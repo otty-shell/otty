@@ -1,0 +1,11 @@
+[workspace]
+resolver = "3"
+members = [
+    "enhydra-agent",
+    "enhydra-client",
+    "enhydra-vte",
+]
+
+[workspace.dependencies]
+thiserror = "2.0.17"
+utf8parse = "0.2.2"
