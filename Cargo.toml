@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
 members = [
-    "enhydra-agent",
-    "enhydra-client",
-    "enhydra-vte",
+    "otty-agent",
+    "otty-client",
+    "otty-vte",
 ]
 
 [workspace.dependencies]

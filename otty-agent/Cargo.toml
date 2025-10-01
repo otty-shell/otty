@@ -1,5 +1,5 @@
 [package]
-name = "enhydra-agent"
+name = "otty-agent"
 version = "0.1.0"
 edition = "2024"
 

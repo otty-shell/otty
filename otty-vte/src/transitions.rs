@@ -1,4 +1,4 @@
-use crate::types::{Action, State};
+use crate::enums::{Action, State};
 
 #[inline(always)]
 pub(crate) fn anywhere(state: State, byte: u8) -> (State, Action) {

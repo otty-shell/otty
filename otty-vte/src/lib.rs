@@ -1,8 +1,8 @@
 mod actor;
 mod parser;
 mod transitions;
-mod types;
+mod enums;
 mod utf8;
 
 pub use actor::Actor;
-pub use parser::Parser;
+pub use parser::{CsiParam, Parser};

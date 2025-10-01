@@ -1,6 +1,7 @@
 [package]
-name = "enhydra-client"
+name = "otty-vte"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+utf8parse.workspace = true

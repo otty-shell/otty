@@ -1,7 +1,5 @@
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum State {
-    Anywhere,
-    Utf8Sequence,
     #[default]
     Ground,
     Escape,
@@ -18,6 +16,9 @@ pub(crate) enum State {
     OscString,
     SosPmApcString,
     Nothing,
+    Utf8Sequence,
+    #[allow(dead_code)]
+    Anywhere,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
