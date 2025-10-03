@@ -1,7 +1,7 @@
 mod actor;
+mod enums;
 mod parser;
 mod transitions;
-mod enums;
 mod utf8;
 
 pub use actor::Actor;

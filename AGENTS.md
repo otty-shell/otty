@@ -22,9 +22,13 @@ VTE parser have to support the full xterm like sequences.
 For working with VTE parser use the next documentation:
 
 - https://vt100.net/emu/dec_ansi_parser
+- https://wezfurlong.org/ecma48
+- https://ecma-international.org/publications-and-standards/standards/ecma-48/
 - https://mitchellh.com/
 - https://gitlab.gnome.org/GNOME/vte
 - https://github.com/alacritty/vte
 - https://github.com/wezterm/wezterm/tree/main/vtparse
 - https://github.com/TragicWarrior/libvterm
 - https://docs.google.com/spreadsheets/d/19W-lXWS9jYwqCK-LwgYo31GucPPxYVld_hVEcfpNpXg/edit?gid=1724051764#gid=1724051764
+- https://wezterm.org/escape-sequences.html#operating-system-command-sequences
+

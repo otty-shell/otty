@@ -112,11 +112,11 @@ impl OscState {
             match self.idx {
                 MAX_OSC_PARAMS => {
                     self.full = true;
-                }
+                },
                 num => {
                     self.params[num.saturating_sub(1)] = self.buffer.len();
                     self.idx += 1;
-                }
+                },
             }
 
             return;
@@ -167,7 +167,7 @@ impl Intermediates {
             self.ignored_excess = true;
         }
     }
-    
+
     fn clear(&mut self) {
         self.reset_index();
         self.ignored_excess = false;
@@ -181,7 +181,7 @@ pub struct Parser {
     intermediates: Intermediates,
     params: Params,
     osc: OscState,
-    utf8_parser: utf8::Utf8Parser
+    utf8_parser: utf8::Utf8Parser,
 }
 
 impl Parser {
@@ -211,8 +211,8 @@ impl Parser {
             }
 
             self.perform(action, byte, actor);
-            self.perform(transitions::entry_action(next_state), byte, actor);
-            
+            // self.perform(transitions::entry_action(next_state), byte, actor);
+
             self.utf8_parser.set_state(self.state);
             self.state = next_state;
         }
@@ -317,13 +317,14 @@ impl Parser {
             let digit = (byte - b'0') as i64;
             match self.params.current.take() {
                 Some(CsiParam::Integer(value)) => {
-                    let updated = value.saturating_mul(10).saturating_add(digit);
+                    let updated =
+                        value.saturating_mul(10).saturating_add(digit);
                     self.params.current.replace(CsiParam::Integer(updated));
-                }
+                },
                 Some(param) => panic!("unexpected param: {param:?}"),
                 None => {
                     self.params.current.replace(CsiParam::Integer(digit));
-                }
+                },
             }
         } else {
             self.params.finish();
@@ -354,7 +355,7 @@ impl Parser {
     fn esc_dispatch<A: Actor>(&mut self, actor: &mut A, byte: u8) {
         self.params.finish();
         actor.esc_dispatch(
-        &self.params.get_integers(),
+            &self.params.get_integers(),
             &self.intermediates.get(),
             self.intermediates.ignored_excess,
             byte,
@@ -391,6 +392,7 @@ impl Parser {
     }
 }
 
+// Thanks for test cases (see https://github.com/wezterm/wezterm/blob/main/vtparse/src/lib.rs#L757)
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -572,10 +574,7 @@ mod tests {
 
     #[test]
     fn test_osc_with_no_params() {
-        assert_eq!(
-            parse(b"\x1b]\x07"),
-            vec![ActorEvents::OscDispatch(vec![])]
-        );
+        assert_eq!(parse(b"\x1b]\x07"), vec![ActorEvents::OscDispatch(vec![])]);
     }
 
     #[test]
@@ -603,9 +602,13 @@ mod tests {
 
         match &actions[0] {
             ActorEvents::OscDispatch(parsed_fields) => {
-                let fields: Vec<_> = fields.into_iter().map(|s| s.as_bytes().to_vec()).collect();
-                assert_eq!(parsed_fields.as_slice(), &fields[0..MAX_OSC_PARAMS]);
-            }
+                let fields: Vec<_> =
+                    fields.into_iter().map(|s| s.as_bytes().to_vec()).collect();
+                assert_eq!(
+                    parsed_fields.as_slice(),
+                    &fields[0..MAX_OSC_PARAMS]
+                );
+            },
             other => panic!("Expected OscDispatch but got {:?}", other),
         }
     }
@@ -631,7 +634,7 @@ mod tests {
         );
     }
 
-   #[test]
+    #[test]
     fn test_fancy_underline() {
         assert_eq!(
             parse(b"\x1b[4m"),
@@ -680,7 +683,7 @@ mod tests {
         );
     }
 
-        #[test]
+    #[test]
     fn test_csi_omitted_param() {
         assert_eq!(
             parse(b"\x1b[;1m"),
@@ -732,7 +735,11 @@ mod tests {
         assert_eq!(
             parse(b"\x1b[1 !p"),
             vec![ActorEvents::CsiDispatch {
-                params: vec![CsiParam::Integer(1), CsiParam::P(b' '), CsiParam::P(b'!')],
+                params: vec![
+                    CsiParam::Integer(1),
+                    CsiParam::P(b' '),
+                    CsiParam::P(b'!')
+                ],
                 parameters_truncated: false,
                 byte: b'p'
             }]
@@ -741,7 +748,11 @@ mod tests {
             parse(b"\x1b[1 !#p"),
             vec![ActorEvents::CsiDispatch {
                 // Note that the `#` was discarded
-                params: vec![CsiParam::Integer(1), CsiParam::P(b' '), CsiParam::P(b'!')],
+                params: vec![
+                    CsiParam::Integer(1),
+                    CsiParam::P(b' '),
+                    CsiParam::P(b'!')
+                ],
                 parameters_truncated: true,
                 byte: b'p'
             }]
@@ -885,5 +896,15 @@ mod tests {
         );
     }
 
-    // Place tests under this line
+    #[test]
+    fn test_csi_dispatch_without_integer_params() {
+        assert_eq!(
+            parse("\x1b[m".as_bytes()),
+            vec![ActorEvents::CsiDispatch {
+                params: vec![],
+                parameters_truncated: false,
+                byte: 109,
+            }],
+        )
+    }
 }

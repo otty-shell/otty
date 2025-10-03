@@ -1,5 +1,5 @@
-use utf8parse::Receiver;
 use crate::enums::State;
+use utf8parse::Receiver;
 
 #[derive(Default)]
 pub(crate) struct Decoder {
@@ -30,7 +30,7 @@ impl Receiver for Decoder {
 #[derive(Default)]
 pub(crate) struct Utf8Parser {
     state: State,
-    inner: utf8parse::Parser
+    inner: utf8parse::Parser,
 }
 
 impl Utf8Parser {

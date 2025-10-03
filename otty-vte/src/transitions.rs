@@ -2,8 +2,8 @@ use crate::enums::{Action, State};
 
 #[inline(always)]
 pub(crate) fn anywhere(state: State, byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
         0x18 | 0x1a | 0x80..=0x8f | 0x91..=0x97 | 0x99 | 0x9a => {
@@ -21,23 +21,21 @@ pub(crate) fn anywhere(state: State, byte: u8) -> (State, Action) {
 
 #[inline(always)]
 pub(crate) fn ground(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
         0x00..=0x17 | 0x19 | 0x1c..=0x1f => (Ground, Execute),
         0x20..=0x7f => (Ground, Print),
-        0xc2..=0xdf | 0xe0..=0xef | 0xf0..=0xf4 => {
-            (Utf8Sequence, Utf8)
-        },
+        0xc2..=0xdf | 0xe0..=0xef | 0xf0..=0xf4 => (Utf8Sequence, Utf8),
         _ => anywhere(Ground, byte),
     }
 }
 
 #[inline(always)]
 pub(crate) fn escape(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
         0x00..=0x17 | 0x19 | 0x1c..=0x1f => (Escape, Execute),
@@ -56,13 +54,11 @@ pub(crate) fn escape(byte: u8) -> (State, Action) {
 
 #[inline(always)]
 pub(crate) fn escape_intermidiate(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
-        0x00..=0x17 | 0x19 | 0x1c..=0x1f => {
-            (EscapeIntermediate, Execute)
-        },
+        0x00..=0x17 | 0x19 | 0x1c..=0x1f => (EscapeIntermediate, Execute),
         0x20..=0x2f => (EscapeIntermediate, Collect),
         0x7f => (EscapeIntermediate, Ignore),
         0x30..=0x7e => (Ground, EscDispatch),
@@ -72,8 +68,8 @@ pub(crate) fn escape_intermidiate(byte: u8) -> (State, Action) {
 
 #[inline(always)]
 pub(crate) fn csi_entry(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
         0x00..=0x17 | 0x19 | 0x1c..=0x1f => (CsiEntry, Execute),
@@ -82,15 +78,15 @@ pub(crate) fn csi_entry(byte: u8) -> (State, Action) {
         0x3a => (CsiIgnore, None),
         0x30..=0x39 | 0x3b => (CsiParam, Param),
         0x3c..=0x3f => (CsiParam, Collect),
-        0x40..=0x7e => (Ground, Collect),
+        0x40..=0x7e => (Ground, CsiDispatch),
         _ => anywhere(CsiEntry, byte),
     }
 }
 
 #[inline(always)]
 pub(crate) fn csi_param(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
         0x00..=0x17 | 0x19 | 0x1c..=0x1f => (CsiParam, Execute),
@@ -105,13 +101,11 @@ pub(crate) fn csi_param(byte: u8) -> (State, Action) {
 
 #[inline(always)]
 pub(crate) fn csi_intermediate(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
-        0x00..=0x17 | 0x19 | 0x1c..=0x1f => {
-            (CsiIntermediate, Execute)
-        },
+        0x00..=0x17 | 0x19 | 0x1c..=0x1f => (CsiIntermediate, Execute),
         0x20..=0x2f => (CsiIntermediate, Collect),
         0x7f => (CsiIntermediate, Ignore),
         0x30..=0x3f => (CsiIntermediate, None),
@@ -122,8 +116,8 @@ pub(crate) fn csi_intermediate(byte: u8) -> (State, Action) {
 
 #[inline(always)]
 pub(crate) fn csi_ignore(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
         0x00..=0x17 | 0x19 | 0x1c..=0x1f => (CsiIgnore, Execute),
@@ -135,8 +129,8 @@ pub(crate) fn csi_ignore(byte: u8) -> (State, Action) {
 
 #[inline(always)]
 pub(crate) fn dcs_entry(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
         0x00..=0x17 | 0x19 | 0x1c..=0x1f => (State::DcsEntry, Action::Execute),
@@ -152,13 +146,11 @@ pub(crate) fn dcs_entry(byte: u8) -> (State, Action) {
 
 #[inline(always)]
 pub(crate) fn dcs_param(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
-        0x00..=0x17 | 0x19 | 0x1c..=0x1f | 0x7f => {
-            (DcsParam, Ignore)
-        },
+        0x00..=0x17 | 0x19 | 0x1c..=0x1f | 0x7f => (DcsParam, Ignore),
         0x30..=0x39 | 0x3b => (DcsParam, Param),
         0x3a | 0x3c..=0x3f => (DcsIgnore, None),
         0x20..=0x2f => (DcsIntermediate, Collect),
@@ -169,13 +161,11 @@ pub(crate) fn dcs_param(byte: u8) -> (State, Action) {
 
 #[inline(always)]
 pub(crate) fn dcs_intermediate(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
-        0x00..=0x17 | 0x19 | 0x1c..=0x1f | 0x7f => {
-            (DcsIntermediate, Ignore)
-        },
+        0x00..=0x17 | 0x19 | 0x1c..=0x1f | 0x7f => (DcsIntermediate, Ignore),
         0x20..=0x2f => (DcsIntermediate, Collect),
         0x30..=0x3f => (DcsIgnore, None),
         0x40..=0x7e => (DcsPassthrough, None),
@@ -185,13 +175,11 @@ pub(crate) fn dcs_intermediate(byte: u8) -> (State, Action) {
 
 #[inline(always)]
 pub(crate) fn dcs_passthrough(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
-        0x00..=0x17 | 0x19 | 0x1c..=0x1f | 0x20..=0x7e => {
-            (DcsPassthrough, Put)
-        },
+        0x00..=0x17 | 0x19 | 0x1c..=0x1f | 0x20..=0x7e => (DcsPassthrough, Put),
         0x7f => (DcsPassthrough, Ignore),
         _ => anywhere(DcsPassthrough, byte),
     }
@@ -199,39 +187,33 @@ pub(crate) fn dcs_passthrough(byte: u8) -> (State, Action) {
 
 #[inline(always)]
 pub(crate) fn dcs_ignore(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
-        0x00..=0x17 | 0x19 | 0x1c..=0x1f | 0x20..=0x7f => {
-            (DcsIgnore, Ignore)
-        },
+        0x00..=0x17 | 0x19 | 0x1c..=0x1f | 0x20..=0x7f => (DcsIgnore, Ignore),
         _ => anywhere(DcsIgnore, byte),
     }
 }
 
 #[inline(always)]
 pub(crate) fn osc_string(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
-        0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1c..=0x1f => {
-            (OscString, Ignore)
-        },
+        0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1c..=0x1f => (OscString, Ignore),
         0x07 => (Ground, Ignore),
         0x20..=0x7f => (OscString, OscPut),
-        0xc2..=0xdf | 0xe0..=0xef | 0xf0..=0xf4 => {
-            (Utf8Sequence, Utf8)
-        },
+        0xc2..=0xdf | 0xe0..=0xef | 0xf0..=0xf4 => (Utf8Sequence, Utf8),
         _ => anywhere(OscString, byte),
     }
 }
 
 #[inline(always)]
 pub(crate) fn sos_pm_apc_string(byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match byte {
         0x00..=0x17 | 0x19 | 0x1c..=0x1f | 0x20..=0x7f => {
@@ -243,8 +225,8 @@ pub(crate) fn sos_pm_apc_string(byte: u8) -> (State, Action) {
 
 #[inline(always)]
 pub(crate) fn entry_action(state: State) -> Action {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match state {
         Ground => None,
@@ -269,8 +251,8 @@ pub(crate) fn entry_action(state: State) -> Action {
 
 #[inline(always)]
 pub(crate) fn exit_action(state: State) -> Action {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match state {
         Ground => None,
@@ -295,8 +277,8 @@ pub(crate) fn exit_action(state: State) -> Action {
 
 #[inline(always)]
 pub(crate) fn transit(state: State, byte: u8) -> (State, Action) {
-    use State::*;
     use Action::*;
+    use State::*;
 
     match state {
         Ground => ground(byte),
