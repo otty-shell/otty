@@ -1,7 +1,19 @@
+//! Transition helpers for the `otty-vte` finite state machine.
+//!
+//! The VTE parser is driven by a table of state transitions that mirrors the
+//! DEC/ECMA-48 specification. Each function in this module is responsible for a
+//! specific parser state: given an input byte it returns the next [`State`] and
+//! the [`Action`] the higher level controller should perform. This keeps
+//! terminal emulation logic table-driven and makes it straightforward to audit
+//! coverage for the different control-sequence families (ESC, CSI, DCS, OSC,
+//! SOS/PM/APC, and UTF-8 handling).
+
 use crate::enums::{Action, State};
 
+/// Transition that applies from any state when processing C1 controls and
+/// common single-byte sequences.
 #[inline(always)]
-pub(crate) fn anywhere(state: State, byte: u8) -> (State, Action) {
+const fn anywhere(state: State, byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -19,21 +31,23 @@ pub(crate) fn anywhere(state: State, byte: u8) -> (State, Action) {
     }
 }
 
+/// Ground state handling printable data and C0 controls.
 #[inline(always)]
-pub(crate) fn ground(byte: u8) -> (State, Action) {
+const fn ground(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
     match byte {
         0x00..=0x17 | 0x19 | 0x1c..=0x1f => (Ground, Execute),
         0x20..=0x7f => (Ground, Print),
-        0xc2..=0xdf | 0xe0..=0xef | 0xf0..=0xf4 => (Utf8Sequence, Utf8),
+        0xc2..=0xf4 => (Utf8Sequence, Utf8),
         _ => anywhere(Ground, byte),
     }
 }
 
+/// ESC state waiting for the next byte to identify the sequence family.
 #[inline(always)]
-pub(crate) fn escape(byte: u8) -> (State, Action) {
+const fn escape(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -52,8 +66,9 @@ pub(crate) fn escape(byte: u8) -> (State, Action) {
     }
 }
 
+/// ESC state that collects intermediate bytes before dispatch.
 #[inline(always)]
-pub(crate) fn escape_intermidiate(byte: u8) -> (State, Action) {
+const fn escape_intermidiate(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -66,8 +81,9 @@ pub(crate) fn escape_intermidiate(byte: u8) -> (State, Action) {
     }
 }
 
+/// CSI entry point that validates and routes subsequent parameter bytes.
 #[inline(always)]
-pub(crate) fn csi_entry(byte: u8) -> (State, Action) {
+const fn csi_entry(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -83,8 +99,9 @@ pub(crate) fn csi_entry(byte: u8) -> (State, Action) {
     }
 }
 
+/// CSI parameter collection handling numeric fields and separators.
 #[inline(always)]
-pub(crate) fn csi_param(byte: u8) -> (State, Action) {
+const fn csi_param(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -99,8 +116,9 @@ pub(crate) fn csi_param(byte: u8) -> (State, Action) {
     }
 }
 
+/// CSI intermediate state collecting extra bytes prior to dispatch.
 #[inline(always)]
-pub(crate) fn csi_intermediate(byte: u8) -> (State, Action) {
+const fn csi_intermediate(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -114,8 +132,9 @@ pub(crate) fn csi_intermediate(byte: u8) -> (State, Action) {
     }
 }
 
+/// CSI ignore state consuming bytes after an invalid introducer.
 #[inline(always)]
-pub(crate) fn csi_ignore(byte: u8) -> (State, Action) {
+const fn csi_ignore(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -127,8 +146,9 @@ pub(crate) fn csi_ignore(byte: u8) -> (State, Action) {
     }
 }
 
+/// DCS entry point collecting the introducer and preparing parameters.
 #[inline(always)]
-pub(crate) fn dcs_entry(byte: u8) -> (State, Action) {
+const fn dcs_entry(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -144,8 +164,9 @@ pub(crate) fn dcs_entry(byte: u8) -> (State, Action) {
     }
 }
 
+/// DCS parameter collection equivalent to `csi_param` but for DCS strings.
 #[inline(always)]
-pub(crate) fn dcs_param(byte: u8) -> (State, Action) {
+const fn dcs_param(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -159,8 +180,9 @@ pub(crate) fn dcs_param(byte: u8) -> (State, Action) {
     }
 }
 
+/// DCS intermediate handler prior to entering passthrough mode.
 #[inline(always)]
-pub(crate) fn dcs_intermediate(byte: u8) -> (State, Action) {
+const fn dcs_intermediate(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -173,8 +195,9 @@ pub(crate) fn dcs_intermediate(byte: u8) -> (State, Action) {
     }
 }
 
+/// DCS passthrough mode forwarding payload bytes to the active handler.
 #[inline(always)]
-pub(crate) fn dcs_passthrough(byte: u8) -> (State, Action) {
+const fn dcs_passthrough(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -185,8 +208,9 @@ pub(crate) fn dcs_passthrough(byte: u8) -> (State, Action) {
     }
 }
 
+/// DCS ignore state swallowing bytes after a malformed sequence.
 #[inline(always)]
-pub(crate) fn dcs_ignore(byte: u8) -> (State, Action) {
+const fn dcs_ignore(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -196,8 +220,9 @@ pub(crate) fn dcs_ignore(byte: u8) -> (State, Action) {
     }
 }
 
+/// OSC payload collection until BEL or ST is observed.
 #[inline(always)]
-pub(crate) fn osc_string(byte: u8) -> (State, Action) {
+const fn osc_string(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -205,13 +230,14 @@ pub(crate) fn osc_string(byte: u8) -> (State, Action) {
         0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1c..=0x1f => (OscString, Ignore),
         0x07 => (Ground, Ignore),
         0x20..=0x7f => (OscString, OscPut),
-        0xc2..=0xdf | 0xe0..=0xef | 0xf0..=0xf4 => (Utf8Sequence, Utf8),
+        0xc2..=0xf4 => (Utf8Sequence, Utf8),
         _ => anywhere(OscString, byte),
     }
 }
 
+/// SOS/PM/APC string collection mirroring OSC but with a different terminator.
 #[inline(always)]
-pub(crate) fn sos_pm_apc_string(byte: u8) -> (State, Action) {
+const fn sos_pm_apc_string(byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 
@@ -223,8 +249,9 @@ pub(crate) fn sos_pm_apc_string(byte: u8) -> (State, Action) {
     }
 }
 
+/// Action to trigger upon entering a new state before reading the next byte.
 #[inline(always)]
-pub(crate) fn entry_action(state: State) -> Action {
+pub(crate) const fn entry_action(state: State) -> Action {
     use Action::*;
     use State::*;
 
@@ -249,8 +276,9 @@ pub(crate) fn entry_action(state: State) -> Action {
     }
 }
 
+/// Action to trigger after leaving a state, typically to finalize buffers.
 #[inline(always)]
-pub(crate) fn exit_action(state: State) -> Action {
+pub(crate) const fn exit_action(state: State) -> Action {
     use Action::*;
     use State::*;
 
@@ -275,8 +303,22 @@ pub(crate) fn exit_action(state: State) -> Action {
     }
 }
 
+/// Action to trigger in default ut8 parsing branch
 #[inline(always)]
-pub(crate) fn transit(state: State, byte: u8) -> (State, Action) {
+pub(crate) const fn utf8_state_action(state: State) -> Action {
+    use Action::*;
+    use State::*;
+
+    match state {
+        Ground => Print,
+        OscString => OscPut,
+        _ => None,
+    }
+}
+
+/// Core transition table that delegates to state-specific helpers.
+#[inline(always)]
+pub(crate) const fn transit(state: State, byte: u8) -> (State, Action) {
     use Action::*;
     use State::*;
 

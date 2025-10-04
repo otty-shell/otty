@@ -194,56 +194,38 @@ impl Parser {
         for byte in bytes {
             let byte = *byte;
 
-            if self.state == State::Utf8Sequence {
-                self.advance_utf8(actor, byte);
-                continue;
+            match self.state {
+                State::Utf8Sequence => self.advance_utf8(actor, byte),
+                state => {
+                    let (next_state, action) =
+                        transitions::transit(state, byte);
+
+                    if state == next_state {
+                        self.perform(action, byte, actor);
+                        continue;
+                    }
+                    
+                    if next_state != State::Utf8Sequence {
+                        self.perform(transitions::exit_action(state), 0, actor);
+                    }
+
+                    self.perform(action, byte, actor);
+                    self.perform(
+                        transitions::entry_action(next_state),
+                        byte,
+                        actor,
+                    );
+
+                    self.utf8_parser.set_state(self.state);
+                    self.state = next_state;
+                },
             }
-
-            let (next_state, action) = transitions::transit(self.state, byte);
-
-            if self.state == next_state {
-                self.perform(action, byte, actor);
-                continue;
-            }
-
-            if next_state != State::Utf8Sequence {
-                self.perform(transitions::exit_action(self.state), 0, actor);
-            }
-
-            self.perform(action, byte, actor);
-            // self.perform(transitions::entry_action(next_state), byte, actor);
-
-            self.utf8_parser.set_state(self.state);
-            self.state = next_state;
-        }
-    }
-
-    fn perform<A: Actor>(&mut self, action: Action, byte: u8, actor: &mut A) {
-        use Action::*;
-
-        match action {
-            Print => actor.print(byte as char),
-            Execute => actor.execute(byte),
-            Put => actor.put(byte),
-            CsiDispatch => self.csi_dispatch(actor, byte),
-            EscDispatch => self.esc_dispatch(actor, byte),
-            Param => self.handle_param_byte(byte),
-            Clear => self.clear(),
-            Collect => self.intermediates.collect(byte),
-            Hook => self.hook(actor, byte),
-            Unhook => actor.unhook(),
-            OscStart => self.osc.clear(),
-            OscPut => self.osc.put(byte as char),
-            OscEnd => self.osc_dispatch(actor),
-            Utf8 => self.advance_utf8(actor, byte),
-            _ => {},
         }
     }
 
     // UTF-8 Parsing function (https://github.com/wezterm/wezterm/blob/main/vtparse/src/lib.rs#L669)
     fn advance_utf8<A: Actor>(&mut self, actor: &mut A, byte: u8) {
         let decoder = self.utf8_parser.advance(byte);
-
         let Some(c) = decoder.get() else {
             return;
         };
@@ -279,13 +261,34 @@ impl Parser {
             }
         }
 
-        match self.utf8_parser.state() {
-            State::Ground => actor.print(c),
-            State::OscString => self.osc.put(c),
-            state => panic!("unreachable state {:?}", state),
-        };
-
+        self.perform(
+            transitions::utf8_state_action(self.utf8_parser.state()),
+            byte,
+            actor
+        );
         self.state = self.utf8_parser.state();
+    }
+
+    fn perform<A: Actor>(&mut self, action: Action, byte: u8, actor: &mut A) {
+        use Action::*;
+
+        match action {
+            Print => actor.print(byte as char),
+            Execute => actor.execute(byte),
+            Put => actor.put(byte),
+            CsiDispatch => self.csi_dispatch(actor, byte),
+            EscDispatch => self.esc_dispatch(actor, byte),
+            Param => self.handle_param_byte(byte),
+            Clear => self.clear(),
+            Collect => self.intermediates.collect(byte),
+            Hook => self.hook(actor, byte),
+            Unhook => actor.unhook(),
+            OscStart => self.osc.clear(),
+            OscPut => self.osc.put(byte as char),
+            OscEnd => self.osc_dispatch(actor),
+            Utf8 => self.advance_utf8(actor, byte),
+            _ => {},
+        }
     }
 
     /// Promote early intermediates to parameters.
@@ -319,6 +322,7 @@ impl Parser {
                 Some(CsiParam::Integer(value)) => {
                     let updated =
                         value.saturating_mul(10).saturating_add(digit);
+
                     self.params.current.replace(CsiParam::Integer(updated));
                 },
                 Some(param) => panic!("unexpected param: {param:?}"),
