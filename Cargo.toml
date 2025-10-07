@@ -1,0 +1,11 @@
+[workspace]
+resolver = "3"
+members = [
+    "otty-agent",
+    "otty-client",
+    "otty-vte",
+]
+
+[workspace.dependencies]
+thiserror = "2.0.17"
+utf8parse = "0.2.2"
