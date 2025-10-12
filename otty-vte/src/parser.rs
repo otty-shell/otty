@@ -6,98 +6,6 @@ const MAX_INTERMEDIATES: usize = 2;
 const MAX_OSC_PARAMS: usize = 32;
 const MAX_PARAMS: usize = 256;
 
-/// Represents a parameter to a CSI-based escaped sequence.
-///
-/// CSI escapes typically have the form: `CSI 3 m`, but can also
-/// bundle multiple values together: `CSI 3 ; 4 m`.  In both
-/// of those examples the parameters are simple integer values
-/// and latter of which would be expressed as a slice containing
-/// `[CsiParam::Integer(3), CsiParam::Integer(4)]`.
-///
-/// There are some escape sequences that use colons to subdivide and
-/// extend the meaning.  For example: `CSI 4:3 m` is a sequence used
-/// to denote a curly underline.  That would be represented as:
-/// `[CsiParam::ColonList(vec![Some(4), Some(3)])]`.
-///
-/// Later: reading ECMA 48, CSI is defined as:
-/// CSI P ... P  I ... I  F
-/// Where P are parameter bytes in the range 0x30-0x3F [0-9:;<=>?]
-/// and I are intermediate bytes in the range 0x20-0x2F
-/// and F is the final byte in the range 0x40-0x7E
-///
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum CsiParam {
-    Integer(i64),
-    P(u8),
-}
-
-impl Default for CsiParam {
-    fn default() -> Self {
-        Self::Integer(0)
-    }
-}
-
-#[derive(Debug)]
-struct Params {
-    items: [CsiParam; MAX_PARAMS],
-    current: Option<CsiParam>,
-    full: bool,
-    idx: usize,
-}
-
-impl Default for Params {
-    fn default() -> Self {
-        Self {
-            items: [CsiParam::default(); MAX_PARAMS],
-            current: None,
-            full: false,
-            idx: 0,
-        }
-    }
-}
-
-impl Params {
-    fn get(&self) -> Vec<CsiParam> {
-        self.items[..self.idx].to_vec()
-    }
-
-    fn get_integers(&self) -> Vec<i64> {
-        self.items[..self.idx]
-            .iter()
-            .map(|param| {
-                if let CsiParam::Integer(val) = param {
-                    *val
-                } else {
-                    0
-                }
-            })
-            .collect()
-    }
-
-    fn push(&mut self, param: CsiParam) {
-        if self.idx >= MAX_PARAMS {
-            self.full = true;
-            return;
-        }
-
-        self.items[self.idx] = param;
-        self.idx += 1;
-    }
-
-    fn finish(&mut self) {
-        if let Some(val) = self.current.take() {
-            self.push(val);
-        }
-    }
-
-    fn clear(&mut self) {
-        self.current.take();
-        self.full = false;
-        self.idx = 0;
-        self.items = [CsiParam::default(); MAX_PARAMS];
-    }
-}
-
 #[derive(Debug, Default)]
 struct OscState {
     buffer: Vec<u8>,
@@ -143,6 +51,118 @@ impl OscState {
     }
 }
 
+/// Represents a parameter to a CSI-based escaped sequence.
+///
+/// CSI escapes typically have the form: `CSI 3 m`, but can also
+/// bundle multiple values together: `CSI 3 ; 4 m`.  In both
+/// of those examples the parameters are simple integer values
+/// and latter of which would be expressed as a slice containing
+/// `[CsiParam::Integer(3), CsiParam::Integer(4)]`.
+///
+/// There are some escape sequences that use colons to subdivide and
+/// extend the meaning.  For example: `CSI 4:3 m` is a sequence used
+/// to denote a curly underline.  That would be represented as:
+/// `[CsiParam::ColonList(vec![Some(4), Some(3)])]`.
+///
+/// Later: reading ECMA 48, CSI is defined as:
+/// CSI P ... P  I ... I  F
+/// Where P are parameter bytes in the range 0x30-0x3F [0-9:;<=>?]
+/// and I are intermediate bytes in the range 0x20-0x2F
+/// and F is the final byte in the range 0x40-0x7E
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum CsiParam {
+    Integer(i64),
+    P(u8),
+}
+
+impl Default for CsiParam {
+    fn default() -> Self {
+        Self::Integer(0)
+    }
+}
+
+#[derive(Debug)]
+struct Params {
+    items: [CsiParam; MAX_PARAMS],
+    current: Option<CsiParam>,
+    full: bool,
+    idx: usize,
+}
+
+impl Default for Params {
+    fn default() -> Self {
+        Self {
+            items: [CsiParam::default(); MAX_PARAMS],
+            current: None,
+            full: false,
+            idx: 0,
+        }
+    }
+}
+
+impl Params {
+    fn handle_byte(&mut self, byte: u8) {
+        if byte.is_ascii_digit() {
+            let digit = (byte - b'0') as i64;
+            match self.current.take() {
+                Some(CsiParam::Integer(value)) => {
+                    let updated =
+                        value.saturating_mul(10).saturating_add(digit);
+
+                    self.current.replace(CsiParam::Integer(updated));
+                },
+                Some(param) => panic!("unexpected param: {param:?}"),
+                None => {
+                    self.current.replace(CsiParam::Integer(digit));
+                },
+            }
+        } else {
+            self.finish();
+            self.push(CsiParam::P(byte));
+        }
+    }
+
+    fn get(&self) -> Vec<CsiParam> {
+        self.items[..self.idx].to_vec()
+    }
+
+    fn get_integers(&self) -> Vec<i64> {
+        self.items[..self.idx]
+            .iter()
+            .map(|param| {
+                if let CsiParam::Integer(val) = param {
+                    *val
+                } else {
+                    0
+                }
+            })
+            .collect()
+    }
+
+    fn push(&mut self, param: CsiParam) {
+        if self.idx >= MAX_PARAMS {
+            self.full = true;
+            return;
+        }
+
+        self.items[self.idx] = param;
+        self.idx += 1;
+    }
+
+    fn finish(&mut self) {
+        if let Some(val) = self.current.take() {
+            self.push(val);
+        }
+    }
+
+    fn clear(&mut self) {
+        self.current.take();
+        self.full = false;
+        self.idx = 0;
+        self.items = [CsiParam::default(); MAX_PARAMS];
+    }
+}
+
 #[derive(Debug, Default)]
 struct Intermediates {
     items: [u8; MAX_INTERMEDIATES],
@@ -165,6 +185,26 @@ impl Intermediates {
             self.idx += 1;
         } else {
             self.ignored_excess = true;
+        }
+    }
+
+    /// Promote early intermediates to parameters.
+    /// This is handle sequences such as DECSET that use `?`
+    /// prior to other numeric parameters.
+    /// `?` is technically in the intermediate range and shouldn't
+    /// appear in the parameter position according to ECMA 48
+    fn promote_to_params(&mut self, params: &mut Params) {
+        if self.idx > 0 {
+            for item in self.get() {
+                if params.full {
+                    self.ignored_excess = true;
+                    break;
+                }
+
+                params.push(CsiParam::P(*item));
+            }
+
+            self.reset_index();
         }
     }
 
@@ -195,7 +235,7 @@ impl Parser {
             let byte = *byte;
 
             match self.state {
-                State::Utf8Sequence => self.advance_utf8(actor, byte),
+                State::Utf8Sequence => self.handle_utf8_step(actor, byte),
                 state => {
                     let (next_state, action) =
                         transitions::transit(state, byte);
@@ -204,7 +244,7 @@ impl Parser {
                         self.perform(action, byte, actor);
                         continue;
                     }
-                    
+
                     if next_state != State::Utf8Sequence {
                         self.perform(transitions::exit_action(state), 0, actor);
                     }
@@ -223,50 +263,32 @@ impl Parser {
         }
     }
 
-    // UTF-8 Parsing function (https://github.com/wezterm/wezterm/blob/main/vtparse/src/lib.rs#L669)
-    fn advance_utf8<A: Actor>(&mut self, actor: &mut A, byte: u8) {
-        let decoder = self.utf8_parser.advance(byte);
-        let Some(c) = decoder.get() else {
-            return;
-        };
-
-        // Slightly gross special cases C1 controls that were
-        // encoded as UTF-8 rather than emitted as raw 8-bit.
-        // If the decoded value is in the byte range, and that
-        // value would cause a state transition, then we process
-        // that state transition rather than performing the default
-        // string accumulation.
-        if c as u32 <= 0xff {
-            let byte = c as u8;
-            let utf8_parser_state = self.utf8_parser.state();
-
-            let (next_state, action) =
-                transitions::transit(utf8_parser_state, byte);
-
-            if action == Action::Execute
-                || (next_state != utf8_parser_state
-                    && next_state != State::Utf8Sequence)
-            {
-                self.perform(
-                    transitions::exit_action(utf8_parser_state),
-                    0,
-                    actor,
-                );
+    // Drive UTF-8 parsing via Utf8Parser::step and dispatch outcomes.
+    fn handle_utf8_step<A: Actor>(&mut self, actor: &mut A, byte: u8) {
+        match self.utf8_parser.step(byte) {
+            utf8::StepResult::Pending => {},
+            utf8::StepResult::Control {
+                byte,
+                from,
+                next,
+                action,
+            } => {
+                self.perform(transitions::exit_action(from), 0, actor);
                 self.perform(action, byte, actor);
-                self.perform(transitions::entry_action(next_state), 0, actor);
+                self.perform(transitions::entry_action(next), 0, actor);
 
                 self.utf8_parser.set_state(self.state);
-                self.state = next_state;
-                return;
-            }
+                self.state = next;
+            },
+            utf8::StepResult::Completed(byte) => {
+                self.perform(
+                    transitions::utf8_state_action(self.utf8_parser.state()),
+                    byte,
+                    actor,
+                );
+                self.state = self.utf8_parser.state();
+            },
         }
-
-        self.perform(
-            transitions::utf8_state_action(self.utf8_parser.state()),
-            byte,
-            actor
-        );
-        self.state = self.utf8_parser.state();
     }
 
     fn perform<A: Actor>(&mut self, action: Action, byte: u8, actor: &mut A) {
@@ -286,26 +308,8 @@ impl Parser {
             OscStart => self.osc.clear(),
             OscPut => self.osc.put(byte as char),
             OscEnd => self.osc_dispatch(actor),
-            Utf8 => self.advance_utf8(actor, byte),
+            Utf8 => self.handle_utf8_step(actor, byte),
             _ => {},
-        }
-    }
-
-    /// Promote early intermediates to parameters.
-    /// This is handle sequences such as DECSET that use `?`
-    /// prior to other numeric parameters.
-    /// `?` is technically in the intermediate range and shouldn't
-    /// appear in the parameter position according to ECMA 48
-    fn promote_intermediates_to_params(&mut self) {
-        if self.intermediates.idx > 0 {
-            for &p in self.intermediates.get() {
-                if self.params.full {
-                    self.intermediates.ignored_excess = true;
-                    break;
-                }
-                self.params.push(CsiParam::P(p));
-            }
-            self.intermediates.reset_index();
         }
     }
 
@@ -314,26 +318,8 @@ impl Parser {
             return;
         }
 
-        self.promote_intermediates_to_params();
-
-        if (b'0'..=b'9').contains(&byte) {
-            let digit = (byte - b'0') as i64;
-            match self.params.current.take() {
-                Some(CsiParam::Integer(value)) => {
-                    let updated =
-                        value.saturating_mul(10).saturating_add(digit);
-
-                    self.params.current.replace(CsiParam::Integer(updated));
-                },
-                Some(param) => panic!("unexpected param: {param:?}"),
-                None => {
-                    self.params.current.replace(CsiParam::Integer(digit));
-                },
-            }
-        } else {
-            self.params.finish();
-            self.params.push(CsiParam::P(byte));
-        }
+        self.intermediates.promote_to_params(&mut self.params);
+        self.params.handle_byte(byte);
     }
 
     fn hook<A: Actor>(&mut self, actor: &mut A, byte: u8) {
@@ -348,7 +334,7 @@ impl Parser {
 
     fn csi_dispatch<A: Actor>(&mut self, actor: &mut A, byte: u8) {
         self.params.finish();
-        self.promote_intermediates_to_params();
+        self.intermediates.promote_to_params(&mut self.params);
         actor.csi_dispatch(
             &self.params.get(),
             self.intermediates.ignored_excess,
@@ -360,7 +346,7 @@ impl Parser {
         self.params.finish();
         actor.esc_dispatch(
             &self.params.get_integers(),
-            &self.intermediates.get(),
+            self.intermediates.get(),
             self.intermediates.ignored_excess,
             byte,
         );
@@ -385,7 +371,7 @@ impl Parser {
             offset = end;
         }
 
-        params.push(&buffer);
+        params.push(buffer);
         actor.osc_dispatch(&params[..limit]);
     }
 
@@ -596,7 +582,6 @@ mod tests {
     #[test]
     fn test_osc_too_many_params() {
         let fields = (0..MAX_OSC_PARAMS + 2)
-            .into_iter()
             .map(|i| i.to_string())
             .collect::<Vec<_>>();
 

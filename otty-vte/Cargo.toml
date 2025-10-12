@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-utf8parse.workspace = true
+utf8parse = "0.2.2"
