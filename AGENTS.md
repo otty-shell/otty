@@ -14,6 +14,7 @@ It turns your familiar shell into a full-featured workspace, available anywhere 
 - Crate names are prefixed with `otty-`. For example, the core crate could be named as `otty-core`
 - When using format! and you can inline variables into {}, always do that.
 - Run `cargo fmt` and after than run `cargo clippy` when you make changes in `.rs` files. If you receive the errors or warnings from `cargo clippy` try to solve them.
+- Use the documentation comments for enriching context.
 
 ## Terminal Emulation
 
