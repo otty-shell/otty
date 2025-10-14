@@ -1,7 +1,6 @@
 # AGENTS Instructions
 
-Otty is a terminal-centric development environment.
-It turns your familiar shell into a full-featured workspace, available anywhere - on a local machine or a remote server. All you need is to install otty and start working.
+General info about the project see in the `README.md` file in the project root
 
 ## Architecture
 
@@ -32,4 +31,3 @@ For working with VTE parser use the next documentation:
 - https://github.com/TragicWarrior/libvterm
 - https://docs.google.com/spreadsheets/d/19W-lXWS9jYwqCK-LwgYo31GucPPxYVld_hVEcfpNpXg/edit?gid=1724051764#gid=1724051764
 - https://wezterm.org/escape-sequences.html#operating-system-command-sequences
-
