@@ -13,7 +13,7 @@ OTTY rethinks the terminal as the only workspace you need.
 
 ### License
 
-See [LICENSE](../LICENSE).
+See [LICENSE](./LICENSE).
 
 ### CONTRIBUTORS
 
