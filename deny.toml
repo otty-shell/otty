@@ -1,0 +1,13 @@
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

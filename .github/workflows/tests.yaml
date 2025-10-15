@@ -1,0 +1,23 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+    - main
+
+jobs:
+  Tests:
+    name: ${{ matrix.os }} / rust
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+    matrix:
+      os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo test --locked --all-features --verbose
