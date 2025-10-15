@@ -21,7 +21,7 @@ Developers spend most of their time in the terminal, but modern terminals remain
 
 ### License
 
-See [LICENSE](../LICENSE).
+See [LICENSE](./LICENSE).
 
 ### CONTRIBUTORS
 
