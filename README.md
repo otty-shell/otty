@@ -7,9 +7,17 @@
 
 ### About
 
+OTTY is not just one more blazing fast terminal emulator, OTTY rethinks the terminal itself as the only workspace you need for development or operation your system. 
+
 Developers spend most of their time in the terminal, but modern terminals remain minimal shells. As a result, engineers juggle between the terminal, code editors (AI and not), different dashboards, and SSH clients instead of working in one coherent space.
 
-OTTY rethinks the terminal as the only workspace you need.
+#### Key features
+
+- Tool management (install / remove tools or sdks, for example: docker, go, rust, zsh, etc)
+- SSH connections catalog
+- Plugins - extend your workspace with community driven plugins or create new one
+- AI agent integration
+- Modern terminal UI - besides the standard UI features like tabs or multiplexer, OTTY rethinks the global terminal UI concept and suggest you using your terminal more convinient.
 
 ### License
 
