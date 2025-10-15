@@ -1,0 +1,19 @@
+name: Lint
+
+on:
+  pull_request:
+  push:
+    branches:
+    - main
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  Lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo fmt --all -- --check
+    - run: cargo lint

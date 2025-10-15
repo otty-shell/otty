@@ -1,0 +1,25 @@
+name: Security Audit
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/Cargo.toml'
+  schedule:
+    - cron: '0 2 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-deny:
+    permissions:
+      checks: write
+      contents: read
+      issues: write
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: EmbarkStudios/cargo-deny-action@v2

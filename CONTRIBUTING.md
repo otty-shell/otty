@@ -7,3 +7,4 @@
 #### Contributing to Code
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) (feat:, fix:, docs:, chore:, refactor:, perf:, test:, build:)
+- Use [AGENTS.md](./AGENTS.md) for enriching LLM context
