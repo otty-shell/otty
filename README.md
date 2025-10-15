@@ -1,4 +1,4 @@
-<div style="text-align: center;">
+<div align="center">
     <img src="./assets/logo.svg" height="240">
     <h4>OTTY - an open-source, terminal-centric workspace that transforms your shell into a true IDE.</h4>
 </div>
