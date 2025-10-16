@@ -1,0 +1,8 @@
+[package]
+name = "otty-surface"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+otty-vte = { path = "../otty-vte" }
+thiserror = { workspace = true }
