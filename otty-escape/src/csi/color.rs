@@ -3,6 +3,21 @@ use std::{
     str::FromStr,
 };
 
+/// An index into the fixed color palette.
+pub type PaletteIndex = u8;
+
+/// Specifies the color to be used when rendering a cell.
+/// This differs from `ColorAttribute` in that this type can only
+/// specify one of the possible color types at once, whereas the
+/// `ColorAttribute` type can specify a TrueColor value and a fallback.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ColorSpec {
+    Default,
+    /// Use either a raw number, or use values from the `AnsiColor` enum
+    PaletteIndex(PaletteIndex),
+    TrueColor(Rgb),
+}
+
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Default)]
 pub struct Rgb {
     pub r: u8,
