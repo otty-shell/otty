@@ -36,7 +36,13 @@ impl Actor for MyActor {
         println!("OSC: {:?}", params);
     }
 
-    fn csi_dispatch(&mut self, params: &[CsiParam], truncated: bool, byte: u8) {
+    fn csi_dispatch(
+        &mut self,
+        params: &[CsiParam],
+        _intermediates: &[u8],
+        truncated: bool,
+        byte: u8,
+    ) {
         println!(
             "CSI: params={params:?} truncated={truncated} final={byte:#04x}"
         );

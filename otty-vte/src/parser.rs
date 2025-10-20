@@ -337,6 +337,7 @@ impl Parser {
         self.intermediates.promote_to_params(&mut self.params);
         actor.csi_dispatch(
             &self.params.get(),
+            self.intermediates.get(),
             self.intermediates.ignored_excess,
             byte,
         );
@@ -468,6 +469,7 @@ mod tests {
         fn csi_dispatch(
             &mut self,
             params: &[CsiParam],
+            _intermediates: &[u8],
             parameters_truncated: bool,
             byte: u8,
         ) {

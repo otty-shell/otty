@@ -64,6 +64,7 @@ pub trait Actor {
     fn csi_dispatch(
         &mut self,
         params: &[CsiParam],
+        intermediates: &[u8],
         parameters_truncated: bool,
         byte: u8,
     );
