@@ -1,4 +1,6 @@
 use std::fmt;
+use log::debug;
+use crate::{actor::Actor, charset::CharsetIndex};
 
 /// Enumeration of the C0/C1 control codes that may be observed outside of an
 /// escape sequence.
@@ -306,6 +308,28 @@ impl fmt::Display for ControlCode {
         match self {
             Unexpected(b) => write!(f, "{code}: 0x{:02X}", b),
             _ => write!(f, "{code}")
+        }
+    }
+}
+
+impl ControlCode {
+    pub(crate) fn perform<'a, A: Actor>(
+        byte: u8,
+        actor: &mut A,
+    ) {
+        let code = ControlCode::from(byte);
+        match code {
+            ControlCode::HorizontalTab => actor.put_tab(1),
+            ControlCode::Backspace => actor.backspace(),
+            ControlCode::CarriageReturn => actor.carriage_return(),
+            ControlCode::LineFeed |
+            ControlCode::FormFeed |
+            ControlCode::VerticalTab => actor.linefeed(),
+            ControlCode::Bell => actor.bell(),
+            ControlCode::Substitute => actor.substitute(),
+            ControlCode::ShiftOut => actor.set_active_charset(CharsetIndex::G1),
+            ControlCode::ShiftIn => actor.set_active_charset(CharsetIndex::G0),
+            _ => debug!("[unexpected: control_code] {code}")
         }
     }
 }

@@ -7,7 +7,7 @@
 //! machine.
 
 use crate::{
-    control::ControlCode, csi::CsiSequence, dcs::{EnterDeviceControl, ShortDeviceControl}, esc::EscapeSequence, osc::OperatingSystemCommand
+    charset::{Charset, CharsetIndex},
 };
 
 /// Trait implemented by consumers of the escape sequence parser.
@@ -20,32 +20,39 @@ pub trait Actor {
     /// Emits a printable Unicode scalar value.
     fn print(&mut self, _: char) {}
 
-    /// Executes a single C0/C1 control code outside the context of a longer
-    /// escape sequence.
-    fn control(&mut self, _: ControlCode) {}
+    fn put_tab(&mut self, _: u16) {}
 
-    /// Dispatches a Control Sequence Introducer (CSI) with the collected
-    /// parameters and intermediates.
-    fn csi(&mut self, _: CsiSequence) {}
+    fn backspace(&mut self) {}
 
-    /// Dispatches a standard escape sequence.
-    fn esc(&mut self, _: EscapeSequence) {}
+    fn bell(&mut self) {}
 
-    /// Dispatches an Operating System Command (OSC).
-    fn osc(&mut self, _: OperatingSystemCommand) {}
+    fn substitute(&mut self) {}
 
-    /// Signals entry into a device control mode.
-    fn device_control_enter(&mut self, _: EnterDeviceControl) {}
+    fn set_active_charset(&mut self, _: CharsetIndex) {}
 
-    /// Streams raw data for the active device control mode.
-    fn device_control_data(&mut self, _: u8) {}
+    fn linefeed(&mut self) {}
 
-    /// Signals exit from the current device control mode.
-    fn device_control_exit(&mut self) {}
+    fn carriage_return(&mut self) {}
 
-    /// Emits a short/inline device control payload that is self-contained.
-    fn short_device_control(&mut self, _: ShortDeviceControl) {}
+    fn set_horizontal_tab(&mut self) {}
 
-    /// Emits the termcap capability names requested by XTGETTCAP.
-    fn xt_get_tcap(&mut self, _: Vec<String>) {}
+    fn reverse_index(&mut self) {}
+
+    fn identify_terminal(&mut self, _: Option<char>) {}
+
+    fn reset_state(&mut self) {}
+
+    fn save_cursor_position(&mut self) {}
+
+    fn restore_cursor_position(&mut self) {}
+
+    fn screen_alignment_display(&mut self) {}
+
+    fn set_keypad_application_mode(&mut self) {}
+
+    fn unset_keypad_application_mode(&mut self) {}
+
+    fn configure_charset(&mut self, _: Charset) {}
+
+    fn reset_color(&mut self, _: usize) {}
 }

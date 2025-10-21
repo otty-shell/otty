@@ -1,3 +1,5 @@
+use otty_vte::CsiParam;
+
 use super::color::ColorSpec;
 
 /// The `Intensity` of a cell describes its boldness.  Most terminals
@@ -76,3 +78,5 @@ pub enum Sgr {
     Overline(bool),
     VerticalAlign(VerticalAlign),
 }
+
+// pub struct SgrParser

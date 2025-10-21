@@ -3,15 +3,9 @@ name = "otty-escape"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-default = ["std"]
-std = []
-serde = ["dep:serde"]
-
 [dependencies]
 bitflags.workspace = true
 otty-vte = { path = "../otty-vte" }
 memchr = "2.7.6"
 cursor-icon = { version = "1.2.0", default-features = false }
 log = { version = "0.4.28" }
-serde = { version = "1.0", features = ["derive"], optional = true }

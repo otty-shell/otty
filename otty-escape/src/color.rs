@@ -3,19 +3,95 @@ use std::{
     str::FromStr,
 };
 
-/// An index into the fixed color palette.
-pub type PaletteIndex = u8;
-
-/// Specifies the color to be used when rendering a cell.
-/// This differs from `ColorAttribute` in that this type can only
-/// specify one of the possible color types at once, whereas the
-/// `ColorAttribute` type can specify a TrueColor value and a fallback.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum ColorSpec {
-    Default,
-    /// Use either a raw number, or use values from the `AnsiColor` enum
-    PaletteIndex(PaletteIndex),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Color {
+    Std(StdColor),
     TrueColor(Rgb),
+    Indexed(u8),
+}
+
+/// Standard colors.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub enum StdColor {
+    Black = 0,
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    White,
+    BrightBlack,
+    BrightRed,
+    BrightGreen,
+    BrightYellow,
+    BrightBlue,
+    BrightMagenta,
+    BrightCyan,
+    BrightWhite,
+    Foreground = 256,
+    Background,
+    Cursor,
+    DimBlack,
+    DimRed,
+    DimGreen,
+    DimYellow,
+    DimBlue,
+    DimMagenta,
+    DimCyan,
+    DimWhite,
+    BrightForeground,
+    DimForeground,
+}
+
+impl StdColor {
+    pub fn to_bright(self) -> Self {
+        match self {
+            Self::Foreground => Self::BrightForeground,
+            Self::Black => Self::BrightBlack,
+            Self::Red => Self::BrightRed,
+            Self::Green => Self::BrightGreen,
+            Self::Yellow => Self::BrightYellow,
+            Self::Blue => Self::BrightBlue,
+            Self::Magenta => Self::BrightMagenta,
+            Self::Cyan => Self::BrightCyan,
+            Self::White => Self::BrightWhite,
+            Self::DimForeground => Self::Foreground,
+            Self::DimBlack => Self::Black,
+            Self::DimRed => Self::Red,
+            Self::DimGreen => Self::Green,
+            Self::DimYellow => Self::Yellow,
+            Self::DimBlue => Self::Blue,
+            Self::DimMagenta => Self::Magenta,
+            Self::DimCyan => Self::Cyan,
+            Self::DimWhite => Self::White,
+            val => val,
+        }
+    }
+
+    pub fn to_dim(self) -> Self {
+        match self {
+            Self::Black => Self::DimBlack,
+            Self::Red => Self::DimRed,
+            Self::Green => Self::DimGreen,
+            Self::Yellow => Self::DimYellow,
+            Self::Blue => Self::DimBlue,
+            Self::Magenta => Self::DimMagenta,
+            Self::Cyan => Self::DimCyan,
+            Self::White => Self::DimWhite,
+            Self::Foreground => Self::DimForeground,
+            Self::BrightBlack => Self::Black,
+            Self::BrightRed => Self::Red,
+            Self::BrightGreen => Self::Green,
+            Self::BrightYellow => Self::Yellow,
+            Self::BrightBlue => Self::Blue,
+            Self::BrightMagenta => Self::Magenta,
+            Self::BrightCyan => Self::Cyan,
+            Self::BrightWhite => Self::White,
+            Self::BrightForeground => Self::Foreground,
+            val => val,
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Default)]
