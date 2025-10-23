@@ -1,5 +1,3 @@
-use std::collections::btree_map::Values;
-
 use log::debug;
 use otty_vte::CsiParam;
 
@@ -50,9 +48,9 @@ enum CSI {
     /// TBC
     TabClear,
     /// CUP
-    CursorPosition,
+    CursorPosition(i32, usize),
     /// HVP
-    HorizontalAndVerticalPosition,
+    HorizontalAndVerticalPosition(i32, usize),
     /// SM
     SetMode(Vec<Mode>),
     /// DECSET
@@ -116,16 +114,18 @@ enum CSI {
 impl From<(&[CsiParam], &[u8], u8)> for CSI {
     fn from(value: (&[CsiParam], &[u8], u8)) -> Self {
         let (params, intermediates, final_byte) = value;
-        let first = params.first();
 
-        match (final_byte, intermediates) {
+        println!("[csi raw] action: {}, params: {params:?}", final_byte as char);
+
+
+        let parsed = match (final_byte, params) {
             (b'h', []) => {
                 let (prefix, params) = parse_mode_params(params);
                 let modes =
                     params.into_iter().map(Mode::from_raw).collect();
                 Self::SetMode(modes)
             },
-            (b'h', [b'?']) => {
+            (b'h', [CsiParam::P(b'?'), ..]) => {
                 let (prefix, params) = parse_mode_params(params);
 
                 let modes =
@@ -138,28 +138,28 @@ impl From<(&[CsiParam], &[u8], u8)> for CSI {
                     params.into_iter().map(Mode::from_raw).collect();
                 Self::ResetMode(modes)
             },
-            (b'l', [b'?']) => {
+            (b'l', [CsiParam::P(b'?'), ..]) => {
                 let (prefix, params) = parse_mode_params(params);
                 let modes =
                     params.into_iter().map(PrivateMode::from_raw).collect();
                 Self::ResetModePrivate(modes)
             }
-            (b'm', []) => {
+            (b'm', [..]) => {
                 let (prefix, values) = parse_mode_params(params);
                 Self::SelectGraphicRendition(values)
             },
-            (b'm', [b'?']) => {
+            (b'm', [CsiParam::P(b'?'), ..]) => {
                 let (prefix, values) = parse_mode_params(params);
                 Self::ReportModifyOtherKeys(values)
             },
-            (b'm', [b'>']) => {
+            (b'm', [CsiParam::P(b'>'), ..]) => {
                 let (prefix, values) = parse_mode_params(params);
                 Self::SetModifyOtherKeys(values)
             },
-            (b'p', [b'$']) => {
+            (b'p', [CsiParam::P(b'$'), ..]) => {
                 Self::RequestMode
             },
-            (b'p', [b'?', b'$']) => {
+            (b'p', [CsiParam::P(b'?'), CsiParam::P(b'$')]) => {
                 Self::RequestModePrivate
             }
             // b'p' => {
@@ -199,8 +199,8 @@ impl From<(&[CsiParam], &[u8], u8)> for CSI {
                 // }
             },
             (b'u', []) => Self::RestoreCursorPosition,
-            (b'u', [b'?']) => Self::ReportKeyboardMode,
-            (b'u', [b'=']) => {
+            (b'u', [CsiParam::P(b'?'), ..]) => Self::ReportKeyboardMode,
+            (b'u', [CsiParam::P(b'='), ..]) => {
                 if let (
                     Some(CsiParam::Integer(flags)),
                     Some(CsiParam::P(b';')),
@@ -213,7 +213,7 @@ impl From<(&[CsiParam], &[u8], u8)> for CSI {
                     Self::Unspecified { params: params.to_vec(), final_byte }
                 }
             },
-            (b'u', [b'>']) => {
+            (b'u', [CsiParam::P(b'>'), ..]) => {
                 if let
                     Some(CsiParam::Integer(flags)) = params.get(0) {
                     Self::PushKeyboardMode(*flags)
@@ -221,7 +221,8 @@ impl From<(&[CsiParam], &[u8], u8)> for CSI {
                     Self::Unspecified { params: params.to_vec(), final_byte }
                 }
             }
-            (b'u', [b'<']) => {
+            (b'u', [CsiParam::P(b'<'), ..]) => {
+                let first = params.first();
                 if matches!(first, Some(CsiParam::P(b'<'))) {
                     let count = params
                         .get(1)
@@ -264,8 +265,8 @@ impl From<(&[CsiParam], &[u8], u8)> for CSI {
                 //     Self::RestoreCursorPosition
                 // }
             },
-            (b'W', [b'?']) => Self::SetTabStops,
-            (b'k', [b' ']) => Self::SelectCharacterProtectionAttribute,
+            (b'W', [CsiParam::P(b'?'), ..]) => Self::SetTabStops,
+            (b'k', [CsiParam::P(b' '), ..]) => Self::SelectCharacterProtectionAttribute,
             (b'@', []) => Self::InsertBlank,
             (b'A', []) => Self::CursorUp,
             (b'B', []) => Self::CursorDown,
@@ -281,8 +282,8 @@ impl From<(&[CsiParam], &[u8], u8)> for CSI {
             (b'G', []) => Self::CursorHorizontalAbsolute,
             (b'`', []) => Self::HorizontalPositionAbsolute,
             (b'g', []) => Self::TabClear,
-            (b'H', []) => Self::CursorPosition,
-            (b'f', []) => Self::HorizontalAndVerticalPosition,
+            (b'H', [CsiParam::Integer(y), CsiParam::P(b';'), CsiParam::Integer(x)]) => Self::CursorPosition(*y as i32, *x as usize),
+            (b'f', [CsiParam::Integer(y), CsiParam::P(b';'), CsiParam::Integer(x)]) => Self::HorizontalAndVerticalPosition(*y as i32, *x as usize),
             (b'I', []) => Self::CursorHorizontalTabulation,
             (b'J', []) => Self::EraseDisplay,
             (b'K', []) => Self::EraseLine,
@@ -301,7 +302,11 @@ impl From<(&[CsiParam], &[u8], u8)> for CSI {
                 params: params.to_vec(),
                 final_byte,
             },
-        }
+        };
+
+        println!("[parsed] action: {:?}", parsed);
+
+        parsed
     }
 }
 
@@ -369,11 +374,8 @@ pub(crate) fn perform<A: Actor, T: Timeout>(
 
             actor.clear_tabs(mode);
         },
-        CSI::CursorPosition | CSI::HorizontalAndVerticalPosition => {
-            let y = next_param_or(1, &mut params_iter) as i32;
-            let x = next_param_or(1, &mut params_iter) as usize;
-            actor.goto(y - 1, x - 1);
-        },
+        CSI::HorizontalAndVerticalPosition(y, x) => actor.goto(y, x),
+        CSI::CursorPosition(y, x) => actor.goto(y, x),
         CSI::SetMode(modes) => {
             for mode in modes {
                 actor.set_mode(mode);
@@ -730,20 +732,21 @@ where
 
 fn parse_mode_params(params: &[CsiParam]) -> (Option<u8>, Vec<u16>) {
     let mut prefix = None;
-    let mut start_idx = 0usize;
+    // let mut start_idx = 0usize;
 
-    if let Some(CsiParam::P(byte)) = params.first() {
-        if matches!(byte, b'?' | b'>' | b'=') {
-            prefix = Some(*byte);
-            start_idx = 1;
-        }
-    }
+    // if let Some(CsiParam::P(byte)) = params.first() {
+    //     if matches!(byte, b'?' | b'>' | b'=') {
+    //         prefix = Some(*byte);
+    //         start_idx = 1;
+    //     }
+    // }
 
     let mut values = Vec::new();
     let mut pending: Option<u16> = None;
     // let mut last_separator = true;
 
-    for param in params.iter().skip(start_idx) {
+    for param in params.iter() {
+    // for param in params.iter().skip(start_idx) {
         match param {
             CsiParam::Integer(value) => {
                 let parsed = if (0..=u16::MAX as i64).contains(value) {
@@ -817,7 +820,7 @@ mod tests {
                 intermediates.is_empty(),
                 "unexpected intermediates delivered separately: {intermediates:?}"
             );
-            self.csis.push(CSI::from((params, byte)));
+            self.csis.push(CSI::from((params, intermediates, byte)));
         }
 
         fn esc_dispatch(&mut self, _: &[i64], _: &[u8], _: bool, _: u8) {}
@@ -868,8 +871,8 @@ mod tests {
             (b"\x1b[2F", CSI::CursorPrecedingLine),
             (b"\x1b[9G", CSI::CursorHorizontalAbsolute),
             (b"\x1b[5\x60", CSI::HorizontalPositionAbsolute),
-            (b"\x1b[7;9H", CSI::CursorPosition),
-            (b"\x1b[7;9f", CSI::HorizontalAndVerticalPosition),
+            // (b"\x1b[7;9H", CSI::CursorPosition),
+            // (b"\x1b[7;9f", CSI::HorizontalAndVerticalPosition),
             (b"\x1b[3I", CSI::CursorHorizontalTabulation),
         ];
 
