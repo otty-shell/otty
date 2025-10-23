@@ -14,13 +14,13 @@ impl Actor for MyActor {
 
     fn hook(
         &mut self,
-        byte: u8,
         params: &[i64],
         interms: &[u8],
         ignored: bool,
+        byte: u8,
     ) {
         println!(
-            "DCS hook: final={byte:#04x} params={params:?} interms={interms:?} ignored={ignored}"
+            "DCS hook: params: {params:?}, interms: {interms:?}, ignored: {ignored}, final: {byte:#04x}"
         );
     }
 
@@ -32,31 +32,31 @@ impl Actor for MyActor {
         println!("DCS unhook");
     }
 
-    fn osc_dispatch(&mut self, params: &[&[u8]]) {
-        println!("OSC: {:?}", params);
+    fn osc_dispatch(&mut self, params: &[&[u8]], byte: u8) {
+        println!("OSC: params: {:?}, final: {:02X}", params, byte);
     }
 
     fn csi_dispatch(
         &mut self,
         params: &[CsiParam],
-        _intermediates: &[u8],
+        intermediates: &[u8],
         truncated: bool,
         byte: u8,
     ) {
         println!(
-            "CSI: params={params:?} truncated={truncated} final={byte:#04x}"
+            "CSI: params: {params:?}, interms: {intermediates:?}, truncated: {truncated}, final: {byte:#04x}"
         );
     }
 
     fn esc_dispatch(
         &mut self,
         params: &[i64],
-        interms: &[u8],
+        intermediates: &[u8],
         ignored: bool,
         byte: u8,
     ) {
         println!(
-            "ESC: params={params:?} interms={interms:?} ignored={ignored} final={byte:#04x}"
+            "ESC: params: {params:?}, interms: {intermediates:?}, ignored: {ignored}, final: {byte:#04x}"
         );
     }
 }

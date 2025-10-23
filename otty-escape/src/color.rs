@@ -129,8 +129,8 @@ impl FromStr for Rgb {
 
 impl Rgb {
     /// [W3C's luminance algorithm implementation]: https://www.w3.org/TR/WCAG20/#relativeluminancedef
-    pub(crate) fn relative_luminance(self) -> f32 {
-        let to_unit = |x: u8| (x as f32) / 255.0;
+    pub(crate) fn relative_luminance(self) -> f64 {
+        let to_unit = |x: u8| (x as f64) / 255.0;
 
         let r_linearised = linearise_channel(to_unit(self.r));
         let g_linearised = linearise_channel(to_unit(self.g));
@@ -140,7 +140,7 @@ impl Rgb {
     }
 
     /// [W3C's contrast algorithm implementation]: https://www.w3.org/TR/WCAG20/#contrast-ratiodef
-    pub(crate) fn contrast(self, other: Rgb) -> f32 {
+    pub(crate) fn contrast(self, other: Rgb) -> f64 {
         let self_luminance = self.relative_luminance();
         let other_luminance = other.relative_luminance();
 
@@ -156,7 +156,7 @@ impl Rgb {
 
 /// Convert the r/g/b channel to linear form
 #[inline]
-fn linearise_channel(channel: f32) -> f32 {
+fn linearise_channel(channel: f64) -> f64 {
     let channel = channel.clamp(0.0, 1.0);
     if channel <= 0.03928 {
         channel / 12.92
@@ -166,7 +166,8 @@ fn linearise_channel(channel: f32) -> f32 {
 }
 
 /// Parse colors in XParseColor format.
-fn xparse_color(color: &[u8]) -> Option<Rgb> {
+/// Supports `#rgb`/`#rrggbb` legacy and `rgb:r/g/b` forms used by xterm.
+pub(crate) fn xparse_color(color: &[u8]) -> Option<Rgb> {
     if !color.is_empty() && color[0] == b'#' {
         parse_legacy_color(&color[1..])
     } else if color.len() >= 4 && &color[..4] == b"rgb:" {
@@ -178,44 +179,192 @@ fn xparse_color(color: &[u8]) -> Option<Rgb> {
 
 /// Parse colors in `#r(rrr)g(ggg)b(bbb)` format.
 fn parse_legacy_color(color: &[u8]) -> Option<Rgb> {
-    let item_len = color.len() / 3;
+    let color_len = color.len() / 3;
+    if color_len == 0 {
+        return None;
+    }
 
-    // Truncate/Fill to two byte precision.
-    let color_from_slice = |slice: &[u8]| {
-        let col =
-            usize::from_str_radix(str::from_utf8(slice).ok()?, 16).ok()? << 4;
-        Some((col >> (4 * slice.len().saturating_sub(1))) as u8)
+    // Normalise each component to two hex digits.
+    fn parse_color(slice: &[u8]) -> Option<u8> {
+        let hex = str::from_utf8(slice).ok()?;
+        let value = usize::from_str_radix(hex, 16).ok()?;
+        let normalized = value << 4;
+        let shift = 4 * slice.len().saturating_sub(1);
+        Some((normalized >> shift) as u8)
     };
 
+    let (r_slice, rest) = color.split_at(color_len);
+    let (g_slice, b_slice) = rest.split_at(color_len);
+
     Some(Rgb {
-        r: color_from_slice(&color[0..item_len])?,
-        g: color_from_slice(&color[item_len..item_len * 2])?,
-        b: color_from_slice(&color[item_len * 2..])?,
+        r: parse_color(r_slice)?,
+        g: parse_color(g_slice)?,
+        b: parse_color(b_slice)?,
     })
 }
 
 /// Parse colors in `rgb:r(rrr)/g(ggg)/b(bbb)` format.
-fn parse_rgb_color(color: &[u8]) -> Option<Rgb> {
-    let colors = str::from_utf8(color).ok()?.split('/').collect::<Vec<_>>();
+fn parse_rgb_color(input: &[u8]) -> Option<Rgb> {
+    let s = std::str::from_utf8(input).ok()?;
+    let colors: Vec<&str> = s.split('/').collect();
 
     if colors.len() != 3 {
         return None;
     }
 
-    // Scale values instead of filling with `0`s.
-    let scale = |input: &str| {
-        if input.len() > 4 {
-            None
-        } else {
-            let max = u32::pow(16, input.len() as u32) - 1;
-            let value = u32::from_str_radix(input, 16).ok()?;
-            Some((255 * value / max) as u8)
+    fn scale_hex(hex: &str) -> Option<u8> {
+        if hex.is_empty() || hex.len() > 4 {
+            return None;
         }
-    };
 
-    Some(Rgb {
-        r: scale(colors[0])?,
-        g: scale(colors[1])?,
-        b: scale(colors[2])?,
-    })
+        let value = u32::from_str_radix(hex, 16).ok()?;
+        let max = u32::pow(16, hex.len() as u32) - 1;
+        Some((255 * value / max) as u8)
+    }
+
+    let r = scale_hex(colors[0])?;
+    let g = scale_hex(colors[1])?;
+    let b = scale_hex(colors[2])?;
+
+    Some(Rgb { r, g, b })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_valid_rgb_colors() {
+        assert_eq!(
+            xparse_color(b"rgb:f/e/d"),
+            Some(Rgb {
+                r: 0xFF,
+                g: 0xEE,
+                b: 0xDD
+            })
+        );
+        assert_eq!(
+            xparse_color(b"rgb:11/aa/ff"),
+            Some(Rgb {
+                r: 0x11,
+                g: 0xAA,
+                b: 0xFF
+            })
+        );
+        assert_eq!(
+            xparse_color(b"rgb:f/ed1/cb23"),
+            Some(Rgb {
+                r: 0xFF,
+                g: 0xEC,
+                b: 0xCA
+            })
+        );
+        assert_eq!(
+            xparse_color(b"rgb:ffff/0/0"),
+            Some(Rgb {
+                r: 0xFF,
+                g: 0x0,
+                b: 0x0
+            })
+        );
+    }
+
+    #[test]
+    fn parse_valid_legacy_rgb_colors() {
+        assert_eq!(
+            xparse_color(b"#1af"),
+            Some(Rgb {
+                r: 0x10,
+                g: 0xA0,
+                b: 0xF0
+            })
+        );
+        assert_eq!(
+            xparse_color(b"#11aaff"),
+            Some(Rgb {
+                r: 0x11,
+                g: 0xAA,
+                b: 0xFF
+            })
+        );
+        assert_eq!(
+            xparse_color(b"#110aa0ff0"),
+            Some(Rgb {
+                r: 0x11,
+                g: 0xAA,
+                b: 0xFF
+            })
+        );
+        assert_eq!(
+            xparse_color(b"#1100aa00ff00"),
+            Some(Rgb {
+                r: 0x11,
+                g: 0xAA,
+                b: 0xFF
+            })
+        );
+    }
+
+    #[test]
+    fn parse_invalid_rgb_colors() {
+        assert_eq!(xparse_color(b"rgb:0//"), None);
+        assert_eq!(xparse_color(b"rgb://///"), None);
+    }
+
+    #[test]
+    fn parse_invalid_legacy_rgb_colors() {
+        assert_eq!(xparse_color(b"#"), None);
+        assert_eq!(xparse_color(b"#f"), None);
+    }
+
+    #[test]
+    fn contrast() {
+        let rgb1 = Rgb {
+            r: 0xFF,
+            g: 0xFF,
+            b: 0xFF,
+        };
+        let rgb2 = Rgb {
+            r: 0x00,
+            g: 0x00,
+            b: 0x00,
+        };
+        assert!((rgb1.contrast(rgb2) - 21.).abs() < f64::EPSILON);
+
+        let rgb1 = Rgb {
+            r: 0xFF,
+            g: 0xFF,
+            b: 0xFF,
+        };
+        assert!((rgb1.contrast(rgb1) - 1.).abs() < f64::EPSILON);
+
+        let rgb1 = Rgb {
+            r: 0xFF,
+            g: 0x00,
+            b: 0xFF,
+        };
+        let rgb2 = Rgb {
+            r: 0x00,
+            g: 0xFF,
+            b: 0x00,
+        };
+        assert!(
+            (rgb1.contrast(rgb2) - 2.285_543_608_124_253_3).abs()
+                < f64::EPSILON
+        );
+
+        let rgb1 = Rgb {
+            r: 0x12,
+            g: 0x34,
+            b: 0x56,
+        };
+        let rgb2 = Rgb {
+            r: 0xFE,
+            g: 0xDC,
+            b: 0xBA,
+        };
+        assert!(
+            (rgb1.contrast(rgb2) - 9.786_558_997_257_74).abs() < f64::EPSILON
+        );
+    }
 }

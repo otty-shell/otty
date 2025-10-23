@@ -1,18 +1,18 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Charset {
     /// ASCII Character set
-    Ascii(CharsetIndex),
+    Ascii,
     /// DEC Line Drawing Character set
-    DecLineDrawing(CharsetIndex),
+    DecLineDrawing,
 }
 
 impl Default for Charset {
     fn default() -> Self {
-        Self::Ascii(CharsetIndex::default())
+        Self::Ascii
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum CharsetIndex {
     /// Designate G0 Character Set
     #[default]
@@ -26,22 +26,22 @@ pub enum CharsetIndex {
 }
 
 impl Charset {
-    /// Set charset index and return the new charset
-    #[inline]
-    pub fn set_index(self, index: CharsetIndex) -> Self {
-        match self {
-            Self::Ascii(_) => Self::Ascii(index),
-            Self::DecLineDrawing(_) => Self::DecLineDrawing(index),
-        }
-    }
+    // /// Set charset index and return the new charset
+    // #[inline]
+    // pub fn set_index(self, index: CharsetIndex) -> Self {
+    //     match self {
+    //         Self::Ascii(_) => Self::Ascii(index),
+    //         Self::DecLineDrawing(_) => Self::DecLineDrawing(index),
+    //     }
+    // }
 
     /// Switch/Map character to the active charset. Ascii is the common case and
     /// for that we want to do as little as possible.
     #[inline]
     pub fn map(self, c: char) -> char {
         match self {
-            Self::Ascii(_) => c,
-            Self::DecLineDrawing(_) => match c {
+            Self::Ascii => c,
+            Self::DecLineDrawing => match c {
                 '_' => ' ',
                 '`' => '◆',
                 'a' => '▒',

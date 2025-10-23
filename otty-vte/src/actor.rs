@@ -44,10 +44,10 @@ pub trait Actor {
     /// Signals the start of a Device Control String (DCS).
     fn hook(
         &mut self,
-        byte: u8,
         params: &[i64],
         intermediates: &[u8],
         ignored_excess_intermediates: bool,
+        byte: u8,
     );
 
     /// Marks the end of the current control string (DCS).
@@ -58,7 +58,7 @@ pub trait Actor {
     fn put(&mut self, byte: u8);
 
     /// Dispatches an Operating System Command (OSC).
-    fn osc_dispatch(&mut self, params: &[&[u8]]);
+    fn osc_dispatch(&mut self, params: &[&[u8]], byte: u8);
 
     /// Dispatches a Control Sequence Introducer (CSI) escape.
     fn csi_dispatch(
@@ -77,4 +77,9 @@ pub trait Actor {
         ignored_excess_intermediates: bool,
         byte: u8,
     );
+
+    // TODO:
+    fn terminated(&self) -> bool {
+        false
+    }
 }

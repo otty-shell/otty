@@ -246,7 +246,11 @@ impl Parser {
                     }
 
                     if next_state != State::Utf8Sequence {
-                        self.perform(transitions::exit_action(state), 0, actor);
+                        self.perform(
+                            transitions::exit_action(state),
+                            byte,
+                            actor,
+                        );
                     }
 
                     self.perform(action, byte, actor);
@@ -263,6 +267,55 @@ impl Parser {
         }
     }
 
+    // TODO:
+    pub fn advance_until_terminated<A: Actor>(
+        &mut self,
+        bytes: &[u8],
+        actor: &mut A,
+    ) -> usize {
+        let mut i = 0;
+
+        while i != bytes.len() && !actor.terminated() {
+            let byte = bytes[i];
+
+            match self.state {
+                State::Utf8Sequence => self.handle_utf8_step(actor, byte),
+                state => {
+                    let (next_state, action) =
+                        transitions::transit(state, byte);
+
+                    if state == next_state {
+                        self.perform(action, byte, actor);
+                        i += 1;
+                        continue;
+                    }
+
+                    if next_state != State::Utf8Sequence {
+                        self.perform(
+                            transitions::exit_action(state),
+                            byte,
+                            actor,
+                        );
+                    }
+
+                    self.perform(action, byte, actor);
+                    self.perform(
+                        transitions::entry_action(next_state),
+                        byte,
+                        actor,
+                    );
+
+                    self.utf8_parser.set_state(self.state);
+                    self.state = next_state;
+                },
+            }
+
+            i += 1;
+        }
+
+        i
+    }
+
     // Drive UTF-8 parsing via Utf8Parser::step and dispatch outcomes.
     fn handle_utf8_step<A: Actor>(&mut self, actor: &mut A, byte: u8) {
         match self.utf8_parser.step(byte) {
@@ -273,9 +326,9 @@ impl Parser {
                 next,
                 action,
             } => {
-                self.perform(transitions::exit_action(from), 0, actor);
+                self.perform(transitions::exit_action(from), byte, actor);
                 self.perform(action, byte, actor);
-                self.perform(transitions::entry_action(next), 0, actor);
+                self.perform(transitions::entry_action(next), byte, actor);
 
                 self.utf8_parser.set_state(self.state);
                 self.state = next;
@@ -307,7 +360,7 @@ impl Parser {
             Unhook => actor.unhook(),
             OscStart => self.osc.clear(),
             OscPut => self.osc.put(byte as char),
-            OscEnd => self.osc_dispatch(actor),
+            OscEnd => self.osc_dispatch(actor, byte),
             Utf8 => self.handle_utf8_step(actor, byte),
             _ => {},
         }
@@ -325,10 +378,10 @@ impl Parser {
     fn hook<A: Actor>(&mut self, actor: &mut A, byte: u8) {
         self.params.finish();
         actor.hook(
-            byte,
             &self.params.get_integers(),
             self.intermediates.get(),
             self.intermediates.ignored_excess,
+            byte,
         );
     }
 
@@ -353,9 +406,9 @@ impl Parser {
         );
     }
 
-    fn osc_dispatch<A: Actor>(&mut self, actor: &mut A) {
+    fn osc_dispatch<A: Actor>(&mut self, actor: &mut A, byte: u8) {
         if self.osc.idx == 0 {
-            actor.osc_dispatch(&[]);
+            actor.osc_dispatch(&[], byte);
             return;
         }
 
@@ -373,7 +426,7 @@ impl Parser {
         }
 
         params.push(buffer);
-        actor.osc_dispatch(&params[..limit]);
+        actor.osc_dispatch(&params[..limit], byte);
     }
 
     fn clear(&mut self) {
@@ -411,7 +464,10 @@ mod tests {
             parameters_truncated: bool,
             byte: u8,
         },
-        OscDispatch(Vec<Vec<u8>>),
+        OscDispatch {
+            params: Vec<Vec<u8>>,
+            byte: u8,
+        },
     }
 
     #[derive(Default)]
@@ -430,10 +486,10 @@ mod tests {
 
         fn hook(
             &mut self,
-            byte: u8,
             params: &[i64],
             intermediates: &[u8],
             ignored_excess_intermediates: bool,
+            byte: u8,
         ) {
             self.actions.push(ActorEvents::Hook {
                 params: params.to_vec(),
@@ -480,10 +536,11 @@ mod tests {
             });
         }
 
-        fn osc_dispatch(&mut self, params: &[&[u8]]) {
-            self.actions.push(ActorEvents::OscDispatch(
-                params.iter().map(|e| e.to_vec()).collect(),
-            ));
+        fn osc_dispatch(&mut self, params: &[&[u8]], byte: u8) {
+            self.actions.push(ActorEvents::OscDispatch {
+                params: params.iter().map(|e| e.to_vec()).collect(),
+                byte,
+            });
         }
     }
 
@@ -546,10 +603,10 @@ mod tests {
     fn test_osc_with_c1_st() {
         assert_eq!(
             parse(b"\x1b]0;there\x9c"),
-            vec![ActorEvents::OscDispatch(vec![
-                b"0".to_vec(),
-                b"there".to_vec()
-            ])]
+            vec![ActorEvents::OscDispatch {
+                params: vec![b"0".to_vec(), b"there".to_vec()],
+                byte: 0x9C,
+            }]
         );
     }
 
@@ -557,16 +614,22 @@ mod tests {
     fn test_osc_with_bel_st() {
         assert_eq!(
             parse(b"\x1b]0;hello\x07"),
-            vec![ActorEvents::OscDispatch(vec![
-                b"0".to_vec(),
-                b"hello".to_vec()
-            ])]
+            vec![ActorEvents::OscDispatch {
+                params: vec![b"0".to_vec(), b"hello".to_vec()],
+                byte: 0x07,
+            }],
         );
     }
 
     #[test]
     fn test_osc_with_no_params() {
-        assert_eq!(parse(b"\x1b]\x07"), vec![ActorEvents::OscDispatch(vec![])]);
+        assert_eq!(
+            parse(b"\x1b]\x07"),
+            vec![ActorEvents::OscDispatch {
+                params: vec![],
+                byte: 0x07,
+            }]
+        );
     }
 
     #[test]
@@ -592,13 +655,11 @@ mod tests {
         assert_eq!(actions.len(), 1);
 
         match &actions[0] {
-            ActorEvents::OscDispatch(parsed_fields) => {
+            ActorEvents::OscDispatch { params, byte } => {
                 let fields: Vec<_> =
                     fields.into_iter().map(|s| s.as_bytes().to_vec()).collect();
-                assert_eq!(
-                    parsed_fields.as_slice(),
-                    &fields[0..MAX_OSC_PARAMS]
-                );
+                assert_eq!(params.as_slice(), &fields[0..MAX_OSC_PARAMS]);
+                assert_eq!(*byte, 0x07);
             },
             other => panic!("Expected OscDispatch but got {:?}", other),
         }
@@ -614,7 +675,10 @@ mod tests {
         assert_eq!(
             parse(b"\x1b]woot\x1b\\"),
             vec![
-                ActorEvents::OscDispatch(vec![b"woot".to_vec()]),
+                ActorEvents::OscDispatch {
+                    params: vec![b"woot".to_vec()],
+                    byte: 0x1B
+                },
                 ActorEvents::EscDispatch {
                     params: vec![],
                     intermediates: vec![],
@@ -754,7 +818,10 @@ mod tests {
     fn osc_utf8() {
         assert_eq!(
             parse("\x1b]\u{af}\x07".as_bytes()),
-            vec![ActorEvents::OscDispatch(vec!["\u{af}".as_bytes().to_vec()])]
+            vec![ActorEvents::OscDispatch {
+                params: vec!["\u{af}".as_bytes().to_vec()],
+                byte: 0x07,
+            }]
         );
     }
 
@@ -762,10 +829,10 @@ mod tests {
     fn osc_fedora_vte() {
         assert_eq!(
             parse("\u{9d}777;preexec\u{9c}".as_bytes()),
-            vec![ActorEvents::OscDispatch(vec![
-                b"777".to_vec(),
-                b"preexec".to_vec(),
-            ])]
+            vec![ActorEvents::OscDispatch {
+                params: vec![b"777".to_vec(), b"preexec".to_vec(),],
+                byte: 0x9C
+            }]
         );
     }
 
