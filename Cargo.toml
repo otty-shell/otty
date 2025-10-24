@@ -15,4 +15,4 @@ rust-version = "1.85.0"
 
 [workspace.dependencies]
 thiserror = "2.0.17"
-bitflags = "2.9.4"
+bitflags = "2.10.0"

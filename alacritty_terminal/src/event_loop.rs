@@ -158,9 +158,6 @@ where
                 writer.write_all(&buf[..unprocessed]).unwrap();
             }
 
-            // Parse the incoming bytes.
-            // state.parser.advance(&mut **terminal, &buf[..unprocessed]);
-
             state.parser.advance(&buf[..unprocessed], &mut **terminal);
 
             processed += unprocessed;
@@ -172,7 +169,7 @@ where
             }
         }
 
-        // Queue terminal redraw unless all processed bytes were synchronized.
+        // Queue terminal redraw unless all processed bytes were synchronized.\
         if state.parser.sync_bytes_count() < processed && processed > 0 {
             self.event_proxy.send_event(Event::Wakeup);
         }

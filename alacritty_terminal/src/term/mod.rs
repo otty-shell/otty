@@ -2841,7 +2841,7 @@ mod tests {
     use crate::selection::{Selection, SelectionType};
     use crate::term::cell::{Cell, Flags};
     use crate::term::test::TermSize;
-    use otty_escape::{self, Actor, Charset, CharsetIndex};
+    use otty_escape::{self, Actor};
 
     #[test]
     fn scroll_display_page_up() {

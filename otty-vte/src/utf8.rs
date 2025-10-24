@@ -7,7 +7,7 @@ pub(crate) enum StepResult {
     /// More bytes are needed to complete a codepoint.
     Pending,
     /// A decoded character is ready.
-    Completed(u8),
+    Completed(char),
     /// A control-like transition should be applied by the caller.
     Control {
         byte: u8,
@@ -96,6 +96,6 @@ impl Utf8Parser {
             }
         }
 
-        StepResult::Completed(byte)
+        StepResult::Completed(c as char)
     }
 }

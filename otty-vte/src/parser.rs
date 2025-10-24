@@ -231,43 +231,11 @@ impl Parser {
     }
 
     pub fn advance<A: Actor>(&mut self, bytes: &[u8], actor: &mut A) {
-        for byte in bytes {
-            let byte = *byte;
-
-            match self.state {
-                State::Utf8Sequence => self.handle_utf8_step(actor, byte),
-                state => {
-                    let (next_state, action) =
-                        transitions::transit(state, byte);
-
-                    if state == next_state {
-                        self.perform(action, byte, actor);
-                        continue;
-                    }
-
-                    if next_state != State::Utf8Sequence {
-                        self.perform(
-                            transitions::exit_action(state),
-                            byte,
-                            actor,
-                        );
-                    }
-
-                    self.perform(action, byte, actor);
-                    self.perform(
-                        transitions::entry_action(next_state),
-                        byte,
-                        actor,
-                    );
-
-                    self.utf8_parser.set_state(self.state);
-                    self.state = next_state;
-                },
-            }
+        for &byte in bytes {
+            self.process_byte(byte, actor);
         }
     }
 
-    // TODO:
     pub fn advance_until_terminated<A: Actor>(
         &mut self,
         bytes: &[u8],
@@ -277,43 +245,37 @@ impl Parser {
 
         while i != bytes.len() && !actor.terminated() {
             let byte = bytes[i];
-
-            match self.state {
-                State::Utf8Sequence => self.handle_utf8_step(actor, byte),
-                state => {
-                    let (next_state, action) =
-                        transitions::transit(state, byte);
-
-                    if state == next_state {
-                        self.perform(action, byte, actor);
-                        i += 1;
-                        continue;
-                    }
-
-                    if next_state != State::Utf8Sequence {
-                        self.perform(
-                            transitions::exit_action(state),
-                            byte,
-                            actor,
-                        );
-                    }
-
-                    self.perform(action, byte, actor);
-                    self.perform(
-                        transitions::entry_action(next_state),
-                        byte,
-                        actor,
-                    );
-
-                    self.utf8_parser.set_state(self.state);
-                    self.state = next_state;
-                },
-            }
-
+            self.process_byte(byte, actor);
             i += 1;
         }
 
         i
+    }
+
+    #[inline(always)]
+    fn process_byte<A: Actor>(&mut self, byte: u8, actor: &mut A) {
+        match self.state {
+            State::Utf8Sequence => self.handle_utf8_step(actor, byte),
+            state => {
+                let (next_state, action) = transitions::transit(state, byte);
+                let ch = char::from(byte);
+
+                if state == next_state {
+                    self.perform(action, ch, actor);
+                    return;
+                }
+
+                if next_state != State::Utf8Sequence {
+                    self.perform(transitions::exit_action(state), ch, actor);
+                }
+
+                self.perform(action, ch, actor);
+                self.perform(transitions::entry_action(next_state), ch, actor);
+
+                self.utf8_parser.set_state(self.state);
+                self.state = next_state;
+            },
+        }
     }
 
     // Drive UTF-8 parsing via Utf8Parser::step and dispatch outcomes.
@@ -326,9 +288,17 @@ impl Parser {
                 next,
                 action,
             } => {
-                self.perform(transitions::exit_action(from), byte, actor);
-                self.perform(action, byte, actor);
-                self.perform(transitions::entry_action(next), byte, actor);
+                self.perform(
+                    transitions::exit_action(from),
+                    byte as char,
+                    actor,
+                );
+                self.perform(action, byte as char, actor);
+                self.perform(
+                    transitions::entry_action(next),
+                    byte as char,
+                    actor,
+                );
 
                 self.utf8_parser.set_state(self.state);
                 self.state = next;
@@ -344,24 +314,24 @@ impl Parser {
         }
     }
 
-    fn perform<A: Actor>(&mut self, action: Action, byte: u8, actor: &mut A) {
+    fn perform<A: Actor>(&mut self, action: Action, byte: char, actor: &mut A) {
         use Action::*;
 
         match action {
-            Print => actor.print(byte as char),
-            Execute => actor.execute(byte),
-            Put => actor.put(byte),
-            CsiDispatch => self.csi_dispatch(actor, byte),
-            EscDispatch => self.esc_dispatch(actor, byte),
-            Param => self.handle_param_byte(byte),
+            Print => actor.print(byte),
+            Execute => actor.execute(byte as u8),
+            Put => actor.put(byte as u8),
+            CsiDispatch => self.csi_dispatch(actor, byte as u8),
+            EscDispatch => self.esc_dispatch(actor, byte as u8),
+            Param => self.handle_param_byte(byte as u8),
             Clear => self.clear(),
-            Collect => self.intermediates.collect(byte),
-            Hook => self.hook(actor, byte),
+            Collect => self.intermediates.collect(byte as u8),
+            Hook => self.hook(actor, byte as u8),
             Unhook => actor.unhook(),
             OscStart => self.osc.clear(),
-            OscPut => self.osc.put(byte as char),
-            OscEnd => self.osc_dispatch(actor, byte),
-            Utf8 => self.handle_utf8_step(actor, byte),
+            OscPut => self.osc.put(byte),
+            OscEnd => self.osc_dispatch(actor, byte as u8),
+            Utf8 => self.handle_utf8_step(actor, byte as u8),
             _ => {},
         }
     }
@@ -596,6 +566,22 @@ mod tests {
         assert_eq!(
             parse("\u{af}".as_bytes()),
             vec![ActorEvents::Print('\u{af}')]
+        );
+    }
+
+    #[test]
+    fn print_utf8_string() {
+        assert_eq!(
+            parse("Привет!".as_bytes()),
+            vec![
+                ActorEvents::Print('П'),
+                ActorEvents::Print('р'),
+                ActorEvents::Print('и'),
+                ActorEvents::Print('в'),
+                ActorEvents::Print('е'),
+                ActorEvents::Print('т'),
+                ActorEvents::Print('!'),
+            ]
         );
     }
 

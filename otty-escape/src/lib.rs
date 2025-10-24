@@ -10,7 +10,7 @@ mod hyperlink;
 mod mode;
 mod osc;
 mod parser;
-mod timeout;
+mod sync;
 
 pub use actor::Actor;
 pub use attributes::*;

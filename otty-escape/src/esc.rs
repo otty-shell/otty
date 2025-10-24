@@ -136,7 +136,7 @@ pub(crate) fn perform<A: Actor>(actor: &mut A, intermediates: &[u8], byte: u8) {
         EscSequence::Unspecified {
             control,
             intermediates,
-        } => debug!(
+        } => println!(
             "[unexpected: esc] control: {:02X} intermediates: {:?}",
             control, intermediates
         ),

@@ -1,19 +1,18 @@
-use std::{mem, time::Duration};
-
 use crate::{
     NamedPrivateMode,
     actor::Actor,
     control, csi, esc, osc,
-    timeout::{StdSyncHandler, Timeout},
+    sync::{SYNC_UPDATE_TIMEOUT, SyncHandler, Timeout},
 };
 use log::debug;
-use otty_vte::{Actor as VteActor, CsiParam, Parser as VTParser};
-
-/// Maximum time before a synchronized update is aborted.
-pub(crate) const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
+use otty_vte::{Actor as VTActor, CsiParam, Parser as VTParser};
+use std::mem;
 
 /// Maximum number of bytes read in one synchronized update (2MiB).
 const SYNC_BUFFER_SIZE: usize = 0x20_0000;
+
+/// Highest fill level allowed before the synchronization buffer is flushed.
+const SYNC_BUFFER_LIMIT: usize = SYNC_BUFFER_SIZE - 1;
 
 /// Number of bytes in the BSU/ESU CSI sequences.
 const SYNC_ESCAPE_LEN: usize = 8;
@@ -24,197 +23,15 @@ const BSU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026h";
 /// ESU CSI sequence for terminating synchronized updates.
 const ESU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026l";
 
-/// High-level escape sequence parser that forwards semantic events to an
-/// [`Actor`](crate::actor::Actor).
-#[derive(Default)]
-pub struct Parser<T: Timeout = StdSyncHandler> {
-    vt: VTParser,
-    state: ParseState<T>,
-}
-
-impl<T: Timeout> Parser<T> {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Synchronized update timeout.
-    pub fn sync_timeout(&self) -> &T {
-        &self.state.sync_state.timeout
-    }
-
-    /// Advance the parser with a new chunk of bytes.
-    pub fn advance<A: Actor>(&mut self, bytes: &[u8], actor: &mut A) {
-        let mut processed = 0;
-        while processed != bytes.len() {
-            if self.state.sync_state.timeout.pending_timeout() {
-                processed += self.advance_sync(actor, &bytes[processed..]);
-            } else {
-                let mut performer = Performer {
-                    actor,
-                    state: &mut self.state,
-                };
-                processed += self.vt.advance_until_terminated(
-                    &bytes[processed..],
-                    &mut performer,
-                );
-            }
-        }
-    }
-
-    /// End a synchronized update.
-    pub fn stop_sync<A>(&mut self, handler: &mut A)
-    where
-        A: Actor,
-    {
-        self.stop_sync_internal(handler, None);
-    }
-
-    /// End a synchronized update.
-    ///
-    /// The `bsu_offset` parameter should be passed if the sync buffer contains
-    /// a new BSU escape that is not part of the current synchronized
-    /// update.
-    fn stop_sync_internal<A>(
-        &mut self,
-        actor: &mut A,
-        bsu_offset: Option<usize>,
-    ) where
-        A: Actor,
-    {
-        // Process all synchronized bytes.
-        //
-        // NOTE: We do not use `advance_until_terminated` here since BSU sequences are
-        // processed automatically during the synchronized update.
-        let buffer = mem::take(&mut self.state.sync_state.buffer);
-        let offset = bsu_offset.unwrap_or(buffer.len());
-        let mut performer = Performer {
-            actor,
-            state: &mut self.state,
-        };
-        self.vt.advance(&buffer[..offset], &mut performer);
-        self.state.sync_state.buffer = buffer;
-
-        match bsu_offset {
-            // Just clear processed bytes if there is a new BSU.
-            //
-            // NOTE: We do not need to re-process for a new ESU since the `advance_sync`
-            // function checks for BSUs in reverse.
-            Some(bsu_offset) => {
-                let new_len = self.state.sync_state.buffer.len() - bsu_offset;
-                self.state.sync_state.buffer.copy_within(bsu_offset.., 0);
-                self.state.sync_state.buffer.truncate(new_len);
-            },
-            // Report mode and clear state if no new BSU is present.
-            None => {
-                actor.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
-                self.state.sync_state.timeout.clear_timeout();
-                self.state.sync_state.buffer.clear();
-            },
-        }
-    }
-
-    /// Number of bytes in the synchronization buffer.
-    #[inline]
-    pub fn sync_bytes_count(&self) -> usize {
-        self.state.sync_state.buffer.len()
-    }
-
-    /// Process a new byte during a synchronized update.
-    ///
-    /// Returns the number of bytes processed.
-    #[cold]
-    fn advance_sync<A>(&mut self, actor: &mut A, bytes: &[u8]) -> usize
-    where
-        A: Actor,
-    {
-        // Advance sync parser or stop sync if we'd exceed the maximum buffer size.
-        if self.state.sync_state.buffer.len() + bytes.len() >= 0x20_0000 - 1 {
-            // Terminate the synchronized update.
-            self.stop_sync_internal(actor, None);
-
-            // Just parse the bytes normally.
-            let mut performer = Performer {
-                actor,
-                state: &mut self.state,
-            };
-            self.vt.advance_until_terminated(bytes, &mut performer)
-        } else {
-            self.state.sync_state.buffer.extend(bytes);
-            self.advance_sync_csi(actor, bytes.len());
-            bytes.len()
-        }
-    }
-
-    /// Handle BSU/ESU CSI sequences during synchronized update.
-    fn advance_sync_csi<A>(&mut self, handler: &mut A, new_bytes: usize)
-    where
-        A: Actor,
-    {
-        // Get constraints within which a new escape character might be relevant.
-        let buffer_len = self.state.sync_state.buffer.len();
-        let start_offset =
-            (buffer_len - new_bytes).saturating_sub(SYNC_ESCAPE_LEN - 1);
-        let end_offset = buffer_len.saturating_sub(SYNC_ESCAPE_LEN - 1);
-        let search_buffer =
-            &self.state.sync_state.buffer[start_offset..end_offset];
-
-        // Search for termination/extension escapes in the added bytes.
-        //
-        // NOTE: It is technically legal to specify multiple private modes in the same
-        // escape, but we only allow EXACTLY `\e[?2026h`/`\e[?2026l` to keep the parser
-        // more simple.
-        let mut bsu_offset = None;
-        for index in memchr::memchr_iter(0x1B, search_buffer).rev() {
-            let offset = start_offset + index;
-            let escape =
-                &self.state.sync_state.buffer[offset..offset + SYNC_ESCAPE_LEN];
-
-            if escape == BSU_CSI {
-                self.state
-                    .sync_state
-                    .timeout
-                    .set_timeout(SYNC_UPDATE_TIMEOUT);
-                bsu_offset = Some(offset);
-            } else if escape == ESU_CSI {
-                self.stop_sync_internal(handler, bsu_offset);
-                break;
-            }
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct ParseState<T: Timeout> {
-    pub last_preceding_char: Option<char>,
-    pub sync_state: SyncState<T>,
-    pub terminated: bool,
-}
-
-#[derive(Debug)]
-pub(crate) struct SyncState<T: Timeout> {
-    /// Handler for synchronized updates.
-    pub timeout: T,
-
-    /// Bytes read during the synchronized update.
-    buffer: Vec<u8>,
-}
-
-impl<T: Timeout> Default for SyncState<T> {
-    fn default() -> Self {
-        Self {
-            buffer: Vec::with_capacity(0x20_0000),
-            timeout: Default::default(),
-        }
-    }
-}
+/// ESC byte introducer for CSI/OSC sequences.
+const ESC_BYTE: u8 = 0x1B;
 
 struct Performer<'a, A: Actor, T: Timeout> {
     actor: &'a mut A,
-    state: &'a mut ParseState<T>,
+    state: &'a mut ParserState<T>,
 }
 
-impl<'a, A: Actor, T: Timeout> VteActor for Performer<'a, A, T> {
+impl<'a, A: Actor, T: Timeout> VTActor for Performer<'a, A, T> {
     fn print(&mut self, c: char) {
         self.actor.print(c);
         self.state.last_preceding_char = Some(c)
@@ -279,6 +96,178 @@ impl<'a, A: Actor, T: Timeout> VteActor for Performer<'a, A, T> {
     #[inline]
     fn terminated(&self) -> bool {
         self.state.terminated
+    }
+}
+
+impl<'a, A: Actor, T: Timeout> Performer<'a, A, T> {
+    #[must_use]
+    fn new(state: &'a mut ParserState<T>, actor: &'a mut A) -> Self {
+        Self { actor, state }
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct ParserState<T: Timeout> {
+    pub last_preceding_char: Option<char>,
+    pub terminated: bool,
+    /// Handler for synchronized updates.
+    pub timeout: T,
+    /// Bytes read during the synchronized update.
+    buffer: Vec<u8>,
+}
+
+/// High-level escape sequence parser that forwards semantic events to an
+/// [`Actor`](crate::actor::Actor).
+#[derive(Default)]
+pub struct Parser<T: Timeout = SyncHandler> {
+    vt: VTParser,
+    state: ParserState<T>,
+}
+
+impl<T: Timeout> Parser<T> {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Synchronized update timeout.
+    #[inline]
+    pub fn sync_timeout(&self) -> &T {
+        &self.state.timeout
+    }
+
+    /// End a synchronized update.
+    pub fn stop_sync<A: Actor>(&mut self, handler: &mut A) {
+        self.stop_sync_internal(handler, None);
+    }
+
+    /// Number of bytes in the synchronization buffer.
+    #[inline]
+    pub fn sync_bytes_count(&self) -> usize {
+        self.state.buffer.len()
+    }
+
+    /// Advance the parser with a new chunk of bytes.
+    pub fn advance<A: Actor>(&mut self, bytes: &[u8], actor: &mut A) {
+        let mut processed = 0;
+
+        while processed != bytes.len() {
+            if self.state.timeout.pending_timeout() {
+                processed += self.advance_sync(actor, &bytes[processed..]);
+                continue;
+            }
+
+            let mut performer = Performer::new(&mut self.state, actor);
+            processed += self
+                .vt
+                .advance_until_terminated(&bytes[processed..], &mut performer);
+        }
+    }
+
+    /// End a synchronized update.
+    ///
+    /// The `bsu_offset` parameter should be passed if the sync buffer contains
+    /// a new BSU escape that is not part of the current synchronized
+    /// update.
+    fn stop_sync_internal<A: Actor>(
+        &mut self,
+        actor: &mut A,
+        bsu_offset: Option<usize>,
+    ) {
+        // Process all synchronized bytes.
+        //
+        // NOTE: We do not use `advance_until_terminated` here since BSU sequences are
+        // processed automatically during the synchronized update.
+        let buffer = mem::take(&mut self.state.buffer);
+        let offset = bsu_offset.unwrap_or(buffer.len());
+
+        {
+            let mut performer = Performer::new(&mut self.state, actor);
+            self.vt.advance(&buffer[..offset], &mut performer);
+        }
+
+        self.state.buffer = buffer;
+
+        match bsu_offset {
+            // Just clear processed bytes if there is a new BSU.
+            //
+            // NOTE: We do not need to re-process for a new ESU since the `advance_sync`
+            // function checks for BSUs in reverse.
+            Some(bsu_offset) => {
+                let new_len = self.state.buffer.len() - bsu_offset;
+                self.state.buffer.copy_within(bsu_offset.., 0);
+                self.state.buffer.truncate(new_len);
+            },
+            // Report mode and clear state if no new BSU is present.
+            None => {
+                actor.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
+                self.state.timeout.clear_timeout();
+                self.state.buffer.clear();
+            },
+        }
+    }
+
+    /// Process a new byte during a synchronized update.
+    ///
+    /// Returns the number of bytes processed.
+    #[cold]
+    fn advance_sync<A: Actor>(&mut self, actor: &mut A, bytes: &[u8]) -> usize {
+        // Advance sync parser or stop sync if we'd exceed the maximum buffer size.
+        let projected_len = self.state.buffer.len() + bytes.len();
+        if projected_len >= SYNC_BUFFER_LIMIT {
+            // Terminate the synchronized update.
+            self.stop_sync_internal(actor, None);
+
+            // Just parse the bytes normally.
+            let mut performer = Performer {
+                actor,
+                state: &mut self.state,
+            };
+            self.vt.advance_until_terminated(bytes, &mut performer)
+        } else {
+            self.state.buffer.extend_from_slice(bytes);
+            self.advance_sync_csi(actor, bytes.len());
+            bytes.len()
+        }
+    }
+
+    /// Handle BSU/ESU CSI sequences during synchronized update.
+    fn advance_sync_csi<A: Actor>(&mut self, actor: &mut A, new_bytes: usize) {
+        // Get constraints within which a new escape character might be relevant.
+        let buffer_len = self.state.buffer.len();
+        let start_offset =
+            (buffer_len - new_bytes).saturating_sub(SYNC_ESCAPE_LEN - 1);
+        let end_offset = buffer_len.saturating_sub(SYNC_ESCAPE_LEN - 1);
+
+        let mut bsu_offset = None;
+        let mut should_stop = false;
+
+        {
+            let search_buffer = &self.state.buffer[start_offset..end_offset];
+
+            // Search for termination/extension escapes in the added bytes.
+            //
+            // NOTE: It is technically legal to specify multiple private modes in the same
+            // escape, but we only allow EXACTLY `\e[?2026h`/`\e[?2026l` to keep the parser
+            // more simple.
+            for index in memchr::memchr_iter(ESC_BYTE, search_buffer).rev() {
+                let offset = start_offset + index;
+                let escape =
+                    &self.state.buffer[offset..offset + SYNC_ESCAPE_LEN];
+
+                if escape == BSU_CSI {
+                    self.state.timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
+                    bsu_offset = Some(offset);
+                } else if escape == ESU_CSI {
+                    should_stop = true;
+                    break;
+                }
+            }
+        }
+
+        if should_stop {
+            self.stop_sync_internal(actor, bsu_offset);
+        }
     }
 }
 

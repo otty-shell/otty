@@ -1,8 +1,11 @@
 use std::time::{Duration, Instant};
 
+/// Maximum time before a synchronized update is aborted.
+pub(crate) const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(100);
+
 /// Interface for creating timeouts and checking their expiry.
 ///
-/// This is internally used by the [`Processor`] to handle synchronized
+/// This is internally used by the [`crate::parser::Parser`] to handle synchronized
 /// updates.
 pub trait Timeout: Default {
     /// Sets the timeout for the next synchronized update.
@@ -17,12 +20,13 @@ pub trait Timeout: Default {
     fn pending_timeout(&self) -> bool;
 }
 
+/// I
 #[derive(Default)]
-pub struct StdSyncHandler {
+pub struct SyncHandler {
     timeout: Option<Instant>,
 }
 
-impl StdSyncHandler {
+impl SyncHandler {
     /// Synchronized update expiration time.
     #[inline]
     pub fn sync_timeout(&self) -> Option<Instant> {
@@ -30,7 +34,7 @@ impl StdSyncHandler {
     }
 }
 
-impl Timeout for StdSyncHandler {
+impl Timeout for SyncHandler {
     #[inline]
     fn set_timeout(&mut self, duration: Duration) {
         self.timeout = Some(Instant::now() + duration);
