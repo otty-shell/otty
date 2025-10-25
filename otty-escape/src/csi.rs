@@ -1,16 +1,20 @@
 use log::debug;
 use otty_vte::CsiParam;
 
-use crate::attributes::Attr;
-use crate::color::{Color, Rgb, StdColor};
+use crate::actor::Action;
+use crate::attributes::CharacterAttribute;
+use crate::color::{Color, StdColor};
 use crate::cursor::{CursorShape, CursorStyle};
+use crate::keyboard::{
+    KeyboardMode, KeyboardModeApplyBehavior, ModifyOtherKeysState,
+};
 use crate::mode::{
-    ClearMode, KeyboardModes, KeyboardModesApplyBehavior, LineClearMode, Mode,
-    ModifyOtherKeys, PrivateMode, ScpCharPath, ScpUpdateMode, TabClearMode,
+    ClearMode, LineClearMode, Mode, PrivateMode, ScpCharPath, ScpUpdateMode,
+    TabClearMode,
 };
 use crate::parser::ParserState;
 use crate::sync::{SYNC_UPDATE_TIMEOUT, Timeout};
-use crate::{Actor, NamedPrivateMode};
+use crate::{Actor, NamedPrivateMode, parse_sgr_color};
 
 /// Operating system command with raw arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,7 +30,7 @@ enum CSI {
     /// REP
     RepeatPrecedingCharacter(i64),
     /// DA1
-    PrimaryDeviceAttributes,
+    PrimaryDeviceAttributes(i64),
     /// CUF
     CursorForward(i64),
     /// HPR
@@ -207,12 +211,13 @@ impl From<(&[CsiParam], &[u8], u8)> for CSI {
             },
             (b'u', [CsiParam::P(b'<'), rest @ ..]) => {
                 let count = rest
-                    .get(1)
+                    .first()
                     .and_then(|param| match param {
                         CsiParam::Integer(value) => Some(*value),
                         _ => None,
                     })
                     .unwrap_or(1);
+
                 Self::PopKeyboardModes(count)
             },
             (b'W', [CsiParam::P(b'?'), CsiParam::Integer(5)]) => {
@@ -242,7 +247,6 @@ impl From<(&[CsiParam], &[u8], u8)> for CSI {
             (b'@', [CsiParam::Integer(count)]) => {
                 Self::InsertBlank(*count as usize)
             },
-
             (b'A', []) => Self::CursorUp(1),
             (b'A', [CsiParam::Integer(rows)]) => Self::CursorUp(*rows),
             (b'B', []) => Self::CursorDown(1),
@@ -262,7 +266,9 @@ impl From<(&[CsiParam], &[u8], u8)> for CSI {
             (b'a', [CsiParam::Integer(columns)]) => {
                 Self::HorizontalPositionRelative(*columns)
             },
-            (b'c', [..]) => Self::PrimaryDeviceAttributes,
+            (b'c', [CsiParam::Integer(attr)]) => {
+                Self::PrimaryDeviceAttributes(*attr)
+            },
             (b'D', []) => Self::CursorBackward(1),
             (b'D', [CsiParam::Integer(columns)]) => {
                 Self::CursorBackward(*columns)
@@ -362,7 +368,7 @@ impl From<(&[CsiParam], &[u8], u8)> for CSI {
             Self::Unspecified {
                 ref params,
                 final_byte,
-            } => println!(
+            } => debug!(
                 "[parsed] action: {:?} {:?} {}",
                 params, inter, final_byte as char
             ),
@@ -381,42 +387,63 @@ pub(crate) fn perform<A: Actor, T: Timeout>(
     params_truncated: bool,
     byte: u8,
 ) {
-    if params_truncated || intermediates.len() > 2 {
+    if params_truncated {
         return unexpected(params, byte);
     }
 
     match CSI::from((params, intermediates, byte)) {
-        CSI::InsertBlank(count) => actor.insert_blank(count),
-        CSI::CursorUp(rows) => actor.move_up(rows as usize),
-        CSI::CursorDown(rows) => actor.move_down(rows as usize),
-        CSI::VerticalPositionRelative(rows) => actor.move_down(rows as usize),
+        CSI::InsertBlank(count) => actor.handle(Action::InsertBlank(count)),
+        CSI::CursorUp(rows) => actor.handle(Action::MoveUp {
+            rows: rows as usize,
+            carrage_return_needed: false,
+        }),
+        CSI::CursorDown(rows) => actor.handle(Action::MoveDown {
+            rows: rows as usize,
+            carrage_return_needed: false,
+        }),
+        CSI::VerticalPositionRelative(rows) => actor.handle(Action::MoveDown {
+            rows: rows as usize,
+            carrage_return_needed: false,
+        }),
         CSI::RepeatPrecedingCharacter(count) => {
-            repeat_preceding_char(actor, state, count)
+            if let Some(c) = state.last_preceding_char {
+                for _ in 0..count {
+                    actor.handle(Action::Print(c));
+                }
+            } else {
+                debug!("tried to repeat with no preceding char");
+            }
         },
-        CSI::CursorForward(columns) => actor.move_forward(columns as usize),
+        CSI::CursorForward(columns) => {
+            actor.handle(Action::MoveForward(columns as usize))
+        },
         CSI::HorizontalPositionRelative(columns) => {
-            actor.move_forward(columns as usize)
+            actor.handle(Action::MoveForward(columns as usize))
         },
-        CSI::PrimaryDeviceAttributes => {
-            actor.identify_terminal(intermediates.first().map(|&i| i as char))
+        CSI::PrimaryDeviceAttributes(attr) => {
+            actor.handle(Action::IdentifyTerminal(char::from_u32(attr as u32)))
         },
-        CSI::CursorBackward(columns) => actor.move_backward(columns as usize),
+        CSI::CursorBackward(columns) => {
+            actor.handle(Action::MoveBackward(columns as usize))
+        },
         CSI::VerticalPositionAbsolute(line_num) => {
-            actor.goto_line(line_num as i32 - 1)
+            actor.handle(Action::GotoRow(line_num as i32 - 1))
         },
-        CSI::CursorNextLine(line_count) => {
-            actor.move_down_and_cr(line_count as usize)
-        },
-        CSI::CursorPrecedingLine(line_count) => {
-            actor.move_up_and_cr(line_count as usize)
-        },
+        CSI::CursorNextLine(line_count) => actor.handle(Action::MoveDown {
+            rows: line_count as usize,
+            carrage_return_needed: true,
+        }),
+        CSI::CursorPrecedingLine(line_count) => actor.handle(Action::MoveUp {
+            rows: line_count as usize,
+            carrage_return_needed: true,
+        }),
         CSI::CursorHorizontalAbsolute(column_num) => {
-            actor.goto_col(column_num as usize - 1)
+            actor.handle(Action::GotoColumn(column_num as usize - 1))
         },
         CSI::HorizontalPositionAbsolute(column_num) => {
-            actor.goto_col(column_num as usize - 1)
+            actor.handle(Action::GotoColumn(column_num as usize - 1))
         },
-        CSI::SetTabStops => actor.set_tabs(8),
+        CSI::SetTabStops => actor.handle(Action::SetTabs(8)),
         CSI::TabClear(mode_index) => {
             let mode = match mode_index {
                 0 => TabClearMode::Current,
@@ -426,13 +453,15 @@ pub(crate) fn perform<A: Actor, T: Timeout>(
                 },
             };
 
-            actor.clear_tabs(mode);
+            actor.handle(Action::ClearTabs(mode));
         },
-        CSI::HorizontalAndVerticalPosition(y, x) => actor.goto(y - 1, x - 1),
-        CSI::CursorPosition(y, x) => actor.goto(y - 1, x - 1),
+        CSI::HorizontalAndVerticalPosition(y, x) => {
+            actor.handle(Action::Goto(y - 1, x - 1))
+        },
+        CSI::CursorPosition(y, x) => actor.handle(Action::Goto(y - 1, x - 1)),
         CSI::SetMode(modes) => {
             for mode in modes {
-                actor.set_mode(mode);
+                actor.handle(Action::SetMode(mode));
             }
         },
         CSI::SetModePrivate(modes) => {
@@ -442,21 +471,21 @@ pub(crate) fn perform<A: Actor, T: Timeout>(
                     state.terminated = true;
                 }
 
-                actor.set_private_mode(mode);
+                actor.handle(Action::SetPrivateMode(mode));
             }
         },
         CSI::ResetMode(modes) => {
             for mode in modes {
-                actor.unset_mode(mode);
+                actor.handle(Action::UnsetMode(mode));
             }
         },
         CSI::ResetModePrivate(modes) => {
             for mode in modes {
-                actor.unset_private_mode(mode);
+                actor.handle(Action::UnsetPrivateMode(mode));
             }
         },
         CSI::CursorHorizontalTabulation(count) => {
-            actor.move_forward_tabs(count as u16)
+            actor.handle(Action::MoveForwardTabs(count as u16))
         },
         CSI::EraseDisplay(mode_index) => {
             let mode = match mode_index {
@@ -468,9 +497,8 @@ pub(crate) fn perform<A: Actor, T: Timeout>(
                     return unexpected(params, byte);
                 },
             };
-            println!("{:?}", mode);
 
-            actor.clear_screen(mode);
+            actor.handle(Action::ClearScreen(mode));
         },
         CSI::EraseLine(mode_index) => {
             let mode = match mode_index {
@@ -482,7 +510,7 @@ pub(crate) fn perform<A: Actor, T: Timeout>(
                 },
             };
 
-            actor.clear_line(mode);
+            actor.handle(Action::ClearLine(mode));
         },
         CSI::SelectCharacterProtectionAttribute(
             char_path_index,
@@ -507,13 +535,19 @@ pub(crate) fn perform<A: Actor, T: Timeout>(
                 },
             };
 
-            actor.set_scp(char_path, update_mode);
+            actor.handle(Action::SetSCP(char_path, update_mode));
         },
-        CSI::InsertLine(count) => actor.insert_blank_lines(count as usize),
-        CSI::DeleteLine(count) => actor.delete_lines(count as usize),
+        CSI::InsertLine(count) => {
+            actor.handle(Action::InsertBlankLines(count as usize))
+        },
+        CSI::DeleteLine(count) => {
+            actor.handle(Action::DeleteLines(count as usize))
+        },
         CSI::SelectGraphicRendition(params) => {
             if params.is_empty() {
-                actor.terminal_attribute(Attr::Reset);
+                actor.handle(Action::SetCharacterAttribute(
+                    CharacterAttribute::Reset,
+                ));
             } else {
                 attrs_from_sgr_parameters(actor, params);
             }
@@ -521,31 +555,37 @@ pub(crate) fn perform<A: Actor, T: Timeout>(
         CSI::SetModifyOtherKeys(vals) => {
             if vals[0] == 4 {
                 let mode = match vals[1] {
-                    0 => ModifyOtherKeys::Reset,
-                    1 => ModifyOtherKeys::EnableExceptWellDefined,
-                    2 => ModifyOtherKeys::EnableAll,
+                    0 => ModifyOtherKeysState::Reset,
+                    1 => ModifyOtherKeysState::EnableExceptWellDefined,
+                    2 => ModifyOtherKeysState::EnableAll,
                     _ => return unexpected(params, byte),
                 };
 
-                actor.set_modify_other_keys(mode);
+                actor.handle(Action::SetModifyOtherKeysState(mode));
             } else {
                 unexpected(params, byte)
             }
         },
         CSI::ReportModifyOtherKeys(vals) => {
             if vals[0] == 4 {
-                actor.report_modify_other_keys();
+                actor.handle(Action::ReportModifyOtherKeysState);
             } else {
                 unexpected(params, byte);
             }
         },
-        CSI::DeviceStatusReport(report) => actor.device_status(report as usize),
-        CSI::DeleteCharacter(count) => actor.delete_chars(count as usize),
+        CSI::DeviceStatusReport(report) => {
+            actor.handle(Action::ReportDeviceStatus(report as usize))
+        },
+        CSI::DeleteCharacter(count) => {
+            actor.handle(Action::DeleteChars(count as usize))
+        },
         CSI::RequestMode(raw_mode) => {
-            actor.report_mode(Mode::from_raw(raw_mode as u16));
+            actor.handle(Action::ReportMode(Mode::from_raw(raw_mode as u16)));
         },
         CSI::RequestModePrivate(raw_mode) => {
-            actor.report_private_mode(PrivateMode::from_raw(raw_mode as u16));
+            actor.handle(Action::ReportPrivateMode(PrivateMode::from_raw(
+                raw_mode as u16,
+            )));
         },
         CSI::SetCursorStyle(raw_shape) => {
             let shape = match raw_shape {
@@ -562,41 +602,49 @@ pub(crate) fn perform<A: Actor, T: Timeout>(
                 blinking: raw_shape % 2 == 1,
             });
 
-            actor.set_cursor_style(cursor_style);
+            actor.handle(Action::SetCursorStyle(cursor_style));
         },
         CSI::SetTopAndBottomMargin(top, bottom) => {
-            actor.set_scrolling_region(top, Some(bottom));
+            actor.handle(Action::SetScrollingRegion(top, bottom));
         },
-        CSI::ScrollUp(count) => actor.scroll_up(count as usize),
-        CSI::SaveCursor => actor.save_cursor_position(),
-        CSI::ScrollDown(count) => actor.scroll_down(count as usize),
+        CSI::ScrollUp(count) => actor.handle(Action::ScrollUp(count as usize)),
+        CSI::SaveCursor => actor.handle(Action::SaveCursorPosition),
+        CSI::ScrollDown(count) => {
+            actor.handle(Action::ScrollDown(count as usize))
+        },
         CSI::WindowManipulation(id) => match id {
-            14 => actor.text_area_size_pixels(),
-            18 => actor.text_area_size_chars(),
-            22 => actor.push_title(),
-            23 => actor.pop_title(),
+            14 => actor.handle(Action::RequestTextAreaSizeByPixels),
+            18 => actor.handle(Action::RequestTextAreaSizeByChars),
+            22 => actor.handle(Action::PushWindowTitle),
+            23 => actor.handle(Action::PopWindowTitle),
             _ => unexpected(params, byte),
         },
-        CSI::RestoreCursorPosition => actor.restore_cursor_position(),
-        CSI::ReportKeyboardMode => actor.report_keyboard_mode(),
+        CSI::RestoreCursorPosition => {
+            actor.handle(Action::RestoreCursorPosition)
+        },
+        CSI::ReportKeyboardMode => actor.handle(Action::ReportKeyboardMode),
         CSI::SetKeyboardMode(flags, behav) => {
-            let mode = KeyboardModes::from_bits_truncate(flags as u8);
+            let mode = KeyboardMode::from_bits_truncate(flags as u8);
             let behavior = match behav {
-                3 => KeyboardModesApplyBehavior::Difference,
-                2 => KeyboardModesApplyBehavior::Union,
+                3 => KeyboardModeApplyBehavior::Difference,
+                2 => KeyboardModeApplyBehavior::Union,
                 // Default is replace.
-                _ => KeyboardModesApplyBehavior::Replace,
+                _ => KeyboardModeApplyBehavior::Replace,
             };
-            actor.set_keyboard_mode(mode, behavior);
+            actor.handle(Action::SetKeyboardMode(mode, behavior));
         },
         CSI::PushKeyboardMode(flags) => {
-            let mode = KeyboardModes::from_bits_truncate(flags as u8);
-            actor.push_keyboard_mode(mode);
+            let mode = KeyboardMode::from_bits_truncate(flags as u8);
+            actor.handle(Action::PushKeyboardMode(mode));
         },
-        CSI::PopKeyboardModes(flags) => actor.pop_keyboard_modes(flags as u16),
-        CSI::EraseCharacters(count) => actor.erase_chars(count as usize),
+        CSI::PopKeyboardModes(count) => {
+            actor.handle(Action::PopKeyboardModes(count as u16))
+        },
+        CSI::EraseCharacters(count) => {
+            actor.handle(Action::EraseChars(count as usize))
+        },
         CSI::CursorBackwardTabulation(count) => {
-            actor.move_backward_tabs(count as u16)
+            actor.handle(Action::MoveBackwardTabs(count as u16))
         },
         CSI::Unspecified { params, final_byte } => {
             unexpected(params.as_slice(), final_byte)
@@ -611,150 +659,163 @@ fn attrs_from_sgr_parameters<A: Actor>(handler: &mut A, params: Vec<u16>) {
 
     while let Some(param) = iter.next() {
         let attr = match param {
-            0 => Some(Attr::Reset),
-            1 => Some(Attr::Bold),
-            2 => Some(Attr::Dim),
-            3 => Some(Attr::Italic),
+            0 => Some(CharacterAttribute::Reset),
+            1 => Some(CharacterAttribute::Bold),
+            2 => Some(CharacterAttribute::Dim),
+            3 => Some(CharacterAttribute::Italic),
             4 => match iter.peek().copied() {
                 Some(0) => {
                     iter.next();
-                    Some(Attr::CancelUnderline)
+                    Some(CharacterAttribute::CancelUnderline)
                 },
                 Some(2) => {
                     iter.next();
-                    Some(Attr::DoubleUnderline)
+                    Some(CharacterAttribute::DoubleUnderline)
                 },
                 Some(3) => {
                     iter.next();
-                    Some(Attr::Undercurl)
+                    Some(CharacterAttribute::Undercurl)
                 },
                 Some(4) => {
                     iter.next();
-                    Some(Attr::DottedUnderline)
+                    Some(CharacterAttribute::DottedUnderline)
                 },
                 Some(5) => {
                     iter.next();
-                    Some(Attr::DashedUnderline)
+                    Some(CharacterAttribute::DashedUnderline)
                 },
-                _ => Some(Attr::Underline),
+                _ => Some(CharacterAttribute::Underline),
             },
-            5 => Some(Attr::BlinkSlow),
-            6 => Some(Attr::BlinkFast),
-            7 => Some(Attr::Reverse),
-            8 => Some(Attr::Hidden),
-            9 => Some(Attr::Strike),
-            21 => Some(Attr::CancelBold),
-            22 => Some(Attr::CancelBoldDim),
-            23 => Some(Attr::CancelItalic),
-            24 => Some(Attr::CancelUnderline),
-            25 => Some(Attr::CancelBlink),
-            27 => Some(Attr::CancelReverse),
-            28 => Some(Attr::CancelHidden),
-            29 => Some(Attr::CancelStrike),
-            30..=37 => standard_color(param)
-                .map(|color| Attr::Foreground(Color::Std(color))),
-            38 => parse_extended_color(&mut iter).map(Attr::Foreground),
-            39 => Some(Attr::Foreground(Color::Std(StdColor::Foreground))),
-            40..=47 => standard_color(param - 10)
-                .map(|color| Attr::Background(Color::Std(color))),
-            48 => parse_extended_color(&mut iter).map(Attr::Background),
-            49 => Some(Attr::Background(Color::Std(StdColor::Background))),
-            58 => parse_extended_color(&mut iter)
-                .map(|color| Attr::UnderlineColor(Some(color))),
-            59 => Some(Attr::UnderlineColor(None)),
-            90..=97 => bright_color(param)
-                .map(|color| Attr::Foreground(Color::Std(color))),
-            100..=107 => bright_color(param - 10)
-                .map(|color| Attr::Background(Color::Std(color))),
+            5 => Some(CharacterAttribute::BlinkSlow),
+            6 => Some(CharacterAttribute::BlinkFast),
+            7 => Some(CharacterAttribute::Reverse),
+            8 => Some(CharacterAttribute::Hidden),
+            9 => Some(CharacterAttribute::Strike),
+            21 => Some(CharacterAttribute::CancelBold),
+            22 => Some(CharacterAttribute::CancelBoldDim),
+            23 => Some(CharacterAttribute::CancelItalic),
+            24 => Some(CharacterAttribute::CancelUnderline),
+            25 => Some(CharacterAttribute::CancelBlink),
+            27 => Some(CharacterAttribute::CancelReverse),
+            28 => Some(CharacterAttribute::CancelHidden),
+            29 => Some(CharacterAttribute::CancelStrike),
+            30 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::Black,
+            ))),
+            31 => {
+                Some(CharacterAttribute::Foreground(Color::Std(StdColor::Red)))
+            },
+            32 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::Green,
+            ))),
+            33 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::Yellow,
+            ))),
+            34 => {
+                Some(CharacterAttribute::Foreground(Color::Std(StdColor::Blue)))
+            },
+            35 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::Magenta,
+            ))),
+            36 => {
+                Some(CharacterAttribute::Foreground(Color::Std(StdColor::Cyan)))
+            },
+            37 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::White,
+            ))),
+            38 => {
+                parse_sgr_color(&mut iter).map(CharacterAttribute::Foreground)
+            },
+            39 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::Foreground,
+            ))),
+            40 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::Black,
+            ))),
+            41 => {
+                Some(CharacterAttribute::Background(Color::Std(StdColor::Red)))
+            },
+            42 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::Green,
+            ))),
+            43 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::Yellow,
+            ))),
+            44 => {
+                Some(CharacterAttribute::Background(Color::Std(StdColor::Blue)))
+            },
+            45 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::Magenta,
+            ))),
+            46 => {
+                Some(CharacterAttribute::Background(Color::Std(StdColor::Cyan)))
+            },
+            47 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::White,
+            ))),
+            48 => {
+                parse_sgr_color(&mut iter).map(CharacterAttribute::Background)
+            },
+            49 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::Background,
+            ))),
+            58 => parse_sgr_color(&mut iter)
+                .map(|color| CharacterAttribute::UnderlineColor(Some(color))),
+            59 => Some(CharacterAttribute::UnderlineColor(None)),
+            90 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::BrightBlack,
+            ))),
+            91 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::BrightRed,
+            ))),
+            92 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::BrightGreen,
+            ))),
+            93 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::BrightYellow,
+            ))),
+            94 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::BrightBlue,
+            ))),
+            95 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::BrightMagenta,
+            ))),
+            96 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::BrightCyan,
+            ))),
+            97 => Some(CharacterAttribute::Foreground(Color::Std(
+                StdColor::BrightWhite,
+            ))),
+            100 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::BrightBlack,
+            ))),
+            101 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::BrightRed,
+            ))),
+            102 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::BrightGreen,
+            ))),
+            103 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::BrightYellow,
+            ))),
+            104 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::BrightBlue,
+            ))),
+            105 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::BrightMagenta,
+            ))),
+            106 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::BrightCyan,
+            ))),
+            107 => Some(CharacterAttribute::Background(Color::Std(
+                StdColor::BrightWhite,
+            ))),
             _ => None,
         };
 
         if let Some(attr) = attr {
-            handler.terminal_attribute(attr);
+            handler.handle(Action::SetCharacterAttribute(attr));
         }
-    }
-}
-
-fn standard_color(code: u16) -> Option<StdColor> {
-    match code {
-        30 => Some(StdColor::Black),
-        31 => Some(StdColor::Red),
-        32 => Some(StdColor::Green),
-        33 => Some(StdColor::Yellow),
-        34 => Some(StdColor::Blue),
-        35 => Some(StdColor::Magenta),
-        36 => Some(StdColor::Cyan),
-        37 => Some(StdColor::White),
-        _ => None,
-    }
-}
-
-fn bright_color(code: u16) -> Option<StdColor> {
-    match code {
-        90 => Some(StdColor::BrightBlack),
-        91 => Some(StdColor::BrightRed),
-        92 => Some(StdColor::BrightGreen),
-        93 => Some(StdColor::BrightYellow),
-        94 => Some(StdColor::BrightBlue),
-        95 => Some(StdColor::BrightMagenta),
-        96 => Some(StdColor::BrightCyan),
-        97 => Some(StdColor::BrightWhite),
-        _ => None,
-    }
-}
-
-fn parse_extended_color<I>(iter: &mut I) -> Option<Color>
-where
-    I: Iterator<Item = u16>,
-{
-    match iter.next() {
-        Some(5) => {
-            let index = iter.next()?;
-            (index <= u8::MAX as u16).then_some(Color::Indexed(index as u8))
-        },
-        Some(2) => {
-            let r = iter.next()?;
-            let g = iter.next()?;
-            let b = iter.next()?;
-
-            if r > u8::MAX as u16 || g > u8::MAX as u16 || b > u8::MAX as u16 {
-                return None;
-            }
-
-            Some(Color::TrueColor(Rgb {
-                r: r as u8,
-                g: g as u8,
-                b: b as u8,
-            }))
-        },
-        _ => None,
-    }
-}
-
-fn repeat_preceding_char<'a, A, T>(
-    actor: &mut A,
-    state: &mut ParserState<T>,
-    count: i64,
-) where
-    T: Timeout,
-    A: Actor,
-{
-    if let Some(c) = state.last_preceding_char {
-        for _ in 0..count {
-            actor.print(c);
-        }
-    } else {
-        debug!("tried to repeat with no preceding char");
-    }
-}
-
-fn next_param_or<'a, I>(default: u16, params_iter: &mut I) -> u16
-where
-    I: Iterator<Item = &'a CsiParam>,
-{
-    match params_iter.next() {
-        Some(CsiParam::Integer(param)) if *param != 0 => *param as u16,
-        _ => default,
     }
 }
 
@@ -763,7 +824,6 @@ fn parse_params(params: &[CsiParam]) -> Vec<u16> {
     let mut pending: Option<u16> = None;
 
     for param in params.iter() {
-        // for param in params.iter().skip(start_idx) {
         match param {
             CsiParam::Integer(value) => {
                 let parsed = if (0..=u16::MAX as i64).contains(value) {
@@ -792,189 +852,3 @@ fn parse_params(params: &[CsiParam]) -> Vec<u16> {
 fn unexpected(params: &[CsiParam], byte: u8) {
     debug!("[unexpected csi] action: {byte:?}, params: {params:?}",);
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::mode::{Mode, NamedMode, NamedPrivateMode};
-//     use otty_vte::{Actor as VteActor, Parser as VteParser};
-
-//     #[derive(Default)]
-//     struct RecordingActor {
-//         csis: Vec<CSI>,
-//     }
-
-//     impl VteActor for RecordingActor {
-//         fn print(&mut self, _: char) {}
-
-//         fn execute(&mut self, _: u8) {}
-
-//         fn hook(&mut self, _: &[i64], _: &[u8], _: bool, _: u8) {}
-
-//         fn unhook(&mut self) {}
-
-//         fn put(&mut self, _: u8) {}
-
-//         fn osc_dispatch(&mut self, _: &[&[u8]], _: u8) {}
-
-//         fn csi_dispatch(
-//             &mut self,
-//             params: &[CsiParam],
-//             intermediates: &[u8],
-//             parameters_truncated: bool,
-//             byte: u8,
-//         ) {
-//             assert!(
-//                 !parameters_truncated,
-//                 "unexpected parameter truncation for params {params:?}",
-//             );
-//             assert!(
-//                 intermediates.is_empty(),
-//                 "unexpected intermediates delivered separately: {intermediates:?}"
-//             );
-//             self.csis.push(CSI::from((params, intermediates, byte)));
-//         }
-
-//         fn esc_dispatch(&mut self, _: &[i64], _: &[u8], _: bool, _: u8) {}
-//     }
-
-//     impl RecordingActor {
-//         fn into_csis(self) -> Vec<CSI> {
-//             self.csis
-//         }
-//     }
-
-//     fn collect_csis(bytes: &[u8]) -> Vec<CSI> {
-//         let mut parser = VteParser::new();
-//         let mut actor = RecordingActor::default();
-//         parser.advance(bytes, &mut actor);
-//         actor.into_csis()
-//     }
-
-//     fn parse_single_csi(bytes: &[u8]) -> CSI {
-//         let mut csis = collect_csis(bytes);
-//         assert_eq!(
-//             csis.len(),
-//             1,
-//             "expected a single CSI action for sequence {bytes:?}"
-//         );
-//         csis.pop().unwrap()
-//     }
-
-//     #[track_caller]
-//     fn assert_csi(bytes: &[u8], expected: CSI) {
-//         let parsed = parse_single_csi(bytes);
-//         assert_eq!(parsed, expected, "sequence {bytes:?} parsed incorrectly");
-//     }
-
-//     #[test]
-//     fn parses_cursor_movement_sequences() {
-//         let cases: Vec<(&[u8], CSI)> = vec![
-//             // (b"\x1b[4@", CSI::InsertBlank),
-//             (b"\x1b[3A", CSI::CursorUp),
-//             (b"\x1b[2B", CSI::CursorDown),
-//             (b"\x1b[5C", CSI::CursorForward),
-//             (b"\x1b[4D", CSI::CursorBackward),
-//             (b"\x1b[3a", CSI::HorizontalPositionRelative),
-//             (b"\x1b[12d", CSI::VerticalPositionAbsolute),
-//             (b"\x1b[2e", CSI::VerticalPositionRelative),
-//             (b"\x1b[5b", CSI::RepeatPrecedingCharacter),
-//             (b"\x1b[2E", CSI::CursorNextLine),
-//             (b"\x1b[2F", CSI::CursorPrecedingLine),
-//             (b"\x1b[9G", CSI::CursorHorizontalAbsolute),
-//             (b"\x1b[5\x60", CSI::HorizontalPositionAbsolute),
-//             // (b"\x1b[7;9H", CSI::CursorPosition),
-//             // (b"\x1b[7;9f", CSI::HorizontalAndVerticalPosition),
-//             (b"\x1b[3I", CSI::CursorHorizontalTabulation),
-//         ];
-
-//         for (bytes, expected) in cases {
-//             assert_csi(bytes, expected);
-//         }
-//     }
-
-//     #[test]
-//     fn parses_mode_management_sequences() {
-//         let cases: Vec<(&[u8], CSI)> = vec![
-//             (b"\x1b[4h", CSI::SetMode(vec![NamedMode::Insert.into()])),
-//             (
-//                 b"\x1b[?1049h",
-//                 CSI::SetModePrivate(vec![
-//                     NamedPrivateMode::SwapScreenAndSetRestoreCursor.into(),
-//                 ]),
-//             ),
-//             (b"\x1b[4l", CSI::ResetMode(vec![NamedMode::Insert.into()])),
-//             (
-//                 b"\x1b[?1049l",
-//                 CSI::ResetModePrivate(vec![
-//                     NamedPrivateMode::SwapScreenAndSetRestoreCursor.into(),
-//                 ]),
-//             ),
-//             (b"\x1b[=1;2u", CSI::SetKeyboardMode(1, 2)),
-//             (b"\x1b[>5u", CSI::PushKeyboardMode(5)),
-//             (b"\x1b[<u", CSI::PopKeyboardModes(1)),
-//             (b"\x1b[<3u", CSI::PopKeyboardModes(3)),
-//             (b"\x1b[?u", CSI::ReportKeyboardMode),
-//             (
-//                 b"\x1b[?25h",
-//                 CSI::SetModePrivate(vec![NamedPrivateMode::ShowCursor.into()]),
-//             ),
-//             (
-//                 b"\x1b[?25l",
-//                 CSI::ResetModePrivate(vec![
-//                     NamedPrivateMode::ShowCursor.into(),
-//                 ]),
-//             ),
-//             (b"\x1b[5h", CSI::SetMode(vec![Mode::Unknown(5)])),
-//             (b"\x1b[5l", CSI::ResetMode(vec![Mode::Unknown(5)])),
-//         ];
-
-//         for (bytes, expected) in cases {
-//             assert_csi(bytes, expected);
-//         }
-//     }
-
-//     #[test]
-//     fn parses_character_and_display_sequences() {
-//         let cases: Vec<(&[u8], CSI)> = vec![
-//             (b"\x1b[c", CSI::PrimaryDeviceAttributes),
-//             (b"\x1b[2J", CSI::EraseDisplay),
-//             (b"\x1b[2K", CSI::EraseLine),
-//             (b"\x1b[3L", CSI::InsertLine),
-//             (b"\x1b[2M", CSI::DeleteLine),
-//             (b"\x1b[2P", CSI::DeleteCharacter),
-//             (b"\x1b[31m", CSI::SelectGraphicRendition(vec![31])),
-//             (b"\x1b[>4;2m", CSI::SetModifyOtherKeys(vec![4, 2])),
-//             (b"\x1b[?1m", CSI::ReportModifyOtherKeys(vec![1])),
-//             (b"\x1b[69$p", CSI::RequestMode),
-//             (b"\x1b[?69$p", CSI::RequestModePrivate),
-//             (b"\x1b[1\x22q", CSI::SelectCharacterProtectionAttribute),
-//             (b"\x1b[2 q", CSI::SetCursorStyle),
-//             (b"\x1b[5W", CSI::SetTabStops),
-//             (b"\x1b[0g", CSI::TabClear),
-//             (b"\x1b[1;24r", CSI::SetTopAndBottomMargin),
-//             (b"\x1b[2S", CSI::ScrollUp),
-//             (b"\x1b[2T", CSI::ScrollDown),
-//             (b"\x1b[s", CSI::SaveCursor),
-//             (b"\x1b[u", CSI::RestoreCursorPosition),
-//             (b"\x1b[2;0;0t", CSI::WindowManipulation),
-//             (b"\x1b[5n", CSI::DeviceStatusReport),
-//         ];
-
-//         for (bytes, expected) in cases {
-//             assert_csi(bytes, expected);
-//         }
-//     }
-
-//     #[test]
-//     fn parses_fallback_to_unspecified() {
-//         let parsed = parse_single_csi(b"\x1b[2~");
-//         assert_eq!(
-//             parsed,
-//             CSI::Unspecified {
-//                 params: vec![CsiParam::Integer(2)],
-//                 final_byte: b'~',
-//             }
-//         );
-//     }
-// }

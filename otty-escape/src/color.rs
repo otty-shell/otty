@@ -127,44 +127,6 @@ impl FromStr for Rgb {
     }
 }
 
-impl Rgb {
-    /// [W3C's luminance algorithm implementation]: https://www.w3.org/TR/WCAG20/#relativeluminancedef
-    pub(crate) fn relative_luminance(self) -> f64 {
-        let to_unit = |x: u8| (x as f64) / 255.0;
-
-        let r_linearised = linearise_channel(to_unit(self.r));
-        let g_linearised = linearise_channel(to_unit(self.g));
-        let b_linearised = linearise_channel(to_unit(self.b));
-
-        0.2126 * r_linearised + 0.7152 * g_linearised + 0.0722 * b_linearised
-    }
-
-    /// [W3C's contrast algorithm implementation]: https://www.w3.org/TR/WCAG20/#contrast-ratiodef
-    pub(crate) fn contrast(self, other: Rgb) -> f64 {
-        let self_luminance = self.relative_luminance();
-        let other_luminance = other.relative_luminance();
-
-        let (darker, lighter) = if self_luminance > other_luminance {
-            (other_luminance, self_luminance)
-        } else {
-            (self_luminance, other_luminance)
-        };
-
-        (lighter + 0.05) / (darker + 0.05)
-    }
-}
-
-/// Convert the r/g/b channel to linear form
-#[inline]
-fn linearise_channel(channel: f64) -> f64 {
-    let channel = channel.clamp(0.0, 1.0);
-    if channel <= 0.03928 {
-        channel / 12.92
-    } else {
-        ((channel + 0.055) / 1.055).powf(2.4)
-    }
-}
-
 /// Parse colors in XParseColor format.
 /// Supports `#rgb`/`#rrggbb` legacy and `rgb:r/g/b` forms used by xterm.
 pub(crate) fn xparse_color(color: &[u8]) -> Option<Rgb> {
@@ -191,7 +153,7 @@ fn parse_legacy_color(color: &[u8]) -> Option<Rgb> {
         let normalized = value << 4;
         let shift = 4 * slice.len().saturating_sub(1);
         Some((normalized >> shift) as u8)
-    };
+    }
 
     let (r_slice, rest) = color.split_at(color_len);
     let (g_slice, b_slice) = rest.split_at(color_len);
@@ -227,6 +189,34 @@ fn parse_rgb_color(input: &[u8]) -> Option<Rgb> {
     let b = scale_hex(colors[2])?;
 
     Some(Rgb { r, g, b })
+}
+
+pub(crate) fn parse_sgr_color<I>(iter: &mut I) -> Option<Color>
+where
+    I: Iterator<Item = u16>,
+{
+    match iter.next() {
+        Some(5) => {
+            let index = iter.next()?;
+            (index <= u8::MAX as u16).then_some(Color::Indexed(index as u8))
+        },
+        Some(2) => {
+            let r = iter.next()?;
+            let g = iter.next()?;
+            let b = iter.next()?;
+
+            if r > u8::MAX as u16 || g > u8::MAX as u16 || b > u8::MAX as u16 {
+                return None;
+            }
+
+            Some(Color::TrueColor(Rgb {
+                r: r as u8,
+                g: g as u8,
+                b: b as u8,
+            }))
+        },
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -315,56 +305,5 @@ mod tests {
     fn parse_invalid_legacy_rgb_colors() {
         assert_eq!(xparse_color(b"#"), None);
         assert_eq!(xparse_color(b"#f"), None);
-    }
-
-    #[test]
-    fn contrast() {
-        let rgb1 = Rgb {
-            r: 0xFF,
-            g: 0xFF,
-            b: 0xFF,
-        };
-        let rgb2 = Rgb {
-            r: 0x00,
-            g: 0x00,
-            b: 0x00,
-        };
-        assert!((rgb1.contrast(rgb2) - 21.).abs() < f64::EPSILON);
-
-        let rgb1 = Rgb {
-            r: 0xFF,
-            g: 0xFF,
-            b: 0xFF,
-        };
-        assert!((rgb1.contrast(rgb1) - 1.).abs() < f64::EPSILON);
-
-        let rgb1 = Rgb {
-            r: 0xFF,
-            g: 0x00,
-            b: 0xFF,
-        };
-        let rgb2 = Rgb {
-            r: 0x00,
-            g: 0xFF,
-            b: 0x00,
-        };
-        assert!(
-            (rgb1.contrast(rgb2) - 2.285_543_608_124_253_3).abs()
-                < f64::EPSILON
-        );
-
-        let rgb1 = Rgb {
-            r: 0x12,
-            g: 0x34,
-            b: 0x56,
-        };
-        let rgb2 = Rgb {
-            r: 0xFE,
-            g: 0xDC,
-            b: 0xBA,
-        };
-        assert!(
-            (rgb1.contrast(rgb2) - 9.786_558_997_257_74).abs() < f64::EPSILON
-        );
     }
 }

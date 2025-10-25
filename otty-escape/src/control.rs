@@ -1,4 +1,7 @@
-use crate::{actor::Actor, charset::CharsetIndex};
+use crate::{
+    actor::{Action, Actor},
+    charset::CharsetIndex,
+};
 use log::debug;
 use std::fmt;
 
@@ -315,16 +318,20 @@ impl fmt::Display for ControlCode {
 pub(crate) fn perform<'a, A: Actor>(byte: u8, actor: &mut A) {
     let code = ControlCode::from(byte);
     match code {
-        ControlCode::HorizontalTab => actor.put_tab(1),
-        ControlCode::Backspace => actor.backspace(),
-        ControlCode::CarriageReturn => actor.carriage_return(),
+        ControlCode::HorizontalTab => actor.handle(Action::InsertTabs(1)),
+        ControlCode::Backspace => actor.handle(Action::Backspace),
+        ControlCode::CarriageReturn => actor.handle(Action::CarriageReturn),
         ControlCode::LineFeed
         | ControlCode::FormFeed
-        | ControlCode::VerticalTab => actor.linefeed(),
-        ControlCode::Bell => actor.bell(),
-        ControlCode::Substitute => actor.substitute(),
-        ControlCode::ShiftOut => actor.set_active_charset(CharsetIndex::G1),
-        ControlCode::ShiftIn => actor.set_active_charset(CharsetIndex::G0),
+        | ControlCode::VerticalTab => actor.handle(Action::LineFeed),
+        ControlCode::Bell => actor.handle(Action::Bell),
+        ControlCode::Substitute => actor.handle(Action::Substitute),
+        ControlCode::ShiftOut => {
+            actor.handle(Action::SetActiveCharsetIndex(CharsetIndex::G1))
+        },
+        ControlCode::ShiftIn => {
+            actor.handle(Action::SetActiveCharsetIndex(CharsetIndex::G0))
+        },
         _ => debug!("[unexpected: control_code] {code}"),
     }
 }

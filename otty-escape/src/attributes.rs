@@ -2,7 +2,7 @@ use crate::color::Color;
 
 /// Terminal character attributes.
 #[derive(Debug, Eq, PartialEq)]
-pub enum Attr {
+pub enum CharacterAttribute {
     /// Clear all special abilities.
     Reset,
     /// Bold text.

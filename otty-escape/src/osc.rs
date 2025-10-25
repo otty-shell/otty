@@ -1,5 +1,7 @@
 use crate::{
     Actor,
+    actor::Action,
+    clipboard::ClipboardType,
     color::{Rgb, StdColor, xparse_color},
     cursor::CursorShape,
     hyperlink::Hyperlink,
@@ -51,9 +53,7 @@ impl From<&[u8]> for OSC {
     }
 }
 
-pub(crate) fn perform<A: Actor>(actor: &mut A, params: &[&[u8]], byte: u8) {
-    let terminator = if byte == 0x07 { "\x07" } else { "\x1b\\" };
-
+pub(crate) fn perform<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     if params.is_empty() || params[0].is_empty() {
         return;
     }
@@ -62,33 +62,29 @@ pub(crate) fn perform<A: Actor>(actor: &mut A, params: &[&[u8]], byte: u8) {
         OSC::Hyperlink if params.len() > 2 => {
             hyperlink_processing(actor, params)
         },
-        OSC::SetColorIndex => set_indexed_color(actor, params, terminator),
+        OSC::SetColorIndex => set_indexed_color(actor, params),
         OSC::SetWindowTitle => set_titile(actor, params),
         OSC::SetMouseCursorIcon => set_mouse_cursor_shape(actor, params),
         OSC::SetCursorShape => set_cursor_style(actor, params),
-        OSC::Clipboard => clipboard_processing(actor, params, terminator),
+        OSC::Clipboard => clipboard_processing(actor, params),
         OSC::ResetIndexedColors => reset_indexed_colors(actor, params),
         OSC::ResetBackgroundColor => {
-            actor.reset_color(StdColor::Background as usize)
+            actor.handle(Action::ResetColor(StdColor::Background as usize))
         },
         OSC::ResetForegroundColor => {
-            actor.reset_color(StdColor::Foreground as usize)
+            actor.handle(Action::ResetColor(StdColor::Foreground as usize))
         },
-        OSC::ResetCursorColor => actor.reset_color(StdColor::Cursor as usize),
-        OSC::SetTextForegroundColor => set_dynamic_std_color(
-            actor,
-            params,
-            StdColor::Foreground,
-            terminator,
-        ),
-        OSC::SetTextBackgroundColor => set_dynamic_std_color(
-            actor,
-            params,
-            StdColor::Background,
-            terminator,
-        ),
+        OSC::ResetCursorColor => {
+            actor.handle(Action::ResetColor(StdColor::Cursor as usize))
+        },
+        OSC::SetTextForegroundColor => {
+            set_dynamic_std_color(actor, params, StdColor::Foreground)
+        },
+        OSC::SetTextBackgroundColor => {
+            set_dynamic_std_color(actor, params, StdColor::Background)
+        },
         OSC::SetTextCursorColor => {
-            set_dynamic_std_color(actor, params, StdColor::Cursor, terminator)
+            set_dynamic_std_color(actor, params, StdColor::Cursor)
         },
         _ => unexpected(params),
     }
@@ -107,9 +103,10 @@ fn set_titile<A: Actor>(actor: &mut A, params: &[&[u8]]) {
         .trim()
         .to_owned();
 
-    actor.set_title(Some(title));
+    actor.handle(Action::SetWindowTitle(title));
 }
 
+// TODO: rewrite
 fn hyperlink_processing<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     let link_params = params[1];
 
@@ -124,7 +121,7 @@ fn hyperlink_processing<A: Actor>(actor: &mut A, params: &[&[u8]]) {
 
     // The OSC 8 escape sequence must be stopped when getting an empty `uri`.
     if uri.is_empty() {
-        actor.set_hyperlink(None);
+        actor.handle(Action::SetHyperlink(None));
         return;
     }
 
@@ -135,14 +132,10 @@ fn hyperlink_processing<A: Actor>(actor: &mut A, params: &[&[u8]]) {
         .find_map(|kv| kv.strip_prefix(b"id="))
         .and_then(|kv| str::from_utf8(kv).ok().map(|e| e.to_owned()));
 
-    actor.set_hyperlink(Some(Hyperlink { id, uri }));
+    actor.handle(Action::SetHyperlink(Some(Hyperlink { id, uri })));
 }
 
-fn set_indexed_color<A: Actor>(
-    actor: &mut A,
-    params: &[&[u8]],
-    terminator: &str,
-) {
+fn set_indexed_color<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     if params.len() <= 1 || params.len() % 2 == 0 {
         return unexpected(params);
     }
@@ -157,9 +150,12 @@ fn set_indexed_color<A: Actor>(
         };
 
         if let Some(c) = xparse_color(chunk[1]) {
-            actor.set_color(index as usize, c);
+            actor.handle(Action::SetColor {
+                index: index as usize,
+                color: c,
+            });
         } else if chunk[1] == b"?" {
-            actor.color_query(index as usize, terminator);
+            actor.handle(Action::QueryColor(index as usize));
         } else {
             unexpected(params)
         }
@@ -169,7 +165,7 @@ fn set_indexed_color<A: Actor>(
 fn set_mouse_cursor_shape<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     let shape = String::from_utf8_lossy(params[1]);
     match CursorIcon::from_str(&shape) {
-        Ok(cursor_icon) => actor.set_mouse_cursor_icon(cursor_icon),
+        Ok(cursor_icon) => actor.handle(Action::SetCursorIcon(cursor_icon)),
         Err(_) => debug!("[osc 22] unrecognized cursor icon shape: {shape:?}"),
     }
 }
@@ -185,25 +181,25 @@ fn set_cursor_style<A: Actor>(actor: &mut A, params: &[&[u8]]) {
             '2' => CursorShape::Underline,
             _ => return unexpected(params),
         };
-        actor.set_cursor_shape(shape);
+        actor.handle(Action::SetCursorShape(shape));
         return;
     }
 
     unexpected(params);
 }
 
-fn clipboard_processing<A: Actor>(
-    actor: &mut A,
-    params: &[&[u8]],
-    terminator: &str,
-) {
+fn clipboard_processing<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     if params.len() < 3 {
         unexpected(params);
     } else {
         let clipboard = params[1].first().unwrap_or(&b'c');
         match params[2] {
-            b"?" => actor.clipboard_load(*clipboard, terminator),
-            base64 => actor.clipboard_store(*clipboard, base64),
+            // Skip the load
+            b"?" => {},
+            base64 => actor.handle(Action::StoreToClipboard(
+                ClipboardType::from(*clipboard),
+                base64.to_vec(),
+            )),
         }
     }
 }
@@ -212,13 +208,13 @@ fn reset_indexed_colors<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     if params.len() == 1 || params[1].is_empty() {
         // Reset all
         for i in 0..256 {
-            actor.reset_color(i);
+            actor.handle(Action::ResetColor(i));
         }
     } else {
         // Reset by params
         for param in &params[1..] {
             match parse_number(param) {
-                Some(index) => actor.reset_color(index as usize),
+                Some(index) => actor.handle(Action::ResetColor(index as usize)),
                 None => unexpected(params),
             }
         }
@@ -228,8 +224,7 @@ fn reset_indexed_colors<A: Actor>(actor: &mut A, params: &[&[u8]]) {
 fn set_dynamic_std_color<A: Actor>(
     actor: &mut A,
     params: &[&[u8]],
-    which: StdColor,
-    terminator: &str,
+    color: StdColor,
 ) {
     // Expect at least action + color parameter
     if params.len() < 2 {
@@ -240,19 +235,25 @@ fn set_dynamic_std_color<A: Actor>(
 
     // Query current color: OSC Ps ; ? ST
     if spec == b"?" {
-        return actor.color_query(which as usize, terminator);
+        return actor.handle(Action::QueryColor(color as usize));
     }
 
     // Accept only first color spec; extra params are ignored per xterm behavior
     match xparse_color(spec) {
-        Some(rgb) => actor.set_color(which as usize, rgb),
+        Some(rgb) => actor.handle(Action::SetColor {
+            index: color as usize,
+            color: rgb,
+        }),
         None => {
             // Also try hex forms understood by Rgb::from_str
             if let Some(rgb) = std::str::from_utf8(spec)
                 .ok()
                 .and_then(|s| Rgb::from_str(s).ok())
             {
-                actor.set_color(which as usize, rgb)
+                actor.handle(Action::SetColor {
+                    index: color as usize,
+                    color: rgb,
+                })
             } else {
                 unexpected(params)
             }

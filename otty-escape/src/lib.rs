@@ -1,22 +1,26 @@
 mod actor;
 mod attributes;
 mod charset;
+mod clipboard;
 mod color;
 mod control;
 mod csi;
 mod cursor;
 mod esc;
 mod hyperlink;
+mod keyboard;
 mod mode;
 mod osc;
 mod parser;
 mod sync;
 
-pub use actor::Actor;
+pub use actor::{Action, Actor};
 pub use attributes::*;
 pub use charset::*;
+pub use clipboard::*;
 pub use color::*;
 pub use cursor::*;
 pub use hyperlink::*;
+pub use keyboard::*;
 pub use mode::*;
 pub use parser::Parser;

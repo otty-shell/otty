@@ -1,5 +1,6 @@
 use crate::{
     Actor,
+    actor::Action,
     charset::{Charset, CharsetIndex},
 };
 use log::debug;
@@ -87,56 +88,60 @@ impl From<(&[u8], u8)> for EscSequence {
 
 pub(crate) fn perform<A: Actor>(actor: &mut A, intermediates: &[u8], byte: u8) {
     match EscSequence::from((intermediates, byte)) {
-        EscSequence::Index => actor.linefeed(),
+        EscSequence::Index => actor.handle(Action::LineFeed),
         EscSequence::NextLine => {
-            actor.linefeed();
-            actor.carriage_return();
+            actor.handle(Action::NextLine)
+            // TODO: remove after integrate
+            // actor.linefeed();
+            // actor.carriage_return();
         },
-        EscSequence::HorizontalTabSet => actor.set_horizontal_tab(),
-        EscSequence::ReverseIndex => actor.reverse_index(),
-        EscSequence::ReturnTerminalId => actor.identify_terminal(None),
-        EscSequence::FullReset => actor.reset_state(),
-        EscSequence::DecSaveCursorPosition => actor.save_cursor_position(),
+        EscSequence::HorizontalTabSet => actor.handle(Action::SetHorizontalTab),
+        EscSequence::ReverseIndex => actor.handle(Action::ReverseIndex),
+        EscSequence::ReturnTerminalId => {
+            actor.handle(Action::IdentifyTerminal(None))
+        },
+        EscSequence::FullReset => actor.handle(Action::ResetState),
+        EscSequence::DecSaveCursorPosition => {
+            actor.handle(Action::SaveCursorPosition)
+        },
         EscSequence::DecScreenAlignmentDisplay => {
-            actor.screen_alignment_display()
+            actor.handle(Action::ScreenAlignmentDisplay)
         },
         EscSequence::DecRestoreCursorPosition => {
-            actor.restore_cursor_position()
+            actor.handle(Action::RestoreCursorPosition)
         },
         EscSequence::DecApplicationKeyPad => {
-            actor.set_keypad_application_mode()
+            actor.handle(Action::SetKeypadApplicationMode)
         },
-        EscSequence::DecNormalKeyPad => actor.unset_keypad_application_mode(),
-        EscSequence::DecLineDrawingG0 => {
-            actor.configure_charset(Charset::DecLineDrawing, CharsetIndex::G0)
+        EscSequence::DecNormalKeyPad => {
+            actor.handle(Action::UnsetKeypadApplicationMode)
         },
-        EscSequence::DecLineDrawingG1 => {
-            actor.configure_charset(Charset::DecLineDrawing, CharsetIndex::G1)
-        },
-        EscSequence::DecLineDrawingG2 => {
-            actor.configure_charset(Charset::DecLineDrawing, CharsetIndex::G2)
-        },
-        EscSequence::DecLineDrawingG3 => {
-            actor.configure_charset(Charset::DecLineDrawing, CharsetIndex::G3)
-        },
-        EscSequence::AsciiCharacterSetG0 => {
-            actor.configure_charset(Charset::Ascii, CharsetIndex::G0)
-        },
-        EscSequence::AsciiCharacterSetG1 => {
-            actor.configure_charset(Charset::Ascii, CharsetIndex::G1)
-        },
-        EscSequence::AsciiCharacterSetG2 => {
-            actor.configure_charset(Charset::Ascii, CharsetIndex::G2)
-        },
-        EscSequence::AsciiCharacterSetG3 => {
-            actor.configure_charset(Charset::Ascii, CharsetIndex::G3)
-        },
+        EscSequence::DecLineDrawingG0 => actor.handle(
+            Action::ConfigureCharset(Charset::DecLineDrawing, CharsetIndex::G0),
+        ),
+        EscSequence::DecLineDrawingG1 => actor.handle(
+            Action::ConfigureCharset(Charset::DecLineDrawing, CharsetIndex::G1),
+        ),
+        EscSequence::DecLineDrawingG2 => actor.handle(
+            Action::ConfigureCharset(Charset::DecLineDrawing, CharsetIndex::G2),
+        ),
+        EscSequence::DecLineDrawingG3 => actor.handle(
+            Action::ConfigureCharset(Charset::DecLineDrawing, CharsetIndex::G3),
+        ),
+        EscSequence::AsciiCharacterSetG0 => actor
+            .handle(Action::ConfigureCharset(Charset::Ascii, CharsetIndex::G0)),
+        EscSequence::AsciiCharacterSetG1 => actor
+            .handle(Action::ConfigureCharset(Charset::Ascii, CharsetIndex::G1)),
+        EscSequence::AsciiCharacterSetG2 => actor
+            .handle(Action::ConfigureCharset(Charset::Ascii, CharsetIndex::G2)),
+        EscSequence::AsciiCharacterSetG3 => actor
+            .handle(Action::ConfigureCharset(Charset::Ascii, CharsetIndex::G3)),
         // do nothing
         EscSequence::StringTerminator => {},
         EscSequence::Unspecified {
             control,
             intermediates,
-        } => println!(
+        } => debug!(
             "[unexpected: esc] control: {:02X} intermediates: {:?}",
             control, intermediates
         ),

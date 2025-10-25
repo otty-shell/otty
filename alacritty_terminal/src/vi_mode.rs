@@ -468,7 +468,7 @@ mod tests {
     use crate::index::{Column, Line};
     use crate::term::test::TermSize;
     use crate::term::{Config, Term};
-    use otty_escape::Actor;
+    use otty_escape::{Action, Actor};
 
     fn term() -> Term<VoidListener> {
         let size = TermSize::new(20, 20);
@@ -857,7 +857,7 @@ mod tests {
 
         // Create 1 line of scrollback.
         for _ in 0..20 {
-            term.newline();
+            term.handle(Action::NewLine);
         }
 
         let mut cursor = ViModeCursor::new(Point::new(Line(0), Column(0)));
@@ -878,7 +878,7 @@ mod tests {
 
         // Create 40 lines of scrollback.
         for _ in 0..59 {
-            term.newline();
+            term.handle(Action::NewLine);
         }
 
         let mut cursor = ViModeCursor::new(Point::new(Line(19), Column(0)));
@@ -902,7 +902,7 @@ mod tests {
 
         // Create 40 lines of scrollback.
         for _ in 0..59 {
-            term.newline();
+            term.handle(Action::NewLine);
         }
 
         let mut cursor = ViModeCursor::new(Point::new(Line(-40), Column(0)));

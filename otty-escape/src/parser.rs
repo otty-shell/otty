@@ -1,6 +1,6 @@
 use crate::{
     NamedPrivateMode,
-    actor::Actor,
+    actor::{Action, Actor},
     control, csi, esc, osc,
     sync::{SYNC_UPDATE_TIMEOUT, SyncHandler, Timeout},
 };
@@ -33,7 +33,7 @@ struct Performer<'a, A: Actor, T: Timeout> {
 
 impl<'a, A: Actor, T: Timeout> VTActor for Performer<'a, A, T> {
     fn print(&mut self, c: char) {
-        self.actor.print(c);
+        self.actor.handle(Action::Print(c));
         self.state.last_preceding_char = Some(c)
     }
 
@@ -62,8 +62,8 @@ impl<'a, A: Actor, T: Timeout> VTActor for Performer<'a, A, T> {
         debug!("[unexpected put] byte: {:?}", byte);
     }
 
-    fn osc_dispatch(&mut self, params: &[&[u8]], byte: u8) {
-        osc::perform(self.actor, params, byte);
+    fn osc_dispatch(&mut self, params: &[&[u8]], _: u8) {
+        osc::perform(self.actor, params);
     }
 
     fn csi_dispatch(
@@ -85,9 +85,9 @@ impl<'a, A: Actor, T: Timeout> VTActor for Performer<'a, A, T> {
 
     fn esc_dispatch(
         &mut self,
-        _params: &[i64],
+        _: &[i64],
         intermediates: &[u8],
-        _ignored_excess_intermediates: bool,
+        _: bool,
         byte: u8,
     ) {
         esc::perform(self.actor, intermediates, byte);
@@ -200,7 +200,9 @@ impl<T: Timeout> Parser<T> {
             },
             // Report mode and clear state if no new BSU is present.
             None => {
-                actor.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
+                actor.handle(Action::UnsetPrivateMode(
+                    NamedPrivateMode::SyncUpdate.into(),
+                ));
                 self.state.timeout.clear_timeout();
                 self.state.buffer.clear();
             },
