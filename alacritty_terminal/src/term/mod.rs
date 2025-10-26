@@ -1200,6 +1200,7 @@ impl<T> Dimensions for Term<T> {
 }
 
 impl<T: EventListener> Actor for Term<T> {
+    #[inline]
     fn handle(&mut self, action: otty_escape::Action) {
         use Action::*;
 

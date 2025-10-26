@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 /// Maximum time before a synchronized update is aborted.
-pub(crate) const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(100);
+pub(crate) const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
 
 /// Interface for creating timeouts and checking their expiry.
 ///

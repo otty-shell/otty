@@ -10,7 +10,7 @@ const TERM_FONT_JET_BRAINS_BYTES: &[u8] = include_bytes!(
 
 fn main() -> iced::Result {
     iced::application(App::title, App::update, App::view)
-        .antialiasing(false)
+        .antialiasing(true)
         .window_size(Size {
             width: 1280.0,
             height: 720.0,
