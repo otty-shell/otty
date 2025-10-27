@@ -1,7 +1,6 @@
 use crate::{
     Actor,
-    actor::Action,
-    clipboard::ClipboardType,
+    actor::{Action, TerminalControlAction},
     color::{Rgb, StdColor, xparse_color},
     cursor::CursorShape,
     hyperlink::Hyperlink,
@@ -66,7 +65,6 @@ pub(crate) fn perform<A: Actor>(actor: &mut A, params: &[&[u8]]) {
         OSC::SetWindowTitle => set_titile(actor, params),
         OSC::SetMouseCursorIcon => set_mouse_cursor_shape(actor, params),
         OSC::SetCursorShape => set_cursor_style(actor, params),
-        OSC::Clipboard => clipboard_processing(actor, params),
         OSC::ResetIndexedColors => reset_indexed_colors(actor, params),
         OSC::ResetBackgroundColor => {
             actor.handle(Action::ResetColor(StdColor::Background as usize))
@@ -103,10 +101,9 @@ fn set_titile<A: Actor>(actor: &mut A, params: &[&[u8]]) {
         .trim()
         .to_owned();
 
-    actor.handle(Action::SetWindowTitle(title));
+    actor.handle(TerminalControlAction::SetWindowTitle(title).into());
 }
 
-// TODO: rewrite
 fn hyperlink_processing<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     let link_params = params[1];
 
@@ -186,22 +183,6 @@ fn set_cursor_style<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     }
 
     unexpected(params);
-}
-
-fn clipboard_processing<A: Actor>(actor: &mut A, params: &[&[u8]]) {
-    if params.len() < 3 {
-        unexpected(params);
-    } else {
-        let clipboard = params[1].first().unwrap_or(&b'c');
-        match params[2] {
-            // Skip the load
-            b"?" => {},
-            base64 => actor.handle(Action::StoreToClipboard(
-                ClipboardType::from(*clipboard),
-                base64.to_vec(),
-            )),
-        }
-    }
 }
 
 fn reset_indexed_colors<A: Actor>(actor: &mut A, params: &[&[u8]]) {

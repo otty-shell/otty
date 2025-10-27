@@ -1,7 +1,7 @@
 use log::debug;
 use otty_vte::CsiParam;
 
-use crate::actor::Action;
+use crate::actor::{Action, TerminalControlAction};
 use crate::attributes::CharacterAttribute;
 use crate::color::{Color, StdColor};
 use crate::cursor::{CursorShape, CursorStyle};
@@ -13,7 +13,6 @@ use crate::mode::{
     TabClearMode,
 };
 use crate::parser::ParserState;
-use crate::sync::{SYNC_UPDATE_TIMEOUT, Timeout};
 use crate::{Actor, NamedPrivateMode, parse_sgr_color};
 
 /// Operating system command with raw arguments.
@@ -115,435 +114,348 @@ enum CSI {
     },
 }
 
-impl From<(&[CsiParam], &[u8], u8)> for CSI {
-    fn from(value: (&[CsiParam], &[u8], u8)) -> Self {
-        let (raw_params, inter, final_byte) = value;
+// impl From<(&[CsiParam], &[u8], u8)> for CSI {
+//     fn from(value: (&[CsiParam], &[u8], u8)) -> Self {
+//         let (raw_params, inter, final_byte) = value;
 
-        let parsed = match (final_byte, raw_params) {
-            (b'h', [CsiParam::P(b'?'), rest @ ..]) => {
-                let modes = parse_params(rest)
-                    .into_iter()
-                    .map(PrivateMode::from_raw)
-                    .collect();
+//         let parsed = match (final_byte, raw_params) {
+//             (b'h', [CsiParam::P(b'?'), rest @ ..]) => Self::SetModePrivate(
+//                 parse_params_with(rest, PrivateMode::from_raw),
+//             ),
+//             (b'h', params) => {
+//                 Self::SetMode(parse_params_with(params, Mode::from_raw))
+//             },
+//             (b'l', [CsiParam::P(b'?'), rest @ ..]) => Self::ResetModePrivate(
+//                 parse_params_with(rest, PrivateMode::from_raw),
+//             ),
+//             (b'l', params) => {
+//                 Self::ResetMode(parse_params_with(params, Mode::from_raw))
+//             },
+//             (b'm', [CsiParam::P(b'?'), rest @ ..]) => {
+//                 Self::ReportModifyOtherKeys(parse_params(rest))
+//             },
+//             (b'm', [CsiParam::P(b'>'), rest @ ..]) => {
+//                 Self::SetModifyOtherKeys(parse_params(rest))
+//             },
+//             (b'm', params) => {
+//                 Self::SelectGraphicRendition(parse_params(params))
+//             },
+//             (b'p', [CsiParam::P(b'$')]) => Self::RequestMode(0),
+//             (b'p', [CsiParam::P(b'$'), CsiParam::Integer(mode)]) => {
+//                 Self::RequestMode(*mode)
+//             },
+//             (b'p', [CsiParam::P(b'?'), CsiParam::P(b'$')]) => {
+//                 Self::RequestModePrivate(0)
+//             },
+//             (
+//                 b'p',
+//                 [
+//                     CsiParam::P(b'?'),
+//                     CsiParam::P(b'$'),
+//                     CsiParam::Integer(mode),
+//                 ],
+//             ) => Self::RequestModePrivate(*mode),
+//             (b'q', []) => Self::SetCursorStyle(0),
+//             (b'q', [CsiParam::Integer(shape)]) => Self::SetCursorStyle(*shape),
+//             (b'q', [CsiParam::Integer(shape), ..]) => {
+//                 Self::SetCursorStyle(*shape)
+//             },
 
-                Self::SetModePrivate(modes)
-            },
-            (b'h', params) => {
-                let modes = parse_params(params)
-                    .into_iter()
-                    .map(Mode::from_raw)
-                    .collect();
+//             (b'u', []) => Self::RestoreCursorPosition,
+//             (b'u', [CsiParam::P(b'?'), ..]) => Self::ReportKeyboardMode,
+//             (b'u', [CsiParam::P(b'='), rest @ ..]) => {
+//                 if let (
+//                     Some(CsiParam::Integer(flags)),
+//                     Some(CsiParam::P(b';')),
+//                     Some(CsiParam::Integer(mode)),
+//                 ) = (rest.get(0), rest.get(1), rest.get(2))
+//                 {
+//                     Self::SetKeyboardMode(*flags, *mode)
+//                 } else {
+//                     Self::Unspecified {
+//                         params: rest.to_vec(),
+//                         final_byte,
+//                     }
+//                 }
+//             },
+//             (b'u', [CsiParam::P(b'>'), rest @ ..]) => {
+//                 if let Some(CsiParam::Integer(flags)) = rest.first() {
+//                     Self::PushKeyboardMode(*flags)
+//                 } else {
+//                     Self::Unspecified {
+//                         params: rest.to_vec(),
+//                         final_byte,
+//                     }
+//                 }
+//             },
+//             (b'u', [CsiParam::P(b'<'), rest @ ..]) => {
+//                 let count = rest
+//                     .first()
+//                     .and_then(|param| match param {
+//                         CsiParam::Integer(value) => Some(*value),
+//                         _ => None,
+//                     })
+//                     .unwrap_or(1);
 
-                Self::SetMode(modes)
-            },
-            (b'l', [CsiParam::P(b'?'), rest @ ..]) => {
-                let modes = parse_params(rest)
-                    .into_iter()
-                    .map(PrivateMode::from_raw)
-                    .collect();
+//                 Self::PopKeyboardModes(count)
+//             },
+//             (b'W', [CsiParam::P(b'?'), CsiParam::Integer(5)]) => {
+//                 Self::SetTabStops
+//             },
+//             (
+//                 b'k',
+//                 [
+//                     CsiParam::P(b' '),
+//                     CsiParam::Integer(char_path),
+//                     CsiParam::Integer(update_mode),
+//                 ],
+//             ) => Self::SelectCharacterProtectionAttribute(
+//                 *char_path,
+//                 *update_mode,
+//             ),
+//             (b'k', [CsiParam::P(b' '), _, CsiParam::Integer(update_mode)]) => {
+//                 Self::SelectCharacterProtectionAttribute(0, *update_mode)
+//             },
+//             (b'k', [CsiParam::P(b' '), CsiParam::Integer(char_path)]) => {
+//                 Self::SelectCharacterProtectionAttribute(*char_path, 0)
+//             },
+//             (b'k', [CsiParam::P(b' '), ..]) => {
+//                 Self::SelectCharacterProtectionAttribute(0, 0)
+//             },
 
-                Self::ResetModePrivate(modes)
-            },
-            (b'l', params) => {
-                let modes = parse_params(params)
-                    .into_iter()
-                    .map(Mode::from_raw)
-                    .collect();
+//             (b'@', [CsiParam::Integer(count)]) => {
+//                 Self::InsertBlank(*count as usize)
+//             },
+//             (b'A', []) => Self::CursorUp(1),
+//             (b'A', [CsiParam::Integer(rows)]) => Self::CursorUp(*rows),
+//             (b'B', []) => Self::CursorDown(1),
+//             (b'B', [CsiParam::Integer(rows)]) => Self::CursorDown(*rows),
 
-                Self::ResetMode(modes)
-            },
-            (b'm', [CsiParam::P(b'?'), rest @ ..]) => {
-                Self::ReportModifyOtherKeys(parse_params(rest))
-            },
-            (b'm', [CsiParam::P(b'>'), rest @ ..]) => {
-                Self::SetModifyOtherKeys(parse_params(rest))
-            },
-            (b'm', params) => {
-                Self::SelectGraphicRendition(parse_params(params))
-            },
-            (b'p', [CsiParam::P(b'$')]) => Self::RequestMode(0),
-            (b'p', [CsiParam::P(b'$'), CsiParam::Integer(mode)]) => {
-                Self::RequestMode(*mode)
-            },
-            (b'p', [CsiParam::P(b'?'), CsiParam::P(b'$')]) => {
-                Self::RequestModePrivate(0)
-            },
-            (
-                b'p',
-                [
-                    CsiParam::P(b'?'),
-                    CsiParam::P(b'$'),
-                    CsiParam::Integer(mode),
-                ],
-            ) => Self::RequestModePrivate(*mode),
-            (b'q', []) => Self::SetCursorStyle(0),
-            (b'q', [CsiParam::Integer(shape)]) => Self::SetCursorStyle(*shape),
-            (b'q', [CsiParam::Integer(shape), ..]) => {
-                Self::SetCursorStyle(*shape)
-            },
+//             (b'e', [CsiParam::Integer(rows)]) => {
+//                 Self::VerticalPositionRelative(*rows)
+//             },
+//             (b'b', [CsiParam::Integer(count)]) => {
+//                 Self::RepeatPrecedingCharacter(*count)
+//             },
+//             (b'C', []) => Self::CursorForward(1),
+//             (b'C', [CsiParam::Integer(columns)]) => {
+//                 Self::CursorForward(*columns)
+//             },
+//             (b'a', []) => Self::HorizontalPositionRelative(1),
+//             (b'a', [CsiParam::Integer(columns)]) => {
+//                 Self::HorizontalPositionRelative(*columns)
+//             },
+//             (b'c', [CsiParam::Integer(attr)]) => {
+//                 Self::PrimaryDeviceAttributes(*attr)
+//             },
+//             (b'D', []) => Self::CursorBackward(1),
+//             (b'D', [CsiParam::Integer(columns)]) => {
+//                 Self::CursorBackward(*columns)
+//             },
+//             (b'd', []) => Self::VerticalPositionAbsolute(1),
+//             (b'd', [CsiParam::Integer(line_num)]) => {
+//                 Self::VerticalPositionAbsolute(*line_num)
+//             },
+//             (b'E', []) => Self::CursorNextLine(1),
+//             (b'E', [CsiParam::Integer(line_count)]) => {
+//                 Self::CursorNextLine(*line_count)
+//             },
+//             (b'F', []) => Self::CursorPrecedingLine(1),
+//             (b'F', [CsiParam::Integer(line_count)]) => {
+//                 Self::CursorPrecedingLine(*line_count)
+//             },
+//             (b'G', []) => Self::CursorHorizontalAbsolute(1),
+//             (b'G', [CsiParam::Integer(column_num)]) => {
+//                 Self::CursorHorizontalAbsolute(*column_num)
+//             },
+//             (b'`', []) => Self::HorizontalPositionAbsolute(1),
+//             (b'`', [CsiParam::Integer(column_num)]) => {
+//                 Self::HorizontalPositionAbsolute(*column_num)
+//             },
 
-            (b'u', []) => Self::RestoreCursorPosition,
-            (b'u', [CsiParam::P(b'?'), ..]) => Self::ReportKeyboardMode,
-            (b'u', [CsiParam::P(b'='), rest @ ..]) => {
-                if let (
-                    Some(CsiParam::Integer(flags)),
-                    Some(CsiParam::P(b';')),
-                    Some(CsiParam::Integer(mode)),
-                ) = (rest.get(0), rest.get(1), rest.get(2))
-                {
-                    Self::SetKeyboardMode(*flags, *mode)
-                } else {
-                    Self::Unspecified {
-                        params: rest.to_vec(),
-                        final_byte,
-                    }
-                }
-            },
-            (b'u', [CsiParam::P(b'>'), rest @ ..]) => {
-                if let Some(CsiParam::Integer(flags)) = rest.get(0) {
-                    Self::PushKeyboardMode(*flags)
-                } else {
-                    Self::Unspecified {
-                        params: rest.to_vec(),
-                        final_byte,
-                    }
-                }
-            },
-            (b'u', [CsiParam::P(b'<'), rest @ ..]) => {
-                let count = rest
-                    .first()
-                    .and_then(|param| match param {
-                        CsiParam::Integer(value) => Some(*value),
-                        _ => None,
-                    })
-                    .unwrap_or(1);
+//             (b'g', []) => Self::TabClear(0),
+//             (b'g', [CsiParam::Integer(mode)]) => Self::TabClear(*mode),
+//             (b'H', []) => Self::CursorPosition(1, 1),
+//             (
+//                 b'H',
+//                 [
+//                     CsiParam::Integer(y),
+//                     CsiParam::P(b';'),
+//                     CsiParam::Integer(x),
+//                 ],
+//             ) => Self::CursorPosition(*y as i32, *x as usize),
+//             (
+//                 b'f',
+//                 [
+//                     CsiParam::Integer(y),
+//                     CsiParam::P(b';'),
+//                     CsiParam::Integer(x),
+//                 ],
+//             ) => Self::HorizontalAndVerticalPosition(*y as i32, *x as usize),
+//             (b'I', []) => Self::CursorHorizontalTabulation(1),
+//             (b'I', [CsiParam::Integer(count)]) => {
+//                 Self::CursorHorizontalTabulation(*count)
+//             },
+//             (b'J', []) => Self::EraseDisplay(0),
+//             (b'J', [CsiParam::Integer(mode)]) => Self::EraseDisplay(*mode),
+//             (b'K', []) => Self::EraseLine(0),
+//             (b'K', [CsiParam::Integer(mode)]) => Self::EraseLine(*mode),
+//             (b'L', []) => Self::InsertLine(1),
+//             (b'L', [CsiParam::Integer(count)]) => Self::InsertLine(*count),
+//             (b'M', []) => Self::DeleteLine(1),
+//             (b'M', [CsiParam::Integer(count)]) => Self::DeleteLine(*count),
+//             (b'n', []) => Self::DeviceStatusReport(0),
+//             (b'n', [CsiParam::Integer(report)]) => {
+//                 Self::DeviceStatusReport(*report)
+//             },
+//             (b'P', []) => Self::DeleteCharacter(1),
+//             (b'P', [CsiParam::Integer(count)]) => Self::DeleteCharacter(*count),
 
-                Self::PopKeyboardModes(count)
-            },
-            (b'W', [CsiParam::P(b'?'), CsiParam::Integer(5)]) => {
-                Self::SetTabStops
-            },
-            (
-                b'k',
-                [
-                    CsiParam::P(b' '),
-                    CsiParam::Integer(char_path),
-                    CsiParam::Integer(update_mode),
-                ],
-            ) => Self::SelectCharacterProtectionAttribute(
-                *char_path,
-                *update_mode,
-            ),
-            (b'k', [CsiParam::P(b' '), _, CsiParam::Integer(update_mode)]) => {
-                Self::SelectCharacterProtectionAttribute(0, *update_mode)
-            },
-            (b'k', [CsiParam::P(b' '), CsiParam::Integer(char_path)]) => {
-                Self::SelectCharacterProtectionAttribute(*char_path, 0)
-            },
-            (b'k', [CsiParam::P(b' '), ..]) => {
-                Self::SelectCharacterProtectionAttribute(0, 0)
-            },
+//             (
+//                 b'r',
+//                 [
+//                     CsiParam::Integer(top),
+//                     CsiParam::P(b';'),
+//                     CsiParam::Integer(bottom),
+//                 ],
+//             ) => Self::SetTopAndBottomMargin(*top as usize, *bottom as usize),
+//             (b'S', []) => Self::ScrollUp(1),
+//             (b'S', [CsiParam::Integer(count)]) => Self::ScrollUp(*count),
+//             (b's', [..]) => Self::SaveCursor,
+//             (b'T', []) => Self::ScrollDown(1),
+//             (b'T', [CsiParam::Integer(count)]) => Self::ScrollDown(*count),
 
-            (b'@', [CsiParam::Integer(count)]) => {
-                Self::InsertBlank(*count as usize)
-            },
-            (b'A', []) => Self::CursorUp(1),
-            (b'A', [CsiParam::Integer(rows)]) => Self::CursorUp(*rows),
-            (b'B', []) => Self::CursorDown(1),
-            (b'B', [CsiParam::Integer(rows)]) => Self::CursorDown(*rows),
+//             (b't', []) => Self::WindowManipulation(1),
+//             (b't', [CsiParam::Integer(id)]) => Self::WindowManipulation(*id),
+//             (b't', [CsiParam::Integer(id), ..]) => {
+//                 Self::WindowManipulation(*id)
+//             },
 
-            (b'e', [CsiParam::Integer(rows)]) => {
-                Self::VerticalPositionRelative(*rows)
-            },
-            (b'b', [CsiParam::Integer(count)]) => {
-                Self::RepeatPrecedingCharacter(*count)
-            },
-            (b'C', []) => Self::CursorForward(1),
-            (b'C', [CsiParam::Integer(columns)]) => {
-                Self::CursorForward(*columns)
-            },
-            (b'a', []) => Self::HorizontalPositionRelative(1),
-            (b'a', [CsiParam::Integer(columns)]) => {
-                Self::HorizontalPositionRelative(*columns)
-            },
-            (b'c', [CsiParam::Integer(attr)]) => {
-                Self::PrimaryDeviceAttributes(*attr)
-            },
-            (b'D', []) => Self::CursorBackward(1),
-            (b'D', [CsiParam::Integer(columns)]) => {
-                Self::CursorBackward(*columns)
-            },
-            (b'd', []) => Self::VerticalPositionAbsolute(1),
-            (b'd', [CsiParam::Integer(line_num)]) => {
-                Self::VerticalPositionAbsolute(*line_num)
-            },
-            (b'E', []) => Self::CursorNextLine(1),
-            (b'E', [CsiParam::Integer(line_count)]) => {
-                Self::CursorNextLine(*line_count)
-            },
-            (b'F', []) => Self::CursorPrecedingLine(1),
-            (b'F', [CsiParam::Integer(line_count)]) => {
-                Self::CursorPrecedingLine(*line_count)
-            },
-            (b'G', []) => Self::CursorHorizontalAbsolute(1),
-            (b'G', [CsiParam::Integer(column_num)]) => {
-                Self::CursorHorizontalAbsolute(*column_num)
-            },
-            (b'`', []) => Self::HorizontalPositionAbsolute(1),
-            (b'`', [CsiParam::Integer(column_num)]) => {
-                Self::HorizontalPositionAbsolute(*column_num)
-            },
+//             (b'X', []) => Self::EraseCharacters(1),
+//             (b'X', [CsiParam::Integer(count)]) => Self::EraseCharacters(*count),
+//             (b'Z', []) => Self::CursorBackwardTabulation(1),
+//             (b'Z', [CsiParam::Integer(count)]) => {
+//                 Self::CursorBackwardTabulation(*count)
+//             },
+//             _ => Self::Unspecified {
+//                 params: raw_params.to_vec(),
+//                 final_byte,
+//             },
+//         };
 
-            (b'g', []) => Self::TabClear(0),
-            (b'g', [CsiParam::Integer(mode)]) => Self::TabClear(*mode),
-            (b'H', []) => Self::CursorPosition(1, 1),
-            (
-                b'H',
-                [
-                    CsiParam::Integer(y),
-                    CsiParam::P(b';'),
-                    CsiParam::Integer(x),
-                ],
-            ) => Self::CursorPosition(*y as i32, *x as usize),
-            (
-                b'f',
-                [
-                    CsiParam::Integer(y),
-                    CsiParam::P(b';'),
-                    CsiParam::Integer(x),
-                ],
-            ) => Self::HorizontalAndVerticalPosition(*y as i32, *x as usize),
-            (b'I', []) => Self::CursorHorizontalTabulation(1),
-            (b'I', [CsiParam::Integer(count)]) => {
-                Self::CursorHorizontalTabulation(*count)
-            },
-            (b'J', []) => Self::EraseDisplay(0),
-            (b'J', [CsiParam::Integer(mode)]) => Self::EraseDisplay(*mode),
-            (b'K', []) => Self::EraseLine(0),
-            (b'K', [CsiParam::Integer(mode)]) => Self::EraseLine(*mode),
-            (b'L', []) => Self::InsertLine(1),
-            (b'L', [CsiParam::Integer(count)]) => Self::InsertLine(*count),
-            (b'M', []) => Self::DeleteLine(1),
-            (b'M', [CsiParam::Integer(count)]) => Self::DeleteLine(*count),
-            (b'n', []) => Self::DeviceStatusReport(0),
-            (b'n', [CsiParam::Integer(report)]) => {
-                Self::DeviceStatusReport(*report)
-            },
-            (b'P', []) => Self::DeleteCharacter(1),
-            (b'P', [CsiParam::Integer(count)]) => Self::DeleteCharacter(*count),
+//         match parsed {
+//             Self::Unspecified {
+//                 ref params,
+//                 final_byte,
+//             } => debug!(
+//                 "[parsed] action: {:?} {:?} {}",
+//                 params, inter, final_byte as char
+//             ),
+//             _ => {},
+//         }
 
-            (
-                b'r',
-                [
-                    CsiParam::Integer(top),
-                    CsiParam::P(b';'),
-                    CsiParam::Integer(bottom),
-                ],
-            ) => Self::SetTopAndBottomMargin(*top as usize, *bottom as usize),
-            (b'S', []) => Self::ScrollUp(1),
-            (b'S', [CsiParam::Integer(count)]) => Self::ScrollUp(*count),
-            (b's', [..]) => Self::SaveCursor,
-            (b'T', []) => Self::ScrollDown(1),
-            (b'T', [CsiParam::Integer(count)]) => Self::ScrollDown(*count),
+//         parsed
+//     }
+// }
 
-            (b't', []) => Self::WindowManipulation(1),
-            (b't', [CsiParam::Integer(id)]) => Self::WindowManipulation(*id),
-            (b't', [CsiParam::Integer(id), ..]) => {
-                Self::WindowManipulation(*id)
-            },
-
-            (b'X', []) => Self::EraseCharacters(1),
-            (b'X', [CsiParam::Integer(count)]) => Self::EraseCharacters(*count),
-            (b'Z', []) => Self::CursorBackwardTabulation(1),
-            (b'Z', [CsiParam::Integer(count)]) => {
-                Self::CursorBackwardTabulation(*count)
-            },
-            _ => Self::Unspecified {
-                params: raw_params.to_vec(),
-                final_byte,
-            },
-        };
-
-        match parsed {
-            Self::Unspecified {
-                ref params,
-                final_byte,
-            } => debug!(
-                "[parsed] action: {:?} {:?} {}",
-                params, inter, final_byte as char
-            ),
-            _ => {},
-        }
-
-        parsed
-    }
-}
-
-pub(crate) fn perform<A: Actor, T: Timeout>(
+#[inline]
+pub(crate) fn perform<A: Actor>(
     actor: &mut A,
-    state: &mut ParserState<T>,
-    params: &[CsiParam],
-    intermediates: &[u8],
+    state: &mut ParserState,
+    raw_params: &[CsiParam],
     params_truncated: bool,
     byte: u8,
 ) {
     if params_truncated {
-        return unexpected(params, byte);
+        return unexpected(raw_params, byte);
     }
 
-    match CSI::from((params, intermediates, byte)) {
-        CSI::InsertBlank(count) => actor.handle(Action::InsertBlank(count)),
-        CSI::CursorUp(rows) => actor.handle(Action::MoveUp {
-            rows: rows as usize,
-            carrage_return_needed: false,
-        }),
-        CSI::CursorDown(rows) => actor.handle(Action::MoveDown {
-            rows: rows as usize,
-            carrage_return_needed: false,
-        }),
-        CSI::VerticalPositionRelative(rows) => actor.handle(Action::MoveDown {
-            rows: rows as usize,
-            carrage_return_needed: false,
-        }),
-        CSI::RepeatPrecedingCharacter(count) => {
-            if let Some(c) = state.last_preceding_char {
-                for _ in 0..count {
-                    actor.handle(Action::Print(c));
+    match (byte, raw_params) {
+        (b'h', [CsiParam::P(b'?'), rest @ ..]) => {
+            for param in rest {
+                match param.as_integer() {
+                    Some(mode) => {
+                        let mode = PrivateMode::from_raw(mode as u16);
+                        if mode
+                            == PrivateMode::Named(NamedPrivateMode::SyncUpdate)
+                        {
+                            actor.begin_sync();
+                        }
+
+                        actor.handle(
+                            TerminalControlAction::SetPrivateMode(mode).into(),
+                        );
+                    },
+                    None => unexpected(raw_params, byte),
                 }
-            } else {
-                debug!("tried to repeat with no preceding char");
             }
         },
-        CSI::CursorForward(columns) => {
-            actor.handle(Action::MoveForward(columns as usize))
-        },
-        CSI::HorizontalPositionRelative(columns) => {
-            actor.handle(Action::MoveForward(columns as usize))
-        },
-        CSI::PrimaryDeviceAttributes(attr) => {
-            actor.handle(Action::IdentifyTerminal(char::from_u32(attr as u32)))
-        },
-        CSI::CursorBackward(columns) => {
-            actor.handle(Action::MoveBackward(columns as usize))
-        },
-        CSI::VerticalPositionAbsolute(line_num) => {
-            actor.handle(Action::GotoRow(line_num as i32 - 1))
-        },
-        CSI::CursorNextLine(line_count) => actor.handle(Action::MoveDown {
-            rows: line_count as usize,
-            carrage_return_needed: true,
-        }),
-        CSI::CursorPrecedingLine(line_count) => actor.handle(Action::MoveUp {
-            rows: line_count as usize,
-            carrage_return_needed: true,
-        }),
-        CSI::CursorHorizontalAbsolute(column_num) => {
-            actor.handle(Action::GotoColumn(column_num as usize - 1))
-        },
-        CSI::HorizontalPositionAbsolute(column_num) => {
-            actor.handle(Action::GotoColumn(column_num as usize - 1))
-        },
-        CSI::SetTabStops => actor.handle(Action::SetTabs(8)),
-        CSI::TabClear(mode_index) => {
-            let mode = match mode_index {
-                0 => TabClearMode::Current,
-                3 => TabClearMode::All,
-                _ => {
-                    return unexpected(params, byte);
-                },
-            };
-
-            actor.handle(Action::ClearTabs(mode));
-        },
-        CSI::HorizontalAndVerticalPosition(y, x) => {
-            actor.handle(Action::Goto(y - 1, x - 1))
-        },
-        CSI::CursorPosition(y, x) => actor.handle(Action::Goto(y - 1, x - 1)),
-        CSI::SetMode(modes) => {
-            for mode in modes {
-                actor.handle(Action::SetMode(mode));
-            }
-        },
-        CSI::SetModePrivate(modes) => {
-            for mode in modes {
-                if mode == PrivateMode::Named(NamedPrivateMode::SyncUpdate) {
-                    state.timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
-                    state.terminated = true;
+        (b'h', params) => {
+            for param in params {
+                match param.as_integer() {
+                    Some(mode) => {
+                        let mode = Mode::from_raw(mode as u16);
+                        actor.handle(
+                            TerminalControlAction::SetMode(mode).into(),
+                        );
+                    },
+                    None => unexpected(raw_params, byte),
                 }
-
-                actor.handle(Action::SetPrivateMode(mode));
             }
         },
-        CSI::ResetMode(modes) => {
-            for mode in modes {
-                actor.handle(Action::UnsetMode(mode));
+        (b'l', [CsiParam::P(b'?'), rest @ ..]) => {
+            for param in rest {
+                match param.as_integer() {
+                    Some(mode) => {
+                        let mode = PrivateMode::from_raw(mode as u16);
+                        if mode
+                            == PrivateMode::Named(NamedPrivateMode::SyncUpdate)
+                        {
+                            actor.end_sync();
+                        }
+
+                        actor.handle(
+                            TerminalControlAction::UnsetPrivateMode(mode)
+                                .into(),
+                        );
+                    },
+                    None => unexpected(raw_params, byte),
+                }
             }
         },
-        CSI::ResetModePrivate(modes) => {
-            for mode in modes {
-                actor.handle(Action::UnsetPrivateMode(mode));
+        (b'l', params) => {
+            for param in params {
+                match param.as_integer() {
+                    Some(mode) => {
+                        let mode = Mode::from_raw(mode as u16);
+                        actor.handle(
+                            TerminalControlAction::UnsetMode(mode).into(),
+                        );
+                    },
+                    None => unexpected(raw_params, byte),
+                }
             }
         },
-        CSI::CursorHorizontalTabulation(count) => {
-            actor.handle(Action::MoveForwardTabs(count as u16))
+        (b'm', [CsiParam::P(b'?'), CsiParam::Integer(4), ..]) => {
+            actor.handle(
+                TerminalControlAction::ReportModifyOtherKeysState.into(),
+            );
         },
-        CSI::EraseDisplay(mode_index) => {
-            let mode = match mode_index {
-                0 => ClearMode::Below,
-                1 => ClearMode::Above,
-                2 => ClearMode::All,
-                3 => ClearMode::Saved,
-                _ => {
-                    return unexpected(params, byte);
+        (b'm', [CsiParam::P(b'>'), CsiParam::Integer(4), rest @ ..]) => {
+            let mode = match rest[0] {
+                CsiParam::Integer(0) => ModifyOtherKeysState::Reset,
+                CsiParam::Integer(1) => {
+                    ModifyOtherKeysState::EnableExceptWellDefined
                 },
+                CsiParam::Integer(2) => ModifyOtherKeysState::EnableAll,
+                _ => return unexpected(raw_params, byte),
             };
 
-            actor.handle(Action::ClearScreen(mode));
+            actor.handle(
+                TerminalControlAction::SetModifyOtherKeysState(mode).into(),
+            );
         },
-        CSI::EraseLine(mode_index) => {
-            let mode = match mode_index {
-                0 => LineClearMode::Right,
-                1 => LineClearMode::Left,
-                2 => LineClearMode::All,
-                _ => {
-                    return unexpected(params, byte);
-                },
-            };
-
-            actor.handle(Action::ClearLine(mode));
-        },
-        CSI::SelectCharacterProtectionAttribute(
-            char_path_index,
-            update_mode_index,
-        ) => {
-            // SCP control.
-            let char_path = match char_path_index {
-                0 => ScpCharPath::Default,
-                1 => ScpCharPath::LTR,
-                2 => ScpCharPath::RTL,
-                _ => {
-                    return unexpected(params, byte);
-                },
-            };
-
-            let update_mode = match update_mode_index {
-                0 => ScpUpdateMode::ImplementationDependant,
-                1 => ScpUpdateMode::DataToPresentation,
-                2 => ScpUpdateMode::PresentationToData,
-                _ => {
-                    return unexpected(params, byte);
-                },
-            };
-
-            actor.handle(Action::SetSCP(char_path, update_mode));
-        },
-        CSI::InsertLine(count) => {
-            actor.handle(Action::InsertBlankLines(count as usize))
-        },
-        CSI::DeleteLine(count) => {
-            actor.handle(Action::DeleteLines(count as usize))
-        },
-        CSI::SelectGraphicRendition(params) => {
+        (b'm', params) => {
             if params.is_empty() {
                 actor.handle(Action::SetCharacterAttribute(
                     CharacterAttribute::Reset,
@@ -552,271 +464,477 @@ pub(crate) fn perform<A: Actor, T: Timeout>(
                 attrs_from_sgr_parameters(actor, params);
             }
         },
-        CSI::SetModifyOtherKeys(vals) => {
-            if vals[0] == 4 {
-                let mode = match vals[1] {
-                    0 => ModifyOtherKeysState::Reset,
-                    1 => ModifyOtherKeysState::EnableExceptWellDefined,
-                    2 => ModifyOtherKeysState::EnableAll,
-                    _ => return unexpected(params, byte),
-                };
-
-                actor.handle(Action::SetModifyOtherKeysState(mode));
-            } else {
-                unexpected(params, byte)
-            }
+        (b'p', [CsiParam::P(b'!')]) => actor.end_sync(),
+        (b'p', [CsiParam::P(b'$')]) => actor.handle(
+            TerminalControlAction::ReportMode(Mode::from_raw(0)).into(),
+        ),
+        (b'p', [CsiParam::P(b'$'), CsiParam::Integer(mode)]) => {
+            actor.handle(
+                TerminalControlAction::ReportMode(Mode::from_raw(*mode as u16))
+                    .into(),
+            );
         },
-        CSI::ReportModifyOtherKeys(vals) => {
-            if vals[0] == 4 {
-                actor.handle(Action::ReportModifyOtherKeysState);
-            } else {
-                unexpected(params, byte);
-            }
+        (b'p', [CsiParam::P(b'?'), CsiParam::P(b'$')]) => {
+            actor.handle(
+                TerminalControlAction::ReportPrivateMode(
+                    PrivateMode::from_raw(0),
+                )
+                .into(),
+            );
         },
-        CSI::DeviceStatusReport(report) => {
-            actor.handle(Action::ReportDeviceStatus(report as usize))
+        (
+            b'p',
+            [
+                CsiParam::P(b'?'),
+                CsiParam::P(b'$'),
+                CsiParam::Integer(mode),
+            ],
+        ) => actor.handle(
+            TerminalControlAction::ReportPrivateMode(PrivateMode::from_raw(
+                *mode as u16,
+            ))
+            .into(),
+        ),
+        (b'q', []) => {
+            let style = parse_cursor_style(0);
+            actor.handle(Action::SetCursorStyle(style));
         },
-        CSI::DeleteCharacter(count) => {
-            actor.handle(Action::DeleteChars(count as usize))
+        (b'q', [CsiParam::Integer(shape)]) => {
+            let style = parse_cursor_style(*shape);
+            actor.handle(Action::SetCursorStyle(style));
         },
-        CSI::RequestMode(raw_mode) => {
-            actor.handle(Action::ReportMode(Mode::from_raw(raw_mode as u16)));
+        (b'q', [CsiParam::Integer(shape), ..]) => {
+            let style = parse_cursor_style(*shape);
+            actor.handle(Action::SetCursorStyle(style));
         },
-        CSI::RequestModePrivate(raw_mode) => {
-            actor.handle(Action::ReportPrivateMode(PrivateMode::from_raw(
-                raw_mode as u16,
-            )));
+        (b'u', []) => actor.handle(Action::RestoreCursorPosition),
+        (b'u', [CsiParam::P(b'?'), ..]) => {
+            actor.handle(TerminalControlAction::ReportKeyboardMode.into())
         },
-        CSI::SetCursorStyle(raw_shape) => {
-            let shape = match raw_shape {
-                0 => None,
-                1 | 2 => Some(CursorShape::Block),
-                3 | 4 => Some(CursorShape::Underline),
-                5 | 6 => Some(CursorShape::Beam),
-                _ => {
-                    return unexpected(params, byte);
-                },
-            };
-            let cursor_style = shape.map(|shape| CursorStyle {
-                shape,
-                blinking: raw_shape % 2 == 1,
-            });
-
-            actor.handle(Action::SetCursorStyle(cursor_style));
-        },
-        CSI::SetTopAndBottomMargin(top, bottom) => {
-            actor.handle(Action::SetScrollingRegion(top, bottom));
-        },
-        CSI::ScrollUp(count) => actor.handle(Action::ScrollUp(count as usize)),
-        CSI::SaveCursor => actor.handle(Action::SaveCursorPosition),
-        CSI::ScrollDown(count) => {
-            actor.handle(Action::ScrollDown(count as usize))
-        },
-        CSI::WindowManipulation(id) => match id {
-            14 => actor.handle(Action::RequestTextAreaSizeByPixels),
-            18 => actor.handle(Action::RequestTextAreaSizeByChars),
-            22 => actor.handle(Action::PushWindowTitle),
-            23 => actor.handle(Action::PopWindowTitle),
-            _ => unexpected(params, byte),
-        },
-        CSI::RestoreCursorPosition => {
-            actor.handle(Action::RestoreCursorPosition)
-        },
-        CSI::ReportKeyboardMode => actor.handle(Action::ReportKeyboardMode),
-        CSI::SetKeyboardMode(flags, behav) => {
-            let mode = KeyboardMode::from_bits_truncate(flags as u8);
-            let behavior = match behav {
+        (
+            b'u',
+            [
+                CsiParam::P(b'='),
+                CsiParam::Integer(raw_mode),
+                CsiParam::P(b';'),
+                CsiParam::Integer(raw_behavior),
+                ..,
+            ],
+        ) => {
+            let mode = KeyboardMode::from_bits_truncate(*raw_mode as u8);
+            let behavior = match raw_behavior {
                 3 => KeyboardModeApplyBehavior::Difference,
                 2 => KeyboardModeApplyBehavior::Union,
                 // Default is replace.
                 _ => KeyboardModeApplyBehavior::Replace,
             };
-            actor.handle(Action::SetKeyboardMode(mode, behavior));
+
+            actor.handle(
+                TerminalControlAction::SetKeyboardMode(mode, behavior).into(),
+            );
         },
-        CSI::PushKeyboardMode(flags) => {
-            let mode = KeyboardMode::from_bits_truncate(flags as u8);
-            actor.handle(Action::PushKeyboardMode(mode));
+        (b'u', [CsiParam::P(b'>'), CsiParam::Integer(mode), ..]) => {
+            let mode = KeyboardMode::from_bits_truncate(*mode as u8);
+            actor.handle(TerminalControlAction::PushKeyboardMode(mode).into());
         },
-        CSI::PopKeyboardModes(count) => {
-            actor.handle(Action::PopKeyboardModes(count as u16))
+        (b'u', [CsiParam::P(b'<'), CsiParam::Integer(count), ..]) => {
+            let count = if *count > 1 { *count } else { 1 } as u16;
+            actor.handle(TerminalControlAction::PopKeyboardModes(count).into())
         },
-        CSI::EraseCharacters(count) => {
-            actor.handle(Action::EraseChars(count as usize))
+        (b'W', [CsiParam::P(b'?'), CsiParam::Integer(5)]) => {
+            actor.handle(Action::SetTabs(8));
         },
-        CSI::CursorBackwardTabulation(count) => {
-            actor.handle(Action::MoveBackwardTabs(count as u16))
+        (b'@', [CsiParam::Integer(count)]) => {
+            actor.handle(Action::InsertBlank(*count as usize))
         },
-        CSI::Unspecified { params, final_byte } => {
-            unexpected(params.as_slice(), final_byte)
+        (b'A', []) => actor.handle(Action::MoveUp {
+            rows: 1,
+            carrage_return_needed: false,
+        }),
+        (b'A', [CsiParam::Integer(rows)]) => actor.handle(Action::MoveUp {
+            rows: *rows as usize,
+            carrage_return_needed: false,
+        }),
+        (b'B', []) => actor.handle(Action::MoveDown {
+            rows: 1,
+            carrage_return_needed: false,
+        }),
+        (b'B', [CsiParam::Integer(rows)]) => actor.handle(Action::MoveDown {
+            rows: *rows as usize,
+            carrage_return_needed: false,
+        }),
+        (b'e', [CsiParam::Integer(rows)]) => actor.handle(Action::MoveDown {
+            rows: *rows as usize,
+            carrage_return_needed: false,
+        }),
+        (b'b', [CsiParam::Integer(count)]) => {
+            if let Some(c) = state.last_preceding_char {
+                for _ in 0..*count {
+                    actor.handle(Action::Print(c));
+                }
+            } else {
+                debug!("tried to repeat with no preceding char");
+            }
         },
-        _ => unexpected(params, byte),
-    }
+        (b'C', []) => actor.handle(Action::MoveForward(1)),
+        (b'C', [CsiParam::Integer(columns)]) => {
+            actor.handle(Action::MoveForward(*columns as usize))
+        },
+        (b'a', []) => actor.handle(Action::MoveForward(1)),
+        (b'a', [CsiParam::Integer(columns)]) => {
+            actor.handle(Action::MoveForward(*columns as usize))
+        },
+        (b'c', []) => {
+            actor.handle(TerminalControlAction::IdentifyTerminal(None).into())
+        },
+        (b'c', [CsiParam::P(b'>')]) => actor
+            .handle(TerminalControlAction::IdentifyTerminal(Some('>')).into()),
+        (b'c', [CsiParam::Integer(attr)]) => actor.handle(
+            TerminalControlAction::IdentifyTerminal(char::from_u32(
+                *attr as u32,
+            ))
+            .into(),
+        ),
+        (b'D', []) => actor.handle(Action::MoveBackward(1)),
+        (b'D', [CsiParam::Integer(columns)]) => {
+            actor.handle(Action::MoveBackward(*columns as usize))
+        },
+        (b'd', []) => actor.handle(Action::GotoRow(1)),
+        (b'd', [CsiParam::Integer(line_num)]) => {
+            actor.handle(Action::GotoRow(*line_num as i32 - 1))
+        },
+        (b'E', []) => actor.handle(Action::MoveDown {
+            rows: 1,
+            carrage_return_needed: true,
+        }),
+        (b'E', [CsiParam::Integer(line_count)]) => {
+            actor.handle(Action::MoveDown {
+                rows: *line_count as usize,
+                carrage_return_needed: true,
+            })
+        },
+        (b'F', []) => actor.handle(Action::MoveUp {
+            rows: 1,
+            carrage_return_needed: true,
+        }),
+        (b'F', [CsiParam::Integer(line_count)]) => {
+            actor.handle(Action::MoveUp {
+                rows: *line_count as usize,
+                carrage_return_needed: true,
+            })
+        },
+        (b'G', []) => actor.handle(Action::GotoColumn(1)),
+        (b'G', [CsiParam::Integer(column_num)]) => {
+            actor.handle(Action::GotoColumn(*column_num as usize - 1))
+        },
+        (b'`', []) => actor.handle(Action::GotoColumn(1)),
+        (b'`', [CsiParam::Integer(column_num)]) => {
+            actor.handle(Action::GotoColumn(*column_num as usize - 1))
+        },
+        (b'g', []) => {
+            actor.handle(Action::ClearTabs(TabClearMode::Current));
+        },
+        (b'g', [CsiParam::Integer(mode)]) => {
+            let mode = match mode {
+                0 => TabClearMode::Current,
+                3 => TabClearMode::All,
+                _ => {
+                    return unexpected(raw_params, byte);
+                },
+            };
+
+            actor.handle(Action::ClearTabs(mode));
+        },
+        (b'H', []) => actor.handle(Action::Goto(0, 0)),
+        (
+            b'H',
+            [
+                CsiParam::Integer(y),
+                CsiParam::P(b';'),
+                CsiParam::Integer(x),
+            ],
+        ) => actor.handle(Action::Goto(*y as i32 - 1, *x as usize - 1)),
+        (
+            b'f',
+            [
+                CsiParam::Integer(y),
+                CsiParam::P(b';'),
+                CsiParam::Integer(x),
+            ],
+        ) => actor.handle(Action::Goto(*y as i32 - 1, *x as usize - 1)),
+        (b'I', []) => actor.handle(Action::MoveForwardTabs(1)),
+        (b'I', [CsiParam::Integer(count)]) => {
+            actor.handle(Action::MoveForwardTabs(*count as u16))
+        },
+        (b'J', []) => actor.handle(Action::ClearScreen(ClearMode::Below)),
+        (b'J', [CsiParam::Integer(mode)]) => {
+            let mode = match mode {
+                0 => ClearMode::Below,
+                1 => ClearMode::Above,
+                2 => ClearMode::All,
+                3 => ClearMode::Saved,
+                _ => {
+                    return unexpected(raw_params, byte);
+                },
+            };
+
+            actor.handle(Action::ClearScreen(mode));
+        },
+        (b'K', []) => actor.handle(Action::ClearLine(LineClearMode::Right)),
+        (b'K', [CsiParam::Integer(mode)]) => {
+            let mode = match mode {
+                0 => LineClearMode::Right,
+                1 => LineClearMode::Left,
+                2 => LineClearMode::All,
+                _ => {
+                    return unexpected(raw_params, byte);
+                },
+            };
+
+            actor.handle(Action::ClearLine(mode));
+        },
+        (b'L', []) => actor.handle(Action::InsertBlankLines(1)),
+        (b'L', [CsiParam::Integer(count)]) => {
+            actor.handle(Action::InsertBlankLines(*count as usize))
+        },
+        (b'M', []) => actor.handle(Action::DeleteLines(1)),
+        (b'M', [CsiParam::Integer(count)]) => {
+            actor.handle(Action::DeleteLines(*count as usize))
+        },
+        (b'n', []) => {
+            actor.handle(TerminalControlAction::ReportDeviceStatus(0).into())
+        },
+        (b'n', [CsiParam::Integer(report)]) => actor.handle(
+            TerminalControlAction::ReportDeviceStatus(*report as usize).into(),
+        ),
+        (b'P', []) => actor.handle(Action::DeleteChars(1)),
+        (b'P', [CsiParam::Integer(count)]) => {
+            actor.handle(Action::DeleteChars(*count as usize))
+        },
+
+        (
+            b'r',
+            [
+                CsiParam::Integer(top),
+                CsiParam::P(b';'),
+                CsiParam::Integer(bottom),
+            ],
+        ) => actor.handle(Action::SetScrollingRegion(
+            *top as usize,
+            *bottom as usize,
+        )),
+        (b'S', []) => actor.handle(Action::ScrollUp(1)),
+        (b'S', [CsiParam::Integer(count)]) => {
+            actor.handle(Action::ScrollUp(*count as usize))
+        },
+        (b's', [..]) => actor.handle(Action::SaveCursorPosition),
+        (b'T', []) => actor.handle(Action::ScrollDown(1)),
+        (b'T', [CsiParam::Integer(count)]) => {
+            actor.handle(Action::ScrollDown(*count as usize))
+        },
+        (b't', [CsiParam::Integer(id)]) => match *id {
+            14 => actor.handle(
+                TerminalControlAction::RequestTextAreaSizeByPixels.into(),
+            ),
+            18 => actor.handle(
+                TerminalControlAction::RequestTextAreaSizeByChars.into(),
+            ),
+            22 => actor.handle(TerminalControlAction::PushWindowTitle.into()),
+            23 => actor.handle(TerminalControlAction::PopWindowTitle.into()),
+            _ => unexpected(raw_params, byte),
+        },
+        (b'X', []) => actor.handle(Action::EraseChars(1)),
+        (b'X', [CsiParam::Integer(count)]) => {
+            actor.handle(Action::EraseChars(*count as usize))
+        },
+        (b'Z', []) => actor.handle(Action::MoveBackwardTabs(1)),
+        (b'Z', [CsiParam::Integer(count)]) => {
+            actor.handle(Action::MoveBackwardTabs(*count as u16))
+        },
+        _ => unexpected(raw_params, byte),
+    };
 }
 
 #[inline]
-fn attrs_from_sgr_parameters<A: Actor>(handler: &mut A, params: Vec<u16>) {
+fn attrs_from_sgr_parameters<A: Actor>(actor: &mut A, params: &[CsiParam]) {
     let mut iter = params.into_iter().peekable();
 
     while let Some(param) = iter.next() {
         let attr = match param {
-            0 => Some(CharacterAttribute::Reset),
-            1 => Some(CharacterAttribute::Bold),
-            2 => Some(CharacterAttribute::Dim),
-            3 => Some(CharacterAttribute::Italic),
-            4 => match iter.peek().copied() {
-                Some(0) => {
+            CsiParam::Integer(0) => Some(CharacterAttribute::Reset),
+            CsiParam::Integer(1) => Some(CharacterAttribute::Bold),
+            CsiParam::Integer(2) => Some(CharacterAttribute::Dim),
+            CsiParam::Integer(3) => Some(CharacterAttribute::Italic),
+            CsiParam::Integer(4) => match iter.peek().copied() {
+                Some(CsiParam::Integer(0)) => {
                     iter.next();
                     Some(CharacterAttribute::CancelUnderline)
                 },
-                Some(2) => {
+                Some(CsiParam::Integer(2)) => {
                     iter.next();
                     Some(CharacterAttribute::DoubleUnderline)
                 },
-                Some(3) => {
+                Some(CsiParam::Integer(3)) => {
                     iter.next();
                     Some(CharacterAttribute::Undercurl)
                 },
-                Some(4) => {
+                Some(CsiParam::Integer(4)) => {
                     iter.next();
                     Some(CharacterAttribute::DottedUnderline)
                 },
-                Some(5) => {
+                Some(CsiParam::Integer(5)) => {
                     iter.next();
                     Some(CharacterAttribute::DashedUnderline)
                 },
                 _ => Some(CharacterAttribute::Underline),
             },
-            5 => Some(CharacterAttribute::BlinkSlow),
-            6 => Some(CharacterAttribute::BlinkFast),
-            7 => Some(CharacterAttribute::Reverse),
-            8 => Some(CharacterAttribute::Hidden),
-            9 => Some(CharacterAttribute::Strike),
-            21 => Some(CharacterAttribute::CancelBold),
-            22 => Some(CharacterAttribute::CancelBoldDim),
-            23 => Some(CharacterAttribute::CancelItalic),
-            24 => Some(CharacterAttribute::CancelUnderline),
-            25 => Some(CharacterAttribute::CancelBlink),
-            27 => Some(CharacterAttribute::CancelReverse),
-            28 => Some(CharacterAttribute::CancelHidden),
-            29 => Some(CharacterAttribute::CancelStrike),
-            30 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::Black,
-            ))),
-            31 => {
+            CsiParam::Integer(5) => Some(CharacterAttribute::BlinkSlow),
+            CsiParam::Integer(6) => Some(CharacterAttribute::BlinkFast),
+            CsiParam::Integer(7) => Some(CharacterAttribute::Reverse),
+            CsiParam::Integer(8) => Some(CharacterAttribute::Hidden),
+            CsiParam::Integer(9) => Some(CharacterAttribute::Strike),
+            CsiParam::Integer(21) => Some(CharacterAttribute::CancelBold),
+            CsiParam::Integer(22) => Some(CharacterAttribute::CancelBoldDim),
+            CsiParam::Integer(23) => Some(CharacterAttribute::CancelItalic),
+            CsiParam::Integer(24) => Some(CharacterAttribute::CancelUnderline),
+            CsiParam::Integer(25) => Some(CharacterAttribute::CancelBlink),
+            CsiParam::Integer(27) => Some(CharacterAttribute::CancelReverse),
+            CsiParam::Integer(28) => Some(CharacterAttribute::CancelHidden),
+            CsiParam::Integer(29) => Some(CharacterAttribute::CancelStrike),
+            CsiParam::Integer(30) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::Black),
+            )),
+            CsiParam::Integer(31) => {
                 Some(CharacterAttribute::Foreground(Color::Std(StdColor::Red)))
             },
-            32 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::Green,
-            ))),
-            33 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::Yellow,
-            ))),
-            34 => {
+            CsiParam::Integer(32) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::Green),
+            )),
+            CsiParam::Integer(33) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::Yellow),
+            )),
+            CsiParam::Integer(34) => {
                 Some(CharacterAttribute::Foreground(Color::Std(StdColor::Blue)))
             },
-            35 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::Magenta,
-            ))),
-            36 => {
+            CsiParam::Integer(35) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::Magenta),
+            )),
+            CsiParam::Integer(36) => {
                 Some(CharacterAttribute::Foreground(Color::Std(StdColor::Cyan)))
             },
-            37 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::White,
-            ))),
-            38 => {
+            CsiParam::Integer(37) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::White),
+            )),
+            CsiParam::Integer(38) => {
                 parse_sgr_color(&mut iter).map(CharacterAttribute::Foreground)
             },
-            39 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::Foreground,
-            ))),
-            40 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::Black,
-            ))),
-            41 => {
+            CsiParam::Integer(39) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::Foreground),
+            )),
+            CsiParam::Integer(40) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::Black),
+            )),
+            CsiParam::Integer(41) => {
                 Some(CharacterAttribute::Background(Color::Std(StdColor::Red)))
             },
-            42 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::Green,
-            ))),
-            43 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::Yellow,
-            ))),
-            44 => {
+            CsiParam::Integer(42) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::Green),
+            )),
+            CsiParam::Integer(43) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::Yellow),
+            )),
+            CsiParam::Integer(44) => {
                 Some(CharacterAttribute::Background(Color::Std(StdColor::Blue)))
             },
-            45 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::Magenta,
-            ))),
-            46 => {
+            CsiParam::Integer(45) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::Magenta),
+            )),
+            CsiParam::Integer(46) => {
                 Some(CharacterAttribute::Background(Color::Std(StdColor::Cyan)))
             },
-            47 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::White,
-            ))),
-            48 => {
+            CsiParam::Integer(47) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::White),
+            )),
+            CsiParam::Integer(48) => {
                 parse_sgr_color(&mut iter).map(CharacterAttribute::Background)
             },
-            49 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::Background,
-            ))),
-            58 => parse_sgr_color(&mut iter)
+            CsiParam::Integer(49) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::Background),
+            )),
+            CsiParam::Integer(58) => parse_sgr_color(&mut iter)
                 .map(|color| CharacterAttribute::UnderlineColor(Some(color))),
-            59 => Some(CharacterAttribute::UnderlineColor(None)),
-            90 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::BrightBlack,
-            ))),
-            91 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::BrightRed,
-            ))),
-            92 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::BrightGreen,
-            ))),
-            93 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::BrightYellow,
-            ))),
-            94 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::BrightBlue,
-            ))),
-            95 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::BrightMagenta,
-            ))),
-            96 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::BrightCyan,
-            ))),
-            97 => Some(CharacterAttribute::Foreground(Color::Std(
-                StdColor::BrightWhite,
-            ))),
-            100 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::BrightBlack,
-            ))),
-            101 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::BrightRed,
-            ))),
-            102 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::BrightGreen,
-            ))),
-            103 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::BrightYellow,
-            ))),
-            104 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::BrightBlue,
-            ))),
-            105 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::BrightMagenta,
-            ))),
-            106 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::BrightCyan,
-            ))),
-            107 => Some(CharacterAttribute::Background(Color::Std(
-                StdColor::BrightWhite,
-            ))),
+            CsiParam::Integer(59) => {
+                Some(CharacterAttribute::UnderlineColor(None))
+            },
+            CsiParam::Integer(90) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::BrightBlack),
+            )),
+            CsiParam::Integer(91) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::BrightRed),
+            )),
+            CsiParam::Integer(92) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::BrightGreen),
+            )),
+            CsiParam::Integer(93) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::BrightYellow),
+            )),
+            CsiParam::Integer(94) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::BrightBlue),
+            )),
+            CsiParam::Integer(95) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::BrightMagenta),
+            )),
+            CsiParam::Integer(96) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::BrightCyan),
+            )),
+            CsiParam::Integer(97) => Some(CharacterAttribute::Foreground(
+                Color::Std(StdColor::BrightWhite),
+            )),
+            CsiParam::Integer(100) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::BrightBlack),
+            )),
+            CsiParam::Integer(101) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::BrightRed),
+            )),
+            CsiParam::Integer(102) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::BrightGreen),
+            )),
+            CsiParam::Integer(103) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::BrightYellow),
+            )),
+            CsiParam::Integer(104) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::BrightBlue),
+            )),
+            CsiParam::Integer(105) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::BrightMagenta),
+            )),
+            CsiParam::Integer(106) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::BrightCyan),
+            )),
+            CsiParam::Integer(107) => Some(CharacterAttribute::Background(
+                Color::Std(StdColor::BrightWhite),
+            )),
             _ => None,
         };
 
         if let Some(attr) = attr {
-            handler.handle(Action::SetCharacterAttribute(attr));
+            actor.handle(Action::SetCharacterAttribute(attr));
         }
     }
+}
+
+fn parse_cursor_style(raw_shape: i64) -> Option<CursorStyle> {
+    let shape = match raw_shape {
+        0 | 1 | 2 => Some(CursorShape::Block),
+        3 | 4 => Some(CursorShape::Underline),
+        5 | 6 => Some(CursorShape::Beam),
+        _ => None,
+    };
+
+    shape.map(|shape| CursorStyle {
+        shape,
+        blinking: raw_shape % 2 == 1,
+    })
 }
 
 fn parse_params(params: &[CsiParam]) -> Vec<u16> {
@@ -842,8 +960,6 @@ fn parse_params(params: &[CsiParam]) -> Vec<u16> {
 
     if let Some(value) = pending {
         values.push(value);
-    } else if values.is_empty() {
-        values.push(0);
     }
 
     values

@@ -12,9 +12,8 @@ mod keyboard;
 mod mode;
 mod osc;
 mod parser;
-mod sync;
 
-pub use actor::{Action, Actor};
+pub use actor::{Action, Actor, TerminalControlAction};
 pub use attributes::*;
 pub use charset::*;
 pub use clipboard::*;

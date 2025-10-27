@@ -3,6 +3,8 @@ use std::{
     str::FromStr,
 };
 
+use otty_vte::CsiParam;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Color {
     Std(StdColor),
@@ -191,21 +193,23 @@ fn parse_rgb_color(input: &[u8]) -> Option<Rgb> {
     Some(Rgb { r, g, b })
 }
 
-pub(crate) fn parse_sgr_color<I>(iter: &mut I) -> Option<Color>
+pub(crate) fn parse_sgr_color<'a, I>(iter: &mut I) -> Option<Color>
 where
-    I: Iterator<Item = u16>,
+    I: Iterator<Item = &'a CsiParam>,
 {
-    match iter.next() {
-        Some(5) => {
-            let index = iter.next()?;
-            (index <= u8::MAX as u16).then_some(Color::Indexed(index as u8))
-        },
-        Some(2) => {
-            let r = iter.next()?;
-            let g = iter.next()?;
-            let b = iter.next()?;
+    let mut iter = iter.filter(|&el| el.as_integer().is_some());
 
-            if r > u8::MAX as u16 || g > u8::MAX as u16 || b > u8::MAX as u16 {
+    match iter.next() {
+        Some(CsiParam::Integer(5)) => {
+            let index = iter.next()?.as_integer()?;
+            (index <= u8::MAX as i64).then_some(Color::Indexed(index as u8))
+        },
+        Some(CsiParam::Integer(2)) => {
+            let r = iter.next()?.as_integer()?;
+            let g = iter.next()?.as_integer()?;
+            let b = iter.next()?.as_integer()?;
+
+            if r > u8::MAX as i64 || g > u8::MAX as i64 || b > u8::MAX as i64 {
                 return None;
             }
 

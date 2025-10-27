@@ -2,6 +2,7 @@
 
 use std::ops::{Index, IndexMut, Range};
 use std::sync::Arc;
+use std::time::Instant;
 use std::{cmp, mem, ptr, slice, str};
 
 use otty_escape::{
@@ -9,6 +10,7 @@ use otty_escape::{
     ClipboardType as OttyClipboardType, Color, CursorShape, CursorStyle,
     Hyperlink, KeyboardMode, KeyboardModeApplyBehavior, LineClearMode, Mode,
     NamedMode, NamedPrivateMode, PrivateMode, Rgb, StdColor, TabClearMode,
+    TerminalControlAction,
 };
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -297,6 +299,52 @@ impl TermDamageState {
     }
 }
 
+/// Maximum number of actions to buffer during synchronized update (2MB equivalent).
+const MAX_SYNC_ACTIONS: usize = 10000;
+
+/// Synchronized update state for BSU/ESU (DEC mode 2026).
+struct SyncState {
+    /// Whether sync mode is active.
+    active: bool,
+    /// Buffered actions during sync.
+    buffer: Vec<Action>,
+    /// Timeout for sync mode.
+    timeout: Option<std::time::Instant>,
+}
+
+impl Default for SyncState {
+    fn default() -> Self {
+        Self {
+            active: false,
+            buffer: Vec::with_capacity(MAX_SYNC_ACTIONS),
+            timeout: None,
+        }
+    }
+}
+
+impl SyncState {
+    /// Begin a synchronized update.
+    fn begin(&mut self) {
+        self.active = true;
+        self.timeout = Some(
+            std::time::Instant::now() + std::time::Duration::from_millis(10),
+        );
+        self.buffer.clear();
+    }
+
+    /// End a synchronized update and return buffered actions.
+    fn end(&mut self) -> Vec<Action> {
+        self.active = false;
+        self.timeout = None;
+        mem::take(&mut self.buffer)
+    }
+
+    /// Check if the sync timeout has expired.
+    fn is_expired(&self) -> bool {
+        self.timeout.is_some_and(|t| std::time::Instant::now() > t)
+    }
+}
+
 pub struct Term<T> {
     /// Terminal focus controlling the cursor shape.
     pub is_focused: bool,
@@ -359,6 +407,9 @@ pub struct Term<T> {
 
     /// Config directly for the terminal.
     config: Config,
+
+    /// Synchronized update state (BSU/ESU mode 2026).
+    sync_state: SyncState,
 }
 
 /// Configuration options for the [`Term`].
@@ -383,6 +434,9 @@ pub struct Config {
 
     /// OSC52 support mode.
     pub osc52: Osc52,
+
+    /// Enable synchronized updates (DEC mode 2026).
+    pub enable_sync_updates: bool,
 }
 
 impl Default for Config {
@@ -394,6 +448,7 @@ impl Default for Config {
             vi_mode_cursor_style: Default::default(),
             kitty_keyboard: Default::default(),
             osc52: Default::default(),
+            enable_sync_updates: true,
         }
     }
 }
@@ -482,6 +537,7 @@ impl<T> Term<T> {
             selection: Default::default(),
             title: Default::default(),
             mode: Default::default(),
+            sync_state: Default::default(),
         }
     }
 
@@ -1180,6 +1236,11 @@ impl<T> Term<T> {
         trace!("Setting keyboard mode to {new_mode:?}");
         self.mode |= new_mode;
     }
+
+    #[inline]
+    pub(crate) fn timeout(&self) -> Option<Instant> {
+        self.sync_state.timeout
+    }
 }
 
 impl<T> Dimensions for Term<T> {
@@ -1201,1253 +1262,1458 @@ impl<T> Dimensions for Term<T> {
 
 impl<T: EventListener> Actor for Term<T> {
     #[inline]
+    fn begin_sync(&mut self) {
+        if self.config.enable_sync_updates {
+            trace!("[sync] Beginning synchronized update");
+            self.sync_state.begin();
+        }
+    }
+
+    #[inline]
+    fn end_sync(&mut self) {
+        trace!(
+            "[sync] Ending synchronized update, flushing {} actions",
+            self.sync_state.buffer.len()
+        );
+        let buffered_actions = self.sync_state.end();
+        self.handle_actions_batch(buffered_actions);
+    }
+
+    #[inline]
     fn handle(&mut self, action: otty_escape::Action) {
-        use Action::*;
+        if !self.sync_state.active || action.is_control() {
+            self.handle_action_internal(action);
+            return;
+        }
 
-        match action {
-            Print(c) => {
-                // Number of cells the char will occupy.
-                let width = match c.width() {
-                    Some(width) => width,
-                    None => return,
-                };
+        self.sync_state.buffer.push(action);
 
-                // Handle zero-width characters.
-                if width == 0 {
-                    // Get previous column.
-                    let mut column = self.grid.cursor.point.column;
-                    if !self.grid.cursor.input_needs_wrap {
-                        column.0 = column.saturating_sub(1);
-                    }
+        if self.sync_state.is_expired()
+            || self.sync_state.buffer.len() >= MAX_SYNC_ACTIONS
+        {
+            let buffered = std::mem::take(&mut self.sync_state.buffer);
+            self.sync_state.active = false;
+            self.handle_actions_batch(buffered);
+        }
+    }
+}
 
-                    // Put zerowidth characters over first fullwidth character cell.
-                    let line = self.grid.cursor.point.line;
-                    if self.grid[line][column]
-                        .flags
-                        .contains(Flags::WIDE_CHAR_SPACER)
-                    {
-                        column.0 = column.saturating_sub(1);
-                    }
+impl<T: EventListener> Term<T> {
+    #[inline]
+    fn handle_actions_batch<I: IntoIterator<Item = otty_escape::Action>>(
+        &mut self,
+        iter: I,
+    ) {
+        for a in iter {
+            self.handle_action_internal(a);
+        }
+    }
 
-                    self.grid[line][column].push_zerowidth(c);
-                    return;
-                }
+    #[inline]
+    fn print(&mut self, c: char) {
+        // Number of cells the char will occupy.
+        let width = match c.width() {
+            Some(width) => width,
+            None => return,
+        };
 
-                // Move cursor to next line.
-                if self.grid.cursor.input_needs_wrap {
-                    self.wrapline();
-                }
+        // Handle zero-width characters.
+        if width == 0 {
+            // Get previous column.
+            let mut column = self.grid.cursor.point.column;
+            if !self.grid.cursor.input_needs_wrap {
+                column.0 = column.saturating_sub(1);
+            }
 
-                // If in insert mode, first shift cells to the right.
-                let columns = self.columns();
-                if self.mode.contains(TermMode::INSERT)
-                    && self.grid.cursor.point.column + width < columns
-                {
-                    let line = self.grid.cursor.point.line;
-                    let col = self.grid.cursor.point.column;
-                    let row = &mut self.grid[line][..];
+            // Put zerowidth characters over first fullwidth character cell.
+            let line = self.grid.cursor.point.line;
+            if self.grid[line][column]
+                .flags
+                .contains(Flags::WIDE_CHAR_SPACER)
+            {
+                column.0 = column.saturating_sub(1);
+            }
 
-                    for col in (col.0..(columns - width)).rev() {
-                        row.swap(col + width, col);
-                    }
-                }
+            self.grid[line][column].push_zerowidth(c);
+            return;
+        }
 
-                if width == 1 {
-                    self.write_at_cursor(c);
-                } else {
-                    if self.grid.cursor.point.column + 1 >= columns {
-                        if self.mode.contains(TermMode::LINE_WRAP) {
-                            // Insert placeholder before wide char if glyph does not fit in this row.
-                            self.grid
-                                .cursor
-                                .template
-                                .flags
-                                .insert(Flags::LEADING_WIDE_CHAR_SPACER);
-                            self.write_at_cursor(' ');
-                            self.grid
-                                .cursor
-                                .template
-                                .flags
-                                .remove(Flags::LEADING_WIDE_CHAR_SPACER);
-                            self.wrapline();
-                        } else {
-                            // Prevent out of bounds crash when linewrapping is disabled.
-                            self.grid.cursor.input_needs_wrap = true;
-                            return;
-                        }
-                    }
+        // Move cursor to next line.
+        if self.grid.cursor.input_needs_wrap {
+            self.wrapline();
+        }
 
-                    // Write full width glyph to current cursor cell.
-                    self.grid.cursor.template.flags.insert(Flags::WIDE_CHAR);
-                    self.write_at_cursor(c);
-                    self.grid.cursor.template.flags.remove(Flags::WIDE_CHAR);
+        // If in insert mode, first shift cells to the right.
+        let columns = self.columns();
+        if self.mode.contains(TermMode::INSERT)
+            && self.grid.cursor.point.column + width < columns
+        {
+            let line = self.grid.cursor.point.line;
+            let col = self.grid.cursor.point.column;
+            let row = &mut self.grid[line][..];
 
-                    // Write spacer to cell following the wide glyph.
-                    self.grid.cursor.point.column += 1;
+            for col in (col.0..(columns - width)).rev() {
+                row.swap(col + width, col);
+            }
+        }
+
+        if width == 1 {
+            self.write_at_cursor(c);
+        } else {
+            if self.grid.cursor.point.column + 1 >= columns {
+                if self.mode.contains(TermMode::LINE_WRAP) {
+                    // Insert placeholder before wide char if glyph does not fit in this row.
                     self.grid
                         .cursor
                         .template
                         .flags
-                        .insert(Flags::WIDE_CHAR_SPACER);
+                        .insert(Flags::LEADING_WIDE_CHAR_SPACER);
                     self.write_at_cursor(' ');
                     self.grid
                         .cursor
                         .template
                         .flags
-                        .remove(Flags::WIDE_CHAR_SPACER);
-                }
-
-                if self.grid.cursor.point.column + 1 < columns {
-                    self.grid.cursor.point.column += 1;
+                        .remove(Flags::LEADING_WIDE_CHAR_SPACER);
+                    self.wrapline();
                 } else {
+                    // Prevent out of bounds crash when linewrapping is disabled.
                     self.grid.cursor.input_needs_wrap = true;
-                }
-            },
-            ScreenAlignmentDisplay => {
-                trace!("Decalnning");
-
-                for line in (0..self.screen_lines()).map(Line::from) {
-                    for column in 0..self.columns() {
-                        let cell = &mut self.grid[line][Column(column)];
-                        *cell = Cell::default();
-                        cell.c = 'E';
-                    }
-                }
-
-                self.mark_fully_damaged();
-            },
-            Goto(line, col) => {
-                let line = Line(line);
-                let col = Column(col);
-
-                trace!("Going to: line={line}, col={col}");
-                let (y_offset, max_y) = if self.mode.contains(TermMode::ORIGIN)
-                {
-                    (self.scroll_region.start, self.scroll_region.end - 1)
-                } else {
-                    (Line(0), self.bottommost_line())
-                };
-
-                self.damage_cursor();
-                self.grid.cursor.point.line =
-                    cmp::max(cmp::min(line + y_offset, max_y), Line(0));
-                self.grid.cursor.point.column =
-                    cmp::min(col, self.last_column());
-                self.damage_cursor();
-                self.grid.cursor.input_needs_wrap = false;
-            },
-            GotoRow(line) => {
-                trace!("Going to line: {line}");
-                self.handle(Action::Goto(line, self.grid.cursor.point.column.0))
-            },
-            GotoColumn(col) => {
-                trace!("Going to column: {col}");
-                self.handle(Action::Goto(self.grid.cursor.point.line.0, col))
-            },
-            InsertBlank(count) => {
-                let cursor = &self.grid.cursor;
-                let bg = cursor.template.bg;
-
-                // Ensure inserting within terminal bounds
-                let count =
-                    cmp::min(count, self.columns() - cursor.point.column.0);
-
-                let source = cursor.point.column;
-                let destination = cursor.point.column.0 + count;
-                let num_cells = self.columns() - destination;
-
-                let line = cursor.point.line;
-                self.damage
-                    .damage_line(line.0 as usize, 0, self.columns() - 1);
-
-                let row = &mut self.grid[line][..];
-
-                for offset in (0..num_cells).rev() {
-                    row.swap(destination + offset, source.0 + offset);
-                }
-
-                // Cells were just moved out toward the end of the line;
-                // fill in between source and dest with blanks.
-                for cell in &mut row[source.0..destination] {
-                    *cell = bg.into();
-                }
-            },
-            MoveUp {
-                rows,
-                carrage_return_needed,
-            } => {
-                if carrage_return_needed {
-                    trace!("Moving up and cr: {rows}");
-
-                    let line = self.grid.cursor.point.line - rows;
-                    self.handle(Action::Goto(line.0, 0));
-                } else {
-                    trace!("Moving up: {rows}");
-
-                    let line = self.grid.cursor.point.line - rows;
-                    let column = self.grid.cursor.point.column;
-                    self.handle(Action::Goto(line.0, column.0));
-                }
-            },
-            MoveDown {
-                rows,
-                carrage_return_needed,
-            } => {
-                if carrage_return_needed {
-                    trace!("Moving down and cr: {rows}");
-
-                    let line = self.grid.cursor.point.line + rows;
-                    self.handle(Action::Goto(line.0, 0));
-                } else {
-                    trace!("Moving down: {rows}");
-
-                    let line = self.grid.cursor.point.line + rows;
-                    let column = self.grid.cursor.point.column;
-                    self.handle(Action::Goto(line.0, column.0));
-                }
-            },
-            MoveForward(cols) => {
-                trace!("Moving forward: {cols}");
-                let last_column = cmp::min(
-                    self.grid.cursor.point.column + cols,
-                    self.last_column(),
-                );
-
-                let cursor_line = self.grid.cursor.point.line.0 as usize;
-                self.damage.damage_line(
-                    cursor_line,
-                    self.grid.cursor.point.column.0,
-                    last_column.0,
-                );
-
-                self.grid.cursor.point.column = last_column;
-                self.grid.cursor.input_needs_wrap = false;
-            },
-            MoveBackward(cols) => {
-                trace!("Moving backward: {cols}");
-                let column = self.grid.cursor.point.column.saturating_sub(cols);
-
-                let cursor_line = self.grid.cursor.point.line.0 as usize;
-                self.damage.damage_line(
-                    cursor_line,
-                    column,
-                    self.grid.cursor.point.column.0,
-                );
-
-                self.grid.cursor.point.column = Column(column);
-                self.grid.cursor.input_needs_wrap = false;
-            },
-            IdentifyTerminal(attr) => match attr {
-                None => {
-                    trace!("Reporting primary device attributes");
-                    let text = String::from("\x1b[?6c");
-                    self.event_proxy.send_event(Event::PtyWrite(text));
-                },
-                Some('>') => {
-                    trace!("Reporting secondary device attributes");
-                    let version = version_number(env!("CARGO_PKG_VERSION"));
-                    let text = format!("\x1b[>0;{version};1c");
-                    self.event_proxy.send_event(Event::PtyWrite(text));
-                },
-                _ => debug!("Unsupported device attributes intermediate"),
-            },
-            ReportKeyboardMode => {
-                if !self.config.kitty_keyboard {
                     return;
                 }
+            }
 
-                trace!("Reporting active keyboard mode");
-                let current_mode = self
-                    .keyboard_mode_stack
-                    .last()
-                    .unwrap_or(&KeyboardMode::NO_MODE)
-                    .bits();
-                let text = format!("\x1b[?{current_mode}u");
+            // Write full width glyph to current cursor cell.
+            self.grid.cursor.template.flags.insert(Flags::WIDE_CHAR);
+            self.write_at_cursor(c);
+            self.grid.cursor.template.flags.remove(Flags::WIDE_CHAR);
+
+            // Write spacer to cell following the wide glyph.
+            self.grid.cursor.point.column += 1;
+            self.grid
+                .cursor
+                .template
+                .flags
+                .insert(Flags::WIDE_CHAR_SPACER);
+            self.write_at_cursor(' ');
+            self.grid
+                .cursor
+                .template
+                .flags
+                .remove(Flags::WIDE_CHAR_SPACER);
+        }
+
+        if self.grid.cursor.point.column + 1 < columns {
+            self.grid.cursor.point.column += 1;
+        } else {
+            self.grid.cursor.input_needs_wrap = true;
+        }
+    }
+
+    #[inline]
+    fn screen_alignment_display(&mut self) {
+        trace!("Decalnning");
+
+        for line in (0..self.screen_lines()).map(Line::from) {
+            for column in 0..self.columns() {
+                let cell = &mut self.grid[line][Column(column)];
+                *cell = Cell::default();
+                cell.c = 'E';
+            }
+        }
+
+        self.mark_fully_damaged();
+    }
+
+    #[inline]
+    fn goto(&mut self, line: i32, col: usize) {
+        let line = Line(line);
+        let col = Column(col);
+
+        trace!("Going to: line={line}, col={col}");
+        let (y_offset, max_y) = if self.mode.contains(TermMode::ORIGIN) {
+            (self.scroll_region.start, self.scroll_region.end - 1)
+        } else {
+            (Line(0), self.bottommost_line())
+        };
+
+        self.damage_cursor();
+        self.grid.cursor.point.line =
+            cmp::max(cmp::min(line + y_offset, max_y), Line(0));
+        self.grid.cursor.point.column = cmp::min(col, self.last_column());
+        self.damage_cursor();
+        self.grid.cursor.input_needs_wrap = false;
+    }
+
+    #[inline]
+    fn insert_blank(&mut self, count: usize) {
+        let cursor = &self.grid.cursor;
+        let bg = cursor.template.bg;
+
+        // Ensure inserting within terminal bounds
+        let count = cmp::min(count, self.columns() - cursor.point.column.0);
+
+        let source = cursor.point.column;
+        let destination = cursor.point.column.0 + count;
+        let num_cells = self.columns() - destination;
+
+        let line = cursor.point.line;
+        self.damage
+            .damage_line(line.0 as usize, 0, self.columns() - 1);
+
+        let row = &mut self.grid[line][..];
+
+        for offset in (0..num_cells).rev() {
+            row.swap(destination + offset, source.0 + offset);
+        }
+
+        // Cells were just moved out toward the end of the line;
+        // fill in between source and dest with blanks.
+        for cell in &mut row[source.0..destination] {
+            *cell = bg.into();
+        }
+    }
+
+    #[inline]
+    fn move_up(&mut self, rows: usize, carrage_return_needed: bool) {
+        if carrage_return_needed {
+            trace!("Moving up and cr: {rows}");
+
+            let line = self.grid.cursor.point.line - rows;
+            self.goto(line.0, 0);
+        } else {
+            trace!("Moving up: {rows}");
+
+            let line = self.grid.cursor.point.line - rows;
+            let column = self.grid.cursor.point.column;
+            self.goto(line.0, column.0);
+        }
+    }
+
+    #[inline]
+    fn move_down(&mut self, rows: usize, carrage_return_needed: bool) {
+        if carrage_return_needed {
+            trace!("Moving down and cr: {rows}");
+
+            let line = self.grid.cursor.point.line + rows;
+            self.goto(line.0, 0);
+        } else {
+            trace!("Moving down: {rows}");
+
+            let line = self.grid.cursor.point.line + rows;
+            let column = self.grid.cursor.point.column;
+            self.goto(line.0, column.0);
+        }
+    }
+
+    #[inline]
+    fn move_forward(&mut self, cols: usize) {
+        trace!("Moving forward: {cols}");
+        let last_column =
+            cmp::min(self.grid.cursor.point.column + cols, self.last_column());
+
+        let cursor_line = self.grid.cursor.point.line.0 as usize;
+        self.damage.damage_line(
+            cursor_line,
+            self.grid.cursor.point.column.0,
+            last_column.0,
+        );
+
+        self.grid.cursor.point.column = last_column;
+        self.grid.cursor.input_needs_wrap = false;
+    }
+
+    #[inline]
+    fn move_backward(&mut self, cols: usize) {
+        trace!("Moving backward: {cols}");
+        let column = self.grid.cursor.point.column.saturating_sub(cols);
+
+        let cursor_line = self.grid.cursor.point.line.0 as usize;
+        self.damage.damage_line(
+            cursor_line,
+            column,
+            self.grid.cursor.point.column.0,
+        );
+
+        self.grid.cursor.point.column = Column(column);
+        self.grid.cursor.input_needs_wrap = false;
+    }
+
+    #[inline]
+    fn identify_terminal(&mut self, attr: Option<char>) {
+        match attr {
+            None => {
+                trace!("Reporting primary device attributes");
+                let text = String::from("\x1b[?6c");
                 self.event_proxy.send_event(Event::PtyWrite(text));
             },
-            PushKeyboardMode(mode) => {
-                if !self.config.kitty_keyboard {
-                    return;
+            Some('>') => {
+                trace!("Reporting secondary device attributes");
+                let version = version_number(env!("CARGO_PKG_VERSION"));
+                let text = format!("\x1b[>0;{version};1c");
+                self.event_proxy.send_event(Event::PtyWrite(text));
+            },
+            _ => debug!("Unsupported device attributes intermediate"),
+        }
+    }
+
+    #[inline]
+    fn report_keyboard_mode(&mut self) {
+        if !self.config.kitty_keyboard {
+            return;
+        }
+
+        trace!("Reporting active keyboard mode");
+        let current_mode = self
+            .keyboard_mode_stack
+            .last()
+            .unwrap_or(&KeyboardMode::NO_MODE)
+            .bits();
+        let text = format!("\x1b[?{current_mode}u");
+        self.event_proxy.send_event(Event::PtyWrite(text));
+    }
+
+    #[inline]
+    fn push_keyboard_mode(&mut self, mode: KeyboardMode) {
+        if !self.config.kitty_keyboard {
+            return;
+        }
+
+        trace!("Pushing `{mode:?}` keyboard mode into the stack");
+
+        if self.keyboard_mode_stack.len() >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+            let removed = self.title_stack.remove(0);
+            trace!(
+                "Removing '{removed:?}' from bottom of keyboard mode stack that exceeds its \
+                maximum depth"
+            );
+        }
+
+        self.keyboard_mode_stack.push(mode);
+        self.set_keyboard_mode(mode.into(), KeyboardModeApplyBehavior::Replace);
+    }
+
+    #[inline]
+    fn pop_keyboard_modes(&mut self, count: u16) {
+        if !self.config.kitty_keyboard {
+            return;
+        }
+
+        trace!("Attempting to pop {count} keyboard modes from the stack");
+        let new_len = self
+            .keyboard_mode_stack
+            .len()
+            .saturating_sub(count as usize);
+        self.keyboard_mode_stack.truncate(new_len);
+
+        // Reload active mode.
+        let mode = self
+            .keyboard_mode_stack
+            .last()
+            .copied()
+            .unwrap_or(KeyboardMode::NO_MODE);
+        self.set_keyboard_mode(mode.into(), KeyboardModeApplyBehavior::Replace);
+    }
+
+    #[inline]
+    fn report_device_status(&mut self, arg: usize) {
+        trace!("Reporting device status: {arg}");
+        match arg {
+            5 => {
+                let text = String::from("\x1b[0n");
+                self.event_proxy.send_event(Event::PtyWrite(text));
+            },
+            6 => {
+                let pos = self.grid.cursor.point;
+                let text = format!("\x1b[{};{}R", pos.line + 1, pos.column + 1);
+                self.event_proxy.send_event(Event::PtyWrite(text));
+            },
+            _ => debug!("unknown device status query: {arg}"),
+        };
+    }
+
+    #[inline]
+    fn insert_tabs(&mut self, mut count: u16) {
+        // A tab after the last column is the same as a linebreak.
+        if self.grid.cursor.input_needs_wrap {
+            self.wrapline();
+            return;
+        }
+
+        while self.grid.cursor.point.column < self.columns() && count != 0 {
+            count -= 1;
+
+            // TODO:
+            let c = self.grid.cursor.charsets[self.active_charset].map('\t');
+            let cell = self.grid.cursor_cell();
+            if cell.c == ' ' {
+                cell.c = c;
+            }
+
+            loop {
+                if (self.grid.cursor.point.column + 1) == self.columns() {
+                    break;
                 }
 
-                trace!("Pushing `{mode:?}` keyboard mode into the stack");
+                self.grid.cursor.point.column += 1;
 
-                if self.keyboard_mode_stack.len()
-                    >= KEYBOARD_MODE_STACK_MAX_DEPTH
-                {
-                    let removed = self.title_stack.remove(0);
-                    trace!(
-                        "Removing '{removed:?}' from bottom of keyboard mode stack that exceeds its \
-                        maximum depth"
-                    );
+                if self.tabs[self.grid.cursor.point.column] {
+                    break;
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn backspace(&mut self) {
+        trace!("Backspace");
+
+        if self.grid.cursor.point.column > Column(0) {
+            let line = self.grid.cursor.point.line.0 as usize;
+            let column = self.grid.cursor.point.column.0;
+            self.grid.cursor.point.column -= 1;
+            self.grid.cursor.input_needs_wrap = false;
+            self.damage.damage_line(line, column - 1, column);
+        }
+    }
+
+    #[inline]
+    fn carriage_return(&mut self) {
+        trace!("Carriage return");
+        let new_col = 0;
+        let line = self.grid.cursor.point.line.0 as usize;
+        self.damage
+            .damage_line(line, new_col, self.grid.cursor.point.column.0);
+        self.grid.cursor.point.column = Column(new_col);
+        self.grid.cursor.input_needs_wrap = false;
+    }
+
+    #[inline]
+    fn linefeed(&mut self) {
+        trace!("Linefeed");
+        let next = self.grid.cursor.point.line + 1;
+        if next == self.scroll_region.end {
+            self.scroll_up(1);
+        } else if next < self.screen_lines() {
+            self.damage_cursor();
+            self.grid.cursor.point.line += 1;
+            self.damage_cursor();
+        }
+    }
+
+    #[inline]
+    fn bell(&mut self) {
+        trace!("Bell");
+        self.event_proxy.send_event(Event::Bell);
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.linefeed();
+
+        if self.mode.contains(TermMode::LINE_FEED_NEW_LINE) {
+            self.carriage_return();
+        }
+    }
+
+    #[inline]
+    fn set_horizontal_tab(&mut self) {
+        trace!("Setting horizontal tabstop");
+        self.tabs[self.grid.cursor.point.column] = true;
+    }
+
+    #[inline]
+    fn scroll_up(&mut self, lines: usize) {
+        let origin = self.scroll_region.start;
+        self.scroll_up_relative(origin, lines);
+    }
+
+    #[inline]
+    fn scroll_down(&mut self, lines: usize) {
+        let origin = self.scroll_region.start;
+        self.scroll_down_relative(origin, lines);
+    }
+
+    #[inline]
+    fn insert_blank_lines(&mut self, count: usize) {
+        trace!("Inserting blank {count} lines");
+
+        let origin = self.grid.cursor.point.line;
+        if self.scroll_region.contains(&origin) {
+            self.scroll_down_relative(origin, count);
+        }
+    }
+
+    #[inline]
+    fn delete_lines(&mut self, count: usize) {
+        let origin = self.grid.cursor.point.line;
+        let lines = cmp::min(self.screen_lines() - origin.0 as usize, count);
+
+        trace!("Deleting {lines} lines");
+
+        if lines > 0 && self.scroll_region.contains(&origin) {
+            self.scroll_up_relative(origin, lines);
+        }
+    }
+
+    #[inline]
+    fn erase_chars(&mut self, count: usize) {
+        let cursor = &self.grid.cursor;
+
+        trace!(
+            "Erasing chars: count={}, col={}",
+            count, cursor.point.column
+        );
+
+        let start = cursor.point.column;
+        let end = cmp::min(start + count, Column(self.columns()));
+
+        // Cleared cells have current background color set.
+        let bg = self.grid.cursor.template.bg;
+        let line = cursor.point.line;
+        self.damage.damage_line(line.0 as usize, start.0, end.0);
+        let row = &mut self.grid[line];
+        for cell in &mut row[start..end] {
+            *cell = bg.into();
+        }
+    }
+
+    #[inline]
+    fn delete_chars(&mut self, count: usize) {
+        let columns = self.columns();
+        let cursor = &self.grid.cursor;
+        let bg = cursor.template.bg;
+
+        // Ensure deleting within terminal bounds.
+        let count = cmp::min(count, columns);
+
+        let start = cursor.point.column.0;
+        let end = cmp::min(start + count, columns - 1);
+        let num_cells = columns - end;
+
+        let line = cursor.point.line;
+        self.damage
+            .damage_line(line.0 as usize, 0, self.columns() - 1);
+        let row = &mut self.grid[line][..];
+
+        for offset in 0..num_cells {
+            row.swap(start + offset, end + offset);
+        }
+
+        // Clear last `count` cells in the row. If deleting 1 char, need to delete
+        // 1 cell.
+        let end = columns - count;
+        for cell in &mut row[end..] {
+            *cell = bg.into();
+        }
+    }
+
+    #[inline]
+    fn move_backward_tabs(&mut self, count: u16) {
+        trace!("Moving backward {count} tabs");
+
+        let old_col = self.grid.cursor.point.column.0;
+        for _ in 0..count {
+            let mut col = self.grid.cursor.point.column;
+
+            if col == 0 {
+                break;
+            }
+
+            for i in (0..(col.0)).rev() {
+                if self.tabs[index::Column(i)] {
+                    col = index::Column(i);
+                    break;
+                }
+            }
+            self.grid.cursor.point.column = col;
+        }
+
+        let line = self.grid.cursor.point.line.0 as usize;
+        self.damage
+            .damage_line(line, self.grid.cursor.point.column.0, old_col);
+    }
+
+    #[inline]
+    fn move_forward_tabs(&mut self, count: u16) {
+        trace!("Moving forward {count} tabs");
+
+        let num_cols = self.columns();
+        let old_col = self.grid.cursor.point.column.0;
+        for _ in 0..count {
+            let mut col = self.grid.cursor.point.column;
+
+            if col == num_cols - 1 {
+                break;
+            }
+
+            for i in col.0 + 1..num_cols {
+                col = index::Column(i);
+                if self.tabs[col] {
+                    break;
+                }
+            }
+
+            self.grid.cursor.point.column = col;
+        }
+
+        let line = self.grid.cursor.point.line.0 as usize;
+        self.damage
+            .damage_line(line, old_col, self.grid.cursor.point.column.0);
+    }
+
+    #[inline]
+    fn save_cursor_position(&mut self) {
+        trace!("Saving cursor position");
+        self.grid.saved_cursor = self.grid.cursor.clone();
+    }
+
+    #[inline]
+    fn restore_cursor_position(&mut self) {
+        trace!("Restoring cursor position");
+
+        self.damage_cursor();
+        self.grid.cursor = self.grid.saved_cursor.clone();
+        self.damage_cursor();
+    }
+
+    #[inline]
+    fn clear_line(&mut self, mode: LineClearMode) {
+        trace!("Clearing line: {mode:?}");
+
+        let cursor = &self.grid.cursor;
+        let bg = cursor.template.bg;
+        let point = cursor.point;
+
+        let (left, right) = match mode {
+            LineClearMode::Right if cursor.input_needs_wrap => return,
+            LineClearMode::Right => (point.column, Column(self.columns())),
+            LineClearMode::Left => (Column(0), point.column + 1),
+            LineClearMode::All => (Column(0), Column(self.columns())),
+        };
+
+        self.damage
+            .damage_line(point.line.0 as usize, left.0, right.0 - 1);
+
+        let row = &mut self.grid[point.line];
+        for cell in &mut row[left..right] {
+            *cell = bg.into();
+        }
+
+        let range = self.grid.cursor.point.line..=self.grid.cursor.point.line;
+        self.selection =
+            self.selection.take().filter(|s| !s.intersects_range(range));
+    }
+
+    #[inline]
+    fn set_color(&mut self, index: usize, color: Rgb) {
+        trace!("Setting color[{index}] = {color:?}");
+
+        // Damage terminal if the color changed and it's not the cursor.
+        if index != StdColor::Cursor as usize
+            && self.colors[index] != Some(color)
+        {
+            self.mark_fully_damaged();
+        }
+
+        self.colors[index] = Some(color);
+    }
+
+    #[inline]
+    fn reset_color(&mut self, index: usize) {
+        trace!("Resetting color[{index}]");
+
+        // Damage terminal if the color changed and it's not the cursor.
+        if index != StdColor::Cursor as usize && self.colors[index].is_some() {
+            self.mark_fully_damaged();
+        }
+
+        self.colors[index] = None;
+    }
+
+    #[inline]
+    fn store_to_clipboard(
+        &mut self,
+        clipboard: OttyClipboardType,
+        payload: &[u8],
+    ) {
+        if !matches!(self.config.osc52, Osc52::OnlyCopy | Osc52::CopyPaste) {
+            debug!("Denied osc52 store");
+            return;
+        }
+
+        let clipboard_type = match clipboard {
+            OttyClipboardType::Clipboard => ClipboardType::Clipboard,
+            OttyClipboardType::Primary | OttyClipboardType::Select => {
+                ClipboardType::Selection
+            },
+            _ => return,
+        };
+
+        if let Ok(bytes) = Base64.decode(payload) {
+            if let Ok(text) = String::from_utf8(bytes) {
+                self.event_proxy
+                    .send_event(Event::ClipboardStore(clipboard_type, text));
+            }
+        }
+    }
+
+    #[inline]
+    fn clear_screen(&mut self, mode: ClearMode) {
+        trace!("Clearing screen: {mode:?}");
+        let bg = self.grid.cursor.template.bg;
+
+        let screen_lines = self.screen_lines();
+
+        match mode {
+            ClearMode::Above => {
+                let cursor = self.grid.cursor.point;
+
+                // If clearing more than one line.
+                if cursor.line > 1 {
+                    // Fully clear all lines before the current line.
+                    self.grid.reset_region(..cursor.line);
                 }
 
-                self.keyboard_mode_stack.push(mode);
-                self.set_keyboard_mode(
-                    mode.into(),
-                    KeyboardModeApplyBehavior::Replace,
-                );
-            },
-            PopKeyboardModes(to_pop) => {
-                if !self.config.kitty_keyboard {
-                    return;
-                }
-
-                trace!(
-                    "Attempting to pop {to_pop} keyboard modes from the stack"
-                );
-                let new_len = self
-                    .keyboard_mode_stack
-                    .len()
-                    .saturating_sub(to_pop as usize);
-                self.keyboard_mode_stack.truncate(new_len);
-
-                // Reload active mode.
-                let mode = self
-                    .keyboard_mode_stack
-                    .last()
-                    .copied()
-                    .unwrap_or(KeyboardMode::NO_MODE);
-                self.set_keyboard_mode(
-                    mode.into(),
-                    KeyboardModeApplyBehavior::Replace,
-                );
-            },
-            SetKeyboardMode(mode, apply) => {
-                if !self.config.kitty_keyboard {
-                    return;
-                }
-
-                self.set_keyboard_mode(mode.into(), apply);
-            },
-            ReportDeviceStatus(arg) => {
-                trace!("Reporting device status: {arg}");
-                match arg {
-                    5 => {
-                        let text = String::from("\x1b[0n");
-                        self.event_proxy.send_event(Event::PtyWrite(text));
-                    },
-                    6 => {
-                        let pos = self.grid.cursor.point;
-                        let text = format!(
-                            "\x1b[{};{}R",
-                            pos.line + 1,
-                            pos.column + 1
-                        );
-                        self.event_proxy.send_event(Event::PtyWrite(text));
-                    },
-                    _ => debug!("unknown device status query: {arg}"),
-                };
-            },
-            InsertTabs(mut count) => {
-                // A tab after the last column is the same as a linebreak.
-                if self.grid.cursor.input_needs_wrap {
-                    self.wrapline();
-                    return;
-                }
-
-                while self.grid.cursor.point.column < self.columns()
-                    && count != 0
-                {
-                    count -= 1;
-
-                    // TODO:
-                    let c = self.grid.cursor.charsets[self.active_charset]
-                        .map('\t');
-                    let cell = self.grid.cursor_cell();
-                    if cell.c == ' ' {
-                        cell.c = c;
-                    }
-
-                    loop {
-                        if (self.grid.cursor.point.column + 1) == self.columns()
-                        {
-                            break;
-                        }
-
-                        self.grid.cursor.point.column += 1;
-
-                        if self.tabs[self.grid.cursor.point.column] {
-                            break;
-                        }
-                    }
-                }
-            },
-            Backspace => {
-                trace!("Backspace");
-
-                if self.grid.cursor.point.column > Column(0) {
-                    let line = self.grid.cursor.point.line.0 as usize;
-                    let column = self.grid.cursor.point.column.0;
-                    self.grid.cursor.point.column -= 1;
-                    self.grid.cursor.input_needs_wrap = false;
-                    self.damage.damage_line(line, column - 1, column);
-                }
-            },
-            CarriageReturn => {
-                trace!("Carriage return");
-                let new_col = 0;
-                let line = self.grid.cursor.point.line.0 as usize;
-                self.damage.damage_line(
-                    line,
-                    new_col,
-                    self.grid.cursor.point.column.0,
-                );
-                self.grid.cursor.point.column = Column(new_col);
-                self.grid.cursor.input_needs_wrap = false;
-            },
-            LineFeed => {
-                trace!("Linefeed");
-                let next = self.grid.cursor.point.line + 1;
-                if next == self.scroll_region.end {
-                    self.handle(ScrollUp(1));
-                } else if next < self.screen_lines() {
-                    self.damage_cursor();
-                    self.grid.cursor.point.line += 1;
-                    self.damage_cursor();
-                }
-            },
-            Bell => {
-                trace!("Bell");
-                self.event_proxy.send_event(Event::Bell);
-            },
-            NewLine => {
-                self.handle(Action::LineFeed);
-
-                if self.mode.contains(TermMode::LINE_FEED_NEW_LINE) {
-                    self.handle(Action::CarriageReturn);
-                }
-            },
-            SetHorizontalTab => {
-                trace!("Setting horizontal tabstop");
-                self.tabs[self.grid.cursor.point.column] = true;
-            },
-            ScrollUp(lines) => {
-                let origin = self.scroll_region.start;
-                self.scroll_up_relative(origin, lines);
-            },
-            ScrollDown(lines) => {
-                let origin = self.scroll_region.start;
-                self.scroll_down_relative(origin, lines);
-            },
-            InsertBlankLines(lines) => {
-                trace!("Inserting blank {lines} lines");
-
-                let origin = self.grid.cursor.point.line;
-                if self.scroll_region.contains(&origin) {
-                    self.scroll_down_relative(origin, lines);
-                }
-            },
-            DeleteLines(lines) => {
-                let origin = self.grid.cursor.point.line;
-                let lines =
-                    cmp::min(self.screen_lines() - origin.0 as usize, lines);
-
-                trace!("Deleting {lines} lines");
-
-                if lines > 0 && self.scroll_region.contains(&origin) {
-                    self.scroll_up_relative(origin, lines);
-                }
-            },
-            EraseChars(count) => {
-                let cursor = &self.grid.cursor;
-
-                trace!(
-                    "Erasing chars: count={}, col={}",
-                    count, cursor.point.column
-                );
-
-                let start = cursor.point.column;
-                let end = cmp::min(start + count, Column(self.columns()));
-
-                // Cleared cells have current background color set.
-                let bg = self.grid.cursor.template.bg;
-                let line = cursor.point.line;
-                self.damage.damage_line(line.0 as usize, start.0, end.0);
-                let row = &mut self.grid[line];
-                for cell in &mut row[start..end] {
+                // Clear up to the current column in the current line.
+                let end = cmp::min(cursor.column + 1, Column(self.columns()));
+                for cell in &mut self.grid[cursor.line][..end] {
                     *cell = bg.into();
                 }
-            },
-            DeleteChars(count) => {
-                let columns = self.columns();
-                let cursor = &self.grid.cursor;
-                let bg = cursor.template.bg;
 
-                // Ensure deleting within terminal bounds.
-                let count = cmp::min(count, columns);
-
-                let start = cursor.point.column.0;
-                let end = cmp::min(start + count, columns - 1);
-                let num_cells = columns - end;
-
-                let line = cursor.point.line;
-                self.damage
-                    .damage_line(line.0 as usize, 0, self.columns() - 1);
-                let row = &mut self.grid[line][..];
-
-                for offset in 0..num_cells {
-                    row.swap(start + offset, end + offset);
-                }
-
-                // Clear last `count` cells in the row. If deleting 1 char, need to delete
-                // 1 cell.
-                let end = columns - count;
-                for cell in &mut row[end..] {
-                    *cell = bg.into();
-                }
-            },
-            MoveBackwardTabs(count) => {
-                trace!("Moving backward {count} tabs");
-
-                let old_col = self.grid.cursor.point.column.0;
-                for _ in 0..count {
-                    let mut col = self.grid.cursor.point.column;
-
-                    if col == 0 {
-                        break;
-                    }
-
-                    for i in (0..(col.0)).rev() {
-                        if self.tabs[index::Column(i)] {
-                            col = index::Column(i);
-                            break;
-                        }
-                    }
-                    self.grid.cursor.point.column = col;
-                }
-
-                let line = self.grid.cursor.point.line.0 as usize;
-                self.damage.damage_line(
-                    line,
-                    self.grid.cursor.point.column.0,
-                    old_col,
-                );
-            },
-            MoveForwardTabs(count) => {
-                trace!("Moving forward {count} tabs");
-
-                let num_cols = self.columns();
-                let old_col = self.grid.cursor.point.column.0;
-                for _ in 0..count {
-                    let mut col = self.grid.cursor.point.column;
-
-                    if col == num_cols - 1 {
-                        break;
-                    }
-
-                    for i in col.0 + 1..num_cols {
-                        col = index::Column(i);
-                        if self.tabs[col] {
-                            break;
-                        }
-                    }
-
-                    self.grid.cursor.point.column = col;
-                }
-
-                let line = self.grid.cursor.point.line.0 as usize;
-                self.damage.damage_line(
-                    line,
-                    old_col,
-                    self.grid.cursor.point.column.0,
-                );
-            },
-            SaveCursorPosition => {
-                trace!("Saving cursor position");
-                self.grid.saved_cursor = self.grid.cursor.clone();
-            },
-            RestoreCursorPosition => {
-                trace!("Restoring cursor position");
-
-                self.damage_cursor();
-                self.grid.cursor = self.grid.saved_cursor.clone();
-                self.damage_cursor();
-            },
-            ClearLine(mode) => {
-                trace!("Clearing line: {mode:?}");
-
-                let cursor = &self.grid.cursor;
-                let bg = cursor.template.bg;
-                let point = cursor.point;
-
-                let (left, right) = match mode {
-                    LineClearMode::Right if cursor.input_needs_wrap => return,
-                    LineClearMode::Right => {
-                        (point.column, Column(self.columns()))
-                    },
-                    LineClearMode::Left => (Column(0), point.column + 1),
-                    LineClearMode::All => (Column(0), Column(self.columns())),
-                };
-
-                self.damage.damage_line(
-                    point.line.0 as usize,
-                    left.0,
-                    right.0 - 1,
-                );
-
-                let row = &mut self.grid[point.line];
-                for cell in &mut row[left..right] {
-                    *cell = bg.into();
-                }
-
-                let range =
-                    self.grid.cursor.point.line..=self.grid.cursor.point.line;
+                let range = Line(0)..=cursor.line;
                 self.selection = self
                     .selection
                     .take()
                     .filter(|s| !s.intersects_range(range));
             },
-            SetColor { index, color } => {
-                trace!("Setting color[{index}] = {color:?}");
-
-                // Damage terminal if the color changed and it's not the cursor.
-                if index != StdColor::Cursor as usize
-                    && self.colors[index] != Some(color)
-                {
-                    self.mark_fully_damaged();
+            ClearMode::Below => {
+                let cursor = self.grid.cursor.point;
+                for cell in &mut self.grid[cursor.line][cursor.column..] {
+                    *cell = bg.into();
                 }
 
-                self.colors[index] = Some(color);
+                if (cursor.line.0 as usize) < screen_lines - 1 {
+                    self.grid.reset_region((cursor.line + 1)..);
+                }
+
+                let range = cursor.line..Line(screen_lines as i32);
+                self.selection = self
+                    .selection
+                    .take()
+                    .filter(|s| !s.intersects_range(range));
             },
-            ResetColor(index) => {
-                trace!("Resetting color[{index}]");
-
-                // Damage terminal if the color changed and it's not the cursor.
-                if index != StdColor::Cursor as usize
-                    && self.colors[index].is_some()
-                {
-                    self.mark_fully_damaged();
-                }
-
-                self.colors[index] = None;
-            },
-            StoreToClipboard(clipboard, payload) => {
-                if !matches!(
-                    self.config.osc52,
-                    Osc52::OnlyCopy | Osc52::CopyPaste
-                ) {
-                    debug!("Denied osc52 store");
-                    return;
-                }
-
-                let clipboard_type = match clipboard {
-                    OttyClipboardType::Clipboard => ClipboardType::Clipboard,
-                    OttyClipboardType::Primary | OttyClipboardType::Select => {
-                        ClipboardType::Selection
-                    },
-                    _ => return,
-                };
-
-                if let Ok(bytes) = Base64.decode(payload.as_slice()) {
-                    if let Ok(text) = String::from_utf8(bytes) {
-                        self.event_proxy.send_event(Event::ClipboardStore(
-                            clipboard_type,
-                            text,
-                        ));
-                    }
-                }
-            },
-            ClearScreen(mode) => {
-                trace!("Clearing screen: {mode:?}");
-                let bg = self.grid.cursor.template.bg;
-
-                let screen_lines = self.screen_lines();
-
-                match mode {
-                    ClearMode::Above => {
-                        let cursor = self.grid.cursor.point;
-
-                        // If clearing more than one line.
-                        if cursor.line > 1 {
-                            // Fully clear all lines before the current line.
-                            self.grid.reset_region(..cursor.line);
-                        }
-
-                        // Clear up to the current column in the current line.
-                        let end =
-                            cmp::min(cursor.column + 1, Column(self.columns()));
-                        for cell in &mut self.grid[cursor.line][..end] {
-                            *cell = bg.into();
-                        }
-
-                        let range = Line(0)..=cursor.line;
-                        self.selection = self
-                            .selection
-                            .take()
-                            .filter(|s| !s.intersects_range(range));
-                    },
-                    ClearMode::Below => {
-                        let cursor = self.grid.cursor.point;
-                        for cell in &mut self.grid[cursor.line][cursor.column..]
-                        {
-                            *cell = bg.into();
-                        }
-
-                        if (cursor.line.0 as usize) < screen_lines - 1 {
-                            self.grid.reset_region((cursor.line + 1)..);
-                        }
-
-                        let range = cursor.line..Line(screen_lines as i32);
-                        self.selection = self
-                            .selection
-                            .take()
-                            .filter(|s| !s.intersects_range(range));
-                    },
-                    ClearMode::All => {
-                        if self.mode.contains(TermMode::ALT_SCREEN) {
-                            self.grid.reset_region(..);
-                        } else {
-                            let old_offset = self.grid.display_offset();
-
-                            self.grid.clear_viewport();
-
-                            // Compute number of lines scrolled by clearing the viewport.
-                            let lines = self
-                                .grid
-                                .display_offset()
-                                .saturating_sub(old_offset);
-
-                            self.vi_mode_cursor.point.line =
-                                (self.vi_mode_cursor.point.line - lines)
-                                    .grid_clamp(self, Boundary::Grid);
-                        }
-
-                        self.selection = None;
-                    },
-                    ClearMode::Saved if self.history_size() > 0 => {
-                        self.grid.clear_history();
-
-                        self.vi_mode_cursor.point.line = self
-                            .vi_mode_cursor
-                            .point
-                            .line
-                            .grid_clamp(self, Boundary::Cursor);
-
-                        self.selection = self
-                            .selection
-                            .take()
-                            .filter(|s| !s.intersects_range(..Line(0)));
-                    },
-                    // We have no history to clear.
-                    ClearMode::Saved => (),
-                }
-
-                self.mark_fully_damaged();
-            },
-            ClearTabs(mode) => {
-                trace!("Clearing tabs: {mode:?}");
-                match mode {
-                    TabClearMode::Current => {
-                        self.tabs[self.grid.cursor.point.column] = false;
-                    },
-                    TabClearMode::All => {
-                        self.tabs.clear_all();
-                    },
-                }
-            },
-            ResetState => {
+            ClearMode::All => {
                 if self.mode.contains(TermMode::ALT_SCREEN) {
-                    mem::swap(&mut self.grid, &mut self.inactive_grid);
-                }
-                self.active_charset = Default::default();
-                self.cursor_style = None;
-                self.grid.reset();
-                self.inactive_grid.reset();
-                self.scroll_region = Line(0)..Line(self.screen_lines() as i32);
-                self.tabs = TabStops::new(self.columns());
-                self.title_stack = Vec::new();
-                self.title = None;
-                self.selection = None;
-                self.vi_mode_cursor = Default::default();
-                self.keyboard_mode_stack = Default::default();
-                self.inactive_keyboard_mode_stack = Default::default();
-
-                // Preserve vi mode across resets.
-                self.mode &= TermMode::VI;
-                self.mode.insert(TermMode::default());
-
-                self.event_proxy.send_event(Event::CursorBlinkingChange);
-                self.mark_fully_damaged();
-            },
-            ReverseIndex => {
-                trace!("Reversing index");
-                // If cursor is at the top.
-                if self.grid.cursor.point.line == self.scroll_region.start {
-                    self.handle(Action::ScrollDown(1));
+                    self.grid.reset_region(..);
                 } else {
-                    self.damage_cursor();
-                    self.grid.cursor.point.line =
-                        cmp::max(self.grid.cursor.point.line - 1, Line(0));
-                    self.damage_cursor();
-                }
-            },
-            SetHyperlink(hyperlink) => {
-                trace!("Setting hyperlink: {hyperlink:?}");
-                self.grid
-                    .cursor
-                    .template
-                    .set_hyperlink(hyperlink.map(|e| e.into()));
-            },
-            SetCharacterAttribute(attr) => {
-                trace!("Setting attribute: {attr:?}");
-                let cursor = &mut self.grid.cursor;
-                match attr {
-                    CharacterAttribute::Foreground(color) => {
-                        cursor.template.fg = color
-                    },
-                    CharacterAttribute::Background(color) => {
-                        cursor.template.bg = color
-                    },
-                    CharacterAttribute::UnderlineColor(color) => {
-                        cursor.template.set_underline_color(color)
-                    },
-                    CharacterAttribute::Reset => {
-                        cursor.template.fg = Color::Std(StdColor::Foreground);
-                        cursor.template.bg = Color::Std(StdColor::Background);
-                        cursor.template.flags = Flags::empty();
-                        cursor.template.set_underline_color(None);
-                    },
-                    CharacterAttribute::Reverse => {
-                        cursor.template.flags.insert(Flags::INVERSE)
-                    },
-                    CharacterAttribute::CancelReverse => {
-                        cursor.template.flags.remove(Flags::INVERSE)
-                    },
-                    CharacterAttribute::Bold => {
-                        cursor.template.flags.insert(Flags::BOLD)
-                    },
-                    CharacterAttribute::CancelBold => {
-                        cursor.template.flags.remove(Flags::BOLD)
-                    },
-                    CharacterAttribute::Dim => {
-                        cursor.template.flags.insert(Flags::DIM)
-                    },
-                    CharacterAttribute::CancelBoldDim => {
-                        cursor.template.flags.remove(Flags::BOLD | Flags::DIM)
-                    },
-                    CharacterAttribute::Italic => {
-                        cursor.template.flags.insert(Flags::ITALIC)
-                    },
-                    CharacterAttribute::CancelItalic => {
-                        cursor.template.flags.remove(Flags::ITALIC)
-                    },
-                    CharacterAttribute::Underline => {
-                        cursor.template.flags.remove(Flags::ALL_UNDERLINES);
-                        cursor.template.flags.insert(Flags::UNDERLINE);
-                    },
-                    CharacterAttribute::DoubleUnderline => {
-                        cursor.template.flags.remove(Flags::ALL_UNDERLINES);
-                        cursor.template.flags.insert(Flags::DOUBLE_UNDERLINE);
-                    },
-                    CharacterAttribute::Undercurl => {
-                        cursor.template.flags.remove(Flags::ALL_UNDERLINES);
-                        cursor.template.flags.insert(Flags::UNDERCURL);
-                    },
-                    CharacterAttribute::DottedUnderline => {
-                        cursor.template.flags.remove(Flags::ALL_UNDERLINES);
-                        cursor.template.flags.insert(Flags::DOTTED_UNDERLINE);
-                    },
-                    CharacterAttribute::DashedUnderline => {
-                        cursor.template.flags.remove(Flags::ALL_UNDERLINES);
-                        cursor.template.flags.insert(Flags::DASHED_UNDERLINE);
-                    },
-                    CharacterAttribute::CancelUnderline => {
-                        cursor.template.flags.remove(Flags::ALL_UNDERLINES)
-                    },
-                    CharacterAttribute::Hidden => {
-                        cursor.template.flags.insert(Flags::HIDDEN)
-                    },
-                    CharacterAttribute::CancelHidden => {
-                        cursor.template.flags.remove(Flags::HIDDEN)
-                    },
-                    CharacterAttribute::Strike => {
-                        cursor.template.flags.insert(Flags::STRIKEOUT)
-                    },
-                    CharacterAttribute::CancelStrike => {
-                        cursor.template.flags.remove(Flags::STRIKEOUT)
-                    },
-                    _ => {
-                        debug!("Term got unhandled attr: {attr:?}");
-                    },
-                }
-            },
-            SetPrivateMode(mode) => {
-                let mode = match mode {
-                    PrivateMode::Named(mode) => mode,
-                    PrivateMode::Unknown(mode) => {
-                        debug!(
-                            "Ignoring unknown mode {mode} in set_private_mode"
-                        );
-                        return;
-                    },
-                };
+                    let old_offset = self.grid.display_offset();
 
-                trace!("Setting private mode: {mode:?}");
-                match mode {
-                    NamedPrivateMode::UrgencyHints => {
-                        self.mode.insert(TermMode::URGENCY_HINTS)
-                    },
-                    NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
-                        if !self.mode.contains(TermMode::ALT_SCREEN) {
-                            self.swap_alt();
-                        }
-                    },
-                    NamedPrivateMode::ShowCursor => {
-                        self.mode.insert(TermMode::SHOW_CURSOR)
-                    },
-                    NamedPrivateMode::CursorKeys => {
-                        self.mode.insert(TermMode::APP_CURSOR)
-                    },
-                    // Mouse protocols are mutually exclusive.
-                    NamedPrivateMode::ReportMouseClicks => {
-                        self.mode.remove(TermMode::MOUSE_MODE);
-                        self.mode.insert(TermMode::MOUSE_REPORT_CLICK);
-                        self.event_proxy.send_event(Event::MouseCursorDirty);
-                    },
-                    NamedPrivateMode::ReportCellMouseMotion => {
-                        self.mode.remove(TermMode::MOUSE_MODE);
-                        self.mode.insert(TermMode::MOUSE_DRAG);
-                        self.event_proxy.send_event(Event::MouseCursorDirty);
-                    },
-                    NamedPrivateMode::ReportAllMouseMotion => {
-                        self.mode.remove(TermMode::MOUSE_MODE);
-                        self.mode.insert(TermMode::MOUSE_MOTION);
-                        self.event_proxy.send_event(Event::MouseCursorDirty);
-                    },
-                    NamedPrivateMode::ReportFocusInOut => {
-                        self.mode.insert(TermMode::FOCUS_IN_OUT)
-                    },
-                    NamedPrivateMode::BracketedPaste => {
-                        self.mode.insert(TermMode::BRACKETED_PASTE)
-                    },
-                    // Mouse encodings are mutually exclusive.
-                    NamedPrivateMode::SgrMouse => {
-                        self.mode.remove(TermMode::UTF8_MOUSE);
-                        self.mode.insert(TermMode::SGR_MOUSE);
-                    },
-                    NamedPrivateMode::Utf8Mouse => {
-                        self.mode.remove(TermMode::SGR_MOUSE);
-                        self.mode.insert(TermMode::UTF8_MOUSE);
-                    },
-                    NamedPrivateMode::AlternateScroll => {
-                        self.mode.insert(TermMode::ALTERNATE_SCROLL)
-                    },
-                    NamedPrivateMode::LineWrap => {
-                        self.mode.insert(TermMode::LINE_WRAP)
-                    },
-                    NamedPrivateMode::Origin => {
-                        self.mode.insert(TermMode::ORIGIN);
-                        self.handle(Action::Goto(0, 0));
-                    },
-                    NamedPrivateMode::ColumnMode => self.deccolm(),
-                    NamedPrivateMode::BlinkingCursor => {
-                        let style = self
-                            .cursor_style
-                            .get_or_insert(self.config.default_cursor_style);
-                        style.blinking = true;
-                        self.event_proxy
-                            .send_event(Event::CursorBlinkingChange);
-                    },
-                    NamedPrivateMode::SyncUpdate => (),
-                }
-            },
-            UnsetPrivateMode(mode) => {
-                let mode = match mode {
-                    PrivateMode::Named(mode) => mode,
-                    PrivateMode::Unknown(mode) => {
-                        debug!(
-                            "Ignoring unknown mode {mode} in unset_private_mode"
-                        );
-                        return;
-                    },
-                };
+                    self.grid.clear_viewport();
 
-                trace!("Unsetting private mode: {mode:?}");
-                match mode {
-                    NamedPrivateMode::UrgencyHints => {
-                        self.mode.remove(TermMode::URGENCY_HINTS)
-                    },
-                    NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
-                        if self.mode.contains(TermMode::ALT_SCREEN) {
-                            self.swap_alt();
-                        }
-                    },
-                    NamedPrivateMode::ShowCursor => {
-                        self.mode.remove(TermMode::SHOW_CURSOR)
-                    },
-                    NamedPrivateMode::CursorKeys => {
-                        self.mode.remove(TermMode::APP_CURSOR)
-                    },
-                    NamedPrivateMode::ReportMouseClicks => {
-                        self.mode.remove(TermMode::MOUSE_REPORT_CLICK);
-                        self.event_proxy.send_event(Event::MouseCursorDirty);
-                    },
-                    NamedPrivateMode::ReportCellMouseMotion => {
-                        self.mode.remove(TermMode::MOUSE_DRAG);
-                        self.event_proxy.send_event(Event::MouseCursorDirty);
-                    },
-                    NamedPrivateMode::ReportAllMouseMotion => {
-                        self.mode.remove(TermMode::MOUSE_MOTION);
-                        self.event_proxy.send_event(Event::MouseCursorDirty);
-                    },
-                    NamedPrivateMode::ReportFocusInOut => {
-                        self.mode.remove(TermMode::FOCUS_IN_OUT)
-                    },
-                    NamedPrivateMode::BracketedPaste => {
-                        self.mode.remove(TermMode::BRACKETED_PASTE)
-                    },
-                    NamedPrivateMode::SgrMouse => {
-                        self.mode.remove(TermMode::SGR_MOUSE)
-                    },
-                    NamedPrivateMode::Utf8Mouse => {
-                        self.mode.remove(TermMode::UTF8_MOUSE)
-                    },
-                    NamedPrivateMode::AlternateScroll => {
-                        self.mode.remove(TermMode::ALTERNATE_SCROLL)
-                    },
-                    NamedPrivateMode::LineWrap => {
-                        self.mode.remove(TermMode::LINE_WRAP)
-                    },
-                    NamedPrivateMode::Origin => {
-                        self.mode.remove(TermMode::ORIGIN)
-                    },
-                    NamedPrivateMode::ColumnMode => self.deccolm(),
-                    NamedPrivateMode::BlinkingCursor => {
-                        let style = self
-                            .cursor_style
-                            .get_or_insert(self.config.default_cursor_style);
-                        style.blinking = false;
-                        self.event_proxy
-                            .send_event(Event::CursorBlinkingChange);
-                    },
-                    NamedPrivateMode::SyncUpdate => (),
-                }
-            },
-            ReportPrivateMode(mode) => {
-                trace!("Reporting private mode {mode:?}");
-                let state = match mode {
-                    PrivateMode::Named(mode) => match mode {
-                        NamedPrivateMode::CursorKeys => {
-                            self.mode.contains(TermMode::APP_CURSOR).into()
-                        },
-                        NamedPrivateMode::Origin => {
-                            self.mode.contains(TermMode::ORIGIN).into()
-                        },
-                        NamedPrivateMode::LineWrap => {
-                            self.mode.contains(TermMode::LINE_WRAP).into()
-                        },
-                        NamedPrivateMode::BlinkingCursor => {
-                            let style = self.cursor_style.get_or_insert(
-                                self.config.default_cursor_style,
-                            );
-                            style.blinking.into()
-                        },
-                        NamedPrivateMode::ShowCursor => {
-                            self.mode.contains(TermMode::SHOW_CURSOR).into()
-                        },
-                        NamedPrivateMode::ReportMouseClicks => self
-                            .mode
-                            .contains(TermMode::MOUSE_REPORT_CLICK)
-                            .into(),
-                        NamedPrivateMode::ReportCellMouseMotion => {
-                            self.mode.contains(TermMode::MOUSE_DRAG).into()
-                        },
-                        NamedPrivateMode::ReportAllMouseMotion => {
-                            self.mode.contains(TermMode::MOUSE_MOTION).into()
-                        },
-                        NamedPrivateMode::ReportFocusInOut => {
-                            self.mode.contains(TermMode::FOCUS_IN_OUT).into()
-                        },
-                        NamedPrivateMode::Utf8Mouse => {
-                            self.mode.contains(TermMode::UTF8_MOUSE).into()
-                        },
-                        NamedPrivateMode::SgrMouse => {
-                            self.mode.contains(TermMode::SGR_MOUSE).into()
-                        },
-                        NamedPrivateMode::AlternateScroll => self
-                            .mode
-                            .contains(TermMode::ALTERNATE_SCROLL)
-                            .into(),
-                        NamedPrivateMode::UrgencyHints => {
-                            self.mode.contains(TermMode::URGENCY_HINTS).into()
-                        },
-                        NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
-                            self.mode.contains(TermMode::ALT_SCREEN).into()
-                        },
-                        NamedPrivateMode::BracketedPaste => {
-                            self.mode.contains(TermMode::BRACKETED_PASTE).into()
-                        },
-                        NamedPrivateMode::SyncUpdate => ModeState::Reset,
-                        NamedPrivateMode::ColumnMode => ModeState::NotSupported,
-                    },
-                    PrivateMode::Unknown(_) => ModeState::NotSupported,
-                };
+                    // Compute number of lines scrolled by clearing the viewport.
+                    let lines =
+                        self.grid.display_offset().saturating_sub(old_offset);
 
-                self.event_proxy.send_event(Event::PtyWrite(format!(
-                    "\x1b[?{};{}$y",
-                    mode.raw(),
-                    state as u8,
-                )));
-            },
-            SetMode(mode) => {
-                let mode = match mode {
-                    Mode::Named(mode) => mode,
-                    Mode::Unknown(mode) => {
-                        debug!("Ignoring unknown mode {mode} in set_mode");
-                        return;
-                    },
-                };
-
-                trace!("Setting public mode: {mode:?}");
-                match mode {
-                    NamedMode::Insert => self.mode.insert(TermMode::INSERT),
-                    NamedMode::LineFeedNewLine => {
-                        self.mode.insert(TermMode::LINE_FEED_NEW_LINE)
-                    },
-                }
-            },
-            UnsetMode(mode) => {
-                let mode = match mode {
-                    Mode::Named(mode) => mode,
-                    Mode::Unknown(mode) => {
-                        debug!("Ignoring unknown mode {mode} in unset_mode");
-                        return;
-                    },
-                };
-
-                trace!("Setting public mode: {mode:?}");
-                match mode {
-                    NamedMode::Insert => {
-                        self.mode.remove(TermMode::INSERT);
-                        self.mark_fully_damaged();
-                    },
-                    NamedMode::LineFeedNewLine => {
-                        self.mode.remove(TermMode::LINE_FEED_NEW_LINE)
-                    },
-                }
-            },
-            ReportMode(mode) => {
-                trace!("Reporting mode {mode:?}");
-                let state = match mode {
-                    Mode::Named(mode) => match mode {
-                        NamedMode::Insert => {
-                            self.mode.contains(TermMode::INSERT).into()
-                        },
-                        NamedMode::LineFeedNewLine => self
-                            .mode
-                            .contains(TermMode::LINE_FEED_NEW_LINE)
-                            .into(),
-                    },
-                    Mode::Unknown(_) => ModeState::NotSupported,
-                };
-
-                self.event_proxy.send_event(Event::PtyWrite(format!(
-                    "\x1b[{};{}$y",
-                    mode.raw(),
-                    state as u8,
-                )));
-            },
-            SetScrollingRegion(top, bottom) => {
-                // Fallback to the last line as default.
-                // let bottom = bottom.unwrap_or_else(|| self.screen_lines());
-
-                if top >= bottom {
-                    debug!("Invalid scrolling region: ({top};{bottom})");
-                    return;
+                    self.vi_mode_cursor.point.line =
+                        (self.vi_mode_cursor.point.line - lines)
+                            .grid_clamp(self, Boundary::Grid);
                 }
 
-                // Bottom should be included in the range, but range end is not
-                // usually included. One option would be to use an inclusive
-                // range, but instead we just let the open range end be 1
-                // higher.
-                let start = Line(top as i32 - 1);
-                let end = Line(bottom as i32);
+                self.selection = None;
+            },
+            ClearMode::Saved if self.history_size() > 0 => {
+                self.grid.clear_history();
 
-                trace!("Setting scrolling region: ({start};{end})");
+                self.vi_mode_cursor.point.line = self
+                    .vi_mode_cursor
+                    .point
+                    .line
+                    .grid_clamp(self, Boundary::Cursor);
 
-                let screen_lines = Line(self.screen_lines() as i32);
-                self.scroll_region.start = cmp::min(start, screen_lines);
-                self.scroll_region.end = cmp::min(end, screen_lines);
+                self.selection = self
+                    .selection
+                    .take()
+                    .filter(|s| !s.intersects_range(..Line(0)));
+            },
+            // We have no history to clear.
+            ClearMode::Saved => (),
+        }
+
+        self.mark_fully_damaged();
+    }
+
+    #[inline]
+    fn clear_tabs(&mut self, mode: TabClearMode) {
+        trace!("Clearing tabs: {mode:?}");
+        match mode {
+            TabClearMode::Current => {
+                self.tabs[self.grid.cursor.point.column] = false;
+            },
+            TabClearMode::All => {
+                self.tabs.clear_all();
+            },
+        }
+    }
+
+    #[inline]
+    fn reset_state(&mut self) {
+        if self.mode.contains(TermMode::ALT_SCREEN) {
+            mem::swap(&mut self.grid, &mut self.inactive_grid);
+        }
+        self.active_charset = Default::default();
+        self.cursor_style = None;
+        self.grid.reset();
+        self.inactive_grid.reset();
+        self.scroll_region = Line(0)..Line(self.screen_lines() as i32);
+        self.tabs = TabStops::new(self.columns());
+        self.title_stack = Vec::new();
+        self.title = None;
+        self.selection = None;
+        self.vi_mode_cursor = Default::default();
+        self.keyboard_mode_stack = Default::default();
+        self.inactive_keyboard_mode_stack = Default::default();
+
+        // Preserve vi mode across resets.
+        self.mode &= TermMode::VI;
+        self.mode.insert(TermMode::default());
+
+        self.event_proxy.send_event(Event::CursorBlinkingChange);
+        self.mark_fully_damaged();
+    }
+
+    #[inline]
+    fn reverse_index(&mut self) {
+        trace!("Reversing index");
+        // If cursor is at the top.
+        if self.grid.cursor.point.line == self.scroll_region.start {
+            self.handle(Action::ScrollDown(1));
+        } else {
+            self.damage_cursor();
+            self.grid.cursor.point.line =
+                cmp::max(self.grid.cursor.point.line - 1, Line(0));
+            self.damage_cursor();
+        }
+    }
+
+    #[inline]
+    fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
+        trace!("Setting hyperlink: {hyperlink:?}");
+        self.grid
+            .cursor
+            .template
+            .set_hyperlink(hyperlink.map(|e| e.into()));
+    }
+
+    #[inline]
+    fn set_character_attribute(&mut self, attr: CharacterAttribute) {
+        trace!("Setting attribute: {attr:?}");
+        let cursor = &mut self.grid.cursor;
+        match attr {
+            CharacterAttribute::Foreground(color) => cursor.template.fg = color,
+            CharacterAttribute::Background(color) => cursor.template.bg = color,
+            CharacterAttribute::UnderlineColor(color) => {
+                cursor.template.set_underline_color(color)
+            },
+            CharacterAttribute::Reset => {
+                cursor.template.fg = Color::Std(StdColor::Foreground);
+                cursor.template.bg = Color::Std(StdColor::Background);
+                cursor.template.flags = Flags::empty();
+                cursor.template.set_underline_color(None);
+            },
+            CharacterAttribute::Reverse => {
+                cursor.template.flags.insert(Flags::INVERSE)
+            },
+            CharacterAttribute::CancelReverse => {
+                cursor.template.flags.remove(Flags::INVERSE)
+            },
+            CharacterAttribute::Bold => {
+                cursor.template.flags.insert(Flags::BOLD)
+            },
+            CharacterAttribute::CancelBold => {
+                cursor.template.flags.remove(Flags::BOLD)
+            },
+            CharacterAttribute::Dim => cursor.template.flags.insert(Flags::DIM),
+            CharacterAttribute::CancelBoldDim => {
+                cursor.template.flags.remove(Flags::BOLD | Flags::DIM)
+            },
+            CharacterAttribute::Italic => {
+                cursor.template.flags.insert(Flags::ITALIC)
+            },
+            CharacterAttribute::CancelItalic => {
+                cursor.template.flags.remove(Flags::ITALIC)
+            },
+            CharacterAttribute::Underline => {
+                cursor.template.flags.remove(Flags::ALL_UNDERLINES);
+                cursor.template.flags.insert(Flags::UNDERLINE);
+            },
+            CharacterAttribute::DoubleUnderline => {
+                cursor.template.flags.remove(Flags::ALL_UNDERLINES);
+                cursor.template.flags.insert(Flags::DOUBLE_UNDERLINE);
+            },
+            CharacterAttribute::Undercurl => {
+                cursor.template.flags.remove(Flags::ALL_UNDERLINES);
+                cursor.template.flags.insert(Flags::UNDERCURL);
+            },
+            CharacterAttribute::DottedUnderline => {
+                cursor.template.flags.remove(Flags::ALL_UNDERLINES);
+                cursor.template.flags.insert(Flags::DOTTED_UNDERLINE);
+            },
+            CharacterAttribute::DashedUnderline => {
+                cursor.template.flags.remove(Flags::ALL_UNDERLINES);
+                cursor.template.flags.insert(Flags::DASHED_UNDERLINE);
+            },
+            CharacterAttribute::CancelUnderline => {
+                cursor.template.flags.remove(Flags::ALL_UNDERLINES)
+            },
+            CharacterAttribute::Hidden => {
+                cursor.template.flags.insert(Flags::HIDDEN)
+            },
+            CharacterAttribute::CancelHidden => {
+                cursor.template.flags.remove(Flags::HIDDEN)
+            },
+            CharacterAttribute::Strike => {
+                cursor.template.flags.insert(Flags::STRIKEOUT)
+            },
+            CharacterAttribute::CancelStrike => {
+                cursor.template.flags.remove(Flags::STRIKEOUT)
+            },
+            _ => {
+                debug!("Term got unhandled attr: {attr:?}");
+            },
+        }
+    }
+
+    #[inline]
+    fn set_private_mode(&mut self, mode: PrivateMode) {
+        let mode = match mode {
+            PrivateMode::Named(mode) => mode,
+            PrivateMode::Unknown(mode) => {
+                debug!("Ignoring unknown mode {mode} in set_private_mode");
+                return;
+            },
+        };
+
+        trace!("Setting private mode: {mode:?}");
+        match mode {
+            NamedPrivateMode::UrgencyHints => {
+                self.mode.insert(TermMode::URGENCY_HINTS)
+            },
+            NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
+                if !self.mode.contains(TermMode::ALT_SCREEN) {
+                    self.swap_alt();
+                }
+            },
+            NamedPrivateMode::ShowCursor => {
+                self.mode.insert(TermMode::SHOW_CURSOR)
+            },
+            NamedPrivateMode::CursorKeys => {
+                self.mode.insert(TermMode::APP_CURSOR)
+            },
+            // Mouse protocols are mutually exclusive.
+            NamedPrivateMode::ReportMouseClicks => {
+                self.mode.remove(TermMode::MOUSE_MODE);
+                self.mode.insert(TermMode::MOUSE_REPORT_CLICK);
+                self.event_proxy.send_event(Event::MouseCursorDirty);
+            },
+            NamedPrivateMode::ReportCellMouseMotion => {
+                self.mode.remove(TermMode::MOUSE_MODE);
+                self.mode.insert(TermMode::MOUSE_DRAG);
+                self.event_proxy.send_event(Event::MouseCursorDirty);
+            },
+            NamedPrivateMode::ReportAllMouseMotion => {
+                self.mode.remove(TermMode::MOUSE_MODE);
+                self.mode.insert(TermMode::MOUSE_MOTION);
+                self.event_proxy.send_event(Event::MouseCursorDirty);
+            },
+            NamedPrivateMode::ReportFocusInOut => {
+                self.mode.insert(TermMode::FOCUS_IN_OUT)
+            },
+            NamedPrivateMode::BracketedPaste => {
+                self.mode.insert(TermMode::BRACKETED_PASTE)
+            },
+            // Mouse encodings are mutually exclusive.
+            NamedPrivateMode::SgrMouse => {
+                self.mode.remove(TermMode::UTF8_MOUSE);
+                self.mode.insert(TermMode::SGR_MOUSE);
+            },
+            NamedPrivateMode::Utf8Mouse => {
+                self.mode.remove(TermMode::SGR_MOUSE);
+                self.mode.insert(TermMode::UTF8_MOUSE);
+            },
+            NamedPrivateMode::AlternateScroll => {
+                self.mode.insert(TermMode::ALTERNATE_SCROLL)
+            },
+            NamedPrivateMode::LineWrap => self.mode.insert(TermMode::LINE_WRAP),
+            NamedPrivateMode::Origin => {
+                self.mode.insert(TermMode::ORIGIN);
                 self.handle(Action::Goto(0, 0));
             },
-            SetKeypadApplicationMode => {
-                trace!("Setting keypad application mode");
-                self.mode.insert(TermMode::APP_KEYPAD);
-            },
-            UnsetKeypadApplicationMode => {
-                trace!("Unsetting keypad application mode");
-                self.mode.remove(TermMode::APP_KEYPAD);
-            },
-            ConfigureCharset(charset, index) => {
-                trace!("Configuring charset {index:?} as {charset:?}");
-                self.grid.cursor.charsets[index] = charset;
-            },
-            SetActiveCharsetIndex(index) => {
-                trace!("Setting active charset {index:?}");
-                self.active_charset = index;
-            },
-            SetCursorStyle(style) => {
-                trace!("Setting cursor style {style:?}");
-                self.cursor_style = style;
-
-                // Notify UI about blinking changes.
-                self.event_proxy.send_event(Event::CursorBlinkingChange);
-            },
-            SetCursorShape(shape) => {
-                trace!("Setting cursor shape {shape:?}");
-
+            NamedPrivateMode::ColumnMode => self.deccolm(),
+            NamedPrivateMode::BlinkingCursor => {
                 let style = self
                     .cursor_style
                     .get_or_insert(self.config.default_cursor_style);
-                style.shape = shape;
+                style.blinking = true;
+                self.event_proxy.send_event(Event::CursorBlinkingChange);
             },
-            SetWindowTitle(title) => {
-                trace!("Setting title to '{title:?}'");
+            NamedPrivateMode::SyncUpdate => (),
+        }
+    }
 
-                self.title = Some(title.clone());
-
-                self.event_proxy.send_event(Event::Title(title));
+    #[inline]
+    fn unset_private_mode(&mut self, mode: PrivateMode) {
+        let mode = match mode {
+            PrivateMode::Named(mode) => mode,
+            PrivateMode::Unknown(mode) => {
+                debug!("Ignoring unknown mode {mode} in unset_private_mode");
+                return;
             },
-            PushWindowTitle => {
-                trace!("Pushing '{:?}' onto title stack", self.title);
+        };
 
-                if self.title_stack.len() >= TITLE_STACK_MAX_DEPTH {
-                    let removed = self.title_stack.remove(0);
-                    trace!(
-                        "Removing '{removed:?}' from bottom of title stack that exceeds its maximum depth"
-                    );
-                }
-
-                self.title_stack.push(self.title.clone());
+        trace!("Unsetting private mode: {mode:?}");
+        match mode {
+            NamedPrivateMode::UrgencyHints => {
+                self.mode.remove(TermMode::URGENCY_HINTS)
             },
-            PopWindowTitle => {
-                trace!("Attempting to pop title from stack...");
-
-                if let Some(popped) = self.title_stack.pop() {
-                    trace!("Title '{popped:?}' popped from stack");
-                    // TODO: option bug
-                    // self.handle(Action::SetWindowTitle(popped));
+            NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
+                if self.mode.contains(TermMode::ALT_SCREEN) {
+                    self.swap_alt();
                 }
             },
-            RequestTextAreaSizeByPixels => {
-                self.event_proxy.send_event(Event::TextAreaSizeRequest(
-                    Arc::new(move |window_size| {
-                        let height =
-                            window_size.num_lines * window_size.cell_height;
-                        let width =
-                            window_size.num_cols * window_size.cell_width;
-                        format!("\x1b[4;{height};{width}t")
-                    }),
-                ));
+            NamedPrivateMode::ShowCursor => {
+                self.mode.remove(TermMode::SHOW_CURSOR)
             },
-            RequestTextAreaSizeByChars => {
-                let text = format!(
-                    "\x1b[8;{};{}t",
-                    self.screen_lines(),
-                    self.columns()
-                );
-                self.event_proxy.send_event(Event::PtyWrite(text));
+            NamedPrivateMode::CursorKeys => {
+                self.mode.remove(TermMode::APP_CURSOR)
+            },
+            NamedPrivateMode::ReportMouseClicks => {
+                self.mode.remove(TermMode::MOUSE_REPORT_CLICK);
+                self.event_proxy.send_event(Event::MouseCursorDirty);
+            },
+            NamedPrivateMode::ReportCellMouseMotion => {
+                self.mode.remove(TermMode::MOUSE_DRAG);
+                self.event_proxy.send_event(Event::MouseCursorDirty);
+            },
+            NamedPrivateMode::ReportAllMouseMotion => {
+                self.mode.remove(TermMode::MOUSE_MOTION);
+                self.event_proxy.send_event(Event::MouseCursorDirty);
+            },
+            NamedPrivateMode::ReportFocusInOut => {
+                self.mode.remove(TermMode::FOCUS_IN_OUT)
+            },
+            NamedPrivateMode::BracketedPaste => {
+                self.mode.remove(TermMode::BRACKETED_PASTE)
+            },
+            NamedPrivateMode::SgrMouse => self.mode.remove(TermMode::SGR_MOUSE),
+            NamedPrivateMode::Utf8Mouse => {
+                self.mode.remove(TermMode::UTF8_MOUSE)
+            },
+            NamedPrivateMode::AlternateScroll => {
+                self.mode.remove(TermMode::ALTERNATE_SCROLL)
+            },
+            NamedPrivateMode::LineWrap => self.mode.remove(TermMode::LINE_WRAP),
+            NamedPrivateMode::Origin => self.mode.remove(TermMode::ORIGIN),
+            NamedPrivateMode::ColumnMode => self.deccolm(),
+            NamedPrivateMode::BlinkingCursor => {
+                let style = self
+                    .cursor_style
+                    .get_or_insert(self.config.default_cursor_style);
+                style.blinking = false;
+                self.event_proxy.send_event(Event::CursorBlinkingChange);
+            },
+            NamedPrivateMode::SyncUpdate => (),
+        }
+    }
+
+    #[inline]
+    fn report_private_mode(&mut self, mode: PrivateMode) {
+        trace!("Reporting private mode {mode:?}");
+        let state = match mode {
+            PrivateMode::Named(mode) => match mode {
+                NamedPrivateMode::CursorKeys => {
+                    self.mode.contains(TermMode::APP_CURSOR).into()
+                },
+                NamedPrivateMode::Origin => {
+                    self.mode.contains(TermMode::ORIGIN).into()
+                },
+                NamedPrivateMode::LineWrap => {
+                    self.mode.contains(TermMode::LINE_WRAP).into()
+                },
+                NamedPrivateMode::BlinkingCursor => {
+                    let style = self
+                        .cursor_style
+                        .get_or_insert(self.config.default_cursor_style);
+                    style.blinking.into()
+                },
+                NamedPrivateMode::ShowCursor => {
+                    self.mode.contains(TermMode::SHOW_CURSOR).into()
+                },
+                NamedPrivateMode::ReportMouseClicks => {
+                    self.mode.contains(TermMode::MOUSE_REPORT_CLICK).into()
+                },
+                NamedPrivateMode::ReportCellMouseMotion => {
+                    self.mode.contains(TermMode::MOUSE_DRAG).into()
+                },
+                NamedPrivateMode::ReportAllMouseMotion => {
+                    self.mode.contains(TermMode::MOUSE_MOTION).into()
+                },
+                NamedPrivateMode::ReportFocusInOut => {
+                    self.mode.contains(TermMode::FOCUS_IN_OUT).into()
+                },
+                NamedPrivateMode::Utf8Mouse => {
+                    self.mode.contains(TermMode::UTF8_MOUSE).into()
+                },
+                NamedPrivateMode::SgrMouse => {
+                    self.mode.contains(TermMode::SGR_MOUSE).into()
+                },
+                NamedPrivateMode::AlternateScroll => {
+                    self.mode.contains(TermMode::ALTERNATE_SCROLL).into()
+                },
+                NamedPrivateMode::UrgencyHints => {
+                    self.mode.contains(TermMode::URGENCY_HINTS).into()
+                },
+                NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
+                    self.mode.contains(TermMode::ALT_SCREEN).into()
+                },
+                NamedPrivateMode::BracketedPaste => {
+                    self.mode.contains(TermMode::BRACKETED_PASTE).into()
+                },
+                NamedPrivateMode::SyncUpdate => ModeState::Reset,
+                NamedPrivateMode::ColumnMode => ModeState::NotSupported,
+            },
+            PrivateMode::Unknown(_) => ModeState::NotSupported,
+        };
+
+        self.event_proxy.send_event(Event::PtyWrite(format!(
+            "\x1b[?{};{}$y",
+            mode.raw(),
+            state as u8,
+        )));
+    }
+
+    #[inline]
+    fn set_mode(&mut self, mode: Mode) {
+        let mode = match mode {
+            Mode::Named(mode) => mode,
+            Mode::Unknown(mode) => {
+                debug!("Ignoring unknown mode {mode} in set_mode");
+                return;
+            },
+        };
+
+        trace!("Setting public mode: {mode:?}");
+        match mode {
+            NamedMode::Insert => self.mode.insert(TermMode::INSERT),
+            NamedMode::LineFeedNewLine => {
+                self.mode.insert(TermMode::LINE_FEED_NEW_LINE)
+            },
+        }
+    }
+
+    #[inline]
+    fn unset_mode(&mut self, mode: Mode) {
+        let mode = match mode {
+            Mode::Named(mode) => mode,
+            Mode::Unknown(mode) => {
+                debug!("Ignoring unknown mode {mode} in unset_mode");
+                return;
+            },
+        };
+
+        trace!("Setting public mode: {mode:?}");
+        match mode {
+            NamedMode::Insert => {
+                self.mode.remove(TermMode::INSERT);
+                self.mark_fully_damaged();
+            },
+            NamedMode::LineFeedNewLine => {
+                self.mode.remove(TermMode::LINE_FEED_NEW_LINE)
+            },
+        }
+    }
+
+    #[inline]
+    fn report_mode(&mut self, mode: Mode) {
+        trace!("Reporting mode {mode:?}");
+        let state = match mode {
+            Mode::Named(mode) => match mode {
+                NamedMode::Insert => {
+                    self.mode.contains(TermMode::INSERT).into()
+                },
+                NamedMode::LineFeedNewLine => {
+                    self.mode.contains(TermMode::LINE_FEED_NEW_LINE).into()
+                },
+            },
+            Mode::Unknown(_) => ModeState::NotSupported,
+        };
+
+        self.event_proxy.send_event(Event::PtyWrite(format!(
+            "\x1b[{};{}$y",
+            mode.raw(),
+            state as u8,
+        )));
+    }
+
+    #[inline]
+    fn set_scrolling_region(&mut self, top: usize, bottom: usize) {
+        // Fallback to the last line as default.
+        // let bottom = bottom.unwrap_or_else(|| self.screen_lines());
+
+        if top >= bottom {
+            debug!("Invalid scrolling region: ({top};{bottom})");
+            return;
+        }
+
+        // Bottom should be included in the range, but range end is not
+        // usually included. One option would be to use an inclusive
+        // range, but instead we just let the open range end be 1
+        // higher.
+        let start = Line(top as i32 - 1);
+        let end = Line(bottom as i32);
+
+        trace!("Setting scrolling region: ({start};{end})");
+
+        let screen_lines = Line(self.screen_lines() as i32);
+        self.scroll_region.start = cmp::min(start, screen_lines);
+        self.scroll_region.end = cmp::min(end, screen_lines);
+        self.goto(0, 0);
+    }
+
+    #[inline]
+    fn set_keypad_application_mode(&mut self) {
+        trace!("Setting keypad application mode");
+        self.mode.insert(TermMode::APP_KEYPAD);
+    }
+
+    #[inline]
+    fn unset_keypad_application_mode(&mut self) {
+        trace!("Unsetting keypad application mode");
+        self.mode.remove(TermMode::APP_KEYPAD);
+    }
+
+    #[inline]
+    fn configure_charset(&mut self, charset: Charset, index: CharsetIndex) {
+        trace!("Configuring charset {index:?} as {charset:?}");
+        self.grid.cursor.charsets[index] = charset;
+    }
+
+    #[inline]
+    fn set_active_charset_index(&mut self, index: CharsetIndex) {
+        trace!("Setting active charset {index:?}");
+        self.active_charset = index;
+    }
+
+    #[inline]
+    fn set_cursor_style(&mut self, style: Option<CursorStyle>) {
+        trace!("Setting cursor style {style:?}");
+        self.cursor_style = style;
+
+        // Notify UI about blinking changes.
+        self.event_proxy.send_event(Event::CursorBlinkingChange);
+    }
+
+    #[inline]
+    fn set_cursor_shape(&mut self, shape: CursorShape) {
+        trace!("Setting cursor shape {shape:?}");
+
+        let style = self
+            .cursor_style
+            .get_or_insert(self.config.default_cursor_style);
+        style.shape = shape;
+    }
+
+    #[inline]
+    fn set_window_title(&mut self, title: Option<String>) {
+        trace!("Setting title to '{title:?}'");
+
+        self.title.clone_from(&title);
+
+        let event = match title {
+            Some(value) => Event::Title(value),
+            None => Event::ResetTitle,
+        };
+
+        self.event_proxy.send_event(event);
+    }
+
+    #[inline]
+    fn push_window_title(&mut self) {
+        trace!("Pushing '{:?}' onto title stack", self.title);
+
+        if self.title_stack.len() >= TITLE_STACK_MAX_DEPTH {
+            let removed = self.title_stack.remove(0);
+            trace!(
+                "Removing '{removed:?}' from bottom of title stack that exceeds its maximum depth"
+            );
+        }
+
+        self.title_stack.push(self.title.clone());
+    }
+
+    #[inline]
+    fn pop_window_title(&mut self) {
+        trace!("Attempting to pop title from stack...");
+
+        if let Some(popped) = self.title_stack.pop() {
+            trace!("Title '{popped:?}' popped from stack");
+            self.set_window_title(popped);
+        }
+    }
+
+    #[inline]
+    fn request_text_area_by_pixels(&mut self) {
+        self.event_proxy
+            .send_event(Event::TextAreaSizeRequest(Arc::new(
+                move |window_size| {
+                    let height =
+                        window_size.num_lines * window_size.cell_height;
+                    let width = window_size.num_cols * window_size.cell_width;
+                    format!("\x1b[4;{height};{width}t")
+                },
+            )));
+    }
+
+    #[inline]
+    fn request_text_area_by_chars(&mut self) {
+        let text =
+            format!("\x1b[8;{};{}t", self.screen_lines(), self.columns());
+        self.event_proxy.send_event(Event::PtyWrite(text));
+    }
+
+    /// Internal action handler (without sync buffering logic).
+    #[inline]
+    #[allow(clippy::enum_glob_use)]
+    fn handle_action_internal(&mut self, action: Action) {
+        use Action::*;
+
+        match action {
+            Print(c) => self.print(c),
+            ScreenAlignmentDisplay => self.screen_alignment_display(),
+            Goto(line, col) => self.goto(line, col),
+            GotoRow(line) => {
+                trace!("Going to line: {line}");
+                self.goto(line, self.grid.cursor.point.column.0);
+            },
+            GotoColumn(col) => {
+                trace!("Going to column: {col}");
+                self.goto(self.grid.cursor.point.line.0, col);
+            },
+            InsertBlank(count) => self.insert_blank(count),
+            MoveUp {
+                rows,
+                carrage_return_needed,
+            } => self.move_up(rows, carrage_return_needed),
+            MoveDown {
+                rows,
+                carrage_return_needed,
+            } => self.move_down(rows, carrage_return_needed),
+            MoveForward(cols) => self.move_forward(cols),
+            MoveBackward(cols) => self.move_backward(cols),
+            InsertTabs(count) => self.insert_tabs(count),
+            Backspace => self.backspace(),
+            CarriageReturn => self.carriage_return(),
+            LineFeed => self.linefeed(),
+            Bell => self.bell(),
+            NewLine => self.new_line(),
+            NextLine => {
+                self.linefeed();
+                self.carriage_return();
+            },
+            Substitute => {},
+            SetTabs(count) => self.insert_tabs(count),
+            SetHorizontalTab => self.set_horizontal_tab(),
+            ScrollUp(lines) => self.scroll_up(lines),
+            ScrollDown(lines) => self.scroll_down(lines),
+            InsertBlankLines(count) => self.insert_blank_lines(count),
+            DeleteLines(count) => self.delete_lines(count),
+            EraseChars(count) => self.erase_chars(count),
+            DeleteChars(count) => self.delete_chars(count),
+            MoveBackwardTabs(count) => self.move_backward_tabs(count),
+            MoveForwardTabs(count) => self.move_forward_tabs(count),
+            SaveCursorPosition => self.save_cursor_position(),
+            RestoreCursorPosition => self.restore_cursor_position(),
+            ClearLine(mode) => self.clear_line(mode),
+            SetColor { index, color } => self.set_color(index, color),
+            ResetColor(index) => self.reset_color(index),
+            // StoreToClipboard(clipboard, payload) => {
+            //     self.store_to_clipboard(clipboard, payload)
+            // },
+            ClearScreen(mode) => self.clear_screen(mode),
+            ClearTabs(mode) => self.clear_tabs(mode),
+            ResetState => self.reset_state(),
+            ReverseIndex => self.reverse_index(),
+            SetHyperlink(hyperlink) => self.set_hyperlink(hyperlink),
+            SetCharacterAttribute(attr) => self.set_character_attribute(attr),
+            SetScrollingRegion(top, bottom) => {
+                self.set_scrolling_region(top, bottom)
+            },
+            ConfigureCharset(charset, index) => {
+                self.configure_charset(charset, index)
+            },
+            SetActiveCharsetIndex(index) => {
+                self.set_active_charset_index(index)
+            },
+            SetCursorStyle(style) => self.set_cursor_style(style),
+            SetCursorShape(shape) => self.set_cursor_shape(shape),
+            Control(action) => match action {
+                TerminalControlAction::ReportDeviceStatus(arg) => {
+                    self.report_device_status(arg)
+                },
+                TerminalControlAction::SetKeypadApplicationMode => {
+                    self.set_keypad_application_mode()
+                },
+                TerminalControlAction::UnsetKeypadApplicationMode => {
+                    self.unset_keypad_application_mode()
+                },
+                TerminalControlAction::PushWindowTitle => {
+                    self.push_window_title()
+                },
+                TerminalControlAction::PopWindowTitle => {
+                    self.pop_window_title()
+                },
+                TerminalControlAction::RequestTextAreaSizeByPixels => {
+                    self.request_text_area_by_pixels()
+                },
+                TerminalControlAction::RequestTextAreaSizeByChars => {
+                    self.request_text_area_by_chars()
+                },
+                TerminalControlAction::IdentifyTerminal(attr) => {
+                    self.identify_terminal(attr)
+                },
+                TerminalControlAction::ReportKeyboardMode => {
+                    self.report_keyboard_mode()
+                },
+                TerminalControlAction::PushKeyboardMode(mode) => {
+                    self.push_keyboard_mode(mode)
+                },
+                TerminalControlAction::PopKeyboardModes(count) => {
+                    self.pop_keyboard_modes(count)
+                },
+                TerminalControlAction::SetKeyboardMode(mode, apply) => {
+                    if !self.config.kitty_keyboard {
+                        return;
+                    }
+
+                    self.set_keyboard_mode(mode.into(), apply);
+                },
+                TerminalControlAction::SetWindowTitle(title) => {
+                    self.set_window_title(Some(title))
+                },
+                TerminalControlAction::SetPrivateMode(mode) => {
+                    self.set_private_mode(mode)
+                },
+                TerminalControlAction::UnsetPrivateMode(mode) => {
+                    self.unset_private_mode(mode)
+                },
+                TerminalControlAction::ReportPrivateMode(mode) => {
+                    self.report_private_mode(mode)
+                },
+                TerminalControlAction::SetMode(mode) => self.set_mode(mode),
+                TerminalControlAction::UnsetMode(mode) => self.unset_mode(mode),
+                TerminalControlAction::ReportMode(mode) => {
+                    self.report_mode(mode)
+                },
+                _ => trace!("[unimplemented] {:?}", action),
             },
             action => {
                 trace!("[unimplemented] {:?}", action);

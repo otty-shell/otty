@@ -81,6 +81,15 @@ impl Default for CsiParam {
     }
 }
 
+impl CsiParam {
+    pub fn as_integer(&self) -> Option<i64> {
+        match self {
+            Self::Integer(i) => Some(*i),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Params {
     items: [CsiParam; MAX_PARAMS],

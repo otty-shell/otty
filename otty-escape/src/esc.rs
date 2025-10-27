@@ -1,6 +1,6 @@
 use crate::{
     Actor,
-    actor::Action,
+    actor::{Action, TerminalControlAction},
     charset::{Charset, CharsetIndex},
 };
 use log::debug;
@@ -98,7 +98,7 @@ pub(crate) fn perform<A: Actor>(actor: &mut A, intermediates: &[u8], byte: u8) {
         EscSequence::HorizontalTabSet => actor.handle(Action::SetHorizontalTab),
         EscSequence::ReverseIndex => actor.handle(Action::ReverseIndex),
         EscSequence::ReturnTerminalId => {
-            actor.handle(Action::IdentifyTerminal(None))
+            actor.handle(TerminalControlAction::IdentifyTerminal(None).into())
         },
         EscSequence::FullReset => actor.handle(Action::ResetState),
         EscSequence::DecSaveCursorPosition => {
@@ -111,11 +111,10 @@ pub(crate) fn perform<A: Actor>(actor: &mut A, intermediates: &[u8], byte: u8) {
             actor.handle(Action::RestoreCursorPosition)
         },
         EscSequence::DecApplicationKeyPad => {
-            actor.handle(Action::SetKeypadApplicationMode)
+            actor.handle(TerminalControlAction::SetKeypadApplicationMode.into())
         },
-        EscSequence::DecNormalKeyPad => {
-            actor.handle(Action::UnsetKeypadApplicationMode)
-        },
+        EscSequence::DecNormalKeyPad => actor
+            .handle(TerminalControlAction::UnsetKeypadApplicationMode.into()),
         EscSequence::DecLineDrawingG0 => actor.handle(
             Action::ConfigureCharset(Charset::DecLineDrawing, CharsetIndex::G0),
         ),

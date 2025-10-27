@@ -2,9 +2,8 @@ use cursor_icon::CursorIcon;
 
 use crate::{
     CharacterAttribute, Charset, CharsetIndex, ClearMode, CursorShape,
-    CursorStyle, Hyperlink, LineClearMode, Mode, PrivateMode, Rgb, ScpCharPath,
-    ScpUpdateMode, TabClearMode,
-    clipboard::ClipboardType,
+    CursorStyle, Hyperlink, LineClearMode, Mode, PrivateMode, Rgb,
+    TabClearMode,
     keyboard::{KeyboardMode, KeyboardModeApplyBehavior, ModifyOtherKeysState},
 };
 
@@ -25,7 +24,6 @@ pub enum Action {
     Substitute,
     SetHorizontalTab,
     ReverseIndex,
-    IdentifyTerminal(Option<char>),
     SetHyperlink(Option<Hyperlink>),
     ResetState,
     ScreenAlignmentDisplay,
@@ -37,8 +35,6 @@ pub enum Action {
     MoveForwardTabs(u16),
     MoveBackwardTabs(u16),
     SetCharacterAttribute(CharacterAttribute),
-    SetSCP(ScpCharPath, ScpUpdateMode),
-    ReportDeviceStatus(usize),
     /// Charset specific actions
     ///
     SetActiveCharsetIndex(CharsetIndex),
@@ -78,17 +74,27 @@ pub enum Action {
     SetScrollingRegion(usize, usize),
     ScrollUp(usize),
     ScrollDown(usize),
+
+    Control(TerminalControlAction),
+}
+
+#[derive(Debug)]
+pub enum TerminalControlAction {
+    IdentifyTerminal(Option<char>),
+    ReportDeviceStatus(usize),
     /// Keyboard specific actions
     ///
     SetKeypadApplicationMode,
     UnsetKeypadApplicationMode,
-    StoreToClipboard(ClipboardType, Vec<u8>),
+
+    // StoreToClipboard(ClipboardType, Vec<u8>),
     SetModifyOtherKeysState(ModifyOtherKeysState),
     ReportModifyOtherKeysState,
     ReportKeyboardMode,
     SetKeyboardMode(KeyboardMode, KeyboardModeApplyBehavior),
     PushKeyboardMode(KeyboardMode),
     PopKeyboardModes(u16),
+
     /// Terminal mode specific actions
     ///
     SetMode(Mode),
@@ -97,6 +103,7 @@ pub enum Action {
     UnsetPrivateMode(PrivateMode),
     ReportMode(Mode),
     ReportPrivateMode(PrivateMode),
+
     /// Window manipulation specific actions
     ///
     RequestTextAreaSizeByPixels,
@@ -106,6 +113,25 @@ pub enum Action {
     SetWindowTitle(String),
 }
 
+impl Action {
+    pub fn is_control(&self) -> bool {
+        match self {
+            Self::Control(_) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Into<Action> for TerminalControlAction {
+    fn into(self) -> Action {
+        Action::Control(self)
+    }
+}
+
 pub trait Actor {
     fn handle(&mut self, _: Action) {}
+    /// Begin synchronized (batch) update (DEC mode 2026)
+    fn begin_sync(&mut self) {}
+    /// End synchronized (batch) update (DEC mode 2026)
+    fn end_sync(&mut self) {}
 }

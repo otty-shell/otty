@@ -98,13 +98,6 @@ pub enum NamedPrivateMode {
     ///
     /// CSI ? 3 h -> set 132 column font.
     /// CSI ? 3 l -> reset 80 column font.
-    ///
-    /// Additionally,
-    ///
-    /// * set margins to default positions
-    /// * erases all data in page memory
-    /// * resets DECLRMM to unavailable
-    /// * clears data from the status line (if set to host-writable)
     ColumnMode = 3,
     Origin = 6,
     LineWrap = 7,
@@ -120,7 +113,6 @@ pub enum NamedPrivateMode {
     UrgencyHints = 1042,
     SwapScreenAndSetRestoreCursor = 1049,
     BracketedPaste = 2004,
-    /// The mode is handled automatically by [`Processor`].
     SyncUpdate = 2026,
 }
 

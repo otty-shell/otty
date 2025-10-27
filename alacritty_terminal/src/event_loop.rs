@@ -19,7 +19,7 @@ use crate::sync::FairMutex;
 use crate::term::Term;
 use crate::{thread, tty};
 // use vte::ansi;
-use otty_escape::Parser;
+use otty_escape::{Actor, Parser};
 
 /// Max bytes to read from the PTY before forced terminal synchronization.
 pub(crate) const READ_BUFFER_SIZE: usize = 0x10_0000;
@@ -169,8 +169,8 @@ where
             }
         }
 
-        // Queue terminal redraw unless all processed bytes were synchronized.\
-        if state.parser.sync_bytes_count() < processed && processed > 0 {
+        // Queue terminal redraw after processing bytes.
+        if processed > 0 {
             self.event_proxy.send_event(Event::Wakeup);
         }
 
@@ -240,10 +240,13 @@ where
             };
 
             'event_loop: loop {
-                // Wakeup the event loop when a synchronized update timeout was reached.
-                let handler = state.parser.sync_timeout();
-                let timeout = handler
-                    .sync_timeout()
+                // Synchronized update timeout is now handled at the terminal layer,
+                // not at the parser level.
+                // let handler = self.terminal.lock().timeout();
+                let timeout = self
+                    .terminal
+                    .lock()
+                    .timeout()
                     .map(|st| st.saturating_duration_since(Instant::now()));
 
                 events.clear();
@@ -257,9 +260,8 @@ where
                     }
                 }
 
-                // Handle synchronized update timeout.
                 if events.is_empty() && self.rx.peek().is_none() {
-                    state.parser.stop_sync(&mut *self.terminal.lock());
+                    self.terminal.lock().end_sync();
                     self.event_proxy.send_event(Event::Wakeup);
                     continue;
                 }
@@ -499,6 +501,7 @@ impl<T> PeekableReceiver<T> {
         Self { rx, peeked: None }
     }
 
+    #[allow(dead_code)]
     fn peek(&mut self) -> Option<&T> {
         if self.peeked.is_none() {
             self.peeked = self.rx.try_recv().ok();
