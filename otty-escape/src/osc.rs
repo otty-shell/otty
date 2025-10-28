@@ -256,265 +256,230 @@ fn unexpected(params: &[&[u8]]) {
     debug!("[unexpected osc]: params: [{}], line: {}", &buf, line!());
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::Parser;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Parser;
 
-//     #[derive(Default, Debug)]
-//     struct RecordingActor {
-//         titles: Vec<Option<String>>,
-//         set_colors: Vec<(usize, Rgb)>,
-//         color_queries: Vec<(usize, String)>,
-//         reset_colors: Vec<usize>,
-//         hyperlinks: Vec<Option<Hyperlink>>,
-//         cursor_shapes: Vec<CursorShape>,
-//         mouse_icons: Vec<CursorIcon>,
-//         clipboard_loads: Vec<(u8, String)>,
-//         clipboard_stores: Vec<(u8, Vec<u8>)>,
-//     }
+    #[derive(Default, Debug)]
+    struct RecordingActor {
+        titles: Vec<Option<String>>,
+        set_colors: Vec<(usize, Rgb)>,
+        color_queries: Vec<(usize, String)>,
+        reset_colors: Vec<usize>,
+        hyperlinks: Vec<Option<Hyperlink>>,
+        cursor_shapes: Vec<CursorShape>,
+        mouse_icons: Vec<CursorIcon>,
+        clipboard_loads: Vec<(u8, String)>,
+        clipboard_stores: Vec<(u8, Vec<u8>)>,
+    }
 
-//     impl Actor for RecordingActor {
-//         fn set_title(&mut self, title: Option<String>) {
-//             self.titles.push(title);
-//         }
+    impl Actor for RecordingActor {
+        fn handle(&mut self, _: Action) {}
+    }
 
-//         fn set_color(&mut self, index: usize, color: Rgb) {
-//             self.set_colors.push((index, color));
-//         }
+    #[test]
+    fn set_window_title_variants() {
+        let mut parser = Parser::new();
+        let mut actor = RecordingActor::default();
 
-//         fn color_query(&mut self, index: usize, terminator: &str) {
-//             self.color_queries.push((index, terminator.to_owned()));
-//         }
+        parser.advance(b"\x1b]0;  First Title  \x07", &mut actor);
+        parser.advance(b"\x1b]2;Part1;Part2\x1b\\", &mut actor);
 
-//         fn reset_color(&mut self, index: usize) {
-//             self.reset_colors.push(index);
-//         }
+        assert_eq!(
+            actor.titles,
+            vec![
+                Some(String::from("First Title")),
+                Some(String::from("Part1;Part2")),
+            ]
+        );
+    }
 
-//         fn set_hyperlink(&mut self, link: Option<Hyperlink>) {
-//             self.hyperlinks.push(link);
-//         }
+    #[test]
+    fn hyperlink_open_and_close() {
+        let mut parser = Parser::new();
+        let mut actor = RecordingActor::default();
 
-//         fn set_cursor_shape(&mut self, shape: CursorShape) {
-//             self.cursor_shapes.push(shape);
-//         }
+        parser.advance(
+            b"\x1b]8;id=session;https://example.com;foo=bar\x07",
+            &mut actor,
+        );
+        parser.advance(b"\x1b]8;;\x07", &mut actor);
 
-//         fn set_mouse_cursor_icon(&mut self, icon: CursorIcon) {
-//             self.mouse_icons.push(icon);
-//         }
+        assert_eq!(
+            actor.hyperlinks,
+            vec![
+                Some(Hyperlink {
+                    id: Some(String::from("session")),
+                    uri: String::from("https://example.com;foo=bar"),
+                }),
+                None,
+            ]
+        );
+    }
 
-//         fn clipboard_load(&mut self, clipboard: u8, terminator: &str) {
-//             self.clipboard_loads
-//                 .push((clipboard, terminator.to_owned()));
-//         }
+    #[test]
+    fn set_indexed_colors_and_query() {
+        let mut parser = Parser::new();
+        let mut actor = RecordingActor::default();
 
-//         fn clipboard_store(&mut self, clipboard: u8, data: &[u8]) {
-//             self.clipboard_stores.push((clipboard, data.to_vec()));
-//         }
-//     }
+        parser.advance(b"\x1b]4;1;#112233;2;#445566\x07", &mut actor);
+        parser.advance(b"\x1b]4;7;?\x07", &mut actor);
+        parser.advance(b"\x1b]4;8;?\x1b\\", &mut actor);
 
-//     #[test]
-//     fn set_window_title_variants() {
-//         let mut parser = Parser::new();
-//         let mut actor = RecordingActor::default();
+        assert_eq!(
+            actor.set_colors,
+            vec![
+                (
+                    1,
+                    Rgb {
+                        r: 0x11,
+                        g: 0x22,
+                        b: 0x33
+                    }
+                ),
+                (
+                    2,
+                    Rgb {
+                        r: 0x44,
+                        g: 0x55,
+                        b: 0x66
+                    }
+                ),
+            ]
+        );
+        assert_eq!(
+            actor.color_queries,
+            vec![(7, String::from("\x07")), (8, String::from("\x1b\\")),]
+        );
+    }
 
-//         parser.advance(b"\x1b]0;  First Title  \x07", &mut actor);
-//         parser.advance(b"\x1b]2;Part1;Part2\x1b\\", &mut actor);
+    #[test]
+    fn set_dynamic_standard_colors_with_queries() {
+        let mut parser = Parser::new();
+        let mut actor = RecordingActor::default();
 
-//         assert_eq!(
-//             actor.titles,
-//             vec![
-//                 Some(String::from("First Title")),
-//                 Some(String::from("Part1;Part2")),
-//             ]
-//         );
-//     }
+        parser.advance(b"\x1b]10;#010203\x07", &mut actor);
+        parser.advance(b"\x1b]11;rgb:aa/bb/cc\x07", &mut actor);
+        parser.advance(b"\x1b]12;0x172b3f\x07", &mut actor);
+        parser.advance(b"\x1b]10;?\x1b\\", &mut actor);
 
-//     #[test]
-//     fn hyperlink_open_and_close() {
-//         let mut parser = Parser::new();
-//         let mut actor = RecordingActor::default();
+        assert_eq!(
+            actor.set_colors,
+            vec![
+                (
+                    StdColor::Foreground as usize,
+                    Rgb {
+                        r: 0x01,
+                        g: 0x02,
+                        b: 0x03
+                    }
+                ),
+                (
+                    StdColor::Background as usize,
+                    Rgb {
+                        r: 0xAA,
+                        g: 0xBB,
+                        b: 0xCC
+                    }
+                ),
+                (
+                    StdColor::Cursor as usize,
+                    Rgb {
+                        r: 0x17,
+                        g: 0x2B,
+                        b: 0x3F
+                    }
+                ),
+            ]
+        );
+        assert_eq!(
+            actor.color_queries,
+            vec![(StdColor::Foreground as usize, String::from("\x1b\\"))]
+        );
+    }
 
-//         parser.advance(
-//             b"\x1b]8;id=session;https://example.com;foo=bar\x07",
-//             &mut actor,
-//         );
-//         parser.advance(b"\x1b]8;;\x07", &mut actor);
+    #[test]
+    fn set_mouse_cursor_icon_and_ignore_invalid() {
+        let mut parser = Parser::new();
+        let mut actor = RecordingActor::default();
 
-//         assert_eq!(
-//             actor.hyperlinks,
-//             vec![
-//                 Some(Hyperlink {
-//                     id: Some(String::from("session")),
-//                     uri: String::from("https://example.com;foo=bar"),
-//                 }),
-//                 None,
-//             ]
-//         );
-//     }
+        parser.advance(b"\x1b]22;pointer\x07", &mut actor);
+        parser.advance(b"\x1b]22;unknown\x07", &mut actor);
 
-//     #[test]
-//     fn set_indexed_colors_and_query() {
-//         let mut parser = Parser::new();
-//         let mut actor = RecordingActor::default();
+        assert_eq!(actor.mouse_icons, vec![CursorIcon::Pointer]);
+    }
 
-//         parser.advance(b"\x1b]4;1;#112233;2;#445566\x07", &mut actor);
-//         parser.advance(b"\x1b]4;7;?\x07", &mut actor);
-//         parser.advance(b"\x1b]4;8;?\x1b\\", &mut actor);
+    #[test]
+    fn set_cursor_shape_variants() {
+        let mut parser = Parser::new();
+        let mut actor = RecordingActor::default();
 
-//         assert_eq!(
-//             actor.set_colors,
-//             vec![
-//                 (
-//                     1,
-//                     Rgb {
-//                         r: 0x11,
-//                         g: 0x22,
-//                         b: 0x33
-//                     }
-//                 ),
-//                 (
-//                     2,
-//                     Rgb {
-//                         r: 0x44,
-//                         g: 0x55,
-//                         b: 0x66
-//                     }
-//                 ),
-//             ]
-//         );
-//         assert_eq!(
-//             actor.color_queries,
-//             vec![(7, String::from("\x07")), (8, String::from("\x1b\\")),]
-//         );
-//     }
+        parser.advance(b"\x1b]50;CursorShape=0\x07", &mut actor);
+        parser.advance(b"\x1b]50;CursorShape=1\x07", &mut actor);
+        parser.advance(b"\x1b]50;CursorShape=2\x07", &mut actor);
+        parser.advance(b"\x1b]50;CursorShape=9\x07", &mut actor);
 
-//     #[test]
-//     fn set_dynamic_standard_colors_with_queries() {
-//         let mut parser = Parser::new();
-//         let mut actor = RecordingActor::default();
+        assert_eq!(
+            actor.cursor_shapes,
+            vec![
+                CursorShape::Block,
+                CursorShape::Beam,
+                CursorShape::Underline
+            ]
+        );
+    }
 
-//         parser.advance(b"\x1b]10;#010203\x07", &mut actor);
-//         parser.advance(b"\x1b]11;rgb:aa/bb/cc\x07", &mut actor);
-//         parser.advance(b"\x1b]12;0x172b3f\x07", &mut actor);
-//         parser.advance(b"\x1b]10;?\x1b\\", &mut actor);
+    #[test]
+    fn clipboard_load_and_store_sequences() {
+        let mut parser = Parser::new();
+        let mut actor = RecordingActor::default();
 
-//         assert_eq!(
-//             actor.set_colors,
-//             vec![
-//                 (
-//                     StdColor::Foreground as usize,
-//                     Rgb {
-//                         r: 0x01,
-//                         g: 0x02,
-//                         b: 0x03
-//                     }
-//                 ),
-//                 (
-//                     StdColor::Background as usize,
-//                     Rgb {
-//                         r: 0xAA,
-//                         g: 0xBB,
-//                         b: 0xCC
-//                     }
-//                 ),
-//                 (
-//                     StdColor::Cursor as usize,
-//                     Rgb {
-//                         r: 0x17,
-//                         g: 0x2B,
-//                         b: 0x3F
-//                     }
-//                 ),
-//             ]
-//         );
-//         assert_eq!(
-//             actor.color_queries,
-//             vec![(StdColor::Foreground as usize, String::from("\x1b\\"))]
-//         );
-//     }
+        parser.advance(b"\x1b]52;c;?\x07", &mut actor);
+        parser.advance(b"\x1b]52;;?\x1b\\", &mut actor);
+        parser.advance(b"\x1b]52;p;SGVsbG8=\x1b\\", &mut actor);
 
-//     #[test]
-//     fn set_mouse_cursor_icon_and_ignore_invalid() {
-//         let mut parser = Parser::new();
-//         let mut actor = RecordingActor::default();
+        assert_eq!(
+            actor.clipboard_loads,
+            vec![(b'c', String::from("\x07")), (b'c', String::from("\x1b\\")),]
+        );
+        assert_eq!(actor.clipboard_stores, vec![(b'p', b"SGVsbG8=".to_vec())]);
+    }
 
-//         parser.advance(b"\x1b]22;pointer\x07", &mut actor);
-//         parser.advance(b"\x1b]22;unknown\x07", &mut actor);
+    #[test]
+    fn reset_indexed_colors_all_and_subset() {
+        let mut parser = Parser::new();
+        let mut actor = RecordingActor::default();
 
-//         assert_eq!(actor.mouse_icons, vec![CursorIcon::Pointer]);
-//     }
+        parser.advance(b"\x1b]104\x07", &mut actor);
 
-//     #[test]
-//     fn set_cursor_shape_variants() {
-//         let mut parser = Parser::new();
-//         let mut actor = RecordingActor::default();
+        assert_eq!(actor.reset_colors.len(), 256);
+        assert_eq!(actor.reset_colors.first(), Some(&0));
+        assert_eq!(actor.reset_colors.last(), Some(&255));
 
-//         parser.advance(b"\x1b]50;CursorShape=0\x07", &mut actor);
-//         parser.advance(b"\x1b]50;CursorShape=1\x07", &mut actor);
-//         parser.advance(b"\x1b]50;CursorShape=2\x07", &mut actor);
-//         parser.advance(b"\x1b]50;CursorShape=9\x07", &mut actor);
+        parser.advance(b"\x1b]104;1;3\x1b\\", &mut actor);
 
-//         assert_eq!(
-//             actor.cursor_shapes,
-//             vec![
-//                 CursorShape::Block,
-//                 CursorShape::Beam,
-//                 CursorShape::Underline
-//             ]
-//         );
-//     }
+        assert_eq!(actor.reset_colors.len(), 258);
+        assert_eq!(actor.reset_colors[256], 1);
+        assert_eq!(actor.reset_colors[257], 3);
+    }
 
-//     #[test]
-//     fn clipboard_load_and_store_sequences() {
-//         let mut parser = Parser::new();
-//         let mut actor = RecordingActor::default();
+    #[test]
+    fn reset_standard_colors() {
+        let mut parser = Parser::new();
+        let mut actor = RecordingActor::default();
 
-//         parser.advance(b"\x1b]52;c;?\x07", &mut actor);
-//         parser.advance(b"\x1b]52;;?\x1b\\", &mut actor);
-//         parser.advance(b"\x1b]52;p;SGVsbG8=\x1b\\", &mut actor);
+        parser.advance(b"\x1b]110\x07", &mut actor);
+        parser.advance(b"\x1b]111\x07", &mut actor);
+        parser.advance(b"\x1b]112\x07", &mut actor);
 
-//         assert_eq!(
-//             actor.clipboard_loads,
-//             vec![(b'c', String::from("\x07")), (b'c', String::from("\x1b\\")),]
-//         );
-//         assert_eq!(actor.clipboard_stores, vec![(b'p', b"SGVsbG8=".to_vec())]);
-//     }
-
-//     #[test]
-//     fn reset_indexed_colors_all_and_subset() {
-//         let mut parser = Parser::new();
-//         let mut actor = RecordingActor::default();
-
-//         parser.advance(b"\x1b]104\x07", &mut actor);
-
-//         assert_eq!(actor.reset_colors.len(), 256);
-//         assert_eq!(actor.reset_colors.first(), Some(&0));
-//         assert_eq!(actor.reset_colors.last(), Some(&255));
-
-//         parser.advance(b"\x1b]104;1;3\x1b\\", &mut actor);
-
-//         assert_eq!(actor.reset_colors.len(), 258);
-//         assert_eq!(actor.reset_colors[256], 1);
-//         assert_eq!(actor.reset_colors[257], 3);
-//     }
-
-//     #[test]
-//     fn reset_standard_colors() {
-//         let mut parser = Parser::new();
-//         let mut actor = RecordingActor::default();
-
-//         parser.advance(b"\x1b]110\x07", &mut actor);
-//         parser.advance(b"\x1b]111\x07", &mut actor);
-//         parser.advance(b"\x1b]112\x07", &mut actor);
-
-//         assert_eq!(
-//             actor.reset_colors,
-//             vec![
-//                 StdColor::Foreground as usize,
-//                 StdColor::Background as usize,
-//                 StdColor::Cursor as usize,
-//             ]
-//         );
-//     }
-// }
+        assert_eq!(
+            actor.reset_colors,
+            vec![
+                StdColor::Foreground as usize,
+                StdColor::Background as usize,
+                StdColor::Cursor as usize,
+            ]
+        );
+    }
+}

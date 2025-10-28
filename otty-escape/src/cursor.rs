@@ -1,15 +1,13 @@
 /// Terminal cursor shape.
 #[derive(Debug, Default, Eq, PartialEq, Copy, Clone, Hash)]
 pub enum CursorShape {
-    /// Cursor is a block like `▒`.
+    /// `▒` Cursor.
     #[default]
     Block,
-    /// Cursor is an underscore like `_`.
+    /// `_` Cursor.
     Underline,
-    /// Cursor is a vertical bar `⎸`.
+    /// `⎸` Cursor.
     Beam,
-    /// Cursor is a box like `☐`.
-    HollowBlock,
     /// Invisible cursor.
     Hidden,
 }

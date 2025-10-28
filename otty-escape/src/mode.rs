@@ -119,7 +119,7 @@ pub enum NamedPrivateMode {
 /// Mode for clearing line.
 ///
 /// Relative to cursor.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum LineClearMode {
     /// Clear right of cursor.
     Right,
@@ -132,7 +132,7 @@ pub enum LineClearMode {
 /// Mode for clearing terminal.
 ///
 /// Relative to cursor.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ClearMode {
     /// Clear below cursor.
     Below,
@@ -145,7 +145,7 @@ pub enum ClearMode {
 }
 
 /// Mode for clearing tab stops.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TabClearMode {
     /// Clear stop under cursor.
     Current,

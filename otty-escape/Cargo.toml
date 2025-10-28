@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 bitflags.workspace = true
+log.workspace = true
 otty-vte = { path = "../otty-vte" }
-memchr = "2.7.6"
 cursor-icon = { version = "1.2.0", default-features = false }
-log = { version = "0.4.28" }

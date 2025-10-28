@@ -2509,7 +2509,6 @@ dependencies = [
  "bitflags 2.10.0",
  "cursor-icon",
  "log",
- "memchr",
  "otty-vte",
 ]
 

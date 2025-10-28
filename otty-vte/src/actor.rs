@@ -9,7 +9,7 @@
 //! should be prepared to receive any sequence of calls that is valid according
 //! to the virtual terminal protocol, and should avoid performing additional
 //! parsing themselves.
-use crate::parser::CsiParam;
+use crate::csi::CsiParam;
 
 /// Consumer-facing interface for terminal actions emitted by the parser.
 ///

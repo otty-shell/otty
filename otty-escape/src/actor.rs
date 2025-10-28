@@ -7,40 +7,29 @@ use crate::{
     keyboard::{KeyboardMode, KeyboardModeApplyBehavior, ModifyOtherKeysState},
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Action {
     Print(char),
-    InsertBlank(usize),
-    InsertBlankLines(usize),
-    DeleteLines(usize),
-    DeleteChars(usize),
-    EraseChars(usize),
-    Backspace,
-    CarriageReturn,
-    LineFeed,
-    NextLine,
-    NewLine,
     Bell,
-    Substitute,
-    SetHorizontalTab,
-    ReverseIndex,
     SetHyperlink(Option<Hyperlink>),
-    ResetState,
-    ScreenAlignmentDisplay,
-    ClearScreen(ClearMode),
-    ClearLine(LineClearMode),
-    InsertTabs(u16),
-    SetTabs(u16),
-    ClearTabs(TabClearMode),
-    MoveForwardTabs(u16),
-    MoveBackwardTabs(u16),
     SetCharacterAttribute(CharacterAttribute),
-    /// Charset specific actions
-    ///
-    SetActiveCharsetIndex(CharsetIndex),
-    ConfigureCharset(Charset, CharsetIndex),
-    /// Cursor specific actions
-    ///
+    /// Domain specific actions
+    Control(TerminalControlAction),
+    Edit(EditAction),
+    Cursor(CursorAction),
+}
+
+impl Action {
+    pub fn is_control(&self) -> bool {
+        match self {
+            Self::Control(_) => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum CursorAction {
     /// Set the text cursor shape
     SetCursorShape(CursorShape),
     /// Set the cursor pointer type [https://www.w3.org/TR/css-ui-3/#cursor]
@@ -61,6 +50,42 @@ pub enum Action {
     Goto(i32, usize),
     GotoRow(i32),
     GotoColumn(usize),
+}
+
+impl Into<Action> for CursorAction {
+    fn into(self) -> Action {
+        Action::Cursor(self)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum EditAction {
+    InsertBlank(usize),
+    InsertBlankLines(usize),
+    DeleteLines(usize),
+    DeleteChars(usize),
+    EraseChars(usize),
+    Backspace,
+    CarriageReturn,
+    LineFeed,
+    NextLine,
+    NewLine,
+    Substitute,
+    SetHorizontalTab,
+    ReverseIndex,
+    ResetState,
+    ClearScreen(ClearMode),
+    ClearLine(LineClearMode),
+    InsertTabs(u16),
+    SetTabs(u16),
+    ClearTabs(TabClearMode),
+    ScreenAlignmentDisplay,
+    MoveForwardTabs(u16),
+    MoveBackwardTabs(u16),
+    /// Charset specific actions
+    ///
+    SetActiveCharsetIndex(CharsetIndex),
+    ConfigureCharset(Charset, CharsetIndex),
     /// Color specific actions
     ///
     SetColor {
@@ -74,11 +99,15 @@ pub enum Action {
     SetScrollingRegion(usize, usize),
     ScrollUp(usize),
     ScrollDown(usize),
-
-    Control(TerminalControlAction),
 }
 
-#[derive(Debug)]
+impl Into<Action> for EditAction {
+    fn into(self) -> Action {
+        Action::Edit(self)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum TerminalControlAction {
     IdentifyTerminal(Option<char>),
     ReportDeviceStatus(usize),
@@ -86,7 +115,6 @@ pub enum TerminalControlAction {
     ///
     SetKeypadApplicationMode,
     UnsetKeypadApplicationMode,
-
     // StoreToClipboard(ClipboardType, Vec<u8>),
     SetModifyOtherKeysState(ModifyOtherKeysState),
     ReportModifyOtherKeysState,
@@ -94,7 +122,6 @@ pub enum TerminalControlAction {
     SetKeyboardMode(KeyboardMode, KeyboardModeApplyBehavior),
     PushKeyboardMode(KeyboardMode),
     PopKeyboardModes(u16),
-
     /// Terminal mode specific actions
     ///
     SetMode(Mode),
@@ -103,7 +130,6 @@ pub enum TerminalControlAction {
     UnsetPrivateMode(PrivateMode),
     ReportMode(Mode),
     ReportPrivateMode(PrivateMode),
-
     /// Window manipulation specific actions
     ///
     RequestTextAreaSizeByPixels,
@@ -113,15 +139,6 @@ pub enum TerminalControlAction {
     SetWindowTitle(String),
 }
 
-impl Action {
-    pub fn is_control(&self) -> bool {
-        match self {
-            Self::Control(_) => true,
-            _ => false,
-        }
-    }
-}
-
 impl Into<Action> for TerminalControlAction {
     fn into(self) -> Action {
         Action::Control(self)
@@ -129,6 +146,7 @@ impl Into<Action> for TerminalControlAction {
 }
 
 pub trait Actor {
+    /// processing the action
     fn handle(&mut self, _: Action) {}
     /// Begin synchronized (batch) update (DEC mode 2026)
     fn begin_sync(&mut self) {}
