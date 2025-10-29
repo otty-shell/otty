@@ -10,7 +10,7 @@ This crate is one piece of the **OTTY** terminal stack:
 
 ```
 ┌─────────────┐   raw bytes    ┌─────────────┐   high level actions   ┌──────────────┐
-│ PTY / shell │ ─────────────▶│ otty-escape │ ─────────────────────▶│ terminal UI  │
+│ PTY / shell │ ─────────────▶│ otty-escape │ ─────────────────────▶ │ terminal UI  │
 └─────────────┘                └─────────────┘                        └──────────────┘
 ```
 
