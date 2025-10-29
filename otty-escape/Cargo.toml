@@ -1,0 +1,10 @@
+[package]
+name = "otty-escape"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bitflags.workspace = true
+log.workspace = true
+otty-vte = { path = "../otty-vte" }
+cursor-icon = { version = "1.2.0", default-features = false }

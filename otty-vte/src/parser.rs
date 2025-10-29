@@ -1,6 +1,6 @@
 use crate::actor::Actor;
 use crate::enums::{Action, State};
-use crate::{transitions, utf8};
+use crate::{CsiParam, transitions, utf8};
 
 const MAX_INTERMEDIATES: usize = 2;
 const MAX_OSC_PARAMS: usize = 32;
@@ -48,36 +48,6 @@ impl OscState {
         self.idx = 0;
         self.full = false;
         self.params = Default::default();
-    }
-}
-
-/// Represents a parameter to a CSI-based escaped sequence.
-///
-/// CSI escapes typically have the form: `CSI 3 m`, but can also
-/// bundle multiple values together: `CSI 3 ; 4 m`.  In both
-/// of those examples the parameters are simple integer values
-/// and latter of which would be expressed as a slice containing
-/// `[CsiParam::Integer(3), CsiParam::Integer(4)]`.
-///
-/// There are some escape sequences that use colons to subdivide and
-/// extend the meaning.  For example: `CSI 4:3 m` is a sequence used
-/// to denote a curly underline.  That would be represented as:
-/// `[CsiParam::ColonList(vec![Some(4), Some(3)])]`.
-///
-/// Later: reading ECMA 48, CSI is defined as:
-/// CSI P ... P  I ... I  F
-/// Where P are parameter bytes in the range 0x30-0x3F [0-9:;<=>?]
-/// and I are intermediate bytes in the range 0x20-0x2F
-/// and F is the final byte in the range 0x40-0x7E
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum CsiParam {
-    Integer(i64),
-    P(u8),
-}
-
-impl Default for CsiParam {
-    fn default() -> Self {
-        Self::Integer(0)
     }
 }
 
@@ -231,35 +201,50 @@ impl Parser {
     }
 
     pub fn advance<A: Actor>(&mut self, bytes: &[u8], actor: &mut A) {
-        for byte in bytes {
-            let byte = *byte;
+        for &byte in bytes {
+            self.process_byte(byte, actor);
+        }
+    }
 
-            match self.state {
-                State::Utf8Sequence => self.handle_utf8_step(actor, byte),
-                state => {
-                    let (next_state, action) =
-                        transitions::transit(state, byte);
+    pub fn advance_until_terminated<A: Actor>(
+        &mut self,
+        bytes: &[u8],
+        actor: &mut A,
+    ) -> usize {
+        let mut i = 0;
 
-                    if state == next_state {
-                        self.perform(action, byte, actor);
-                        continue;
-                    }
+        while i != bytes.len() && !actor.terminated() {
+            let byte = bytes[i];
+            self.process_byte(byte, actor);
+            i += 1;
+        }
 
-                    if next_state != State::Utf8Sequence {
-                        self.perform(transitions::exit_action(state), 0, actor);
-                    }
+        i
+    }
 
-                    self.perform(action, byte, actor);
-                    self.perform(
-                        transitions::entry_action(next_state),
-                        byte,
-                        actor,
-                    );
+    #[inline(always)]
+    fn process_byte<A: Actor>(&mut self, byte: u8, actor: &mut A) {
+        match self.state {
+            State::Utf8Sequence => self.handle_utf8_step(actor, byte),
+            state => {
+                let (next_state, action) = transitions::transit(state, byte);
+                let ch = char::from(byte);
 
-                    self.utf8_parser.set_state(self.state);
-                    self.state = next_state;
-                },
-            }
+                if state == next_state {
+                    self.perform(action, ch, actor);
+                    return;
+                }
+
+                if next_state != State::Utf8Sequence {
+                    self.perform(transitions::exit_action(state), ch, actor);
+                }
+
+                self.perform(action, ch, actor);
+                self.perform(transitions::entry_action(next_state), ch, actor);
+
+                self.utf8_parser.set_state(self.state);
+                self.state = next_state;
+            },
         }
     }
 
@@ -273,9 +258,17 @@ impl Parser {
                 next,
                 action,
             } => {
-                self.perform(transitions::exit_action(from), 0, actor);
-                self.perform(action, byte, actor);
-                self.perform(transitions::entry_action(next), 0, actor);
+                self.perform(
+                    transitions::exit_action(from),
+                    byte as char,
+                    actor,
+                );
+                self.perform(action, byte as char, actor);
+                self.perform(
+                    transitions::entry_action(next),
+                    byte as char,
+                    actor,
+                );
 
                 self.utf8_parser.set_state(self.state);
                 self.state = next;
@@ -291,24 +284,24 @@ impl Parser {
         }
     }
 
-    fn perform<A: Actor>(&mut self, action: Action, byte: u8, actor: &mut A) {
+    fn perform<A: Actor>(&mut self, action: Action, byte: char, actor: &mut A) {
         use Action::*;
 
         match action {
-            Print => actor.print(byte as char),
-            Execute => actor.execute(byte),
-            Put => actor.put(byte),
-            CsiDispatch => self.csi_dispatch(actor, byte),
-            EscDispatch => self.esc_dispatch(actor, byte),
-            Param => self.handle_param_byte(byte),
+            Print => actor.print(byte),
+            Execute => actor.execute(byte as u8),
+            Put => actor.put(byte as u8),
+            CsiDispatch => self.csi_dispatch(actor, byte as u8),
+            EscDispatch => self.esc_dispatch(actor, byte as u8),
+            Param => self.handle_param_byte(byte as u8),
             Clear => self.clear(),
-            Collect => self.intermediates.collect(byte),
-            Hook => self.hook(actor, byte),
+            Collect => self.intermediates.collect(byte as u8),
+            Hook => self.hook(actor, byte as u8),
             Unhook => actor.unhook(),
             OscStart => self.osc.clear(),
-            OscPut => self.osc.put(byte as char),
-            OscEnd => self.osc_dispatch(actor),
-            Utf8 => self.handle_utf8_step(actor, byte),
+            OscPut => self.osc.put(byte),
+            OscEnd => self.osc_dispatch(actor, byte as u8),
+            Utf8 => self.handle_utf8_step(actor, byte as u8),
             _ => {},
         }
     }
@@ -325,10 +318,10 @@ impl Parser {
     fn hook<A: Actor>(&mut self, actor: &mut A, byte: u8) {
         self.params.finish();
         actor.hook(
-            byte,
             &self.params.get_integers(),
             self.intermediates.get(),
             self.intermediates.ignored_excess,
+            byte,
         );
     }
 
@@ -337,6 +330,7 @@ impl Parser {
         self.intermediates.promote_to_params(&mut self.params);
         actor.csi_dispatch(
             &self.params.get(),
+            self.intermediates.get(),
             self.intermediates.ignored_excess,
             byte,
         );
@@ -352,9 +346,9 @@ impl Parser {
         );
     }
 
-    fn osc_dispatch<A: Actor>(&mut self, actor: &mut A) {
+    fn osc_dispatch<A: Actor>(&mut self, actor: &mut A, byte: u8) {
         if self.osc.idx == 0 {
-            actor.osc_dispatch(&[]);
+            actor.osc_dispatch(&[], byte);
             return;
         }
 
@@ -372,7 +366,7 @@ impl Parser {
         }
 
         params.push(buffer);
-        actor.osc_dispatch(&params[..limit]);
+        actor.osc_dispatch(&params[..limit], byte);
     }
 
     fn clear(&mut self) {
@@ -410,7 +404,10 @@ mod tests {
             parameters_truncated: bool,
             byte: u8,
         },
-        OscDispatch(Vec<Vec<u8>>),
+        OscDispatch {
+            params: Vec<Vec<u8>>,
+            byte: u8,
+        },
     }
 
     #[derive(Default)]
@@ -429,10 +426,10 @@ mod tests {
 
         fn hook(
             &mut self,
-            byte: u8,
             params: &[i64],
             intermediates: &[u8],
             ignored_excess_intermediates: bool,
+            byte: u8,
         ) {
             self.actions.push(ActorEvents::Hook {
                 params: params.to_vec(),
@@ -468,6 +465,7 @@ mod tests {
         fn csi_dispatch(
             &mut self,
             params: &[CsiParam],
+            _intermediates: &[u8],
             parameters_truncated: bool,
             byte: u8,
         ) {
@@ -478,10 +476,11 @@ mod tests {
             });
         }
 
-        fn osc_dispatch(&mut self, params: &[&[u8]]) {
-            self.actions.push(ActorEvents::OscDispatch(
-                params.iter().map(|e| e.to_vec()).collect(),
-            ));
+        fn osc_dispatch(&mut self, params: &[&[u8]], byte: u8) {
+            self.actions.push(ActorEvents::OscDispatch {
+                params: params.iter().map(|e| e.to_vec()).collect(),
+                byte,
+            });
         }
     }
 
@@ -541,13 +540,29 @@ mod tests {
     }
 
     #[test]
+    fn print_utf8_string() {
+        assert_eq!(
+            parse("Привет!".as_bytes()),
+            vec![
+                ActorEvents::Print('П'),
+                ActorEvents::Print('р'),
+                ActorEvents::Print('и'),
+                ActorEvents::Print('в'),
+                ActorEvents::Print('е'),
+                ActorEvents::Print('т'),
+                ActorEvents::Print('!'),
+            ]
+        );
+    }
+
+    #[test]
     fn test_osc_with_c1_st() {
         assert_eq!(
             parse(b"\x1b]0;there\x9c"),
-            vec![ActorEvents::OscDispatch(vec![
-                b"0".to_vec(),
-                b"there".to_vec()
-            ])]
+            vec![ActorEvents::OscDispatch {
+                params: vec![b"0".to_vec(), b"there".to_vec()],
+                byte: 0x9C,
+            }]
         );
     }
 
@@ -555,16 +570,22 @@ mod tests {
     fn test_osc_with_bel_st() {
         assert_eq!(
             parse(b"\x1b]0;hello\x07"),
-            vec![ActorEvents::OscDispatch(vec![
-                b"0".to_vec(),
-                b"hello".to_vec()
-            ])]
+            vec![ActorEvents::OscDispatch {
+                params: vec![b"0".to_vec(), b"hello".to_vec()],
+                byte: 0x07,
+            }],
         );
     }
 
     #[test]
     fn test_osc_with_no_params() {
-        assert_eq!(parse(b"\x1b]\x07"), vec![ActorEvents::OscDispatch(vec![])]);
+        assert_eq!(
+            parse(b"\x1b]\x07"),
+            vec![ActorEvents::OscDispatch {
+                params: vec![],
+                byte: 0x07,
+            }]
+        );
     }
 
     #[test]
@@ -590,13 +611,11 @@ mod tests {
         assert_eq!(actions.len(), 1);
 
         match &actions[0] {
-            ActorEvents::OscDispatch(parsed_fields) => {
+            ActorEvents::OscDispatch { params, byte } => {
                 let fields: Vec<_> =
                     fields.into_iter().map(|s| s.as_bytes().to_vec()).collect();
-                assert_eq!(
-                    parsed_fields.as_slice(),
-                    &fields[0..MAX_OSC_PARAMS]
-                );
+                assert_eq!(params.as_slice(), &fields[0..MAX_OSC_PARAMS]);
+                assert_eq!(*byte, 0x07);
             },
             other => panic!("Expected OscDispatch but got {:?}", other),
         }
@@ -612,7 +631,10 @@ mod tests {
         assert_eq!(
             parse(b"\x1b]woot\x1b\\"),
             vec![
-                ActorEvents::OscDispatch(vec![b"woot".to_vec()]),
+                ActorEvents::OscDispatch {
+                    params: vec![b"woot".to_vec()],
+                    byte: 0x1B
+                },
                 ActorEvents::EscDispatch {
                     params: vec![],
                     intermediates: vec![],
@@ -752,7 +774,10 @@ mod tests {
     fn osc_utf8() {
         assert_eq!(
             parse("\x1b]\u{af}\x07".as_bytes()),
-            vec![ActorEvents::OscDispatch(vec!["\u{af}".as_bytes().to_vec()])]
+            vec![ActorEvents::OscDispatch {
+                params: vec!["\u{af}".as_bytes().to_vec()],
+                byte: 0x07,
+            }]
         );
     }
 
@@ -760,10 +785,10 @@ mod tests {
     fn osc_fedora_vte() {
         assert_eq!(
             parse("\u{9d}777;preexec\u{9c}".as_bytes()),
-            vec![ActorEvents::OscDispatch(vec![
-                b"777".to_vec(),
-                b"preexec".to_vec(),
-            ])]
+            vec![ActorEvents::OscDispatch {
+                params: vec![b"777".to_vec(), b"preexec".to_vec(),],
+                byte: 0x9C
+            }]
         );
     }
 

@@ -3,12 +3,32 @@
 version = 4
 
 [[package]]
-name = "otty-agent"
-version = "0.1.0"
+name = "bitflags"
+version = "2.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
-name = "otty-client"
+name = "cursor-icon"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
+
+[[package]]
+name = "log"
+version = "0.4.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
+
+[[package]]
+name = "otty-escape"
 version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "cursor-icon",
+ "log",
+ "otty-vte",
+]
 
 [[package]]
 name = "otty-vte"

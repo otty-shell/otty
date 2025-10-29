@@ -9,7 +9,7 @@
 //! should be prepared to receive any sequence of calls that is valid according
 //! to the virtual terminal protocol, and should avoid performing additional
 //! parsing themselves.
-use crate::parser::CsiParam;
+use crate::csi::CsiParam;
 
 /// Consumer-facing interface for terminal actions emitted by the parser.
 ///
@@ -44,10 +44,10 @@ pub trait Actor {
     /// Signals the start of a Device Control String (DCS).
     fn hook(
         &mut self,
-        byte: u8,
         params: &[i64],
         intermediates: &[u8],
         ignored_excess_intermediates: bool,
+        byte: u8,
     );
 
     /// Marks the end of the current control string (DCS).
@@ -58,12 +58,13 @@ pub trait Actor {
     fn put(&mut self, byte: u8);
 
     /// Dispatches an Operating System Command (OSC).
-    fn osc_dispatch(&mut self, params: &[&[u8]]);
+    fn osc_dispatch(&mut self, params: &[&[u8]], byte: u8);
 
     /// Dispatches a Control Sequence Introducer (CSI) escape.
     fn csi_dispatch(
         &mut self,
         params: &[CsiParam],
+        intermediates: &[u8],
         parameters_truncated: bool,
         byte: u8,
     );
@@ -76,4 +77,9 @@ pub trait Actor {
         ignored_excess_intermediates: bool,
         byte: u8,
     );
+
+    // TODO:
+    fn terminated(&self) -> bool {
+        false
+    }
 }

@@ -24,3 +24,12 @@ target
 # Added by cargo
 
 /target
+
+# AI
+
+.codex
+
+# Misc
+
+iced_term
+alacritty_terminal
