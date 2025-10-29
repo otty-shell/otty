@@ -133,7 +133,7 @@ fn hyperlink_processing<A: Actor>(actor: &mut A, params: &[&[u8]]) {
 }
 
 fn set_indexed_color<A: Actor>(actor: &mut A, params: &[&[u8]]) {
-    if params.len() <= 1 || params.len() % 2 == 0 {
+    if params.len() <= 1 || params.len().is_multiple_of(2) {
         return unexpected(params);
     }
 
@@ -445,7 +445,7 @@ mod tests {
         let cases = vec![
             (
                 "\x1b]104\x07",
-                all_colors.map(|i| Action::ResetColor(i)).collect(),
+                all_colors.map(Action::ResetColor).collect(),
             ),
             (
                 "\x1b]104;1;3\x1b\\",
