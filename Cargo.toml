@@ -1,9 +1,6 @@
 [workspace]
 resolver = "3"
 members = [
-    "alacritty_terminal",
-    "iced_term",
-    "iced_term/examples/*",
     "otty-escape",
     "otty-vte",
 ]
