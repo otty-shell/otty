@@ -443,10 +443,7 @@ mod tests {
         let all_colors = 0..256;
 
         let cases = vec![
-            (
-                "\x1b]104\x07",
-                all_colors.map(Action::ResetColor).collect(),
-            ),
+            ("\x1b]104\x07", all_colors.map(Action::ResetColor).collect()),
             (
                 "\x1b]104;1;3\x1b\\",
                 vec![Action::ResetColor(1), Action::ResetColor(3)],
