@@ -1,7 +1,14 @@
 [package]
 name = "otty-vte"
+homepage = "https://otty.sh"
+repository = "https://github.com/otty-shell/otty"
+description = "Library for writing terminal emulators"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
-edition = "2024"
+license = "Apache-2.0"
+readme = "./README.md"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 utf8parse = "0.2.2"
