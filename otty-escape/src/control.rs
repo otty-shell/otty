@@ -104,7 +104,7 @@ impl fmt::Display for ControlCode {
     }
 }
 
-pub(crate) fn perform<'a, A: Actor>(byte: u8, actor: &mut A) {
+pub(crate) fn perform<A: Actor>(byte: u8, actor: &mut A) {
     let code = ControlCode::from(byte);
     match code {
         // C0

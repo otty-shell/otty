@@ -96,6 +96,6 @@ impl Utf8Parser {
             }
         }
 
-        StepResult::Completed(c as char)
+        StepResult::Completed(c)
     }
 }

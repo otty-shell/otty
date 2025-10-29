@@ -3,7 +3,6 @@ resolver = "3"
 members = [
     "alacritty_terminal",
     "iced_term",
-    "vte",
     "iced_term/examples/*",
     "otty-escape",
     "otty-vte",

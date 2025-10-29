@@ -1,16 +1,16 @@
 use log::debug;
 use otty_vte::CsiParam;
 
-use crate::actor::{Action, CursorAction, EditAction, TerminalControlAction};
+use crate::actor::Action;
 use crate::attributes::CharacterAttribute;
-use crate::color::{Color, StdColor};
+use crate::color::{Color, StdColor, parse_sgr_color};
 use crate::cursor::{CursorShape, CursorStyle};
 use crate::keyboard::{
     KeyboardMode, KeyboardModeApplyBehavior, ModifyOtherKeysState,
 };
 use crate::mode::{ClearMode, LineClearMode, Mode, PrivateMode, TabClearMode};
 use crate::parser::ParserState;
-use crate::{Actor, NamedPrivateMode, parse_sgr_color};
+use crate::{Actor, NamedPrivateMode};
 
 #[inline]
 pub(crate) fn perform<A: Actor>(
@@ -34,15 +34,15 @@ pub(crate) fn perform<A: Actor>(
         // DECRST (CSI ? Pm l) and RM (CSI Pm l)
         (b'l', params) => handle_reset_mode(actor, params, fallback),
         // xterm modifyOtherKeys state report.
-        (b'm', [P(b'?'), Integer(4), ..]) => actor
-            .handle(TerminalControlAction::ReportModifyOtherKeysState.into()),
+        (b'm', [P(b'?'), Integer(4), ..]) => {
+            actor.handle(Action::ReportModifyOtherKeysState)
+        },
         // xterm modifyOtherKeys state set.
-        (b'm', [P(b'>'), Integer(4), mode, ..]) => {
+        (b'm', [P(b'>'), Integer(4), _, mode, ..]) => {
             handle_set_xterm_modify_other_keys_state(actor, mode, fallback)
         },
         // SGR (CSI Pm m) Reset
-        (b'm', []) => actor
-            .handle(Action::SetCharacterAttribute(CharacterAttribute::Reset)),
+        (b'm', []) => actor.handle(Action::SGR(CharacterAttribute::Reset)),
         // SGR (CSI Pm m) Set
         (b'm', params) => handle_set_sgr_attribute(actor, params, fallback),
         // DECSTR (CSI ! p)
@@ -160,9 +160,7 @@ where
                             actor.begin_sync();
                         }
 
-                        actor.handle(
-                            TerminalControlAction::SetPrivateMode(mode).into(),
-                        );
+                        actor.handle(Action::SetPrivateMode(mode));
                     },
                     None => fallback(),
                 }
@@ -173,9 +171,7 @@ where
                 match param.as_integer() {
                     Some(mode) => {
                         let mode = Mode::from_raw(mode as u16);
-                        actor.handle(
-                            TerminalControlAction::SetMode(mode).into(),
-                        );
+                        actor.handle(Action::SetMode(mode));
                     },
                     None => fallback(),
                 }
@@ -203,10 +199,7 @@ where
                             actor.end_sync();
                         }
 
-                        actor.handle(
-                            TerminalControlAction::UnsetPrivateMode(mode)
-                                .into(),
-                        );
+                        actor.handle(Action::UnsetPrivateMode(mode));
                     },
                     None => fallback(),
                 }
@@ -217,9 +210,7 @@ where
                 match param.as_integer() {
                     Some(mode) => {
                         let mode = Mode::from_raw(mode as u16);
-                        actor.handle(
-                            TerminalControlAction::UnsetMode(mode).into(),
-                        );
+                        actor.handle(Action::UnsetMode(mode));
                     },
                     None => fallback(),
                 }
@@ -236,24 +227,15 @@ where
     use CsiParam::*;
 
     match params {
-        [P(b'$')] => actor.handle(
-            TerminalControlAction::ReportMode(Mode::from_raw(0)).into(),
-        ),
+        [P(b'$')] => actor.handle(Action::ReportMode(Mode::from_raw(0))),
         [Integer(mode), P(b'$')] => {
-            actor.handle(
-                TerminalControlAction::ReportMode(Mode::from_raw(*mode as u16))
-                    .into(),
-            );
+            actor.handle(Action::ReportMode(Mode::from_raw(*mode as u16)));
         },
-        [P(b'?'), P(b'$')] => actor.handle(
-            TerminalControlAction::ReportPrivateMode(PrivateMode::from_raw(0))
-                .into(),
-        ),
+        [P(b'?'), P(b'$')] => {
+            actor.handle(Action::ReportPrivateMode(PrivateMode::from_raw(0)))
+        },
         [P(b'?'), Integer(mode), P(b'$')] => actor.handle(
-            TerminalControlAction::ReportPrivateMode(PrivateMode::from_raw(
-                *mode as u16,
-            ))
-            .into(),
+            Action::ReportPrivateMode(PrivateMode::from_raw(*mode as u16)),
         ),
         _ => fallback(),
     }
@@ -276,7 +258,7 @@ fn handle_set_xterm_modify_other_keys_state<A, F>(
         _ => return fallback(),
     };
 
-    actor.handle(TerminalControlAction::SetModifyOtherKeysState(mode).into());
+    actor.handle(Action::SetModifyOtherKeysState(mode));
 }
 
 fn handle_set_cursor_style<A, F>(
@@ -309,7 +291,7 @@ where
 
     match params {
         [P(b'?'), ..] => {
-            actor.handle(TerminalControlAction::ReportKeyboardMode.into());
+            actor.handle(Action::ReportKeyboardMode);
         },
         [
             P(b'='),
@@ -325,17 +307,15 @@ where
                 _ => KeyboardModeApplyBehavior::Replace,
             };
 
-            actor.handle(
-                TerminalControlAction::SetKeyboardMode(mode, behavior).into(),
-            );
+            actor.handle(Action::SetKeyboardMode(mode, behavior));
         },
         [P(b'>'), Integer(mode), ..] => {
             let mode = KeyboardMode::from_bits_truncate(*mode as u8);
-            actor.handle(TerminalControlAction::PushKeyboardMode(mode).into());
+            actor.handle(Action::PushKeyboardMode(mode));
         },
         [P(b'<'), Integer(count), ..] => {
             let count = if *count > 1 { *count } else { 1 } as u16;
-            actor.handle(TerminalControlAction::PopKeyboardModes(count).into());
+            actor.handle(Action::PopKeyboardModes(count));
         },
         _ => fallback(),
     }
@@ -432,17 +412,11 @@ fn handle_identify_terminal<A, F>(
     use CsiParam::*;
 
     match params {
-        [] => {
-            actor.handle(TerminalControlAction::IdentifyTerminal(None).into())
+        [] => actor.handle(Action::IdentifyTerminal(None)),
+        [P(b'>')] => actor.handle(Action::IdentifyTerminal(Some('>'))),
+        [Integer(attr)] => {
+            actor.handle(Action::IdentifyTerminal(char::from_u32(*attr as u32)))
         },
-        [P(b'>')] => actor
-            .handle(TerminalControlAction::IdentifyTerminal(Some('>')).into()),
-        [Integer(attr)] => actor.handle(
-            TerminalControlAction::IdentifyTerminal(char::from_u32(
-                *attr as u32,
-            ))
-            .into(),
-        ),
         _ => fallback(),
     }
 }
@@ -578,10 +552,10 @@ where
     use CsiParam::*;
 
     match params {
-        [] => actor.handle(EditAction::ClearTabs(TabClearMode::Current).into()),
+        [] => actor.handle(Action::ClearTabs(TabClearMode::Current)),
         [Integer(mode)] => match mode {
-            0 => actor.handle(EditAction::ClearTabs(TabClearMode::Current).into()),
-            3 => actor.handle(EditAction::ClearTabs(TabClearMode::All).into()),
+            0 => actor.handle(Action::ClearTabs(TabClearMode::Current)),
+            3 => actor.handle(Action::ClearTabs(TabClearMode::All)),
             _ => fallback(),
         },
         _ => fallback(),
@@ -599,9 +573,9 @@ fn handle_horizontal_and_vertical_position<A, F>(
     use CsiParam::*;
 
     match params {
-        [] => actor.handle(CursorAction::Goto(0, 0).into()),
+        [] => actor.handle(Action::Goto(0, 0)),
         [Integer(y), P(b';'), Integer(x)] => {
-            actor.handle(CursorAction::Goto(*y as i32 - 1, *x as usize - 1).into());
+            actor.handle(Action::Goto(*y as i32 - 1, *x as usize - 1));
         },
         _ => fallback(),
     }
@@ -618,9 +592,9 @@ fn handle_cursor_horizontal_tabulation<A, F>(
     use CsiParam::*;
 
     match params {
-        [] => actor.handle(EditAction::MoveForwardTabs(1).into()),
+        [] => actor.handle(Action::MoveForwardTabs(1)),
         [Integer(count)] => {
-            actor.handle(EditAction::MoveForwardTabs(*count as u16).into());
+            actor.handle(Action::MoveForwardTabs(*count as u16));
         },
         _ => fallback(),
     }
@@ -708,10 +682,10 @@ fn handle_device_status_report<A, F>(
     use CsiParam::*;
 
     match params {
-        [] => actor.handle(TerminalControlAction::ReportDeviceStatus(0).into()),
-        [Integer(report)] => actor.handle(
-            TerminalControlAction::ReportDeviceStatus(*report as usize).into(),
-        ),
+        [] => actor.handle(Action::ReportDeviceStatus(0)),
+        [Integer(report)] => {
+            actor.handle(Action::ReportDeviceStatus(*report as usize))
+        },
         _ => fallback(),
     }
 }
@@ -797,14 +771,10 @@ fn handle_window_manipulation<A, F>(
 
     match params {
         [Integer(id)] => match *id {
-            14 => actor.handle(
-                TerminalControlAction::RequestTextAreaSizeByPixels.into(),
-            ),
-            18 => actor.handle(
-                TerminalControlAction::RequestTextAreaSizeByChars.into(),
-            ),
-            22 => actor.handle(TerminalControlAction::PushWindowTitle.into()),
-            23 => actor.handle(TerminalControlAction::PopWindowTitle.into()),
+            14 => actor.handle(Action::RequestTextAreaSizeByPixels),
+            18 => actor.handle(Action::RequestTextAreaSizeByChars),
+            22 => actor.handle(Action::PushWindowTitle),
+            23 => actor.handle(Action::PopWindowTitle),
             _ => fallback(),
         },
         _ => fallback(),
@@ -1019,7 +989,7 @@ fn handle_set_sgr_attribute<A, F>(
         };
 
         if let Some(attr) = attr {
-            actor.handle(Action::SetCharacterAttribute(attr));
+            actor.handle(Action::SGR(attr));
         } else {
             fallback()
         }
@@ -1111,222 +1081,114 @@ mod tests {
             parser.advance(input.as_bytes(), &mut actor);
             actor
         }
-
-        fn action(&self, index: usize) -> &Action {
-            self.actions.get(index).unwrap_or_else(|| {
-                panic!(
-                    "missing action at index {index}, got {:?}",
-                    self.actions
-                )
-            })
-        }
-    }
-
-    fn assert_single_action<F>(input: &str, check: F)
-    where
-        F: FnOnce(&RecordingActor, &Action),
-    {
-        let actor = RecordingActor::parse(input);
-        assert_eq!(
-            actor.actions.len(),
-            1,
-            "expected one action for {input:?}, got {:?}",
-            actor.actions
-        );
-        check(&actor, actor.action(0));
     }
 
     #[test]
     fn csi_mode_sequences() {
         let actor = RecordingActor::parse(
-            "\x1b[4h\x1b[4l\x1b[?25h\x1b[?25l\x1b[?2026h\x1b[?2026l\x1b[?1h\x1b[?1l",
+            "\x1b[4h\x1b[4l\x1b[?25h\x1b[?25l\x1b[?2026h\x1b[?2026l\x1b[?1h\x1b[?1l\x1b[!p\x1b[20$p\x1b[?25$p\x1b[0$p",
         );
 
         assert_eq!(actor.begin_sync_calls, 1);
-        assert_eq!(actor.end_sync_calls, 1);
-        assert_eq!(actor.actions.len(), 8);
+        assert_eq!(actor.end_sync_calls, 2);
+        assert_eq!(actor.actions.len(), 11);
 
-        match actor.action(0) {
-            Action::Control(TerminalControlAction::SetMode(mode)) => {
-                assert_eq!(*mode, Mode::Named(NamedMode::Insert));
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(1) {
-            Action::Control(TerminalControlAction::UnsetMode(mode)) => {
-                assert_eq!(*mode, Mode::Named(NamedMode::Insert));
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(2) {
-            Action::Control(TerminalControlAction::SetPrivateMode(mode)) => {
-                assert_eq!(
-                    *mode,
-                    PrivateMode::Named(NamedPrivateMode::ShowCursor)
-                );
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(3) {
-            Action::Control(TerminalControlAction::UnsetPrivateMode(mode)) => {
-                assert_eq!(
-                    *mode,
-                    PrivateMode::Named(NamedPrivateMode::ShowCursor)
-                );
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(4) {
-            Action::Control(TerminalControlAction::SetPrivateMode(mode)) => {
-                assert_eq!(
-                    *mode,
-                    PrivateMode::Named(NamedPrivateMode::SyncUpdate)
-                );
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(5) {
-            Action::Control(TerminalControlAction::UnsetPrivateMode(mode)) => {
-                assert_eq!(
-                    *mode,
-                    PrivateMode::Named(NamedPrivateMode::SyncUpdate)
-                );
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(6) {
-            Action::Control(TerminalControlAction::SetPrivateMode(mode)) => {
-                assert_eq!(
-                    *mode,
-                    PrivateMode::Named(NamedPrivateMode::CursorKeys)
-                );
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(7) {
-            Action::Control(TerminalControlAction::UnsetPrivateMode(mode)) => {
-                assert_eq!(
-                    *mode,
-                    PrivateMode::Named(NamedPrivateMode::CursorKeys)
-                );
-            },
-            other => panic!("unexpected action: {other:?}"),
+        assert_eq!(
+            actor.actions,
+            vec![
+                Action::SetMode(Mode::Named(NamedMode::Insert)),
+                Action::UnsetMode(Mode::Named(NamedMode::Insert)),
+                Action::SetPrivateMode(PrivateMode::Named(
+                    NamedPrivateMode::ShowCursor
+                )),
+                Action::UnsetPrivateMode(PrivateMode::Named(
+                    NamedPrivateMode::ShowCursor
+                )),
+                Action::SetPrivateMode(PrivateMode::Named(
+                    NamedPrivateMode::SyncUpdate
+                )),
+                Action::UnsetPrivateMode(PrivateMode::Named(
+                    NamedPrivateMode::SyncUpdate
+                )),
+                Action::SetPrivateMode(PrivateMode::Named(
+                    NamedPrivateMode::CursorKeys
+                )),
+                Action::UnsetPrivateMode(PrivateMode::Named(
+                    NamedPrivateMode::CursorKeys
+                )),
+                Action::ReportMode(Mode::Named(NamedMode::LineFeedNewLine)),
+                Action::ReportPrivateMode(PrivateMode::Named(
+                    NamedPrivateMode::ShowCursor
+                )),
+                Action::ReportMode(Mode::Unknown(0))
+            ]
+        );
+    }
+
+    #[test]
+    fn csi_modify_other_keys() {
+        let cases = vec![
+            ("\x1b[?4m", vec![Action::ReportModifyOtherKeysState]),
+            (
+                "\x1b[>4;1m",
+                vec![Action::SetModifyOtherKeysState(
+                    ModifyOtherKeysState::EnableExceptWellDefined,
+                )],
+            ),
+        ];
+
+        for (input, expected) in cases {
+            let actual = RecordingActor::parse(input).actions;
+            assert_eq!(expected, actual)
         }
     }
 
     #[test]
-    fn csi_modify_other_keys_and_keyboard_controls() {
-        assert_single_action("\x1b[?4m", |_, action| match action {
-            Action::Control(
-                TerminalControlAction::ReportModifyOtherKeysState,
-            ) => {},
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        let actor = RecordingActor::parse("\x1b[>4;1m");
-        assert!(
-            actor.actions.is_empty(),
-            "modifyOtherKeys set sequence currently yields no action: {:?}",
-            actor.actions
-        );
-
-        assert_single_action("\x1b[=5;2u", |_, action| match action {
-            Action::Control(TerminalControlAction::SetKeyboardMode(
-                mode,
-                behavior,
-            )) => {
-                assert_eq!(
-                    *mode,
+    fn csi_keyboard_controls() {
+        let cases = vec![
+            (
+                "\x1b[=5;2u",
+                vec![Action::SetKeyboardMode(
                     KeyboardMode::DISAMBIGUATE_ESC_CODES
-                        | KeyboardMode::REPORT_ALTERNATE_KEYS
-                );
-                assert_eq!(*behavior, KeyboardModeApplyBehavior::Union);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[>3u", |_, action| match action {
-            Action::Control(TerminalControlAction::PushKeyboardMode(mode)) => {
-                assert_eq!(
-                    *mode,
+                        | KeyboardMode::REPORT_ALTERNATE_KEYS,
+                    KeyboardModeApplyBehavior::Union,
+                )],
+            ),
+            (
+                "\x1b[>3u",
+                vec![Action::PushKeyboardMode(
                     KeyboardMode::DISAMBIGUATE_ESC_CODES
-                        | KeyboardMode::REPORT_EVENT_TYPES
-                );
-            },
-            other => panic!("unexpected action: {other:?}"),
-        });
+                        | KeyboardMode::REPORT_EVENT_TYPES,
+                )],
+            ),
+            ("\x1b[<4u", vec![Action::PopKeyboardModes(4)]),
+            ("\x1b[?u", vec![Action::ReportKeyboardMode]),
+            ("\x1b[<0u", vec![Action::PopKeyboardModes(1)]),
+        ];
 
-        assert_single_action("\x1b[<4u", |_, action| match action {
-            Action::Control(TerminalControlAction::PopKeyboardModes(count)) => {
-                assert_eq!(*count, 4);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[?u", |_, action| match action {
-            Action::Control(TerminalControlAction::ReportKeyboardMode) => {},
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[<0u", |_, action| match action {
-            Action::Control(TerminalControlAction::PopKeyboardModes(count)) => {
-                assert_eq!(*count, 1);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        });
+        for (input, expected) in cases {
+            let actual = RecordingActor::parse(input).actions;
+            assert_eq!(expected, actual)
+        }
     }
 
     #[test]
-    fn csi_device_reports_and_window_manipulation() {
-        let actor = RecordingActor::parse(
-            "\x1b[!p\x1b[20$p\x1b[?25$p\x1b[0$p\x1b[14t\x1b[18t\x1b[22t\x1b[23t",
-        );
+    fn csi_window_manipulation() {
+        let actor = RecordingActor::parse("\x1b[14t\x1b[18t\x1b[22t\x1b[23t");
 
         assert_eq!(actor.begin_sync_calls, 0);
-        assert_eq!(actor.end_sync_calls, 1);
-        assert_eq!(actor.actions.len(), 7);
+        assert_eq!(actor.end_sync_calls, 0);
+        assert_eq!(actor.actions.len(), 4);
 
-        match actor.action(0) {
-            Action::Control(TerminalControlAction::ReportMode(mode)) => {
-                assert_eq!(*mode, Mode::Named(NamedMode::LineFeedNewLine));
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(1) {
-            Action::Control(TerminalControlAction::ReportPrivateMode(mode)) => {
-                assert_eq!(
-                    *mode,
-                    PrivateMode::Named(NamedPrivateMode::ShowCursor)
-                );
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(2) {
-            Action::Control(TerminalControlAction::ReportMode(mode)) => {
-                assert_eq!(*mode, Mode::Unknown(0));
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(3) {
-            Action::Control(
-                TerminalControlAction::RequestTextAreaSizeByPixels,
-            ) => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(4) {
-            Action::Control(
-                TerminalControlAction::RequestTextAreaSizeByChars,
-            ) => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(5) {
-            Action::Control(TerminalControlAction::PushWindowTitle) => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(6) {
-            Action::Control(TerminalControlAction::PopWindowTitle) => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
+        assert_eq!(
+            actor.actions,
+            vec![
+                Action::RequestTextAreaSizeByPixels,
+                Action::RequestTextAreaSizeByChars,
+                Action::PushWindowTitle,
+                Action::PopWindowTitle
+            ]
+        );
     }
 
     #[test]
@@ -1337,104 +1199,43 @@ mod tests {
 
         assert_eq!(actor.actions.len(), 14);
 
-        match actor.action(0) {
-            Action::MoveUp {
-                rows,
-                carrage_return_needed,
-            } => {
-                assert_eq!(*rows, 1);
-                assert!(!carrage_return_needed);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(1) {
-            Action::MoveUp {
-                rows,
-                carrage_return_needed,
-            } => {
-                assert_eq!(*rows, 5);
-                assert!(!carrage_return_needed);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(2) {
-            Action::MoveDown {
-                rows,
-                carrage_return_needed,
-            } => {
-                assert_eq!(*rows, 1);
-                assert!(!carrage_return_needed);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(3) {
-            Action::MoveDown {
-                rows,
-                carrage_return_needed,
-            } => {
-                assert_eq!(*rows, 2);
-                assert!(!carrage_return_needed);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(4) {
-            Action::MoveForward(columns) => assert_eq!(*columns, 3),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(5) {
-            Action::MoveForward(columns) => assert_eq!(*columns, 4),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(6) {
-            Action::MoveBackward(columns) => assert_eq!(*columns, 2),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(7) {
-            Action::GotoRow(row) => assert_eq!(*row, 2),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(8) {
-            Action::MoveDown {
-                rows,
-                carrage_return_needed,
-            } => {
-                assert_eq!(*rows, 1);
-                assert!(*carrage_return_needed);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(9) {
-            Action::MoveUp {
-                rows,
-                carrage_return_needed,
-            } => {
-                assert_eq!(*rows, 2);
-                assert!(*carrage_return_needed);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(10) {
-            Action::GotoColumn(col) => assert_eq!(*col, 9),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(11) {
-            Action::GotoColumn(col) => assert_eq!(*col, 5),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(12) {
-            Action::Goto(row, col) => {
-                assert_eq!(*row, 4);
-                assert_eq!(*col, 8);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(13) {
-            Action::Goto(row, col) => {
-                assert_eq!(*row, 2);
-                assert_eq!(*col, 3);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
+        assert_eq!(
+            actor.actions,
+            vec![
+                Action::MoveUp {
+                    rows: 1,
+                    carrage_return_needed: false,
+                },
+                Action::MoveUp {
+                    rows: 5,
+                    carrage_return_needed: false,
+                },
+                Action::MoveDown {
+                    rows: 1,
+                    carrage_return_needed: false,
+                },
+                Action::MoveDown {
+                    rows: 2,
+                    carrage_return_needed: false,
+                },
+                Action::MoveForward(3),
+                Action::MoveForward(4),
+                Action::MoveBackward(2),
+                Action::GotoRow(2),
+                Action::MoveDown {
+                    rows: 1,
+                    carrage_return_needed: true,
+                },
+                Action::MoveUp {
+                    rows: 2,
+                    carrage_return_needed: true,
+                },
+                Action::GotoColumn(9),
+                Action::GotoColumn(5),
+                Action::Goto(4, 8),
+                Action::Goto(2, 3)
+            ]
+        );
     }
 
     #[test]
@@ -1445,145 +1246,51 @@ mod tests {
 
         assert_eq!(actor.actions.len(), 12);
 
-        match actor.action(0) {
-            Action::SetTabs(width) => assert_eq!(*width, 8),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(1) {
-            Action::ClearTabs(TabClearMode::Current) => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(2) {
-            Action::ClearTabs(TabClearMode::All) => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(3) {
-            Action::MoveForwardTabs(count) => assert_eq!(*count, 1),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(4) {
-            Action::MoveForwardTabs(count) => assert_eq!(*count, 4),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(5) {
-            Action::MoveBackwardTabs(count) => assert_eq!(*count, 1),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(6) {
-            Action::MoveBackwardTabs(count) => assert_eq!(*count, 3),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(7) {
-            Action::SetScrollingRegion(top, bottom) => {
-                assert_eq!(*top, 1);
-                assert_eq!(*bottom, 24);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(8) {
-            Action::ScrollUp(rows) => assert_eq!(*rows, 1),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(9) {
-            Action::ScrollUp(rows) => assert_eq!(*rows, 2),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(10) {
-            Action::ScrollDown(rows) => assert_eq!(*rows, 1),
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(11) {
-            Action::ScrollDown(rows) => assert_eq!(*rows, 3),
-            other => panic!("unexpected action: {other:?}"),
-        }
+        assert_eq!(
+            actor.actions,
+            vec![
+                Action::SetTabs(8),
+                Action::ClearTabs(TabClearMode::Current),
+                Action::ClearTabs(TabClearMode::All),
+                Action::MoveForwardTabs(1),
+                Action::MoveForwardTabs(4),
+                Action::MoveBackwardTabs(1),
+                Action::MoveBackwardTabs(3),
+                Action::SetScrollingRegion(1, 24),
+                Action::ScrollUp(1),
+                Action::ScrollUp(2),
+                Action::ScrollDown(1),
+                Action::ScrollDown(3),
+            ]
+        );
     }
 
     #[test]
-    fn csi_editing_and_erasing_sequences() {
-        assert_single_action("\x1b[1@", |_, action| match action {
-            Action::InsertBlank(count) => assert_eq!(*count, 1),
-            other => panic!("unexpected action: {other:?}"),
-        });
+    fn csi_editing_sequences() {
+        let cases = vec![
+            ("\x1b[1@", vec![Action::InsertBlank(1)]),
+            ("\x1b[5@", vec![Action::InsertBlank(5)]),
+            ("\x1b[L", vec![Action::InsertBlankLines(1)]),
+            ("\x1b[3L", vec![Action::InsertBlankLines(3)]),
+            ("\x1b[M", vec![Action::DeleteLines(1)]),
+            ("\x1b[2M", vec![Action::DeleteLines(2)]),
+            ("\x1b[P", vec![Action::DeleteChars(1)]),
+            ("\x1b[2P", vec![Action::DeleteChars(2)]),
+            ("\x1b[X", vec![Action::EraseChars(1)]),
+            ("\x1b[4X", vec![Action::EraseChars(4)]),
+            ("\x1b[J", vec![Action::ClearScreen(ClearMode::Below)]),
+            ("\x1b[1J", vec![Action::ClearScreen(ClearMode::Above)]),
+            ("\x1b[2J", vec![Action::ClearScreen(ClearMode::All)]),
+            ("\x1b[3J", vec![Action::ClearScreen(ClearMode::Saved)]),
+            ("\x1b[K", vec![Action::ClearLine(LineClearMode::Right)]),
+            ("\x1b[1K", vec![Action::ClearLine(LineClearMode::Left)]),
+            ("\x1b[2K", vec![Action::ClearLine(LineClearMode::All)]),
+        ];
 
-        assert_single_action("\x1b[5@", |_, action| match action {
-            Action::InsertBlank(count) => assert_eq!(*count, 5),
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[L", |_, action| match action {
-            Action::InsertBlankLines(count) => assert_eq!(*count, 1),
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[3L", |_, action| match action {
-            Action::InsertBlankLines(count) => assert_eq!(*count, 3),
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[M", |_, action| match action {
-            Action::DeleteLines(count) => assert_eq!(*count, 1),
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[2M", |_, action| match action {
-            Action::DeleteLines(count) => assert_eq!(*count, 2),
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[P", |_, action| match action {
-            Action::DeleteChars(count) => assert_eq!(*count, 1),
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[2P", |_, action| match action {
-            Action::DeleteChars(count) => assert_eq!(*count, 2),
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[X", |_, action| match action {
-            Action::EraseChars(count) => assert_eq!(*count, 1),
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[4X", |_, action| match action {
-            Action::EraseChars(count) => assert_eq!(*count, 4),
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[J", |_, action| match action {
-            Action::ClearScreen(ClearMode::Below) => {},
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[1J", |_, action| match action {
-            Action::ClearScreen(ClearMode::Above) => {},
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[2J", |_, action| match action {
-            Action::ClearScreen(ClearMode::All) => {},
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[3J", |_, action| match action {
-            Action::ClearScreen(ClearMode::Saved) => {},
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[K", |_, action| match action {
-            Action::ClearLine(LineClearMode::Right) => {},
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[1K", |_, action| match action {
-            Action::ClearLine(LineClearMode::Left) => {},
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[2K", |_, action| match action {
-            Action::ClearLine(LineClearMode::All) => {},
-            other => panic!("unexpected action: {other:?}"),
-        });
+        for (input, expected) in cases {
+            let actual = RecordingActor::parse(input).actions;
+            assert_eq!(expected, actual)
+        }
     }
 
     #[test]
@@ -1592,197 +1299,127 @@ mod tests {
 
         assert_eq!(actor.actions.len(), 5);
 
-        match actor.action(0) {
-            Action::Control(TerminalControlAction::ReportDeviceStatus(
-                code,
-            )) => {
-                assert_eq!(*code, 0);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(1) {
-            Action::Control(TerminalControlAction::ReportDeviceStatus(
-                code,
-            )) => {
-                assert_eq!(*code, 6);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(2) {
-            Action::Control(TerminalControlAction::IdentifyTerminal(id)) => {
-                assert_eq!(*id, None)
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(3) {
-            Action::Control(TerminalControlAction::IdentifyTerminal(id)) => {
-                assert_eq!(*id, Some('>'));
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(4) {
-            Action::Control(TerminalControlAction::IdentifyTerminal(id)) => {
-                assert_eq!(*id, Some('A'));
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
+        assert_eq!(
+            actor.actions,
+            vec![
+                Action::ReportDeviceStatus(0),
+                Action::ReportDeviceStatus(6),
+                Action::IdentifyTerminal(None),
+                Action::IdentifyTerminal(Some('>')),
+                Action::IdentifyTerminal(Some('A'))
+            ]
+        );
     }
 
     #[test]
     fn csi_sgr_sequences_cover_standard_and_extended_colors() {
-        assert_single_action("\x1b[m", |_, action| match action {
-            Action::SetCharacterAttribute(attr) => {
-                assert_eq!(*attr, CharacterAttribute::Reset);
-            },
-            other => panic!("unexpected action: {other:?}"),
-        });
+        let cases = vec![
+            ("\x1b[m", vec![Action::SGR(CharacterAttribute::Reset)]),
+            (
+                "\x1b[1;31m",
+                vec![
+                    Action::SGR(CharacterAttribute::Bold),
+                    Action::SGR(CharacterAttribute::Foreground(Color::Std(
+                        StdColor::Red,
+                    ))),
+                ],
+            ),
+            (
+                "\x1b[38;5;42m",
+                vec![Action::SGR(CharacterAttribute::Foreground(
+                    Color::Indexed(42),
+                ))],
+            ),
+            (
+                "\x1b[38;2;10;20;30m",
+                vec![Action::SGR(CharacterAttribute::Foreground(
+                    Color::TrueColor(Rgb {
+                        r: 10,
+                        g: 20,
+                        b: 30,
+                    }),
+                ))],
+            ),
+            (
+                "\x1b[58;2;40;50;60m",
+                vec![Action::SGR(CharacterAttribute::UnderlineColor(Some(
+                    Color::TrueColor(Rgb {
+                        r: 40,
+                        g: 50,
+                        b: 60,
+                    }),
+                )))],
+            ),
+            (
+                "\x1b[59m",
+                vec![Action::SGR(CharacterAttribute::UnderlineColor(None))],
+            ),
+            (
+                "\x1b[90;100m",
+                vec![
+                    Action::SGR(CharacterAttribute::Foreground(Color::Std(
+                        StdColor::BrightBlack,
+                    ))),
+                    Action::SGR(CharacterAttribute::Background(Color::Std(
+                        StdColor::BrightBlack,
+                    ))),
+                ],
+            ),
+            ("\x1b[38;2;300;0;0m", vec![]),
+        ];
 
-        let actor = RecordingActor::parse("\x1b[1;31m");
-        assert_eq!(actor.actions.len(), 2);
-        match actor.action(0) {
-            Action::SetCharacterAttribute(attr) => {
-                assert_eq!(*attr, CharacterAttribute::Bold);
-            },
-            other => panic!("unexpected action: {other:?}"),
+        for (input, expected) in cases {
+            let actual = RecordingActor::parse(input).actions;
+            assert_eq!(expected, actual)
         }
-        match actor.action(1) {
-            Action::SetCharacterAttribute(attr) => match attr {
-                CharacterAttribute::Foreground(Color::Std(color)) => {
-                    assert_eq!(*color, StdColor::Red);
-                },
-                other => panic!("unexpected attribute: {other:?}"),
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-
-        assert_single_action("\x1b[38;5;42m", |_, action| match action {
-            Action::SetCharacterAttribute(attr) => match attr {
-                CharacterAttribute::Foreground(Color::Indexed(idx)) => {
-                    assert_eq!(*idx, 42);
-                },
-                other => panic!("unexpected attribute: {other:?}"),
-            },
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[38;2;10;20;30m", |_, action| match action {
-            Action::SetCharacterAttribute(attr) => match attr {
-                CharacterAttribute::Foreground(Color::TrueColor(Rgb {
-                    r,
-                    g,
-                    b,
-                })) => {
-                    assert_eq!((*r, *g, *b), (10, 20, 30));
-                },
-                other => panic!("unexpected attribute: {other:?}"),
-            },
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[58;2;40;50;60m", |_, action| match action {
-            Action::SetCharacterAttribute(attr) => match attr {
-                CharacterAttribute::UnderlineColor(Some(Color::TrueColor(
-                    Rgb { r, g, b },
-                ))) => {
-                    assert_eq!((*r, *g, *b), (40, 50, 60));
-                },
-                other => panic!("unexpected attribute: {other:?}"),
-            },
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[59m", |_, action| match action {
-            Action::SetCharacterAttribute(attr) => match attr {
-                CharacterAttribute::UnderlineColor(None) => {},
-                other => panic!("unexpected attribute: {other:?}"),
-            },
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        let actor = RecordingActor::parse("\x1b[90;100m");
-        assert_eq!(actor.actions.len(), 2);
-        match actor.action(0) {
-            Action::SetCharacterAttribute(attr) => match attr {
-                CharacterAttribute::Foreground(Color::Std(color)) => {
-                    assert_eq!(*color, StdColor::BrightBlack);
-                },
-                other => panic!("unexpected attribute: {other:?}"),
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(1) {
-            Action::SetCharacterAttribute(attr) => match attr {
-                CharacterAttribute::Background(Color::Std(color)) => {
-                    assert_eq!(*color, StdColor::BrightBlack);
-                },
-                other => panic!("unexpected attribute: {other:?}"),
-            },
-            other => panic!("unexpected action: {other:?}"),
-        }
-
-        let actor = RecordingActor::parse("\x1b[38;2;300;0;0m");
-        assert!(
-            actor.actions.is_empty(),
-            "invalid truecolor parameters should not emit actions"
-        );
     }
 
     #[test]
-    fn csi_cursor_style_and_restore_sequences() {
-        assert_single_action("\x1b[5 q", |_, action| match action {
-            Action::SetCursorStyle(style) => match style {
-                Some(CursorStyle { shape, blinking }) => {
-                    assert_eq!(*shape, CursorShape::Beam);
-                    assert!(*blinking);
-                },
-                other => panic!("unexpected cursor style: {other:?}"),
-            },
-            other => panic!("unexpected action: {other:?}"),
-        });
+    fn cursor_position_save_and_restore() {
+        let cases = vec![
+            ("\x1b[s", vec![Action::SaveCursorPosition]),
+            ("\x1b[u", vec![Action::RestoreCursorPosition]),
+        ];
 
-        assert_single_action("\x1b[9 q", |_, action| match action {
-            Action::SetCursorStyle(style) => assert!(style.is_none()),
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[s", |_, action| match action {
-            Action::SaveCursorPosition => {},
-            other => panic!("unexpected action: {other:?}"),
-        });
-
-        assert_single_action("\x1b[u", |_, action| match action {
-            Action::RestoreCursorPosition => {},
-            other => panic!("unexpected action: {other:?}"),
-        });
+        for (input, expected) in cases {
+            let actual = RecordingActor::parse(input).actions;
+            assert_eq!(expected, actual)
+        }
     }
 
     #[test]
-    fn csi_repeat_character_and_edge_cases() {
+    fn csi_cursor_style() {
+        let cases = vec![
+            (
+                "\x1b[5 q",
+                vec![Action::SetCursorStyle(Some(CursorStyle {
+                    shape: CursorShape::Beam,
+                    blinking: true,
+                }))],
+            ),
+            ("\x1b[9 q", vec![Action::SetCursorStyle(None)]),
+        ];
+
+        for (input, expected) in cases {
+            let actual = RecordingActor::parse(input).actions;
+            assert_eq!(expected, actual)
+        }
+    }
+
+    #[test]
+    fn csi_repeat_character() {
         let actor = RecordingActor::parse("A\x1b[3b");
+
         assert_eq!(actor.actions.len(), 4);
-        for action in &actor.actions {
-            match action {
-                Action::Print('A') => {},
-                other => panic!("unexpected action: {other:?}"),
-            }
-        }
 
-        let actor = RecordingActor::parse("\x1b[3b");
-        assert!(
-            actor.actions.is_empty(),
-            "repeat without preceding character should not emit prints"
-        );
-
-        let actor = RecordingActor::parse("\x1b[>4;9m");
-        assert!(
-            actor.actions.is_empty(),
-            "unknown modifyOtherKeys state should be ignored"
-        );
-
-        let actor = RecordingActor::parse("\x1b[5;H");
-        assert!(
-            actor.actions.is_empty(),
-            "missing column parameter should fall back without actions"
+        assert_eq!(
+            actor.actions,
+            vec![
+                Action::Print('A'),
+                Action::Print('A'),
+                Action::Print('A'),
+                Action::Print('A'),
+            ]
         );
     }
 
@@ -1791,29 +1428,17 @@ mod tests {
         let actor = RecordingActor::parse("A\x1b[2J\x1b[sB\x1b[u\x1b[0K");
 
         assert_eq!(actor.actions.len(), 6);
-        match actor.action(0) {
-            Action::Print('A') => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(1) {
-            Action::ClearScreen(ClearMode::All) => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(2) {
-            Action::SaveCursorPosition => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(3) {
-            Action::Print('B') => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(4) {
-            Action::RestoreCursorPosition => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
-        match actor.action(5) {
-            Action::ClearLine(LineClearMode::Right) => {},
-            other => panic!("unexpected action: {other:?}"),
-        }
+
+        assert_eq!(
+            actor.actions,
+            vec![
+                Action::Print('A'),
+                Action::ClearScreen(ClearMode::All),
+                Action::SaveCursorPosition,
+                Action::Print('B'),
+                Action::RestoreCursorPosition,
+                Action::ClearLine(LineClearMode::Right)
+            ]
+        );
     }
 }

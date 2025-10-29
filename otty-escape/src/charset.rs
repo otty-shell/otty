@@ -26,15 +26,6 @@ pub enum CharsetIndex {
 }
 
 impl Charset {
-    // /// Set charset index and return the new charset
-    // #[inline]
-    // pub fn set_index(self, index: CharsetIndex) -> Self {
-    //     match self {
-    //         Self::Ascii(_) => Self::Ascii(index),
-    //         Self::DecLineDrawing(_) => Self::DecLineDrawing(index),
-    //     }
-    // }
-
     /// Switch/Map character to the active charset. Ascii is the common case and
     /// for that we want to do as little as possible.
     #[inline]

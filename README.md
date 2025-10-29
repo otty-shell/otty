@@ -26,3 +26,10 @@ See [LICENSE](./LICENSE).
 ### CONTRIBUTORS
 
 > Contributors guide will be appeared soon.
+
+
+### References
+
+- [kitty](https://sw.kovidgoyal.net/kitty)
+- [xterm](https://invisible-island.net/xterm)
+- [xterm.js](https://xtermjs.org/docs/api/vtfeatures)
