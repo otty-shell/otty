@@ -1,8 +1,8 @@
 [package]
-name = "otty-escape"
+name = "otty-pty"
 homepage = "https://otty.sh"
 repository = "https://github.com/otty-shell/otty"
-description = "Library for parsing raw bytes to UI frendly actions"
+description = "Library for working with pty"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"
@@ -11,7 +11,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-bitflags.workspace = true
-log.workspace = true
-otty-vte = { path = "../otty-vte", version = "0.1.0" }
-cursor-icon = { version = "1.2.0", default-features = false }
+portable-pty = "0.9.0"
+ssh2 = "0.9.5"
+anyhow = "1.0.100"
+thiserror.workspace = true

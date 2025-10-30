@@ -2,7 +2,11 @@
 resolver = "3"
 members = [
     "otty-escape",
+    "otty-pty",
     "otty-vte",
+    "alacritty_terminal",
+    "iced_term",
+    "iced_term/examples/*"
 ]
 
 [workspace.package]
