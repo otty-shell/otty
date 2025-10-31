@@ -9,4 +9,7 @@ pub enum SessionError {
 
     #[error("local pty I/O error")]
     IO(#[from] io::Error),
+
+    #[error("error from ssh2 lib")]
+    SSH2(#[from] ssh2::Error),
 }
