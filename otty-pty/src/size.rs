@@ -1,5 +1,4 @@
 use nix::libc::winsize;
-use portable_pty::PtySize as InnerPtySize;
 
 /// The size of the visible display area in the pty
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,24 +24,13 @@ impl Default for PtySize {
     }
 }
 
-impl From<PtySize> for InnerPtySize {
-    fn from(size: PtySize) -> Self {
-        InnerPtySize {
-            rows: size.rows,
-            cols: size.cols,
-            pixel_width: size.cell_width,
-            pixel_height: size.cell_height,
-        }
-    }
-}
-
-impl Into<winsize> for PtySize {
-    fn into(self) -> winsize {
+impl From<PtySize> for winsize {
+    fn from(value: PtySize) -> winsize {
         winsize {
-            ws_row: self.rows,
-            ws_col: self.cols,
-            ws_xpixel: self.cell_width,
-            ws_ypixel: self.cell_height,
+            ws_row: value.rows,
+            ws_col: value.cols,
+            ws_xpixel: value.cell_width,
+            ws_ypixel: value.cell_height,
         }
     }
 }

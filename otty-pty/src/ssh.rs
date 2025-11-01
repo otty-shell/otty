@@ -1,27 +1,26 @@
+use std::fs::File;
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, FromRawFd};
 use std::path::Path;
-#[cfg(unix)]
-use std::os::fd::RawFd;
 
 use ssh2::{Channel, Session as Ssh2Session};
 
-use crate::{PtySize, SessionError};
 use crate::session::Session;
+use crate::{PtySize, SessionError};
 
 #[derive(Debug)]
 pub enum SSHAuth {
     Password(String),
     KeyFile {
         private_key_path: String,
-        passphrase: Option<String>
-    }
+        passphrase: Option<String>,
+    },
 }
 
 pub struct SSHSession {
     channel: Channel,
-    raw: TcpStream,
+    raw: File,
 }
 
 impl Session for SSHSession {
@@ -43,38 +42,23 @@ impl Session for SSHSession {
         Ok(())
     }
 
-    fn close(&mut self) -> Result<u32, SessionError> {
+    fn close(&mut self) -> Result<i32, SessionError> {
         let _ = self.channel.send_eof();
         let _ = self.channel.wait_eof();
         let _ = self.channel.close();
         let _ = self.channel.wait_close();
 
         let code = self.channel.exit_status().unwrap_or(0);
-        Ok(code as u32)
+        Ok(code)
     }
 
-    fn try_wait(&mut self) -> Result<Option<u32>, SessionError> {
-        match self.channel.exit_status() {
-            Ok(code) => Ok(Some(code as u32)),
-            Err(e) => {
-                use ssh2::ErrorCode;
-                if matches!(e.code(), ErrorCode::Session(_)) && e.message().contains("EAGAIN") {
-                    Ok(None)
-                } else {
-                    if self.channel.eof() {
-                        Ok(Some(0))
-                    } else {
-                        Err(e.into())
-                    }
-                }
-            }
-        }
+    fn try_wait(&mut self) -> Result<i32, SessionError> {
+        let code = self.channel.exit_status()?;
+        Ok(code)
     }
 
-    #[cfg(unix)]
-    fn as_raw_fd(&self) -> Option<RawFd> {
-        // Some(self.raw.as_raw_fd())
-        None
+    fn raw(&self) -> &File {
+        &self.raw
     }
 }
 
@@ -117,14 +101,14 @@ impl SSHSessionBuilder {
         self
     }
 
-    pub fn with_cwd<P>(mut self, path: P) -> Self
+    pub fn with_cwd<P>(self, _path: P) -> Self
     where
         P: AsRef<std::path::Path>,
     {
         self
     }
 
-    pub fn with_env(mut self, key: &str, value: &str) -> Self {
+    pub fn with_env(self, _key: &str, _value: &str) -> Self {
         self
     }
 
@@ -152,7 +136,7 @@ impl SSHSessionBuilder {
             match self.auth {
                 SSHAuth::Password(ref pw) => {
                     raw_session.userauth_password(&self.user, pw)?;
-                }
+                },
                 SSHAuth::KeyFile {
                     ref private_key_path,
                     ref passphrase,
@@ -164,25 +148,26 @@ impl SSHSessionBuilder {
                         path,
                         passphrase.as_deref(),
                     )?;
-                }
+                },
             }
         }
 
         let mut channel = raw_session.channel_session()?;
         channel.handle_extended_data(ssh2::ExtendedData::Merge)?;
         channel.request_pty(
-            "xterm-256color", 
+            "xterm-256color",
             None,
             Some((
                 self.size.cols as u32,
                 self.size.rows as u32,
                 self.size.cell_width as u32,
-                self.size.cell_height as u32
-            ))
+                self.size.cell_height as u32,
+            )),
         )?;
         channel.shell()?;
         raw_session.set_blocking(false);
-        
+
+        let stream = unsafe { File::from_raw_fd(stream.as_raw_fd()) };
 
         Ok(SSHSession {
             channel,

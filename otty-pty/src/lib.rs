@@ -1,12 +1,11 @@
 mod errors;
-mod size;
-mod local;
-mod ssh;
 mod session;
+mod size;
+mod ssh;
 mod unix;
 
 pub use crate::errors::SessionError;
-pub use crate::size::PtySize;
 pub use crate::session::Session;
-pub use local::{LocalSession, LocalSessionBuilder, local};
+pub use crate::size::PtySize;
 pub use ssh::{SSHAuth, SSHSession, SSHSessionBuilder, ssh};
+pub use unix::{UnixSession, UnixSessionBuilder, unix};

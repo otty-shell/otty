@@ -13,7 +13,5 @@ rust-version.workspace = true
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true
-portable-pty = "0.9.0"
 ssh2 = "0.9.5"
-polling = "3.8.0"
-nix = "0.30.1"
+nix = { version = "0.30.1", features = ["term"]}

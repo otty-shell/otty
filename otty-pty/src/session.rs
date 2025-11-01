@@ -1,5 +1,4 @@
-#[cfg(unix)]
-use std::os::fd::RawFd;
+use std::fs::File;
 
 use crate::{PtySize, SessionError};
 
@@ -10,10 +9,9 @@ pub trait Session: Send {
 
     fn resize(&mut self, size: PtySize) -> Result<(), SessionError>;
 
-    fn close(&mut self) -> Result<u32, SessionError>;
+    fn close(&mut self) -> Result<i32, SessionError>;
 
-    fn try_wait(&mut self) -> Result<Option<u32>, SessionError>;
+    fn try_wait(&mut self) -> Result<i32, SessionError>;
 
-    #[cfg(unix)]
-    fn as_raw_fd(&self) -> Option<RawFd>;
+    fn raw(&self) -> &File;
 }
