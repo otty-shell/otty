@@ -2132,6 +2132,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69d83b0086dc8ecf3ce9ae2874b2d1290252e2a30720bea58a5c6639b0092873"
 dependencies = [
  "libc",
+ "log",
  "wasi",
  "windows-sys 0.61.2",
 ]
@@ -2566,7 +2567,9 @@ name = "otty-pty"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "mio",
  "nix 0.30.1",
+ "signal-hook",
  "ssh2",
  "thiserror 2.0.17",
 ]

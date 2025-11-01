@@ -2,15 +2,20 @@ use std::env;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
+use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, Command, ExitStatus};
 
 use nix::libc;
 use nix::pty::{Winsize, openpty};
+use signal_hook::{
+    low_level::{self, pipe},
+    SigId
+};
 
 use crate::session::Session;
-use crate::{PtySize, SessionError};
+use crate::{PtySize, SessionError, UnixSessionExt};
 
 pub struct UnixSessionBuilder {
     cmd: Command,
@@ -66,7 +71,7 @@ impl UnixSessionBuilder {
         self
     }
 
-    pub fn spawn(mut self) -> Result<impl Session, SessionError> {
+    pub fn spawn(mut self) -> Result<impl Session + UnixSessionExt, SessionError> {
         let result = openpty(Some(&self.size.into()), None)?;
         let master = unsafe { File::from_raw_fd(result.master.into_raw_fd()) };
         let slave = unsafe { File::from_raw_fd(result.slave.into_raw_fd()) };
@@ -120,28 +125,45 @@ impl UnixSessionBuilder {
                 });
         };
 
+        let (signal_pipe, signal_pipe_id) = register_signal_handler()?;
+
         let child = self.cmd.spawn()?;
 
-        unsafe {
-            let flags = libc::fcntl(raw_master, libc::F_GETFL, 0);
-            if flags == -1 {
-                return Err(SessionError::IO(io::Error::last_os_error()));
-            }
+        set_nonblocking(raw_master)?;
 
-            if libc::fcntl(raw_master, libc::F_SETFL, flags | libc::O_NONBLOCK)
-                == -1
-            {
-                return Err(SessionError::IO(io::Error::last_os_error()));
-            }
+        Ok(UnixSession::new(
+            master,
+            child,
+            signal_pipe,
+            signal_pipe_id,
+        ))
+    }
+}
+
+fn register_signal_handler() -> Result<(UnixStream, SigId), SessionError>{
+    let (pipe_writer, pipe) = UnixStream::pair()?;
+    let pipe_id = pipe::register(libc::SIGCHLD, pipe_writer)?;
+    pipe.set_nonblocking(true)?;
+    Ok((pipe, pipe_id))
+}
+
+fn set_nonblocking(raw_fd: i32) -> Result<(), SessionError> {
+    unsafe {
+        let flags = libc::fcntl(raw_fd, libc::F_GETFL, 0);
+        let result = libc::fcntl(raw_fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+        if result != 0 {
+            return Err(SessionError::IO(io::Error::last_os_error()));
         }
 
-        Ok(UnixSession::new(master, child))
+        Ok(())
     }
 }
 
 pub struct UnixSession {
     master: File,
     child: Child,
+    signal_pipe: UnixStream,
+    signal_pipe_id: SigId,
 }
 
 impl Session for UnixSession {
@@ -171,9 +193,7 @@ impl Session for UnixSession {
     }
 
     fn close(&mut self) -> Result<i32, SessionError> {
-        if let Some(status) = self.child.try_wait()? {
-            return Ok(status.code().unwrap_or(-1));
-        }
+        low_level::unregister(self.signal_pipe_id);
 
         self.child.kill()?;
 
@@ -185,14 +205,42 @@ impl Session for UnixSession {
         let status = self.child.wait()?;
         Ok(status.code().unwrap_or(-1))
     }
+}
 
-    fn raw(&self) -> &File {
+impl UnixSessionExt for UnixSession {
+    fn master_fd(&self) -> &File {
         &self.master
+    }
+
+    fn signal_pipe(&self) -> &UnixStream {
+        &self.signal_pipe
+    }
+    
+    fn get_next_exit(&mut self) -> Result<Option<ExitStatus>, SessionError> {
+        let mut tmp = [0u8; 1];
+        match self.signal_pipe.read(&mut tmp) {
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(None),
+            Err(e) => return Err(SessionError::IO(e)),
+            _ => {}
+        }
+
+        let status = self.child.try_wait()?;
+        Ok(status)
     }
 }
 
 impl UnixSession {
-    fn new(master: File, child: Child) -> Self {
-        Self { master, child }
+    fn new(
+        master: File,
+        child: Child,
+        signal_pipe: UnixStream,
+        signal_pipe_id: SigId,
+    ) -> Self {
+        Self {
+            master,
+            child,
+            signal_pipe,
+            signal_pipe_id
+        }
     }
 }

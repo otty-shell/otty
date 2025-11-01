@@ -1,4 +1,4 @@
-use nix::libc::winsize;
+use nix::libc::{self, winsize};
 
 /// The size of the visible display area in the pty
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,11 +26,17 @@ impl Default for PtySize {
 
 impl From<PtySize> for winsize {
     fn from(value: PtySize) -> winsize {
+        let ws_row = value.rows as libc::c_ushort;
+        let ws_col = value.cols as libc::c_ushort;
+
+        let ws_xpixel = ws_col * value.cell_width as libc::c_ushort;
+        let ws_ypixel = ws_row * value.cell_height as libc::c_ushort;
+
         winsize {
-            ws_row: value.rows,
-            ws_col: value.cols,
-            ws_xpixel: value.cell_width,
-            ws_ypixel: value.cell_height,
+            ws_row,
+            ws_col,
+            ws_xpixel,
+            ws_ypixel,
         }
     }
 }
