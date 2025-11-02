@@ -13,7 +13,7 @@ rust-version.workspace = true
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true
-mio.workspace = true
+mio = { workspace = true, features = ["os-ext"] }
 ssh2 = "0.9.5"
 
 [target.'cfg(unix)'.dependencies]

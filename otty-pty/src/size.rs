@@ -40,3 +40,31 @@ impl From<PtySize> for winsize {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nix::libc::winsize;
+
+    #[test]
+    fn converts_to_winsize_without_loss() {
+        let size = PtySize {
+            rows: 42,
+            cols: 120,
+            cell_width: 8,
+            cell_height: 16,
+        };
+
+        let winsize {
+            ws_row,
+            ws_col,
+            ws_xpixel,
+            ws_ypixel,
+        } = winsize::from(size);
+
+        assert_eq!(ws_row, 42);
+        assert_eq!(ws_col, 120);
+        assert_eq!(ws_xpixel, 960);
+        assert_eq!(ws_ypixel, 672);
+    }
+}
