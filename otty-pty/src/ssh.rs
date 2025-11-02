@@ -3,14 +3,11 @@
 
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
-use std::os::fd::AsRawFd;
-use std::os::unix::net::UnixStream;
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::ExitStatus;
 
-use mio::Token;
-use mio::unix::SourceFd;
+use mio::{Token, Waker};
 use ssh2::{
     Channel, Error as SshError, ErrorCode, ExtendedData, Session as Ssh2Session,
 };
@@ -36,10 +33,12 @@ pub enum SSHAuth {
 /// Interactive SSH session backed by `ssh2` crate
 /// and integrated with Mio's poll loop.
 pub struct SSHSession {
-    session: Ssh2Session,
+    _session: Ssh2Session,
     channel: Channel,
-    exit_pipe: UnixStream,
-    exit_notifier: UnixStream,
+
+    io: mio::net::TcpStream,
+    waker: Option<mio::Waker>,
+
     exit_status: Option<ExitStatus>,
     exit_notified: bool,
 }
@@ -49,30 +48,26 @@ impl SSHSession {
     fn new(
         session: Ssh2Session,
         channel: Channel,
-        exit_pipe: UnixStream,
-        exit_notifier: UnixStream,
+        io: mio::net::TcpStream,
     ) -> Self {
         Self {
-            session,
+            _session: session,
             channel,
-            exit_pipe,
-            exit_notifier,
+            io,
+            waker: None,
             exit_status: None,
             exit_notified: false,
         }
     }
 
-    /// Notify the poller that the remote child exited exactly once.
-    fn notify_child_exit(&mut self) -> Result<(), SessionError> {
+    /// Notify the poller that the remote stream exited exactly once.
+    fn notify_exit(&mut self) -> Result<(), SessionError> {
         if self.exit_notified {
             return Ok(());
         }
 
-        match self.exit_notifier.write(&[1]) {
-            Ok(_) => (),
-            Err(err) if err.kind() == io::ErrorKind::WouldBlock => (),
-            Err(err) if err.kind() == io::ErrorKind::BrokenPipe => (),
-            Err(err) => return Err(SessionError::IO(err)),
+        if let Some(waker) = &self.waker {
+            waker.wake()?;
         }
 
         self.exit_notified = true;
@@ -110,18 +105,26 @@ impl Session for SSHSession {
         match self.channel.read(buf) {
             Ok(0) => {
                 let _ = self.try_cache_exit_status();
-                self.notify_child_exit()?;
+                self.notify_exit()?;
                 Ok(0)
             },
             Ok(n) => Ok(n),
-            Err(err) => Err(SessionError::IO(err)),
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
+            Err(e) => Err(SessionError::IO(e)),
         }
     }
 
     /// Forward bytes to the remote PTY, respecting libssh2's non-blocking
     /// semantics.
     fn write(&mut self, input: &[u8]) -> Result<usize, SessionError> {
-        Ok(self.channel.write(input)?)
+        match self.channel.write(input) {
+            Ok(n) => {
+                let _ = self.channel.flush();
+                Ok(n)
+            },
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
+            Err(e) => Err(SessionError::IO(e)),
+        }
     }
 
     /// Request a resize of the remote PTY dimensions, propagating both
@@ -145,34 +148,23 @@ impl Session for SSHSession {
     /// Drive a graceful SSH channel teardown and surface the remote exit code
     /// when available.
     fn close(&mut self) -> Result<i32, SessionError> {
-        if let Err(err) = self.channel.send_eof() {
-            if !is_would_block(&err) {
-                return Err(SessionError::SSH2(err));
-            }
-        }
-
-        if let Err(err) = self.channel.wait_eof() {
-            if !is_would_block(&err) {
-                return Err(SessionError::SSH2(err));
-            }
-        }
-
-        if let Err(err) = self.channel.close() {
-            if !is_would_block(&err) {
-                return Err(SessionError::SSH2(err));
-            }
-        }
-
-        if let Err(err) = self.channel.wait_close() {
-            if !is_would_block(&err) {
-                return Err(SessionError::SSH2(err));
+        for step in [
+            Channel::send_eof,
+            Channel::wait_eof,
+            Channel::close,
+            Channel::wait_close,
+        ] {
+            if let Err(err) = step(&mut self.channel) {
+                if !is_would_block(&err) {
+                    return Err(SessionError::SSH2(err));
+                }
             }
         }
 
         let status = self
             .try_cache_exit_status()?
             .unwrap_or_else(|| exit_status_from_code(0));
-        self.notify_child_exit()?;
+        self.notify_exit()?;
 
         Ok(status.code().unwrap_or_default())
     }
@@ -183,7 +175,7 @@ impl Session for SSHSession {
     ) -> Result<Option<ExitStatus>, SessionError> {
         let status = self.try_cache_exit_status()?;
         if status.is_some() {
-            self.notify_child_exit()?;
+            self.notify_exit()?;
         }
         Ok(status)
     }
@@ -198,20 +190,8 @@ impl Pollable for SSHSession {
         io_token: Token,
         child_token: Token,
     ) -> Result<(), SessionError> {
-        let session_fd = self.session.as_raw_fd();
-        let mut session_source = SourceFd(&session_fd);
-
-        registry.register(&mut session_source, io_token, interest)?;
-
-        let exit_fd = self.exit_pipe.as_raw_fd();
-        let mut exit_source = SourceFd(&exit_fd);
-
-        registry.register(
-            &mut exit_source,
-            child_token,
-            mio::Interest::READABLE,
-        )?;
-
+        registry.register(&mut self.io, io_token, interest)?;
+        self.waker = Some(Waker::new(registry, child_token)?);
         Ok(())
     }
 
@@ -221,22 +201,9 @@ impl Pollable for SSHSession {
         registry: &mio::Registry,
         interest: mio::Interest,
         io_token: Token,
-        child_token: Token,
+        _: Token,
     ) -> Result<(), SessionError> {
-        let session_fd = self.session.as_raw_fd();
-        let mut session_source = SourceFd(&session_fd);
-
-        registry.reregister(&mut session_source, io_token, interest)?;
-
-        let exit_fd = self.exit_pipe.as_raw_fd();
-        let mut exit_source = SourceFd(&exit_fd);
-
-        registry.reregister(
-            &mut exit_source,
-            child_token,
-            mio::Interest::READABLE,
-        )?;
-
+        registry.reregister(&mut self.io, io_token, interest)?;
         Ok(())
     }
 
@@ -245,14 +212,8 @@ impl Pollable for SSHSession {
         &mut self,
         registry: &mio::Registry,
     ) -> Result<(), SessionError> {
-        let session_fd = self.session.as_raw_fd();
-        let mut session_source = SourceFd(&session_fd);
-        registry.deregister(&mut session_source)?;
-
-        let exit_fd = self.exit_pipe.as_raw_fd();
-        let mut exit_source = SourceFd(&exit_fd);
-        registry.deregister(&mut exit_source)?;
-
+        registry.deregister(&mut self.io)?;
+        let _ = self.waker.take();
         Ok(())
     }
 }
@@ -307,23 +268,9 @@ impl SSHSessionBuilder {
         self
     }
 
-    /// Return the builder unchanged. Remote sessions do not apply local `cwd`.
-    pub fn with_cwd<P>(self, _path: P) -> Self
-    where
-        P: AsRef<Path>,
-    {
-        self
-    }
-
-    /// Return the builder unchanged. Environment overrides are not forwarded
-    /// for remote sessions.
-    pub fn with_env(self, _key: &str, _value: &str) -> Self {
-        self
-    }
-
     /// Establish the SSH connection, negotiate a PTY, and return an interactive
     /// session that can be registered with Mio.
-    pub fn spawn(self) -> Result<impl Session + Pollable, SessionError> {
+    pub fn spawn(self) -> Result<SSHSession, SessionError> {
         let SSHSessionBuilder {
             host,
             user,
@@ -332,6 +279,7 @@ impl SSHSessionBuilder {
         } = self;
 
         let stream = TcpStream::connect(&host)?;
+        stream.set_nonblocking(true)?;
         stream.set_nodelay(true)?;
 
         let mut session = Ssh2Session::new()?;
@@ -386,14 +334,12 @@ impl SSHSessionBuilder {
         channel.request_pty(REQUEST_PTY_TAG, None, pty_size)?;
         channel.shell()?;
 
-        stream.set_nonblocking(true)?;
         session.set_blocking(false);
 
-        let (exit_notifier, exit_pipe) = UnixStream::pair()?;
-        exit_pipe.set_nonblocking(true)?;
-        exit_notifier.set_nonblocking(true)?;
+        let mio_stream = mio::net::TcpStream::from_std(stream);
+        mio_stream.set_nodelay(true)?;
 
-        Ok(SSHSession::new(session, channel, exit_pipe, exit_notifier))
+        Ok(SSHSession::new(session, channel, mio_stream))
     }
 }
 

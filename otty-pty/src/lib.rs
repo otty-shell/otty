@@ -10,6 +10,7 @@
 mod errors;
 mod size;
 mod ssh;
+#[cfg(unix)]
 mod unix;
 
 use std::process::ExitStatus;

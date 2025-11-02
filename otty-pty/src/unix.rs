@@ -46,13 +46,24 @@ impl Session for UnixSession {
 
     /// Read bytes produced by the child process from the PTY master.
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, SessionError> {
-        Ok(self.master.read(buf)?)
+        match self.master.read(buf) {
+            Ok(n) => Ok(n),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
+            Err(e) => Err(SessionError::IO(e)),
+        }
     }
 
     /// Write bytes into the PTY master so the child process receives them on
     /// its stdin.
     fn write(&mut self, input: &[u8]) -> Result<usize, SessionError> {
-        Ok(self.master.write(input)?)
+        match self.master.write(input) {
+            Ok(n) => {
+                self.master.flush()?;
+                Ok(n)
+            },
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
+            Err(e) => Err(SessionError::IO(e)),
+        }
     }
 
     /// Resize the pseudo terminal to match the front-end viewport.
@@ -81,6 +92,7 @@ impl Session for UnixSession {
             return Ok(status.code().unwrap_or_default());
         }
 
+        // Try send SIGTERM and wait for graceful shutdown
         if let Ok(pid_raw) = i32::try_from(self.child.id()) {
             let result = unsafe { libc::kill(pid_raw, libc::SIGTERM) };
             if result == 0 {
@@ -88,6 +100,7 @@ impl Session for UnixSession {
                     return Ok(status.code().unwrap_or_default());
                 }
             } else {
+                // Check that the process with targed pid is exists
                 let err = io::Error::last_os_error();
                 if err.raw_os_error() != Some(libc::ESRCH) {
                     return Err(SessionError::IO(err));
@@ -98,9 +111,6 @@ impl Session for UnixSession {
         match self.child.kill() {
             Ok(()) => (),
             Err(err) if err.kind() == io::ErrorKind::InvalidInput => (),
-            Err(err) if err.kind() == io::ErrorKind::PermissionDenied => {
-                return Err(SessionError::IO(err));
-            },
             Err(err) => return Err(SessionError::IO(err)),
         }
 
@@ -266,7 +276,7 @@ impl UnixSessionBuilder {
 
     /// Spawn the configured command and return an interactive PTY session that
     /// can be registered with Mio.
-    pub fn spawn(mut self) -> Result<impl Session + Pollable, SessionError> {
+    pub fn spawn(mut self) -> Result<UnixSession, SessionError> {
         let result = openpty(Some(&self.size.into()), None)?;
         let master = unsafe { File::from_raw_fd(result.master.into_raw_fd()) };
         let slave = unsafe { File::from_raw_fd(result.slave.into_raw_fd()) };
