@@ -388,7 +388,7 @@ mod test {
 
     #[test]
     fn unix_session_echoes_output() {
-        let mut session = match unix("/bin/echo").with_arg("otty-test").spawn()
+        let mut session = match unix("echo").with_arg("otty-test").spawn()
         {
             Ok(session) => session,
             Err(SessionError::Nix(Errno::EACCES)) => {
