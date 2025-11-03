@@ -46,13 +46,35 @@ impl Session for UnixSession {
 
     /// Read bytes produced by the child process from the PTY master.
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, SessionError> {
-        Ok(self.master.read(buf)?)
+        loop {
+            match self.master.read(buf) {
+                Ok(n) => return Ok(n),
+                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
+                    continue;
+                },
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                    return Err(SessionError::IO(err));
+                },
+                Err(err) => return Err(SessionError::IO(err)),
+            }
+        }
     }
 
     /// Write bytes into the PTY master so the child process receives them on
     /// its stdin.
     fn write(&mut self, input: &[u8]) -> Result<usize, SessionError> {
-        Ok(self.master.write(input)?)
+        loop {
+            match self.master.write(input) {
+                Ok(n) => return Ok(n),
+                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
+                    continue;
+                },
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                    return Err(SessionError::IO(err));
+                },
+                Err(err) => return Err(SessionError::IO(err)),
+            }
+        }
     }
 
     /// Resize the pseudo terminal to match the front-end viewport.
@@ -362,7 +384,7 @@ mod test {
         let mut buffer = [0u8; 1024];
         let mut collected = Vec::new();
 
-        for _ in 0..10 {
+        for _ in 0..100 {
             match session.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(n) => {
@@ -372,12 +394,17 @@ mod test {
                     }
                 },
                 Err(SessionError::IO(err))
+                    if err.kind() == ErrorKind::Interrupted =>
+                {
+                    continue;
+                },
+                Err(SessionError::IO(err))
                     if err.kind() == ErrorKind::WouldBlock =>
                 {
                     if !collected.is_empty() {
                         break;
                     }
-                    thread::sleep(Duration::from_secs(1));
+                    thread::sleep(Duration::from_millis(10));
                 },
                 Err(err) => return Err(err),
             }
@@ -386,10 +413,38 @@ mod test {
         Ok(String::from_utf8_lossy(&collected).into_owned())
     }
 
+    fn write_input(
+        session: &mut impl Session,
+        data: &[u8],
+    ) -> Result<(), SessionError> {
+        let mut offset = 0;
+
+        while offset < data.len() {
+            match session.write(&data[offset..]) {
+                Ok(0) => thread::sleep(Duration::from_millis(10)),
+                Ok(n) => {
+                    offset += n;
+                },
+                Err(SessionError::IO(err))
+                    if err.kind() == ErrorKind::Interrupted =>
+                {
+                    continue;
+                },
+                Err(SessionError::IO(err))
+                    if err.kind() == ErrorKind::WouldBlock =>
+                {
+                    thread::sleep(Duration::from_millis(10));
+                },
+                Err(err) => return Err(err),
+            }
+        }
+
+        Ok(())
+    }
+
     #[test]
     fn unix_session_echoes_output() {
-        let mut session = match unix("echo").with_arg("otty-test").spawn()
-        {
+        let mut session = match unix("/bin/cat").spawn() {
             Ok(session) => session,
             Err(SessionError::Nix(Errno::EACCES)) => {
                 eprintln!("skipping test; PTY allocation denied (EACCES)");
@@ -398,10 +453,13 @@ mod test {
             Err(err) => panic!("failed to spawn session: {err:?}"),
         };
 
+        write_input(&mut session, b"otty-test\n")
+            .expect("failed to send payload to child");
+
         let output = read_output(&mut session).expect("failed to read output");
         assert!(
             output.contains("otty-test"),
-            "expected echo output, got: {output:?}"
+            "expected echoed output, got: {output:?}"
         );
 
         assert_eq!(session.close().expect("failed to close"), 0);

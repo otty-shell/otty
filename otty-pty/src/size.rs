@@ -43,7 +43,7 @@ impl From<PtySize> for winsize {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use nix::libc::winsize;

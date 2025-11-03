@@ -3,13 +3,20 @@
 //! Run with:
 //! `cargo run --package otty-pty --example run_unix_shell`
 
+#[cfg(unix)]
+use otty_pty::{Session, SessionError, unix};
 use std::error::Error;
 use std::io::ErrorKind;
 use std::thread;
 use std::time::Duration;
 
-use otty_pty::{Session, SessionError, unix};
+#[cfg(not(unix))]
+fn main() -> Result<(), Box<dyn Error>> {
+    eprintln!("run_unix_shell example is only available on Unix platforms.");
+    Ok(())
+}
 
+#[cfg(unix)]
 fn main() -> Result<(), Box<dyn Error>> {
     let mut session = unix("/bin/sh").with_arg("-i").spawn()?;
 
