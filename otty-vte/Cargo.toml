@@ -2,7 +2,7 @@
 name = "otty-vte"
 homepage = "https://otty.sh"
 repository = "https://github.com/otty-shell/otty"
-description = "Library for writing terminal emulators"
+description = "VT00/DEC parser implementation"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"

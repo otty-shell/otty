@@ -1,15 +1,10 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Charset {
     /// ASCII Character set
+    #[default]
     Ascii,
     /// DEC Line Drawing Character set
     DecLineDrawing,
-}
-
-impl Default for Charset {
-    fn default() -> Self {
-        Self::Ascii
-    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

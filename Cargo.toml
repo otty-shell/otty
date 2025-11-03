@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "otty-escape",
+    "otty-pty",
     "otty-vte",
 ]
 
@@ -13,4 +14,5 @@ rust-version = "1.87.0"
 thiserror = "2.0.17"
 bitflags = "2.10.0"
 log = { version = "0.4.28" }
-
+anyhow = "1.0.100"
+mio = "1.1.0"
