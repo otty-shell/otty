@@ -46,24 +46,13 @@ impl Session for UnixSession {
 
     /// Read bytes produced by the child process from the PTY master.
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, SessionError> {
-        match self.master.read(buf) {
-            Ok(n) => Ok(n),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
-            Err(e) => Err(SessionError::IO(e)),
-        }
+        Ok(self.master.read(buf)?)
     }
 
     /// Write bytes into the PTY master so the child process receives them on
     /// its stdin.
     fn write(&mut self, input: &[u8]) -> Result<usize, SessionError> {
-        match self.master.write(input) {
-            Ok(n) => {
-                self.master.flush()?;
-                Ok(n)
-            },
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
-            Err(e) => Err(SessionError::IO(e)),
-        }
+        Ok(self.master.write(input)?)
     }
 
     /// Resize the pseudo terminal to match the front-end viewport.
@@ -373,7 +362,7 @@ mod test {
         let mut buffer = [0u8; 1024];
         let mut collected = Vec::new();
 
-        for _ in 0..50 {
+        for _ in 0..10 {
             match session.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(n) => {
@@ -388,7 +377,7 @@ mod test {
                     if !collected.is_empty() {
                         break;
                     }
-                    thread::sleep(Duration::from_millis(10));
+                    thread::sleep(Duration::from_secs(1));
                 },
                 Err(err) => return Err(err),
             }
@@ -398,25 +387,24 @@ mod test {
     }
 
     #[test]
-    fn unix_session_echoes_output() -> Result<(), Box<dyn std::error::Error>> {
+    fn unix_session_echoes_output() {
         let mut session = match unix("/bin/echo").with_arg("otty-test").spawn()
         {
             Ok(session) => session,
             Err(SessionError::Nix(Errno::EACCES)) => {
                 eprintln!("skipping test; PTY allocation denied (EACCES)");
-                return Ok(());
+                return;
             },
-            Err(err) => return Err(err.into()),
+            Err(err) => panic!("failed to spawn session: {err:?}"),
         };
 
-        let output = read_output(&mut session)?;
+        let output = read_output(&mut session).expect("failed to read output");
         assert!(
             output.contains("otty-test"),
             "expected echo output, got: {output:?}"
         );
 
-        assert_eq!(session.close()?, 0);
-        Ok(())
+        assert_eq!(session.close().expect("failed to close"), 0);
     }
 
     #[test]

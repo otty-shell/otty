@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use nix::libc::{self, winsize};
 
 /// The size of the visible display area in the pty
@@ -24,6 +25,7 @@ impl Default for PtySize {
     }
 }
 
+#[cfg(unix)]
 impl From<PtySize> for winsize {
     fn from(value: PtySize) -> winsize {
         let ws_row = value.rows as libc::c_ushort;

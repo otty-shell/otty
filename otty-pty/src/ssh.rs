@@ -3,7 +3,6 @@
 
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
-use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::ExitStatus;
 
@@ -75,7 +74,7 @@ impl SSHSession {
     }
 
     /// Cache the remote exit status so repeated queries do not hit the network.
-    fn try_cache_exit_status(
+    fn try_get_exit_status(
         &mut self,
     ) -> Result<Option<ExitStatus>, SessionError> {
         if let Some(status) = self.exit_status {
@@ -92,6 +91,7 @@ impl SSHSession {
                 self.exit_status = Some(status);
                 Ok(Some(status))
             },
+            // If we receive EAGAIN it's not an error or exit status
             Err(err) if is_would_block(&err) => Ok(None),
             Err(err) => Err(SessionError::SSH2(err)),
         }
@@ -103,13 +103,14 @@ impl Session for SSHSession {
     /// arrive from the remote PTY.
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, SessionError> {
         match self.channel.read(buf) {
+            // Channel receive the EOF so we need to notify of exit
             Ok(0) => {
-                let _ = self.try_cache_exit_status();
+                let _ = self.try_get_exit_status();
                 self.notify_exit()?;
                 Ok(0)
             },
             Ok(n) => Ok(n),
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
             Err(e) => Err(SessionError::IO(e)),
         }
     }
@@ -162,7 +163,7 @@ impl Session for SSHSession {
         }
 
         let status = self
-            .try_cache_exit_status()?
+            .try_get_exit_status()?
             .unwrap_or_else(|| exit_status_from_code(0));
         self.notify_exit()?;
 
@@ -173,10 +174,7 @@ impl Session for SSHSession {
     fn try_get_child_exit_status(
         &mut self,
     ) -> Result<Option<ExitStatus>, SessionError> {
-        let status = self.try_cache_exit_status()?;
-        if status.is_some() {
-            self.notify_exit()?;
-        }
+        let status = self.try_get_exit_status()?;
         Ok(status)
     }
 }
@@ -349,6 +347,13 @@ fn is_would_block(err: &SshError) -> bool {
 }
 
 /// Build an `ExitStatus` from the raw exit code reported by libssh2.
+#[cfg(unix)]
 fn exit_status_from_code(code: i32) -> ExitStatus {
-    ExitStatusExt::from_raw((code & 0xff) << 8)
+    std::os::unix::process::ExitStatusExt::from_raw((code & 0xff) << 8)
+}
+
+/// Build an `ExitStatus` from the raw exit code reported by libssh2.
+#[cfg(windows)]
+fn exit_status_from_code(code: i32) -> ExitStatus {
+    std::os::windows::process::ExitStatusExt::from_raw(code as u32)
 }
