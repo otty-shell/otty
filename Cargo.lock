@@ -154,6 +154,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "otty-surface"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cursor-icon",
+ "log",
+ "mio",
+ "nix",
+ "otty-escape",
+ "otty-pty",
+ "signal-hook",
+]
+
+[[package]]
 name = "otty-vte"
 version = "0.1.0"
 dependencies = [
