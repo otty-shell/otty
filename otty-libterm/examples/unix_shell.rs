@@ -13,27 +13,22 @@ fn main() -> Result<()> {
 
 #[cfg(unix)]
 mod unix_shell {
+    use std::collections::VecDeque;
     use std::io::{self, Read, Write};
     use std::mem::MaybeUninit;
     use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
     use std::sync::mpsc;
     use std::thread;
-    use std::time::{Duration, Instant};
 
     use anyhow::{Context, Result};
-    use mio::unix::SourceFd;
-    use mio::{Events, Interest, Poll, Token};
     use nix::fcntl::{FcntlArg, OFlag, fcntl};
     use nix::libc;
     use nix::sys::termios::{self, SetArg};
-    use otty_escape::{Color, Parser, StdColor};
-    use otty_pty::{Pollable, PtySize, Session, SessionError, unix};
-    use otty_surface::{CellAttributes, CellUnderline, Surface, SurfaceConfig};
+    use otty_libterm::{
+        CellAttributes, CellUnderline, Color, LibTermError, PtySize, StdColor,
+        Surface, SurfaceConfig, Terminal, TerminalClient, UnixTerminalBuilder,
+    };
     use signal_hook::consts::signal::SIGWINCH;
-
-    const PTY_IO: Token = Token(0);
-    const PTY_CHILD: Token = Token(1);
-    const STDIN_TOKEN: Token = Token(2);
 
     pub fn run() -> Result<()> {
         let stdin = io::stdin();
@@ -41,245 +36,222 @@ mod unix_shell {
         let stdin_fd = stdin.as_raw_fd();
         let stdout_fd = stdout.as_raw_fd();
 
-        let _raw_guard = RawModeGuard::enable(stdin_fd)?;
-        let _stdin_nonblocking = NonBlockingGuard::set(stdin_fd)?;
+        let raw_guard = RawModeGuard::enable(stdin_fd)
+            .context("failed to enable raw mode")?;
+        let nonblocking_guard = NonBlockingGuard::set(stdin_fd)
+            .context("failed to toggle non-blocking mode")?;
 
         let (rows, cols) = query_winsize(stdout_fd)
             .context("failed to query terminal size")?;
-        let mut surface = Surface::new(SurfaceConfig {
-            columns: cols as usize,
-            rows: rows as usize,
-            ..SurfaceConfig::default()
-        });
-        let mut parser = Parser::new();
 
-        let mut session = unix("/bin/sh")
-            .with_arg("-i")
-            .with_size(PtySize {
+        let mut terminal = UnixTerminalBuilder::new("/bin/sh")
+            .arg("-i")
+            .size(PtySize {
                 rows,
                 cols,
                 cell_width: 0,
                 cell_height: 0,
             })
-            .set_controling_tty_enable()
+            .surface_config(SurfaceConfig {
+                columns: cols as usize,
+                rows: rows as usize,
+                ..SurfaceConfig::default()
+            })
+            .controlling_tty(true)
             .spawn()
             .context("failed to spawn shell session")?;
 
-        let mut poll = Poll::new().context("failed to create poll instance")?;
-        session
-            .register(poll.registry(), Interest::READABLE, PTY_IO, PTY_CHILD)
-            .context("failed to register PTY with poll")?;
-
-        let mut stdin_source = SourceFd(&stdin_fd);
-        poll.registry()
-            .register(&mut stdin_source, STDIN_TOKEN, Interest::READABLE)
-            .context("failed to register stdin with poll")?;
-
-        let mut screen =
-            Screen::new().context("failed to initialize screen")?;
-        let mut needs_redraw = true;
-
         let (resize_tx, resize_rx) = mpsc::channel();
         thread::spawn(move || {
-            let mut signals =
-                signal_hook::iterator::Signals::new([SIGWINCH]).unwrap();
-            for _ in &mut signals {
-                if resize_tx.send(()).is_err() {
-                    break;
+            if let Ok(mut signals) =
+                signal_hook::iterator::Signals::new([SIGWINCH])
+            {
+                for _ in &mut signals {
+                    if resize_tx.send(()).is_err() {
+                        break;
+                    }
                 }
             }
         });
 
-        let mut events = Events::with_capacity(128);
-        let mut last_render = Instant::now() - Duration::from_millis(16);
-        let mut running = true;
+        let mut frontend = ShellFrontend::new(
+            resize_rx,
+            raw_guard,
+            nonblocking_guard,
+            (rows, cols),
+        )?;
 
-        while running {
-            let timeout = Some(Duration::from_millis(16));
-            match poll.poll(&mut events, timeout) {
-                Ok(_) => {},
-                Err(err) if err.kind() == io::ErrorKind::Interrupted => {
-                    continue;
-                },
-                Err(err) => {
-                    return Err(err).context("event loop poll failed");
-                },
+        terminal.run(&mut frontend)?;
+        Ok(())
+    }
+
+    struct ShellFrontend {
+        resize_rx: mpsc::Receiver<()>,
+        pending_input: VecDeque<u8>,
+        screen: Screen,
+        _raw_guard: RawModeGuard,
+        _nonblocking_guard: NonBlockingGuard,
+        size: (u16, u16),
+    }
+
+    impl ShellFrontend {
+        fn new(
+            resize_rx: mpsc::Receiver<()>,
+            raw_guard: RawModeGuard,
+            nonblocking_guard: NonBlockingGuard,
+            size: (u16, u16),
+        ) -> io::Result<Self> {
+            Ok(Self {
+                resize_rx,
+                pending_input: VecDeque::new(),
+                screen: Screen::new()?,
+                _raw_guard: raw_guard,
+                _nonblocking_guard: nonblocking_guard,
+                size,
+            })
+        }
+
+        fn handle_resize(
+            &mut self,
+            terminal: &mut Terminal<Surface>,
+        ) -> Result<(), LibTermError> {
+            let mut resized = false;
+            while self.resize_rx.try_recv().is_ok() {
+                resized = true;
             }
 
-            for event in events.iter() {
-                match event.token() {
-                    PTY_IO if event.is_readable() => {
-                        match handle_pty_read(
-                            &mut session,
-                            &mut parser,
-                            &mut surface,
-                        ) {
-                            Ok(true) => needs_redraw = true,
-                            Ok(false) => {},
-                            Err(err) => {
-                                // Check if child exited before propagating error
-                                if let Ok(Some(status)) =
-                                    session.try_get_child_exit_status()
-                                {
-                                    eprintln!(
-                                        "\r\nShell exited with status {:?}",
-                                        status.code()
-                                    );
-                                    running = false;
-                                } else {
-                                    return Err(err)
-                                        .context("error from local pty I/O");
-                                }
-                            },
-                        }
-                    },
-                    PTY_CHILD if event.is_readable() => {
-                        if let Some(status) =
-                            session.try_get_child_exit_status()?
-                        {
-                            eprintln!(
-                                "\r\nShell exited with status {:?}",
-                                status.code()
-                            );
-                            running = false;
-                        }
-                    },
-                    STDIN_TOKEN if event.is_readable() => {
-                        handle_stdin(&mut session)?;
-                    },
-                    _ => {},
-                }
+            if !resized {
+                return Ok(());
             }
 
-            while resize_rx.try_recv().is_ok() {
-                let (rows, cols) = query_winsize(stdout_fd)?;
-                session.resize(PtySize {
+            let (rows, cols) =
+                query_winsize(self.screen.fd()).map_err(LibTermError::from)?;
+
+            if (rows, cols) != self.size {
+                terminal.resize(PtySize {
                     rows,
                     cols,
                     cell_width: 0,
                     cell_height: 0,
                 })?;
-                surface.resize(cols as usize, rows as usize);
-                needs_redraw = true;
+                self.size = (rows, cols);
+                self.screen.clear().map_err(LibTermError::from)?;
             }
 
-            if needs_redraw && last_render.elapsed() > Duration::from_millis(16)
-            {
-                render_surface(&surface, screen.writer())?;
-                last_render = Instant::now();
-                needs_redraw = false;
+            Ok(())
+        }
+
+        fn flush_pending_input(
+            &mut self,
+            terminal: &mut Terminal<Surface>,
+        ) -> Result<(), LibTermError> {
+            while !self.pending_input.is_empty() {
+                let (front, _) = self.pending_input.as_slices();
+                if front.is_empty() {
+                    break;
+                }
+
+                let written = terminal.write(front)?;
+                if written == 0 {
+                    break;
+                }
+                self.pending_input.drain(0..written);
             }
+
+            Ok(())
         }
 
-        // Drain remaining output to ensure we show the final prompt/output.
-        if handle_pty_read(&mut session, &mut parser, &mut surface)? {
-            render_surface(&surface, screen.writer())?;
-        }
-        let _ = session.close();
+        fn read_stdin(&mut self) -> Result<(), LibTermError> {
+            let mut buffer = [0u8; 1024];
+            let mut stdin = io::stdin();
 
-        Ok(())
+            loop {
+                match stdin.read(&mut buffer) {
+                    Ok(0) => {
+                        self.pending_input.push_back(4);
+                        break;
+                    },
+                    Ok(read) => {
+                        self.pending_input.extend(&buffer[..read]);
+                    },
+                    Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                        break;
+                    },
+                    Err(err) if err.kind() == io::ErrorKind::Interrupted => {
+                        continue;
+                    },
+                    Err(err) => return Err(LibTermError::Io(err)),
+                }
+            }
+
+            Ok(())
+        }
+
+        fn render(&mut self, surface: &Surface) -> Result<(), LibTermError> {
+            render_surface(surface, self.screen.writer())
+                .map_err(LibTermError::from)
+        }
     }
 
-    fn handle_pty_read(
-        session: &mut impl Session,
-        parser: &mut Parser,
-        surface: &mut Surface,
-    ) -> Result<bool> {
-        let mut buffer = [0u8; 8192];
-        let mut updated = false;
-        loop {
-            match session.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(read) => {
-                    parser.advance(&buffer[..read], surface);
-                    updated = true;
-                },
-                Err(SessionError::IO(err))
-                    if err.kind() == io::ErrorKind::WouldBlock =>
-                {
-                    break;
-                },
-                Err(SessionError::IO(err))
-                    if err.kind() == io::ErrorKind::Interrupted =>
-                {
-                    continue;
-                },
-                Err(err) => return Err(err.into()),
-            }
+    impl TerminalClient<Surface> for ShellFrontend {
+        fn before_poll(
+            &mut self,
+            terminal: &mut Terminal<Surface>,
+        ) -> Result<(), LibTermError> {
+            self.handle_resize(terminal)?;
+            self.flush_pending_input(terminal)?;
+            self.read_stdin()?;
+            self.flush_pending_input(terminal)?;
+            Ok(())
         }
 
-        Ok(updated)
-    }
-
-    fn handle_stdin(session: &mut impl Session) -> Result<()> {
-        let mut buffer = [0u8; 1024];
-        loop {
-            match io::stdin().read(&mut buffer) {
-                Ok(0) => {
-                    session.write(&[4])?; // Send EOF (Ctrl+D)
-                    break;
-                },
-                Ok(read) => {
-                    let mut written = 0;
-                    while written < read {
-                        match session.write(&buffer[written..read]) {
-                            Ok(bytes) => written += bytes,
-                            Err(SessionError::IO(err))
-                                if err.kind() == io::ErrorKind::WouldBlock =>
-                            {
-                                break;
-                            },
-                            Err(SessionError::IO(err))
-                                if err.kind() == io::ErrorKind::Interrupted =>
-                            {
-                                continue;
-                            },
-                            Err(err) => return Err(err.into()),
-                        }
-                    }
-                },
-                Err(err) if err.kind() == io::ErrorKind::WouldBlock => break,
-                Err(err) if err.kind() == io::ErrorKind::Interrupted => {
-                    continue;
-                },
-                Err(err) => return Err(err.into()),
-            }
+        fn on_surface_change(
+            &mut self,
+            surface: &Surface,
+        ) -> Result<(), LibTermError> {
+            self.render(surface)
         }
 
-        Ok(())
+        fn on_child_exit(
+            &mut self,
+            status: &std::process::ExitStatus,
+        ) -> Result<(), LibTermError> {
+            let out = self.screen.writer();
+            let exit_repr = status
+                .code()
+                .map(|code| format!("{code}"))
+                .unwrap_or_else(|| "terminated by signal".to_string());
+            writeln!(out, "\r\nShell exited with {exit_repr}")
+                .map_err(LibTermError::from)?;
+            out.flush().map_err(LibTermError::from)?;
+            Ok(())
+        }
     }
 
     fn render_surface(
         surface: &Surface,
         out: &mut impl Write,
     ) -> io::Result<()> {
-        // Hide cursor
         write!(out, "\x1b[?25l")?;
         let mut buf = [0u8; 4];
         let mut prev_attrs: Option<CellAttributes> = None;
-
         let default_attrs = CellAttributes::default();
 
         for row_idx in 0..surface.grid().height() {
-            // Move to start of this row
             write!(out, "\x1b[{};1H", row_idx + 1)?;
 
             let row = surface.grid().row(row_idx);
             let width = surface.grid().width();
 
-            // Render all cells in this row
             for col_idx in 0..width {
-                // Get cell or use space with default attrs if grid doesn't have it
                 let (ch, attrs) = if col_idx < row.cells.len() {
                     let cell = &row.cells[col_idx];
                     let ch = if cell.attributes.hidden { ' ' } else { cell.ch };
                     (ch, &cell.attributes)
                 } else {
-                    // Grid doesn't have this cell - use default
                     (' ', &default_attrs)
                 };
 
-                // Emit SGR codes if attributes changed
                 if prev_attrs.as_ref() != Some(attrs) {
                     write_sgr_for_attrs(out, attrs)?;
                     prev_attrs = Some(attrs.clone());
@@ -289,17 +261,14 @@ mod unix_shell {
                 out.write_all(encoded.as_bytes())?;
             }
 
-            // Reset attributes at end of line
             if prev_attrs.is_some() {
                 write!(out, "\x1b[0m")?;
                 prev_attrs = None;
             }
         }
 
-        // Position cursor where the terminal expects it
         let (cursor_row, cursor_col) = surface.cursor_position();
         write!(out, "\x1b[{};{}H\x1b[?25h", cursor_row + 1, cursor_col + 1)?;
-
         out.flush()
     }
 
@@ -307,10 +276,8 @@ mod unix_shell {
         out: &mut impl Write,
         attrs: &CellAttributes,
     ) -> io::Result<()> {
-        // Start with reset
         write!(out, "\x1b[0")?;
 
-        // Text attributes
         if attrs.bold {
             write!(out, ";1")?;
         }
@@ -335,10 +302,7 @@ mod unix_shell {
             write!(out, ";9")?;
         }
 
-        // Foreground color
         write_color(out, &attrs.foreground, true)?;
-
-        // Background color
         write_color(out, &attrs.background, false)?;
 
         write!(out, "m")?;
@@ -375,7 +339,6 @@ mod unix_shell {
                 | StdColor::Background
                 | StdColor::BrightForeground
                 | StdColor::DimForeground => {
-                    // Use default color
                     write!(out, ";{}", if is_foreground { 39 } else { 49 })?
                 },
                 _ => {},
@@ -391,13 +354,13 @@ mod unix_shell {
         Ok(())
     }
 
-    fn query_winsize(fd: RawFd) -> Result<(u16, u16)> {
+    fn query_winsize(fd: RawFd) -> io::Result<(u16, u16)> {
         let mut winsize = MaybeUninit::<libc::winsize>::zeroed();
         let res =
             unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, winsize.as_mut_ptr()) };
 
         if res == -1 {
-            return Err(io::Error::last_os_error()).context("ioctl TIOCGWINSZ");
+            return Err(io::Error::last_os_error());
         }
 
         let winsize = unsafe { winsize.assume_init() };
@@ -420,7 +383,7 @@ mod unix_shell {
     }
 
     impl RawModeGuard {
-        fn enable(fd: RawFd) -> Result<Self> {
+        fn enable(fd: RawFd) -> io::Result<Self> {
             let original =
                 termios::tcgetattr(unsafe { BorrowedFd::borrow_raw(fd) })?;
             let mut raw = original.clone();
@@ -450,7 +413,7 @@ mod unix_shell {
     }
 
     impl NonBlockingGuard {
-        fn set(fd: RawFd) -> Result<Self> {
+        fn set(fd: RawFd) -> io::Result<Self> {
             let flags = OFlag::from_bits_truncate(fcntl(
                 unsafe { BorrowedFd::borrow_raw(fd) },
                 FcntlArg::F_GETFL,
@@ -490,6 +453,15 @@ mod unix_shell {
 
         fn writer(&mut self) -> &mut io::Stdout {
             &mut self.stdout
+        }
+
+        fn clear(&mut self) -> io::Result<()> {
+            write!(self.stdout, "\x1b[2J\x1b[H")?;
+            self.stdout.flush()
+        }
+
+        fn fd(&self) -> RawFd {
+            self.stdout.as_raw_fd()
         }
     }
 

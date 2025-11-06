@@ -90,6 +90,9 @@ impl CellAttributes {
 pub struct Cell {
     pub ch: char,
     pub attributes: CellAttributes,
+    pub zero_width: Vec<char>,
+    pub wide_leading: bool,
+    pub wide_trailing: bool,
 }
 
 impl Cell {
@@ -97,6 +100,9 @@ impl Cell {
         Self {
             ch: ' ',
             attributes: attributes.clone(),
+            zero_width: Vec::new(),
+            wide_leading: false,
+            wide_trailing: false,
         }
     }
 
@@ -104,10 +110,29 @@ impl Cell {
         Self {
             ch,
             attributes: attributes.clone(),
+            zero_width: Vec::new(),
+            wide_leading: false,
+            wide_trailing: false,
         }
     }
 
     pub fn is_blank(&self) -> bool {
         self.ch == ' '
+    }
+
+    pub fn clear_zero_width(&mut self) {
+        self.zero_width.clear();
+    }
+
+    pub fn push_zero_width(&mut self, ch: char) {
+        self.zero_width.push(ch);
+    }
+
+    pub fn is_wide_leading(&self) -> bool {
+        self.wide_leading
+    }
+
+    pub fn is_wide_trailing(&self) -> bool {
+        self.wide_trailing
     }
 }
