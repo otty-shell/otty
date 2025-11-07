@@ -1,9 +1,9 @@
-use otty_vte::{Actor, CsiParam, Parser};
+use otty_vte::{CsiParam, Parser, VTActor, VTParser};
 
 #[derive(Default)]
 struct MyActor;
 
-impl Actor for MyActor {
+impl VTActor for MyActor {
     fn print(&mut self, c: char) {
         println!("print: {c}");
     }

@@ -1,5 +1,6 @@
-use otty_escape::Parser;
-use otty_surface::{Surface, SurfaceConfig};
+use log::trace;
+use otty_escape::{Action, EscapeActor, EscapeParser, Parser, vte};
+use otty_surface::{Surface, SurfaceConfig, SurfaceController};
 
 fn main() {
     println!("=== otty-escape → otty-surface Integration Example ===\n");
@@ -59,8 +60,143 @@ fn main() {
     println!("Cursor: {:?}", surface.cursor_position());
 }
 
-fn advance(parser: &mut Parser, surface: &mut Surface, bytes: &[u8]) {
-    parser.advance(bytes, surface);
+fn advance(
+    parser: &mut Parser<vte::Parser>,
+    surface: &mut Surface,
+    bytes: &[u8],
+) {
+    struct SurfaceActor<'a> {
+        surface: &'a mut Surface,
+    }
+
+    impl<'a> EscapeActor for SurfaceActor<'a> {
+        fn handle(&mut self, action: Action) {
+            use Action::*;
+
+            match action {
+                Print(ch) => self.surface.print(ch),
+                Bell => self.surface.bell(),
+                InsertBlank(count) => self.surface.insert_blank(count),
+                InsertBlankLines(count) => {
+                    self.surface.insert_blank_lines(count)
+                },
+                DeleteLines(count) => self.surface.delete_lines(count),
+                DeleteChars(count) => self.surface.delete_chars(count),
+                EraseChars(count) => self.surface.erase_chars(count),
+                Backspace => self.surface.backspace(),
+                CarriageReturn => self.surface.carriage_return(),
+                LineFeed => self.surface.line_feed(),
+                NextLine | NewLine => self.surface.new_line(),
+                Substitute => self.surface.print('�'),
+                SetHorizontalTab => self.surface.set_horizontal_tab(),
+                ReverseIndex => self.surface.reverse_index(),
+                ResetState => self.surface.reset(),
+                ClearScreen(mode) => self.surface.clear_screen(mode),
+                ClearLine(mode) => self.surface.clear_line(mode),
+                InsertTabs(count) => self.surface.insert_tabs(count as usize),
+                SetTabs(mask) => self.surface.set_tabs(mask),
+                ClearTabs(mode) => self.surface.clear_tabs(mode),
+                ScreenAlignmentDisplay => {
+                    self.surface.screen_alignment_display()
+                },
+                MoveForwardTabs(count) => {
+                    self.surface.move_forward_tabs(count as usize);
+                },
+                MoveBackwardTabs(count) => {
+                    self.surface.move_backward_tabs(count as usize);
+                },
+                SetActiveCharsetIndex(_) | ConfigureCharset(_, _) => {
+                    trace!("Charset handling not implemented yet");
+                },
+                SetColor { index, color } => {
+                    self.surface.set_color(index, color)
+                },
+                QueryColor(index) => self.surface.query_color(index),
+                ResetColor(index) => self.surface.reset_color(index),
+                SetScrollingRegion(top, bottom) => {
+                    self.surface.set_scrolling_region(top, bottom);
+                },
+                ScrollUp(count) => self.surface.scroll_up(count),
+                ScrollDown(count) => self.surface.scroll_down(count),
+                SetHyperlink(link) => self.surface.set_hyperlink(link),
+                SGR(attribute) => self.surface.sgr(attribute),
+                SetCursorShape(shape) => self.surface.set_cursor_shape(shape),
+                SetCursorIcon(icon) => self.surface.set_cursor_icon(icon),
+                SetCursorStyle(style) => self.surface.set_cursor_style(style),
+                SaveCursorPosition => self.surface.save_cursor(),
+                RestoreCursorPosition => self.surface.restore_cursor(),
+                MoveUp {
+                    rows,
+                    carrage_return_needed,
+                } => self.surface.move_up(rows, carrage_return_needed),
+                MoveDown {
+                    rows,
+                    carrage_return_needed,
+                } => self.surface.move_down(rows, carrage_return_needed),
+                MoveForward(cols) => self.surface.move_forward(cols),
+                MoveBackward(cols) => self.surface.move_backward(cols),
+                Goto(row, col) => self.surface.goto(row, col),
+                GotoRow(row) => self.surface.goto_row(row),
+                GotoColumn(col) => self.surface.goto_column(col),
+                IdentifyTerminal(response) => {
+                    trace!("Identify terminal {:?}", response);
+                },
+                ReportDeviceStatus(status) => {
+                    trace!("Report device status {}", status);
+                },
+                SetKeypadApplicationMode => {
+                    self.surface.set_keypad_application_mode(true);
+                },
+                UnsetKeypadApplicationMode => {
+                    self.surface.set_keypad_application_mode(false);
+                },
+                SetModifyOtherKeysState(state) => {
+                    trace!("modifyOtherKeys => {:?}", state);
+                },
+                ReportModifyOtherKeysState => trace!("Report modifyOtherKeys"),
+                ReportKeyboardMode => trace!("Report keyboard mode"),
+                SetKeyboardMode(mode, behavior) => {
+                    trace!("Set keyboard mode {:?} {:?}", mode, behavior);
+                },
+                PushKeyboardMode(_) => self.surface.push_keyboard_mode(),
+                PopKeyboardModes(amount) => {
+                    self.surface.pop_keyboard_modes(amount)
+                },
+                SetMode(mode) => self.surface.set_mode(mode, true),
+                SetPrivateMode(mode) => {
+                    self.surface.set_private_mode(mode, true)
+                },
+                UnsetMode(mode) => self.surface.set_mode(mode, false),
+                UnsetPrivateMode(mode) => {
+                    self.surface.set_private_mode(mode, false)
+                },
+                ReportMode(mode) => trace!("Report mode {:?}", mode),
+                ReportPrivateMode(mode) => {
+                    trace!("Report private mode {:?}", mode);
+                },
+                RequestTextAreaSizeByPixels => {
+                    trace!("Request text area size (pixels)");
+                },
+                RequestTextAreaSizeByChars => {
+                    trace!("Request text area size (chars)");
+                },
+                PushWindowTitle => self.surface.push_window_title(),
+                PopWindowTitle => self.surface.pop_window_title(),
+                SetWindowTitle(title) => self.surface.set_window_title(title),
+            }
+        }
+
+        fn begin_sync(&mut self) {
+            self.surface.begin_sync();
+        }
+
+        fn end_sync(&mut self) {
+            self.surface.end_sync();
+        }
+    }
+
+    let mut actor = SurfaceActor { surface };
+    parser.advance(bytes, &mut actor);
 }
 
 fn print_grid(surface: &Surface) {

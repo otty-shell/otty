@@ -1,7 +1,6 @@
 use log::debug;
 use otty_vte::CsiParam;
 
-use crate::actor::Action;
 use crate::attributes::CharacterAttribute;
 use crate::color::{Color, StdColor, parse_sgr_color};
 use crate::cursor::{CursorShape, CursorStyle};
@@ -10,10 +9,10 @@ use crate::keyboard::{
 };
 use crate::mode::{ClearMode, LineClearMode, Mode, PrivateMode, TabClearMode};
 use crate::parser::ParserState;
-use crate::{Actor, NamedPrivateMode};
+use crate::{Action, EscapeActor, NamedPrivateMode};
 
 #[inline]
-pub(crate) fn perform<A: Actor>(
+pub(crate) fn perform<A: EscapeActor>(
     actor: &mut A,
     state: &mut ParserState,
     raw_params: &[CsiParam],
@@ -143,7 +142,7 @@ pub(crate) fn perform<A: Actor>(
 
 fn handle_set_mode<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -182,7 +181,7 @@ where
 
 fn handle_reset_mode<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -221,7 +220,7 @@ where
 
 fn handle_report_mode<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -246,7 +245,7 @@ fn handle_set_xterm_modify_other_keys_state<A, F>(
     mode: &CsiParam,
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -266,7 +265,7 @@ fn handle_set_cursor_style<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -284,7 +283,7 @@ fn handle_set_cursor_style<A, F>(
 
 fn handle_keyboard_mode<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -323,7 +322,7 @@ where
 
 fn handle_cursor_up<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -343,7 +342,7 @@ where
 
 fn handle_cursor_down<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -367,7 +366,7 @@ fn handle_repeat_preceding_character<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -387,7 +386,7 @@ fn handle_repeat_preceding_character<A, F>(
 
 fn handle_cursor_forward<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -406,7 +405,7 @@ fn handle_identify_terminal<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -423,7 +422,7 @@ fn handle_identify_terminal<A, F>(
 
 fn handle_cursor_backward<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -442,7 +441,7 @@ fn handle_vertical_position_absolute<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -461,7 +460,7 @@ fn handle_cursor_next_line<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -486,7 +485,7 @@ fn handle_cursor_preceding_line<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -511,7 +510,7 @@ fn handle_cursor_horizontal_absolute<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -530,7 +529,7 @@ fn handle_character_position_absolute<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -546,7 +545,7 @@ fn handle_character_position_absolute<A, F>(
 
 fn handle_tab_clear<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -567,7 +566,7 @@ fn handle_horizontal_and_vertical_position<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -586,7 +585,7 @@ fn handle_cursor_horizontal_tabulation<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -602,7 +601,7 @@ fn handle_cursor_horizontal_tabulation<A, F>(
 
 fn handle_erase_display<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -622,7 +621,7 @@ where
 
 fn handle_erase_line<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -641,7 +640,7 @@ where
 
 fn handle_insert_line<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -657,7 +656,7 @@ where
 
 fn handle_delete_line<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -676,7 +675,7 @@ fn handle_device_status_report<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -695,7 +694,7 @@ fn handle_delete_character<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -714,7 +713,7 @@ fn handle_set_scrolling_region<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -729,7 +728,7 @@ fn handle_set_scrolling_region<A, F>(
 
 fn handle_scroll_up<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -745,7 +744,7 @@ where
 
 fn handle_scroll_down<A, F>(actor: &mut A, params: &[CsiParam], fallback: F)
 where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -764,7 +763,7 @@ fn handle_window_manipulation<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -786,7 +785,7 @@ fn handle_erase_characters<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -805,7 +804,7 @@ fn handle_cursor_backward_tabulation<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     use CsiParam::*;
@@ -825,7 +824,7 @@ fn handle_set_sgr_attribute<A, F>(
     params: &[CsiParam],
     fallback: F,
 ) where
-    A: Actor,
+    A: EscapeActor,
     F: Fn(),
 {
     let mut iter = params.iter().peekable();
@@ -1047,6 +1046,7 @@ fn unexpected(params: &[CsiParam], byte: u8) {
 mod tests {
     use super::*;
     use crate::{
+        EscapeParser,
         color::Rgb,
         keyboard::{KeyboardMode, KeyboardModeApplyBehavior},
         mode::{NamedMode, NamedPrivateMode},
@@ -1054,13 +1054,13 @@ mod tests {
     };
 
     #[derive(Default)]
-    struct RecordingActor {
+    struct RecordingEscapeActor {
         actions: Vec<Action>,
         begin_sync_calls: usize,
         end_sync_calls: usize,
     }
 
-    impl Actor for RecordingActor {
+    impl EscapeActor for RecordingEscapeActor {
         fn handle(&mut self, action: Action) {
             self.actions.push(action);
         }
@@ -1074,9 +1074,9 @@ mod tests {
         }
     }
 
-    impl RecordingActor {
+    impl RecordingEscapeActor {
         fn parse(input: &str) -> Self {
-            let mut parser = Parser::new();
+            let mut parser: Parser<otty_vte::Parser> = Parser::new();
             let mut actor = Self::default();
             parser.advance(input.as_bytes(), &mut actor);
             actor
@@ -1085,7 +1085,7 @@ mod tests {
 
     #[test]
     fn csi_mode_sequences() {
-        let actor = RecordingActor::parse(
+        let actor = RecordingEscapeActor::parse(
             "\x1b[4h\x1b[4l\x1b[?25h\x1b[?25l\x1b[?2026h\x1b[?2026l\x1b[?1h\x1b[?1l\x1b[!p\x1b[20$p\x1b[?25$p\x1b[0$p",
         );
 
@@ -1138,7 +1138,7 @@ mod tests {
         ];
 
         for (input, expected) in cases {
-            let actual = RecordingActor::parse(input).actions;
+            let actual = RecordingEscapeActor::parse(input).actions;
             assert_eq!(expected, actual)
         }
     }
@@ -1167,14 +1167,15 @@ mod tests {
         ];
 
         for (input, expected) in cases {
-            let actual = RecordingActor::parse(input).actions;
+            let actual = RecordingEscapeActor::parse(input).actions;
             assert_eq!(expected, actual)
         }
     }
 
     #[test]
     fn csi_window_manipulation() {
-        let actor = RecordingActor::parse("\x1b[14t\x1b[18t\x1b[22t\x1b[23t");
+        let actor =
+            RecordingEscapeActor::parse("\x1b[14t\x1b[18t\x1b[22t\x1b[23t");
 
         assert_eq!(actor.begin_sync_calls, 0);
         assert_eq!(actor.end_sync_calls, 0);
@@ -1193,7 +1194,7 @@ mod tests {
 
     #[test]
     fn csi_cursor_motion_and_positioning_sequences() {
-        let actor = RecordingActor::parse(
+        let actor = RecordingEscapeActor::parse(
             "\x1b[A\x1b[5A\x1b[B\x1b[2e\x1b[3C\x1b[4a\x1b[2D\x1b[3d\x1b[E\x1b[2F\x1b[10G\x1b[6`\x1b[5;9H\x1b[3;4f",
         );
 
@@ -1240,7 +1241,7 @@ mod tests {
 
     #[test]
     fn csi_tab_scrolling_and_region_sequences() {
-        let actor = RecordingActor::parse(
+        let actor = RecordingEscapeActor::parse(
             "\x1b[?5W\x1b[g\x1b[3g\x1b[I\x1b[4I\x1b[Z\x1b[3Z\x1b[1;24r\x1b[S\x1b[2S\x1b[T\x1b[3T",
         );
 
@@ -1288,14 +1289,15 @@ mod tests {
         ];
 
         for (input, expected) in cases {
-            let actual = RecordingActor::parse(input).actions;
+            let actual = RecordingEscapeActor::parse(input).actions;
             assert_eq!(expected, actual)
         }
     }
 
     #[test]
     fn csi_device_status_and_identify_sequences() {
-        let actor = RecordingActor::parse("\x1b[n\x1b[6n\x1b[c\x1b[>c\x1b[65c");
+        let actor =
+            RecordingEscapeActor::parse("\x1b[n\x1b[6n\x1b[c\x1b[>c\x1b[65c");
 
         assert_eq!(actor.actions.len(), 5);
 
@@ -1369,7 +1371,7 @@ mod tests {
         ];
 
         for (input, expected) in cases {
-            let actual = RecordingActor::parse(input).actions;
+            let actual = RecordingEscapeActor::parse(input).actions;
             assert_eq!(expected, actual)
         }
     }
@@ -1382,7 +1384,7 @@ mod tests {
         ];
 
         for (input, expected) in cases {
-            let actual = RecordingActor::parse(input).actions;
+            let actual = RecordingEscapeActor::parse(input).actions;
             assert_eq!(expected, actual)
         }
     }
@@ -1401,14 +1403,14 @@ mod tests {
         ];
 
         for (input, expected) in cases {
-            let actual = RecordingActor::parse(input).actions;
+            let actual = RecordingEscapeActor::parse(input).actions;
             assert_eq!(expected, actual)
         }
     }
 
     #[test]
     fn csi_repeat_character() {
-        let actor = RecordingActor::parse("A\x1b[3b");
+        let actor = RecordingEscapeActor::parse("A\x1b[3b");
 
         assert_eq!(actor.actions.len(), 4);
 
@@ -1425,7 +1427,7 @@ mod tests {
 
     #[test]
     fn mixed_sequences_preserve_order() {
-        let actor = RecordingActor::parse("A\x1b[2J\x1b[sB\x1b[u\x1b[0K");
+        let actor = RecordingEscapeActor::parse("A\x1b[2J\x1b[sB\x1b[u\x1b[0K");
 
         assert_eq!(actor.actions.len(), 6);
 

@@ -1,16 +1,13 @@
-use crate::{
-    actor::{Action, Actor},
-    control, csi, esc, osc,
-};
+use crate::{Action, EscapeActor, EscapeParser, control, csi, esc, osc};
 use log::debug;
-use otty_vte::{Actor as VTActor, CsiParam, Parser as VTParser};
+use otty_vte::{self, CsiParam, VTActor, VTParser};
 
-struct Performer<'a, A: Actor> {
+struct Performer<'a, A: EscapeActor> {
     actor: &'a mut A,
     state: &'a mut ParserState,
 }
 
-impl<'a, A: Actor> VTActor for Performer<'a, A> {
+impl<'a, A: EscapeActor> VTActor for Performer<'a, A> {
     fn print(&mut self, c: char) {
         self.actor.handle(Action::Print(c));
         self.state.last_preceding_char = Some(c)
@@ -72,7 +69,7 @@ impl<'a, A: Actor> VTActor for Performer<'a, A> {
     }
 }
 
-impl<'a, A: Actor> Performer<'a, A> {
+impl<'a, A: EscapeActor> Performer<'a, A> {
     #[must_use]
     fn new(state: &'a mut ParserState, actor: &'a mut A) -> Self {
         Self { actor, state }
@@ -85,26 +82,31 @@ pub(crate) struct ParserState {
 }
 
 /// High-level escape sequence parser that forwards semantic events to an
-/// [`Actor`](crate::actor::Actor).
+/// [`EscapeActor`](crate::actor::EscapeActor).
 #[derive(Default)]
-pub struct Parser {
-    vt: VTParser,
+pub struct Parser<P: VTParser + Default> {
+    vt: P,
     state: ParserState,
 }
 
-impl Parser {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
+impl<P: VTParser + Default> EscapeParser for Parser<P> {
     /// Advance the parser with a new chunk of bytes.
     ///
     /// All escape sequences are parsed and forwarded to the actor as actions.
     /// Synchronized update buffering is handled by the terminal layer, not the parser.
-    pub fn advance<A: Actor>(&mut self, bytes: &[u8], actor: &mut A) {
+    fn advance<A: EscapeActor>(&mut self, bytes: &[u8], actor: &mut A) {
         let mut performer = Performer::new(&mut self.state, actor);
         self.vt.advance(bytes, &mut performer);
+    }
+}
+
+impl<P: VTParser + Default> Parser<P> {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            vt: P::default(),
+            state: ParserState::default(),
+        }
     }
 }
 

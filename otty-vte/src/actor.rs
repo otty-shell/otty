@@ -30,7 +30,7 @@ use crate::csi::CsiParam;
 /// `params` in most of the functions of this trait are decimal integer parameters in escape
 /// sequences. They are separated by semicolon characters. An omitted parameter is returned in
 /// this interface as a zero, which represents the default value for that parameter.
-pub trait Actor {
+pub trait VTActor {
     /// Emits a single printable Unicode code point.
     fn print(&mut self, c: char);
 
@@ -77,9 +77,4 @@ pub trait Actor {
         ignored_excess_intermediates: bool,
         byte: u8,
     );
-
-    // TODO:
-    fn terminated(&self) -> bool {
-        false
-    }
 }

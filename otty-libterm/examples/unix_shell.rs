@@ -25,10 +25,19 @@ mod unix_shell {
     use nix::libc;
     use nix::sys::termios::{self, SetArg};
     use otty_libterm::{
-        CellAttributes, CellUnderline, Color, LibTermError, PtySize, StdColor,
-        Surface, SurfaceConfig, Terminal, TerminalClient, UnixTerminalBuilder,
+        escape::{self, Color, StdColor},
+        pty::{self, PtySize},
+        surface::{CellAttributes, CellUnderline, Surface, SurfaceConfig},
+        DefaultTerminalSurface, LibTermError, Terminal, TerminalClient,
+        UnixTerminalBuilder,
     };
     use signal_hook::consts::signal::SIGWINCH;
+
+    type ShellTerminal = Terminal<
+        pty::UnixSession,
+        escape::Parser<escape::vte::Parser>,
+        DefaultTerminalSurface,
+    >;
 
     pub fn run() -> Result<()> {
         let stdin = io::stdin();
@@ -113,7 +122,7 @@ mod unix_shell {
 
         fn handle_resize(
             &mut self,
-            terminal: &mut Terminal<Surface>,
+            terminal: &mut ShellTerminal,
         ) -> Result<(), LibTermError> {
             let mut resized = false;
             while self.resize_rx.try_recv().is_ok() {
@@ -143,7 +152,7 @@ mod unix_shell {
 
         fn flush_pending_input(
             &mut self,
-            terminal: &mut Terminal<Surface>,
+            terminal: &mut ShellTerminal,
         ) -> Result<(), LibTermError> {
             while !self.pending_input.is_empty() {
                 let (front, _) = self.pending_input.as_slices();
@@ -193,10 +202,10 @@ mod unix_shell {
         }
     }
 
-    impl TerminalClient<Surface> for ShellFrontend {
+    impl TerminalClient<ShellTerminal> for ShellFrontend {
         fn before_poll(
             &mut self,
-            terminal: &mut Terminal<Surface>,
+            terminal: &mut ShellTerminal,
         ) -> Result<(), LibTermError> {
             self.handle_resize(terminal)?;
             self.flush_pending_input(terminal)?;
@@ -207,7 +216,7 @@ mod unix_shell {
 
         fn on_surface_change(
             &mut self,
-            surface: &Surface,
+            surface: &DefaultTerminalSurface,
         ) -> Result<(), LibTermError> {
             self.render(surface)
         }

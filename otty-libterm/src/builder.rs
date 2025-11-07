@@ -1,28 +1,33 @@
 #[cfg(unix)]
-use std::{marker::PhantomData, path::Path};
+use std::path::Path;
 
 #[cfg(unix)]
 use crate::{
     error::Result,
+    escape::{self, vte},
     options::TerminalOptions,
-    terminal::{Terminal, TerminalSurface},
+    terminal::Terminal,
 };
 #[cfg(unix)]
-use otty_pty::{PtySize, UnixSessionBuilder, unix};
+use otty_pty::{PtySize, UnixSession, UnixSessionBuilder, unix};
 #[cfg(unix)]
 use otty_surface::{Surface, SurfaceConfig};
 
+#[cfg(unix)]
+type DefaultEscapeParser = escape::Parser<vte::Parser>;
+#[cfg(unix)]
+type DefaultUnixTerminal = Terminal<UnixSession, DefaultEscapeParser, Surface>;
+
 /// Builder for launching a local Unix PTY session wrapped in the terminal runtime.
 #[cfg(unix)]
-pub struct UnixTerminalBuilder<S: TerminalSurface = Surface> {
+pub struct UnixTerminalBuilder {
     session: UnixSessionBuilder,
     surface_config: SurfaceConfig,
     options: TerminalOptions,
-    _marker: PhantomData<S>,
 }
 
 #[cfg(unix)]
-impl<S: TerminalSurface> UnixTerminalBuilder<S> {
+impl UnixTerminalBuilder {
     /// Start configuring a PTY session for the provided executable.
     #[must_use]
     pub fn new(program: &str) -> Self {
@@ -30,7 +35,6 @@ impl<S: TerminalSurface> UnixTerminalBuilder<S> {
             session: unix(program),
             surface_config: SurfaceConfig::default(),
             options: TerminalOptions::default(),
-            _marker: PhantomData,
         }
     }
 
@@ -100,25 +104,29 @@ impl<S: TerminalSurface> UnixTerminalBuilder<S> {
     }
 
     /// Finalize the builder and spawn the terminal runtime using the default surface factory.
-    pub fn spawn(self) -> Result<Terminal<S>> {
+    pub fn spawn(self) -> Result<DefaultUnixTerminal> {
         let Self {
             session,
             surface_config,
             options,
-            _marker,
         } = self;
 
         let session = session.spawn()?;
-        Terminal::with_session(session, surface_config, options)
+        let surface = Surface::new(surface_config);
+        let parser: DefaultEscapeParser = Default::default();
+        Terminal::new(session, surface, parser, options)
     }
 
     /// Finalize the builder and spawn the terminal runtime with a pre-built surface.
-    pub fn spawn_with_surface(self, surface: S) -> Result<Terminal<S>> {
+    pub fn spawn_with_surface(
+        self,
+        surface: Surface,
+    ) -> Result<DefaultUnixTerminal> {
         let Self {
             session, options, ..
         } = self;
-
         let session = session.spawn()?;
-        Terminal::with_session_and_surface(session, surface, options)
+        let parser: DefaultEscapeParser = Default::default();
+        Terminal::new(session, surface, parser, options)
     }
 }

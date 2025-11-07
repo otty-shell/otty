@@ -1,11 +1,14 @@
 use crate::{
-    Actor,
-    actor::Action,
+    Action, EscapeActor,
     charset::{Charset, CharsetIndex},
 };
 use log::debug;
 
-pub(crate) fn perform<A: Actor>(actor: &mut A, intermediates: &[u8], byte: u8) {
+pub(crate) fn perform<A: EscapeActor>(
+    actor: &mut A,
+    intermediates: &[u8],
+    byte: u8,
+) {
     match (byte, intermediates) {
         // IND - Index.  Note that for Vt52 and Windows 10 ANSI consoles,
         // this is interpreted as CursorUp
@@ -75,14 +78,14 @@ pub(crate) fn perform<A: Actor>(actor: &mut A, intermediates: &[u8], byte: u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Parser;
+    use crate::{EscapeParser, Parser};
 
     #[derive(Default)]
     struct RecordingActor {
         actions: Vec<Action>,
     }
 
-    impl Actor for RecordingActor {
+    impl EscapeActor for RecordingActor {
         fn handle(&mut self, action: Action) {
             self.actions.push(action);
         }
@@ -90,7 +93,7 @@ mod tests {
 
     impl RecordingActor {
         fn parse(input: &str) -> Self {
-            let mut parser = Parser::new();
+            let mut parser: Parser<otty_vte::Parser> = Parser::new();
             let mut actor = Self::default();
             parser.advance(input.as_bytes(), &mut actor);
             actor
