@@ -27,7 +27,7 @@ mod unix_shell {
     use nix::libc;
     use nix::sys::termios::{self, SetArg};
     use otty_libterm::{
-        LibTermError, PollHookHandler, Runtime, RuntimeHandle, Terminal,
+        LibTermError, Runtime, RuntimeHooks, RuntimeRequestProxy, Terminal,
         TerminalClient, TerminalEvent, TerminalOptions, TerminalRequest,
         TerminalSnapshot,
         escape::{self, Color, StdColor},
@@ -77,7 +77,7 @@ mod unix_shell {
 
         let mut runtime =
             Runtime::new().context("failed to create terminal runtime")?;
-        let runtime_handle = runtime.handle();
+        let runtime_handle = runtime.proxy();
 
         let (resize_tx, resize_rx) = mpsc::channel();
         thread::spawn(move || {
@@ -96,7 +96,7 @@ mod unix_shell {
             ShellState::new((rows, cols)).context("failed to configure tty")?,
         ));
 
-        let mut poll_hooks = ShellPollHooks::new(
+        let poll_hooks = ShellPollHooks::new(
             runtime_handle,
             resize_rx,
             raw_guard,
@@ -107,7 +107,7 @@ mod unix_shell {
         let event_handler = ShellEventHandler::new(shared_state);
         terminal.set_event_client(event_handler);
 
-        runtime.run(&mut terminal, &mut poll_hooks)?;
+        runtime.run(terminal, poll_hooks)?;
         Ok(())
     }
 
@@ -134,7 +134,7 @@ mod unix_shell {
     }
 
     struct ShellPollHooks {
-        runtime: RuntimeHandle,
+        runtime_proxy: RuntimeRequestProxy,
         resize_rx: mpsc::Receiver<()>,
         state: Rc<RefCell<ShellState>>,
         _raw_guard: RawModeGuard,
@@ -143,14 +143,14 @@ mod unix_shell {
 
     impl ShellPollHooks {
         fn new(
-            runtime: RuntimeHandle,
+            runtime_proxy: RuntimeRequestProxy,
             resize_rx: mpsc::Receiver<()>,
             raw_guard: RawModeGuard,
             nonblocking_guard: NonBlockingGuard,
             state: Rc<RefCell<ShellState>>,
         ) -> Self {
             Self {
-                runtime,
+                runtime_proxy,
                 resize_rx,
                 state,
                 _raw_guard: raw_guard,
@@ -173,7 +173,7 @@ mod unix_shell {
 
             let mut state = self.state.borrow_mut();
             if (rows, cols) != state.size {
-                self.runtime.send(TerminalRequest::Resize(PtySize {
+                self.runtime_proxy.send(TerminalRequest::Resize(PtySize {
                     rows,
                     cols,
                     cell_width: 0,
@@ -196,7 +196,7 @@ mod unix_shell {
             drop(state);
 
             if !chunk.is_empty() {
-                self.runtime.send(TerminalRequest::Write(chunk))?;
+                self.runtime_proxy.send(TerminalRequest::Write(chunk))?;
             }
 
             Ok(())
@@ -232,7 +232,7 @@ mod unix_shell {
         }
     }
 
-    impl PollHookHandler<ShellTerminal> for ShellPollHooks {
+    impl RuntimeHooks<ShellTerminal> for ShellPollHooks {
         fn before_poll(
             &mut self,
             _terminal: &mut ShellTerminal,

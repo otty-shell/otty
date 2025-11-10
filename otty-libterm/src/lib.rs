@@ -7,10 +7,12 @@ mod terminal;
 pub use error::{LibTermError, Result};
 pub use mode::TerminalMode;
 pub use runtime::{
-    PollHookHandler, Runtime, RuntimeClient, RuntimeEvent, RuntimeHandle,
+    Runtime, RuntimeClient, RuntimeEvent, RuntimeHooks, RuntimeRequestProxy,
 };
-pub use snapshot::{SurfaceSnapshot, SurfaceSnapshotSource, TerminalSnapshot};
-pub use terminal::{Terminal, TerminalEvent, TerminalClient, TerminalOptions, TerminalRequest};
+pub use snapshot::TerminalSnapshot;
+pub use terminal::{
+    Terminal, TerminalClient, TerminalEvent, TerminalOptions, TerminalRequest,
+};
 
 pub use otty_escape as escape;
 pub use otty_pty as pty;

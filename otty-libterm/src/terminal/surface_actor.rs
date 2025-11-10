@@ -1,8 +1,11 @@
 use log::trace;
 
-use crate::escape::{EscapeActor, Mode, PrivateMode, NamedMode, NamedPrivateMode, KeyboardMode, KeyboardModeApplyBehavior, Action};
-use crate::surface::{SurfaceController};
 use crate::TerminalMode;
+use crate::escape::{
+    Action, EscapeActor, KeyboardMode, KeyboardModeApplyBehavior, Mode,
+    NamedMode, NamedPrivateMode, PrivateMode,
+};
+use crate::surface::SurfaceController;
 use crate::terminal::{TerminalClient, TerminalEvent};
 
 pub(super) struct TerminalSurfaceActor<'a, S> {
@@ -41,11 +44,7 @@ impl<'a, S> TerminalSurfaceActor<'a, S> {
         }
     }
 
-    fn update_private_mode(
-        &mut self,
-        mode: &PrivateMode,
-        enabled: bool,
-    ) {
+    fn update_private_mode(&mut self, mode: &PrivateMode, enabled: bool) {
         if let PrivateMode::Named(named) = mode {
             match named {
                 NamedPrivateMode::CursorKeys => {

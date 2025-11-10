@@ -1,17 +1,5 @@
+use crate::surface::SurfaceSnapshot;
 use crate::{TerminalMode, escape::KeyboardMode};
-use otty_surface::Surface;
-pub use otty_surface::SurfaceSnapshot;
-
-// TODO: to otty-surface
-pub trait SurfaceSnapshotSource {
-    fn capture_snapshot(&self) -> SurfaceSnapshot;
-}
-
-impl SurfaceSnapshotSource for Surface {
-    fn capture_snapshot(&self) -> SurfaceSnapshot {
-        self.snapshot()
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct TerminalSnapshot {

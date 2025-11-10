@@ -6,17 +6,10 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use cursor_icon::CursorIcon;
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
-use otty_escape::{CursorShape, CursorStyle, Hyperlink};
 
 use crate::TerminalRequest;
-use crate::{
-    TerminalSnapshot,
-    error::{LibTermError, Result},
-    pty::PtySize,
-    surface::ScrollDirection,
-};
+use crate::error::{LibTermError, Result};
 
 const PTY_IO_TOKEN: Token = Token(0);
 const PTY_CHILD_TOKEN: Token = Token(1);
@@ -46,13 +39,13 @@ pub enum RuntimeEvent<'a> {
     Request(TerminalRequest),
 }
 
-/// Handle used by front-ends to submit [`TerminalRequest`]s to the runtime.
-pub struct RuntimeHandle {
+/// Proxy that used by front-ends to submit [`TerminalRequest`]s to the terminal.
+pub struct RuntimeRequestProxy {
     sender: Sender<TerminalRequest>,
     waker: Arc<Waker>,
 }
 
-impl Clone for RuntimeHandle {
+impl Clone for RuntimeRequestProxy {
     fn clone(&self) -> Self {
         Self {
             sender: self.sender.clone(),
@@ -61,7 +54,7 @@ impl Clone for RuntimeHandle {
     }
 }
 
-impl RuntimeHandle {
+impl RuntimeRequestProxy {
     /// Submit a new request and wake the runtime loop.
     pub fn send(&self, request: TerminalRequest) -> Result<()> {
         self.sender
@@ -78,7 +71,9 @@ pub trait RuntimeClient {
         Ok(())
     }
 
-    fn has_pending_output(&self) -> bool { false }
+    fn has_pending_output(&self) -> bool {
+        false
+    }
 
     fn check_child_exit(&mut self) -> Result<Option<ExitStatus>> {
         Ok(None)
@@ -86,7 +81,7 @@ pub trait RuntimeClient {
 }
 
 /// Hooks that run immediately before and after each poll iteration.
-pub trait PollHookHandler<T: RuntimeClient + ?Sized> {
+pub trait RuntimeHooks<T: RuntimeClient + ?Sized> {
     fn before_poll(&mut self, _terminal: &mut T) -> Result<()> {
         Ok(())
     }
@@ -95,8 +90,6 @@ pub trait PollHookHandler<T: RuntimeClient + ?Sized> {
         Ok(())
     }
 }
-
-impl<T: RuntimeClient + ?Sized> PollHookHandler<T> for () {}
 
 /// Mio-backed driver that pumps PTY and child-process events for a terminal runtime.
 pub struct Runtime {
@@ -125,7 +118,7 @@ impl Runtime {
             command_tx,
             command_rx,
             waker,
-            poll_timeout: Some(Duration::from_millis(150)),
+            poll_timeout: Some(Duration::from_millis(10)),
         })
     }
 
@@ -134,20 +127,17 @@ impl Runtime {
     }
 
     /// Acquire a handle that can be used to send requests into the runtime.
-    #[must_use]
-    pub fn handle(&self) -> RuntimeHandle {
-        RuntimeHandle {
+    pub fn proxy(&self) -> RuntimeRequestProxy {
+        RuntimeRequestProxy {
             sender: self.command_tx.clone(),
             waker: Arc::clone(&self.waker),
         }
     }
 
-    // TODO: need refactor
-    /// Run the event loop, delegating polling hooks to the provided handler.
-    pub fn run<C, H>(&mut self, client: &mut C, hooks: &mut H) -> Result<()>
+    pub fn run<C, H>(&mut self, mut client: C, mut hooks: H) -> Result<()>
     where
-        C: RuntimeClient + ?Sized,
-        H: PollHookHandler<C> + ?Sized,
+        C: RuntimeClient,
+        H: RuntimeHooks<C>,
     {
         let mut interest = Interest::READABLE;
         client.handle_runtime_event(RuntimeEvent::RegisterSession {
@@ -157,7 +147,6 @@ impl Runtime {
             child_token: PTY_CHILD_TOKEN,
         })?;
 
-
         let mut shutdown_requested = false;
         let mut exit_detected = false;
 
@@ -166,8 +155,8 @@ impl Runtime {
                 break;
             }
 
-            hooks.before_poll(client)?;
-            shutdown_requested |= self.drain_runtime_requests(client)?;
+            hooks.before_poll(&mut client)?;
+            shutdown_requested |= self.drain_runtime_requests(&mut client)?;
             client.handle_runtime_event(RuntimeEvent::Maintain)?;
             self.poll_once()?;
 
@@ -195,14 +184,14 @@ impl Runtime {
                 };
             }
 
-            shutdown_requested |= self.drain_runtime_requests(client)?;
+            shutdown_requested |= self.drain_runtime_requests(&mut client)?;
             client.handle_runtime_event(RuntimeEvent::Maintain)?;
 
             if !exit_detected && client.check_child_exit()?.is_some() {
                 exit_detected = true;
             }
 
-            hooks.after_poll(client)?;
+            hooks.after_poll(&mut client)?;
 
             if exit_detected || shutdown_requested {
                 break;
