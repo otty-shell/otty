@@ -29,6 +29,7 @@ mod unix_shell {
     use otty_libterm::{
         LibTermError, PollHookHandler, Runtime, RuntimeHandle, Terminal,
         TerminalClient, TerminalEvent, TerminalOptions, TerminalRequest,
+        TerminalSnapshot,
         escape::{self, Color, StdColor},
         pty::{self, PtySize},
         surface::{CellAttributes, CellUnderline, Surface, SurfaceConfig},
@@ -253,9 +254,12 @@ mod unix_shell {
             Self { state }
         }
 
-        fn render(&self, surface: &Surface) -> Result<(), LibTermError> {
+        fn render(
+            &self,
+            snapshot: &TerminalSnapshot,
+        ) -> Result<(), LibTermError> {
             let mut state = self.state.borrow_mut();
-            render_surface(surface, state.screen.writer())
+            render_surface(snapshot, state.screen.writer())
                 .map_err(LibTermError::from)
         }
 
@@ -275,34 +279,45 @@ mod unix_shell {
         }
     }
 
-    impl TerminalClient<Surface> for ShellEventHandler {
+    impl TerminalClient for ShellEventHandler {
         fn handle_event(
             &mut self,
-            event: TerminalEvent<'_, Surface>,
+            event: TerminalEvent,
         ) -> Result<(), LibTermError> {
             match event {
-                TerminalEvent::SurfaceChanged { surface } => {
-                    self.render(surface)
+                TerminalEvent::SurfaceChanged { snapshot } => {
+                    self.render(&snapshot)
                 },
-                TerminalEvent::ChildExit { status } => self.handle_exit(status),
+                TerminalEvent::ChildExit { status } => {
+                    self.handle_exit(&status)
+                },
+                TerminalEvent::TitleChanged { .. }
+                | TerminalEvent::Bell
+                | TerminalEvent::CursorShapeChanged { .. }
+                | TerminalEvent::CursorStyleChanged { .. }
+                | TerminalEvent::CursorIconChanged { .. }
+                | TerminalEvent::Hyperlink { .. } => Ok(()),
             }
         }
     }
 
     fn render_surface(
-        surface: &Surface,
+        snapshot: &TerminalSnapshot,
         out: &mut impl Write,
     ) -> io::Result<()> {
         write!(out, "\x1b[?25l")?;
         let mut buf = [0u8; 4];
         let mut prev_attrs: Option<CellAttributes> = None;
         let default_attrs = CellAttributes::default();
+        let grid = &snapshot.surface.grid;
+        let rows = snapshot.surface.rows;
+        let columns = snapshot.surface.columns;
 
-        for row_idx in 0..surface.grid().height() {
+        for row_idx in 0..rows {
             write!(out, "\x1b[{};1H", row_idx + 1)?;
 
-            let row = surface.grid().row(row_idx);
-            let width = surface.grid().width();
+            let row = grid.row(row_idx);
+            let width = columns;
 
             for col_idx in 0..width {
                 let (ch, attrs) = if col_idx < row.cells.len() {
@@ -328,7 +343,8 @@ mod unix_shell {
             }
         }
 
-        let (cursor_row, cursor_col) = surface.cursor_position();
+        let cursor_row = snapshot.surface.cursor_row;
+        let cursor_col = snapshot.surface.cursor_col;
         write!(out, "\x1b[{};{}H\x1b[?25h", cursor_row + 1, cursor_col + 1)?;
         out.flush()
     }

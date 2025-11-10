@@ -1,3 +1,4 @@
+use crate::grid::ScrollDirection;
 use cursor_icon::CursorIcon;
 use otty_escape::{
     CharacterAttribute, ClearMode, Hyperlink, LineClearMode, Mode, PrivateMode,
@@ -110,4 +111,6 @@ pub trait SurfaceController {
     fn begin_sync(&mut self) {}
 
     fn end_sync(&mut self) {}
+
+    fn scroll_display(&mut self, _direction: ScrollDirection) {}
 }

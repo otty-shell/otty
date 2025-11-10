@@ -4,6 +4,7 @@ use otty_escape::{
     CharacterAttribute, ClearMode, Hyperlink, LineClearMode, Mode, NamedMode,
     NamedPrivateMode, PrivateMode, Rgb, TabClearMode,
 };
+use std::sync::Arc;
 use unicode_width::UnicodeWidthChar;
 
 use crate::{
@@ -148,6 +149,56 @@ impl ScreenState {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SurfaceSnapshot {
+    pub grid: Arc<Grid>,
+    pub columns: usize,
+    pub rows: usize,
+    pub cursor_row: usize,
+    pub cursor_col: usize,
+    pub display_offset: usize,
+    pub cursor_icon: Option<CursorIcon>,
+    pub cursor_shape: Option<otty_escape::CursorShape>,
+    pub cursor_style: Option<otty_escape::CursorStyle>,
+}
+
+// TODO: to self module
+// pub trait SurfaceSnapshotSource {
+//     fn capture_snapshot(&self) -> SurfaceSnapshot;
+// }
+
+// impl SurfaceSnapshotSource for Surface {
+//     fn capture_snapshot(&self) -> SurfaceSnapshot {
+//         self.snapshot()
+//     }
+// }
+
+impl SurfaceSnapshot {
+    pub fn new(
+        grid: Arc<Grid>,
+        columns: usize,
+        rows: usize,
+        cursor_row: usize,
+        cursor_col: usize,
+        display_offset: usize,
+        cursor_icon: Option<CursorIcon>,
+        cursor_shape: Option<otty_escape::CursorShape>,
+        cursor_style: Option<otty_escape::CursorStyle>,
+    ) -> Self {
+        Self {
+            grid,
+            columns,
+            rows,
+            cursor_row,
+            cursor_col,
+            display_offset,
+            cursor_icon,
+            cursor_shape,
+            cursor_style,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Surface {
     grid: Grid,
@@ -231,6 +282,26 @@ impl Surface {
         (self.cursor_row, self.cursor_col)
     }
 
+    pub fn columns(&self) -> usize {
+        self.grid.width()
+    }
+
+    pub fn rows(&self) -> usize {
+        self.grid.height()
+    }
+
+    pub fn cursor_icon(&self) -> Option<CursorIcon> {
+        self.cursor_icon
+    }
+
+    pub fn cursor_shape(&self) -> Option<otty_escape::CursorShape> {
+        self.cursor_shape
+    }
+
+    pub fn cursor_style(&self) -> Option<otty_escape::CursorStyle> {
+        self.cursor_style
+    }
+
     /// Get the number of lines in scrollback history.
     pub fn history_size(&self) -> usize {
         self.grid.history_size()
@@ -244,6 +315,20 @@ impl Surface {
     /// Scroll the display viewport through history.
     pub fn scroll_display(&mut self, direction: crate::grid::ScrollDirection) {
         self.grid.scroll_display(direction);
+    }
+
+    pub fn snapshot(&self) -> SurfaceSnapshot {
+        SurfaceSnapshot::new(
+            Arc::new(self.grid.clone()),
+            self.grid.width(),
+            self.grid.height(),
+            self.cursor_row,
+            self.cursor_col,
+            self.grid.display_offset(),
+            self.cursor_icon,
+            self.cursor_shape,
+            self.cursor_style,
+        )
     }
 
     fn reset_state(&mut self) {
@@ -1033,6 +1118,10 @@ impl SurfaceController for Surface {
 
     fn set_window_title(&mut self, title: String) {
         self.window_title = Some(title);
+    }
+
+    fn scroll_display(&mut self, direction: crate::grid::ScrollDirection) {
+        Surface::scroll_display(self, direction);
     }
 }
 

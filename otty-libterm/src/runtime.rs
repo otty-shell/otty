@@ -6,11 +6,16 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use mio::{Events, Interest, Poll, Token, Waker};
+use cursor_icon::CursorIcon;
+use mio::{Events, Interest, Poll, Registry, Token, Waker};
+use otty_escape::{CursorShape, CursorStyle, Hyperlink};
 
+use crate::TerminalRequest;
 use crate::{
+    TerminalSnapshot,
     error::{LibTermError, Result},
     pty::PtySize,
+    surface::ScrollDirection,
 };
 
 const PTY_IO_TOKEN: Token = Token(0);
@@ -18,22 +23,27 @@ const PTY_CHILD_TOKEN: Token = Token(1);
 const RUNTIME_WAKE_TOKEN: Token = Token(2);
 const DEFAULT_EVENT_CAPACITY: usize = 128;
 
-/// Commands that the runtime understands for mutating the terminal state.
-#[derive(Debug, Clone)]
-pub enum TerminalRequest {
-    /// Write raw bytes into the PTY.
-    Write(Vec<u8>),
-    /// Resize the PTY/session.
-    Resize(PtySize),
-    /// Close the session and terminate the event loop.
-    Shutdown,
-}
-
-/// Events emitted by terminal implementations to interested clients.
-#[derive(Debug)]
-pub enum TerminalEvent<'a, SurfaceHandle> {
-    SurfaceChanged { surface: &'a SurfaceHandle },
-    ChildExit { status: &'a ExitStatus },
+/// Events sent from the runtime driver into terminal implementations.
+pub enum RuntimeEvent<'a> {
+    RegisterSession {
+        registry: &'a Registry,
+        interest: Interest,
+        io_token: Token,
+        child_token: Token,
+    },
+    ReregisterSession {
+        registry: &'a Registry,
+        interest: Interest,
+        io_token: Token,
+        child_token: Token,
+    },
+    DeregisterSession {
+        registry: &'a Registry,
+    },
+    ReadReady,
+    WriteReady,
+    Maintain,
+    Request(TerminalRequest),
 }
 
 /// Handle used by front-ends to submit [`TerminalRequest`]s to the runtime.
@@ -62,97 +72,21 @@ impl RuntimeHandle {
     }
 }
 
-/// Register/unregister the underlying pollable resources with Mio.
-pub trait SessionRegistration {
-    fn register_session(
-        &mut self,
-        registry: &mio::Registry,
-        interest: Interest,
-        io_token: Token,
-        child_token: Token,
-    ) -> Result<()>;
-
-    fn reregister_session(
-        &mut self,
-        registry: &mio::Registry,
-        interest: Interest,
-        io_token: Token,
-        child_token: Token,
-    ) -> Result<()>;
-
-    fn deregister_session(&mut self, registry: &mio::Registry) -> Result<()>;
-}
-
-/// Handle IO readiness notifications from Mio.
-pub trait IoHandler {
-    fn handle_read_ready(&mut self) -> Result<bool>;
-
-    fn handle_write_ready(&mut self) -> Result<()> {
+/// Minimal interface accepted by the [`Runtime`] driver.
+pub trait RuntimeClient {
+    fn handle_runtime_event(&mut self, _event: RuntimeEvent<'_>) -> Result<()> {
         Ok(())
     }
-}
 
-/// Report lifecycle state to the runtime driver.
-pub trait LifecycleControl {
-    fn check_child_exit(&mut self) -> Result<Option<ExitStatus>>;
-}
+    fn has_pending_output(&self) -> bool { false }
 
-/// Provide optional maintenance hooks and poll configuration.
-pub trait RuntimeMaintenance {
-    fn maintain(&mut self) -> Result<()> {
-        Ok(())
-    }
-}
-
-/// Process commands submitted via [`RuntimeHandle`].
-pub trait RequestHandler {
-    fn handle_request(&mut self, request: TerminalRequest) -> Result<()> {
-        let _ = request;
-        Ok(())
-    }
-}
-
-/// Report whether the target has buffered output waiting to be flushed.
-pub trait PendingOutput {
-    fn has_pending_output(&self) -> bool {
-        false
-    }
-}
-
-/// Minimal trait object accepted by the [`Runtime`] driver.
-pub trait RuntimeTarget:
-    SessionRegistration
-    + IoHandler
-    + LifecycleControl
-    + RuntimeMaintenance
-    + RequestHandler
-    + PendingOutput
-{
-}
-
-impl<T> RuntimeTarget for T where
-    T: SessionRegistration
-        + IoHandler
-        + LifecycleControl
-        + RuntimeMaintenance
-        + RequestHandler
-        + PendingOutput
-{
-}
-
-/// Callback interface for consuming [`TerminalEvent`]s emitted by terminal instances.
-pub trait TerminalClient<SurfaceHandle> {
-    /// Handle a single terminal event produced by the terminal.
-    fn handle_event(
-        &mut self,
-        _event: TerminalEvent<'_, SurfaceHandle>,
-    ) -> Result<()> {
-        Ok(())
+    fn check_child_exit(&mut self) -> Result<Option<ExitStatus>> {
+        Ok(None)
     }
 }
 
 /// Hooks that run immediately before and after each poll iteration.
-pub trait PollHookHandler<T: RuntimeTarget + ?Sized> {
+pub trait PollHookHandler<T: RuntimeClient + ?Sized> {
     fn before_poll(&mut self, _terminal: &mut T) -> Result<()> {
         Ok(())
     }
@@ -162,7 +96,7 @@ pub trait PollHookHandler<T: RuntimeTarget + ?Sized> {
     }
 }
 
-impl<T: RuntimeTarget + ?Sized> PollHookHandler<T> for () {}
+impl<T: RuntimeClient + ?Sized> PollHookHandler<T> for () {}
 
 /// Mio-backed driver that pumps PTY and child-process events for a terminal runtime.
 pub struct Runtime {
@@ -191,7 +125,7 @@ impl Runtime {
             command_tx,
             command_rx,
             waker,
-            poll_timeout: Some(Duration::from_millis(16)),
+            poll_timeout: Some(Duration::from_millis(150)),
         })
     }
 
@@ -208,91 +142,93 @@ impl Runtime {
         }
     }
 
+    // TODO: need refactor
     /// Run the event loop, delegating polling hooks to the provided handler.
-    pub fn run<T, H>(&mut self, terminal: &mut T, hooks: &mut H) -> Result<()>
+    pub fn run<C, H>(&mut self, client: &mut C, hooks: &mut H) -> Result<()>
     where
-        T: RuntimeTarget + ?Sized,
-        H: PollHookHandler<T> + ?Sized,
+        C: RuntimeClient + ?Sized,
+        H: PollHookHandler<C> + ?Sized,
     {
         let mut interest = Interest::READABLE;
-        terminal.register_session(
-            self.poll.registry(),
+        client.handle_runtime_event(RuntimeEvent::RegisterSession {
+            registry: self.poll.registry(),
             interest,
-            PTY_IO_TOKEN,
-            PTY_CHILD_TOKEN,
-        )?;
+            io_token: PTY_IO_TOKEN,
+            child_token: PTY_CHILD_TOKEN,
+        })?;
 
-        let run_result = (|| -> Result<()> {
-            let mut shutdown_requested = false;
-            let mut exit_detected = false;
 
-            loop {
-                if shutdown_requested || exit_detected {
-                    break;
-                }
+        let mut shutdown_requested = false;
+        let mut exit_detected = false;
 
-                hooks.before_poll(terminal)?;
-                shutdown_requested |= self.drain_runtime_requests(terminal)?;
-                terminal.maintain()?;
-                self.poll_once()?;
-
-                for event in self.events.iter() {
-                    match event.token() {
-                        PTY_IO_TOKEN => {
-                            if event.is_readable() {
-                                terminal.handle_read_ready()?;
-                            }
-                            if event.is_writable() {
-                                terminal.handle_write_ready()?;
-                            }
-                        },
-                        PTY_CHILD_TOKEN => {
-                            if terminal.check_child_exit()?.is_some() {
-                                exit_detected = true;
-                            }
-                        },
-                        RUNTIME_WAKE_TOKEN => {},
-                        _ => {},
-                    };
-                }
-
-                shutdown_requested |= self.drain_runtime_requests(terminal)?;
-                terminal.maintain()?;
-
-                if !exit_detected && terminal.check_child_exit()?.is_some() {
-                    exit_detected = true;
-                }
-
-                hooks.after_poll(terminal)?;
-
-                if exit_detected || shutdown_requested {
-                    break;
-                }
-
-                let mut desired_interest = Interest::READABLE;
-                if terminal.has_pending_output() {
-                    desired_interest |= Interest::WRITABLE;
-                }
-
-                if desired_interest != interest {
-                    terminal.reregister_session(
-                        self.poll.registry(),
-                        desired_interest,
-                        PTY_IO_TOKEN,
-                        PTY_CHILD_TOKEN,
-                    )?;
-                    interest = desired_interest;
-                }
+        loop {
+            if shutdown_requested || exit_detected {
+                break;
             }
 
-            Ok(())
-        })();
+            hooks.before_poll(client)?;
+            shutdown_requested |= self.drain_runtime_requests(client)?;
+            client.handle_runtime_event(RuntimeEvent::Maintain)?;
+            self.poll_once()?;
 
-        let deregister_result =
-            terminal.deregister_session(self.poll.registry());
+            for event in self.events.iter() {
+                match event.token() {
+                    PTY_IO_TOKEN => {
+                        if event.is_readable() {
+                            client.handle_runtime_event(
+                                RuntimeEvent::ReadReady,
+                            )?;
+                        }
+                        if event.is_writable() {
+                            client.handle_runtime_event(
+                                RuntimeEvent::WriteReady,
+                            )?;
+                        }
+                    },
+                    PTY_CHILD_TOKEN => {
+                        if client.check_child_exit()?.is_some() {
+                            exit_detected = true;
+                        }
+                    },
+                    RUNTIME_WAKE_TOKEN => {},
+                    _ => {},
+                };
+            }
 
-        run_result?;
-        deregister_result?;
+            shutdown_requested |= self.drain_runtime_requests(client)?;
+            client.handle_runtime_event(RuntimeEvent::Maintain)?;
+
+            if !exit_detected && client.check_child_exit()?.is_some() {
+                exit_detected = true;
+            }
+
+            hooks.after_poll(client)?;
+
+            if exit_detected || shutdown_requested {
+                break;
+            }
+
+            let mut desired_interest = Interest::READABLE;
+            if client.has_pending_output() {
+                desired_interest |= Interest::WRITABLE;
+            }
+
+            if desired_interest != interest {
+                client.handle_runtime_event(
+                    RuntimeEvent::ReregisterSession {
+                        registry: self.poll.registry(),
+                        interest: desired_interest,
+                        io_token: PTY_IO_TOKEN,
+                        child_token: PTY_CHILD_TOKEN,
+                    },
+                )?;
+                interest = desired_interest;
+            }
+        }
+
+        client.handle_runtime_event(RuntimeEvent::DeregisterSession {
+            registry: self.poll.registry(),
+        })?;
 
         Ok(())
     }
@@ -310,9 +246,9 @@ impl Runtime {
         Ok(())
     }
 
-    fn drain_runtime_requests<T>(&mut self, terminal: &mut T) -> Result<bool>
+    fn drain_runtime_requests<C>(&mut self, client: &mut C) -> Result<bool>
     where
-        T: RuntimeTarget + ?Sized,
+        C: RuntimeClient + ?Sized,
     {
         let mut shutdown_requested = false;
         loop {
@@ -321,7 +257,8 @@ impl Runtime {
                     if matches!(request, TerminalRequest::Shutdown) {
                         shutdown_requested = true;
                     }
-                    terminal.handle_request(request)?;
+                    client
+                        .handle_runtime_event(RuntimeEvent::Request(request))?;
                 },
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {

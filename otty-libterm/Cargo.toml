@@ -11,6 +11,7 @@ bitflags.workspace = true
 otty-escape = { path = "../otty-escape" }
 otty-pty = { path = "../otty-pty" }
 otty-surface = { path = "../otty-surface" }
+cursor-icon = { version = "1.2.0", default-features = false }
 thiserror.workspace = true
 
 [dev-dependencies]

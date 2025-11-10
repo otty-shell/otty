@@ -992,6 +992,7 @@ dependencies = [
  "alacritty_terminal",
  "anyhow",
  "bitflags 2.10.0",
+ "cursor-icon",
  "egui",
  "open",
  "otty-libterm",
@@ -2353,6 +2354,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitflags 2.10.0",
+ "cursor-icon",
  "log",
  "mio",
  "nix",
