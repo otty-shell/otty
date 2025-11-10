@@ -15,6 +15,12 @@ pub enum LibTermError {
 
     #[error("i/o error: {0}")]
     Io(#[from] io::Error),
+
+    #[error("failed to wake event loop: {0}")]
+    Wake(io::Error),
+
+    #[error("runtime command channel closed")]
+    RuntimeChannelClosed,
 }
 
 pub type Result<T> = std::result::Result<T, LibTermError>;

@@ -13,10 +13,12 @@ fn main() -> Result<()> {
 
 #[cfg(unix)]
 mod unix_shell {
+    use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::io::{self, Read, Write};
     use std::mem::MaybeUninit;
     use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
+    use std::rc::Rc;
     use std::sync::mpsc;
     use std::thread;
 
@@ -25,19 +27,13 @@ mod unix_shell {
     use nix::libc;
     use nix::sys::termios::{self, SetArg};
     use otty_libterm::{
+        LibTermError, PollHookHandler, Runtime, RuntimeHandle, Terminal,
+        TerminalClient, TerminalEvent, TerminalOptions, TerminalRequest,
         escape::{self, Color, StdColor},
         pty::{self, PtySize},
         surface::{CellAttributes, CellUnderline, Surface, SurfaceConfig},
-        DefaultTerminalSurface, LibTermError, Terminal, TerminalClient,
-        UnixTerminalBuilder,
     };
     use signal_hook::consts::signal::SIGWINCH;
-
-    type ShellTerminal = Terminal<
-        pty::UnixSession,
-        escape::Parser<escape::vte::Parser>,
-        DefaultTerminalSurface,
-    >;
 
     pub fn run() -> Result<()> {
         let stdin = io::stdin();
@@ -53,22 +49,34 @@ mod unix_shell {
         let (rows, cols) = query_winsize(stdout_fd)
             .context("failed to query terminal size")?;
 
-        let mut terminal = UnixTerminalBuilder::new("/bin/sh")
-            .arg("-i")
-            .size(PtySize {
-                rows,
-                cols,
-                cell_width: 0,
-                cell_height: 0,
-            })
-            .surface_config(SurfaceConfig {
-                columns: cols as usize,
-                rows: rows as usize,
-                ..SurfaceConfig::default()
-            })
-            .controlling_tty(true)
+        let pty_size = PtySize {
+            rows,
+            cols,
+            cell_width: 0,
+            cell_height: 0,
+        };
+
+        let session = pty::unix("/bin/sh")
+            .with_arg("-i")
+            .with_size(pty_size)
+            .set_controling_tty_enable()
             .spawn()
             .context("failed to spawn shell session")?;
+
+        let surface = Surface::new(SurfaceConfig {
+            columns: cols as usize,
+            rows: rows as usize,
+            ..SurfaceConfig::default()
+        });
+        let parser: escape::Parser<escape::vte::Parser> = Default::default();
+        let options = TerminalOptions::default();
+
+        let mut terminal = Terminal::new(session, surface, parser, options)
+            .context("failed to construct terminal runtime")?;
+
+        let mut runtime =
+            Runtime::new().context("failed to create terminal runtime")?;
+        let runtime_handle = runtime.handle();
 
         let (resize_tx, resize_rx) = mpsc::channel();
         thread::spawn(move || {
@@ -83,47 +91,73 @@ mod unix_shell {
             }
         });
 
-        let mut frontend = ShellFrontend::new(
+        let shared_state = Rc::new(RefCell::new(
+            ShellState::new((rows, cols)).context("failed to configure tty")?,
+        ));
+
+        let mut poll_hooks = ShellPollHooks::new(
+            runtime_handle,
             resize_rx,
             raw_guard,
             nonblocking_guard,
-            (rows, cols),
-        )?;
+            shared_state.clone(),
+        );
 
-        terminal.run(&mut frontend)?;
+        let event_handler = ShellEventHandler::new(shared_state);
+        terminal.set_event_client(event_handler);
+
+        runtime.run(&mut terminal, &mut poll_hooks)?;
         Ok(())
     }
 
-    struct ShellFrontend {
-        resize_rx: mpsc::Receiver<()>,
+    type ShellTerminal = Terminal<
+        pty::UnixSession,
+        escape::Parser<escape::vte::Parser>,
+        Surface,
+    >;
+
+    struct ShellState {
         pending_input: VecDeque<u8>,
         screen: Screen,
-        _raw_guard: RawModeGuard,
-        _nonblocking_guard: NonBlockingGuard,
         size: (u16, u16),
     }
 
-    impl ShellFrontend {
-        fn new(
-            resize_rx: mpsc::Receiver<()>,
-            raw_guard: RawModeGuard,
-            nonblocking_guard: NonBlockingGuard,
-            size: (u16, u16),
-        ) -> io::Result<Self> {
+    impl ShellState {
+        fn new(size: (u16, u16)) -> io::Result<Self> {
             Ok(Self {
-                resize_rx,
                 pending_input: VecDeque::new(),
                 screen: Screen::new()?,
-                _raw_guard: raw_guard,
-                _nonblocking_guard: nonblocking_guard,
                 size,
             })
         }
+    }
 
-        fn handle_resize(
-            &mut self,
-            terminal: &mut ShellTerminal,
-        ) -> Result<(), LibTermError> {
+    struct ShellPollHooks {
+        runtime: RuntimeHandle,
+        resize_rx: mpsc::Receiver<()>,
+        state: Rc<RefCell<ShellState>>,
+        _raw_guard: RawModeGuard,
+        _nonblocking_guard: NonBlockingGuard,
+    }
+
+    impl ShellPollHooks {
+        fn new(
+            runtime: RuntimeHandle,
+            resize_rx: mpsc::Receiver<()>,
+            raw_guard: RawModeGuard,
+            nonblocking_guard: NonBlockingGuard,
+            state: Rc<RefCell<ShellState>>,
+        ) -> Self {
+            Self {
+                runtime,
+                resize_rx,
+                state,
+                _raw_guard: raw_guard,
+                _nonblocking_guard: nonblocking_guard,
+            }
+        }
+
+        fn handle_resize(&mut self) -> Result<(), LibTermError> {
             let mut resized = false;
             while self.resize_rx.try_recv().is_ok() {
                 resized = true;
@@ -133,38 +167,35 @@ mod unix_shell {
                 return Ok(());
             }
 
-            let (rows, cols) =
-                query_winsize(self.screen.fd()).map_err(LibTermError::from)?;
+            let fd = { self.state.borrow().screen.fd() };
+            let (rows, cols) = query_winsize(fd).map_err(LibTermError::from)?;
 
-            if (rows, cols) != self.size {
-                terminal.resize(PtySize {
+            let mut state = self.state.borrow_mut();
+            if (rows, cols) != state.size {
+                self.runtime.send(TerminalRequest::Resize(PtySize {
                     rows,
                     cols,
                     cell_width: 0,
                     cell_height: 0,
-                })?;
-                self.size = (rows, cols);
-                self.screen.clear().map_err(LibTermError::from)?;
+                }))?;
+                state.size = (rows, cols);
+                state.screen.clear().map_err(LibTermError::from)?;
             }
 
             Ok(())
         }
 
-        fn flush_pending_input(
-            &mut self,
-            terminal: &mut ShellTerminal,
-        ) -> Result<(), LibTermError> {
-            while !self.pending_input.is_empty() {
-                let (front, _) = self.pending_input.as_slices();
-                if front.is_empty() {
-                    break;
-                }
+        fn flush_pending_input(&mut self) -> Result<(), LibTermError> {
+            let mut state = self.state.borrow_mut();
+            if state.pending_input.is_empty() {
+                return Ok(());
+            }
 
-                let written = terminal.write(front)?;
-                if written == 0 {
-                    break;
-                }
-                self.pending_input.drain(0..written);
+            let chunk: Vec<u8> = state.pending_input.drain(..).collect();
+            drop(state);
+
+            if !chunk.is_empty() {
+                self.runtime.send(TerminalRequest::Write(chunk))?;
             }
 
             Ok(())
@@ -177,11 +208,14 @@ mod unix_shell {
             loop {
                 match stdin.read(&mut buffer) {
                     Ok(0) => {
-                        self.pending_input.push_back(4);
+                        self.state.borrow_mut().pending_input.push_back(4);
                         break;
                     },
                     Ok(read) => {
-                        self.pending_input.extend(&buffer[..read]);
+                        self.state
+                            .borrow_mut()
+                            .pending_input
+                            .extend(&buffer[..read]);
                     },
                     Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
                         break;
@@ -195,45 +229,63 @@ mod unix_shell {
 
             Ok(())
         }
+    }
 
-        fn render(&mut self, surface: &Surface) -> Result<(), LibTermError> {
-            render_surface(surface, self.screen.writer())
-                .map_err(LibTermError::from)
+    impl PollHookHandler<ShellTerminal> for ShellPollHooks {
+        fn before_poll(
+            &mut self,
+            _terminal: &mut ShellTerminal,
+        ) -> Result<(), LibTermError> {
+            self.handle_resize()?;
+            self.flush_pending_input()?;
+            self.read_stdin()?;
+            self.flush_pending_input()?;
+            Ok(())
         }
     }
 
-    impl TerminalClient<ShellTerminal> for ShellFrontend {
-        fn before_poll(
-            &mut self,
-            terminal: &mut ShellTerminal,
-        ) -> Result<(), LibTermError> {
-            self.handle_resize(terminal)?;
-            self.flush_pending_input(terminal)?;
-            self.read_stdin()?;
-            self.flush_pending_input(terminal)?;
-            Ok(())
+    struct ShellEventHandler {
+        state: Rc<RefCell<ShellState>>,
+    }
+
+    impl ShellEventHandler {
+        fn new(state: Rc<RefCell<ShellState>>) -> Self {
+            Self { state }
         }
 
-        fn on_surface_change(
-            &mut self,
-            surface: &DefaultTerminalSurface,
-        ) -> Result<(), LibTermError> {
-            self.render(surface)
+        fn render(&self, surface: &Surface) -> Result<(), LibTermError> {
+            let mut state = self.state.borrow_mut();
+            render_surface(surface, state.screen.writer())
+                .map_err(LibTermError::from)
         }
 
-        fn on_child_exit(
-            &mut self,
+        fn handle_exit(
+            &self,
             status: &std::process::ExitStatus,
         ) -> Result<(), LibTermError> {
-            let out = self.screen.writer();
+            let mut state = self.state.borrow_mut();
+            let out = state.screen.writer();
             let exit_repr = status
                 .code()
                 .map(|code| format!("{code}"))
                 .unwrap_or_else(|| "terminated by signal".to_string());
             writeln!(out, "\r\nShell exited with {exit_repr}")
                 .map_err(LibTermError::from)?;
-            out.flush().map_err(LibTermError::from)?;
-            Ok(())
+            out.flush().map_err(LibTermError::from)
+        }
+    }
+
+    impl TerminalClient<Surface> for ShellEventHandler {
+        fn handle_event(
+            &mut self,
+            event: TerminalEvent<'_, Surface>,
+        ) -> Result<(), LibTermError> {
+            match event {
+                TerminalEvent::SurfaceChanged { surface } => {
+                    self.render(surface)
+                },
+                TerminalEvent::ChildExit { status } => self.handle_exit(status),
+            }
         }
     }
 

@@ -1,6 +1,6 @@
+use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::process::ExitStatus;
-use std::time::Duration;
 
 use log::trace;
 use mio::Registry;
@@ -9,15 +9,18 @@ use mio::{Interest, Token};
 use crate::TerminalMode;
 use crate::error::Result;
 use crate::escape::{Action, EscapeActor, EscapeParser};
-use crate::event_loop::{
-    TerminalClient, TerminalEventLoop, TerminalLoopTarget,
-};
 use crate::options::TerminalOptions;
 use crate::pty::{Pollable, PtySize, Session, SessionError};
+use crate::runtime::{
+    IoHandler, LifecycleControl, PendingOutput, RequestHandler,
+    RuntimeMaintenance, SessionRegistration, TerminalClient, TerminalEvent,
+    TerminalRequest,
+};
 use crate::surface::SurfaceController;
 
-pub trait PtySession: Session + Pollable {}
-impl<T> PtySession for T where T: Session + Pollable {}
+const DEFAULT_READ_BUFFER_CAPACITY: usize = 1024;
+
+type DynTerminalClient<S> = dyn TerminalClient<S> + 'static;
 
 /// High level runtime that connects a PTY session with the escape parser and
 /// in-memory surface model.
@@ -26,10 +29,10 @@ pub struct Terminal<P, E, S> {
     parser: E,
     surface: S,
     read_buffer: Vec<u8>,
-    options: TerminalOptions,
     exit_status: Option<ExitStatus>,
-    running: bool,
     mode: TerminalMode,
+    pending_input: VecDeque<u8>,
+    event_client: Option<Box<DynTerminalClient<S>>>,
 }
 
 struct TerminalSurfaceActor<'a, S> {
@@ -158,7 +161,7 @@ impl<'a, S: SurfaceController> EscapeActor for TerminalSurfaceActor<'a, S> {
 
 impl<P, E, S> Terminal<P, E, S>
 where
-    P: PtySession,
+    P: Session,
     E: EscapeParser,
     S: SurfaceController,
 {
@@ -168,10 +171,14 @@ where
         parser: E,
         options: TerminalOptions,
     ) -> Result<Self> {
-        let mut read_buffer = vec![0u8; options.read_buffer_capacity.max(1024)];
-
+        let mut read_buffer = vec![
+            0u8;
+            options
+                .read_buffer_capacity
+                .max(DEFAULT_READ_BUFFER_CAPACITY)
+        ];
         if read_buffer.is_empty() {
-            read_buffer.resize(1024, 0);
+            read_buffer.resize(DEFAULT_READ_BUFFER_CAPACITY, 0);
         }
 
         Ok(Self {
@@ -179,24 +186,48 @@ where
             parser,
             surface,
             read_buffer,
-            options,
             exit_status: None,
-            running: true,
             mode: TerminalMode::default(),
+            pending_input: VecDeque::new(),
+            event_client: None,
         })
     }
 
-    /// Run the terminal event loop, delegating front-end duties to the provided client.
-    pub fn run<C>(&mut self, client: &mut C) -> Result<()>
+    /// Attach a client that will receive [`TerminalEvent`] callbacks directly from this terminal.
+    pub fn set_event_client<C>(&mut self, client: C)
     where
-        C: TerminalClient<Self> + ?Sized,
+        C: TerminalClient<S> + 'static,
     {
-        let mut event_loop = TerminalEventLoop::new()?;
-        event_loop.run(self, client)
+        self.event_client = Some(Box::new(client));
+    }
+
+    /// Remove the currently attached event client.
+    pub fn take_event_client(&mut self) -> Option<Box<DynTerminalClient<S>>> {
+        self.event_client.take()
+    }
+
+    /// Check whether the terminal has an event client attached.
+    pub fn has_event_client(&self) -> bool {
+        self.event_client.is_some()
+    }
+
+    /// Apply a [`TerminalRequest`] without going through the [`Runtime`].
+    pub fn apply_request(&mut self, request: TerminalRequest) -> Result<()> {
+        self.process_request(request)
+    }
+
+    /// Drain any readable data from the PTY, returning whether the surface changed.
+    pub fn poll_output(&mut self) -> Result<bool> {
+        self.drain_session()
+    }
+
+    /// Poll the child process for exit status updates.
+    pub fn poll_exit(&mut self) -> Result<Option<ExitStatus>> {
+        self.capture_exit()
     }
 
     /// Write a chunk of bytes to the PTY session.
-    pub fn write(&mut self, bytes: &[u8]) -> Result<usize> {
+    fn write(&mut self, bytes: &[u8]) -> Result<usize> {
         let mut written = 0usize;
 
         while written < bytes.len() {
@@ -221,14 +252,14 @@ where
     }
 
     /// Request a PTY resize and mirror the new geometry in the surface model.
-    pub fn resize(&mut self, size: PtySize) -> Result<()> {
+    fn resize(&mut self, size: PtySize) -> Result<()> {
         self.session.resize(size)?;
         self.surface.resize(size.cols as usize, size.rows as usize);
-        Ok(())
+        self.emit_surface_change()
     }
 
     /// Terminate the session and return the reported exit status code.
-    pub fn close(&mut self) -> Result<i32> {
+    fn close(&mut self) -> Result<i32> {
         let code = self.session.close()?;
         #[cfg(unix)]
         {
@@ -240,41 +271,119 @@ where
             use std::os::windows::process::ExitStatusExt;
             self.exit_status = Some(ExitStatusExt::from_raw(code as u32));
         }
-        self.running = false;
+        if let Some(status) = self.exit_status.as_ref().copied() {
+            self.emit_child_exit(&status)?;
+        }
         Ok(code)
     }
 
-    // /// Access the active surface for inspection or rendering.
-    // pub fn surface(&self) -> &Surface {
-    //     self.surface
-    // }
-
-    // /// Mutably access the surface.
-    // pub fn surface_mut(&mut self) -> &mut Surface {
-    //     self.surface
-    // }
-
-    /// Borrow the underlying surface actor.
+    /// Borrow the underlying surface controller.
     pub fn surface_actor(&self) -> &S {
         &self.surface
     }
 
-    /// Mutably borrow the underlying surface actor.
+    /// Mutably borrow the surface controller.
     pub fn surface_actor_mut(&mut self) -> &mut S {
         &mut self.surface
     }
 
-    /// Check whether the child process is still running.
-    pub fn is_running(&self) -> bool {
-        self.running
+    fn capture_exit(&mut self) -> Result<Option<ExitStatus>> {
+        match self.session.try_get_child_exit_status() {
+            Ok(Some(status)) => {
+                self.exit_status = Some(status);
+                if let Some(exit_status) = self.exit_status.as_ref().copied() {
+                    self.emit_child_exit(&exit_status)?;
+                }
+                Ok(self.exit_status)
+            },
+            Ok(None) => Ok(None),
+            Err(SessionError::IO(err))
+                if err.kind() == ErrorKind::WouldBlock =>
+            {
+                Ok(None)
+            },
+            Err(SessionError::IO(err))
+                if err.kind() == ErrorKind::Interrupted =>
+            {
+                Ok(None)
+            },
+            Err(err) => Err(err.into()),
+        }
     }
 
-    /// Retrieve the cached exit status if the child process has terminated.
-    pub fn exit_status(&self) -> Option<&ExitStatus> {
-        self.exit_status.as_ref()
+    fn enqueue_input(&mut self, data: Vec<u8>) {
+        if data.is_empty() {
+            return;
+        }
+        self.pending_input.extend(data);
     }
 
-    fn drain_pty(&mut self) -> Result<bool> {
+    fn flush_pending_input(&mut self) -> Result<()> {
+        while !self.pending_input.is_empty() {
+            let chunk = {
+                let slice = self.pending_input.make_contiguous();
+                slice.to_vec()
+            };
+
+            if chunk.is_empty() {
+                break;
+            }
+
+            let total = chunk.len();
+            let written = self.write(&chunk)?;
+
+            if written == 0 {
+                break;
+            }
+
+            self.pending_input
+                .drain(0..written.min(self.pending_input.len()));
+
+            if written < total {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn emit_surface_change(&mut self) -> Result<()> {
+        if let Some(mut client) = self.event_client.take() {
+            {
+                let surface = self.surface_actor();
+                client
+                    .handle_event(TerminalEvent::SurfaceChanged { surface })?;
+            }
+            self.event_client = Some(client);
+        }
+        Ok(())
+    }
+
+    fn emit_child_exit(&mut self, status: &ExitStatus) -> Result<()> {
+        if let Some(mut client) = self.event_client.take() {
+            client.handle_event(TerminalEvent::ChildExit { status })?;
+            self.event_client = Some(client);
+        }
+
+        Ok(())
+    }
+
+    fn process_request(&mut self, request: TerminalRequest) -> Result<()> {
+        match request {
+            TerminalRequest::Write(bytes) => {
+                self.enqueue_input(bytes);
+                self.flush_pending_input()?;
+            },
+            TerminalRequest::Resize(size) => self.resize(size)?,
+            TerminalRequest::Shutdown => {
+                self.close()?;
+            },
+        }
+
+        Ok(())
+    }
+
+    fn drain_session(&mut self) -> Result<bool> {
         let mut updated = false;
 
         loop {
@@ -303,40 +412,20 @@ where
             }
         }
 
-        Ok(updated)
-    }
-
-    fn capture_exit(&mut self) -> Result<Option<ExitStatus>> {
-        match self.session.try_get_child_exit_status() {
-            Ok(Some(status)) => {
-                self.exit_status = Some(status);
-                self.running = false;
-                Ok(self.exit_status)
-            },
-            Ok(None) => Ok(None),
-            Err(SessionError::IO(err))
-                if err.kind() == ErrorKind::WouldBlock =>
-            {
-                Ok(None)
-            },
-            Err(SessionError::IO(err))
-                if err.kind() == ErrorKind::Interrupted =>
-            {
-                Ok(None)
-            },
-            Err(err) => Err(err.into()),
+        if updated {
+            self.emit_surface_change()?;
         }
+
+        Ok(updated)
     }
 }
 
-impl<P, E, S> TerminalLoopTarget for Terminal<P, E, S>
+impl<P, E, S> SessionRegistration for Terminal<P, E, S>
 where
-    P: PtySession,
+    P: Session + Pollable,
     E: EscapeParser,
     S: SurfaceController,
 {
-    type SurfaceHandle = S;
-
     fn register_session(
         &mut self,
         registry: &Registry,
@@ -365,59 +454,63 @@ where
         self.session.deregister(registry)?;
         Ok(())
     }
+}
 
+impl<P, E, S> IoHandler for Terminal<P, E, S>
+where
+    P: Session + Pollable,
+    E: EscapeParser,
+    S: SurfaceController,
+{
     fn handle_read_ready(&mut self) -> Result<bool> {
-        self.drain_pty()
+        self.drain_session()
     }
 
-    fn check_child_exit(&mut self) -> Result<Option<ExitStatus>> {
-        self.capture_exit()
-    }
-
-    fn poll_timeout(&self) -> Option<Duration> {
-        Some(self.options.poll_timeout)
-    }
-
-    fn is_running(&self) -> bool {
-        self.running
-    }
-
-    fn surface_handle(&self) -> &Self::SurfaceHandle {
-        self.surface_actor()
-    }
-
-    fn exit_status(&self) -> Option<&ExitStatus> {
-        self.exit_status()
+    fn handle_write_ready(&mut self) -> Result<()> {
+        self.flush_pending_input()
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use otty_escape::{Action, CharacterAttribute, Color, StdColor};
+impl<P, E, S> RequestHandler for Terminal<P, E, S>
+where
+    P: Session + Pollable,
+    E: EscapeParser,
+    S: SurfaceController,
+{
+    fn handle_request(&mut self, request: TerminalRequest) -> Result<()> {
+        self.process_request(request)
+    }
+}
 
-//     use super::*;
+impl<P, E, S> LifecycleControl for Terminal<P, E, S>
+where
+    P: Session + Pollable,
+    E: EscapeParser,
+    S: SurfaceController,
+{
+    fn check_child_exit(&mut self) -> Result<Option<ExitStatus>> {
+        self.capture_exit()
+    }
+}
 
-//     #[test]
-//     fn default_surface_actor_handles_print() {
-//         let mut actor = DefaultTerminalSurface::default();
+impl<P, E, S> RuntimeMaintenance for Terminal<P, E, S>
+where
+    P: Session + Pollable,
+    E: EscapeParser,
+    S: SurfaceController,
+{
+    fn maintain(&mut self) -> Result<()> {
+        self.flush_pending_input()
+    }
+}
 
-//         actor.handle(Action::Print('X'));
-
-//         let grid = actor.surface().grid();
-//         assert_eq!(grid.row(0).cells[0].ch, 'X');
-//     }
-
-//     #[test]
-//     fn default_surface_actor_applies_sgr() {
-//         let mut actor = DefaultTerminalSurface::default();
-
-//         actor.handle(Action::SGR(CharacterAttribute::Foreground(Color::Std(
-//             StdColor::Blue,
-//         ))));
-//         actor.handle(Action::Print('A'));
-
-//         let cell = &actor.surface().grid().row(0).cells[0];
-//         assert_eq!(cell.ch, 'A');
-//         assert_eq!(cell.attributes.foreground, Color::Std(StdColor::Blue));
-//     }
-// }
+impl<P, E, S> PendingOutput for Terminal<P, E, S>
+where
+    P: Session + Pollable,
+    E: EscapeParser,
+    S: SurfaceController,
+{
+    fn has_pending_output(&self) -> bool {
+        !self.pending_input.is_empty()
+    }
+}
