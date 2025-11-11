@@ -4,9 +4,10 @@ mod surface_actor;
 use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::process::ExitStatus;
+use std::time::{Duration, Instant};
 
 use crate::escape::{
-    CursorShape, CursorStyle, EscapeParser, Hyperlink, KeyboardMode,
+    Action, CursorShape, CursorStyle, EscapeParser, Hyperlink, KeyboardMode,
 };
 use crate::pty::{Pollable, PtySize, Session, SessionError};
 use crate::surface::{ScrollDirection, SurfaceActor, SurfaceSnapshotSource};
@@ -48,6 +49,69 @@ pub enum TerminalRequest {
     Shutdown,
 }
 
+const MAX_SYNC_ACTIONS: usize = 10_000;
+const SYNC_TIMEOUT: Duration = Duration::from_millis(10);
+const IDLE_TICK: Duration = Duration::from_millis(10);
+
+struct SyncState {
+    active: bool,
+    buffer: Vec<Action>,
+    deadline: Option<Instant>,
+}
+
+impl SyncState {
+    fn new() -> Self {
+        let mut state = Self {
+            active: false,
+            buffer: Vec::with_capacity(MAX_SYNC_ACTIONS),
+            deadline: None,
+        };
+        state.refresh_deadline();
+        state
+    }
+
+    fn begin(&mut self) {
+        self.active = true;
+        self.buffer.clear();
+        self.refresh_deadline();
+    }
+
+    fn end(&mut self) -> Vec<Action> {
+        self.active = false;
+        self.refresh_deadline();
+        std::mem::take(&mut self.buffer)
+    }
+
+    fn cancel(&mut self) -> Vec<Action> {
+        self.active = false;
+        self.refresh_deadline();
+        std::mem::take(&mut self.buffer)
+    }
+
+    fn push(&mut self, action: Action) -> std::result::Result<(), Action> {
+        if self.buffer.len() >= MAX_SYNC_ACTIONS {
+            return Err(action);
+        }
+        self.buffer.push(action);
+        self.refresh_deadline();
+        Ok(())
+    }
+
+    fn is_active(&self) -> bool {
+        self.active
+    }
+
+    fn is_expired(&self) -> bool {
+        self.deadline
+            .is_some_and(|deadline| Instant::now() > deadline)
+    }
+
+    fn refresh_deadline(&mut self) {
+        let timeout = if self.active { SYNC_TIMEOUT } else { IDLE_TICK };
+        self.deadline = Some(Instant::now() + timeout);
+    }
+}
+
 /// Callback interface for consuming [`TerminalEvent`]s emitted by terminal instances.
 pub trait TerminalClient {
     /// Handle a single terminal event produced by the terminal.
@@ -69,6 +133,7 @@ pub struct Terminal<P, E, S> {
     keyboard_stack: Vec<KeyboardMode>,
     pending_input: VecDeque<u8>,
     event_client: Option<Box<dyn TerminalClient + 'static>>,
+    sync_state: SyncState,
 }
 
 impl<P, E, S> Terminal<P, E, S>
@@ -104,6 +169,7 @@ where
             keyboard_stack: Vec::new(),
             pending_input: VecDeque::new(),
             event_client: None,
+            sync_state: SyncState::new(),
         })
     }
 
@@ -127,6 +193,28 @@ where
         self.flush_pending_input()
     }
 
+    /// Drop expired synchronized-update buffers even if no new PTY data arrives.
+    pub fn flush_sync_timeout(&mut self) -> Result<bool> {
+        let mut event_client = self.event_client.take();
+        let flushed = {
+            let mut actor = TerminalSurfaceActor {
+                surface: &mut self.surface,
+                mode: &mut self.mode,
+                keyboard_mode: &mut self.keyboard_mode,
+                keyboard_stack: &mut self.keyboard_stack,
+                client: &mut event_client,
+                pending_input: &mut self.pending_input,
+                sync_state: &mut self.sync_state,
+            };
+            actor.flush_sync_timeout()
+        };
+        self.event_client = event_client;
+        if flushed {
+            self.emit_surface_change()?;
+        }
+        Ok(flushed)
+    }
+
     fn read(&mut self) -> Result<bool> {
         let mut updated = false;
 
@@ -141,14 +229,19 @@ where
                     let keyboard_mode = &mut self.keyboard_mode;
                     let keyboard_stack = &mut self.keyboard_stack;
                     let mut event_client = self.event_client.take();
-                    let mut actor = TerminalSurfaceActor {
-                        surface,
-                        mode,
-                        keyboard_mode,
-                        keyboard_stack,
-                        client: &mut event_client,
-                    };
-                    parser.advance(chunk, &mut actor);
+                    {
+                        let mut actor = TerminalSurfaceActor {
+                            surface,
+                            mode,
+                            keyboard_mode,
+                            keyboard_stack,
+                            client: &mut event_client,
+                            pending_input: &mut self.pending_input,
+                            sync_state: &mut self.sync_state,
+                        };
+                        parser.advance(chunk, &mut actor);
+                        let _ = actor.flush_sync_timeout();
+                    }
                     self.event_client = event_client;
                     updated = true;
                 },
@@ -215,7 +308,7 @@ where
     }
 
     /// Capture the current terminal state without mutating it.
-    pub fn snapshot(&self) -> TerminalSnapshot {
+    pub fn snapshot(&mut self) -> TerminalSnapshot {
         let surface = self.surface.capture_snapshot();
         TerminalSnapshot::new(surface, self.mode, self.keyboard_mode)
     }
@@ -387,8 +480,12 @@ where
             RuntimeEvent::ReadReady => {
                 let _ = self.read()?;
             },
-            RuntimeEvent::WriteReady | RuntimeEvent::Maintain => {
+            RuntimeEvent::WriteReady => {
                 self.flush_pending_input()?;
+            },
+            RuntimeEvent::Maintain => {
+                self.flush_pending_input()?;
+                let _ = self.flush_sync_timeout()?;
             },
             RuntimeEvent::Request(request) => {
                 self.process_request(request)?;
@@ -403,5 +500,9 @@ where
 
     fn check_child_exit(&mut self) -> Result<Option<ExitStatus>> {
         self.capture_exit()
+    }
+
+    fn pool_timeout(&self) -> Option<Instant> {
+        self.sync_state.deadline
     }
 }

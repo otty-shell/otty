@@ -1,4 +1,8 @@
+use std::collections::VecDeque;
+
 use log::trace;
+
+use super::SyncState;
 
 use crate::TerminalMode;
 use crate::escape::{
@@ -14,6 +18,8 @@ pub(super) struct TerminalSurfaceActor<'a, S> {
     pub keyboard_mode: &'a mut KeyboardMode,
     pub keyboard_stack: &'a mut Vec<KeyboardMode>,
     pub client: &'a mut Option<Box<dyn TerminalClient + 'static>>,
+    pub pending_input: &'a mut VecDeque<u8>,
+    pub sync_state: &'a mut SyncState,
 }
 
 impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
@@ -23,16 +29,10 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
         }
     }
 
-    fn set_flag(&mut self, flag: TerminalMode, enabled: bool) {
-        if enabled {
-            self.mode.insert(flag);
-        } else {
-            self.mode.remove(flag);
-        }
-    }
-
-    fn set_mode(&mut self, mode: &Mode) {
+    fn set_mode(&mut self, mode: Mode) {
         use NamedMode::*;
+
+        self.surface.set_mode(mode, true);
 
         if let Mode::Named(named) = mode {
             match named {
@@ -46,8 +46,10 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
         }
     }
 
-    fn unset_mode(&mut self, mode: &Mode) {
+    fn unset_mode(&mut self, mode: Mode) {
         use NamedMode::*;
+
+        self.surface.set_mode(mode, false);
 
         if let Mode::Named(named) = mode {
             match named {
@@ -61,24 +63,40 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
         }
     }
 
-    fn set_private_mode(&mut self, mode: &PrivateMode) {
+    fn report_mode(&mut self, mode: Mode) {
+        use NamedMode::*;
+
+        let state = match mode {
+            Mode::Named(mode) => match mode {
+                Insert => self.mode.contains(TerminalMode::INSERT).into(),
+                LineFeedNewLine => {
+                    self.mode.contains(TerminalMode::LINE_FEED_NEW_LINE).into()
+                },
+            },
+            Mode::Unknown(_) => 0,
+        };
+
+        self.pending_input.extend(
+            format!("\x1b[{};{}$y", mode.raw(), state as u8,).as_bytes(),
+        );
+    }
+
+    fn set_private_mode(&mut self, mode: PrivateMode) {
         use NamedPrivateMode::*;
+
+        self.surface.set_private_mode(mode, true);
 
         if let PrivateMode::Named(named) = mode {
             match named {
-                CursorKeys => {
-                    self.mode.insert(TerminalMode::APP_CURSOR)
-                },
+                CursorKeys => self.mode.insert(TerminalMode::APP_CURSOR),
                 Origin => {
                     self.mode.insert(TerminalMode::ORIGIN);
                     self.surface.goto(0, 0);
                 },
                 LineWrap => {
-                    self.mode.insert(TerminalMode::SHOW_CURSOR);
+                    self.mode.insert(TerminalMode::LINE_WRAP);
                 },
-                ShowCursor => {
-                    self.mode.insert(TerminalMode::SHOW_CURSOR)
-                },
+                ShowCursor => self.mode.insert(TerminalMode::SHOW_CURSOR),
                 ReportMouseClicks => {
                     self.mode.remove(TerminalMode::MOUSE_MODE);
                     self.mode.insert(TerminalMode::MOUSE_REPORT_CLICK);
@@ -111,39 +129,33 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
                 AlternateScroll => {
                     self.mode.insert(TerminalMode::ALTERNATE_SCROLL)
                 },
-                UrgencyHints => {
-                    self.mode.insert(TerminalMode::URGENCY_HINTS)
-                },
+                UrgencyHints => self.mode.insert(TerminalMode::URGENCY_HINTS),
                 SwapScreenAndSetRestoreCursor => {
                     self.mode.insert(TerminalMode::ALT_SCREEN);
-                    self.surface.enter_altscreem();
                 },
                 BracketedPaste => {
-                    self.mode.remove(TerminalMode::BRACKETED_PASTE)
+                    self.mode.insert(TerminalMode::BRACKETED_PASTE)
                 },
-                ColumnMode => self.surface.decolumn(),
                 _ => {},
             }
         }
     }
 
-    fn unset_private_mode(&mut self, mode: &PrivateMode) {
+    fn unset_private_mode(&mut self, mode: PrivateMode) {
         use NamedPrivateMode::*;
+
+        self.surface.set_private_mode(mode, false);
 
         if let PrivateMode::Named(named) = mode {
             match named {
-                CursorKeys => {
-                    self.mode.remove(TerminalMode::APP_CURSOR)
-                },
+                CursorKeys => self.mode.remove(TerminalMode::APP_CURSOR),
                 Origin => {
                     self.mode.remove(TerminalMode::ORIGIN);
                 },
                 LineWrap => {
-                    self.mode.insert(TerminalMode::SHOW_CURSOR);
+                    self.mode.remove(TerminalMode::LINE_WRAP);
                 },
-                ShowCursor => {
-                    self.mode.remove(TerminalMode::SHOW_CURSOR)
-                },
+                ShowCursor => self.mode.remove(TerminalMode::SHOW_CURSOR),
                 ReportMouseClicks => {
                     self.mode.remove(TerminalMode::MOUSE_REPORT_CLICK);
                     // TODO: send event
@@ -171,17 +183,13 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
                 AlternateScroll => {
                     self.mode.remove(TerminalMode::ALTERNATE_SCROLL)
                 },
-                UrgencyHints => {
-                    self.mode.remove(TerminalMode::URGENCY_HINTS)
-                },
+                UrgencyHints => self.mode.remove(TerminalMode::URGENCY_HINTS),
                 SwapScreenAndSetRestoreCursor => {
                     self.mode.remove(TerminalMode::ALT_SCREEN);
-                    self.surface.exit_altscreem();
                 },
                 BracketedPaste => {
                     self.mode.remove(TerminalMode::BRACKETED_PASTE)
                 },
-                ColumnMode => self.surface.decolumn(),
                 _ => {},
             }
         }
@@ -190,20 +198,13 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
     fn report_private_mode(&mut self, mode: PrivateMode) {
         use NamedPrivateMode::*;
 
-        let _ = match mode {
+        let state = match mode {
             PrivateMode::Named(mode) => match mode {
                 CursorKeys => {
                     self.mode.contains(TerminalMode::APP_CURSOR).into()
                 },
-                Origin => {
-                    self.mode.contains(TerminalMode::ORIGIN).into()
-                },
-                LineWrap => {
-                    self.mode.contains(TerminalMode::LINE_WRAP).into()
-                },
-                // TODO:
-                // NamedPrivateMode::BlinkingCursor => {
-                // },
+                Origin => self.mode.contains(TerminalMode::ORIGIN).into(),
+                LineWrap => self.mode.contains(TerminalMode::LINE_WRAP).into(),
                 ShowCursor => {
                     self.mode.contains(TerminalMode::SHOW_CURSOR).into()
                 },
@@ -222,9 +223,7 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
                 Utf8Mouse => {
                     self.mode.contains(TerminalMode::UTF8_MOUSE).into()
                 },
-                SgrMouse => {
-                    self.mode.contains(TerminalMode::SGR_MOUSE).into()
-                },
+                SgrMouse => self.mode.contains(TerminalMode::SGR_MOUSE).into(),
                 AlternateScroll => {
                     self.mode.contains(TerminalMode::ALTERNATE_SCROLL).into()
                 },
@@ -244,11 +243,10 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
             PrivateMode::Unknown(_) => 0,
         };
 
-        // self.event_proxy.send_event(Event::PtyWrite(format!(
-        //     "\x1b[?{};{}$y",
-        //     mode.raw(),
-        //     state as u8,
-        // )));
+        println!("\x1b[?{};{}$y", mode.raw(), state as u8,);
+        self.pending_input.extend(
+            format!("\x1b[?{};{}$y", mode.raw(), state as u8,).as_bytes(),
+        );
     }
 
     fn apply_keyboard_mode(
@@ -274,6 +272,7 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
         self.keyboard_stack.push(*self.keyboard_mode);
         *self.keyboard_mode = mode;
         self.sync_keyboard_flags();
+        self.surface.push_keyboard_mode();
     }
 
     fn pop_keyboard_modes(&mut self, amount: u16) {
@@ -286,6 +285,7 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
             }
         }
         self.sync_keyboard_flags();
+        self.surface.pop_keyboard_modes(amount);
     }
 
     fn sync_keyboard_flags(&mut self) {
@@ -295,10 +295,8 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
             self.mode.insert(TerminalMode::KITTY_KEYBOARD_PROTOCOL);
         }
     }
-}
 
-impl<'a, S: SurfaceActor> EscapeActor for TerminalSurfaceActor<'a, S> {
-    fn handle(&mut self, action: Action) {
+    fn process_action(&mut self, action: Action) {
         use Action::*;
 
         match action {
@@ -398,11 +396,11 @@ impl<'a, S: SurfaceActor> EscapeActor for TerminalSurfaceActor<'a, S> {
             },
             SetKeypadApplicationMode => {
                 self.surface.set_keypad_application_mode(true);
-                self.set_flag(TerminalMode::APP_KEYPAD, true);
+                self.mode.insert(TerminalMode::APP_KEYPAD);
             },
             UnsetKeypadApplicationMode => {
                 self.surface.set_keypad_application_mode(false);
-                self.set_flag(TerminalMode::APP_KEYPAD, false);
+                self.mode.remove(TerminalMode::APP_KEYPAD);
             },
             SetModifyOtherKeysState(state) => {
                 trace!("modifyOtherKeys => {:?}", state);
@@ -414,30 +412,22 @@ impl<'a, S: SurfaceActor> EscapeActor for TerminalSurfaceActor<'a, S> {
             },
             PushKeyboardMode(mode) => {
                 self.push_keyboard_mode(mode);
-                self.surface.push_keyboard_mode();
             },
             PopKeyboardModes(amount) => {
                 self.pop_keyboard_modes(amount);
-                self.surface.pop_keyboard_modes(amount);
             },
-            SetMode(mode) => {
-                self.set_mode(&mode);
-                // TODO: useless
-                self.surface.set_mode(mode, true);
-            },
+            SetMode(mode) => self.set_mode(mode),
             SetPrivateMode(mode) => {
-                self.set_private_mode(&mode);
+                self.set_private_mode(mode);
             },
             UnsetMode(mode) => {
-                self.unset_mode(&mode);
-                // TODO: useless
-                self.surface.set_mode(mode, false);
+                self.unset_mode(mode);
             },
             UnsetPrivateMode(mode) => {
-                self.unset_private_mode(&mode);
+                self.unset_private_mode(mode);
             },
-            ReportMode(mode) => trace!("Report mode {:?}", mode),
-            ReportPrivateMode(mode) => trace!("Report private mode {:?}", mode),
+            ReportMode(mode) => self.report_mode(mode),
+            ReportPrivateMode(mode) => self.report_private_mode(mode),
             RequestTextAreaSizeByPixels => {
                 trace!("Request text area size (pixels)");
             },
@@ -453,7 +443,69 @@ impl<'a, S: SurfaceActor> EscapeActor for TerminalSurfaceActor<'a, S> {
         }
     }
 
-    fn begin_sync(&mut self) {}
+    fn flush_buffered_actions(&mut self, actions: Vec<Action>) {
+        for action in actions {
+            self.process_action(action);
+        }
+    }
 
-    fn end_sync(&mut self) {}
+    fn abort_sync(&mut self) -> bool {
+        if !self.sync_state.is_active() {
+            return false;
+        }
+        let actions = self.sync_state.cancel();
+        self.surface.end_sync();
+        self.flush_buffered_actions(actions);
+        true
+    }
+
+    pub(super) fn flush_sync_timeout(&mut self) -> bool {
+        if self.sync_state.is_expired() {
+            if self.sync_state.is_active() {
+                return self.abort_sync();
+            }
+            self.sync_state.refresh_deadline();
+        }
+        false
+    }
+}
+
+impl<'a, S: SurfaceActor> EscapeActor for TerminalSurfaceActor<'a, S> {
+    fn handle(&mut self, action: Action) {
+        if self.sync_state.is_active() {
+            if self.sync_state.is_expired() {
+                self.abort_sync();
+            }
+
+            if self.sync_state.is_active() {
+                match self.sync_state.push(action) {
+                    Ok(()) => return,
+                    Err(overflowed) => {
+                        let _ = self.abort_sync();
+                        self.process_action(overflowed);
+                        return;
+                    },
+                }
+            }
+        }
+
+        self.process_action(action);
+    }
+
+    fn begin_sync(&mut self) {
+        if self.sync_state.is_active() {
+            return;
+        }
+        self.surface.begin_sync();
+        self.sync_state.begin();
+    }
+
+    fn end_sync(&mut self) {
+        if !self.sync_state.is_active() {
+            return;
+        }
+        let actions = self.sync_state.end();
+        self.surface.end_sync();
+        self.flush_buffered_actions(actions);
+    }
 }

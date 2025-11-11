@@ -447,9 +447,9 @@ fn handle_vertical_position_absolute<A, F>(
     use CsiParam::*;
 
     match params {
-        [] => actor.handle(Action::GotoRow(1)),
+        [] => actor.handle(Action::GotoRow(0)),
         [Integer(line_num)] => {
-            actor.handle(Action::GotoRow(*line_num as i32 - 1));
+            actor.handle(Action::GotoRow(*line_num as i32));
         },
         _ => fallback(),
     }
@@ -516,9 +516,9 @@ fn handle_cursor_horizontal_absolute<A, F>(
     use CsiParam::*;
 
     match params {
-        [] => actor.handle(Action::GotoColumn(1)),
+        [] => actor.handle(Action::GotoColumn(0)),
         [Integer(column_num)] => {
-            actor.handle(Action::GotoColumn(*column_num as usize - 1));
+            actor.handle(Action::GotoColumn(*column_num as usize));
         },
         _ => fallback(),
     }
@@ -535,9 +535,9 @@ fn handle_character_position_absolute<A, F>(
     use CsiParam::*;
 
     match params {
-        [] => actor.handle(Action::GotoColumn(1)),
+        [] => actor.handle(Action::GotoColumn(0)),
         [Integer(column_num)] => {
-            actor.handle(Action::GotoColumn(*column_num as usize - 1));
+            actor.handle(Action::GotoColumn(*column_num as usize));
         },
         _ => fallback(),
     }
@@ -574,7 +574,7 @@ fn handle_horizontal_and_vertical_position<A, F>(
     match params {
         [] => actor.handle(Action::Goto(0, 0)),
         [Integer(y), P(b';'), Integer(x)] => {
-            actor.handle(Action::Goto(*y as i32 - 1, *x as usize - 1));
+            actor.handle(Action::Goto(*y as i32, *x as usize));
         },
         _ => fallback(),
     }
@@ -1222,7 +1222,7 @@ mod tests {
                 Action::MoveForward(3),
                 Action::MoveForward(4),
                 Action::MoveBackward(2),
-                Action::GotoRow(2),
+                Action::GotoRow(3),
                 Action::MoveDown {
                     rows: 1,
                     carrage_return_needed: true,
@@ -1231,10 +1231,10 @@ mod tests {
                     rows: 2,
                     carrage_return_needed: true,
                 },
-                Action::GotoColumn(9),
-                Action::GotoColumn(5),
-                Action::Goto(4, 8),
-                Action::Goto(2, 3)
+                Action::GotoColumn(10),
+                Action::GotoColumn(6),
+                Action::Goto(5, 9),
+                Action::Goto(3, 4)
             ]
         );
     }

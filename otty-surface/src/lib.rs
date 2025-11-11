@@ -8,6 +8,7 @@ pub use actor::SurfaceActor;
 pub use cell::{Cell, CellAttributes, CellBlink, CellUnderline, HyperlinkRef};
 pub use grid::{Grid, GridRow, ScrollDirection};
 pub use state::{
-    CursorSnapshot, SurfacePalette, SurfaceSnapshot, SurfaceSnapshotSource,
+    CursorSnapshot, LineDamage, SurfaceDamage, SurfacePalette, SurfaceSnapshot,
+    SurfaceSnapshotSource,
 };
 pub use surface::{Surface, SurfaceConfig};

@@ -4,7 +4,7 @@ use std::sync::{
     Arc,
     mpsc::{self, Receiver, Sender, TryRecvError},
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
 
@@ -78,6 +78,10 @@ pub trait RuntimeClient {
     fn check_child_exit(&mut self) -> Result<Option<ExitStatus>> {
         Ok(None)
     }
+
+    fn pool_timeout(&self) -> Option<Instant> {
+        None
+    }
 }
 
 /// Hooks that run immediately before and after each poll iteration.
@@ -98,7 +102,6 @@ pub struct Runtime {
     command_tx: Sender<TerminalRequest>,
     command_rx: Receiver<TerminalRequest>,
     waker: Arc<Waker>,
-    poll_timeout: Option<Duration>,
 }
 
 impl Runtime {
@@ -118,12 +121,7 @@ impl Runtime {
             command_tx,
             command_rx,
             waker,
-            poll_timeout: Some(Duration::from_millis(10)),
         })
-    }
-
-    pub fn set_poll_timeout(&mut self, timeout: Option<Duration>) {
-        self.poll_timeout = timeout;
     }
 
     /// Acquire a handle that can be used to send requests into the runtime.
@@ -158,7 +156,12 @@ impl Runtime {
             hooks.before_poll(&mut client)?;
             shutdown_requested |= self.drain_runtime_requests(&mut client)?;
             client.handle_runtime_event(RuntimeEvent::Maintain)?;
-            self.poll_once()?;
+            let now = Instant::now();
+            let timeout = client
+                .pool_timeout()
+                .map(|deadline| deadline.saturating_duration_since(now));
+
+            self.poll_once(timeout)?;
 
             for event in self.events.iter() {
                 match event.token() {
@@ -222,10 +225,10 @@ impl Runtime {
         Ok(())
     }
 
-    fn poll_once(&mut self) -> Result<()> {
+    fn poll_once(&mut self, timeout: Option<Duration>) -> Result<()> {
         self.events.clear();
         loop {
-            match self.poll.poll(&mut self.events, self.poll_timeout) {
+            match self.poll.poll(&mut self.events, timeout) {
                 Ok(()) => break,
                 Err(err) if err.kind() == ErrorKind::Interrupted => continue,
                 Err(err) => return Err(LibTermError::Poll(err)),

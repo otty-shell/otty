@@ -12,7 +12,10 @@ use crate::{
     SurfaceActor,
     cell::{Cell, CellAttributes, CellBlink, CellUnderline},
     grid::Grid,
-    state::{CursorSnapshot, SurfacePalette, SurfaceSnapshot},
+    state::{
+        CursorSnapshot, LineDamage, SurfaceDamage, SurfacePalette,
+        SurfaceSnapshot,
+    },
 };
 
 const DEFAULT_COLUMNS: usize = 80;
@@ -30,6 +33,104 @@ fn default_tab_stops(width: usize) -> Vec<bool> {
         stops[col] = true;
     }
     stops
+}
+
+#[derive(Debug, Clone)]
+struct DamageTracker {
+    full: bool,
+    width: usize,
+    lines: Vec<LineDamage>,
+}
+
+impl DamageTracker {
+    fn new(columns: usize, rows: usize) -> Self {
+        let mut lines = Vec::with_capacity(rows);
+        for row in 0..rows {
+            lines.push(LineDamage::undamaged(row, columns));
+        }
+        Self {
+            full: true,
+            width: columns,
+            lines,
+        }
+    }
+
+    fn resize(&mut self, columns: usize, rows: usize) {
+        self.width = columns;
+
+        if rows > self.lines.len() {
+            for row in self.lines.len()..rows {
+                self.lines.push(LineDamage::undamaged(row, columns));
+            }
+        } else if rows < self.lines.len() {
+            self.lines.truncate(rows);
+        }
+
+        for (row_idx, entry) in self.lines.iter_mut().enumerate() {
+            entry.row = row_idx;
+            entry.reset(columns);
+        }
+
+        self.full = true;
+    }
+
+    fn mark_full(&mut self) {
+        self.full = true;
+    }
+
+    fn damage_rows(&mut self, start: usize, end: usize) {
+        if self.width == 0 || start > end || self.lines.is_empty() {
+            return;
+        }
+        let max_col = self.width.saturating_sub(1);
+        let end = end.min(self.lines.len().saturating_sub(1));
+        for row in start..=end {
+            self.damage_range(row, 0, max_col);
+        }
+    }
+
+    fn damage_cell(&mut self, row: usize, col: usize) {
+        self.damage_range(row, col, col);
+    }
+
+    fn damage_range(&mut self, row: usize, left: usize, right: usize) {
+        if self.full || self.width == 0 || row >= self.lines.len() {
+            return;
+        }
+        let max_col = self.width.saturating_sub(1);
+        let start = left.min(max_col);
+        let end = right.min(max_col);
+        if start > end {
+            return;
+        }
+        self.lines[row].include(start, end);
+    }
+
+    fn take(&mut self) -> SurfaceDamage {
+        if self.full {
+            self.full = false;
+            for (row_idx, entry) in self.lines.iter_mut().enumerate() {
+                entry.row = row_idx;
+                entry.reset(self.width);
+            }
+            return SurfaceDamage::Full;
+        }
+
+        let mut damaged = Vec::new();
+        for (row_idx, entry) in self.lines.iter_mut().enumerate() {
+            entry.row = row_idx;
+            if entry.is_damaged() {
+                damaged.push(*entry);
+                entry.reset(self.width);
+            }
+        }
+
+        if damaged.is_empty() {
+            SurfaceDamage::None
+        } else {
+            SurfaceDamage::Partial(damaged)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -189,6 +290,7 @@ pub struct Surface {
     primary_screen: Option<ScreenState>,
     charsets: [Charset; 4],
     active_charset: CharsetIndex,
+    damage: DamageTracker,
 }
 
 impl Surface {
@@ -230,6 +332,7 @@ impl Surface {
             primary_screen: None,
             charsets: default_charsets(),
             active_charset: CharsetIndex::G0,
+            damage: DamageTracker::new(columns, rows),
         };
         surface.reset_tab_stops();
         surface
@@ -267,6 +370,22 @@ impl Surface {
         self.cursor_style
     }
 
+    fn mark_full_dirty(&mut self) {
+        self.damage.mark_full();
+    }
+
+    fn mark_row_dirty(&mut self, row: usize, left: usize, right: usize) {
+        self.damage.damage_range(row, left, right);
+    }
+
+    fn mark_rows_dirty(&mut self, start: usize, end: usize) {
+        self.damage.damage_rows(start, end);
+    }
+
+    fn mark_cell_dirty(&mut self, row: usize, col: usize) {
+        self.damage.damage_cell(row, col);
+    }
+
     /// Get the number of lines in scrollback history.
     pub fn history_size(&self) -> usize {
         self.grid.history_size()
@@ -280,9 +399,11 @@ impl Surface {
     /// Scroll the display viewport through history.
     pub fn scroll_display(&mut self, direction: crate::grid::ScrollDirection) {
         self.grid.scroll_display(direction);
+        self.damage.mark_full();
     }
 
-    pub fn snapshot(&self) -> SurfaceSnapshot {
+    pub fn snapshot(&mut self) -> SurfaceSnapshot {
+        let damage = self.damage.take();
         SurfaceSnapshot::new(
             Arc::new(self.grid.clone()),
             self.grid.width(),
@@ -293,6 +414,7 @@ impl Surface {
             self.cursor_icon,
             self.cursor_shape,
             self.cursor_style,
+            damage,
         )
     }
 
@@ -410,10 +532,12 @@ impl Surface {
                 1,
                 &self.default_attributes,
             );
+            self.mark_full_dirty();
             // Reset display offset when new content arrives (snap to bottom).
             if self.grid.display_offset() > 0 {
                 self.grid
                     .scroll_display(crate::grid::ScrollDirection::Bottom);
+                self.mark_full_dirty();
             }
         } else {
             self.cursor_row = (self.cursor_row + 1).min(bottom);
@@ -465,6 +589,7 @@ impl Surface {
         let row = self.grid.row_mut(row_idx);
         if col_idx < row.cells.len() {
             row.cells[col_idx].push_zero_width(ch);
+            self.mark_cell_dirty(row_idx, col_idx);
         }
     }
 
@@ -505,6 +630,11 @@ impl Surface {
         } else {
             row_mut.cells[col].clear_zero_width();
         }
+
+        let max_col = self.grid.width().saturating_sub(1);
+        let start = col.saturating_sub(1).min(max_col);
+        let end = col.saturating_add(1).min(max_col);
+        self.mark_row_dirty(row, start, end);
     }
 
     fn set_scrolling_region(&mut self, top: usize, bottom: usize) {
@@ -528,6 +658,7 @@ impl Surface {
             count,
             &self.default_attributes,
         );
+        self.mark_full_dirty();
     }
 
     fn delete_lines(&mut self, count: usize) {
@@ -539,6 +670,7 @@ impl Surface {
             count,
             &self.default_attributes,
         );
+        self.mark_full_dirty();
     }
 }
 
@@ -591,7 +723,7 @@ impl SurfaceActor for Surface {
                 self.cursor_row,
                 self.cursor_col,
                 width,
-                &self.default_attributes,
+                &self.current_attributes,
             );
         }
 
@@ -600,6 +732,8 @@ impl SurfaceActor for Surface {
         }
 
         self.clear_wide_cell(self.cursor_row, self.cursor_col);
+
+        let draw_col = self.cursor_col;
 
         if self.cursor_row < self.grid.height()
             && self.cursor_col < self.grid.width()
@@ -639,6 +773,12 @@ impl SurfaceActor for Surface {
             }
         }
 
+        let max_col = self.grid.width().saturating_sub(1);
+        let end_col = draw_col
+            .saturating_add(width.saturating_sub(1))
+            .min(max_col);
+        self.mark_row_dirty(self.cursor_row, draw_col, end_col);
+
         if self.cursor_col + 1 < self.grid.width() {
             self.cursor_col += 1;
         } else {
@@ -657,6 +797,8 @@ impl SurfaceActor for Surface {
         if let Some(primary) = self.primary_screen.as_mut() {
             primary.resize(columns, rows, &self.default_attributes);
         }
+        self.damage.resize(columns, rows);
+        self.mark_full_dirty();
     }
 
     fn insert_blank(&mut self, count: usize) {
@@ -664,16 +806,20 @@ impl SurfaceActor for Surface {
             self.cursor_row,
             self.cursor_col,
             count,
-            &self.default_attributes,
+            &self.current_attributes,
         );
+        let max_col = self.grid.width().saturating_sub(1);
+        self.mark_row_dirty(self.cursor_row, self.cursor_col, max_col);
     }
 
     fn insert_blank_lines(&mut self, count: usize) {
         self.insert_blank_lines(count);
+        self.mark_rows_dirty(self.cursor_row, self.scroll_bottom);
     }
 
     fn delete_lines(&mut self, count: usize) {
         self.delete_lines(count);
+        self.mark_rows_dirty(self.cursor_row, self.scroll_bottom);
     }
 
     fn delete_chars(&mut self, count: usize) {
@@ -681,8 +827,10 @@ impl SurfaceActor for Surface {
             self.cursor_row,
             self.cursor_col,
             count,
-            &self.default_attributes,
+            &self.current_attributes,
         );
+        let max_col = self.grid.width().saturating_sub(1);
+        self.mark_row_dirty(self.cursor_row, self.cursor_col, max_col);
     }
 
     fn erase_chars(&mut self, count: usize) {
@@ -693,6 +841,7 @@ impl SurfaceActor for Surface {
             end,
             &self.current_attributes,
         );
+        self.mark_row_dirty(self.cursor_row, self.cursor_col, end);
     }
 
     fn backspace(&mut self) {
@@ -728,6 +877,7 @@ impl SurfaceActor for Surface {
                 1,
                 &self.default_attributes,
             );
+            self.mark_rows_dirty(self.scroll_top, self.scroll_bottom);
         } else {
             self.cursor_row = self.cursor_row.saturating_sub(1);
         }
@@ -737,6 +887,7 @@ impl SurfaceActor for Surface {
     fn reset(&mut self) {
         self.reset_state();
         self.grid.clear(&self.default_attributes);
+        self.mark_full_dirty();
     }
 
     fn clear_screen(&mut self, mode: ClearMode) {
@@ -768,6 +919,7 @@ impl SurfaceActor for Surface {
                 );
             },
         }
+        self.mark_full_dirty();
     }
 
     fn clear_line(&mut self, mode: LineClearMode) {
@@ -794,6 +946,8 @@ impl SurfaceActor for Surface {
                 );
             },
         }
+        let max_col = self.grid.width().saturating_sub(1);
+        self.mark_row_dirty(self.cursor_row, 0, max_col);
     }
 
     fn insert_tabs(&mut self, count: usize) {
@@ -825,6 +979,7 @@ impl SurfaceActor for Surface {
             }
         }
         self.cursor_home();
+        self.mark_full_dirty();
     }
 
     fn move_forward_tabs(&mut self, count: usize) {
@@ -871,6 +1026,7 @@ impl SurfaceActor for Surface {
             count,
             &self.default_attributes,
         );
+        self.mark_rows_dirty(self.scroll_top, self.scroll_bottom);
     }
 
     fn scroll_down(&mut self, count: usize) {
@@ -880,6 +1036,7 @@ impl SurfaceActor for Surface {
             count,
             &self.default_attributes,
         );
+        self.mark_rows_dirty(self.scroll_top, self.scroll_bottom);
     }
 
     fn set_hyperlink(&mut self, link: Option<Hyperlink>) {
@@ -1040,6 +1197,34 @@ impl SurfaceActor for Surface {
         }
     }
 
+    fn set_private_mode(&mut self, mode: PrivateMode, enabled: bool) {
+        if let PrivateMode::Named(named) = mode {
+            match named {
+                NamedPrivateMode::Origin => {
+                    self.origin_mode = enabled;
+                    self.cursor_home();
+                },
+                NamedPrivateMode::LineWrap => {
+                    self.autowrap = enabled;
+                    if !enabled {
+                        self.wrap_pending = false;
+                    }
+                },
+                NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
+                    if enabled {
+                        self.enter_altscreem();
+                    } else {
+                        self.exit_altscreem();
+                    }
+                },
+                NamedPrivateMode::ColumnMode => {
+                    self.decolumn();
+                },
+                _ => {},
+            }
+        }
+    }
+
     fn push_window_title(&mut self) {
         if let Some(title) = &self.window_title {
             self.window_title_stack.push(title.clone());
@@ -1068,11 +1253,13 @@ impl SurfaceActor for Surface {
         self.primary_screen = Some(ScreenState::from_surface(self));
         self.grid = Grid::new(rows, columns, 0, &self.default_attributes);
         self.reset_state();
+        self.mark_full_dirty();
     }
 
     fn exit_altscreem(&mut self) {
         if let Some(state) = self.primary_screen.take() {
             state.apply(self);
+            self.mark_full_dirty();
         } else {
             warn!(
                 "Alternate screen exit requested without active primary snapshot"
@@ -1084,5 +1271,16 @@ impl SurfaceActor for Surface {
     fn decolumn(&mut self) {
         self.set_scrolling_region(1, self.grid.total_lines());
         self.grid.clear(&self.default_attributes);
+        self.mark_full_dirty();
+    }
+
+    fn begin_sync(&mut self) {
+        self.sync_depth = self.sync_depth.saturating_add(1);
+    }
+
+    fn end_sync(&mut self) {
+        if self.sync_depth > 0 {
+            self.sync_depth -= 1;
+        }
     }
 }

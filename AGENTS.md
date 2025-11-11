@@ -2,6 +2,9 @@
 
 General context lives in `README.md` at the repository root.
 
+## Common
+- Generate plan of changes before code generation and wait approved only after that start code generation
+
 ## Architecture
 
 - OTTY is evolving toward a terminal-centric workspace. The current codebase focuses on the terminal stack: pseudo-terminal access, virtual terminal parsing, and higher-level escape handling.
