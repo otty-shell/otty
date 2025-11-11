@@ -9,9 +9,7 @@ use crate::escape::{
     CursorShape, CursorStyle, EscapeParser, Hyperlink, KeyboardMode,
 };
 use crate::pty::{Pollable, PtySize, Session, SessionError};
-use crate::surface::{
-    ScrollDirection, SurfaceController, SurfaceSnapshotSource,
-};
+use crate::surface::{ScrollDirection, SurfaceActor, SurfaceSnapshotSource};
 use crate::terminal::surface_actor::TerminalSurfaceActor;
 use crate::{
     Result, RuntimeClient, RuntimeEvent, TerminalMode, TerminalSnapshot,
@@ -46,8 +44,6 @@ pub enum TerminalRequest {
     Resize(PtySize),
     /// Scroll the display viewport.
     ScrollDisplay(ScrollDirection),
-    /// Close the session but keep the runtime loop alive until shutdown.
-    Close,
     /// Close the session and terminate the event loop.
     Shutdown,
 }
@@ -79,7 +75,7 @@ impl<P, E, S> Terminal<P, E, S>
 where
     P: Session,
     E: EscapeParser,
-    S: SurfaceController + SurfaceSnapshotSource,
+    S: SurfaceActor + SurfaceSnapshotSource,
 {
     pub fn new(
         session: P,
@@ -239,7 +235,7 @@ where
                 self.surface.scroll_display(direction);
                 self.emit_surface_change()?;
             },
-            TerminalRequest::Close | TerminalRequest::Shutdown => {
+            TerminalRequest::Shutdown => {
                 self.close()?;
             },
         }
@@ -355,7 +351,7 @@ impl<P, E, S> RuntimeClient for Terminal<P, E, S>
 where
     P: Session + Pollable,
     E: EscapeParser,
-    S: SurfaceController + SurfaceSnapshotSource,
+    S: SurfaceActor + SurfaceSnapshotSource,
 {
     fn handle_runtime_event(&mut self, event: RuntimeEvent<'_>) -> Result<()> {
         match event {

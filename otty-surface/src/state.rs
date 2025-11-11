@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use cursor_icon::CursorIcon;
-use otty_escape::Rgb;
+use otty_escape::{Charset, CharsetIndex, Rgb};
 
 use crate::{Grid, Surface, cell::CellAttributes};
 
@@ -59,14 +59,24 @@ pub struct CursorSnapshot {
     pub row: usize,
     pub col: usize,
     pub attributes: CellAttributes,
+    pub charsets: [Charset; 4],
+    pub active_charset: CharsetIndex,
 }
 
 impl CursorSnapshot {
-    pub fn new(row: usize, col: usize, attributes: CellAttributes) -> Self {
+    pub fn new(
+        row: usize,
+        col: usize,
+        attributes: CellAttributes,
+        charsets: [Charset; 4],
+        active_charset: CharsetIndex,
+    ) -> Self {
         Self {
             row,
             col,
             attributes,
+            charsets,
+            active_charset,
         }
     }
 }

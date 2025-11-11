@@ -1,16 +1,14 @@
 use crate::grid::ScrollDirection;
 use cursor_icon::CursorIcon;
 use otty_escape::{
-    CharacterAttribute, ClearMode, Hyperlink, LineClearMode, Mode, PrivateMode,
-    Rgb, TabClearMode,
+    CharacterAttribute, Charset, CharsetIndex, ClearMode, Hyperlink,
+    LineClearMode, Mode, PrivateMode, Rgb, TabClearMode,
 };
 
-pub trait SurfaceController {
+pub trait SurfaceActor {
     fn print(&mut self, _ch: char) {}
 
     fn resize(&mut self, _columns: usize, _rows: usize) {}
-
-    fn bell(&mut self) {}
 
     fn insert_blank(&mut self, _count: usize) {}
 
@@ -51,6 +49,10 @@ pub trait SurfaceController {
     fn move_forward_tabs(&mut self, _count: usize) {}
 
     fn move_backward_tabs(&mut self, _count: usize) {}
+
+    fn set_active_charset_index(&mut self, _index: CharsetIndex) {}
+
+    fn configure_charset(&mut self, _charset: Charset, _index: CharsetIndex) {}
 
     fn set_color(&mut self, _index: usize, _color: Rgb) {}
 
@@ -113,4 +115,10 @@ pub trait SurfaceController {
     fn end_sync(&mut self) {}
 
     fn scroll_display(&mut self, _direction: ScrollDirection) {}
+
+    fn enter_altscreem(&mut self) {}
+
+    fn exit_altscreem(&mut self) {}
+
+    fn decolumn(&mut self) {}
 }

@@ -5,7 +5,7 @@ use crate::escape::{
     Action, EscapeActor, KeyboardMode, KeyboardModeApplyBehavior, Mode,
     NamedMode, NamedPrivateMode, PrivateMode,
 };
-use crate::surface::SurfaceController;
+use crate::surface::SurfaceActor;
 use crate::terminal::{TerminalClient, TerminalEvent};
 
 pub(super) struct TerminalSurfaceActor<'a, S> {
@@ -16,7 +16,7 @@ pub(super) struct TerminalSurfaceActor<'a, S> {
     pub client: &'a mut Option<Box<dyn TerminalClient + 'static>>,
 }
 
-impl<'a, S> TerminalSurfaceActor<'a, S> {
+impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
     fn dispatch_event(&mut self, event: TerminalEvent) {
         if let Some(client) = self.client {
             let _ = client.handle_event(event);
@@ -31,67 +31,224 @@ impl<'a, S> TerminalSurfaceActor<'a, S> {
         }
     }
 
-    fn update_mode(&mut self, mode: &Mode, enabled: bool) {
+    fn set_mode(&mut self, mode: &Mode) {
+        use NamedMode::*;
+
         if let Mode::Named(named) = mode {
             match named {
-                NamedMode::Insert => {
-                    self.set_flag(TerminalMode::INSERT, enabled);
+                Insert => {
+                    self.mode.insert(TerminalMode::INSERT);
                 },
-                NamedMode::LineFeedNewLine => {
-                    self.set_flag(TerminalMode::LINE_FEED_NEW_LINE, enabled);
+                LineFeedNewLine => {
+                    self.mode.insert(TerminalMode::LINE_FEED_NEW_LINE);
                 },
             }
         }
     }
 
-    fn update_private_mode(&mut self, mode: &PrivateMode, enabled: bool) {
+    fn unset_mode(&mut self, mode: &Mode) {
+        use NamedMode::*;
+
+        if let Mode::Named(named) = mode {
+            match named {
+                Insert => {
+                    self.mode.remove(TerminalMode::INSERT);
+                },
+                LineFeedNewLine => {
+                    self.mode.remove(TerminalMode::LINE_FEED_NEW_LINE);
+                },
+            }
+        }
+    }
+
+    fn set_private_mode(&mut self, mode: &PrivateMode) {
+        use NamedPrivateMode::*;
+
         if let PrivateMode::Named(named) = mode {
             match named {
-                NamedPrivateMode::CursorKeys => {
-                    self.set_flag(TerminalMode::APP_CURSOR, enabled);
+                CursorKeys => {
+                    self.mode.insert(TerminalMode::APP_CURSOR)
                 },
-                NamedPrivateMode::Origin => {
-                    self.set_flag(TerminalMode::ORIGIN, enabled);
+                Origin => {
+                    self.mode.insert(TerminalMode::ORIGIN);
+                    self.surface.goto(0, 0);
                 },
-                NamedPrivateMode::LineWrap => {
-                    self.set_flag(TerminalMode::LINE_WRAP, enabled);
+                LineWrap => {
+                    self.mode.insert(TerminalMode::SHOW_CURSOR);
                 },
-                NamedPrivateMode::ShowCursor => {
-                    self.set_flag(TerminalMode::SHOW_CURSOR, enabled);
+                ShowCursor => {
+                    self.mode.insert(TerminalMode::SHOW_CURSOR)
                 },
-                NamedPrivateMode::ReportMouseClicks => {
-                    self.set_flag(TerminalMode::MOUSE_REPORT_CLICK, enabled);
+                ReportMouseClicks => {
+                    self.mode.remove(TerminalMode::MOUSE_MODE);
+                    self.mode.insert(TerminalMode::MOUSE_REPORT_CLICK);
+                    // TODO: send event
+                    // self.event_proxy.send_event(Event::MouseCursorDirty);
                 },
-                NamedPrivateMode::ReportCellMouseMotion => {
-                    self.set_flag(TerminalMode::MOUSE_DRAG, enabled);
+                ReportCellMouseMotion => {
+                    self.mode.remove(TerminalMode::MOUSE_MODE);
+                    self.mode.insert(TerminalMode::MOUSE_DRAG);
+                    // TODO: send event
+                    // self.event_proxy.send_event(Event::MouseCursorDirty);
                 },
-                NamedPrivateMode::ReportAllMouseMotion => {
-                    self.set_flag(TerminalMode::MOUSE_MOTION, enabled);
+                ReportAllMouseMotion => {
+                    self.mode.remove(TerminalMode::MOUSE_MODE);
+                    self.mode.insert(TerminalMode::MOUSE_MOTION);
+                    // TODO: send event
+                    // self.event_proxy.send_event(Event::MouseCursorDirty);
                 },
-                NamedPrivateMode::ReportFocusInOut => {
-                    self.set_flag(TerminalMode::FOCUS_IN_OUT, enabled);
+                ReportFocusInOut => {
+                    self.mode.insert(TerminalMode::FOCUS_IN_OUT)
                 },
-                NamedPrivateMode::Utf8Mouse => {
-                    self.set_flag(TerminalMode::UTF8_MOUSE, enabled);
+                Utf8Mouse => {
+                    self.mode.remove(TerminalMode::SGR_MOUSE);
+                    self.mode.insert(TerminalMode::UTF8_MOUSE);
                 },
-                NamedPrivateMode::SgrMouse => {
-                    self.set_flag(TerminalMode::SGR_MOUSE, enabled);
+                SgrMouse => {
+                    self.mode.remove(TerminalMode::UTF8_MOUSE);
+                    self.mode.insert(TerminalMode::SGR_MOUSE);
                 },
-                NamedPrivateMode::AlternateScroll => {
-                    self.set_flag(TerminalMode::ALTERNATE_SCROLL, enabled);
+                AlternateScroll => {
+                    self.mode.insert(TerminalMode::ALTERNATE_SCROLL)
                 },
-                NamedPrivateMode::UrgencyHints => {
-                    self.set_flag(TerminalMode::URGENCY_HINTS, enabled);
+                UrgencyHints => {
+                    self.mode.insert(TerminalMode::URGENCY_HINTS)
                 },
-                NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
-                    self.set_flag(TerminalMode::ALT_SCREEN, enabled);
+                SwapScreenAndSetRestoreCursor => {
+                    self.mode.insert(TerminalMode::ALT_SCREEN);
+                    self.surface.enter_altscreem();
                 },
-                NamedPrivateMode::BracketedPaste => {
-                    self.set_flag(TerminalMode::BRACKETED_PASTE, enabled);
+                BracketedPaste => {
+                    self.mode.remove(TerminalMode::BRACKETED_PASTE)
                 },
+                ColumnMode => self.surface.decolumn(),
                 _ => {},
             }
         }
+    }
+
+    fn unset_private_mode(&mut self, mode: &PrivateMode) {
+        use NamedPrivateMode::*;
+
+        if let PrivateMode::Named(named) = mode {
+            match named {
+                CursorKeys => {
+                    self.mode.remove(TerminalMode::APP_CURSOR)
+                },
+                Origin => {
+                    self.mode.remove(TerminalMode::ORIGIN);
+                },
+                LineWrap => {
+                    self.mode.insert(TerminalMode::SHOW_CURSOR);
+                },
+                ShowCursor => {
+                    self.mode.remove(TerminalMode::SHOW_CURSOR)
+                },
+                ReportMouseClicks => {
+                    self.mode.remove(TerminalMode::MOUSE_REPORT_CLICK);
+                    // TODO: send event
+                    // self.event_proxy.send_event(Event::MouseCursorDirty);
+                },
+                ReportCellMouseMotion => {
+                    self.mode.remove(TerminalMode::MOUSE_DRAG);
+                    // TODO: send event
+                    // self.event_proxy.send_event(Event::MouseCursorDirty);
+                },
+                ReportAllMouseMotion => {
+                    self.mode.remove(TerminalMode::MOUSE_MOTION);
+                    // TODO: send event
+                    // self.event_proxy.send_event(Event::MouseCursorDirty);
+                },
+                ReportFocusInOut => {
+                    self.mode.remove(TerminalMode::FOCUS_IN_OUT)
+                },
+                Utf8Mouse => {
+                    self.mode.remove(TerminalMode::UTF8_MOUSE);
+                },
+                SgrMouse => {
+                    self.mode.remove(TerminalMode::SGR_MOUSE);
+                },
+                AlternateScroll => {
+                    self.mode.remove(TerminalMode::ALTERNATE_SCROLL)
+                },
+                UrgencyHints => {
+                    self.mode.remove(TerminalMode::URGENCY_HINTS)
+                },
+                SwapScreenAndSetRestoreCursor => {
+                    self.mode.remove(TerminalMode::ALT_SCREEN);
+                    self.surface.exit_altscreem();
+                },
+                BracketedPaste => {
+                    self.mode.remove(TerminalMode::BRACKETED_PASTE)
+                },
+                ColumnMode => self.surface.decolumn(),
+                _ => {},
+            }
+        }
+    }
+
+    fn report_private_mode(&mut self, mode: PrivateMode) {
+        use NamedPrivateMode::*;
+
+        let _ = match mode {
+            PrivateMode::Named(mode) => match mode {
+                CursorKeys => {
+                    self.mode.contains(TerminalMode::APP_CURSOR).into()
+                },
+                Origin => {
+                    self.mode.contains(TerminalMode::ORIGIN).into()
+                },
+                LineWrap => {
+                    self.mode.contains(TerminalMode::LINE_WRAP).into()
+                },
+                // TODO:
+                // NamedPrivateMode::BlinkingCursor => {
+                // },
+                ShowCursor => {
+                    self.mode.contains(TerminalMode::SHOW_CURSOR).into()
+                },
+                ReportMouseClicks => {
+                    self.mode.contains(TerminalMode::MOUSE_REPORT_CLICK).into()
+                },
+                ReportCellMouseMotion => {
+                    self.mode.contains(TerminalMode::MOUSE_DRAG).into()
+                },
+                ReportAllMouseMotion => {
+                    self.mode.contains(TerminalMode::MOUSE_MOTION).into()
+                },
+                ReportFocusInOut => {
+                    self.mode.contains(TerminalMode::FOCUS_IN_OUT).into()
+                },
+                Utf8Mouse => {
+                    self.mode.contains(TerminalMode::UTF8_MOUSE).into()
+                },
+                SgrMouse => {
+                    self.mode.contains(TerminalMode::SGR_MOUSE).into()
+                },
+                AlternateScroll => {
+                    self.mode.contains(TerminalMode::ALTERNATE_SCROLL).into()
+                },
+                UrgencyHints => {
+                    self.mode.contains(TerminalMode::URGENCY_HINTS).into()
+                },
+                SwapScreenAndSetRestoreCursor => {
+                    self.mode.contains(TerminalMode::ALT_SCREEN).into()
+                },
+                BracketedPaste => {
+                    self.mode.contains(TerminalMode::BRACKETED_PASTE).into()
+                },
+                SyncUpdate => 2,
+                ColumnMode => 0,
+                _ => 0,
+            },
+            PrivateMode::Unknown(_) => 0,
+        };
+
+        // self.event_proxy.send_event(Event::PtyWrite(format!(
+        //     "\x1b[?{};{}$y",
+        //     mode.raw(),
+        //     state as u8,
+        // )));
     }
 
     fn apply_keyboard_mode(
@@ -140,7 +297,7 @@ impl<'a, S> TerminalSurfaceActor<'a, S> {
     }
 }
 
-impl<'a, S: SurfaceController> EscapeActor for TerminalSurfaceActor<'a, S> {
+impl<'a, S: SurfaceActor> EscapeActor for TerminalSurfaceActor<'a, S> {
     fn handle(&mut self, action: Action) {
         use Action::*;
 
@@ -183,8 +340,11 @@ impl<'a, S: SurfaceController> EscapeActor for TerminalSurfaceActor<'a, S> {
             MoveBackwardTabs(count) => {
                 self.surface.move_backward_tabs(count as usize)
             },
-            SetActiveCharsetIndex(_) | ConfigureCharset(_, _) => {
-                trace!("Charset handling not implemented yet");
+            SetActiveCharsetIndex(index) => {
+                self.surface.set_active_charset_index(index);
+            },
+            ConfigureCharset(charset, index) => {
+                self.surface.configure_charset(charset, index);
             },
             SetColor { index, color } => self.surface.set_color(index, color),
             QueryColor(index) => self.surface.query_color(index),
@@ -261,20 +421,20 @@ impl<'a, S: SurfaceController> EscapeActor for TerminalSurfaceActor<'a, S> {
                 self.surface.pop_keyboard_modes(amount);
             },
             SetMode(mode) => {
-                self.update_mode(&mode, true);
+                self.set_mode(&mode);
+                // TODO: useless
                 self.surface.set_mode(mode, true);
             },
             SetPrivateMode(mode) => {
-                self.update_private_mode(&mode, true);
-                self.surface.set_private_mode(mode, true);
+                self.set_private_mode(&mode);
             },
             UnsetMode(mode) => {
-                self.update_mode(&mode, false);
+                self.unset_mode(&mode);
+                // TODO: useless
                 self.surface.set_mode(mode, false);
             },
             UnsetPrivateMode(mode) => {
-                self.update_private_mode(&mode, false);
-                self.surface.set_private_mode(mode, false)
+                self.unset_private_mode(&mode);
             },
             ReportMode(mode) => trace!("Report mode {:?}", mode),
             ReportPrivateMode(mode) => trace!("Report private mode {:?}", mode),

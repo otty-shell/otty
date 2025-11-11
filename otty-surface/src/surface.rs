@@ -1,14 +1,15 @@
 use cursor_icon::CursorIcon;
 use log::{debug, trace, warn};
 use otty_escape::{
-    CharacterAttribute, ClearMode, Hyperlink, LineClearMode, Mode, NamedMode,
-    NamedPrivateMode, PrivateMode, Rgb, TabClearMode,
+    CharacterAttribute, Charset, CharsetIndex, ClearMode, Hyperlink,
+    LineClearMode, Mode, NamedMode, NamedPrivateMode, PrivateMode, Rgb,
+    TabClearMode,
 };
 use std::sync::Arc;
 use unicode_width::UnicodeWidthChar;
 
 use crate::{
-    SurfaceController,
+    SurfaceActor,
     cell::{Cell, CellAttributes, CellBlink, CellUnderline},
     grid::Grid,
     state::{CursorSnapshot, SurfacePalette, SurfaceSnapshot},
@@ -18,6 +19,10 @@ const DEFAULT_COLUMNS: usize = 80;
 const DEFAULT_ROWS: usize = 24;
 const DEFAULT_SCROLL_LIMIT: usize = 10_000;
 const TAB_WIDTH: usize = 8;
+
+fn default_charsets() -> [Charset; 4] {
+    [Charset::Ascii; 4]
+}
 
 fn default_tab_stops(width: usize) -> Vec<bool> {
     let mut stops = vec![false; width];
@@ -73,6 +78,8 @@ struct ScreenState {
     sync_depth: u32,
     window_title_stack: Vec<String>,
     window_title: Option<String>,
+    charsets: [Charset; 4],
+    active_charset: CharsetIndex,
 }
 
 impl ScreenState {
@@ -100,6 +107,8 @@ impl ScreenState {
             sync_depth: surface.sync_depth,
             window_title_stack: surface.window_title_stack.clone(),
             window_title: surface.window_title.clone(),
+            charsets: surface.charsets,
+            active_charset: surface.active_charset,
         }
     }
 
@@ -126,6 +135,8 @@ impl ScreenState {
         surface.sync_depth = self.sync_depth;
         surface.window_title_stack = self.window_title_stack;
         surface.window_title = self.window_title;
+        surface.charsets = self.charsets;
+        surface.active_charset = self.active_charset;
     }
 
     fn resize(
@@ -176,6 +187,8 @@ pub struct Surface {
     window_title_stack: Vec<String>,
     window_title: Option<String>,
     primary_screen: Option<ScreenState>,
+    charsets: [Charset; 4],
+    active_charset: CharsetIndex,
 }
 
 impl Surface {
@@ -215,6 +228,8 @@ impl Surface {
             window_title_stack: Vec::new(),
             window_title: None,
             primary_screen: None,
+            charsets: default_charsets(),
+            active_charset: CharsetIndex::G0,
         };
         surface.reset_tab_stops();
         surface
@@ -297,6 +312,8 @@ impl Surface {
         self.reset_tab_stops();
         self.window_title_stack.clear();
         self.window_title = None;
+        self.charsets = default_charsets();
+        self.active_charset = CharsetIndex::G0;
     }
 
     fn clamp_cursor(&mut self) {
@@ -353,6 +370,19 @@ impl Surface {
         }
 
         col
+    }
+
+    fn charset_slot(index: CharsetIndex) -> usize {
+        match index {
+            CharsetIndex::G0 => 0,
+            CharsetIndex::G1 => 1,
+            CharsetIndex::G2 => 2,
+            CharsetIndex::G3 => 3,
+        }
+    }
+
+    fn active_charset(&self) -> Charset {
+        self.charsets[Self::charset_slot(self.active_charset)]
     }
 
     fn move_cursor_to(&mut self, row: usize, col: usize) {
@@ -510,28 +540,6 @@ impl Surface {
             &self.default_attributes,
         );
     }
-
-    fn enter_alternate_screen(&mut self) {
-        if self.primary_screen.is_some() {
-            return;
-        }
-
-        let columns = self.grid.width();
-        let rows = self.grid.height();
-        self.primary_screen = Some(ScreenState::from_surface(self));
-        self.grid = Grid::new(rows, columns, 0, &self.default_attributes);
-        self.reset_state();
-    }
-
-    fn exit_alternate_screen(&mut self) {
-        if let Some(state) = self.primary_screen.take() {
-            state.apply(self);
-        } else {
-            warn!(
-                "Alternate screen exit requested without active primary snapshot"
-            );
-        }
-    }
 }
 
 impl Default for Surface {
@@ -540,8 +548,9 @@ impl Default for Surface {
     }
 }
 
-impl SurfaceController for Surface {
+impl SurfaceActor for Surface {
     fn print(&mut self, ch: char) {
+        let ch = self.active_charset().map(ch);
         let width = match ch.width() {
             Some(width) => width,
             None => return,
@@ -648,10 +657,6 @@ impl SurfaceController for Surface {
         if let Some(primary) = self.primary_screen.as_mut() {
             primary.resize(columns, rows, &self.default_attributes);
         }
-    }
-
-    fn bell(&mut self) {
-        debug!("Bell");
     }
 
     fn insert_blank(&mut self, count: usize) {
@@ -832,6 +837,15 @@ impl SurfaceController for Surface {
         self.cursor_col = col;
     }
 
+    fn set_active_charset_index(&mut self, index: CharsetIndex) {
+        self.active_charset = index;
+    }
+
+    fn configure_charset(&mut self, charset: Charset, index: CharsetIndex) {
+        let slot = Self::charset_slot(index);
+        self.charsets[slot] = charset;
+    }
+
     fn set_color(&mut self, index: usize, color: Rgb) {
         self.palette.set(index, color);
     }
@@ -937,6 +951,8 @@ impl SurfaceController for Surface {
             self.cursor_row,
             self.cursor_col,
             self.current_attributes.clone(),
+            self.charsets,
+            self.active_charset,
         ));
     }
 
@@ -945,6 +961,8 @@ impl SurfaceController for Surface {
             self.cursor_row = snapshot.row;
             self.cursor_col = snapshot.col;
             self.current_attributes = snapshot.attributes;
+            self.charsets = snapshot.charsets;
+            self.active_charset = snapshot.active_charset;
         }
     }
 
@@ -1022,40 +1040,6 @@ impl SurfaceController for Surface {
         }
     }
 
-    fn set_private_mode(&mut self, mode: PrivateMode, enabled: bool) {
-        match mode {
-            PrivateMode::Named(named) => match named {
-                NamedPrivateMode::LineWrap => self.autowrap = enabled,
-                NamedPrivateMode::Origin => {
-                    self.origin_mode = enabled;
-                    self.cursor_home();
-                },
-                NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
-                    if enabled {
-                        self.enter_alternate_screen();
-                    } else {
-                        self.exit_alternate_screen();
-                    }
-                },
-                NamedPrivateMode::BlinkingCursor => {
-                    debug!("Blinking cursor mode toggled -> {enabled}")
-                },
-                NamedPrivateMode::ShowCursor => {
-                    debug!("Cursor visibility toggled -> {enabled}")
-                },
-                NamedPrivateMode::SyncUpdate => {
-                    if !enabled {
-                        self.sync_depth = 0;
-                    }
-                },
-                _ => debug!("Private mode {:?} => {}", named, enabled),
-            },
-            PrivateMode::Unknown(id) => {
-                debug!("Unknown private mode {} => {}", id, enabled)
-            },
-        }
-    }
-
     fn push_window_title(&mut self) {
         if let Some(title) = &self.window_title {
             self.window_title_stack.push(title.clone());
@@ -1073,481 +1057,32 @@ impl SurfaceController for Surface {
     fn scroll_display(&mut self, direction: crate::grid::ScrollDirection) {
         Surface::scroll_display(self, direction);
     }
+
+    fn enter_altscreem(&mut self) {
+        if self.primary_screen.is_some() {
+            return;
+        }
+
+        let columns = self.grid.width();
+        let rows = self.grid.height();
+        self.primary_screen = Some(ScreenState::from_surface(self));
+        self.grid = Grid::new(rows, columns, 0, &self.default_attributes);
+        self.reset_state();
+    }
+
+    fn exit_altscreem(&mut self) {
+        if let Some(state) = self.primary_screen.take() {
+            state.apply(self);
+        } else {
+            warn!(
+                "Alternate screen exit requested without active primary snapshot"
+            );
+        }
+    }
+
+    // TODO: rename
+    fn decolumn(&mut self) {
+        self.set_scrolling_region(1, self.grid.total_lines());
+        self.grid.clear(&self.default_attributes);
+    }
 }
-
-// #[cfg(test)]
-// impl Surface {
-//     fn apply_action(&mut self, action: otty_escape::Action) {
-//         use otty_escape::Action::*;
-
-//         let mut controller = SurfaceController::new(self);
-
-//         match action {
-//             Print(ch) => controller.print(ch),
-//             Bell => controller.bell(),
-//             InsertBlank(count) => controller.insert_blank(count),
-//             InsertBlankLines(count) => controller.insert_blank_lines(count),
-//             DeleteLines(count) => controller.delete_lines(count),
-//             DeleteChars(count) => controller.delete_chars(count),
-//             EraseChars(count) => controller.erase_chars(count),
-//             Backspace => controller.backspace(),
-//             CarriageReturn => controller.carriage_return(),
-//             LineFeed => controller.line_feed(),
-//             NextLine | NewLine => controller.new_line(),
-//             Substitute => controller.print('�'),
-//             SetHorizontalTab => controller.set_horizontal_tab(),
-//             ReverseIndex => controller.reverse_index(),
-//             ResetState => controller.reset(),
-//             ClearScreen(mode) => controller.clear_screen(mode),
-//             ClearLine(mode) => controller.clear_line(mode),
-//             InsertTabs(count) => controller.insert_tabs(count as usize),
-//             SetTabs(mask) => controller.set_tabs(mask),
-//             ClearTabs(mode) => controller.clear_tabs(mode),
-//             ScreenAlignmentDisplay => controller.screen_alignment_display(),
-//             MoveForwardTabs(count) => {
-//                 controller.move_forward_tabs(count as usize)
-//             },
-//             MoveBackwardTabs(count) => {
-//                 controller.move_backward_tabs(count as usize)
-//             },
-//             SetActiveCharsetIndex(_) | ConfigureCharset(_, _) => {},
-//             SetColor { index, color } => controller.set_color(index, color),
-//             QueryColor(index) => controller.query_color(index),
-//             ResetColor(index) => controller.reset_color(index),
-//             SetScrollingRegion(top, bottom) => {
-//                 controller.set_scrolling_region(top, bottom);
-//             },
-//             ScrollUp(count) => controller.scroll_up(count),
-//             ScrollDown(count) => controller.scroll_down(count),
-//             SetHyperlink(link) => controller.set_hyperlink(link),
-//             SGR(attribute) => controller.sgr(attribute),
-//             SetCursorShape(shape) => controller.set_cursor_shape(shape),
-//             SetCursorIcon(icon) => controller.set_cursor_icon(icon),
-//             SetCursorStyle(style) => controller.set_cursor_style(style),
-//             SaveCursorPosition => controller.save_cursor(),
-//             RestoreCursorPosition => controller.restore_cursor(),
-//             MoveUp {
-//                 rows,
-//                 carrage_return_needed,
-//             } => controller.move_up(rows, carrage_return_needed),
-//             MoveDown {
-//                 rows,
-//                 carrage_return_needed,
-//             } => controller.move_down(rows, carrage_return_needed),
-//             MoveForward(cols) => controller.move_forward(cols),
-//             MoveBackward(cols) => controller.move_backward(cols),
-//             Goto(row, col) => controller.goto(row, col),
-//             GotoRow(row) => controller.goto_row(row),
-//             GotoColumn(col) => controller.goto_column(col),
-//             IdentifyTerminal(_) => {},
-//             ReportDeviceStatus(_) => {},
-//             SetKeypadApplicationMode => {
-//                 controller.set_keypad_application_mode(true)
-//             },
-//             UnsetKeypadApplicationMode => {
-//                 controller.set_keypad_application_mode(false)
-//             },
-//             SetModifyOtherKeysState(_) => {},
-//             ReportModifyOtherKeysState => {},
-//             ReportKeyboardMode => {},
-//             SetKeyboardMode(_, _) => {},
-//             PushKeyboardMode(_) => controller.push_keyboard_mode(),
-//             PopKeyboardModes(amount) => controller.pop_keyboard_modes(amount),
-//             SetMode(mode) => controller.set_mode(mode, true),
-//             SetPrivateMode(mode) => controller.set_private_mode(mode, true),
-//             UnsetMode(mode) => controller.set_mode(mode, false),
-//             UnsetPrivateMode(mode) => controller.set_private_mode(mode, false),
-//             ReportMode(_) => {},
-//             ReportPrivateMode(_) => {},
-//             RequestTextAreaSizeByPixels => {},
-//             RequestTextAreaSizeByChars => {},
-//             PushWindowTitle => controller.push_window_title(),
-//             PopWindowTitle => controller.pop_window_title(),
-//             SetWindowTitle(title) => controller.set_window_title(title),
-//         }
-//     }
-// }
-// #[cfg(test)]
-// mod tests {
-//     use otty_escape::{
-//         Action, CharacterAttribute, Color, NamedPrivateMode, PrivateMode,
-//         StdColor,
-//     };
-
-//     use super::Surface;
-
-//     #[test]
-//     fn prints_text_across_rows() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::Print('H'));
-//         surface.apply_action(Action::Print('i'));
-//         surface.apply_action(Action::NewLine);
-//         surface.apply_action(Action::Print('!'));
-
-//         let grid = surface.grid();
-
-//         assert_eq!(grid.row(0).cells[0].ch, 'H');
-//         assert_eq!(grid.row(0).cells[1].ch, 'i');
-//         assert_eq!(grid.row(1).cells[0].ch, '!');
-//     }
-
-//     #[test]
-//     fn applies_basic_sgr_attributes() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::SGR(CharacterAttribute::Bold));
-//         surface.apply_action(Action::SGR(CharacterAttribute::Foreground(
-//             Color::Std(StdColor::Red),
-//         )));
-//         surface.apply_action(Action::Print('A'));
-
-//         let cell = &surface.grid().row(0).cells[0];
-//         assert_eq!(cell.ch, 'A');
-//         assert!(cell.attributes.bold);
-//         assert_eq!(cell.attributes.foreground, Color::Std(StdColor::Red));
-//     }
-
-//     #[test]
-//     fn clear_line_from_cursor() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::Print('A'));
-//         surface.apply_action(Action::Print('B'));
-//         surface.apply_action(Action::Print('C'));
-//         surface.apply_action(Action::MoveBackward(2));
-//         surface
-//             .apply_action(Action::ClearLine(otty_escape::LineClearMode::Right));
-
-//         let row = surface.grid().row(0);
-//         assert_eq!(row.cells[0].ch, 'A');
-//         assert_eq!(row.cells[1].ch, ' ');
-//         assert_eq!(row.cells[2].ch, ' ');
-//     }
-
-//     #[test]
-//     fn alternate_screen_restores_primary_content() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::Print('A'));
-//         assert_eq!(surface.grid().row(0).cells[0].ch, 'A');
-
-//         surface.apply_action(Action::SetPrivateMode(PrivateMode::Named(
-//             NamedPrivateMode::SwapScreenAndSetRestoreCursor,
-//         )));
-
-//         assert_eq!(surface.grid().row(0).cells[0].ch, ' ');
-
-//         surface.apply_action(Action::Print('Z'));
-//         assert_eq!(surface.grid().row(0).cells[0].ch, 'Z');
-
-//         surface.apply_action(Action::UnsetPrivateMode(PrivateMode::Named(
-//             NamedPrivateMode::SwapScreenAndSetRestoreCursor,
-//         )));
-
-//         assert_eq!(surface.grid().row(0).cells[0].ch, 'A');
-//     }
-
-//     #[test]
-//     fn wrapping_with_autowrap_enabled() {
-//         let mut surface = Surface::default();
-
-//         // Print exactly width characters.
-//         for i in 0..80 {
-//             surface.apply_action(Action::Print(
-//                 char::from_digit((i % 10) as u32, 10).unwrap(),
-//             ));
-//         }
-
-//         // Next character should wrap to next line.
-//         surface.apply_action(Action::Print('X'));
-
-//         assert_eq!(surface.grid().row(1).cells[0].ch, 'X');
-//     }
-
-//     #[test]
-//     fn wrapping_disabled_when_autowrap_off() {
-//         let mut surface = Surface::default();
-
-//         // Disable autowrap.
-//         surface.apply_action(Action::UnsetPrivateMode(
-//             otty_escape::PrivateMode::Named(
-//                 otty_escape::NamedPrivateMode::LineWrap,
-//             ),
-//         ));
-
-//         // Print beyond width.
-//         for _ in 0..85 {
-//             surface.apply_action(Action::Print('A'));
-//         }
-
-//         // Should stay on row 0, last column overwritten.
-//         assert_eq!(surface.cursor_position().0, 0);
-//         assert_eq!(surface.grid().row(1).cells[0].ch, ' ');
-//     }
-
-//     #[test]
-//     fn sgr_combinations() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::SGR(CharacterAttribute::Bold));
-//         surface.apply_action(Action::SGR(CharacterAttribute::Italic));
-//         surface.apply_action(Action::SGR(CharacterAttribute::Underline));
-//         surface.apply_action(Action::Print('A'));
-
-//         let cell = &surface.grid().row(0).cells[0];
-//         assert!(cell.attributes.bold);
-//         assert!(cell.attributes.italic);
-//         assert_eq!(
-//             cell.attributes.underline,
-//             crate::cell::CellUnderline::Single
-//         );
-//     }
-
-//     #[test]
-//     fn clear_screen_modes() {
-//         use otty_escape::ClearMode;
-
-//         let mut surface = Surface::default();
-
-//         // Fill grid with content.
-//         for _ in 0..5 {
-//             for _ in 0..10 {
-//                 surface.apply_action(Action::Print('X'));
-//             }
-//             surface.apply_action(Action::NewLine);
-//         }
-
-//         // Move to middle.
-//         surface.apply_action(Action::Goto(3, 5));
-
-//         // Clear below.
-//         surface.apply_action(Action::ClearScreen(ClearMode::Below));
-
-//         // Row 2 should have 'X' chars before cursor.
-//         assert_eq!(surface.grid().row(2).cells[0].ch, 'X');
-//         // Row 2 at cursor and after should be cleared.
-//         assert_eq!(surface.grid().row(2).cells[4].ch, ' ');
-//         // Row 3+ should be cleared.
-//         assert_eq!(surface.grid().row(3).cells[0].ch, ' ');
-//     }
-
-//     #[test]
-//     fn insert_and_delete_chars() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::Print('A'));
-//         surface.apply_action(Action::Print('B'));
-//         surface.apply_action(Action::Print('C'));
-
-//         // Move to 'B'.
-//         surface.apply_action(Action::Goto(1, 2));
-//         surface.apply_action(Action::InsertBlank(1));
-
-//         let row = surface.grid().row(0);
-//         assert_eq!(row.cells[0].ch, 'A');
-//         assert_eq!(row.cells[1].ch, ' ');
-//         assert_eq!(row.cells[2].ch, 'B');
-//         assert_eq!(row.cells[3].ch, 'C');
-//     }
-
-//     #[test]
-//     fn delete_chars_shifts_left() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::Print('A'));
-//         surface.apply_action(Action::Print('B'));
-//         surface.apply_action(Action::Print('C'));
-//         surface.apply_action(Action::Print('D'));
-
-//         // Move to 'B'.
-//         surface.apply_action(Action::Goto(1, 2));
-//         surface.apply_action(Action::DeleteChars(2));
-
-//         let row = surface.grid().row(0);
-//         assert_eq!(row.cells[0].ch, 'A');
-//         assert_eq!(row.cells[1].ch, 'D');
-//         assert_eq!(row.cells[2].ch, ' ');
-//     }
-
-//     #[test]
-//     fn erase_chars() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::Print('A'));
-//         surface.apply_action(Action::Print('B'));
-//         surface.apply_action(Action::Print('C'));
-
-//         surface.apply_action(Action::Goto(1, 2));
-//         surface.apply_action(Action::EraseChars(2));
-
-//         let row = surface.grid().row(0);
-//         assert_eq!(row.cells[0].ch, 'A');
-//         assert_eq!(row.cells[1].ch, ' ');
-//         assert_eq!(row.cells[2].ch, ' ');
-//     }
-
-//     #[test]
-//     fn insert_and_delete_lines() {
-//         let mut surface = Surface::default();
-
-//         for i in 0..5 {
-//             surface
-//                 .apply_action(Action::Print(char::from_digit(i, 10).unwrap()));
-//             surface.apply_action(Action::NewLine);
-//         }
-
-//         surface.apply_action(Action::Goto(2, 1));
-//         surface.apply_action(Action::InsertBlankLines(1));
-
-//         assert_eq!(surface.grid().row(0).cells[0].ch, '0');
-//         assert_eq!(surface.grid().row(1).cells[0].ch, ' ');
-//         assert_eq!(surface.grid().row(2).cells[0].ch, '1');
-//     }
-
-//     #[test]
-//     fn scroll_region_basic() {
-//         let mut surface = Surface::default();
-
-//         // Set scroll region to rows 2-5 (1-based).
-//         surface.apply_action(Action::SetScrollingRegion(2, 5));
-
-//         // Cursor should be at home (within region if origin mode).
-//         assert_eq!(surface.cursor_position(), (0, 0));
-//     }
-
-//     #[test]
-//     fn scrollback_accumulation() {
-//         let mut surface = Surface::default();
-
-//         // Initially no history.
-//         assert_eq!(surface.history_size(), 0);
-
-//         // Fill the screen.
-//         for _ in 0..24 {
-//             surface.apply_action(Action::Print('X'));
-//             surface.apply_action(Action::NewLine);
-//         }
-
-//         // Should have scrolled content into history.
-//         assert!(surface.history_size() > 0);
-//     }
-
-//     #[test]
-//     fn tab_stops() {
-//         let mut surface = Surface::default();
-
-//         // Default tabs every 8 columns.
-//         surface.apply_action(Action::MoveForwardTabs(1));
-//         assert_eq!(surface.cursor_position().1, 8);
-
-//         surface.apply_action(Action::MoveForwardTabs(1));
-//         assert_eq!(surface.cursor_position().1, 16);
-
-//         // Move back.
-//         surface.apply_action(Action::MoveBackwardTabs(1));
-//         assert_eq!(surface.cursor_position().1, 8);
-//     }
-
-//     #[test]
-//     fn cursor_save_restore() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::SGR(CharacterAttribute::Bold));
-//         surface.apply_action(Action::Print('A'));
-//         surface.apply_action(Action::Print('B'));
-
-//         surface.apply_action(Action::SaveCursorPosition);
-
-//         surface.apply_action(Action::Goto(10, 10));
-//         surface.apply_action(Action::SGR(CharacterAttribute::Italic));
-
-//         surface.apply_action(Action::RestoreCursorPosition);
-
-//         let (row, col) = surface.cursor_position();
-//         assert_eq!(row, 0);
-//         assert_eq!(col, 2);
-//         // Attributes should also be restored.
-//         assert!(surface.current_attributes.bold);
-//         assert!(!surface.current_attributes.italic);
-//     }
-
-//     #[test]
-//     fn origin_mode_addressing() {
-//         let mut surface = Surface::default();
-
-//         // Set scroll region 5-10.
-//         surface.apply_action(Action::SetScrollingRegion(5, 10));
-
-//         // Enable origin mode.
-//         surface.apply_action(Action::SetPrivateMode(
-//             otty_escape::PrivateMode::Named(
-//                 otty_escape::NamedPrivateMode::Origin,
-//             ),
-//         ));
-
-//         // Goto(1,1) should now be relative to scroll_top (row 4 in 0-based).
-//         surface.apply_action(Action::Goto(1, 1));
-//         assert_eq!(surface.cursor_position().0, 4);
-//     }
-
-//     #[test]
-//     fn reverse_index_at_top() {
-//         let mut surface = Surface::default();
-
-//         // Start at top.
-//         assert_eq!(surface.cursor_position().0, 0);
-
-//         // Reverse index should scroll region down.
-//         surface.apply_action(Action::ReverseIndex);
-
-//         // Cursor should still be at top, but content scrolled.
-//         assert_eq!(surface.cursor_position().0, 0);
-//     }
-
-//     #[test]
-//     fn screen_alignment_display() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::ScreenAlignmentDisplay);
-
-//         // All cells should be 'E'.
-//         for row in 0..surface.grid().height() {
-//             for col in 0..surface.grid().width() {
-//                 assert_eq!(surface.grid().row(row).cells[col].ch, 'E');
-//             }
-//         }
-
-//         // Cursor should be at home.
-//         assert_eq!(surface.cursor_position(), (0, 0));
-//     }
-
-//     #[test]
-//     fn zero_width_characters_combine_with_previous_cell() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::Print('a'));
-//         surface.apply_action(Action::Print('\u{0301}')); // combining acute accent
-
-//         let cell = &surface.grid().row(0).cells[0];
-//         assert_eq!(cell.ch, 'a');
-//         assert_eq!(cell.zero_width, vec!['\u{0301}']);
-//         assert_eq!(surface.cursor_position(), (0, 1));
-//     }
-
-//     #[test]
-//     fn wide_characters_occupy_two_cells() {
-//         let mut surface = Surface::default();
-
-//         surface.apply_action(Action::Print('漢'));
-
-//         let row = surface.grid().row(0);
-//         assert_eq!(row.cells[0].ch, '漢');
-//         assert!(row.cells[0].wide_leading);
-//         assert!(!row.cells[0].wide_trailing);
-//         assert_eq!(row.cells[1].ch, ' ');
-//         assert!(!row.cells[1].wide_leading);
-//         assert!(row.cells[1].wide_trailing);
-//         assert_eq!(surface.cursor_position(), (0, 2));
-//     }
-// }
