@@ -95,6 +95,8 @@ pub trait RuntimeHooks<T: RuntimeClient + ?Sized> {
     }
 }
 
+impl<T: RuntimeClient + ?Sized> RuntimeHooks<T> for () {}
+
 /// Mio-backed driver that pumps PTY and child-process events for a terminal runtime.
 pub struct Runtime {
     poll: Poll,
