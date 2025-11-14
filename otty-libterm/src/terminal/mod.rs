@@ -1,30 +1,41 @@
-mod options;
-mod surface_actor;
+pub mod mode;
+pub mod cell;
+pub mod color;
+pub mod index;
+pub mod actor;
+pub mod surface;
+pub mod options;
+pub mod snapshot;
+pub mod surface_actor;
 
 use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::process::ExitStatus;
 use std::time::{Duration, Instant};
 
-use crate::escape::{
-    Action, CursorShape, CursorStyle, EscapeParser, Hyperlink, KeyboardMode,
-};
-use crate::pty::{Pollable, PtySize, Session, SessionError};
-use crate::surface::{ScrollDirection, SurfaceActor, SurfaceSnapshotSource};
-use crate::terminal::surface_actor::TerminalSurfaceActor;
-use crate::{
-    Result, RuntimeClient, RuntimeEvent, TerminalMode, TerminalSnapshot,
-};
 use cursor_icon::CursorIcon;
 
-pub use options::TerminalOptions;
+use crate::{
+    escape::{Action, CursorShape, CursorStyle, EscapeParser, Hyperlink, KeyboardMode},
+    pty::{Pollable, PtySize, Session, SessionError},
+};
+use crate::grid::Scroll;
+use crate::{
+    Result, RuntimeClient, RuntimeEvent,
+};
+
+use actor::SurfaceActor;
+use surface::SurfaceSnapshotSource;
+use surface_actor::TerminalSurfaceActor;
+use mode::TerminalMode;
+use snapshot::TerminalSnapshot;
+use options::TerminalOptions;
 
 const DEFAULT_READ_BUFFER_CAPACITY: usize = 1024;
 
 /// Events emitted by terminal implementations to interested clients.
-#[derive(Debug, Clone)]
-pub enum TerminalEvent {
-    SurfaceChanged { snapshot: TerminalSnapshot },
+pub enum TerminalEvent<'a> {
+    SurfaceChanged { snapshot: TerminalSnapshot<'a> },
     ChildExit { status: ExitStatus },
     TitleChanged { title: String },
     Bell,
@@ -44,7 +55,7 @@ pub enum TerminalRequest {
     /// Resize the PTY/session.
     Resize(PtySize),
     /// Scroll the display viewport.
-    ScrollDisplay(ScrollDirection),
+    ScrollDisplay(Scroll),
     /// Close the session and terminate the event loop.
     Shutdown,
 }
@@ -53,7 +64,7 @@ const MAX_SYNC_ACTIONS: usize = 10_000;
 const SYNC_TIMEOUT: Duration = Duration::from_millis(10);
 const IDLE_TICK: Duration = Duration::from_millis(10);
 
-struct SyncState {
+pub(crate) struct SyncState {
     active: bool,
     buffer: Vec<Action>,
     deadline: Option<Instant>,
@@ -181,16 +192,46 @@ where
         self.event_client = Some(Box::new(client));
     }
 
-    /// Manually service readable data from the underlying session without the [`Runtime`](crate::Runtime).
-    ///
-    /// Returns `true` if the surface was updated.
-    pub fn poll_session(&mut self) -> Result<bool> {
-        self.read()
+    /// Remove the currently attached event client.
+    pub fn take_event_client(
+        &mut self,
+    ) -> Option<Box<dyn TerminalClient + 'static>> {
+        self.event_client.take()
+    }
+
+    /// Check whether the terminal has an event client attached.
+    pub fn has_event_client(&self) -> bool {
+        self.event_client.is_some()
     }
 
     /// Flush any buffered PTY output when operating without the [`Runtime`](crate::Runtime).
-    pub fn flush_pending(&mut self) -> Result<()> {
-        self.flush_pending_input()
+    pub fn flush_pending_input(&mut self) -> Result<()> {
+        while !self.pending_input.is_empty() {
+            let chunk = {
+                let slice = self.pending_input.make_contiguous();
+                slice.to_vec()
+            };
+
+            if chunk.is_empty() {
+                break;
+            }
+
+            let total = chunk.len();
+            let written = self.write(&chunk)?;
+
+            if written == 0 {
+                break;
+            }
+
+            self.pending_input
+                .drain(0..written.min(self.pending_input.len()));
+
+            if written < total {
+                break;
+            }
+        }
+
+        Ok(())
     }
 
     /// Drop expired synchronized-update buffers even if no new PTY data arrives.
@@ -266,47 +307,6 @@ where
         Ok(updated)
     }
 
-    pub fn flush_pending_input(&mut self) -> Result<()> {
-        while !self.pending_input.is_empty() {
-            let chunk = {
-                let slice = self.pending_input.make_contiguous();
-                slice.to_vec()
-            };
-
-            if chunk.is_empty() {
-                break;
-            }
-
-            let total = chunk.len();
-            let written = self.write(&chunk)?;
-
-            if written == 0 {
-                break;
-            }
-
-            self.pending_input
-                .drain(0..written.min(self.pending_input.len()));
-
-            if written < total {
-                break;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Remove the currently attached event client.
-    pub fn take_event_client(
-        &mut self,
-    ) -> Option<Box<dyn TerminalClient + 'static>> {
-        self.event_client.take()
-    }
-
-    /// Check whether the terminal has an event client attached.
-    pub fn has_event_client(&self) -> bool {
-        self.event_client.is_some()
-    }
-
     /// Capture the current terminal state without mutating it.
     pub fn snapshot(&mut self) -> TerminalSnapshot {
         let surface = self.surface.capture_snapshot();
@@ -334,10 +334,6 @@ where
         }
 
         Ok(())
-    }
-
-    pub fn has_pending_output(&self) -> bool {
-        !self.pending_input.is_empty()
     }
 
     /// Write a chunk of bytes to the PTY session.

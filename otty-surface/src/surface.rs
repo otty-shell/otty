@@ -20,7 +20,7 @@ use crate::{
 
 const DEFAULT_COLUMNS: usize = 80;
 const DEFAULT_ROWS: usize = 24;
-const DEFAULT_SCROLL_LIMIT: usize = 10_000;
+const DEFAULT_SCROLL_LIMIT: usize = 1000;
 const TAB_WIDTH: usize = 8;
 
 fn default_charsets() -> [Charset; 4] {
@@ -522,7 +522,11 @@ impl Surface {
         (self.scroll_top, self.scroll_bottom)
     }
 
-    fn line_feed(&mut self) {
+    fn advance_line(&mut self, from_wrap: bool) {
+        if self.cursor_row < self.grid.height() {
+            self.grid.row_mut(self.cursor_row).set_soft_wrap(from_wrap);
+        }
+
         let (_, bottom) = self.scroll_region_limits();
 
         if self.cursor_row == bottom {
@@ -535,6 +539,10 @@ impl Surface {
             self.mark_full_dirty();
             // Reset display offset when new content arrives (snap to bottom).
             if self.grid.display_offset() > 0 {
+                debug!(
+                    "[surface] line_feed: forcing scroll to Bottom, offset was {}",
+                    self.grid.display_offset()
+                );
                 self.grid
                     .scroll_display(crate::grid::ScrollDirection::Bottom);
                 self.mark_full_dirty();
@@ -547,6 +555,10 @@ impl Surface {
             self.cursor_col = 0;
         }
         self.wrap_pending = false;
+
+        if self.cursor_row < self.grid.height() {
+            self.grid.row_mut(self.cursor_row).set_soft_wrap(false);
+        }
     }
 
     fn put_zero_width_char(&mut self, ch: char) {
@@ -695,7 +707,7 @@ impl SurfaceActor for Surface {
 
         if self.wrap_pending {
             self.cursor_col = 0;
-            self.line_feed();
+            self.advance_line(true);
         }
 
         let columns = self.grid.width();
@@ -707,7 +719,7 @@ impl SurfaceActor for Surface {
         if width == 2 && (self.cursor_col + 1 >= columns) {
             if self.autowrap {
                 self.cursor_col = 0;
-                self.line_feed();
+                self.advance_line(true);
             } else {
                 self.wrap_pending = true;
                 return;
@@ -765,6 +777,7 @@ impl SurfaceActor for Surface {
                             Cell::blank(&self.current_attributes);
                         row.cells[self.cursor_col + 1].wide_trailing = true;
                         row.cells[self.cursor_col + 1].wide_leading = false;
+                        row.cells[self.cursor_col + 1].touched = true;
                     }
                 }
                 if self.cursor_col + 1 < columns {
@@ -857,11 +870,11 @@ impl SurfaceActor for Surface {
     }
 
     fn line_feed(&mut self) {
-        self.line_feed();
+        self.advance_line(false);
     }
 
     fn new_line(&mut self) {
-        self.line_feed();
+        self.advance_line(false);
         self.cursor_col = 0;
     }
 

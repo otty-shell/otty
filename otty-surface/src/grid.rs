@@ -1,4 +1,9 @@
-use std::ops::{Index, IndexMut};
+use std::{
+    cmp::{max, min},
+    ops::{Index, IndexMut},
+};
+
+use log::debug;
 
 use crate::cell::{Cell, CellAttributes};
 
@@ -6,21 +11,41 @@ use crate::cell::{Cell, CellAttributes};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GridRow {
     pub cells: Vec<Cell>,
+    overflow: Vec<Cell>,
+    soft_wrap: bool,
 }
 
 impl GridRow {
     pub fn new(width: usize, template: &CellAttributes) -> Self {
         let cells = (0..width).map(|_| Cell::blank(template)).collect();
-        Self { cells }
+        Self {
+            cells,
+            overflow: Vec::new(),
+            soft_wrap: false,
+        }
     }
 
     pub fn resize(&mut self, width: usize, template: &CellAttributes) {
         if width > self.cells.len() {
-            self.cells.extend(
-                (0..(width - self.cells.len())).map(|_| Cell::blank(template)),
-            );
+            let deficit = width - self.cells.len();
+            let restored = self
+                .overflow
+                .split_off(self.overflow.len().saturating_sub(deficit));
+            for cell in restored.into_iter().rev() {
+                self.cells.push(cell);
+            }
+            if self.cells.len() < width {
+                self.cells.extend(
+                    (0..(width - self.cells.len()))
+                        .map(|_| Cell::blank(template)),
+                );
+            }
         } else {
-            self.cells.truncate(width);
+            while self.cells.len() > width {
+                if let Some(cell) = self.cells.pop() {
+                    self.overflow.push(cell);
+                }
+            }
         }
     }
 
@@ -28,6 +53,8 @@ impl GridRow {
         for cell in &mut self.cells {
             *cell = Cell::blank(template);
         }
+        self.overflow.clear();
+        self.soft_wrap = false;
     }
 
     pub fn len(&self) -> usize {
@@ -36,6 +63,14 @@ impl GridRow {
 
     pub fn is_empty(&self) -> bool {
         self.cells.is_empty()
+    }
+
+    pub fn set_soft_wrap(&mut self, value: bool) {
+        self.soft_wrap = value;
+    }
+
+    pub fn is_soft_wrap(&self) -> bool {
+        self.soft_wrap
     }
 }
 
@@ -160,13 +195,6 @@ impl Storage {
             None
         }
     }
-
-    /// Resize all rows to a new width.
-    fn resize_columns(&mut self, columns: usize, template: &CellAttributes) {
-        for row in &mut self.inner {
-            row.resize(columns, template);
-        }
-    }
 }
 
 /// Terminal grid with scrollback history support.
@@ -257,21 +285,132 @@ impl Grid {
         template: &CellAttributes,
     ) {
         if columns != self.columns {
-            self.storage.resize_columns(columns, template);
-            self.columns = columns;
+            self.reflow_columns(columns, visible_lines, template);
+            return;
         }
 
-        if visible_lines > self.visible_lines {
-            let additional = visible_lines - self.visible_lines;
-            self.storage.grow_lines(additional, columns, template);
-        } else if visible_lines < self.visible_lines {
-            let to_remove = self.visible_lines - visible_lines;
-            self.storage.shrink_lines(to_remove);
+        self.resize_visible_lines(visible_lines, columns, template);
+    }
+
+    fn resize_visible_lines(
+        &mut self,
+        visible_lines: usize,
+        columns: usize,
+        template: &CellAttributes,
+    ) {
+        let previous_offset = self.display_offset;
+        let target_visible = visible_lines.max(1);
+        let current_total = self.storage.len;
+
+        if target_visible > current_total {
+            let growth = target_visible - current_total;
+            self.storage.grow_lines(growth, columns, template);
         }
 
-        self.storage.visible_lines = visible_lines;
-        self.visible_lines = visible_lines;
-        self.display_offset = 0;
+        self.storage.visible_lines = target_visible;
+        self.visible_lines = target_visible;
+        self.display_offset = min(previous_offset, self.history_size());
+
+        let max_total =
+            self.visible_lines.saturating_add(self.max_scroll_limit);
+        if self.storage.len > max_total {
+            let excess = self.storage.len - max_total;
+            if self.storage.len > 0 {
+                self.storage.rotate(excess % self.storage.len);
+            }
+            self.storage.shrink_lines(excess);
+        }
+    }
+
+    fn reflow_columns(
+        &mut self,
+        columns: usize,
+        visible_lines: usize,
+        template: &CellAttributes,
+    ) {
+        let target_visible = visible_lines.max(1);
+        let max_total = target_visible.saturating_add(self.max_scroll_limit);
+
+        let mut logical_lines: Vec<Vec<Cell>> = Vec::new();
+        let mut current_line: Vec<Cell> = Vec::new();
+
+        for idx in 0..self.storage.len {
+            if let Some(row) = self.storage.get(idx) {
+                let trimmed = trim_trailing_blanks(&row.cells);
+                if trimmed.is_empty() && !row.is_soft_wrap() {
+                    if !current_line.is_empty() {
+                        logical_lines.push(std::mem::take(&mut current_line));
+                    }
+                    logical_lines.push(Vec::new());
+                    continue;
+                }
+
+                current_line.extend(trimmed.into_iter());
+                if !row.is_soft_wrap() {
+                    logical_lines.push(std::mem::take(&mut current_line));
+                }
+            }
+        }
+
+        if !current_line.is_empty() {
+            logical_lines.push(current_line);
+        }
+
+        if logical_lines.is_empty() {
+            logical_lines.push(Vec::new());
+        }
+
+        let mut new_rows: Vec<GridRow> = Vec::new();
+        for line in logical_lines.into_iter() {
+            if line.is_empty() {
+                let mut row = GridRow::new(columns, template);
+                row.set_soft_wrap(false);
+                new_rows.push(row);
+                continue;
+            }
+
+            let mut cursor = 0;
+            while cursor < line.len() {
+                let mut chunk_end = (cursor + columns).min(line.len());
+                if chunk_end < line.len() {
+                    while chunk_end > cursor
+                        && line[chunk_end - 1].is_wide_leading()
+                    {
+                        chunk_end -= 1;
+                    }
+                    if chunk_end == cursor {
+                        chunk_end = (cursor + 1).min(line.len());
+                    }
+                }
+
+                let mut row = GridRow::new(columns, template);
+                for (dst, cell) in
+                    row.cells.iter_mut().zip(line[cursor..chunk_end].iter())
+                {
+                    *dst = cell.clone();
+                }
+                row.set_soft_wrap(chunk_end < line.len());
+                new_rows.push(row);
+                cursor = chunk_end;
+            }
+        }
+
+        if new_rows.len() > max_total {
+            let excess = new_rows.len() - max_total;
+            new_rows.drain(0..excess);
+        }
+
+        while new_rows.len() < target_visible {
+            new_rows.push(GridRow::new(columns, template));
+        }
+
+        self.storage.inner = new_rows;
+        self.storage.zero = 0;
+        self.storage.len = self.storage.inner.len();
+        self.storage.visible_lines = target_visible.min(self.storage.len);
+        self.columns = columns;
+        self.visible_lines = target_visible.min(self.storage.len);
+        self.display_offset = self.display_offset.min(self.history_size());
     }
 
     /// Clear the entire grid with a template cell.
@@ -286,6 +425,7 @@ impl Grid {
     /// Clear all scrollback history.
     pub fn clear_history(&mut self) {
         self.storage.len = self.visible_lines;
+        debug!("[grid] clear_history: resetting display_offset to 0");
         self.display_offset = 0;
     }
 
@@ -397,6 +537,7 @@ impl Grid {
             let history = self.history_size();
             let can_grow = self.max_scroll_limit.saturating_sub(history);
             let grow_by = count.min(can_grow);
+            let overflow = count.saturating_sub(grow_by);
 
             if grow_by > 0 {
                 self.storage.grow_lines(grow_by, self.columns, template);
@@ -412,8 +553,25 @@ impl Grid {
                 }
             }
 
+            if overflow > 0 && self.storage.len > 0 {
+                // No room left to grow history: rotate the ring buffer so the oldest
+                // lines fall off the front, then reuse those rows for the new blanks.
+                self.storage.rotate(overflow);
+                let new_len = self.storage.len;
+                for i in 0..overflow {
+                    let idx = new_len.saturating_sub(overflow) + i;
+                    if let Some(row) = self.storage.get_mut(idx) {
+                        row.clear(template);
+                    }
+                }
+            }
+
             // Reset display offset when new content arrives.
             if self.display_offset > 0 {
+                debug!(
+                    "[grid] scroll_up: resetting display_offset {} -> 0 (new content)",
+                    self.display_offset
+                );
                 self.display_offset = 0;
             }
         } else {
@@ -466,35 +624,29 @@ impl Grid {
 
     /// Scroll the display viewport (user scrolling through history).
     pub fn scroll_display(&mut self, direction: ScrollDirection) {
-        let history = self.history_size();
-
-        match direction {
-            ScrollDirection::Delta(delta) => {
-                if delta > 0 {
-                    // Scroll up into history.
-                    self.display_offset =
-                        (self.display_offset + delta as usize).min(history);
-                } else {
-                    // Scroll down toward bottom.
-                    self.display_offset =
-                        self.display_offset.saturating_sub((-delta) as usize);
-                }
-            },
-            ScrollDirection::PageUp => {
-                let page = self.visible_lines.saturating_sub(1).max(1);
-                self.display_offset = (self.display_offset + page).min(history);
-            },
+        let old_offset = self.display_offset;
+        self.display_offset = match direction {
+            ScrollDirection::Delta(count) => min(
+                max((self.display_offset as i32) + count, 0) as usize,
+                self.history_size(),
+            ),
+            ScrollDirection::PageUp => min(
+                self.display_offset + self.visible_lines,
+                self.history_size(),
+            ),
             ScrollDirection::PageDown => {
-                let page = self.visible_lines.saturating_sub(1).max(1);
-                self.display_offset = self.display_offset.saturating_sub(page);
+                self.display_offset.saturating_sub(self.visible_lines)
             },
-            ScrollDirection::Top => {
-                self.display_offset = history;
-            },
-            ScrollDirection::Bottom => {
-                self.display_offset = 0;
-            },
-        }
+            ScrollDirection::Top => self.history_size(),
+            ScrollDirection::Bottom => 0,
+        };
+        debug!(
+            "[grid] scroll_display: {:?}, offset {} -> {}, history={}",
+            direction,
+            old_offset,
+            self.display_offset,
+            self.history_size()
+        );
     }
 
     /// Iterate over the currently displayed rows (accounting for display_offset).
@@ -504,6 +656,28 @@ impl Grid {
         (start..start + self.visible_lines)
             .filter_map(move |i| self.storage.get(i))
     }
+}
+
+fn trim_trailing_blanks(cells: &[Cell]) -> Vec<Cell> {
+    if cells.is_empty() {
+        return Vec::new();
+    }
+
+    let mut end = cells.len();
+    while end > 0 {
+        let cell = &cells[end - 1];
+        if !cell.is_blank()
+            || cell.touched
+            || cell.is_wide_leading()
+            || cell.is_wide_trailing()
+        {
+            break;
+        }
+
+        end -= 1;
+    }
+
+    cells[..end].to_vec()
 }
 
 #[cfg(test)]
@@ -569,5 +743,149 @@ mod tests {
         // Scroll to bottom.
         grid.scroll_display(ScrollDirection::Bottom);
         assert_eq!(grid.display_offset(), 0);
+    }
+
+    #[test]
+    fn history_overflow_drops_oldest_lines() {
+        let attrs = CellAttributes::default();
+        let mut grid = Grid::new(2, 1, 3, &attrs);
+
+        grid.row_mut(0).cells[0] = Cell::with_char('0', &attrs);
+        grid.row_mut(1).cells[0] = Cell::with_char('1', &attrs);
+        let bottom = grid.height().saturating_sub(1);
+
+        for ch in ['2', '3', '4', '5'] {
+            grid.scroll_up(0, bottom, 1, &attrs);
+            grid.row_mut(bottom).cells[0] = Cell::with_char(ch, &attrs);
+        }
+
+        assert_eq!(grid.history_size(), 3);
+        let rows: Vec<char> =
+            grid.rows().iter().map(|row| row.cells[0].ch).collect();
+        assert_eq!(rows, vec!['1', '2', '3', '4', '5']);
+    }
+
+    #[test]
+    fn row_resize_preserves_truncated_cells() {
+        let attrs = CellAttributes::default();
+        let mut row = GridRow::new(4, &attrs);
+        for (idx, ch) in ['A', 'B', 'C', 'D'].into_iter().enumerate() {
+            row.cells[idx] = Cell::with_char(ch, &attrs);
+        }
+
+        row.resize(2, &attrs);
+        assert_eq!(row.cells.len(), 2);
+        assert_eq!(row.cells[0].ch, 'A');
+        assert_eq!(row.cells[1].ch, 'B');
+
+        row.resize(4, &attrs);
+        let chars: Vec<char> = row.cells.iter().map(|cell| cell.ch).collect();
+        assert_eq!(chars, vec!['A', 'B', 'C', 'D']);
+    }
+
+    #[test]
+    fn resize_reflows_when_columns_shrink() {
+        let attrs = CellAttributes::default();
+        let mut grid = Grid::new(3, 10, 100, &attrs);
+        let text: Vec<char> = "HELLOWORLD".chars().collect();
+        for (idx, ch) in text.iter().enumerate() {
+            grid.row_mut(0).cells[idx] = Cell::with_char(*ch, &attrs);
+        }
+
+        grid.resize(4, 3, &attrs);
+
+        let rows: Vec<String> = grid
+            .rows()
+            .iter()
+            .map(|row| row.cells.iter().map(|c| c.ch).collect::<String>())
+            .collect();
+        assert!(rows.len() >= 3);
+        assert_eq!(&rows[0][..4], "HELL");
+        assert_eq!(&rows[1][..4], "OWOR");
+        assert_eq!(&rows[2][..2], "LD");
+    }
+
+    #[test]
+    fn resize_reflows_when_columns_expand() {
+        let attrs = CellAttributes::default();
+        let mut grid = Grid::new(3, 4, 100, &attrs);
+        let segments = ["HELL", "OWOR", "LD  "];
+        for (idx, segment) in segments.iter().enumerate() {
+            for (col, ch) in segment.chars().enumerate() {
+                grid.row_mut(idx).cells[col] = Cell::with_char(ch, &attrs);
+            }
+            if idx < segments.len() - 1 {
+                grid.row_mut(idx).set_soft_wrap(true);
+            }
+        }
+
+        grid.resize(10, 3, &attrs);
+
+        let rows: Vec<String> = grid
+            .rows()
+            .iter()
+            .map(|row| row.cells.iter().map(|c| c.ch).collect::<String>())
+            .collect();
+        assert!(!rows.is_empty());
+        assert_eq!(&rows[0][..10], "HELLOWORLD");
+    }
+
+    #[test]
+    fn resize_preserves_explicit_trailing_spaces() {
+        let attrs = CellAttributes::default();
+        let mut grid = Grid::new(2, 6, 100, &attrs);
+
+        grid.row_mut(0).cells[0] = Cell::with_char('A', &attrs);
+        grid.row_mut(0).cells[1] = Cell::with_char(' ', &attrs);
+        grid.row_mut(0).cells[2] = Cell::with_char(' ', &attrs);
+
+        grid.resize(4, 2, &attrs);
+        grid.resize(6, 2, &attrs);
+
+        let row = grid.row(0);
+        let snapshot: Vec<char> =
+            row.cells.iter().take(3).map(|cell| cell.ch).collect();
+        assert_eq!(snapshot, vec!['A', ' ', ' ']);
+    }
+
+    #[test]
+    fn shrinking_visible_lines_moves_rows_into_history() {
+        let attrs = CellAttributes::default();
+        let mut grid = Grid::new(4, 2, 10, &attrs);
+
+        for row in 0..4 {
+            let ch = char::from(b'0' + row as u8);
+            grid.row_mut(row).cells[0] = Cell::with_char(ch, &attrs);
+        }
+
+        grid.resize(2, 2, &attrs);
+
+        assert_eq!(grid.height(), 2);
+        assert_eq!(grid.history_size(), 2);
+        assert_eq!(grid.row(0).cells[0].ch, '2');
+        assert_eq!(grid.row(1).cells[0].ch, '3');
+
+        let rows: Vec<char> =
+            grid.rows().iter().map(|row| row.cells[0].ch).collect();
+        assert_eq!(rows, vec!['0', '1', '2', '3']);
+    }
+
+    #[test]
+    fn resize_expands_view_using_history_before_adding_blanks() {
+        let attrs = CellAttributes::default();
+        let mut grid = Grid::new(2, 1, 10, &attrs);
+        let bottom = grid.height().saturating_sub(1);
+
+        for ch in ['0', '1', '2', '3', '4'] {
+            grid.scroll_up(0, bottom, 1, &attrs);
+            grid.row_mut(bottom).cells[0] = Cell::with_char(ch, &attrs);
+        }
+
+        grid.resize(1, 4, &attrs);
+
+        let visible: Vec<char> = (0..grid.height())
+            .map(|row| grid.row(row).cells[0].ch)
+            .collect();
+        assert_eq!(visible, vec!['1', '2', '3', '4']);
     }
 }

@@ -447,9 +447,9 @@ fn handle_vertical_position_absolute<A, F>(
     use CsiParam::*;
 
     match params {
-        [] => actor.handle(Action::GotoRow(0)),
+        [] => actor.handle(Action::GotoRow(1)),
         [Integer(line_num)] => {
-            actor.handle(Action::GotoRow(*line_num as i32));
+            actor.handle(Action::GotoRow(*line_num as i32 - 1));
         },
         _ => fallback(),
     }
@@ -516,9 +516,9 @@ fn handle_cursor_horizontal_absolute<A, F>(
     use CsiParam::*;
 
     match params {
-        [] => actor.handle(Action::GotoColumn(0)),
+        [] => actor.handle(Action::GotoColumn(1)),
         [Integer(column_num)] => {
-            actor.handle(Action::GotoColumn(*column_num as usize));
+            actor.handle(Action::GotoColumn(*column_num as usize - 1));
         },
         _ => fallback(),
     }
@@ -535,9 +535,9 @@ fn handle_character_position_absolute<A, F>(
     use CsiParam::*;
 
     match params {
-        [] => actor.handle(Action::GotoColumn(0)),
+        [] => actor.handle(Action::GotoColumn(1)),
         [Integer(column_num)] => {
-            actor.handle(Action::GotoColumn(*column_num as usize));
+            actor.handle(Action::GotoColumn(*column_num as usize - 1));
         },
         _ => fallback(),
     }
@@ -574,7 +574,7 @@ fn handle_horizontal_and_vertical_position<A, F>(
     match params {
         [] => actor.handle(Action::Goto(0, 0)),
         [Integer(y), P(b';'), Integer(x)] => {
-            actor.handle(Action::Goto(*y as i32, *x as usize));
+            actor.handle(Action::Goto(*y as i32 - 1, *x as usize - 1));
         },
         _ => fallback(),
     }

@@ -2,15 +2,13 @@ use std::collections::VecDeque;
 
 use log::trace;
 
-use super::SyncState;
-
-use crate::TerminalMode;
 use crate::escape::{
     Action, EscapeActor, KeyboardMode, KeyboardModeApplyBehavior, Mode,
     NamedMode, NamedPrivateMode, PrivateMode,
 };
-use crate::surface::SurfaceActor;
-use crate::terminal::{TerminalClient, TerminalEvent};
+use crate::terminal::mode::TerminalMode;
+use crate::terminal::actor::SurfaceActor;
+use crate::terminal::{TerminalClient, TerminalEvent, SyncState};
 
 pub(super) struct TerminalSurfaceActor<'a, S> {
     pub surface: &'a mut S,
@@ -32,8 +30,6 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
     fn set_mode(&mut self, mode: Mode) {
         use NamedMode::*;
 
-        self.surface.set_mode(mode, true);
-
         if let Mode::Named(named) = mode {
             match named {
                 Insert => {
@@ -48,8 +44,6 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
 
     fn unset_mode(&mut self, mode: Mode) {
         use NamedMode::*;
-
-        self.surface.set_mode(mode, false);
 
         if let Mode::Named(named) = mode {
             match named {
@@ -83,8 +77,6 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
 
     fn set_private_mode(&mut self, mode: PrivateMode) {
         use NamedPrivateMode::*;
-
-        self.surface.set_private_mode(mode, true);
 
         if let PrivateMode::Named(named) = mode {
             match named {
@@ -131,11 +123,15 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
                 },
                 UrgencyHints => self.mode.insert(TerminalMode::URGENCY_HINTS),
                 SwapScreenAndSetRestoreCursor => {
-                    self.mode.insert(TerminalMode::ALT_SCREEN);
+                    if !self.mode.contains(TerminalMode::ALT_SCREEN) {
+                        self.surface.swap_altscreen(true);
+                        self.mode.insert(TerminalMode::ALT_SCREEN)
+                    }
                 },
                 BracketedPaste => {
                     self.mode.insert(TerminalMode::BRACKETED_PASTE)
                 },
+                ColumnMode => self.surface.deccolm(),
                 _ => {},
             }
         }
@@ -143,8 +139,6 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
 
     fn unset_private_mode(&mut self, mode: PrivateMode) {
         use NamedPrivateMode::*;
-
-        self.surface.set_private_mode(mode, false);
 
         if let PrivateMode::Named(named) = mode {
             match named {
@@ -185,11 +179,15 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
                 },
                 UrgencyHints => self.mode.remove(TerminalMode::URGENCY_HINTS),
                 SwapScreenAndSetRestoreCursor => {
-                    self.mode.remove(TerminalMode::ALT_SCREEN);
+                    if self.mode.contains(TerminalMode::ALT_SCREEN) {
+                        self.surface.swap_altscreen(false);
+                        self.mode.remove(TerminalMode::ALT_SCREEN)
+                    }
                 },
                 BracketedPaste => {
                     self.mode.remove(TerminalMode::BRACKETED_PASTE)
                 },
+                ColumnMode => self.surface.deccolm(),
                 _ => {},
             }
         }
@@ -243,7 +241,6 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
             PrivateMode::Unknown(_) => 0,
         };
 
-        println!("\x1b[?{};{}$y", mode.raw(), state as u8,);
         self.pending_input.extend(
             format!("\x1b[?{};{}$y", mode.raw(), state as u8,).as_bytes(),
         );
@@ -329,7 +326,7 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
             ClearScreen(mode) => self.surface.clear_screen(mode),
             ClearLine(mode) => self.surface.clear_line(mode),
             InsertTabs(count) => self.surface.insert_tabs(count as usize),
-            SetTabs(mask) => self.surface.set_tabs(mask),
+            SetTabs(mask) => self.surface.insert_tabs(mask as usize),
             ClearTabs(mode) => self.surface.clear_tabs(mode),
             ScreenAlignmentDisplay => self.surface.screen_alignment_display(),
             MoveForwardTabs(count) => {

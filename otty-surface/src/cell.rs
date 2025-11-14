@@ -93,6 +93,7 @@ pub struct Cell {
     pub zero_width: Vec<char>,
     pub wide_leading: bool,
     pub wide_trailing: bool,
+    pub touched: bool,
 }
 
 impl Cell {
@@ -103,6 +104,7 @@ impl Cell {
             zero_width: Vec::new(),
             wide_leading: false,
             wide_trailing: false,
+            touched: false,
         }
     }
 
@@ -113,6 +115,7 @@ impl Cell {
             zero_width: Vec::new(),
             wide_leading: false,
             wide_trailing: false,
+            touched: true,
         }
     }
 

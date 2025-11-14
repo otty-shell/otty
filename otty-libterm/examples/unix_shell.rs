@@ -32,8 +32,9 @@ mod unix_shell {
         TerminalSnapshot,
         escape::{self, Color, StdColor},
         pty::{self, PtySize},
-        surface::{CellAttributes, CellUnderline, Surface, SurfaceConfig},
+        surface::{Surface, SurfaceConfig},
     };
+    use otty_surface_3::{Cell, Dimensions, Flags, point_to_viewport};
     use signal_hook::consts::signal::SIGWINCH;
 
     pub fn run() -> Result<()> {
@@ -64,11 +65,12 @@ mod unix_shell {
             .spawn()
             .context("failed to spawn shell session")?;
 
-        let surface = Surface::new(SurfaceConfig {
+        let surface_dimensions = TerminalDimensions {
             columns: cols as usize,
             rows: rows as usize,
-            ..SurfaceConfig::default()
-        });
+        };
+        let surface =
+            Surface::new(SurfaceConfig::default(), &surface_dimensions);
         let parser: escape::Parser<escape::vte::Parser> = Default::default();
         let options = TerminalOptions::default();
 
@@ -116,6 +118,25 @@ mod unix_shell {
         escape::Parser<escape::vte::Parser>,
         Surface,
     >;
+
+    struct TerminalDimensions {
+        columns: usize,
+        rows: usize,
+    }
+
+    impl Dimensions for TerminalDimensions {
+        fn total_lines(&self) -> usize {
+            self.rows
+        }
+
+        fn screen_lines(&self) -> usize {
+            self.rows
+        }
+
+        fn columns(&self) -> usize {
+            self.columns
+        }
+    }
 
     struct ShellState {
         pending_input: VecDeque<u8>,
@@ -256,10 +277,11 @@ mod unix_shell {
 
         fn render(
             &self,
-            snapshot: &TerminalSnapshot,
+            snapshot: TerminalSnapshot,
         ) -> Result<(), LibTermError> {
             let mut state = self.state.borrow_mut();
-            render_surface(snapshot, state.screen.writer())
+            let size = state.size;
+            render_surface(snapshot, size, state.screen.writer())
                 .map_err(LibTermError::from)
         }
 
@@ -286,7 +308,7 @@ mod unix_shell {
         ) -> Result<(), LibTermError> {
             match event {
                 TerminalEvent::SurfaceChanged { snapshot } => {
-                    self.render(&snapshot)
+                    self.render(snapshot)
                 },
                 TerminalEvent::ChildExit { status } => {
                     self.handle_exit(&status)
@@ -302,56 +324,171 @@ mod unix_shell {
     }
 
     fn render_surface(
-        snapshot: &TerminalSnapshot,
+        snapshot: TerminalSnapshot,
+        viewport_size: (u16, u16),
         out: &mut impl Write,
     ) -> io::Result<()> {
         write!(out, "\x1b[?25l")?;
         let mut buf = [0u8; 4];
-        let mut prev_attrs: Option<CellAttributes> = None;
-        let default_attrs = CellAttributes::default();
-        let grid = &snapshot.surface.grid;
-        let rows = snapshot.surface.rows;
-        let columns = snapshot.surface.columns;
+        let mut iter = snapshot.surface.display_iter;
+        let mut prev_attrs: Option<RenderAttributes> = None;
+        let mut prev_line: Option<i32> = None;
+        let mut row_idx: usize = 0;
+        let mut rendered_any = false;
 
-        for row_idx in 0..rows {
-            write!(out, "\x1b[{};1H", row_idx + 1)?;
+        while let Some(indexed) = iter.next() {
+            rendered_any = true;
+            let line = indexed.point.line.0;
 
-            let row = grid.row(row_idx);
-            let width = columns;
-
-            for col_idx in 0..width {
-                let (ch, attrs) = if col_idx < row.cells.len() {
-                    let cell = &row.cells[col_idx];
-                    let ch = if cell.attributes.hidden { ' ' } else { cell.ch };
-                    (ch, &cell.attributes)
-                } else {
-                    (' ', &default_attrs)
-                };
-
-                if prev_attrs.as_ref() != Some(attrs) {
-                    write_sgr_for_attrs(out, attrs)?;
-                    prev_attrs = Some(attrs.clone());
+            if prev_line.map_or(true, |prev| prev != line) {
+                if prev_line.is_some() {
+                    row_idx += 1;
                 }
-
-                let encoded = ch.encode_utf8(&mut buf);
-                out.write_all(encoded.as_bytes())?;
+                write!(out, "\x1b[{};1H\x1b[2K", row_idx + 1)?;
+                if prev_attrs.is_some() {
+                    write!(out, "\x1b[0m")?;
+                    prev_attrs = None;
+                }
+                prev_line = Some(line);
             }
 
-            if prev_attrs.is_some() {
-                write!(out, "\x1b[0m")?;
-                prev_attrs = None;
+            let attrs = RenderAttributes::from_cell(indexed.cell);
+            if prev_attrs.as_ref() != Some(&attrs) {
+                write_sgr_for_attrs(out, &attrs)?;
+                prev_attrs = Some(attrs.clone());
+            }
+
+            write_cell(out, indexed.cell, &mut buf)?;
+        }
+
+        if prev_attrs.is_some() {
+            write!(out, "\x1b[0m")?;
+        }
+
+        let total_rows = viewport_size.0 as usize;
+        let rendered_rows = if rendered_any { row_idx + 1 } else { 0 };
+        if rendered_rows < total_rows {
+            for extra in rendered_rows..total_rows {
+                write!(out, "\x1b[{};1H\x1b[2K", extra + 1)?;
             }
         }
 
-        let cursor_row = snapshot.surface.cursor_row;
-        let cursor_col = snapshot.surface.cursor_col;
-        write!(out, "\x1b[{};{}H\x1b[?25h", cursor_row + 1, cursor_col + 1)?;
+        if snapshot.surface.cursor.shape != escape::CursorShape::Hidden {
+            if let Some(cursor) = point_to_viewport(
+                snapshot.surface.display_offset,
+                snapshot.surface.cursor.point,
+            ) {
+                write!(
+                    out,
+                    "\x1b[{};{}H\x1b[?25h",
+                    cursor.line + 1,
+                    cursor.column.0 + 1
+                )?;
+            }
+        }
+
         out.flush()
+    }
+
+    fn write_cell(
+        out: &mut impl Write,
+        cell: &Cell,
+        buf: &mut [u8; 4],
+    ) -> io::Result<()> {
+        let mut ch = cell.c;
+        let flags = cell.flags;
+        if flags.contains(Flags::HIDDEN)
+            || flags.contains(Flags::WIDE_CHAR_SPACER)
+            || flags.contains(Flags::LEADING_WIDE_CHAR_SPACER)
+        {
+            ch = ' ';
+        }
+
+        let encoded = ch.encode_utf8(buf);
+        out.write_all(encoded.as_bytes())?;
+
+        if let Some(extra) = cell.zerowidth() {
+            for zw in extra {
+                let encoded = zw.encode_utf8(buf);
+                out.write_all(encoded.as_bytes())?;
+            }
+        }
+
+        Ok(())
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum RenderUnderline {
+        None,
+        Single,
+        Double,
+        Curl,
+        Dotted,
+        Dashed,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct RenderAttributes {
+        bold: bool,
+        dim: bool,
+        italic: bool,
+        underline: RenderUnderline,
+        reverse: bool,
+        strike: bool,
+        foreground: Color,
+        background: Color,
+    }
+
+    impl Default for RenderAttributes {
+        fn default() -> Self {
+            Self {
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: RenderUnderline::None,
+                reverse: false,
+                strike: false,
+                foreground: Color::Std(StdColor::Foreground),
+                background: Color::Std(StdColor::Background),
+            }
+        }
+    }
+
+    impl RenderAttributes {
+        fn from_cell(cell: &Cell) -> Self {
+            let flags = cell.flags;
+            let underline = if flags.contains(Flags::DOUBLE_UNDERLINE) {
+                RenderUnderline::Double
+            } else if flags.contains(Flags::UNDERCURL) {
+                RenderUnderline::Curl
+            } else if flags.contains(Flags::DOTTED_UNDERLINE) {
+                RenderUnderline::Dotted
+            } else if flags.contains(Flags::DASHED_UNDERLINE) {
+                RenderUnderline::Dashed
+            } else if flags.contains(Flags::UNDERLINE) {
+                RenderUnderline::Single
+            } else {
+                RenderUnderline::None
+            };
+
+            Self {
+                bold: flags.intersects(
+                    Flags::BOLD | Flags::BOLD_ITALIC | Flags::DIM_BOLD,
+                ),
+                dim: flags.intersects(Flags::DIM | Flags::DIM_BOLD),
+                italic: flags.intersects(Flags::ITALIC | Flags::BOLD_ITALIC),
+                underline,
+                reverse: flags.contains(Flags::INVERSE),
+                strike: flags.contains(Flags::STRIKEOUT),
+                foreground: cell.fg,
+                background: cell.bg,
+            }
+        }
     }
 
     fn write_sgr_for_attrs(
         out: &mut impl Write,
-        attrs: &CellAttributes,
+        attrs: &RenderAttributes,
     ) -> io::Result<()> {
         write!(out, "\x1b[0")?;
 
@@ -365,12 +502,12 @@ mod unix_shell {
             write!(out, ";3")?;
         }
         match attrs.underline {
-            CellUnderline::Single => write!(out, ";4")?,
-            CellUnderline::Double => write!(out, ";21")?,
-            CellUnderline::Curl => write!(out, ";4:3")?,
-            CellUnderline::Dotted => write!(out, ";4:4")?,
-            CellUnderline::Dashed => write!(out, ";4:5")?,
-            CellUnderline::None => {},
+            RenderUnderline::Single => write!(out, ";4")?,
+            RenderUnderline::Double => write!(out, ";21")?,
+            RenderUnderline::Curl => write!(out, ";4:3")?,
+            RenderUnderline::Dotted => write!(out, ";4:4")?,
+            RenderUnderline::Dashed => write!(out, ";4:5")?,
+            RenderUnderline::None => {},
         }
         if attrs.reverse {
             write!(out, ";7")?;
