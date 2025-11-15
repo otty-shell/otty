@@ -1,8 +1,8 @@
 //! Tests for the Grid.
 
-use super::*;
+use crate::cell::Cell;
 
-use crate::terminal::cell::Cell;
+use super::*;
 
 impl GridCell for usize {
     fn is_empty(&self) -> bool {

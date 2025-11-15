@@ -18,4 +18,3 @@ pub mod vi_mode;
 pub use crate::grid::Grid;
 pub use crate::term::Term;
 pub use otty_escape;
-// pub use vte;

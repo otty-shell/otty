@@ -3,7 +3,7 @@ use std::mem;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 
-use crate::terminal::index::Line;
+use crate::index::Line;
 
 use super::row::Row;
 
@@ -12,22 +12,22 @@ const MAX_CACHE_SIZE: usize = 1_000;
 
 /// A ring buffer for optimizing indexing and rotation.
 ///
-/// The [`Storage::rotate`] and [`Storage::rotate_down`] functions are fast modular additions on
-/// the internal [`zero`] field. As compared with [`slice::rotate_left`] which must rearrange items
-/// in memory.
+/// The [`Storage::rotate`] and [`Storage::rotate_down`] functions are fast
+/// modular additions on the internal [`zero`] field, instead of physically
+/// moving rows in memory as [`slice::rotate_left`] would do.
 ///
-/// As a consequence, both [`Index`] and [`IndexMut`] are reimplemented for this type to account
-/// for the zeroth element not always being at the start of the allocation.
+/// As a consequence, both [`Index`] and [`IndexMut`] are reimplemented for
+/// this type to account for the zeroth element not always being at the start
+/// of the allocation.
 ///
-/// Because certain [`Vec`] operations are no longer valid on this type, no [`Deref`]
-/// implementation is provided. Anything from [`Vec`] that should be exposed must be done so
-/// manually.
+/// Because certain [`Vec`] operations are no longer valid on this type, no
+/// [`Deref`] implementation is provided. Anything from [`Vec`] that should be
+/// exposed must be done so manually.
 ///
 /// [`slice::rotate_left`]: https://doc.rust-lang.org/std/primitive.slice.html#method.rotate_left
 /// [`Deref`]: std::ops::Deref
 /// [`zero`]: #structfield.zero
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Storage<T> {
     inner: Vec<Row<T>>,
 
@@ -275,11 +275,11 @@ impl<T> IndexMut<Line> for Storage<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::terminal::cell::Flags;
+    use crate::cell::Flags;
     use crate::grid::GridCell;
     use crate::grid::row::Row;
     use crate::grid::storage::{MAX_CACHE_SIZE, Storage};
-    use crate::terminal::index::{Column, Line};
+    use crate::index::{Column, Line};
 
     impl GridCell for char {
         fn is_empty(&self) -> bool {

@@ -1,4 +1,9 @@
 //! A specialized 2D grid implementation optimized for use in a terminal.
+//!
+//! The grid stores scrollback and the visible viewport in a single logical
+//! ring buffer and provides iterators, scrolling and resizing operations
+//! tuned for terminal workloads. It is generic over the concrete cell type
+//! and is used by [`crate::surface::Surface`] via [`crate::cell::Cell`].
 
 mod resize;
 mod row;
@@ -9,13 +14,18 @@ mod tests;
 use std::cmp::{max, min};
 use std::ops::{Bound, Deref, Index, IndexMut, Range, RangeBounds};
 
-use crate::terminal::cell::{Flags, ResetDiscriminant};
-use crate::terminal::index::{Column, Line, Point};
+use crate::cell::{Flags, ResetDiscriminant};
 use crate::escape::{Charset, CharsetIndex};
+use crate::index::{Column, Line, Point};
 
-pub use row::Row;
+pub(crate) use row::Row;
 use storage::Storage;
 
+/// Common interface required from grid cell types.
+///
+/// This is implemented for [`crate::cell::Cell`] and for primitive types in
+/// tests. The trait allows the grid to stay generic while still supporting
+/// efficient resets and flag manipulation.
 pub trait GridCell: Sized {
     /// Check if the cell contains any content.
     fn is_empty(&self) -> bool;
@@ -27,6 +37,11 @@ pub trait GridCell: Sized {
     fn flags_mut(&mut self) -> &mut Flags;
 }
 
+/// Cursor state used when writing into the grid.
+///
+/// The cursor tracks its current logical position, a template cell used to
+/// initialize new content, the active character sets and whether the next
+/// input operation should first perform a line wrap.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Cursor<T> {
     /// The location of this cursor.
@@ -49,6 +64,7 @@ pub struct Cursor<T> {
     pub input_needs_wrap: bool,
 }
 
+/// Mapping of character set indices (G0–G3) to actual charsets.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct Charsets([Charset; 4]);
 
@@ -66,12 +82,18 @@ impl IndexMut<CharsetIndex> for Charsets {
     }
 }
 
+/// Logical scroll operation for the visible viewport.
 #[derive(Debug, Copy, Clone)]
 pub enum Scroll {
+    /// Scroll the viewport by a relative delta in lines.
     Delta(i32),
+    /// Scroll one page up.
     PageUp,
+    /// Scroll one page down.
     PageDown,
+    /// Scroll to the oldest available scrollback.
     Top,
+    /// Scroll back to the bottom (live content).
     Bottom,
 }
 
@@ -103,14 +125,11 @@ pub enum Scroll {
 ///                        columns
 /// ```
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Grid<T> {
     /// Current cursor for writing data.
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub cursor: Cursor<T>,
 
     /// Last saved cursor.
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub saved_cursor: Cursor<T>,
 
     /// Lines in the grid. Each row holds a list of cells corresponding to the
@@ -135,6 +154,7 @@ pub struct Grid<T> {
 }
 
 impl<T: GridCell + Default + PartialEq> Grid<T> {
+    /// Create a new grid with the given viewport size and scrollback limit.
     pub fn new(
         lines: usize,
         columns: usize,
@@ -574,7 +594,9 @@ impl Dimensions for (usize, usize) {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Indexed<T> {
+    /// Logical position of the cell within the grid.
     pub point: Point,
+    /// Cell value at the given point.
     pub cell: T,
 }
 

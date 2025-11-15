@@ -1,16 +1,25 @@
 //! Grid resize and reflow.
+//!
+//! This module implements xterm/Alacritty‑style behavior when the viewport
+//! size changes. Depending on the `reflow` flag, content may be logically
+//! rewrapped to preserve paragraphs when the number of columns changes.
 
 use std::cmp::{Ordering, max, min};
 use std::mem;
 
-use crate::terminal::cell::{Flags, ResetDiscriminant};
-use crate::terminal::index::{Boundary, Column, Line};
+use crate::cell::{Flags, ResetDiscriminant};
+use crate::index::{Boundary, Column, Line};
 
 use super::row::Row;
 use super::{Dimensions, Grid, GridCell};
 
 impl<T: GridCell + Default + PartialEq> Grid<T> {
     /// Resize the grid's width and/or height.
+    ///
+    /// * `reflow = true` enables logical rewrapping of lines when the number
+    ///   of columns changes, similar to GUI terminals.
+    /// * `reflow = false` keeps cell positions fixed and may truncate or pad
+    ///   rows instead.
     pub fn resize<D>(&mut self, reflow: bool, lines: usize, columns: usize)
     where
         T: ResetDiscriminant<D>,

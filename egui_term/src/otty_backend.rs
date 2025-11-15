@@ -5,16 +5,16 @@ use std::thread;
 use anyhow::Context;
 use egui::{Context as EguiContext, Modifiers};
 
+use otty_libterm::surface::{Column, Line, Point, SelectionType, Side};
 use otty_libterm::{
     escape::{self, KeyboardMode},
     pty::{self, PtySize},
     surface::{
-        SurfaceSnapshotSource,
-        point_to_viewport, Cell, Dimensions, Flags, Scroll, Surface,
-        SurfaceConfig,
+        point_to_viewport, viewport_to_point, Cell, Dimensions, Flags, Scroll,
+        Surface, SurfaceConfig, SurfaceMode, SurfaceSnapshotSource,
     },
     LibTermError, Runtime, RuntimeRequestProxy, Terminal, TerminalClient,
-    TerminalEvent, TerminalMode, TerminalOptions, TerminalRequest,
+    TerminalEvent, TerminalOptions, TerminalRequest, TerminalSize,
     TerminalSnapshot,
 };
 
@@ -28,15 +28,17 @@ pub enum BackendCommand {
     Write(Vec<u8>),
     Scroll(i32),
     Resize(Size, Size),
+    SelectStart(SelectionType, f32, f32),
+    SelectUpdate(f32, f32),
     MouseReport {
         button: MouseButton,
         modifiers: Modifiers,
-        position: (i32, usize),
+        position: Point,
         is_pressed: bool,
     },
     ProcessLink {
         action: LinkAction,
-        position: (i32, usize),
+        position: Point,
     },
 }
 
@@ -60,11 +62,11 @@ pub enum MouseMode {
     Normal(bool),
 }
 
-impl From<TerminalMode> for MouseMode {
-    fn from(term_mode: TerminalMode) -> Self {
-        if term_mode.contains(TerminalMode::SGR_MOUSE) {
+impl From<SurfaceMode> for MouseMode {
+    fn from(term_mode: SurfaceMode) -> Self {
+        if term_mode.contains(SurfaceMode::SGR_MOUSE) {
             MouseMode::Sgr
-        } else if term_mode.contains(TerminalMode::UTF8_MOUSE) {
+        } else if term_mode.contains(SurfaceMode::UTF8_MOUSE) {
             MouseMode::Normal(true)
         } else {
             MouseMode::Normal(false)
@@ -84,6 +86,7 @@ pub struct RenderCellAttributes {
     pub foreground: escape::Color,
     pub background: escape::Color,
     pub reverse: bool,
+    pub selected: bool,
 }
 
 impl Default for RenderCellAttributes {
@@ -92,6 +95,7 @@ impl Default for RenderCellAttributes {
             foreground: escape::Color::Std(escape::StdColor::Foreground),
             background: escape::Color::Std(escape::StdColor::Background),
             reverse: false,
+            selected: false,
         }
     }
 }
@@ -110,7 +114,7 @@ impl RenderCell {
         }
     }
 
-    fn from_cell(cell: &Cell) -> Self {
+    fn from_cell(cell: &Cell, selected: bool) -> Self {
         let mut ch = cell.c;
         if cell.flags.intersects(
             Flags::HIDDEN
@@ -126,6 +130,7 @@ impl RenderCell {
                 foreground: cell.fg,
                 background: cell.bg,
                 reverse: cell.flags.contains(Flags::INVERSE),
+                selected,
             },
         }
     }
@@ -154,10 +159,6 @@ impl RenderRow {
     fn cells_mut(&mut self) -> &mut [RenderCell] {
         &mut self.cells
     }
-
-    fn len(&self) -> usize {
-        self.cells.len()
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -174,13 +175,14 @@ pub struct RenderableContent {
     pub rows: usize,
     pub cell_width: u16,
     pub cell_height: u16,
-    pub terminal_mode: TerminalMode,
+    pub terminal_mode: SurfaceMode,
     pub keyboard_mode: KeyboardMode,
     pub display_offset: usize,
     pub cursor_row: Option<usize>,
     pub cursor_col: Option<usize>,
     pub damage: RenderDamage,
     pub revision: u64,
+    pub selected_text: String,
 }
 
 impl RenderableContent {
@@ -189,17 +191,16 @@ impl RenderableContent {
         snapshot: TerminalSnapshot,
         size: &TerminalSize,
     ) {
-        let TerminalSnapshot {
-            mut surface,
-            terminal_mode,
-            keyboard_mode,
-        } = snapshot;
+        let TerminalSnapshot { mut surface, .. } = snapshot;
 
-        let target_columns = size.num_cols as usize;
-        let target_rows = size.num_lines as usize;
+        let target_columns = size.cols as usize;
+        let target_rows = size.rows as usize;
         let mut new_grid = vec![RenderRow::new(target_columns); target_rows];
         let mut prev_line: Option<i32> = None;
         let mut row_idx: usize = 0;
+        let selection = surface.selection;
+        let cursor_snapshot = surface.cursor;
+        let mut selected_text = String::new();
 
         while let Some(indexed) = surface.display_iter.next() {
             if row_idx >= target_rows {
@@ -219,14 +220,26 @@ impl RenderableContent {
 
             let column = indexed.point.column.0 as usize;
             if column < target_columns {
-                new_grid[row_idx].cells_mut()[column] =
-                    RenderCell::from_cell(indexed.cell);
+                let is_selected = selection.as_ref().is_some_and(|range| {
+                    range.contains_cell(
+                        &indexed,
+                        cursor_snapshot.point,
+                        cursor_snapshot.shape,
+                    )
+                });
+
+                let cell = RenderCell::from_cell(indexed.cell, is_selected);
+                if is_selected {
+                    selected_text.push(cell.ch);
+                }
+
+                new_grid[row_idx].cells_mut()[column] = cell;
             }
         }
 
         let cursor_point =
-            if surface.cursor.shape != escape::CursorShape::Hidden {
-                point_to_viewport(surface.display_offset, surface.cursor.point)
+            if cursor_snapshot.shape != escape::CursorShape::Hidden {
+                point_to_viewport(surface.display_offset, cursor_snapshot.point)
             } else {
                 None
             };
@@ -258,29 +271,30 @@ impl RenderableContent {
         self.rows = target_rows;
         self.cell_width = size.cell_width;
         self.cell_height = size.cell_height;
-        self.terminal_mode = terminal_mode;
-        self.keyboard_mode = keyboard_mode;
         self.display_offset = surface.display_offset;
+        self.terminal_mode = surface.mode;
         self.cursor_row = cursor_point.as_ref().map(|point| point.line);
         self.cursor_col = cursor_point.as_ref().map(|point| point.column.0);
         self.damage = damage;
         self.revision = self.revision.wrapping_add(1);
+        self.selected_text = selected_text;
     }
 
     fn from_snapshot(snapshot: TerminalSnapshot, size: &TerminalSize) -> Self {
         let mut content = Self {
             grid: Vec::new(),
-            columns: size.num_cols as usize,
-            rows: size.num_lines as usize,
+            columns: size.cols as usize,
+            rows: size.rows as usize,
             cell_width: size.cell_width,
             cell_height: size.cell_height,
-            terminal_mode: TerminalMode::default(),
+            terminal_mode: SurfaceMode::default(),
             keyboard_mode: KeyboardMode::default(),
             display_offset: 0,
             cursor_row: None,
             cursor_col: None,
             damage: RenderDamage::Full,
             revision: 0,
+            selected_text: String::new(),
         };
         content.apply_snapshot(snapshot, size);
         content
@@ -295,40 +309,12 @@ impl Default for RenderableContent {
     fn default() -> Self {
         let size = TerminalSize::default();
         let dimensions = TerminalDimensions {
-            columns: size.num_cols as usize,
-            rows: size.num_lines as usize,
+            columns: size.cols as usize,
+            rows: size.rows as usize,
         };
         let surface = Surface::new(SurfaceConfig::default(), &dimensions);
-        let snapshot = TerminalSnapshot::new(
-            surface.capture_snapshot(),
-            TerminalMode::default(),
-            KeyboardMode::default(),
-        );
+        let snapshot = TerminalSnapshot::new(surface.capture_snapshot(), size);
         Self::from_snapshot(snapshot, &size)
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct TerminalSize {
-    pub cell_width: u16,
-    pub cell_height: u16,
-    pub num_cols: u16,
-    pub num_lines: u16,
-    pub layout_size: Size,
-}
-
-impl Default for TerminalSize {
-    fn default() -> Self {
-        Self {
-            cell_width: 8,
-            cell_height: 16,
-            num_cols: 80,
-            num_lines: 24,
-            layout_size: Size {
-                width: 640.0,
-                height: 384.0,
-            },
-        }
     }
 }
 
@@ -430,8 +416,8 @@ impl TerminalBackend {
                 }
                 let scroll = Scroll::Delta(delta);
                 let mode = self.terminal_mode();
-                if mode.contains(TerminalMode::ALT_SCREEN)
-                    && mode.contains(TerminalMode::ALTERNATE_SCROLL)
+                if mode.contains(SurfaceMode::ALT_SCREEN)
+                    && mode.contains(SurfaceMode::ALTERNATE_SCROLL)
                 {
                     let line_cmd = if delta > 0 { b'A' } else { b'B' };
                     let mut content = vec![];
@@ -450,8 +436,8 @@ impl TerminalBackend {
             BackendCommand::Resize(layout, font) => {
                 if let Some(size) = compute_terminal_size(layout, font) {
                     // Avoid spamming resizes that reset display_offset when geometry didn't change.
-                    let same_geometry = size.num_cols == self.size.num_cols
-                        && size.num_lines == self.size.num_lines
+                    let same_geometry = size.cols == self.size.cols
+                        && size.rows == self.size.rows
                         && size.cell_width == self.size.cell_width
                         && size.cell_height == self.size.cell_height;
 
@@ -460,12 +446,8 @@ impl TerminalBackend {
                     }
 
                     self.size = size;
-                    TerminalRequest::Resize(PtySize {
-                        rows: size.num_lines,
-                        cols: size.num_cols,
-                        cell_width: size.cell_width,
-                        cell_height: size.cell_height,
-                    })
+                    self.update_shared_size(size);
+                    TerminalRequest::Resize(size)
                 } else {
                     return;
                 }
@@ -485,7 +467,33 @@ impl TerminalBackend {
                     return;
                 }
             },
-            BackendCommand::ProcessLink { action, position } => {
+            BackendCommand::SelectStart(selection_type, x, y) => {
+                let point = Self::selection_point(
+                    x,
+                    y,
+                    &self.size,
+                    self.last_content.display_offset,
+                );
+                TerminalRequest::StartSelection {
+                    ty: selection_type,
+                    point,
+                    direction: self.selection_side(x),
+                }
+            },
+            BackendCommand::SelectUpdate(x, y) => {
+                let point = Self::selection_point(
+                    x,
+                    y,
+                    &self.size,
+                    self.last_content.display_offset,
+                );
+
+                TerminalRequest::UpdateSelection {
+                    point,
+                    direction: self.selection_side(x),
+                }
+            },
+            BackendCommand::ProcessLink { .. } => {
                 return;
             },
         };
@@ -505,7 +513,7 @@ impl TerminalBackend {
         self.last_content.clone()
     }
 
-    pub fn terminal_mode(&self) -> TerminalMode {
+    pub fn terminal_mode(&self) -> SurfaceMode {
         self.last_content.terminal_mode
     }
 
@@ -513,29 +521,25 @@ impl TerminalBackend {
         &self.last_content
     }
 
-    pub fn selection_point(
-        x: f32,
-        y: f32,
-        terminal_size: &TerminalSize,
-        display_offset: usize,
-    ) -> (i32, usize) {
-        let col = (x as usize) / (terminal_size.cell_width as usize);
-        let col = min(col, terminal_size.num_cols as usize - 1);
-
-        let line = (y as usize) / (terminal_size.cell_height as usize);
-        let line = min(line, terminal_size.num_lines as usize - 1);
-        ((line + display_offset) as i32, col)
+    pub fn selectable_content(&self) -> String {
+        self.last_content.selected_text.clone()
     }
 
     pub fn terminal_size(&self) -> TerminalSize {
         self.size
     }
 
+    fn update_shared_size(&self, size: TerminalSize) {
+        if let Ok(mut shared_size) = self.size_state.lock() {
+            *shared_size = size;
+        }
+    }
+
     fn process_mouse_report(
         &self,
         button: MouseButton,
         modifiers: Modifiers,
-        point: (i32, usize),
+        point: Point,
         pressed: bool,
     ) -> Option<Vec<u8>> {
         let mut mods = 0;
@@ -575,27 +579,35 @@ impl TerminalBackend {
 
     fn sgr_mouse_report(
         &self,
-        point: (i32, usize),
+        point: Point,
         button: u8,
         pressed: bool,
     ) -> Vec<u8> {
         let c = if pressed { 'M' } else { 'm' };
 
-        format!("\x1b[<{};{};{}{}", button, point.1 + 1, point.0 + 1, c)
-            .as_bytes()
-            .to_vec()
+        format!(
+            "\x1b[<{};{};{}{}",
+            button,
+            point.column.0 + 1,
+            point.line.0 + 1,
+            c
+        )
+        .as_bytes()
+        .to_vec()
     }
 
     fn normal_mouse_report(
         &self,
-        point: (i32, usize),
+        point: Point,
         button: u8,
         is_utf8: bool,
     ) -> Vec<u8> {
-        let (line, column) = point;
+        let Point { line, column } = point;
+        let line_idx = line.0.max(0) as usize;
+        let column_idx = column.0;
         let max_point = if is_utf8 { 2015 } else { 223 };
 
-        if line >= max_point || column >= max_point as usize {
+        if line_idx >= max_point || column_idx >= max_point {
             return vec![];
         }
 
@@ -608,19 +620,46 @@ impl TerminalBackend {
             vec![first as u8, second as u8]
         };
 
-        if is_utf8 && column >= 95 {
-            msg.append(&mut mouse_pos_encode(column));
+        if is_utf8 && column_idx >= 95 {
+            msg.append(&mut mouse_pos_encode(column_idx));
         } else {
-            msg.push(32 + 1 + column as u8);
+            msg.push(32 + 1 + column_idx as u8);
         }
 
-        if is_utf8 && line >= 95 {
-            msg.append(&mut mouse_pos_encode(line as usize));
+        if is_utf8 && line_idx >= 95 {
+            msg.append(&mut mouse_pos_encode(line_idx));
         } else {
-            msg.push(32 + 1 + line as u8);
+            msg.push(32 + 1 + line_idx as u8);
         }
 
         msg.to_vec()
+    }
+
+    fn selection_side(&self, x: f32) -> Side {
+        let cell_x = x as usize % self.size.cell_width as usize;
+        let half_cell_width = (self.size.cell_width as f32 / 2.0) as usize;
+
+        if cell_x > half_cell_width {
+            Side::Right
+        } else {
+            Side::Left
+        }
+    }
+
+    pub fn selection_point(
+        x: f32,
+        y: f32,
+        terminal_size: &TerminalSize,
+        display_offset: usize,
+    ) -> Point {
+        let col = (x as usize) / (terminal_size.cell_width as usize);
+        let col = min(col, terminal_size.cols as usize - 1);
+
+        let line = (y as usize) / (terminal_size.cell_height as usize);
+        let line = min(line, terminal_size.rows as usize - 1);
+
+        let viewport_point = Point::<usize>::new(line, Column(col));
+        viewport_to_point(display_offset, viewport_point)
     }
 }
 
@@ -634,16 +673,16 @@ fn run_terminal_thread(
 ) -> anyhow::Result<()> {
     let surface_config = SurfaceConfig::default();
     let surface_dimensions = TerminalDimensions {
-        columns: initial_size.num_cols as usize,
-        rows: initial_size.num_lines as usize,
+        columns: initial_size.cols as usize,
+        rows: initial_size.rows as usize,
     };
     let surface = Surface::new(surface_config, &surface_dimensions);
 
     let mut builder = pty::unix(&settings.shell)
         .with_args(&settings.args)
         .with_size(PtySize {
-            rows: initial_size.num_lines,
-            cols: initial_size.num_cols,
+            rows: initial_size.rows,
+            cols: initial_size.cols,
             cell_width: initial_size.cell_width,
             cell_height: initial_size.cell_height,
         })
@@ -722,11 +761,6 @@ impl TerminalClient for RuntimeEventHandler {
     ) -> Result<(), LibTermError> {
         match event {
             TerminalEvent::SurfaceChanged { snapshot } => {
-                // Debug: track display_offset and history size while investigating scroll behavior
-                // eprintln!(
-                //     "[egui_term] surface changed: display_offset={}, history_size={}",
-                //     snapshot.surface.display_offset, snapshot.surface.grid.history_size()
-                // );
                 self.update_render_state(snapshot)?;
             },
             TerminalEvent::ChildExit { status } => {
@@ -736,6 +770,7 @@ impl TerminalClient for RuntimeEventHandler {
                 );
             },
             TerminalEvent::TitleChanged { .. }
+            | TerminalEvent::ResetTitle
             | TerminalEvent::Bell
             | TerminalEvent::CursorShapeChanged { .. }
             | TerminalEvent::CursorStyleChanged { .. }
@@ -768,8 +803,7 @@ fn compute_terminal_size(layout: Size, font: Size) -> Option<TerminalSize> {
     Some(TerminalSize {
         cell_width: cell_width as u16,
         cell_height: cell_height as u16,
-        num_cols: cols,
-        num_lines: rows,
-        layout_size: layout,
+        rows,
+        cols,
     })
 }

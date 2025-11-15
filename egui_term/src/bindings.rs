@@ -1,5 +1,30 @@
-use crate::TerminalMode;
+use bitflags::Flags;
 use egui::{Key, Modifiers, PointerButton};
+
+use crate::backend::TerminalMode as DefaultTerminalMode;
+
+#[cfg(feature = "backend-otty")]
+use otty_libterm::surface::SurfaceMode;
+
+/// Trait implemented by terminal mode bitflags that can drive bindings.
+pub trait BindingMode: Flags + Copy + PartialEq + Eq {
+    const APP_CURSOR: Self;
+    const ALT_SCREEN: Self;
+    const SGR_MOUSE: Self;
+}
+
+impl BindingMode for DefaultTerminalMode {
+    const APP_CURSOR: Self = DefaultTerminalMode::APP_CURSOR;
+    const ALT_SCREEN: Self = DefaultTerminalMode::ALT_SCREEN;
+    const SGR_MOUSE: Self = DefaultTerminalMode::SGR_MOUSE;
+}
+
+#[cfg(feature = "backend-otty")]
+impl BindingMode for SurfaceMode {
+    const APP_CURSOR: Self = SurfaceMode::APP_CURSOR;
+    const ALT_SCREEN: Self = SurfaceMode::ALT_SCREEN;
+    const SGR_MOUSE: Self = SurfaceMode::SGR_MOUSE;
+}
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub enum BindingAction {
@@ -18,20 +43,23 @@ pub enum InputKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Binding<T> {
+pub struct Binding<T, M = DefaultTerminalMode>
+where
+    M: BindingMode,
+{
     pub target: T,
     pub modifiers: Modifiers,
-    pub terminal_mode_include: TerminalMode,
-    pub terminal_mode_exclude: TerminalMode,
+    pub terminal_mode_include: M,
+    pub terminal_mode_exclude: M,
 }
 
-pub type KeyboardBinding = Binding<InputKind>;
-pub type MouseBinding = Binding<InputKind>;
+pub type KeyboardBinding<M = DefaultTerminalMode> = Binding<InputKind, M>;
+pub type MouseBinding<M = DefaultTerminalMode> = Binding<InputKind, M>;
 
 #[macro_export]
 macro_rules! generate_bindings {
     (
-        $binding_type:ident;
+        $binding_type:ident<$mode:ty>;
         $(
             $input_kind:tt$(::$button:ident)?
             $(,$input_modifiers:expr)*
@@ -58,12 +86,12 @@ macro_rules! generate_bindings {
         $(
             let mut _input_modifiers = Modifiers::default();
             $(_input_modifiers = $input_modifiers;)*
-            let mut _terminal_mode_include = TerminalMode::empty();
+            let mut _terminal_mode_include = <$mode>::empty();
             $(_terminal_mode_include.insert($terminal_mode_include);)*
-            let mut _terminal_mode_exclude = TerminalMode::empty();
+            let mut _terminal_mode_exclude = <$mode>::empty();
             $(_terminal_mode_exclude.insert($terminal_mode_exclude);)*
 
-            let binding = $binding_type {
+            let binding = $binding_type::<$mode> {
                 target: input_kind_match!($binding_type, $input_kind),
                 modifiers: _input_modifiers,
                 terminal_mode_include: _terminal_mode_include,
@@ -78,29 +106,38 @@ macro_rules! generate_bindings {
 }
 
 #[derive(Clone, Debug)]
-pub struct BindingsLayout {
-    layout: Vec<(Binding<InputKind>, BindingAction)>,
+pub struct BindingsLayout<M = DefaultTerminalMode>
+where
+    M: BindingMode,
+{
+    layout: Vec<(Binding<InputKind, M>, BindingAction)>,
 }
 
-impl Default for BindingsLayout {
+impl<M> Default for BindingsLayout<M>
+where
+    M: BindingMode,
+{
     fn default() -> Self {
         BindingsLayout::new()
     }
 }
 
-impl BindingsLayout {
+impl<M> BindingsLayout<M>
+where
+    M: BindingMode,
+{
     pub fn new() -> Self {
         let mut layout = Self {
-            layout: default_keyboard_bindings(),
+            layout: default_keyboard_bindings::<M>(),
         };
-        layout.add_bindings(platform_keyboard_bindings());
-        layout.add_bindings(mouse_default_bindings());
+        layout.add_bindings(platform_keyboard_bindings::<M>());
+        layout.add_bindings(mouse_default_bindings::<M>());
         layout
     }
 
     pub fn add_bindings(
         &mut self,
-        bindings: Vec<(Binding<InputKind>, BindingAction)>,
+        bindings: Vec<(Binding<InputKind, M>, BindingAction)>,
     ) {
         for (binding, action) in bindings {
             match self
@@ -118,7 +155,7 @@ impl BindingsLayout {
         &self,
         input: InputKind,
         modifiers: Modifiers,
-        terminal_mode: TerminalMode,
+        terminal_mode: M,
     ) -> BindingAction {
         for (binding, action) in &self.layout {
             let is_triggered = binding.target == input
@@ -135,9 +172,10 @@ impl BindingsLayout {
     }
 }
 
-fn default_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
+fn default_keyboard_bindings<M: BindingMode>(
+) -> Vec<(Binding<InputKind, M>, BindingAction)> {
     generate_bindings!(
-        KeyboardBinding;
+        KeyboardBinding<M>;
         // NONE MODIFIERS
         Enter;     BindingAction::Char('\x0d');
         Backspace; BindingAction::Char('\x7f');
@@ -168,19 +206,19 @@ fn default_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
         F19;       BindingAction::Esc("\x1b[33~".into());
         F20;       BindingAction::Esc("\x1b[34~".into());
         // APP_CURSOR Excluding
-        End,        ~TerminalMode::APP_CURSOR; BindingAction::Esc("\x1b[F".into());
-        Home,       ~TerminalMode::APP_CURSOR; BindingAction::Esc("\x1b[H".into());
-        ArrowUp,    ~TerminalMode::APP_CURSOR; BindingAction::Esc("\x1b[A".into());
-        ArrowDown,  ~TerminalMode::APP_CURSOR; BindingAction::Esc("\x1b[B".into());
-        ArrowLeft,  ~TerminalMode::APP_CURSOR; BindingAction::Esc("\x1b[D".into());
-        ArrowRight, ~TerminalMode::APP_CURSOR; BindingAction::Esc("\x1b[C".into());
+        End,        ~M::APP_CURSOR; BindingAction::Esc("\x1b[F".into());
+        Home,       ~M::APP_CURSOR; BindingAction::Esc("\x1b[H".into());
+        ArrowUp,    ~M::APP_CURSOR; BindingAction::Esc("\x1b[A".into());
+        ArrowDown,  ~M::APP_CURSOR; BindingAction::Esc("\x1b[B".into());
+        ArrowLeft,  ~M::APP_CURSOR; BindingAction::Esc("\x1b[D".into());
+        ArrowRight, ~M::APP_CURSOR; BindingAction::Esc("\x1b[C".into());
         // APP_CURSOR Including
-        End,        +TerminalMode::APP_CURSOR; BindingAction::Esc("\x1BOF".into());
-        Home,       +TerminalMode::APP_CURSOR; BindingAction::Esc("\x1BOH".into());
-        ArrowUp,    +TerminalMode::APP_CURSOR; BindingAction::Esc("\x1bOA".into());
-        ArrowDown,  +TerminalMode::APP_CURSOR; BindingAction::Esc("\x1bOB".into());
-        ArrowLeft,  +TerminalMode::APP_CURSOR; BindingAction::Esc("\x1bOD".into());
-        ArrowRight, +TerminalMode::APP_CURSOR; BindingAction::Esc("\x1bOC".into());
+        End,        +M::APP_CURSOR; BindingAction::Esc("\x1BOF".into());
+        Home,       +M::APP_CURSOR; BindingAction::Esc("\x1BOH".into());
+        ArrowUp,    +M::APP_CURSOR; BindingAction::Esc("\x1bOA".into());
+        ArrowDown,  +M::APP_CURSOR; BindingAction::Esc("\x1bOB".into());
+        ArrowLeft,  +M::APP_CURSOR; BindingAction::Esc("\x1bOD".into());
+        ArrowRight, +M::APP_CURSOR; BindingAction::Esc("\x1bOC".into());
         // CTRL
         ArrowUp,    Modifiers::COMMAND; BindingAction::Esc("\x1b[1;5A".into());
         ArrowDown,  Modifiers::COMMAND; BindingAction::Esc("\x1b[1;5B".into());
@@ -237,10 +275,10 @@ fn default_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
         Enter,      Modifiers::SHIFT; BindingAction::Char('\x0d');
         Backspace,  Modifiers::SHIFT; BindingAction::Char('\x7f');
         Tab,        Modifiers::SHIFT; BindingAction::Esc("\x1b[Z".into());
-        End,        Modifiers::SHIFT, +TerminalMode::ALT_SCREEN; BindingAction::Esc("\x1b[1;2F".into());
-        Home,       Modifiers::SHIFT, +TerminalMode::ALT_SCREEN; BindingAction::Esc("\x1b[1;2H".into());
-        PageUp,     Modifiers::SHIFT, +TerminalMode::ALT_SCREEN; BindingAction::Esc("\x1b[5;2~".into());
-        PageDown,   Modifiers::SHIFT, +TerminalMode::ALT_SCREEN; BindingAction::Esc("\x1b[6;2~".into());
+        End,        Modifiers::SHIFT, +M::ALT_SCREEN; BindingAction::Esc("\x1b[1;2F".into());
+        Home,       Modifiers::SHIFT, +M::ALT_SCREEN; BindingAction::Esc("\x1b[1;2H".into());
+        PageUp,     Modifiers::SHIFT, +M::ALT_SCREEN; BindingAction::Esc("\x1b[5;2~".into());
+        PageDown,   Modifiers::SHIFT, +M::ALT_SCREEN; BindingAction::Esc("\x1b[6;2~".into());
         ArrowUp,    Modifiers::SHIFT; BindingAction::Esc("\x1b[1;2A".into());
         ArrowDown,  Modifiers::SHIFT; BindingAction::Esc("\x1b[1;2B".into());
         ArrowLeft,  Modifiers::SHIFT; BindingAction::Esc("\x1b[1;2D".into());
@@ -320,26 +358,29 @@ fn default_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
 }
 
 #[cfg(target_os = "macos")]
-fn platform_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
+fn platform_keyboard_bindings<M: BindingMode>(
+) -> Vec<(Binding<InputKind, M>, BindingAction)> {
     generate_bindings!(
-        KeyboardBinding;
+        KeyboardBinding<M>;
         C, Modifiers::MAC_CMD; BindingAction::Copy;
         V, Modifiers::MAC_CMD; BindingAction::Paste;
     )
 }
 
 #[cfg(not(target_os = "macos"))]
-fn platform_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
+fn platform_keyboard_bindings<M: BindingMode>(
+) -> Vec<(Binding<InputKind, M>, BindingAction)> {
     generate_bindings!(
-        KeyboardBinding;
+        KeyboardBinding<M>;
         C, Modifiers::SHIFT | Modifiers::COMMAND; BindingAction::Copy;
         V, Modifiers::SHIFT | Modifiers::COMMAND; BindingAction::Paste;
     )
 }
 
-fn mouse_default_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
+fn mouse_default_bindings<M: BindingMode>(
+) -> Vec<(Binding<InputKind, M>, BindingAction)> {
     generate_bindings!(
-        MouseBinding;
+        MouseBinding<M>;
         Primary, Modifiers::COMMAND; BindingAction::LinkOpen;
     )
 }
@@ -347,15 +388,17 @@ fn mouse_default_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
 #[cfg(test)]
 mod tests {
     use super::{BindingAction, BindingsLayout, InputKind, KeyboardBinding};
+    use crate::backend::TerminalMode;
     use crate::bindings::MouseBinding;
-    use crate::TerminalMode;
     use egui::{Key, Modifiers, PointerButton};
+
+    type TestLayout = BindingsLayout<TerminalMode>;
 
     #[test]
     fn add_new_custom_keyboard_binding() {
-        let mut current_layout = BindingsLayout::default();
+        let mut current_layout: TestLayout = BindingsLayout::default();
         let custom_bindings = generate_bindings!(
-            KeyboardBinding;
+            KeyboardBinding<TerminalMode>;
             C, Modifiers::SHIFT | Modifiers::ALT; BindingAction::Copy;
         );
         let current_layout_length = current_layout.layout.len();
@@ -374,9 +417,9 @@ mod tests {
 
     #[test]
     fn add_many_new_custom_keyboard_bindings() {
-        let mut current_layout: BindingsLayout = BindingsLayout::default();
+        let mut current_layout: TestLayout = BindingsLayout::default();
         let custom_bindings = generate_bindings!(
-            KeyboardBinding;
+            KeyboardBinding<TerminalMode>;
             ArrowDown, Modifiers::ALT, +TerminalMode::SGR_MOUSE; BindingAction::LinkOpen;
             C,       Modifiers::SHIFT, +TerminalMode::ALT_SCREEN;             BindingAction::Paste;
             C,       Modifiers::SHIFT | Modifiers::ALT;                   BindingAction::Copy;
@@ -401,9 +444,9 @@ mod tests {
 
     #[test]
     fn add_custom_keyboard_bindings_that_replace_current() {
-        let mut current_layout = BindingsLayout::default();
+        let mut current_layout: TestLayout = BindingsLayout::default();
         let custom_bindings = generate_bindings!(
-            KeyboardBinding;
+            KeyboardBinding<TerminalMode>;
             C, Modifiers::SHIFT, +TerminalMode::ALT_SCREEN; BindingAction::Paste;
             A, Modifiers::SHIFT | Modifiers::CTRL;      BindingAction::Char('A');
             B, Modifiers::SHIFT | Modifiers::CTRL;      BindingAction::Char('B');
@@ -420,7 +463,7 @@ mod tests {
             assert!(found_binding.is_some());
         }
         let replaced_bindings = generate_bindings!(
-            KeyboardBinding;
+            KeyboardBinding<TerminalMode>;
             A, Modifiers::SHIFT | Modifiers::CTRL; BindingAction::Char('\x01');
             B, Modifiers::SHIFT | Modifiers::CTRL; BindingAction::Char('\x02');
             C, Modifiers::SHIFT | Modifiers::CTRL; BindingAction::Char('\x03');
@@ -436,9 +479,9 @@ mod tests {
 
     #[test]
     fn add_mouse_binding() {
-        let mut current_layout = BindingsLayout::default();
+        let mut current_layout: TestLayout = BindingsLayout::default();
         let custom_bindings = generate_bindings!(
-            MouseBinding;
+            MouseBinding<TerminalMode>;
             Primary,   Modifiers::SHIFT, +TerminalMode::ALT_SCREEN; BindingAction::Paste;
             Secondary, Modifiers::SHIFT | Modifiers::CTRL;      BindingAction::Char('A');
         );
@@ -456,7 +499,7 @@ mod tests {
 
     #[test]
     fn get_action() {
-        let current_layout = BindingsLayout::default();
+        let current_layout: TestLayout = BindingsLayout::default();
         for (bind, action) in &current_layout.layout {
             let found_action = current_layout.get_action(
                 bind.target.clone(),
@@ -469,9 +512,9 @@ mod tests {
 
     #[test]
     fn get_action_with_custom_bindings() {
-        let mut current_layout = BindingsLayout::default();
+        let mut current_layout: TestLayout = BindingsLayout::default();
         let custom_bindings = generate_bindings!(
-            KeyboardBinding;
+            KeyboardBinding<TerminalMode>;
             C, Modifiers::SHIFT, +TerminalMode::ALT_SCREEN; BindingAction::Paste;
             A, Modifiers::SHIFT | Modifiers::CTRL;      BindingAction::Char('A');
             B, Modifiers::SHIFT | Modifiers::CTRL;      BindingAction::Char('B');

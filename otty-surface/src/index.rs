@@ -1,4 +1,8 @@
-//! Line and Column newtypes for strongly typed tty/grid/terminal APIs.
+//! Line and Column newtypes for strongly typed grid/surface APIs.
+//!
+//! This module provides small wrapper types around primitive indices so that
+//! code manipulating the surface grid can clearly distinguish between rows
+//! (`Line`), columns (`Column`) and 2D points (`Point`).
 
 /// Indexing types and implementations for Grid and Line.
 use std::cmp::{Ord, Ordering, max, min};
@@ -13,7 +17,9 @@ pub type Side = Direction;
 /// Horizontal direction.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Direction {
+    /// Left side / movement to the left.
     Left,
+    /// Right side / movement to the right.
     Right,
 }
 
@@ -27,7 +33,7 @@ impl Direction {
     }
 }
 
-/// Terminal grid boundaries.
+/// Surface grid boundaries used for clamping.
 pub enum Boundary {
     /// Cursor's range of motion in the grid.
     ///

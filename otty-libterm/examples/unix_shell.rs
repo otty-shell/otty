@@ -26,15 +26,17 @@ mod unix_shell {
     use nix::fcntl::{FcntlArg, OFlag, fcntl};
     use nix::libc;
     use nix::sys::termios::{self, SetArg};
+    use otty_libterm::TerminalSnapshot;
     use otty_libterm::{
         LibTermError, Runtime, RuntimeHooks, RuntimeRequestProxy, Terminal,
         TerminalClient, TerminalEvent, TerminalOptions, TerminalRequest,
-        TerminalSnapshot,
+        TerminalSize,
         escape::{self, Color, StdColor},
         pty::{self, PtySize},
-        surface::{Surface, SurfaceConfig},
+        surface::{
+            Cell, Dimensions, Flags, Surface, SurfaceConfig, point_to_viewport,
+        },
     };
-    use otty_surface_3::{Cell, Dimensions, Flags, point_to_viewport};
     use signal_hook::consts::signal::SIGWINCH;
 
     pub fn run() -> Result<()> {
@@ -142,6 +144,7 @@ mod unix_shell {
         pending_input: VecDeque<u8>,
         screen: Screen,
         size: (u16, u16),
+        stdin_closed: bool,
     }
 
     impl ShellState {
@@ -150,6 +153,7 @@ mod unix_shell {
                 pending_input: VecDeque::new(),
                 screen: Screen::new()?,
                 size,
+                stdin_closed: false,
             })
         }
     }
@@ -194,12 +198,14 @@ mod unix_shell {
 
             let mut state = self.state.borrow_mut();
             if (rows, cols) != state.size {
-                self.runtime_proxy.send(TerminalRequest::Resize(PtySize {
-                    rows,
-                    cols,
-                    cell_width: 0,
-                    cell_height: 0,
-                }))?;
+                self.runtime_proxy.send(TerminalRequest::Resize(
+                    TerminalSize {
+                        rows,
+                        cols,
+                        cell_width: 0,
+                        cell_height: 0,
+                    },
+                ))?;
                 state.size = (rows, cols);
                 state.screen.clear().map_err(LibTermError::from)?;
             }
@@ -224,13 +230,24 @@ mod unix_shell {
         }
 
         fn read_stdin(&mut self) -> Result<(), LibTermError> {
+            if self.state.borrow().stdin_closed {
+                return Ok(());
+            }
+
             let mut buffer = [0u8; 1024];
             let mut stdin = io::stdin();
 
             loop {
                 match stdin.read(&mut buffer) {
                     Ok(0) => {
-                        self.state.borrow_mut().pending_input.push_back(4);
+                        {
+                            let mut state = self.state.borrow_mut();
+                            if state.stdin_closed {
+                                break;
+                            }
+                            state.stdin_closed = true;
+                            state.pending_input.push_back(4);
+                        }
                         break;
                     },
                     Ok(read) => {
@@ -314,6 +331,7 @@ mod unix_shell {
                     self.handle_exit(&status)
                 },
                 TerminalEvent::TitleChanged { .. }
+                | TerminalEvent::ResetTitle
                 | TerminalEvent::Bell
                 | TerminalEvent::CursorShapeChanged { .. }
                 | TerminalEvent::CursorStyleChanged { .. }

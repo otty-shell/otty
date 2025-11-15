@@ -1,14 +1,25 @@
+//! Terminal surface abstraction for grid‑based terminal content.
+
 mod actor;
 mod cell;
+mod color;
+mod damage;
 mod grid;
-mod state;
+mod index;
+mod mode;
+mod selection;
+mod snapshot;
 mod surface;
 
+pub(crate) use otty_escape as escape;
+
 pub use actor::SurfaceActor;
-pub use cell::{Cell, CellAttributes, CellBlink, CellUnderline, HyperlinkRef};
-pub use grid::{Grid, GridRow, ScrollDirection};
-pub use state::{
-    CursorSnapshot, LineDamage, SurfaceDamage, SurfacePalette, SurfaceSnapshot,
-    SurfaceSnapshotSource,
+pub use cell::{Cell, Flags};
+pub use grid::{Dimensions, Grid, Scroll};
+pub use index::{Column, Line, Point, Side};
+pub use mode::SurfaceMode;
+pub use selection::SelectionType;
+pub use snapshot::{CursorSnapshot, SurfaceSnapshot, SurfaceSnapshotSource};
+pub use surface::{
+    Surface, SurfaceConfig, point_to_viewport, viewport_to_point,
 };
-pub use surface::{Surface, SurfaceConfig};

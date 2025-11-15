@@ -14,4 +14,4 @@ rust-version.workspace = true
 bitflags.workspace = true
 log.workspace = true
 otty-vte = { path = "../otty-vte", version = "0.1.0" }
-cursor-icon = { version = "1.2.0", default-features = false }
+cursor-icon = { workspace = true }

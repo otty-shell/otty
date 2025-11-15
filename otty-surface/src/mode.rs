@@ -1,9 +1,17 @@
+//! Bitflags describing active surface/terminal modes.
+
 use bitflags::bitflags;
+
 use crate::escape::KeyboardMode;
 
 bitflags! {
+    /// Collection of public and private terminal modes active on the surface.
+    ///
+    /// These flags mirror xterm/DEC modes (cursor visibility, origin mode,
+    /// insert mode, alternate screen, mouse reporting, etc.) as well as
+    /// Kitty keyboard protocol options.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub struct TerminalMode: u32 {
+    pub struct SurfaceMode: u32 {
         const NONE                    = 0;
         const SHOW_CURSOR             = 1;
         const APP_CURSOR              = 1 << 1;
@@ -27,18 +35,23 @@ bitflags! {
         const REPORT_ALTERNATE_KEYS   = 1 << 19;
         const REPORT_ALL_KEYS_AS_ESC  = 1 << 20;
         const REPORT_ASSOCIATED_TEXT  = 1 << 21;
+        /// Convenience mask for all mouse reporting modes.
         const MOUSE_MODE              = Self::MOUSE_REPORT_CLICK.bits() | Self::MOUSE_MOTION.bits() | Self::MOUSE_DRAG.bits();
+        /// Convenience mask for all Kitty keyboard protocol modes.
         const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
                                       | Self::REPORT_EVENT_TYPES.bits()
                                       | Self::REPORT_ALTERNATE_KEYS.bits()
                                       | Self::REPORT_ALL_KEYS_AS_ESC.bits()
                                       | Self::REPORT_ASSOCIATED_TEXT.bits();
-         const ANY                    = u32::MAX;
+        /// Mask that matches any mode.
+        const ANY                    = u32::MAX;
     }
 }
 
-impl Default for TerminalMode {
+impl Default for SurfaceMode {
     fn default() -> Self {
+        // Reasonable defaults for an interactive terminal emulator:
+        // show cursor, wrap lines, enable alternate scroll and urgency hints.
         Self::SHOW_CURSOR
             | Self::LINE_WRAP
             | Self::ALTERNATE_SCROLL
@@ -46,7 +59,7 @@ impl Default for TerminalMode {
     }
 }
 
-impl From<KeyboardMode> for TerminalMode {
+impl From<KeyboardMode> for SurfaceMode {
     fn from(value: KeyboardMode) -> Self {
         let mut mode = Self::empty();
 

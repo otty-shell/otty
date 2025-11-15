@@ -4,16 +4,16 @@ use egui::{
 };
 use egui::{Key, Modifiers, MouseWheelUnit, PointerButton};
 
+use crate::bindings::{Binding, BindingAction, BindingsLayout, InputKind};
 use crate::otty_backend::{
     BackendCommand, LinkAction, MouseButton, RenderDamage, RenderRow,
     RenderableContent, TerminalBackend,
 };
-use crate::otty_bindings::{Binding, BindingAction, BindingsLayout, InputKind};
 use crate::otty_theme::TerminalTheme;
 use crate::types::Size;
 use crate::TerminalFont;
 use otty_libterm::escape::{Color, StdColor};
-use otty_libterm::TerminalMode;
+use otty_libterm::surface::{Point, SelectionType, SurfaceMode};
 use std::sync::{Arc, Mutex};
 
 const EGUI_TERM_WIDGET_ID_PREFIX: &str = "egui_term::otty::";
@@ -29,7 +29,7 @@ enum InputAction {
 pub struct TerminalViewState {
     is_dragged: bool,
     scroll_pixels: f32,
-    current_mouse_position_on_grid: (i32, usize),
+    current_mouse_position_on_grid: Point,
     row_shapes: Arc<Mutex<Vec<Vec<Shape>>>>,
     cached_origin: Option<Pos2>,
     cached_cell_size: (u16, u16),
@@ -41,7 +41,7 @@ impl Default for TerminalViewState {
         Self {
             is_dragged: false,
             scroll_pixels: 0.0,
-            current_mouse_position_on_grid: (0, 0),
+            current_mouse_position_on_grid: Point::default(),
             row_shapes: Arc::new(Mutex::new(Vec::new())),
             cached_origin: None,
             cached_cell_size: (0, 0),
@@ -50,6 +50,9 @@ impl Default for TerminalViewState {
     }
 }
 
+type SurfaceBinding = Binding<InputKind, SurfaceMode>;
+type SurfaceBindingsLayout = BindingsLayout<SurfaceMode>;
+
 pub struct TerminalView<'a> {
     widget_id: Id,
     size: Vec2,
@@ -57,7 +60,7 @@ pub struct TerminalView<'a> {
     backend: &'a mut TerminalBackend,
     font: TerminalFont,
     theme: TerminalTheme,
-    bindings_layout: BindingsLayout,
+    bindings_layout: SurfaceBindingsLayout,
 }
 
 impl<'a> TerminalView<'a> {
@@ -75,7 +78,7 @@ impl<'a> TerminalView<'a> {
             backend,
             theme: TerminalTheme::default(),
             font: TerminalFont::default(),
-            bindings_layout: BindingsLayout::default(),
+            bindings_layout: SurfaceBindingsLayout::default(),
         }
     }
 
@@ -97,7 +100,7 @@ impl<'a> TerminalView<'a> {
     #[inline]
     pub fn add_bindings(
         mut self,
-        bindings: Vec<(Binding<InputKind>, BindingAction)>,
+        bindings: Vec<(SurfaceBinding, BindingAction)>,
     ) -> Self {
         self.bindings_layout.add_bindings(bindings);
         self
@@ -282,13 +285,9 @@ fn paint_grid(
         dirty_rows = (0..content.rows).collect();
     } else if state.last_revision != content.revision {
         dirty_rows = match &content.damage {
-            RenderDamage::None => {
-                state.last_revision = content.revision;
-                Vec::new()
-            },
-            RenderDamage::Full => (0..content.rows).collect(),
             RenderDamage::Partial(lines) => lines.clone(),
-        };
+            _ => (0..content.rows).collect(),
+        }
     }
 
     if !dirty_rows.is_empty() {
@@ -322,17 +321,19 @@ fn rebuild_row_shapes(
 ) -> Vec<Shape> {
     let mut shapes = Vec::new();
     let y = origin.y + row_idx as f32 * cell_h;
+    let default_bg = theme.resolve(Color::Std(StdColor::Background));
 
     for (col_idx, cell) in row.cells().iter().enumerate() {
         let x = origin.x + col_idx as f32 * cell_w;
         let mut fg = theme.resolve(cell.attributes.foreground);
         let mut bg = theme.resolve(cell.attributes.background);
+        let is_selected = cell.attributes.selected;
 
-        if cell.attributes.reverse {
+        if cell.attributes.reverse || is_selected {
             std::mem::swap(&mut fg, &mut bg);
         }
 
-        if bg != theme.resolve(Color::Std(StdColor::Background)) {
+        if is_selected || bg != default_bg {
             shapes.push(Shape::Rect(RectShape::filled(
                 Rect::from_min_size(Pos2::new(x, y), Vec2::new(cell_w, cell_h)),
                 egui::CornerRadius::ZERO,
@@ -363,7 +364,7 @@ fn rebuild_row_shapes(
 fn process_keyboard_event(
     event: egui::Event,
     backend: &TerminalBackend,
-    bindings_layout: &BindingsLayout,
+    bindings_layout: &SurfaceBindingsLayout,
     modifiers: Modifiers,
 ) -> InputAction {
     match event {
@@ -384,20 +385,19 @@ fn process_keyboard_event(
             },
         ),
         egui::Event::Copy => {
-            InputAction::Ignore
-            // #[cfg(not(any(target_os = "ios", target_os = "macos")))]
-            // if modifiers.contains(Modifiers::COMMAND | Modifiers::SHIFT) {
-            //     let content = backend.selectable_content();
-            //     InputAction::WriteToClipboard(content)
-            // } else {
-            //     // Hotfix - Send ^C when there's not selection on view.
-            //     InputAction::BackendCall(BackendCommand::Write([0x3].to_vec()))
-            // }
-            // #[cfg(any(target_os = "ios", target_os = "macos"))]
-            // {
-            //     let content = backend.selectable_content();
-            //     InputAction::WriteToClipboard(content)
-            // }
+            #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+            if modifiers.contains(Modifiers::COMMAND | Modifiers::SHIFT) {
+                let content = backend.selectable_content();
+                InputAction::WriteToClipboard(content)
+            } else {
+                // Hotfix - Send ^C when there's not selection on view.
+                InputAction::BackendCall(BackendCommand::Write([0x3].to_vec()))
+            }
+            #[cfg(any(target_os = "ios", target_os = "macos"))]
+            {
+                let content = backend.selectable_content();
+                InputAction::WriteToClipboard(content)
+            }
         },
         egui::Event::Key {
             key,
@@ -419,7 +419,7 @@ fn process_text_event(
     text: &str,
     modifiers: Modifiers,
     backend: &TerminalBackend,
-    bindings_layout: &BindingsLayout,
+    bindings_layout: &SurfaceBindingsLayout,
 ) -> InputAction {
     if let Some(key) = Key::from_name(text) {
         if bindings_layout.get_action(
@@ -443,7 +443,7 @@ fn process_text_event(
 
 fn process_keyboard_key(
     backend: &TerminalBackend,
-    bindings_layout: &BindingsLayout,
+    bindings_layout: &SurfaceBindingsLayout,
     key: Key,
     modifiers: Modifiers,
     pressed: bool,
@@ -503,7 +503,7 @@ fn process_button_click(
     state: &mut TerminalViewState,
     layout: &Response,
     backend: &TerminalBackend,
-    bindings_layout: &BindingsLayout,
+    bindings_layout: &SurfaceBindingsLayout,
     button: PointerButton,
     position: Pos2,
     modifiers: &Modifiers,
@@ -527,13 +527,13 @@ fn process_left_button(
     state: &mut TerminalViewState,
     layout: &Response,
     backend: &TerminalBackend,
-    bindings_layout: &BindingsLayout,
+    bindings_layout: &SurfaceBindingsLayout,
     position: Pos2,
     modifiers: &Modifiers,
     pressed: bool,
 ) -> InputAction {
     let terminal_mode = backend.terminal_mode();
-    if terminal_mode.intersects(TerminalMode::MOUSE_MODE) {
+    if terminal_mode.intersects(SurfaceMode::MOUSE_MODE) {
         InputAction::BackendCall(BackendCommand::MouseReport {
             button: MouseButton::LeftButton,
             modifiers: *modifiers,
@@ -560,22 +560,20 @@ fn process_left_button_pressed(
     position: Pos2,
 ) -> InputAction {
     state.is_dragged = true;
-    // InputAction::BackendCall(build_start_select_command(layout, position))
-    InputAction::Ignore
+    InputAction::BackendCall(build_start_select_command(layout, position))
 }
 
 fn process_left_button_released(
     state: &mut TerminalViewState,
     layout: &Response,
     backend: &TerminalBackend,
-    bindings_layout: &BindingsLayout,
-    _position: Pos2,
+    bindings_layout: &SurfaceBindingsLayout,
+    position: Pos2,
     modifiers: &Modifiers,
 ) -> InputAction {
     state.is_dragged = false;
     if layout.double_clicked() || layout.triple_clicked() {
-        InputAction::Ignore
-        // InputAction::BackendCall(build_start_select_command(layout, position))
+        InputAction::BackendCall(build_start_select_command(layout, position))
     } else {
         let terminal_content = backend.last_content();
         let binding_action = bindings_layout.get_action(
@@ -595,24 +593,24 @@ fn process_left_button_released(
     }
 }
 
-// fn build_start_select_command(
-//     layout: &Response,
-//     cursor_position: Pos2,
-// ) -> BackendCommand {
-//     let selection_type = if layout.double_clicked() {
-//         SelectionType::Semantic
-//     } else if layout.triple_clicked() {
-//         SelectionType::Lines
-//     } else {
-//         SelectionType::Simple
-//     };
+fn build_start_select_command(
+    layout: &Response,
+    cursor_position: Pos2,
+) -> BackendCommand {
+    let selection_type = if layout.double_clicked() {
+        SelectionType::Semantic
+    } else if layout.triple_clicked() {
+        SelectionType::Lines
+    } else {
+        SelectionType::Simple
+    };
 
-//     BackendCommand::SelectStart(
-//         selection_type,
-//         cursor_position.x - layout.rect.min.x,
-//         cursor_position.y - layout.rect.min.y,
-//     )
-// }
+    BackendCommand::SelectStart(
+        selection_type,
+        cursor_position.x - layout.rect.min.x,
+        cursor_position.y - layout.rect.min.y,
+    )
+}
 
 fn process_mouse_move(
     state: &mut TerminalViewState,
@@ -634,7 +632,7 @@ fn process_mouse_move(
     // Handle command or selection update based on terminal mode and modifiers
     if state.is_dragged {
         let terminal_mode = backend.terminal_mode();
-        let cmd = if terminal_mode.contains(TerminalMode::MOUSE_MOTION)
+        let cmd = if terminal_mode.contains(SurfaceMode::MOUSE_MOTION)
             && modifiers.is_none()
         {
             InputAction::BackendCall(BackendCommand::MouseReport {
@@ -644,11 +642,9 @@ fn process_mouse_move(
                 is_pressed: true,
             })
         } else {
-            // InputAction::BackendCall(BackendCommand::SelectUpdate(
-            //     cursor_x, cursor_y,
-            // ))
-
-            InputAction::Ignore
+            InputAction::BackendCall(BackendCommand::SelectUpdate(
+                cursor_x, cursor_y,
+            ))
         };
 
         actions.push(cmd);

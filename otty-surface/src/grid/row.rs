@@ -1,4 +1,4 @@
-//! Defines the Row type which makes up lines in the grid.
+//! Row type which makes up lines in the grid.
 
 use std::cmp::{max, min};
 use std::ops::{
@@ -6,12 +6,15 @@ use std::ops::{
 };
 use std::{ptr, slice};
 
-use crate::terminal::cell::ResetDiscriminant;
-use crate::terminal::index::Column;
+use crate::cell::ResetDiscriminant;
+use crate::index::Column;
 
 use super::GridCell;
 
-/// A row in the grid.
+/// A single logical row of cells in the grid.
+///
+/// The `Row` keeps track of an "occupied" prefix (`occ`) to speed up mass
+/// resets when only a subset of cells differ from the current template.
 #[derive(Default, Clone, Debug)]
 pub struct Row<T> {
     inner: Vec<T>,
@@ -32,7 +35,8 @@ impl<T: PartialEq> PartialEq for Row<T> {
 impl<T: Default> Row<T> {
     /// Create a new terminal row.
     ///
-    /// Ideally the `template` should be `Copy` in all performance sensitive scenarios.
+    /// All cells are initialized with `T::default`. In performance‑sensitive
+    /// code the default value is usually a cheap template cell.
     pub fn new(columns: usize) -> Row<T> {
         debug_assert!(columns >= 1);
 
@@ -123,6 +127,7 @@ impl<T> Row<T> {
         Row { inner: vec, occ }
     }
 
+    /// Total number of columns in this row.
     #[inline]
     pub fn len(&self) -> usize {
         self.inner.len()

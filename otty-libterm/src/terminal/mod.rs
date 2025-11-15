@@ -1,10 +1,5 @@
-pub mod mode;
-pub mod cell;
-pub mod color;
-pub mod index;
-pub mod actor;
-pub mod surface;
 pub mod options;
+pub mod size;
 pub mod snapshot;
 pub mod surface_actor;
 
@@ -15,21 +10,19 @@ use std::time::{Duration, Instant};
 
 use cursor_icon::CursorIcon;
 
+use crate::terminal::size::TerminalSize;
+use crate::terminal::surface_actor::TerminalSurfaceActor;
+use crate::{Result, RuntimeClient, RuntimeEvent};
 use crate::{
-    escape::{Action, CursorShape, CursorStyle, EscapeParser, Hyperlink, KeyboardMode},
-    pty::{Pollable, PtySize, Session, SessionError},
-};
-use crate::grid::Scroll;
-use crate::{
-    Result, RuntimeClient, RuntimeEvent,
+    escape::{Action, CursorShape, CursorStyle, EscapeParser, Hyperlink},
+    pty::{Pollable, Session, SessionError},
+    surface::{
+        Point, Scroll, SelectionType, Side, SurfaceActor, SurfaceSnapshotSource,
+    },
 };
 
-use actor::SurfaceActor;
-use surface::SurfaceSnapshotSource;
-use surface_actor::TerminalSurfaceActor;
-use mode::TerminalMode;
-use snapshot::TerminalSnapshot;
 use options::TerminalOptions;
+use snapshot::TerminalSnapshot;
 
 const DEFAULT_READ_BUFFER_CAPACITY: usize = 1024;
 
@@ -38,6 +31,7 @@ pub enum TerminalEvent<'a> {
     SurfaceChanged { snapshot: TerminalSnapshot<'a> },
     ChildExit { status: ExitStatus },
     TitleChanged { title: String },
+    ResetTitle,
     Bell,
     CursorShapeChanged { shape: CursorShape },
     CursorStyleChanged { style: Option<CursorStyle> },
@@ -50,12 +44,18 @@ pub enum TerminalEvent<'a> {
 pub enum TerminalRequest {
     /// Write raw bytes into the PTY.
     Write(Vec<u8>),
-    /// Emit a mouse report (front-ends may encode the bytes directly).
-    MouseReport(Vec<u8>),
     /// Resize the PTY/session.
-    Resize(PtySize),
+    Resize(TerminalSize),
     /// Scroll the display viewport.
     ScrollDisplay(Scroll),
+    /// Init the selection
+    StartSelection {
+        ty: SelectionType,
+        point: Point,
+        direction: Side,
+    },
+    /// Update the selection range
+    UpdateSelection { point: Point, direction: Side },
     /// Close the session and terminate the event loop.
     Shutdown,
 }
@@ -137,11 +137,9 @@ pub struct Terminal<P, E, S> {
     session: P,
     parser: E,
     surface: S,
+    size: TerminalSize,
     read_buffer: Vec<u8>,
     exit_status: Option<ExitStatus>,
-    mode: TerminalMode,
-    keyboard_mode: KeyboardMode,
-    keyboard_stack: Vec<KeyboardMode>,
     pending_input: VecDeque<u8>,
     event_client: Option<Box<dyn TerminalClient + 'static>>,
     sync_state: SyncState,
@@ -174,10 +172,8 @@ where
             parser,
             surface,
             read_buffer,
+            size: TerminalSize::default(),
             exit_status: None,
-            mode: TerminalMode::default(),
-            keyboard_mode: KeyboardMode::default(),
-            keyboard_stack: Vec::new(),
             pending_input: VecDeque::new(),
             event_client: None,
             sync_state: SyncState::new(),
@@ -240,9 +236,6 @@ where
         let flushed = {
             let mut actor = TerminalSurfaceActor {
                 surface: &mut self.surface,
-                mode: &mut self.mode,
-                keyboard_mode: &mut self.keyboard_mode,
-                keyboard_stack: &mut self.keyboard_stack,
                 client: &mut event_client,
                 pending_input: &mut self.pending_input,
                 sync_state: &mut self.sync_state,
@@ -266,16 +259,10 @@ where
                     let chunk = &self.read_buffer[..count];
                     let parser = &mut self.parser;
                     let surface = &mut self.surface;
-                    let mode = &mut self.mode;
-                    let keyboard_mode = &mut self.keyboard_mode;
-                    let keyboard_stack = &mut self.keyboard_stack;
                     let mut event_client = self.event_client.take();
                     {
                         let mut actor = TerminalSurfaceActor {
                             surface,
-                            mode,
-                            keyboard_mode,
-                            keyboard_stack,
                             client: &mut event_client,
                             pending_input: &mut self.pending_input,
                             sync_state: &mut self.sync_state,
@@ -308,27 +295,37 @@ where
     }
 
     /// Capture the current terminal state without mutating it.
-    pub fn snapshot(&mut self) -> TerminalSnapshot {
+    pub fn snapshot(&mut self) -> TerminalSnapshot<'_> {
         let surface = self.surface.capture_snapshot();
-        TerminalSnapshot::new(surface, self.mode, self.keyboard_mode)
+        TerminalSnapshot::new(surface, self.size)
     }
 
     pub fn process_request(&mut self, request: TerminalRequest) -> Result<()> {
+        use TerminalRequest::*;
+
         match request {
-            TerminalRequest::Write(bytes) => {
+            Write(bytes) => {
                 self.enqueue_input(bytes);
                 self.flush_pending_input()?;
             },
-            TerminalRequest::MouseReport(bytes) => {
-                self.enqueue_input(bytes);
-                self.flush_pending_input()?;
-            },
-            TerminalRequest::Resize(size) => self.resize(size)?,
-            TerminalRequest::ScrollDisplay(direction) => {
+            Resize(size) => self.resize(size)?,
+            ScrollDisplay(direction) => {
                 self.surface.scroll_display(direction);
                 self.emit_surface_change()?;
             },
-            TerminalRequest::Shutdown => {
+            StartSelection {
+                ty,
+                point,
+                direction,
+            } => {
+                self.surface.start_selection(ty, point, direction);
+                self.emit_surface_change()?;
+            },
+            UpdateSelection { point, direction } => {
+                self.surface.update_selection(point, direction);
+                self.emit_surface_change()?;
+            },
+            Shutdown => {
                 self.close()?;
             },
         }
@@ -362,9 +359,10 @@ where
     }
 
     /// Request a PTY resize and mirror the new geometry in the surface model.
-    fn resize(&mut self, size: PtySize) -> Result<()> {
-        self.session.resize(size)?;
-        self.surface.resize(size.cols as usize, size.rows as usize);
+    fn resize(&mut self, size: TerminalSize) -> Result<()> {
+        self.session.resize(size.into())?;
+        self.surface.resize(size);
+        self.size = size;
         self.emit_surface_change()
     }
 
