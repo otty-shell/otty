@@ -2,11 +2,16 @@ use otty_pty::PtySize;
 
 use crate::surface::{Column, Dimensions, Line};
 
+/// Geometry of the terminal grid and the size of individual cells.
 #[derive(Clone, Copy, Debug)]
 pub struct TerminalSize {
+    /// Width of a single terminal cell in pixels.
     pub cell_width: u16,
+    /// Height of a single terminal cell in pixels.
     pub cell_height: u16,
+    /// Number of columns in the terminal grid.
     pub cols: u16,
+    /// Number of rows in the terminal grid.
     pub rows: u16,
 }
 

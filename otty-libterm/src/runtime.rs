@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
 
 use crate::TerminalRequest;
-use crate::error::{LibTermError, Result};
+use crate::error::{Error, Result};
 
 const PTY_IO_TOKEN: Token = Token(0);
 const PTY_CHILD_TOKEN: Token = Token(1);
@@ -18,24 +18,40 @@ const DEFAULT_EVENT_CAPACITY: usize = 128;
 
 /// Events sent from the runtime driver into terminal implementations.
 pub enum RuntimeEvent<'a> {
+    /// Initial registration of the underlying PTY session with `mio`.
     RegisterSession {
+        /// `mio` registry used to register the PTY session.
         registry: &'a Registry,
+        /// Initial interest mask for the PTY I/O handle.
         interest: Interest,
+        /// Token assigned to I/O readiness events.
         io_token: Token,
+        /// Token assigned to child-exit readiness events.
         child_token: Token,
     },
+    /// Update registration of the PTY session with a new interest mask.
     ReregisterSession {
+        /// `mio` registry used to reregister the PTY session.
         registry: &'a Registry,
+        /// Updated interest mask for the PTY I/O handle.
         interest: Interest,
+        /// Token assigned to I/O readiness events.
         io_token: Token,
+        /// Token assigned to child-exit readiness events.
         child_token: Token,
     },
+    /// Remove the PTY session from the `mio` registry.
     DeregisterSession {
+        /// `mio` registry used to deregister the PTY session.
         registry: &'a Registry,
     },
+    /// The PTY is readable according to the OS event source.
     ReadReady,
+    /// The PTY is writable according to the OS event source.
     WriteReady,
+    /// Periodic maintenance tick used by terminal implementations.
     Maintain,
+    /// A high-level terminal request coming from the `Runtime` command channel.
     Request(TerminalRequest),
 }
 
@@ -59,26 +75,45 @@ impl RuntimeRequestProxy {
     pub fn send(&self, request: TerminalRequest) -> Result<()> {
         self.sender
             .send(request)
-            .map_err(|_| LibTermError::RuntimeChannelClosed)?;
-        self.waker.wake().map_err(LibTermError::Wake)?;
+            .map_err(|_| Error::RuntimeChannelClosed)?;
+        self.waker.wake().map_err(Error::Wake)?;
         Ok(())
     }
 }
 
 /// Minimal interface accepted by the [`Runtime`] driver.
+///
+/// Implementors receive [`RuntimeEvent`]s and can expose additional runtime
+/// behaviour, such as pending output, child-process status and dynamic poll
+/// timeouts. The primary implementation in this crate is
+/// [`Terminal`](crate::Terminal).
 pub trait RuntimeClient {
+    /// Handle a single runtime event emitted by the [`Runtime`] loop.
     fn handle_runtime_event(&mut self, _event: RuntimeEvent<'_>) -> Result<()> {
         Ok(())
     }
 
+    /// Report whether there are bytes buffered for writing to the PTY.
+    ///
+    /// When this method returns `true`, the runtime will request writable
+    /// readiness from `mio` in addition to readable readiness.
     fn has_pending_output(&self) -> bool {
         false
     }
 
+    /// Check whether the child process attached to the PTY has exited.
+    ///
+    /// Implementors should return `Ok(Some(status))` once the child exit status
+    /// becomes available, and then continue returning `Ok(Some(status))` or
+    /// cache the value internally.
     fn check_child_exit(&mut self) -> Result<Option<ExitStatus>> {
         Ok(None)
     }
 
+    /// Deadline for the next maintenance tick.
+    ///
+    /// If this returns `Some(instant)`, the runtime will use it to compute the
+    /// maximum blocking duration for the next `poll` call.
     fn pool_timeout(&self) -> Option<Instant> {
         None
     }
@@ -86,10 +121,18 @@ pub trait RuntimeClient {
 
 /// Hooks that run immediately before and after each poll iteration.
 pub trait RuntimeHooks<T: RuntimeClient + ?Sized> {
+    /// Called right before polling for OS events.
+    ///
+    /// This is a good place for front-ends to inject bookkeeping logic that
+    /// should run frequently but does not depend on I/O readiness.
     fn before_poll(&mut self, _terminal: &mut T) -> Result<()> {
         Ok(())
     }
 
+    /// Called right after completing a full poll iteration.
+    ///
+    /// This hook runs after queued requests have been drained and the client
+    /// has processed any I/O events for the current loop iteration.
     fn after_poll(&mut self, _terminal: &mut T) -> Result<()> {
         Ok(())
     }
@@ -134,6 +177,7 @@ impl Runtime {
         }
     }
 
+    /// Drive a [`RuntimeClient`] until shutdown or child exit.
     pub fn run<C, H>(&mut self, mut client: C, mut hooks: H) -> Result<()>
     where
         C: RuntimeClient,
@@ -233,7 +277,7 @@ impl Runtime {
             match self.poll.poll(&mut self.events, timeout) {
                 Ok(()) => break,
                 Err(err) if err.kind() == ErrorKind::Interrupted => continue,
-                Err(err) => return Err(LibTermError::Poll(err)),
+                Err(err) => return Err(Error::Poll(err)),
             }
         }
 

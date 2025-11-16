@@ -6,6 +6,8 @@ use crate::escape::{Action, EscapeActor};
 use crate::surface::SurfaceActor;
 use crate::terminal::{SyncState, TerminalClient, TerminalEvent};
 
+/// Adapter that applies parsed escape [`Action`]s to a [`SurfaceActor`]
+/// implementation and emits high-level [`TerminalEvent`]s.
 pub(super) struct TerminalSurfaceActor<'a, S> {
     pub surface: &'a mut S,
     pub client: &'a mut Option<Box<dyn TerminalClient + 'static>>,
@@ -159,6 +161,7 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
         }
     }
 
+    /// Apply a batch of actions, typically collected during a sync update.
     fn flush_buffered_actions(&mut self, actions: Vec<Action>) {
         for action in actions {
             self.process_action(action);
@@ -174,6 +177,7 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
         true
     }
 
+    /// Drop expired synchronized-update buffers if necessary.
     pub(super) fn flush_sync_timeout(&mut self) -> bool {
         if self.sync_state.is_expired() {
             if self.sync_state.is_active() {
@@ -186,6 +190,7 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
 }
 
 impl<'a, S: SurfaceActor> EscapeActor for TerminalSurfaceActor<'a, S> {
+    /// Handle a single escape action, optionally buffering it in sync mode.
     fn handle(&mut self, action: Action) {
         if self.sync_state.is_active() {
             if self.sync_state.is_expired() {
@@ -207,6 +212,7 @@ impl<'a, S: SurfaceActor> EscapeActor for TerminalSurfaceActor<'a, S> {
         self.process_action(action);
     }
 
+    /// Begin a synchronized-update section.
     fn begin_sync(&mut self) {
         if self.sync_state.is_active() {
             return;
@@ -214,6 +220,7 @@ impl<'a, S: SurfaceActor> EscapeActor for TerminalSurfaceActor<'a, S> {
         self.sync_state.begin();
     }
 
+    /// End a synchronized-update section and replay buffered actions.
     fn end_sync(&mut self) {
         if !self.sync_state.is_active() {
             return;

@@ -28,7 +28,7 @@ mod unix_shell {
     use nix::sys::termios::{self, SetArg};
     use otty_libterm::TerminalSnapshot;
     use otty_libterm::{
-        LibTermError, Runtime, RuntimeHooks, RuntimeRequestProxy, Terminal,
+        Error, Runtime, RuntimeHooks, RuntimeRequestProxy, Terminal,
         TerminalClient, TerminalEvent, TerminalOptions, TerminalRequest,
         TerminalSize,
         escape::{self, Color, StdColor},
@@ -183,7 +183,7 @@ mod unix_shell {
             }
         }
 
-        fn handle_resize(&mut self) -> Result<(), LibTermError> {
+        fn handle_resize(&mut self) -> Result<(), Error> {
             let mut resized = false;
             while self.resize_rx.try_recv().is_ok() {
                 resized = true;
@@ -194,7 +194,7 @@ mod unix_shell {
             }
 
             let fd = { self.state.borrow().screen.fd() };
-            let (rows, cols) = query_winsize(fd).map_err(LibTermError::from)?;
+            let (rows, cols) = query_winsize(fd).map_err(Error::from)?;
 
             let mut state = self.state.borrow_mut();
             if (rows, cols) != state.size {
@@ -207,13 +207,13 @@ mod unix_shell {
                     },
                 ))?;
                 state.size = (rows, cols);
-                state.screen.clear().map_err(LibTermError::from)?;
+                state.screen.clear().map_err(Error::from)?;
             }
 
             Ok(())
         }
 
-        fn flush_pending_input(&mut self) -> Result<(), LibTermError> {
+        fn flush_pending_input(&mut self) -> Result<(), Error> {
             let mut state = self.state.borrow_mut();
             if state.pending_input.is_empty() {
                 return Ok(());
@@ -229,7 +229,7 @@ mod unix_shell {
             Ok(())
         }
 
-        fn read_stdin(&mut self) -> Result<(), LibTermError> {
+        fn read_stdin(&mut self) -> Result<(), Error> {
             if self.state.borrow().stdin_closed {
                 return Ok(());
             }
@@ -262,7 +262,7 @@ mod unix_shell {
                     Err(err) if err.kind() == io::ErrorKind::Interrupted => {
                         continue;
                     },
-                    Err(err) => return Err(LibTermError::Io(err)),
+                    Err(err) => return Err(Error::Io(err)),
                 }
             }
 
@@ -274,7 +274,7 @@ mod unix_shell {
         fn before_poll(
             &mut self,
             _terminal: &mut ShellTerminal,
-        ) -> Result<(), LibTermError> {
+        ) -> Result<(), Error> {
             self.handle_resize()?;
             self.flush_pending_input()?;
             self.read_stdin()?;
@@ -292,20 +292,17 @@ mod unix_shell {
             Self { state }
         }
 
-        fn render(
-            &self,
-            snapshot: TerminalSnapshot,
-        ) -> Result<(), LibTermError> {
+        fn render(&self, snapshot: TerminalSnapshot) -> Result<(), Error> {
             let mut state = self.state.borrow_mut();
             let size = state.size;
             render_surface(snapshot, size, state.screen.writer())
-                .map_err(LibTermError::from)
+                .map_err(Error::from)
         }
 
         fn handle_exit(
             &self,
             status: &std::process::ExitStatus,
-        ) -> Result<(), LibTermError> {
+        ) -> Result<(), Error> {
             let mut state = self.state.borrow_mut();
             let out = state.screen.writer();
             let exit_repr = status
@@ -313,16 +310,13 @@ mod unix_shell {
                 .map(|code| format!("{code}"))
                 .unwrap_or_else(|| "terminated by signal".to_string());
             writeln!(out, "\r\nShell exited with {exit_repr}")
-                .map_err(LibTermError::from)?;
-            out.flush().map_err(LibTermError::from)
+                .map_err(Error::from)?;
+            out.flush().map_err(Error::from)
         }
     }
 
     impl TerminalClient for ShellEventHandler {
-        fn handle_event(
-            &mut self,
-            event: TerminalEvent,
-        ) -> Result<(), LibTermError> {
+        fn handle_event(&mut self, event: TerminalEvent) -> Result<(), Error> {
             match event {
                 TerminalEvent::SurfaceChanged { snapshot } => {
                     self.render(snapshot)

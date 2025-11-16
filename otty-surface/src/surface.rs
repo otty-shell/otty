@@ -2108,9 +2108,9 @@ impl SurfaceActor for Surface {
     }
 
     fn update_selection(&mut self, point: Point, side: Side) {
-        self.selection = self.selection.take().and_then(|mut s| {
+        self.selection = self.selection.take().map(|mut s| {
             s.update(point, side);
-            Some(s)
+            s
         })
     }
 }

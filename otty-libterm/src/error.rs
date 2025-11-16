@@ -6,7 +6,7 @@ use otty_pty::SessionError;
 
 /// Errors originating from the `otty-libterm` runtime.
 #[derive(Debug, Error)]
-pub enum LibTermError {
+pub enum Error {
     #[error("pty session error: {0}")]
     Session(#[from] SessionError),
 
@@ -23,4 +23,5 @@ pub enum LibTermError {
     RuntimeChannelClosed,
 }
 
-pub type Result<T> = std::result::Result<T, LibTermError>;
+/// Convenient result alias for fallible operations in this crate.
+pub type Result<T> = std::result::Result<T, Error>;

@@ -61,3 +61,7 @@ fn main() {
     }
 }
 ```
+
+## Acknowledgements
+
+Parts of `otty-surface` were originally derived from the [`alacritty_terminal`](https://github.com/alacritty/alacritty/tree/master/alacritty_terminal) crate and adapted to work with the `otty` backend. Many thanks to the Alacritty project for providing an excellent reference implementation.

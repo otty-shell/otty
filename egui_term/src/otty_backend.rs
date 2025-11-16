@@ -5,7 +5,7 @@ use std::thread;
 use anyhow::Context;
 use egui::{Context as EguiContext, Modifiers};
 
-use otty_libterm::surface::{Column, Line, Point, SelectionType, Side};
+use otty_libterm::surface::{Column, Point, SelectionType, Side};
 use otty_libterm::{
     escape::{self, KeyboardMode},
     pty::{self, PtySize},
@@ -13,7 +13,7 @@ use otty_libterm::{
         point_to_viewport, viewport_to_point, Cell, Dimensions, Flags, Scroll,
         Surface, SurfaceConfig, SurfaceMode, SurfaceSnapshotSource,
     },
-    LibTermError, Runtime, RuntimeRequestProxy, Terminal, TerminalClient,
+    Error, Runtime, RuntimeRequestProxy, Terminal, TerminalClient,
     TerminalEvent, TerminalOptions, TerminalRequest, TerminalSize,
     TerminalSnapshot,
 };
@@ -744,7 +744,7 @@ impl RuntimeEventHandler {
     fn update_render_state(
         &self,
         snapshot: TerminalSnapshot,
-    ) -> Result<(), LibTermError> {
+    ) -> Result<(), Error> {
         let size = self.size_state.lock().map(|s| *s).unwrap_or_default();
         if let Ok(mut content) = self.render_state.lock() {
             content.apply_snapshot(snapshot, &size);
@@ -758,7 +758,7 @@ impl TerminalClient for RuntimeEventHandler {
     fn handle_event(
         &mut self,
         event: TerminalEvent,
-    ) -> Result<(), LibTermError> {
+    ) -> Result<(), Error> {
         match event {
             TerminalEvent::SurfaceChanged { snapshot } => {
                 self.update_render_state(snapshot)?;

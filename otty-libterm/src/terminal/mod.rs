@@ -28,14 +28,25 @@ const DEFAULT_READ_BUFFER_CAPACITY: usize = 1024;
 
 /// Events emitted by terminal implementations to interested clients.
 pub enum TerminalEvent<'a> {
+    /// The in-memory surface contents have changed.
+    ///
+    /// Front-ends typically respond by re-rendering the provided snapshot.
     SurfaceChanged { snapshot: TerminalSnapshot<'a> },
+    /// The child process attached to the PTY has exited.
     ChildExit { status: ExitStatus },
+    /// The terminal's window or tab title has changed.
     TitleChanged { title: String },
+    /// Reset the terminal's window or tab title to its default value.
     ResetTitle,
+    /// An audible bell was requested by the remote application.
     Bell,
+    /// The visual shape of the cursor has changed.
     CursorShapeChanged { shape: CursorShape },
+    /// The cursor style (e.g. blinking mode) has changed.
     CursorStyleChanged { style: Option<CursorStyle> },
+    /// The pointing device cursor/icon has changed.
     CursorIconChanged { icon: CursorIcon },
+    /// The currently active hyperlink under the cursor has changed.
     Hyperlink { link: Option<Hyperlink> },
 }
 
@@ -48,13 +59,13 @@ pub enum TerminalRequest {
     Resize(TerminalSize),
     /// Scroll the display viewport.
     ScrollDisplay(Scroll),
-    /// Init the selection
+    /// Initialize the selection range on the surface.
     StartSelection {
         ty: SelectionType,
         point: Point,
         direction: Side,
     },
-    /// Update the selection range
+    /// Update the active selection range on the surface.
     UpdateSelection { point: Point, direction: Side },
     /// Close the session and terminate the event loop.
     Shutdown,
@@ -71,6 +82,7 @@ pub(crate) struct SyncState {
 }
 
 impl SyncState {
+    /// Create a new sync state with a fresh deadline.
     fn new() -> Self {
         let mut state = Self {
             active: false,
@@ -81,24 +93,31 @@ impl SyncState {
         state
     }
 
+    /// Enter synchronized-update mode, buffering subsequent actions.
     fn begin(&mut self) {
         self.active = true;
         self.buffer.clear();
         self.refresh_deadline();
     }
 
+    /// End synchronized-update mode and drain buffered actions.
     fn end(&mut self) -> Vec<Action> {
         self.active = false;
         self.refresh_deadline();
         std::mem::take(&mut self.buffer)
     }
 
+    /// Cancel synchronized-update mode and drain buffered actions.
     fn cancel(&mut self) -> Vec<Action> {
         self.active = false;
         self.refresh_deadline();
         std::mem::take(&mut self.buffer)
     }
 
+    /// Try to push a new action into the sync buffer.
+    ///
+    /// Returns the action back on overflow so that callers can fall back to
+    /// immediate processing.
     fn push(&mut self, action: Action) -> std::result::Result<(), Action> {
         if self.buffer.len() >= MAX_SYNC_ACTIONS {
             return Err(action);
@@ -108,15 +127,18 @@ impl SyncState {
         Ok(())
     }
 
+    /// Check whether synchronized-update mode is currently active.
     fn is_active(&self) -> bool {
         self.active
     }
 
+    /// Check whether the current deadline has expired.
     fn is_expired(&self) -> bool {
         self.deadline
             .is_some_and(|deadline| Instant::now() > deadline)
     }
 
+    /// Refresh the internal deadline based on the current mode.
     fn refresh_deadline(&mut self) {
         let timeout = if self.active { SYNC_TIMEOUT } else { IDLE_TICK };
         self.deadline = Some(Instant::now() + timeout);
