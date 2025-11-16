@@ -13,6 +13,6 @@ rust-version = { workspace = true }
 [dependencies]
 bitflags = { workspace = true }
 log = { workspace = true }
-otty-escape = { path = "../otty-escape" }
+otty-escape = { path = "../otty-escape", version = "0.1.0" }
 cursor-icon = { workspace = true }
 unicode-width = "0.2.2"

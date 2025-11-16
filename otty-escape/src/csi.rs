@@ -1222,7 +1222,7 @@ mod tests {
                 Action::MoveForward(3),
                 Action::MoveForward(4),
                 Action::MoveBackward(2),
-                Action::GotoRow(3),
+                Action::GotoRow(2),
                 Action::MoveDown {
                     rows: 1,
                     carrage_return_needed: true,
@@ -1231,10 +1231,10 @@ mod tests {
                     rows: 2,
                     carrage_return_needed: true,
                 },
-                Action::GotoColumn(10),
-                Action::GotoColumn(6),
-                Action::Goto(5, 9),
-                Action::Goto(3, 4)
+                Action::GotoColumn(9),
+                Action::GotoColumn(5),
+                Action::Goto(4, 8),
+                Action::Goto(2, 3)
             ]
         );
     }
