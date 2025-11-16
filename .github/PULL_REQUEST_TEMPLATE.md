@@ -12,8 +12,4 @@
 - [ ] CI Fix or Improvement (changelog entry is not required)
 - [ ] Not for changelog (changelog entry is not required)
 
-## Motivation
-
-
-## Solution
-
+## User readable description
