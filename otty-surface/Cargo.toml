@@ -7,12 +7,12 @@ authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"
 readme = "./README.md"
-edition.workspace = true
-rust-version.workspace = true
+edition = { workspace = true }
+rust-version = { workspace = true }
 
 [dependencies]
-bitflags.workspace = true
-log.workspace = true
+bitflags = { workspace = true }
+log = { workspace = true }
 otty-escape = { path = "../otty-escape" }
 cursor-icon = { workspace = true }
 unicode-width = "0.2.2"
