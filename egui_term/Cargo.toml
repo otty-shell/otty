@@ -1,0 +1,25 @@
+[package]
+name = "egui_term"
+description = "Terminal emulator widget powered by EGUI framework and alacritty terminal backend."
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/Harzu/egui_term"
+categories = ["gui"]
+license = "MIT"
+
+[dependencies]
+bitflags.workspace = true
+egui = "0.33.0"
+alacritty_terminal = "0.25.1"
+anyhow = "1.0.100"
+cursor-icon = "1.1"
+open = "5.3.2"
+
+[features]
+# New OTTY-driven backend and view. Kept opt-in to avoid breaking changes.
+backend-otty = ["dep:otty-libterm"]
+
+[dependencies.otty-libterm]
+path = "../otty-libterm"
+optional = true

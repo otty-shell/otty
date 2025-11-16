@@ -1,6 +1,6 @@
-use crate::actor::Actor;
+use crate::actor::VTActor;
 use crate::enums::{Action, State};
-use crate::{CsiParam, transitions, utf8};
+use crate::{CsiParam, VTParser, transitions, utf8};
 
 const MAX_INTERMEDIATES: usize = 2;
 const MAX_OSC_PARAMS: usize = 32;
@@ -194,36 +194,23 @@ pub struct Parser {
     utf8_parser: utf8::Utf8Parser,
 }
 
+impl VTParser for Parser {
+    #[inline]
+    fn advance<A: VTActor>(&mut self, bytes: &[u8], actor: &mut A) {
+        for &byte in bytes {
+            self.process_byte(byte, actor);
+        }
+    }
+}
+
 impl Parser {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn advance<A: Actor>(&mut self, bytes: &[u8], actor: &mut A) {
-        for &byte in bytes {
-            self.process_byte(byte, actor);
-        }
-    }
-
-    pub fn advance_until_terminated<A: Actor>(
-        &mut self,
-        bytes: &[u8],
-        actor: &mut A,
-    ) -> usize {
-        let mut i = 0;
-
-        while i != bytes.len() && !actor.terminated() {
-            let byte = bytes[i];
-            self.process_byte(byte, actor);
-            i += 1;
-        }
-
-        i
-    }
-
     #[inline(always)]
-    fn process_byte<A: Actor>(&mut self, byte: u8, actor: &mut A) {
+    fn process_byte<A: VTActor>(&mut self, byte: u8, actor: &mut A) {
         match self.state {
             State::Utf8Sequence => self.handle_utf8_step(actor, byte),
             state => {
@@ -249,7 +236,7 @@ impl Parser {
     }
 
     // Drive UTF-8 parsing via Utf8Parser::step and dispatch outcomes.
-    fn handle_utf8_step<A: Actor>(&mut self, actor: &mut A, byte: u8) {
+    fn handle_utf8_step<A: VTActor>(&mut self, actor: &mut A, byte: u8) {
         match self.utf8_parser.step(byte) {
             utf8::StepResult::Pending => {},
             utf8::StepResult::Control {
@@ -284,7 +271,12 @@ impl Parser {
         }
     }
 
-    fn perform<A: Actor>(&mut self, action: Action, byte: char, actor: &mut A) {
+    fn perform<A: VTActor>(
+        &mut self,
+        action: Action,
+        byte: char,
+        actor: &mut A,
+    ) {
         use Action::*;
 
         match action {
@@ -315,7 +307,7 @@ impl Parser {
         self.params.handle_byte(byte);
     }
 
-    fn hook<A: Actor>(&mut self, actor: &mut A, byte: u8) {
+    fn hook<A: VTActor>(&mut self, actor: &mut A, byte: u8) {
         self.params.finish();
         actor.hook(
             &self.params.get_integers(),
@@ -325,7 +317,7 @@ impl Parser {
         );
     }
 
-    fn csi_dispatch<A: Actor>(&mut self, actor: &mut A, byte: u8) {
+    fn csi_dispatch<A: VTActor>(&mut self, actor: &mut A, byte: u8) {
         self.params.finish();
         self.intermediates.promote_to_params(&mut self.params);
         actor.csi_dispatch(
@@ -336,7 +328,7 @@ impl Parser {
         );
     }
 
-    fn esc_dispatch<A: Actor>(&mut self, actor: &mut A, byte: u8) {
+    fn esc_dispatch<A: VTActor>(&mut self, actor: &mut A, byte: u8) {
         self.params.finish();
         actor.esc_dispatch(
             &self.params.get_integers(),
@@ -346,7 +338,7 @@ impl Parser {
         );
     }
 
-    fn osc_dispatch<A: Actor>(&mut self, actor: &mut A, byte: u8) {
+    fn osc_dispatch<A: VTActor>(&mut self, actor: &mut A, byte: u8) {
         if self.osc.idx == 0 {
             actor.osc_dispatch(&[], byte);
             return;
@@ -415,7 +407,7 @@ mod tests {
         actions: Vec<ActorEvents>,
     }
 
-    impl Actor for CollectingActor {
+    impl VTActor for CollectingActor {
         fn print(&mut self, c: char) {
             self.actions.push(ActorEvents::Print(c));
         }

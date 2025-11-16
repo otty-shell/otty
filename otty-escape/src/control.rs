@@ -1,5 +1,5 @@
 use crate::{
-    actor::{Action, Actor},
+    actor::{Action, EscapeActor},
     charset::CharsetIndex,
 };
 use log::debug;
@@ -104,7 +104,7 @@ impl fmt::Display for ControlCode {
     }
 }
 
-pub(crate) fn perform<A: Actor>(byte: u8, actor: &mut A) {
+pub(crate) fn perform<A: EscapeActor>(byte: u8, actor: &mut A) {
     let code = ControlCode::from(byte);
     match code {
         // C0
@@ -134,14 +134,14 @@ pub(crate) fn perform<A: Actor>(byte: u8, actor: &mut A) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{charset::CharsetIndex, parser::Parser};
+    use crate::{EscapeParser, charset::CharsetIndex, parser::Parser};
 
     #[derive(Default)]
     struct RecordingActor {
         actions: Vec<Action>,
     }
 
-    impl Actor for RecordingActor {
+    impl EscapeActor for RecordingActor {
         fn handle(&mut self, action: Action) {
             self.actions.push(action);
         }
@@ -149,7 +149,7 @@ mod tests {
 
     impl RecordingActor {
         fn parse(bytes: &[u8]) -> Self {
-            let mut parser = Parser::new();
+            let mut parser: Parser<otty_vte::Parser> = Parser::new();
             let mut actor = Self::default();
             parser.advance(bytes, &mut actor);
             actor

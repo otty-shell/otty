@@ -153,7 +153,7 @@ pub enum Action {
     SetWindowTitle(String),
 }
 
-pub trait Actor {
+pub trait EscapeActor {
     /// processing the action
     fn handle(&mut self, _: Action) {}
     /// Begin synchronized (batch) update (DEC mode 2026)

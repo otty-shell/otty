@@ -3,7 +3,9 @@ resolver = "3"
 members = [
     "otty-escape",
     "otty-pty",
+    "otty-surface",
     "otty-vte",
+    "otty-libterm",
 ]
 
 [workspace.package]
@@ -16,3 +18,4 @@ bitflags = "2.10.0"
 log = { version = "0.4.28" }
 anyhow = "1.0.100"
 mio = "1.1.0"
+cursor-icon = { version = "1.2.0", default-features = false }

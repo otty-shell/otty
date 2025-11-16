@@ -1,6 +1,5 @@
 use crate::{
-    Actor,
-    actor::Action,
+    Action, EscapeActor,
     color::{Rgb, StdColor, xparse_color},
     cursor::CursorShape,
     hyperlink::Hyperlink,
@@ -52,7 +51,7 @@ impl From<&[u8]> for OSC {
     }
 }
 
-pub(crate) fn perform<A: Actor>(actor: &mut A, params: &[&[u8]]) {
+pub(crate) fn perform<A: EscapeActor>(actor: &mut A, params: &[&[u8]]) {
     if params.is_empty() || params[0].is_empty() {
         return;
     }
@@ -88,7 +87,7 @@ pub(crate) fn perform<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     }
 }
 
-fn set_titile<A: Actor>(actor: &mut A, params: &[&[u8]]) {
+fn set_titile<A: EscapeActor>(actor: &mut A, params: &[&[u8]]) {
     if params.len() < 2 {
         return unexpected(params);
     }
@@ -104,7 +103,7 @@ fn set_titile<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     actor.handle(Action::SetWindowTitle(title));
 }
 
-fn hyperlink_processing<A: Actor>(actor: &mut A, params: &[&[u8]]) {
+fn hyperlink_processing<A: EscapeActor>(actor: &mut A, params: &[&[u8]]) {
     let link_params = params[1];
 
     // NOTE: The escape sequence is of form 'OSC 8 ; params ; URI ST', where
@@ -132,7 +131,7 @@ fn hyperlink_processing<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     actor.handle(Action::SetHyperlink(Some(Hyperlink { id, uri })));
 }
 
-fn set_indexed_color<A: Actor>(actor: &mut A, params: &[&[u8]]) {
+fn set_indexed_color<A: EscapeActor>(actor: &mut A, params: &[&[u8]]) {
     if params.len() <= 1 || params.len().is_multiple_of(2) {
         return unexpected(params);
     }
@@ -159,7 +158,7 @@ fn set_indexed_color<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     }
 }
 
-fn set_mouse_cursor_shape<A: Actor>(actor: &mut A, params: &[&[u8]]) {
+fn set_mouse_cursor_shape<A: EscapeActor>(actor: &mut A, params: &[&[u8]]) {
     let shape = String::from_utf8_lossy(params[1]);
     match CursorIcon::from_str(&shape) {
         Ok(cursor_icon) => actor.handle(Action::SetCursorIcon(cursor_icon)),
@@ -167,7 +166,7 @@ fn set_mouse_cursor_shape<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     }
 }
 
-fn set_cursor_style<A: Actor>(actor: &mut A, params: &[&[u8]]) {
+fn set_cursor_style<A: EscapeActor>(actor: &mut A, params: &[&[u8]]) {
     if params.len() >= 2
         && params[1].len() >= 13
         && params[1][0..12] == *b"CursorShape="
@@ -185,7 +184,7 @@ fn set_cursor_style<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     unexpected(params);
 }
 
-fn reset_indexed_colors<A: Actor>(actor: &mut A, params: &[&[u8]]) {
+fn reset_indexed_colors<A: EscapeActor>(actor: &mut A, params: &[&[u8]]) {
     if params.len() == 1 || params[1].is_empty() {
         // Reset all
         for i in 0..256 {
@@ -202,7 +201,7 @@ fn reset_indexed_colors<A: Actor>(actor: &mut A, params: &[&[u8]]) {
     }
 }
 
-fn set_dynamic_std_color<A: Actor>(
+fn set_dynamic_std_color<A: EscapeActor>(
     actor: &mut A,
     params: &[&[u8]],
     color: StdColor,
@@ -259,14 +258,14 @@ fn unexpected(params: &[&[u8]]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Parser;
+    use crate::{EscapeParser, Parser};
 
     #[derive(Default, Debug)]
     struct RecordingActor {
         actions: Vec<Action>,
     }
 
-    impl Actor for RecordingActor {
+    impl EscapeActor for RecordingActor {
         fn handle(&mut self, action: Action) {
             self.actions.push(action);
         }
@@ -274,7 +273,7 @@ mod tests {
 
     impl RecordingActor {
         fn parse(input: &str) -> Self {
-            let mut parser = Parser::new();
+            let mut parser: Parser<otty_vte::Parser> = Parser::default();
             let mut actor = Self::default();
             parser.advance(input.as_bytes(), &mut actor);
             actor

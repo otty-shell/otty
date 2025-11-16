@@ -32,4 +32,5 @@ target
 # Misc
 
 iced_term
-alacritty_terminal
+# egui_term
+# alacritty_terminal

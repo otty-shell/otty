@@ -1,12 +1,12 @@
 //! Print every [`Action`] emitted by the parser for a given byte stream.
-use otty_escape::{Action, Actor, Parser};
+use otty_escape::{Action, EscapeActor, EscapeParser, Parser};
 
 #[derive(Default)]
 struct LoggingActor {
     seq: usize,
 }
 
-impl Actor for LoggingActor {
+impl EscapeActor for LoggingActor {
     fn handle(&mut self, action: Action) {
         self.seq += 1;
         println!("{:02}: {action:?}", self.seq);
@@ -14,7 +14,7 @@ impl Actor for LoggingActor {
 }
 
 fn main() {
-    let mut parser = Parser::new();
+    let mut parser: Parser<otty_vte::Parser> = Parser::new();
     let mut actor = LoggingActor::default();
 
     let bytes = b"Hello \x1b[1mOtty\x1b[0m!\n\

@@ -7,12 +7,12 @@ authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"
 readme = "./README.md"
-edition.workspace = true
-rust-version.workspace = true
+edition = { workspace = true }
+rust-version = { workspace = true }
 
 [dependencies]
-anyhow.workspace = true
-thiserror.workspace = true
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 mio = { workspace = true, features = ["os-ext", "net"] }
 ssh2 = "0.9.5"
 
