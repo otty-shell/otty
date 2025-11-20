@@ -1,6 +1,8 @@
+use std::thread;
+use std::time::Duration;
+
 use otty_libterm::{
-    Runtime, Terminal, TerminalClient, TerminalEvent, TerminalOptions,
-    TerminalRequest, escape,
+    TerminalEngine, TerminalEvent, TerminalOptions, TerminalRequest, escape,
     pty::{self, PtySize},
     surface::{Dimensions, Surface, SurfaceConfig},
 };
@@ -57,46 +59,43 @@ fn main() -> otty_libterm::Result<()> {
     // 3. Create an escape parser and terminal runtime.
     let parser: escape::Parser<escape::vte::Parser> = Default::default();
     let options = TerminalOptions::default();
-    let mut terminal = Terminal::new(session, surface, parser, options)?;
+    let mut terminal = TerminalEngine::new(session, parser, surface, options)?;
 
-    // 4. Attach a minimal event client: log when the child exits.
-    struct SimpleClient;
+    // 4. Enqueue a couple of commands to the shell.
+    terminal.queue_request(TerminalRequest::WriteBytes(
+        b"echo 'hello from otty-libterm'\n".to_vec(),
+    ))?;
+    terminal.queue_request(TerminalRequest::WriteBytes(b"exit\n".to_vec()))?;
 
-    impl TerminalClient for SimpleClient {
-        fn handle_event(
-            &mut self,
-            event: TerminalEvent,
-        ) -> otty_libterm::Result<()> {
-            use TerminalEvent::*;
+    // 5. Drive the engine manually until the child process exits.
+    loop {
+        terminal.on_readable()?;
 
+        if terminal.has_pending_output() {
+            terminal.on_writable()?;
+        }
+
+        terminal.tick()?;
+
+        while let Some(event) = terminal.next_event() {
             match event {
-                SurfaceChanged { .. } => {
-                    println!("surface was changed need render!")
+                TerminalEvent::Frame { frame } => {
+                    let view = frame.view();
+                    println!(
+                        "frame updated: {}x{} ({} cells)",
+                        view.size.columns,
+                        view.size.screen_lines,
+                        view.visible_cell_count
+                    );
                 },
-                ChildExit { status } => {
+                TerminalEvent::ChildExit { status } => {
                     println!("Child process exited with: {status}");
+                    return Ok(());
                 },
                 _ => {},
             }
-
-            Ok(())
         }
+
+        thread::sleep(Duration::from_millis(10));
     }
-
-    terminal.set_event_client(SimpleClient);
-
-    // 5. Create a runtime and a proxy for sending requests.
-    let mut runtime = Runtime::new()?;
-    let proxy = runtime.proxy();
-
-    // 6. Send a couple of commands to the shell, then run the runtime loop.
-    proxy.send(TerminalRequest::Write(
-        b"echo 'hello from otty-libterm'\n".to_vec(),
-    ))?;
-    proxy.send(TerminalRequest::Write(b"exit\n".to_vec()))?;
-
-    // 7. Drive the runtime until the child process exits.
-    runtime.run(terminal, ())?;
-
-    Ok(())
 }

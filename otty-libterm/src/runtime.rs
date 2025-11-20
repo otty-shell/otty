@@ -85,8 +85,7 @@ impl RuntimeRequestProxy {
 ///
 /// Implementors receive [`RuntimeEvent`]s and can expose additional runtime
 /// behaviour, such as pending output, child-process status and dynamic poll
-/// timeouts. The primary implementation in this crate is
-/// [`Terminal`](crate::Terminal).
+/// timeouts.
 pub trait RuntimeClient {
     /// Handle a single runtime event emitted by the [`Runtime`] loop.
     fn handle_runtime_event(&mut self, _event: RuntimeEvent<'_>) -> Result<()> {

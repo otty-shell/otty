@@ -1,3 +1,7 @@
+use std::io::{self, Read, Write};
+use std::thread;
+use std::time::Duration;
+
 use anyhow::Result;
 
 #[cfg(unix)]
@@ -13,113 +17,120 @@ fn main() -> Result<()> {
 
 #[cfg(unix)]
 mod unix_shell {
-    use std::cell::RefCell;
-    use std::collections::VecDeque;
-    use std::io::{self, Read, Write};
-    use std::mem::MaybeUninit;
-    use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
-    use std::rc::Rc;
-    use std::sync::mpsc;
-    use std::thread;
-
-    use anyhow::{Context, Result};
+    use super::*;
     use nix::fcntl::{FcntlArg, OFlag, fcntl};
     use nix::libc;
-    use nix::sys::termios::{self, SetArg};
-    use otty_libterm::TerminalSnapshot;
+    use otty_escape::{Color as AnsiColor, StdColor};
+    use otty_libterm::surface::Colors;
     use otty_libterm::{
-        Error, Runtime, RuntimeHooks, RuntimeRequestProxy, Terminal,
-        TerminalClient, TerminalEvent, TerminalOptions, TerminalRequest,
-        TerminalSize,
-        escape::{self, Color, StdColor},
+        TerminalEngine, TerminalEvent, TerminalOptions, TerminalRequest,
+        TerminalSize, escape,
         pty::{self, PtySize},
         surface::{
-            Cell, Dimensions, Flags, Surface, SurfaceConfig, point_to_viewport,
+            Dimensions, Flags, FrameCell, FrameOwned, FrameView, Surface,
+            SurfaceConfig,
         },
     };
-    use signal_hook::consts::signal::SIGWINCH;
+    use std::os::fd::{AsRawFd, BorrowedFd};
 
     pub fn run() -> Result<()> {
-        let stdin = io::stdin();
-        let stdout = io::stdout();
-        let stdin_fd = stdin.as_raw_fd();
-        let stdout_fd = stdout.as_raw_fd();
+        let (rows, cols) = query_winsize().unwrap_or((24, 80));
 
-        let raw_guard = RawModeGuard::enable(stdin_fd)
-            .context("failed to enable raw mode")?;
-        let nonblocking_guard = NonBlockingGuard::set(stdin_fd)
-            .context("failed to toggle non-blocking mode")?;
-
-        let (rows, cols) = query_winsize(stdout_fd)
-            .context("failed to query terminal size")?;
-
-        let pty_size = PtySize {
+        let mut current_size = TerminalSize {
             rows,
             cols,
             cell_width: 0,
             cell_height: 0,
         };
 
+        let pty_size = PtySize {
+            rows: current_size.rows,
+            cols: current_size.cols,
+            cell_width: current_size.cell_width,
+            cell_height: current_size.cell_height,
+        };
+
         let session = pty::unix("/bin/sh")
             .with_arg("-i")
             .with_size(pty_size)
             .set_controling_tty_enable()
-            .spawn()
-            .context("failed to spawn shell session")?;
+            .spawn()?;
 
         let surface_dimensions = TerminalDimensions {
-            columns: cols as usize,
-            rows: rows as usize,
+            columns: current_size.cols as usize,
+            rows: current_size.rows as usize,
         };
         let surface =
             Surface::new(SurfaceConfig::default(), &surface_dimensions);
         let parser: escape::Parser<escape::vte::Parser> = Default::default();
         let options = TerminalOptions::default();
+        let mut engine =
+            TerminalEngine::new(session, parser, surface, options)?;
 
-        let mut terminal = Terminal::new(session, surface, parser, options)
-            .context("failed to construct terminal runtime")?;
+        let mut stdin = io::stdin();
+        let mut input = [0u8; 1024];
+        set_nonblocking(&stdin)?;
 
-        let mut runtime =
-            Runtime::new().context("failed to create terminal runtime")?;
-        let runtime_handle = runtime.proxy();
+        loop {
+            match stdin.read(&mut input) {
+                Ok(read) if read > 0 => {
+                    engine.queue_request(TerminalRequest::WriteBytes(
+                        input[..read].to_vec(),
+                    ))?;
+                },
+                Ok(_) => {},
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {},
+                Err(err) => return Err(err.into()),
+            }
 
-        let (resize_tx, resize_rx) = mpsc::channel();
-        thread::spawn(move || {
-            if let Ok(mut signals) =
-                signal_hook::iterator::Signals::new([SIGWINCH])
-            {
-                for _ in &mut signals {
-                    if resize_tx.send(()).is_err() {
-                        break;
-                    }
+            engine.on_readable()?;
+
+            if engine.has_pending_output() {
+                engine.on_writable()?;
+            }
+
+            engine.tick()?;
+
+            if let Some((rows, cols)) = query_winsize() {
+                let new_size = TerminalSize {
+                    rows,
+                    cols,
+                    cell_width: 0,
+                    cell_height: 0,
+                };
+                if new_size.rows != current_size.rows
+                    || new_size.cols != current_size.cols
+                {
+                    current_size = new_size;
+                    engine.queue_request(TerminalRequest::Resize(new_size))?;
                 }
             }
-        });
 
-        let shared_state = Rc::new(RefCell::new(
-            ShellState::new((rows, cols)).context("failed to configure tty")?,
-        ));
+            while let Some(event) = engine.next_event() {
+                match event {
+                    TerminalEvent::Frame { frame } => {
+                        render_frame(&frame)?;
+                    },
+                    TerminalEvent::ChildExit { status } => {
+                        eprintln!("Child exited with {status}");
+                        return Ok(());
+                    },
+                    TerminalEvent::TitleChanged { title } => {
+                        eprintln!("Title changed: {title}");
+                    },
+                    TerminalEvent::ResetTitle => {
+                        eprintln!("Title reset");
+                    },
+                    TerminalEvent::Bell => {
+                        eprintln!("Bell");
+                    },
+                    _ => {},
+                }
+            }
 
-        let poll_hooks = ShellPollHooks::new(
-            runtime_handle,
-            resize_rx,
-            raw_guard,
-            nonblocking_guard,
-            shared_state.clone(),
-        );
-
-        let event_handler = ShellEventHandler::new(shared_state);
-        terminal.set_event_client(event_handler);
-
-        runtime.run(terminal, poll_hooks)?;
-        Ok(())
+            thread::sleep(Duration::from_millis(10));
+        }
     }
-
-    type ShellTerminal = Terminal<
-        pty::UnixSession,
-        escape::Parser<escape::vte::Parser>,
-        Surface,
-    >;
 
     struct TerminalDimensions {
         columns: usize,
@@ -140,561 +151,236 @@ mod unix_shell {
         }
     }
 
-    struct ShellState {
-        pending_input: VecDeque<u8>,
-        screen: Screen,
-        size: (u16, u16),
-        stdin_closed: bool,
-    }
-
-    impl ShellState {
-        fn new(size: (u16, u16)) -> io::Result<Self> {
-            Ok(Self {
-                pending_input: VecDeque::new(),
-                screen: Screen::new()?,
-                size,
-                stdin_closed: false,
-            })
+    fn query_winsize() -> Option<(u16, u16)> {
+        let fd = io::stdout().as_raw_fd();
+        let mut ws = libc::winsize {
+            ws_row: 0,
+            ws_col: 0,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        let res = unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) };
+        if res == 0 && ws.ws_row > 0 && ws.ws_col > 0 {
+            Some((ws.ws_row, ws.ws_col))
+        } else {
+            None
         }
     }
 
-    struct ShellPollHooks {
-        runtime_proxy: RuntimeRequestProxy,
-        resize_rx: mpsc::Receiver<()>,
-        state: Rc<RefCell<ShellState>>,
-        _raw_guard: RawModeGuard,
-        _nonblocking_guard: NonBlockingGuard,
-    }
+    /// Minimal ANSI renderer honoring colors and basic attributes.
+    fn render_frame(frame: &FrameOwned) -> Result<()> {
+        let view = frame.view();
+        let cols = view.size.columns;
+        let rows = view.size.screen_lines;
 
-    impl ShellPollHooks {
-        fn new(
-            runtime_proxy: RuntimeRequestProxy,
-            resize_rx: mpsc::Receiver<()>,
-            raw_guard: RawModeGuard,
-            nonblocking_guard: NonBlockingGuard,
-            state: Rc<RefCell<ShellState>>,
-        ) -> Self {
-            Self {
-                runtime_proxy,
-                resize_rx,
-                state,
-                _raw_guard: raw_guard,
-                _nonblocking_guard: nonblocking_guard,
-            }
-        }
+        let mut out = String::new();
+        out.push_str("\u{1b}[?25l"); // hide cursor during redraw
+        out.push_str("\u{1b}[2J\u{1b}[H"); // clear and home
 
-        fn handle_resize(&mut self) -> Result<(), Error> {
-            let mut resized = false;
-            while self.resize_rx.try_recv().is_ok() {
-                resized = true;
-            }
+        let mut last_sgr = String::new();
+        let mut idx = 0usize;
+        for _ in 0..rows {
+            for _ in 0..cols {
+                let cell = &view.cells[idx];
+                idx += 1;
 
-            if !resized {
-                return Ok(());
-            }
-
-            let fd = { self.state.borrow().screen.fd() };
-            let (rows, cols) = query_winsize(fd).map_err(Error::from)?;
-
-            let mut state = self.state.borrow_mut();
-            if (rows, cols) != state.size {
-                self.runtime_proxy.send(TerminalRequest::Resize(
-                    TerminalSize {
-                        rows,
-                        cols,
-                        cell_width: 0,
-                        cell_height: 0,
-                    },
-                ))?;
-                state.size = (rows, cols);
-                state.screen.clear().map_err(Error::from)?;
-            }
-
-            Ok(())
-        }
-
-        fn flush_pending_input(&mut self) -> Result<(), Error> {
-            let mut state = self.state.borrow_mut();
-            if state.pending_input.is_empty() {
-                return Ok(());
-            }
-
-            let chunk: Vec<u8> = state.pending_input.drain(..).collect();
-            drop(state);
-
-            if !chunk.is_empty() {
-                self.runtime_proxy.send(TerminalRequest::Write(chunk))?;
-            }
-
-            Ok(())
-        }
-
-        fn read_stdin(&mut self) -> Result<(), Error> {
-            if self.state.borrow().stdin_closed {
-                return Ok(());
-            }
-
-            let mut buffer = [0u8; 1024];
-            let mut stdin = io::stdin();
-
-            loop {
-                match stdin.read(&mut buffer) {
-                    Ok(0) => {
-                        {
-                            let mut state = self.state.borrow_mut();
-                            if state.stdin_closed {
-                                break;
-                            }
-                            state.stdin_closed = true;
-                            state.pending_input.push_back(4);
-                        }
-                        break;
-                    },
-                    Ok(read) => {
-                        self.state
-                            .borrow_mut()
-                            .pending_input
-                            .extend(&buffer[..read]);
-                    },
-                    Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
-                        break;
-                    },
-                    Err(err) if err.kind() == io::ErrorKind::Interrupted => {
-                        continue;
-                    },
-                    Err(err) => return Err(Error::Io(err)),
+                let sgr = cell_sgr(cell, &view);
+                if sgr != last_sgr {
+                    out.push_str(&sgr);
+                    last_sgr = sgr;
                 }
-            }
 
-            Ok(())
-        }
-    }
-
-    impl RuntimeHooks<ShellTerminal> for ShellPollHooks {
-        fn before_poll(
-            &mut self,
-            _terminal: &mut ShellTerminal,
-        ) -> Result<(), Error> {
-            self.handle_resize()?;
-            self.flush_pending_input()?;
-            self.read_stdin()?;
-            self.flush_pending_input()?;
-            Ok(())
-        }
-    }
-
-    struct ShellEventHandler {
-        state: Rc<RefCell<ShellState>>,
-    }
-
-    impl ShellEventHandler {
-        fn new(state: Rc<RefCell<ShellState>>) -> Self {
-            Self { state }
-        }
-
-        fn render(&self, snapshot: TerminalSnapshot) -> Result<(), Error> {
-            let mut state = self.state.borrow_mut();
-            let size = state.size;
-            render_surface(snapshot, size, state.screen.writer())
-                .map_err(Error::from)
-        }
-
-        fn handle_exit(
-            &self,
-            status: &std::process::ExitStatus,
-        ) -> Result<(), Error> {
-            let mut state = self.state.borrow_mut();
-            let out = state.screen.writer();
-            let exit_repr = status
-                .code()
-                .map(|code| format!("{code}"))
-                .unwrap_or_else(|| "terminated by signal".to_string());
-            writeln!(out, "\r\nShell exited with {exit_repr}")
-                .map_err(Error::from)?;
-            out.flush().map_err(Error::from)
-        }
-    }
-
-    impl TerminalClient for ShellEventHandler {
-        fn handle_event(&mut self, event: TerminalEvent) -> Result<(), Error> {
-            match event {
-                TerminalEvent::SurfaceChanged { snapshot } => {
-                    self.render(snapshot)
-                },
-                TerminalEvent::ChildExit { status } => {
-                    self.handle_exit(&status)
-                },
-                TerminalEvent::TitleChanged { .. }
-                | TerminalEvent::ResetTitle
-                | TerminalEvent::Bell
-                | TerminalEvent::CursorShapeChanged { .. }
-                | TerminalEvent::CursorStyleChanged { .. }
-                | TerminalEvent::CursorIconChanged { .. }
-                | TerminalEvent::Hyperlink { .. } => Ok(()),
-            }
-        }
-    }
-
-    fn render_surface(
-        snapshot: TerminalSnapshot,
-        viewport_size: (u16, u16),
-        out: &mut impl Write,
-    ) -> io::Result<()> {
-        write!(out, "\x1b[?25l")?;
-        let mut buf = [0u8; 4];
-        let mut iter = snapshot.surface.display_iter;
-        let mut prev_attrs: Option<RenderAttributes> = None;
-        let mut prev_line: Option<i32> = None;
-        let mut row_idx: usize = 0;
-        let mut rendered_any = false;
-
-        while let Some(indexed) = iter.next() {
-            rendered_any = true;
-            let line = indexed.point.line.0;
-
-            if prev_line.map_or(true, |prev| prev != line) {
-                if prev_line.is_some() {
-                    row_idx += 1;
+                let mut ch = cell.cell.c;
+                if cell.cell.flags.contains(Flags::HIDDEN) {
+                    ch = ' ';
                 }
-                write!(out, "\x1b[{};1H\x1b[2K", row_idx + 1)?;
-                if prev_attrs.is_some() {
-                    write!(out, "\x1b[0m")?;
-                    prev_attrs = None;
-                }
-                prev_line = Some(line);
+                out.push(ch);
             }
-
-            let attrs = RenderAttributes::from_cell(indexed.cell);
-            if prev_attrs.as_ref() != Some(&attrs) {
-                write_sgr_for_attrs(out, &attrs)?;
-                prev_attrs = Some(attrs.clone());
-            }
-
-            write_cell(out, indexed.cell, &mut buf)?;
+            out.push('\n');
         }
 
-        if prev_attrs.is_some() {
-            write!(out, "\x1b[0m")?;
-        }
-
-        let total_rows = viewport_size.0 as usize;
-        let rendered_rows = if rendered_any { row_idx + 1 } else { 0 };
-        if rendered_rows < total_rows {
-            for extra in rendered_rows..total_rows {
-                write!(out, "\x1b[{};1H\x1b[2K", extra + 1)?;
-            }
-        }
-
-        if snapshot.surface.cursor.shape != escape::CursorShape::Hidden {
-            if let Some(cursor) = point_to_viewport(
-                snapshot.surface.display_offset,
-                snapshot.surface.cursor.point,
-            ) {
-                write!(
-                    out,
-                    "\x1b[{};{}H\x1b[?25h",
-                    cursor.line + 1,
-                    cursor.column.0 + 1
-                )?;
-            }
-        }
-
-        out.flush()
-    }
-
-    fn write_cell(
-        out: &mut impl Write,
-        cell: &Cell,
-        buf: &mut [u8; 4],
-    ) -> io::Result<()> {
-        let mut ch = cell.c;
-        let flags = cell.flags;
-        if flags.contains(Flags::HIDDEN)
-            || flags.contains(Flags::WIDE_CHAR_SPACER)
-            || flags.contains(Flags::LEADING_WIDE_CHAR_SPACER)
-        {
-            ch = ' ';
-        }
-
-        let encoded = ch.encode_utf8(buf);
-        out.write_all(encoded.as_bytes())?;
-
-        if let Some(extra) = cell.zerowidth() {
-            for zw in extra {
-                let encoded = zw.encode_utf8(buf);
-                out.write_all(encoded.as_bytes())?;
-            }
-        }
-
-        Ok(())
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    enum RenderUnderline {
-        None,
-        Single,
-        Double,
-        Curl,
-        Dotted,
-        Dashed,
-    }
-
-    #[derive(Clone, Debug, PartialEq)]
-    struct RenderAttributes {
-        bold: bool,
-        dim: bool,
-        italic: bool,
-        underline: RenderUnderline,
-        reverse: bool,
-        strike: bool,
-        foreground: Color,
-        background: Color,
-    }
-
-    impl Default for RenderAttributes {
-        fn default() -> Self {
-            Self {
-                bold: false,
-                dim: false,
-                italic: false,
-                underline: RenderUnderline::None,
-                reverse: false,
-                strike: false,
-                foreground: Color::Std(StdColor::Foreground),
-                background: Color::Std(StdColor::Background),
-            }
-        }
-    }
-
-    impl RenderAttributes {
-        fn from_cell(cell: &Cell) -> Self {
-            let flags = cell.flags;
-            let underline = if flags.contains(Flags::DOUBLE_UNDERLINE) {
-                RenderUnderline::Double
-            } else if flags.contains(Flags::UNDERCURL) {
-                RenderUnderline::Curl
-            } else if flags.contains(Flags::DOTTED_UNDERLINE) {
-                RenderUnderline::Dotted
-            } else if flags.contains(Flags::DASHED_UNDERLINE) {
-                RenderUnderline::Dashed
-            } else if flags.contains(Flags::UNDERLINE) {
-                RenderUnderline::Single
+        // Reset attributes and place cursor.
+        out.push_str("\u{1b}[0m");
+        let cursor = view.cursor.point;
+        let cursor_row = cursor.line.0 as usize;
+        let cursor_col = cursor.column.0;
+        if cursor_row < rows && cursor_col < cols {
+            out.push_str(&format!(
+                "\u{1b}[{};{}H",
+                cursor_row + 1,
+                cursor_col + 1
+            ));
+            if matches!(view.cursor.shape, otty_escape::CursorShape::Hidden) {
+                out.push_str("\u{1b}[?25l");
             } else {
-                RenderUnderline::None
-            };
-
-            Self {
-                bold: flags.intersects(
-                    Flags::BOLD | Flags::BOLD_ITALIC | Flags::DIM_BOLD,
-                ),
-                dim: flags.intersects(Flags::DIM | Flags::DIM_BOLD),
-                italic: flags.intersects(Flags::ITALIC | Flags::BOLD_ITALIC),
-                underline,
-                reverse: flags.contains(Flags::INVERSE),
-                strike: flags.contains(Flags::STRIKEOUT),
-                foreground: cell.fg,
-                background: cell.bg,
+                out.push_str("\u{1b}[?25h");
             }
         }
-    }
 
-    fn write_sgr_for_attrs(
-        out: &mut impl Write,
-        attrs: &RenderAttributes,
-    ) -> io::Result<()> {
-        write!(out, "\x1b[0")?;
-
-        if attrs.bold {
-            write!(out, ";1")?;
-        }
-        if attrs.dim {
-            write!(out, ";2")?;
-        }
-        if attrs.italic {
-            write!(out, ";3")?;
-        }
-        match attrs.underline {
-            RenderUnderline::Single => write!(out, ";4")?,
-            RenderUnderline::Double => write!(out, ";21")?,
-            RenderUnderline::Curl => write!(out, ";4:3")?,
-            RenderUnderline::Dotted => write!(out, ";4:4")?,
-            RenderUnderline::Dashed => write!(out, ";4:5")?,
-            RenderUnderline::None => {},
-        }
-        if attrs.reverse {
-            write!(out, ";7")?;
-        }
-        if attrs.strike {
-            write!(out, ";9")?;
-        }
-
-        write_color(out, &attrs.foreground, true)?;
-        write_color(out, &attrs.background, false)?;
-
-        write!(out, "m")?;
+        let mut stdout = io::stdout();
+        stdout.write_all(out.as_bytes())?;
+        stdout.flush()?;
         Ok(())
     }
 
-    fn write_color(
-        out: &mut impl Write,
-        color: &Color,
-        is_foreground: bool,
-    ) -> io::Result<()> {
-        let base = if is_foreground { 30 } else { 40 };
-        let bright_base = if is_foreground { 90 } else { 100 };
+    fn cell_sgr(cell: &FrameCell, view: &FrameView<'_>) -> String {
+        let mut codes: Vec<String> = Vec::new();
+        codes.push("0".to_string()); // reset to base before applying attributes
 
+        let flags = cell.cell.flags;
+        if flags.contains(Flags::BOLD) || flags.contains(Flags::DIM_BOLD) {
+            codes.push("1".to_string());
+        }
+        if flags.contains(Flags::DIM) || flags.contains(Flags::DIM_BOLD) {
+            codes.push("2".to_string());
+        }
+        if flags.intersects(Flags::ITALIC | Flags::BOLD_ITALIC) {
+            codes.push("3".to_string());
+        }
+        if flags.contains(Flags::STRIKEOUT) {
+            codes.push("9".to_string());
+        }
+        if flags.intersects(Flags::UNDERLINE | Flags::DOUBLE_UNDERLINE) {
+            codes.push(
+                if flags.contains(Flags::DOUBLE_UNDERLINE) {
+                    "21"
+                } else {
+                    "4"
+                }
+                .to_string(),
+            );
+        }
+        if flags.intersects(
+            Flags::UNDERCURL
+                | Flags::DOTTED_UNDERLINE
+                | Flags::DASHED_UNDERLINE,
+        ) {
+            // Best-effort underline for unsupported styles.
+            codes.push("4".to_string());
+        }
+        if flags.contains(Flags::INVERSE) {
+            codes.push("7".to_string());
+        }
+        if flags.contains(Flags::HIDDEN) {
+            codes.push("8".to_string());
+        }
+
+        let mut fg = cell.cell.fg;
+        let mut bg = cell.cell.bg;
+        if flags.contains(Flags::INVERSE) {
+            std::mem::swap(&mut fg, &mut bg);
+        }
+
+        if let Some(fg_code) = color_sgr(fg, view.colors, true) {
+            codes.push(fg_code);
+        }
+        if let Some(bg_code) = color_sgr(bg, view.colors, false) {
+            codes.push(bg_code);
+        }
+
+        format!("\u{1b}[{}m", codes.join(";"))
+    }
+
+    fn color_sgr(
+        color: AnsiColor,
+        palette: &Colors,
+        is_fg: bool,
+    ) -> Option<String> {
+        let prefix = if is_fg { "38" } else { "48" };
         match color {
-            Color::Std(std_color) => match std_color {
-                StdColor::Black => write!(out, ";{}", base)?,
-                StdColor::Red => write!(out, ";{}", base + 1)?,
-                StdColor::Green => write!(out, ";{}", base + 2)?,
-                StdColor::Yellow => write!(out, ";{}", base + 3)?,
-                StdColor::Blue => write!(out, ";{}", base + 4)?,
-                StdColor::Magenta => write!(out, ";{}", base + 5)?,
-                StdColor::Cyan => write!(out, ";{}", base + 6)?,
-                StdColor::White => write!(out, ";{}", base + 7)?,
-                StdColor::BrightBlack => write!(out, ";{}", bright_base)?,
-                StdColor::BrightRed => write!(out, ";{}", bright_base + 1)?,
-                StdColor::BrightGreen => write!(out, ";{}", bright_base + 2)?,
-                StdColor::BrightYellow => write!(out, ";{}", bright_base + 3)?,
-                StdColor::BrightBlue => write!(out, ";{}", bright_base + 4)?,
-                StdColor::BrightMagenta => write!(out, ";{}", bright_base + 5)?,
-                StdColor::BrightCyan => write!(out, ";{}", bright_base + 6)?,
-                StdColor::BrightWhite => write!(out, ";{}", bright_base + 7)?,
-                StdColor::Foreground
-                | StdColor::Background
-                | StdColor::BrightForeground
-                | StdColor::DimForeground => {
-                    write!(out, ";{}", if is_foreground { 39 } else { 49 })?
-                },
-                _ => {},
+            AnsiColor::TrueColor(rgb) => {
+                Some(format!("{prefix};2;{};{};{}", rgb.r, rgb.g, rgb.b))
             },
-            Color::Indexed(idx) => {
-                write!(out, ";{};5;{}", base + 8, idx)?;
-            },
-            Color::TrueColor(rgb) => {
-                write!(out, ";{};2;{};{};{}", base + 8, rgb.r, rgb.g, rgb.b)?;
+            AnsiColor::Indexed(idx) => Some(format!("{prefix};5;{idx}")),
+            AnsiColor::Std(std) => {
+                if let Some(rgb) = palette[std] {
+                    return Some(format!(
+                        "{prefix};2;{};{};{}",
+                        rgb.r, rgb.g, rgb.b
+                    ));
+                }
+
+                match std {
+                    StdColor::Foreground => {
+                        if is_fg {
+                            Some("39".to_string())
+                        } else {
+                            Some("49".to_string())
+                        }
+                    },
+                    StdColor::Background => {
+                        if is_fg {
+                            Some("39".to_string())
+                        } else {
+                            Some("49".to_string())
+                        }
+                    },
+                    StdColor::BrightForeground => {
+                        if is_fg {
+                            Some("97".to_string())
+                        } else {
+                            Some("49".to_string())
+                        }
+                    },
+                    StdColor::DimForeground => {
+                        if is_fg {
+                            Some("39".to_string())
+                        } else {
+                            Some("49".to_string())
+                        }
+                    },
+                    StdColor::Cursor => None,
+                    _ => {
+                        let (base, bright) = match std {
+                            StdColor::Black => (0, false),
+                            StdColor::Red => (1, false),
+                            StdColor::Green => (2, false),
+                            StdColor::Yellow => (3, false),
+                            StdColor::Blue => (4, false),
+                            StdColor::Magenta => (5, false),
+                            StdColor::Cyan => (6, false),
+                            StdColor::White => (7, false),
+                            StdColor::BrightBlack => (0, true),
+                            StdColor::BrightRed => (1, true),
+                            StdColor::BrightGreen => (2, true),
+                            StdColor::BrightYellow => (3, true),
+                            StdColor::BrightBlue => (4, true),
+                            StdColor::BrightMagenta => (5, true),
+                            StdColor::BrightCyan => (6, true),
+                            StdColor::BrightWhite => (7, true),
+                            StdColor::DimBlack => (0, false),
+                            StdColor::DimRed => (1, false),
+                            StdColor::DimGreen => (2, false),
+                            StdColor::DimYellow => (3, false),
+                            StdColor::DimBlue => (4, false),
+                            StdColor::DimMagenta => (5, false),
+                            StdColor::DimCyan => (6, false),
+                            StdColor::DimWhite => (7, false),
+                            StdColor::DimForeground => (0, false),
+                            StdColor::BrightForeground => (7, true),
+                            _ => (0, false),
+                        };
+
+                        let code = if is_fg {
+                            if bright { 90 + base } else { 30 + base }
+                        } else if bright {
+                            100 + base
+                        } else {
+                            40 + base
+                        };
+                        Some(code.to_string())
+                    },
+                }
             },
         }
+    }
 
+    fn set_nonblocking(stdin: &io::Stdin) -> Result<()> {
+        let raw_fd = stdin.as_raw_fd();
+        let fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
+        let flags = OFlag::from_bits_truncate(fcntl(fd, FcntlArg::F_GETFL)?);
+        let new_flags = flags | OFlag::O_NONBLOCK;
+        fcntl(fd, FcntlArg::F_SETFL(new_flags))?;
         Ok(())
-    }
-
-    fn query_winsize(fd: RawFd) -> io::Result<(u16, u16)> {
-        let mut winsize = MaybeUninit::<libc::winsize>::zeroed();
-        let res =
-            unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, winsize.as_mut_ptr()) };
-
-        if res == -1 {
-            return Err(io::Error::last_os_error());
-        }
-
-        let winsize = unsafe { winsize.assume_init() };
-        let rows = if winsize.ws_row == 0 {
-            24
-        } else {
-            winsize.ws_row
-        };
-        let cols = if winsize.ws_col == 0 {
-            80
-        } else {
-            winsize.ws_col
-        };
-        Ok((rows, cols))
-    }
-
-    struct RawModeGuard {
-        fd: RawFd,
-        original: termios::Termios,
-    }
-
-    impl RawModeGuard {
-        fn enable(fd: RawFd) -> io::Result<Self> {
-            let original =
-                termios::tcgetattr(unsafe { BorrowedFd::borrow_raw(fd) })?;
-            let mut raw = original.clone();
-            termios::cfmakeraw(&mut raw);
-            termios::tcsetattr(
-                unsafe { BorrowedFd::borrow_raw(fd) },
-                SetArg::TCSANOW,
-                &raw,
-            )?;
-            Ok(Self { fd, original })
-        }
-    }
-
-    impl Drop for RawModeGuard {
-        fn drop(&mut self) {
-            let _ = termios::tcsetattr(
-                unsafe { BorrowedFd::borrow_raw(self.fd) },
-                SetArg::TCSANOW,
-                &self.original,
-            );
-        }
-    }
-
-    struct NonBlockingGuard {
-        fd: RawFd,
-        original: OFlag,
-    }
-
-    impl NonBlockingGuard {
-        fn set(fd: RawFd) -> io::Result<Self> {
-            let flags = OFlag::from_bits_truncate(fcntl(
-                unsafe { BorrowedFd::borrow_raw(fd) },
-                FcntlArg::F_GETFL,
-            )?);
-            let new_flags = flags | OFlag::O_NONBLOCK;
-            fcntl(
-                unsafe { BorrowedFd::borrow_raw(fd) },
-                FcntlArg::F_SETFL(new_flags),
-            )?;
-            Ok(Self {
-                fd,
-                original: flags,
-            })
-        }
-    }
-
-    impl Drop for NonBlockingGuard {
-        fn drop(&mut self) {
-            let _ = fcntl(
-                unsafe { BorrowedFd::borrow_raw(self.fd) },
-                FcntlArg::F_SETFL(self.original),
-            );
-        }
-    }
-
-    struct Screen {
-        stdout: io::Stdout,
-    }
-
-    impl Screen {
-        fn new() -> io::Result<Self> {
-            let mut stdout = io::stdout();
-            write!(stdout, "\x1b[2J\x1b[H\x1b[?25l")?;
-            stdout.flush()?;
-            Ok(Self { stdout })
-        }
-
-        fn writer(&mut self) -> &mut io::Stdout {
-            &mut self.stdout
-        }
-
-        fn clear(&mut self) -> io::Result<()> {
-            write!(self.stdout, "\x1b[2J\x1b[H")?;
-            self.stdout.flush()
-        }
-
-        fn fd(&self) -> RawFd {
-            self.stdout.as_raw_fd()
-        }
-    }
-
-    impl Drop for Screen {
-        fn drop(&mut self) {
-            let _ = write!(self.stdout, "\x1b[?25h\x1b[0m\x1b[2J\x1b[H");
-            let _ = self.stdout.flush();
-        }
     }
 }
