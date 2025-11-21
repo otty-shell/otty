@@ -21,6 +21,12 @@ pub enum Error {
 
     #[error("runtime command channel closed")]
     RuntimeChannelClosed,
+
+    #[error("event channel is full")]
+    EventChannelFull,
+
+    #[error("event channel closed")]
+    EventChannelClosed,
 }
 
 /// Convenient result alias for fallible operations in this crate.

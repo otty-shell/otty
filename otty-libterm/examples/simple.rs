@@ -2,9 +2,7 @@ use std::thread;
 use std::time::Duration;
 
 use otty_libterm::{
-    TerminalEngine, TerminalEvent, TerminalOptions, TerminalRequest, escape,
-    pty::{self, PtySize},
-    surface::{Dimensions, Surface, SurfaceConfig},
+    TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize, pty,
 };
 
 #[cfg(not(unix))]
@@ -16,56 +14,28 @@ fn main() -> otty_libterm::Result<()> {
 #[cfg(unix)]
 fn main() -> otty_libterm::Result<()> {
     // 1. Spawn an interactive /bin/sh attached to a PTY.
-    let pty_size = PtySize {
+    let size = TerminalSize {
         rows: 24,
         cols: 80,
         cell_width: 0,
         cell_height: 0,
     };
 
-    let session = pty::unix("/bin/sh")
+    let unix_builder = pty::unix("/bin/sh")
         .with_arg("-i")
-        .with_size(pty_size)
-        .set_controling_tty_enable()
-        .spawn()?;
+        .set_controling_tty_enable();
 
-    // 2. Create a surface for our terminal grid.
-    struct SimpleDimensions {
-        columns: usize,
-        rows: usize,
-    }
+    let (mut terminal, handle, events) =
+        TerminalBuilder::from_unix_builder(unix_builder)
+            .with_size(size)
+            .build()?;
 
-    impl Dimensions for SimpleDimensions {
-        fn total_lines(&self) -> usize {
-            self.rows
-        }
-
-        fn screen_lines(&self) -> usize {
-            self.rows
-        }
-
-        fn columns(&self) -> usize {
-            self.columns
-        }
-    }
-
-    let surface_dimensions = SimpleDimensions {
-        columns: pty_size.cols as usize,
-        rows: pty_size.rows as usize,
-    };
-
-    let surface = Surface::new(SurfaceConfig::default(), &surface_dimensions);
-
-    // 3. Create an escape parser and terminal runtime.
-    let parser: escape::Parser<escape::vte::Parser> = Default::default();
-    let options = TerminalOptions::default();
-    let mut terminal = TerminalEngine::new(session, parser, surface, options)?;
-
-    // 4. Enqueue a couple of commands to the shell.
-    terminal.queue_request(TerminalRequest::WriteBytes(
-        b"echo 'hello from otty-libterm'\n".to_vec(),
-    ))?;
-    terminal.queue_request(TerminalRequest::WriteBytes(b"exit\n".to_vec()))?;
+    // 4. Send an echo first so we can render a frame before exiting.
+    handle
+        .send(TerminalRequest::WriteBytes(
+            b"echo 'hello from otty-libterm'\n".to_vec(),
+        ))
+        .expect("request channel open");
 
     // 5. Drive the engine manually until the child process exits.
     loop {
@@ -77,7 +47,7 @@ fn main() -> otty_libterm::Result<()> {
 
         terminal.tick()?;
 
-        while let Some(event) = terminal.next_event() {
+        while let Ok(event) = events.try_recv() {
             match event {
                 TerminalEvent::Frame { frame } => {
                     let view = frame.view();
@@ -87,6 +57,10 @@ fn main() -> otty_libterm::Result<()> {
                         view.size.screen_lines,
                         view.visible_cell_count
                     );
+
+                    handle
+                        .send(TerminalRequest::WriteBytes(b"exit\n".to_vec()))
+                        .expect("request channel open");
                 },
                 TerminalEvent::ChildExit { status } => {
                     println!("Child process exited with: {status}");

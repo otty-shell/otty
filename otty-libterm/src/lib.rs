@@ -18,18 +18,22 @@
 //!    and a [`surface::SurfaceActor`] implementation.
 //! 2. Wrap them in a [`TerminalEngine`].
 //! 3. Drive `on_readable` / `on_writable` / `tick` based on your preferred
-//!    readiness model, and drain [`TerminalEvent`]s with `next_event()`.
+//!    readiness model, and drain [`TerminalEvent`]s from [`TerminalEvents`].
 
 mod error;
 mod runtime;
 mod terminal;
 
 pub use error::{Error, Result};
-pub use runtime::{
-    Runtime, RuntimeClient, RuntimeEvent, RuntimeHooks, RuntimeRequestProxy,
-};
+pub use runtime::{Driver, Runtime, RuntimeHooks, RuntimeRequestProxy};
 pub use terminal::{
-    TerminalEngine, TerminalEvent, TerminalRequest, options::TerminalOptions,
+    FrameArc, TerminalEngine, TerminalEvent, TerminalRequest,
+    builder::{DefaultParser, DefaultSurface, TerminalBuilder},
+    channel::{
+        ChannelConfig, ChannelRecvError, ChannelSendError, ChannelTryRecvError,
+        TerminalEvents, TerminalHandle,
+    },
+    options::TerminalOptions,
     size::TerminalSize,
 };
 

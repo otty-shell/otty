@@ -1,8 +1,7 @@
 use std::io::{self, Read, Write};
-use std::thread;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 
 #[cfg(unix)]
 fn main() -> Result<()> {
@@ -23,19 +22,14 @@ mod unix_shell {
     use otty_escape::{Color as AnsiColor, StdColor};
     use otty_libterm::surface::Colors;
     use otty_libterm::{
-        TerminalEngine, TerminalEvent, TerminalOptions, TerminalRequest,
-        TerminalSize, escape,
-        pty::{self, PtySize},
-        surface::{
-            Dimensions, Flags, FrameCell, FrameOwned, FrameView, Surface,
-            SurfaceConfig,
-        },
+        TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize, pty,
+        surface::{Flags, FrameCell, FrameOwned},
     };
     use std::os::fd::{AsRawFd, BorrowedFd};
+    use std::thread;
 
     pub fn run() -> Result<()> {
         let (rows, cols) = query_winsize().unwrap_or((24, 80));
-
         let mut current_size = TerminalSize {
             rows,
             cols,
@@ -43,29 +37,15 @@ mod unix_shell {
             cell_height: 0,
         };
 
-        let pty_size = PtySize {
-            rows: current_size.rows,
-            cols: current_size.cols,
-            cell_width: current_size.cell_width,
-            cell_height: current_size.cell_height,
-        };
-
-        let session = pty::unix("/bin/sh")
+        let unix_builder = pty::unix("/bin/sh")
             .with_arg("-i")
-            .with_size(pty_size)
             .set_controling_tty_enable()
-            .spawn()?;
+            .with_size(current_size.into());
 
-        let surface_dimensions = TerminalDimensions {
-            columns: current_size.cols as usize,
-            rows: current_size.rows as usize,
-        };
-        let surface =
-            Surface::new(SurfaceConfig::default(), &surface_dimensions);
-        let parser: escape::Parser<escape::vte::Parser> = Default::default();
-        let options = TerminalOptions::default();
-        let mut engine =
-            TerminalEngine::new(session, parser, surface, options)?;
+        let (mut engine, handle, events) =
+            TerminalBuilder::from_unix_builder(unix_builder)
+                .with_size(current_size)
+                .build()?;
 
         let mut stdin = io::stdin();
         let mut input = [0u8; 1024];
@@ -74,9 +54,11 @@ mod unix_shell {
         loop {
             match stdin.read(&mut input) {
                 Ok(read) if read > 0 => {
-                    engine.queue_request(TerminalRequest::WriteBytes(
-                        input[..read].to_vec(),
-                    ))?;
+                    handle
+                        .send(TerminalRequest::WriteBytes(
+                            input[..read].to_vec(),
+                        ))
+                        .map_err(|err| anyhow!("send input: {err:?}"))?;
                 },
                 Ok(_) => {},
                 Err(err) if err.kind() == io::ErrorKind::WouldBlock => {},
@@ -84,11 +66,9 @@ mod unix_shell {
             }
 
             engine.on_readable()?;
-
             if engine.has_pending_output() {
                 engine.on_writable()?;
             }
-
             engine.tick()?;
 
             if let Some((rows, cols)) = query_winsize() {
@@ -102,11 +82,13 @@ mod unix_shell {
                     || new_size.cols != current_size.cols
                 {
                     current_size = new_size;
-                    engine.queue_request(TerminalRequest::Resize(new_size))?;
+                    handle
+                        .send(TerminalRequest::Resize(new_size))
+                        .map_err(|err| anyhow!("send resize: {err:?}"))?;
                 }
             }
 
-            while let Some(event) = engine.next_event() {
+            while let Ok(event) = events.try_recv() {
                 match event {
                     TerminalEvent::Frame { frame } => {
                         render_frame(&frame)?;
@@ -132,25 +114,6 @@ mod unix_shell {
         }
     }
 
-    struct TerminalDimensions {
-        columns: usize,
-        rows: usize,
-    }
-
-    impl Dimensions for TerminalDimensions {
-        fn total_lines(&self) -> usize {
-            self.rows
-        }
-
-        fn screen_lines(&self) -> usize {
-            self.rows
-        }
-
-        fn columns(&self) -> usize {
-            self.columns
-        }
-    }
-
     fn query_winsize() -> Option<(u16, u16)> {
         let fd = io::stdout().as_raw_fd();
         let mut ws = libc::winsize {
@@ -173,206 +136,258 @@ mod unix_shell {
         let cols = view.size.columns;
         let rows = view.size.screen_lines;
 
-        let mut out = String::new();
-        out.push_str("\u{1b}[?25l"); // hide cursor during redraw
-        out.push_str("\u{1b}[2J\u{1b}[H"); // clear and home
+        let mut out = io::stdout();
+        write!(out, "\x1b[?25l\x1b[2J\x1b[H")?;
 
-        let mut last_sgr = String::new();
-        let mut idx = 0usize;
-        for _ in 0..rows {
-            for _ in 0..cols {
-                let cell = &view.cells[idx];
-                idx += 1;
+        let mut buf = [0u8; 4];
 
-                let sgr = cell_sgr(cell, &view);
-                if sgr != last_sgr {
-                    out.push_str(&sgr);
-                    last_sgr = sgr;
+        for row in 0..rows {
+            let mut prev_attrs: Option<RenderAttributes> = None;
+            write!(out, "\x1b[{};1H\x1b[2K", row + 1)?;
+
+            for col in 0..cols {
+                let idx = row * cols + col;
+                let Some(cell) = view.cells.get(idx) else {
+                    break;
+                };
+                let attrs = RenderAttributes::from_cell(cell);
+                if prev_attrs.as_ref() != Some(&attrs) {
+                    write_sgr_for_attrs(&mut out, &attrs, view.colors)?;
+                    prev_attrs = Some(attrs);
                 }
-
-                let mut ch = cell.cell.c;
-                if cell.cell.flags.contains(Flags::HIDDEN) {
-                    ch = ' ';
-                }
-                out.push(ch);
-            }
-            out.push('\n');
-        }
-
-        // Reset attributes and place cursor.
-        out.push_str("\u{1b}[0m");
-        let cursor = view.cursor.point;
-        let cursor_row = cursor.line.0 as usize;
-        let cursor_col = cursor.column.0;
-        if cursor_row < rows && cursor_col < cols {
-            out.push_str(&format!(
-                "\u{1b}[{};{}H",
-                cursor_row + 1,
-                cursor_col + 1
-            ));
-            if matches!(view.cursor.shape, otty_escape::CursorShape::Hidden) {
-                out.push_str("\u{1b}[?25l");
-            } else {
-                out.push_str("\u{1b}[?25h");
+                write_cell(&mut out, cell, &mut buf)?;
             }
         }
 
-        let mut stdout = io::stdout();
-        stdout.write_all(out.as_bytes())?;
-        stdout.flush()?;
+        write!(out, "\x1b[0m")?;
+
+        if view.cursor.shape != otty_escape::CursorShape::Hidden {
+            if let Some(cursor) = otty_libterm::surface::point_to_viewport(
+                view.display_offset,
+                view.cursor.point,
+            ) {
+                let row = cursor.line;
+                let col = cursor.column.0;
+                if row < rows && col < cols {
+                    write!(out, "\x1b[{};{}H\x1b[?25h", row + 1, col + 1)?;
+                }
+            }
+        }
+
+        out.flush()?;
         Ok(())
     }
 
-    fn cell_sgr(cell: &FrameCell, view: &FrameView<'_>) -> String {
-        let mut codes: Vec<String> = Vec::new();
-        codes.push("0".to_string()); // reset to base before applying attributes
-
-        let flags = cell.cell.flags;
-        if flags.contains(Flags::BOLD) || flags.contains(Flags::DIM_BOLD) {
-            codes.push("1".to_string());
-        }
-        if flags.contains(Flags::DIM) || flags.contains(Flags::DIM_BOLD) {
-            codes.push("2".to_string());
-        }
-        if flags.intersects(Flags::ITALIC | Flags::BOLD_ITALIC) {
-            codes.push("3".to_string());
-        }
-        if flags.contains(Flags::STRIKEOUT) {
-            codes.push("9".to_string());
-        }
-        if flags.intersects(Flags::UNDERLINE | Flags::DOUBLE_UNDERLINE) {
-            codes.push(
-                if flags.contains(Flags::DOUBLE_UNDERLINE) {
-                    "21"
-                } else {
-                    "4"
-                }
-                .to_string(),
-            );
-        }
-        if flags.intersects(
-            Flags::UNDERCURL
-                | Flags::DOTTED_UNDERLINE
-                | Flags::DASHED_UNDERLINE,
-        ) {
-            // Best-effort underline for unsupported styles.
-            codes.push("4".to_string());
-        }
-        if flags.contains(Flags::INVERSE) {
-            codes.push("7".to_string());
-        }
-        if flags.contains(Flags::HIDDEN) {
-            codes.push("8".to_string());
-        }
-
-        let mut fg = cell.cell.fg;
-        let mut bg = cell.cell.bg;
-        if flags.contains(Flags::INVERSE) {
-            std::mem::swap(&mut fg, &mut bg);
-        }
-
-        if let Some(fg_code) = color_sgr(fg, view.colors, true) {
-            codes.push(fg_code);
-        }
-        if let Some(bg_code) = color_sgr(bg, view.colors, false) {
-            codes.push(bg_code);
-        }
-
-        format!("\u{1b}[{}m", codes.join(";"))
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum RenderUnderline {
+        None,
+        Single,
+        Double,
+        Curl,
+        Dotted,
+        Dashed,
     }
 
-    fn color_sgr(
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct RenderAttributes {
+        bold: bool,
+        dim: bool,
+        italic: bool,
+        underline: RenderUnderline,
+        reverse: bool,
+        strike: bool,
+        foreground: AnsiColor,
+        background: AnsiColor,
+    }
+
+    impl RenderAttributes {
+        fn from_cell(cell: &FrameCell) -> Self {
+            let flags = cell.cell.flags;
+            let underline = if flags.contains(Flags::DOUBLE_UNDERLINE) {
+                RenderUnderline::Double
+            } else if flags.contains(Flags::UNDERCURL) {
+                RenderUnderline::Curl
+            } else if flags.contains(Flags::DOTTED_UNDERLINE) {
+                RenderUnderline::Dotted
+            } else if flags.contains(Flags::DASHED_UNDERLINE) {
+                RenderUnderline::Dashed
+            } else if flags.contains(Flags::UNDERLINE) {
+                RenderUnderline::Single
+            } else {
+                RenderUnderline::None
+            };
+
+            Self {
+                bold: flags.intersects(
+                    Flags::BOLD | Flags::BOLD_ITALIC | Flags::DIM_BOLD,
+                ),
+                dim: flags.intersects(Flags::DIM | Flags::DIM_BOLD),
+                italic: flags.intersects(Flags::ITALIC | Flags::BOLD_ITALIC),
+                underline,
+                reverse: flags.contains(Flags::INVERSE),
+                strike: flags.contains(Flags::STRIKEOUT),
+                foreground: cell.cell.fg,
+                background: cell.cell.bg,
+            }
+        }
+    }
+
+    fn write_sgr_for_attrs(
+        out: &mut impl Write,
+        attrs: &RenderAttributes,
+        palette: &Colors,
+    ) -> io::Result<()> {
+        write!(out, "\x1b[0")?;
+
+        if attrs.bold {
+            write!(out, ";1")?;
+        }
+        if attrs.dim {
+            write!(out, ";2")?;
+        }
+        if attrs.italic {
+            write!(out, ";3")?;
+        }
+        match attrs.underline {
+            RenderUnderline::Single => write!(out, ";4")?,
+            RenderUnderline::Double => write!(out, ";21")?,
+            RenderUnderline::Curl => write!(out, ";4:3")?,
+            RenderUnderline::Dotted => write!(out, ";4:4")?,
+            RenderUnderline::Dashed => write!(out, ";4:5")?,
+            RenderUnderline::None => {},
+        }
+        if attrs.reverse {
+            write!(out, ";7")?;
+        }
+        if attrs.strike {
+            write!(out, ";9")?;
+        }
+
+        write_color(out, attrs.foreground, palette, true)?;
+        write_color(out, attrs.background, palette, false)?;
+
+        write!(out, "m")?;
+        Ok(())
+    }
+
+    fn write_color(
+        out: &mut impl Write,
         color: AnsiColor,
         palette: &Colors,
-        is_fg: bool,
-    ) -> Option<String> {
-        let prefix = if is_fg { "38" } else { "48" };
+        is_foreground: bool,
+    ) -> io::Result<()> {
+        let base = if is_foreground { 30 } else { 40 };
+        let bright_base = if is_foreground { 90 } else { 100 };
+
         match color {
-            AnsiColor::TrueColor(rgb) => {
-                Some(format!("{prefix};2;{};{};{}", rgb.r, rgb.g, rgb.b))
+            AnsiColor::Std(std_color) => {
+                if let Some(rgb) = palette[std_color] {
+                    write!(
+                        out,
+                        ";{};2;{};{};{}",
+                        base + 8,
+                        rgb.r,
+                        rgb.g,
+                        rgb.b
+                    )?;
+                    return Ok(());
+                }
+
+                match std_color {
+                    StdColor::Black => write!(out, ";{}", base)?,
+                    StdColor::Red => write!(out, ";{}", base + 1)?,
+                    StdColor::Green => write!(out, ";{}", base + 2)?,
+                    StdColor::Yellow => write!(out, ";{}", base + 3)?,
+                    StdColor::Blue => write!(out, ";{}", base + 4)?,
+                    StdColor::Magenta => write!(out, ";{}", base + 5)?,
+                    StdColor::Cyan => write!(out, ";{}", base + 6)?,
+                    StdColor::White => write!(out, ";{}", base + 7)?,
+                    StdColor::BrightBlack => write!(out, ";{}", bright_base)?,
+                    StdColor::BrightRed => write!(out, ";{}", bright_base + 1)?,
+                    StdColor::BrightGreen => {
+                        write!(out, ";{}", bright_base + 2)?
+                    },
+                    StdColor::BrightYellow => {
+                        write!(out, ";{}", bright_base + 3)?
+                    },
+                    StdColor::BrightBlue => {
+                        write!(out, ";{}", bright_base + 4)?
+                    },
+                    StdColor::BrightMagenta => {
+                        write!(out, ";{}", bright_base + 5)?
+                    },
+                    StdColor::BrightCyan => {
+                        write!(out, ";{}", bright_base + 6)?
+                    },
+                    StdColor::BrightWhite => {
+                        write!(out, ";{}", bright_base + 7)?
+                    },
+                    StdColor::Foreground
+                    | StdColor::Background
+                    | StdColor::BrightForeground
+                    | StdColor::DimForeground => {
+                        write!(out, ";{}", if is_foreground { 39 } else { 49 })?
+                    },
+                    StdColor::Cursor
+                    | StdColor::DimBlack
+                    | StdColor::DimRed
+                    | StdColor::DimGreen
+                    | StdColor::DimYellow
+                    | StdColor::DimBlue
+                    | StdColor::DimMagenta
+                    | StdColor::DimCyan
+                    | StdColor::DimWhite => {
+                        let base_idx = match std_color {
+                            StdColor::DimBlack => 0,
+                            StdColor::DimRed => 1,
+                            StdColor::DimGreen => 2,
+                            StdColor::DimYellow => 3,
+                            StdColor::DimBlue => 4,
+                            StdColor::DimMagenta => 5,
+                            StdColor::DimCyan => 6,
+                            StdColor::DimWhite => 7,
+                            _ => 0,
+                        };
+                        write!(out, ";{}", base + base_idx)?;
+                    },
+                }
             },
-            AnsiColor::Indexed(idx) => Some(format!("{prefix};5;{idx}")),
-            AnsiColor::Std(std) => {
-                if let Some(rgb) = palette[std] {
-                    return Some(format!(
-                        "{prefix};2;{};{};{}",
-                        rgb.r, rgb.g, rgb.b
-                    ));
-                }
-
-                match std {
-                    StdColor::Foreground => {
-                        if is_fg {
-                            Some("39".to_string())
-                        } else {
-                            Some("49".to_string())
-                        }
-                    },
-                    StdColor::Background => {
-                        if is_fg {
-                            Some("39".to_string())
-                        } else {
-                            Some("49".to_string())
-                        }
-                    },
-                    StdColor::BrightForeground => {
-                        if is_fg {
-                            Some("97".to_string())
-                        } else {
-                            Some("49".to_string())
-                        }
-                    },
-                    StdColor::DimForeground => {
-                        if is_fg {
-                            Some("39".to_string())
-                        } else {
-                            Some("49".to_string())
-                        }
-                    },
-                    StdColor::Cursor => None,
-                    _ => {
-                        let (base, bright) = match std {
-                            StdColor::Black => (0, false),
-                            StdColor::Red => (1, false),
-                            StdColor::Green => (2, false),
-                            StdColor::Yellow => (3, false),
-                            StdColor::Blue => (4, false),
-                            StdColor::Magenta => (5, false),
-                            StdColor::Cyan => (6, false),
-                            StdColor::White => (7, false),
-                            StdColor::BrightBlack => (0, true),
-                            StdColor::BrightRed => (1, true),
-                            StdColor::BrightGreen => (2, true),
-                            StdColor::BrightYellow => (3, true),
-                            StdColor::BrightBlue => (4, true),
-                            StdColor::BrightMagenta => (5, true),
-                            StdColor::BrightCyan => (6, true),
-                            StdColor::BrightWhite => (7, true),
-                            StdColor::DimBlack => (0, false),
-                            StdColor::DimRed => (1, false),
-                            StdColor::DimGreen => (2, false),
-                            StdColor::DimYellow => (3, false),
-                            StdColor::DimBlue => (4, false),
-                            StdColor::DimMagenta => (5, false),
-                            StdColor::DimCyan => (6, false),
-                            StdColor::DimWhite => (7, false),
-                            StdColor::DimForeground => (0, false),
-                            StdColor::BrightForeground => (7, true),
-                            _ => (0, false),
-                        };
-
-                        let code = if is_fg {
-                            if bright { 90 + base } else { 30 + base }
-                        } else if bright {
-                            100 + base
-                        } else {
-                            40 + base
-                        };
-                        Some(code.to_string())
-                    },
-                }
+            AnsiColor::Indexed(idx) => {
+                write!(out, ";{};5;{}", base + 8, idx)?;
+            },
+            AnsiColor::TrueColor(rgb) => {
+                write!(out, ";{};2;{};{};{}", base + 8, rgb.r, rgb.g, rgb.b)?;
             },
         }
+
+        Ok(())
+    }
+
+    fn write_cell(
+        out: &mut impl Write,
+        cell: &FrameCell,
+        buf: &mut [u8; 4],
+    ) -> io::Result<()> {
+        let mut ch = cell.cell.c;
+        let flags = cell.cell.flags;
+        if flags.contains(Flags::HIDDEN)
+            || flags.contains(Flags::WIDE_CHAR_SPACER)
+            || flags.contains(Flags::LEADING_WIDE_CHAR_SPACER)
+        {
+            ch = ' ';
+        }
+
+        let encoded = ch.encode_utf8(buf);
+        out.write_all(encoded.as_bytes())?;
+
+        if let Some(extra) = cell.cell.zerowidth() {
+            for zw in extra {
+                let encoded = zw.encode_utf8(buf);
+                out.write_all(encoded.as_bytes())?;
+            }
+        }
+
+        Ok(())
     }
 
     fn set_nonblocking(stdin: &io::Stdin) -> Result<()> {

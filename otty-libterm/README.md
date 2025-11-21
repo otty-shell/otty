@@ -26,23 +26,19 @@ user input -> TerminalRequest::WriteBytes
 
 ## Quick start
 
-The easiest way to see `otty-libterm` in action is to look at the example in
-`otty-libterm/examples/simple.rs`, which wires a Unix PTY, a parser and a basic surface together.
-
-Conceptually, the flow looks like:
+The `TerminalBuilder` presets wire up a PTY, parser, and surface for you. The
+`examples/simple.rs` sample uses the Unix preset and drives the engine manually:
 
 ```rust
 use std::thread;
 use std::time::Duration;
 
 use otty_libterm::{
-    escape,
-    pty::{self, PtySize},
-    surface::{Dimensions, Surface, SurfaceConfig},
-    TerminalEngine,
+    pty,
+    TerminalBuilder,
     TerminalEvent,
-    TerminalOptions,
     TerminalRequest,
+    TerminalSize,
 };
 
 #[cfg(not(unix))]
@@ -53,72 +49,42 @@ fn main() -> otty_libterm::Result<()> {
 
 #[cfg(unix)]
 fn main() -> otty_libterm::Result<()> {
-    // 1. Spawn an interactive /bin/sh attached to a PTY.
-    let pty_size = PtySize {
+    // 1. Configure the PTY and terminal size.
+    let size = TerminalSize {
         rows: 24,
         cols: 80,
         cell_width: 0,
         cell_height: 0,
     };
-
-    let session = pty::unix("/bin/sh")
+    let unix_builder = pty::unix("/bin/sh")
         .with_arg("-i")
-        .with_size(pty_size)
-        .set_controling_tty_enable()
-        .spawn()?;
+        .set_controling_tty_enable();
 
-    // 2. Create a surface for our terminal grid.
-    struct SimpleDimensions {
-        columns: usize,
-        rows: usize,
-    }
+    // 2. Build the engine, handle, and event receiver.
+    let (mut terminal, handle, events) =
+        TerminalBuilder::from_unix_builder(unix_builder)
+            .with_size(size)
+            .build()?;
 
-    impl Dimensions for SimpleDimensions {
-        fn total_lines(&self) -> usize {
-            self.rows
-        }
+    // 3. Send a couple of commands.
+    handle
+        .send(TerminalRequest::WriteBytes(
+            b"echo 'hello from otty-libterm'\n".to_vec(),
+        ))
+        .expect("event channel open");
+    handle
+        .send(TerminalRequest::WriteBytes(b"exit\n".to_vec()))
+        .expect("event channel open");
 
-        fn screen_lines(&self) -> usize {
-            self.rows
-        }
-
-        fn columns(&self) -> usize {
-            self.columns
-        }
-    }
-
-    let surface_dimensions = SimpleDimensions {
-        columns: pty_size.cols as usize,
-        rows: pty_size.rows as usize,
-    };
-
-    let surface = Surface::new(SurfaceConfig::default(), &surface_dimensions);
-
-    // 3. Create an escape parser and terminal engine.
-    let parser: escape::Parser<escape::vte::Parser> = Default::default();
-    let options = TerminalOptions::default();
-    let mut terminal =
-        TerminalEngine::new(session, parser, surface, options)?;
-
-    // 4. Enqueue a couple of commands to the shell.
-    terminal.queue_request(TerminalRequest::WriteBytes(
-        b"echo 'hello from otty-libterm'\n".to_vec(),
-    ))?;
-    terminal.queue_request(TerminalRequest::WriteBytes(
-        b"exit\n".to_vec(),
-    ))?;
-
-    // 5. Drive the engine manually until the child process exits.
+    // 4. Drive the engine manually until the child process exits.
     loop {
         terminal.on_readable()?;
-
         if terminal.has_pending_output() {
             terminal.on_writable()?;
         }
-
         terminal.tick()?;
 
-        while let Some(event) = terminal.next_event() {
+        while let Ok(event) = events.try_recv() {
             match event {
                 TerminalEvent::Frame { frame } => {
                     println!(
@@ -139,6 +105,9 @@ fn main() -> otty_libterm::Result<()> {
 }
 ```
 
+See `examples/tokio_runtime.rs` for a Tokio-driven runtime example and
+`examples/unix_shell.rs` for a minimal ANSI renderer.
+
 ## Integrating with a UI
 
 `otty-libterm` does not render pixels. Instead, it keeps an in-memory surface and emits owned frames whenever parsing mutates that surface.
@@ -146,14 +115,26 @@ fn main() -> otty_libterm::Result<()> {
 To render:
 
 - Drive `on_readable`, `on_writable`, and `tick` based on your event loop (mio, tokio, custom).
-- Drain events from `next_event()`. For `TerminalEvent::Frame { frame }`, call `frame.view()` to inspect cells, cursor, modes, and damage.
+- Drain events from `TerminalEvents`. For `TerminalEvent::Frame { frame }`, call `frame.view()` to inspect cells, cursor, modes, and damage.
 - React to other events such as `ChildExit`, `TitleChanged`, `Bell`, or cursor updates as needed.
 
 To send input:
 
-- Translate user input into raw bytes.
-- Call `queue_request(TerminalRequest::WriteBytes(bytes))`.
-- Use `has_pending_output()` to decide when to request writable readiness.
+- Translate user input into raw bytes (encoding is the front-end's job).
+- Call `queue_request(TerminalRequest::WriteBytes(bytes))` or chunk a large payload with `TerminalHandle::send_bytes_chunked`.
+- For multi-step pastes or coalescing, use `TerminalHandle::batcher()` to stage bytes and flush in safe chunks.
+- Use `has_pending_output()` to decide when to request writable readiness; it reflects queued write requests and partially flushed buffers.
+
+### Input buffering and large pastes
+
+- Large pastes should be chunked (defaults to 4 KiB in the batcher) to keep bounded channels responsive and to let `has_pending_output()` stay accurate until everything is flushed.
+- The batcher helper coalesces multiple `push()` calls and sends them as a series of `WriteBytes` requests on `flush()`, preserving any unsent data if the request channel is full.
+- Higher-level input encoders (keymaps, IME, bracketed paste framing) should live above `libterm`, handing only raw bytes into `WriteBytes`.
+
+## Runtime vs manual loops
+
+- `build()` returns `(engine, handle, events)` for manual integration with your readiness model (mio, epoll, tokio watcher, custom loop).
+- `build_with_runtime()` also hands back a mio `Runtime` and `RuntimeRequestProxy` for a turnkey blocking loop. See `examples/tokio_runtime.rs` for running that runtime from Tokio.
 
 ## Configuration
 

@@ -1,3 +1,5 @@
+pub mod builder;
+pub mod channel;
 pub mod options;
 pub mod size;
 pub mod surface_actor;
@@ -5,16 +7,21 @@ pub mod surface_actor;
 use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::process::ExitStatus;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use cursor_icon::CursorIcon;
+use flume::{Receiver, Sender};
 
 use crate::Result;
+use crate::terminal::channel::{
+    ChannelSendError, TerminalEvents, TerminalHandle, map_send_error,
+};
 use crate::terminal::size::TerminalSize;
 use crate::terminal::surface_actor::TerminalSurfaceActor;
 use crate::{
     escape::{Action, CursorShape, CursorStyle, EscapeParser, Hyperlink},
-    pty::{Session, SessionError},
+    pty::{Pollable, Session, SessionError},
     surface::{
         FrameOwned, Point, Scroll, SelectionType, Side, SurfaceActor,
         SurfaceModel,
@@ -23,6 +30,9 @@ use crate::{
 
 use options::TerminalOptions;
 
+/// Owned frame wrapper shared with terminal consumers.
+pub type FrameArc = Arc<FrameOwned>;
+
 const DEFAULT_READ_BUFFER_CAPACITY: usize = 1024;
 
 /// Events emitted by terminal implementations to interested clients.
@@ -30,7 +40,7 @@ pub enum TerminalEvent {
     /// The in-memory surface contents have changed.
     ///
     /// Front-ends typically respond by re-rendering the provided frame.
-    Frame { frame: Box<FrameOwned> },
+    Frame { frame: FrameArc },
     /// The child process attached to the PTY has exited.
     ChildExit { status: ExitStatus },
     /// The terminal's window or tab title has changed.
@@ -153,6 +163,8 @@ pub struct TerminalEngine<P, E, S> {
     size: TerminalSize,
     read_buffer: Vec<u8>,
     exit_status: Option<ExitStatus>,
+    event_tx: Sender<TerminalEvent>,
+    request_rx: Receiver<TerminalRequest>,
     pending_input: VecDeque<u8>,
     pending_requests: VecDeque<TerminalRequest>,
     events: VecDeque<TerminalEvent>,
@@ -170,7 +182,13 @@ where
         parser: E,
         surface: S,
         options: TerminalOptions,
-    ) -> Result<Self> {
+    ) -> Result<(Self, TerminalHandle, TerminalEvents)> {
+        let (event_tx, event_rx, request_tx, request_rx) =
+            channel::build_channels(&options.channel_config);
+
+        let handle = TerminalHandle::new(request_tx);
+        let events = TerminalEvents::new(event_rx);
+
         let mut read_buffer = vec![
             0u8;
             options
@@ -181,18 +199,24 @@ where
             read_buffer.resize(DEFAULT_READ_BUFFER_CAPACITY, 0);
         }
 
-        Ok(Self {
-            session,
-            parser,
-            surface,
-            read_buffer,
-            size: TerminalSize::default(),
-            exit_status: None,
-            pending_input: VecDeque::new(),
-            pending_requests: VecDeque::new(),
-            events: VecDeque::new(),
-            sync_state: SyncState::new(),
-        })
+        Ok((
+            Self {
+                session,
+                parser,
+                surface,
+                read_buffer,
+                size: TerminalSize::default(),
+                exit_status: None,
+                event_tx,
+                request_rx,
+                pending_input: VecDeque::new(),
+                pending_requests: VecDeque::new(),
+                events: VecDeque::new(),
+                sync_state: SyncState::new(),
+            },
+            handle,
+            events,
+        ))
     }
 
     /// Push a request into the engine for processing.
@@ -236,6 +260,12 @@ where
                 {
                     break;
                 },
+                Err(SessionError::IO(ref err))
+                    if is_session_closed_error(err) =>
+                {
+                    self.capture_exit()?;
+                    break;
+                },
                 Err(err) => return Err(err.into()),
             }
         }
@@ -246,6 +276,8 @@ where
 
         self.capture_exit()?;
 
+        self.flush_event_queue()?;
+
         Ok(updated)
     }
 
@@ -253,6 +285,7 @@ where
     pub fn on_writable(&mut self) -> Result<bool> {
         self.process_pending_requests()?;
         self.flush_pending_input()?;
+        self.flush_event_queue()?;
         Ok(!self.pending_input.is_empty())
     }
 
@@ -276,6 +309,8 @@ where
 
         self.capture_exit()?;
 
+        self.flush_event_queue()?;
+
         Ok(())
     }
 
@@ -288,14 +323,14 @@ where
                 .any(|req| matches!(req, TerminalRequest::WriteBytes(_)))
     }
 
-    /// Pop the next pending terminal event, if any.
-    pub fn next_event(&mut self) -> Option<TerminalEvent> {
-        self.events.pop_front()
-    }
-
     /// Inspect the active terminal geometry.
     pub fn size(&self) -> TerminalSize {
         self.size
+    }
+
+    /// Deadline for the next maintenance tick, based on sync mode.
+    pub fn next_deadline(&self) -> Option<Instant> {
+        self.sync_state.deadline
     }
 
     pub fn check_child_exit(&mut self) -> Result<Option<ExitStatus>> {
@@ -303,6 +338,10 @@ where
     }
 
     fn process_pending_requests(&mut self) -> Result<()> {
+        while let Ok(request) = self.request_rx.try_recv() {
+            self.pending_requests.push_back(request);
+        }
+
         while let Some(request) = self.pending_requests.pop_front() {
             self.process_request(request)?;
         }
@@ -447,13 +486,30 @@ where
         let frame = self.surface.snapshot_owned();
         self.surface.reset_damage();
         self.events.push_back(TerminalEvent::Frame {
-            frame: Box::new(frame),
+            frame: Arc::new(frame),
         });
         Ok(())
     }
 
     fn emit_child_exit(&mut self, status: ExitStatus) -> Result<()> {
         self.events.push_back(TerminalEvent::ChildExit { status });
+        Ok(())
+    }
+
+    fn flush_event_queue(&mut self) -> Result<()> {
+        while let Some(event) = self.events.pop_front() {
+            match self.event_tx.try_send(event) {
+                Ok(()) => {},
+                Err(err) => match map_send_error(err) {
+                    ChannelSendError::Full => {
+                        return Err(crate::Error::EventChannelFull);
+                    },
+                    ChannelSendError::Disconnected => {
+                        return Err(crate::Error::EventChannelClosed);
+                    },
+                },
+            }
+        }
         Ok(())
     }
 }
@@ -468,5 +524,214 @@ fn to_exit_status(code: i32) -> ExitStatus {
     {
         use std::os::windows::process::ExitStatusExt;
         ExitStatusExt::from_raw(code as u32)
+    }
+}
+
+#[cfg(unix)]
+fn is_session_closed_error(err: &std::io::Error) -> bool {
+    const EIO_RAW: i32 = 5;
+    err.kind() == ErrorKind::UnexpectedEof
+        || err.raw_os_error() == Some(EIO_RAW)
+}
+
+#[cfg(not(unix))]
+fn is_session_closed_error(err: &std::io::Error) -> bool {
+    err.kind() == ErrorKind::UnexpectedEof
+}
+
+impl<P, E, S> TerminalEngine<P, E, S>
+where
+    P: Session + Pollable,
+    E: EscapeParser,
+    S: SurfaceActor + SurfaceModel,
+{
+    /// Register the underlying session with a mio registry.
+    pub fn register_session(
+        &mut self,
+        registry: &mio::Registry,
+        interest: mio::Interest,
+        io_token: mio::Token,
+        child_token: mio::Token,
+    ) -> Result<()> {
+        self.session
+            .register(registry, interest, io_token, child_token)?;
+        Ok(())
+    }
+
+    /// Update registered interest for the session handles.
+    pub fn reregister_session(
+        &mut self,
+        registry: &mio::Registry,
+        interest: mio::Interest,
+        io_token: mio::Token,
+        child_token: mio::Token,
+    ) -> Result<()> {
+        self.session
+            .reregister(registry, interest, io_token, child_token)?;
+        Ok(())
+    }
+
+    /// Deregister the session handles from the mio registry.
+    pub fn deregister_session(
+        &mut self,
+        registry: &mio::Registry,
+    ) -> Result<()> {
+        self.session.deregister(registry)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use otty_escape::{EscapeActor, EscapeParser};
+    use otty_surface::{Surface, SurfaceConfig};
+
+    use crate::terminal::channel::ChannelConfig;
+
+    use super::*;
+
+    #[test]
+    fn partial_writes_keep_pending_output_until_drained() -> Result<()> {
+        let session = PartialSession::with_behavior(4, true);
+        let parser = NoopParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+
+        let (mut engine, _handle, _events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions {
+                channel_config: ChannelConfig::bounded(16),
+                ..TerminalOptions::default()
+            },
+        )?;
+
+        engine
+            .queue_request(TerminalRequest::WriteBytes(b"abcdefgh".to_vec()))?;
+
+        assert!(engine.has_pending_output());
+
+        let pending_after_first = engine.on_writable()?;
+        assert!(pending_after_first);
+        assert_eq!(engine.session.writes.len(), 1);
+        assert_eq!(engine.session.writes[0], b"abcd");
+        assert_eq!(engine.pending_input.len(), 4);
+        assert!(engine.has_pending_output());
+
+        engine.session.blocked = false;
+        let pending_after_second = engine.on_writable()?;
+        assert!(!pending_after_second);
+        assert_eq!(engine.session.writes.len(), 2);
+        assert_eq!(engine.session.writes[1], b"efgh");
+        assert!(engine.pending_input.is_empty());
+        assert!(!engine.has_pending_output());
+
+        Ok(())
+    }
+
+    #[test]
+    fn has_pending_output_includes_queued_write_request() -> Result<()> {
+        let session = PartialSession::with_behavior(4, true);
+        let parser = NoopParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+
+        let (mut engine, handle, _events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+
+        handle
+            .send(TerminalRequest::WriteBytes(b"long-payload".to_vec()))
+            .expect("request channel open");
+
+        engine.process_pending_requests()?;
+        assert!(engine.has_pending_output());
+
+        engine.session.blocked = false;
+        engine.on_writable()?;
+        engine.session.blocked = false;
+        engine.on_writable()?;
+        assert!(!engine.has_pending_output());
+
+        Ok(())
+    }
+
+    #[derive(Default)]
+    struct NoopParser;
+
+    impl EscapeParser for NoopParser {
+        fn advance<A: EscapeActor>(&mut self, _bytes: &[u8], _actor: &mut A) {}
+    }
+
+    #[derive(Default)]
+    struct PartialSession {
+        max_per_call: usize,
+        block_after_first: bool,
+        blocked: bool,
+        pub writes: Vec<Vec<u8>>,
+    }
+
+    impl PartialSession {
+        fn with_behavior(max_per_call: usize, block_after_first: bool) -> Self {
+            Self {
+                max_per_call,
+                block_after_first,
+                blocked: false,
+                writes: Vec::new(),
+            }
+        }
+    }
+
+    impl Session for PartialSession {
+        fn read(
+            &mut self,
+            _buf: &mut [u8],
+        ) -> std::result::Result<usize, otty_pty::SessionError> {
+            Err(io::Error::from(io::ErrorKind::WouldBlock).into())
+        }
+
+        fn write(
+            &mut self,
+            input: &[u8],
+        ) -> std::result::Result<usize, otty_pty::SessionError> {
+            if self.block_after_first && self.blocked {
+                return Err(io::Error::from(io::ErrorKind::WouldBlock).into());
+            }
+
+            let len = input.len().min(self.max_per_call);
+            if len > 0 {
+                self.writes.push(input[..len].to_vec());
+            }
+            if self.block_after_first {
+                self.blocked = true;
+            }
+            Ok(len)
+        }
+
+        fn resize(
+            &mut self,
+            _size: otty_pty::PtySize,
+        ) -> std::result::Result<(), otty_pty::SessionError> {
+            Ok(())
+        }
+
+        fn close(
+            &mut self,
+        ) -> std::result::Result<i32, otty_pty::SessionError> {
+            Ok(0)
+        }
+
+        fn try_get_child_exit_status(
+            &mut self,
+        ) -> std::result::Result<Option<ExitStatus>, otty_pty::SessionError>
+        {
+            Ok(None)
+        }
     }
 }

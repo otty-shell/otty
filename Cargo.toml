@@ -19,3 +19,5 @@ log = { version = "0.4.28" }
 anyhow = "1.0.100"
 mio = "^1.1"
 cursor-icon = { version = "1.2.0", default-features = false }
+nix = { version = "0.30.1", features = ["term", "fs"]}
+signal-hook = "0.3.18"
