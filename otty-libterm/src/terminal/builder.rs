@@ -17,11 +17,8 @@ pub type DefaultParser = escape::Parser<escape::vte::Parser>;
 pub type DefaultSurface = Surface;
 
 /// Terminal emulator backend
-pub type Terminal<P, E, S> = (
-    TerminalEngine<P, E, S>,
-    TerminalHandle,
-    TerminalEvents
-);
+pub type Terminal<P, E, S> =
+    (TerminalEngine<P, E, S>, TerminalHandle, TerminalEvents);
 
 /// Terminal emulator backend with runtime implementation
 pub type TerminalWithRuntime<P, E, S> = (
@@ -127,9 +124,7 @@ where
     S: SurfaceActor + SurfaceModel,
 {
     /// Build a terminal engine, events receiver, and request handle.
-    pub fn build(
-        self,
-    ) -> Result<Terminal<P, E, S>> {
+    pub fn build(self) -> Result<Terminal<P, E, S>> {
         let TerminalBuilder {
             session,
             parser,
@@ -154,9 +149,7 @@ where
     }
 
     /// Build a terminal engine bundle plus a mio runtime and proxy.
-    pub fn build_with_runtime(
-        self,
-    ) -> Result<TerminalWithRuntime<P, E, S>> {
+    pub fn build_with_runtime(self) -> Result<TerminalWithRuntime<P, E, S>> {
         let runtime = Runtime::new()?;
         let proxy = runtime.proxy();
         let (engine, handle, events) = self.build()?;

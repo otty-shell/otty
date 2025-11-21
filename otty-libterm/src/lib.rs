@@ -28,7 +28,10 @@ pub use error::{Error, Result};
 pub use runtime::{Driver, Runtime, RuntimeHooks, RuntimeRequestProxy};
 pub use terminal::{
     SnapshotArc, TerminalEngine, TerminalEvent, TerminalRequest,
-    builder::{DefaultParser, DefaultSurface, TerminalBuilder, Terminal, TerminalWithRuntime},
+    builder::{
+        DefaultParser, DefaultSurface, Terminal, TerminalBuilder,
+        TerminalWithRuntime,
+    },
     channel::{
         ChannelConfig, ChannelRecvError, ChannelSendError, ChannelTryRecvError,
         TerminalEvents, TerminalHandle,
