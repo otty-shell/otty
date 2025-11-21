@@ -138,12 +138,10 @@ pub(crate) mod tests {
         }
     }
 
-    #[cfg(unix)]
     pub struct EioSession {
         exit_status: Option<ExitStatus>,
     }
 
-    #[cfg(unix)]
     impl EioSession {
         pub fn with_exit(status: ExitStatus) -> Self {
             Self {
@@ -152,7 +150,6 @@ pub(crate) mod tests {
         }
     }
 
-    #[cfg(unix)]
     impl pty::Session for EioSession {
         fn read(
             &mut self,
