@@ -107,8 +107,8 @@ fn main() -> otty_libterm::Result<()> {
 }
 ```
 
-See [examples/tokio_runtime.rs](./examples/tokio_runtime.rs) for a Tokio-driven runtime example and
-[examples/unix_shell.rs](./examples/unix_shell.rs) for a minimal ANSI renderer.
+See:
+- [examples/unix_shell.rs](./examples/unix_shell.rs) for a minimal ANSI renderer.
 
 ## Integrating with a UI
 
