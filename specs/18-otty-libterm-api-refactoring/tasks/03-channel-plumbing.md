@@ -4,7 +4,7 @@ Goal: Deliver channel-based event delivery and request handles so embedders cons
 
 What to do:
 - Introduce `TerminalEvents` receivers (sync + async variants) and `TerminalHandle` senders for `TerminalRequest`.
-- Wire `TerminalEngine` to emit `TerminalEvent::Frame(FrameOwned)` and other events into channels.
+- Wire `TerminalEngine` to emit `TerminalEvent::Frame(SnapshotOwned)` and other events into channels.
 - Ensure frames/events are `'static` and cheaply cloneable via `Arc`.
 - Provide fallible `send` semantics (wake mechanisms for runtimes can come in Task 04).
 - Add docs explaining usage patterns (UI thread, async tasks).

@@ -23,7 +23,7 @@ mod unix_shell {
     use otty_libterm::surface::Colors;
     use otty_libterm::{
         TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize, pty,
-        surface::{Flags, FrameCell, FrameOwned},
+        surface::{Flags, SnapshotCell, SnapshotOwned},
     };
     use std::os::fd::{AsRawFd, BorrowedFd};
     use std::thread;
@@ -131,7 +131,7 @@ mod unix_shell {
     }
 
     /// Minimal ANSI renderer honoring colors and basic attributes.
-    fn render_frame(frame: &FrameOwned) -> Result<()> {
+    fn render_frame(frame: &SnapshotOwned) -> Result<()> {
         let view = frame.view();
         let cols = view.size.columns;
         let rows = view.size.screen_lines;
@@ -201,7 +201,7 @@ mod unix_shell {
     }
 
     impl RenderAttributes {
-        fn from_cell(cell: &FrameCell) -> Self {
+        fn from_cell(cell: &SnapshotCell) -> Self {
             let flags = cell.cell.flags;
             let underline = if flags.contains(Flags::DOUBLE_UNDERLINE) {
                 RenderUnderline::Double
@@ -365,7 +365,7 @@ mod unix_shell {
 
     fn write_cell(
         out: &mut impl Write,
-        cell: &FrameCell,
+        cell: &SnapshotCell,
         buf: &mut [u8; 4],
     ) -> io::Result<()> {
         let mut ch = cell.cell.c;

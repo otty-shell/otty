@@ -16,6 +16,22 @@ pub type DefaultParser = escape::Parser<escape::vte::Parser>;
 /// Default surface used by preset builders.
 pub type DefaultSurface = Surface;
 
+/// Terminal emulator backend
+pub type Terminal<P, E, S> = (
+    TerminalEngine<P, E, S>,
+    TerminalHandle,
+    TerminalEvents
+);
+
+/// Terminal emulator backend with runtime implementation
+pub type TerminalWithRuntime<P, E, S> = (
+    Runtime,
+    TerminalEngine<P, E, S>,
+    TerminalHandle,
+    TerminalEvents,
+    RuntimeRequestProxy,
+);
+
 /// Builder that wires together a session, parser, and surface into a
 /// [`TerminalEngine`].
 pub struct TerminalBuilder<P, E, S> {
@@ -37,9 +53,9 @@ where
     S: SurfaceActor,
 {
     /// Replace the session with a custom implementation.
-    pub fn with_session<P2>(self, session: P2) -> TerminalBuilder<P2, E, S>
+    pub fn with_session<PS>(self, session: PS) -> TerminalBuilder<PS, E, S>
     where
-        P2: Session,
+        PS: Session,
     {
         TerminalBuilder {
             session: SessionSource::Provided(Some(session)),
@@ -51,9 +67,9 @@ where
     }
 
     /// Replace the escape parser with a custom implementation.
-    pub fn with_parser<E2>(self, parser: E2) -> TerminalBuilder<P, E2, S>
+    pub fn with_parser<EP>(self, parser: EP) -> TerminalBuilder<P, EP, S>
     where
-        E2: EscapeParser,
+        EP: EscapeParser,
     {
         TerminalBuilder {
             session: self.session,
@@ -65,9 +81,9 @@ where
     }
 
     /// Replace the surface with a custom implementation.
-    pub fn with_surface<S2>(self, surface: S2) -> TerminalBuilder<P, E, S2>
+    pub fn with_surface<SA>(self, surface: SA) -> TerminalBuilder<P, E, SA>
     where
-        S2: SurfaceActor,
+        SA: SurfaceActor,
     {
         TerminalBuilder {
             session: self.session,
@@ -113,7 +129,7 @@ where
     /// Build a terminal engine, events receiver, and request handle.
     pub fn build(
         self,
-    ) -> Result<(TerminalEngine<P, E, S>, TerminalHandle, TerminalEvents)> {
+    ) -> Result<Terminal<P, E, S>> {
         let TerminalBuilder {
             session,
             parser,
@@ -140,13 +156,7 @@ where
     /// Build a terminal engine bundle plus a mio runtime and proxy.
     pub fn build_with_runtime(
         self,
-    ) -> Result<(
-        Runtime,
-        TerminalEngine<P, E, S>,
-        TerminalHandle,
-        TerminalEvents,
-        RuntimeRequestProxy,
-    )> {
+    ) -> Result<TerminalWithRuntime<P, E, S>> {
         let runtime = Runtime::new()?;
         let proxy = runtime.proxy();
         let (engine, handle, events) = self.build()?;

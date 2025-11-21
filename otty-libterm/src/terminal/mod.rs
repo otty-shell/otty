@@ -23,7 +23,7 @@ use crate::{
     escape::{Action, CursorShape, CursorStyle, EscapeParser, Hyperlink},
     pty::{Pollable, Session, SessionError},
     surface::{
-        FrameOwned, Point, Scroll, SelectionType, Side, SurfaceActor,
+        Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceActor,
         SurfaceModel,
     },
 };
@@ -31,7 +31,7 @@ use crate::{
 use options::TerminalOptions;
 
 /// Owned frame wrapper shared with terminal consumers.
-pub type FrameArc = Arc<FrameOwned>;
+pub type SnapshotArc = Arc<SnapshotOwned>;
 
 const DEFAULT_READ_BUFFER_CAPACITY: usize = 1024;
 
@@ -40,7 +40,7 @@ pub enum TerminalEvent {
     /// The in-memory surface contents have changed.
     ///
     /// Front-ends typically respond by re-rendering the provided frame.
-    Frame { frame: FrameArc },
+    Frame { frame: SnapshotArc },
     /// The child process attached to the PTY has exited.
     ChildExit { status: ExitStatus },
     /// The terminal's window or tab title has changed.
@@ -583,19 +583,20 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-
-    use otty_escape::{EscapeActor, EscapeParser};
-    use otty_surface::{Surface, SurfaceConfig};
-
+    use crate::surface::{Surface, SurfaceConfig};
     use crate::terminal::channel::ChannelConfig;
+    use crate::tests::{
+        EioSession, FakeSession, PartialSession, StubParser, assert_frame,
+        collect_events, exit_ok,
+    };
+    use crate::{DefaultParser, Error};
 
     use super::*;
 
     #[test]
     fn partial_writes_keep_pending_output_until_drained() -> Result<()> {
         let session = PartialSession::with_behavior(4, true);
-        let parser = NoopParser::default();
+        let parser = StubParser::default();
         let surface =
             Surface::new(SurfaceConfig::default(), &TerminalSize::default());
 
@@ -635,7 +636,7 @@ mod tests {
     #[test]
     fn has_pending_output_includes_queued_write_request() -> Result<()> {
         let session = PartialSession::with_behavior(4, true);
-        let parser = NoopParser::default();
+        let parser = StubParser::default();
         let surface =
             Surface::new(SurfaceConfig::default(), &TerminalSize::default());
 
@@ -662,76 +663,208 @@ mod tests {
         Ok(())
     }
 
-    #[derive(Default)]
-    struct NoopParser;
+    #[test]
+    fn emits_frame_before_child_exit() -> Result<()> {
+        let session = FakeSession::with_reads(vec![b"data".to_vec()])
+            .with_exit(exit_ok());
+        let parser = StubParser::with_actions(vec![Action::Print('a')]);
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let options = TerminalOptions {
+            channel_config: ChannelConfig::default(),
+            ..TerminalOptions::default()
+        };
+        let (mut engine, _handle, events) =
+            TerminalEngine::new(session, parser, surface, options)?;
 
-    impl EscapeParser for NoopParser {
-        fn advance<A: EscapeActor>(&mut self, _bytes: &[u8], _actor: &mut A) {}
+        engine.on_readable()?;
+
+        let first = events.recv().expect("first event");
+        match first {
+            TerminalEvent::Frame { frame } => assert_frame(frame),
+            _ => panic!("expected frame first"),
+        }
+
+        let second = events.recv().expect("second event");
+        assert!(matches!(second, TerminalEvent::ChildExit { .. }));
+
+        Ok(())
     }
 
-    #[derive(Default)]
-    struct PartialSession {
-        max_per_call: usize,
-        block_after_first: bool,
-        blocked: bool,
-        pub writes: Vec<Vec<u8>>,
+    #[test]
+    fn bounded_event_channel_surfaces_backpressure() {
+        let session = FakeSession::with_reads(vec![b"payload".to_vec()])
+            .with_exit(exit_ok());
+        let parser = StubParser::with_actions(vec![Action::Print('x')]);
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let options = TerminalOptions {
+            channel_config: ChannelConfig {
+                event_capacity: Some(1),
+                request_capacity: None,
+            },
+            ..TerminalOptions::default()
+        };
+
+        let (mut engine, _handle, _events) =
+            TerminalEngine::new(session, parser, surface, options)
+                .expect("construct engine");
+
+        let err = engine.on_readable().expect_err("channel backpressure");
+        assert!(matches!(err, Error::EventChannelFull));
     }
 
-    impl PartialSession {
-        fn with_behavior(max_per_call: usize, block_after_first: bool) -> Self {
-            Self {
-                max_per_call,
-                block_after_first,
-                blocked: false,
-                writes: Vec::new(),
-            }
+    #[test]
+    fn handle_requests_flow_into_engine() -> Result<()> {
+        let session = FakeSession::default();
+        let parser = StubParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+
+        handle
+            .send(TerminalRequest::Resize(TerminalSize::default()))
+            .expect("request channel open");
+
+        engine.tick()?;
+
+        let event = events.recv().expect("frame after resize");
+        match event {
+            TerminalEvent::Frame { frame } => assert_frame(frame),
+            _ => panic!("expected frame"),
         }
+
+        Ok(())
     }
 
-    impl Session for PartialSession {
-        fn read(
-            &mut self,
-            _buf: &mut [u8],
-        ) -> std::result::Result<usize, otty_pty::SessionError> {
-            Err(io::Error::from(io::ErrorKind::WouldBlock).into())
-        }
+    #[cfg(unix)]
+    #[test]
+    fn eio_is_treated_as_exit() -> Result<()> {
+        let session = EioSession::with_exit(exit_ok());
+        let parser = StubParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, _handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
 
-        fn write(
-            &mut self,
-            input: &[u8],
-        ) -> std::result::Result<usize, otty_pty::SessionError> {
-            if self.block_after_first && self.blocked {
-                return Err(io::Error::from(io::ErrorKind::WouldBlock).into());
-            }
+        let res = engine.on_readable();
+        assert!(res.is_ok());
 
-            let len = input.len().min(self.max_per_call);
-            if len > 0 {
-                self.writes.push(input[..len].to_vec());
-            }
-            if self.block_after_first {
-                self.blocked = true;
-            }
-            Ok(len)
-        }
+        let event = events.recv().expect("child exit");
+        assert!(matches!(event, TerminalEvent::ChildExit { .. }));
 
-        fn resize(
-            &mut self,
-            _size: otty_pty::PtySize,
-        ) -> std::result::Result<(), otty_pty::SessionError> {
-            Ok(())
-        }
+        Ok(())
+    }
 
-        fn close(
-            &mut self,
-        ) -> std::result::Result<i32, otty_pty::SessionError> {
-            Ok(0)
-        }
+    #[test]
+    fn parses_bytes_into_title_event_and_frame() -> anyhow::Result<()> {
+        let session =
+            FakeSession::with_reads(vec![b"\x1b]0;hello\x07hi".to_vec()]);
+        let parser = DefaultParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, _handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
 
-        fn try_get_child_exit_status(
-            &mut self,
-        ) -> std::result::Result<Option<ExitStatus>, otty_pty::SessionError>
-        {
-            Ok(None)
-        }
+        engine.on_readable()?;
+
+        let collected = collect_events(&events);
+        assert!(!collected.is_empty());
+        assert!(matches!(
+            collected.first(),
+            Some(TerminalEvent::TitleChanged { title }) if title == "hello"
+        ));
+        let frame = match collected.last() {
+            Some(TerminalEvent::Frame { frame }) => frame,
+            _ => panic!("expected frame event last"),
+        };
+        let view = frame.view();
+        assert!(
+            view.cells.len() >= 2,
+            "frame should expose visible cells after print"
+        );
+        assert_eq!(view.cells[0].cell.c, 'h');
+        assert_eq!(view.cells[1].cell.c, 'i');
+
+        Ok(())
+    }
+
+    #[test]
+    fn propagates_action_events_before_frame_delivery() -> anyhow::Result<()> {
+        let actions = vec![
+            Action::SetWindowTitle("title".to_string()),
+            Action::Bell,
+            Action::SetCursorShape(CursorShape::Beam),
+            Action::SetCursorStyle(Some(CursorStyle {
+                shape: CursorShape::Underline,
+                blinking: true,
+            })),
+            Action::SetHyperlink(Some(Hyperlink {
+                id: Some("id".into()),
+                uri: "https://example.test".into(),
+            })),
+        ];
+        let session = FakeSession::with_reads(vec![b"payload".to_vec()]);
+        let parser = StubParser::with_actions(actions);
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, _handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+
+        engine.on_readable()?;
+
+        let collected = collect_events(&events);
+        assert!(
+            matches!(collected.last(), Some(TerminalEvent::Frame { .. })),
+            "frame should be emitted after action-driven events"
+        );
+        assert!(collected.iter().any(|ev| matches!(ev, TerminalEvent::Bell)));
+        assert!(collected.iter().any(|ev| matches!(ev, TerminalEvent::CursorShapeChanged { shape } if *shape == CursorShape::Beam)));
+        assert!(collected.iter().any(|ev| matches!(ev, TerminalEvent::CursorStyleChanged { style: Some(style) } if style.shape == CursorShape::Underline)));
+        assert!(collected.iter().any(|ev| matches!(ev, TerminalEvent::Hyperlink { link: Some(link) } if link.uri == "https://example.test")));
+        assert!(matches!(
+            collected.first(),
+            Some(TerminalEvent::TitleChanged { title }) if title == "title"
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn frame_is_emitted_before_child_exit() -> anyhow::Result<()> {
+        let session = FakeSession::with_reads(vec![b"data".to_vec()])
+            .with_exit(exit_ok());
+        let parser = DefaultParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let options = TerminalOptions::default();
+        let (mut engine, _handle, events) =
+            TerminalEngine::new(session, parser, surface, options)?;
+
+        engine.on_readable()?;
+
+        let first = events.recv().expect("frame before exit");
+        assert!(matches!(first, TerminalEvent::Frame { .. }));
+        let second = events.recv().expect("child exit after frame");
+        assert!(matches!(second, TerminalEvent::ChildExit { .. }));
+
+        Ok(())
     }
 }

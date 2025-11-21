@@ -21,8 +21,8 @@ pub use index::{Column, Line, Point, Side};
 pub use mode::SurfaceMode;
 pub use selection::{SelectionRange, SelectionType};
 pub use snapshot::{
-    CursorSnapshot, FrameCell, FrameDamage, FrameOwned, FrameSize, FrameView,
-    SurfaceModel, SurfaceSnapshot, SurfaceSnapshotSource,
+    CursorSnapshot, SnapshotCell, SnapshotDamage, SnapshotOwned, SnapshotSize,
+    SnapshotView, SurfaceModel,
 };
 pub use surface::{
     Surface, SurfaceConfig, point_to_viewport, viewport_to_point,

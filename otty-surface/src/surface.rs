@@ -5,12 +5,10 @@
 //! [`crate::SurfaceActor`], meaning it can consume the semantic actions
 //! produced by `otty-escape` and update its internal state accordingly.
 //!
-//! Rendering frontends typically interact with [`Surface`] by:
-//! - Constructing it with [`Surface::new`] for a given size.
-//! - Driving it via the [`crate::SurfaceActor`] methods.
-//! - Periodically calling [`Surface::snapshot`] (or
-//!   [`crate::SurfaceSnapshotSource::capture_snapshot`]) to obtain a
-//!   read‑only view suitable for drawing.
+//! Rendering frontends typically interact with [`Surface`] by constructing it
+//! with [`Surface::new`] for a given size, driving it via the
+//! [`crate::SurfaceActor`] methods, and exporting owned snapshots for rendering
+//! via [`crate::SurfaceModel`].
 
 use std::cmp::max;
 use std::collections::VecDeque;
@@ -34,7 +32,6 @@ use crate::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
 use crate::index::{Boundary, Column, Direction, Line, Point};
 use crate::mode::SurfaceMode;
 use crate::selection::{Selection, SelectionRange, SelectionType};
-use crate::snapshot::SurfaceSnapshot;
 
 /// Max size of the window title stack.
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
@@ -401,10 +398,6 @@ impl Surface {
 
     /// Surface content required for rendering.
     #[inline]
-    pub fn snapshot(&self) -> SurfaceSnapshot<'_> {
-        SurfaceSnapshot::new(self)
-    }
-
     /// Access to the raw grid data structure.
     pub fn grid(&self) -> &Grid<Cell> {
         &self.grid

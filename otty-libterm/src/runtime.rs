@@ -361,6 +361,7 @@ mod tests {
 
     use mio::{Interest, Registry, Token};
 
+    use crate::tests::exit_ok;
     use crate::{Result, TerminalRequest};
 
     use super::{Driver, Runtime};
@@ -465,8 +466,10 @@ mod tests {
         proxy.send(TerminalRequest::WriteBytes(b"hi".to_vec()))?;
         proxy.send(TerminalRequest::Shutdown)?;
 
-        let mut driver = StubDriver::default();
-        driver.deadline = Some(Instant::now());
+        let mut driver = StubDriver {
+            deadline: Some(Instant::now()),
+            ..Default::default()
+        };
 
         runtime.run(&mut driver, ())?;
 
@@ -485,9 +488,11 @@ mod tests {
     #[test]
     fn runtime_detects_child_exit() -> Result<()> {
         let mut runtime = Runtime::new()?;
-        let mut driver = StubDriver::default();
-        driver.deadline = Some(Instant::now());
-        driver.mark_exit(exit_status_ok());
+        let mut driver = StubDriver {
+            deadline: Some(Instant::now()),
+            ..Default::default()
+        };
+        driver.mark_exit(exit_ok());
 
         runtime.run(&mut driver, ())?;
 
@@ -523,24 +528,14 @@ mod tests {
         let proxy = runtime.proxy();
         proxy.send(TerminalRequest::Shutdown)?;
 
-        let mut driver = StubDriver::default();
-        driver.deadline = Some(Instant::now());
+        let mut driver = StubDriver {
+            deadline: Some(Instant::now()),
+            ..Default::default()
+        };
 
         runtime.run(&mut driver, ())?;
 
         assert!(driver.tick_count > 0);
         Ok(())
-    }
-
-    #[cfg(unix)]
-    fn exit_status_ok() -> ExitStatus {
-        use std::os::unix::process::ExitStatusExt;
-        ExitStatusExt::from_raw(0)
-    }
-
-    #[cfg(windows)]
-    fn exit_status_ok() -> ExitStatus {
-        use std::os::windows::process::ExitStatusExt;
-        ExitStatusExt::from_raw(0)
     }
 }

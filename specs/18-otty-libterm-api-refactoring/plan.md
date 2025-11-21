@@ -13,10 +13,10 @@ No backward-compat constraints; optimize for embedders building terminal emulato
   - `TerminalEngine<S, P, Surf>`: owns session, parser, surface; pure core with no runtime baked in.
   - `TerminalHandle`: cloneable sender for requests; callable from UI threads/tasks.
   - `TerminalEvents`: receiver (sync + async variants) yielding `'static` events.
-  - `TerminalEvent`: `Frame(FrameOwned)`, `ChildExit`, `TitleChanged/Reset`, `Bell`, `Cursor{Shape,Style,Icon}`, `Hyperlink`, `ModeChanged`, `Metrics` (optional stats).
+  - `TerminalEvent`: `Frame(SnapshotOwned)`, `ChildExit`, `TitleChanged/Reset`, `Bell`, `Cursor{Shape,Style,Icon}`, `Hyperlink`, `ModeChanged`, `Metrics` (optional stats).
   - `TerminalRequest`: `Resize(TerminalSize)`, `ScrollDisplay`, `Selection(Start/Update)`, `Shutdown`, `WriteBytes(Bytes)` (front-end stays responsible for encoding user input to bytes).
 - Frame/surface:
-  - `FrameOwned` = `Arc<FrameData>` with `FrameView<'_>` accessor; includes `size`, `cursor`, `mode`, `display_offset`, `damage: DamageSet`, and an iterator over visible cells (or spans/runs).
+  - `SnapshotOwned` = `Arc<FrameData>` with `SnapshotView<'_>` accessor; includes `size`, `cursor`, `mode`, `display_offset`, `damage: DamageSet`, and an iterator over visible cells (or spans/runs).
   - `DamageSet`: list of dirty regions (line ranges + columns) plus flags for “full clear”/“title change”.
   - `SurfaceModel` trait (replaces `SurfaceActor + SurfaceSnapshotSource`) with owned snapshot export; default impl is `Surface`.
 - Session/driver:
@@ -96,7 +96,7 @@ impl Pollable for MySession { /* tokens/registration */ }
 struct MySurface { /* gpu-backed grid */ }
 impl SurfaceModel for MySurface {
     fn apply(&mut self, action: Action) { /* mutate GPU buffers */ }
-    fn snapshot_owned(&self) -> FrameOwned { /* produce owned frame */ }
+    fn snapshot_owned(&self) -> SnapshotOwned { /* produce owned frame */ }
 }
 
 // Custom escape parser implementing EscapeParser.
@@ -179,7 +179,7 @@ loop {
 1) Core refactor:
    - Rename `Terminal` → `TerminalEngine`; strip runtime glue out of the core.
    - Remove `TerminalClient` callback storage; core emits events only via channels.
-   - Replace `TerminalSnapshot` with owned `FrameOwned`/`FrameView`.
+   - Replace `TerminalSnapshot` with owned `SnapshotOwned`/`SnapshotView`.
 
 2) Surface + damage:
    - Extend `otty-surface` to track dirty regions and emit owned snapshots/spans.
@@ -187,7 +187,7 @@ loop {
 
 3) Channel plumbing:
    - Introduce `TerminalEvents` (sync + async) and `TerminalHandle`; wire engine to push events into channels.
-   - Ensure `FrameOwned` is `'static` and cheaply cloneable (`Arc`).
+   - Ensure `SnapshotOwned` is `'static` and cheaply cloneable (`Arc`).
 
 4) Drivers/runtimes:
    - Define a `Driver` interface on top of `TerminalEngine` (`on_readable/on_writable/tick/queue`).

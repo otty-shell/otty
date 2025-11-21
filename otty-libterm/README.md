@@ -21,7 +21,7 @@ user input -> TerminalRequest::WriteBytes
            -> PTY Session (otty-pty)
            -> EscapeParser (otty-escape)
            -> SurfaceActor (otty-surface)
-           -> TerminalEvent::Frame(FrameOwned) for UI consumption
+           -> TerminalEvent::Frame(SnapshotOwned) for UI consumption
 ```
 
 ## Quick start
@@ -161,3 +161,9 @@ To send input:
   - user input handling beyond turning your input into `TerminalRequest`s.
 
 A minimal `mio` runtime driver is still present as a stub for future integration tasks, but the core engine no longer depends on it.
+
+## Validation
+
+- Tests: `cargo test --workspace` covers unit + integration, including parser→surface→frame validation in `otty-libterm/tests/validation.rs`.
+- Benches: `cargo bench -p otty-surface --bench snapshot` and `cargo bench -p otty-libterm --bench engine` (Criterion). Track throughput numbers locally for regressions.
+- Fuzz: `cd fuzz && cargo fuzz run escape_to_surface` (requires `cargo install cargo-fuzz`). Expect no panics or OOMs while exercising escape parsing into the surface model.

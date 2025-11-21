@@ -2,7 +2,7 @@ use crate::cell::{Cell, Flags};
 use crate::color::Colors;
 use crate::damage::{LineDamageBounds, SurfaceDamage};
 use crate::escape::CursorShape;
-use crate::grid::{Dimensions, GridIterator};
+use crate::grid::Dimensions;
 use crate::index::Point;
 use crate::mode::SurfaceMode;
 use crate::selection::SelectionRange;
@@ -43,31 +43,16 @@ impl CursorSnapshot {
 /// Visible terminal content.
 ///
 /// This contains all content required to render the current terminal view.
-pub struct SurfaceSnapshot<'a> {
-    /// Iterator over all cells in the visible region.
-    pub display_iter: GridIterator<'a, Cell>,
-    /// Resolved selection range in grid coordinates, if any.
-    pub selection: Option<SelectionRange>,
-    /// Cursor state suitable for rendering.
-    pub cursor: CursorSnapshot,
-    /// Current scrollback display offset.
-    pub display_offset: usize,
-    /// Effective color palette.
-    pub colors: &'a Colors,
-    /// Active surface modes.
-    pub mode: SurfaceMode,
-}
-
-/// Cell paired with its grid location in an owned frame.
+/// Cell paired with its grid location in an owned snapshot.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FrameCell {
+pub struct SnapshotCell {
     pub point: Point,
     pub cell: Cell,
 }
 
-/// Geometry captured alongside an owned frame.
+/// Geometry captured alongside an owned snapshot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FrameSize {
+pub struct SnapshotSize {
     pub columns: usize,
     pub screen_lines: usize,
     pub total_lines: usize,
@@ -75,29 +60,29 @@ pub struct FrameSize {
 
 /// Owned view of damage accumulated on the surface.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum FrameDamage {
+pub enum SnapshotDamage {
     Full,
     Partial(Vec<LineDamageBounds>),
 }
 
-/// Owned frame capturing all renderable surface state.
+/// Owned snapshot capturing all renderable surface state.
 #[derive(Clone)]
-pub struct FrameOwned {
-    cells: Vec<FrameCell>,
+pub struct SnapshotOwned {
+    cells: Vec<SnapshotCell>,
     selection: Option<SelectionRange>,
     cursor: CursorSnapshot,
     display_offset: usize,
     colors: Colors,
     mode: SurfaceMode,
-    size: FrameSize,
-    damage: FrameDamage,
+    size: SnapshotSize,
+    damage: SnapshotDamage,
     visible_cell_count: usize,
 }
 
-/// View over an owned frame suitable for rendering.
-pub struct FrameView<'a> {
+/// View over an owned snapshot suitable for rendering.
+pub struct SnapshotView<'a> {
     /// Owned cells with grid positions.
-    pub cells: &'a [FrameCell],
+    pub cells: &'a [SnapshotCell],
     /// Resolved selection range in grid coordinates, if any.
     pub selection: Option<&'a SelectionRange>,
     /// Cursor state suitable for rendering.
@@ -109,17 +94,17 @@ pub struct FrameView<'a> {
     /// Active surface modes.
     pub mode: SurfaceMode,
     /// Grid geometry at capture time.
-    pub size: FrameSize,
+    pub size: SnapshotSize,
     /// Damage collected since last reset.
-    pub damage: &'a FrameDamage,
+    pub damage: &'a SnapshotDamage,
     /// Total number of cells across visible viewport (cols × rows).
     pub visible_cell_count: usize,
 }
 
-impl FrameOwned {
-    /// Borrow this owned frame as a lightweight view.
-    pub fn view(&self) -> FrameView<'_> {
-        FrameView {
+impl SnapshotOwned {
+    /// Borrow this owned snapshot as a lightweight view.
+    pub fn view(&self) -> SnapshotView<'_> {
+        SnapshotView {
             cells: &self.cells,
             selection: self.selection.as_ref(),
             cursor: self.cursor,
@@ -133,30 +118,30 @@ impl FrameOwned {
     }
 }
 
-impl From<&mut Surface> for FrameOwned {
+impl From<&mut Surface> for SnapshotOwned {
     fn from(surface: &mut Surface) -> Self {
-        let snapshot = surface.snapshot();
         let mut cells =
-            Vec::with_capacity(snapshot.display_iter.clone().count());
-        for indexed in snapshot.display_iter {
-            cells.push(FrameCell {
+            Vec::with_capacity(surface.grid().display_iter().count());
+        for indexed in surface.grid().display_iter() {
+            cells.push(SnapshotCell {
                 point: indexed.point,
                 cell: indexed.cell.clone(),
             });
         }
 
-        let selection = snapshot.selection;
-        let cursor = snapshot.cursor;
-        let display_offset = snapshot.display_offset;
-        let colors = *snapshot.colors;
-        let mode = snapshot.mode;
-        let size = FrameSize {
+        let selection =
+            surface.selection.as_ref().and_then(|s| s.to_range(surface));
+        let cursor = CursorSnapshot::new(surface);
+        let display_offset = surface.grid().display_offset();
+        let colors = *surface.colors();
+        let mode = *surface.mode();
+        let size = SnapshotSize {
             columns: surface.grid().columns(),
             screen_lines: surface.grid().screen_lines(),
             total_lines: surface.grid().total_lines(),
         };
 
-        let damage = FrameDamage::from(surface.damage());
+        let damage = SnapshotDamage::from(surface.damage());
         let visible_cell_count = size.columns * size.screen_lines;
 
         Self {
@@ -173,7 +158,7 @@ impl From<&mut Surface> for FrameOwned {
     }
 }
 
-impl From<SurfaceDamage<'_>> for FrameDamage {
+impl From<SurfaceDamage<'_>> for SnapshotDamage {
     fn from(damage: SurfaceDamage<'_>) -> Self {
         match damage {
             SurfaceDamage::Full => Self::Full,
@@ -182,47 +167,18 @@ impl From<SurfaceDamage<'_>> for FrameDamage {
     }
 }
 
-impl<'a> SurfaceSnapshot<'a> {
-    /// Capture a snapshot of all state needed to render the given surface.
-    pub(crate) fn new(surface: &'a Surface) -> Self {
-        Self {
-            display_iter: surface.grid().display_iter(),
-            display_offset: surface.grid().display_offset(),
-            cursor: CursorSnapshot::new(surface),
-            selection: surface
-                .selection
-                .as_ref()
-                .and_then(|s| s.to_range(surface)),
-            colors: surface.colors(),
-            mode: *surface.mode(),
-        }
-    }
-}
-
-pub trait SurfaceSnapshotSource {
-    /// Capture a read‑only snapshot of the surface suitable for rendering.
-    fn capture_snapshot(&self) -> SurfaceSnapshot<'_>;
-}
-
-impl SurfaceSnapshotSource for Surface {
-    /// Capture a [`SurfaceSnapshot`] from this surface.
-    fn capture_snapshot(&self) -> SurfaceSnapshot<'_> {
-        self.snapshot()
-    }
-}
-
 /// Apply actions and export owned snapshots.
 pub trait SurfaceModel {
     /// Export an owned frame capturing the current surface state.
-    fn snapshot_owned(&mut self) -> FrameOwned;
+    fn snapshot_owned(&mut self) -> SnapshotOwned;
 
     /// Reset any accumulated damage bookkeeping after a frame is consumed.
     fn reset_damage(&mut self) {}
 }
 
 impl SurfaceModel for Surface {
-    fn snapshot_owned(&mut self) -> FrameOwned {
-        FrameOwned::from(self)
+    fn snapshot_owned(&mut self) -> SnapshotOwned {
+        SnapshotOwned::from(self)
     }
 
     fn reset_damage(&mut self) {
@@ -234,7 +190,9 @@ impl SurfaceModel for Surface {
 mod tests {
     use crate::actor::SurfaceActor;
     use crate::selection::SelectionType;
-    use crate::{FrameDamage, FrameView, Surface, SurfaceConfig, SurfaceModel};
+    use crate::{
+        SnapshotDamage, SnapshotView, Surface, SurfaceConfig, SurfaceModel,
+    };
 
     use super::*;
 
@@ -275,13 +233,14 @@ mod tests {
 
         assert_eq!(frame.view().size.columns, 4);
         assert_eq!(frame.view().size.screen_lines, 2);
-        assert_eq!(frame.view().visible_cell_count, 8);
-        assert!(!frame.view().cells.is_empty());
-        match frame.view().damage {
-            FrameDamage::Partial(lines) => {
+        let view = frame.view();
+        assert_eq!(view.visible_cell_count, 8);
+        assert!(!view.cells.is_empty());
+        match view.damage {
+            SnapshotDamage::Partial(lines) => {
                 assert!(!lines.is_empty());
             },
-            FrameDamage::Full => {
+            SnapshotDamage::Full => {
                 panic!("expected partial damage after single print")
             },
         }
@@ -305,7 +264,7 @@ mod tests {
         );
 
         let frame = surface.snapshot_owned();
-        let view: FrameView<'_> = frame.view();
+        let view: SnapshotView<'_> = frame.view();
 
         assert!(view.selection.is_some());
         assert_eq!(view.cursor.point, surface.grid().cursor.point);
