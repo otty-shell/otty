@@ -16,10 +16,3 @@ log = { workspace = true }
 otty-escape = { path = "../otty-escape", version = "0.1.0" }
 cursor-icon = { workspace = true }
 unicode-width = "0.2.2"
-
-[dev-dependencies]
-criterion = "0.5"
-
-[[bench]]
-name = "snapshot"
-harness = false

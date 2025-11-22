@@ -26,8 +26,3 @@ anyhow = { workspace = true }
 signal-hook = { workspace = true }
 nix = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
-criterion = "0.5"
-
-[[bench]]
-name = "engine"
-harness = false
