@@ -4,22 +4,20 @@ use log::debug;
 
 use crate::escape::{Action, EscapeActor};
 use crate::surface::SurfaceActor;
-use crate::terminal::{SyncState, TerminalClient, TerminalEvent};
+use crate::terminal::{SyncState, TerminalEvent};
 
 /// Adapter that applies parsed escape [`Action`]s to a [`SurfaceActor`]
 /// implementation and emits high-level [`TerminalEvent`]s.
 pub(super) struct TerminalSurfaceActor<'a, S> {
     pub surface: &'a mut S,
-    pub client: &'a mut Option<Box<dyn TerminalClient + 'static>>,
+    pub events: &'a mut VecDeque<TerminalEvent>,
     pub pending_input: &'a mut VecDeque<u8>,
     pub sync_state: &'a mut SyncState,
 }
 
 impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
     fn dispatch_event(&mut self, event: TerminalEvent) {
-        if let Some(client) = self.client {
-            let _ = client.handle_event(event);
-        }
+        self.events.push_back(event);
     }
 
     fn process_action(&mut self, action: Action) {

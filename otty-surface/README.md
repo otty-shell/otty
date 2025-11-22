@@ -18,8 +18,7 @@ The crate is used by higher-level components (like terminal frontends or TUI lib
 
 ```rust
 use otty_surface::{
-    Surface, SurfaceConfig,
-    Dimensions, SurfaceActor,
+    Dimensions, Surface, SurfaceActor, SurfaceConfig, SurfaceModel,
 };
 
 /// Simple static terminal size.
@@ -44,7 +43,10 @@ impl Dimensions for Size {
 
 fn main() {
     // Create a 80x24 surface with default configuration.
-    let size = Size { cols: 80, lines: 24 };
+    let size = Size {
+        cols: 80,
+        lines: 24,
+    };
     let mut surface = Surface::new(SurfaceConfig::default(), &size);
 
     // Drive the surface using the `SurfaceActor` API.
@@ -54,8 +56,8 @@ fn main() {
     surface.print('>');
 
     // Capture a snapshot and iterate over visible cells for rendering.
-    let snapshot = surface.snapshot();
-    for indexed in snapshot.display_iter {
+    let snapshot = surface.snapshot_owned();
+    for indexed in snapshot.view().cells {
         let ch = indexed.cell.c;
         print!("{ch}");
     }

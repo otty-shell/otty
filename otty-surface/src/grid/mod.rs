@@ -610,6 +610,7 @@ impl<T> Deref for Indexed<T> {
 }
 
 /// Grid cell iterator.
+#[derive(Clone)]
 pub struct GridIterator<'a, T> {
     /// Immutable grid reference.
     grid: &'a Grid<T>,

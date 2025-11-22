@@ -1,14 +1,14 @@
 # otty-libterm
 
-High-level terminal runtime glue for the OTTY workspace.
+High-level terminal core for the OTTY workspace.
 
-`otty-libterm` connects three lower-level crates:
+`otty-libterm` wires three lower-level crates together:
 
 - [`otty-pty`](../otty-pty) – spawns and manages PTY / SSH sessions.
 - [`otty-escape`](../otty-escape) – parses terminal escape sequences into semantic actions.
 - [`otty-surface`](../otty-surface) – maintains an in-memory terminal surface (screen model).
 
-Together they form a reusable building block for terminal front-ends and UI toolkits.
+The [`TerminalEngine`] owns a PTY session, escape parser and surface. It exposes a small API around input requests, readiness hooks (`on_readable` / `on_writable` / `tick`) and emits owned frames through [`TerminalEvent`]s.
 
 > **Status**: Work in progress. APIs may evolve while the rest of OTTY stabilizes.
 
@@ -17,31 +17,24 @@ Together they form a reusable building block for terminal front-ends and UI tool
 At a high level, data flows through `otty-libterm` like this:
 
 ```text
-user input -> TerminalRequest::Write
+user input -> TerminalRequest::WriteBytes
            -> PTY Session (otty-pty)
            -> EscapeParser (otty-escape)
            -> SurfaceActor (otty-surface)
-           -> TerminalEvent::SurfaceChanged / snapshots for UI
+           -> TerminalEvent::Frame(SnapshotOwned) for UI consumption
 ```
 
 ## Quick start
 
-The easiest way to see `otty-libterm` in action is to look at the example in
-`otty-libterm/examples/unix_shell.rs`, which wires a Unix PTY, a parser and a basic surface together.
-
-Conceptually, the flow looks like:
+The `TerminalBuilder` presets wire up a PTY, parser, and surface for you. The
+[examples/simple.rs](./examples/simple.rs) sample uses the Unix preset and drives the engine manually:
 
 ```rust
+use std::thread;
+use std::time::Duration;
+
 use otty_libterm::{
-    escape,
-    pty::{self, PtySize},
-    surface::{Dimensions, Surface, SurfaceConfig},
-    Runtime,
-    Terminal,
-    TerminalClient,
-    TerminalEvent,
-    TerminalOptions,
-    TerminalRequest,
+    TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize, pty,
 };
 
 #[cfg(not(unix))]
@@ -53,114 +46,97 @@ fn main() -> otty_libterm::Result<()> {
 #[cfg(unix)]
 fn main() -> otty_libterm::Result<()> {
     // 1. Spawn an interactive /bin/sh attached to a PTY.
-    let pty_size = PtySize {
+    let size = TerminalSize {
         rows: 24,
         cols: 80,
         cell_width: 0,
         cell_height: 0,
     };
 
-    let session = pty::unix("/bin/sh")
+    let unix_builder = pty::unix("/bin/sh")
         .with_arg("-i")
-        .with_size(pty_size)
-        .set_controling_tty_enable()
-        .spawn()?;
+        .set_controling_tty_enable();
 
-    // 2. Create a surface for our terminal grid.
-    struct SimpleDimensions {
-        columns: usize,
-        rows: usize,
-    }
+    let (mut terminal, handle, events) =
+        TerminalBuilder::from_unix_builder(unix_builder)
+            .with_size(size)
+            .build()?;
 
-    impl Dimensions for SimpleDimensions {
-        fn total_lines(&self) -> usize {
-            self.rows
+    // 4. Send an echo first so we can render a frame before exiting.
+    handle
+        .send(TerminalRequest::WriteBytes(
+            b"echo 'hello from otty-libterm'\n".to_vec(),
+        ))
+        .expect("request channel open");
+
+    // 5. Drive the engine manually until the child process exits.
+    loop {
+        terminal.on_readable()?;
+
+        if terminal.has_pending_output() {
+            terminal.on_writable()?;
         }
 
-        fn screen_lines(&self) -> usize {
-            self.rows
-        }
+        terminal.tick()?;
 
-        fn columns(&self) -> usize {
-            self.columns
-        }
-    }
-
-    let surface_dimensions = SimpleDimensions {
-        columns: pty_size.cols as usize,
-        rows: pty_size.rows as usize,
-    };
-
-    let surface = Surface::new(SurfaceConfig::default(), &surface_dimensions);
-
-    // 3. Create an escape parser and terminal runtime.
-    let parser: escape::Parser<escape::vte::Parser> = Default::default();
-    let options = TerminalOptions::default();
-    let mut terminal = Terminal::new(session, surface, parser, options)?;
-
-    // 4. Attach a minimal event client: log when the child exits.
-    struct SimpleClient;
-
-    impl TerminalClient for SimpleClient {
-        fn handle_event(
-            &mut self,
-            event: TerminalEvent,
-        ) -> otty_libterm::Result<()> {
-            use TerminalEvent::*;
-            
+        while let Ok(event) = events.try_recv() {
             match event {
-                SurfaceChanged { .. } => {
-                    println!("surface was changed need render!")
-                }
-                ChildExit { status } => {
+                TerminalEvent::Frame { frame } => {
+                    let view = frame.view();
+                    println!(
+                        "frame updated: {}x{} ({} cells)",
+                        view.size.columns,
+                        view.size.screen_lines,
+                        view.visible_cell_count
+                    );
+
+                    handle
+                        .send(TerminalRequest::WriteBytes(b"exit\n".to_vec()))
+                        .expect("request channel open");
+                },
+                TerminalEvent::ChildExit { status } => {
                     println!("Child process exited with: {status}");
-                }
-                _ => {}
+                    return Ok(());
+                },
+                _ => {},
             }
-
-            Ok(())
         }
+
+        thread::sleep(Duration::from_millis(10));
     }
-
-    terminal.set_event_client(SimpleClient);
-
-    // 5. Create a runtime and a proxy for sending requests.
-    let mut runtime = Runtime::new()?;
-    let proxy = runtime.proxy();
-
-    // 6. Send a couple of commands to the shell, then run the runtime loop.
-    proxy.send(TerminalRequest::Write(
-        b"echo 'hello from otty-libterm'\n".to_vec(),
-    ))?;
-    proxy.send(TerminalRequest::Write(b"exit\n".to_vec()))?;
-
-    // 7. Drive the runtime until the child process exits.
-    runtime.run(terminal, ())?;
-
-    Ok(())
 }
 ```
 
-This example matches `examples/simple.rs` and is intended to be copy-pasted into a standalone project (on Unix platforms).
+See:
+- [examples/unix_shell.rs](./examples/unix_shell.rs) for a minimal ANSI renderer.
 
 ## Integrating with a UI
 
-`otty-libterm` does not render pixels. Instead, it gives you a snapshot of the
-terminal state and events that describe what changed.
+`otty-libterm` does not render pixels. Instead, it keeps an in-memory surface and emits owned frames whenever parsing mutates that surface.
 
 To render:
 
-- Implement `TerminalClient` for a type that:
-  - receives `TerminalEvent::SurfaceChanged { snapshot }`,
-  - walks the `snapshot.surface` (from `otty-surface`) to extract cells, attributes, cursor position, etc.,
-  - re-renders the view in your UI toolkit (e.g. egui, Iced, wgpu).
+- Drive `on_readable`, `on_writable`, and `tick` based on your event loop (mio, tokio, custom).
+- Drain events from `TerminalEvents`. For `TerminalEvent::Frame { frame }`, call `frame.view()` to inspect cells, cursor, modes, and damage.
+- React to other events such as `ChildExit`, `TitleChanged`, `Bell`, or cursor updates as needed.
 
 To send input:
 
-- If you own the `Terminal` directly (no `Runtime`), you can call `terminal.process_request(TerminalRequest::...)` on the same thread
-- If the `Terminal` is driven by `Runtime::run`, keep a `RuntimeRequestProxy` in your UI thread and:
-  - translate key presses, mouse events or higher-level actions into `TerminalRequest` values,
-  - send them via `request_proxy.send(TerminalRequest::...)` so the runtime loop can wake up and apply them safely.
+- Translate user input into raw bytes (encoding is the front-end's job).
+- Call `queue_request(TerminalRequest::WriteBytes(bytes))` or chunk a large payload with `TerminalHandle::send_bytes_chunked`.
+- For multi-step pastes or coalescing, use `TerminalHandle::batcher()` to stage bytes and flush in safe chunks.
+- Use `has_pending_output()` to decide when to request writable readiness; it reflects queued write requests and partially flushed buffers.
+
+### Input buffering and large pastes
+
+- Large pastes should be chunked (defaults to 4 KiB in the batcher) to keep bounded channels responsive and to let `has_pending_output()` stay accurate until everything is flushed.
+- The batcher helper coalesces multiple `push()` calls and sends them as a series of `WriteBytes` requests on `flush()`, preserving any unsent data if the request channel is full.
+- Higher-level input encoders (keymaps, IME, bracketed paste framing) should live above `libterm`, handing only raw bytes into `WriteBytes`.
+
+## Runtime vs manual loops
+
+- `build()` returns `(engine, handle, events)` for manual integration with your readiness model (mio, epoll, tokio watcher, custom loop).
+- `build_with_runtime()` also hands back a mio `Runtime` and `RuntimeRequestProxy` for a turnkey blocking loop. See `examples/tokio_runtime.rs` for running that runtime from Tokio.
 
 ## Configuration
 
@@ -179,13 +155,16 @@ To send input:
 
 - **Is** responsible for:
   - wiring PTY I/O into the escape parser and surface model,
-  - providing a clean request / event API for front-ends,
-  - driving everything from a `mio`-based runtime.
+  - providing a clean request / event API for front-ends.
 
 - **Is not** responsible for:
   - drawing text or glyphs,
   - window management, GPU resources, or font rendering,
   - user input handling beyond turning your input into `TerminalRequest`s.
 
-It is intended to be embedded into different terminal front-ends (TUI, GUI, web)
-and reused across them.
+A minimal `mio` runtime driver is still present as a stub for future integration tasks, but the core engine no longer depends on it.
+
+## Validation
+
+- Tests: `cargo test --workspace` covers unit + integration.
+- Benches: `cargo bench -p otty-libterm --bench engine` (Criterion). Track throughput numbers locally for regressions.
