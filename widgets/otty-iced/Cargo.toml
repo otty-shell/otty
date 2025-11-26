@@ -1,0 +1,13 @@
+[package]
+name = "otty-iced"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+iced = { version = "0.13", features = ["canvas", "advanced"] }
+iced_graphics = { version = "0.13", default-features = false }
+iced_core = "0.13"
+otty-libterm = { path = "../../otty-libterm", version = "0.1.0" }
+tokio = { version = "1.47.1", features = ["full"] }

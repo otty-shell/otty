@@ -30,7 +30,7 @@ pub use terminal::{
     SnapshotArc, TerminalEngine, TerminalEvent, TerminalRequest,
     builder::{
         DefaultParser, DefaultSurface, Terminal, TerminalBuilder,
-        TerminalWithRuntime,
+        RuntimeTerminal,
     },
     channel::{
         ChannelConfig, ChannelRecvError, ChannelSendError, ChannelTryRecvError,

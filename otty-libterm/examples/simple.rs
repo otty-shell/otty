@@ -21,12 +21,12 @@ fn main() -> otty_libterm::Result<()> {
         cell_height: 0,
     };
 
-    let unix_builder = pty::unix("/bin/sh")
+    let unix_builder = pty::local("/bin/sh")
         .with_arg("-i")
         .set_controling_tty_enable();
 
     let (mut terminal, handle, events) =
-        TerminalBuilder::from_unix_builder(unix_builder)
+        TerminalBuilder::from(unix_builder)
             .with_size(size)
             .build()?;
 

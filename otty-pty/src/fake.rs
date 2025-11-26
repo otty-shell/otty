@@ -23,14 +23,14 @@ use signal_hook::{
 use crate::{Pollable, PtySize, Session, SessionError};
 
 /// Local pseudo terminal session that owns the spawned child process.
-pub struct LocalSession {
+pub struct UnixSession {
     master: File,
     child: Child,
     signal_pipe: UnixStream,
     signal_pipe_id: SigId,
 }
 
-impl Session for LocalSession {
+impl Session for UnixSession {
     /// Poll the child process for a new exit status without blocking the
     /// event loop thread.
     fn try_get_child_exit_status(
@@ -130,7 +130,7 @@ impl Session for LocalSession {
     }
 }
 
-impl Pollable for LocalSession {
+impl Pollable for UnixSession {
     /// Register the PTY master and SIGCHLD notification pipe with Mio.
     fn register(
         &mut self,
@@ -198,13 +198,13 @@ impl Pollable for LocalSession {
     }
 }
 
-impl Drop for LocalSession {
+impl Drop for UnixSession {
     fn drop(&mut self) {
         let _ = self.close().expect("failed to close unix session");
     }
 }
 
-impl LocalSession {
+impl UnixSession {
     fn new(
         master: File,
         child: Child,
@@ -221,7 +221,7 @@ impl LocalSession {
 }
 
 /// Builder for launching local commands attached to a pseudo terminal.
-pub struct LocalSessionBuilder {
+pub struct UnixSessionBuilder {
     cmd: Command,
     size: PtySize,
     work_dir: Option<PathBuf>,
@@ -229,8 +229,8 @@ pub struct LocalSessionBuilder {
 }
 
 /// Start building a Unix PTY session for the provided executable.
-pub fn local(program: &str) -> LocalSessionBuilder {
-    LocalSessionBuilder {
+pub fn unix(program: &str) -> UnixSessionBuilder {
+    UnixSessionBuilder {
         cmd: Command::new(program),
         size: PtySize::default(),
         work_dir: None,
@@ -238,14 +238,7 @@ pub fn local(program: &str) -> LocalSessionBuilder {
     }
 }
 
-impl Default for LocalSessionBuilder {
-    fn default() -> Self {
-        local("/bin/bash")
-            .set_controling_tty_enable()
-    }
-}
-
-impl LocalSessionBuilder {
+impl UnixSessionBuilder {
     /// Append a single argument to the command line.
     pub fn with_arg(mut self, arg: &str) -> Self {
         self.cmd.arg(arg);
@@ -294,7 +287,7 @@ impl LocalSessionBuilder {
 
     /// Spawn the configured command and return an interactive PTY session that
     /// can be registered with Mio.
-    pub fn spawn(mut self) -> Result<LocalSession, SessionError> {
+    pub fn spawn(mut self) -> Result<UnixSession, SessionError> {
         let result = openpty(Some(&self.size.into()), None)?;
         let master = unsafe { File::from_raw_fd(result.master.into_raw_fd()) };
         let slave = unsafe { File::from_raw_fd(result.slave.into_raw_fd()) };
@@ -354,7 +347,7 @@ impl LocalSessionBuilder {
 
         set_nonblocking(raw_master)?;
 
-        Ok(LocalSession::new(master, child, signal_pipe, signal_pipe_id))
+        Ok(UnixSession::new(master, child, signal_pipe, signal_pipe_id))
     }
 }
 
@@ -384,7 +377,7 @@ mod test {
     use std::thread;
     use std::time::Duration;
 
-    use super::{Session, SessionError, local};
+    use super::{Session, SessionError, unix};
     use nix::errno::Errno;
 
     fn read_output(session: &mut impl Session) -> Result<String, SessionError> {
@@ -451,7 +444,7 @@ mod test {
 
     #[test]
     fn unix_session_echoes_output() {
-        let mut session = match local("/bin/cat").spawn() {
+        let mut session = match unix("/bin/cat").spawn() {
             Ok(session) => session,
             Err(SessionError::Nix(Errno::EACCES)) => {
                 eprintln!("skipping test; PTY allocation denied (EACCES)");
@@ -475,7 +468,7 @@ mod test {
     #[test]
     fn unix_session_respects_environment()
     -> Result<(), Box<dyn std::error::Error>> {
-        let mut session = match local("/bin/sh")
+        let mut session = match unix("/bin/sh")
             .with_arg("-c")
             .with_arg("printf '%s' \"$OTTY_ENV_TEST\"")
             .with_env("OTTY_ENV_TEST", "42")

@@ -4,7 +4,7 @@
 //! `cargo run --package otty-pty --example run_unix_shell`
 
 #[cfg(unix)]
-use otty_pty::{Session, SessionError, unix};
+use otty_pty::{Session, SessionError, local};
 use std::error::Error;
 use std::io::ErrorKind;
 use std::thread;
@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(unix)]
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut session = unix("/bin/sh").with_arg("-i").spawn()?;
+    let mut session = local("/bin/sh").with_arg("-i").spawn()?;
 
     session.write(b"echo 'Hello from otty-pty' && date\n")?;
 

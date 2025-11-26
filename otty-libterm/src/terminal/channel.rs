@@ -2,6 +2,7 @@ use flume::{
     Receiver, Sender, TryRecvError as FlumeTryRecvError,
     TrySendError as FlumeTrySendError,
 };
+use std::sync::Arc;
 
 use crate::terminal::{TerminalEvent, TerminalRequest};
 
@@ -151,14 +152,16 @@ impl TerminalHandle {
 }
 
 /// Receiver for terminal events with sync + async helpers.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TerminalEvents {
-    receiver: Receiver<TerminalEvent>,
+    receiver: Arc<Receiver<TerminalEvent>>,
 }
 
 impl TerminalEvents {
     pub(crate) fn new(receiver: Receiver<TerminalEvent>) -> Self {
-        Self { receiver }
+        Self {
+            receiver: Arc::new(receiver),
+        }
     }
 
     /// Blocking receive.

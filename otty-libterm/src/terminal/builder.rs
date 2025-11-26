@@ -3,7 +3,7 @@ use crate::terminal::channel::ChannelConfig;
 use crate::terminal::channel::{TerminalEvents, TerminalHandle};
 use crate::terminal::options::TerminalOptions;
 use crate::terminal::size::TerminalSize;
-use crate::{Result, Runtime, RuntimeRequestProxy};
+use crate::{Result, Runtime};
 use crate::{
     escape::{self, EscapeParser},
     pty::{self, Pollable, Session},
@@ -21,12 +21,11 @@ pub type Terminal<P, E, S> =
     (TerminalEngine<P, E, S>, TerminalHandle, TerminalEvents);
 
 /// Terminal emulator backend with runtime implementation
-pub type TerminalWithRuntime<P, E, S> = (
+pub type RuntimeTerminal<P, E, S> = (
     Runtime,
     TerminalEngine<P, E, S>,
     TerminalHandle,
     TerminalEvents,
-    RuntimeRequestProxy,
 );
 
 /// Builder that wires together a session, parser, and surface into a
@@ -94,7 +93,6 @@ where
     /// Override the initial terminal geometry.
     pub fn with_size(mut self, size: TerminalSize) -> Self {
         self.size = size;
-        self.surface.resize(size);
         self
     }
 
@@ -149,26 +147,18 @@ where
     }
 
     /// Build a terminal engine bundle plus a mio runtime and proxy.
-    pub fn build_with_runtime(self) -> Result<TerminalWithRuntime<P, E, S>> {
+    pub fn build_with_runtime(self) -> Result<RuntimeTerminal<P, E, S>> {
         let runtime = Runtime::new()?;
-        let proxy = runtime.proxy();
         let (engine, handle, events) = self.build()?;
-        Ok((runtime, engine, handle, events, proxy))
+        Ok((runtime, engine, handle, events))
     }
 }
 
-#[cfg(unix)]
-impl TerminalBuilder<pty::UnixSession, DefaultParser, DefaultSurface> {
-    /// Preset builder for launching a Unix PTY session.
-    pub fn unix(program: &str) -> Self {
-        Self::from_unix_builder(pty::unix(program))
-    }
-
-    /// Construct a builder from an existing Unix session builder.
-    pub fn from_unix_builder(builder: pty::UnixSessionBuilder) -> Self {
+impl From<pty::LocalSessionBuilder> for TerminalBuilder<pty::LocalSession, DefaultParser, DefaultSurface> {
+    fn from(builder: pty::LocalSessionBuilder) -> Self {
         let size = TerminalSize::default();
         Self {
-            session: SessionSource::Factory(unix_factory(builder)),
+            session: SessionSource::Factory(local_factory(builder)),
             parser: DefaultParser::default(),
             surface: DefaultSurface::new(SurfaceConfig::default(), &size),
             options: TerminalOptions::default(),
@@ -177,14 +167,8 @@ impl TerminalBuilder<pty::UnixSession, DefaultParser, DefaultSurface> {
     }
 }
 
-impl TerminalBuilder<pty::SSHSession, DefaultParser, DefaultSurface> {
-    /// Preset builder for launching an SSH-backed PTY session.
-    pub fn ssh(host: &str) -> Self {
-        Self::from_ssh_builder(pty::ssh().with_host(host))
-    }
-
-    /// Construct a builder from an existing SSH session builder.
-    pub fn from_ssh_builder(builder: pty::SSHSessionBuilder) -> Self {
+impl From<pty::SSHSessionBuilder> for TerminalBuilder<pty::SSHSession, DefaultParser, DefaultSurface> {
+    fn from(builder: pty::SSHSessionBuilder) -> Self {
         let size = TerminalSize::default();
         Self {
             session: SessionSource::Factory(ssh_factory(builder)),
@@ -223,10 +207,9 @@ where
     }
 }
 
-#[cfg(unix)]
-fn unix_factory(
-    builder: pty::UnixSessionBuilder,
-) -> Box<dyn FnMut(TerminalSize) -> Result<pty::UnixSession> + Send> {
+fn local_factory(
+    builder: pty::LocalSessionBuilder,
+) -> Box<dyn FnMut(TerminalSize) -> Result<pty::LocalSession> + Send> {
     let mut builder = Some(builder);
     Box::new(move |size: TerminalSize| {
         let builder = builder

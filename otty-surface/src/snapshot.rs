@@ -9,7 +9,7 @@ use crate::selection::SelectionRange;
 use crate::surface::Surface;
 
 /// Terminal cursor rendering information.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Copy, Clone, PartialEq, Eq)]
 pub struct CursorSnapshot {
     pub shape: CursorShape,
     pub point: Point,
@@ -51,7 +51,7 @@ pub struct SnapshotCell {
 }
 
 /// Geometry captured alongside an owned snapshot.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SnapshotSize {
     pub columns: usize,
     pub screen_lines: usize,
@@ -59,14 +59,15 @@ pub struct SnapshotSize {
 }
 
 /// Owned view of damage accumulated on the surface.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
 pub enum SnapshotDamage {
+    #[default]
     Full,
     Partial(Vec<LineDamageBounds>),
 }
 
 /// Owned snapshot capturing all renderable surface state.
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct SnapshotOwned {
     cells: Vec<SnapshotCell>,
     selection: Option<SelectionRange>,
