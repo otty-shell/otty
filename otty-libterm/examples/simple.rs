@@ -25,10 +25,9 @@ fn main() -> otty_libterm::Result<()> {
         .with_arg("-i")
         .set_controling_tty_enable();
 
-    let (mut terminal, handle, events) =
-        TerminalBuilder::from(unix_builder)
-            .with_size(size)
-            .build()?;
+    let (mut terminal, handle, events) = TerminalBuilder::from(unix_builder)
+        .with_size(size)
+        .build()?;
 
     // 4. Send an echo first so we can render a frame before exiting.
     handle

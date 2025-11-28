@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
-use otty_libterm::escape::{self, StdColor};
-use iced::{widget::container, Color};
+use iced::{Color, widget::container};
+use otty_libterm::escape::{self, Rgb, StdColor};
 
-use crate::{error, settings::ThemeSettings};
+use crate::settings::ThemeSettings;
 
 pub(crate) trait TerminalStyle {
     fn container_style(&self) -> container::Style;
@@ -101,7 +101,9 @@ impl Theme {
 
     pub fn get_color(&self, c: escape::Color) -> Color {
         match c {
-            escape::Color::TrueColor(rgb) => Color::from_rgb8(rgb.r, rgb.g, rgb.b),
+            escape::Color::TrueColor(rgb) => {
+                Color::from_rgb8(rgb.r, rgb.g, rgb.b)
+            },
             escape::Color::Indexed(index) => {
                 if index <= 15 {
                     let color = match index {
@@ -126,7 +128,8 @@ impl Theme {
                         _ => &self.palette.background,
                     };
 
-                    return hex_to_color(color)
+                    return Rgb::from_str(color)
+                        .map(|c| Color::from_rgb8(c.r, c.g, c.b))
                         .unwrap_or_else(|_| panic!("invalid color {}", color));
                 }
 
@@ -177,7 +180,8 @@ impl Theme {
                     _ => &self.palette.background,
                 };
 
-                hex_to_color(color)
+                Rgb::from_str(color)
+                    .map(|c| Color::from_rgb8(c.r, c.g, c.b))
                     .unwrap_or_else(|_| panic!("invalid color {}", color))
             },
         }
@@ -211,23 +215,12 @@ fn build_ansi256_colors() -> HashMap<u8, Color> {
     ansi256_colors
 }
 
-fn hex_to_color(hex: &str) -> error::Result<Color> {
-    if hex.len() != 7 {
-        return Err(error::Error::InvalidColorString);
-    }
-
-    let r = u8::from_str_radix(&hex[1..3], 16)?;
-    let g = u8::from_str_radix(&hex[3..5], 16)?;
-    let b = u8::from_str_radix(&hex[5..7], 16)?;
-
-    Ok(Color::from_rgb8(r, g, b))
-}
-
 impl TerminalStyle for Theme {
     fn container_style(&self) -> container::Style {
         container::Style {
             background: Some(
-                hex_to_color(&self.palette.background)
+                Rgb::from_str(&self.palette.background)
+                    .map(|c| Color::from_rgb8(c.r, c.g, c.b))
                     .unwrap_or_else(|_| {
                         panic!(
                             "invalid background color {}",
@@ -246,26 +239,6 @@ mod tests {
     use super::*;
     use otty_libterm::escape;
     use std::collections::HashMap;
-
-    #[test]
-    fn hex_to_color_valid_convertion() {
-        assert!(hex_to_color("#000000").is_ok())
-    }
-
-    #[test]
-    fn hex_to_color_short_string() {
-        assert!(hex_to_color("GG").is_err());
-    }
-
-    #[test]
-    fn hex_to_color_long_string() {
-        assert!(hex_to_color("GG000000").is_err());
-    }
-
-    #[test]
-    fn hex_to_color_non_valid_hex_string() {
-        assert!(hex_to_color("#KKLLOO").is_err());
-    }
 
     #[test]
     fn get_basic_indexed_colors() {
@@ -292,7 +265,12 @@ mod tests {
         for index in 0..16 {
             let color = default_theme.get_color(escape::Color::Indexed(index));
             let expected_color = basic_indexed_colors_map.get(&index).unwrap();
-            assert_eq!(color, hex_to_color(expected_color).unwrap())
+            assert_eq!(
+                color,
+                Rgb::from_str(expected_color)
+                    .map(|c| Color::from_rgb8(c.r, c.g, c.b))
+                    .unwrap()
+            )
         }
     }
 }

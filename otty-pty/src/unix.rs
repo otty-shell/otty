@@ -240,8 +240,7 @@ pub fn local(program: &str) -> LocalSessionBuilder {
 
 impl Default for LocalSessionBuilder {
     fn default() -> Self {
-        local("/bin/bash")
-            .set_controling_tty_enable()
+        local("/bin/bash").set_controling_tty_enable()
     }
 }
 
@@ -354,7 +353,12 @@ impl LocalSessionBuilder {
 
         set_nonblocking(raw_master)?;
 
-        Ok(LocalSession::new(master, child, signal_pipe, signal_pipe_id))
+        Ok(LocalSession::new(
+            master,
+            child,
+            signal_pipe,
+            signal_pipe_id,
+        ))
     }
 }
 

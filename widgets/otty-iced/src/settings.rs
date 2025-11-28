@@ -37,28 +37,117 @@ impl BackendSettings {
 }
 
 #[derive(Debug, Clone)]
-pub enum SessionKind {
-    Local {
-        program: String,
-        args: Vec<String>,
-        envs: HashMap<String, String>,
-        working_directory: Option<PathBuf>,
-    },
-    SSH {
-        host: String,
-        user: String,
-        auth: SSHAuth,
-    }
+pub struct LocalSessionOptions {
+    program: String,
+    args: Vec<String>,
+    envs: HashMap<String, String>,
+    working_directory: Option<PathBuf>,
 }
 
-impl Default for SessionKind {
+impl Default for LocalSessionOptions {
     fn default() -> Self {
-        Self::Local {
+        Self {
             program: DEFAULT_SHELL.to_string(),
             args: vec![],
             envs: HashMap::new(),
             working_directory: None,
         }
+    }
+}
+
+impl LocalSessionOptions {
+    pub fn with_program(mut self, program: &str) -> Self {
+        self.program = program.to_string();
+        self
+    }
+
+    pub fn with_args(mut self, args: Vec<String>) -> Self {
+        self.args = args;
+        self
+    }
+
+    pub fn with_envs(mut self, envs: HashMap<String, String>) -> Self {
+        self.envs = envs;
+        self
+    }
+
+    pub fn with_working_directory(mut self, dir: PathBuf) -> Self {
+        self.working_directory = Some(dir);
+        self
+    }
+
+    pub fn program(&self) -> &String {
+        &self.program
+    }
+
+    pub fn args(&self) -> &[String] {
+        &self.args
+    }
+
+    pub fn envs(&self) -> &HashMap<String, String> {
+        &self.envs
+    }
+
+    pub fn working_directory(&self) -> &Option<PathBuf> {
+        &self.working_directory
+    }
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct SSHSessionOptions {
+    host: String,
+    user: String,
+    auth: SSHAuth,
+}
+
+impl SSHSessionOptions {
+    pub fn with_host(mut self, host: &str) -> Self {
+        self.host = host.to_string();
+        self
+    }
+
+    pub fn with_user(mut self, user: &str) -> Self {
+        self.user = user.to_string();
+        self
+    }
+
+    pub fn with_auth(mut self, auth: SSHAuth) -> Self {
+        self.auth = auth;
+        self
+    }
+
+    pub fn host(&self) -> &String {
+        &self.host
+    }
+
+    pub fn user(&self) -> &String {
+        &self.user
+    }
+
+    pub fn auth(&self) -> SSHAuth {
+        self.auth.clone()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum SessionKind {
+    Local(LocalSessionOptions),
+    Ssh(SSHSessionOptions),
+}
+
+impl Default for SessionKind {
+    fn default() -> Self {
+        Self::Local(LocalSessionOptions::default())
+    }
+}
+
+impl SessionKind {
+    pub fn from_local_options(options: LocalSessionOptions) -> Self {
+        Self::Local(options)
+    }
+
+    pub fn from_ssh_options(options: SSHSessionOptions) -> Self {
+        Self::Ssh(options)
     }
 }
 

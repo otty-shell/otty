@@ -3,15 +3,17 @@ use crate::color::Colors;
 use crate::damage::{LineDamageBounds, SurfaceDamage};
 use crate::escape::CursorShape;
 use crate::grid::Dimensions;
+use crate::hyperlink::{HyperlinkMap, HyperlinkSpan};
 use crate::index::Point;
 use crate::mode::SurfaceMode;
 use crate::selection::SelectionRange;
 use crate::surface::Surface;
 
 /// Terminal cursor rendering information.
-#[derive(Default, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq)]
 pub struct CursorSnapshot {
     pub shape: CursorShape,
+    pub cell: Cell,
     pub point: Point,
 }
 
@@ -36,7 +38,15 @@ impl CursorSnapshot {
             surface.cursor_style().shape
         };
 
-        Self { shape, point }
+        Self {
+            shape,
+            point,
+            cell: surface
+                .grid()
+                .cursor
+                .template
+                .clone()
+        }
     }
 }
 
@@ -71,6 +81,7 @@ pub enum SnapshotDamage {
 pub struct SnapshotOwned {
     cells: Vec<SnapshotCell>,
     selection: Option<SelectionRange>,
+    hyperlinks: HyperlinkMap,
     cursor: CursorSnapshot,
     display_offset: usize,
     colors: Colors,
@@ -86,8 +97,10 @@ pub struct SnapshotView<'a> {
     pub cells: &'a [SnapshotCell],
     /// Resolved selection range in grid coordinates, if any.
     pub selection: Option<&'a SelectionRange>,
+    /// Hyperlink mapping for the visible viewport.
+    pub(crate) hyperlinks: &'a HyperlinkMap,
     /// Cursor state suitable for rendering.
-    pub cursor: CursorSnapshot,
+    pub cursor: &'a CursorSnapshot,
     /// Current scrollback display offset.
     pub display_offset: usize,
     /// Effective color palette.
@@ -108,7 +121,8 @@ impl SnapshotOwned {
         SnapshotView {
             cells: &self.cells,
             selection: self.selection.as_ref(),
-            cursor: self.cursor,
+            hyperlinks: &self.hyperlinks,
+            cursor: &self.cursor,
             display_offset: self.display_offset,
             colors: &self.colors,
             mode: self.mode,
@@ -141,13 +155,15 @@ impl From<&mut Surface> for SnapshotOwned {
             screen_lines: surface.grid().screen_lines(),
             total_lines: surface.grid().total_lines(),
         };
+        let visible_cell_count = size.columns * size.screen_lines;
+        let hyperlinks = HyperlinkMap::build(&cells, size, display_offset);
 
         let damage = SnapshotDamage::from(surface.damage());
-        let visible_cell_count = size.columns * size.screen_lines;
 
         Self {
             cells,
             selection,
+            hyperlinks,
             cursor,
             display_offset,
             colors,
@@ -187,9 +203,26 @@ impl SurfaceModel for Surface {
     }
 }
 
+impl<'a> SnapshotView<'a> {
+    /// Get hyperlink span for the given grid point (visible viewport only).
+    #[inline]
+    pub fn hyperlink_span_at(&self, point: Point) -> Option<&HyperlinkSpan> {
+        self.hyperlinks.span_for_point(self.display_offset, point)
+    }
+
+    /// Get hyperlink span id for the given grid point (visible viewport only).
+    #[inline]
+    pub fn hyperlink_span_id_at(&self, point: Point) -> Option<u32> {
+        self.hyperlinks
+            .span_id_for_point(self.display_offset, point)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::actor::SurfaceActor;
+    use crate::cell::Hyperlink;
+    use crate::index::{Column, Line};
     use crate::selection::SelectionType;
     use crate::{
         SnapshotDamage, SnapshotView, Surface, SurfaceConfig, SurfaceModel,
@@ -219,6 +252,13 @@ mod tests {
     impl TestDimensions {
         fn new(columns: usize, lines: usize) -> Self {
             Self { columns, lines }
+        }
+    }
+
+    fn set_text(surface: &mut Surface, line: usize, text: &str) {
+        for (idx, ch) in text.chars().enumerate() {
+            let column = Column(idx);
+            surface.grid_mut()[Line(line as i32)][column].c = ch;
         }
     }
 
@@ -269,5 +309,64 @@ mod tests {
 
         assert!(view.selection.is_some());
         assert_eq!(view.cursor.point, surface.grid().cursor.point);
+    }
+
+    #[test]
+    fn osc_hyperlink_is_exposed_in_snapshot() {
+        let mut surface =
+            Surface::new(SurfaceConfig::default(), &TestDimensions::new(10, 2));
+        let link = Hyperlink::new(None::<String>, "https://example.com".into());
+        surface.grid_mut()[Line(0)][Column(0)]
+            .set_hyperlink(Some(link.clone()));
+        surface.grid_mut()[Line(0)][Column(1)]
+            .set_hyperlink(Some(link.clone()));
+        set_text(&mut surface, 0, "hi");
+
+        let snapshot = surface.snapshot_owned();
+        let view = snapshot.view();
+        let span = view
+            .hyperlink_span_at(Point::new(Line(0), Column(0)))
+            .expect("span expected");
+
+        assert_eq!(span.link, link);
+        assert!(span.contains(Point::new(Line(0), Column(1))));
+    }
+
+    #[test]
+    fn regex_detects_plain_url() {
+        let mut surface =
+            Surface::new(SurfaceConfig::default(), &TestDimensions::new(40, 2));
+        set_text(&mut surface, 0, "visit https://otty.sh now");
+
+        let snapshot = surface.snapshot_owned();
+        let view = snapshot.view();
+        let span = view
+            .hyperlink_span_at(Point::new(Line(0), Column(8)))
+            .expect("url span");
+
+        assert_eq!(span.link.uri(), "https://otty.sh");
+        assert!(
+            view.hyperlink_span_at(Point::new(Line(0), Column(22)))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn unsupported_scheme_is_ignored() {
+        let mut surface =
+            Surface::new(SurfaceConfig::default(), &TestDimensions::new(40, 2));
+        set_text(&mut surface, 0, "custom://example is not supported");
+
+        let snapshot = surface.snapshot_owned();
+        let view = snapshot.view();
+
+        assert!(
+            view.hyperlink_span_at(Point::new(Line(0), Column(0)))
+                .is_none()
+        );
+        assert!(
+            view.hyperlink_span_at(Point::new(Line(0), Column(15)))
+                .is_none()
+        );
     }
 }

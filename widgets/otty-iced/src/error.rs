@@ -1,9 +1,9 @@
 use std::io;
 use std::num::ParseIntError;
 
-use thiserror::Error;
 use otty_libterm::Error as LibtermError;
 use otty_libterm::pty::SessionError;
+use thiserror::Error;
 
 /// Errors originating from the `otty-iced` widget.
 #[derive(Debug, Error)]
@@ -21,7 +21,7 @@ pub enum Error {
     InvalidColorString,
 
     #[error("parsing color string to rgb error: {0}")]
-    ParsingColorString(#[from] ParseIntError)
+    ParsingColorString(#[from] ParseIntError),
 }
 
 /// Convenient result alias for fallible operations in this crate.

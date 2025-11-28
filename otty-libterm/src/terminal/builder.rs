@@ -154,7 +154,9 @@ where
     }
 }
 
-impl From<pty::LocalSessionBuilder> for TerminalBuilder<pty::LocalSession, DefaultParser, DefaultSurface> {
+impl From<pty::LocalSessionBuilder>
+    for TerminalBuilder<pty::LocalSession, DefaultParser, DefaultSurface>
+{
     fn from(builder: pty::LocalSessionBuilder) -> Self {
         let size = TerminalSize::default();
         Self {
@@ -167,7 +169,9 @@ impl From<pty::LocalSessionBuilder> for TerminalBuilder<pty::LocalSession, Defau
     }
 }
 
-impl From<pty::SSHSessionBuilder> for TerminalBuilder<pty::SSHSession, DefaultParser, DefaultSurface> {
+impl From<pty::SSHSessionBuilder>
+    for TerminalBuilder<pty::SSHSession, DefaultParser, DefaultSurface>
+{
     fn from(builder: pty::SSHSessionBuilder) -> Self {
         let size = TerminalSize::default();
         Self {

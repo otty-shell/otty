@@ -10,6 +10,7 @@ mod mode;
 mod selection;
 mod snapshot;
 mod surface;
+mod hyperlink;
 
 pub(crate) use otty_escape as escape;
 

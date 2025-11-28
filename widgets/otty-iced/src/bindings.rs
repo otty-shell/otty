@@ -1,8 +1,8 @@
-use otty_libterm::surface::SurfaceMode;
 use iced_core::{
-    keyboard::{key::Named, Modifiers},
+    keyboard::{Modifiers, key::Named},
     mouse::Button,
 };
+use otty_libterm::surface::SurfaceMode;
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub enum BindingAction {
@@ -25,9 +25,8 @@ pub enum InputKind {
 pub struct Binding<T> {
     pub target: T,
     pub modifiers: Modifiers,
-    // TODO: rename to surface mod
-    pub terminal_mode_include: SurfaceMode,
-    pub terminal_mode_exclude: SurfaceMode,
+    pub mode_include: SurfaceMode,
+    pub mode_exclude: SurfaceMode,
 }
 
 pub type KeyboardBinding = Binding<InputKind>;
@@ -40,8 +39,8 @@ macro_rules! generate_bindings {
         $(
             $input_kind:tt$(::$button:ident)?
             $(,$input_modifiers:expr)*
-            $(,+$terminal_mode_include:expr)*
-            $(,~$terminal_mode_exclude:expr)*
+            $(,+$mode_include:expr)*
+            $(,~$mode_exclude:expr)*
             ;$action:expr
         );*
         $(;)*
@@ -63,16 +62,16 @@ macro_rules! generate_bindings {
         $(
             let mut _input_modifiers = Modifiers::empty();
             $(_input_modifiers = $input_modifiers;)*
-            let mut _terminal_mode_include = SurfaceMode::empty();
-            $(_terminal_mode_include.insert($terminal_mode_include);)*
-            let mut _terminal_mode_exclude = SurfaceMode::empty();
-            $(_terminal_mode_exclude.insert($terminal_mode_exclude);)*
+            let mut _mode_include = SurfaceMode::empty();
+            $(_mode_include.insert($mode_include);)*
+            let mut _mode_exclude = SurfaceMode::empty();
+            $(_mode_exclude.insert($mode_exclude);)*
 
             let binding = $binding_type {
                 target: input_kind_match!($binding_type, $input_kind),
                 modifiers: _input_modifiers,
-                terminal_mode_include: _terminal_mode_include,
-                terminal_mode_exclude: _terminal_mode_exclude,
+                mode_include: _mode_include,
+                mode_exclude: _mode_exclude,
             };
 
             v.push((binding, $action.into()));
@@ -123,13 +122,13 @@ impl BindingsLayout {
         &self,
         input: InputKind,
         modifiers: Modifiers,
-        terminal_mode: SurfaceMode,
+        mode: SurfaceMode,
     ) -> BindingAction {
         for (binding, action) in &self.layout {
             let is_trigered = binding.target == input
                 && binding.modifiers == modifiers
-                && terminal_mode.contains(binding.terminal_mode_include)
-                && !terminal_mode.intersects(binding.terminal_mode_exclude);
+                && mode.contains(binding.mode_include)
+                && !mode.intersects(binding.mode_exclude);
 
             if is_trigered {
                 return action.clone();
@@ -355,11 +354,11 @@ mod tests {
     use crate::bindings::MouseBinding;
 
     use super::{BindingAction, BindingsLayout, InputKind, KeyboardBinding};
-    use otty_libterm::surface::SurfaceMode;
     use iced_core::{
-        keyboard::{key::Named, Modifiers},
+        keyboard::{Modifiers, key::Named},
         mouse::Button,
     };
+    use otty_libterm::surface::SurfaceMode;
 
     #[test]
     fn add_new_custom_keyboard_binding() {
@@ -471,7 +470,7 @@ mod tests {
             let found_action = current_layout.get_action(
                 bind.target.clone(),
                 bind.modifiers,
-                bind.terminal_mode_include,
+                bind.mode_include,
             );
             assert_eq!(action, &found_action);
         }
@@ -492,7 +491,7 @@ mod tests {
             let found_action = current_layout.get_action(
                 bind.target.clone(),
                 bind.modifiers,
-                bind.terminal_mode_include,
+                bind.mode_include,
             );
             assert_eq!(action, &found_action);
         }

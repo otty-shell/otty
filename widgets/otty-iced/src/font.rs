@@ -1,8 +1,8 @@
 use iced::{Font, Size};
 use iced_core::{
+    Text,
     alignment::{Horizontal, Vertical},
     text::{LineHeight, Paragraph, Shaping as TextShaping},
-    Text,
 };
 use iced_graphics::text::paragraph;
 
@@ -28,11 +28,6 @@ impl TermFont {
                 settings.font_type,
             ),
         }
-    }
-
-    pub fn sync(&mut self) {
-        self.measure =
-            font_measure(self.size, self.scale_factor, self.font_type)
     }
 }
 
