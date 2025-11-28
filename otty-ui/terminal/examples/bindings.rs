@@ -1,12 +1,12 @@
 use iced::keyboard::Modifiers;
 use iced::widget::container;
-use iced::{window, Element, Length, Size, Subscription, Task, Theme};
-use otty_iced::TerminalView;
-use otty_iced::settings::{LocalSessionOptions, SessionKind};
-use otty_iced::{
-    self,
+use iced::{Element, Length, Size, Subscription, Task, Theme, window};
+use otty_ui_term::TerminalView;
+use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
+use otty_ui_term::{
+    self, SurfaceMode,
     bindings::{Binding, BindingAction, InputKind, KeyboardBinding},
-    generate_bindings, SurfaceMode,
+    generate_bindings,
 };
 
 fn main() -> iced::Result {
@@ -22,12 +22,12 @@ fn main() -> iced::Result {
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    Terminal(otty_iced::Event),
+    Terminal(otty_ui_term::Event),
 }
 
 struct App {
     title: String,
-    term: otty_iced::Terminal,
+    term: otty_ui_term::Terminal,
 }
 
 impl App {
@@ -39,8 +39,8 @@ impl App {
             LocalSessionOptions::default().with_program(&system_shell);
         let session = SessionKind::from_local_options(session_options);
         let term_id = 0;
-        let term_settings = otty_iced::settings::Settings {
-            backend: otty_iced::settings::BackendSettings::default()
+        let term_settings = otty_ui_term::settings::Settings {
+            backend: otty_ui_term::settings::BackendSettings::default()
                 .with_session(session),
             ..Default::default()
         };
@@ -75,7 +75,7 @@ impl App {
             ),
         ];
 
-        let mut term = otty_iced::Terminal::new(term_id, term_settings)
+        let mut term = otty_ui_term::Terminal::new(term_id, term_settings)
             .expect("failed to create the new terminal instance");
 
         term.add_bindings(custom_bindings);
@@ -107,7 +107,7 @@ impl App {
     }
 
     fn update(&mut self, event: Event) -> Task<Event> {
-        use otty_iced::Event::*;
+        use otty_ui_term::Event::*;
 
         match event {
             Event::Terminal(inner) => match inner {

@@ -1,8 +1,8 @@
 use iced::advanced::graphics::core::Element;
 use iced::widget::{button, column, container, row};
-use iced::{window, Length, Size, Subscription, Task, Theme};
-use otty_iced::{ColorPalette, TerminalView};
-use otty_iced::settings::{LocalSessionOptions, SessionKind};
+use iced::{Length, Size, Subscription, Task, Theme, window};
+use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
+use otty_ui_term::{ColorPalette, TerminalView};
 
 fn main() -> iced::Result {
     iced::application(App::title, App::update, App::view)
@@ -17,13 +17,13 @@ fn main() -> iced::Result {
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    Terminal(otty_iced::Event),
-    ThemeChanged(otty_iced::ColorPalette),
+    Terminal(otty_ui_term::Event),
+    ThemeChanged(otty_ui_term::ColorPalette),
 }
 
 struct App {
     title: String,
-    term: otty_iced::Terminal,
+    term: otty_ui_term::Terminal,
 }
 
 impl App {
@@ -35,8 +35,8 @@ impl App {
             LocalSessionOptions::default().with_program(&system_shell);
         let session = SessionKind::from_local_options(session_options);
         let term_id = 0;
-        let term_settings = otty_iced::settings::Settings {
-            backend: otty_iced::settings::BackendSettings::default()
+        let term_settings = otty_ui_term::settings::Settings {
+            backend: otty_ui_term::settings::BackendSettings::default()
                 .with_session(session),
             ..Default::default()
         };
@@ -44,7 +44,7 @@ impl App {
         (
             Self {
                 title: String::from("Terminal app"),
-                term: otty_iced::Terminal::new(term_id, term_settings.clone())
+                term: otty_ui_term::Terminal::new(term_id, term_settings.clone())
                     .expect("failed to create the new terminal instance"),
             },
             Task::none(),
@@ -62,12 +62,12 @@ impl App {
     }
 
     fn update(&mut self, event: Event) -> Task<Event> {
-        use otty_iced::Event::*;
+        use otty_ui_term::Event::*;
 
         match event {
             Event::ThemeChanged(theme) => {
                 self.term.change_theme(theme);
-            }
+            },
             Event::Terminal(inner) => match inner {
                 Shutdown { .. } => {
                     return window::get_latest().and_then(window::close);
@@ -90,7 +90,7 @@ impl App {
                     .padding(8)
                     .on_press(Event::ThemeChanged(ColorPalette::default())),
                 button("ubuntu").width(Length::Fill).padding(8).on_press(
-                    Event::ThemeChanged(otty_iced::ColorPalette {
+                    Event::ThemeChanged(otty_ui_term::ColorPalette {
                         background: String::from("#300A24"),
                         foreground: String::from("#FFFFFF"),
                         black: String::from("#2E3436"),
@@ -113,7 +113,7 @@ impl App {
                     })
                 ),
                 button("3024 Day").width(Length::Fill).padding(8).on_press(
-                    Event::ThemeChanged(otty_iced::ColorPalette {
+                    Event::ThemeChanged(otty_ui_term::ColorPalette {
                         background: String::from("#F7F7F7"),
                         foreground: String::from("#4A4543"),
                         black: String::from("#090300"),

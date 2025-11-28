@@ -6,7 +6,7 @@ members = [
     "otty-surface",
     "otty-vte",
     "otty-libterm",
-    "widgets/otty-iced",
+    "otty-ui/*",
 ]
 
 [workspace.package]

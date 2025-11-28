@@ -2374,19 +2374,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "otty-iced"
-version = "0.1.0"
-dependencies = [
- "iced",
- "iced_core",
- "iced_graphics",
- "open",
- "otty-libterm",
- "thiserror 2.0.17",
- "tokio",
-]
-
-[[package]]
 name = "otty-libterm"
 version = "0.1.0"
 dependencies = [
@@ -2424,10 +2411,22 @@ dependencies = [
  "bitflags 2.10.0",
  "cursor-icon",
  "log",
- "once_cell",
  "otty-escape",
- "regex",
+ "regex-automata",
  "unicode-width 0.2.2",
+]
+
+[[package]]
+name = "otty-ui-term"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_core",
+ "iced_graphics",
+ "open",
+ "otty-libterm",
+ "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]
@@ -2874,18 +2873,6 @@ dependencies = [
  "getrandom 0.2.16",
  "libredox",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "regex"
-version = "1.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843bc0191f75f3e22651ae5f1e72939ab2f72a4bc30fa80a066bd66edefc24d4"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-automata",
- "regex-syntax",
 ]
 
 [[package]]

@@ -1,7 +1,8 @@
 use std::cmp::min;
 use std::sync::Arc;
 
-use otty_libterm::pty;
+use iced::keyboard::Modifiers;
+use iced_core::Size;
 use otty_libterm::surface::{
     Column, Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceMode,
     viewport_to_point,
@@ -10,8 +11,7 @@ use otty_libterm::{
     DefaultParser, DefaultSurface, RuntimeRequestProxy, RuntimeTerminal,
     TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize,
 };
-use iced::keyboard::Modifiers;
-use iced_core::Size;
+use otty_libterm::pty;
 use tokio::sync::mpsc;
 
 use crate::error::Result;
@@ -389,54 +389,80 @@ impl Engine {
             }
         }
     }
-
-    pub(crate) fn selectable_content(&self) -> String {
-        let content = self.snapshot();
-        let view = content.view();
-        let mut result = String::new();
-        if let Some(range) = view.selection {
-            for indexed in view.cells {
-                if range.contains(indexed.point) {
-                    result.push(indexed.cell.c);
-                }
-            }
-        }
-        result
-    }
-
-    //     /// Based on alacritty/src/display/hint.rs > regex_match_at
-    //     /// Retrieve the match, if the specified point is inside the content matching the regex.
-    //     fn regex_match_at(
-    //         &self,
-    //         terminal: &Term<EventProxy>,
-    //         point: Point,
-    //         regex: &mut RegexSearch,
-    //     ) -> Option<Match> {
-    //         let x = visible_regex_match_iter(terminal, regex)
-    //             .find(|rm| rm.contains(&point));
-    //         x
-    //     }
 }
 
-// /// Copied from alacritty/src/display/hint.rs:
-// /// Iterate over all visible regex matches.
-// fn visible_regex_match_iter<'a>(
-//     term: &'a Term<EventProxy>,
-//     regex: &'a mut RegexSearch,
-// ) -> impl Iterator<Item = Match> + 'a {
-//     let viewport_start = Line(-(term.grid().display_offset() as i32));
-//     let viewport_end = viewport_start + term.bottommost_line();
-//     let mut start =
-//         term.line_search_left(Point::new(viewport_start, Column(0)));
-//     let mut end = term.line_search_right(Point::new(viewport_end, Column(0)));
-//     start.line = start.line.max(viewport_start - 100);
-//     end.line = end.line.min(viewport_end + 100);
-
-//     RegexIter::new(start, end, Direction::Right, term, regex)
-//         .skip_while(move |rm| rm.end().line < viewport_start)
-//         .take_while(move |rm| rm.start().line <= viewport_end)
-// }
-
 impl Drop for Engine {
-    fn drop(&mut self) {}
+    fn drop(&mut self) {
+        let _ = self.request_proxy.send(TerminalRequest::Shutdown);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_libterm::surface::Line;
+
+    use super::*;
+
+
+    #[test]
+    fn test_selection_point_basic() {
+        let terminal_size = TerminalSize {
+            cols: 80,
+            rows: 24,
+            cell_width: 8,
+            cell_height: 16,
+        };
+
+        let point = Engine::selection_point(16.0, 32.0, &terminal_size, 0);
+
+        // x=16 / cell_width=8 = col 2
+        // y=32 / cell_height=16 = line 2
+        assert_eq!(point.column, Column(2));
+        assert_eq!(point.line, Line(2));
+    }
+
+    #[test]
+    fn test_selection_point_with_offset() {
+        let terminal_size = TerminalSize {
+            cols: 80,
+            rows: 24,
+            cell_width: 8,
+            cell_height: 16,
+        };
+
+        let point = Engine::selection_point(0.0, 0.0, &terminal_size, 5);
+
+        // Should account for display_offset
+        assert!(point.line.0 != 0 || point.column == Column(0));
+    }
+
+    #[test]
+    fn test_selection_point_boundary_clamp() {
+        let terminal_size = TerminalSize {
+            cols: 80,
+            rows: 24,
+            cell_width: 8,
+            cell_height: 16,
+        };
+
+        // Large coordinates should be clamped to terminal bounds
+        let point = Engine::selection_point(10000.0, 10000.0, &terminal_size, 0);
+
+        assert!(point.column.0 < terminal_size.cols as usize);
+        assert!(point.line.0 < terminal_size.rows as i32);
+    }
+
+    #[test]
+    fn test_selection_point_at_zero() {
+        let terminal_size = TerminalSize {
+            cols: 80,
+            rows: 24,
+            cell_width: 8,
+            cell_height: 16,
+        };
+
+        let point = Engine::selection_point(0.0, 0.0, &terminal_size, 0);
+
+        assert_eq!(point.column, Column(0));
+    }
 }

@@ -1,8 +1,8 @@
 use iced::advanced::graphics::core::Element;
 use iced::widget::container;
 use iced::{Length, Size, Subscription, Task, Theme, window};
-use otty_iced::TerminalView;
-use otty_iced::settings::{LocalSessionOptions, SessionKind};
+use otty_ui_term::TerminalView;
+use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
 fn main() -> iced::Result {
     iced::application(App::title, App::update, App::view)
@@ -16,12 +16,12 @@ fn main() -> iced::Result {
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    Terminal(otty_iced::Event),
+    Terminal(otty_ui_term::Event),
 }
 
 struct App {
     title: String,
-    term: otty_iced::Terminal,
+    term: otty_ui_term::Terminal,
 }
 
 impl App {
@@ -33,8 +33,8 @@ impl App {
             LocalSessionOptions::default().with_program(&system_shell);
         let session = SessionKind::from_local_options(session_options);
         let term_id = 0;
-        let term_settings = otty_iced::settings::Settings {
-            backend: otty_iced::settings::BackendSettings::default()
+        let term_settings = otty_ui_term::settings::Settings {
+            backend: otty_ui_term::settings::BackendSettings::default()
                 .with_session(session),
             ..Default::default()
         };
@@ -42,7 +42,7 @@ impl App {
         (
             Self {
                 title: String::from("full_screen"),
-                term: otty_iced::Terminal::new(term_id, term_settings)
+                term: otty_ui_term::Terminal::new(term_id, term_settings)
                     .expect("failed to create the new terminal instance"),
             },
             Task::none(),
@@ -60,7 +60,7 @@ impl App {
     }
 
     fn update(&mut self, event: Event) -> Task<Event> {
-        use otty_iced::Event::*;
+        use otty_ui_term::Event::*;
 
         match event {
             Event::Terminal(inner) => match inner {

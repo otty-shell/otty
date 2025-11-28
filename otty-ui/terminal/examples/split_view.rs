@@ -1,10 +1,10 @@
-use iced::widget::pane_grid::{self, PaneGrid};
-use iced::widget::{button, container, responsive, row, text};
 use iced::Task;
 use iced::alignment;
-use iced::{window, Color, Element, Length, Size, Subscription};
-use otty_iced::TerminalView;
-use otty_iced::settings::{LocalSessionOptions, SessionKind};
+use iced::widget::pane_grid::{self, PaneGrid};
+use iced::widget::{button, container, responsive, row, text};
+use iced::{Color, Element, Length, Size, Subscription, window};
+use otty_ui_term::TerminalView;
+use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 use std::collections::HashMap;
 
 fn main() -> iced::Result {
@@ -20,8 +20,8 @@ fn main() -> iced::Result {
 
 struct App {
     panes: pane_grid::State<Pane>,
-    tabs: HashMap<u64, otty_iced::Terminal>,
-    term_settings: otty_iced::settings::Settings,
+    tabs: HashMap<u64, otty_ui_term::Terminal>,
+    term_settings: otty_ui_term::settings::Settings,
     panes_created: usize,
     focus: Option<pane_grid::Pane>,
 }
@@ -32,7 +32,7 @@ enum Event {
     Clicked(pane_grid::Pane),
     Resized(pane_grid::ResizeEvent),
     Close(pane_grid::Pane),
-    Terminal(otty_iced::Event),
+    Terminal(otty_ui_term::Event),
 }
 
 impl App {
@@ -45,13 +45,13 @@ impl App {
         let session_options =
             LocalSessionOptions::default().with_program(&system_shell);
         let session = SessionKind::from_local_options(session_options);
-        let term_settings = otty_iced::settings::Settings {
-            backend: otty_iced::settings::BackendSettings::default()
+        let term_settings = otty_ui_term::settings::Settings {
+            backend: otty_ui_term::settings::BackendSettings::default()
                 .with_session(session),
             ..Default::default()
         };
 
-        let tab = otty_iced::Terminal::new(
+        let tab = otty_ui_term::Terminal::new(
             initial_pane_id as u64,
             term_settings.clone(),
         )
@@ -82,7 +82,7 @@ impl App {
                 let result =
                     self.panes.split(axis, pane, Pane::new(self.panes_created));
 
-                let tab = otty_iced::Terminal::new(
+                let tab = otty_ui_term::Terminal::new(
                     self.panes_created as u64,
                     self.term_settings.clone(),
                 )
@@ -131,7 +131,7 @@ impl App {
                 let id = inner.terminal_id();
                 if let Some(tab) = self.tabs.get_mut(&id) {
                     match inner {
-                        otty_iced::Event::Shutdown { .. } => {
+                        otty_ui_term::Event::Shutdown { .. } => {
                             if let Some(current_pane) = self.focus {
                                 return self.update(Event::Close(current_pane));
                             }
@@ -234,7 +234,7 @@ impl Pane {
 
 fn view_content(
     pane_id: u64,
-    tabs: &HashMap<u64, otty_iced::Terminal>,
+    tabs: &HashMap<u64, otty_ui_term::Terminal>,
 ) -> Element<'_, Event> {
     let tab = tabs.get(&pane_id).expect("tab with target id not found");
     container(TerminalView::show(tab).map(Event::Terminal))

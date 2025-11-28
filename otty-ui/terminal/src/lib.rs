@@ -4,6 +4,7 @@ pub mod settings;
 mod engine;
 mod error;
 mod font;
+mod input;
 mod term;
 mod theme;
 mod view;

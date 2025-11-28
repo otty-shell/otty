@@ -1,9 +1,9 @@
 use iced::advanced::graphics::core::Element;
 use iced::font::{Family, Weight};
 use iced::widget::{button, column, container, row};
-use iced::{window, Font, Length, Size, Subscription, Task, Theme};
-use otty_iced::TerminalView;
-use otty_iced::settings::{LocalSessionOptions, SessionKind};
+use iced::{Font, Length, Size, Subscription, Task, Theme, window};
+use otty_ui_term::TerminalView;
+use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
 const TERM_FONT_JET_BRAINS_BYTES: &[u8] = include_bytes!(
     "../../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"
@@ -14,7 +14,7 @@ const TERM_FONT_3270_BYTES: &[u8] =
 
 fn main() -> iced::Result {
     iced::application(App::title, App::update, App::view)
-        .antialiasing(false)
+        .antialiasing(true)
         .window_size(Size {
             width: 1280.0,
             height: 720.0,
@@ -27,7 +27,7 @@ fn main() -> iced::Result {
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    Terminal(otty_iced::Event),
+    Terminal(otty_ui_term::Event),
     FontChanged(String),
     FontSizeInc,
     FontSizeDec,
@@ -35,8 +35,8 @@ pub enum Event {
 
 struct App {
     title: String,
-    term: otty_iced::Terminal,
-    font_setting: otty_iced::settings::FontSettings,
+    term: otty_ui_term::Terminal,
+    font_setting: otty_ui_term::settings::FontSettings,
 }
 
 impl App {
@@ -48,8 +48,8 @@ impl App {
             LocalSessionOptions::default().with_program(&system_shell);
         let session = SessionKind::from_local_options(session_options);
         let term_id = 0;
-        let term_settings = otty_iced::settings::Settings {
-            backend: otty_iced::settings::BackendSettings::default()
+        let term_settings = otty_ui_term::settings::Settings {
+            backend: otty_ui_term::settings::BackendSettings::default()
                 .with_session(session),
             ..Default::default()
         };
@@ -57,7 +57,7 @@ impl App {
         (
             Self {
                 title: String::from("fonts"),
-                term: otty_iced::Terminal::new(term_id, term_settings.clone())
+                term: otty_ui_term::Terminal::new(term_id, term_settings.clone())
                     .expect("failed to create the new terminal instance"),
                 font_setting: term_settings.font,
             },
@@ -105,12 +105,12 @@ impl App {
                 }
             },
             Event::Terminal(inner) => match inner {
-                otty_iced::Event::Shutdown { .. } => {
+                otty_ui_term::Event::Shutdown { .. } => {
                     return window::get_latest().and_then(window::close);
                 },
-                otty_iced::Event::TitleChanged { title, .. } => {
+                otty_ui_term::Event::TitleChanged { title, .. } => {
                     self.title = title;
-                }
+                },
                 event => self.term.handle(event),
             },
         }

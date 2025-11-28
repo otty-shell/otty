@@ -19,7 +19,8 @@ use crate::{engine, error};
 
 #[derive(Clone)]
 pub enum Event {
-    Redraw {
+    Redraw { id: u64 },
+    ContentSync {
         id: u64,
         frame: Arc<SnapshotOwned>,
     },
@@ -67,7 +68,9 @@ pub enum Event {
     ResetTitle {
         id: u64,
     },
-    Ignore { id: u64 },
+    Ignore {
+        id: u64,
+    },
 }
 
 impl Debug for Event {
@@ -75,10 +78,11 @@ impl Debug for Event {
         use Event::*;
 
         match self {
-            Redraw {
+            Redraw { id } => f.write_fmt(format_args!("Event::Redraw {id}")),
+            ContentSync {
                 id,
                 ..
-            } => f.write_fmt(format_args!("Event::Redraw {id}")),
+            } => f.write_fmt(format_args!("Event::ContentSync {id}")),
             Shutdown {
                 id,
                 exit_status,
@@ -129,6 +133,7 @@ impl Event {
 
         match self {
             Redraw { id, .. } => id,
+            ContentSync { id, .. } => id,
             Shutdown { id, .. } => id,
             Write { id, .. } => id,
             Scroll { id, .. } => id,
@@ -142,14 +147,14 @@ impl Event {
             Ignore { id } => id,
         }
     }
-    
+
     fn from_terminal_event(id: u64, event: TerminalEvent) -> Event {
         match event {
             TerminalEvent::ChildExit { status } => Event::Shutdown {
                 id,
                 exit_status: status,
             },
-            TerminalEvent::Frame { frame } => Event::Redraw { id, frame },
+            TerminalEvent::Frame { frame } => Event::ContentSync { id, frame },
             TerminalEvent::TitleChanged { title } => {
                 Event::TitleChanged { id, title }
             },
@@ -191,9 +196,7 @@ impl Terminal {
         iced::widget::text_input::Id::new(self.id.to_string())
     }
 
-    pub fn subscription(
-        &self,
-    ) -> impl Stream<Item = Event> + Send + 'static {
+    pub fn subscription(&self) -> impl Stream<Item = Event> + Send + 'static {
         let id = self.id;
         let event_receiver = self.backend_event_rx.clone();
         iced::stream::channel(100, move |mut output| async move {
@@ -230,27 +233,33 @@ impl Terminal {
 
     pub fn handle(&mut self, event: Event) {
         use Event::*;
-        
+
         match event {
-            Redraw { frame, .. } => self.redraw(frame),
+            Redraw { .. } => self.cache.clear(),
+            ContentSync { frame, .. } => self.content_sync(frame),
             Write { data, .. } => self.engine.write(data),
             Scroll { delta, .. } => self.engine.scroll_delta(delta),
             SelectStart {
                 selection_type,
                 position,
                 ..
-            } =>  self.engine.start_selection(selection_type, position.0, position.1),
-            SelectUpdate { position, .. } => self.engine.update_selection(position.0, position.1),
+            } => self.engine.start_selection(
+                selection_type,
+                position.0,
+                position.1,
+            ),
+            SelectUpdate { position, .. } => {
+                self.engine.update_selection(position.0, position.1)
+            },
             MouseReport {
                 button,
                 modifiers,
                 point,
                 pressed,
                 ..
-            } => {
-                self.engine
-                    .process_mouse_report(button, modifiers, point, pressed)
-            },
+            } => self
+                .engine
+                .process_mouse_report(button, modifiers, point, pressed),
             Resize {
                 layout_size,
                 cell_size,
@@ -281,7 +290,7 @@ impl Terminal {
         self.cache.clear();
     }
 
-    fn redraw(&mut self, frame: Arc<SnapshotOwned>) {
+    fn content_sync(&mut self, frame: Arc<SnapshotOwned>) {
         self.engine.sync_snapshot(frame);
         self.cache.clear();
     }

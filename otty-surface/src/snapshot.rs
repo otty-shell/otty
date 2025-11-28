@@ -41,11 +41,7 @@ impl CursorSnapshot {
         Self {
             shape,
             point,
-            cell: surface
-                .grid()
-                .cursor
-                .template
-                .clone()
+            cell: surface.grid().cursor.template.clone(),
         }
     }
 }
@@ -156,7 +152,8 @@ impl From<&mut Surface> for SnapshotOwned {
             total_lines: surface.grid().total_lines(),
         };
         let visible_cell_count = size.columns * size.screen_lines;
-        let hyperlinks = HyperlinkMap::build(&cells, size, display_offset);
+        let hyperlinks =
+            HyperlinkMap::build(surface, &cells, size, display_offset);
 
         let damage = SnapshotDamage::from(surface.damage());
 
@@ -215,6 +212,20 @@ impl<'a> SnapshotView<'a> {
     pub fn hyperlink_span_id_at(&self, point: Point) -> Option<u32> {
         self.hyperlinks
             .span_id_for_point(self.display_offset, point)
+    }
+
+    /// Get selected content into one string buffer
+    #[inline]
+    pub fn selectable_content(&self) -> String {
+        let mut result = String::new();
+        if let Some(range) = self.selection {
+            for indexed in self.cells {
+                if range.contains(indexed.point) {
+                    result.push(indexed.cell.c);
+                }
+            }
+        }
+        result
     }
 }
 
