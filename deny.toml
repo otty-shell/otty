@@ -1,10 +1,22 @@
+[advisories]
+ignore = [
+    "RUSTSEC-2024-0353",
+    "RUSTSEC-2024-0384",
+]
+
 [licenses]
 allow = [
     "MIT",
     "Apache-2.0",
     "Unicode-3.0",
-    "Zlib"
+    "Zlib",
+    "ISC",
+    "CC0-1.0",
+    "BSL-1.0",
+    "BSD-3-Clause",
+    "BSD-2-Clause"
 ]
+confidence-threshold = 0.8
 
 [bans]
 multiple-versions = "allow"
