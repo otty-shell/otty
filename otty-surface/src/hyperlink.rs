@@ -52,7 +52,7 @@ impl HyperlinkSpan {
                 point.column >= self.start.column
                     && (point.line < self.end.line
                         || point.column <= self.end.column)
-            }
+            },
         }
     }
 }
@@ -150,11 +150,14 @@ impl HyperlinkMap {
         let mut last_flags = Flags::empty();
 
         for indexed in cells {
-            let Some(viewport_point) = point_to_viewport(display_offset, indexed.point) else {
+            let Some(viewport_point) =
+                point_to_viewport(display_offset, indexed.point)
+            else {
                 continue;
             };
 
-            let cell_index = viewport_point.line * self.columns + viewport_point.column.0;
+            let cell_index =
+                viewport_point.line * self.columns + viewport_point.column.0;
 
             match indexed.cell.hyperlink() {
                 Some(link) => {
@@ -165,17 +168,20 @@ impl HyperlinkMap {
                         last_viewport,
                         last_flags,
                     ) {
-                        self.extend_current_span(current_span.unwrap(), indexed.point)
+                        self.extend_current_span(
+                            current_span.unwrap(),
+                            indexed.point,
+                        )
                     } else {
                         self.push_span(link, indexed.point, indexed.point)
                     };
 
                     self.set_span_for_index(span_id, cell_index);
                     current_span = Some(span_id);
-                }
+                },
                 None => {
                     current_span = None;
-                }
+                },
             }
 
             last_viewport = Some(viewport_point);

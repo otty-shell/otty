@@ -44,8 +44,11 @@ impl App {
         (
             Self {
                 title: String::from("Terminal app"),
-                term: otty_ui_term::Terminal::new(term_id, term_settings.clone())
-                    .expect("failed to create the new terminal instance"),
+                term: otty_ui_term::Terminal::new(
+                    term_id,
+                    term_settings.clone(),
+                )
+                .expect("failed to create the new terminal instance"),
             },
             Task::none(),
         )

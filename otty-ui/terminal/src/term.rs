@@ -19,7 +19,9 @@ use crate::{engine, error};
 
 #[derive(Clone)]
 pub enum Event {
-    Redraw { id: u64 },
+    Redraw {
+        id: u64,
+    },
     ContentSync {
         id: u64,
         frame: Arc<SnapshotOwned>,

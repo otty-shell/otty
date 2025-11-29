@@ -61,7 +61,7 @@ impl<'a> InputManager<'a> {
             ) => self.handle_button_released(
                 view_state,
                 terminal_content,
-                &self.bindings,
+                self.bindings,
                 publisher,
             ),
             iced::mouse::Event::WheelScrolled { delta } => self
@@ -160,11 +160,13 @@ impl<'a> InputManager<'a> {
             publisher(cmd);
             return iced::event::Status::Captured;
         } else {
-            let hovered_span_id =
-                terminal_state.hyperlink_span_id_at(state.mouse_position_on_grid);
+            let hovered_span_id = terminal_state
+                .hyperlink_span_id_at(state.mouse_position_on_grid);
             if hovered_span_id != state.hovered_span_id {
                 state.hovered_span_id = hovered_span_id;
-                publisher(crate::Event::Redraw { id: self.terminal_id });
+                publisher(crate::Event::Redraw {
+                    id: self.terminal_id,
+                });
                 return iced::event::Status::Captured;
             }
         }

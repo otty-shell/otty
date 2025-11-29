@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use iced::keyboard::Modifiers;
 use iced_core::Size;
+use otty_libterm::pty;
 use otty_libterm::surface::{
     Column, Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceMode,
     viewport_to_point,
@@ -11,7 +12,6 @@ use otty_libterm::{
     DefaultParser, DefaultSurface, RuntimeRequestProxy, RuntimeTerminal,
     TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize,
 };
-use otty_libterm::pty;
 use tokio::sync::mpsc;
 
 use crate::error::Result;
@@ -403,7 +403,6 @@ mod tests {
 
     use super::*;
 
-
     #[test]
     fn test_selection_point_basic() {
         let terminal_size = TerminalSize {
@@ -446,7 +445,8 @@ mod tests {
         };
 
         // Large coordinates should be clamped to terminal bounds
-        let point = Engine::selection_point(10000.0, 10000.0, &terminal_size, 0);
+        let point =
+            Engine::selection_point(10000.0, 10000.0, &terminal_size, 0);
 
         assert!(point.column.0 < terminal_size.cols as usize);
         assert!(point.line.0 < terminal_size.rows as i32);

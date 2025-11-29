@@ -579,11 +579,9 @@ mod tests {
                 if line_idx >= max_lines {
                     break;
                 }
-            } else {
-                if col.0 < grid.columns() && line_idx < max_lines {
-                    grid[Line(line_idx)][col].c = ch;
-                    col += 1;
-                }
+            } else if col.0 < grid.columns() && line_idx < max_lines {
+                grid[Line(line_idx)][col].c = ch;
+                col += 1;
             }
         }
     }
@@ -648,8 +646,13 @@ mod tests {
         let mut regex = RegexSearch::new("test").unwrap();
         let origin = Point::new(Line(0), Column(0));
 
-        let result =
-            surface.search_next(&mut regex, origin, Direction::Right, Side::Left, None);
+        let result = surface.search_next(
+            &mut regex,
+            origin,
+            Direction::Right,
+            Side::Left,
+            None,
+        );
         assert!(result.is_some());
 
         let match_range = result.unwrap();
@@ -665,8 +668,13 @@ mod tests {
         let mut regex = RegexSearch::new("test").unwrap();
         let origin = Point::new(Line(1), Column(10));
 
-        let result =
-            surface.search_next(&mut regex, origin, Direction::Left, Side::Left, None);
+        let result = surface.search_next(
+            &mut regex,
+            origin,
+            Direction::Left,
+            Side::Left,
+            None,
+        );
         assert!(result.is_some());
 
         let match_range = result.unwrap();
@@ -746,9 +754,10 @@ mod tests {
         let end = Point::new(Line(0), Column(0));
 
         let matches: Vec<Match> =
-            RegexIter::new(start, end, Direction::Left, &surface, &mut regex).collect();
+            RegexIter::new(start, end, Direction::Left, &surface, &mut regex)
+                .collect();
 
-        assert!(matches.len() >= 1);
+        assert!(!matches.is_empty());
     }
 
     #[test]
