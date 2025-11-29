@@ -29,8 +29,8 @@ pub use runtime::{Driver, Runtime, RuntimeHooks, RuntimeRequestProxy};
 pub use terminal::{
     SnapshotArc, TerminalEngine, TerminalEvent, TerminalRequest,
     builder::{
-        DefaultParser, DefaultSurface, Terminal, TerminalBuilder,
-        TerminalWithRuntime,
+        DefaultParser, DefaultSurface, RuntimeTerminal, Terminal,
+        TerminalBuilder,
     },
     channel::{
         ChannelConfig, ChannelRecvError, ChannelSendError, ChannelTryRecvError,

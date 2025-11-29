@@ -5,8 +5,10 @@ mod cell;
 mod color;
 mod damage;
 mod grid;
+mod hyperlink;
 mod index;
 mod mode;
+mod search;
 mod selection;
 mod snapshot;
 mod surface;
@@ -19,6 +21,7 @@ pub use color::Colors;
 pub use grid::{Dimensions, Grid, Scroll};
 pub use index::{Column, Line, Point, Side};
 pub use mode::SurfaceMode;
+pub use search::{Match, RegexIter, RegexSearch};
 pub use selection::{SelectionRange, SelectionType};
 pub use snapshot::{
     CursorSnapshot, SnapshotCell, SnapshotDamage, SnapshotOwned, SnapshotSize,

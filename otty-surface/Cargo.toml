@@ -16,3 +16,4 @@ log = { workspace = true }
 otty-escape = { path = "../otty-escape", version = "0.1.0" }
 cursor-icon = { workspace = true }
 unicode-width = "0.2.2"
+regex-automata = { version = "0.4", features = ["hybrid"] }

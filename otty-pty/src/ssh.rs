@@ -17,7 +17,7 @@ const LIBSSH2_ERROR_EAGAIN: i32 = -37;
 const REQUEST_PTY_TAG: &str = "xterm-256color";
 
 /// Authentication strategy used when establishing an SSH session.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SSHAuth {
     /// Authenticate with a plain-text password.
     Password(String),

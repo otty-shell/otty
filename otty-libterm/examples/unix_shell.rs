@@ -19,11 +19,11 @@ mod unix_shell {
     use super::*;
     use nix::fcntl::{FcntlArg, OFlag, fcntl};
     use nix::libc;
-    use otty_escape::{Color as AnsiColor, StdColor};
-    use otty_libterm::surface::Colors;
     use otty_libterm::{
-        TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize, pty,
-        surface::{Flags, SnapshotCell, SnapshotOwned},
+        TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize,
+        escape::{Color as AnsiColor, StdColor},
+        pty,
+        surface::{Colors, Flags, SnapshotCell, SnapshotOwned},
     };
     use std::os::fd::{AsRawFd, BorrowedFd};
     use std::thread;
@@ -37,15 +37,14 @@ mod unix_shell {
             cell_height: 0,
         };
 
-        let unix_builder = pty::unix("/bin/sh")
+        let unix_builder = pty::local("/bin/sh")
             .with_arg("-i")
             .set_controling_tty_enable()
             .with_size(current_size.into());
 
-        let (mut engine, handle, events) =
-            TerminalBuilder::from_unix_builder(unix_builder)
-                .with_size(current_size)
-                .build()?;
+        let (mut engine, handle, events) = TerminalBuilder::from(unix_builder)
+            .with_size(current_size)
+            .build()?;
 
         let mut stdin = io::stdin();
         let mut input = [0u8; 1024];
