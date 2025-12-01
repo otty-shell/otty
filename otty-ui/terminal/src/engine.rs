@@ -17,6 +17,9 @@ use tokio::sync::mpsc;
 use crate::error::Result;
 use crate::settings::{BackendSettings, SessionKind};
 
+#[cfg(test)]
+use otty_libterm::Runtime;
+
 #[derive(Debug, Clone)]
 pub enum MouseMode {
     Sgr,
@@ -168,6 +171,24 @@ impl Engine {
             request_proxy,
             snapshot: Arc::new(SnapshotOwned::default()),
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_snapshot_for_test(
+        snapshot: Arc<SnapshotOwned>,
+        terminal_size: TerminalSize,
+    ) -> Self {
+        let runtime = Box::leak(Box::new(
+            Runtime::new().expect("failed to build runtime for test"),
+        ));
+        let request_proxy = runtime.proxy();
+
+        Self {
+            terminal_size,
+            layout_size: Size::default(),
+            request_proxy,
+            snapshot,
+        }
     }
 
     pub fn terminal_size(&self) -> TerminalSize {

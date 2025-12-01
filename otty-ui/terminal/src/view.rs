@@ -122,6 +122,7 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
             let font_scale_factor = self.term.font.scale_factor;
             let layout_offset_x = layout.position().x;
             let layout_offset_y = layout.position().y;
+            let layout_bounds = layout.bounds();
             let display_offset = view.display_offset as f32;
             let half_h = cell_height * 0.5;
 
@@ -134,6 +135,52 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
 
             let hovered_span_id =
                 view.hyperlink_span_id_at(state.mouse_position_on_grid);
+            let hovered_block_id = state.hovered_block_id.as_deref();
+            let selected_block_id = state.selected_block_id.as_deref();
+            let mut block_frames: Vec<(Point, Size, Color)> = Vec::new();
+
+            if !view.blocks().is_empty() && layout_bounds.width > 0.0 {
+                let mut hover_color =
+                    self.term.theme.get_color(ansi::Color::Std(StdColor::Blue));
+                hover_color.a *= 0.6;
+                let mut selected_color = self
+                    .term
+                    .theme
+                    .get_color(ansi::Color::Std(StdColor::BrightBlue));
+                selected_color.a = selected_color.a.max(0.8);
+
+                for block in view.blocks() {
+                    if block.line_count == 0 {
+                        continue;
+                    }
+
+                    let block_height = (block.line_count as f32) * cell_height;
+                    if block_height <= 0.0 {
+                        continue;
+                    }
+
+                    let block_top = block.start_line as f32;
+                    let y = layout_offset_y
+                        + ((block_top + display_offset) * cell_height);
+
+                    let block_id = block.id.as_str();
+                    let color = if Some(block_id) == selected_block_id {
+                        Some(selected_color)
+                    } else if Some(block_id) == hovered_block_id {
+                        Some(hover_color)
+                    } else {
+                        None
+                    };
+
+                    if let Some(color) = color {
+                        block_frames.push((
+                            Point::new(layout_offset_x, y),
+                            Size::new(layout_bounds.width, block_height),
+                            color,
+                        ));
+                    }
+                }
+            }
 
             let mut last_line: Option<i32> = None;
             let mut bg_batch_rect = BackgroundRect::default();
@@ -299,6 +346,14 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                     bg_batch_rect.color,
                 );
             }
+
+            for (origin, size, color) in block_frames {
+                let rect = Path::rectangle(origin, size);
+                frame.stroke(
+                    &rect,
+                    Stroke::default().with_width(1.0).with_color(color),
+                );
+            }
         });
 
         use iced::advanced::graphics::geometry::Renderer as _;
@@ -414,6 +469,8 @@ pub(crate) struct TerminalViewState {
     pub size: Size<f32>,
     pub mouse_position_on_grid: TerminalGridPoint,
     pub hovered_span_id: Option<u32>,
+    pub hovered_block_id: Option<String>,
+    pub selected_block_id: Option<String>,
 }
 
 impl TerminalViewState {
@@ -427,6 +484,8 @@ impl TerminalViewState {
             size: Size::from([0.0, 0.0]),
             mouse_position_on_grid: TerminalGridPoint::default(),
             hovered_span_id: None,
+            hovered_block_id: None,
+            selected_block_id: None,
         }
     }
 }

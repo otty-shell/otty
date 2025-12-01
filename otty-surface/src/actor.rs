@@ -255,4 +255,11 @@ pub trait SurfaceActor {
 
     /// Update the selection range
     fn update_selection(&mut self, _: Point, _: Side) {}
+
+    /// Handle high‑level block lifecycle events coming from the parser.
+    ///
+    /// По умолчанию реализации поверхности могут игнорировать блоки; модели,
+    /// поддерживающие историю блоков (например, `BlockSurface`), переопределяют
+    /// этот метод.
+    fn handle_block_event(&mut self, _: crate::escape::BlockEvent) {}
 }

@@ -63,6 +63,6 @@ impl VTActor for MyActor {
 
 fn main() {
     let mut parser = Parser::new();
-    let mut actor = MyActor::default();
+    let mut actor = MyActor;
     parser.advance(b"\x1b[31mhi\x1b[0m", &mut actor);
 }

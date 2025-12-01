@@ -162,8 +162,24 @@ impl<'a> InputManager<'a> {
         } else {
             let hovered_span_id = terminal_state
                 .hyperlink_span_id_at(state.mouse_position_on_grid);
+            let hovered_block_id = terminal_state
+                .block_at_point(state.mouse_position_on_grid)
+                .map(|block| block.id.clone());
+
+            let mut needs_redraw = false;
+
             if hovered_span_id != state.hovered_span_id {
                 state.hovered_span_id = hovered_span_id;
+                needs_redraw = true;
+            }
+
+            if hovered_block_id.as_deref() != state.hovered_block_id.as_deref()
+            {
+                state.hovered_block_id = hovered_block_id;
+                needs_redraw = true;
+            }
+
+            if needs_redraw {
                 publisher(crate::Event::Redraw {
                     id: self.terminal_id,
                 });
@@ -181,6 +197,7 @@ impl<'a> InputManager<'a> {
         bindings: &BindingsLayout, // Use the actual type of your bindings here
         publisher: &mut impl FnMut(crate::Event),
     ) -> iced::event::Status {
+        let was_dragging = state.is_dragged;
         state.is_dragged = false;
         let mut published = false;
 
@@ -209,6 +226,34 @@ impl<'a> InputManager<'a> {
                 publisher(crate::Event::OpenLink {
                     id: self.terminal_id,
                     uri: span.link.uri().to_string(),
+                });
+                published = true;
+            }
+        }
+
+        if !was_dragging
+            && !terminal_state.mode.intersects(SurfaceMode::MOUSE_MODE)
+        {
+            let hovered_block_id = state.hovered_block_id.clone();
+            let selection_changed = match (
+                hovered_block_id.as_deref(),
+                state.selected_block_id.as_deref(),
+            ) {
+                (Some(hovered), Some(selected)) if hovered == selected => false,
+                (Some(hovered), _) => {
+                    state.selected_block_id = Some(hovered.to_string());
+                    true
+                },
+                (None, None) => false,
+                (None, Some(_)) => {
+                    state.selected_block_id = None;
+                    true
+                },
+            };
+
+            if selection_changed {
+                publisher(crate::Event::Redraw {
+                    id: self.terminal_id,
                 });
                 published = true;
             }

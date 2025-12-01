@@ -1,20 +1,18 @@
+use crate::escape::{self, EscapeParser};
+use crate::pty::{self, Pollable, Session};
+use crate::surface::{BlockSurface, SurfaceActor, SurfaceConfig, SurfaceModel};
 use crate::terminal::TerminalEngine;
 use crate::terminal::channel::ChannelConfig;
 use crate::terminal::channel::{TerminalEvents, TerminalHandle};
 use crate::terminal::options::TerminalOptions;
 use crate::terminal::size::TerminalSize;
 use crate::{Result, Runtime};
-use crate::{
-    escape::{self, EscapeParser},
-    pty::{self, Pollable, Session},
-    surface::{Surface, SurfaceActor, SurfaceConfig, SurfaceModel},
-};
 
 /// Default escape parser used by preset builders.
 pub type DefaultParser = escape::Parser<escape::vte::Parser>;
 
 /// Default surface used by preset builders.
-pub type DefaultSurface = Surface;
+pub type DefaultSurface = BlockSurface;
 
 /// Terminal emulator backend
 pub type Terminal<P, E, S> =

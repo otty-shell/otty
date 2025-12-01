@@ -72,6 +72,23 @@ impl HyperlinkMap {
         size: SnapshotSize,
         display_offset: usize,
     ) -> Self {
+        Self::build_impl(Some(surface), cells, size, display_offset)
+    }
+
+    pub(crate) fn build_without_surface(
+        cells: &[SnapshotCell],
+        size: SnapshotSize,
+        display_offset: usize,
+    ) -> Self {
+        Self::build_impl(None, cells, size, display_offset)
+    }
+
+    fn build_impl(
+        surface: Option<&Surface>,
+        cells: &[SnapshotCell],
+        size: SnapshotSize,
+        display_offset: usize,
+    ) -> Self {
         let visible_cells = size.columns * size.screen_lines;
         if visible_cells == 0 || cells.is_empty() {
             return Self::default();
@@ -85,7 +102,9 @@ impl HyperlinkMap {
         };
 
         map.ingest_osc_spans(cells, display_offset);
-        map.ingest_detected_urls(surface, cells, display_offset);
+        if let Some(surface) = surface {
+            map.ingest_detected_urls(surface, cells, display_offset);
+        }
         map
     }
 
