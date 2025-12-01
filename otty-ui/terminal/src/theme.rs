@@ -39,6 +39,7 @@ pub struct ColorPalette {
     pub dim_magenta: String,
     pub dim_cyan: String,
     pub dim_white: String,
+    pub block_highlight: String,
 }
 
 impl Default for ColorPalette {
@@ -72,6 +73,7 @@ impl Default for ColorPalette {
             dim_magenta: String::from("#704d68"),
             dim_cyan: String::from("#4d7770"),
             dim_white: String::from("#8e8e8e"),
+            block_highlight: String::from("#ffffff"),
         }
     }
 }
@@ -97,6 +99,10 @@ impl Theme {
             palette: settings.color_pallete,
             ansi256_colors: build_ansi256_colors(),
         }
+    }
+
+    pub fn block_highlight_color(&self) -> Color {
+        parse_hex_color(&self.palette.block_highlight)
     }
 
     pub fn get_color(&self, c: escape::Color) -> Color {
@@ -128,9 +134,7 @@ impl Theme {
                         _ => &self.palette.background,
                     };
 
-                    return Rgb::from_str(color)
-                        .map(|c| Color::from_rgb8(c.r, c.g, c.b))
-                        .unwrap_or_else(|_| panic!("invalid color {}", color));
+                    return parse_hex_color(color);
                 }
 
                 // Other colors
@@ -180,9 +184,7 @@ impl Theme {
                     _ => &self.palette.background,
                 };
 
-                Rgb::from_str(color)
-                    .map(|c| Color::from_rgb8(c.r, c.g, c.b))
-                    .unwrap_or_else(|_| panic!("invalid color {}", color))
+                parse_hex_color(color)
             },
         }
     }
@@ -232,6 +234,12 @@ impl TerminalStyle for Theme {
             ..container::Style::default()
         }
     }
+}
+
+pub fn parse_hex_color(value: &str) -> Color {
+    Rgb::from_str(value)
+        .map(|c| Color::from_rgb8(c.r, c.g, c.b))
+        .unwrap_or_else(|_| panic!("invalid color {}", value))
 }
 
 #[cfg(test)]

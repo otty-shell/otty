@@ -121,12 +121,12 @@ impl BindingsLayout {
     pub(crate) fn get_action(
         &self,
         input: InputKind,
-        modifiers: Modifiers,
+        modifiers: &Modifiers,
         mode: SurfaceMode,
     ) -> BindingAction {
         for (binding, action) in &self.layout {
             let is_trigered = binding.target == input
-                && binding.modifiers == modifiers
+                && &binding.modifiers == modifiers
                 && mode.contains(binding.mode_include)
                 && !mode.intersects(binding.mode_exclude);
 
@@ -469,7 +469,7 @@ mod tests {
         for (bind, action) in &current_layout.layout {
             let found_action = current_layout.get_action(
                 bind.target.clone(),
-                bind.modifiers,
+                &bind.modifiers,
                 bind.mode_include,
             );
             assert_eq!(action, &found_action);
@@ -490,7 +490,7 @@ mod tests {
         for (bind, action) in &current_layout.layout {
             let found_action = current_layout.get_action(
                 bind.target.clone(),
-                bind.modifiers,
+                &bind.modifiers,
                 bind.mode_include,
             );
             assert_eq!(action, &found_action);

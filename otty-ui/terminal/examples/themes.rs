@@ -5,20 +5,21 @@ use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 use otty_ui_term::{ColorPalette, TerminalView};
 
 fn main() -> iced::Result {
-    iced::application(App::title, App::update, App::view)
+    iced::application(App::new, App::update, App::view)
         .antialiasing(false)
         .window_size(Size {
             width: 1280.0,
             height: 720.0,
         })
+        .title(App::title)
         .subscription(App::subscription)
-        .run_with(App::new)
+        .run()
 }
 
 #[derive(Debug, Clone)]
 pub enum Event {
     Terminal(otty_ui_term::Event),
-    ThemeChanged(otty_ui_term::ColorPalette),
+    ThemeChanged(Box<otty_ui_term::ColorPalette>),
 }
 
 struct App {
@@ -59,9 +60,7 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Event> {
-        let id = self.term.id;
-        let subscription = self.term.subscription();
-        Subscription::run_with_id(id, subscription).map(Event::Terminal)
+        self.term.subscription().map(Event::Terminal)
     }
 
     fn update(&mut self, event: Event) -> Task<Event> {
@@ -69,11 +68,11 @@ impl App {
 
         match event {
             Event::ThemeChanged(theme) => {
-                self.term.change_theme(theme);
+                self.term.change_theme(*theme);
             },
             Event::Terminal(inner) => match inner {
                 Shutdown { .. } => {
-                    return window::get_latest().and_then(window::close);
+                    return window::latest().and_then(window::close);
                 },
                 TitleChanged { title, .. } => {
                     self.title = title;
@@ -88,12 +87,11 @@ impl App {
     fn view(&'_ self) -> Element<'_, Event, Theme, iced::Renderer> {
         let content = column![
             row![
-                button("default")
-                    .width(Length::Fill)
-                    .padding(8)
-                    .on_press(Event::ThemeChanged(ColorPalette::default())),
+                button("default").width(Length::Fill).padding(8).on_press(
+                    Event::ThemeChanged(Box::new(ColorPalette::default(),))
+                ),
                 button("ubuntu").width(Length::Fill).padding(8).on_press(
-                    Event::ThemeChanged(otty_ui_term::ColorPalette {
+                    Event::ThemeChanged(Box::new(otty_ui_term::ColorPalette {
                         background: String::from("#300A24"),
                         foreground: String::from("#FFFFFF"),
                         black: String::from("#2E3436"),
@@ -113,10 +111,10 @@ impl App {
                         bright_cyan: String::from("#34E2E2"),
                         bright_white: String::from("#EEEEEC"),
                         ..Default::default()
-                    })
+                    }))
                 ),
                 button("3024 Day").width(Length::Fill).padding(8).on_press(
-                    Event::ThemeChanged(otty_ui_term::ColorPalette {
+                    Event::ThemeChanged(Box::new(otty_ui_term::ColorPalette {
                         background: String::from("#F7F7F7"),
                         foreground: String::from("#4A4543"),
                         black: String::from("#090300"),
@@ -136,7 +134,7 @@ impl App {
                         bright_cyan: String::from("#CDAB53"),
                         bright_white: String::from("#F7F7F7"),
                         ..Default::default()
-                    })
+                    }))
                 ),
             ],
             row![TerminalView::show(&self.term).map(Event::Terminal)]

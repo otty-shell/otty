@@ -22,7 +22,7 @@ Add this to your `Cargo.toml`:
 ```toml
 [dependencies]
 otty-ui-term = "0.1.0"
-iced = { version = "0.13" }
+iced = { version = "0.14" }
 ```
 
 ## Quick Start
@@ -37,13 +37,14 @@ use otty_ui_term::TerminalView;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
 fn main() -> iced::Result {
-    iced::application(App::title, App::update, App::view)
+    iced::application(App::new, App::update, App::view)
         .window_size(Size {
             width: 1280.0,
             height: 720.0,
         })
+        .title(App::title)
         .subscription(App::subscription)
-        .run_with(App::new)
+        .run()
 }
 
 #[derive(Debug, Clone)]
@@ -86,9 +87,7 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Event> {
-        let id = self.term.id;
-        let subscription = self.term.subscription();
-        Subscription::run_with_id(id, subscription).map(Event::Terminal)
+        self.term.subscription().map(Event::Terminal)
     }
 
     fn update(&mut self, event: Event) -> Task<Event> {
@@ -97,7 +96,7 @@ impl App {
         match event {
             Event::Terminal(inner) => match inner {
                 Shutdown { .. } => {
-                    return window::get_latest().and_then(window::close);
+                    return window::latest().and_then(window::close);
                 },
                 TitleChanged { title, .. } => {
                     self.title = title;

@@ -19,6 +19,15 @@ Developers spend most of their time in the terminal, but modern terminals remain
 - AI agent integration
 - Modern terminal UI - besides the standard UI features like tabs or multiplexer, OTTY rethinks the global terminal UI concept and suggest you using your terminal more convinient.
 
+### Block-oriented terminal UX
+
+OTTY models every prompt/command pair as a structured block so UI layers can
+drive overlays, copy actions, and scrolling programmatically. Check
+[docs/blocks.md](docs/blocks.md) for an overview of the block kinds, the
+`Terminal::blocks`/`Terminal::block_text` helpers, geometry utilities, and the
+`BlockCommand` + `Event::Block*` flow that keeps custom chrome in sync with
+what happens inside the shell.
+
 ### License
 
 See [LICENSE](./LICENSE).

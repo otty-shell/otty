@@ -13,16 +13,17 @@ const TERM_FONT_3270_BYTES: &[u8] =
     include_bytes!("../../../assets/fonts/3270/3270NerdFont-Regular.ttf");
 
 fn main() -> iced::Result {
-    iced::application(App::title, App::update, App::view)
+    iced::application(App::new, App::update, App::view)
         .antialiasing(true)
         .window_size(Size {
             width: 1280.0,
             height: 720.0,
         })
+        .title(App::title)
         .subscription(App::subscription)
         .font(TERM_FONT_JET_BRAINS_BYTES)
         .font(TERM_FONT_3270_BYTES)
-        .run_with(App::new)
+        .run()
 }
 
 #[derive(Debug, Clone)]
@@ -73,9 +74,7 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Event> {
-        let id = self.term.id;
-        let subscription = self.term.subscription();
-        Subscription::run_with_id(id, subscription).map(Event::Terminal)
+        self.term.subscription().map(Event::Terminal)
     }
 
     fn update(&mut self, event: Event) -> Task<Event> {
@@ -109,7 +108,7 @@ impl App {
             },
             Event::Terminal(inner) => match inner {
                 otty_ui_term::Event::Shutdown { .. } => {
-                    return window::get_latest().and_then(window::close);
+                    return window::latest().and_then(window::close);
                 },
                 otty_ui_term::Event::TitleChanged { title, .. } => {
                     self.title = title;

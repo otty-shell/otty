@@ -127,10 +127,12 @@ impl SyncState {
     ///
     /// Returns the action back on overflow so that callers can fall back to
     /// immediate processing.
+    #[allow(clippy::result_large_err)]
     fn push(&mut self, action: Action) -> std::result::Result<(), Action> {
         if self.buffer.len() >= MAX_SYNC_ACTIONS {
             return Err(action);
         }
+
         self.buffer.push(action);
         self.refresh_deadline();
         Ok(())

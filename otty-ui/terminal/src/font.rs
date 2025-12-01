@@ -1,8 +1,8 @@
 use iced::{Font, Size};
 use iced_core::{
     Text,
-    alignment::{Horizontal, Vertical},
-    text::{LineHeight, Paragraph, Shaping as TextShaping},
+    alignment::Vertical,
+    text::{Alignment, LineHeight, Paragraph, Shaping as TextShaping},
 };
 use iced_graphics::text::paragraph;
 
@@ -31,7 +31,7 @@ impl TermFont {
     }
 }
 
-fn font_measure(
+pub fn font_measure(
     font_size: f32,
     scale_factor: f32,
     font_type: Font,
@@ -40,11 +40,11 @@ fn font_measure(
         content: "m",
         font: font_type,
         size: iced_core::Pixels(font_size),
-        vertical_alignment: Vertical::Center,
-        horizontal_alignment: Horizontal::Center,
+        align_y: Vertical::Center,
+        align_x: Alignment::Center,
         shaping: TextShaping::Advanced,
         line_height: LineHeight::Relative(scale_factor),
-        bounds: Size::INFINITY,
+        bounds: Size::INFINITE,
         wrapping: iced_core::text::Wrapping::Glyph,
     });
 

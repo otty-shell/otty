@@ -8,14 +8,15 @@ use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 use std::collections::HashMap;
 
 fn main() -> iced::Result {
-    iced::application(App::title, App::update, App::view)
+    iced::application(App::new, App::update, App::view)
         .antialiasing(false)
         .window_size(Size {
             width: 1280.0,
             height: 720.0,
         })
+        .title(App::title)
         .subscription(App::subscription)
-        .run_with(App::new)
+        .run()
 }
 
 struct App {
@@ -88,7 +89,7 @@ impl App {
                 )
                 .expect("failed to create the new terminal instance");
 
-                let command = TerminalView::focus(tab.widget_id());
+                let command = TerminalView::focus(tab.widget_id().clone());
                 self.tabs.insert(self.panes_created as u64, tab);
 
                 if let Some((pane, _)) = result {
@@ -104,7 +105,9 @@ impl App {
                     self.tabs.get_mut(&(new_focused_pane.id as u64)).unwrap();
 
                 self.focus = Some(pane);
-                return TerminalView::focus(new_focused_tab.widget_id());
+                return TerminalView::focus(
+                    new_focused_tab.widget_id().clone(),
+                );
             },
             Event::Resized(pane_grid::ResizeEvent { split, ratio }) => {
                 self.panes.resize(split, ratio);
@@ -121,15 +124,17 @@ impl App {
                         .get_mut(&(new_focused_pane.id as u64))
                         .unwrap();
 
-                    return TerminalView::focus(new_focused_tab.widget_id());
+                    return TerminalView::focus(
+                        new_focused_tab.widget_id().clone(),
+                    );
                 } else {
-                    return window::get_latest().and_then(window::close);
+                    return window::latest().and_then(window::close);
                 }
             },
 
             Event::Terminal(inner) => {
                 let id = inner.terminal_id();
-                if let Some(tab) = self.tabs.get_mut(&id) {
+                if let Some(tab) = self.tabs.get_mut(id) {
                     match inner {
                         otty_ui_term::Event::Shutdown { .. } => {
                             if let Some(current_pane) = self.focus {
@@ -195,12 +200,11 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Event> {
-        let mut subscriptions = vec![];
-        for id in self.tabs.keys() {
-            let tab = self.tabs.get(id).unwrap();
-            subscriptions
-                .push(Subscription::run_with_id(tab.id, tab.subscription()));
-        }
+        let subscriptions = self
+            .tabs
+            .values()
+            .map(|tab| tab.subscription())
+            .collect::<Vec<_>>();
 
         Subscription::batch(subscriptions).map(Event::Terminal)
     }

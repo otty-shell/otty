@@ -1,8 +1,8 @@
 use cursor_icon::CursorIcon;
 
 use crate::{
-    CharacterAttribute, Charset, CharsetIndex, ClearMode, CursorShape,
-    CursorStyle, Hyperlink, LineClearMode, Mode, PrivateMode, Rgb,
+    BlockEvent, CharacterAttribute, Charset, CharsetIndex, ClearMode,
+    CursorShape, CursorStyle, Hyperlink, LineClearMode, Mode, PrivateMode, Rgb,
     TabClearMode,
     keyboard::{KeyboardMode, KeyboardModeApplyBehavior, ModifyOtherKeysState},
 };
@@ -151,6 +151,8 @@ pub enum Action {
     PopWindowTitle,
     /// Window: set the terminal window title.
     SetWindowTitle(String),
+    /// High-level block lifecycle event parsed from DCS JSON.
+    BlockEvent(BlockEvent),
 }
 
 pub trait EscapeActor {
