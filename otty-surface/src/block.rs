@@ -87,6 +87,26 @@ struct BlockSliceInfo {
     top_line: Line,
 }
 
+struct ViewportContext {
+    content_lines: usize,
+    start: usize,
+    viewport_end: usize,
+    bottom_padding: usize,
+    effective_start: isize,
+}
+
+#[derive(Clone, Copy)]
+struct GlobalPoint {
+    line_index: usize,
+    column: Column,
+}
+
+#[derive(Clone, Copy)]
+struct GlobalSelection {
+    start: GlobalPoint,
+    end: GlobalPoint,
+}
+
 /// Helper dimensions type used when creating new block surfaces.
 struct BlockDimensions {
     columns: usize,
@@ -131,6 +151,9 @@ pub struct BlockSurface {
     max_blocks: usize,
     config: SurfaceConfig,
     display_offset: usize,
+    selection_block: Option<usize>,
+    selection_anchor: Option<GlobalPoint>,
+    global_selection: Option<GlobalSelection>,
 }
 
 impl BlockSurface {
@@ -160,6 +183,9 @@ impl BlockSurface {
             max_blocks: Self::DEFAULT_MAX_BLOCKS,
             config,
             display_offset: 0,
+            selection_block: None,
+            selection_anchor: None,
+            global_selection: None,
         }
     }
 
@@ -216,6 +242,29 @@ impl BlockSurface {
         }
 
         result
+    }
+
+    fn viewport_context(&self, slices: &[BlockSliceInfo]) -> ViewportContext {
+        let viewport_lines = self.screen_lines();
+        let content_lines = slices.last().map(|slice| slice.end).unwrap_or(0);
+        let total_lines = max(viewport_lines, content_lines);
+        let start =
+            total_lines.saturating_sub(viewport_lines + self.display_offset);
+        let viewport_end = start + viewport_lines;
+        let bottom_padding = if self.display_offset == 0 {
+            viewport_lines.saturating_sub(content_lines)
+        } else {
+            0
+        };
+        let effective_start = start as isize - bottom_padding as isize;
+
+        ViewportContext {
+            content_lines,
+            start,
+            viewport_end,
+            bottom_padding,
+            effective_start,
+        }
     }
 
     fn global_index_for_point(
@@ -275,6 +324,16 @@ impl BlockSurface {
         while self.blocks.len() > self.max_blocks && index < self.blocks.len() {
             if self.blocks[index].meta.is_finished && index != self.active {
                 self.blocks.remove(index);
+
+                if let Some(selection_index) = self.selection_block {
+                    if selection_index == index {
+                        self.selection_block = None;
+                        self.selection_anchor = None;
+                        self.global_selection = None;
+                    } else if selection_index > index {
+                        self.selection_block = Some(selection_index - 1);
+                    }
+                }
 
                 if self.active > index {
                     self.active -= 1;
@@ -701,9 +760,30 @@ impl SurfaceActor for BlockSurface {
         point: crate::index::Point,
         side: crate::Side,
     ) {
-        self.active_block_mut()
-            .surface
-            .start_selection(ty, point, side);
+        self.global_selection = None;
+        let slices = self.block_slices();
+        if slices.is_empty() {
+            self.selection_block = None;
+            self.selection_anchor = None;
+            return;
+        }
+
+        let context = self.viewport_context(&slices);
+        if let Some((index, local_point, global_index)) =
+            self.resolve_block_point_with(&slices, &context, point)
+        {
+            self.selection_block = Some(index);
+            self.selection_anchor = Some(GlobalPoint {
+                line_index: global_index,
+                column: local_point.column,
+            });
+            if let Some(block) = self.blocks.get_mut(index) {
+                block.surface.start_selection(ty, local_point, side);
+            }
+        } else {
+            self.selection_block = None;
+            self.selection_anchor = None;
+        }
     }
 
     fn update_selection(
@@ -711,9 +791,53 @@ impl SurfaceActor for BlockSurface {
         point: crate::index::Point,
         side: crate::Side,
     ) {
-        self.active_block_mut()
-            .surface
-            .update_selection(point, side);
+        let slices = self.block_slices();
+        if slices.is_empty() {
+            return;
+        }
+
+        let context = self.viewport_context(&slices);
+        let resolved =
+            self.resolve_block_point_with(&slices, &context, point);
+
+        if let Some(block_index) = self.selection_block {
+            if let Some((index, local_point, global_index)) = resolved {
+                if self.global_selection.is_none() && index == block_index {
+                    if let Some(block) = self.blocks.get_mut(index) {
+                        block.surface.update_selection(local_point, side);
+                        return;
+                    }
+                } else if self.global_selection.is_none() {
+                    if let Some(block) = self.blocks.get_mut(block_index) {
+                        block.surface.selection = None;
+                    }
+                    self.selection_block = None;
+                    if let Some(anchor) = self.selection_anchor {
+                        self.global_selection = Some(GlobalSelection {
+                            start: anchor,
+                            end: GlobalPoint {
+                                line_index: global_index,
+                                column: local_point.column,
+                            },
+                        });
+                    }
+                }
+            } else {
+                return;
+            }
+        }
+
+        if let (Some((_, local_point, global_index)), Some(anchor)) =
+            (resolved, self.selection_anchor)
+        {
+            self.global_selection = Some(GlobalSelection {
+                start: anchor,
+                end: GlobalPoint {
+                    line_index: global_index,
+                    column: local_point.column,
+                },
+            });
+        }
     }
 
     fn handle_block_event(&mut self, event: crate::escape::BlockEvent) {
@@ -772,28 +896,21 @@ impl SurfaceModel for BlockSurface {
         let columns = self.columns();
         let viewport_lines = self.screen_lines();
         let slices = self.block_slices();
-        let content_lines = slices.last().map(|slice| slice.end).unwrap_or(0);
-        let total_lines = max(viewport_lines, content_lines);
-        let start =
-            total_lines.saturating_sub(viewport_lines + self.display_offset);
-        let viewport_end = start + viewport_lines;
+        let context = self.viewport_context(&slices);
+        let start = context.start;
+        let viewport_end = context.viewport_end;
 
         let mut cells =
             Vec::with_capacity(columns.saturating_mul(viewport_lines));
-        let bottom_padding = if self.display_offset == 0 {
-            viewport_lines.saturating_sub(content_lines)
-        } else {
-            0
-        };
-        let effective_start =
-            start as isize - bottom_padding as isize;
+        let bottom_padding = context.bottom_padding;
+        let effective_start = context.effective_start;
 
         let mut slice_idx = 0;
         let mut current_slice = slices.get(slice_idx);
         for row in 0..viewport_lines {
             let global_index = effective_start + row as isize;
             if global_index < 0
-                || global_index as usize >= content_lines
+                || global_index as usize >= context.content_lines
                 || current_slice.is_none()
             {
                 Self::push_blank_row(
@@ -851,11 +968,6 @@ impl SurfaceModel for BlockSurface {
 
         let active_block = &self.blocks[self.active].surface;
         let mut cursor = CursorSnapshot::new(active_block);
-        let selection = active_block
-            .selection
-            .as_ref()
-            .and_then(|s| s.to_range(active_block));
-
         let active_slice =
             slices.iter().find(|slice| slice.index == self.active);
         if let Some(slice) = active_slice {
@@ -866,12 +978,22 @@ impl SurfaceModel for BlockSurface {
             }
         }
 
-        let mut selection =
-            if let (Some(slice), Some(range)) = (active_slice, selection) {
-                self.convert_selection_to_view(range, slice, start)
-            } else {
-                None
-            };
+        let mut selection = None;
+        if let Some(index) =
+            self.selection_block.filter(|&idx| idx < self.blocks.len())
+        {
+            if let Some(slice) = slices.iter().find(|slice| slice.index == index)
+            {
+                if let Some(range) = self.blocks[index]
+                    .surface
+                    .selection
+                    .as_ref()
+                    .and_then(|s| s.to_range(&self.blocks[index].surface))
+                {
+                    selection = self.convert_selection_to_view(range, slice, start);
+                }
+            }
+        }
 
         let size = SnapshotSize {
             columns,
@@ -885,6 +1007,13 @@ impl SurfaceModel for BlockSurface {
             size,
             self.display_offset,
         );
+
+        if selection.is_none() {
+            if let Some(global_selection) = &self.global_selection {
+                selection = self
+                    .global_selection_to_view(global_selection, &context, viewport_lines);
+            }
+        }
 
         let padding_adjustment = bottom_padding as i32;
         if padding_adjustment > 0 {
@@ -962,6 +1091,53 @@ impl BlockSurface {
         (top_line, total_lines)
     }
 
+    fn resolve_block_point_with(
+        &self,
+        slices: &[BlockSliceInfo],
+        context: &ViewportContext,
+        point: Point,
+    ) -> Option<(usize, Point, usize)> {
+        if slices.is_empty() {
+            return None;
+        }
+
+        if context.content_lines == 0 {
+            let index = self.active.min(self.blocks.len().saturating_sub(1));
+            let block = &self.blocks[index];
+            let column = min(
+                point.column,
+                Column(block.surface.columns().saturating_sub(1)),
+            );
+            return Some((index, Point::new(Line(0), column), 0));
+        }
+
+        let viewport_line = point.line.0 + self.display_offset as i32;
+        let mut global_index =
+            context.effective_start + viewport_line as isize;
+        global_index = global_index.clamp(
+            0,
+            (context.content_lines.saturating_sub(1)) as isize,
+        );
+        let global_index = global_index as usize;
+
+        let slice = slices.iter().find(|slice| {
+            global_index >= slice.start && global_index < slice.end
+        })?;
+        let local_index = global_index.saturating_sub(slice.start);
+        let block = &self.blocks[slice.index];
+        let block_line = slice.top_line + local_index;
+        let column = min(
+            point.column,
+            Column(block.surface.columns().saturating_sub(1)),
+        );
+
+        Some((
+            slice.index,
+            Point::new(block_line, column),
+            global_index,
+        ))
+    }
+
     fn push_blank_row(
         cells: &mut Vec<SnapshotCell>,
         columns: usize,
@@ -1001,6 +1177,58 @@ impl BlockSurface {
             (Some(start), Some(end)) => (start, end),
             _ => (screen_lines, screen_lines),
         }
+    }
+
+    fn global_to_view_point(
+        &self,
+        context: &ViewportContext,
+        global_line: usize,
+        column: Column,
+        viewport_lines: usize,
+    ) -> Option<Point> {
+        if context.viewport_end <= context.start {
+            return None;
+        }
+        let viewport_span = context.viewport_end - context.start;
+        let relative_line = global_line.checked_sub(context.start)?;
+        if relative_line >= viewport_span {
+            return None;
+        }
+        if relative_line >= viewport_lines {
+            return None;
+        }
+        let line = relative_line as i32 - self.display_offset as i32;
+        Some(Point::new(Line(line), column))
+    }
+
+    fn global_selection_to_view(
+        &self,
+        selection: &GlobalSelection,
+        context: &ViewportContext,
+        viewport_lines: usize,
+    ) -> Option<SelectionRange> {
+        let (start, end) = if selection.start.line_index
+            <= selection.end.line_index
+        {
+            (selection.start, selection.end)
+        } else {
+            (selection.end, selection.start)
+        };
+
+        let start_point = self.global_to_view_point(
+            context,
+            start.line_index,
+            start.column,
+            viewport_lines,
+        )?;
+        let end_point = self.global_to_view_point(
+            context,
+            end.line_index,
+            end.column,
+            viewport_lines,
+        )?;
+
+        Some(SelectionRange::new(start_point, end_point, false))
     }
 }
 

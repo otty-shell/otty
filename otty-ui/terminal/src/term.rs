@@ -218,7 +218,7 @@ impl Terminal {
     pub fn subscription(&self) -> impl Stream<Item = Event> + Send + 'static {
         let id = self.id;
         let event_receiver = self.backend_event_rx.clone();
-        iced::stream::channel(100, move |mut output| async move {
+        iced::stream::channel(1000, move |mut output| async move {
             let mut shutdown = false;
             loop {
                 let mut event_receiver = event_receiver.lock().await;
