@@ -1,6 +1,7 @@
 use std::cmp::{max, min};
 
-use crate::grid::Scroll;
+use crate::cell::Cell;
+use crate::grid::{Grid, Scroll};
 use crate::hyperlink::HyperlinkMap;
 use crate::index::{Column, Line, Point};
 use crate::selection::SelectionRange;
@@ -186,10 +187,7 @@ impl BlockSurface {
         let history = self
             .blocks
             .iter()
-            .map(|block| {
-                let grid = block.surface.grid();
-                grid.history_size() + grid.screen_lines()
-            })
+            .map(Self::block_visible_line_count)
             .sum::<usize>();
 
         max(viewport, history)
@@ -206,13 +204,12 @@ impl BlockSurface {
         let mut result = Vec::with_capacity(self.blocks.len());
 
         for (index, block) in self.blocks.iter().enumerate() {
-            let grid = block.surface.grid();
-            let total_lines = grid.history_size() + grid.screen_lines();
+            let (top_line, total_lines) = Self::block_visible_extent(block);
             let slice = BlockSliceInfo {
                 index,
                 start,
                 end: start + total_lines,
-                top_line: grid.topmost_line(),
+                top_line,
             };
             start += total_lines;
             result.push(slice);
@@ -368,7 +365,16 @@ impl SurfaceActor for BlockSurface {
     }
 
     fn resize<S: Dimensions>(&mut self, size: S) {
-        self.active_block_mut().surface.resize(size);
+        let columns = size.columns();
+        let screen_lines = size.screen_lines();
+
+        for block in &mut self.blocks {
+            block
+                .surface
+                .resize(BlockDimensions { columns, screen_lines });
+        }
+
+        self.clamp_display_offset();
     }
 
     fn insert_blank(&mut self, count: usize) {
@@ -766,36 +772,73 @@ impl SurfaceModel for BlockSurface {
         let columns = self.columns();
         let viewport_lines = self.screen_lines();
         let slices = self.block_slices();
-        let total_lines = slices
-            .last()
-            .map(|slice| slice.end)
-            .unwrap_or(viewport_lines);
+        let content_lines = slices.last().map(|slice| slice.end).unwrap_or(0);
+        let total_lines = max(viewport_lines, content_lines);
         let start =
             total_lines.saturating_sub(viewport_lines + self.display_offset);
         let viewport_end = start + viewport_lines;
 
         let mut cells =
             Vec::with_capacity(columns.saturating_mul(viewport_lines));
-        let mut slice_idx = 0;
-        while slice_idx + 1 < slices.len() && slices[slice_idx].end <= start {
-            slice_idx += 1;
-        }
+        let bottom_padding = if self.display_offset == 0 {
+            viewport_lines.saturating_sub(content_lines)
+        } else {
+            0
+        };
+        let effective_start =
+            start as isize - bottom_padding as isize;
 
-        let mut current_slice = &slices[slice_idx];
+        let mut slice_idx = 0;
+        let mut current_slice = slices.get(slice_idx);
         for row in 0..viewport_lines {
-            let global_index = start + row;
-            while global_index >= current_slice.end
-                && slice_idx + 1 < slices.len()
+            let global_index = effective_start + row as isize;
+            if global_index < 0
+                || global_index as usize >= content_lines
+                || current_slice.is_none()
             {
-                slice_idx += 1;
-                current_slice = &slices[slice_idx];
+                Self::push_blank_row(
+                    &mut cells,
+                    columns,
+                    row,
+                    self.display_offset,
+                );
+                continue;
             }
 
-            let block_index = current_slice.index;
+            let global_index = global_index as usize;
+            while let Some(slice) = current_slice {
+                if global_index < slice.end {
+                    break;
+                }
+                slice_idx += 1;
+                current_slice = slices.get(slice_idx);
+            }
+
+            let Some(slice) = current_slice else {
+                Self::push_blank_row(
+                    &mut cells,
+                    columns,
+                    row,
+                    self.display_offset,
+                );
+                continue;
+            };
+
+            if global_index < slice.start {
+                Self::push_blank_row(
+                    &mut cells,
+                    columns,
+                    row,
+                    self.display_offset,
+                );
+                continue;
+            }
+
+            let block_index = slice.index;
             let block = &self.blocks[block_index];
             let grid = block.surface.grid();
-            let local_index = global_index - current_slice.start;
-            let line = current_slice.top_line + local_index;
+            let local_index = global_index - slice.start;
+            let line = slice.top_line + local_index;
 
             for col in 0..columns {
                 let column = Column(col);
@@ -823,7 +866,7 @@ impl SurfaceModel for BlockSurface {
             }
         }
 
-        let selection =
+        let mut selection =
             if let (Some(slice), Some(range)) = (active_slice, selection) {
                 self.convert_selection_to_view(range, slice, start)
             } else {
@@ -843,14 +886,27 @@ impl SurfaceModel for BlockSurface {
             self.display_offset,
         );
 
+        let padding_adjustment = bottom_padding as i32;
+        if padding_adjustment > 0 {
+            cursor.point.line += padding_adjustment;
+            if let Some(range) = selection.as_mut() {
+                range.start.line += padding_adjustment;
+                range.end.line += padding_adjustment;
+            }
+        }
+
         let mut block_snapshots = Vec::with_capacity(self.blocks.len());
         for slice in &slices {
             let block = &self.blocks[slice.index];
-            let visible_start = max(slice.start, start);
-            let visible_end = min(slice.end, viewport_end);
+            let block_start = slice.start;
+            let block_end = slice.end;
+            let visible_start = max(block_start, start);
+            let visible_end = min(block_end, viewport_end);
             let line_count = visible_end.saturating_sub(visible_start);
             let line_offset = visible_start.saturating_sub(start);
-            let start_line = line_offset as i32 - self.display_offset as i32;
+            let start_line = line_offset as i32
+                - self.display_offset as i32
+                + padding_adjustment;
 
             block_snapshots.push(BlockSnapshot {
                 id: block.meta.id.clone(),
@@ -878,6 +934,73 @@ impl SurfaceModel for BlockSurface {
 
     fn reset_damage(&mut self) {
         self.active_block_mut().surface.reset_damage();
+    }
+}
+
+impl BlockSurface {
+    fn block_visible_line_count(block: &Block) -> usize {
+        Self::block_visible_extent(block).1
+    }
+
+    fn block_visible_extent(block: &Block) -> (Line, usize) {
+        let grid = block.surface.grid();
+        let history_lines = grid.history_size();
+        let screen_lines = grid.screen_lines();
+        let (viewport_head, viewport_tail) =
+            Self::viewport_content_bounds(grid);
+        let trim_head = if history_lines == 0 {
+            viewport_head
+        } else {
+            0
+        };
+        let trim_tail = screen_lines.saturating_sub(viewport_tail);
+        let visible_viewport =
+            screen_lines.saturating_sub(trim_head + trim_tail);
+        let total_lines = history_lines + visible_viewport;
+        let top_line = grid.topmost_line() + trim_head;
+
+        (top_line, total_lines)
+    }
+
+    fn push_blank_row(
+        cells: &mut Vec<SnapshotCell>,
+        columns: usize,
+        row: usize,
+        display_offset: usize,
+    ) {
+        let blank_cell = Cell::default();
+        let line = Line(row as i32 - display_offset as i32);
+        for col in 0..columns {
+            let column = Column(col);
+            cells.push(SnapshotCell {
+                point: Point::new(line, column),
+                cell: blank_cell.clone(),
+            });
+        }
+    }
+
+    fn viewport_content_bounds(grid: &Grid<Cell>) -> (usize, usize) {
+        let screen_lines = grid.screen_lines();
+        let mut first_non_empty = None;
+        let mut last_non_empty = None;
+        let cursor_line = grid.cursor.point.line;
+
+        for row_idx in 0..screen_lines {
+            let line = Line(row_idx as i32);
+            let row = &grid[line];
+            let is_cursor_row = cursor_line == line;
+            if is_cursor_row || !row.is_clear() {
+                if first_non_empty.is_none() {
+                    first_non_empty = Some(row_idx);
+                }
+                last_non_empty = Some(row_idx + 1);
+            }
+        }
+
+        match (first_non_empty, last_non_empty) {
+            (Some(start), Some(end)) => (start, end),
+            _ => (screen_lines, screen_lines),
+        }
     }
 }
 
@@ -977,9 +1100,13 @@ mod tests {
         let second_snapshot = surface.snapshot_owned();
         let second_view = second_snapshot.view();
         assert!(second_view.cells.iter().any(|cell| cell.cell.c == 'b'));
+        let blocks = second_view.blocks();
+        assert_eq!(blocks.len(), 2);
         assert!(
-            second_view.cells.iter().all(|cell| cell.cell.c != 'a'),
-            "new block should start with an empty surface"
+            blocks
+                .last()
+                .is_some_and(|block| block.line_count > 0),
+            "new block should contribute its own surface lines"
         );
     }
 
@@ -1115,5 +1242,106 @@ mod tests {
         let top_blocks = top_view.blocks();
         assert_eq!(top_blocks[0].line_count, top_view.size.screen_lines);
         assert_eq!(top_blocks[1].line_count, 0);
+    }
+
+    #[test]
+    fn block_snapshot_trims_empty_viewport_rows() {
+        use crate::grid::Scroll;
+
+        let dims = TestDimensions::new(2, 4);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+
+        surface.print('A');
+        surface.new_line();
+        surface.print('A');
+
+        let meta = BlockMeta {
+            id: String::from("cmd-1"),
+            kind: BlockKind::Command,
+            cmd: Some(String::from("echo A")),
+            cwd: None,
+            shell: None,
+            started_at: Some(1),
+            finished_at: None,
+            exit_code: None,
+            is_alt_screen: false,
+            is_finished: false,
+        };
+
+        let _ = surface.begin_block(meta);
+        surface.print('B');
+
+        surface.scroll_display(Scroll::Top);
+        let top_snapshot = surface.snapshot_owned();
+        let top_view = top_snapshot.view();
+        let top_blocks = top_view.blocks();
+        assert_eq!(top_blocks.len(), 2);
+        assert_eq!(top_blocks[0].line_count, 2);
+        let first_block_extent = top_blocks[0].line_count;
+
+        surface.scroll_display(Scroll::Bottom);
+        let bottom_snapshot = surface.snapshot_owned();
+        let bottom_view = bottom_snapshot.view();
+        let bottom_blocks = bottom_view.blocks();
+        assert_eq!(bottom_blocks.len(), 2);
+        assert!(
+            bottom_blocks[0].line_count <= first_block_extent,
+            "first block should never expand when scrolled to the bottom"
+        );
+        assert_eq!(bottom_blocks[1].line_count, 1);
+        assert_eq!(
+            bottom_blocks[1].start_line,
+            bottom_view.size.screen_lines as i32 - 1
+        );
+    }
+
+    #[test]
+    fn prompt_is_pinned_to_bottom_when_not_scrolled() {
+        let dims = TestDimensions::new(4, 6);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+
+        surface.print('>');
+
+        let snapshot = surface.snapshot_owned();
+        let view = snapshot.view();
+        let blocks = view.blocks();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].line_count, 1);
+        assert_eq!(
+            blocks[0].start_line,
+            view.size.screen_lines as i32 - 1
+        );
+    }
+
+    #[test]
+    fn resizing_updates_all_blocks() {
+        let dims = TestDimensions::new(4, 2);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+
+        surface.print('A');
+
+        let meta = BlockMeta {
+            id: String::from("cmd-1"),
+            kind: BlockKind::Command,
+            cmd: None,
+            cwd: None,
+            shell: None,
+            started_at: Some(1),
+            finished_at: None,
+            exit_code: None,
+            is_alt_screen: false,
+            is_finished: false,
+        };
+
+        let _ = surface.begin_block(meta);
+        surface.print('B');
+
+        surface.resize(TestDimensions::new(6, 4));
+
+        for block in &surface.blocks {
+            let grid = block.surface.grid();
+            assert_eq!(grid.columns(), 6);
+            assert_eq!(grid.screen_lines(), 4);
+        }
     }
 }
