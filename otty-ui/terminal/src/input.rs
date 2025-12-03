@@ -3,11 +3,17 @@ use iced_core::clipboard::Kind as ClipboardKind;
 use iced_core::mouse::{self, Click};
 use otty_libterm::{
     SnapshotArc, TerminalSize,
-    surface::{BlockKind, SelectionType, SurfaceMode},
+    surface::{
+        BlockKind, BlockSnapshot, Flags, SelectionType, SnapshotCell,
+        SnapshotView, SurfaceMode,
+    },
 };
 
 use crate::{
     bindings::{BindingAction, BindingsLayout, InputKind},
+    block_controls::{
+        BlockActionButtonGeometry, compute_action_button_geometry,
+    },
     engine::{Engine, MouseButton},
     font::TermFont,
     view::TerminalViewState,
@@ -35,18 +41,35 @@ impl<'a> InputManager<'a> {
         layout_position: Point,
         cursor_position: Point,
         event: iced::mouse::Event,
+        clipboard: &mut dyn iced_graphics::core::Clipboard,
         publisher: &mut impl FnMut(crate::Event),
     ) -> iced::event::Status {
         match event {
             iced_core::mouse::Event::ButtonPressed(
                 iced_core::mouse::Button::Left,
-            ) => self.handle_left_button_pressed(
-                view_state,
-                terminal_content,
-                cursor_position,
-                layout_position,
-                publisher,
-            ),
+            ) => {
+                if self.handle_block_action_click(
+                    view_state,
+                    terminal_content.clone(),
+                    terminal_size,
+                    layout_position,
+                    cursor_position,
+                    clipboard,
+                ) {
+                    publisher(crate::Event::Redraw {
+                        id: self.terminal_id,
+                    });
+                    iced::event::Status::Captured
+                } else {
+                    self.handle_left_button_pressed(
+                        view_state,
+                        terminal_content,
+                        cursor_position,
+                        layout_position,
+                        publisher,
+                    )
+                }
+            },
             iced_core::mouse::Event::CursorMoved { position } => self
                 .handle_cursor_moved(
                     view_state,
@@ -200,6 +223,22 @@ impl<'a> InputManager<'a> {
 
             if hovered_block_kind != state.hovered_block_kind {
                 state.hovered_block_kind = hovered_block_kind;
+                needs_redraw = true;
+            }
+
+            let prev_action_hover = state.hovered_action_block_id.clone();
+            let action_hover = self
+                .action_button_geometry(
+                    state,
+                    &terminal_state,
+                    layout_position,
+                    terminal_size,
+                )
+                .filter(|button| button.rect.contains(position))
+                .map(|button| button.block_id);
+
+            if action_hover != prev_action_hover {
+                state.hovered_action_block_id = action_hover;
                 needs_redraw = true;
             }
 
@@ -449,6 +488,136 @@ impl<'a> InputManager<'a> {
     }
 }
 
+impl<'a> InputManager<'a> {
+    fn action_button_geometry(
+        &self,
+        state: &TerminalViewState,
+        snapshot: &SnapshotView<'_>,
+        layout_position: Point,
+        terminal_size: TerminalSize,
+    ) -> Option<BlockActionButtonGeometry> {
+        let block_id = state
+            .hovered_block_id
+            .as_deref()
+            .or(state.selected_block_id.as_deref())?;
+
+        let cell_height = terminal_size.cell_height as f32;
+        compute_action_button_geometry(
+            snapshot,
+            block_id,
+            layout_position,
+            state.size,
+            cell_height,
+        )
+    }
+
+    fn handle_block_action_click(
+        &self,
+        state: &mut TerminalViewState,
+        terminal_state: SnapshotArc,
+        terminal_size: TerminalSize,
+        layout_position: Point,
+        cursor_position: Point,
+        clipboard: &mut dyn iced_graphics::core::Clipboard,
+    ) -> bool {
+        let snapshot = terminal_state.view();
+        let geometry = self.action_button_geometry(
+            state,
+            &snapshot,
+            layout_position,
+            terminal_size,
+        );
+        let Some(button) = geometry else {
+            return false;
+        };
+
+        if !button.rect.contains(cursor_position) {
+            return false;
+        }
+
+        let Some(block) = snapshot
+            .blocks()
+            .iter()
+            .find(|block| block.id == button.block_id)
+        else {
+            return false;
+        };
+
+        state.selected_block_id = Some(block.id.clone());
+        state.selected_block_kind = Some(block.meta.kind.clone());
+
+        self.copy_block_by_id(&block.id, &snapshot, clipboard)
+    }
+
+    fn copy_block_by_id(
+        &self,
+        block_id: &str,
+        snapshot: &SnapshotView<'_>,
+        clipboard: &mut dyn iced_graphics::core::Clipboard,
+    ) -> bool {
+        let Some(block) =
+            snapshot.blocks().iter().find(|block| block.id == block_id)
+        else {
+            return false;
+        };
+
+        if let Some(content) = collect_block_text(block, snapshot.cells) {
+            clipboard.write(ClipboardKind::Standard, content);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+fn trim_trailing_spaces(input: &str) -> String {
+    let mut trimmed = input.to_string();
+    while trimmed.ends_with(' ') {
+        trimmed.pop();
+    }
+    trimmed
+}
+
+fn collect_block_text(
+    block: &BlockSnapshot,
+    cells: &[SnapshotCell],
+) -> Option<String> {
+    if block.line_count == 0 || block.meta.kind == BlockKind::Prompt {
+        return None;
+    }
+
+    let start = block.start_line;
+    let end = start + block.line_count as i32;
+    let mut lines = Vec::new();
+    let mut current_line = None;
+    let mut buffer = String::new();
+
+    for cell in cells {
+        let line_value = cell.point.line.0;
+        if line_value < start || line_value >= end {
+            continue;
+        }
+
+        if current_line != Some(line_value) {
+            if current_line.is_some() {
+                lines.push(trim_trailing_spaces(&buffer));
+                buffer.clear();
+            }
+            current_line = Some(line_value);
+        }
+
+        if !cell.cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
+            buffer.push(cell.cell.c);
+        }
+    }
+
+    if current_line.is_some() {
+        lines.push(trim_trailing_spaces(&buffer));
+    }
+
+    Some(lines.join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -456,8 +625,9 @@ mod tests {
     use otty_libterm::TerminalSize;
     use otty_libterm::escape::{Hyperlink, NamedPrivateMode};
     use otty_libterm::surface::{
-        BlockKind, Column, Line, Point as TerminalGridPoint, SnapshotOwned,
-        Surface, SurfaceActor, SurfaceConfig, SurfaceModel,
+        BlockKind, BlockMetaPublic, BlockSnapshot, Cell, Column, Line,
+        Point as TerminalGridPoint, SnapshotCell, SnapshotOwned, Surface,
+        SurfaceActor, SurfaceConfig, SurfaceModel,
     };
 
     use super::*;
@@ -491,6 +661,42 @@ mod tests {
         surface.grid_mut()[Line(0)][Column(0)].set_hyperlink(Some(link.into()));
         surface.grid_mut()[Line(0)][Column(0)].c = 'h';
         Arc::new(surface.snapshot_owned())
+    }
+
+    fn block_snapshot(
+        id: &str,
+        kind: BlockKind,
+        line_count: usize,
+    ) -> BlockSnapshot {
+        BlockSnapshot {
+            id: id.into(),
+            meta: BlockMetaPublic {
+                id: id.into(),
+                kind,
+                ..BlockMetaPublic::default()
+            },
+            start_line: 0,
+            line_count,
+            is_alt_screen: false,
+        }
+    }
+
+    fn cells_for_lines(lines: &[&str]) -> Vec<SnapshotCell> {
+        let mut result = Vec::new();
+        for (row, line) in lines.iter().enumerate() {
+            for (col, ch) in line.chars().enumerate() {
+                let mut cell = Cell::default();
+                cell.c = ch;
+                result.push(SnapshotCell {
+                    point: TerminalGridPoint::new(
+                        Line(row as i32),
+                        Column(col),
+                    ),
+                    cell,
+                });
+            }
+        }
+        result
     }
 
     mod handle_left_button_pressed_tests {
@@ -566,6 +772,40 @@ mod tests {
                 }
             ));
             assert!(state.is_dragged);
+        }
+    }
+
+    mod copy_block_tests {
+        use super::*;
+
+        #[test]
+        fn collects_block_content_from_cells() {
+            let block = block_snapshot("block-1", BlockKind::Command, 2);
+            let cells = cells_for_lines(&["echo  hi", "result"]);
+
+            let content = collect_block_text(&block, &cells);
+
+            assert_eq!(content.as_deref(), Some("echo  hi\nresult"));
+        }
+
+        #[test]
+        fn collect_block_returns_none_for_prompt() {
+            let block = block_snapshot("prompt", BlockKind::Prompt, 1);
+            let cells = cells_for_lines(&["user@host$"]);
+
+            let content = collect_block_text(&block, &cells);
+
+            assert!(content.is_none());
+        }
+
+        #[test]
+        fn collect_block_returns_none_when_not_visible() {
+            let block = block_snapshot("block-1", BlockKind::Command, 0);
+            let cells = cells_for_lines(&["echo      "]);
+
+            let content = collect_block_text(&block, &cells);
+
+            assert!(content.is_none());
         }
     }
 

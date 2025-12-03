@@ -1,6 +1,7 @@
 pub mod bindings;
 pub mod settings;
 
+mod block_controls;
 mod engine;
 mod error;
 mod font;

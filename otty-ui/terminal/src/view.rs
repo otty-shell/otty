@@ -17,6 +17,9 @@ use otty_libterm::escape::{self as ansi, CursorShape, StdColor};
 use otty_libterm::surface::SurfaceMode;
 use otty_libterm::surface::{BlockKind, Flags, Point as TerminalGridPoint};
 
+use crate::block_controls::{
+    BlockActionButtonGeometry, compute_action_button_geometry,
+};
 use crate::input::InputManager;
 use crate::term::{Event, Terminal};
 use crate::theme::TerminalStyle;
@@ -140,10 +143,12 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
             let selected_block_id = state.selected_block_id.as_deref();
             let mut block_highlights: Vec<(Point, Size)> = Vec::new();
             let mut block_dividers: Vec<(Point, Point)> = Vec::new();
+            let mut block_action_buttons: Vec<BlockActionButtonGeometry> =
+                Vec::new();
             let mut selected_color = self.term.theme.block_highlight_color();
-            selected_color.a = selected_color.a.min(0.2);
-            let mut divider_color = selected_color;
-            divider_color.a = divider_color.a.min(0.4);
+            selected_color.a = selected_color.a.min(0.01);
+            let mut divider_color = self.term.theme.block_highlight_color();
+            divider_color.a = divider_color.a.min(0.1);
 
             if !view.blocks().is_empty() && layout_bounds.width > 0.0 {
                 for block in view.blocks() {
@@ -161,16 +166,15 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                         + ((block_top + display_offset) * cell_height);
 
                     let block_id = block.id.as_str();
-                    if Some(block_id) == selected_block_id
-                        && block.meta.kind != BlockKind::Prompt
-                    {
+                    let is_prompt = block.meta.kind == BlockKind::Prompt;
+                    if Some(block_id) == selected_block_id && !is_prompt {
                         block_highlights.push((
                             Point::new(layout_offset_x, y),
                             Size::new(layout_bounds.width, block_height),
                         ));
                     }
 
-                    if block.meta.kind != BlockKind::Prompt {
+                    if !is_prompt {
                         let divider_y = y + block_height;
                         block_dividers.push((
                             Point::new(layout_offset_x, divider_y),
@@ -179,6 +183,23 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                                 divider_y,
                             ),
                         ));
+                    }
+
+                    let show_actions = !is_prompt
+                        && (state.hovered_block_id.as_deref()
+                            == Some(block_id)
+                            || state.selected_block_id.as_deref()
+                                == Some(block_id));
+                    if show_actions {
+                        if let Some(button) = compute_action_button_geometry(
+                            &view,
+                            block_id,
+                            Point::new(layout_offset_x, layout_offset_y),
+                            layout_bounds.size(),
+                            cell_height,
+                        ) {
+                            block_action_buttons.push(button);
+                        }
                     }
                 }
             }
@@ -360,6 +381,38 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                     Stroke::default().with_width(1.0).with_color(divider_color),
                 );
             }
+
+            for button in block_action_buttons {
+                let is_hovered = state.hovered_action_block_id.as_deref()
+                    == Some(button.block_id.as_str());
+                if is_hovered {
+                    let mut bg_color = self.term.theme.block_highlight_color();
+                    bg_color.a = 0.0;
+                    let origin = Point::new(button.rect.x, button.rect.y);
+                    let size = Size::new(button.rect.width, button.rect.height);
+                    frame.fill_rectangle(origin, size, bg_color);
+                }
+
+                let mut dot_color = self
+                    .term
+                    .theme
+                    .get_color(ansi::Color::Std(StdColor::Foreground));
+                dot_color.a = 0.5;
+                if is_hovered {
+                    dot_color.a = 1.0;
+                }
+
+                let dot_radius =
+                    (button.rect.height.min(button.rect.width) / 9.0).max(1.0);
+                let center_x = button.rect.x + (button.rect.width / 2.0);
+                let center_y = button.rect.y + (button.rect.height / 2.0);
+                let spacing = button.rect.height / 3.5;
+                for offset in [-1.0_f32, 0.0, 1.0] {
+                    let y = center_y + (offset * spacing);
+                    let dot = Path::circle(Point::new(center_x, y), dot_radius);
+                    frame.fill(&dot, dot_color);
+                }
+            }
         });
 
         use iced::advanced::graphics::geometry::Renderer as _;
@@ -415,6 +468,7 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                     layout.position(),
                     cursor.position().unwrap(), // Assuming cursor position is always available here.
                     mouse_event,
+                    clipboard,
                     &mut publish,
                 )
             },
@@ -458,6 +512,12 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
             cursor_mode = iced_core::mouse::Interaction::Pointer;
         }
 
+        if self.is_cursor_in_layout(cursor, layout)
+            && state.hovered_action_block_id.is_some()
+        {
+            cursor_mode = iced_core::mouse::Interaction::Pointer;
+        }
+
         cursor_mode
     }
 }
@@ -482,6 +542,7 @@ pub(crate) struct TerminalViewState {
     pub hovered_block_kind: Option<BlockKind>,
     pub selected_block_id: Option<String>,
     pub selected_block_kind: Option<BlockKind>,
+    pub hovered_action_block_id: Option<String>,
     pub selection_in_progress: bool,
     pending_resize: Option<Size<f32>>,
     pending_cell_size: Option<Size<f32>>,
@@ -504,6 +565,7 @@ impl TerminalViewState {
             hovered_block_kind: None,
             selected_block_id: None,
             selected_block_kind: None,
+            hovered_action_block_id: None,
             selection_in_progress: false,
             pending_resize: None,
             pending_cell_size: None,
