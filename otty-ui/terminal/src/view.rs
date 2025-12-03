@@ -126,6 +126,8 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
             let display_offset = view.display_offset as f32;
             let half_h = cell_height * 0.5;
 
+            println!("{:?}", view.mode);
+
             // We use the background pallete color as a default
             // because the widget global background color must be the same
             let default_bg = self

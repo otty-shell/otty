@@ -9,7 +9,7 @@ use crate::snapshot::{
     CursorSnapshot, SnapshotCell, SnapshotDamage, SnapshotOwned, SnapshotSize,
     SurfaceModel,
 };
-use crate::{Dimensions, Surface, SurfaceActor, SurfaceConfig};
+use crate::{Dimensions, Surface, SurfaceActor, SurfaceConfig, SurfaceMode};
 
 /// Kind of a terminal block.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -226,6 +226,18 @@ impl BlockSurface {
     }
 
     fn block_slices(&self) -> Vec<BlockSliceInfo> {
+        if self.is_alt_screen_active() {
+            if let Some(block) = self.blocks.get(self.active) {
+                let (top_line, total_lines) = Self::block_visible_extent(block);
+                return vec![BlockSliceInfo {
+                    index: self.active,
+                    start: 0,
+                    end: total_lines,
+                    top_line,
+                }];
+            }
+        }
+
         let mut start = 0;
         let mut result = Vec::with_capacity(self.blocks.len());
 
@@ -242,6 +254,13 @@ impl BlockSurface {
         }
 
         result
+    }
+
+    fn is_alt_screen_active(&self) -> bool {
+        self.blocks
+            .get(self.active)
+            .map(|block| block.surface.mode().contains(SurfaceMode::ALT_SCREEN))
+            .unwrap_or(false)
     }
 
     fn viewport_context(&self, slices: &[BlockSliceInfo]) -> ViewportContext {
@@ -312,9 +331,6 @@ impl BlockSurface {
     }
 
     /// Ensure the number of stored blocks does not exceed `max_blocks`.
-    ///
-    /// Oldest завершённые блоки удаляются первыми; активный и другие
-    /// незавершённые блоки не удаляются.
     fn enforce_max_blocks(&mut self) {
         if self.blocks.len() <= self.max_blocks {
             return;
@@ -323,26 +339,34 @@ impl BlockSurface {
         let mut index = 0;
         while self.blocks.len() > self.max_blocks && index < self.blocks.len() {
             if self.blocks[index].meta.is_finished && index != self.active {
-                self.blocks.remove(index);
-
-                if let Some(selection_index) = self.selection_block {
-                    if selection_index == index {
-                        self.selection_block = None;
-                        self.selection_anchor = None;
-                        self.global_selection = None;
-                    } else if selection_index > index {
-                        self.selection_block = Some(selection_index - 1);
-                    }
-                }
-
-                if self.active > index {
-                    self.active -= 1;
-                } else if self.active >= self.blocks.len() {
-                    self.active = self.blocks.len().saturating_sub(1);
-                }
+                self.remove_block_at(index);
             } else {
                 index += 1;
             }
+        }
+    }
+
+    fn remove_block_at(&mut self, index: usize) {
+        if index >= self.blocks.len() {
+            return;
+        }
+
+        self.blocks.remove(index);
+
+        if let Some(selection_index) = self.selection_block {
+            if selection_index == index {
+                self.selection_block = None;
+                self.selection_anchor = None;
+                self.global_selection = None;
+            } else if selection_index > index {
+                self.selection_block = Some(selection_index - 1);
+            }
+        }
+
+        if self.active > index {
+            self.active -= 1;
+        } else if self.active >= self.blocks.len() {
+            self.active = self.blocks.len().saturating_sub(1);
         }
 
         self.clamp_display_offset();
@@ -384,33 +408,51 @@ impl BlockSurface {
         &mut self.blocks[self.active].surface
     }
 
-    /// Обновляет метаданные и помечает блок с данным `id` как завершённый.
+    fn merge_block_meta(target: &mut BlockMeta, meta: &BlockMeta) {
+        if let Some(cmd) = &meta.cmd {
+            target.cmd = Some(cmd.clone());
+        }
+
+        if let Some(cwd) = &meta.cwd {
+            target.cwd = Some(cwd.clone());
+        }
+
+        if let Some(shell) = &meta.shell {
+            target.shell = Some(shell.clone());
+        }
+
+        if let Some(started_at) = meta.started_at {
+            target.started_at = Some(started_at);
+        }
+
+        if let Some(finished_at) = meta.finished_at {
+            target.finished_at = Some(finished_at);
+        }
+
+        if let Some(exit_code) = meta.exit_code {
+            target.exit_code = Some(exit_code);
+        }
+
+        target.kind = meta.kind.clone();
+        target.is_alt_screen = meta.is_alt_screen;
+    }
+
+    fn active_prompt_index(&self) -> Option<usize> {
+        self.blocks.get(self.active).and_then(|block| {
+            if block.meta.kind == BlockKind::Prompt && !block.meta.is_finished {
+                Some(self.active)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Обновляет метаданные и помечает блок с данным `id` как завершённым.
     pub fn end_block_by_id(&mut self, meta: &BlockMeta) {
         if let Some(block) =
             self.blocks.iter_mut().find(|b| b.meta.id == meta.id)
         {
-            if let Some(cmd) = &meta.cmd {
-                block.meta.cmd = Some(cmd.clone());
-            }
-
-            if let Some(cwd) = &meta.cwd {
-                block.meta.cwd = Some(cwd.clone());
-            }
-
-            if let Some(shell) = &meta.shell {
-                block.meta.shell = Some(shell.clone());
-            }
-
-            if let Some(finished_at) = meta.finished_at {
-                block.meta.finished_at = Some(finished_at);
-            }
-
-            if let Some(exit_code) = meta.exit_code {
-                block.meta.exit_code = Some(exit_code);
-            }
-
-            block.meta.kind = meta.kind.clone();
-            block.meta.is_alt_screen = meta.is_alt_screen;
+            Self::merge_block_meta(&mut block.meta, meta);
             block.meta.is_finished = true;
         }
 
@@ -428,9 +470,10 @@ impl SurfaceActor for BlockSurface {
         let screen_lines = size.screen_lines();
 
         for block in &mut self.blocks {
-            block
-                .surface
-                .resize(BlockDimensions { columns, screen_lines });
+            block.surface.resize(BlockDimensions {
+                columns,
+                screen_lines,
+            });
         }
 
         self.clamp_display_offset();
@@ -797,8 +840,7 @@ impl SurfaceActor for BlockSurface {
         }
 
         let context = self.viewport_context(&slices);
-        let resolved =
-            self.resolve_block_point_with(&slices, &context, point);
+        let resolved = self.resolve_block_point_with(&slices, &context, point);
 
         if let Some(block_index) = self.selection_block {
             if let Some((index, local_point, global_index)) = resolved {
@@ -865,6 +907,14 @@ impl SurfaceActor for BlockSurface {
         match event.phase {
             BlockPhase::Preexec => {
                 meta.kind = BlockKind::Command;
+                if let Some(prompt_idx) = self.active_prompt_index() {
+                    self.blocks[prompt_idx].meta = meta;
+                    self.active = prompt_idx;
+                    self.display_offset = 0;
+                    self.clamp_display_offset();
+                    return;
+                }
+
                 let _ = self.begin_block(meta);
             },
             BlockPhase::Exit => {
@@ -873,13 +923,18 @@ impl SurfaceActor for BlockSurface {
             BlockPhase::Precmd => {
                 meta.kind = BlockKind::Prompt;
 
-                let exists = self.blocks.iter().any(|b| b.meta.id == meta.id);
-
-                if exists {
+                if self.blocks.iter().any(|b| b.meta.id == meta.id) {
                     self.end_block_by_id(&meta);
-                } else {
-                    let _ = self.begin_block(meta);
+                    return;
                 }
+
+                if let Some(index) = self.active_prompt_index() {
+                    if self.blocks.len() > 1 {
+                        self.remove_block_at(index);
+                    }
+                }
+
+                let _ = self.begin_block(meta);
             },
         }
     }
@@ -889,6 +944,10 @@ impl SurfaceModel for BlockSurface {
     fn snapshot_owned(&mut self) -> SnapshotOwned {
         if self.blocks.is_empty() {
             return SnapshotOwned::default();
+        }
+
+        if self.is_alt_screen_active() {
+            return self.snapshot_active_alt_screen_block();
         }
 
         self.clamp_display_offset();
@@ -982,7 +1041,8 @@ impl SurfaceModel for BlockSurface {
         if let Some(index) =
             self.selection_block.filter(|&idx| idx < self.blocks.len())
         {
-            if let Some(slice) = slices.iter().find(|slice| slice.index == index)
+            if let Some(slice) =
+                slices.iter().find(|slice| slice.index == index)
             {
                 if let Some(range) = self.blocks[index]
                     .surface
@@ -990,7 +1050,8 @@ impl SurfaceModel for BlockSurface {
                     .as_ref()
                     .and_then(|s| s.to_range(&self.blocks[index].surface))
                 {
-                    selection = self.convert_selection_to_view(range, slice, start);
+                    selection =
+                        self.convert_selection_to_view(range, slice, start);
                 }
             }
         }
@@ -1010,8 +1071,11 @@ impl SurfaceModel for BlockSurface {
 
         if selection.is_none() {
             if let Some(global_selection) = &self.global_selection {
-                selection = self
-                    .global_selection_to_view(global_selection, &context, viewport_lines);
+                selection = self.global_selection_to_view(
+                    global_selection,
+                    &context,
+                    viewport_lines,
+                );
             }
         }
 
@@ -1033,8 +1097,7 @@ impl SurfaceModel for BlockSurface {
             let visible_end = min(block_end, viewport_end);
             let line_count = visible_end.saturating_sub(visible_start);
             let line_offset = visible_start.saturating_sub(start);
-            let start_line = line_offset as i32
-                - self.display_offset as i32
+            let start_line = line_offset as i32 - self.display_offset as i32
                 + padding_adjustment;
 
             block_snapshots.push(BlockSnapshot {
@@ -1067,6 +1130,28 @@ impl SurfaceModel for BlockSurface {
 }
 
 impl BlockSurface {
+    fn snapshot_active_alt_screen_block(&mut self) -> SnapshotOwned {
+        self.display_offset = 0;
+        let Some(block) = self.blocks.get_mut(self.active) else {
+            return SnapshotOwned::default();
+        };
+
+        block.meta.is_alt_screen =
+            block.surface.mode().contains(SurfaceMode::ALT_SCREEN);
+
+        let mut snapshot = SnapshotOwned::from_surface(&mut block.surface);
+        let line_count = snapshot.view().size.screen_lines;
+        snapshot.blocks = vec![BlockSnapshot {
+            id: block.meta.id.clone(),
+            meta: BlockMetaPublic::from(&block.meta),
+            start_line: 0,
+            line_count,
+            is_alt_screen: block.meta.is_alt_screen,
+        }];
+
+        snapshot
+    }
+
     fn block_visible_line_count(block: &Block) -> usize {
         Self::block_visible_extent(block).1
     }
@@ -1077,11 +1162,7 @@ impl BlockSurface {
         let screen_lines = grid.screen_lines();
         let (viewport_head, viewport_tail) =
             Self::viewport_content_bounds(grid);
-        let trim_head = if history_lines == 0 {
-            viewport_head
-        } else {
-            0
-        };
+        let trim_head = if history_lines == 0 { viewport_head } else { 0 };
         let trim_tail = screen_lines.saturating_sub(viewport_tail);
         let visible_viewport =
             screen_lines.saturating_sub(trim_head + trim_tail);
@@ -1112,12 +1193,9 @@ impl BlockSurface {
         }
 
         let viewport_line = point.line.0 + self.display_offset as i32;
-        let mut global_index =
-            context.effective_start + viewport_line as isize;
-        global_index = global_index.clamp(
-            0,
-            (context.content_lines.saturating_sub(1)) as isize,
-        );
+        let mut global_index = context.effective_start + viewport_line as isize;
+        global_index = global_index
+            .clamp(0, (context.content_lines.saturating_sub(1)) as isize);
         let global_index = global_index as usize;
 
         let slice = slices.iter().find(|slice| {
@@ -1131,11 +1209,7 @@ impl BlockSurface {
             Column(block.surface.columns().saturating_sub(1)),
         );
 
-        Some((
-            slice.index,
-            Point::new(block_line, column),
-            global_index,
-        ))
+        Some((slice.index, Point::new(block_line, column), global_index))
     }
 
     fn push_blank_row(
@@ -1207,13 +1281,12 @@ impl BlockSurface {
         context: &ViewportContext,
         viewport_lines: usize,
     ) -> Option<SelectionRange> {
-        let (start, end) = if selection.start.line_index
-            <= selection.end.line_index
-        {
-            (selection.start, selection.end)
-        } else {
-            (selection.end, selection.start)
-        };
+        let (start, end) =
+            if selection.start.line_index <= selection.end.line_index {
+                (selection.start, selection.end)
+            } else {
+                (selection.end, selection.start)
+            };
 
         let start_point = self.global_to_view_point(
             context,
@@ -1331,9 +1404,7 @@ mod tests {
         let blocks = second_view.blocks();
         assert_eq!(blocks.len(), 2);
         assert!(
-            blocks
-                .last()
-                .is_some_and(|block| block.line_count > 0),
+            blocks.last().is_some_and(|block| block.line_count > 0),
             "new block should contribute its own surface lines"
         );
     }
@@ -1535,10 +1606,7 @@ mod tests {
         let blocks = view.blocks();
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].line_count, 1);
-        assert_eq!(
-            blocks[0].start_line,
-            view.size.screen_lines as i32 - 1
-        );
+        assert_eq!(blocks[0].start_line, view.size.screen_lines as i32 - 1);
     }
 
     #[test]
