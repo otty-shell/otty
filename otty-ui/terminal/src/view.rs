@@ -1,9 +1,11 @@
+use std::time::{Duration, Instant};
+
 use iced::alignment::{Horizontal, Vertical};
 use iced::font::{Style as FontStyle, Weight as FontWeight};
 use iced::mouse::Cursor;
 use iced::widget::canvas::{Path, Text};
 use iced::widget::container;
-use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
+use iced::{Color, Element, Length, Point, Rectangle, Size, Theme, window};
 use iced_core::keyboard::Modifiers;
 use iced_core::mouse;
 use iced_core::text::{LineHeight, Shaping};
@@ -13,7 +15,7 @@ use iced_graphics::core::widget::{Tree, tree};
 use iced_graphics::geometry::Stroke;
 use otty_libterm::escape::{self as ansi, CursorShape, StdColor};
 use otty_libterm::surface::SurfaceMode;
-use otty_libterm::surface::{Flags, Point as TerminalGridPoint};
+use otty_libterm::surface::{BlockKind, Flags, Point as TerminalGridPoint};
 
 use crate::input::InputManager;
 use crate::term::{Event, Terminal};
@@ -126,8 +128,6 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
             let display_offset = view.display_offset as f32;
             let half_h = cell_height * 0.5;
 
-            println!("{:?}", view.mode);
-
             // We use the background pallete color as a default
             // because the widget global background color must be the same
             let default_bg = self
@@ -137,20 +137,15 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
 
             let hovered_span_id =
                 view.hyperlink_span_id_at(state.mouse_position_on_grid);
-            let hovered_block_id = state.hovered_block_id.as_deref();
             let selected_block_id = state.selected_block_id.as_deref();
-            let mut block_frames: Vec<(Point, Size, Color)> = Vec::new();
+            let mut block_highlights: Vec<(Point, Size)> = Vec::new();
+            let mut block_dividers: Vec<(Point, Point)> = Vec::new();
+            let mut selected_color = self.term.theme.block_highlight_color();
+            selected_color.a = selected_color.a.min(0.2);
+            let mut divider_color = selected_color;
+            divider_color.a = divider_color.a.min(0.4);
 
             if !view.blocks().is_empty() && layout_bounds.width > 0.0 {
-                let mut hover_color =
-                    self.term.theme.get_color(ansi::Color::Std(StdColor::Blue));
-                hover_color.a *= 0.6;
-                let mut selected_color = self
-                    .term
-                    .theme
-                    .get_color(ansi::Color::Std(StdColor::BrightBlue));
-                selected_color.a = selected_color.a.max(0.8);
-
                 for block in view.blocks() {
                     if block.line_count == 0 {
                         continue;
@@ -166,19 +161,23 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                         + ((block_top + display_offset) * cell_height);
 
                     let block_id = block.id.as_str();
-                    let color = if Some(block_id) == selected_block_id {
-                        Some(selected_color)
-                    } else if Some(block_id) == hovered_block_id {
-                        Some(hover_color)
-                    } else {
-                        None
-                    };
-
-                    if let Some(color) = color {
-                        block_frames.push((
+                    if Some(block_id) == selected_block_id
+                        && block.meta.kind != BlockKind::Prompt
+                    {
+                        block_highlights.push((
                             Point::new(layout_offset_x, y),
                             Size::new(layout_bounds.width, block_height),
-                            color,
+                        ));
+                    }
+
+                    if block.meta.kind != BlockKind::Prompt {
+                        let divider_y = y + block_height;
+                        block_dividers.push((
+                            Point::new(layout_offset_x, divider_y),
+                            Point::new(
+                                layout_offset_x + layout_bounds.width,
+                                divider_y,
+                            ),
                         ));
                     }
                 }
@@ -349,11 +348,16 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                 );
             }
 
-            for (origin, size, color) in block_frames {
+            for (origin, size) in block_highlights {
                 let rect = Path::rectangle(origin, size);
+                frame.fill(&rect, selected_color);
+            }
+
+            for (start, end) in block_dividers {
+                let divider = Path::line(start, end);
                 frame.stroke(
-                    &rect,
-                    Stroke::default().with_width(1.0).with_color(color),
+                    &divider,
+                    Stroke::default().with_width(1.0).with_color(divider_color),
                 );
             }
         });
@@ -379,13 +383,16 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
         let font = &self.term.font;
         let layout_size = layout.bounds().size();
 
+        view_state.flush_pending_resize(self.term.id, shell);
+
         if view_state.size != layout_size {
             view_state.size = layout_size;
-            shell.publish(Event::Resize {
-                id: self.term.id,
-                layout_size: Some(layout_size),
-                cell_size: Some(self.term.font.measure),
-            });
+            view_state.queue_resize(
+                self.term.id,
+                layout_size,
+                self.term.font.measure,
+                shell,
+            );
         }
 
         if !view_state.is_focused {
@@ -472,7 +479,14 @@ pub(crate) struct TerminalViewState {
     pub mouse_position_on_grid: TerminalGridPoint,
     pub hovered_span_id: Option<u32>,
     pub hovered_block_id: Option<String>,
+    pub hovered_block_kind: Option<BlockKind>,
     pub selected_block_id: Option<String>,
+    pub selected_block_kind: Option<BlockKind>,
+    pub selection_in_progress: bool,
+    pending_resize: Option<Size<f32>>,
+    pending_cell_size: Option<Size<f32>>,
+    pending_resize_deadline: Option<Instant>,
+    last_resize_sent_at: Option<Instant>,
 }
 
 impl TerminalViewState {
@@ -487,7 +501,88 @@ impl TerminalViewState {
             mouse_position_on_grid: TerminalGridPoint::default(),
             hovered_span_id: None,
             hovered_block_id: None,
+            hovered_block_kind: None,
             selected_block_id: None,
+            selected_block_kind: None,
+            selection_in_progress: false,
+            pending_resize: None,
+            pending_cell_size: None,
+            pending_resize_deadline: None,
+            last_resize_sent_at: None,
+        }
+    }
+
+    fn queue_resize(
+        &mut self,
+        terminal_id: u64,
+        layout_size: Size<f32>,
+        cell_size: Size<f32>,
+        shell: &mut iced_graphics::core::Shell<'_, Event>,
+    ) {
+        const THROTTLE: Duration = Duration::from_millis(33);
+        let now = Instant::now();
+        let should_send = self
+            .last_resize_sent_at
+            .map(|last| now.saturating_duration_since(last) >= THROTTLE)
+            .unwrap_or(true);
+
+        if should_send {
+            self.publish_resize(
+                terminal_id,
+                layout_size,
+                cell_size,
+                shell,
+                now,
+            );
+        } else {
+            self.pending_resize = Some(layout_size);
+            self.pending_cell_size = Some(cell_size);
+            self.pending_resize_deadline =
+                self.last_resize_sent_at.map(|last| last + THROTTLE);
+            shell.request_redraw(window::RedrawRequest::NextFrame);
+        }
+    }
+
+    fn publish_resize(
+        &mut self,
+        terminal_id: u64,
+        layout_size: Size<f32>,
+        cell_size: Size<f32>,
+        shell: &mut iced_graphics::core::Shell<'_, Event>,
+        now: Instant,
+    ) {
+        self.last_resize_sent_at = Some(now);
+        self.pending_resize = None;
+        self.pending_cell_size = None;
+        self.pending_resize_deadline = None;
+        shell.publish(Event::Resize {
+            id: terminal_id,
+            layout_size: Some(layout_size),
+            cell_size: Some(cell_size),
+        });
+    }
+
+    fn flush_pending_resize(
+        &mut self,
+        terminal_id: u64,
+        shell: &mut iced_graphics::core::Shell<'_, Event>,
+    ) {
+        if let (Some(layout_size), Some(cell_size), Some(deadline)) = (
+            self.pending_resize,
+            self.pending_cell_size,
+            self.pending_resize_deadline,
+        ) {
+            if Instant::now() >= deadline {
+                self.publish_resize(
+                    terminal_id,
+                    layout_size,
+                    cell_size,
+                    shell,
+                    Instant::now(),
+                );
+            } else {
+                shell.request_redraw(window::RedrawRequest::NextFrame);
+            }
         }
     }
 }

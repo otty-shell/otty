@@ -1260,19 +1260,44 @@ impl BlockSurface {
         column: Column,
         viewport_lines: usize,
     ) -> Option<Point> {
-        if context.viewport_end <= context.start {
+        if context.viewport_end <= context.start || viewport_lines == 0 {
             return None;
         }
+
         let viewport_span = context.viewport_end - context.start;
-        let relative_line = global_line.checked_sub(context.start)?;
-        if relative_line >= viewport_span {
+        if viewport_span == 0 {
             return None;
         }
-        if relative_line >= viewport_lines {
+
+        let mut relative_line = global_line as isize - context.start as isize;
+        let mut clamped = false;
+
+        if relative_line < 0 {
+            relative_line = 0;
+            clamped = true;
+        } else if relative_line as usize >= viewport_span {
+            relative_line = viewport_span as isize - 1;
+            clamped = true;
+        }
+
+        if relative_line < 0 {
             return None;
         }
+
         let line = relative_line as i32 - self.display_offset as i32;
-        Some(Point::new(Line(line), column))
+        let columns = self.columns();
+        let max_col = columns.saturating_sub(1);
+        let col = if clamped {
+            if global_line < context.start {
+                Column(0)
+            } else {
+                Column(max_col)
+            }
+        } else {
+            column
+        };
+
+        Some(Point::new(Line(line), col))
     }
 
     fn global_selection_to_view(
@@ -1300,6 +1325,11 @@ impl BlockSurface {
             end.column,
             viewport_lines,
         )?;
+        let (start_point, end_point) = if start_point <= end_point {
+            (start_point, end_point)
+        } else {
+            (end_point, start_point)
+        };
 
         Some(SelectionRange::new(start_point, end_point, false))
     }
