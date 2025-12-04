@@ -18,7 +18,7 @@ pub(crate) use otty_escape as escape;
 
 pub use actor::SurfaceActor;
 pub use block::{
-    BlockKind, BlockMeta, BlockMetaPublic, BlockSnapshot, BlockSurface,
+    BlockKind, BlockMeta, BlockSnapshot, BlockSurface,
 };
 pub use cell::{Cell, Flags};
 pub use color::Colors;

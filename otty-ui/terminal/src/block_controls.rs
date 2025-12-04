@@ -16,7 +16,7 @@ fn block_for_id<'a>(
     block_id: &str,
 ) -> Option<&'a BlockSnapshot> {
     snapshot.blocks().iter().find(|block| {
-        block.id == block_id && block.meta.kind != BlockKind::Prompt
+        block.meta.id == block_id && block.meta.kind != BlockKind::Prompt
     })
 }
 

@@ -165,7 +165,7 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                     let y = layout_offset_y
                         + ((block_top + display_offset) * cell_height);
 
-                    let block_id = block.id.as_str();
+                    let block_id = block.meta.id.as_str();
                     let is_prompt = block.meta.kind == BlockKind::Prompt;
                     if Some(block_id) == selected_block_id && !is_prompt {
                         block_highlights.push((

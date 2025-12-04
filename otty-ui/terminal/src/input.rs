@@ -201,7 +201,7 @@ impl<'a> InputManager<'a> {
                 .hyperlink_span_id_at(state.mouse_position_on_grid);
             let hovered_block = terminal_state
                 .block_at_point(state.mouse_position_on_grid)
-                .map(|block| (block.id.clone(), block.meta.kind.clone()));
+                .map(|block| (block.meta.id.clone(), block.meta.kind.clone()));
 
             let mut needs_redraw = false;
 
@@ -538,15 +538,15 @@ impl<'a> InputManager<'a> {
         let Some(block) = snapshot
             .blocks()
             .iter()
-            .find(|block| block.id == button.block_id)
+            .find(|block| block.meta.id == button.block_id)
         else {
             return false;
         };
 
-        state.selected_block_id = Some(block.id.clone());
+        state.selected_block_id = Some(block.meta.id.clone());
         state.selected_block_kind = Some(block.meta.kind.clone());
 
-        self.copy_block_by_id(&block.id, &snapshot, clipboard)
+        self.copy_block_by_id(&block.meta.id, &snapshot, clipboard)
     }
 
     fn copy_block_by_id(
@@ -556,7 +556,7 @@ impl<'a> InputManager<'a> {
         clipboard: &mut dyn iced_graphics::core::Clipboard,
     ) -> bool {
         let Some(block) =
-            snapshot.blocks().iter().find(|block| block.id == block_id)
+            snapshot.blocks().iter().find(|block| block.meta.id == block_id)
         else {
             return false;
         };
@@ -625,9 +625,7 @@ mod tests {
     use otty_libterm::TerminalSize;
     use otty_libterm::escape::{Hyperlink, NamedPrivateMode};
     use otty_libterm::surface::{
-        BlockKind, BlockMetaPublic, BlockSnapshot, Cell, Column, Line,
-        Point as TerminalGridPoint, SnapshotCell, SnapshotOwned, Surface,
-        SurfaceActor, SurfaceConfig, SurfaceModel,
+        BlockKind, BlockMeta, BlockSnapshot, Cell, Column, Line, Point as TerminalGridPoint, SnapshotCell, SnapshotOwned, Surface, SurfaceActor, SurfaceConfig, SurfaceModel
     };
 
     use super::*;
@@ -669,11 +667,10 @@ mod tests {
         line_count: usize,
     ) -> BlockSnapshot {
         BlockSnapshot {
-            id: id.into(),
-            meta: BlockMetaPublic {
+            meta: BlockMeta {
                 id: id.into(),
                 kind,
-                ..BlockMetaPublic::default()
+                ..BlockMeta::default()
             },
             start_line: 0,
             line_count,

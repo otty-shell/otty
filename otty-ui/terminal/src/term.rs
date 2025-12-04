@@ -319,28 +319,26 @@ impl Terminal {
 mod tests {
     use super::*;
     use crate::settings::Settings;
-    use otty_libterm::surface::{BlockKind, BlockMetaPublic};
+    use otty_libterm::surface::{BlockKind, BlockMeta};
 
     fn snapshot_with_blocks() -> Arc<SnapshotOwned> {
         let mut snapshot = SnapshotOwned::default();
         snapshot.blocks = vec![
             BlockSnapshot {
-                id: "block-1".into(),
-                meta: BlockMetaPublic {
+                meta: BlockMeta {
                     id: "block-1".into(),
                     kind: BlockKind::Command,
-                    ..BlockMetaPublic::default()
+                    ..BlockMeta::default()
                 },
                 start_line: 0,
                 line_count: 4,
                 is_alt_screen: false,
             },
             BlockSnapshot {
-                id: "block-2".into(),
-                meta: BlockMetaPublic {
+                meta: BlockMeta {
                     id: "block-2".into(),
                     kind: BlockKind::Prompt,
-                    ..BlockMetaPublic::default()
+                    ..BlockMeta::default()
                 },
                 start_line: 4,
                 line_count: 1,
@@ -385,7 +383,7 @@ mod tests {
 
         let blocks = terminal.blocks();
         assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[0].id, "block-1");
+        assert_eq!(blocks[0].meta.id, "block-1");
         assert_eq!(blocks[1].meta.kind, BlockKind::Prompt);
     }
 }
