@@ -435,13 +435,17 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
         let terminal_size = self.term.engine.terminal_size();
         let font = &self.term.font;
         let layout_size = layout.bounds().size();
+        let terminal_id = self.term.id;
 
-        view_state.flush_pending_resize(self.term.id, shell);
+        view_state.flush_pending_resize(terminal_id, shell);
 
-        if view_state.size != layout_size {
+        if view_state.size != layout_size
+            || view_state.terminal_id != Some(terminal_id)
+        {
             view_state.size = layout_size;
+            view_state.terminal_id = Some(terminal_id);
             view_state.queue_resize(
-                self.term.id,
+                terminal_id,
                 layout_size,
                 self.term.font.measure,
                 shell,
@@ -544,6 +548,7 @@ pub(crate) struct TerminalViewState {
     pub selected_block_kind: Option<BlockKind>,
     pub hovered_action_block_id: Option<String>,
     pub selection_in_progress: bool,
+    pub terminal_id: Option<u64>,
     pending_resize: Option<Size<f32>>,
     pending_cell_size: Option<Size<f32>>,
     pending_resize_deadline: Option<Instant>,
@@ -567,6 +572,7 @@ impl TerminalViewState {
             selected_block_kind: None,
             hovered_action_block_id: None,
             selection_in_progress: false,
+            terminal_id: None,
             pending_resize: None,
             pending_cell_size: None,
             pending_resize_deadline: None,

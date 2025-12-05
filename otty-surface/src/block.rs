@@ -1,6 +1,9 @@
 use std::cmp::{max, min};
 
 use crate::cell::Cell;
+use crate::escape::{
+    BlockKind as EscapeBlockKind, BlockMeta as EscapeBlockMeta, BlockPhase,
+};
 use crate::grid::{Grid, Scroll};
 use crate::hyperlink::HyperlinkMap;
 use crate::index::{Column, Line, Point};
@@ -9,7 +12,6 @@ use crate::snapshot::{
     CursorSnapshot, SnapshotCell, SnapshotDamage, SnapshotOwned, SnapshotSize,
     SurfaceModel,
 };
-use crate::escape::{BlockKind as EscapeBlockKind, BlockMeta as EscapeBlockMeta, BlockPhase};
 use crate::{Dimensions, Surface, SurfaceActor, SurfaceConfig, SurfaceMode};
 
 /// Kind of a terminal block.
@@ -26,7 +28,7 @@ impl From<EscapeBlockKind> for BlockKind {
         match value {
             EscapeBlockKind::Command => Self::Command,
             EscapeBlockKind::FullScreen => Self::FullScreen,
-            EscapeBlockKind::Prompt => Self::Prompt,    
+            EscapeBlockKind::Prompt => Self::Prompt,
         }
     }
 }
@@ -34,15 +36,25 @@ impl From<EscapeBlockKind> for BlockKind {
 /// Minimal metadata associated with a terminal block.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BlockMeta {
+    /// Unique identifier reported by the escape handler for this block.
     pub id: String,
+    /// Semantic category (prompt, command, fullscreen) of the block.
     pub kind: BlockKind,
+    /// Command line (if known) that generated the block.
     pub cmd: Option<String>,
+    /// Working directory captured when the block started.
     pub cwd: Option<String>,
+    /// Shell executable responsible for the block.
     pub shell: Option<String>,
+    /// Exit status of the command, once finished.
     pub exit_code: Option<i32>,
+    /// Timestamp marking when the block started executing.
     pub started_at: Option<i64>,
+    /// Timestamp marking when the block finished executing.
     pub finished_at: Option<i64>,
+    /// Whether the block ever entered alt-screen mode.
     pub is_alt_screen: bool,
+    /// Whether the block has finished producing output.
     pub is_finished: bool,
 }
 
@@ -66,19 +78,27 @@ impl From<EscapeBlockMeta> for BlockMeta {
 /// Snapshot entry describing a block's extent within the viewport.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BlockSnapshot {
+    /// Metadata describing the block captured in this snapshot entry.
     pub meta: BlockMeta,
+    /// Viewport-relative line where this block begins.
     pub start_line: i32,
+    /// Number of visible lines contributed by this block.
     pub line_count: usize,
+    /// Whether this block snapshot corresponds to an alt screen.
     pub is_alt_screen: bool,
 }
 
 /// In‑memory representation of a single block.
 struct Block {
+    /// Metadata describing the block's identity and lifecycle.
     pub meta: BlockMeta,
+    /// Embedded surface that records the block's terminal contents.
     pub surface: Surface,
 }
 
 impl Block {
+    /// Construct a block with its own `Surface` configured for the provided
+    /// dimensions so it can capture terminal output independently.
     fn new<D: Dimensions>(
         config: &SurfaceConfig,
         dimensions: &D,
@@ -93,47 +113,65 @@ impl Block {
 
 /// Aggregate geometry for a block within the concatenated history.
 struct BlockSliceInfo {
+    /// Index into the `blocks` array.
     index: usize,
+    /// Global history line index marking the start of this block slice.
     start: usize,
+    /// Global history line index marking the end of this block slice.
     end: usize,
+    /// First visible line inside the block's own coordinate space.
     top_line: Line,
 }
 
 struct ViewportContext {
+    /// Total number of lines contributed by all blocks.
     content_lines: usize,
+    /// Global line where the viewport begins.
     start: usize,
+    /// Global line immediately after the viewport.
     viewport_end: usize,
+    /// Extra blank rows appended below content when scrolled to bottom.
     bottom_padding: usize,
+    /// Effective viewport start taking bottom padding into account.
     effective_start: isize,
 }
 
 #[derive(Clone, Copy)]
 struct GlobalPoint {
+    /// Global line index within the stitched history.
     line_index: usize,
+    /// Column position relative to the viewport.
     column: Column,
 }
 
 #[derive(Clone, Copy)]
 struct GlobalSelection {
+    /// Anchor of the selection in global coordinates.
     start: GlobalPoint,
+    /// Active end of the selection in global coordinates.
     end: GlobalPoint,
 }
 
 /// Helper dimensions type used when creating new block surfaces.
 struct BlockDimensions {
+    /// Column count shared by all block surfaces.
     columns: usize,
+    /// Visible viewport line count shared by all block surfaces.
     screen_lines: usize,
 }
 
 impl Dimensions for BlockDimensions {
+    /// Total available lines always matches the configured screen lines.
     fn total_lines(&self) -> usize {
         self.screen_lines
     }
 
+    /// Screen lines (visible viewport) for the helper dimensions.
     fn screen_lines(&self) -> usize {
         self.screen_lines
     }
 
+    /// Number of columns for the helper dimensions.
     fn columns(&self) -> usize {
         self.columns
     }
@@ -144,19 +182,25 @@ impl Dimensions for BlockDimensions {
 /// On this step `BlockSurface` behaves as a thin wrapper around a single
 /// [`Surface`]: all operations are delegated to the active block and
 /// snapshots are exported only for that block.
-#[derive(Default)]
 pub struct BlockSurface {
+    /// Ordered list of terminal blocks and their backing surfaces.
     blocks: Vec<Block>,
-    // active: usize,
+    /// Upper bound on how many blocks to retain in history.
     max_blocks: usize,
+    /// Rendering configuration cloned into new blocks.
     config: SurfaceConfig,
+    /// Global scroll offset expressed in lines from the bottom.
     display_offset: usize,
+    /// Index of the block currently owning the local selection, if any.
     selection_block: Option<usize>,
+    /// Fixed anchor used when a selection extends beyond its original block.
     selection_anchor: Option<GlobalPoint>,
+    /// Selection that spans multiple blocks in global coordinates.
     global_selection: Option<GlobalSelection>,
 }
 
 impl Dimensions for BlockSurface {
+    /// Reuse the active block's column count when reporting overall dimensions.
     fn columns(&self) -> usize {
         self.blocks
             .get(self.last_block_idx())
@@ -164,6 +208,7 @@ impl Dimensions for BlockSurface {
             .unwrap_or(0)
     }
 
+    /// Reuse the active block's screen-line count for viewport height.
     fn screen_lines(&self) -> usize {
         self.blocks
             .get(self.last_block_idx())
@@ -171,6 +216,7 @@ impl Dimensions for BlockSurface {
             .unwrap_or(0)
     }
 
+    /// Combine history and viewport height to report total scrollable lines.
     fn total_lines(&self) -> usize {
         let viewport = self.screen_lines();
         let history = self
@@ -195,10 +241,14 @@ impl BlockSurface {
             blocks: vec![block],
             max_blocks: Self::DEFAULT_MAX_BLOCKS,
             config,
-            ..Default::default()
+            display_offset: 0,
+            selection_anchor: None,
+            selection_block: None,
+            global_selection: None,
         }
     }
 
+    /// Return the index of the last block, clamping to zero if no blocks exist.
     fn last_block_idx(&self) -> usize {
         self.blocks.len().saturating_sub(1)
     }
@@ -217,6 +267,8 @@ impl BlockSurface {
         self.display_offset = min(self.display_offset, max_offset);
     }
 
+    /// Produce a list describing how each block maps into the concatenated
+    /// history so snapshots can stitch them into a single viewport.
     fn block_slices(&self) -> Vec<BlockSliceInfo> {
         if self.is_alt_screen_active() {
             if let Some(block) = self.blocks.get(self.last_block_idx()) {
@@ -248,6 +300,7 @@ impl BlockSurface {
         result
     }
 
+    /// Determine whether the active block is currently in alt-screen mode.
     fn is_alt_screen_active(&self) -> bool {
         self.blocks
             .get(self.last_block_idx())
@@ -255,6 +308,8 @@ impl BlockSurface {
             .unwrap_or(false)
     }
 
+    /// Compute viewport geometry (start/end offsets and padding) for a set of
+    /// block slices.
     fn viewport_context(&self, slices: &[BlockSliceInfo]) -> ViewportContext {
         let viewport_lines = self.screen_lines();
         let content_lines = slices.last().map(|slice| slice.end).unwrap_or(0);
@@ -278,6 +333,8 @@ impl BlockSurface {
         }
     }
 
+    /// Convert a point relative to a block slice into a global index within the
+    /// concatenated history.
     fn global_index_for_point(
         slice: &BlockSliceInfo,
         point: Point,
@@ -296,6 +353,8 @@ impl BlockSurface {
         Some(slice.start + offset)
     }
 
+    /// Translate a point from block coordinates into viewport coordinates
+    /// taking the current scroll offset into account.
     fn convert_point_to_view(
         &self,
         slice: &BlockSliceInfo,
@@ -309,6 +368,8 @@ impl BlockSurface {
         Some(Point::new(Line(line_value), point.column))
     }
 
+    /// Translate a selection range from block coordinates into viewport
+    /// coordinates if the slice intersects the viewport.
     fn convert_selection_to_view(
         &self,
         range: SelectionRange,
@@ -329,7 +390,9 @@ impl BlockSurface {
         }
 
         let mut index = 0;
-        while self.blocks.len() > self.max_blocks && index != self.last_block_idx() {
+        while self.blocks.len() > self.max_blocks
+            && index != self.last_block_idx()
+        {
             if self.blocks[index].meta.is_finished {
                 self.remove_block_at(index);
             } else {
@@ -338,6 +401,7 @@ impl BlockSurface {
         }
     }
 
+    /// Remove a block from the history and adjust selection state to match.
     fn remove_block_at(&mut self, index: usize) {
         if index >= self.blocks.len() {
             return;
@@ -360,7 +424,7 @@ impl BlockSurface {
 
     /// Terminates the current block (if it's still running), creates a new block
     /// with a new `Surface`, and makes it active.
-    pub fn begin_block(&mut self, mut meta: BlockMeta) -> &mut Surface {
+    fn begin_block(&mut self, meta: BlockMeta) {
         // Mark the active block as complete if it is not already marked.
         let idx = self.last_block_idx();
         if let Some(active) = self.blocks.get_mut(idx) {
@@ -383,17 +447,13 @@ impl BlockSurface {
             }
         };
 
-        self.blocks.push(
-            Block::new(&self.config, &size, meta)
-        );
-        
+        self.blocks.push(Block::new(&self.config, &size, meta));
+
         self.enforce_max_blocks();
         self.calculate_display_offset();
-
-        let idx = self.last_block_idx();
-        &mut self.blocks[idx].surface
     }
 
+    /// Return the index of the currently active unfinished prompt block, if any.
     fn active_prompt_index(&self) -> Option<usize> {
         let idx = self.last_block_idx();
         self.blocks.get(idx).and_then(|block| {
@@ -417,6 +477,7 @@ impl BlockSurface {
         self.enforce_max_blocks();
     }
 
+    /// Generate a snapshot for the active block when it occupies the alt screen.
     fn snapshot_active_alt_screen_block(&mut self) -> SnapshotOwned {
         self.display_offset = 0;
         let idx = self.last_block_idx();
@@ -439,10 +500,14 @@ impl BlockSurface {
         snapshot
     }
 
+    /// Return the number of visible lines from a block, including trimmed
+    /// viewport content and scrollback.
     fn block_visible_line_count(block: &Block) -> usize {
         Self::block_visible_extent(block).1
     }
 
+    /// Calculate the top-most visible line and total visible line count for a
+    /// block by trimming empty viewport rows.
     fn block_visible_extent(block: &Block) -> (Line, usize) {
         let grid = block.surface.grid();
         let history_lines = grid.history_size();
@@ -459,6 +524,8 @@ impl BlockSurface {
         (top_line, total_lines)
     }
 
+    /// Resolve a viewport-relative point into the owning block together with
+    /// its local coordinates and global history index.
     fn resolve_block_point_with(
         &self,
         slices: &[BlockSliceInfo],
@@ -470,13 +537,13 @@ impl BlockSurface {
         }
 
         if context.content_lines == 0 {
-            let index = self.last_block_idx().min(self.blocks.len().saturating_sub(1));
-            let block = &self.blocks[index];
+            let idx = self.last_block_idx();
+            let block = &self.blocks[idx];
             let column = min(
                 point.column,
                 Column(block.surface.columns().saturating_sub(1)),
             );
-            return Some((index, Point::new(Line(0), column), 0));
+            return Some((idx, Point::new(Line(0), column), 0));
         }
 
         let viewport_line = point.line.0 + self.display_offset as i32;
@@ -499,6 +566,7 @@ impl BlockSurface {
         Some((slice.index, Point::new(block_line, column), global_index))
     }
 
+    /// Push a blank row of cells (offset by scroll) into a snapshot.
     fn push_blank_row(
         cells: &mut Vec<SnapshotCell>,
         columns: usize,
@@ -516,6 +584,8 @@ impl BlockSurface {
         }
     }
 
+    /// Determine the first/last meaningful viewport rows (non-empty or cursor
+    /// row) to trim empty top/bottom padding.
     fn viewport_content_bounds(grid: &Grid<Cell>) -> (usize, usize) {
         let screen_lines = grid.screen_lines();
         let mut first_non_empty = None;
@@ -540,6 +610,8 @@ impl BlockSurface {
         }
     }
 
+    /// Convert a global history line + column into a viewport point while
+    /// respecting scroll and bounds.
     fn global_to_view_point(
         &self,
         context: &ViewportContext,
@@ -587,6 +659,8 @@ impl BlockSurface {
         Some(Point::new(Line(line), col))
     }
 
+    /// Convert a global selection into a viewport-relative range so the UI can
+    /// render drag selections spanning multiple blocks.
     fn global_selection_to_view(
         &self,
         selection: &GlobalSelection,
@@ -620,13 +694,66 @@ impl BlockSurface {
 
         Some(SelectionRange::new(start_point, end_point, false))
     }
+
+    /// Remove any existing selection from the block at the provided index.
+    fn clear_block_selection(&mut self, index: usize) {
+        if let Some(block) = self.blocks.get_mut(index) {
+            block.surface.selection = None;
+        }
+    }
+
+    /// Update the per-block selection if the drag remains inside a single block.
+    ///
+    /// Returns `true` when the selection update was handled locally, signalling
+    /// that no global multi-block selection should be created.
+    fn handle_local_selection(
+        &mut self,
+        resolved: Option<&(usize, Point, usize)>,
+        side: crate::Side,
+    ) -> bool {
+        let Some(block_index) = self.selection_block else {
+            return false;
+        };
+
+        let Some(&(index, local_point, global_index)) = resolved else {
+            return true;
+        };
+
+        if self.global_selection.is_some() {
+            return false;
+        }
+
+        if index == block_index {
+            if let Some(block) = self.blocks.get_mut(index) {
+                block.surface.update_selection(local_point, side);
+            }
+            return true;
+        }
+
+        self.clear_block_selection(block_index);
+        self.selection_block = None;
+
+        if let Some(anchor) = self.selection_anchor {
+            self.global_selection = Some(GlobalSelection {
+                start: anchor,
+                end: GlobalPoint {
+                    line_index: global_index,
+                    column: local_point.column,
+                },
+            });
+        }
+
+        true
+    }
 }
 
 impl SurfaceActor for BlockSurface {
+    /// Write a printable character into the active block surface.
     fn print(&mut self, c: char) {
         self.active_block_mut().surface.print(c);
     }
 
+    /// Resize every block surface so they stay aligned when the viewport changes.
     fn resize<S: Dimensions>(&mut self, size: S) {
         let columns = size.columns();
         let screen_lines = size.screen_lines();
@@ -641,88 +768,109 @@ impl SurfaceActor for BlockSurface {
         self.calculate_display_offset();
     }
 
+    /// Insert blank cells at the cursor within the active block.
     fn insert_blank(&mut self, count: usize) {
         self.active_block_mut().surface.insert_blank(count);
     }
 
+    /// Insert blank lines into the active block, pushing existing content down.
     fn insert_blank_lines(&mut self, count: usize) {
         self.active_block_mut().surface.insert_blank_lines(count);
     }
 
+    /// Delete lines from the active block starting at the cursor row.
     fn delete_lines(&mut self, count: usize) {
         self.active_block_mut().surface.delete_lines(count);
     }
 
+    /// Delete characters from the active block starting at the cursor column.
     fn delete_chars(&mut self, count: usize) {
         self.active_block_mut().surface.delete_chars(count);
     }
 
+    /// Erase characters (replacing with blanks) within the active block.
     fn erase_chars(&mut self, count: usize) {
         self.active_block_mut().surface.erase_chars(count);
     }
 
+    /// Backspace within the active block surface.
     fn backspace(&mut self) {
         self.active_block_mut().surface.backspace();
     }
 
+    /// Move the cursor to the beginning of the current line in the active block.
     fn carriage_return(&mut self) {
         self.active_block_mut().surface.carriage_return();
     }
 
+    /// Perform a line feed within the active block surface.
     fn line_feed(&mut self) {
         self.active_block_mut().surface.line_feed();
     }
 
+    /// Insert a newline sequence, combining carriage return and line feed.
     fn new_line(&mut self) {
         self.active_block_mut().surface.new_line();
     }
 
+    /// Record a horizontal tab stop within the active block.
     fn set_horizontal_tab(&mut self) {
         self.active_block_mut().surface.set_horizontal_tab();
     }
 
+    /// Scroll the active block up when the cursor moves past the top.
     fn reverse_index(&mut self) {
         self.active_block_mut().surface.reverse_index();
     }
 
+    /// Reset the active block to its initial state.
     fn reset(&mut self) {
         self.active_block_mut().surface.reset();
     }
 
+    /// Clear the active block screen according to the requested mode.
     fn clear_screen(&mut self, mode: crate::escape::ClearMode) {
         self.active_block_mut().surface.clear_screen(mode);
     }
 
+    /// Clear part of the current line in the active block.
     fn clear_line(&mut self, mode: crate::escape::LineClearMode) {
         self.active_block_mut().surface.clear_line(mode);
     }
 
+    /// Insert blank tab fields relative to the active cursor.
     fn insert_tabs(&mut self, count: usize) {
         self.active_block_mut().surface.insert_tabs(count);
     }
 
+    /// Clear tab stops in the active block surface.
     fn clear_tabs(&mut self, mode: crate::escape::TabClearMode) {
         self.active_block_mut().surface.clear_tabs(mode);
     }
 
+    /// Fill the active screen with test characters for alignment checks.
     fn screen_alignment_display(&mut self) {
         self.active_block_mut().surface.screen_alignment_display();
     }
 
+    /// Move forward across tab stops within the active block.
     fn move_forward_tabs(&mut self, count: usize) {
         self.active_block_mut().surface.move_forward_tabs(count);
     }
 
+    /// Move backward across tab stops within the active block.
     fn move_backward_tabs(&mut self, count: usize) {
         self.active_block_mut().surface.move_backward_tabs(count);
     }
 
+    /// Select which charset slot subsequent escape codes target.
     fn set_active_charset_index(&mut self, index: crate::escape::CharsetIndex) {
         self.active_block_mut()
             .surface
             .set_active_charset_index(index);
     }
 
+    /// Configure a charset mapping for the given slot on the active surface.
     fn configure_charset(
         &mut self,
         charset: crate::escape::Charset,
@@ -733,32 +881,39 @@ impl SurfaceActor for BlockSurface {
             .configure_charset(charset, index);
     }
 
+    /// Override one of the dynamic palette entries for the active block.
     fn set_color(&mut self, index: usize, color: crate::escape::Rgb) {
         self.active_block_mut().surface.set_color(index, color);
     }
 
+    /// Query a palette entry, routing the response through the active surface.
     fn query_color(&mut self, index: usize) {
         self.active_block_mut().surface.query_color(index);
     }
 
+    /// Reset a palette entry back to its default value.
     fn reset_color(&mut self, index: usize) {
         self.active_block_mut().surface.reset_color(index);
     }
 
+    /// Set the DEC scrolling region on the active surface.
     fn set_scrolling_region(&mut self, top: usize, bottom: usize) {
         self.active_block_mut()
             .surface
             .set_scrolling_region(top, bottom);
     }
 
+    /// Scroll the active surface content up by the given count.
     fn scroll_up(&mut self, count: usize) {
         self.active_block_mut().surface.scroll_up(count);
     }
 
+    /// Scroll the active surface content down by the given count.
     fn scroll_down(&mut self, count: usize) {
         self.active_block_mut().surface.scroll_down(count);
     }
 
+    /// Scroll the aggregated block history (rather than a single surface).
     fn scroll_display(&mut self, scroll: Scroll) {
         let viewport = self.screen_lines();
         if viewport == 0 {
@@ -780,68 +935,83 @@ impl SurfaceActor for BlockSurface {
         };
     }
 
+    /// Apply or clear the active hyperlink for subsequently printed cells.
     fn set_hyperlink(&mut self, link: Option<crate::escape::Hyperlink>) {
         self.active_block_mut().surface.set_hyperlink(link);
     }
 
+    /// Apply an SGR attribute to the active surface.
     fn sgr(&mut self, attr: crate::escape::CharacterAttribute) {
         self.active_block_mut().surface.sgr(attr);
     }
 
+    /// Change the cursor shape for the active block.
     fn set_cursor_shape(&mut self, shape: crate::escape::CursorShape) {
         self.active_block_mut().surface.set_cursor_shape(shape);
     }
 
+    /// Change the cursor style (blinking/steady) for the active block.
     fn set_cursor_style(&mut self, style: Option<crate::escape::CursorStyle>) {
         self.active_block_mut().surface.set_cursor_style(style);
     }
 
+    /// Save the current cursor state for later restoration.
     fn save_cursor(&mut self) {
         self.active_block_mut().surface.save_cursor();
     }
 
+    /// Restore the previously saved cursor state.
     fn restore_cursor(&mut self) {
         self.active_block_mut().surface.restore_cursor();
     }
 
+    /// Move the cursor up within the active block.
     fn move_up(&mut self, rows: usize, carriage_return: bool) {
         self.active_block_mut()
             .surface
             .move_up(rows, carriage_return);
     }
 
+    /// Move the cursor down within the active block.
     fn move_down(&mut self, rows: usize, carriage_return: bool) {
         self.active_block_mut()
             .surface
             .move_down(rows, carriage_return);
     }
 
+    /// Move the cursor forward horizontally.
     fn move_forward(&mut self, cols: usize) {
         self.active_block_mut().surface.move_forward(cols);
     }
 
+    /// Move the cursor backward horizontally.
     fn move_backward(&mut self, cols: usize) {
         self.active_block_mut().surface.move_backward(cols);
     }
 
+    /// Jump the cursor to an absolute row/column in the active block.
     fn goto(&mut self, row: i32, col: usize) {
         self.active_block_mut().surface.goto(row, col);
     }
 
+    /// Jump the cursor to an absolute row.
     fn goto_row(&mut self, row: i32) {
         self.active_block_mut().surface.goto_row(row);
     }
 
+    /// Jump the cursor to an absolute column.
     fn goto_column(&mut self, col: usize) {
         self.active_block_mut().surface.goto_column(col);
     }
 
+    /// Toggle keypad application mode on the active surface.
     fn set_keypad_application_mode(&mut self, enabled: bool) {
         self.active_block_mut()
             .surface
             .set_keypad_application_mode(enabled);
     }
 
+    /// Apply a keyboard mode change and optionally report it.
     fn set_keyboard_mode(
         &mut self,
         mode: crate::escape::KeyboardMode,
@@ -852,14 +1022,17 @@ impl SurfaceActor for BlockSurface {
             .set_keyboard_mode(mode, behavior);
     }
 
+    /// Push a keyboard mode onto the active surface stack.
     fn push_keyboard_mode(&mut self, mode: crate::escape::KeyboardMode) {
         self.active_block_mut().surface.push_keyboard_mode(mode);
     }
 
+    /// Pop keyboard modes from the active surface stack.
     fn pop_keyboard_modes(&mut self, count: u16) {
         self.active_block_mut().surface.pop_keyboard_modes(count);
     }
 
+    /// Report the current keyboard mode through the provided channel.
     fn report_keyboard_mode(
         &mut self,
         report_channel: &mut std::collections::VecDeque<u8>,
@@ -869,30 +1042,37 @@ impl SurfaceActor for BlockSurface {
             .report_keyboard_mode(report_channel);
     }
 
+    /// Save the current window title on a stack.
     fn push_window_title(&mut self) {
         self.active_block_mut().surface.push_window_title();
     }
 
+    /// Restore the most recently saved window title if available.
     fn pop_window_title(&mut self) -> Option<String> {
         self.active_block_mut().surface.pop_window_title()
     }
 
+    /// Set the current window title.
     fn set_window_title(&mut self, title: Option<String>) {
         self.active_block_mut().surface.set_window_title(title);
     }
 
+    /// Toggle 80/132-column mode on the active surface.
     fn deccolm(&mut self) {
         self.active_block_mut().surface.deccolm();
     }
 
+    /// Enable a DEC private mode bit on the active surface.
     fn set_private_mode(&mut self, mode: crate::escape::PrivateMode) {
         self.active_block_mut().surface.set_private_mode(mode);
     }
 
+    /// Disable a DEC private mode bit on the active surface.
     fn unset_private_mode(&mut self, mode: crate::escape::PrivateMode) {
         self.active_block_mut().surface.unset_private_mode(mode);
     }
 
+    /// Report a DEC private mode through the response channel.
     fn report_private_mode(
         &mut self,
         mode: crate::escape::PrivateMode,
@@ -903,14 +1083,17 @@ impl SurfaceActor for BlockSurface {
             .report_private_mode(mode, report_channel);
     }
 
+    /// Enable a standard terminal mode.
     fn set_mode(&mut self, mode: crate::escape::Mode) {
         self.active_block_mut().surface.set_mode(mode);
     }
 
+    /// Disable a standard terminal mode.
     fn unset_mode(&mut self, mode: crate::escape::Mode) {
         self.active_block_mut().surface.unset_mode(mode);
     }
 
+    /// Report a standard terminal mode to the host.
     fn report_mode(
         &mut self,
         mode: crate::escape::Mode,
@@ -921,6 +1104,7 @@ impl SurfaceActor for BlockSurface {
             .report_mode(mode, report_channel);
     }
 
+    /// Respond to terminal identification queries.
     fn identify_terminal(
         &mut self,
         attr: Option<char>,
@@ -931,6 +1115,7 @@ impl SurfaceActor for BlockSurface {
             .identify_terminal(attr, report_channel);
     }
 
+    /// Report device status queries via the active surface.
     fn report_device_status(
         &mut self,
         status: usize,
@@ -941,6 +1126,7 @@ impl SurfaceActor for BlockSurface {
             .report_device_status(status, report_channel);
     }
 
+    /// Report the text area dimensions in pixels.
     fn request_text_area_by_pixels(
         &mut self,
         report_channel: &mut std::collections::VecDeque<u8>,
@@ -950,6 +1136,7 @@ impl SurfaceActor for BlockSurface {
             .request_text_area_by_pixels(report_channel);
     }
 
+    /// Report the text area dimensions in characters.
     fn request_text_area_by_chars(
         &mut self,
         report_channel: &mut std::collections::VecDeque<u8>,
@@ -959,6 +1146,7 @@ impl SurfaceActor for BlockSurface {
             .request_text_area_by_chars(report_channel);
     }
 
+    /// Begin a local selection tied to the block under the cursor.
     fn start_selection(
         &mut self,
         ty: crate::SelectionType,
@@ -991,6 +1179,7 @@ impl SurfaceActor for BlockSurface {
         }
     }
 
+    /// Extend or convert the active selection as the cursor moves.
     fn update_selection(
         &mut self,
         point: crate::index::Point,
@@ -1004,31 +1193,8 @@ impl SurfaceActor for BlockSurface {
         let context = self.viewport_context(&slices);
         let resolved = self.resolve_block_point_with(&slices, &context, point);
 
-        if let Some(block_index) = self.selection_block {
-            if let Some((index, local_point, global_index)) = resolved {
-                if self.global_selection.is_none() && index == block_index {
-                    if let Some(block) = self.blocks.get_mut(index) {
-                        block.surface.update_selection(local_point, side);
-                        return;
-                    }
-                } else if self.global_selection.is_none() {
-                    if let Some(block) = self.blocks.get_mut(block_index) {
-                        block.surface.selection = None;
-                    }
-                    self.selection_block = None;
-                    if let Some(anchor) = self.selection_anchor {
-                        self.global_selection = Some(GlobalSelection {
-                            start: anchor,
-                            end: GlobalPoint {
-                                line_index: global_index,
-                                column: local_point.column,
-                            },
-                        });
-                    }
-                }
-            } else {
-                return;
-            }
+        if self.handle_local_selection(resolved.as_ref(), side) {
+            return;
         }
 
         if let (Some((_, local_point, global_index)), Some(anchor)) =
@@ -1044,6 +1210,7 @@ impl SurfaceActor for BlockSurface {
         }
     }
 
+    /// React to prompt/command lifecycle events emitted by the parser.
     fn handle_block_event(&mut self, event: crate::escape::BlockEvent) {
         let escape_meta = event.meta;
         let mut meta = BlockMeta::from(escape_meta);
@@ -1065,7 +1232,7 @@ impl SurfaceActor for BlockSurface {
                     self.blocks[prompt_idx].meta = meta;
                     self.calculate_display_offset();
                 } else {
-                    let _ = self.begin_block(meta);
+                    self.begin_block(meta);
                 }
             },
             BlockPhase::Exit => {
@@ -1086,13 +1253,14 @@ impl SurfaceActor for BlockSurface {
                     }
                 }
 
-                let _ = self.begin_block(meta);
+                self.begin_block(meta);
             },
         }
     }
 }
 
 impl SurfaceModel for BlockSurface {
+    /// Build a full snapshot of all blocks merged into a single viewport.
     fn snapshot_owned(&mut self) -> SnapshotOwned {
         if self.blocks.is_empty() {
             return SnapshotOwned::default();
@@ -1180,8 +1348,7 @@ impl SurfaceModel for BlockSurface {
         let idx = self.last_block_idx();
         let active_block = &self.blocks[idx].surface;
         let mut cursor = CursorSnapshot::new(active_block);
-        let active_slice =
-            slices.iter().find(|slice| slice.index == idx);
+        let active_slice = slices.iter().find(|slice| slice.index == idx);
         if let Some(slice) = active_slice {
             if let Some(point) =
                 self.convert_point_to_view(slice, cursor.point, start)
@@ -1276,344 +1443,343 @@ impl SurfaceModel for BlockSurface {
         )
     }
 
+    /// Propagate damage reset to the active block surface.
     fn reset_damage(&mut self) {
         self.active_block_mut().surface.reset_damage();
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::snapshot::SurfaceModel;
+    use crate::{Dimensions, Line, SurfaceConfig};
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::snapshot::SurfaceModel;
-//     use crate::{Dimensions, Line, SurfaceConfig};
+    struct TestDimensions {
+        columns: usize,
+        lines: usize,
+    }
 
-//     struct TestDimensions {
-//         columns: usize,
-//         lines: usize,
-//     }
+    impl Dimensions for TestDimensions {
+        fn total_lines(&self) -> usize {
+            self.lines
+        }
 
-//     impl Dimensions for TestDimensions {
-//         fn total_lines(&self) -> usize {
-//             self.lines
-//         }
+        fn screen_lines(&self) -> usize {
+            self.lines
+        }
 
-//         fn screen_lines(&self) -> usize {
-//             self.lines
-//         }
+        fn columns(&self) -> usize {
+            self.columns
+        }
 
-//         fn columns(&self) -> usize {
-//             self.columns
-//         }
+        fn last_column(&self) -> crate::index::Column {
+            crate::index::Column(self.columns - 1)
+        }
 
-//         fn last_column(&self) -> crate::index::Column {
-//             crate::index::Column(self.columns - 1)
-//         }
+        fn bottommost_line(&self) -> Line {
+            Line(self.lines as i32 - 1)
+        }
+    }
 
-//         fn bottommost_line(&self) -> Line {
-//             Line(self.lines as i32 - 1)
-//         }
-//     }
+    impl TestDimensions {
+        fn new(columns: usize, lines: usize) -> Self {
+            Self { columns, lines }
+        }
+    }
 
-//     impl TestDimensions {
-//         fn new(columns: usize, lines: usize) -> Self {
-//             Self { columns, lines }
-//         }
-//     }
+    #[test]
+    fn block_surface_starts_with_single_block() {
+        let dims = TestDimensions::new(4, 2);
+        let surface = BlockSurface::new(SurfaceConfig::default(), &dims);
 
-//     #[test]
-//     fn block_surface_starts_with_single_block() {
-//         let dims = TestDimensions::new(4, 2);
-//         let surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        assert_eq!(surface.blocks.len(), 1);
+        assert_eq!(surface.blocks[0].meta.kind, BlockKind::Command);
+    }
 
-//         assert_eq!(surface.blocks.len(), 1);
-//         assert_eq!(surface.active, 0);
-//         assert_eq!(surface.blocks[0].meta.kind, BlockKind::Command);
-//     }
+    #[test]
+    fn block_surface_delegates_to_inner_surface() {
+        let dims = TestDimensions::new(4, 2);
+        let mut block_surface =
+            BlockSurface::new(SurfaceConfig::default(), &dims);
 
-//     #[test]
-//     fn block_surface_delegates_to_inner_surface() {
-//         let dims = TestDimensions::new(4, 2);
-//         let mut block_surface =
-//             BlockSurface::new(SurfaceConfig::default(), &dims);
+        block_surface.print('X');
+        let snapshot = block_surface.snapshot_owned();
+        let view = snapshot.view();
 
-//         block_surface.print('X');
-//         let snapshot = block_surface.snapshot_owned();
-//         let view = snapshot.view();
+        assert_eq!(view.size.columns, 4);
+        assert_eq!(view.size.screen_lines, 2);
+        assert!(view.cells.iter().any(|cell| cell.cell.c == 'X'));
+    }
 
-//         assert_eq!(view.size.columns, 4);
-//         assert_eq!(view.size.screen_lines, 2);
-//         assert!(view.cells.iter().any(|cell| cell.cell.c == 'X'));
-//     }
+    #[test]
+    fn block_surface_begin_block_creates_new_active_block() {
+        let dims = TestDimensions::new(4, 2);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
 
-//     #[test]
-//     fn block_surface_begin_block_creates_new_active_block() {
-//         let dims = TestDimensions::new(4, 2);
-//         let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        surface.print('a');
+        let first_snapshot = surface.snapshot_owned();
+        let first_view = first_snapshot.view();
+        assert!(first_view.cells.iter().any(|cell| cell.cell.c == 'a'));
 
-//         surface.print('a');
-//         let first_snapshot = surface.snapshot_owned();
-//         let first_view = first_snapshot.view();
-//         assert!(first_view.cells.iter().any(|cell| cell.cell.c == 'a'));
+        let meta = BlockMeta {
+            id: String::from("1"),
+            kind: BlockKind::Command,
+            cmd: None,
+            cwd: None,
+            shell: None,
+            started_at: Some(1),
+            finished_at: None,
+            exit_code: None,
+            is_alt_screen: false,
+            is_finished: false,
+        };
 
-//         let meta = BlockMeta {
-//             id: String::from("1"),
-//             kind: BlockKind::Command,
-//             cmd: None,
-//             cwd: None,
-//             shell: None,
-//             started_at: Some(1),
-//             finished_at: None,
-//             exit_code: None,
-//             is_alt_screen: false,
-//             is_finished: false,
-//         };
+        surface.begin_block(meta);
+        surface.print('b');
 
-//         let _ = surface.begin_block(meta);
-//         surface.print('b');
+        assert_eq!(surface.blocks.len(), 2);
+        assert_eq!(surface.last_block_idx(), 1);
 
-//         assert_eq!(surface.blocks.len(), 2);
-//         assert_eq!(surface.active, 1);
+        let second_snapshot = surface.snapshot_owned();
+        let second_view = second_snapshot.view();
+        assert!(second_view.cells.iter().any(|cell| cell.cell.c == 'b'));
+        let blocks = second_view.blocks();
+        assert_eq!(blocks.len(), 2);
+        assert!(
+            blocks.last().is_some_and(|block| block.line_count > 0),
+            "new block should contribute its own surface lines",
+        );
+    }
 
-//         let second_snapshot = surface.snapshot_owned();
-//         let second_view = second_snapshot.view();
-//         assert!(second_view.cells.iter().any(|cell| cell.cell.c == 'b'));
-//         let blocks = second_view.blocks();
-//         assert_eq!(blocks.len(), 2);
-//         assert!(
-//             blocks.last().is_some_and(|block| block.line_count > 0),
-//             "new block should contribute its own surface lines"
-//         );
-//     }
+    #[test]
+    fn block_surface_end_block_by_id_marks_block_finished() {
+        let dims = TestDimensions::new(4, 2);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
 
-//     #[test]
-//     fn block_surface_end_block_by_id_marks_block_finished() {
-//         let dims = TestDimensions::new(4, 2);
-//         let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        let start_meta = BlockMeta {
+            id: String::from("cmd-1"),
+            kind: BlockKind::Command,
+            cmd: None,
+            cwd: None,
+            shell: None,
+            started_at: Some(10),
+            finished_at: None,
+            exit_code: None,
+            is_alt_screen: false,
+            is_finished: false,
+        };
 
-//         let start_meta = BlockMeta {
-//             id: String::from("cmd-1"),
-//             kind: BlockKind::Command,
-//             cmd: None,
-//             cwd: None,
-//             shell: None,
-//             started_at: Some(10),
-//             finished_at: None,
-//             exit_code: None,
-//             is_alt_screen: false,
-//             is_finished: false,
-//         };
+        surface.begin_block(start_meta);
 
-//         let _ = surface.begin_block(start_meta);
+        let meta = BlockMeta {
+            id: String::from("cmd-1"),
+            kind: BlockKind::Command,
+            cmd: None,
+            cwd: None,
+            shell: None,
+            started_at: Some(10),
+            finished_at: Some(20),
+            exit_code: Some(0),
+            is_alt_screen: false,
+            is_finished: false,
+        };
 
-//         let meta = BlockMeta {
-//             id: String::from("cmd-1"),
-//             kind: BlockKind::Command,
-//             cmd: None,
-//             cwd: None,
-//             shell: None,
-//             started_at: Some(10),
-//             finished_at: Some(20),
-//             exit_code: Some(0),
-//             is_alt_screen: false,
-//             is_finished: false,
-//         };
+        surface.end_block_by_id(&meta);
 
-//         surface.end_block_by_id(&meta);
+        let block = surface
+            .blocks
+            .iter()
+            .find(|b| b.meta.id == "cmd-1")
+            .expect("block exists");
+        assert_eq!(block.meta.exit_code, Some(0));
+        assert_eq!(block.meta.finished_at, Some(20));
+        assert!(block.meta.is_finished);
+    }
 
-//         let block = surface
-//             .blocks
-//             .iter()
-//             .find(|b| b.meta.id == "cmd-1")
-//             .expect("block exists");
-//         assert_eq!(block.meta.exit_code, Some(0));
-//         assert_eq!(block.meta.finished_at, Some(20));
-//         assert!(block.meta.is_finished);
-//     }
+    #[test]
+    fn block_surface_respects_max_blocks_and_keeps_unfinished() {
+        let dims = TestDimensions::new(4, 2);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
 
-//     #[test]
-//     fn block_surface_respects_max_blocks_and_keeps_unfinished() {
-//         let dims = TestDimensions::new(4, 2);
-//         let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        surface.max_blocks = 3;
 
-//         surface.max_blocks = 3;
+        for i in 0..5 {
+            let meta = BlockMeta {
+                id: format!("{i}"),
+                kind: BlockKind::Command,
+                cmd: None,
+                cwd: None,
+                shell: None,
+                started_at: Some(i),
+                finished_at: Some(i),
+                exit_code: Some(0),
+                is_alt_screen: false,
+                is_finished: false,
+            };
+            surface.begin_block(meta);
+        }
 
-//         for i in 0..5 {
-//             let meta = BlockMeta {
-//                 id: format!("{i}"),
-//                 kind: BlockKind::Command,
-//                 cmd: None,
-//                 cwd: None,
-//                 shell: None,
-//                 started_at: Some(i),
-//                 finished_at: Some(i),
-//                 exit_code: Some(0),
-//                 is_alt_screen: false,
-//                 is_finished: false,
-//             };
-//             let _ = surface.begin_block(meta);
-//         }
+        assert!(
+            surface.blocks.len() <= 3,
+            "block history should be bounded by max_blocks",
+        );
+        assert!(
+            surface.blocks.iter().any(|b| !b.meta.is_finished),
+            "unfinished blocks should not be deleted when applying max_blocks",
+        );
+    }
 
-//         assert!(
-//             surface.blocks.len() <= 3,
-//             "block history should be bounded by max_blocks"
-//         );
-//         assert!(
-//             surface.blocks.iter().any(|b| !b.meta.is_finished),
-//             "unfinished blocks should not be deleted when applying max_blocks"
-//         );
-//     }
+    #[test]
+    fn snapshot_includes_multiple_blocks() {
+        use crate::grid::Scroll;
 
-//     #[test]
-//     fn snapshot_includes_multiple_blocks() {
-//         use crate::grid::Scroll;
+        let dims = TestDimensions::new(2, 4);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
 
-//         let dims = TestDimensions::new(2, 4);
-//         let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        for _ in 0..4 {
+            surface.print('A');
+            surface.new_line();
+        }
 
-//         for _ in 0..4 {
-//             surface.print('A');
-//             surface.new_line();
-//         }
+        let meta = BlockMeta {
+            id: String::from("cmd-1"),
+            kind: BlockKind::Command,
+            cmd: Some(String::from("ls")),
+            cwd: Some(String::from("/tmp")),
+            shell: Some(String::from("bash")),
+            started_at: Some(1),
+            finished_at: None,
+            exit_code: None,
+            is_alt_screen: false,
+            is_finished: false,
+        };
+        surface.begin_block(meta);
 
-//         let meta = BlockMeta {
-//             id: String::from("cmd-1"),
-//             kind: BlockKind::Command,
-//             cmd: Some(String::from("ls")),
-//             cwd: Some(String::from("/tmp")),
-//             shell: Some(String::from("bash")),
-//             started_at: Some(1),
-//             finished_at: None,
-//             exit_code: None,
-//             is_alt_screen: false,
-//             is_finished: false,
-//         };
-//         let _ = surface.begin_block(meta);
+        for _ in 0..4 {
+            surface.print('B');
+            surface.new_line();
+        }
 
-//         for _ in 0..4 {
-//             surface.print('B');
-//             surface.new_line();
-//         }
+        let bottom_snapshot = surface.snapshot_owned();
+        let bottom_view = bottom_snapshot.view();
+        assert!(
+            bottom_view.cells.iter().any(|cell| cell.cell.c == 'B'),
+            "bottom view should display active block output",
+        );
 
-//         let bottom_snapshot = surface.snapshot_owned();
-//         let bottom_view = bottom_snapshot.view();
-//         assert!(
-//             bottom_view.cells.iter().any(|cell| cell.cell.c == 'B'),
-//             "bottom view should display active block output"
-//         );
+        let blocks = bottom_view.blocks();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].line_count, 0);
+        assert_eq!(blocks[1].line_count, bottom_view.size.screen_lines);
 
-//         let blocks = bottom_view.blocks();
-//         assert_eq!(blocks.len(), 2);
-//         assert_eq!(blocks[0].line_count, 0);
-//         assert_eq!(blocks[1].line_count, bottom_view.size.screen_lines);
+        surface.scroll_display(Scroll::Top);
+        let top_snapshot = surface.snapshot_owned();
+        let top_view = top_snapshot.view();
+        assert!(
+            top_view.cells.iter().any(|cell| cell.cell.c == 'A'),
+            "scrolling to top should reveal the first block",
+        );
 
-//         surface.scroll_display(Scroll::Top);
-//         let top_snapshot = surface.snapshot_owned();
-//         let top_view = top_snapshot.view();
-//         assert!(
-//             top_view.cells.iter().any(|cell| cell.cell.c == 'A'),
-//             "scrolling to top should reveal the first block"
-//         );
+        let top_blocks = top_view.blocks();
+        assert_eq!(top_blocks[0].line_count, top_view.size.screen_lines);
+        assert_eq!(top_blocks[1].line_count, 0);
+    }
 
-//         let top_blocks = top_view.blocks();
-//         assert_eq!(top_blocks[0].line_count, top_view.size.screen_lines);
-//         assert_eq!(top_blocks[1].line_count, 0);
-//     }
+    #[test]
+    fn block_snapshot_trims_empty_viewport_rows() {
+        use crate::grid::Scroll;
 
-//     #[test]
-//     fn block_snapshot_trims_empty_viewport_rows() {
-//         use crate::grid::Scroll;
+        let dims = TestDimensions::new(2, 4);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
 
-//         let dims = TestDimensions::new(2, 4);
-//         let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        surface.print('A');
+        surface.new_line();
+        surface.print('A');
 
-//         surface.print('A');
-//         surface.new_line();
-//         surface.print('A');
+        let meta = BlockMeta {
+            id: String::from("cmd-1"),
+            kind: BlockKind::Command,
+            cmd: Some(String::from("echo A")),
+            cwd: None,
+            shell: None,
+            started_at: Some(1),
+            finished_at: None,
+            exit_code: None,
+            is_alt_screen: false,
+            is_finished: false,
+        };
 
-//         let meta = BlockMeta {
-//             id: String::from("cmd-1"),
-//             kind: BlockKind::Command,
-//             cmd: Some(String::from("echo A")),
-//             cwd: None,
-//             shell: None,
-//             started_at: Some(1),
-//             finished_at: None,
-//             exit_code: None,
-//             is_alt_screen: false,
-//             is_finished: false,
-//         };
+        surface.begin_block(meta);
+        surface.print('B');
 
-//         let _ = surface.begin_block(meta);
-//         surface.print('B');
+        surface.scroll_display(Scroll::Top);
+        let top_snapshot = surface.snapshot_owned();
+        let top_view = top_snapshot.view();
+        let top_blocks = top_view.blocks();
+        assert_eq!(top_blocks.len(), 2);
+        assert_eq!(top_blocks[0].line_count, 2);
+        let first_block_extent = top_blocks[0].line_count;
 
-//         surface.scroll_display(Scroll::Top);
-//         let top_snapshot = surface.snapshot_owned();
-//         let top_view = top_snapshot.view();
-//         let top_blocks = top_view.blocks();
-//         assert_eq!(top_blocks.len(), 2);
-//         assert_eq!(top_blocks[0].line_count, 2);
-//         let first_block_extent = top_blocks[0].line_count;
+        surface.scroll_display(Scroll::Bottom);
+        let bottom_snapshot = surface.snapshot_owned();
+        let bottom_view = bottom_snapshot.view();
+        let bottom_blocks = bottom_view.blocks();
+        assert_eq!(bottom_blocks.len(), 2);
+        assert!(
+            bottom_blocks[0].line_count <= first_block_extent,
+            "first block should never expand when scrolled to the bottom",
+        );
+        assert_eq!(bottom_blocks[1].line_count, 1);
+        assert_eq!(
+            bottom_blocks[1].start_line,
+            bottom_view.size.screen_lines as i32 - 1,
+        );
+    }
 
-//         surface.scroll_display(Scroll::Bottom);
-//         let bottom_snapshot = surface.snapshot_owned();
-//         let bottom_view = bottom_snapshot.view();
-//         let bottom_blocks = bottom_view.blocks();
-//         assert_eq!(bottom_blocks.len(), 2);
-//         assert!(
-//             bottom_blocks[0].line_count <= first_block_extent,
-//             "first block should never expand when scrolled to the bottom"
-//         );
-//         assert_eq!(bottom_blocks[1].line_count, 1);
-//         assert_eq!(
-//             bottom_blocks[1].start_line,
-//             bottom_view.size.screen_lines as i32 - 1
-//         );
-//     }
+    #[test]
+    fn prompt_is_pinned_to_bottom_when_not_scrolled() {
+        let dims = TestDimensions::new(4, 6);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
 
-//     #[test]
-//     fn prompt_is_pinned_to_bottom_when_not_scrolled() {
-//         let dims = TestDimensions::new(4, 6);
-//         let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        surface.print('>');
 
-//         surface.print('>');
+        let snapshot = surface.snapshot_owned();
+        let view = snapshot.view();
+        let blocks = view.blocks();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].line_count, 1);
+        assert_eq!(blocks[0].start_line, view.size.screen_lines as i32 - 1);
+    }
 
-//         let snapshot = surface.snapshot_owned();
-//         let view = snapshot.view();
-//         let blocks = view.blocks();
-//         assert_eq!(blocks.len(), 1);
-//         assert_eq!(blocks[0].line_count, 1);
-//         assert_eq!(blocks[0].start_line, view.size.screen_lines as i32 - 1);
-//     }
+    #[test]
+    fn resizing_updates_all_blocks() {
+        let dims = TestDimensions::new(4, 2);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
 
-//     #[test]
-//     fn resizing_updates_all_blocks() {
-//         let dims = TestDimensions::new(4, 2);
-//         let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        surface.print('A');
 
-//         surface.print('A');
+        let meta = BlockMeta {
+            id: String::from("cmd-1"),
+            kind: BlockKind::Command,
+            cmd: None,
+            cwd: None,
+            shell: None,
+            started_at: Some(1),
+            finished_at: None,
+            exit_code: None,
+            is_alt_screen: false,
+            is_finished: false,
+        };
 
-//         let meta = BlockMeta {
-//             id: String::from("cmd-1"),
-//             kind: BlockKind::Command,
-//             cmd: None,
-//             cwd: None,
-//             shell: None,
-//             started_at: Some(1),
-//             finished_at: None,
-//             exit_code: None,
-//             is_alt_screen: false,
-//             is_finished: false,
-//         };
+        surface.begin_block(meta);
+        surface.print('B');
 
-//         let _ = surface.begin_block(meta);
-//         surface.print('B');
+        surface.resize(TestDimensions::new(6, 4));
 
-//         surface.resize(TestDimensions::new(6, 4));
-
-//         for block in &surface.blocks {
-//             let grid = block.surface.grid();
-//             assert_eq!(grid.columns(), 6);
-//             assert_eq!(grid.screen_lines(), 4);
-//         }
-//     }
-// }
+        for block in &surface.blocks {
+            let grid = block.surface.grid();
+            assert_eq!(grid.columns(), 6);
+            assert_eq!(grid.screen_lines(), 4);
+        }
+    }
+}

@@ -555,8 +555,10 @@ impl<'a> InputManager<'a> {
         snapshot: &SnapshotView<'_>,
         clipboard: &mut dyn iced_graphics::core::Clipboard,
     ) -> bool {
-        let Some(block) =
-            snapshot.blocks().iter().find(|block| block.meta.id == block_id)
+        let Some(block) = snapshot
+            .blocks()
+            .iter()
+            .find(|block| block.meta.id == block_id)
         else {
             return false;
         };
@@ -625,7 +627,9 @@ mod tests {
     use otty_libterm::TerminalSize;
     use otty_libterm::escape::{Hyperlink, NamedPrivateMode};
     use otty_libterm::surface::{
-        BlockKind, BlockMeta, BlockSnapshot, Cell, Column, Line, Point as TerminalGridPoint, SnapshotCell, SnapshotOwned, Surface, SurfaceActor, SurfaceConfig, SurfaceModel
+        BlockKind, BlockMeta, BlockSnapshot, Cell, Column, Line,
+        Point as TerminalGridPoint, SnapshotCell, SnapshotOwned, Surface,
+        SurfaceActor, SurfaceConfig, SurfaceModel,
     };
 
     use super::*;

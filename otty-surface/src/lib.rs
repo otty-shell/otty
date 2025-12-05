@@ -17,9 +17,7 @@ mod surface;
 pub(crate) use otty_escape as escape;
 
 pub use actor::SurfaceActor;
-pub use block::{
-    BlockKind, BlockMeta, BlockSnapshot, BlockSurface,
-};
+pub use block::{BlockKind, BlockMeta, BlockSnapshot, BlockSurface};
 pub use cell::{Cell, Flags};
 pub use color::Colors;
 pub use grid::{Dimensions, Grid, Scroll};
