@@ -1,0 +1,82 @@
+name: Build packages
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  linux-packages:
+    name: Build RPM and DEB (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy,rustfmt
+
+      - name: Install packaging tools
+        run: |
+          cargo install cargo-deb cargo-generate-rpm
+
+      - name: Build release binary
+        run: |
+          cargo build --release -p otty
+
+      - name: Build RPM package
+        run: |
+          cargo generate-rpm -p otty
+
+      - name: Build DEB package
+        run: |
+          cd otty
+          cargo deb
+
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-rpm
+          path: |
+            target/generate-rpm/*.rpm
+
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-deb
+          path: |
+            otty/target/debian/*.deb
+
+  macos-universal:
+    name: Build universal macOS binary
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          brew install libssh2
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build universal macOS binary
+        run: |
+          bash packages/macos/build-universal-macos.sh
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-macos-universal
+          path: |
+            target/universal-macos/otty
+
