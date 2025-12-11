@@ -88,10 +88,7 @@ impl<'a> TerminalView<'a> {
     pub fn show(term: &'a Terminal) -> Element<'a, Event> {
         container(Self {
             term,
-            input_manager: InputManager::new(
-                term.id,
-                &term.bindings,
-            ),
+            input_manager: InputManager::new(term.id, &term.bindings),
         })
         .padding(10)
         .width(Length::Fill)

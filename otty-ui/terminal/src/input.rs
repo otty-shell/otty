@@ -19,10 +19,7 @@ pub(crate) struct InputManager<'a> {
 }
 
 impl<'a> InputManager<'a> {
-    pub(crate) fn new(
-        terminal_id: u64,
-        bindings: &'a BindingsLayout,
-    ) -> Self {
+    pub(crate) fn new(terminal_id: u64, bindings: &'a BindingsLayout) -> Self {
         Self {
             terminal_id,
             bindings,
@@ -561,8 +558,7 @@ mod tests {
             let mut publish = |event| commands.push(event);
             let _modifiers = Modifiers::empty();
             let bindings = bindings::BindingsLayout::new();
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             input_manager.handle_left_button_pressed(
                 &mut state,
@@ -599,8 +595,7 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             input_manager.handle_left_button_pressed(
                 &mut state,
@@ -666,8 +661,7 @@ mod tests {
             ];
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             for (layout_position, cursor_position, expected) in cases {
                 input_manager.handle_cursor_moved(
@@ -695,8 +689,7 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             input_manager.handle_cursor_moved(
                 &mut state,
@@ -729,8 +722,7 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             input_manager.handle_cursor_moved(
                 &mut state,
@@ -766,8 +758,7 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             input_manager.handle_cursor_moved(
                 &mut state,
@@ -810,8 +801,7 @@ mod tests {
             let mut publish = |event| commands.push(event);
             let _modifiers = Modifiers::empty();
 
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             input_manager.handle_button_released(
                 &mut state,
@@ -848,8 +838,7 @@ mod tests {
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
 
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             input_manager.handle_button_released(
                 &mut state,
@@ -872,8 +861,7 @@ mod tests {
             let bindings = BindingsLayout::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             let status = input_manager.handle_button_released(
                 &mut state,
@@ -907,8 +895,7 @@ mod tests {
             let bindings = BindingsLayout::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             let status = input_manager.handle_button_released(
                 &mut state,
@@ -942,8 +929,7 @@ mod tests {
             let bindings = BindingsLayout::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             let status = input_manager.handle_button_released(
                 &mut state,
@@ -970,8 +956,7 @@ mod tests {
             let bindings = BindingsLayout::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             let status = input_manager.handle_button_released(
                 &mut state,
@@ -999,8 +984,7 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             input_manager.handle_wheel_scrolled(
                 &mut state,
@@ -1027,8 +1011,7 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager =
-                InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(TEST_ID, &bindings);
 
             input_manager.handle_wheel_scrolled(
                 &mut state,

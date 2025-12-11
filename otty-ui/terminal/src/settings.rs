@@ -51,7 +51,7 @@ impl Default for LocalSessionOptions {
             args: vec![],
             envs: HashMap::from([
                 ("TERM".to_string(), "xterm-256color".to_string()),
-                ("COLORTERM".to_string(), "truecolor".to_string())
+                ("COLORTERM".to_string(), "truecolor".to_string()),
             ]),
             working_directory: None,
         }

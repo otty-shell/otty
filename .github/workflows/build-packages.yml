@@ -7,76 +7,74 @@ on:
   workflow_dispatch:
 
 jobs:
-  linux-packages:
-    name: Build RPM and DEB (Linux)
-    runs-on: ubuntu-latest
+  # linux-packages:
+  #   name: Build RPM and DEB (Linux)
+  #   runs-on: ubuntu-latest
+
+  #   steps:
+  #     - name: Checkout sources
+  #       uses: actions/checkout@v4
+
+  #     - name: Set up Rust toolchain
+  #       uses: actions-rust-lang/setup-rust-toolchain@stable
+
+  #     - name: Install packaging tools
+  #       run: cargo install cargo-deb cargo-generate-rpm
+
+  #     - name: Build release binary
+  #       run: cargo build --release -p otty
+
+  #     - name: Build RPM package
+  #       run: cargo generate-rpm -p otty
+
+  #     - name: Build DEB package
+  #       run: cargo deb -p otty
+
+  #     - name: Upload RPM artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: otty-rpm
+  #         path: target/generate-rpm/*.rpm
+
+  #     - name: Upload DEB artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: otty-deb
+  #         path: otty/target/debian/*.deb
+
+  macos-packages:
+    name: Build DMG (macOS)
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      matrix:
+        arch: [x86_64-apple-darwin, aarch64-apple-darwin]
+        include:
+          - arch: x86_64-apple-darwin
+            runner: macos-13
+          - arch: aarch64-apple-darwin
+            runner: macos-14
 
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@stable
         with:
-          toolchain: stable
-          components: clippy,rustfmt
-
-      - name: Install packaging tools
-        run: |
-          cargo install cargo-deb cargo-generate-rpm
+          targets: ${{ matrix.arch }}
 
       - name: Build release binary
-        run: |
-          cargo build --release -p otty
+        run: cargo build --release -p otty --target ${{ matrix.arch }}
 
-      - name: Build RPM package
-        run: |
-          cargo generate-rpm -p otty
+      - name: Make app bundle
+        run: bash packages/macos/make-app-bundle.sh ${{ matrix.arch }}
 
-      - name: Build DEB package
-        run: |
-          cd otty
-          cargo deb
+      - name: Make DMG
+        run: bash packages/macos/make-dmg.sh ${{ matrix.arch }}
 
-      - name: Upload RPM artifact
+      - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: otty-rpm
-          path: |
-            target/generate-rpm/*.rpm
-
-      - name: Upload DEB artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: otty-deb
-          path: |
-            otty/target/debian/*.deb
-
-  macos-universal:
-    name: Build universal macOS binary
-    runs-on: macos-latest
-
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: |
-          brew install libssh2
-
-      - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Build universal macOS binary
-        run: |
-          bash packages/macos/build-universal-macos.sh
-
-      - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: otty-macos-universal
-          path: |
-            target/universal-macos/otty
-
+          name: otty-dmg-${{ matrix.arch }}
+          path: dist/mac/${{ matrix.arch }}/*.dmg
