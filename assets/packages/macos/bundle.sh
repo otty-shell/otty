@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ARCH="${1:-aarch64-apple-darwin}" # или x86_64-apple-darwin
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")../../.." && pwd)"
 TARGET_DIR="${PROJECT_ROOT}/target/${ARCH}/release"
 APP_NAME="otty"
 APP_BUNDLE_DIR="${PROJECT_ROOT}/dist/mac/${ARCH}/${APP_NAME}.app"
