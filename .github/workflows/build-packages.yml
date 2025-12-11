@@ -68,10 +68,13 @@ jobs:
         run: cargo build --release -p otty --target ${{ matrix.arch }}
 
       - name: Make app bundle
-        run: bash assets/packages/macos/make-app-bundle.sh ${{ matrix.arch }}
+        run: bash assets/packages/macos/bundle.sh ${{ matrix.arch }}
+
+      - name: Sign app
+        run: bash assets/packages/macos/sign.sh ${{ matrix.arch }}
 
       - name: Make DMG
-        run: bash assets/packages/macos/make-dmg.sh ${{ matrix.arch }}
+        run: bash assets/packages/macos/package.sh ${{ matrix.arch }}
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
