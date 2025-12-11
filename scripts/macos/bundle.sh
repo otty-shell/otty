@@ -1,13 +1,16 @@
-#! /usr/bin/env -S bash -e
+#!/bin/bash
 
-TARGET="otty"
+set -e
+
+ARCH="${1:-aarch64-apple-darwin}" # or x86_64-apple-darwin
+TARGET_BIN="otty"
 ASSETS_DIR="assets"
 RELEASE_DIR="target/release"
 APP_NAME="otty.app"
 APP_TEMPLATE="$ASSETS_DIR/packages/macos/$APP_NAME"
 APP_TEMPLATE_PLIST="$APP_TEMPLATE/Contents/Info.plist"
 APP_DIR="$RELEASE_DIR/macos"
-APP_BINARY="$RELEASE_DIR/$TARGET"
+APP_BINARY="$RELEASE_DIR/$TARGET_BIN"
 APP_BINARY_DIR="$APP_DIR/$APP_NAME/Contents/MacOS"
 APP_EXTRAS_DIR="$APP_DIR/$APP_NAME/Contents/Resources"
 
@@ -22,12 +25,7 @@ sed -i '' -e "s/{{ VERSION }}/$VERSION/g" "$APP_TEMPLATE_PLIST"
 sed -i '' -e "s/{{ BUILD }}/$BUILD/g" "$APP_TEMPLATE_PLIST"
 
 # build binary
-export MACOSX_DEPLOYMENT_TARGET="11.0"
-rustup target add x86_64-apple-darwin
-rustup target add aarch64-apple-darwin
-cargo build --release --locked --target=x86_64-apple-darwin
-cargo build --release --locked --target=aarch64-apple-darwin
-lipo "target/x86_64-apple-darwin/release/$TARGET" "target/aarch64-apple-darwin/release/$TARGET" -create -output "$APP_BINARY"
+lipo "target/$ARCH/release/$TARGET_BIN" -create -output "$APP_BINARY"
 
 # build app
 mkdir -p "$APP_BINARY_DIR"

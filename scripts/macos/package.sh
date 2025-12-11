@@ -1,16 +1,14 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-ARCH="${1:-aarch64-apple-darwin}" # или x86_64-apple-darwin
+set -e
+
+ARCH="${1:-aarch64-apple-darwin}" # or x86_64-apple-darwin
 APP_NAME="otty"
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-APP_BUNDLE_DIR="${PROJECT_ROOT}/dist/mac/${ARCH}/${APP_NAME}.app"
-DMG_DIR="${PROJECT_ROOT}/dist/mac/${ARCH}"
-
-mkdir -p "${DMG_DIR}"
+RELEASE_DIR="target/release/macos"
+APP_BUNDLE_DIR="$RELEASE_DIR/${APP_NAME}.app"
 
 DMG_NAME="${APP_NAME}-${ARCH}.dmg"
-DMG_PATH="${DMG_DIR}/${DMG_NAME}"
+DMG_PATH="${RELEASE_DIR}/${DMG_NAME}"
 
 echo "Creating DMG: ${DMG_PATH}"
 
@@ -22,4 +20,3 @@ hdiutil create \
   "${DMG_PATH}"
 
 echo "DMG created at: ${DMG_PATH}"
-

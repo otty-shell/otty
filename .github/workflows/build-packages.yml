@@ -2,8 +2,7 @@ name: Build packages
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: "v*"
   workflow_dispatch:
 
 jobs:
@@ -71,7 +70,7 @@ jobs:
         run: bash assets/packages/macos/bundle.sh ${{ matrix.arch }}
 
       - name: Sign app
-        run: bash assets/packages/macos/sign.sh ${{ matrix.arch }}
+        run: bash assets/packages/macos/sign.sh
 
       - name: Make DMG
         run: bash assets/packages/macos/package.sh ${{ matrix.arch }}
