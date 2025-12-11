@@ -78,5 +78,5 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: otty-dmg-${{ matrix.arch }}
-          path: dist/mac/${{ matrix.arch }}/*.dmg
+          name: otty-${{ matrix.arch }}
+          path: target/release/macos/*.dmg
