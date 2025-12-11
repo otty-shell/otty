@@ -21,7 +21,7 @@ maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"
 
 assets = [
     { source = "target/release/otty", dest = "/usr/bin/otty", mode = "755" },
-    { source = "packages/linux/otty.desktop", dest = "/usr/share/applications/otty.desktop", mode = "644" },
+    { source = "assets/packages/linux/otty.desktop", dest = "/usr/share/applications/otty.desktop", mode = "644" },
     { source = "assets/logo-small.png", dest = "/usr/share/icons/hicolor/64x64/apps/otty.png", mode = "644" }
 ]
 
@@ -30,6 +30,6 @@ maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"
 
 assets = [
     { source = "target/release/otty", dest = "/usr/bin/otty", mode = "755" },
-    { source = "../packages/linux/otty.desktop", dest = "/usr/share/applications/otty.desktop", mode = "644" },
+    { source = "../assets/packages/linux/otty.desktop", dest = "/usr/share/applications/otty.desktop", mode = "644" },
     { source = "../assets/logo-small.png", dest = "/usr/share/icons/hicolor/64x64/apps/otty.png", mode = "644" }
 ]

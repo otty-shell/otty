@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
@@ -12,6 +12,16 @@ const OTTY_ZSH_SCRIPT: &str =
 const OTTY_BASH_SCRIPT: &str =
     include_str!("../../assets/shell-integrations/otty.bash");
 
+fn config_dir() -> PathBuf {
+    if let Ok(home) = env::var("HOME") {
+        return Path::new(&home)
+            .join(".config")
+            .join(SHELL_INTEGRATIONS_DIR);
+    }
+
+    env::temp_dir().join(SHELL_INTEGRATIONS_DIR)
+}
+
 pub fn setup_shell_session() -> std::io::Result<(String, SessionKind)> {
     let shell_path = env::var("SHELL").unwrap_or(FALLBACK_SHELL.to_string());
 
@@ -21,7 +31,7 @@ pub fn setup_shell_session() -> std::io::Result<(String, SessionKind)> {
         .map(ToString::to_string)
         .unwrap_or_else(|| shell_path.clone());
 
-    let dir = env::temp_dir().join(SHELL_INTEGRATIONS_DIR);
+    let dir = config_dir();
     // Ensure directory
     fs::create_dir_all(&dir)?;
 

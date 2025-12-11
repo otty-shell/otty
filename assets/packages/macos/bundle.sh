@@ -14,6 +14,6 @@ mkdir -p "${APP_BUNDLE_DIR}/Contents/Resources"
 
 cp "${TARGET_DIR}/${APP_NAME}" "${APP_BUNDLE_DIR}/Contents/MacOS/${APP_NAME}"
 cp "${PROJECT_ROOT}/packages/macos/Info.plist" "${APP_BUNDLE_DIR}/Contents/Info.plist"
-cp "${PROJECT_ROOT}/packages/macos/logo-small.icns" "${APP_BUNDLE_DIR}/Contents/Resources/logo-small.icns"
+cp "${PROJECT_ROOT}/packages/macos/logo.icns" "${APP_BUNDLE_DIR}/Contents/Resources/logo.icns"
 
 echo "Created app bundle at: ${APP_BUNDLE_DIR}"

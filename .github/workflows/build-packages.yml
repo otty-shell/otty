@@ -7,40 +7,40 @@ on:
   workflow_dispatch:
 
 jobs:
-  # linux-packages:
-  #   name: Build RPM and DEB (Linux)
-  #   runs-on: ubuntu-latest
+  linux-packages:
+    name: Build RPM and DEB (Linux)
+    runs-on: ubuntu-latest
 
-  #   steps:
-  #     - name: Checkout sources
-  #       uses: actions/checkout@v4
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
 
-  #     - name: Set up Rust toolchain
-  #       uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-  #     - name: Install packaging tools
-  #       run: cargo install cargo-deb cargo-generate-rpm
+      - name: Install packaging tools
+        run: cargo install cargo-deb cargo-generate-rpm
 
-  #     - name: Build release binary
-  #       run: cargo build --release -p otty
+      - name: Build release binary
+        run: cargo build --release -p otty
 
-  #     - name: Build RPM package
-  #       run: cargo generate-rpm -p otty
+      - name: Build RPM package
+        run: cargo generate-rpm -p otty
 
-  #     - name: Build DEB package
-  #       run: cargo deb -p otty
+      - name: Build DEB package
+        run: cargo deb -p otty
 
-  #     - name: Upload RPM artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: otty-rpm
-  #         path: target/generate-rpm/*.rpm
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-rpm
+          path: target/generate-rpm/*.rpm
 
-  #     - name: Upload DEB artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: otty-deb
-  #         path: otty/target/debian/*.deb
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-deb
+          path: otty/target/debian/*.deb
 
   macos-packages:
     name: Build DMG (macOS)
@@ -53,7 +53,7 @@ jobs:
           - arch: x86_64-apple-darwin
             runner: macos-15-intel
           - arch: aarch64-apple-darwin
-            runner: macos-26
+            runner: macos-15
 
     steps:
       - name: Checkout sources
@@ -68,10 +68,10 @@ jobs:
         run: cargo build --release -p otty --target ${{ matrix.arch }}
 
       - name: Make app bundle
-        run: bash packages/macos/make-app-bundle.sh ${{ matrix.arch }}
+        run: bash assets/packages/macos/make-app-bundle.sh ${{ matrix.arch }}
 
       - name: Make DMG
-        run: bash packages/macos/make-dmg.sh ${{ matrix.arch }}
+        run: bash assets/packages/macos/make-dmg.sh ${{ matrix.arch }}
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
