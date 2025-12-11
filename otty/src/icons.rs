@@ -9,4 +9,4 @@ pub(crate) const LOGO_SMALL: &[u8] =
 pub(crate) const ADD_TAB_HEADER: &[u8] =
     include_bytes!("../../assets/svg/add-tab.svg");
 pub(crate) const APP_ICON_DATA: &[u8] =
-    include_bytes!("../../assets/logo-small.png");
+    include_bytes!("../../assets/logo/logo-small.png");
