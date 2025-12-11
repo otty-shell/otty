@@ -51,9 +51,9 @@ jobs:
         arch: [x86_64-apple-darwin, aarch64-apple-darwin]
         include:
           - arch: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-15-intel
           - arch: aarch64-apple-darwin
-            runner: macos-14
+            runner: macos-26
 
     steps:
       - name: Checkout sources
