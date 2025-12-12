@@ -14,6 +14,17 @@ pub fn collect_block_text(
     block: &BlockSnapshot,
     cells: &[SnapshotCell],
 ) -> Option<String> {
+    if let Some(text) = &block.cached_text {
+        if matches!(block.meta.kind, BlockKind::Prompt) {
+            return None;
+        }
+        let text = text.as_ref();
+        if text.is_empty() {
+            return None;
+        }
+        return Some(text.to_string());
+    }
+
     if block.line_count == 0 || matches!(block.meta.kind, BlockKind::Prompt) {
         return None;
     }
@@ -84,6 +95,19 @@ impl<'a> SnapshotView<'a> {
         &self,
         block: &BlockSnapshot,
     ) -> Option<String> {
+        if let Some(text) = &block.cached_text {
+            if block.meta.kind != BlockKind::Command {
+                return None;
+            }
+
+            let first = text.lines().next().unwrap_or_default();
+            if first.is_empty() {
+                return None;
+            }
+
+            return Some(first.to_string());
+        }
+
         if block.line_count == 0 || block.meta.kind != BlockKind::Command {
             return None;
         }
@@ -175,6 +199,7 @@ mod tests {
             },
             start_line,
             line_count,
+            cached_text: None,
             is_alt_screen: false,
         }
     }

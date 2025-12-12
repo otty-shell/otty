@@ -494,6 +494,7 @@ mod tests {
                 },
                 start_line: 0,
                 line_count: 4,
+                cached_text: None,
                 is_alt_screen: false,
             },
             BlockSnapshot {
@@ -504,6 +505,7 @@ mod tests {
                 },
                 start_line: 4,
                 line_count: 1,
+                cached_text: None,
                 is_alt_screen: false,
             },
         ];
@@ -532,6 +534,7 @@ mod tests {
                 },
                 start_line: 0,
                 line_count: 2,
+                cached_text: None,
                 is_alt_screen: false,
             },
             BlockSnapshot {
@@ -542,6 +545,7 @@ mod tests {
                 },
                 start_line: 2,
                 line_count: 1,
+                cached_text: None,
                 is_alt_screen: false,
             },
         ];

@@ -72,6 +72,7 @@ mod tests {
             },
             start_line,
             line_count,
+            cached_text: None,
             is_alt_screen: false,
         }
     }

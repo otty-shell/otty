@@ -1,5 +1,7 @@
 use std::cmp::{max, min};
+use std::sync::Arc;
 
+use crate::Flags;
 use crate::cell::Cell;
 use crate::escape::{
     BlockKind as EscapeBlockKind, BlockMeta as EscapeBlockMeta, BlockPhase,
@@ -84,6 +86,11 @@ pub struct BlockSnapshot {
     pub start_line: i32,
     /// Number of visible lines contributed by this block.
     pub line_count: usize,
+    /// Cached full textual contents for finished blocks.
+    ///
+    /// This is intentionally detached from the viewport so UI actions like
+    /// "copy content" can include scrollback lines that are currently off-screen.
+    pub cached_text: Option<Arc<str>>,
     /// Whether this block snapshot corresponds to an alt screen.
     pub is_alt_screen: bool,
 }
@@ -94,6 +101,8 @@ struct Block {
     pub meta: BlockMeta,
     /// Embedded surface that records the block's terminal contents.
     pub surface: Surface,
+    /// Cached textual contents for finished blocks.
+    pub cached_text: Option<Arc<str>>,
 }
 
 impl Block {
@@ -107,6 +116,45 @@ impl Block {
         Self {
             meta,
             surface: Surface::new(config.clone(), dimensions),
+            cached_text: None,
+        }
+    }
+
+    fn update_cached_text(&mut self) {
+        if self.meta.kind == BlockKind::Prompt || !self.meta.is_finished {
+            return;
+        }
+
+        let grid = self.surface.grid();
+        let (top_line, total_lines) = BlockSurface::block_visible_extent(self);
+        if total_lines == 0 || self.surface.columns() == 0 {
+            self.cached_text = None;
+            return;
+        }
+
+        let columns = self.surface.columns();
+        let start = top_line.0;
+        let end = start + total_lines as i32;
+
+        let mut lines = Vec::with_capacity(total_lines);
+        for line_value in start..end {
+            let line = Line(line_value);
+            let mut buffer = String::with_capacity(columns);
+            for col in 0..columns {
+                let column = Column(col);
+                let cell = &grid[line][column];
+                if !cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                    buffer.push(cell.c);
+                }
+            }
+            lines.push(buffer.trim_end_matches(' ').to_string());
+        }
+
+        let text = lines.join("\n");
+        if text.is_empty() {
+            self.cached_text = None;
+        } else {
+            self.cached_text = Some(Arc::<str>::from(text));
         }
     }
 }
@@ -436,6 +484,7 @@ impl BlockSurface {
                         meta.started_at.or(meta.finished_at);
                 }
             }
+            active.update_cached_text();
         }
 
         // A new block is created with the current surface dimensions.
@@ -472,6 +521,7 @@ impl BlockSurface {
         {
             block.meta = meta.clone();
             block.meta.is_finished = true;
+            block.update_cached_text();
         }
 
         self.enforce_max_blocks();
@@ -494,6 +544,7 @@ impl BlockSurface {
             meta: block.meta.clone(),
             start_line: 0,
             line_count,
+            cached_text: block.cached_text.clone(),
             is_alt_screen: block.meta.is_alt_screen,
         }];
 
@@ -1424,6 +1475,7 @@ impl SurfaceModel for BlockSurface {
                 meta: block.meta.clone(),
                 start_line,
                 line_count,
+                cached_text: block.cached_text.clone(),
                 is_alt_screen: block.meta.is_alt_screen,
             });
         }
@@ -1781,5 +1833,59 @@ mod tests {
             assert_eq!(grid.columns(), 6);
             assert_eq!(grid.screen_lines(), 4);
         }
+    }
+
+    #[test]
+    fn block_text_includes_offscreen_history_for_finished_blocks() {
+        let dims = TestDimensions::new(4, 2);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+
+        let meta_1 = BlockMeta {
+            id: String::from("block-1"),
+            kind: BlockKind::Command,
+            cmd: None,
+            cwd: None,
+            shell: None,
+            started_at: Some(1),
+            finished_at: None,
+            exit_code: None,
+            is_alt_screen: false,
+            is_finished: false,
+        };
+        surface.begin_block(meta_1);
+        surface.print('A');
+        surface.carriage_return();
+        surface.line_feed();
+        surface.print('B');
+
+        let meta_2 = BlockMeta {
+            id: String::from("block-2"),
+            kind: BlockKind::Command,
+            cmd: None,
+            cwd: None,
+            shell: None,
+            started_at: Some(2),
+            finished_at: None,
+            exit_code: None,
+            is_alt_screen: false,
+            is_finished: false,
+        };
+        surface.begin_block(meta_2);
+
+        surface.print('C');
+        surface.carriage_return();
+        surface.line_feed();
+        surface.print('D');
+
+        let snapshot = surface.snapshot_owned();
+        let view = snapshot.view();
+        let blocks = view.blocks();
+        let first = blocks
+            .iter()
+            .find(|b| b.meta.id == "block-1")
+            .expect("block-1 snapshot");
+        assert_eq!(first.line_count, 0);
+
+        assert_eq!(snapshot.block_text("block-1"), Some(String::from("A\nB")));
     }
 }
