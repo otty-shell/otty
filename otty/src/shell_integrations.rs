@@ -23,7 +23,8 @@ fn config_dir() -> PathBuf {
 }
 
 pub fn setup_shell_session() -> std::io::Result<(String, SessionKind)> {
-    let shell_path = env::var("SHELL").unwrap_or(FALLBACK_SHELL.to_string());
+    let shell_path =
+        env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.to_string());
 
     let shell_name = Path::new(&shell_path)
         .file_name()

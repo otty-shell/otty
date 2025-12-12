@@ -93,7 +93,7 @@ else
   __bp_inside_precmd=0
   __bp_inside_preexec=0
 
-  __bp_install_string=$'__bp_trap_string=\"$(trap -p DEBUG)\"\\ntrap - DEBUG\\n__bp_install'
+  __bp_install_string=$'__bp_trap_string="$(trap -p DEBUG)"\ntrap - DEBUG\n__bp_install'
 
   __bp_trim_whitespace() {
     local var=${1:?} text=${2:-}
@@ -218,7 +218,7 @@ else
 
     PROMPT_COMMAND=$'__bp_precmd_invoke_cmd\n'
     if [[ -n "$existing_prompt_command" ]]; then
-      PROMPT_COMMAND+=${existing_prompt_command}$'\n'
+      PROMPT_COMMAND+="${existing_prompt_command}"$'\n'
     fi
     PROMPT_COMMAND+='__bp_interactive_mode'
 
@@ -233,9 +233,9 @@ else
     local sanitized_prompt_command
     __bp_sanitize_string sanitized_prompt_command "${PROMPT_COMMAND:-}"
     if [[ -n "$sanitized_prompt_command" ]]; then
-      PROMPT_COMMAND=${sanitized_prompt_command}$'\n'
+      PROMPT_COMMAND="${sanitized_prompt_command}"$'\n'
     fi
-    PROMPT_COMMAND+=${__bp_install_string}
+    PROMPT_COMMAND+="${__bp_install_string}"
   }
 
   declare -a precmd_functions
