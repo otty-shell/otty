@@ -7,26 +7,50 @@
 
 ### About
 
-OTTY is not just one more blazing fast terminal emulator, OTTY rethinks the terminal itself as the only workspace you need for development or operation your system. 
+<div align="center">
+    <img src="./assets/otty.png">
+</div>
+
+OTTY is not just one more blazing fast terminal emulator, OTTY rethinks the terminal itself as the only workspace you need for development or operation your system.
 
 Developers spend most of their time in the terminal, but modern terminals remain minimal shells. As a result, engineers juggle between the terminal, code editors (AI and not), different dashboards, and SSH clients instead of working in one coherent space.
 
-#### Key features
+#### Install
 
-- Tool management (install / remove tools or sdks, for example: docker, go, rust, zsh, etc)
-- SSH connections catalog
-- Plugins - extend your workspace with community driven plugins or create new one
-- AI agent integration
-- Modern terminal UI - besides the standard UI features like tabs or multiplexer, OTTY rethinks the global terminal UI concept and suggest you using your terminal more convinient.
+Prebuilt artifacts are published on the GitHub Releases page: https://github.com/otty-shell/otty/releases
 
-### Block-oriented terminal UX
+#### Supported Platforms
 
-OTTY models every prompt/command pair as a structured block so UI layers can
-drive overlays, copy actions, and scrolling programmatically. Check
-[docs/blocks.md](docs/blocks.md) for an overview of the block kinds, the
-`Terminal::blocks`/`Terminal::block_text` helpers, geometry utilities, and the
-`BlockCommand` + `Event::Block*` flow that keeps custom chrome in sync with
-what happens inside the shell.
+- Linux: DEB- and RPM-based distributions (`.deb` / `.rpm`).
+- macOS: Intel (`x86_64`) and Apple Silicon (`aarch64`) builds (`.dmg`).
+
+#### What works today
+
+- Desktop app:
+  - Tabs and split screen.
+  - Block-oriented terminal UX.
+    - Block highlight
+    - Semantic copy (prompt, content, command)
+- Terminal stack powering the app:
+  - `otty-ui-term`: the terminal widget for Iced.
+  - `otty-libterm`: request/event-driven terminal engine.
+  - `otty-surface`: in-memory surface model (grid, selection/search, snapshots, blocks).
+  - `otty-escape` + `otty-vte`: VT parser + semantic actions (see `otty-escape/docs/support_sequences.md`).
+  - `otty-pty`: PTY backends.
+
+#### What is planned (not implemented yet)
+
+- App settings and customizations (fonts, colors, profiles, shell, etc...).
+- SSH connections catalog.
+- Support windows platform.
+- Automatically app version upgrade.
+- Tool management (install/remove SDKs and CLIs).
+- Plugins system.
+- AI agent integrations.
+- Secret storage.
+- File tree widget.
+
+More details about the future plans will be appeared soon in roadmap.
 
 ### License
 
@@ -34,4 +58,4 @@ See [LICENSE](./LICENSE).
 
 ### CONTRIBUTORS
 
-> Contributors guide will be appeared soon.
+See [CONTRIBUTING.md](./CONTRIBUTING.md).

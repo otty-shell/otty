@@ -1,7 +1,7 @@
 [package]
 name = "otty"
 description = "Your future terminal"
-version = "0.1.0"
+version = "0.1.0-beta1"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 homepage = "https://otty.sh"
 repository = "https://github.com/otty-shell/otty"
