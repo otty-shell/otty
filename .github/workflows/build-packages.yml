@@ -2,9 +2,7 @@ name: Build packages
 
 on:
   push:
-    tags:
-      - "v*"
-  workflow_dispatch:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
 
 jobs:
   linux-packages:
@@ -16,67 +14,68 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy,rustfmt
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install packaging tools
-        run: |
-          cargo install cargo-deb cargo-generate-rpm
+        run: cargo install cargo-deb cargo-generate-rpm
 
       - name: Build release binary
-        run: |
-          cargo build --release -p otty
+        run: cargo build --release -p otty
 
       - name: Build RPM package
-        run: |
-          cargo generate-rpm -p otty
+        run: cargo generate-rpm -p otty
 
       - name: Build DEB package
-        run: |
-          cd otty
-          cargo deb
+        run: cargo deb -p otty
 
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
         with:
           name: otty-rpm
-          path: |
-            target/generate-rpm/*.rpm
+          path: target/generate-rpm/*.rpm
 
       - name: Upload DEB artifact
         uses: actions/upload-artifact@v4
         with:
           name: otty-deb
-          path: |
-            otty/target/debian/*.deb
+          path: target/debian/*.deb
 
-  macos-universal:
-    name: Build universal macOS binary
-    runs-on: macos-latest
+  macos-packages:
+    name: Build DMG (macOS)
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      matrix:
+        arch: [x86_64-apple-darwin, aarch64-apple-darwin]
+        include:
+          - arch: x86_64-apple-darwin
+            runner: macos-15-intel
+          - arch: aarch64-apple-darwin
+            runner: macos-15
 
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: |
-          brew install libssh2
-
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          targets: ${{ matrix.arch }}
 
-      - name: Build universal macOS binary
-        run: |
-          bash packages/macos/build-universal-macos.sh
+      - name: Build release binary
+        run: cargo build --release -p otty --target ${{ matrix.arch }}
 
-      - name: Upload macOS artifact
+      - name: Make app bundle
+        run: bash scripts/macos/bundle.sh ${{ matrix.arch }}
+
+      - name: Sign app
+        run: bash scripts/macos/sign.sh
+
+      - name: Make DMG
+        run: bash scripts/macos/package.sh ${{ matrix.arch }}
+
+      - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: otty-macos-universal
-          path: |
-            target/universal-macos/otty
-
+          name: otty-${{ matrix.arch }}
+          path: target/release/macos/*.dmg

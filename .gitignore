@@ -29,9 +29,11 @@ target
 
 .codex
 .claude
+specs
 
 # Misc
 
 iced_term
 egui_term
 alacritty_terminal
+dist

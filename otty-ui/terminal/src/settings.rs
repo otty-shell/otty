@@ -49,7 +49,10 @@ impl Default for LocalSessionOptions {
         Self {
             program: DEFAULT_SHELL.to_string(),
             args: vec![],
-            envs: HashMap::new(),
+            envs: HashMap::from([
+                ("TERM".to_string(), "xterm-256color".to_string()),
+                ("COLORTERM".to_string(), "truecolor".to_string()),
+            ]),
             working_directory: None,
         }
     }
@@ -68,6 +71,11 @@ impl LocalSessionOptions {
 
     pub fn with_envs(mut self, envs: HashMap<String, String>) -> Self {
         self.envs = envs;
+        self
+    }
+
+    pub fn with_env(mut self, k: &str, v: &str) -> Self {
+        self.envs.insert(k.to_string(), v.to_string());
         self
     }
 

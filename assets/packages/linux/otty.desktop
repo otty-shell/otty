@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+TryExec=otty
+Exec=otty
+Icon=otty
+Terminal=false
+Categories=System;TerminalEmulator;
+
+Name=OTTY
+GenericName=Terminal
+Comment=Your future terminal emulator
+StartupNotify=true
+StartupWMClass=OTTY
+Actions=New;
+X-Desktop-File-Install-Version=0.1
+
+[Desktop Action New]
+Name=New Terminal
+Exec=otty

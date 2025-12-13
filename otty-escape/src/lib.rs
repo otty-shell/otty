@@ -1,10 +1,12 @@
 mod actor;
 mod attributes;
+mod block;
 mod charset;
 mod color;
 mod control;
 mod csi;
 mod cursor;
+mod dcs;
 mod esc;
 mod hyperlink;
 mod keyboard;
@@ -14,6 +16,7 @@ mod parser;
 
 pub use actor::{Action, EscapeActor};
 pub use attributes::CharacterAttribute;
+pub use block::{BlockEvent, BlockKind, BlockMeta, BlockPhase};
 pub use charset::{Charset, CharsetIndex};
 pub use color::{Color, Rgb, StdColor};
 pub use cursor::{CursorShape, CursorStyle};

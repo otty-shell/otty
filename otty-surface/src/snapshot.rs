@@ -1,3 +1,4 @@
+use crate::block::BlockSnapshot;
 use crate::cell::{Cell, Flags};
 use crate::color::Colors;
 use crate::damage::{LineDamageBounds, SurfaceDamage};
@@ -21,7 +22,7 @@ impl CursorSnapshot {
     /// Construct a renderable cursor description from the given surface.
     ///
     /// This accounts for wide characters and cursor visibility modes.
-    fn new(surface: &Surface) -> Self {
+    pub(crate) fn new(surface: &Surface) -> Self {
         // Cursor position.
         let mut point = surface.grid().cursor.point;
         if surface.grid()[point]
@@ -85,6 +86,7 @@ pub struct SnapshotOwned {
     size: SnapshotSize,
     damage: SnapshotDamage,
     visible_cell_count: usize,
+    pub blocks: Vec<BlockSnapshot>,
 }
 
 /// View over an owned snapshot suitable for rendering.
@@ -109,6 +111,8 @@ pub struct SnapshotView<'a> {
     pub damage: &'a SnapshotDamage,
     /// Total number of cells across visible viewport (cols × rows).
     pub visible_cell_count: usize,
+    /// Ordered list of block metadata captured alongside this snapshot.
+    pub(crate) blocks: &'a [BlockSnapshot],
 }
 
 impl SnapshotOwned {
@@ -125,12 +129,39 @@ impl SnapshotOwned {
             size: self.size,
             damage: &self.damage,
             visible_cell_count: self.visible_cell_count,
+            blocks: &self.blocks,
         }
     }
-}
 
-impl From<&mut Surface> for SnapshotOwned {
-    fn from(surface: &mut Surface) -> Self {
+    pub(crate) fn from_parts(
+        cells: Vec<SnapshotCell>,
+        selection: Option<SelectionRange>,
+        hyperlinks: HyperlinkMap,
+        cursor: CursorSnapshot,
+        display_offset: usize,
+        colors: Colors,
+        mode: SurfaceMode,
+        size: SnapshotSize,
+        damage: SnapshotDamage,
+        visible_cell_count: usize,
+        blocks: Vec<BlockSnapshot>,
+    ) -> Self {
+        SnapshotOwned {
+            cells,
+            selection,
+            hyperlinks,
+            cursor,
+            display_offset,
+            colors,
+            mode,
+            size,
+            damage,
+            visible_cell_count,
+            blocks,
+        }
+    }
+
+    pub fn from_surface(surface: &mut Surface) -> SnapshotOwned {
         let mut cells =
             Vec::with_capacity(surface.grid().display_iter().count());
         for indexed in surface.grid().display_iter() {
@@ -157,7 +188,7 @@ impl From<&mut Surface> for SnapshotOwned {
 
         let damage = SnapshotDamage::from(surface.damage());
 
-        Self {
+        SnapshotOwned {
             cells,
             selection,
             hyperlinks,
@@ -168,7 +199,14 @@ impl From<&mut Surface> for SnapshotOwned {
             size,
             damage,
             visible_cell_count,
+            blocks: Vec::new(),
         }
+    }
+}
+
+impl From<&mut Surface> for SnapshotOwned {
+    fn from(surface: &mut Surface) -> Self {
+        SnapshotOwned::from_surface(surface)
     }
 }
 
@@ -192,7 +230,7 @@ pub trait SurfaceModel {
 
 impl SurfaceModel for Surface {
     fn snapshot_owned(&mut self) -> SnapshotOwned {
-        SnapshotOwned::from(self)
+        SnapshotOwned::from_surface(self)
     }
 
     fn reset_damage(&mut self) {
@@ -226,6 +264,25 @@ impl<'a> SnapshotView<'a> {
             }
         }
         result
+    }
+
+    /// Return the list of block metadata captured in this snapshot.
+    #[inline]
+    pub fn blocks(&self) -> &[BlockSnapshot] {
+        self.blocks
+    }
+
+    /// Resolve the block intersecting the provided grid point, if any.
+    pub fn block_at_point(&self, point: Point) -> Option<&BlockSnapshot> {
+        self.blocks.iter().find(|block| {
+            if block.line_count == 0 {
+                return false;
+            }
+
+            let start = block.start_line;
+            let end = start + block.line_count as i32;
+            point.line.0 >= start && point.line.0 < end
+        })
     }
 }
 

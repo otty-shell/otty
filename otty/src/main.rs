@@ -1,0 +1,43 @@
+mod action_bar;
+mod context_menu;
+mod fonts;
+mod icons;
+mod main_window;
+mod shell_integrations;
+mod tab;
+mod tab_bar;
+mod tab_button;
+mod theme;
+
+use iced::{Size, window};
+use image::ImageFormat;
+
+use crate::{
+    fonts::TERM_FONT_JET_BRAINS_BYTES,
+    icons::APP_ICON_DATA,
+    main_window::{App, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH},
+};
+
+fn main() -> iced::Result {
+    iced::application(App::new, App::update, App::view)
+        .title(App::title)
+        .theme(App::theme)
+        .antialiasing(true)
+        .window(window::Settings {
+            decorations: false,
+            min_size: Some(Size {
+                width: MIN_WINDOW_WIDTH,
+                height: MIN_WINDOW_HEIGHT,
+            }),
+            icon: window::icon::from_file_data(
+                APP_ICON_DATA,
+                Some(ImageFormat::Png),
+            )
+            .ok(),
+            ..window::Settings::default()
+        })
+        .resizable(true)
+        .font(TERM_FONT_JET_BRAINS_BYTES)
+        .subscription(App::subscription)
+        .run()
+}
