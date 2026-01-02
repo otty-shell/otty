@@ -115,7 +115,10 @@ pub(crate) fn parse_block_dcs(buffer: &[u8]) -> Option<BlockEvent> {
     let json_str = match std::str::from_utf8(json_bytes) {
         Ok(s) => s,
         Err(err) => {
-            warn!("failed to decode otty-block JSON as UTF-8: {err}");
+            warn!(
+                "failed to decode otty-block JSON as UTF-8: {err}; bytes={:02X?}",
+                json_bytes
+            );
             return None;
         },
     };
@@ -123,7 +126,10 @@ pub(crate) fn parse_block_dcs(buffer: &[u8]) -> Option<BlockEvent> {
     let raw: RawBlockDcs = match serde_json::from_str(json_str) {
         Ok(raw) => raw,
         Err(err) => {
-            warn!("failed to parse otty-block JSON payload: {err}");
+            let preview: String = json_str.chars().take(256).collect();
+            warn!(
+                "failed to parse otty-block JSON payload: {err}; payload_preview={preview:?}"
+            );
             return None;
         },
     };

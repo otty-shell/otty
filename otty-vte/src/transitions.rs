@@ -202,7 +202,18 @@ const fn dcs_passthrough(byte: u8) -> (State, Action) {
     use State::*;
 
     match byte {
-        0x00..=0x17 | 0x19 | 0x1c..=0x1f | 0x20..=0x7e => (DcsPassthrough, Put),
+        // String Terminator (ST) in 8-bit form.
+        0x9c => (Ground, None),
+        // Mirror common VTE behavior: DCS payload is effectively a byte stream
+        // (e.g. sixel or app-specific protocols). Accept high-bit bytes as
+        // payload too, otherwise UTF-8 continuation bytes (0x80..=0xBF) can be
+        // misinterpreted as C1 controls and prematurely terminate the DCS.
+        0x00..=0x17
+        | 0x19
+        | 0x1c..=0x1f
+        | 0x20..=0x7e
+        | 0x80..=0x9b
+        | 0x9d..=0xff => (DcsPassthrough, Put),
         0x7f => (DcsPassthrough, Ignore),
         _ => anywhere(DcsPassthrough, byte),
     }
@@ -215,7 +226,14 @@ const fn dcs_ignore(byte: u8) -> (State, Action) {
     use State::*;
 
     match byte {
-        0x00..=0x17 | 0x19 | 0x1c..=0x1f | 0x20..=0x7f => (DcsIgnore, Ignore),
+        // String Terminator (ST) in 8-bit form.
+        0x9c => (Ground, None),
+        0x00..=0x17
+        | 0x19
+        | 0x1c..=0x1f
+        | 0x20..=0x7f
+        | 0x80..=0x9b
+        | 0x9d..=0xff => (DcsIgnore, Ignore),
         _ => anywhere(DcsIgnore, byte),
     }
 }
