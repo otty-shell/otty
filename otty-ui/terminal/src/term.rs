@@ -8,6 +8,7 @@ use iced::Subscription;
 use iced::futures::stream::BoxStream;
 use iced::futures::{SinkExt, StreamExt};
 use iced::widget::canvas::Cache;
+use log::debug;
 use otty_libterm::SnapshotArc;
 use otty_libterm::TerminalEvent;
 use otty_libterm::surface::{
@@ -329,7 +330,16 @@ impl Terminal {
         match event {
             Redraw { .. } => self.cache.clear(),
             ContentSync { frame, .. } => self.content_sync(frame),
-            Write { data, .. } => self.engine.write(data),
+            Write { data, .. } => {
+                debug!(
+                    "terminal {} write {} bytes: {:02X?} (utf8={})",
+                    self.id,
+                    data.len(),
+                    data,
+                    String::from_utf8_lossy(&data)
+                );
+                self.engine.write(data);
+            },
             Scroll { delta, .. } => self.engine.scroll_delta(delta),
             SelectStart {
                 selection_type,

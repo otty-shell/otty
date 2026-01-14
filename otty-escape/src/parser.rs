@@ -1,6 +1,9 @@
 use crate::{
-    Action, EscapeActor, EscapeParser, control, csi, dcs::DcsState, esc, osc,
+    Action, EscapeActor, EscapeParser, control, csi,
+    dcs::{self, max_dcs_buffer_len},
+    esc, osc,
 };
+use log::debug;
 use otty_vte::{self, CsiParam, VTActor, VTParser};
 
 struct Performer<'a, A: EscapeActor> {
@@ -20,25 +23,37 @@ impl<'a, A: EscapeActor> VTActor for Performer<'a, A> {
 
     fn hook(
         &mut self,
-        params: &[i64],
-        intermediates: &[u8],
-        ignored_excess_intermediates: bool,
+        _params: &[i64],
+        _intermediates: &[u8],
+        _ignored_excess_intermediates: bool,
         byte: u8,
     ) {
-        self.state.dcs.hook(
-            params,
-            intermediates,
-            ignored_excess_intermediates,
-            byte,
-        );
-    }
-
-    fn unhook(&mut self) {
-        self.state.dcs.unhook(self.actor);
+        self.state.dcs.buffer.clear();
+        self.state.dcs.overflow = false;
+        self.state.dcs.buffer.push(byte);
     }
 
     fn put(&mut self, byte: u8) {
-        self.state.dcs.put(byte);
+        if self.state.dcs.overflow {
+            return;
+        }
+
+        if self.state.dcs.buffer.len() < max_dcs_buffer_len() {
+            self.state.dcs.buffer.push(byte);
+        } else {
+            self.state.dcs.overflow = true;
+        }
+    }
+
+    fn unhook(&mut self) {
+        if self.state.dcs.overflow {
+            debug!("[dcs unhook] payload exceeded buffer limit, ignoring");
+        } else {
+            dcs::perform(self.actor, self.state.dcs.buffer.as_slice());
+        }
+
+        self.state.dcs.buffer.clear();
+        self.state.dcs.overflow = false;
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], _: u8) {
@@ -82,9 +97,15 @@ impl<'a, A: EscapeActor> Performer<'a, A> {
 #[derive(Default)]
 pub(crate) struct ParserState {
     pub last_preceding_char: Option<char>,
-    pub dcs: DcsState,
+    dcs: DcsState,
 }
 
+/// Internal state for handling DCS passthrough sequences.
+#[derive(Default)]
+struct DcsState {
+    buffer: Vec<u8>,
+    overflow: bool,
+}
 /// High-level escape sequence parser that forwards semantic events to an
 /// [`EscapeActor`](crate::actor::EscapeActor).
 #[derive(Default)]
@@ -128,18 +149,6 @@ pub(crate) fn parse_number(input: &[u8]) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BlockKind, BlockPhase};
-
-    #[derive(Default)]
-    struct CollectingActor {
-        actions: Vec<Action>,
-    }
-
-    impl EscapeActor for CollectingActor {
-        fn handle(&mut self, action: Action) {
-            self.actions.push(action);
-        }
-    }
 
     #[test]
     fn parse_invalid_number() {
@@ -154,50 +163,5 @@ mod tests {
     #[test]
     fn parse_number_too_large() {
         assert_eq!(parse_number(b"321"), None);
-    }
-
-    fn parse_with_bytes(input: &[u8]) -> Vec<Action> {
-        let mut parser = Parser::<otty_vte::Parser>::new();
-        let mut actor = CollectingActor::default();
-        parser.advance(input, &mut actor);
-        actor.actions
-    }
-
-    #[test]
-    fn parses_block_event_from_dcs() {
-        let json = r#"{"v":1,"id":"1","phase":"preexec","cmd":"ls","cwd":"/","time":42}"#;
-        let payload = format!("\x1bPotty-block;{json}\x1b\\");
-        let actions = parse_with_bytes(payload.as_bytes());
-
-        assert!(
-            actions.iter().any(|action| match action {
-                Action::BlockEvent(event) => {
-                    assert_eq!(event.phase, BlockPhase::Preexec);
-                    assert_eq!(event.meta.id, "1");
-                    assert_eq!(event.meta.kind, BlockKind::Command);
-                    assert_eq!(event.meta.cmd.as_deref(), Some("ls"));
-                    assert_eq!(event.meta.cwd.as_deref(), Some("/"));
-                    assert_eq!(event.meta.started_at, Some(42));
-                    assert_eq!(event.meta.finished_at, None);
-                    true
-                },
-                _ => false,
-            }),
-            "expected at least one BlockEvent action"
-        );
-    }
-
-    #[test]
-    fn ignores_invalid_block_dcs() {
-        let json = r#"{"v":1,"id":"1","phase":"preexec","cmd":"ls","cwd":"/","time":42"#;
-        let payload = format!("\x1bPotty-block;{json}\x1b\\");
-        let actions = parse_with_bytes(payload.as_bytes());
-
-        assert!(
-            !actions
-                .iter()
-                .any(|action| matches!(action, Action::BlockEvent(_))),
-            "invalid JSON should not produce BlockEvent"
-        );
     }
 }

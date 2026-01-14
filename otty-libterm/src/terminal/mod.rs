@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use cursor_icon::CursorIcon;
 use flume::{Receiver, Sender};
+use log::debug;
 
 use crate::Result;
 use crate::terminal::channel::{
@@ -355,6 +356,12 @@ where
 
         match request {
             WriteBytes(bytes) => {
+                debug!(
+                    "terminal request write {} bytes: {:02X?} (utf8={})",
+                    bytes.len(),
+                    bytes,
+                    String::from_utf8_lossy(&bytes)
+                );
                 self.enqueue_input(bytes);
                 self.flush_pending_input()?;
             },
@@ -416,6 +423,13 @@ where
     /// Write a chunk of bytes to the PTY session.
     fn write(&mut self, bytes: &[u8]) -> Result<usize> {
         let mut written = 0usize;
+        let total = bytes.len();
+        debug!(
+            "session write attempt {} bytes: {:02X?} (utf8={})",
+            total,
+            bytes,
+            String::from_utf8_lossy(bytes)
+        );
 
         while written < bytes.len() {
             match self.session.write(&bytes[written..]) {
@@ -435,6 +449,7 @@ where
             }
         }
 
+        debug!("session write completed {written}/{total} bytes");
         Ok(written)
     }
 

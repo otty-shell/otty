@@ -18,3 +18,4 @@ iced_core = "0.14"
 otty-libterm = { path = "../../otty-libterm", version = "0.1.0" }
 tokio = { version = "1.47.1", features = ["full"] }
 open = "5.3.2"
+log = { workspace = true }

@@ -854,6 +854,31 @@ mod tests {
     }
 
     #[test]
+    fn dcs_payload_allows_utf8_bytes() {
+        let json =
+            r#"{"v":1,"id":"cmd-1","phase":"preexec","cmd":"echo \"ыы\""}"#;
+        let input = format!("\x1bPotty-block;{json}\x1b\\");
+        let actions = parse(input.as_bytes());
+
+        let mut payload = Vec::new();
+        let mut in_payload = false;
+
+        for action in actions {
+            match action {
+                ActorEvents::Hook { byte, .. } => {
+                    assert_eq!(byte, b'o');
+                    in_payload = true;
+                },
+                ActorEvents::Put(byte) if in_payload => payload.push(byte),
+                ActorEvents::Unhook => break,
+                _ => {},
+            }
+        }
+
+        assert_eq!(payload, format!("tty-block;{json}").into_bytes());
+    }
+
+    #[test]
     fn sixel() {
         assert_eq!(
             parse("\x1bPqhello\x1b\\".as_bytes()),

@@ -9,6 +9,7 @@ mod tab_bar;
 mod tab_button;
 mod theme;
 
+use env_logger::Env;
 use iced::{Size, window};
 use image::ImageFormat;
 
@@ -19,6 +20,10 @@ use crate::{
 };
 
 fn main() -> iced::Result {
+    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+        .format_timestamp_millis()
+        .init();
+
     iced::application(App::new, App::update, App::view)
         .title(App::title)
         .theme(App::theme)
