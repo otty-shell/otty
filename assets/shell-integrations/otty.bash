@@ -73,7 +73,7 @@ _otty_json_escape() {
 }
 
 _otty_emit() {
-  printf '\033P'; printf 'otty-block;%s' "$1"; printf '\033\\'
+  printf '\033P'; printf 'otty-dcs;block;%s' "$1"; printf '\033\\'
 }
 
 # ---- Minimal bash-preexec core (MIT) ----

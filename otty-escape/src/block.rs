@@ -3,6 +3,11 @@ use std::fmt;
 use log::warn;
 use serde::Deserialize;
 
+use crate::dcs::MAX_DCS_CONTENT_BYTES;
+
+const MAX_CMD_LEN: usize = 1024;
+const MAX_CWD_LEN: usize = 512;
+
 /// Kind of a terminal block in the session history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockKind {
@@ -46,14 +51,8 @@ pub struct BlockEvent {
     pub meta: BlockMeta,
 }
 
-const DCS_PREFIX: &[u8] = b"otty-block;";
-const MAX_JSON_BYTES: usize = 4096;
-const MAX_CMD_LEN: usize = 1024;
-const MAX_CWD_LEN: usize = 512;
-
 #[derive(Debug, Deserialize)]
-struct RawBlockDcs {
-    v: u8,
+struct BlockDcsPayload {
     id: String,
     phase: String,
     #[serde(default)]
@@ -80,67 +79,34 @@ impl fmt::Display for BlockPhase {
 }
 
 fn truncate_opt(value: Option<String>, max_chars: usize) -> Option<String> {
-    value.map(|s| {
-        if s.chars().count() <= max_chars {
-            return s;
-        }
-        s.chars().take(max_chars).collect()
-    })
+    value.map(|s| s.chars().take(max_chars).collect())
 }
 
-/// Try to parse a block event from a completed DCS buffer.
+/// Try to parse a block event from a completed DCS payload.
 ///
-/// The buffer is expected to contain the DCS payload including the leading
-/// `otty-block;` prefix followed by a UTF-8 JSON string.
-pub(crate) fn parse_block_dcs(buffer: &[u8]) -> Option<BlockEvent> {
-    if !buffer.starts_with(DCS_PREFIX) {
-        return None;
-    }
-
-    let json_bytes = &buffer[DCS_PREFIX.len()..];
-    if json_bytes.is_empty() {
+/// The payload is expected to be a UTF-8 JSON string for the `otty-block` DCS.
+pub(crate) fn parse_block_payload(payload: &[u8]) -> Option<BlockEvent> {
+    if payload.is_empty() {
         warn!("otty-block DCS has empty JSON payload");
         return None;
     }
 
-    if json_bytes.len() > MAX_JSON_BYTES {
+    if payload.len() > MAX_DCS_CONTENT_BYTES {
         warn!(
             "otty-block JSON payload too large: {len} bytes (max {max})",
-            len = json_bytes.len(),
-            max = MAX_JSON_BYTES
+            len = payload.len(),
+            max = MAX_DCS_CONTENT_BYTES
         );
         return None;
     }
 
-    let json_str = match std::str::from_utf8(json_bytes) {
-        Ok(s) => s,
-        Err(err) => {
-            warn!(
-                "failed to decode otty-block JSON as UTF-8: {err}; bytes={:02X?}",
-                json_bytes
-            );
-            return None;
-        },
-    };
-
-    let raw: RawBlockDcs = match serde_json::from_str(json_str) {
+    let raw: BlockDcsPayload = match serde_json::from_slice(payload) {
         Ok(raw) => raw,
         Err(err) => {
-            let preview: String = json_str.chars().take(256).collect();
-            warn!(
-                "failed to parse otty-block JSON payload: {err}; payload_preview={preview:?}"
-            );
+            warn!("failed to parse otty-block JSON payload: {err}");
             return None;
         },
     };
-
-    if raw.v != 1 {
-        warn!(
-            "unsupported otty-block protocol version: {version}",
-            version = raw.v
-        );
-        return None;
-    }
 
     let phase = match raw.phase.as_str() {
         "preexec" => BlockPhase::Preexec,
@@ -183,8 +149,4 @@ pub(crate) fn parse_block_dcs(buffer: &[u8]) -> Option<BlockEvent> {
     };
 
     Some(BlockEvent { phase, meta })
-}
-
-pub(crate) const fn max_block_dcs_buffer_len() -> usize {
-    DCS_PREFIX.len() + MAX_JSON_BYTES
 }
