@@ -1,6 +1,5 @@
 mod actor;
 mod attributes;
-mod block;
 mod charset;
 mod color;
 mod control;
@@ -16,10 +15,10 @@ mod parser;
 
 pub use actor::{Action, EscapeActor};
 pub use attributes::CharacterAttribute;
-pub use block::{BlockEvent, BlockKind, BlockMeta, BlockPhase};
 pub use charset::{Charset, CharsetIndex};
 pub use color::{Color, Rgb, StdColor};
 pub use cursor::{CursorShape, CursorStyle};
+pub use dcs::{BlockEvent, BlockKind, BlockMeta, BlockPhase};
 pub use hyperlink::Hyperlink;
 pub use keyboard::*;
 pub use mode::*;

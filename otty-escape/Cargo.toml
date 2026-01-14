@@ -17,3 +17,5 @@ otty-vte = { path = "../otty-vte", version = "0.1.0" }
 cursor-icon = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
+memchr = "2.7.6"

@@ -1,12 +1,27 @@
 use std::fmt;
 
-use log::warn;
 use serde::Deserialize;
+use thiserror::Error;
 
 use crate::dcs::MAX_DCS_CONTENT_BYTES;
 
 const MAX_CMD_LEN: usize = 1024;
 const MAX_CWD_LEN: usize = 512;
+
+#[derive(Debug, Error)]
+pub(super) enum BlockPayloadParsingError {
+    #[error("payload is empty")]
+    EmptyPayload,
+
+    #[error("payload length is exceeded")]
+    PayloadLengthExceeded,
+
+    #[error("payload deserialization error")]
+    DeserializationError(#[from] serde_json::Error),
+
+    #[error("unsuported phase")]
+    UnsupportedPhase(String),
+}
 
 /// Kind of a terminal block in the session history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,36 +100,27 @@ fn truncate_opt(value: Option<String>, max_chars: usize) -> Option<String> {
 /// Try to parse a block event from a completed DCS payload.
 ///
 /// The payload is expected to be a UTF-8 JSON string for the `otty-block` DCS.
-pub(crate) fn parse_block_payload(payload: &[u8]) -> Option<BlockEvent> {
+pub(crate) fn parse_block_payload(
+    payload: &[u8],
+) -> Result<BlockEvent, BlockPayloadParsingError> {
     if payload.is_empty() {
-        warn!("otty-block DCS has empty JSON payload");
-        return None;
+        return Err(BlockPayloadParsingError::EmptyPayload);
     }
 
     if payload.len() > MAX_DCS_CONTENT_BYTES {
-        warn!(
-            "otty-block JSON payload too large: {len} bytes (max {max})",
-            len = payload.len(),
-            max = MAX_DCS_CONTENT_BYTES
-        );
-        return None;
+        return Err(BlockPayloadParsingError::PayloadLengthExceeded);
     }
 
-    let raw: BlockDcsPayload = match serde_json::from_slice(payload) {
-        Ok(raw) => raw,
-        Err(err) => {
-            warn!("failed to parse otty-block JSON payload: {err}");
-            return None;
-        },
-    };
+    let raw: BlockDcsPayload = serde_json::from_slice(payload)?;
 
     let phase = match raw.phase.as_str() {
         "preexec" => BlockPhase::Preexec,
         "exit" => BlockPhase::Exit,
         "precmd" => BlockPhase::Precmd,
         other => {
-            warn!("unknown otty-block phase: {other}");
-            return None;
+            return Err(BlockPayloadParsingError::UnsupportedPhase(
+                other.to_string(),
+            ));
         },
     };
 
@@ -148,5 +154,72 @@ pub(crate) fn parse_block_payload(payload: &[u8]) -> Option<BlockEvent> {
         is_alt_screen: false,
     };
 
-    Some(BlockEvent { phase, meta })
+    Ok(BlockEvent { phase, meta })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_empty_payload() {
+        let err = parse_block_payload(b"").unwrap_err();
+        assert!(matches!(err, BlockPayloadParsingError::EmptyPayload));
+    }
+
+    #[test]
+    fn rejects_oversized_payload() {
+        let payload = vec![b'a'; MAX_DCS_CONTENT_BYTES + 1];
+        let err = parse_block_payload(&payload).unwrap_err();
+        assert!(matches!(
+            err,
+            BlockPayloadParsingError::PayloadLengthExceeded
+        ));
+    }
+
+    #[test]
+    fn rejects_unknown_phase() {
+        let json = r#"{"id":"1","phase":"later","time":1}"#;
+        let err = parse_block_payload(json.as_bytes()).unwrap_err();
+        assert!(matches!(
+            err,
+            BlockPayloadParsingError::UnsupportedPhase(phase) if phase == "later"
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_utf8_json() {
+        let err = parse_block_payload(b"{\xff}").unwrap_err();
+        assert!(matches!(
+            err,
+            BlockPayloadParsingError::DeserializationError(_)
+        ));
+    }
+
+    #[test]
+    fn truncates_cmd_and_cwd_fields() {
+        let cmd = "a".repeat(MAX_CMD_LEN + 10);
+        let cwd = "b".repeat(MAX_CWD_LEN + 10);
+        let json = format!(
+            r#"{{"id":"1","phase":"preexec","cmd":"{cmd}","cwd":"{cwd}","time":1}}"#
+        );
+        let event =
+            parse_block_payload(json.as_bytes()).expect("valid payload");
+
+        assert_eq!(event.meta.cmd.as_deref().unwrap().len(), MAX_CMD_LEN);
+        assert_eq!(event.meta.cwd.as_deref().unwrap().len(), MAX_CWD_LEN);
+    }
+
+    #[test]
+    fn parses_exit_payload_fields() {
+        let json = r#"{"id":"2","phase":"exit","time":5,"exit_code":7,"shell":"fish"}"#;
+        let event =
+            parse_block_payload(json.as_bytes()).expect("valid payload");
+
+        assert_eq!(event.phase, BlockPhase::Exit);
+        assert_eq!(event.meta.kind, BlockKind::Command);
+        assert_eq!(event.meta.finished_at, Some(5));
+        assert_eq!(event.meta.exit_code, Some(7));
+        assert_eq!(event.meta.shell.as_deref(), Some("fish"));
+    }
 }

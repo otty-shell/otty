@@ -17,11 +17,11 @@ rust-version = "1.87.0"
 [workspace.dependencies]
 thiserror = "2.0.17"
 bitflags = "2.10.0"
-log = "0.4"
+log = "0.4.29"
 anyhow = "1.0.100"
-mio = "^1.1"
+mio = "^1.1.1"
 cursor-icon = { version = "1.2.0", default-features = false }
 nix = { version = "0.30.1", features = ["term", "fs"]}
 signal-hook = "0.3.18"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = "1.0.149"
