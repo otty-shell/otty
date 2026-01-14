@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::{Action, EscapeActor};
 pub use block::{BlockEvent, BlockKind, BlockMeta, BlockPhase};
 
-pub(crate) const DCS_PREFIX: &[u8] = b"otty;";
+pub(crate) const DCS_PREFIX: &[u8] = b"otty-dcs;";
 pub(crate) const MAX_DCS_KIND_LEN: usize = 32;
 pub(crate) const MAX_DCS_CONTENT_BYTES: usize = 4096;
 
@@ -125,7 +125,7 @@ mod tests {
     fn parses_block_event_from_dcs() {
         let json =
             r#"{"id":"1","phase":"preexec","cmd":"ls","cwd":"/","time":42}"#;
-        let payload = format!("\x1bPotty;block;{json}\x1b\\");
+        let payload = format!("\x1bPotty-dcs;block;{json}\x1b\\");
         let actions = parse_with_bytes(payload.as_bytes());
 
         assert!(
@@ -150,7 +150,7 @@ mod tests {
     fn ignores_invalid_block_dcs() {
         let json =
             r#"{"id":"1","phase":"preexec","cmd":"ls","cwd":"/","time":42"#;
-        let payload = format!("\x1bPotty;block;{json}\x1b\\");
+        let payload = format!("\x1bPotty-dcs;block;{json}\x1b\\");
         let actions = parse_with_bytes(payload.as_bytes());
 
         assert!(
@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn parses_exit_block_event_from_dcs() {
         let json = r#"{"id":"2","phase":"exit","time":99,"exit_code":3,"shell":"zsh"}"#;
-        let payload = format!("\x1bPotty;block;{json}\x1b\\");
+        let payload = format!("\x1bPotty-dcs;block;{json}\x1b\\");
         let actions = parse_with_bytes(payload.as_bytes());
 
         assert!(
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn parses_precmd_block_event_from_dcs() {
         let json = r#"{"id":"3","phase":"precmd","time":7,"cwd":"/tmp"}"#;
-        let payload = format!("\x1bPotty;block;{json}\x1b\\");
+        let payload = format!("\x1bPotty-dcs;block;{json}\x1b\\");
         let actions = parse_with_bytes(payload.as_bytes());
 
         assert!(
@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn ignores_dcs_with_unsupported_kind() {
         let json = r#"{"id":"1","phase":"preexec","time":1}"#;
-        let payload = format!("\x1bPotty;unknown;{json}\x1b\\");
+        let payload = format!("\x1bPotty-dcs;unknown;{json}\x1b\\");
         let actions = parse_with_bytes(payload.as_bytes());
 
         assert!(
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn ignores_dcs_with_wrong_prefix() {
         let json = r#"{"id":"1","phase":"preexec","time":1}"#;
-        let payload = format!("\x1bPnotty;block;{json}\x1b\\");
+        let payload = format!("\x1bPnotty-dcs;block;{json}\x1b\\");
         let actions = parse_with_bytes(payload.as_bytes());
 
         assert!(
@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn ignores_dcs_with_empty_payload() {
-        let payload = "\x1bPotty;block;\x1b\\";
+        let payload = "\x1bPotty-dcs;block;\x1b\\";
         let actions = parse_with_bytes(payload.as_bytes());
 
         assert!(
@@ -255,7 +255,7 @@ mod tests {
         let preexec = r#"{"id":"10","phase":"preexec","time":1,"cmd":"ls"}"#;
         let exit = r#"{"id":"10","phase":"exit","time":2,"exit_code":0}"#;
         let payload = format!(
-            "\x1bPotty;block;{preexec}\x1b\\\x1bPotty;block;{exit}\x1b\\"
+            "\x1bPotty-dcs;block;{preexec}\x1b\\\x1bPotty-dcs;block;{exit}\x1b\\"
         );
         let actions = parse_with_bytes(payload.as_bytes());
 
@@ -275,12 +275,12 @@ mod tests {
         ));
 
         assert!(matches!(
-            DcsMessage::parse(b"otty;block"),
+            DcsMessage::parse(b"otty-dcs;block"),
             Err(DcsMessageParsingError::KindSeparatorMissed)
         ));
 
         assert!(matches!(
-            DcsMessage::parse(b"otty;unknown;{}"),
+            DcsMessage::parse(b"otty-dcs;unknown;{}"),
             Err(DcsMessageParsingError::UnsupportedKind(_))
         ));
     }
