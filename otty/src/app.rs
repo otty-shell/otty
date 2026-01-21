@@ -14,6 +14,7 @@ use crate::shell_integrations::setup_shell_session;
 use crate::tab::{Tab, TabAction};
 use crate::tab_bar::{self, TAB_BAR_HEIGHT};
 use crate::theme::ThemeManager;
+use crate::widget;
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
@@ -30,6 +31,9 @@ pub enum ActiveView {
 #[derive(Debug, Clone)]
 pub enum Event {
     IcedReady,
+
+    TabBar(widget::tab_bar::TabBarEvent),
+
     Terminal(otty_ui_term::Event),
     NewTab,
     CloseTab(u64),
@@ -182,84 +186,90 @@ impl App {
     }
 
     pub fn update(&mut self, event: Event) -> Task<Event> {
+        use Event::*;
+
         match event {
-            Event::IcedReady => self.create_tab(),
-            Event::Terminal(inner) => self.update_terminal(inner),
-            Event::NewTab => {
+            IcedReady => self.create_tab(),
+            Terminal(inner) => self.update_terminal(inner),
+
+            // TODO:
+            TabBar(e) => Task::none(),
+
+            NewTab => {
                 self.active_view = ActiveView::Terminal;
                 self.create_tab()
             },
-            Event::CloseTab(id) => self.close_tab(id),
-            Event::ActivateTab(id) => {
+            CloseTab(id) => self.close_tab(id),
+            ActivateTab(id) => {
                 self.active_view = ActiveView::Terminal;
                 self.activate_tab(id)
             },
-            Event::ToggleFullScreen => self.toggle_full_screen(),
-            Event::ToggleTray => self.minimize_window(),
-            Event::CloseWindow => window::latest().and_then(window::close),
-            Event::StartWindowDrag => window::latest().and_then(window::drag),
-            Event::FromWindow(window::Event::Resized(size)) => {
+            ToggleFullScreen => self.toggle_full_screen(),
+            ToggleTray => self.minimize_window(),
+            CloseWindow => window::latest().and_then(window::close),
+            StartWindowDrag => window::latest().and_then(window::drag),
+            FromWindow(window::Event::Resized(size)) => {
                 self.window_size = size;
                 self.sync_tab_grid_sizes();
                 Task::none()
             },
-            Event::FromWindow(_) => Task::none(),
-            Event::ResizeWindow(dir) => iced::window::latest()
+            FromWindow(_) => Task::none(),
+            ResizeWindow(dir) => iced::window::latest()
                 .and_then(move |id| window::drag_resize(id, dir)),
-            Event::SplitPane { tab_id, pane, axis } => {
+            SplitPane { tab_id, pane, axis } => {
                 self.split_pane(tab_id, pane, axis)
             },
-            Event::ClosePane { tab_id, pane } => {
+            ClosePane { tab_id, pane } => {
                 self.close_pane_by_id(tab_id, pane)
             },
-            Event::PaneClicked { tab_id, pane } => {
+            PaneClicked { tab_id, pane } => {
                 self.with_tab_mut(tab_id, |tab| tab.focus_pane(pane))
             },
-            Event::PaneResized { tab_id, event } => {
+            PaneResized { tab_id, event } => {
                 if let Some(tab) = self.tab_mut(tab_id) {
                     tab.resize(event);
                 }
                 Task::none()
             },
-            Event::PaneGridCursorMoved { tab_id, position } => self
+            PaneGridCursorMoved { tab_id, position } => self
                 .with_tab_mut(tab_id, move |tab| {
                     tab.update_grid_cursor(position);
                     TabAction::none()
                 }),
-            Event::OpenPaneContextMenu {
+            OpenPaneContextMenu {
                 tab_id,
                 pane,
                 terminal_id,
             } => self.with_tab_mut(tab_id, move |tab| {
                 tab.open_context_menu(pane, terminal_id)
             }),
-            Event::ClosePaneContextMenu { tab_id } => {
+            ClosePaneContextMenu { tab_id } => {
                 self.with_tab_mut(tab_id, Tab::close_context_menu)
             },
-            Event::PaneContextMenuInput => Task::none(),
-            Event::CopySelectedBlockContent {
+            PaneContextMenuInput => Task::none(),
+            CopySelectedBlockContent {
                 tab_id,
                 terminal_id,
             } => {
                 self.copy_selected_block(tab_id, terminal_id, CopyKind::Content)
             },
-            Event::CopySelectedBlockPrompt {
+            CopySelectedBlockPrompt {
                 tab_id,
                 terminal_id,
             } => {
                 self.copy_selected_block(tab_id, terminal_id, CopyKind::Prompt)
             },
-            Event::CopySelectedBlockCommand {
+            CopySelectedBlockCommand {
                 tab_id,
                 terminal_id,
             } => {
                 self.copy_selected_block(tab_id, terminal_id, CopyKind::Command)
             },
-            Event::CopySelection {
+            CopySelection {
                 tab_id,
                 terminal_id,
             } => self.copy_selection(tab_id, terminal_id),
-            Event::PasteIntoPrompt {
+            PasteIntoPrompt {
                 tab_id,
                 terminal_id,
             } => self.paste_into_prompt(tab_id, terminal_id),
@@ -268,12 +278,17 @@ impl App {
 
     pub fn view(&self) -> Element<'_, Event, Theme, iced::Renderer> {
         let header = action_bar::view_action_bar(self);
-        let tabs_row = tab_bar::view_tab_bar(self);
+        let tab_bar = widget::tab_bar::TabBar::new(
+            &self.tabs,
+            self.theme_manager.current(),
+            self.active_tab_index
+        ).view().map(Event::TabBar);
+        // let tabs_row = tab_bar::view_tab_bar(self);
         let main_content: Element<Event, Theme, iced::Renderer> =
             match self.active_view {
                 ActiveView::Terminal => {
                     let content = self.view_active_terminal();
-                    column![tabs_row, content]
+                    column![tab_bar, content]
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .into()

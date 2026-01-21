@@ -7,7 +7,7 @@ use otty_ui_term::settings::Settings;
 use otty_ui_term::{BlockCommand, SurfaceMode, TerminalView};
 
 use crate::context_menu::{self, PaneContextMenu};
-use crate::main_window::Event;
+use crate::app::Event;
 use crate::theme::IcedColorPalette;
 
 #[derive(Clone, Debug)]

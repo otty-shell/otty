@@ -7,7 +7,7 @@ use iced::{Element, Length, Theme};
 use crate::icons::{
     ADD_TAB_HEADER, LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY,
 };
-use crate::main_window::{ActiveView, App, Event};
+use crate::app::{ActiveView, App, Event};
 use crate::theme::IcedColorPalette;
 
 pub const ACTION_BAR_HEIGHT: f32 = 30.0;

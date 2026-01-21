@@ -1,7 +1,7 @@
 use iced::widget::{container, row, scrollable};
 use iced::{Element, Length};
 
-use crate::main_window::{App, Event};
+use crate::app::{App, Event};
 use crate::tab_button::tab_button;
 
 pub const TAB_BAR_HEIGHT: f32 = 25.0;

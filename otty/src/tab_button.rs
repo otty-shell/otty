@@ -4,7 +4,7 @@ use iced::{Alignment, alignment};
 use iced::{Element, Length, Theme};
 
 use crate::icons;
-use crate::main_window::Event;
+use crate::app::Event;
 use crate::theme::IcedColorPalette;
 
 const TAB_LABEL_FONT_SIZE: f32 = 13.0;

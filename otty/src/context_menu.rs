@@ -7,7 +7,7 @@ use iced::widget::{
 };
 use iced::{Background, Element, Length, Point, Size, Task, Theme, alignment};
 
-use crate::main_window::Event;
+use crate::app::Event;
 use crate::tab::TabBlockSelection;
 use crate::theme::IcedColorPalette;
 
