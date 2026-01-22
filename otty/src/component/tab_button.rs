@@ -1,68 +1,80 @@
 use iced::alignment;
 use iced::widget::{Space, button, container, row, stack};
 use iced::widget::text::Wrapping;
-use iced::{Alignment, Length, advanced::graphics::core::Element, widget::{svg, text}};
+use iced::{Alignment, Length, Element, widget::{svg, text}};
 
-use crate::{icons, theme::{AppTheme, IcedColorPalette}};
-
-const TAB_LABEL_FONT_SIZE: f32 = 13.0;
-const TAB_HEIGHT: f32 = 25.0;
-const TAB_WIDTH: f32 = 235.0;
-const CLOSE_ICON_SIZE: f32 = 25.0;
-const CLOSE_BUTTON_RIGHT_PADDING: f32 = 2.0;
-const DEFAULT_MAX_CHAR_COUNT_BEFORE_ELIPSIZE: usize = 20;
+use crate::theme::fallback_theme;
+use crate::{icons, theme::{AppTheme, IcedColorPalette}, helpers::ellipsize};
 
 #[derive(Debug, Clone)]
-pub enum TabButtonEvent {
+pub enum Event {
     ActivateTab(u64),
     CloseTab(u64),
 }
 
-#[derive(Clone, Copy)]
-struct TabButtonState<'a> {
-    id: u64,
-    title: &'a str,
-    theme: &'a AppTheme,
-    is_active: bool,
+#[derive(Debug, Clone)]
+pub struct Metrics {
+    height: f32,
+    width: f32,
+    padding: f32,
+    label_font_size: f32,
+    pill_padding: f32,
+    close_icon_size: f32,
+    close_button_right_padding: f32,
+    close_button_padding: f32,
 }
 
-impl<'a> TabButtonState<'a> {
-    fn new(
-        id: u64,
-        title: &'a str,
-        is_active: bool,
-        theme: &'a AppTheme,
-    ) -> Self {
+impl Default for Metrics {
+    fn default() -> Self {
         Self {
-            id,
-            title,
-            theme,
-            is_active
+            height: 25.0,
+            width: 235.0,
+            padding: 0.0,
+            label_font_size: 13.0,
+            pill_padding: 2.0,
+            close_icon_size: 25.0,
+            close_button_right_padding: 2.0,
+            close_button_padding: 0.0,
         }
     }
 }
 
+#[derive(Debug, Default)]
 pub struct TabButton<'a> {
-    state: TabButtonState<'a>,
+    id: u64,
+    title: &'a str,
+    is_active: bool,
+    theme: Option<&'a AppTheme>,
+    metrics: Metrics,
 }
 
 impl<'a> TabButton<'a> {
     pub fn new(
         id: u64,
         title: &'a str,
-        is_active: bool,
-        theme: &'a AppTheme,
     ) -> Self {
         Self {
-            state: TabButtonState::new(id, title, is_active, theme)
+            id,
+            title,
+            ..Default::default()
         }
     }
 
-    pub fn view(&self) -> Element<'a, TabButtonEvent, iced::Theme, iced::Renderer> {
-        let state = self.state;
+    pub fn theme(mut self, theme: &'a AppTheme) -> Self {
+        self.theme = Some(theme);
+        self
+    }
 
-        let label = text(ellipsize(state.title))
-            .size(TAB_LABEL_FONT_SIZE)
+    pub fn active(mut self, val: bool) -> Self {
+        self.is_active = val;
+        self
+    }
+
+    pub fn view(self) -> Element<'a, Event> {
+        let theme = self.theme.unwrap_or(fallback_theme());
+
+        let label = text(ellipsize(self.title))
+            .size(self.metrics.label_font_size)
             .width(Length::Fill)
             .height(Length::Shrink)
             .align_y(Alignment::Center)
@@ -71,14 +83,14 @@ impl<'a> TabButton<'a> {
 
         let close_icon = svg::Handle::from_memory(icons::WINDOW_CLOSE);
         let close_svg = svg::Svg::new(close_icon)
-            .width(Length::Fixed(CLOSE_ICON_SIZE))
-            .height(Length::Fixed(CLOSE_ICON_SIZE))
+            .width(Length::Fixed(self.metrics.close_icon_size))
+            .height(Length::Fixed(self.metrics.close_icon_size))
             .style({
-                let theme = state.theme.iced_palette().clone();
+                let theme = theme.iced_palette().clone();
                 move |_, status| {
                     let color = if status == svg::Status::Hovered {
                         theme.red
-                    } else if state.is_active {
+                    } else if self.is_active {
                         theme.foreground
                     } else {
                         theme.dim_foreground
@@ -95,15 +107,15 @@ impl<'a> TabButton<'a> {
             .align_y(alignment::Vertical::Center);
 
         let close_button = button(close_icon_view)
-            .on_press(TabButtonEvent::CloseTab(state.id))
-            .padding(0)
+            .on_press(Event::CloseTab(self.id))
+            .padding(self.metrics.close_button_padding)
             .height(Length::Fill)
             .style(|_, _| iced::widget::button::Style::default());
 
         let close_button_row = row![
             Space::new().width(Length::Fill),
             close_button,
-            Space::new().width(Length::Fixed(CLOSE_BUTTON_RIGHT_PADDING))
+            Space::new().width(Length::Fixed(self.metrics.close_button_right_padding))
         ]
         .width(Length::Fill)
         .height(Length::Fill)
@@ -119,13 +131,13 @@ impl<'a> TabButton<'a> {
             .width(Length::Fill);
 
         let pill = container(pill_content)
-            .padding(2)
+            .padding(self.metrics.pill_padding)
             .width(Length::Fill)
             .height(Length::Fill)
             .style({
-                let theme = state.theme.iced_palette().clone();
+                let theme = theme.iced_palette().clone();
                 move |_| {
-                    if state.is_active {
+                    if self.is_active {
                         active_tab_style(&theme)
                     } else {
                         inactive_tab_style(&theme)
@@ -134,10 +146,10 @@ impl<'a> TabButton<'a> {
             });
 
         button(pill)
-            .on_press(TabButtonEvent::ActivateTab(state.id))
-            .padding(0)
-            .width(TAB_WIDTH)
-            .height(TAB_HEIGHT)
+            .on_press(Event::ActivateTab(self.id))
+            .padding(self.metrics.padding)
+            .width(self.metrics.width)
+            .height(self.metrics.height)
             .into()
     }
 }
@@ -160,23 +172,4 @@ fn inactive_tab_style(
         text_color: Some(theme.dim_foreground),
         ..Default::default()
     }
-}
-
-fn ellipsize(s: &str) -> String {
-    let total = s.chars().count();
-    if total <= DEFAULT_MAX_CHAR_COUNT_BEFORE_ELIPSIZE {
-        return s.to_owned();
-    }
-
-    let keep = DEFAULT_MAX_CHAR_COUNT_BEFORE_ELIPSIZE - 2;
-    let tail: String = s
-        .chars()
-        .rev()
-        .take(keep)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-
-    format!("..{}", tail)
 }

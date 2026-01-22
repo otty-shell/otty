@@ -10,11 +10,10 @@ use otty_ui_term::settings::{
 
 use crate::action_bar::{self, ACTION_BAR_HEIGHT};
 use crate::fonts::FontsConfig;
-use crate::shell_integrations::setup_shell_session;
+use crate::service::shell_integrations::setup_shell_session;
 use crate::tab::{Tab, TabAction};
-use crate::tab_bar::{self, TAB_BAR_HEIGHT};
 use crate::theme::ThemeManager;
-use crate::widget;
+use crate::widget::{self, tab_bar};
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
@@ -32,7 +31,7 @@ pub enum ActiveView {
 pub enum Event {
     IcedReady,
 
-    TabBar(widget::tab_bar::TabBarEvent),
+    TabBar(widget::tab_bar::Event),
 
     Terminal(otty_ui_term::Event),
     NewTab,
@@ -280,9 +279,11 @@ impl App {
         let header = action_bar::view_action_bar(self);
         let tab_bar = widget::tab_bar::TabBar::new(
             &self.tabs,
-            self.theme_manager.current(),
             self.active_tab_index
-        ).view().map(Event::TabBar);
+        )
+        .theme(self.theme_manager.current())
+        .view()
+        .map(Event::TabBar);
         // let tabs_row = tab_bar::view_tab_bar(self);
         let main_content: Element<Event, Theme, iced::Renderer> =
             match self.active_view {
@@ -780,8 +781,9 @@ impl App {
     }
 
     fn pane_grid_size(&self) -> Size {
+        let tab_bar_height = tab_bar::Metrics::default().height;
         let height =
-            (self.window_size.height - ACTION_BAR_HEIGHT - TAB_BAR_HEIGHT)
+            (self.window_size.height - ACTION_BAR_HEIGHT - tab_bar_height)
                 .max(0.0);
         Size::new(self.window_size.width, height)
     }

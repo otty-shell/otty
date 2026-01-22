@@ -8,9 +8,9 @@ const FALLBACK_SHELL: &str = "/bin/bash";
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
 
 const OTTY_ZSH_SCRIPT: &str =
-    include_str!("../../assets/shell-integrations/otty.zsh");
+    include_str!("../../../assets/shell-integrations/otty.zsh");
 const OTTY_BASH_SCRIPT: &str =
-    include_str!("../../assets/shell-integrations/otty.bash");
+    include_str!("../../../assets/shell-integrations/otty.bash");
 
 fn config_dir() -> PathBuf {
     if let Ok(home) = env::var("HOME") {

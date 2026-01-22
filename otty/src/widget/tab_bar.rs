@@ -1,62 +1,64 @@
-use iced::{Length, advanced::graphics::core::Element, widget::{container, row, scrollable}};
+use iced::{Element, Length, widget::{container, row, scrollable}};
 
-use crate::{component::tab_button::{TabButton, TabButtonEvent}, tab::Tab, theme::AppTheme};
-
-pub const TAB_BAR_HEIGHT: f32 = 25.0;
+use crate::{component::tab_button, tab::Tab, theme::{AppTheme, fallback_theme}};
 
 #[derive(Debug, Clone)]
-pub enum TabBarEvent {
-    TabButton(TabButtonEvent)
+pub enum Event {
+    TabButton(tab_button::Event)
 }
 
 #[derive(Clone, Copy)]
-struct TabBarState<'a> {
-    tabs: &'a Vec<Tab>,
-    theme: &'a AppTheme,
-    active_tab_index: usize,
+pub struct Metrics {
+    pub height: f32,
 }
 
-impl<'a> TabBarState<'a> {
-    fn new(
-        tabs: &'a Vec<Tab>,
-        theme: &'a AppTheme,
-        active_tab_index: usize,
-    ) -> Self {
-        Self {
-            tabs,
-            theme,
-            active_tab_index,
-        }
+impl Default for Metrics {
+    fn default() -> Self {
+        Self { height: 25.0 }
     }
 }
 
 pub struct TabBar<'a> {
-    state: TabBarState<'a>,
+    tabs: &'a [Tab],
+    active_tab_index: usize,
+    theme: Option<&'a AppTheme>,
+    metrics: Metrics
 }
 
 impl<'a> TabBar<'a> {
     pub fn new(
-        tabs: &'a Vec<Tab>,
-        theme: &'a AppTheme,
+        tabs: &'a [Tab],
         active_tab_index: usize,
     ) -> Self {
         Self {
-            state: TabBarState::new(tabs, theme, active_tab_index)
+            tabs,
+            active_tab_index,
+            theme: None,
+            metrics: Metrics::default(),
         }
     }
 
-    pub fn view(&self) -> Element<'a, TabBarEvent, iced::Theme, iced::Renderer> {
-        let state = self.state;
-        let mut tabs_row = row![].spacing(0);
-        let active_tab_id = state.tabs[state.active_tab_index].id;
+    pub fn theme(mut self, theme: &'a AppTheme) -> Self {
+        self.theme = Some(theme);
+        self
+    }
 
-        for tab in state.tabs {
-            tabs_row = tabs_row.push(TabButton::new(
-                tab.id,
-                &tab.title,
-                active_tab_id == tab.id,
-                state.theme,
-            ).view().map(TabBarEvent::TabButton));
+    pub fn view(&self) -> Element<'a, Event> {
+        let theme = self.theme.unwrap_or(fallback_theme());
+        let mut tabs_row = row![].spacing(0);
+        let active_tab_id = self.tabs[self.active_tab_index].id;
+
+        for tab in self.tabs {
+            tabs_row = tabs_row.push(
+                tab_button::TabButton::new(
+                    tab.id,
+                    &tab.title,
+                )
+                .theme(theme)
+                .active(active_tab_id == tab.id)            
+                .view()
+                .map(Event::TabButton)
+            );
         }
 
         let scroll = scrollable::Scrollable::with_direction(
@@ -71,10 +73,10 @@ impl<'a> TabBar<'a> {
         .width(Length::Fill);
 
         container(scroll)
-            .height(Length::Fixed(TAB_BAR_HEIGHT))
+            .height(Length::Fixed(self.metrics.height))
             .width(Length::Fill)
             .style({
-                let theme = state.theme.iced_palette();
+                let theme = theme.iced_palette();
                 move |_| iced::widget::container::Style {
                     background: Some(theme.dim_black.into()),
                     text_color: None,

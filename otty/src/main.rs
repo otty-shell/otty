@@ -3,7 +3,6 @@ mod context_menu;
 mod fonts;
 mod icons;
 mod app;
-mod shell_integrations;
 mod tab;
 mod tab_bar;
 mod tab_button;
@@ -11,6 +10,8 @@ mod theme;
 mod screen;
 mod widget;
 mod component;
+mod service;
+mod helpers;
 
 use env_logger::Env;
 use iced::{Size, window};

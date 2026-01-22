@@ -186,6 +186,11 @@ pub struct AppTheme {
     iced_palette: IcedColorPalette,
 }
 
+pub fn fallback_theme() -> &'static AppTheme {
+    static THEME: std::sync::OnceLock<AppTheme> = std::sync::OnceLock::new();
+    THEME.get_or_init(AppTheme::default)
+}
+
 impl Default for AppTheme {
     fn default() -> Self {
         let raw_palette = ColorPalette::default();
