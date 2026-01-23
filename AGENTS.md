@@ -9,6 +9,14 @@ General context lives in `README.md` at the repository root.
 - When touching Rust code, run `cargo fmt` followed by `cargo clippy --workspace --all-targets`. Fix warnings wherever practical.
 - Run `cargo test -p <crate>` (or `cargo test --workspace`) before submitting changes that affect logic-heavy crates like `otty-escape` or `otty-pty`.
 - Add concise documentation comments to new public items to communicate intent.
+- Prefer borrowing over cloning; pass `&T`/`&str` where possible and keep ownership at boundaries.
+- Avoid unnecessary heap allocations; use slices and references for read-only data.
+- Use `Result`/`Option` for error handling; no `unwrap()` in production code (prefer `expect()` with context during initialization).
+- Use explicit error types (e.g., with `thiserror`) and propagate with `?`.
+- Keep APIs minimal and trait-based; use associated types for event/action contracts.
+- Prefer `format!("{value}")` style interpolation for strings.
+- Document public items with concise doc comments and examples.
+- Run `cargo fmt`, `cargo clippy --workspace --all-targets`, and relevant `cargo test` targets after changes.
 
 ## Terminal emulation
 
