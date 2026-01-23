@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
+use thiserror::Error;
 
 const FALLBACK_SHELL: &str = "/bin/bash";
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
@@ -12,6 +13,66 @@ const OTTY_ZSH_SCRIPT: &str =
 const OTTY_BASH_SCRIPT: &str =
     include_str!("../../../assets/shell-integrations/otty.bash");
 
+/// Errors emitted by the shell service.
+#[derive(Debug, Error)]
+pub(crate) enum ShellError {
+    #[error("shell integration IO failed")]
+    Io(#[from] std::io::Error),
+}
+
+/// Shell session information needed to start a terminal backend.
+#[derive(Debug, Clone)]
+pub(crate) struct ShellSession {
+    pub name: String,
+    pub session: SessionKind,
+}
+
+/// Shell integration API used by the app layer.
+pub(crate) trait ShellService {
+    fn setup_session(&mut self) -> Result<ShellSession, ShellError>;
+}
+
+/// Default implementation for shell integration setup.
+#[derive(Debug, Default)]
+pub(crate) struct ShellServiceImpl;
+
+impl ShellServiceImpl {
+    pub(crate) fn new() -> Self {
+        Self
+    }
+}
+
+impl ShellService for ShellServiceImpl {
+    fn setup_session(&mut self) -> Result<ShellSession, ShellError> {
+        let shell_path =
+            env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.to_string());
+
+        let shell_name = Path::new(&shell_path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(ToString::to_string)
+            .unwrap_or_else(|| shell_path.clone());
+
+        let dir = config_dir();
+        fs::create_dir_all(&dir)?;
+
+        let session = match shell_name.as_str() {
+            "zsh" => setup_zsh_session(&shell_path, &dir)?,
+            "bash" => setup_bash_session(&shell_path, &dir)?,
+            _ => {
+                let options =
+                    LocalSessionOptions::default().with_program(&shell_path);
+                SessionKind::from_local_options(options)
+            },
+        };
+
+        Ok(ShellSession {
+            name: shell_name,
+            session,
+        })
+    }
+}
+
 fn config_dir() -> PathBuf {
     if let Ok(home) = env::var("HOME") {
         return Path::new(&home)
@@ -20,33 +81,6 @@ fn config_dir() -> PathBuf {
     }
 
     env::temp_dir().join(SHELL_INTEGRATIONS_DIR)
-}
-
-pub fn setup_shell_session() -> std::io::Result<(String, SessionKind)> {
-    let shell_path =
-        env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.to_string());
-
-    let shell_name = Path::new(&shell_path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| shell_path.clone());
-
-    let dir = config_dir();
-    // Ensure directory
-    fs::create_dir_all(&dir)?;
-
-    let session = match shell_name.as_str() {
-        "zsh" => setup_zsh_session(&shell_path, &dir)?,
-        "bash" => setup_bash_session(&shell_path, &dir)?,
-        _ => {
-            let options =
-                LocalSessionOptions::default().with_program(&shell_path);
-            SessionKind::from_local_options(options)
-        },
-    };
-
-    Ok((shell_name, session))
 }
 
 fn setup_zsh_session(

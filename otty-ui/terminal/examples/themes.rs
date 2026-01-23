@@ -1,8 +1,8 @@
 use iced::advanced::graphics::core::Element;
 use iced::widget::{button, column, container, row};
 use iced::{Length, Size, Subscription, Task, Theme, window};
+use otty_ui_term::TerminalView;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
-use otty_ui_term::{ColorPalette, TerminalView};
 
 fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)
@@ -87,9 +87,10 @@ impl App {
     fn view(&'_ self) -> Element<'_, Event, Theme, iced::Renderer> {
         let content = column![
             row![
-                button("default").width(Length::Fill).padding(8).on_press(
-                    Event::ThemeChanged(Box::new(ColorPalette::default(),))
-                ),
+                button("default")
+                    .width(Length::Fill)
+                    .padding(8)
+                    .on_press(Event::ThemeChanged(Box::default())),
                 button("ubuntu").width(Length::Fill).padding(8).on_press(
                     Event::ThemeChanged(Box::new(otty_ui_term::ColorPalette {
                         background: String::from("#300A24"),

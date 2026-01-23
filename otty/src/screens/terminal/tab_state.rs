@@ -1,50 +1,38 @@
 use std::collections::HashMap;
 
-use iced::widget::pane_grid::{self, Highlight, Line, PaneGrid};
-use iced::widget::{Stack, container, mouse_area};
-use iced::{Border, Element, Length, Point, Size, Task, Theme};
+use iced::widget::pane_grid;
+use iced::{Point, Size, Task};
 use otty_ui_term::settings::Settings;
 use otty_ui_term::{BlockCommand, SurfaceMode, TerminalView};
 
-use crate::context_menu::{self, PaneContextMenu};
-use crate::app::Event;
-use crate::theme::IcedColorPalette;
+use crate::widgets::pane_context_menu::PaneContextMenuState;
+use crate::widgets::tab::{TabPane, TerminalEntry};
+
+use super::TerminalScreenEvent;
 
 #[derive(Clone, Debug)]
-pub struct TabBlockSelection {
+pub(crate) struct TabBlockSelection {
     pub terminal_id: u64,
     pub block_id: String,
 }
 
-pub struct Tab {
-    pub id: u64,
-    pub title: String,
-    pub panes: pane_grid::State<TabPane>,
-    pub terminals: HashMap<u64, TerminalEntry>,
-    pub focus: Option<pane_grid::Pane>,
-    pub context_menu: Option<PaneContextMenu>,
+pub(crate) struct TabState {
+    id: u64,
+    title: String,
+    panes: pane_grid::State<TabPane>,
+    terminals: HashMap<u64, TerminalEntry>,
+    focus: Option<pane_grid::Pane>,
+    context_menu: Option<PaneContextMenuState>,
     selected_block: Option<TabBlockSelection>,
     default_title: String,
     grid_cursor: Option<Point>,
     grid_size: Size,
-    theme: IcedColorPalette,
-}
-
-#[derive(Debug, Clone)]
-pub struct TabPane {
-    pub terminal_id: u64,
-}
-
-pub struct TerminalEntry {
-    pub pane: pane_grid::Pane,
-    pub terminal: otty_ui_term::Terminal,
-    pub title: String,
 }
 
 #[derive(Default)]
-pub struct TabAction {
+pub(crate) struct TabAction {
     pub close_tab: bool,
-    pub task: Option<Task<Event>>,
+    pub task: Option<Task<TerminalScreenEvent>>,
 }
 
 impl TabAction {
@@ -52,7 +40,7 @@ impl TabAction {
         Self::default()
     }
 
-    pub fn with_task(task: Task<Event>) -> Self {
+    pub fn with_task(task: Task<TerminalScreenEvent>) -> Self {
         Self {
             close_tab: false,
             task: Some(task),
@@ -66,7 +54,7 @@ impl TabAction {
         }
     }
 
-    pub fn merge_task(&mut self, task: Task<Event>) {
+    pub fn merge_task(&mut self, task: Task<TerminalScreenEvent>) {
         self.task = Some(match self.task.take() {
             Some(existing) => Task::batch(vec![existing, task]),
             None => task,
@@ -74,14 +62,13 @@ impl TabAction {
     }
 }
 
-impl Tab {
+impl TabState {
     pub fn new(
         id: u64,
         default_title: String,
         terminal_id: u64,
         settings: &Settings,
-        theme: &IcedColorPalette,
-    ) -> (Self, Task<Event>) {
+    ) -> (Self, Task<TerminalScreenEvent>) {
         let terminal =
             otty_ui_term::Terminal::new(terminal_id, settings.clone())
                 .expect("failed to create the new terminal instance");
@@ -100,7 +87,7 @@ impl Tab {
             },
         );
 
-        let tab = Tab {
+        let tab = TabState {
             id,
             title: default_title.clone(),
             panes,
@@ -111,10 +98,37 @@ impl Tab {
             default_title,
             grid_cursor: None,
             grid_size: Size::ZERO,
-            theme: theme.clone(),
         };
 
         (tab, TerminalView::focus(widget_id))
+    }
+
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn panes(&self) -> &pane_grid::State<TabPane> {
+        &self.panes
+    }
+
+    pub fn terminals(&self) -> &HashMap<u64, TerminalEntry> {
+        &self.terminals
+    }
+
+    pub fn focus(&self) -> Option<pane_grid::Pane> {
+        self.focus
+    }
+
+    pub fn context_menu(&self) -> Option<&PaneContextMenuState> {
+        self.context_menu.as_ref()
+    }
+
+    pub fn selected_block(&self) -> Option<&TabBlockSelection> {
+        self.selected_block.as_ref()
     }
 
     pub fn contains_terminal(&self, id: u64) -> bool {
@@ -146,10 +160,6 @@ impl Tab {
         self.selected_block.as_ref().map(|sel| sel.terminal_id)
     }
 
-    pub fn selected_block(&self) -> Option<&TabBlockSelection> {
-        self.selected_block.as_ref()
-    }
-
     pub fn set_selected_block(&mut self, terminal_id: u64, block_id: String) {
         self.selected_block = Some(TabBlockSelection {
             terminal_id,
@@ -170,85 +180,6 @@ impl Tab {
         {
             self.selected_block = None;
         }
-    }
-
-    pub fn view_with_selection(
-        &self,
-        selected_block_terminal: Option<u64>,
-    ) -> Element<'_, Event, Theme, iced::Renderer> {
-        let tab_id = self.id;
-        let tab_ref = self;
-
-        let pane_grid =
-            PaneGrid::new(&self.panes, move |pane, pane_state, _| {
-                let is_focused = tab_ref.focus == Some(pane);
-                let content =
-                    tab_ref.view_single_pane(pane, pane_state, is_focused);
-
-                pane_grid::Content::new(content)
-            })
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .spacing(1.0)
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                let mut separator = palette.background.weak.text;
-                separator.a = 0.25;
-
-                pane_grid::Style {
-                    hovered_region: Highlight {
-                        background: separator.into(),
-                        border: Border::default(),
-                    },
-                    picked_split: Line {
-                        color: separator,
-                        width: 1.0,
-                    },
-                    hovered_split: Line {
-                        color: separator,
-                        width: 1.0,
-                    },
-                }
-            })
-            .on_resize(12.0, move |event| Event::PaneResized { tab_id, event });
-
-        let pane_grid = container(pane_grid)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                let mut separator = palette.background.weak.text;
-                separator.a = 0.25;
-
-                iced::widget::container::Style {
-                    background: Some(separator.into()),
-                    ..Default::default()
-                }
-            })
-            .into();
-
-        let mut layers = vec![pane_grid];
-
-        if let Some(menu) = &self.context_menu {
-            let selection = if selected_block_terminal == Some(menu.terminal_id)
-            {
-                self.selected_block().cloned()
-            } else {
-                None
-            };
-            layers.push(context_menu::overlay(tab_id, menu, selection));
-        }
-
-        let stack_widget = Stack::with_children(layers)
-            .width(Length::Fill)
-            .height(Length::Fill);
-
-        mouse_area(stack_widget)
-            .on_move(move |position| Event::PaneGridCursorMoved {
-                tab_id,
-                position,
-            })
-            .into()
     }
 
     pub fn split_pane(
@@ -355,11 +286,10 @@ impl Tab {
         );
         action.merge_task(select_task);
 
-        let menu_state = PaneContextMenu::new(
+        let menu_state = PaneContextMenuState::new(
             pane,
             cursor,
             self.grid_size,
-            &self.theme.clone(),
             terminal_id,
         );
         action.merge_task(menu_state.focus_task());
@@ -436,62 +366,6 @@ impl Tab {
     #[cfg(test)]
     pub(crate) fn grid_size(&self) -> Size {
         self.grid_size
-    }
-
-    fn view_single_pane(
-        &self,
-        pane: pane_grid::Pane,
-        pane_state: &TabPane,
-        is_focused: bool,
-    ) -> Element<'_, Event, Theme, iced::Renderer> {
-        let terminal_entry = self
-            .terminals
-            .get(&pane_state.terminal_id)
-            .expect("terminal missing for pane");
-
-        let tab_id = self.id;
-        let pane_id = pane;
-        let terminal_id = pane_state.terminal_id;
-        let focus_event = Event::PaneClicked {
-            tab_id,
-            pane: pane_id,
-        };
-
-        let terminal_view =
-            TerminalView::show(&terminal_entry.terminal).map(Event::Terminal);
-        let terminal_area = mouse_area(terminal_view)
-            .on_press(focus_event.clone())
-            .on_right_press(Event::OpenPaneContextMenu {
-                tab_id,
-                pane: pane_id,
-                terminal_id,
-            })
-            .into();
-
-        let mut stack_widget = Stack::with_children(vec![terminal_area]);
-        stack_widget = stack_widget.width(Length::Fill).height(Length::Fill);
-
-        container(stack_widget)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(move |theme: &Theme| {
-                let palette = theme.extended_palette();
-                let border_color = if is_focused {
-                    palette.primary.strong.color
-                } else {
-                    palette.background.strong.color
-                };
-
-                iced::widget::container::Style {
-                    border: iced::Border {
-                        width: 1.0,
-                        color: border_color,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }
-            })
-            .into()
     }
 
     fn set_focus_on_pane(

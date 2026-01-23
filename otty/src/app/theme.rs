@@ -178,17 +178,20 @@ impl From<&ColorPalette> for IcedColorPalette {
     }
 }
 
+/// Optional overrides for widget/component styling.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct StyleOverrides {
+    pub background: Option<Color>,
+    pub foreground: Option<Color>,
+    pub border_radius: Option<f32>,
+}
+
 /// Global application theme shared between UI and terminal.
 #[derive(Debug, Clone)]
 pub struct AppTheme {
     id: String,
     raw_palette: ColorPalette,
     iced_palette: IcedColorPalette,
-}
-
-pub fn fallback_theme() -> &'static AppTheme {
-    static THEME: std::sync::OnceLock<AppTheme> = std::sync::OnceLock::new();
-    THEME.get_or_init(AppTheme::default)
 }
 
 impl Default for AppTheme {
@@ -231,6 +234,22 @@ impl AppTheme {
 
     pub fn iced_palette(&self) -> &IcedColorPalette {
         &self.iced_palette
+    }
+}
+
+/// Theme props passed through App -> Screen -> Widget -> Component.
+#[derive(Debug, Clone, Copy)]
+pub struct ThemeProps<'a> {
+    pub theme: &'a AppTheme,
+    pub overrides: Option<StyleOverrides>,
+}
+
+impl<'a> ThemeProps<'a> {
+    pub fn new(theme: &'a AppTheme) -> Self {
+        Self {
+            theme,
+            overrides: None,
+        }
     }
 }
 

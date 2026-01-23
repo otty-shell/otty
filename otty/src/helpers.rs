@@ -16,5 +16,5 @@ pub fn ellipsize(s: &str) -> String {
         .rev()
         .collect();
 
-    format!("..{}", tail)
+    format!("..{tail}")
 }

@@ -1,19 +1,26 @@
 use iced::alignment;
-use iced::widget::{Space, button, container, row, stack};
+use iced::border::Radius;
 use iced::widget::text::Wrapping;
-use iced::{Alignment, Length, Element, widget::{svg, text}};
+use iced::widget::{Space, button, container, row, stack};
+use iced::{
+    Alignment, Element, Length,
+    widget::{svg, text},
+};
 
-use crate::theme::fallback_theme;
-use crate::{icons, theme::{AppTheme, IcedColorPalette}, helpers::ellipsize};
+use crate::app::theme::{StyleOverrides, ThemeProps};
+use crate::helpers::ellipsize;
+use crate::icons;
 
+/// UI events emitted by a tab button.
 #[derive(Debug, Clone)]
-pub enum Event {
+pub(crate) enum TabButtonEvent {
     ActivateTab(u64),
     CloseTab(u64),
 }
 
-#[derive(Debug, Clone)]
-pub struct Metrics {
+/// Layout metrics for a tab button.
+#[derive(Debug, Clone, Copy)]
+struct TabButtonMetrics {
     height: f32,
     width: f32,
     padding: f32,
@@ -24,7 +31,7 @@ pub struct Metrics {
     close_button_padding: f32,
 }
 
-impl Default for Metrics {
+impl Default for TabButtonMetrics {
     fn default() -> Self {
         Self {
             height: 25.0,
@@ -39,41 +46,38 @@ impl Default for Metrics {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct TabButton<'a> {
-    id: u64,
-    title: &'a str,
-    is_active: bool,
-    theme: Option<&'a AppTheme>,
-    metrics: Metrics,
+/// Props for rendering a tab button.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TabButtonProps<'a> {
+    pub(crate) id: u64,
+    pub(crate) title: &'a str,
+    pub(crate) is_active: bool,
+    pub(crate) theme: ThemeProps<'a>,
+}
+
+/// A clickable tab pill with close affordance.
+pub(crate) struct TabButton<'a> {
+    props: TabButtonProps<'a>,
+    metrics: TabButtonMetrics,
 }
 
 impl<'a> TabButton<'a> {
-    pub fn new(
-        id: u64,
-        title: &'a str,
-    ) -> Self {
+    pub fn new(props: TabButtonProps<'a>) -> Self {
         Self {
-            id,
-            title,
-            ..Default::default()
+            props,
+            metrics: TabButtonMetrics::default(),
         }
     }
 
-    pub fn theme(mut self, theme: &'a AppTheme) -> Self {
-        self.theme = Some(theme);
-        self
-    }
+    pub fn view(self) -> Element<'a, TabButtonEvent> {
+        let palette = self.props.theme.theme.iced_palette();
+        let foreground = palette.foreground;
+        let dim_foreground = palette.dim_foreground;
+        let red = palette.red;
+        let background = palette.background;
+        let dim_black = palette.dim_black;
 
-    pub fn active(mut self, val: bool) -> Self {
-        self.is_active = val;
-        self
-    }
-
-    pub fn view(self) -> Element<'a, Event> {
-        let theme = self.theme.unwrap_or(fallback_theme());
-
-        let label = text(ellipsize(self.title))
+        let label = text(ellipsize(self.props.title))
             .size(self.metrics.label_font_size)
             .width(Length::Fill)
             .height(Length::Shrink)
@@ -86,14 +90,14 @@ impl<'a> TabButton<'a> {
             .width(Length::Fixed(self.metrics.close_icon_size))
             .height(Length::Fixed(self.metrics.close_icon_size))
             .style({
-                let theme = theme.iced_palette().clone();
+                let is_active = self.props.is_active;
                 move |_, status| {
                     let color = if status == svg::Status::Hovered {
-                        theme.red
-                    } else if self.is_active {
-                        theme.foreground
+                        red
+                    } else if is_active {
+                        foreground
                     } else {
-                        theme.dim_foreground
+                        dim_foreground
                     };
 
                     svg::Style { color: Some(color) }
@@ -107,7 +111,7 @@ impl<'a> TabButton<'a> {
             .align_y(alignment::Vertical::Center);
 
         let close_button = button(close_icon_view)
-            .on_press(Event::CloseTab(self.id))
+            .on_press(TabButtonEvent::CloseTab(self.props.id))
             .padding(self.metrics.close_button_padding)
             .height(Length::Fill)
             .style(|_, _| iced::widget::button::Style::default());
@@ -115,7 +119,8 @@ impl<'a> TabButton<'a> {
         let close_button_row = row![
             Space::new().width(Length::Fill),
             close_button,
-            Space::new().width(Length::Fixed(self.metrics.close_button_right_padding))
+            Space::new()
+                .width(Length::Fixed(self.metrics.close_button_right_padding))
         ]
         .width(Length::Fill)
         .height(Length::Fill)
@@ -135,18 +140,18 @@ impl<'a> TabButton<'a> {
             .width(Length::Fill)
             .height(Length::Fill)
             .style({
-                let theme = theme.iced_palette().clone();
+                let overrides = self.props.theme.overrides;
                 move |_| {
-                    if self.is_active {
-                        active_tab_style(&theme)
+                    if self.props.is_active {
+                        tab_style(background, foreground, overrides)
                     } else {
-                        inactive_tab_style(&theme)
+                        tab_style(dim_black, dim_foreground, overrides)
                     }
                 }
             });
 
         button(pill)
-            .on_press(Event::ActivateTab(self.id))
+            .on_press(TabButtonEvent::ActivateTab(self.props.id))
             .padding(self.metrics.padding)
             .width(self.metrics.width)
             .height(self.metrics.height)
@@ -154,22 +159,28 @@ impl<'a> TabButton<'a> {
     }
 }
 
-fn active_tab_style(
-    theme: &IcedColorPalette,
+fn tab_style(
+    background: iced::Color,
+    foreground: iced::Color,
+    overrides: Option<StyleOverrides>,
 ) -> iced::widget::container::Style {
-    iced::widget::container::Style {
-        background: Some(theme.background.into()),
-        text_color: Some(theme.foreground),
+    let mut style = iced::widget::container::Style {
+        background: Some(background.into()),
+        text_color: Some(foreground),
         ..Default::default()
-    }
-}
+    };
 
-fn inactive_tab_style(
-    theme: &IcedColorPalette,
-) -> iced::widget::container::Style {
-    iced::widget::container::Style {
-        background: Some(theme.dim_black.into()),
-        text_color: Some(theme.dim_foreground),
-        ..Default::default()
+    if let Some(overrides) = overrides {
+        if let Some(color) = overrides.background {
+            style.background = Some(color.into());
+        }
+        if let Some(color) = overrides.foreground {
+            style.text_color = Some(color);
+        }
+        if let Some(radius) = overrides.border_radius {
+            style.border.radius = Radius::new(radius);
+        }
     }
+
+    style
 }

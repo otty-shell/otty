@@ -4,13 +4,13 @@ use iced::{
 };
 
 pub(crate) const TERM_FONT_JET_BRAINS_BYTES: &[u8] = include_bytes!(
-    "../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"
+    "../../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"
 );
 
 #[derive(Debug, Clone)]
-pub struct UiFonts {
-    pub _font_type: Font,
-    pub size: f32,
+pub(crate) struct UiFonts {
+    pub(crate) _font_type: Font,
+    pub(crate) size: f32,
 }
 
 impl Default for UiFonts {
@@ -23,9 +23,9 @@ impl Default for UiFonts {
 }
 
 #[derive(Debug, Clone)]
-pub struct TerminalFonts {
-    pub font_type: Font,
-    pub size: f32,
+pub(crate) struct TerminalFonts {
+    pub(crate) font_type: Font,
+    pub(crate) size: f32,
 }
 
 impl Default for TerminalFonts {
@@ -42,7 +42,7 @@ impl Default for TerminalFonts {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct FontsConfig {
-    pub ui: UiFonts,
-    pub terminal: TerminalFonts,
+pub(crate) struct FontsConfig {
+    pub(crate) ui: UiFonts,
+    pub(crate) terminal: TerminalFonts,
 }
