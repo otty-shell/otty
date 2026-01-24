@@ -47,10 +47,10 @@ impl Default for TabButtonMetrics {
 }
 
 /// Props for rendering a tab button.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct TabButtonProps<'a> {
     pub(crate) id: u64,
-    pub(crate) title: &'a str,
+    pub(crate) title: String,
     pub(crate) is_active: bool,
     pub(crate) theme: ThemeProps<'a>,
 }
@@ -77,7 +77,7 @@ impl<'a> TabButton<'a> {
         let background = palette.background;
         let dim_black = palette.dim_black;
 
-        let label = text(ellipsize(self.props.title))
+        let label = text(ellipsize(&self.props.title))
             .size(self.metrics.label_font_size)
             .width(Length::Fill)
             .height(Length::Shrink)

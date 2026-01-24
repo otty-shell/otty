@@ -32,9 +32,9 @@ impl Default for TabBarMetrics {
 }
 
 /// Props for rendering the tab bar.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct TabBarProps<'a> {
-    pub(crate) tabs: &'a [TabSummary],
+    pub(crate) tabs: Vec<TabSummary>,
     pub(crate) active_tab_id: u64,
     pub(crate) theme: ThemeProps<'a>,
     pub(crate) metrics: TabBarMetrics,
@@ -50,13 +50,13 @@ impl<'a> TabBar<'a> {
         Self { props }
     }
 
-    pub fn view(&self) -> Element<'a, TabBarEvent> {
+    pub fn view(self) -> Element<'a, TabBarEvent> {
         let mut tabs_row = row![].spacing(0);
 
-        for tab in self.props.tabs {
+        for tab in &self.props.tabs {
             let tab_props = TabButtonProps {
                 id: tab.id,
-                title: tab.title.as_str(),
+                title: tab.title.clone(),
                 is_active: self.props.active_tab_id == tab.id,
                 theme: self.props.theme,
             };

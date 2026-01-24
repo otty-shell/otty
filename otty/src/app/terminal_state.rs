@@ -5,10 +5,9 @@ use iced::{Point, Size, Task};
 use otty_ui_term::settings::Settings;
 use otty_ui_term::{BlockCommand, SurfaceMode, TerminalView};
 
+use crate::app::state::AppEvent;
 use crate::widgets::pane_context_menu::PaneContextMenuState;
 use crate::widgets::tab::{TabPane, TerminalEntry};
-
-use super::TerminalScreenEvent;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TabBlockSelection {
@@ -16,8 +15,7 @@ pub(crate) struct TabBlockSelection {
     pub block_id: String,
 }
 
-pub(crate) struct TabState {
-    id: u64,
+pub(crate) struct TerminalTabState {
     title: String,
     panes: pane_grid::State<TabPane>,
     terminals: HashMap<u64, TerminalEntry>,
@@ -32,7 +30,7 @@ pub(crate) struct TabState {
 #[derive(Default)]
 pub(crate) struct TabAction {
     pub close_tab: bool,
-    pub task: Option<Task<TerminalScreenEvent>>,
+    pub task: Option<Task<AppEvent>>,
 }
 
 impl TabAction {
@@ -40,7 +38,7 @@ impl TabAction {
         Self::default()
     }
 
-    pub fn with_task(task: Task<TerminalScreenEvent>) -> Self {
+    pub fn with_task(task: Task<AppEvent>) -> Self {
         Self {
             close_tab: false,
             task: Some(task),
@@ -54,7 +52,7 @@ impl TabAction {
         }
     }
 
-    pub fn merge_task(&mut self, task: Task<TerminalScreenEvent>) {
+    pub fn merge_task(&mut self, task: Task<AppEvent>) {
         self.task = Some(match self.task.take() {
             Some(existing) => Task::batch(vec![existing, task]),
             None => task,
@@ -62,13 +60,12 @@ impl TabAction {
     }
 }
 
-impl TabState {
+impl TerminalTabState {
     pub fn new(
-        id: u64,
         default_title: String,
         terminal_id: u64,
         settings: &Settings,
-    ) -> (Self, Task<TerminalScreenEvent>) {
+    ) -> (Self, Task<AppEvent>) {
         let terminal =
             otty_ui_term::Terminal::new(terminal_id, settings.clone())
                 .expect("failed to create the new terminal instance");
@@ -87,8 +84,7 @@ impl TabState {
             },
         );
 
-        let tab = TabState {
-            id,
+        let tab = TerminalTabState {
             title: default_title.clone(),
             panes,
             terminals,
@@ -101,10 +97,6 @@ impl TabState {
         };
 
         (tab, TerminalView::focus(widget_id))
-    }
-
-    pub fn id(&self) -> u64 {
-        self.id
     }
 
     pub fn title(&self) -> &str {

@@ -5,34 +5,30 @@ use iced::{Element, Length, Size, Subscription, Task, Theme, window};
 
 use crate::app::config::AppConfig;
 use crate::app::fonts::FontsConfig;
-use crate::app::theme::{ThemeManager, ThemeProps};
-use crate::screens::terminal::{
-    TerminalScreen, TerminalScreenAction, TerminalScreenEvent,
-    TerminalScreenUpdate,
+use crate::app::tabs::{
+    TabContent, TabKind, WorkspaceEvent, WorkspaceState, tab_reducer,
+    terminal_reducer, workspace_reducer,
 };
+use crate::app::theme::{ThemeManager, ThemeProps};
+use crate::screens::terminal;
 use crate::services::ServiceRegistry;
 use crate::widgets::action_bar::{
     ActionBar, ActionBarEvent, ActionBarMetrics, ActionBarProps,
 };
+use crate::widgets::tab::TabEvent;
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
 const RESIZE_EDGE_MOUSE_AREA_THICKNESS: f32 = 6.0;
 const RESIZE_CORNER_MOUSE_AREA_THICKNESS: f32 = 12.0;
 
-/// Represents the currently active high-level view.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ActiveView {
-    #[default]
-    Terminal,
-}
-
 /// App-wide events that drive the root update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum AppEvent {
     IcedReady,
     ActionBar(ActionBarEvent),
-    TerminalScreen(TerminalScreenEvent),
+    Tab(TabEvent),
+    Terminal(otty_ui_term::Event),
     Window(window::Event),
     ResizeWindow(Direction),
 }
@@ -48,12 +44,11 @@ pub(crate) enum AppCommand {
 
 pub(crate) struct App {
     window_size: Size,
-    active_view: ActiveView,
     theme_manager: ThemeManager,
     fonts: FontsConfig,
     _services: ServiceRegistry,
-    _config: AppConfig,
-    terminal_screen: TerminalScreen,
+    config: AppConfig,
+    workspace: WorkspaceState,
     is_fullscreen: bool,
 }
 
@@ -76,16 +71,15 @@ impl App {
             height: MIN_WINDOW_HEIGHT,
         };
         let screen_size = Self::screen_size_from_window(window_size);
-        let terminal_screen = TerminalScreen::new(config.clone(), screen_size);
+        let workspace = WorkspaceState::new(window_size, screen_size);
 
         let app = App {
             window_size,
-            active_view: ActiveView::default(),
             theme_manager,
             fonts,
             _services: services,
-            _config: config,
-            terminal_screen,
+            config,
+            workspace,
             is_fullscreen: false,
         };
 
@@ -101,31 +95,44 @@ impl App {
     }
 
     pub(crate) fn subscription(&self) -> Subscription<AppEvent> {
-        let screen_subs = self
-            .terminal_screen
-            .subscription()
-            .map(AppEvent::TerminalScreen);
+        let mut subscriptions = Vec::new();
+        for tab_id in &self.workspace.tabs {
+            if let Some(tab) = self.workspace.tab_items.get(tab_id) {
+                let TabContent::Terminal(terminal) = &tab.content;
+                for entry in terminal.terminals().values() {
+                    subscriptions.push(entry.terminal.subscription());
+                }
+            }
+        }
+
+        let terminal_subs =
+            Subscription::batch(subscriptions).map(AppEvent::Terminal);
         let win_subs =
             window::events().map(|(_id, event)| AppEvent::Window(event));
 
-        Subscription::batch(vec![screen_subs, win_subs])
+        Subscription::batch(vec![terminal_subs, win_subs])
     }
 
     pub(crate) fn update(&mut self, event: AppEvent) -> Task<AppEvent> {
         match event {
-            AppEvent::IcedReady => {
-                let update =
-                    self.terminal_screen.update(TerminalScreenEvent::NewTab);
-                self.handle_screen_update(update)
-            },
+            AppEvent::IcedReady => workspace_reducer(
+                &mut self.workspace,
+                &self.config,
+                WorkspaceEvent::NewTab {
+                    kind: TabKind::Terminal,
+                },
+            ),
             AppEvent::ActionBar(event) => self.handle_action_bar(event),
-            AppEvent::TerminalScreen(event) => {
-                let update = self.terminal_screen.update(event);
-                self.handle_screen_update(update)
+            AppEvent::Tab(event) => {
+                tab_reducer(&mut self.workspace, &self.config, event)
+            },
+            AppEvent::Terminal(event) => {
+                terminal_reducer(&mut self.workspace, &self.config, event)
             },
             AppEvent::Window(window::Event::Resized(size)) => {
                 self.window_size = size;
-                self.terminal_screen
+                self.workspace.window_size = size;
+                self.workspace
                     .set_screen_size(Self::screen_size_from_window(size));
                 Task::none()
             },
@@ -141,8 +148,7 @@ impl App {
         let mut metrics = ActionBarMetrics::default();
         metrics.title_font_size = self.fonts.ui.size * 0.9;
 
-        let header_title =
-            self.terminal_screen.active_tab_title().unwrap_or("OTTY");
+        let header_title = self.workspace.active_tab_title().unwrap_or("OTTY");
 
         let header = ActionBar::new(ActionBarProps {
             title: header_title,
@@ -152,13 +158,7 @@ impl App {
         .view()
         .map(AppEvent::ActionBar);
 
-        let main_content: Element<AppEvent, Theme, iced::Renderer> =
-            match self.active_view {
-                ActiveView::Terminal => self
-                    .terminal_screen
-                    .view(theme_props)
-                    .map(AppEvent::TerminalScreen),
-            };
+        let main_content = terminal::view(&self.workspace, theme_props);
 
         let content_row =
             row![main_content].width(Length::Fill).height(Length::Fill);
@@ -176,11 +176,13 @@ impl App {
 
     fn handle_action_bar(&mut self, event: ActionBarEvent) -> Task<AppEvent> {
         match event {
-            ActionBarEvent::NewTab => {
-                let update =
-                    self.terminal_screen.update(TerminalScreenEvent::NewTab);
-                self.handle_screen_update(update)
-            },
+            ActionBarEvent::NewTab => workspace_reducer(
+                &mut self.workspace,
+                &self.config,
+                WorkspaceEvent::NewTab {
+                    kind: TabKind::Terminal,
+                },
+            ),
             ActionBarEvent::ToggleFullScreen => {
                 self.apply_command(AppCommand::ToggleFullScreen)
             },
@@ -194,25 +196,6 @@ impl App {
                 self.apply_command(AppCommand::StartWindowDrag)
             },
         }
-    }
-
-    fn handle_screen_update(
-        &mut self,
-        update: TerminalScreenUpdate,
-    ) -> Task<AppEvent> {
-        let mut tasks = vec![update.task.map(AppEvent::TerminalScreen)];
-
-        match update.action {
-            TerminalScreenAction::ActivateView => {
-                self.active_view = ActiveView::Terminal;
-            },
-            TerminalScreenAction::CloseWindow => {
-                tasks.push(self.apply_command(AppCommand::CloseWindow));
-            },
-            TerminalScreenAction::None => {},
-        }
-
-        Task::batch(tasks)
     }
 
     fn apply_command(&mut self, command: AppCommand) -> Task<AppEvent> {

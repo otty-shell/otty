@@ -15,6 +15,12 @@ use crate::widgets::pane_context_menu::{
 #[derive(Debug, Clone)]
 pub(crate) enum TabEvent {
     Terminal(otty_ui_term::Event),
+    ActivateTab {
+        tab_id: u64,
+    },
+    CloseTab {
+        tab_id: u64,
+    },
     PaneClicked {
         tab_id: u64,
         pane: pane_grid::Pane,
