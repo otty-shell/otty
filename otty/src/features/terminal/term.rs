@@ -1,78 +1,61 @@
 use std::collections::HashMap;
 
-use iced::widget::pane_grid;
-use iced::{Point, Size, Task};
-use otty_ui_term::settings::Settings;
-use otty_ui_term::{BlockCommand, SurfaceMode, TerminalView};
+use iced::{Point, Size, Task, widget::pane_grid};
+use otty_ui_term::{
+    BlockCommand, SurfaceMode, TerminalView, settings::Settings,
+};
 
-use crate::app::state::AppEvent;
-use crate::widgets::pane_context_menu::PaneContextMenuState;
-use crate::widgets::tab::{TabPane, TerminalEntry};
+use crate::{
+    app::Event as AppEvent, features::tab::TabEvent,
+    features::terminal::pane_context_menu::PaneContextMenuState,
+};
+
+/// Per-pane data stored inside a tab's pane grid.
+#[derive(Debug, Clone)]
+pub(crate) struct Pane {
+    pub(crate) terminal_id: u64,
+}
+
+/// Terminal entry used by the tab view.
+pub(crate) struct TerminalEntry {
+    pub(crate) pane: pane_grid::Pane,
+    pub(crate) terminal: otty_ui_term::Terminal,
+    pub(crate) title: String,
+}
 
 #[derive(Clone, Debug)]
-pub(crate) struct TabBlockSelection {
+pub(crate) struct BlockSelection {
     pub terminal_id: u64,
     pub block_id: String,
 }
 
-pub(crate) struct TerminalTabState {
+pub(crate) struct TerminalState {
+    tab_id: u64,
     title: String,
-    panes: pane_grid::State<TabPane>,
+    terminal_settings: Settings,
+    panes: pane_grid::State<Pane>,
     terminals: HashMap<u64, TerminalEntry>,
     focus: Option<pane_grid::Pane>,
     context_menu: Option<PaneContextMenuState>,
-    selected_block: Option<TabBlockSelection>,
+    selected_block: Option<BlockSelection>,
     default_title: String,
     grid_cursor: Option<Point>,
     grid_size: Size,
 }
 
-#[derive(Default)]
-pub(crate) struct TabAction {
-    pub close_tab: bool,
-    pub task: Option<Task<AppEvent>>,
-}
-
-impl TabAction {
-    pub fn none() -> Self {
-        Self::default()
-    }
-
-    pub fn with_task(task: Task<AppEvent>) -> Self {
-        Self {
-            close_tab: false,
-            task: Some(task),
-        }
-    }
-
-    pub fn close_tab() -> Self {
-        Self {
-            close_tab: true,
-            task: None,
-        }
-    }
-
-    pub fn merge_task(&mut self, task: Task<AppEvent>) {
-        self.task = Some(match self.task.take() {
-            Some(existing) => Task::batch(vec![existing, task]),
-            None => task,
-        });
-    }
-}
-
-impl TerminalTabState {
+impl TerminalState {
     pub fn new(
+        tab_id: u64,
         default_title: String,
         terminal_id: u64,
-        settings: &Settings,
+        settings: Settings,
     ) -> (Self, Task<AppEvent>) {
         let terminal =
             otty_ui_term::Terminal::new(terminal_id, settings.clone())
                 .expect("failed to create the new terminal instance");
         let widget_id = terminal.widget_id().clone();
 
-        let (panes, initial_pane) =
-            pane_grid::State::new(TabPane { terminal_id });
+        let (panes, initial_pane) = pane_grid::State::new(Pane { terminal_id });
 
         let mut terminals = HashMap::new();
         terminals.insert(
@@ -84,8 +67,10 @@ impl TerminalTabState {
             },
         );
 
-        let tab = TerminalTabState {
+        let tab = TerminalState {
+            tab_id,
             title: default_title.clone(),
+            terminal_settings: settings,
             panes,
             terminals,
             focus: Some(initial_pane),
@@ -103,7 +88,7 @@ impl TerminalTabState {
         &self.title
     }
 
-    pub fn panes(&self) -> &pane_grid::State<TabPane> {
+    pub fn panes(&self) -> &pane_grid::State<Pane> {
         &self.panes
     }
 
@@ -119,7 +104,7 @@ impl TerminalTabState {
         self.context_menu.as_ref()
     }
 
-    pub fn selected_block(&self) -> Option<&TabBlockSelection> {
+    pub fn selected_block(&self) -> Option<&BlockSelection> {
         self.selected_block.as_ref()
     }
 
@@ -153,7 +138,7 @@ impl TerminalTabState {
     }
 
     pub fn set_selected_block(&mut self, terminal_id: u64, block_id: String) {
-        self.selected_block = Some(TabBlockSelection {
+        self.selected_block = Some(BlockSelection {
             terminal_id,
             block_id,
         });
@@ -179,14 +164,15 @@ impl TerminalTabState {
         pane: pane_grid::Pane,
         axis: pane_grid::Axis,
         terminal_id: u64,
-        settings: &Settings,
-    ) -> TabAction {
-        let split = self.panes.split(axis, pane, TabPane { terminal_id });
+    ) -> Task<AppEvent> {
+        let split = self.panes.split(axis, pane, Pane { terminal_id });
 
         if let Some((new_pane, _)) = split {
-            let terminal =
-                otty_ui_term::Terminal::new(terminal_id, settings.clone())
-                    .expect("failed to create the new terminal instance");
+            let terminal = otty_ui_term::Terminal::new(
+                terminal_id,
+                self.terminal_settings.clone(),
+            )
+            .expect("failed to create the new terminal instance");
             let widget_id = terminal.widget_id().clone();
 
             self.terminals.insert(
@@ -201,15 +187,17 @@ impl TerminalTabState {
             self.context_menu = None;
             self.update_title_from_terminal(Some(terminal_id));
 
-            return TabAction::with_task(TerminalView::focus(widget_id));
+            return TerminalView::focus(widget_id);
         }
 
-        TabAction::none()
+        Task::none()
     }
 
-    pub fn close_pane(&mut self, pane: pane_grid::Pane) -> TabAction {
+    pub fn close_pane(&mut self, pane: pane_grid::Pane) -> Task<AppEvent> {
         if self.panes.len() == 1 {
-            return TabAction::close_tab();
+            return Task::done(AppEvent::Tab(TabEvent::CloseTab {
+                tab_id: self.tab_id,
+            }));
         }
 
         let result = self.panes.close(pane);
@@ -226,20 +214,18 @@ impl TerminalTabState {
                     if let Some(entry) = self.terminals.get(&next_id) {
                         let widget_id = entry.terminal.widget_id().clone();
                         self.update_title_from_terminal(Some(next_id));
-                        return TabAction::with_task(TerminalView::focus(
-                            widget_id,
-                        ));
+                        return TerminalView::focus(widget_id);
                     }
                 }
             }
 
-            return TabAction::none();
+            return Task::none();
         }
 
-        TabAction::none()
+        Task::none()
     }
 
-    pub fn focus_pane(&mut self, pane: pane_grid::Pane) -> TabAction {
+    pub fn focus_pane(&mut self, pane: pane_grid::Pane) -> Task<AppEvent> {
         self.set_focus_on_pane(pane, true, true)
     }
 
@@ -251,7 +237,7 @@ impl TerminalTabState {
         &mut self,
         pane: pane_grid::Pane,
         terminal_id: u64,
-    ) -> TabAction {
+    ) -> Task<AppEvent> {
         let Some((widget_id, snapshot)) =
             self.terminals.get(&terminal_id).map(|entry| {
                 (
@@ -260,13 +246,13 @@ impl TerminalTabState {
                 )
             })
         else {
-            return TabAction::none();
+            return Task::none();
         };
         if snapshot.view().mode.contains(SurfaceMode::ALT_SCREEN) {
-            return TabAction::none();
+            return Task::none();
         }
 
-        let mut action = self.set_focus_on_pane(pane, false, false);
+        let focus_task = self.set_focus_on_pane(pane, false, false);
 
         let cursor = self.grid_cursor.unwrap_or_else(|| {
             Point::new(self.grid_size.width / 2.0, self.grid_size.height / 2.0)
@@ -276,7 +262,6 @@ impl TerminalTabState {
             widget_id.clone(),
             BlockCommand::SelectHovered,
         );
-        action.merge_task(select_task);
 
         let menu_state = PaneContextMenuState::new(
             pane,
@@ -284,27 +269,26 @@ impl TerminalTabState {
             self.grid_size,
             terminal_id,
         );
-        action.merge_task(menu_state.focus_task());
+        let menu_focus_task = menu_state.focus_task();
         self.context_menu = Some(menu_state);
 
-        action
+        Task::batch(vec![focus_task, select_task, menu_focus_task])
     }
 
-    pub fn close_context_menu(&mut self) -> TabAction {
+    pub fn close_context_menu(&mut self) -> Task<AppEvent> {
         if self.context_menu.take().is_some() {
             if let Some(pane) = self.focus {
                 return self.set_focus_on_pane(pane, false, true);
             }
         }
 
-        TabAction::none()
+        Task::none()
     }
 
     pub fn handle_terminal_event(
         &mut self,
         event: otty_ui_term::Event,
-        shell_name: &str,
-    ) -> TabAction {
+    ) -> Task<AppEvent> {
         use otty_ui_term::Event::*;
 
         let terminal_id = *event.terminal_id();
@@ -325,7 +309,7 @@ impl TerminalTabState {
                 }
             },
             ResetTitle { .. } => {
-                let reset_title = shell_name.to_string();
+                let reset_title = self.default_title.clone();
                 if let Some(entry) = self.terminal_entry_mut(terminal_id) {
                     entry.title = reset_title.clone();
                 }
@@ -340,12 +324,12 @@ impl TerminalTabState {
             },
         }
 
-        TabAction::none()
+        Task::none()
     }
 
-    pub fn update_grid_cursor(&mut self, position: Point) -> TabAction {
+    pub fn update_grid_cursor(&mut self, position: Point) -> Task<AppEvent> {
         self.grid_cursor = Some(Self::clamp_point(position, self.grid_size));
-        TabAction::none()
+        Task::none()
     }
 
     pub fn set_grid_size(&mut self, size: Size) {
@@ -356,6 +340,7 @@ impl TerminalTabState {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn grid_size(&self) -> Size {
         self.grid_size
     }
@@ -364,10 +349,10 @@ impl TerminalTabState {
         &mut self,
         pane: pane_grid::Pane,
         close_menu: bool,
-        focus_terminal: bool,
-    ) -> TabAction {
+        focus_terminal_widget: bool,
+    ) -> Task<AppEvent> {
         let Some(terminal_id) = self.pane_terminal_id(pane) else {
-            return TabAction::none();
+            return Task::none();
         };
 
         self.focus = Some(pane);
@@ -376,15 +361,13 @@ impl TerminalTabState {
         }
         self.update_title_from_terminal(Some(terminal_id));
 
-        if focus_terminal {
+        if focus_terminal_widget {
             if let Some(entry) = self.terminals.get(&terminal_id) {
-                return TabAction::with_task(TerminalView::focus(
-                    entry.terminal.widget_id().clone(),
-                ));
+                return TerminalView::focus(entry.terminal.widget_id().clone());
             }
         }
 
-        TabAction::none()
+        Task::none()
     }
 
     fn update_title_from_terminal(&mut self, terminal_id: Option<u64>) {

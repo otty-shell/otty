@@ -2,7 +2,7 @@ use iced::widget::button::Status as ButtonStatus;
 use iced::widget::{button, text};
 use iced::{Element, Length, alignment};
 
-use crate::app::theme::ThemeProps;
+use crate::theme::{IcedColorPalette, ThemeProps};
 
 /// UI events emitted by a menu item.
 #[derive(Debug, Clone)]
@@ -69,7 +69,7 @@ impl<'a> MenuItem<'a> {
 }
 
 fn menu_button_style(
-    palette: &crate::app::theme::IcedColorPalette,
+    palette: &IcedColorPalette,
     status: ButtonStatus,
 ) -> button::Style {
     let background = match status {

@@ -4,7 +4,7 @@ use iced::{
 };
 
 pub(crate) const TERM_FONT_JET_BRAINS_BYTES: &[u8] = include_bytes!(
-    "../../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"
+    "../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"
 );
 
 #[derive(Debug, Clone)]

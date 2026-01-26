@@ -1,19 +1,19 @@
 mod app;
-mod components;
-mod helpers;
+mod effects;
+mod features;
+mod fonts;
 mod icons;
-mod screens;
-mod services;
-mod widgets;
+mod state;
+mod theme;
+mod ui;
 
 use env_logger::Env;
 use iced::{Size, window};
 use image::ImageFormat;
 
 use crate::{
-    app::{
-        App, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, TERM_FONT_JET_BRAINS_BYTES,
-    },
+    app::{App, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH},
+    fonts::TERM_FONT_JET_BRAINS_BYTES,
     icons::APP_ICON_DATA,
 };
 

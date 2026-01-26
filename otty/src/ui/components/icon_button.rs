@@ -2,7 +2,7 @@ use iced::alignment;
 use iced::widget::{button, container, svg};
 use iced::{Element, Length};
 
-use crate::app::theme::{StyleOverrides, ThemeProps};
+use crate::theme::{StyleOverrides, ThemeProps};
 
 /// UI events emitted by an icon button.
 #[derive(Debug, Clone)]
