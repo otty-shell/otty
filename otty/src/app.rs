@@ -15,9 +15,9 @@ use crate::features::terminal::shell::{
 use crate::fonts::FontsConfig;
 use crate::state::State;
 use crate::theme::{AppTheme, ThemeManager, ThemeProps};
-use crate::ui::widgets::tab_content;
 use crate::ui::widgets::action_bar;
 use crate::ui::widgets::tab_bar;
+use crate::ui::widgets::tab_content;
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
