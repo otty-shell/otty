@@ -1,22 +1,20 @@
-mod action_bar;
-mod context_menu;
+mod app;
+mod effects;
+mod features;
 mod fonts;
 mod icons;
-mod main_window;
-mod shell_integrations;
-mod tab;
-mod tab_bar;
-mod tab_button;
+mod state;
 mod theme;
+mod ui;
 
 use env_logger::Env;
 use iced::{Size, window};
 use image::ImageFormat;
 
 use crate::{
+    app::{App, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH},
     fonts::TERM_FONT_JET_BRAINS_BYTES,
     icons::APP_ICON_DATA,
-    main_window::{App, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH},
 };
 
 fn main() -> iced::Result {

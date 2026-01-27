@@ -2892,6 +2892,7 @@ dependencies = [
  "image",
  "log",
  "otty-ui-term",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
