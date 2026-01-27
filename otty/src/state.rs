@@ -56,7 +56,7 @@ impl State {
     }
 
     pub(crate) fn pane_grid_size(&self) -> Size {
-        let tab_bar_height = tab_bar::tab_bar_metrics().height;
+        let tab_bar_height = tab_bar::TAB_BAR_HEIGHT;
         let height = (self.screen_size.height - tab_bar_height).max(0.0);
         Size::new(self.screen_size.width, height)
     }

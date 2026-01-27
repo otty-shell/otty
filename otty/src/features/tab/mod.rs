@@ -62,6 +62,20 @@ fn close_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {
         return close_window();
     }
 
+    let next_active = if state.active_tab_id == Some(tab_id) {
+        let prev = state
+            .tab_items
+            .range(..tab_id)
+            .next_back()
+            .map(|(&id, _)| id);
+
+        let last = state.tab_items.keys().next_back().copied();
+
+        prev.or(last)
+    } else {
+        state.active_tab_id
+    };
+
     state.tab_items.remove(&tab_id);
 
     if state.tab_items.is_empty() {
@@ -70,7 +84,7 @@ fn close_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {
     }
 
     if state.active_tab_id == Some(tab_id) {
-        state.active_tab_id = state.tab_items.keys().copied().next();
+        state.active_tab_id = next_active;
     }
 
     let focus_task = terminal::focus_active_terminal(state);

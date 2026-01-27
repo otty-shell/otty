@@ -15,7 +15,7 @@ use crate::features::terminal::shell::{
 use crate::fonts::FontsConfig;
 use crate::state::State;
 use crate::theme::{AppTheme, ThemeManager, ThemeProps};
-use crate::ui::screens::terminal;
+use crate::ui::widgets::tab_content;
 use crate::ui::widgets::action_bar;
 use crate::ui::widgets::tab_bar;
 
@@ -33,15 +33,6 @@ pub(crate) enum Event {
     Terminal { tab_id: u64, event: TerminalEvent },
     Window(window::Event),
     ResizeWindow(Direction),
-}
-
-/// Commands executed at the app boundary.
-#[derive(Debug, Clone)]
-pub(crate) enum AppCommand {
-    CloseWindow,
-    ToggleFullScreen,
-    MinimizeWindow,
-    StartWindowDrag,
 }
 
 pub(crate) struct App {
@@ -177,7 +168,7 @@ impl App {
         })
         .map(Event::Tab);
 
-        let main_content = terminal::view(&self.state, theme_props);
+        let main_content = tab_content::view(&self.state, theme_props);
 
         let content_row =
             row![main_content].width(Length::Fill).height(Length::Fill);
@@ -205,25 +196,12 @@ impl App {
                     kind: TabKind::Terminal,
                 },
             ),
-            ToggleFullScreen => {
-                self.apply_command(AppCommand::ToggleFullScreen)
-            },
-            ToggleTray => self.apply_command(AppCommand::MinimizeWindow),
-            CloseWindow => self.apply_command(AppCommand::CloseWindow),
-            StartWindowDrag => self.apply_command(AppCommand::StartWindowDrag),
-        }
-    }
-
-    fn apply_command(&mut self, command: AppCommand) -> Task<Event> {
-        match command {
-            AppCommand::CloseWindow => close_window(),
-            AppCommand::ToggleFullScreen => self.toggle_full_screen(),
-            AppCommand::MinimizeWindow => {
+            ToggleFullScreen => self.toggle_full_screen(),
+            ToggleTray => {
                 window::latest().and_then(|id| window::minimize(id, true))
             },
-            AppCommand::StartWindowDrag => {
-                window::latest().and_then(window::drag)
-            },
+            CloseWindow => close_window(),
+            StartWindowDrag => window::latest().and_then(window::drag),
         }
     }
 
@@ -240,7 +218,7 @@ impl App {
     }
 
     fn screen_size_from_window(window_size: Size) -> Size {
-        let action_bar_height = action_bar::ActionBarMetrics::default().height;
+        let action_bar_height = action_bar::ACTION_BAR_HEIGHT;
         let height = (window_size.height - action_bar_height).max(0.0);
         Size::new(window_size.width, height)
     }

@@ -10,12 +10,6 @@ use crate::{
     features::terminal::pane_context_menu::PaneContextMenuState,
 };
 
-/// Per-pane data stored inside a tab's pane grid.
-#[derive(Debug, Clone)]
-pub(crate) struct Pane {
-    pub(crate) terminal_id: u64,
-}
-
 /// Terminal entry used by the tab view.
 pub(crate) struct TerminalEntry {
     pub(crate) pane: pane_grid::Pane,
@@ -33,7 +27,7 @@ pub(crate) struct TerminalState {
     tab_id: u64,
     title: String,
     terminal_settings: Settings,
-    panes: pane_grid::State<Pane>,
+    panes: pane_grid::State<u64>,
     terminals: HashMap<u64, TerminalEntry>,
     focus: Option<pane_grid::Pane>,
     context_menu: Option<PaneContextMenuState>,
@@ -55,7 +49,7 @@ impl TerminalState {
                 .expect("failed to create the new terminal instance");
         let widget_id = terminal.widget_id().clone();
 
-        let (panes, initial_pane) = pane_grid::State::new(Pane { terminal_id });
+        let (panes, initial_pane) = pane_grid::State::new(terminal_id);
 
         let mut terminals = HashMap::new();
         terminals.insert(
@@ -88,7 +82,7 @@ impl TerminalState {
         &self.title
     }
 
-    pub fn panes(&self) -> &pane_grid::State<Pane> {
+    pub fn panes(&self) -> &pane_grid::State<u64> {
         &self.panes
     }
 
@@ -113,7 +107,7 @@ impl TerminalState {
     }
 
     pub fn pane_terminal_id(&self, pane: pane_grid::Pane) -> Option<u64> {
-        self.panes.get(pane).map(|pane| pane.terminal_id)
+        self.panes.get(pane).copied()
     }
 
     pub fn focused_terminal_id(&self) -> Option<u64> {
@@ -165,7 +159,7 @@ impl TerminalState {
         axis: pane_grid::Axis,
         terminal_id: u64,
     ) -> Task<AppEvent> {
-        let split = self.panes.split(axis, pane, Pane { terminal_id });
+        let split = self.panes.split(axis, pane, terminal_id);
 
         if let Some((new_pane, _)) = split {
             let terminal = otty_ui_term::Terminal::new(
@@ -201,8 +195,7 @@ impl TerminalState {
         }
 
         let result = self.panes.close(pane);
-        if let Some((pane_state, sibling)) = result {
-            let terminal_id = pane_state.terminal_id;
+        if let Some((terminal_id, sibling)) = result {
             self.clear_selected_block_for_terminal(terminal_id);
             self.context_menu = None;
             self.terminals.remove(&terminal_id);

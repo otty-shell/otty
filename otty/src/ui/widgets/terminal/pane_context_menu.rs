@@ -10,23 +10,11 @@ use crate::ui::components::menu_item::{
     MenuItem, MenuItemEvent, MenuItemProps,
 };
 
-pub(super) struct Metrics {
-    container_width: f32,
-    item_height: f32,
-    vertical_padding: f32,
-    margin: f32,
-}
-
-impl Default for Metrics {
-    fn default() -> Self {
-        Self {
-            container_width: 250.0,
-            item_height: 24.0,
-            vertical_padding: 20.0,
-            margin: 6.0,
-        }
-    }
-}
+const MENU_CONTAINER_WIDTH: f32 = 250.0;
+const MENU_ITEM_HEIGHT: f32 = 24.0;
+const MENU_VERTICAL_PADDING: f32 = 20.0;
+const MENU_MARGIN: f32 = 6.0;
+const MENU_CONTAINER_PADDING_X: f32 = 10.0;
 
 /// Props for rendering a pane context menu.
 #[derive(Debug, Clone, Copy)]
@@ -37,7 +25,6 @@ pub(super) struct Props<'a> {
 }
 
 pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
-    let metrics = Metrics::default();
     let mut buttons: Vec<Element<'a, TerminalEvent>> = Vec::new();
 
     buttons.push(menu_item(
@@ -103,7 +90,7 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         },
     ));
 
-    let menu_height = menu_height_for_items(buttons.len(), &metrics);
+    let menu_height = menu_height_for_items(buttons.len());
     let menu_column = buttons
         .into_iter()
         .fold(Column::new(), |column, button| column.push(button));
@@ -112,12 +99,8 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         .width(Length::Fill)
         .align_x(alignment::Horizontal::Left);
 
-    let anchor = anchor_position(
-        props.menu.cursor,
-        props.menu.grid_size,
-        menu_height,
-        &metrics,
-    );
+    let anchor =
+        anchor_position(props.menu.cursor, props.menu.grid_size, menu_height);
 
     let padding = iced::Padding {
         top: anchor.y,
@@ -126,8 +109,8 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
     };
 
     let menu_container = container(menu_column)
-        .padding([10, 0])
-        .width(metrics.container_width)
+        .padding([MENU_CONTAINER_PADDING_X, 0.0])
+        .width(MENU_CONTAINER_WIDTH)
         .style(menu_panel_style(props.theme));
 
     let positioned_menu = container(menu_container)
@@ -213,49 +196,39 @@ pub(crate) fn anchor_position(
     cursor: Point,
     grid_size: Size,
     menu_height: f32,
-    metrics: &Metrics,
 ) -> Point {
     let clamped_cursor = Point::new(
         cursor.x.clamp(0.0, grid_size.width),
         cursor.y.clamp(0.0, grid_size.height),
     );
 
-    let fits_right =
-        clamped_cursor.x + metrics.container_width + metrics.margin
-            <= grid_size.width;
+    let fits_right = clamped_cursor.x + MENU_CONTAINER_WIDTH + MENU_MARGIN
+        <= grid_size.width;
     let x = if fits_right {
-        (clamped_cursor.x + metrics.margin)
-            .min(grid_size.width - metrics.margin - metrics.container_width)
+        (clamped_cursor.x + MENU_MARGIN)
+            .min(grid_size.width - MENU_MARGIN - MENU_CONTAINER_WIDTH)
     } else {
-        (clamped_cursor.x - metrics.container_width - metrics.margin)
-            .max(metrics.margin)
+        (clamped_cursor.x - MENU_CONTAINER_WIDTH - MENU_MARGIN).max(MENU_MARGIN)
     };
 
     let fits_down =
-        clamped_cursor.y + menu_height + metrics.margin <= grid_size.height;
+        clamped_cursor.y + menu_height + MENU_MARGIN <= grid_size.height;
     let y = if fits_down {
-        (clamped_cursor.y + metrics.margin)
-            .min(grid_size.height - metrics.margin - menu_height)
+        (clamped_cursor.y + MENU_MARGIN)
+            .min(grid_size.height - MENU_MARGIN - menu_height)
     } else {
-        (clamped_cursor.y - menu_height - metrics.margin).max(metrics.margin)
+        (clamped_cursor.y - menu_height - MENU_MARGIN).max(MENU_MARGIN)
     };
 
-    let max_x = (grid_size.width - metrics.container_width - metrics.margin)
-        .max(metrics.margin);
-    let max_y =
-        (grid_size.height - menu_height - metrics.margin).max(metrics.margin);
+    let max_x =
+        (grid_size.width - MENU_CONTAINER_WIDTH - MENU_MARGIN).max(MENU_MARGIN);
+    let max_y = (grid_size.height - menu_height - MENU_MARGIN).max(MENU_MARGIN);
 
-    Point::new(
-        x.clamp(metrics.margin, max_x),
-        y.clamp(metrics.margin, max_y),
-    )
+    Point::new(x.clamp(MENU_MARGIN, max_x), y.clamp(MENU_MARGIN, max_y))
 }
 
-pub(crate) fn menu_height_for_items(
-    item_count: usize,
-    metrics: &Metrics,
-) -> f32 {
-    metrics.vertical_padding + metrics.item_height * item_count as f32
+pub(crate) fn menu_height_for_items(item_count: usize) -> f32 {
+    MENU_VERTICAL_PADDING + MENU_ITEM_HEIGHT * item_count as f32
 }
 
 #[cfg(test)]
@@ -266,39 +239,33 @@ mod tests {
     fn anchor_position_clamps_inside_bounds() {
         let grid = Size::new(400.0, 300.0);
         let cursor = Point::new(390.0, 290.0);
-        let metrics = Metrics::default();
-        let menu_height = menu_height_for_items(5, &metrics);
-        let anchor = anchor_position(cursor, grid, menu_height, &metrics);
-        assert!(anchor.x >= metrics.margin);
-        assert!(anchor.y >= metrics.margin);
+        let menu_height = menu_height_for_items(5);
+        let anchor = anchor_position(cursor, grid, menu_height);
+        assert!(anchor.x >= MENU_MARGIN);
+        assert!(anchor.y >= MENU_MARGIN);
         assert!(
-            anchor.x + metrics.container_width
-                <= grid.width - metrics.margin + 0.1
+            anchor.x + MENU_CONTAINER_WIDTH <= grid.width - MENU_MARGIN + 0.1
         );
-        assert!(anchor.y + menu_height <= grid.height - metrics.margin + 0.1);
+        assert!(anchor.y + menu_height <= grid.height - MENU_MARGIN + 0.1);
     }
 
     #[test]
     fn anchor_position_stays_near_cursor_when_space_allows() {
         let grid = Size::new(800.0, 600.0);
         let cursor = Point::new(100.0, 120.0);
-        let metrics = Metrics::default();
-        let menu_height = menu_height_for_items(5, &metrics);
-        let anchor = anchor_position(cursor, grid, menu_height, &metrics);
-        assert!((anchor.x - (cursor.x + metrics.margin)).abs() < 0.1);
-        assert!((anchor.y - (cursor.y + metrics.margin)).abs() < 0.1);
+        let menu_height = menu_height_for_items(5);
+        let anchor = anchor_position(cursor, grid, menu_height);
+        assert!((anchor.x - (cursor.x + MENU_MARGIN)).abs() < 0.1);
+        assert!((anchor.y - (cursor.y + MENU_MARGIN)).abs() < 0.1);
     }
 
     #[test]
     fn anchor_position_flips_when_near_right_edge() {
         let grid = Size::new(500.0, 400.0);
         let cursor = Point::new(490.0, 200.0);
-        let metrics = Metrics::default();
-        let menu_height = menu_height_for_items(5, &metrics);
-        let anchor = anchor_position(cursor, grid, menu_height, &metrics);
+        let menu_height = menu_height_for_items(5);
+        let anchor = anchor_position(cursor, grid, menu_height);
         assert!(anchor.x < cursor.x);
-        assert!(
-            cursor.x - anchor.x >= metrics.container_width - metrics.margin
-        );
+        assert!(cursor.x - anchor.x >= MENU_CONTAINER_WIDTH - MENU_MARGIN);
     }
 }

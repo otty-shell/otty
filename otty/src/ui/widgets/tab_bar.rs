@@ -9,21 +9,16 @@ use crate::features::tab::TabEvent;
 use crate::icons;
 use crate::theme::{StyleOverrides, ThemeProps};
 
-/// Layout metrics for the tab bar.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct TabBarMetrics {
-    pub(crate) height: f32,
-}
+pub(crate) const TAB_BAR_HEIGHT: f32 = 25.0;
 
-impl Default for TabBarMetrics {
-    fn default() -> Self {
-        Self { height: 25.0 }
-    }
-}
-
-pub(crate) fn tab_bar_metrics() -> TabBarMetrics {
-    TabBarMetrics::default()
-}
+const TAB_BUTTON_HEIGHT: f32 = 25.0;
+const TAB_BUTTON_WIDTH: f32 = 235.0;
+const TAB_BUTTON_PADDING: f32 = 0.0;
+const TAB_LABEL_FONT_SIZE: f32 = 13.0;
+const TAB_PILL_PADDING: f32 = 2.0;
+const TAB_CLOSE_ICON_SIZE: f32 = 25.0;
+const TAB_CLOSE_BUTTON_RIGHT_PADDING: f32 = 2.0;
+const TAB_CLOSE_BUTTON_PADDING: f32 = 0.0;
 
 /// Props for rendering the tab bar.
 #[derive(Debug, Clone)]
@@ -34,7 +29,6 @@ pub(crate) struct Props<'a> {
 }
 
 pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TabEvent> {
-    let metrics = tab_bar_metrics();
     let mut tabs_row = row![].spacing(0);
 
     for tab in &props.tabs {
@@ -61,7 +55,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TabEvent> {
     let palette = props.theme.theme.iced_palette();
 
     container(scroll)
-        .height(Length::Fixed(metrics.height))
+        .height(Length::Fixed(TAB_BAR_HEIGHT))
         .width(Length::Fill)
         .style(move |_| iced::widget::container::Style {
             background: Some(palette.dim_black.into()),
@@ -71,34 +65,6 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TabEvent> {
         .into()
 }
 
-/// Layout metrics for a tab button.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct TabButtonMetrics {
-    height: f32,
-    width: f32,
-    padding: f32,
-    label_font_size: f32,
-    pill_padding: f32,
-    close_icon_size: f32,
-    close_button_right_padding: f32,
-    close_button_padding: f32,
-}
-
-impl Default for TabButtonMetrics {
-    fn default() -> Self {
-        Self {
-            height: 25.0,
-            width: 235.0,
-            padding: 0.0,
-            label_font_size: 13.0,
-            pill_padding: 2.0,
-            close_icon_size: 25.0,
-            close_button_right_padding: 2.0,
-            close_button_padding: 0.0,
-        }
-    }
-}
-
 /// A clickable tab pill with close affordance.
 fn tab_button<'a>(
     tab_id: u64,
@@ -106,7 +72,6 @@ fn tab_button<'a>(
     is_active: bool,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, TabEvent> {
-    let metrics = TabButtonMetrics::default();
     let palette = theme_props.theme.iced_palette();
     let foreground = palette.foreground;
     let dim_foreground = palette.dim_foreground;
@@ -115,7 +80,7 @@ fn tab_button<'a>(
     let dim_black = palette.dim_black;
 
     let label = text(ellipsize(&title))
-        .size(metrics.label_font_size)
+        .size(TAB_LABEL_FONT_SIZE)
         .width(Length::Fill)
         .height(Length::Shrink)
         .align_y(Alignment::Center)
@@ -124,8 +89,8 @@ fn tab_button<'a>(
 
     let close_icon = svg::Handle::from_memory(icons::WINDOW_CLOSE);
     let close_svg = svg::Svg::new(close_icon)
-        .width(Length::Fixed(metrics.close_icon_size))
-        .height(Length::Fixed(metrics.close_icon_size))
+        .width(Length::Fixed(TAB_CLOSE_ICON_SIZE))
+        .height(Length::Fixed(TAB_CLOSE_ICON_SIZE))
         .style({
             move |_, status| {
                 let color = if status == svg::Status::Hovered {
@@ -148,14 +113,14 @@ fn tab_button<'a>(
 
     let close_button = button(close_icon_view)
         .on_press(TabEvent::CloseTab { tab_id })
-        .padding(metrics.close_button_padding)
+        .padding(TAB_CLOSE_BUTTON_PADDING)
         .height(Length::Fill)
         .style(|_, _| iced::widget::button::Style::default());
 
     let close_button_row = row![
         Space::new().width(Length::Fill),
         close_button,
-        Space::new().width(Length::Fixed(metrics.close_button_right_padding))
+        Space::new().width(Length::Fixed(TAB_CLOSE_BUTTON_RIGHT_PADDING))
     ]
     .width(Length::Fill)
     .height(Length::Fill)
@@ -171,7 +136,7 @@ fn tab_button<'a>(
         .width(Length::Fill);
 
     let pill = container(pill_content)
-        .padding(metrics.pill_padding)
+        .padding(TAB_PILL_PADDING)
         .width(Length::Fill)
         .height(Length::Fill)
         .style({
@@ -187,9 +152,9 @@ fn tab_button<'a>(
 
     button(pill)
         .on_press(TabEvent::ActivateTab { tab_id })
-        .padding(metrics.padding)
-        .width(metrics.width)
-        .height(metrics.height)
+        .padding(TAB_BUTTON_PADDING)
+        .width(TAB_BUTTON_WIDTH)
+        .height(TAB_BUTTON_HEIGHT)
         .into()
 }
 
