@@ -3,9 +3,7 @@ use iced::widget::{MouseArea, Space, Stack, container, row, svg, text};
 use iced::{Element, Length};
 
 use crate::fonts::FontsConfig;
-use crate::icons::{
-    ADD_TAB_HEADER, LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY,
-};
+use crate::icons::{LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY};
 use crate::theme::{StyleOverrides, ThemeProps};
 use crate::ui::components::icon_button::{
     IconButton, IconButtonEvent, IconButtonProps, IconButtonVariant,
@@ -24,7 +22,6 @@ const ACTION_BAR_CONTROLS_SPACING: f32 = 6.0;
 /// UI events emitted by the window action bar.
 #[derive(Debug, Clone)]
 pub(crate) enum Event {
-    NewTab,
     ToggleFullScreen,
     ToggleTray,
     CloseWindow,
@@ -73,11 +70,7 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
             ..Default::default()
         });
 
-    let add_tab_button =
-        icon_button(ADD_TAB_HEADER, IconButtonVariant::Standard, props.theme)
-            .map(|_| Event::NewTab);
-
-    let left_controls = row![logo_container, add_tab_button]
+    let left_controls = row![logo_container]
         .spacing(ACTION_BAR_LEFT_SPACING)
         .align_y(alignment::Vertical::Center);
 

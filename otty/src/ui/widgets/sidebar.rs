@@ -1,9 +1,7 @@
 use iced::alignment;
 use iced::widget::pane_grid;
-use iced::widget::{
-    Space, button, column, container, row, scrollable, svg, text,
-};
-use iced::{Border, Element, Length};
+use iced::widget::{Space, button, column, container, row, scrollable, svg};
+use iced::{Border, Element, Length, Theme};
 
 use crate::icons;
 use crate::state::{SIDEBAR_MENU_WIDTH, SidebarItem};
@@ -14,10 +12,6 @@ const MENU_ICON_SIZE: f32 = 20.0;
 const MENU_BUTTON_PADDING: f32 = 8.0;
 const MENU_META_SPACING: f32 = 0.0;
 const ACTIVE_BORDER_WIDTH: f32 = 2.0;
-
-const WORKSPACE_TITLE_SIZE: f32 = 13.0;
-const WORKSPACE_PADDING_HORIZONTAL: f32 = 12.0;
-const WORKSPACE_PADDING_VERTICAL: f32 = 10.0;
 
 /// UI events emitted by the sidebar.
 #[derive(Debug, Clone)]
@@ -37,9 +31,8 @@ pub(crate) struct MenuProps<'a> {
 }
 
 /// Props for rendering the sidebar workspace area.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct WorkspaceProps<'a> {
-    pub(crate) title: &'a str,
+pub(crate) struct WorkspaceProps<'a, Message> {
+    pub(crate) content: Element<'a, Message, Theme, iced::Renderer>,
     pub(crate) visible: bool,
     pub(crate) theme: ThemeProps<'a>,
 }
@@ -103,9 +96,9 @@ pub(crate) fn menu_view<'a>(props: MenuProps<'a>) -> Element<'a, Event> {
 }
 
 /// Render the sidebar workspace content area.
-pub(crate) fn workspace_view<'a>(
-    props: WorkspaceProps<'a>,
-) -> Element<'a, Event> {
+pub(crate) fn workspace_view<'a, Message: 'a>(
+    props: WorkspaceProps<'a, Message>,
+) -> Element<'a, Message, Theme, iced::Renderer> {
     if !props.visible {
         return container(Space::new())
             .width(Length::Fill)
@@ -114,23 +107,7 @@ pub(crate) fn workspace_view<'a>(
     }
 
     let palette = props.theme.theme.iced_palette();
-
-    let title = text(props.title)
-        .size(WORKSPACE_TITLE_SIZE)
-        .width(Length::Fill)
-        .align_x(alignment::Horizontal::Left);
-
-    let content = column![title]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(alignment::Horizontal::Left);
-
-    let content = container(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding([WORKSPACE_PADDING_VERTICAL, WORKSPACE_PADDING_HORIZONTAL]);
-
-    container(content)
+    container(props.content)
         .width(Length::Fill)
         .height(Length::Fill)
         .clip(true)

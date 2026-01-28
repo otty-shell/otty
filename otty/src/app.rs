@@ -22,6 +22,7 @@ use crate::state::{
 use crate::theme::{AppTheme, ThemeManager, ThemeProps};
 use crate::ui::widgets::action_bar;
 use crate::ui::widgets::sidebar;
+use crate::ui::widgets::sidebar_workspace;
 use crate::ui::widgets::tab_bar;
 use crate::ui::widgets::tab_content;
 
@@ -29,7 +30,9 @@ pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
 const RESIZE_EDGE_MOUSE_AREA_THICKNESS: f32 = 6.0;
 const RESIZE_CORNER_MOUSE_AREA_THICKNESS: f32 = 12.0;
+const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
 const SIDEBAR_SEPARATOR_WIDTH: f32 = 0.3;
+const SEPARATOR_ALPHA: f32 = 0.3;
 
 /// App-wide events that drive the root update loop.
 #[derive(Debug, Clone)]
@@ -37,6 +40,7 @@ pub(crate) enum Event {
     IcedReady,
     ActionBar(action_bar::Event),
     Sidebar(sidebar::Event),
+    SidebarWorkspace(sidebar_workspace::Event),
     Tab(TabEvent),
     Terminal { tab_id: u64, event: TerminalEvent },
     Window(window::Event),
@@ -133,6 +137,7 @@ impl App {
             ),
             ActionBar(event) => self.handle_action_bar(event),
             Sidebar(event) => self.handle_sidebar(event),
+            SidebarWorkspace(event) => self.handle_sidebar_workspace(event),
             Tab(event) => tab_reducer(
                 &mut self.state,
                 &self.terminal_settings,
@@ -185,7 +190,7 @@ impl App {
             .height(Length::Fill)
             .style(move |_| {
                 let mut background = palette.dim_white;
-                background.a = 0.3;
+                background.a = SEPARATOR_ALPHA;
                 iced::widget::container::Style {
                     background: Some(background.into()),
                     ..Default::default()
@@ -194,20 +199,20 @@ impl App {
 
         let sidebar_state = &self.state;
         let sidebar_open = self.state.sidebar.workspace_open;
-        let sidebar_active = self.state.sidebar.active_item;
 
         let sidebar_split = pane_grid::PaneGrid::new(
             &self.state.sidebar.panes,
             move |_, pane, _| match pane {
                 SidebarPane::Workspace => {
+                    let workspace_content =
+                        sidebar_workspace::view(sidebar_state, theme_props)
+                            .map(Event::SidebarWorkspace);
                     let workspace =
                         sidebar::workspace_view(sidebar::WorkspaceProps {
-                            title: "SHELL",
-                            visible: sidebar_open
-                                && sidebar_active == SidebarItem::Terminal,
+                            content: workspace_content,
+                            visible: sidebar_open,
                             theme: theme_props,
-                        })
-                        .map(Event::Sidebar);
+                        });
                     pane_grid::Content::new(workspace)
                 },
                 SidebarPane::Content => {
@@ -240,6 +245,18 @@ impl App {
             Event::Sidebar(sidebar::Event::Resized(event))
         });
 
+        let header_separator = container(Space::new())
+            .width(Length::Fill)
+            .height(Length::Fixed(HEADER_SEPARATOR_HEIGHT))
+            .style(move |_| {
+                let mut background = palette.dim_white;
+                background.a = SEPARATOR_ALPHA;
+                iced::widget::container::Style {
+                    background: Some(background.into()),
+                    ..Default::default()
+                }
+            });
+
         let content_row = row![sidebar_menu, sidebar_separator, sidebar_split]
             .width(Length::Fill)
             .height(Length::Fill);
@@ -247,7 +264,7 @@ impl App {
         let resize_grips = build_resize_grips();
 
         stack!(
-            column![header, content_row]
+            column![header, header_separator, content_row]
                 .width(Length::Fill)
                 .height(Length::Fill),
             resize_grips
@@ -259,14 +276,6 @@ impl App {
         use action_bar::Event::*;
 
         match event {
-            NewTab => tab_reducer(
-                &mut self.state,
-                &self.terminal_settings,
-                &self.shell_session,
-                TabEvent::NewTab {
-                    kind: TabKind::Terminal,
-                },
-            ),
             ToggleFullScreen => self.toggle_full_screen(),
             ToggleTray => {
                 window::latest().and_then(|id| window::minimize(id, true))
@@ -301,6 +310,22 @@ impl App {
                 self.handle_sidebar_resize(event);
                 Task::none()
             },
+        }
+    }
+
+    fn handle_sidebar_workspace(
+        &mut self,
+        event: sidebar_workspace::Event,
+    ) -> Task<Event> {
+        match event {
+            sidebar_workspace::Event::TerminalNewTab => tab_reducer(
+                &mut self.state,
+                &self.terminal_settings,
+                &self.shell_session,
+                TabEvent::NewTab {
+                    kind: TabKind::Terminal,
+                },
+            ),
         }
     }
 
@@ -362,10 +387,7 @@ impl App {
                 return;
             }
 
-            let ratio = event
-                .ratio
-                .max(SIDEBAR_DEFAULT_WORKSPACE_RATIO)
-                .min(max_ratio);
+            let ratio = SIDEBAR_COLLAPSE_WORKSPACE_RATIO.min(max_ratio);
             self.state.sidebar.workspace_open = true;
             self.state.sidebar.workspace_ratio = ratio;
             self.state
@@ -409,7 +431,9 @@ impl App {
 
     fn screen_size_from_window(window_size: Size) -> Size {
         let action_bar_height = action_bar::ACTION_BAR_HEIGHT;
-        let height = (window_size.height - action_bar_height).max(0.0);
+        let height =
+            (window_size.height - action_bar_height - SIDEBAR_SEPARATOR_WIDTH)
+                .max(0.0);
         Size::new(window_size.width, height)
     }
 }
