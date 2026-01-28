@@ -12,6 +12,8 @@ use crate::state::State;
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum TabKind {
     Terminal,
+    /// Settings screen tab.
+    Settings,
 }
 
 /// High-level events routed to the tab reducer.
@@ -24,7 +26,9 @@ pub(crate) enum TabEvent {
 
 /// Tab payloads stored in app state.
 pub(crate) enum TabContent {
-    Terminal(TerminalState),
+    Terminal(Box<TerminalState>),
+    /// Placeholder settings screen.
+    Settings,
 }
 
 /// Metadata for a single tab entry.
@@ -47,10 +51,28 @@ pub(crate) fn tab_reducer(
                 terminal_settings,
                 shell_session,
             ),
+            TabKind::Settings => create_settings_tab(state),
         },
         TabEvent::ActivateTab { tab_id } => activate_tab(state, tab_id),
         TabEvent::CloseTab { tab_id } => close_tab(state, tab_id),
     }
+}
+
+fn create_settings_tab(state: &mut State) -> Task<AppEvent> {
+    let tab_id = state.next_tab_id;
+    state.next_tab_id += 1;
+
+    state.tab_items.insert(
+        tab_id,
+        TabItem {
+            id: tab_id,
+            title: String::from("Settings"),
+            content: TabContent::Settings,
+        },
+    );
+    state.active_tab_id = Some(tab_id);
+
+    Task::none()
 }
 
 fn close_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {

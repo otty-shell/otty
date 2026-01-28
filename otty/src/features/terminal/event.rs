@@ -162,7 +162,7 @@ pub(crate) fn create_terminal_tab(
         TabItem {
             id: tab_id,
             title,
-            content: TabContent::Terminal(tab),
+            content: TabContent::Terminal(Box::new(tab)),
         },
     );
     state.active_tab_id = Some(tab_id);
@@ -177,10 +177,16 @@ pub(crate) fn focus_active_terminal(state: &State) -> Task<AppEvent> {
         return Task::none();
     };
 
-    let TabContent::Terminal(terminal) = &tab.content;
-    match terminal.focused_terminal_entry() {
-        Some(entry) => TerminalView::focus(entry.terminal.widget_id().clone()),
-        None => Task::none(),
+    match &tab.content {
+        TabContent::Terminal(terminal) => {
+            match terminal.focused_terminal_entry() {
+                Some(entry) => {
+                    TerminalView::focus(entry.terminal.widget_id().clone())
+                },
+                None => Task::none(),
+            }
+        },
+        TabContent::Settings => Task::none(),
     }
 }
 
@@ -192,7 +198,9 @@ pub(crate) fn sync_tab_block_selection(
         return Task::none();
     };
 
-    let TabContent::Terminal(terminal) = &tab.content;
+    let TabContent::Terminal(terminal) = &tab.content else {
+        return Task::none();
+    };
     let selection = terminal.selected_block().cloned();
     let mut tasks = Vec::new();
 
@@ -376,10 +384,13 @@ fn terminal_tab_mut(
     state: &mut State,
     tab_id: u64,
 ) -> Option<&mut TerminalState> {
-    state.tab_items.get_mut(&tab_id).map(|tab| {
-        let TabContent::Terminal(terminal) = &mut tab.content;
-        terminal
-    })
+    state
+        .tab_items
+        .get_mut(&tab_id)
+        .and_then(|tab| match &mut tab.content {
+            TabContent::Terminal(terminal) => Some(terminal.as_mut()),
+            TabContent::Settings => None,
+        })
 }
 
 fn sync_tab_title(state: &mut State, tab_id: u64) {
@@ -387,15 +398,19 @@ fn sync_tab_title(state: &mut State, tab_id: u64) {
         return;
     };
 
-    let TabContent::Terminal(terminal) = &tab.content;
-    tab.title = terminal.title().to_string();
+    if let TabContent::Terminal(terminal) = &tab.content {
+        tab.title = terminal.title().to_string();
+    }
 }
 
 fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
-    state.tab_items.get(&tab_id).map(|tab| {
-        let TabContent::Terminal(terminal) = &tab.content;
-        terminal
-    })
+    state
+        .tab_items
+        .get(&tab_id)
+        .and_then(|tab| match &tab.content {
+            TabContent::Terminal(terminal) => Some(terminal.as_ref()),
+            TabContent::Settings => None,
+        })
 }
 
 fn tab_id_by_terminal(state: &State, terminal_id: u64) -> Option<u64> {

@@ -1,4 +1,4 @@
-use iced::widget::{container, text};
+use iced::widget::{Space, container, text};
 use iced::{Element, Length, Theme, alignment};
 
 use crate::app::Event as AppEvent;
@@ -28,6 +28,10 @@ pub(crate) fn view<'a>(
                     })
                     .map(move |event| AppEvent::Terminal { tab_id, event })
                 },
+                TabContent::Settings => container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
             },
             None => container(text("No tabs"))
                 .width(Length::Fill)

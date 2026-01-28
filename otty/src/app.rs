@@ -1,5 +1,7 @@
 use iced::mouse;
-use iced::widget::{column, container, mouse_area, row, stack, text};
+use iced::widget::{
+    Space, column, container, mouse_area, pane_grid, row, stack, text,
+};
 use iced::window::Direction;
 use iced::{Element, Length, Size, Subscription, Task, Theme, window};
 use otty_ui_term::settings::{
@@ -13,9 +15,13 @@ use crate::features::terminal::shell::{
     ShellSession, fallback_shell_session, setup_shell_session,
 };
 use crate::fonts::FontsConfig;
-use crate::state::State;
+use crate::state::{
+    SIDEBAR_COLLAPSE_WORKSPACE_RATIO, SIDEBAR_DEFAULT_WORKSPACE_RATIO,
+    SIDEBAR_MIN_TAB_CONTENT_RATIO, SidebarItem, SidebarPane, State,
+};
 use crate::theme::{AppTheme, ThemeManager, ThemeProps};
 use crate::ui::widgets::action_bar;
+use crate::ui::widgets::sidebar;
 use crate::ui::widgets::tab_bar;
 use crate::ui::widgets::tab_content;
 
@@ -23,12 +29,14 @@ pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
 const RESIZE_EDGE_MOUSE_AREA_THICKNESS: f32 = 6.0;
 const RESIZE_CORNER_MOUSE_AREA_THICKNESS: f32 = 12.0;
+const SIDEBAR_SEPARATOR_WIDTH: f32 = 0.3;
 
 /// App-wide events that drive the root update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum Event {
     IcedReady,
     ActionBar(action_bar::Event),
+    Sidebar(sidebar::Event),
     Tab(TabEvent),
     Terminal { tab_id: u64, event: TerminalEvent },
     Window(window::Event),
@@ -91,15 +99,16 @@ impl App {
     pub(crate) fn subscription(&self) -> Subscription<Event> {
         let mut subscriptions = Vec::new();
         for (&tab_id, tab) in &self.state.tab_items {
-            let TabContent::Terminal(terminal) = &tab.content;
-            for entry in terminal.terminals().values() {
-                let sub = entry.terminal.subscription().with(tab_id).map(
-                    |(tab_id, event)| Event::Terminal {
-                        tab_id,
-                        event: TerminalEvent::ProxyToInternalWidget(event),
-                    },
-                );
-                subscriptions.push(sub);
+            if let TabContent::Terminal(terminal) = &tab.content {
+                for entry in terminal.terminals().values() {
+                    let sub = entry.terminal.subscription().with(tab_id).map(
+                        |(tab_id, event)| Event::Terminal {
+                            tab_id,
+                            event: TerminalEvent::ProxyToInternalWidget(event),
+                        },
+                    );
+                    subscriptions.push(sub);
+                }
             }
         }
 
@@ -123,6 +132,7 @@ impl App {
                 },
             ),
             ActionBar(event) => self.handle_action_bar(event),
+            Sidebar(event) => self.handle_sidebar(event),
             Tab(event) => tab_reducer(
                 &mut self.state,
                 &self.terminal_settings,
@@ -161,22 +171,83 @@ impl App {
         let tab_summaries = self.state.tab_summaries();
         let active_tab_id = self.state.active_tab_id.unwrap_or(0);
 
-        let tab_bar = tab_bar::view(tab_bar::Props {
-            tabs: tab_summaries,
-            active_tab_id,
+        let palette = theme_props.theme.iced_palette();
+
+        let sidebar_menu = sidebar::menu_view(sidebar::MenuProps {
+            active_item: self.state.sidebar.active_item,
+            workspace_open: self.state.sidebar.workspace_open,
             theme: theme_props,
         })
-        .map(Event::Tab);
+        .map(Event::Sidebar);
 
-        let main_content = tab_content::view(&self.state, theme_props);
+        let sidebar_separator = container(Space::new())
+            .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
+            .height(Length::Fill)
+            .style(move |_| {
+                let mut background = palette.dim_white;
+                background.a = 0.3;
+                iced::widget::container::Style {
+                    background: Some(background.into()),
+                    ..Default::default()
+                }
+            });
 
-        let content_row =
-            row![main_content].width(Length::Fill).height(Length::Fill);
+        let sidebar_state = &self.state;
+        let sidebar_open = self.state.sidebar.workspace_open;
+        let sidebar_active = self.state.sidebar.active_item;
+
+        let sidebar_split = pane_grid::PaneGrid::new(
+            &self.state.sidebar.panes,
+            move |_, pane, _| match pane {
+                SidebarPane::Workspace => {
+                    let workspace =
+                        sidebar::workspace_view(sidebar::WorkspaceProps {
+                            title: "SHELL",
+                            visible: sidebar_open
+                                && sidebar_active == SidebarItem::Terminal,
+                            theme: theme_props,
+                        })
+                        .map(Event::Sidebar);
+                    pane_grid::Content::new(workspace)
+                },
+                SidebarPane::Content => {
+                    let tab_bar = tab_bar::view(tab_bar::Props {
+                        tabs: tab_summaries.clone(),
+                        active_tab_id,
+                        theme: theme_props,
+                    })
+                    .map(Event::Tab);
+
+                    let content = tab_content::view(sidebar_state, theme_props);
+
+                    let content_column = column![tab_bar, content]
+                        .width(Length::Fill)
+                        .height(Length::Fill);
+
+                    let content_container = container(content_column)
+                        .width(Length::Fill)
+                        .height(Length::Fill);
+
+                    pane_grid::Content::new(content_container)
+                },
+            },
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .spacing(0)
+        .min_size(0)
+        .on_resize(10.0, |event| {
+            Event::Sidebar(sidebar::Event::Resized(event))
+        });
+
+        let content_row = row![sidebar_menu, sidebar_separator, sidebar_split]
+            .width(Length::Fill)
+            .height(Length::Fill);
 
         let resize_grips = build_resize_grips();
 
         stack!(
-            column![header, tab_bar, content_row]
+            column![header, content_row]
                 .width(Length::Fill)
                 .height(Length::Fill),
             resize_grips
@@ -203,6 +274,125 @@ impl App {
             CloseWindow => close_window(),
             StartWindowDrag => window::latest().and_then(window::drag),
         }
+    }
+
+    fn handle_sidebar(&mut self, event: sidebar::Event) -> Task<Event> {
+        match event {
+            sidebar::Event::SelectItem(item) => {
+                self.state.sidebar.active_item = item;
+                if item == SidebarItem::Terminal {
+                    self.ensure_sidebar_workspace_open();
+                }
+                Task::none()
+            },
+            sidebar::Event::OpenSettings => tab_reducer(
+                &mut self.state,
+                &self.terminal_settings,
+                &self.shell_session,
+                TabEvent::NewTab {
+                    kind: TabKind::Settings,
+                },
+            ),
+            sidebar::Event::ToggleWorkspace => {
+                self.toggle_sidebar_workspace();
+                Task::none()
+            },
+            sidebar::Event::Resized(event) => {
+                self.handle_sidebar_resize(event);
+                Task::none()
+            },
+        }
+    }
+
+    fn ensure_sidebar_workspace_open(&mut self) {
+        if self.state.sidebar.workspace_open {
+            return;
+        }
+
+        let ratio = self
+            .state
+            .sidebar
+            .workspace_ratio
+            .max(SIDEBAR_DEFAULT_WORKSPACE_RATIO)
+            .min(max_sidebar_workspace_ratio());
+
+        self.state.sidebar.workspace_open = true;
+        self.state.sidebar.workspace_ratio = ratio;
+        self.state
+            .sidebar
+            .panes
+            .resize(self.state.sidebar.split, ratio);
+        self.state.sync_tab_grid_sizes();
+    }
+
+    fn toggle_sidebar_workspace(&mut self) {
+        if self.state.sidebar.workspace_open {
+            self.state.sidebar.workspace_open = false;
+            self.state
+                .sidebar
+                .panes
+                .resize(self.state.sidebar.split, 0.0);
+        } else {
+            let ratio = self
+                .state
+                .sidebar
+                .workspace_ratio
+                .max(SIDEBAR_DEFAULT_WORKSPACE_RATIO)
+                .min(max_sidebar_workspace_ratio());
+            self.state.sidebar.workspace_open = true;
+            self.state.sidebar.workspace_ratio = ratio;
+            self.state
+                .sidebar
+                .panes
+                .resize(self.state.sidebar.split, ratio);
+        }
+
+        self.state.sync_tab_grid_sizes();
+    }
+
+    fn handle_sidebar_resize(&mut self, event: pane_grid::ResizeEvent) {
+        let max_ratio = max_sidebar_workspace_ratio();
+
+        if !self.state.sidebar.workspace_open {
+            if event.ratio <= SIDEBAR_COLLAPSE_WORKSPACE_RATIO {
+                self.state
+                    .sidebar
+                    .panes
+                    .resize(self.state.sidebar.split, 0.0);
+                return;
+            }
+
+            let ratio = event
+                .ratio
+                .max(SIDEBAR_DEFAULT_WORKSPACE_RATIO)
+                .min(max_ratio);
+            self.state.sidebar.workspace_open = true;
+            self.state.sidebar.workspace_ratio = ratio;
+            self.state
+                .sidebar
+                .panes
+                .resize(self.state.sidebar.split, ratio);
+            self.state.sync_tab_grid_sizes();
+            return;
+        }
+
+        if event.ratio <= SIDEBAR_COLLAPSE_WORKSPACE_RATIO {
+            self.state.sidebar.workspace_open = false;
+            self.state
+                .sidebar
+                .panes
+                .resize(self.state.sidebar.split, 0.0);
+            self.state.sync_tab_grid_sizes();
+            return;
+        }
+
+        let ratio = event.ratio.min(max_ratio);
+        self.state.sidebar.workspace_ratio = ratio;
+        self.state
+            .sidebar
+            .panes
+            .resize(self.state.sidebar.split, ratio);
+        self.state.sync_tab_grid_sizes();
     }
 
     fn toggle_full_screen(&mut self) -> Task<Event> {
@@ -344,4 +534,8 @@ fn build_resize_grips() -> Element<'static, Event, Theme, iced::Renderer> {
             .align_y(iced::alignment::Vertical::Bottom),
     )
     .into()
+}
+
+fn max_sidebar_workspace_ratio() -> f32 {
+    (1.0 - SIDEBAR_MIN_TAB_CONTENT_RATIO).max(0.0)
 }
