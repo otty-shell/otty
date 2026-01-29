@@ -210,7 +210,11 @@ fn render_entry<'a>(
             DropTarget::Root => None,
         })
         .unwrap_or(false);
-    let launched_at = props.state.launching.get(&entry.path).copied();
+    let launched_at = props
+        .state
+        .launching
+        .get(&entry.path)
+        .map(|info| info.started_at);
 
     let is_editing = matches!(props.state.inline_edit.as_ref(), Some(edit)
         if matches!(&edit.kind, InlineEditKind::Rename { path } if path == &entry.path));
@@ -271,14 +275,13 @@ fn render_entry<'a>(
     let content = row![
         Space::new().width(Length::Fixed(indent)),
         icon_view,
+        indicator,
         title,
-        indicator
     ]
     .spacing(TREE_ROW_SPACING)
     .align_y(alignment::Vertical::Center);
 
     let palette = props.theme.theme.iced_palette().clone();
-
     let row = container(content)
         .width(Length::Fill)
         .height(Length::Fixed(TREE_ROW_HEIGHT))

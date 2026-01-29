@@ -682,6 +682,7 @@ impl App {
                         menu,
                         theme,
                         area_size,
+                        launching: &self.state.quick_commands.launching,
                     },
                 )
                 .map(|event| {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use iced::Point;
@@ -47,7 +47,9 @@ pub(crate) struct QuickCommandsState {
     pub(crate) last_error: Option<String>,
     pub(crate) selected: Option<NodePath>,
     pub(crate) hovered: Option<NodePath>,
-    pub(crate) launching: HashMap<NodePath, Instant>,
+    pub(crate) launching: HashMap<NodePath, LaunchInfo>,
+    pub(crate) canceled_launches: HashSet<u64>,
+    pub(crate) next_launch_id: u64,
     pub(crate) blink_nonce: u64,
     pub(crate) context_menu: Option<ContextMenuState>,
     pub(crate) inline_edit: Option<InlineEditState>,
@@ -55,6 +57,13 @@ pub(crate) struct QuickCommandsState {
     pub(crate) drag: Option<DragState>,
     pub(crate) drop_target: Option<DropTarget>,
     pub(crate) cursor: Point,
+}
+
+/// Runtime info for a pending quick command launch.
+#[derive(Debug, Clone)]
+pub(crate) struct LaunchInfo {
+    pub(crate) id: u64,
+    pub(crate) started_at: Instant,
 }
 
 impl QuickCommandsState {
@@ -67,6 +76,8 @@ impl QuickCommandsState {
                 selected: None,
                 hovered: None,
                 launching: HashMap::new(),
+                canceled_launches: HashSet::new(),
+                next_launch_id: 1,
                 blink_nonce: 0,
                 context_menu: None,
                 inline_edit: None,
@@ -107,6 +118,8 @@ impl Default for QuickCommandsState {
             selected: None,
             hovered: None,
             launching: HashMap::new(),
+            canceled_launches: HashSet::new(),
+            next_launch_id: 1,
             blink_nonce: 0,
             context_menu: None,
             inline_edit: None,

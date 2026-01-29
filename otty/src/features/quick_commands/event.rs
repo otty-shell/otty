@@ -27,7 +27,7 @@ use super::model::{
 };
 use super::state::{
     ContextMenuState, ContextMenuTarget, DragState, DropTarget, InlineEditKind,
-    InlineEditState,
+    InlineEditState, LaunchInfo,
 };
 
 /// Events emitted by the quick commands sidebar tree.
@@ -56,11 +56,13 @@ pub(crate) const QUICK_COMMANDS_TICK_MS: u64 = 200;
 pub(crate) enum QuickCommandLaunchResult {
     Success {
         path: NodePath,
+        launch_id: u64,
         tab_id: u64,
         terminal: Arc<Mutex<Option<TerminalState>>>,
     },
     Error {
         path: NodePath,
+        launch_id: u64,
         title: String,
         message: String,
     },
@@ -69,18 +71,26 @@ pub(crate) enum QuickCommandLaunchResult {
 impl fmt::Debug for QuickCommandLaunchResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Success { path, tab_id, .. } => f
+            Self::Success {
+                path,
+                launch_id,
+                tab_id,
+                ..
+            } => f
                 .debug_struct("QuickCommandLaunchResult::Success")
                 .field("path", path)
+                .field("launch_id", launch_id)
                 .field("tab_id", tab_id)
                 .finish(),
             Self::Error {
                 path,
+                launch_id,
                 title,
                 message,
             } => f
                 .debug_struct("QuickCommandLaunchResult::Error")
                 .field("path", path)
+                .field("launch_id", launch_id)
                 .field("title", title)
                 .field("message", message)
                 .finish(),
@@ -98,6 +108,7 @@ pub(crate) enum ContextMenuAction {
     Delete,
     CreateFolder,
     CreateCommand,
+    Kill,
 }
 
 pub(crate) fn quick_commands_reducer(
@@ -249,9 +260,18 @@ pub(crate) fn handle_quick_command_launch_result(
     match result {
         QuickCommandLaunchResult::Success {
             path,
+            launch_id,
             tab_id,
             terminal,
         } => {
+            if state.quick_commands.canceled_launches.remove(&launch_id) {
+                return Task::none();
+            }
+            if let Some(info) = state.quick_commands.launching.get(&path) {
+                if info.id != launch_id {
+                    return Task::none();
+                }
+            }
             state.quick_commands.launching.remove(&path);
             let terminal =
                 terminal.lock().ok().and_then(|mut guard| guard.take());
@@ -276,9 +296,18 @@ pub(crate) fn handle_quick_command_launch_result(
         },
         QuickCommandLaunchResult::Error {
             path,
+            launch_id,
             title,
             message,
         } => {
+            if state.quick_commands.canceled_launches.remove(&launch_id) {
+                return Task::none();
+            }
+            if let Some(info) = state.quick_commands.launching.get(&path) {
+                if info.id != launch_id {
+                    return Task::none();
+                }
+            }
             state.quick_commands.launching.remove(&path);
             open_error_tab(
                 state,
@@ -382,6 +411,13 @@ fn handle_context_menu_action(
             ContextMenuTarget::Background => {
                 open_create_command_tab(state, Vec::new())
             },
+        },
+        ContextMenuAction::Kill => match menu.target {
+            ContextMenuTarget::Command(path) => {
+                kill_command_launch(state, &path);
+                Task::none()
+            },
+            _ => Task::none(),
         },
     }
 }
@@ -703,8 +739,36 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
     target_folder.children.push(moved);
     let mut new_path = target_path.clone();
     new_path.push(title);
+    update_launching_paths(state, &source, &new_path);
     state.quick_commands.selected = Some(new_path);
     persist_quick_commands(state);
+}
+
+fn update_launching_paths(
+    state: &mut State,
+    source: &[String],
+    new_path: &[String],
+) {
+    let mut moved: Vec<(NodePath, LaunchInfo)> = Vec::new();
+    for (path, info) in &state.quick_commands.launching {
+        if is_prefix(source, path) {
+            moved.push((path.clone(), info.clone()));
+        }
+    }
+
+    if moved.is_empty() {
+        return;
+    }
+
+    for (path, _) in &moved {
+        state.quick_commands.launching.remove(path);
+    }
+
+    for (old_path, info) in moved {
+        let mut updated = new_path.to_vec();
+        updated.extend_from_slice(&old_path[source.len()..]);
+        state.quick_commands.launching.insert(updated, info);
+    }
 }
 
 fn is_prefix(prefix: &[String], path: &[String]) -> bool {
@@ -743,6 +807,12 @@ fn remove_node(state: &mut State, path: &[String]) {
     };
     parent.remove_child(title);
     persist_quick_commands(state);
+}
+
+fn kill_command_launch(state: &mut State, path: &[String]) {
+    if let Some(info) = state.quick_commands.launching.remove(path) {
+        state.quick_commands.canceled_launches.insert(info.id);
+    }
 }
 
 fn duplicate_command(state: &mut State, path: &[String]) {
@@ -808,10 +878,16 @@ fn launch_quick_command(
         );
     }
 
-    state
-        .quick_commands
-        .launching
-        .insert(path.clone(), Instant::now());
+    let launch_id = state.quick_commands.next_launch_id;
+    state.quick_commands.next_launch_id =
+        state.quick_commands.next_launch_id.wrapping_add(1);
+    state.quick_commands.launching.insert(
+        path.clone(),
+        LaunchInfo {
+            id: launch_id,
+            started_at: Instant::now(),
+        },
+    );
 
     let tab_id = state.next_tab_id;
     state.next_tab_id += 1;
@@ -832,11 +908,13 @@ fn launch_quick_command(
             ) {
                 Ok((terminal, _)) => QuickCommandLaunchResult::Success {
                     path,
+                    launch_id,
                     tab_id,
                     terminal: Arc::new(Mutex::new(Some(terminal))),
                 },
                 Err(err) => QuickCommandLaunchResult::Error {
                     path,
+                    launch_id,
                     title,
                     message: quick_command_error_message(&command, &err),
                 },

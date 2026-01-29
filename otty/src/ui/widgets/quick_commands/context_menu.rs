@@ -1,12 +1,14 @@
 use iced::border::Radius;
 use iced::widget::{Column, container, mouse_area};
 use iced::{Element, Length, Point, Size, alignment};
+use std::collections::HashMap;
 
 use crate::features::quick_commands::event::{
     ContextMenuAction, QuickCommandsEvent,
 };
+use crate::features::quick_commands::model::NodePath;
 use crate::features::quick_commands::state::{
-    ContextMenuState, ContextMenuTarget,
+    ContextMenuState, ContextMenuTarget, LaunchInfo,
 };
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
@@ -25,13 +27,22 @@ pub(crate) struct Props<'a> {
     pub(crate) menu: &'a ContextMenuState,
     pub(crate) theme: ThemeProps<'a>,
     pub(crate) area_size: Size,
+    pub(crate) launching: &'a HashMap<NodePath, LaunchInfo>,
 }
 
 pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
     let mut items: Vec<Element<'a, QuickCommandsEvent>> = Vec::new();
 
     match &props.menu.target {
-        ContextMenuTarget::Command(_) => {
+        ContextMenuTarget::Command(path) => {
+            let is_launching = props.launching.contains_key(path);
+            if is_launching {
+                items.push(menu_item(
+                    "Kill",
+                    props.theme,
+                    ContextMenuAction::Kill,
+                ));
+            }
             items.push(menu_item("Edit", props.theme, ContextMenuAction::Edit));
             items.push(menu_item(
                 "Rename",
