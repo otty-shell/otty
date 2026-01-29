@@ -139,6 +139,14 @@ impl App {
     pub(crate) fn update(&mut self, event: Event) -> Task<Event> {
         use Event::*;
 
+        if self.any_context_menu_open() {
+            match context_menu_guard(&event) {
+                MenuGuard::Allow => {},
+                MenuGuard::Ignore => return Task::none(),
+                MenuGuard::Dismiss => return self.close_all_context_menus(),
+            }
+        }
+
         match event {
             IcedReady => tab_reducer(
                 &mut self.state,
@@ -293,15 +301,46 @@ impl App {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        let resize_grips = build_resize_grips();
+        let content_row = mouse_area(content_row).on_move(|position| {
+            Event::SidebarWorkspace(
+                sidebar_workspace::Event::WorkspaceCursorMoved { position },
+            )
+        });
 
-        stack!(
-            column![header, header_separator, content_row]
+        let mut content_layers: Vec<Element<'_, Event, Theme, iced::Renderer>> =
+            vec![content_row.into()];
+
+        if let Some(menu_layer) =
+            self.context_menu_layer(theme_props, self.state.screen_size)
+        {
+            content_layers.push(menu_layer);
+        }
+
+        let content_stack = iced::widget::Stack::with_children(content_layers)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        let resize_grips = if self.any_context_menu_open() {
+            container(Space::new())
                 .width(Length::Fill)
-                .height(Length::Fill),
-            resize_grips
-        )
-        .into()
+                .height(Length::Fill)
+                .into()
+        } else {
+            build_resize_grips()
+        };
+
+        let root_layers: Vec<Element<'_, Event, Theme, iced::Renderer>> = vec![
+            column![header, header_separator, content_stack]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+            resize_grips,
+        ];
+
+        iced::widget::Stack::with_children(root_layers)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     fn handle_action_bar(&mut self, event: action_bar::Event) -> Task<Event> {
@@ -350,14 +389,48 @@ impl App {
         event: sidebar_workspace::Event,
     ) -> Task<Event> {
         match event {
-            sidebar_workspace::Event::TerminalNewTab => tab_reducer(
-                &mut self.state,
-                &self.terminal_settings,
-                &self.shell_session,
-                TabEvent::NewTab {
-                    kind: TabKind::Terminal,
-                },
-            ),
+            sidebar_workspace::Event::TerminalAddMenuOpen => {
+                self.state.sidebar.add_menu =
+                    Some(crate::state::SidebarAddMenuState {
+                        cursor: self.state.sidebar.cursor,
+                    });
+                Task::none()
+            },
+            sidebar_workspace::Event::TerminalAddMenuDismiss => {
+                self.state.sidebar.add_menu = None;
+                Task::none()
+            },
+            sidebar_workspace::Event::TerminalAddMenuAction(action) => {
+                self.state.sidebar.add_menu = None;
+                match action {
+                    sidebar_workspace::AddMenuAction::CreateTab => tab_reducer(
+                        &mut self.state,
+                        &self.terminal_settings,
+                        &self.shell_session,
+                        TabEvent::NewTab {
+                            kind: TabKind::Terminal,
+                        },
+                    ),
+                    sidebar_workspace::AddMenuAction::CreateCommand => {
+                        quick_commands::quick_commands_reducer(
+                            &mut self.state,
+                            &self.terminal_settings,
+                            quick_commands::QuickCommandsEvent::HeaderCreateCommand,
+                        )
+                    },
+                    sidebar_workspace::AddMenuAction::CreateFolder => {
+                        quick_commands::quick_commands_reducer(
+                            &mut self.state,
+                            &self.terminal_settings,
+                            quick_commands::QuickCommandsEvent::HeaderCreateFolder,
+                        )
+                    },
+                }
+            },
+            sidebar_workspace::Event::WorkspaceCursorMoved { position } => {
+                self.state.sidebar.cursor = position;
+                Task::none()
+            },
             sidebar_workspace::Event::QuickCommands(event) => {
                 quick_commands::quick_commands_reducer(
                     &mut self.state,
@@ -474,6 +547,145 @@ impl App {
             (window_size.height - action_bar_height - SIDEBAR_SEPARATOR_WIDTH)
                 .max(0.0);
         Size::new(window_size.width, height)
+    }
+
+    fn any_context_menu_open(&self) -> bool {
+        if self.state.sidebar.add_menu.is_some()
+            || self.state.quick_commands.context_menu.is_some()
+        {
+            return true;
+        }
+
+        self.state.tab_items.values().any(|tab| {
+            matches!(
+                &tab.content,
+                TabContent::Terminal(terminal)
+                    if terminal.context_menu().is_some()
+            )
+        })
+    }
+
+    fn close_all_context_menus(&mut self) -> Task<Event> {
+        let mut tasks = Vec::new();
+
+        self.state.sidebar.add_menu = None;
+        self.state.quick_commands.context_menu = None;
+
+        for tab in self.state.tab_items.values_mut() {
+            if let TabContent::Terminal(terminal) = &mut tab.content {
+                if terminal.context_menu().is_some() {
+                    tasks.push(terminal.close_context_menu());
+                }
+            }
+        }
+
+        Task::batch(tasks)
+    }
+
+    fn context_menu_layer<'a>(
+        &'a self,
+        theme: ThemeProps<'a>,
+        area_size: Size,
+    ) -> Option<Element<'a, Event, Theme, iced::Renderer>> {
+        if let Some(menu) = self.state.sidebar.add_menu.as_ref() {
+            return Some(
+                sidebar_workspace::add_menu::view(
+                    sidebar_workspace::add_menu::Props {
+                        menu,
+                        theme,
+                        area_size,
+                    },
+                )
+                .map(Event::SidebarWorkspace),
+            );
+        }
+
+        if let Some(menu) = self.state.quick_commands.context_menu.as_ref() {
+            return Some(
+                crate::ui::widgets::quick_commands::context_menu::view(
+                    crate::ui::widgets::quick_commands::context_menu::Props {
+                        menu,
+                        theme,
+                        area_size,
+                    },
+                )
+                .map(|event| {
+                    Event::SidebarWorkspace(
+                        sidebar_workspace::Event::QuickCommands(event),
+                    )
+                }),
+            );
+        }
+
+        for tab in self.state.tab_items.values() {
+            if let TabContent::Terminal(terminal) = &tab.content {
+                if let Some(menu) = terminal.context_menu() {
+                    let has_block_selection = terminal
+                        .selected_block_terminal()
+                        == Some(menu.terminal_id);
+                    let tab_id = tab.id;
+                    return Some(
+                        crate::ui::widgets::terminal::pane_context_menu::view(
+                            crate::ui::widgets::terminal::pane_context_menu::Props {
+                                menu,
+                                has_block_selection,
+                                theme,
+                            },
+                        )
+                        .map(move |event| Event::Terminal { tab_id, event }),
+                    );
+                }
+            }
+        }
+
+        None
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum MenuGuard {
+    Allow,
+    Ignore,
+    Dismiss,
+}
+
+fn context_menu_guard(event: &Event) -> MenuGuard {
+    use MenuGuard::*;
+
+    match event {
+        Event::SidebarWorkspace(
+            sidebar_workspace::Event::TerminalAddMenuAction(_)
+            | sidebar_workspace::Event::TerminalAddMenuDismiss,
+        )
+        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickCommands(
+            quick_commands::QuickCommandsEvent::ContextMenuAction(_)
+            | quick_commands::QuickCommandsEvent::ContextMenuDismiss,
+        )) => Allow,
+        Event::Terminal { event, .. } => match event {
+            TerminalEvent::CloseContextMenu
+            | TerminalEvent::CopySelection { .. }
+            | TerminalEvent::PasteIntoPrompt { .. }
+            | TerminalEvent::CopySelectedBlockContent { .. }
+            | TerminalEvent::CopySelectedBlockPrompt { .. }
+            | TerminalEvent::CopySelectedBlockCommand { .. }
+            | TerminalEvent::SplitPane { .. }
+            | TerminalEvent::ClosePane { .. } => Allow,
+            TerminalEvent::ProxyToInternalWidget(_) => Allow,
+            TerminalEvent::PaneGridCursorMoved { .. } => Ignore,
+            _ => Dismiss,
+        },
+        Event::SidebarWorkspace(
+            sidebar_workspace::Event::WorkspaceCursorMoved { .. },
+        )
+        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickCommands(
+            quick_commands::QuickCommandsEvent::CursorMoved { .. }
+            | quick_commands::QuickCommandsEvent::HoverEntered { .. }
+            | quick_commands::QuickCommandsEvent::HoverLeft { .. },
+        )) => Ignore,
+        Event::ActionBar(_) => Allow,
+        Event::Window(_) | Event::ResizeWindow(_) => Allow,
+        Event::Keyboard(_) => Ignore,
+        _ => Dismiss,
     }
 }
 

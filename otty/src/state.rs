@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use iced::Size;
 use iced::widget::pane_grid;
+use iced::{Point, Size};
 
 use crate::features::quick_commands::state::QuickCommandsState;
 use crate::features::tab::{TabContent, TabItem};
@@ -31,12 +31,15 @@ pub(crate) enum SidebarPane {
 }
 
 /// Sidebar layout state shared across the app.
+#[derive(Debug)]
 pub(crate) struct SidebarState {
     pub(crate) active_item: SidebarItem,
     pub(crate) workspace_open: bool,
     pub(crate) workspace_ratio: f32,
     pub(crate) split: pane_grid::Split,
     pub(crate) panes: pane_grid::State<SidebarPane>,
+    pub(crate) add_menu: Option<SidebarAddMenuState>,
+    pub(crate) cursor: Point,
 }
 
 impl SidebarState {
@@ -75,8 +78,15 @@ impl Default for SidebarState {
             workspace_ratio: SIDEBAR_DEFAULT_WORKSPACE_RATIO,
             split,
             panes,
+            add_menu: None,
+            cursor: Point::ORIGIN,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SidebarAddMenuState {
+    pub(crate) cursor: Point,
 }
 
 #[derive(Default)]
@@ -143,13 +153,5 @@ impl State {
         let workspace_ratio = self.sidebar.effective_workspace_ratio();
         let width = (available_width * (1.0 - workspace_ratio)).max(0.0);
         Size::new(width, height)
-    }
-
-    pub(crate) fn sidebar_workspace_size(&self) -> Size {
-        let available_width =
-            (self.screen_size.width - SIDEBAR_MENU_WIDTH).max(0.0);
-        let workspace_ratio = self.sidebar.effective_workspace_ratio();
-        let width = (available_width * workspace_ratio).max(0.0);
-        Size::new(width, self.screen_size.height)
     }
 }

@@ -18,10 +18,10 @@ const MENU_CONTAINER_PADDING_X: f32 = 10.0;
 
 /// Props for rendering a pane context menu.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Props<'a> {
-    pub(super) menu: &'a PaneContextMenuState,
-    pub(super) has_block_selection: bool,
-    pub(super) theme: ThemeProps<'a>,
+pub(crate) struct Props<'a> {
+    pub(crate) menu: &'a PaneContextMenuState,
+    pub(crate) has_block_selection: bool,
+    pub(crate) theme: ThemeProps<'a>,
 }
 
 pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
@@ -126,7 +126,8 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
             .height(Length::Fill),
     )
     .on_press(TerminalEvent::CloseContextMenu)
-    .on_right_press(TerminalEvent::CloseContextMenu);
+    .on_right_press(TerminalEvent::CloseContextMenu)
+    .on_move(|position| TerminalEvent::PaneGridCursorMoved { position });
 
     iced::widget::stack!(
         dismiss_layer,

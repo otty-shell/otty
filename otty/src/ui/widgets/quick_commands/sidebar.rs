@@ -4,7 +4,7 @@ use iced::widget::{
     Column, Space, column, container, mouse_area, row, scrollable, svg, text,
     text_input,
 };
-use iced::{Element, Length, Size};
+use iced::{Element, Length};
 
 use crate::features::quick_commands::event::QuickCommandsEvent;
 use crate::features::quick_commands::model::QuickCommandNode;
@@ -13,17 +13,11 @@ use crate::features::quick_commands::state::{
 };
 use crate::icons;
 use crate::theme::ThemeProps;
-use crate::ui::components::icon_button::{
-    IconButton, IconButtonEvent, IconButtonProps, IconButtonVariant,
-};
-use crate::ui::widgets::quick_commands::context_menu;
 use crate::ui::widgets::tree::{TreeNode, flatten_tree};
 
 const HEADER_HEIGHT: f32 = 28.0;
 const HEADER_PADDING_X: f32 = 10.0;
 const HEADER_FONT_SIZE: f32 = 12.0;
-const HEADER_ICON_SIZE: f32 = 16.0;
-const HEADER_BUTTON_SIZE: f32 = 20.0;
 
 const TREE_ROW_HEIGHT: f32 = 24.0;
 const TREE_FONT_SIZE: f32 = 12.0;
@@ -41,7 +35,6 @@ const INPUT_FONT_SIZE: f32 = 12.0;
 pub(crate) struct Props<'a> {
     pub(crate) state: &'a QuickCommandsState,
     pub(crate) theme: ThemeProps<'a>,
-    pub(crate) workspace_size: Size,
 }
 
 pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
@@ -49,22 +42,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
 
     let tree_list = quick_commands_tree(props);
 
-    let mut layers: Vec<Element<'a, QuickCommandsEvent>> = Vec::new();
-    layers.push(tree_list);
-
-    if let Some(menu) = props.state.context_menu.as_ref() {
-        layers.push(context_menu::view(context_menu::Props {
-            menu,
-            theme: props.theme,
-            area_size: props.workspace_size,
-        }));
-    }
-
-    let tree_stack = iced::widget::Stack::with_children(layers)
-        .width(Length::Fill)
-        .height(Length::Fill);
-
-    column![header, tree_stack]
+    column![header, tree_list]
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
@@ -79,33 +57,7 @@ fn quick_commands_header<'a>(
         .wrapping(Wrapping::None)
         .align_x(alignment::Horizontal::Left);
 
-    let folder_button = IconButton::new(IconButtonProps {
-        icon: icons::FOLDER_ADD,
-        theme,
-        size: HEADER_BUTTON_SIZE,
-        icon_size: HEADER_ICON_SIZE,
-        variant: IconButtonVariant::Standard,
-    })
-    .view()
-    .map(|event| match event {
-        IconButtonEvent::Pressed => QuickCommandsEvent::HeaderCreateFolder,
-    });
-
-    let add_button = IconButton::new(IconButtonProps {
-        icon: icons::ADD_CMD,
-        theme,
-        size: HEADER_BUTTON_SIZE,
-        icon_size: HEADER_ICON_SIZE,
-        variant: IconButtonVariant::Standard,
-    })
-    .view()
-    .map(|event| match event {
-        IconButtonEvent::Pressed => QuickCommandsEvent::HeaderCreateCommand,
-    });
-
-    let row = row![title, folder_button, add_button]
-        .spacing(4)
-        .align_y(alignment::Vertical::Center);
+    let row = row![title].spacing(4).align_y(alignment::Vertical::Center);
 
     let palette = theme.theme.iced_palette().clone();
 

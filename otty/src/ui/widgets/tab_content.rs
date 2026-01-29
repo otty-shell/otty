@@ -16,16 +16,11 @@ pub(crate) fn view<'a>(
         match state.active_tab() {
             Some(tab) => match &tab.content {
                 TabContent::Terminal(terminal) => {
-                    let selected_block_terminal =
-                        terminal.selected_block_terminal();
                     let tab_id = tab.id;
                     terminal::view(terminal::Props {
                         panes: terminal.panes(),
                         terminals: terminal.terminals(),
                         focus: terminal.focus(),
-                        context_menu: terminal.context_menu(),
-                        selected_block_terminal,
-                        theme,
                     })
                     .map(move |event| AppEvent::Terminal { tab_id, event })
                 },

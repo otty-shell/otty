@@ -64,8 +64,10 @@ pub(crate) fn terminal_tab_reducer(
             internal_widget_event_reducer(state, inner)
         },
         OpenContextMenu { pane, terminal_id } => {
+            let cursor = state.sidebar.cursor;
+            let grid_size = state.screen_size;
             with_terminal_tab(state, tab_id, |tab| {
-                tab.open_context_menu(pane, terminal_id)
+                tab.open_context_menu(pane, terminal_id, cursor, grid_size)
             })
         },
         CloseContextMenu => {

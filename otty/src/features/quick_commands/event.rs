@@ -111,7 +111,7 @@ pub(crate) fn quick_commands_reducer(
         BackgroundRightClicked => {
             state.quick_commands.context_menu = Some(ContextMenuState {
                 target: ContextMenuTarget::Background,
-                cursor: state.quick_commands.cursor,
+                cursor: state.sidebar.cursor,
             });
             state.quick_commands.selected = None;
             Task::none()
@@ -128,7 +128,7 @@ pub(crate) fn quick_commands_reducer(
             };
             state.quick_commands.context_menu = Some(ContextMenuState {
                 target,
-                cursor: state.quick_commands.cursor,
+                cursor: state.sidebar.cursor,
             });
             Task::none()
         },

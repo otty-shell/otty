@@ -1,7 +1,7 @@
 use iced::alignment;
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, text};
-use iced::{Element, Length, Size, Theme};
+use iced::{Element, Length, Theme};
 
 use crate::features::quick_commands::state::QuickCommandsState;
 use crate::icons;
@@ -22,7 +22,6 @@ const WORKSPACE_ADD_ICON_SIZE: f32 = 16.0;
 pub(crate) struct Props<'a> {
     pub(crate) theme: ThemeProps<'a>,
     pub(crate) quick_commands: &'a QuickCommandsState,
-    pub(crate) workspace_size: Size,
 }
 
 pub(crate) fn view<'a>(
@@ -42,7 +41,7 @@ pub(crate) fn view<'a>(
         variant: IconButtonVariant::Standard,
     })
     .view()
-    .map(|_| super::Event::TerminalNewTab);
+    .map(|_| super::Event::TerminalAddMenuOpen);
 
     let title_container = container(title)
         .width(Length::Fill)
@@ -59,7 +58,6 @@ pub(crate) fn view<'a>(
         quick_commands::sidebar::view(quick_commands::sidebar::Props {
             state: props.quick_commands,
             theme: props.theme,
-            workspace_size: props.workspace_size,
         })
         .map(super::Event::QuickCommands);
 

@@ -2,16 +2,12 @@ use iced::border::Radius;
 use iced::widget::{Column, container, mouse_area};
 use iced::{Element, Length, Point, Size, alignment};
 
-use crate::features::quick_commands::event::{
-    ContextMenuAction, QuickCommandsEvent,
-};
-use crate::features::quick_commands::state::{
-    ContextMenuState, ContextMenuTarget,
-};
+use crate::state::SidebarAddMenuState;
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
     MenuItem, MenuItemEvent, MenuItemProps,
 };
+use crate::ui::widgets::sidebar_workspace::{AddMenuAction, Event};
 
 const MENU_CONTAINER_WIDTH: f32 = 220.0;
 const MENU_ITEM_HEIGHT: f32 = 24.0;
@@ -19,61 +15,20 @@ const MENU_VERTICAL_PADDING: f32 = 16.0;
 const MENU_MARGIN: f32 = 6.0;
 const MENU_CONTAINER_PADDING_X: f32 = 8.0;
 
-/// Props for rendering the quick commands context menu.
+/// Props for rendering the terminal add menu.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Props<'a> {
-    pub(crate) menu: &'a ContextMenuState,
+    pub(crate) menu: &'a SidebarAddMenuState,
     pub(crate) theme: ThemeProps<'a>,
     pub(crate) area_size: Size,
 }
 
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
-    let mut items: Vec<Element<'a, QuickCommandsEvent>> = Vec::new();
-
-    match &props.menu.target {
-        ContextMenuTarget::Command(_) => {
-            items.push(menu_item("Edit", props.theme, ContextMenuAction::Edit));
-            items.push(menu_item(
-                "Rename",
-                props.theme,
-                ContextMenuAction::Rename,
-            ));
-            items.push(menu_item(
-                "Duplicate",
-                props.theme,
-                ContextMenuAction::Duplicate,
-            ));
-            items.push(menu_item(
-                "Remove",
-                props.theme,
-                ContextMenuAction::Remove,
-            ));
-        },
-        ContextMenuTarget::Folder(_) => {
-            items.push(menu_item(
-                "Rename",
-                props.theme,
-                ContextMenuAction::Rename,
-            ));
-            items.push(menu_item(
-                "Delete",
-                props.theme,
-                ContextMenuAction::Delete,
-            ));
-        },
-        ContextMenuTarget::Background => {
-            items.push(menu_item(
-                "Create folder",
-                props.theme,
-                ContextMenuAction::CreateFolder,
-            ));
-            items.push(menu_item(
-                "Create command",
-                props.theme,
-                ContextMenuAction::CreateCommand,
-            ));
-        },
-    }
+pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
+    let items = [
+        menu_item("Create tab", props.theme, AddMenuAction::CreateTab),
+        menu_item("Create command", props.theme, AddMenuAction::CreateCommand),
+        menu_item("Create folder", props.theme, AddMenuAction::CreateFolder),
+    ];
 
     let menu_height = menu_height_for_items(items.len());
     let menu_column = items
@@ -109,9 +64,9 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(QuickCommandsEvent::ContextMenuDismiss)
-    .on_right_press(QuickCommandsEvent::ContextMenuDismiss)
-    .on_move(|position| QuickCommandsEvent::CursorMoved { position });
+    .on_press(Event::TerminalAddMenuDismiss)
+    .on_right_press(Event::TerminalAddMenuDismiss)
+    .on_move(|position| Event::WorkspaceCursorMoved { position });
 
     iced::widget::stack!(dismiss_layer, positioned_menu)
         .width(Length::Fill)
@@ -122,11 +77,11 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
 fn menu_item<'a>(
     label: &'a str,
     theme: ThemeProps<'a>,
-    action: ContextMenuAction,
-) -> Element<'a, QuickCommandsEvent> {
+    action: AddMenuAction,
+) -> Element<'a, Event> {
     let props = MenuItemProps { label, theme };
     MenuItem::new(props).view().map(move |event| match event {
-        MenuItemEvent::Pressed => QuickCommandsEvent::ContextMenuAction(action),
+        MenuItemEvent::Pressed => Event::TerminalAddMenuAction(action),
     })
 }
 
@@ -150,7 +105,6 @@ fn menu_height_for_items(item_count: usize) -> f32 {
     MENU_VERTICAL_PADDING + MENU_ITEM_HEIGHT * item_count as f32
 }
 
-// TODO: duplicate
 fn anchor_position(cursor: Point, grid_size: Size, menu_height: f32) -> Point {
     let clamped_cursor = Point::new(
         cursor.x.clamp(0.0, grid_size.width),

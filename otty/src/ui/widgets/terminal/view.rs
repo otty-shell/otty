@@ -6,11 +6,7 @@ use iced::{Border, Element, Length, Theme};
 use otty_ui_term::TerminalView;
 
 use crate::features::terminal::event::TerminalEvent;
-use crate::features::terminal::pane_context_menu::PaneContextMenuState;
 use crate::features::terminal::term::TerminalEntry;
-use crate::theme::ThemeProps;
-
-use super::pane_context_menu;
 
 const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_RESIZE_GRAB: f32 = 12.0;
@@ -23,9 +19,6 @@ pub(crate) struct Props<'a> {
     pub(crate) panes: &'a pane_grid::State<u64>,
     pub(crate) terminals: &'a HashMap<u64, TerminalEntry>,
     pub(crate) focus: Option<pane_grid::Pane>,
-    pub(crate) context_menu: Option<&'a PaneContextMenuState>,
-    pub(crate) selected_block_terminal: Option<u64>,
-    pub(crate) theme: ThemeProps<'a>,
 }
 
 pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
@@ -81,19 +74,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         })
         .into();
 
-    let mut layers = vec![pane_grid];
-
-    if let Some(menu) = props.context_menu {
-        let has_block_selection =
-            props.selected_block_terminal == Some(menu.terminal_id);
-        layers.push(pane_context_menu::view(pane_context_menu::Props {
-            menu,
-            has_block_selection,
-            theme: props.theme,
-        }));
-    }
-
-    let stack_widget = Stack::with_children(layers)
+    let stack_widget = Stack::with_children(vec![pane_grid])
         .width(Length::Fill)
         .height(Length::Fill);
 

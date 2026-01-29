@@ -236,6 +236,8 @@ impl TerminalState {
         &mut self,
         pane: pane_grid::Pane,
         terminal_id: u64,
+        cursor: Point,
+        grid_size: Size,
     ) -> Task<AppEvent> {
         let Some((widget_id, snapshot)) =
             self.terminals.get(&terminal_id).map(|entry| {
@@ -253,21 +255,13 @@ impl TerminalState {
 
         let focus_task = self.set_focus_on_pane(pane, false, false);
 
-        let cursor = self.grid_cursor.unwrap_or_else(|| {
-            Point::new(self.grid_size.width / 2.0, self.grid_size.height / 2.0)
-        });
-
         let select_task = TerminalView::command(
             widget_id.clone(),
             BlockCommand::SelectHovered,
         );
 
-        let menu_state = PaneContextMenuState::new(
-            pane,
-            cursor,
-            self.grid_size,
-            terminal_id,
-        );
+        let menu_state =
+            PaneContextMenuState::new(pane, cursor, grid_size, terminal_id);
         let menu_focus_task = menu_state.focus_task();
         self.context_menu = Some(menu_state);
 

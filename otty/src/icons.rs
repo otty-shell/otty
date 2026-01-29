@@ -11,10 +11,6 @@ pub(crate) const ADD_TAB_HEADER: &[u8] =
 pub(crate) const FOLDER: &[u8] = include_bytes!("../../assets/svg/folder.svg");
 pub(crate) const FOLDER_OPENED: &[u8] =
     include_bytes!("../../assets/svg/folder-opened.svg");
-pub(crate) const FOLDER_ADD: &[u8] =
-    include_bytes!("../../assets/svg/folder-add.svg");
-pub(crate) const ADD_CMD: &[u8] =
-    include_bytes!("../../assets/svg/add-cmd.svg");
 pub(crate) const SIDEBAR_TERMINAL: &[u8] =
     include_bytes!("../../assets/svg/terminal.svg");
 pub(crate) const SIDEBAR_SETTINGS: &[u8] =
