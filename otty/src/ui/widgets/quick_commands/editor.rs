@@ -1,4 +1,5 @@
 use iced::alignment;
+use iced::widget::button::Status as ButtonStatus;
 use iced::widget::text::Wrapping;
 use iced::widget::{
     button, column, container, row, scrollable, text, text_input,
@@ -9,11 +10,12 @@ use crate::features::quick_commands::editor::{
     QuickCommandEditorEvent, QuickCommandEditorMode, QuickCommandEditorState,
     QuickCommandType,
 };
-use crate::theme::ThemeProps;
+use crate::theme::{IcedColorPalette, ThemeProps};
 
 const SECTION_SPACING: f32 = 16.0;
 const FIELD_SPACING: f32 = 8.0;
 const LABEL_SIZE: f32 = 13.0;
+const LABEL_WIDTH: f32 = 160.0;
 const INPUT_SIZE: f32 = 13.0;
 const INPUT_PADDING_X: f32 = 8.0;
 const INPUT_PADDING_Y: f32 = 6.0;
@@ -45,7 +47,8 @@ pub(crate) fn view<'a>(
             content.push(command_type_selector(props.editor, props.theme))
         },
         QuickCommandEditorMode::Edit { .. } => {
-            let label = format!("Type: {}", props.editor.command_type.label());
+            let command_type = props.editor.command_type.label();
+            let label = format!("Type: {command_type}");
             content.push(text(label).size(LABEL_SIZE))
         },
     };
@@ -65,8 +68,9 @@ pub(crate) fn view<'a>(
                 QuickCommandEditorEvent::AddArg,
                 QuickCommandEditorEvent::RemoveArg,
                 update_arg,
+                props.theme,
             ));
-            content = content.push(env_editor(&props.editor.env));
+            content = content.push(env_editor(&props.editor.env, props.theme));
             content = content.push(text_input_row(
                 "Working directory",
                 &props.editor.working_directory,
@@ -103,6 +107,7 @@ pub(crate) fn view<'a>(
                 QuickCommandEditorEvent::AddExtraArg,
                 QuickCommandEditorEvent::RemoveExtraArg,
                 update_extra_arg,
+                props.theme,
             ));
         },
     }
@@ -117,14 +122,8 @@ pub(crate) fn view<'a>(
     }
 
     let action_row = row![
-        button(text("Save").size(LABEL_SIZE))
-            .on_press(QuickCommandEditorEvent::Save)
-            .padding([0.0, BUTTON_PADDING_X])
-            .height(Length::Fixed(BUTTON_HEIGHT)),
-        button(text("Cancel").size(LABEL_SIZE))
-            .on_press(QuickCommandEditorEvent::Cancel)
-            .padding([0.0, BUTTON_PADDING_X])
-            .height(Length::Fixed(BUTTON_HEIGHT))
+        editor_button("Save", QuickCommandEditorEvent::Save, props.theme),
+        editor_button("Cancel", QuickCommandEditorEvent::Cancel, props.theme)
     ]
     .spacing(8);
 
@@ -166,12 +165,7 @@ fn text_input_row<'a>(
     value: &'a str,
     on_input: fn(String) -> QuickCommandEditorEvent,
 ) -> Element<'a, QuickCommandEditorEvent> {
-    let label = text(label)
-        .size(LABEL_SIZE)
-        .width(Length::Fixed(160.0))
-        .align_x(alignment::Horizontal::Left)
-        .wrapping(Wrapping::None);
-
+    let label = field_label(label);
     let input = text_input("", value)
         .on_input(on_input)
         .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
@@ -233,7 +227,7 @@ fn command_type_selector<'a>(
             }
         });
 
-    row![text("Type").size(LABEL_SIZE), custom, ssh]
+    row![field_label("Type"), custom, ssh]
         .spacing(FIELD_SPACING)
         .align_y(alignment::Vertical::Center)
         .into()
@@ -245,6 +239,7 @@ fn list_editor<'a>(
     on_add: QuickCommandEditorEvent,
     on_remove: fn(usize) -> QuickCommandEditorEvent,
     on_update: fn(usize, String) -> QuickCommandEditorEvent,
+    theme: ThemeProps<'a>,
 ) -> Element<'a, QuickCommandEditorEvent> {
     let mut column = column![text(label).size(LABEL_SIZE)]
         .spacing(FIELD_SPACING)
@@ -257,26 +252,17 @@ fn list_editor<'a>(
             .size(INPUT_SIZE)
             .width(Length::Fill);
 
-        let remove = button(text("Remove").size(LABEL_SIZE))
-            .on_press(on_remove(index))
-            .padding([0.0, BUTTON_PADDING_X])
-            .height(Length::Fixed(BUTTON_HEIGHT));
+        let remove = editor_button("Remove", on_remove(index), theme);
 
         column = column.push(row![input, remove].spacing(FIELD_SPACING));
     }
 
-    column
-        .push(
-            button(text("Add").size(LABEL_SIZE))
-                .on_press(on_add)
-                .padding([0.0, BUTTON_PADDING_X])
-                .height(Length::Fixed(BUTTON_HEIGHT)),
-        )
-        .into()
+    column.push(editor_button("Add", on_add, theme)).into()
 }
 
 fn env_editor<'a>(
     env: &'a [(String, String)],
+    theme: ThemeProps<'a>,
 ) -> Element<'a, QuickCommandEditorEvent> {
     let mut column = column![text("Environment").size(LABEL_SIZE)]
         .spacing(FIELD_SPACING)
@@ -301,21 +287,21 @@ fn env_editor<'a>(
             .size(INPUT_SIZE)
             .width(Length::Fill);
 
-        let remove = button(text("Remove").size(LABEL_SIZE))
-            .on_press(QuickCommandEditorEvent::RemoveEnv(index))
-            .padding([0.0, BUTTON_PADDING_X])
-            .height(Length::Fixed(BUTTON_HEIGHT));
+        let remove = editor_button(
+            "Remove",
+            QuickCommandEditorEvent::RemoveEnv(index),
+            theme,
+        );
 
         column = column.push(row![key_input, value_input, remove].spacing(6));
     }
 
     column
-        .push(
-            button(text("Add env").size(LABEL_SIZE))
-                .on_press(QuickCommandEditorEvent::AddEnv)
-                .padding([0.0, BUTTON_PADDING_X])
-                .height(Length::Fixed(BUTTON_HEIGHT)),
-        )
+        .push(editor_button(
+            "Add env",
+            QuickCommandEditorEvent::AddEnv,
+            theme,
+        ))
         .into()
 }
 
@@ -333,5 +319,68 @@ impl QuickCommandType {
             QuickCommandType::Custom => "Custom",
             QuickCommandType::Ssh => "SSH",
         }
+    }
+}
+
+fn field_label<'a>(label: &'a str) -> Element<'a, QuickCommandEditorEvent> {
+    container(
+        text(label)
+            .size(LABEL_SIZE)
+            .width(Length::Fixed(LABEL_WIDTH))
+            .align_x(alignment::Horizontal::Left)
+            .wrapping(Wrapping::None),
+    )
+    .height(Length::Fill)
+    .align_y(alignment::Vertical::Center)
+    .into()
+}
+
+fn editor_button<'a>(
+    label: &'a str,
+    on_press: QuickCommandEditorEvent,
+    theme: ThemeProps<'a>,
+) -> iced::widget::Button<'a, QuickCommandEditorEvent> {
+    let palette = theme.theme.iced_palette().clone();
+    let content = container(
+        text(label)
+            .size(LABEL_SIZE)
+            .align_x(alignment::Horizontal::Center),
+    )
+    // .width(Length::Fill)
+    // .height(Length::Fill)
+    .align_x(alignment::Horizontal::Center)
+    .align_y(alignment::Vertical::Center);
+
+    button(content)
+        .on_press(on_press)
+        .padding([0.0, BUTTON_PADDING_X])
+        .height(Length::Fixed(BUTTON_HEIGHT))
+        .style(move |_, status| button_style(&palette, status))
+}
+
+fn button_style(
+    palette: &IcedColorPalette,
+    status: ButtonStatus,
+) -> button::Style {
+    let background = match status {
+        ButtonStatus::Hovered | ButtonStatus::Pressed => {
+            Some(palette.dim_blue.into())
+        },
+        _ => Some(palette.overlay.into()),
+    };
+
+    let text_color = match status {
+        ButtonStatus::Hovered | ButtonStatus::Pressed => palette.dim_black,
+        _ => palette.foreground,
+    };
+
+    button::Style {
+        background,
+        text_color,
+        border: iced::Border {
+            width: 0.0,
+            ..Default::default()
+        },
+        ..Default::default()
     }
 }

@@ -33,6 +33,7 @@ pub(crate) struct InlineEditState {
     pub(crate) kind: InlineEditKind,
     pub(crate) value: String,
     pub(crate) error: Option<String>,
+    pub(crate) id: iced::widget::Id,
 }
 
 /// Workspace state for saved quick commands and their UI.

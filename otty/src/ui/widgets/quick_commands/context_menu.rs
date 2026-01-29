@@ -149,6 +149,7 @@ fn menu_height_for_items(item_count: usize) -> f32 {
     MENU_VERTICAL_PADDING + MENU_ITEM_HEIGHT * item_count as f32
 }
 
+// TODO: duplicate
 fn anchor_position(cursor: Point, grid_size: Size, menu_height: f32) -> Point {
     let clamped_cursor = Point::new(
         cursor.x.clamp(0.0, grid_size.width),

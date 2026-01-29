@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use iced::{Point, Task};
+use iced::{Point, Task, widget::operation};
 use otty_libterm::pty::SSHAuth;
 use otty_ui_term::settings::{
     LocalSessionOptions, SSHSessionOptions, SessionKind, Settings,
@@ -27,7 +27,8 @@ use super::state::{
 #[derive(Debug, Clone)]
 pub(crate) enum QuickCommandsEvent {
     CursorMoved { position: Point },
-    HoverChanged { path: Option<NodePath> },
+    HoverEntered { path: NodePath },
+    HoverLeft { path: NodePath },
     NodePressed { path: NodePath },
     NodeReleased { path: NodePath },
     NodeRightClicked { path: NodePath },
@@ -67,36 +68,21 @@ pub(crate) fn quick_commands_reducer(
             update_drag_state(state);
             Task::none()
         },
-        HoverChanged { path } => {
-            let drag_active = state
+        HoverEntered { path } => {
+            state.quick_commands.hovered = Some(path);
+            update_drag_drop_target(state);
+            Task::none()
+        },
+        HoverLeft { path } => {
+            if state
                 .quick_commands
-                .drag
+                .hovered
                 .as_ref()
-                .map(|drag| drag.active)
-                .unwrap_or(false);
-
-            if drag_active && path.is_none() {
-                return Task::none();
-            }
-
-            state.quick_commands.hovered = path;
-
-            if drag_active {
-                let target = drop_target_from_hover(state);
-                if can_drop(
-                    state,
-                    &state
-                        .quick_commands
-                        .drag
-                        .as_ref()
-                        .map(|drag| drag.source.clone())
-                        .unwrap_or_default(),
-                    &target,
-                ) {
-                    state.quick_commands.drop_target = Some(target);
-                } else {
-                    state.quick_commands.drop_target = None;
-                }
+                .map(|current| current == &path)
+                .unwrap_or(false)
+            {
+                state.quick_commands.hovered = None;
+                update_drag_drop_target(state);
             }
             Task::none()
         },
@@ -153,7 +139,7 @@ pub(crate) fn quick_commands_reducer(
         HeaderCreateFolder => {
             let parent = selected_parent_path(state);
             begin_inline_create_folder(state, parent);
-            Task::none()
+            focus_inline_edit(state)
         },
         HeaderCreateCommand => {
             let parent = selected_parent_path(state);
@@ -254,7 +240,7 @@ fn handle_context_menu_action(
             ContextMenuTarget::Command(path)
             | ContextMenuTarget::Folder(path) => {
                 begin_inline_rename(state, path);
-                Task::none()
+                focus_inline_edit(state)
             },
             ContextMenuTarget::Background => Task::none(),
         },
@@ -280,8 +266,9 @@ fn handle_context_menu_action(
             _ => Task::none(),
         },
         ContextMenuAction::CreateFolder => {
-            begin_inline_create_folder(state, Vec::new());
-            Task::none()
+            let parent = selected_parent_path(state);
+            begin_inline_create_folder(state, parent);
+            focus_inline_edit(state)
         },
         ContextMenuAction::CreateCommand => {
             open_create_command_tab(state, Vec::new())
@@ -297,11 +284,13 @@ fn begin_inline_create_folder(state: &mut State, parent_path: NodePath) {
         folder.expanded = true;
     }
 
-    state.quick_commands.inline_edit = Some(InlineEditState {
+    let edit = InlineEditState {
         kind: InlineEditKind::CreateFolder { parent_path },
         value: String::new(),
         error: None,
-    });
+        id: iced::widget::Id::unique(),
+    };
+    state.quick_commands.inline_edit = Some(edit);
     state.quick_commands.context_menu = None;
 }
 
@@ -310,11 +299,13 @@ fn begin_inline_rename(state: &mut State, path: NodePath) {
         return;
     };
 
-    state.quick_commands.inline_edit = Some(InlineEditState {
+    let edit = InlineEditState {
         kind: InlineEditKind::Rename { path },
         value: node.title().to_string(),
         error: None,
-    });
+        id: iced::widget::Id::unique(),
+    };
+    state.quick_commands.inline_edit = Some(edit);
 }
 
 fn inline_edit_matches(edit: &InlineEditState, path: &[String]) -> bool {
@@ -352,6 +343,7 @@ fn apply_inline_edit(state: &mut State) {
                         kind: InlineEditKind::CreateFolder { parent_path },
                         value: edit.value,
                         error: Some(message),
+                        id: edit.id,
                     });
                 },
             }
@@ -390,6 +382,7 @@ fn apply_inline_edit(state: &mut State) {
                         kind: InlineEditKind::Rename { path },
                         value: edit.value,
                         error: Some(message),
+                        id: edit.id,
                     });
                 },
             }
@@ -445,6 +438,14 @@ fn selected_parent_path(state: &State) -> NodePath {
             parent
         },
     }
+}
+
+fn focus_inline_edit(state: &State) -> Task<AppEvent> {
+    let Some(edit) = state.quick_commands.inline_edit.as_ref() else {
+        return Task::none();
+    };
+
+    operation::focus(edit.id.clone())
 }
 
 fn update_drag_state(state: &mut State) {
@@ -513,6 +514,23 @@ fn drop_target_from_hover(state: &State) -> DropTarget {
                 DropTarget::Folder(parent)
             }
         },
+    }
+}
+
+fn update_drag_drop_target(state: &mut State) {
+    let Some(drag) = state.quick_commands.drag.as_ref() else {
+        return;
+    };
+
+    if !drag.active {
+        return;
+    }
+
+    let target = drop_target_from_hover(state);
+    if can_drop(state, &drag.source, &target) {
+        state.quick_commands.drop_target = Some(target);
+    } else {
+        state.quick_commands.drop_target = None;
     }
 }
 

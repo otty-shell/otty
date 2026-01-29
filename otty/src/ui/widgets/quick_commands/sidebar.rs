@@ -1,7 +1,7 @@
 use iced::alignment;
 use iced::widget::text::Wrapping;
 use iced::widget::{
-    Column, Space, column, container, mouse_area, row, scrollable, text,
+    Column, Space, column, container, mouse_area, row, scrollable, svg, text,
     text_input,
 };
 use iced::{Element, Length, Size};
@@ -80,7 +80,7 @@ fn quick_commands_header<'a>(
         .align_x(alignment::Horizontal::Left);
 
     let folder_button = IconButton::new(IconButtonProps {
-        icon: icons::FOLDER,
+        icon: icons::FOLDER_ADD,
         theme,
         size: HEADER_BUTTON_SIZE,
         icon_size: HEADER_ICON_SIZE,
@@ -92,7 +92,7 @@ fn quick_commands_header<'a>(
     });
 
     let add_button = IconButton::new(IconButtonProps {
-        icon: icons::PLUS,
+        icon: icons::ADD_CMD,
         theme,
         size: HEADER_BUTTON_SIZE,
         icon_size: HEADER_ICON_SIZE,
@@ -186,8 +186,8 @@ fn quick_commands_tree<'a>(
         .height(Length::Fill)
         .style(move |_| {
             let background = if is_root_drop {
-                let mut color = palette.dim_green;
-                color.a = 0.2;
+                let mut color = palette.overlay;
+                color.a = 0.6;
                 Some(color.into())
             } else {
                 None
@@ -236,25 +236,48 @@ fn render_entry<'a>(
         }
     }
 
-    let caret = if entry.node.is_folder() {
-        if entry.node.expanded() { "v" } else { ">" }
+    let icon_view: Element<'a, QuickCommandsEvent> = if entry.node.is_folder() {
+        let icon = if entry.node.expanded() {
+            icons::FOLDER_OPENED
+        } else {
+            icons::FOLDER
+        };
+        let handle = svg::Handle::from_memory(icon);
+        let svg_icon = svg::Svg::new(handle)
+            .width(Length::Fixed(TREE_ICON_WIDTH))
+            .height(Length::Fixed(TREE_ICON_WIDTH))
+            .style({
+                let palette = props.theme.theme.iced_palette().clone();
+                move |_, _| svg::Style {
+                    color: Some(palette.dim_foreground),
+                }
+            });
+        container(svg_icon)
+            .width(Length::Fixed(TREE_ICON_WIDTH))
+            .height(Length::Fill)
+            .align_x(alignment::Horizontal::Center)
+            .align_y(alignment::Vertical::Center)
+            .into()
     } else {
-        ""
+        Space::new()
+            .width(Length::Fixed(TREE_ICON_WIDTH))
+            .height(Length::Fill)
+            .into()
     };
 
-    let caret_text = text(caret)
-        .size(TREE_FONT_SIZE)
-        .width(Length::Fixed(TREE_ICON_WIDTH))
-        .align_x(alignment::Horizontal::Center);
-
-    let title = text(entry.node.title())
-        .size(TREE_FONT_SIZE)
-        .width(Length::Fill)
-        .wrapping(Wrapping::None)
-        .align_x(alignment::Horizontal::Left);
+    let title = container(
+        text(entry.node.title())
+            .size(TREE_FONT_SIZE)
+            .width(Length::Fill)
+            .wrapping(Wrapping::None)
+            .align_x(alignment::Horizontal::Left),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_y(alignment::Vertical::Center);
 
     let content =
-        row![Space::new().width(Length::Fixed(indent)), caret_text, title]
+        row![Space::new().width(Length::Fixed(indent)), icon_view, title]
             .spacing(TREE_ROW_SPACING)
             .align_y(alignment::Vertical::Center);
 
@@ -266,8 +289,8 @@ fn render_entry<'a>(
         .padding([0.0, TREE_ROW_PADDING_X])
         .style(move |_| {
             let background = if is_drop_target {
-                let mut color = palette.dim_green;
-                color.a = 0.35;
+                let mut color = palette.overlay;
+                color.a = 0.6;
                 Some(color.into())
             } else if is_selected {
                 let mut color = palette.dim_blue;
@@ -292,10 +315,12 @@ fn render_entry<'a>(
         .on_press(QuickCommandsEvent::NodePressed { path: path.clone() })
         .on_release(QuickCommandsEvent::NodeReleased { path: path.clone() })
         .on_right_press(QuickCommandsEvent::NodeRightClicked { path })
-        .on_enter(QuickCommandsEvent::HoverChanged {
-            path: Some(entry.path.clone()),
+        .on_enter(QuickCommandsEvent::HoverEntered {
+            path: entry.path.clone(),
         })
-        .on_exit(QuickCommandsEvent::HoverChanged { path: None })
+        .on_exit(QuickCommandsEvent::HoverLeft {
+            path: entry.path.clone(),
+        })
         .into()
 }
 
@@ -309,7 +334,8 @@ fn inline_edit_row<'a>(
         .on_submit(QuickCommandsEvent::InlineEditSubmit)
         .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
         .size(INPUT_FONT_SIZE)
-        .width(Length::Fill);
+        .width(Length::Fill)
+        .id(edit.id.clone());
 
     let row = row![Space::new().width(Length::Fixed(indent)), input]
         .spacing(TREE_ROW_SPACING)
