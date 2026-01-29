@@ -172,6 +172,40 @@ pub(crate) fn create_terminal_tab(
     Task::batch(vec![focus_task, sync_task])
 }
 
+/// Create a terminal tab using the provided session configuration.
+pub(crate) fn create_terminal_tab_with_session(
+    state: &mut State,
+    terminal_settings: &Settings,
+    title: &str,
+    session: SessionKind,
+) -> Task<AppEvent> {
+    let tab_id = state.next_tab_id;
+    state.next_tab_id += 1;
+
+    let terminal_id = state.next_terminal_id;
+    state.next_terminal_id += 1;
+
+    let settings = settings_for_session(terminal_settings, session);
+    let (mut tab, focus_task) =
+        TerminalState::new(tab_id, title.to_string(), terminal_id, settings);
+    tab.set_grid_size(state.pane_grid_size());
+
+    let title = tab.title().to_string();
+    state.tab_items.insert(
+        tab_id,
+        TabItem {
+            id: tab_id,
+            title,
+            content: TabContent::Terminal(Box::new(tab)),
+        },
+    );
+    state.active_tab_id = Some(tab_id);
+
+    let sync_task = sync_tab_block_selection(state, tab_id);
+
+    Task::batch(vec![focus_task, sync_task])
+}
+
 pub(crate) fn focus_active_terminal(state: &State) -> Task<AppEvent> {
     let Some(tab) = state.active_tab() else {
         return Task::none();
@@ -186,7 +220,9 @@ pub(crate) fn focus_active_terminal(state: &State) -> Task<AppEvent> {
                 None => Task::none(),
             }
         },
-        TabContent::Settings => Task::none(),
+        TabContent::Settings | TabContent::QuickCommandEditor(_) => {
+            Task::none()
+        },
     }
 }
 
@@ -198,8 +234,11 @@ pub(crate) fn sync_tab_block_selection(
         return Task::none();
     };
 
-    let TabContent::Terminal(terminal) = &tab.content else {
-        return Task::none();
+    let terminal = match &tab.content {
+        TabContent::Terminal(terminal) => terminal,
+        TabContent::Settings | TabContent::QuickCommandEditor(_) => {
+            return Task::none();
+        },
     };
     let selection = terminal.selected_block().cloned();
     let mut tasks = Vec::new();
@@ -389,7 +428,7 @@ fn terminal_tab_mut(
         .get_mut(&tab_id)
         .and_then(|tab| match &mut tab.content {
             TabContent::Terminal(terminal) => Some(terminal.as_mut()),
-            TabContent::Settings => None,
+            TabContent::Settings | TabContent::QuickCommandEditor(_) => None,
         })
 }
 
@@ -409,7 +448,7 @@ fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
         .get(&tab_id)
         .and_then(|tab| match &tab.content {
             TabContent::Terminal(terminal) => Some(terminal.as_ref()),
-            TabContent::Settings => None,
+            TabContent::Settings | TabContent::QuickCommandEditor(_) => None,
         })
 }
 

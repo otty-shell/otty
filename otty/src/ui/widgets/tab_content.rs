@@ -5,6 +5,7 @@ use crate::app::Event as AppEvent;
 use crate::features::tab::TabContent;
 use crate::state::State;
 use crate::theme::ThemeProps;
+use crate::ui::widgets::quick_commands;
 use crate::ui::widgets::terminal;
 
 pub(crate) fn view<'a>(
@@ -32,6 +33,15 @@ pub(crate) fn view<'a>(
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into(),
+                TabContent::QuickCommandEditor(editor) => {
+                    let tab_id = tab.id;
+                    quick_commands::editor::view(
+                        quick_commands::editor::Props { editor, theme },
+                    )
+                    .map(move |event| {
+                        AppEvent::QuickCommandEditor { tab_id, event }
+                    })
+                },
             },
             None => container(text("No tabs"))
                 .width(Length::Fill)

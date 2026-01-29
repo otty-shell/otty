@@ -1,6 +1,8 @@
 pub(crate) mod action_bar;
+pub(crate) mod quick_commands;
 pub(crate) mod sidebar;
 pub(crate) mod sidebar_workspace;
 pub(crate) mod tab_bar;
 pub(crate) mod tab_content;
 pub(crate) mod terminal;
+pub(crate) mod tree;

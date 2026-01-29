@@ -9,6 +9,10 @@ use otty_ui_term::settings::{
 };
 
 use crate::effects::close_window;
+use crate::features::quick_commands::editor::{
+    QuickCommandEditorEvent, quick_command_editor_reducer,
+};
+use crate::features::quick_commands::event as quick_commands;
 use crate::features::tab::{TabContent, TabEvent, TabKind, tab_reducer};
 use crate::features::terminal::event::{TerminalEvent, terminal_tab_reducer};
 use crate::features::terminal::shell::{
@@ -42,7 +46,15 @@ pub(crate) enum Event {
     Sidebar(sidebar::Event),
     SidebarWorkspace(sidebar_workspace::Event),
     Tab(TabEvent),
-    Terminal { tab_id: u64, event: TerminalEvent },
+    Terminal {
+        tab_id: u64,
+        event: TerminalEvent,
+    },
+    QuickCommandEditor {
+        tab_id: u64,
+        event: QuickCommandEditorEvent,
+    },
+    Keyboard(iced::keyboard::Event),
     Window(window::Event),
     ResizeWindow(Direction),
 }
@@ -119,8 +131,9 @@ impl App {
         let terminal_subs = Subscription::batch(subscriptions);
         let win_subs =
             window::events().map(|(_id, event)| Event::Window(event));
+        let key_subs = iced::keyboard::listen().map(Event::Keyboard);
 
-        Subscription::batch(vec![terminal_subs, win_subs])
+        Subscription::batch(vec![terminal_subs, win_subs, key_subs])
     }
 
     pub(crate) fn update(&mut self, event: Event) -> Task<Event> {
@@ -147,6 +160,10 @@ impl App {
             Terminal { tab_id, event } => {
                 terminal_tab_reducer(&mut self.state, tab_id, event)
             },
+            QuickCommandEditor { tab_id, event } => {
+                quick_command_editor_reducer(&mut self.state, tab_id, event)
+            },
+            Keyboard(event) => self.handle_keyboard(event),
             Window(window::Event::Resized(size)) => {
                 self.window_size = size;
                 self.state.window_size = size;
@@ -158,6 +175,21 @@ impl App {
             ResizeWindow(dir) => window::latest()
                 .and_then(move |id| window::drag_resize(id, dir)),
         }
+    }
+
+    fn handle_keyboard(&mut self, event: iced::keyboard::Event) -> Task<Event> {
+        if let iced::keyboard::Event::KeyPressed { key, .. } = event
+            && matches!(
+                key,
+                iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
+            )
+            && self.state.quick_commands.inline_edit.is_some()
+        {
+            self.state.quick_commands.inline_edit = None;
+            return Task::none();
+        }
+
+        Task::none()
     }
 
     pub(crate) fn view(&self) -> Element<'_, Event, Theme, iced::Renderer> {
@@ -326,6 +358,13 @@ impl App {
                     kind: TabKind::Terminal,
                 },
             ),
+            sidebar_workspace::Event::QuickCommands(event) => {
+                quick_commands::quick_commands_reducer(
+                    &mut self.state,
+                    &self.terminal_settings,
+                    event,
+                )
+            },
         }
     }
 

@@ -2891,7 +2891,10 @@ dependencies = [
  "iced",
  "image",
  "log",
+ "otty-libterm",
  "otty-ui-term",
+ "serde",
+ "serde_json",
  "thiserror 2.0.17",
 ]
 

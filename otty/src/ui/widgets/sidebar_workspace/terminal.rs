@@ -1,13 +1,15 @@
 use iced::alignment;
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, text};
-use iced::{Element, Length, Theme};
+use iced::{Element, Length, Size, Theme};
 
+use crate::features::quick_commands::state::QuickCommandsState;
 use crate::icons;
 use crate::theme::ThemeProps;
 use crate::ui::components::icon_button::{
     IconButton, IconButtonProps, IconButtonVariant,
 };
+use crate::ui::widgets::quick_commands;
 
 const WORKSPACE_TITLE_SIZE: f32 = 13.0;
 const WORKSPACE_PADDING_HORIZONTAL: f32 = 12.0;
@@ -19,6 +21,8 @@ const WORKSPACE_ADD_ICON_SIZE: f32 = 16.0;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Props<'a> {
     pub(crate) theme: ThemeProps<'a>,
+    pub(crate) quick_commands: &'a QuickCommandsState,
+    pub(crate) workspace_size: Size,
 }
 
 pub(crate) fn view<'a>(
@@ -51,7 +55,16 @@ pub(crate) fn view<'a>(
         .width(Length::Fill)
         .align_y(alignment::Vertical::Center);
 
-    let content = column![header]
+    let quick_commands =
+        quick_commands::sidebar::view(quick_commands::sidebar::Props {
+            state: props.quick_commands,
+            theme: props.theme,
+            workspace_size: props.workspace_size,
+        })
+        .map(super::Event::QuickCommands);
+
+    let content = column![header, quick_commands]
+        .spacing(10)
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(alignment::Horizontal::Left);

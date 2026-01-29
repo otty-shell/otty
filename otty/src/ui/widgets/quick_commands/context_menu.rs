@@ -1,0 +1,177 @@
+use iced::border::Radius;
+use iced::widget::{Column, container, mouse_area};
+use iced::{Element, Length, Point, Size, alignment};
+
+use crate::features::quick_commands::event::{
+    ContextMenuAction, QuickCommandsEvent,
+};
+use crate::features::quick_commands::state::{
+    ContextMenuState, ContextMenuTarget,
+};
+use crate::theme::ThemeProps;
+use crate::ui::components::menu_item::{
+    MenuItem, MenuItemEvent, MenuItemProps,
+};
+
+const MENU_CONTAINER_WIDTH: f32 = 220.0;
+const MENU_ITEM_HEIGHT: f32 = 24.0;
+const MENU_VERTICAL_PADDING: f32 = 16.0;
+const MENU_MARGIN: f32 = 6.0;
+const MENU_CONTAINER_PADDING_X: f32 = 8.0;
+
+/// Props for rendering the quick commands context menu.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Props<'a> {
+    pub(crate) menu: &'a ContextMenuState,
+    pub(crate) theme: ThemeProps<'a>,
+    pub(crate) area_size: Size,
+}
+
+pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
+    let mut items: Vec<Element<'a, QuickCommandsEvent>> = Vec::new();
+
+    match &props.menu.target {
+        ContextMenuTarget::Command(_) => {
+            items.push(menu_item("Edit", props.theme, ContextMenuAction::Edit));
+            items.push(menu_item(
+                "Rename",
+                props.theme,
+                ContextMenuAction::Rename,
+            ));
+            items.push(menu_item(
+                "Duplicate",
+                props.theme,
+                ContextMenuAction::Duplicate,
+            ));
+            items.push(menu_item(
+                "Remove",
+                props.theme,
+                ContextMenuAction::Remove,
+            ));
+        },
+        ContextMenuTarget::Folder(_) => {
+            items.push(menu_item(
+                "Rename",
+                props.theme,
+                ContextMenuAction::Rename,
+            ));
+            items.push(menu_item(
+                "Delete",
+                props.theme,
+                ContextMenuAction::Delete,
+            ));
+        },
+        ContextMenuTarget::Background => {
+            items.push(menu_item(
+                "Create folder",
+                props.theme,
+                ContextMenuAction::CreateFolder,
+            ));
+            items.push(menu_item(
+                "Create command",
+                props.theme,
+                ContextMenuAction::CreateCommand,
+            ));
+        },
+    }
+
+    let menu_height = menu_height_for_items(items.len());
+    let menu_column = items
+        .into_iter()
+        .fold(Column::new(), |column, button| column.push(button))
+        .spacing(0)
+        .width(Length::Fill)
+        .align_x(alignment::Horizontal::Left);
+
+    let anchor =
+        anchor_position(props.menu.cursor, props.area_size, menu_height);
+
+    let padding = iced::Padding {
+        top: anchor.y,
+        left: anchor.x,
+        ..iced::Padding::ZERO
+    };
+
+    let menu_container = container(menu_column)
+        .padding([MENU_CONTAINER_PADDING_X, 0.0])
+        .width(MENU_CONTAINER_WIDTH)
+        .style(menu_panel_style(props.theme));
+
+    let positioned_menu = container(menu_container)
+        .padding(padding)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(alignment::Horizontal::Left)
+        .align_y(alignment::Vertical::Top);
+
+    let dismiss_layer = mouse_area(
+        container(iced::widget::text(""))
+            .width(Length::Fill)
+            .height(Length::Fill),
+    )
+    .on_press(QuickCommandsEvent::ContextMenuDismiss)
+    .on_right_press(QuickCommandsEvent::ContextMenuDismiss);
+
+    iced::widget::stack!(dismiss_layer, positioned_menu)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+fn menu_item<'a>(
+    label: &'a str,
+    theme: ThemeProps<'a>,
+    action: ContextMenuAction,
+) -> Element<'a, QuickCommandsEvent> {
+    let props = MenuItemProps { label, theme };
+    MenuItem::new(props).view().map(move |event| match event {
+        MenuItemEvent::Pressed => QuickCommandsEvent::ContextMenuAction(action),
+    })
+}
+
+fn menu_panel_style(
+    theme: ThemeProps<'_>,
+) -> impl Fn(&iced::Theme) -> iced::widget::container::Style + 'static {
+    let palette = theme.theme.iced_palette().clone();
+    move |_theme: &iced::Theme| iced::widget::container::Style {
+        background: Some(palette.overlay.into()),
+        text_color: Some(palette.foreground),
+        border: iced::Border {
+            width: 0.25,
+            color: palette.overlay,
+            radius: Radius::new(4.0),
+        },
+        ..Default::default()
+    }
+}
+
+fn menu_height_for_items(item_count: usize) -> f32 {
+    MENU_VERTICAL_PADDING + MENU_ITEM_HEIGHT * item_count as f32
+}
+
+fn anchor_position(cursor: Point, grid_size: Size, menu_height: f32) -> Point {
+    let clamped_cursor = Point::new(
+        cursor.x.clamp(0.0, grid_size.width),
+        cursor.y.clamp(0.0, grid_size.height),
+    );
+
+    let fits_right = clamped_cursor.x + MENU_CONTAINER_WIDTH + MENU_MARGIN
+        <= grid_size.width;
+    let x = if fits_right {
+        (clamped_cursor.x + MENU_MARGIN)
+            .min(grid_size.width - MENU_MARGIN - MENU_CONTAINER_WIDTH)
+    } else {
+        (clamped_cursor.x - MENU_CONTAINER_WIDTH - MENU_MARGIN).max(MENU_MARGIN)
+    };
+
+    let fits_down =
+        clamped_cursor.y + menu_height + MENU_MARGIN <= grid_size.height;
+    let y = if fits_down {
+        (clamped_cursor.y + MENU_MARGIN)
+            .min(grid_size.height - MENU_MARGIN - menu_height)
+    } else {
+        (clamped_cursor.y - menu_height - MENU_MARGIN).max(MENU_MARGIN)
+    };
+
+    Point::new(x, y)
+}

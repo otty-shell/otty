@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use iced::Size;
 use iced::widget::pane_grid;
 
+use crate::features::quick_commands::state::QuickCommandsState;
 use crate::features::tab::{TabContent, TabItem};
 use crate::ui::widgets::tab_bar;
 
@@ -87,14 +88,17 @@ pub(crate) struct State {
     pub(crate) window_size: Size,
     pub(crate) screen_size: Size,
     pub(crate) sidebar: SidebarState,
+    pub(crate) quick_commands: QuickCommandsState,
 }
 
 impl State {
     pub(crate) fn new(window_size: Size, screen_size: Size) -> Self {
+        let quick_commands = QuickCommandsState::load();
         Self {
             window_size,
             screen_size,
             sidebar: SidebarState::new(),
+            quick_commands,
             ..Default::default()
         }
     }
@@ -139,5 +143,13 @@ impl State {
         let workspace_ratio = self.sidebar.effective_workspace_ratio();
         let width = (available_width * (1.0 - workspace_ratio)).max(0.0);
         Size::new(width, height)
+    }
+
+    pub(crate) fn sidebar_workspace_size(&self) -> Size {
+        let available_width =
+            (self.screen_size.width - SIDEBAR_MENU_WIDTH).max(0.0);
+        let workspace_ratio = self.sidebar.effective_workspace_ratio();
+        let width = (available_width * workspace_ratio).max(0.0);
+        Size::new(width, self.screen_size.height)
     }
 }

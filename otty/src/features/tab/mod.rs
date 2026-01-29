@@ -3,6 +3,7 @@ use otty_ui_term::settings::Settings;
 
 use crate::app::Event as AppEvent;
 use crate::effects::close_window;
+use crate::features::quick_commands::editor::QuickCommandEditorState;
 use crate::features::terminal::event as terminal;
 use crate::features::terminal::shell::ShellSession;
 use crate::features::terminal::term::TerminalState;
@@ -29,6 +30,8 @@ pub(crate) enum TabContent {
     Terminal(Box<TerminalState>),
     /// Placeholder settings screen.
     Settings,
+    /// Editor for quick command definitions.
+    QuickCommandEditor(Box<QuickCommandEditorState>),
 }
 
 /// Metadata for a single tab entry.
