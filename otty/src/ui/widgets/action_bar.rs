@@ -1,6 +1,6 @@
 use iced::alignment;
 use iced::widget::{MouseArea, Space, Stack, container, row, svg, text};
-use iced::{Element, Length};
+use iced::{Element, Length, mouse};
 
 use crate::fonts::FontsConfig;
 use crate::icons::{LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY};
@@ -25,6 +25,7 @@ pub(crate) enum Event {
     ToggleFullScreen,
     ToggleTray,
     CloseWindow,
+    ToggleSidebarVisibility,
     StartWindowDrag,
 }
 
@@ -55,6 +56,9 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
         .align_x(alignment::Horizontal::Left)
         .align_y(alignment::Vertical::Center)
         .padding([0.0, ACTION_BAR_HORIZONTAL_PADDING]);
+    let logo_container = MouseArea::new(logo_container)
+        .on_press(Event::ToggleSidebarVisibility)
+        .interaction(mouse::Interaction::Pointer);
 
     let center_zone = container(detail_label)
         .width(Length::Fill)

@@ -40,6 +40,16 @@ pub(crate) enum QuickCommandType {
     Ssh,
 }
 
+impl std::fmt::Display for QuickCommandType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            QuickCommandType::Custom => "Custom",
+            QuickCommandType::Ssh => "SSH",
+        };
+        write!(f, "{label}")
+    }
+}
+
 /// Mode for the editor tab.
 #[derive(Debug, Clone)]
 pub(crate) enum QuickCommandEditorMode {

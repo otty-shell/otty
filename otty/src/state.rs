@@ -36,6 +36,7 @@ pub(crate) enum SidebarPane {
 #[derive(Debug)]
 pub(crate) struct SidebarState {
     pub(crate) active_item: SidebarItem,
+    pub(crate) hidden: bool,
     pub(crate) workspace_open: bool,
     pub(crate) workspace_ratio: f32,
     pub(crate) split: pane_grid::Split,
@@ -53,7 +54,9 @@ impl SidebarState {
 
     /// Workspace ratio used for sizing when the workspace is visible.
     pub(crate) fn effective_workspace_ratio(&self) -> f32 {
-        if self.workspace_open {
+        if self.hidden {
+            0.0
+        } else if self.workspace_open {
             self.workspace_ratio
         } else {
             0.0
@@ -90,6 +93,7 @@ impl Default for SidebarState {
 
         Self {
             active_item: SidebarItem::Terminal,
+            hidden: false,
             workspace_open: true,
             workspace_ratio: SIDEBAR_DEFAULT_WORKSPACE_RATIO,
             split,
@@ -165,8 +169,12 @@ impl State {
     pub(crate) fn pane_grid_size(&self) -> Size {
         let tab_bar_height = tab_bar::TAB_BAR_HEIGHT;
         let height = (self.screen_size.height - tab_bar_height).max(0.0);
-        let available_width =
-            (self.screen_size.width - SIDEBAR_MENU_WIDTH).max(0.0);
+        let menu_width = if self.sidebar.hidden {
+            0.0
+        } else {
+            SIDEBAR_MENU_WIDTH
+        };
+        let available_width = (self.screen_size.width - menu_width).max(0.0);
         let workspace_ratio = self.sidebar.effective_workspace_ratio();
         let width = (available_width * (1.0 - workspace_ratio)).max(0.0);
         Size::new(width, height)

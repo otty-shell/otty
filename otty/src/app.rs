@@ -224,73 +224,6 @@ impl App {
 
         let palette = theme_props.theme.iced_palette();
 
-        let sidebar_menu = sidebar::menu_view(sidebar::MenuProps {
-            active_item: self.state.sidebar.active_item,
-            workspace_open: self.state.sidebar.workspace_open,
-            theme: theme_props,
-        })
-        .map(Event::Sidebar);
-
-        let sidebar_separator = container(Space::new())
-            .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
-            .height(Length::Fill)
-            .style(move |_| {
-                let mut background = palette.dim_white;
-                background.a = SEPARATOR_ALPHA;
-                iced::widget::container::Style {
-                    background: Some(background.into()),
-                    ..Default::default()
-                }
-            });
-
-        let sidebar_state = &self.state;
-        let sidebar_open = self.state.sidebar.workspace_open;
-
-        let sidebar_split = pane_grid::PaneGrid::new(
-            &self.state.sidebar.panes,
-            move |_, pane, _| match pane {
-                SidebarPane::Workspace => {
-                    let workspace_content =
-                        sidebar_workspace::view(sidebar_state, theme_props)
-                            .map(Event::SidebarWorkspace);
-                    let workspace =
-                        sidebar::workspace_view(sidebar::WorkspaceProps {
-                            content: workspace_content,
-                            visible: sidebar_open,
-                            theme: theme_props,
-                        });
-                    pane_grid::Content::new(workspace)
-                },
-                SidebarPane::Content => {
-                    let tab_bar = tab_bar::view(tab_bar::Props {
-                        tabs: tab_summaries.clone(),
-                        active_tab_id,
-                        theme: theme_props,
-                    })
-                    .map(Event::Tab);
-
-                    let content = tab_content::view(sidebar_state, theme_props);
-
-                    let content_column = column![tab_bar, content]
-                        .width(Length::Fill)
-                        .height(Length::Fill);
-
-                    let content_container = container(content_column)
-                        .width(Length::Fill)
-                        .height(Length::Fill);
-
-                    pane_grid::Content::new(content_container)
-                },
-            },
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .spacing(0)
-        .min_size(0)
-        .on_resize(10.0, |event| {
-            Event::Sidebar(sidebar::Event::Resized(event))
-        });
-
         let header_separator = container(Space::new())
             .width(Length::Fill)
             .height(Length::Fixed(HEADER_SEPARATOR_HEIGHT))
@@ -303,9 +236,100 @@ impl App {
                 }
             });
 
-        let content_row = row![sidebar_menu, sidebar_separator, sidebar_split]
+        let content_row: Element<'_, Event, Theme, iced::Renderer> = if self
+            .state
+            .sidebar
+            .hidden
+        {
+            let tab_bar = tab_bar::view(tab_bar::Props {
+                tabs: tab_summaries.clone(),
+                active_tab_id,
+                theme: theme_props,
+            })
+            .map(Event::Tab);
+
+            let content = tab_content::view(&self.state, theme_props);
+            let content_column = column![tab_bar, content]
+                .width(Length::Fill)
+                .height(Length::Fill);
+            container(content_column)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            let sidebar_menu = sidebar::menu_view(sidebar::MenuProps {
+                active_item: self.state.sidebar.active_item,
+                workspace_open: self.state.sidebar.workspace_open,
+                theme: theme_props,
+            })
+            .map(Event::Sidebar);
+
+            let sidebar_separator = container(Space::new())
+                .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
+                .height(Length::Fill)
+                .style(move |_| {
+                    let mut background = palette.dim_white;
+                    background.a = SEPARATOR_ALPHA;
+                    iced::widget::container::Style {
+                        background: Some(background.into()),
+                        ..Default::default()
+                    }
+                });
+
+            let sidebar_state = &self.state;
+            let sidebar_open = self.state.sidebar.workspace_open;
+
+            let sidebar_split = pane_grid::PaneGrid::new(
+                &self.state.sidebar.panes,
+                move |_, pane, _| match pane {
+                    SidebarPane::Workspace => {
+                        let workspace_content =
+                            sidebar_workspace::view(sidebar_state, theme_props)
+                                .map(Event::SidebarWorkspace);
+                        let workspace =
+                            sidebar::workspace_view(sidebar::WorkspaceProps {
+                                content: workspace_content,
+                                visible: sidebar_open,
+                                theme: theme_props,
+                            });
+                        pane_grid::Content::new(workspace)
+                    },
+                    SidebarPane::Content => {
+                        let tab_bar = tab_bar::view(tab_bar::Props {
+                            tabs: tab_summaries.clone(),
+                            active_tab_id,
+                            theme: theme_props,
+                        })
+                        .map(Event::Tab);
+
+                        let content =
+                            tab_content::view(sidebar_state, theme_props);
+
+                        let content_column = column![tab_bar, content]
+                            .width(Length::Fill)
+                            .height(Length::Fill);
+
+                        let content_container = container(content_column)
+                            .width(Length::Fill)
+                            .height(Length::Fill);
+
+                        pane_grid::Content::new(content_container)
+                    },
+                },
+            )
             .width(Length::Fill)
-            .height(Length::Fill);
+            .height(Length::Fill)
+            .spacing(0)
+            .min_size(0)
+            .on_resize(10.0, |event| {
+                Event::Sidebar(sidebar::Event::Resized(event))
+            });
+
+            row![sidebar_menu, sidebar_separator, sidebar_split]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        };
 
         let content_row = mouse_area(content_row).on_move(|position| {
             Event::SidebarWorkspace(
@@ -358,6 +382,11 @@ impl App {
                 window::latest().and_then(|id| window::minimize(id, true))
             },
             CloseWindow => close_window(),
+            ToggleSidebarVisibility => {
+                self.state.sidebar.hidden = !self.state.sidebar.hidden;
+                self.state.sync_tab_grid_sizes();
+                Task::none()
+            },
             StartWindowDrag => window::latest().and_then(window::drag),
         }
     }
