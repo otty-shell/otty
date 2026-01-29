@@ -1,4 +1,5 @@
 use iced::mouse;
+use iced::widget::operation::snap_to_end;
 use iced::widget::{
     Space, column, container, mouse_area, pane_grid, row, stack, text,
 };
@@ -7,6 +8,7 @@ use iced::{Element, Length, Size, Subscription, Task, Theme, window};
 use otty_ui_term::settings::{
     BackendSettings, FontSettings, Settings, ThemeSettings,
 };
+use std::time::Duration;
 
 use crate::effects::close_window;
 use crate::features::quick_commands::editor::{
@@ -54,6 +56,8 @@ pub(crate) enum Event {
         tab_id: u64,
         event: QuickCommandEditorEvent,
     },
+    QuickCommandLaunchFinished(quick_commands::QuickCommandLaunchResult),
+    QuickCommandsTick,
     Keyboard(iced::keyboard::Event),
     Window(window::Event),
     ResizeWindow(Direction),
@@ -133,7 +137,17 @@ impl App {
             window::events().map(|(_id, event)| Event::Window(event));
         let key_subs = iced::keyboard::listen().map(Event::Keyboard);
 
-        Subscription::batch(vec![terminal_subs, win_subs, key_subs])
+        let mut subs = vec![terminal_subs, win_subs, key_subs];
+        if !self.state.quick_commands.launching.is_empty() {
+            subs.push(
+                iced::time::every(Duration::from_millis(
+                    quick_commands::QUICK_COMMANDS_TICK_MS,
+                ))
+                .map(|_| Event::QuickCommandsTick),
+            );
+        }
+
+        Subscription::batch(subs)
     }
 
     pub(crate) fn update(&mut self, event: Event) -> Task<Event> {
@@ -153,7 +167,8 @@ impl App {
             }
         }
 
-        match event {
+        let tabs_before = self.state.tab_items.len();
+        let task = match event {
             IcedReady => tab_reducer(
                 &mut self.state,
                 &self.terminal_settings,
@@ -171,6 +186,20 @@ impl App {
                 &self.shell_session,
                 event,
             ),
+            QuickCommandLaunchFinished(result) => {
+                quick_commands::handle_quick_command_launch_result(
+                    &mut self.state,
+                    result,
+                )
+            },
+            QuickCommandsTick => {
+                if self.state.quick_commands.launching.is_empty() {
+                    return Task::none();
+                }
+                self.state.quick_commands.blink_nonce =
+                    self.state.quick_commands.blink_nonce.wrapping_add(1);
+                Task::none()
+            },
             Terminal { tab_id, event } => {
                 terminal_tab_reducer(&mut self.state, tab_id, event)
             },
@@ -188,6 +217,12 @@ impl App {
             Window(_) => Task::none(),
             ResizeWindow(dir) => window::latest()
                 .and_then(move |id| window::drag_resize(id, dir)),
+        };
+
+        if self.state.tab_items.len() > tabs_before {
+            Task::batch(vec![task, snap_to_end(tab_bar::TAB_BAR_SCROLL_ID)])
+        } else {
+            task
         }
     }
 
@@ -700,7 +735,9 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
         | Event::SidebarWorkspace(sidebar_workspace::Event::QuickCommands(
             quick_commands::QuickCommandsEvent::ContextMenuAction(_)
             | quick_commands::QuickCommandsEvent::ContextMenuDismiss,
-        )) => Allow,
+        ))
+        | Event::QuickCommandLaunchFinished(_)
+        | Event::QuickCommandsTick => Allow,
         Event::Terminal { event, .. } => match event {
             TerminalEvent::CloseContextMenu
             | TerminalEvent::CopySelection { .. }
@@ -745,6 +782,9 @@ fn should_cancel_inline_edit(event: &Event) -> bool {
                 | QuickCommandsEvent::HoverEntered { .. }
                 | QuickCommandsEvent::HoverLeft { .. }
         ),
+        Event::QuickCommandsTick | Event::QuickCommandLaunchFinished(_) => {
+            false
+        },
         Event::SidebarWorkspace(
             sidebar_workspace::Event::WorkspaceCursorMoved { .. },
         ) => false,

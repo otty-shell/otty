@@ -1,5 +1,8 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use iced::{Point, Task, widget::operation};
 use otty_libterm::pty::SSHAuth;
@@ -12,7 +15,10 @@ use crate::features::quick_commands::editor::{
     open_create_editor_tab, open_edit_editor_tab,
 };
 use crate::features::tab::{QuickCommandErrorState, TabContent, TabItem};
-use crate::features::terminal::event::create_terminal_tab_with_session;
+use crate::features::terminal::event::{
+    focus_active_terminal, settings_for_session, sync_tab_block_selection,
+};
+use crate::features::terminal::term::TerminalState;
 use crate::state::State;
 
 use super::model::{
@@ -42,6 +48,44 @@ pub(crate) enum QuickCommandsEvent {
     ContextMenuDismiss,
     InlineEditChanged(String),
     InlineEditSubmit,
+}
+
+pub(crate) const QUICK_COMMANDS_TICK_MS: u64 = 200;
+
+#[derive(Clone)]
+pub(crate) enum QuickCommandLaunchResult {
+    Success {
+        path: NodePath,
+        tab_id: u64,
+        terminal: Arc<Mutex<Option<TerminalState>>>,
+    },
+    Error {
+        path: NodePath,
+        title: String,
+        message: String,
+    },
+}
+
+impl fmt::Debug for QuickCommandLaunchResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Success { path, tab_id, .. } => f
+                .debug_struct("QuickCommandLaunchResult::Success")
+                .field("path", path)
+                .field("tab_id", tab_id)
+                .finish(),
+            Self::Error {
+                path,
+                title,
+                message,
+            } => f
+                .debug_struct("QuickCommandLaunchResult::Error")
+                .field("path", path)
+                .field("title", title)
+                .field("message", message)
+                .finish(),
+        }
+    }
 }
 
 /// Actions that can be triggered from the context menu.
@@ -198,6 +242,53 @@ pub(crate) fn quick_commands_reducer(
     }
 }
 
+pub(crate) fn handle_quick_command_launch_result(
+    state: &mut State,
+    result: QuickCommandLaunchResult,
+) -> Task<AppEvent> {
+    match result {
+        QuickCommandLaunchResult::Success {
+            path,
+            tab_id,
+            terminal,
+        } => {
+            state.quick_commands.launching.remove(&path);
+            let terminal =
+                terminal.lock().ok().and_then(|mut guard| guard.take());
+            let Some(terminal) = terminal else {
+                return Task::none();
+            };
+
+            let title = terminal.title().to_string();
+            state.tab_items.insert(
+                tab_id,
+                TabItem {
+                    id: tab_id,
+                    title,
+                    content: TabContent::Terminal(Box::new(terminal)),
+                },
+            );
+            state.active_tab_id = Some(tab_id);
+
+            let sync_task = sync_tab_block_selection(state, tab_id);
+            let focus_task = focus_active_terminal(state);
+            Task::batch(vec![focus_task, sync_task])
+        },
+        QuickCommandLaunchResult::Error {
+            path,
+            title,
+            message,
+        } => {
+            state.quick_commands.launching.remove(&path);
+            open_error_tab(
+                state,
+                format!("Failed to launch \"{title}\""),
+                message,
+            )
+        },
+    }
+}
+
 fn handle_node_left_click(
     state: &mut State,
     terminal_settings: &Settings,
@@ -223,7 +314,7 @@ fn handle_node_left_click(
             Task::none()
         },
         QuickCommandNode::Command(command) => {
-            launch_quick_command(state, terminal_settings, &command)
+            launch_quick_command(state, terminal_settings, path, command)
         },
     }
 }
@@ -699,41 +790,71 @@ fn persist_quick_commands(state: &mut State) {
 fn launch_quick_command(
     state: &mut State,
     terminal_settings: &Settings,
-    command: &QuickCommand,
+    path: NodePath,
+    command: QuickCommand,
 ) -> Task<AppEvent> {
-    let session = match &command.spec {
+    if state.quick_commands.launching.contains_key(&path) {
+        return Task::none();
+    }
+
+    if let Some(validation_error) = validate_quick_command(&command) {
+        return open_error_tab(
+            state,
+            format!("Failed to launch \"{}\"", command.title),
+            quick_command_error_message(
+                &command,
+                &format!("Validation failed: {validation_error}"),
+            ),
+        );
+    }
+
+    state
+        .quick_commands
+        .launching
+        .insert(path.clone(), Instant::now());
+
+    let tab_id = state.next_tab_id;
+    state.next_tab_id += 1;
+    let terminal_id = state.next_terminal_id;
+    state.next_terminal_id += 1;
+
+    let session = command_session(&command);
+    let settings = settings_for_session(terminal_settings, session);
+    let title = command.title.clone();
+
+    Task::perform(
+        async move {
+            match TerminalState::new(
+                tab_id,
+                title.clone(),
+                terminal_id,
+                settings,
+            ) {
+                Ok((terminal, _)) => QuickCommandLaunchResult::Success {
+                    path,
+                    tab_id,
+                    terminal: Arc::new(Mutex::new(Some(terminal))),
+                },
+                Err(err) => QuickCommandLaunchResult::Error {
+                    path,
+                    title,
+                    message: quick_command_error_message(&command, &err),
+                },
+            }
+        },
+        AppEvent::QuickCommandLaunchFinished,
+    )
+}
+
+fn command_session(command: &QuickCommand) -> SessionKind {
+    match &command.spec {
         CommandSpec::Custom { custom } => {
             SessionKind::from_local_options(custom_session(custom))
         },
         CommandSpec::Ssh { ssh } => {
             SessionKind::from_ssh_options(ssh_session(ssh))
         },
-    };
-
-    if let Some(validation_error) = validate_quick_command(command) {
-        return open_error_tab(
-            state,
-            format!("Failed to launch \"{}\"", command.title),
-            quick_command_error_message(
-                command,
-                &format!("Validation failed: {validation_error}"),
-            ),
-        );
     }
-
-    create_terminal_tab_with_session(
-        state,
-        terminal_settings,
-        &command.title,
-        session,
-    )
-    .unwrap_or_else(|err| {
-        open_error_tab(
-            state,
-            format!("Failed to launch \"{}\"", command.title),
-            quick_command_error_message(command, &err),
-        )
-    })
 }
 
 fn validate_quick_command(command: &QuickCommand) -> Option<String> {

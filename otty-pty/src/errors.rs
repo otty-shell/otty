@@ -10,13 +10,13 @@ pub enum SessionError {
     #[error("error from *nix bindings")]
     Nix(#[from] Errno),
 
-    #[error("error from local pty I/O")]
+    #[error("pty I/O error: {0}")]
     IO(#[from] io::Error),
 
-    #[error("error from ssh2 lib")]
+    #[error("ssh error: {0}")]
     SSH2(#[from] ssh2::Error),
 
-    #[error("failed to resize pty")]
+    #[error("failed to resize pty: {0}")]
     Resize(io::Error),
 
     #[error("failed to parse ssh host")]

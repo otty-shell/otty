@@ -10,6 +10,7 @@ use crate::icons;
 use crate::theme::{StyleOverrides, ThemeProps};
 
 pub(crate) const TAB_BAR_HEIGHT: f32 = 25.0;
+pub(crate) const TAB_BAR_SCROLL_ID: &str = "tab_bar_scroll";
 
 const TAB_BUTTON_HEIGHT: f32 = 25.0;
 const TAB_BUTTON_WIDTH: f32 = 235.0;
@@ -50,6 +51,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TabEvent> {
                 .margin(0),
         ),
     )
+    .id(TAB_BAR_SCROLL_ID)
     .width(Length::Fill);
 
     let palette = props.theme.theme.iced_palette();

@@ -2,7 +2,6 @@ use iced::Task;
 use otty_ui_term::settings::Settings;
 
 use crate::app::Event as AppEvent;
-use crate::effects::close_window;
 use crate::features::quick_commands::editor::QuickCommandEditorState;
 use crate::features::terminal::event as terminal;
 use crate::features::terminal::shell::ShellSession;
@@ -90,10 +89,6 @@ fn create_settings_tab(state: &mut State) -> Task<AppEvent> {
 fn close_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {
     if !state.tab_items.contains_key(&tab_id) {
         return Task::none();
-    }
-
-    if state.tab_items.len() == 1 {
-        return close_window();
     }
 
     let next_active = if state.active_tab_id == Some(tab_id) {

@@ -181,40 +181,6 @@ pub(crate) fn create_terminal_tab(
     Task::batch(vec![focus_task, sync_task])
 }
 
-/// Create a terminal tab using the provided session configuration.
-pub(crate) fn create_terminal_tab_with_session(
-    state: &mut State,
-    terminal_settings: &Settings,
-    title: &str,
-    session: SessionKind,
-) -> Result<Task<AppEvent>, String> {
-    let tab_id = state.next_tab_id;
-    state.next_tab_id += 1;
-
-    let terminal_id = state.next_terminal_id;
-    state.next_terminal_id += 1;
-
-    let settings = settings_for_session(terminal_settings, session);
-    let (mut tab, focus_task) =
-        TerminalState::new(tab_id, title.to_string(), terminal_id, settings)?;
-    tab.set_grid_size(state.pane_grid_size());
-
-    let title = tab.title().to_string();
-    state.tab_items.insert(
-        tab_id,
-        TabItem {
-            id: tab_id,
-            title,
-            content: TabContent::Terminal(Box::new(tab)),
-        },
-    );
-    state.active_tab_id = Some(tab_id);
-
-    let sync_task = sync_tab_block_selection(state, tab_id);
-
-    Ok(Task::batch(vec![focus_task, sync_task]))
-}
-
 pub(crate) fn focus_active_terminal(state: &State) -> Task<AppEvent> {
     let Some(tab) = state.active_tab() else {
         return Task::none();
@@ -482,7 +448,7 @@ enum CopyKind {
     Command,
 }
 
-fn settings_for_session(
+pub(crate) fn settings_for_session(
     base_settings: &Settings,
     session: SessionKind,
 ) -> Settings {

@@ -1,12 +1,16 @@
 use iced::alignment;
+use iced::border::Radius;
 use iced::widget::text::Wrapping;
 use iced::widget::{
     Column, Space, column, container, mouse_area, row, scrollable, svg, text,
     text_input,
 };
 use iced::{Background, Element, Length, mouse};
+use std::time::{Duration, Instant};
 
-use crate::features::quick_commands::event::QuickCommandsEvent;
+use crate::features::quick_commands::event::{
+    QUICK_COMMANDS_TICK_MS, QuickCommandsEvent,
+};
 use crate::features::quick_commands::model::QuickCommandNode;
 use crate::features::quick_commands::state::{
     DropTarget, InlineEditKind, InlineEditState, QuickCommandsState,
@@ -25,6 +29,10 @@ const TREE_INDENT: f32 = 14.0;
 const TREE_ICON_WIDTH: f32 = 14.0;
 const TREE_ROW_PADDING_X: f32 = 6.0;
 const TREE_ROW_SPACING: f32 = 6.0;
+const LAUNCH_INDICATOR_SIZE: f32 = 6.0;
+const LAUNCH_INDICATOR_SLOT: f32 = 12.0;
+const LAUNCH_INDICATOR_DELAY: Duration = Duration::from_secs(1);
+const LAUNCH_INDICATOR_BLINK_MS: u128 = 500;
 
 const INPUT_PADDING_X: f32 = 6.0;
 const INPUT_PADDING_Y: f32 = 4.0;
@@ -202,6 +210,7 @@ fn render_entry<'a>(
             DropTarget::Root => None,
         })
         .unwrap_or(false);
+    let launched_at = props.state.launching.get(&entry.path).copied();
 
     let is_editing = matches!(props.state.inline_edit.as_ref(), Some(edit)
         if matches!(&edit.kind, InlineEditKind::Rename { path } if path == &entry.path));
@@ -252,10 +261,21 @@ fn render_entry<'a>(
     .height(Length::Fill)
     .align_y(alignment::Vertical::Center);
 
-    let content =
-        row![Space::new().width(Length::Fixed(indent)), icon_view, title]
-            .spacing(TREE_ROW_SPACING)
-            .align_y(alignment::Vertical::Center);
+    let indicator = launch_indicator(
+        props.theme,
+        !entry.node.is_folder(),
+        launched_at,
+        props.state.blink_nonce,
+    );
+
+    let content = row![
+        Space::new().width(Length::Fixed(indent)),
+        icon_view,
+        title,
+        indicator
+    ]
+    .spacing(TREE_ROW_SPACING)
+    .align_y(alignment::Vertical::Center);
 
     let palette = props.theme.theme.iced_palette().clone();
 
@@ -335,6 +355,52 @@ fn inline_edit_row<'a>(
         .width(Length::Fill)
         .padding([0.0, TREE_ROW_PADDING_X])
         .into()
+}
+
+fn launch_indicator<'a>(
+    theme: ThemeProps<'a>,
+    is_command: bool,
+    launched_at: Option<Instant>,
+    blink_nonce: u64,
+) -> Element<'a, QuickCommandsEvent> {
+    let slot = Length::Fixed(LAUNCH_INDICATOR_SLOT);
+    if !is_command {
+        return Space::new().width(slot).height(Length::Fill).into();
+    }
+
+    let show = launched_at
+        .map(|start| start.elapsed())
+        .filter(|elapsed| *elapsed >= LAUNCH_INDICATOR_DELAY);
+
+    if let Some(_elapsed) = show {
+        let blink_step = (blink_nonce as u128 * QUICK_COMMANDS_TICK_MS as u128)
+            / LAUNCH_INDICATOR_BLINK_MS;
+        let blink_on = blink_step.is_multiple_of(2);
+        if blink_on {
+            let palette = theme.theme.iced_palette();
+            let dot = container(Space::new())
+                .width(Length::Fixed(LAUNCH_INDICATOR_SIZE))
+                .height(Length::Fixed(LAUNCH_INDICATOR_SIZE))
+                .style(move |_| iced::widget::container::Style {
+                    background: Some(palette.blue.into()),
+                    border: iced::Border {
+                        radius: Radius::from(LAUNCH_INDICATOR_SIZE / 2.0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
+            container(dot)
+                .width(slot)
+                .height(Length::Fill)
+                .align_x(alignment::Horizontal::Center)
+                .align_y(alignment::Vertical::Center)
+                .into()
+        } else {
+            Space::new().width(slot).height(Length::Fill).into()
+        }
+    } else {
+        Space::new().width(slot).height(Length::Fill).into()
+    }
 }
 
 fn is_prefix(prefix: &[String], path: &[String]) -> bool {

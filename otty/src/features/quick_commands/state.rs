@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::time::Instant;
+
 use iced::Point;
 
 use super::model::{NodePath, QuickCommandsFile};
@@ -44,6 +47,8 @@ pub(crate) struct QuickCommandsState {
     pub(crate) last_error: Option<String>,
     pub(crate) selected: Option<NodePath>,
     pub(crate) hovered: Option<NodePath>,
+    pub(crate) launching: HashMap<NodePath, Instant>,
+    pub(crate) blink_nonce: u64,
     pub(crate) context_menu: Option<ContextMenuState>,
     pub(crate) inline_edit: Option<InlineEditState>,
     pub(crate) pressed: Option<NodePath>,
@@ -61,6 +66,8 @@ impl QuickCommandsState {
                 last_error: None,
                 selected: None,
                 hovered: None,
+                launching: HashMap::new(),
+                blink_nonce: 0,
                 context_menu: None,
                 inline_edit: None,
                 pressed: None,
@@ -99,6 +106,8 @@ impl Default for QuickCommandsState {
             last_error: None,
             selected: None,
             hovered: None,
+            launching: HashMap::new(),
+            blink_nonce: 0,
             context_menu: None,
             inline_edit: None,
             pressed: None,
