@@ -131,7 +131,11 @@ fn quick_commands_tree<'a>(
     let mut column = Column::new().spacing(0);
 
     if let Some(edit) = props.state.inline_edit.as_ref()
-        && matches!(&edit.kind, InlineEditKind::CreateFolder { parent_path } if parent_path.is_empty())
+        && matches!(
+            &edit.kind,
+            InlineEditKind::CreateFolder { parent_path }
+                if parent_path.is_empty()
+        )
     {
         column = column.push(inline_edit_row(edit, 0));
     }
@@ -139,6 +143,16 @@ fn quick_commands_tree<'a>(
     for entry in entries {
         let row = render_entry(props, &entry);
         column = column.push(row);
+
+        if let Some(edit) = props.state.inline_edit.as_ref()
+            && matches!(
+                &edit.kind,
+                InlineEditKind::CreateFolder { parent_path }
+                    if parent_path == &entry.path
+            )
+        {
+            column = column.push(inline_edit_row(edit, entry.depth + 1));
+        }
     }
 
     let scrollable = scrollable::Scrollable::new(column)
@@ -170,6 +184,12 @@ fn render_entry<'a>(
     let is_hovered = props
         .state
         .hovered
+        .as_ref()
+        .map(|path| path == &entry.path)
+        .unwrap_or(false);
+    let is_selected = props
+        .state
+        .selected
         .as_ref()
         .map(|path| path == &entry.path)
         .unwrap_or(false);
@@ -212,7 +232,11 @@ fn render_entry<'a>(
         .height(Length::Fixed(TREE_ROW_HEIGHT))
         .padding([0.0, TREE_ROW_PADDING_X])
         .style(move |_| {
-            let background = if is_hovered {
+            let background = if is_selected {
+                let mut color = palette.dim_blue;
+                color.a = 0.7;
+                Some(color.into())
+            } else if is_hovered {
                 let mut color = palette.overlay;
                 color.a = 0.6;
                 Some(color.into())

@@ -148,12 +148,18 @@ pub(crate) fn create_terminal_tab(
 
     let settings =
         settings_for_session(terminal_settings, shell_session.session.clone());
-    let (mut tab, focus_task) = TerminalState::new(
+    let (mut tab, focus_task) = match TerminalState::new(
         tab_id,
         shell_session.name.clone(),
         terminal_id,
         settings,
-    );
+    ) {
+        Ok(result) => result,
+        Err(err) => {
+            log::warn!("failed to create terminal tab: {err}");
+            return Task::none();
+        },
+    };
     tab.set_grid_size(state.pane_grid_size());
 
     let title = tab.title().to_string();
@@ -178,7 +184,7 @@ pub(crate) fn create_terminal_tab_with_session(
     terminal_settings: &Settings,
     title: &str,
     session: SessionKind,
-) -> Task<AppEvent> {
+) -> Result<Task<AppEvent>, String> {
     let tab_id = state.next_tab_id;
     state.next_tab_id += 1;
 
@@ -187,7 +193,7 @@ pub(crate) fn create_terminal_tab_with_session(
 
     let settings = settings_for_session(terminal_settings, session);
     let (mut tab, focus_task) =
-        TerminalState::new(tab_id, title.to_string(), terminal_id, settings);
+        TerminalState::new(tab_id, title.to_string(), terminal_id, settings)?;
     tab.set_grid_size(state.pane_grid_size());
 
     let title = tab.title().to_string();
@@ -203,7 +209,7 @@ pub(crate) fn create_terminal_tab_with_session(
 
     let sync_task = sync_tab_block_selection(state, tab_id);
 
-    Task::batch(vec![focus_task, sync_task])
+    Ok(Task::batch(vec![focus_task, sync_task]))
 }
 
 pub(crate) fn focus_active_terminal(state: &State) -> Task<AppEvent> {
@@ -220,9 +226,9 @@ pub(crate) fn focus_active_terminal(state: &State) -> Task<AppEvent> {
                 None => Task::none(),
             }
         },
-        TabContent::Settings | TabContent::QuickCommandEditor(_) => {
-            Task::none()
-        },
+        TabContent::Settings
+        | TabContent::QuickCommandEditor(_)
+        | TabContent::QuickCommandError(_) => Task::none(),
     }
 }
 
@@ -236,7 +242,9 @@ pub(crate) fn sync_tab_block_selection(
 
     let terminal = match &tab.content {
         TabContent::Terminal(terminal) => terminal,
-        TabContent::Settings | TabContent::QuickCommandEditor(_) => {
+        TabContent::Settings
+        | TabContent::QuickCommandEditor(_)
+        | TabContent::QuickCommandError(_) => {
             return Task::none();
         },
     };
@@ -428,7 +436,9 @@ fn terminal_tab_mut(
         .get_mut(&tab_id)
         .and_then(|tab| match &mut tab.content {
             TabContent::Terminal(terminal) => Some(terminal.as_mut()),
-            TabContent::Settings | TabContent::QuickCommandEditor(_) => None,
+            TabContent::Settings
+            | TabContent::QuickCommandEditor(_)
+            | TabContent::QuickCommandError(_) => None,
         })
 }
 
@@ -448,7 +458,9 @@ fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
         .get(&tab_id)
         .and_then(|tab| match &tab.content {
             TabContent::Terminal(terminal) => Some(terminal.as_ref()),
-            TabContent::Settings | TabContent::QuickCommandEditor(_) => None,
+            TabContent::Settings
+            | TabContent::QuickCommandEditor(_)
+            | TabContent::QuickCommandError(_) => None,
         })
 }
 

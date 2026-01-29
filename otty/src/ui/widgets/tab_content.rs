@@ -42,6 +42,12 @@ pub(crate) fn view<'a>(
                         AppEvent::QuickCommandEditor { tab_id, event }
                     })
                 },
+                TabContent::QuickCommandError(error) => {
+                    quick_commands::error::view(quick_commands::error::Props {
+                        error,
+                        theme,
+                    })
+                },
             },
             None => container(text("No tabs"))
                 .width(Length::Fill)

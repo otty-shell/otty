@@ -43,10 +43,10 @@ impl TerminalState {
         default_title: String,
         terminal_id: u64,
         settings: Settings,
-    ) -> (Self, Task<AppEvent>) {
+    ) -> Result<(Self, Task<AppEvent>), String> {
         let terminal =
             otty_ui_term::Terminal::new(terminal_id, settings.clone())
-                .expect("failed to create the new terminal instance");
+                .map_err(|err| format!("{err}"))?;
         let widget_id = terminal.widget_id().clone();
 
         let (panes, initial_pane) = pane_grid::State::new(terminal_id);
@@ -75,7 +75,7 @@ impl TerminalState {
             grid_size: Size::ZERO,
         };
 
-        (tab, TerminalView::focus(widget_id))
+        Ok((tab, TerminalView::focus(widget_id)))
     }
 
     pub fn title(&self) -> &str {
@@ -162,11 +162,17 @@ impl TerminalState {
         let split = self.panes.split(axis, pane, terminal_id);
 
         if let Some((new_pane, _)) = split {
-            let terminal = otty_ui_term::Terminal::new(
+            let terminal = match otty_ui_term::Terminal::new(
                 terminal_id,
                 self.terminal_settings.clone(),
-            )
-            .expect("failed to create the new terminal instance");
+            ) {
+                Ok(terminal) => terminal,
+                Err(err) => {
+                    log::warn!("split pane terminal init failed: {err}");
+                    let _ = self.panes.close(new_pane);
+                    return Task::none();
+                },
+            };
             let widget_id = terminal.widget_id().clone();
 
             self.terminals.insert(

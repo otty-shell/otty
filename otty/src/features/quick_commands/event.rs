@@ -10,6 +10,7 @@ use crate::app::Event as AppEvent;
 use crate::features::quick_commands::editor::{
     open_create_editor_tab, open_edit_editor_tab,
 };
+use crate::features::tab::{QuickCommandErrorState, TabContent, TabItem};
 use crate::features::terminal::event::create_terminal_tab_with_session;
 use crate::state::State;
 
@@ -69,6 +70,7 @@ pub(crate) fn quick_commands_reducer(
         BackgroundPressed => {
             state.quick_commands.context_menu = None;
             state.quick_commands.inline_edit = None;
+            state.quick_commands.selected = None;
             Task::none()
         },
         BackgroundRightClicked => {
@@ -76,6 +78,7 @@ pub(crate) fn quick_commands_reducer(
                 target: ContextMenuTarget::Background,
                 cursor: state.quick_commands.cursor,
             });
+            state.quick_commands.selected = None;
             Task::none()
         },
         NodeRightClicked { path } => {
@@ -99,10 +102,14 @@ pub(crate) fn quick_commands_reducer(
             Task::none()
         },
         HeaderCreateFolder => {
-            begin_inline_create_folder(state, Vec::new());
+            let parent = selected_parent_path(state);
+            begin_inline_create_folder(state, parent);
             Task::none()
         },
-        HeaderCreateCommand => open_create_command_tab(state, Vec::new()),
+        HeaderCreateCommand => {
+            let parent = selected_parent_path(state);
+            open_create_command_tab(state, parent)
+        },
         NodeLeftClicked { path } => {
             handle_node_left_click(state, terminal_settings, path)
         },
@@ -139,6 +146,7 @@ fn handle_node_left_click(
 
     state.quick_commands.inline_edit = None;
     state.quick_commands.context_menu = None;
+    state.quick_commands.selected = Some(path.clone());
 
     match node {
         QuickCommandNode::Folder(_) => {
@@ -210,6 +218,13 @@ fn handle_context_menu_action(
 }
 
 fn begin_inline_create_folder(state: &mut State, parent_path: NodePath) {
+    if !parent_path.is_empty()
+        && let Some(QuickCommandNode::Folder(folder)) =
+            state.quick_commands.data.node_mut(&parent_path)
+    {
+        folder.expanded = true;
+    }
+
     state.quick_commands.inline_edit = Some(InlineEditState {
         kind: InlineEditKind::CreateFolder { parent_path },
         value: String::new(),
@@ -282,6 +297,19 @@ fn apply_inline_edit(state: &mut State) {
                         state.quick_commands.data.node_mut(&path)
                     {
                         *node.title_mut() = title;
+                        if state
+                            .quick_commands
+                            .selected
+                            .as_ref()
+                            .map(|selected| selected == &path)
+                            .unwrap_or(false)
+                        {
+                            let mut updated = path.clone();
+                            if let Some(last) = updated.last_mut() {
+                                *last = node.title().to_string();
+                            }
+                            state.quick_commands.selected = Some(updated);
+                        }
                         persist_quick_commands(state);
                     }
                 },
@@ -325,6 +353,25 @@ fn toggle_folder_expanded(state: &mut State, path: &[String]) {
     };
     if let QuickCommandNode::Folder(folder) = node {
         folder.expanded = !folder.expanded;
+    }
+}
+
+fn selected_parent_path(state: &State) -> NodePath {
+    let Some(selected) = state.quick_commands.selected.as_ref() else {
+        return Vec::new();
+    };
+
+    let Some(node) = state.quick_commands.data.node(selected) else {
+        return Vec::new();
+    };
+
+    match node {
+        QuickCommandNode::Folder(_) => selected.clone(),
+        QuickCommandNode::Command(_) => {
+            let mut parent = selected.clone();
+            parent.pop();
+            parent
+        },
     }
 }
 
@@ -401,6 +448,13 @@ fn launch_quick_command(
         &command.title,
         session,
     )
+    .unwrap_or_else(|err| {
+        open_error_tab(
+            state,
+            format!("Failed to launch \"{}\"", command.title),
+            err,
+        )
+    })
 }
 
 fn custom_session(custom: &CustomCommand) -> LocalSessionOptions {
@@ -465,4 +519,28 @@ fn open_edit_command_tab(state: &mut State, path: NodePath) -> Task<AppEvent> {
     };
 
     open_edit_editor_tab(state, path, &command)
+}
+
+fn open_error_tab(
+    state: &mut State,
+    title: String,
+    message: String,
+) -> Task<AppEvent> {
+    let tab_id = state.next_tab_id;
+    state.next_tab_id += 1;
+
+    state.tab_items.insert(
+        tab_id,
+        TabItem {
+            id: tab_id,
+            title: title.clone(),
+            content: TabContent::QuickCommandError(QuickCommandErrorState {
+                title,
+                message,
+            }),
+        },
+    );
+    state.active_tab_id = Some(tab_id);
+
+    Task::none()
 }

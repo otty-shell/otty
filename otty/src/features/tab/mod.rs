@@ -32,6 +32,15 @@ pub(crate) enum TabContent {
     Settings,
     /// Editor for quick command definitions.
     QuickCommandEditor(Box<QuickCommandEditorState>),
+    /// Error tab shown when quick command launch fails.
+    QuickCommandError(QuickCommandErrorState),
+}
+
+/// Snapshot of a failed quick command launch.
+#[derive(Debug, Clone)]
+pub(crate) struct QuickCommandErrorState {
+    pub(crate) title: String,
+    pub(crate) message: String,
 }
 
 /// Metadata for a single tab entry.
