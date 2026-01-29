@@ -9,7 +9,7 @@ use iced::{Element, Length, Size};
 use crate::features::quick_commands::event::QuickCommandsEvent;
 use crate::features::quick_commands::model::QuickCommandNode;
 use crate::features::quick_commands::state::{
-    InlineEditKind, InlineEditState, QuickCommandsState,
+    DropTarget, InlineEditKind, InlineEditState, QuickCommandsState,
 };
 use crate::icons;
 use crate::theme::ThemeProps;
@@ -168,11 +168,35 @@ fn quick_commands_tree<'a>(
     let scrollable = mouse_area(scrollable)
         .on_move(|position| QuickCommandsEvent::CursorMoved { position })
         .on_press(QuickCommandsEvent::BackgroundPressed)
+        .on_release(QuickCommandsEvent::BackgroundReleased)
         .on_right_press(QuickCommandsEvent::BackgroundRightClicked);
+
+    let is_root_drop =
+        matches!(props.state.drop_target, Some(DropTarget::Root))
+            && props
+                .state
+                .drag
+                .as_ref()
+                .map(|drag| drag.active)
+                .unwrap_or(false);
+    let palette = props.theme.theme.iced_palette().clone();
 
     container(scrollable)
         .width(Length::Fill)
         .height(Length::Fill)
+        .style(move |_| {
+            let background = if is_root_drop {
+                let mut color = palette.dim_green;
+                color.a = 0.2;
+                Some(color.into())
+            } else {
+                None
+            };
+            iced::widget::container::Style {
+                background,
+                ..Default::default()
+            }
+        })
         .into()
 }
 
@@ -192,6 +216,15 @@ fn render_entry<'a>(
         .selected
         .as_ref()
         .map(|path| path == &entry.path)
+        .unwrap_or(false);
+    let is_drop_target = props
+        .state
+        .drop_target
+        .as_ref()
+        .and_then(|target| match target {
+            DropTarget::Folder(path) => Some(is_prefix(path, &entry.path)),
+            DropTarget::Root => None,
+        })
         .unwrap_or(false);
 
     let is_editing = matches!(props.state.inline_edit.as_ref(), Some(edit)
@@ -232,7 +265,11 @@ fn render_entry<'a>(
         .height(Length::Fixed(TREE_ROW_HEIGHT))
         .padding([0.0, TREE_ROW_PADDING_X])
         .style(move |_| {
-            let background = if is_selected {
+            let background = if is_drop_target {
+                let mut color = palette.dim_green;
+                color.a = 0.35;
+                Some(color.into())
+            } else if is_selected {
                 let mut color = palette.dim_blue;
                 color.a = 0.7;
                 Some(color.into())
@@ -252,7 +289,8 @@ fn render_entry<'a>(
 
     let path = entry.path.clone();
     mouse_area(row)
-        .on_press(QuickCommandsEvent::NodeLeftClicked { path: path.clone() })
+        .on_press(QuickCommandsEvent::NodePressed { path: path.clone() })
+        .on_release(QuickCommandsEvent::NodeReleased { path: path.clone() })
         .on_right_press(QuickCommandsEvent::NodeRightClicked { path })
         .on_enter(QuickCommandsEvent::HoverChanged {
             path: Some(entry.path.clone()),
@@ -294,6 +332,14 @@ fn inline_edit_row<'a>(
         .width(Length::Fill)
         .padding([0.0, TREE_ROW_PADDING_X])
         .into()
+}
+
+fn is_prefix(prefix: &[String], path: &[String]) -> bool {
+    if prefix.len() > path.len() {
+        return false;
+    }
+
+    prefix.iter().zip(path.iter()).all(|(a, b)| a == b)
 }
 
 impl TreeNode for QuickCommandNode {

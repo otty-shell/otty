@@ -45,6 +45,9 @@ pub(crate) struct QuickCommandsState {
     pub(crate) hovered: Option<NodePath>,
     pub(crate) context_menu: Option<ContextMenuState>,
     pub(crate) inline_edit: Option<InlineEditState>,
+    pub(crate) pressed: Option<NodePath>,
+    pub(crate) drag: Option<DragState>,
+    pub(crate) drop_target: Option<DropTarget>,
     pub(crate) cursor: Point,
 }
 
@@ -59,6 +62,9 @@ impl QuickCommandsState {
                 hovered: None,
                 context_menu: None,
                 inline_edit: None,
+                pressed: None,
+                drag: None,
+                drop_target: None,
                 cursor: Point::ORIGIN,
             },
             Ok(None) => Self::default(),
@@ -94,7 +100,25 @@ impl Default for QuickCommandsState {
             hovered: None,
             context_menu: None,
             inline_edit: None,
+            pressed: None,
+            drag: None,
+            drop_target: None,
             cursor: Point::ORIGIN,
         }
     }
+}
+
+/// Active drag state for a tree node.
+#[derive(Debug, Clone)]
+pub(crate) struct DragState {
+    pub(crate) source: NodePath,
+    pub(crate) origin: Point,
+    pub(crate) active: bool,
+}
+
+/// Drop target for a drag operation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DropTarget {
+    Root,
+    Folder(NodePath),
 }

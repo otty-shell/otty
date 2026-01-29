@@ -19,7 +19,8 @@ use super::model::{
     QuickCommandFolder, QuickCommandNode, SshCommand,
 };
 use super::state::{
-    ContextMenuState, ContextMenuTarget, InlineEditKind, InlineEditState,
+    ContextMenuState, ContextMenuTarget, DragState, DropTarget, InlineEditKind,
+    InlineEditState,
 };
 
 /// Events emitted by the quick commands sidebar tree.
@@ -27,10 +28,12 @@ use super::state::{
 pub(crate) enum QuickCommandsEvent {
     CursorMoved { position: Point },
     HoverChanged { path: Option<NodePath> },
-    NodeLeftClicked { path: NodePath },
+    NodePressed { path: NodePath },
+    NodeReleased { path: NodePath },
     NodeRightClicked { path: NodePath },
     BackgroundRightClicked,
     BackgroundPressed,
+    BackgroundReleased,
     HeaderCreateFolder,
     HeaderCreateCommand,
     ContextMenuAction(ContextMenuAction),
@@ -61,16 +64,62 @@ pub(crate) fn quick_commands_reducer(
     match event {
         CursorMoved { position } => {
             state.quick_commands.cursor = position;
+            update_drag_state(state);
             Task::none()
         },
         HoverChanged { path } => {
+            let drag_active = state
+                .quick_commands
+                .drag
+                .as_ref()
+                .map(|drag| drag.active)
+                .unwrap_or(false);
+
+            if drag_active && path.is_none() {
+                return Task::none();
+            }
+
             state.quick_commands.hovered = path;
+
+            if drag_active {
+                let target = drop_target_from_hover(state);
+                if can_drop(
+                    state,
+                    &state
+                        .quick_commands
+                        .drag
+                        .as_ref()
+                        .map(|drag| drag.source.clone())
+                        .unwrap_or_default(),
+                    &target,
+                ) {
+                    state.quick_commands.drop_target = Some(target);
+                } else {
+                    state.quick_commands.drop_target = None;
+                }
+            }
             Task::none()
         },
         BackgroundPressed => {
             state.quick_commands.context_menu = None;
             state.quick_commands.inline_edit = None;
             state.quick_commands.selected = None;
+            Task::none()
+        },
+        BackgroundReleased => {
+            if state
+                .quick_commands
+                .drag
+                .as_ref()
+                .map(|drag| drag.active)
+                .unwrap_or(false)
+            {
+                state.quick_commands.drop_target = Some(DropTarget::Root);
+            }
+            if finish_drag(state) {
+                return Task::none();
+            }
+            state.quick_commands.pressed = None;
             Task::none()
         },
         BackgroundRightClicked => {
@@ -110,8 +159,31 @@ pub(crate) fn quick_commands_reducer(
             let parent = selected_parent_path(state);
             open_create_command_tab(state, parent)
         },
-        NodeLeftClicked { path } => {
-            handle_node_left_click(state, terminal_settings, path)
+        NodePressed { path } => {
+            state.quick_commands.pressed = Some(path.clone());
+            state.quick_commands.selected = Some(path.clone());
+            state.quick_commands.drag = Some(DragState {
+                source: path,
+                origin: state.quick_commands.cursor,
+                active: false,
+            });
+            Task::none()
+        },
+        NodeReleased { path } => {
+            if finish_drag(state) {
+                return Task::none();
+            }
+            let clicked = state
+                .quick_commands
+                .pressed
+                .as_ref()
+                .map(|pressed| pressed == &path)
+                .unwrap_or(false);
+            state.quick_commands.pressed = None;
+            if clicked {
+                return handle_node_left_click(state, terminal_settings, path);
+            }
+            Task::none()
         },
         InlineEditChanged(value) => {
             if let Some(edit) = state.quick_commands.inline_edit.as_mut() {
@@ -373,6 +445,165 @@ fn selected_parent_path(state: &State) -> NodePath {
             parent
         },
     }
+}
+
+fn update_drag_state(state: &mut State) {
+    let (active, source) = {
+        let Some(drag) = state.quick_commands.drag.as_mut() else {
+            return;
+        };
+
+        let dx = state.quick_commands.cursor.x - drag.origin.x;
+        let dy = state.quick_commands.cursor.y - drag.origin.y;
+        let distance_sq = dx * dx + dy * dy;
+        let threshold = 4.0;
+        if !drag.active && distance_sq >= threshold * threshold {
+            drag.active = true;
+        }
+
+        (drag.active, drag.source.clone())
+    };
+
+    if active {
+        let target = drop_target_from_hover(state);
+        if can_drop(state, &source, &target) {
+            state.quick_commands.drop_target = Some(target);
+        } else {
+            state.quick_commands.drop_target = None;
+        }
+    }
+}
+
+fn finish_drag(state: &mut State) -> bool {
+    let Some(drag) = state.quick_commands.drag.take() else {
+        return false;
+    };
+
+    if !drag.active {
+        state.quick_commands.drop_target = None;
+        return false;
+    }
+
+    let target = match state.quick_commands.drop_target.take() {
+        Some(target) => target,
+        None => return true,
+    };
+    state.quick_commands.pressed = None;
+    move_node(state, drag.source, target);
+    true
+}
+
+fn drop_target_from_hover(state: &State) -> DropTarget {
+    let Some(hovered) = state.quick_commands.hovered.as_ref() else {
+        return DropTarget::Root;
+    };
+
+    let Some(node) = state.quick_commands.data.node(hovered) else {
+        return DropTarget::Root;
+    };
+
+    match node {
+        QuickCommandNode::Folder(_) => DropTarget::Folder(hovered.clone()),
+        QuickCommandNode::Command(_) => {
+            let mut parent = hovered.clone();
+            parent.pop();
+            if parent.is_empty() {
+                DropTarget::Root
+            } else {
+                DropTarget::Folder(parent)
+            }
+        },
+    }
+}
+
+fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
+    let Some(node) = state.quick_commands.data.node(&source).cloned() else {
+        return;
+    };
+
+    let target_path = match target {
+        DropTarget::Root => Vec::new(),
+        DropTarget::Folder(path) => path,
+    };
+
+    let Some((_, source_parent)) = source.split_last() else {
+        return;
+    };
+    if source_parent == target_path.as_slice() {
+        return;
+    }
+
+    if matches!(node, QuickCommandNode::Folder(_))
+        && is_prefix(&source, &target_path)
+    {
+        state.quick_commands.last_error =
+            Some(String::from("Cannot move a folder into itself."));
+        return;
+    }
+
+    let title = source.last().cloned().unwrap_or_default();
+    if let Some(target_folder) = state.quick_commands.data.folder(&target_path)
+    {
+        if target_folder.contains_title(&title) {
+            state.quick_commands.last_error = Some(String::from(
+                "Target folder already has an item with that title.",
+            ));
+            return;
+        }
+    } else {
+        return;
+    }
+
+    let moved = {
+        let Some(parent_folder) =
+            state.quick_commands.data.parent_folder_mut(&source)
+        else {
+            return;
+        };
+        let Some(moved) = parent_folder.remove_child(&title) else {
+            return;
+        };
+        moved
+    };
+
+    let Some(target_folder) =
+        state.quick_commands.data.folder_mut(&target_path)
+    else {
+        return;
+    };
+
+    target_folder.children.push(moved);
+    let mut new_path = target_path.clone();
+    new_path.push(title);
+    state.quick_commands.selected = Some(new_path);
+    persist_quick_commands(state);
+}
+
+fn is_prefix(prefix: &[String], path: &[String]) -> bool {
+    if prefix.len() > path.len() {
+        return false;
+    }
+
+    prefix.iter().zip(path.iter()).all(|(a, b)| a == b)
+}
+
+fn can_drop(state: &State, source: &[String], target: &DropTarget) -> bool {
+    let Some(node) = state.quick_commands.data.node(source) else {
+        return false;
+    };
+
+    let target_path = match target {
+        DropTarget::Root => Vec::new(),
+        DropTarget::Folder(path) => path.clone(),
+    };
+
+    if matches!(node, QuickCommandNode::Folder(_))
+        && is_prefix(source, &target_path)
+    {
+        return false;
+    }
+
+    true
 }
 
 fn remove_node(state: &mut State, path: &[String]) {
