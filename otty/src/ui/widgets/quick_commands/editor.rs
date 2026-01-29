@@ -42,6 +42,7 @@ pub(crate) fn view<'a>(
         "codex: review",
         &props.editor.title,
         QuickCommandEditorEvent::UpdateTitle,
+        props.theme,
     ));
 
     content = match props.editor.mode {
@@ -64,6 +65,7 @@ pub(crate) fn view<'a>(
                 "/usr/bin/bash",
                 &props.editor.program,
                 QuickCommandEditorEvent::UpdateProgram,
+                props.theme,
             ));
             content = content.push(list_editor(
                 "Arguments",
@@ -85,6 +87,7 @@ pub(crate) fn view<'a>(
                 "/path/to/project",
                 &props.editor.working_directory,
                 QuickCommandEditorEvent::UpdateWorkingDirectory,
+                props.theme,
             ));
         },
         QuickCommandType::Ssh => {
@@ -95,12 +98,14 @@ pub(crate) fn view<'a>(
                 "example.com",
                 &props.editor.host,
                 QuickCommandEditorEvent::UpdateHost,
+                props.theme,
             ));
             let port_row = text_input_row(
                 "Port",
                 "22",
                 &props.editor.port,
                 QuickCommandEditorEvent::UpdatePort,
+                props.theme,
             );
             content = content.push(port_row);
             content = content.push(text_input_row(
@@ -108,12 +113,14 @@ pub(crate) fn view<'a>(
                 "ubuntu",
                 &props.editor.user,
                 QuickCommandEditorEvent::UpdateUser,
+                props.theme,
             ));
             content = content.push(text_input_row(
                 "Identity file",
                 "~/.ssh/id_ed25519",
                 &props.editor.identity_file,
                 QuickCommandEditorEvent::UpdateIdentityFile,
+                props.theme,
             ));
             content = content.push(list_editor(
                 "Extra args",
@@ -187,12 +194,14 @@ fn text_input_row<'a>(
     placeholder: &'a str,
     value: &'a str,
     on_input: fn(String) -> QuickCommandEditorEvent,
+    theme: ThemeProps<'a>,
 ) -> Element<'a, QuickCommandEditorEvent> {
     let label = field_label(label);
     let input = text_input(placeholder, value)
         .on_input(on_input)
         .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
         .size(INPUT_SIZE)
+        .style(text_input_style(theme))
         .width(Length::Fill);
 
     row![label, input]
@@ -239,6 +248,7 @@ fn list_editor<'a>(
             .on_input(move |val| on_update(index, val))
             .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
             .size(INPUT_SIZE)
+            .style(text_input_style(theme))
             .width(Length::Fill);
 
         let remove = editor_button("Remove", on_remove(index), theme);
@@ -267,6 +277,7 @@ fn env_editor<'a>(
             })
             .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
             .size(INPUT_SIZE)
+            .style(text_input_style(theme))
             .width(Length::Fill);
 
         let value_input = text_input(value_placeholder, value)
@@ -276,6 +287,7 @@ fn env_editor<'a>(
             })
             .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
             .size(INPUT_SIZE)
+            .style(text_input_style(theme))
             .width(Length::Fill);
 
         let remove = editor_button(
@@ -304,15 +316,24 @@ fn update_extra_arg(index: usize, value: String) -> QuickCommandEditorEvent {
     QuickCommandEditorEvent::UpdateExtraArg { index, value }
 }
 
-fn field_label<'a>(
-    label: &'a str,
-) -> Element<'a, QuickCommandEditorEvent> {
+fn field_label<'a>(label: &'a str) -> Element<'a, QuickCommandEditorEvent> {
     text(label)
         .size(LABEL_SIZE)
         .width(Length::Fixed(LABEL_WIDTH))
         .align_x(alignment::Horizontal::Left)
         .wrapping(Wrapping::None)
         .into()
+}
+
+fn text_input_style(
+    theme: ThemeProps<'_>,
+) -> impl Fn(&iced::Theme, text_input::Status) -> text_input::Style + 'static {
+    let palette = theme.theme.iced_palette().clone();
+    move |base: &iced::Theme, status| {
+        let mut style = iced::widget::text_input::default(base, status);
+        style.selection = palette.blue;
+        style
+    }
 }
 
 fn editor_button<'a>(
