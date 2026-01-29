@@ -304,17 +304,15 @@ fn update_extra_arg(index: usize, value: String) -> QuickCommandEditorEvent {
     QuickCommandEditorEvent::UpdateExtraArg { index, value }
 }
 
-fn field_label<'a>(label: &'a str) -> Element<'a, QuickCommandEditorEvent> {
-    container(
-        text(label)
-            .size(LABEL_SIZE)
-            .width(Length::Fixed(LABEL_WIDTH))
-            .align_x(alignment::Horizontal::Left)
-            .wrapping(Wrapping::None),
-    )
-    .height(Length::Fill)
-    .align_y(alignment::Vertical::Center)
-    .into()
+fn field_label<'a>(
+    label: &'a str,
+) -> Element<'a, QuickCommandEditorEvent> {
+    text(label)
+        .size(LABEL_SIZE)
+        .width(Length::Fixed(LABEL_WIDTH))
+        .align_x(alignment::Horizontal::Left)
+        .wrapping(Wrapping::None)
+        .into()
 }
 
 fn editor_button<'a>(
@@ -328,8 +326,6 @@ fn editor_button<'a>(
             .size(LABEL_SIZE)
             .align_x(alignment::Horizontal::Center),
     )
-    // .width(Length::Fill)
-    // .height(Length::Fill)
     .align_x(alignment::Horizontal::Center)
     .align_y(alignment::Vertical::Center);
 
