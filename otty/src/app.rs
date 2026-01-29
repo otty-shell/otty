@@ -139,6 +139,12 @@ impl App {
     pub(crate) fn update(&mut self, event: Event) -> Task<Event> {
         use Event::*;
 
+        if self.state.quick_commands.inline_edit.is_some()
+            && should_cancel_inline_edit(&event)
+        {
+            self.state.quick_commands.inline_edit = None;
+        }
+
         if self.any_context_menu_open() {
             match context_menu_guard(&event) {
                 MenuGuard::Allow => {},
@@ -488,6 +494,11 @@ impl App {
     }
 
     fn handle_sidebar_resize(&mut self, event: pane_grid::ResizeEvent) {
+        self.state.sidebar.mark_resizing();
+        self.state.quick_commands.hovered = None;
+        self.state.quick_commands.pressed = None;
+        self.state.quick_commands.drag = None;
+        self.state.quick_commands.drop_target = None;
         let max_ratio = max_sidebar_workspace_ratio();
 
         if !self.state.sidebar.workspace_open {
@@ -671,21 +682,50 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
             | TerminalEvent::SplitPane { .. }
             | TerminalEvent::ClosePane { .. } => Allow,
             TerminalEvent::ProxyToInternalWidget(_) => Allow,
-            TerminalEvent::PaneGridCursorMoved { .. } => Ignore,
+            TerminalEvent::PaneGridCursorMoved { .. } => Allow,
             _ => Dismiss,
         },
         Event::SidebarWorkspace(
             sidebar_workspace::Event::WorkspaceCursorMoved { .. },
         )
         | Event::SidebarWorkspace(sidebar_workspace::Event::QuickCommands(
-            quick_commands::QuickCommandsEvent::CursorMoved { .. }
-            | quick_commands::QuickCommandsEvent::HoverEntered { .. }
+            quick_commands::QuickCommandsEvent::CursorMoved { .. },
+        )) => Allow,
+        Event::SidebarWorkspace(sidebar_workspace::Event::QuickCommands(
+            quick_commands::QuickCommandsEvent::HoverEntered { .. }
             | quick_commands::QuickCommandsEvent::HoverLeft { .. },
         )) => Ignore,
         Event::ActionBar(_) => Allow,
         Event::Window(_) | Event::ResizeWindow(_) => Allow,
         Event::Keyboard(_) => Ignore,
         _ => Dismiss,
+    }
+}
+
+fn should_cancel_inline_edit(event: &Event) -> bool {
+    use quick_commands::QuickCommandsEvent;
+
+    match event {
+        Event::SidebarWorkspace(sidebar_workspace::Event::QuickCommands(
+            quick_commands_event,
+        )) => !matches!(
+            quick_commands_event,
+            QuickCommandsEvent::InlineEditChanged(_)
+                | QuickCommandsEvent::InlineEditSubmit
+                | QuickCommandsEvent::CursorMoved { .. }
+                | QuickCommandsEvent::HoverEntered { .. }
+                | QuickCommandsEvent::HoverLeft { .. }
+        ),
+        Event::SidebarWorkspace(
+            sidebar_workspace::Event::WorkspaceCursorMoved { .. },
+        ) => false,
+        Event::Terminal { event, .. } => !matches!(
+            event,
+            TerminalEvent::ProxyToInternalWidget(_)
+                | TerminalEvent::PaneGridCursorMoved { .. }
+        ),
+        Event::Keyboard(_) | Event::Window(_) => false,
+        _ => true,
     }
 }
 

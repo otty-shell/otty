@@ -4,7 +4,7 @@ use iced::widget::{
     Column, Space, column, container, mouse_area, row, scrollable, svg, text,
     text_input,
 };
-use iced::{Element, Length};
+use iced::{Background, Element, Length, mouse};
 
 use crate::features::quick_commands::event::QuickCommandsEvent;
 use crate::features::quick_commands::model::QuickCommandNode;
@@ -22,7 +22,7 @@ const HEADER_FONT_SIZE: f32 = 12.0;
 const TREE_ROW_HEIGHT: f32 = 24.0;
 const TREE_FONT_SIZE: f32 = 12.0;
 const TREE_INDENT: f32 = 14.0;
-const TREE_ICON_WIDTH: f32 = 10.0;
+const TREE_ICON_WIDTH: f32 = 14.0;
 const TREE_ROW_PADDING_X: f32 = 6.0;
 const TREE_ROW_SPACING: f32 = 6.0;
 
@@ -107,15 +107,39 @@ fn quick_commands_tree<'a>(
         }
     }
 
+    let palette = props.theme.theme.iced_palette().clone();
+
     let scrollable = scrollable::Scrollable::new(column)
         .width(Length::Fill)
         .height(Length::Fill)
         .direction(scrollable::Direction::Vertical(
             scrollable::Scrollbar::new()
                 .width(4)
-                .margin(2)
+                .margin(0)
                 .scroller_width(4),
-        ));
+        ))
+        .style(move |theme, status| {
+            let mut style = scrollable::default(theme, status);
+            let radius = iced::border::Radius::from(0.0);
+
+            style.vertical_rail.border.radius = radius;
+            style.vertical_rail.scroller.border.radius = radius;
+            style.horizontal_rail.border.radius = radius;
+            style.horizontal_rail.scroller.border.radius = radius;
+
+            let mut scroller_color =
+                match style.vertical_rail.scroller.background {
+                    Background::Color(color) => color,
+                    _ => palette.dim_foreground,
+                };
+            scroller_color.a = (scroller_color.a * 0.7).min(1.0);
+            style.vertical_rail.scroller.background =
+                Background::Color(scroller_color);
+            style.horizontal_rail.scroller.background =
+                Background::Color(scroller_color);
+
+            style
+        });
 
     let scrollable = mouse_area(scrollable)
         .on_move(|position| QuickCommandsEvent::CursorMoved { position })
@@ -264,6 +288,7 @@ fn render_entry<'a>(
 
     let path = entry.path.clone();
     mouse_area(row)
+        .interaction(mouse::Interaction::Pointer)
         .on_press(QuickCommandsEvent::NodePressed { path: path.clone() })
         .on_release(QuickCommandsEvent::NodeReleased { path: path.clone() })
         .on_right_press(QuickCommandsEvent::NodeRightClicked { path })

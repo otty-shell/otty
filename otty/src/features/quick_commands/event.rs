@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use iced::{Point, Task, widget::operation};
 use otty_libterm::pty::SSHAuth;
@@ -65,15 +66,22 @@ pub(crate) fn quick_commands_reducer(
     match event {
         CursorMoved { position } => {
             state.quick_commands.cursor = position;
+            state.sidebar.cursor = position;
             update_drag_state(state);
             Task::none()
         },
         HoverEntered { path } => {
+            if state.sidebar.is_resizing() {
+                return Task::none();
+            }
             state.quick_commands.hovered = Some(path);
             update_drag_drop_target(state);
             Task::none()
         },
         HoverLeft { path } => {
+            if state.sidebar.is_resizing() {
+                return Task::none();
+            }
             if state
                 .quick_commands
                 .hovered
@@ -117,6 +125,7 @@ pub(crate) fn quick_commands_reducer(
             Task::none()
         },
         NodeRightClicked { path } => {
+            let selected_path = path.clone();
             let Some(node) = state.quick_commands.data.node(&path) else {
                 return Task::none();
             };
@@ -130,6 +139,7 @@ pub(crate) fn quick_commands_reducer(
                 target,
                 cursor: state.sidebar.cursor,
             });
+            state.quick_commands.selected = Some(selected_path);
             Task::none()
         },
         ContextMenuDismiss => {
@@ -270,8 +280,17 @@ fn handle_context_menu_action(
             begin_inline_create_folder(state, parent);
             focus_inline_edit(state)
         },
-        ContextMenuAction::CreateCommand => {
-            open_create_command_tab(state, Vec::new())
+        ContextMenuAction::CreateCommand => match menu.target {
+            ContextMenuTarget::Folder(path) => {
+                open_create_command_tab(state, path)
+            },
+            ContextMenuTarget::Command(path) => {
+                let parent = path[..path.len().saturating_sub(1)].to_vec();
+                open_create_command_tab(state, parent)
+            },
+            ContextMenuTarget::Background => {
+                open_create_command_tab(state, Vec::new())
+            },
         },
     }
 }
@@ -691,6 +710,17 @@ fn launch_quick_command(
         },
     };
 
+    if let Some(validation_error) = validate_quick_command(command) {
+        return open_error_tab(
+            state,
+            format!("Failed to launch \"{}\"", command.title),
+            quick_command_error_message(
+                command,
+                &format!("Validation failed: {validation_error}"),
+            ),
+        );
+    }
+
     create_terminal_tab_with_session(
         state,
         terminal_settings,
@@ -701,9 +731,198 @@ fn launch_quick_command(
         open_error_tab(
             state,
             format!("Failed to launch \"{}\"", command.title),
-            err,
+            quick_command_error_message(command, &err),
         )
     })
+}
+
+fn validate_quick_command(command: &QuickCommand) -> Option<String> {
+    match &command.spec {
+        CommandSpec::Custom { custom } => validate_custom_command(custom).err(),
+        CommandSpec::Ssh { ssh } => validate_ssh_command(ssh).err(),
+    }
+}
+
+fn validate_custom_command(custom: &CustomCommand) -> Result<(), String> {
+    let program = custom.program.trim();
+    if program.is_empty() {
+        return Err(String::from("Program is empty."));
+    }
+
+    let _program_path = find_program_path(program)?;
+
+    if let Some(dir) = custom.working_directory.as_deref() {
+        let dir = dir.trim();
+        if dir.is_empty() {
+            return Err(String::from("Working directory is empty."));
+        }
+
+        let expanded = expand_tilde(dir);
+        let path = Path::new(&expanded);
+        if !path.exists() {
+            return Err(format!("Working directory not found: {}", expanded));
+        }
+        if !path.is_dir() {
+            return Err(format!(
+                "Working directory is not a directory: {}",
+                expanded
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_ssh_command(ssh: &SshCommand) -> Result<(), String> {
+    if ssh.host.trim().is_empty() {
+        return Err(String::from("Host is empty."));
+    }
+
+    if ssh.port == 0 {
+        return Err(String::from("Port must be greater than 0."));
+    }
+
+    if let Some(identity) = ssh.identity_file.as_deref() {
+        let identity = identity.trim();
+        if !identity.is_empty() {
+            let expanded = expand_tilde(identity);
+            let path = Path::new(&expanded);
+            if !path.exists() {
+                return Err(format!("Identity file not found: {}", expanded));
+            }
+            if !path.is_file() {
+                return Err(format!(
+                    "Identity file is not a file: {}",
+                    expanded
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn find_program_path(program: &str) -> Result<PathBuf, String> {
+    let program = program.trim();
+    let has_separator = program.contains('/') || program.contains('\\');
+    let is_explicit = has_separator || program.starts_with('~');
+
+    if is_explicit {
+        let expanded = expand_tilde(program);
+        let path = PathBuf::from(&expanded);
+        return validate_program_path(&path, &expanded);
+    }
+
+    let paths: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|value| std::env::split_paths(&value).collect())
+        .unwrap_or_default();
+    for dir in paths {
+        let candidate = dir.join(program);
+        if is_executable_path(&candidate) {
+            return Ok(candidate);
+        }
+    }
+
+    Err(format!("Program not found in PATH: {program}"))
+}
+
+fn validate_program_path(path: &Path, label: &str) -> Result<PathBuf, String> {
+    if !path.exists() {
+        return Err(format!("Program not found: {label}"));
+    }
+    if path.is_dir() {
+        return Err(format!("Program is a directory: {label}"));
+    }
+    if !is_executable_path(path) {
+        return Err(format!("Program is not executable: {label}"));
+    }
+    Ok(path.to_path_buf())
+}
+
+fn is_executable_path(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path)
+            .map(|meta| meta.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+fn expand_tilde(path: &str) -> String {
+    if path == "~" {
+        return std::env::var("HOME").unwrap_or_else(|_| String::from("~"));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{home}/{rest}");
+        }
+    }
+    path.to_string()
+}
+
+fn quick_command_error_message(command: &QuickCommand, err: &str) -> String {
+    match &command.spec {
+        CommandSpec::Custom { custom } => {
+            let program = custom.program.as_str();
+            let args = if custom.args.is_empty() {
+                String::from("<none>")
+            } else {
+                custom.args.join(" ")
+            };
+            let cwd = custom
+                .working_directory
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("<default>");
+            let env = if custom.env.is_empty() {
+                String::from("<none>")
+            } else {
+                custom
+                    .env
+                    .iter()
+                    .map(|entry| format!("{}={}", entry.key, entry.value))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+
+            format!(
+                "Type: Custom\nProgram: {program}\nArgs: {args}\nWorking dir: {cwd}\nEnv: {env}\nError: {err}"
+            )
+        },
+        CommandSpec::Ssh { ssh } => {
+            let host = ssh.host.as_str();
+            let port = ssh.port;
+            let user = ssh
+                .user
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("<default>");
+            let identity = ssh
+                .identity_file
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("<default>");
+            let extra_args = if ssh.extra_args.is_empty() {
+                String::from("<none>")
+            } else {
+                ssh.extra_args.join(" ")
+            };
+
+            format!(
+                "Type: SSH\nHost: {host}\nPort: {port}\nUser: {user}\nIdentity file: {identity}\nExtra args: {extra_args}\nError: {err}"
+            )
+        },
+    }
 }
 
 fn custom_session(custom: &CustomCommand) -> LocalSessionOptions {

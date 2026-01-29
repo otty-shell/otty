@@ -12,7 +12,9 @@ use crate::ui::components::icon_button::{
 use crate::ui::widgets::quick_commands;
 
 const WORKSPACE_TITLE_SIZE: f32 = 13.0;
-const WORKSPACE_PADDING_HORIZONTAL: f32 = 12.0;
+const WORKSPACE_HEADER_PADDING_HORIZONTAL: f32 = 10.0;
+const WORKSPACE_HEADER_PADDING_VERTICAL: f32 = 0.0;
+const WORKSPACE_PADDING_HORIZONTAL: f32 = 0.0;
 const WORKSPACE_PADDING_VERTICAL: f32 = 10.0;
 const WORKSPACE_ADD_BUTTON_SIZE: f32 = 22.0;
 const WORKSPACE_ADD_ICON_SIZE: f32 = 16.0;
@@ -52,6 +54,10 @@ pub(crate) fn view<'a>(
 
     let header = row![title_container, add_button]
         .width(Length::Fill)
+        .padding([
+            WORKSPACE_HEADER_PADDING_VERTICAL,
+            WORKSPACE_HEADER_PADDING_HORIZONTAL,
+        ])
         .align_y(alignment::Vertical::Center);
 
     let quick_commands =

@@ -102,6 +102,7 @@ pub(crate) fn terminal_tab_reducer(
             Task::none()
         },
         PaneGridCursorMoved { position } => {
+            state.sidebar.cursor = position;
             with_terminal_tab(state, tab_id, |tab| {
                 tab.update_grid_cursor(position)
             })

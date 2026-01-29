@@ -51,6 +51,11 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
         },
         ContextMenuTarget::Folder(_) => {
             items.push(menu_item(
+                "Create command",
+                props.theme,
+                ContextMenuAction::CreateCommand,
+            ));
+            items.push(menu_item(
                 "Rename",
                 props.theme,
                 ContextMenuAction::Rename,

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 use iced::widget::pane_grid;
 use iced::{Point, Size};
@@ -16,6 +17,7 @@ pub(crate) const SIDEBAR_COLLAPSE_WORKSPACE_RATIO: f32 =
     SIDEBAR_DEFAULT_WORKSPACE_RATIO * 0.2;
 /// Minimum width ratio reserved for tab content.
 pub(crate) const SIDEBAR_MIN_TAB_CONTENT_RATIO: f32 = 0.2;
+const SIDEBAR_RESIZE_HOVER_SUPPRESS_MS: u64 = 200;
 
 /// Sidebar menu destinations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +42,7 @@ pub(crate) struct SidebarState {
     pub(crate) panes: pane_grid::State<SidebarPane>,
     pub(crate) add_menu: Option<SidebarAddMenuState>,
     pub(crate) cursor: Point,
+    last_resize_at: Option<Instant>,
 }
 
 impl SidebarState {
@@ -55,6 +58,19 @@ impl SidebarState {
         } else {
             0.0
         }
+    }
+
+    pub(crate) fn mark_resizing(&mut self) {
+        self.last_resize_at = Some(Instant::now());
+    }
+
+    pub(crate) fn is_resizing(&self) -> bool {
+        self.last_resize_at
+            .map(|last| {
+                last.elapsed()
+                    <= Duration::from_millis(SIDEBAR_RESIZE_HOVER_SUPPRESS_MS)
+            })
+            .unwrap_or(false)
     }
 }
 
@@ -80,6 +96,7 @@ impl Default for SidebarState {
             panes,
             add_menu: None,
             cursor: Point::ORIGIN,
+            last_resize_at: None,
         }
     }
 }
