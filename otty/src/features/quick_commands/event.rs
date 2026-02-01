@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::{Duration, Instant};
 
 use iced::{Point, Task, widget::operation};
 use otty_libterm::pty::SSHAuth;
@@ -51,6 +54,7 @@ pub(crate) enum QuickCommandsEvent {
 }
 
 pub(crate) const QUICK_COMMANDS_TICK_MS: u64 = 200;
+const QUICK_COMMAND_SSH_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
 pub(crate) enum QuickCommandLaunchResult {
@@ -265,6 +269,7 @@ pub(crate) fn handle_quick_command_launch_result(
             terminal,
         } => {
             if state.quick_commands.canceled_launches.remove(&launch_id) {
+                remove_launch_by_id(state, launch_id);
                 return Task::none();
             }
             if let Some(info) = state.quick_commands.launching.get(&path) {
@@ -272,7 +277,7 @@ pub(crate) fn handle_quick_command_launch_result(
                     return Task::none();
                 }
             }
-            state.quick_commands.launching.remove(&path);
+            remove_launch_by_id(state, launch_id);
             let terminal =
                 terminal.lock().ok().and_then(|mut guard| guard.take());
             let Some(terminal) = terminal else {
@@ -301,6 +306,7 @@ pub(crate) fn handle_quick_command_launch_result(
             message,
         } => {
             if state.quick_commands.canceled_launches.remove(&launch_id) {
+                remove_launch_by_id(state, launch_id);
                 return Task::none();
             }
             if let Some(info) = state.quick_commands.launching.get(&path) {
@@ -308,7 +314,7 @@ pub(crate) fn handle_quick_command_launch_result(
                     return Task::none();
                 }
             }
-            state.quick_commands.launching.remove(&path);
+            remove_launch_by_id(state, launch_id);
             open_error_tab(
                 state,
                 format!("Failed to launch \"{title}\""),
@@ -810,8 +816,28 @@ fn remove_node(state: &mut State, path: &[String]) {
 }
 
 fn kill_command_launch(state: &mut State, path: &[String]) {
-    if let Some(info) = state.quick_commands.launching.remove(path) {
+    if let Some(info) = state.quick_commands.launching.get(path) {
+        info.cancel.store(true, Ordering::Relaxed);
         state.quick_commands.canceled_launches.insert(info.id);
+    }
+}
+
+fn remove_launch_by_id(state: &mut State, launch_id: u64) {
+    let path =
+        state
+            .quick_commands
+            .launching
+            .iter()
+            .find_map(|(path, info)| {
+                if info.id == launch_id {
+                    Some(path.clone())
+                } else {
+                    None
+                }
+            });
+
+    if let Some(path) = path {
+        state.quick_commands.launching.remove(&path);
     }
 }
 
@@ -881,11 +907,13 @@ fn launch_quick_command(
     let launch_id = state.quick_commands.next_launch_id;
     state.quick_commands.next_launch_id =
         state.quick_commands.next_launch_id.wrapping_add(1);
+    let cancel = Arc::new(AtomicBool::new(false));
     state.quick_commands.launching.insert(
         path.clone(),
         LaunchInfo {
             id: launch_id,
             started_at: Instant::now(),
+            cancel: cancel.clone(),
         },
     );
 
@@ -894,7 +922,7 @@ fn launch_quick_command(
     let terminal_id = state.next_terminal_id;
     state.next_terminal_id += 1;
 
-    let session = command_session(&command);
+    let session = command_session(&command, &cancel);
     let settings = settings_for_session(terminal_settings, session);
     let title = command.title.clone();
 
@@ -924,13 +952,16 @@ fn launch_quick_command(
     )
 }
 
-fn command_session(command: &QuickCommand) -> SessionKind {
+fn command_session(
+    command: &QuickCommand,
+    cancel: &Arc<AtomicBool>,
+) -> SessionKind {
     match &command.spec {
         CommandSpec::Custom { custom } => {
             SessionKind::from_local_options(custom_session(custom))
         },
         CommandSpec::Ssh { ssh } => {
-            SessionKind::from_ssh_options(ssh_session(ssh))
+            SessionKind::from_ssh_options(ssh_session(ssh, cancel))
         },
     }
 }
@@ -1144,7 +1175,10 @@ fn custom_session(custom: &CustomCommand) -> LocalSessionOptions {
     options
 }
 
-fn ssh_session(ssh: &SshCommand) -> SSHSessionOptions {
+fn ssh_session(
+    ssh: &SshCommand,
+    cancel: &Arc<AtomicBool>,
+) -> SSHSessionOptions {
     let host = format!("{}:{}", ssh.host, ssh.port);
     let user = ssh
         .user
@@ -1168,6 +1202,8 @@ fn ssh_session(ssh: &SshCommand) -> SSHSessionOptions {
         .with_host(&host)
         .with_user(&user)
         .with_auth(auth)
+        .with_timeout(QUICK_COMMAND_SSH_TIMEOUT)
+        .with_cancel_token(cancel.clone())
 }
 
 fn open_create_command_tab(

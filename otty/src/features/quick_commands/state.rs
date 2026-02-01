@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, atomic::AtomicBool};
 use std::time::Instant;
 
 use iced::Point;
@@ -64,6 +65,7 @@ pub(crate) struct QuickCommandsState {
 pub(crate) struct LaunchInfo {
     pub(crate) id: u64,
     pub(crate) started_at: Instant,
+    pub(crate) cancel: Arc<AtomicBool>,
 }
 
 impl QuickCommandsState {

@@ -1,4 +1,9 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, atomic::AtomicBool},
+    time::Duration,
+};
 
 use iced::Font;
 use otty_libterm::{TerminalSize, pty::SSHAuth};
@@ -106,6 +111,8 @@ pub struct SSHSessionOptions {
     host: String,
     user: String,
     auth: SSHAuth,
+    timeout: Option<Duration>,
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 impl SSHSessionOptions {
@@ -124,6 +131,16 @@ impl SSHSessionOptions {
         self
     }
 
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    pub fn with_cancel_token(mut self, cancel: Arc<AtomicBool>) -> Self {
+        self.cancel = Some(cancel);
+        self
+    }
+
     pub fn host(&self) -> &String {
         &self.host
     }
@@ -134,6 +151,14 @@ impl SSHSessionOptions {
 
     pub fn auth(&self) -> SSHAuth {
         self.auth.clone()
+    }
+
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout
+    }
+
+    pub fn cancel_token(&self) -> Option<&Arc<AtomicBool>> {
+        self.cancel.as_ref()
     }
 }
 

@@ -1,4 +1,5 @@
 use std::io;
+use std::time::Duration;
 
 #[cfg(unix)]
 use nix::errno::Errno;
@@ -19,6 +20,18 @@ pub enum SessionError {
     #[error("failed to resize pty: {0}")]
     Resize(io::Error),
 
-    #[error("failed to parse ssh host")]
-    HostParsing,
+    #[error("ssh host resolved to no addresses")]
+    NoAddresses,
+
+    #[error("session launch cancelled")]
+    Cancelled,
+
+    #[error("session timed out while {step} after {duration:?}")]
+    Timeout {
+        step: &'static str,
+        duration: Duration,
+    },
+
+    #[error("internal error: {0}")]
+    Internal(String),
 }

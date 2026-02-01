@@ -86,11 +86,19 @@ impl EngineInner {
                 Ok(EngineInner::Local(result))
             },
             SessionKind::Ssh(options) => {
-                let builder = pty::ssh()
+                let mut builder = pty::ssh()
                     .with_host(options.host())
                     .with_user(options.user())
                     .with_auth(options.auth())
                     .with_size(size.into());
+
+                if let Some(timeout) = options.timeout() {
+                    builder = builder.with_timeout(timeout);
+                }
+
+                if let Some(cancel) = options.cancel_token() {
+                    builder = builder.with_cancel_token(cancel.clone());
+                }
 
                 let result =
                     TerminalBuilder::from(builder).build_with_runtime()?;
