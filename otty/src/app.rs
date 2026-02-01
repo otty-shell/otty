@@ -227,15 +227,27 @@ impl App {
     }
 
     fn handle_keyboard(&mut self, event: iced::keyboard::Event) -> Task<Event> {
-        if let iced::keyboard::Event::KeyPressed { key, .. } = event
-            && matches!(
+        if let iced::keyboard::Event::KeyPressed { key, .. } = event {
+            if matches!(
                 key,
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
-            )
-            && self.state.quick_commands.inline_edit.is_some()
-        {
-            self.state.quick_commands.inline_edit = None;
-            return Task::none();
+            ) && self.state.quick_commands.inline_edit.is_some()
+            {
+                self.state.quick_commands.inline_edit = None;
+                return Task::none();
+            }
+
+            if matches!(
+                key,
+                iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete)
+            ) && self.state.quick_commands.inline_edit.is_none()
+            {
+                return quick_commands::quick_commands_reducer(
+                    &mut self.state,
+                    &self.terminal_settings,
+                    quick_commands::QuickCommandsEvent::DeleteSelected,
+                );
+            }
         }
 
         Task::none()

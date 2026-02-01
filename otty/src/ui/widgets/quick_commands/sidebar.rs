@@ -265,21 +265,23 @@ fn render_entry<'a>(
     .height(Length::Fill)
     .align_y(alignment::Vertical::Center);
 
-    let indicator = launch_indicator(
+    let mut leading = row![icon_view]
+        .spacing(0)
+        .align_y(alignment::Vertical::Center);
+
+    if let Some(indicator) = launch_indicator(
         props.theme,
         !entry.node.is_folder(),
         launched_at,
         props.state.blink_nonce,
-    );
+    ) {
+        leading = leading.push(indicator);
+    }
 
-    let content = row![
-        Space::new().width(Length::Fixed(indent)),
-        icon_view,
-        indicator,
-        title,
-    ]
-    .spacing(TREE_ROW_SPACING)
-    .align_y(alignment::Vertical::Center);
+    let content =
+        row![Space::new().width(Length::Fixed(indent)), leading, title,]
+            .spacing(TREE_ROW_SPACING)
+            .align_y(alignment::Vertical::Center);
 
     let palette = props.theme.theme.iced_palette().clone();
     let row = container(content)
@@ -365,10 +367,10 @@ fn launch_indicator<'a>(
     is_command: bool,
     launched_at: Option<Instant>,
     blink_nonce: u64,
-) -> Element<'a, QuickCommandsEvent> {
+) -> Option<Element<'a, QuickCommandsEvent>> {
     let slot = Length::Fixed(LAUNCH_INDICATOR_SLOT);
     if !is_command {
-        return Space::new().width(slot).height(Length::Fill).into();
+        return None;
     }
 
     let show = launched_at
@@ -392,17 +394,19 @@ fn launch_indicator<'a>(
                     },
                     ..Default::default()
                 });
-            container(dot)
-                .width(slot)
-                .height(Length::Fill)
-                .align_x(alignment::Horizontal::Center)
-                .align_y(alignment::Vertical::Center)
-                .into()
+            Some(
+                container(dot)
+                    .width(slot)
+                    .height(Length::Fill)
+                    .align_x(alignment::Horizontal::Center)
+                    .align_y(alignment::Vertical::Center)
+                    .into(),
+            )
         } else {
-            Space::new().width(slot).height(Length::Fill).into()
+            Some(Space::new().width(slot).height(Length::Fill).into())
         }
     } else {
-        Space::new().width(slot).height(Length::Fill).into()
+        None
     }
 }
 

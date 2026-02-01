@@ -47,6 +47,7 @@ pub(crate) enum QuickCommandsEvent {
     BackgroundReleased,
     HeaderCreateFolder,
     HeaderCreateCommand,
+    DeleteSelected,
     ContextMenuAction(ContextMenuAction),
     ContextMenuDismiss,
     InlineEditChanged(String),
@@ -213,6 +214,19 @@ pub(crate) fn quick_commands_reducer(
         HeaderCreateCommand => {
             let parent = selected_parent_path(state);
             open_create_command_tab(state, parent)
+        },
+        DeleteSelected => {
+            let Some(path) = state.quick_commands.selected.clone() else {
+                return Task::none();
+            };
+            let Some(node) = state.quick_commands.data.node(&path) else {
+                return Task::none();
+            };
+            if matches!(node, QuickCommandNode::Folder(_)) {
+                remove_node(state, &path);
+                state.quick_commands.selected = None;
+            }
+            Task::none()
         },
         NodePressed { path } => {
             state.quick_commands.pressed = Some(path.clone());
@@ -402,7 +416,15 @@ fn handle_context_menu_action(
             _ => Task::none(),
         },
         ContextMenuAction::CreateFolder => {
-            let parent = selected_parent_path(state);
+            let parent = match menu.target {
+                ContextMenuTarget::Folder(path) => path,
+                ContextMenuTarget::Command(path) => {
+                    let mut parent = path.clone();
+                    parent.pop();
+                    parent
+                },
+                ContextMenuTarget::Background => Vec::new(),
+            };
             begin_inline_create_folder(state, parent);
             focus_inline_edit(state)
         },
