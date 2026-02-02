@@ -15,10 +15,12 @@ use crate::features::quick_commands::editor::{
     QuickCommandEditorEvent, quick_command_editor_reducer,
 };
 use crate::features::quick_commands::event as quick_commands;
+use crate::features::settings;
 use crate::features::tab::{TabContent, TabEvent, TabKind, tab_reducer};
 use crate::features::terminal::event::{TerminalEvent, terminal_tab_reducer};
 use crate::features::terminal::shell::{
-    ShellSession, fallback_shell_session, setup_shell_session,
+    ShellSession, fallback_shell_session_with_shell,
+    setup_shell_session_with_shell,
 };
 use crate::fonts::FontsConfig;
 use crate::state::{
@@ -56,6 +58,7 @@ pub(crate) enum Event {
         tab_id: u64,
         event: QuickCommandEditorEvent,
     },
+    Settings(settings::SettingsEvent),
     QuickCommandLaunchFinished(quick_commands::QuickCommandLaunchResult),
     QuickCommandsTick,
     Keyboard(iced::keyboard::Event),
@@ -75,16 +78,23 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) fn new() -> (Self, Task<Event>) {
-        let theme_manager = ThemeManager::new();
+        let settings_state = settings::SettingsState::load();
+        let mut theme_manager = ThemeManager::new();
+        let settings_palette = settings_state.draft.theme.to_color_palette();
+        theme_manager.set_custom_palette(settings_palette);
         let current_theme = theme_manager.current();
         let fonts = FontsConfig::default();
 
         let terminal_settings = terminal_settings(current_theme, &fonts);
-        let shell_session = match setup_shell_session() {
+        let shell_session = match setup_shell_session_with_shell(
+            &settings_state.draft.terminal.shell,
+        ) {
             Ok(session) => session,
             Err(err) => {
                 log::warn!("shell integration setup failed: {err}");
-                fallback_shell_session()
+                fallback_shell_session_with_shell(
+                    &settings_state.draft.terminal.shell,
+                )
             },
         };
 
@@ -93,7 +103,7 @@ impl App {
             height: MIN_WINDOW_HEIGHT,
         };
         let screen_size = Self::screen_size_from_window(window_size);
-        let state = State::new(window_size, screen_size);
+        let state = State::new(window_size, screen_size, settings_state);
 
         let app = App {
             window_size,
@@ -206,6 +216,7 @@ impl App {
             QuickCommandEditor { tab_id, event } => {
                 quick_command_editor_reducer(&mut self.state, tab_id, event)
             },
+            Settings(event) => self.handle_settings(event),
             Keyboard(event) => self.handle_keyboard(event),
             Window(window::Event::Resized(size)) => {
                 self.window_size = size;
@@ -251,6 +262,69 @@ impl App {
         }
 
         Task::none()
+    }
+
+    fn handle_settings(
+        &mut self,
+        event: settings::SettingsEvent,
+    ) -> Task<Event> {
+        match event {
+            settings::SettingsEvent::Save => {
+                match self.state.settings.persist() {
+                    Ok(settings) => self.apply_settings(&settings),
+                    Err(err) => {
+                        self.state.settings.last_error = Some(format!("{err}"));
+                    },
+                }
+                Task::none()
+            },
+            settings::SettingsEvent::Reset => {
+                self.state.settings.reset();
+                Task::none()
+            },
+            settings::SettingsEvent::NodePressed { path } => {
+                self.state.settings.select_path(&path);
+                Task::none()
+            },
+            settings::SettingsEvent::ShellChanged(value) => {
+                self.state.settings.set_shell(value);
+                Task::none()
+            },
+            settings::SettingsEvent::EditorChanged(value) => {
+                self.state.settings.set_editor(value);
+                Task::none()
+            },
+            settings::SettingsEvent::PaletteChanged { index, value } => {
+                self.state.settings.set_palette_input(index, value);
+                Task::none()
+            },
+            settings::SettingsEvent::ApplyPreset(preset) => {
+                self.state.settings.apply_preset(preset);
+                Task::none()
+            },
+        }
+    }
+
+    fn apply_settings(&mut self, settings: &settings::SettingsData) {
+        let palette = settings.theme.to_color_palette();
+        self.theme_manager.set_custom_palette(palette);
+        let current_theme = self.theme_manager.current();
+        self.terminal_settings = terminal_settings(current_theme, &self.fonts);
+        let terminal_palette = current_theme.terminal_palette();
+        for tab in self.state.tab_items.values_mut() {
+            if let TabContent::Terminal(terminal) = &mut tab.content {
+                terminal.apply_theme(terminal_palette.clone());
+            }
+        }
+
+        match setup_shell_session_with_shell(&settings.terminal.shell) {
+            Ok(session) => self.shell_session = session,
+            Err(err) => {
+                log::warn!("shell integration setup failed: {err}");
+                self.shell_session =
+                    fallback_shell_session_with_shell(&settings.terminal.shell);
+            },
+        }
     }
 
     pub(crate) fn view(&self) -> Element<'_, Event, Theme, iced::Renderer> {

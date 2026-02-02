@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 use thiserror::Error;
 
-const FALLBACK_SHELL: &str = "/bin/bash";
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
 
 const OTTY_ZSH_SCRIPT: &str =
@@ -27,20 +26,21 @@ pub(crate) struct ShellSession {
     pub session: SessionKind,
 }
 
-/// Build a shell session configured with OTTY integrations.
-pub(crate) fn setup_shell_session() -> Result<ShellSession, ShellError> {
-    let shell_path = shell_path();
-    let shell_name = shell_name(&shell_path);
+/// Build a shell session configured with OTTY integrations for a given shell.
+pub(crate) fn setup_shell_session_with_shell(
+    shell_path: &str,
+) -> Result<ShellSession, ShellError> {
+    let shell_name = shell_name(shell_path);
 
     let dir = config_dir();
     fs::create_dir_all(&dir)?;
 
     let session = match shell_name.as_str() {
-        "zsh" => setup_zsh_session(&shell_path, &dir)?,
-        "bash" => setup_bash_session(&shell_path, &dir)?,
+        "zsh" => setup_zsh_session(shell_path, &dir)?,
+        "bash" => setup_bash_session(shell_path, &dir)?,
         _ => {
             let options =
-                LocalSessionOptions::default().with_program(&shell_path);
+                LocalSessionOptions::default().with_program(shell_path);
             SessionKind::from_local_options(options)
         },
     };
@@ -51,20 +51,17 @@ pub(crate) fn setup_shell_session() -> Result<ShellSession, ShellError> {
     })
 }
 
-/// Build a shell session without writing shell integration files.
-pub(crate) fn fallback_shell_session() -> ShellSession {
-    let shell_path = shell_path();
-    let shell_name = shell_name(&shell_path);
-    let options = LocalSessionOptions::default().with_program(&shell_path);
+/// Build a shell session without writing shell integration files for a shell.
+pub(crate) fn fallback_shell_session_with_shell(
+    shell_path: &str,
+) -> ShellSession {
+    let shell_name = shell_name(shell_path);
+    let options = LocalSessionOptions::default().with_program(shell_path);
 
     ShellSession {
         name: shell_name,
         session: SessionKind::from_local_options(options),
     }
-}
-
-fn shell_path() -> String {
-    env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.to_string())
 }
 
 fn shell_name(shell_path: &str) -> String {

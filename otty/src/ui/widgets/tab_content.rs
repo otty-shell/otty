@@ -1,4 +1,4 @@
-use iced::widget::{Space, container, text};
+use iced::widget::{container, text};
 use iced::{Element, Length, Theme, alignment};
 
 use crate::app::Event as AppEvent;
@@ -6,6 +6,7 @@ use crate::features::tab::TabContent;
 use crate::state::State;
 use crate::theme::ThemeProps;
 use crate::ui::widgets::quick_commands;
+use crate::ui::widgets::settings;
 use crate::ui::widgets::terminal;
 
 pub(crate) fn view<'a>(
@@ -24,10 +25,11 @@ pub(crate) fn view<'a>(
                     })
                     .map(move |event| AppEvent::Terminal { tab_id, event })
                 },
-                TabContent::Settings => container(Space::new())
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into(),
+                TabContent::Settings => settings::view(settings::Props {
+                    state: &state.settings,
+                    theme,
+                })
+                .map(AppEvent::Settings),
                 TabContent::QuickCommandEditor(editor) => {
                     let tab_id = tab.id;
                     quick_commands::editor::view(

@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use iced::{Point, Size, Task, widget::pane_grid};
 use otty_ui_term::{
-    BlockCommand, SurfaceMode, TerminalView, settings::Settings,
+    BlockCommand, SurfaceMode, TerminalView,
+    settings::{Settings, ThemeSettings},
 };
 
 use crate::{
@@ -222,6 +223,14 @@ impl TerminalState {
         }
 
         Task::none()
+    }
+
+    pub fn apply_theme(&mut self, palette: otty_ui_term::ColorPalette) {
+        self.terminal_settings.theme =
+            ThemeSettings::new(Box::new(palette.clone()));
+        for entry in self.terminals.values_mut() {
+            entry.terminal.change_theme(palette.clone());
+        }
     }
 
     pub fn focus_pane(&mut self, pane: pane_grid::Pane) -> Task<AppEvent> {

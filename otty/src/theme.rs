@@ -224,6 +224,16 @@ impl From<&AppTheme> for Theme {
 }
 
 impl AppTheme {
+    /// Build an application theme from a custom palette.
+    pub fn from_palette(id: String, raw_palette: ColorPalette) -> Self {
+        let iced_palette = IcedColorPalette::from(&raw_palette);
+        Self {
+            id,
+            raw_palette,
+            iced_palette,
+        }
+    }
+
     pub fn id(&self) -> &String {
         &self.id
     }
@@ -288,5 +298,10 @@ impl ThemeManager {
 
     pub fn iced_theme(&self) -> Theme {
         Theme::from(&self.current)
+    }
+
+    /// Replace the current theme with a custom palette.
+    pub fn set_custom_palette(&mut self, palette: ColorPalette) {
+        self.current = AppTheme::from_palette(String::from("custom"), palette);
     }
 }

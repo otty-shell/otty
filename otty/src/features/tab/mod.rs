@@ -27,7 +27,7 @@ pub(crate) enum TabEvent {
 /// Tab payloads stored in app state.
 pub(crate) enum TabContent {
     Terminal(Box<TerminalState>),
-    /// Placeholder settings screen.
+    /// Settings screen tab.
     Settings,
     /// Editor for quick command definitions.
     QuickCommandEditor(Box<QuickCommandEditorState>),
@@ -72,6 +72,8 @@ pub(crate) fn tab_reducer(
 fn create_settings_tab(state: &mut State) -> Task<AppEvent> {
     let tab_id = state.next_tab_id;
     state.next_tab_id += 1;
+
+    state.settings.reload();
 
     state.tab_items.insert(
         tab_id,
