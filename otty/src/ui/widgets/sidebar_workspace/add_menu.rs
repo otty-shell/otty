@@ -1,12 +1,13 @@
 use iced::border::Radius;
 use iced::widget::{Column, container, mouse_area};
-use iced::{Element, Length, Point, Size, alignment};
+use iced::{Element, Length, Size, alignment};
 
 use crate::state::SidebarAddMenuState;
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
     MenuItem, MenuItemEvent, MenuItemProps,
 };
+use crate::ui::widgets::helpers::anchor_position;
 use crate::ui::widgets::sidebar_workspace::{AddMenuAction, Event};
 
 const MENU_CONTAINER_WIDTH: f32 = 220.0;
@@ -38,8 +39,13 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
         .width(Length::Fill)
         .align_x(alignment::Horizontal::Left);
 
-    let anchor =
-        anchor_position(props.menu.cursor, props.area_size, menu_height);
+    let anchor = anchor_position(
+        props.menu.cursor,
+        props.area_size,
+        MENU_CONTAINER_WIDTH,
+        menu_height,
+        MENU_MARGIN,
+    );
 
     let padding = iced::Padding {
         top: anchor.y,
@@ -103,31 +109,4 @@ fn menu_panel_style(
 
 fn menu_height_for_items(item_count: usize) -> f32 {
     MENU_VERTICAL_PADDING + MENU_ITEM_HEIGHT * item_count as f32
-}
-
-fn anchor_position(cursor: Point, grid_size: Size, menu_height: f32) -> Point {
-    let clamped_cursor = Point::new(
-        cursor.x.clamp(0.0, grid_size.width),
-        cursor.y.clamp(0.0, grid_size.height),
-    );
-
-    let fits_right = clamped_cursor.x + MENU_CONTAINER_WIDTH + MENU_MARGIN
-        <= grid_size.width;
-    let x = if fits_right {
-        (clamped_cursor.x + MENU_MARGIN)
-            .min(grid_size.width - MENU_MARGIN - MENU_CONTAINER_WIDTH)
-    } else {
-        (clamped_cursor.x - MENU_CONTAINER_WIDTH - MENU_MARGIN).max(MENU_MARGIN)
-    };
-
-    let fits_down =
-        clamped_cursor.y + menu_height + MENU_MARGIN <= grid_size.height;
-    let y = if fits_down {
-        (clamped_cursor.y + MENU_MARGIN)
-            .min(grid_size.height - MENU_MARGIN - menu_height)
-    } else {
-        (clamped_cursor.y - menu_height - MENU_MARGIN).max(MENU_MARGIN)
-    };
-
-    Point::new(x, y)
 }

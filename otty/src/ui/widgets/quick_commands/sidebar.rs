@@ -1,11 +1,10 @@
 use iced::alignment;
-use iced::border::Radius;
 use iced::widget::text::Wrapping;
 use iced::widget::{
     Column, Space, column, container, mouse_area, row, scrollable, svg, text,
     text_input,
 };
-use iced::{Background, Element, Length, mouse};
+use iced::{Background, Color, Element, Length, mouse};
 use std::time::{Duration, Instant};
 
 use crate::features::quick_commands::event::{
@@ -16,7 +15,7 @@ use crate::features::quick_commands::state::{
     DropTarget, InlineEditKind, InlineEditState, QuickCommandsState,
 };
 use crate::icons;
-use crate::theme::ThemeProps;
+use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::ui::widgets::tree::{TreeNode, flatten_tree};
 
 const HEADER_HEIGHT: f32 = 28.0;
@@ -29,10 +28,8 @@ const TREE_INDENT: f32 = 14.0;
 const TREE_ICON_WIDTH: f32 = 14.0;
 const TREE_ROW_PADDING_X: f32 = 6.0;
 const TREE_ROW_SPACING: f32 = 6.0;
-const LAUNCH_INDICATOR_SIZE: f32 = 6.0;
-const LAUNCH_INDICATOR_SLOT: f32 = 12.0;
-const LAUNCH_INDICATOR_DELAY: Duration = Duration::from_secs(1);
-const LAUNCH_INDICATOR_BLINK_MS: u128 = 500;
+const LAUNCH_ICON_DELAY: Duration = Duration::from_secs(1);
+const LAUNCH_ICON_BLINK_MS: u128 = 500;
 
 const INPUT_PADDING_X: f32 = 6.0;
 const INPUT_PADDING_Y: f32 = 4.0;
@@ -225,33 +222,16 @@ fn render_entry<'a>(
         }
     }
 
+    let icon_palette = props.theme.theme.iced_palette();
     let icon_view: Element<'a, QuickCommandsEvent> = if entry.node.is_folder() {
         let icon = if entry.node.expanded() {
             icons::FOLDER_OPENED
         } else {
             icons::FOLDER
         };
-        let handle = svg::Handle::from_memory(icon);
-        let svg_icon = svg::Svg::new(handle)
-            .width(Length::Fixed(TREE_ICON_WIDTH))
-            .height(Length::Fixed(TREE_ICON_WIDTH))
-            .style({
-                let palette = props.theme.theme.iced_palette().clone();
-                move |_, _| svg::Style {
-                    color: Some(palette.dim_foreground),
-                }
-            });
-        container(svg_icon)
-            .width(Length::Fixed(TREE_ICON_WIDTH))
-            .height(Length::Fill)
-            .align_x(alignment::Horizontal::Center)
-            .align_y(alignment::Vertical::Center)
-            .into()
+        svg_icon(icon, icon_palette.dim_foreground)
     } else {
-        Space::new()
-            .width(Length::Fixed(TREE_ICON_WIDTH))
-            .height(Length::Fill)
-            .into()
+        command_icon(icon_palette, launched_at, props.state.blink_nonce)
     };
 
     let title = container(
@@ -265,18 +245,9 @@ fn render_entry<'a>(
     .height(Length::Fill)
     .align_y(alignment::Vertical::Center);
 
-    let mut leading = row![icon_view]
+    let leading = row![icon_view]
         .spacing(0)
         .align_y(alignment::Vertical::Center);
-
-    if let Some(indicator) = launch_indicator(
-        props.theme,
-        !entry.node.is_folder(),
-        launched_at,
-        props.state.blink_nonce,
-    ) {
-        leading = leading.push(indicator);
-    }
 
     let content =
         row![Space::new().width(Length::Fixed(indent)), leading, title,]
@@ -362,52 +333,47 @@ fn inline_edit_row<'a>(
         .into()
 }
 
-fn launch_indicator<'a>(
-    theme: ThemeProps<'a>,
-    is_command: bool,
+fn command_icon<'a>(
+    palette: &IcedColorPalette,
     launched_at: Option<Instant>,
     blink_nonce: u64,
-) -> Option<Element<'a, QuickCommandsEvent>> {
-    let slot = Length::Fixed(LAUNCH_INDICATOR_SLOT);
-    if !is_command {
-        return None;
-    }
-
+) -> Element<'a, QuickCommandsEvent> {
     let show = launched_at
         .map(|start| start.elapsed())
-        .filter(|elapsed| *elapsed >= LAUNCH_INDICATOR_DELAY);
+        .filter(|elapsed| *elapsed >= LAUNCH_ICON_DELAY)
+        .is_some();
 
-    if let Some(_elapsed) = show {
+    let color = if show {
         let blink_step = (blink_nonce as u128 * QUICK_COMMANDS_TICK_MS as u128)
-            / LAUNCH_INDICATOR_BLINK_MS;
+            / LAUNCH_ICON_BLINK_MS;
         let blink_on = blink_step.is_multiple_of(2);
         if blink_on {
-            let palette = theme.theme.iced_palette();
-            let dot = container(Space::new())
-                .width(Length::Fixed(LAUNCH_INDICATOR_SIZE))
-                .height(Length::Fixed(LAUNCH_INDICATOR_SIZE))
-                .style(move |_| iced::widget::container::Style {
-                    background: Some(palette.blue.into()),
-                    border: iced::Border {
-                        radius: Radius::from(LAUNCH_INDICATOR_SIZE / 2.0),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                });
-            Some(
-                container(dot)
-                    .width(slot)
-                    .height(Length::Fill)
-                    .align_x(alignment::Horizontal::Center)
-                    .align_y(alignment::Vertical::Center)
-                    .into(),
-            )
+            palette.foreground
         } else {
-            Some(Space::new().width(slot).height(Length::Fill).into())
+            palette.dim_foreground
         }
     } else {
-        None
-    }
+        palette.dim_foreground
+    };
+
+    svg_icon(icons::PLAY, color)
+}
+
+fn svg_icon<'a>(
+    icon: &'static [u8],
+    color: Color,
+) -> Element<'a, QuickCommandsEvent> {
+    let handle = svg::Handle::from_memory(icon);
+    let svg_icon = svg::Svg::new(handle)
+        .width(Length::Fixed(TREE_ICON_WIDTH))
+        .height(Length::Fixed(TREE_ICON_WIDTH))
+        .style(move |_, _| svg::Style { color: Some(color) });
+    container(svg_icon)
+        .width(Length::Fixed(TREE_ICON_WIDTH))
+        .height(Length::Fill)
+        .align_x(alignment::Horizontal::Center)
+        .align_y(alignment::Vertical::Center)
+        .into()
 }
 
 fn is_prefix(prefix: &[String], path: &[String]) -> bool {

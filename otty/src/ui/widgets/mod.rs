@@ -1,4 +1,5 @@
 pub(crate) mod action_bar;
+pub(crate) mod helpers;
 pub(crate) mod quick_commands;
 pub(crate) mod sidebar;
 pub(crate) mod sidebar_workspace;
