@@ -1,3 +1,95 @@
+//! Tree utilities shared by UI widgets.
+//!
+//! This module defines a small UI-facing tree model:
+//! - [`TreeNode`] describes a node with a title, optional children,
+//!   and expansion state.
+//! - [`flatten_tree`] turns a nested tree into a flat list of visible rows
+//!   with depth and path metadata, suitable for rendering.
+//! - [`TreePath`] is the path of titles from the root to a node, used for
+//!   selection/hover/expand events in widgets.
+//!
+//! It is intentionally UI-agnostic (no rendering code). Widgets like
+//! `quick_commands` and `settings` provide their own row rendering while
+//! reusing the same tree flattening logic.
+//!
+//! # Usage
+//!
+//! Single example that defines folders/files, flattens the tree, and renders
+//! it with iced:
+//!
+//! ```rust,ignore
+//! use iced::widget::{column, row, text, Space};
+//! use iced::{Element, Length};
+//! use crate::ui::widgets::tree::{TreeNode, flatten_tree};
+//!
+//! #[derive(Clone)]
+//! enum Node {
+//!     Folder { title: String, expanded: bool, children: Vec<Node> },
+//!     File { title: String },
+//! }
+//!
+//! impl TreeNode for Node {
+//!     fn title(&self) -> &str {
+//!         match self {
+//!             Node::Folder { title, .. } => title,
+//!             Node::File { title } => title,
+//!         }
+//!     }
+//!
+//!     fn children(&self) -> Option<&[Self]> {
+//!         match self {
+//!             Node::Folder { children, .. } => Some(children),
+//!             Node::File { .. } => None,
+//!         }
+//!     }
+//!
+//!     fn expanded(&self) -> bool {
+//!         match self {
+//!             Node::Folder { expanded, .. } => *expanded,
+//!             Node::File { .. } => false,
+//!         }
+//!     }
+//!
+//!     fn is_folder(&self) -> bool {
+//!         matches!(self, Node::Folder { .. })
+//!     }
+//! }
+//!
+//! fn render_tree<'a>(nodes: &'a [Node]) -> Element<'a, Event> {
+//!     let mut col = column![];
+//!     for entry in flatten_tree(nodes) {
+//!         let indent = entry.depth as f32 * 14.0;
+//!         let row = row![
+//!             Space::new().width(Length::Fixed(indent)),
+//!             text(entry.node.title()),
+//!         ]
+//!         .spacing(6);
+//!         col = col.push(row);
+//!     }
+//!     col.into()
+//! }
+//!
+//! let tree = vec![
+//!     Node::Folder {
+//!         title: "General".to_string(),
+//!         expanded: true,
+//!         children: vec![
+//!             Node::File { title: "Terminal".to_string() },
+//!             Node::File { title: "Theme".to_string() },
+//!         ],
+//!     },
+//!     Node::File { title: "About".to_string() },
+//! ];
+//!
+//! let _view = render_tree(&tree);
+//! ```
+//!
+//! Typical widget flow:
+//! 1. Keep your own tree model in state.
+//! 2. Call [`flatten_tree`] in `view`.
+//! 3. Render each row using `entry.depth` for indentation.
+//! 4. Use `entry.path` to drive selection, hover, and expand/collapse.
+//!
 /// Path of titles that identifies a tree node from the root.
 pub(crate) type TreePath = Vec<String>;
 
