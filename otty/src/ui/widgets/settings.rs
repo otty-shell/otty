@@ -2,10 +2,10 @@ use iced::alignment;
 use iced::widget::button::Status as ButtonStatus;
 use iced::widget::text::Wrapping;
 use iced::widget::{
-    Column, Space, button, column, container, mouse_area, row, scrollable, svg,
-    text, text_input,
+    Column, Space, button, column, container, row, scrollable, svg, text,
+    text_input,
 };
-use iced::{Background, Color, Element, Length, mouse};
+use iced::{Background, Color, Element, Length};
 use otty_ui_term::parse_hex_color;
 
 use crate::features::settings::{
@@ -14,7 +14,7 @@ use crate::features::settings::{
 };
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::ui::widgets::tree::{TreeNode, flatten_tree};
+use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 const HEADER_HEIGHT: f32 = 32.0;
 const HEADER_PADDING_X: f32 = 12.0;
@@ -104,16 +104,25 @@ fn settings_split_view<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
 }
 
 fn settings_nav_tree<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
-    let entries = flatten_tree(&props.state.tree);
-    let mut column = Column::new().spacing(0);
-
-    for entry in entries {
-        column = column.push(render_nav_row(props, &entry));
-    }
-
     let palette = props.theme.theme.iced_palette().clone();
+    let row_palette = palette.clone();
+    let icon_color = palette.dim_foreground;
 
-    let scrollable = scrollable::Scrollable::new(column)
+    let tree_view = TreeView::new(&props.state.tree, move |context| {
+        render_nav_row(props, context)
+    })
+    .selected(Some(&props.state.selected_path))
+    .hovered(props.state.hovered_path.as_ref())
+    .on_select(|path| SettingsEvent::NodePressed { path })
+    .on_hover(|path| SettingsEvent::NodeHovered { path })
+    .on_toggle_folder(|path| SettingsEvent::NodeToggled { path })
+    .row_style(move |context| nav_row_style(&row_palette, context))
+    .toggle_content(move |context| nav_toggle_icon(context, icon_color))
+    .toggle_width(NAV_ICON_SIZE + NAV_ROW_SPACING)
+    .indent_width(NAV_INDENT)
+    .spacing(0.0);
+
+    let scrollable = scrollable::Scrollable::new(tree_view.view())
         .width(Length::Fill)
         .height(Length::Fill)
         .direction(scrollable::Direction::Vertical(
@@ -152,67 +161,20 @@ fn settings_nav_tree<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
 }
 
 fn render_nav_row<'a>(
-    props: Props<'a>,
-    entry: &crate::ui::widgets::tree::FlattenedNode<'a, SettingsNode>,
+    _props: Props<'a>,
+    context: &TreeRowContext<'a, SettingsNode>,
 ) -> Element<'a, SettingsEvent> {
-    let indent = entry.depth as f32 * NAV_INDENT;
-    let is_selected = props.state.selected_path == entry.path;
+    let title = text(context.entry.node.title())
+        .size(NAV_FONT_SIZE)
+        .width(Length::Fill)
+        .wrapping(Wrapping::None)
+        .align_x(alignment::Horizontal::Left);
 
-    let icon_view = nav_icon(entry.node)
-        .map(|icon| {
-            svg_icon(icon, props.theme.theme.iced_palette().dim_foreground)
-        })
-        .unwrap_or_else(|| {
-            container(Space::new())
-                .width(Length::Fixed(NAV_ICON_SIZE))
-                .height(Length::Fixed(NAV_ICON_SIZE))
-                .into()
-        });
-
-    let title = container(
-        text(entry.node.title())
-            .size(NAV_FONT_SIZE)
-            .width(Length::Fill)
-            .wrapping(Wrapping::None)
-            .align_x(alignment::Horizontal::Left),
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .align_y(alignment::Vertical::Center);
-
-    let leading = row![icon_view]
-        .spacing(0)
-        .align_y(alignment::Vertical::Center);
-
-    let content =
-        row![Space::new().width(Length::Fixed(indent)), leading, title,]
-            .spacing(NAV_ROW_SPACING)
-            .align_y(alignment::Vertical::Center);
-
-    let palette = props.theme.theme.iced_palette().clone();
-    let row = container(content)
+    container(title)
         .width(Length::Fill)
         .height(Length::Fixed(NAV_ROW_HEIGHT))
         .padding([0.0, NAV_ROW_PADDING_X])
-        .style(move |_| {
-            let background = if is_selected {
-                let mut color = palette.dim_blue;
-                color.a = 0.7;
-                Some(color.into())
-            } else {
-                None
-            };
-            iced::widget::container::Style {
-                background,
-                text_color: Some(palette.foreground),
-                ..Default::default()
-            }
-        });
-
-    let path = entry.path.clone();
-    mouse_area(row)
-        .interaction(mouse::Interaction::Pointer)
-        .on_press(SettingsEvent::NodePressed { path })
+        .align_y(alignment::Vertical::Center)
         .into()
 }
 
@@ -458,6 +420,38 @@ fn text_input_style(
         style.selection = palette.blue;
         style
     }
+}
+
+fn nav_row_style(
+    palette: &IcedColorPalette,
+    context: &TreeRowContext<'_, SettingsNode>,
+) -> container::Style {
+    let background = if context.is_selected {
+        let mut color = palette.dim_blue;
+        color.a = 0.7;
+        Some(color.into())
+    } else if context.is_hovered {
+        let mut color = palette.overlay;
+        color.a = 0.6;
+        Some(color.into())
+    } else {
+        None
+    };
+
+    container::Style {
+        background,
+        text_color: Some(palette.foreground),
+        ..Default::default()
+    }
+}
+
+fn nav_toggle_icon<'a>(
+    context: &TreeRowContext<'a, SettingsNode>,
+    color: Color,
+) -> Element<'a, SettingsEvent> {
+    nav_icon(context.entry.node)
+        .map(|icon| svg_icon(icon, color))
+        .unwrap_or_else(|| Space::new().into())
 }
 
 fn nav_icon(node: &SettingsNode) -> Option<&'static [u8]> {

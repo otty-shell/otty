@@ -1,10 +1,10 @@
 use iced::alignment;
 use iced::widget::text::Wrapping;
 use iced::widget::{
-    Column, Space, column, container, mouse_area, row, scrollable, svg, text,
+    Space, column, container, mouse_area, row, scrollable, svg, text,
     text_input,
 };
-use iced::{Background, Color, Element, Length, mouse};
+use iced::{Background, Color, Element, Length};
 use std::time::{Duration, Instant};
 
 use crate::features::quick_commands::event::{
@@ -16,7 +16,7 @@ use crate::features::quick_commands::state::{
 };
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::ui::widgets::tree::{TreeNode, flatten_tree};
+use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 const HEADER_HEIGHT: f32 = 28.0;
 const HEADER_PADDING_X: f32 = 10.0;
@@ -83,38 +83,38 @@ fn quick_commands_header<'a>(
 fn quick_commands_tree<'a>(
     props: Props<'a>,
 ) -> Element<'a, QuickCommandsEvent> {
-    let entries = flatten_tree(&props.state.data.root.children);
+    let row_props = props;
+    let row_style_props = props;
+    let before_props = props;
+    let after_props = props;
+    let visible_props = props;
 
-    let mut column = Column::new().spacing(0);
+    let palette = props.theme.theme.iced_palette().clone();
+    let row_palette = palette.clone();
 
-    if let Some(edit) = props.state.inline_edit.as_ref()
-        && matches!(
-            &edit.kind,
-            InlineEditKind::CreateFolder { parent_path }
-                if parent_path.is_empty()
-        )
-    {
-        column = column.push(inline_edit_row(edit, 0));
-    }
-
-    for entry in entries {
-        let row = render_entry(props, &entry);
-        column = column.push(row);
-
-        if let Some(edit) = props.state.inline_edit.as_ref()
-            && matches!(
-                &edit.kind,
-                InlineEditKind::CreateFolder { parent_path }
-                    if parent_path == &entry.path
-            )
-        {
-            column = column.push(inline_edit_row(edit, entry.depth + 1));
-        }
-    }
+    let tree_view =
+        TreeView::new(&props.state.data.root.children, move |context| {
+            render_entry(row_props, context)
+        })
+        .selected(props.state.selected.as_ref())
+        .hovered(props.state.hovered.as_ref())
+        .on_press(|path| QuickCommandsEvent::NodePressed { path })
+        .on_release(|path| QuickCommandsEvent::NodeReleased { path })
+        .on_right_press(|path| QuickCommandsEvent::NodeRightClicked { path })
+        .on_enter(|path| QuickCommandsEvent::HoverEntered { path })
+        .on_exit(|path| QuickCommandsEvent::HoverLeft { path })
+        .row_style(move |context| {
+            tree_row_style(row_style_props, &row_palette, context)
+        })
+        .row_visible(move |context| !is_rename_edit(visible_props, context))
+        .before_rows(move || inline_edit_root(before_props))
+        .after_row(move |context| inline_edit_after(after_props, context))
+        .indent_width(TREE_INDENT)
+        .spacing(0.0);
 
     let palette = props.theme.theme.iced_palette().clone();
 
-    let scrollable = scrollable::Scrollable::new(column)
+    let scrollable = scrollable::Scrollable::new(tree_view.view())
         .width(Length::Fill)
         .height(Length::Fill)
         .direction(scrollable::Direction::Vertical(
@@ -183,59 +183,29 @@ fn quick_commands_tree<'a>(
 
 fn render_entry<'a>(
     props: Props<'a>,
-    entry: &crate::ui::widgets::tree::FlattenedNode<'a, QuickCommandNode>,
+    context: &TreeRowContext<'a, QuickCommandNode>,
 ) -> Element<'a, QuickCommandsEvent> {
-    let indent = entry.depth as f32 * TREE_INDENT;
-    let is_hovered = props
-        .state
-        .hovered
-        .as_ref()
-        .map(|path| path == &entry.path)
-        .unwrap_or(false);
-    let is_selected = props
-        .state
-        .selected
-        .as_ref()
-        .map(|path| path == &entry.path)
-        .unwrap_or(false);
-    let is_drop_target = props
-        .state
-        .drop_target
-        .as_ref()
-        .and_then(|target| match target {
-            DropTarget::Folder(path) => Some(is_prefix(path, &entry.path)),
-            DropTarget::Root => None,
-        })
-        .unwrap_or(false);
     let launched_at = props
         .state
         .launching
-        .get(&entry.path)
+        .get(&context.entry.path)
         .map(|info| info.started_at);
 
-    let is_editing = matches!(props.state.inline_edit.as_ref(), Some(edit)
-        if matches!(&edit.kind, InlineEditKind::Rename { path } if path == &entry.path));
-
-    if is_editing {
-        if let Some(edit) = props.state.inline_edit.as_ref() {
-            return inline_edit_row(edit, entry.depth);
-        }
-    }
-
     let icon_palette = props.theme.theme.iced_palette();
-    let icon_view: Element<'a, QuickCommandsEvent> = if entry.node.is_folder() {
-        let icon = if entry.node.expanded() {
-            icons::FOLDER_OPENED
+    let icon_view: Element<'a, QuickCommandsEvent> =
+        if context.entry.node.is_folder() {
+            let icon = if context.entry.node.expanded() {
+                icons::FOLDER_OPENED
+            } else {
+                icons::FOLDER
+            };
+            svg_icon(icon, icon_palette.dim_foreground)
         } else {
-            icons::FOLDER
+            command_icon(icon_palette, launched_at, props.state.blink_nonce)
         };
-        svg_icon(icon, icon_palette.dim_foreground)
-    } else {
-        command_icon(icon_palette, launched_at, props.state.blink_nonce)
-    };
 
     let title = container(
-        text(entry.node.title())
+        text(context.entry.node.title())
             .size(TREE_FONT_SIZE)
             .width(Length::Fill)
             .wrapping(Wrapping::None)
@@ -249,51 +219,14 @@ fn render_entry<'a>(
         .spacing(0)
         .align_y(alignment::Vertical::Center);
 
-    let content =
-        row![Space::new().width(Length::Fixed(indent)), leading, title,]
-            .spacing(TREE_ROW_SPACING)
-            .align_y(alignment::Vertical::Center);
+    let content = row![leading, title]
+        .spacing(TREE_ROW_SPACING)
+        .align_y(alignment::Vertical::Center);
 
-    let palette = props.theme.theme.iced_palette().clone();
-    let row = container(content)
+    container(content)
         .width(Length::Fill)
         .height(Length::Fixed(TREE_ROW_HEIGHT))
         .padding([0.0, TREE_ROW_PADDING_X])
-        .style(move |_| {
-            let background = if is_drop_target {
-                let mut color = palette.overlay;
-                color.a = 0.6;
-                Some(color.into())
-            } else if is_selected {
-                let mut color = palette.dim_blue;
-                color.a = 0.7;
-                Some(color.into())
-            } else if is_hovered {
-                let mut color = palette.overlay;
-                color.a = 0.6;
-                Some(color.into())
-            } else {
-                None
-            };
-            iced::widget::container::Style {
-                background,
-                text_color: Some(palette.foreground),
-                ..Default::default()
-            }
-        });
-
-    let path = entry.path.clone();
-    mouse_area(row)
-        .interaction(mouse::Interaction::Pointer)
-        .on_press(QuickCommandsEvent::NodePressed { path: path.clone() })
-        .on_release(QuickCommandsEvent::NodeReleased { path: path.clone() })
-        .on_right_press(QuickCommandsEvent::NodeRightClicked { path })
-        .on_enter(QuickCommandsEvent::HoverEntered {
-            path: entry.path.clone(),
-        })
-        .on_exit(QuickCommandsEvent::HoverLeft {
-            path: entry.path.clone(),
-        })
         .into()
 }
 
@@ -331,6 +264,87 @@ fn inline_edit_row<'a>(
         .width(Length::Fill)
         .padding([0.0, TREE_ROW_PADDING_X])
         .into()
+}
+
+fn inline_edit_root(
+    props: Props<'_>,
+) -> Option<Element<'_, QuickCommandsEvent>> {
+    let edit = props.state.inline_edit.as_ref()?;
+    if matches!(
+        &edit.kind,
+        InlineEditKind::CreateFolder { parent_path }
+            if parent_path.is_empty()
+    ) {
+        return Some(inline_edit_row(edit, 0));
+    }
+    None
+}
+
+fn inline_edit_after<'a>(
+    props: Props<'a>,
+    context: &TreeRowContext<'a, QuickCommandNode>,
+) -> Option<Element<'a, QuickCommandsEvent>> {
+    let edit = props.state.inline_edit.as_ref()?;
+
+    match &edit.kind {
+        InlineEditKind::CreateFolder { parent_path }
+            if parent_path == &context.entry.path =>
+        {
+            Some(inline_edit_row(edit, context.entry.depth + 1))
+        },
+        InlineEditKind::Rename { path } if path == &context.entry.path => {
+            Some(inline_edit_row(edit, context.entry.depth))
+        },
+        _ => None,
+    }
+}
+
+fn is_rename_edit(
+    props: Props<'_>,
+    context: &TreeRowContext<'_, QuickCommandNode>,
+) -> bool {
+    matches!(props.state.inline_edit.as_ref(), Some(edit)
+        if matches!(&edit.kind, InlineEditKind::Rename { path } if path == &context.entry.path))
+}
+
+fn tree_row_style(
+    props: Props<'_>,
+    palette: &IcedColorPalette,
+    context: &TreeRowContext<'_, QuickCommandNode>,
+) -> iced::widget::container::Style {
+    let is_drop_target = props
+        .state
+        .drop_target
+        .as_ref()
+        .and_then(|target| match target {
+            DropTarget::Folder(path) => {
+                Some(is_prefix(path, &context.entry.path))
+            },
+            DropTarget::Root => None,
+        })
+        .unwrap_or(false);
+
+    let background = if is_drop_target {
+        let mut color = palette.overlay;
+        color.a = 0.6;
+        Some(color.into())
+    } else if context.is_selected {
+        let mut color = palette.dim_blue;
+        color.a = 0.7;
+        Some(color.into())
+    } else if context.is_hovered {
+        let mut color = palette.overlay;
+        color.a = 0.6;
+        Some(color.into())
+    } else {
+        None
+    };
+
+    iced::widget::container::Style {
+        background,
+        text_color: Some(palette.foreground),
+        ..Default::default()
+    }
 }
 
 fn command_icon<'a>(

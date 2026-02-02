@@ -2894,6 +2894,7 @@ dependencies = [
  "log",
  "otty-libterm",
  "otty-ui-term",
+ "otty-ui-tree",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
@@ -2969,6 +2970,13 @@ dependencies = [
  "otty-libterm",
  "thiserror 2.0.17",
  "tokio",
+]
+
+[[package]]
+name = "otty-ui-tree"
+version = "0.1.0"
+dependencies = [
+ "iced",
 ]
 
 [[package]]

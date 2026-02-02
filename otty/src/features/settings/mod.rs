@@ -94,6 +94,8 @@ pub(crate) enum SettingsEvent {
     Save,
     Reset,
     NodePressed { path: Vec<String> },
+    NodeToggled { path: Vec<String> },
+    NodeHovered { path: Option<Vec<String>> },
     ShellChanged(String),
     EditorChanged(String),
     PaletteChanged { index: usize, value: String },
@@ -109,6 +111,7 @@ pub(crate) struct SettingsState {
     pub(crate) tree: Vec<SettingsNode>,
     pub(crate) selected_section: SettingsSection,
     pub(crate) selected_path: Vec<String>,
+    pub(crate) hovered_path: Option<Vec<String>>,
     pub(crate) dirty: bool,
     pub(crate) last_error: Option<String>,
 }
@@ -212,6 +215,18 @@ impl SettingsState {
         }
     }
 
+    pub(crate) fn toggle_folder_path(&mut self, path: &[String]) {
+        if let Some(node) = find_node_mut(&mut self.tree, path) {
+            if node.is_folder() {
+                node.expanded = !node.expanded;
+            }
+        }
+    }
+
+    pub(crate) fn set_hovered_path(&mut self, path: Option<Vec<String>>) {
+        self.hovered_path = path;
+    }
+
     pub(crate) fn update_dirty(&mut self) {
         self.dirty = self.draft != self.baseline;
     }
@@ -238,6 +253,7 @@ impl SettingsState {
             tree,
             selected_section,
             selected_path,
+            hovered_path: None,
             dirty: false,
             last_error: None,
         }
@@ -247,6 +263,7 @@ impl SettingsState {
         self.baseline = settings.clone();
         self.draft = settings;
         self.palette_inputs = self.draft.theme.palette.clone();
+        self.hovered_path = None;
         self.dirty = false;
     }
 }
