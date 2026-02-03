@@ -251,13 +251,21 @@ _otty_preexec() {
   [[ -z $cmd ]] && return 0
   local id="cmd-$((++otty_block_seq))"
   local cmd_json
+  local cwd_json
+  local now
   cmd_json=$(_otty_json_escape "$cmd")
-  _otty_emit "{\"v\":1,\"id\":\"$id\",\"phase\":\"preexec\",\"cmd\":$cmd_json}"
+  cwd_json=$(_otty_json_escape "$PWD")
+  now=$(date +%s 2>/dev/null || echo 0)
+  _otty_emit "{\"v\":1,\"id\":\"$id\",\"phase\":\"preexec\",\"cmd\":$cmd_json,\"cwd\":$cwd_json,\"time\":$now}"
 }
 
 _otty_precmd() {
   local prompt_id="prompt-$((++otty_prompt_seq))"
-  _otty_emit "{\"v\":1,\"id\":\"$prompt_id\",\"phase\":\"precmd\"}"
+  local cwd_json
+  local now
+  cwd_json=$(_otty_json_escape "$PWD")
+  now=$(date +%s 2>/dev/null || echo 0)
+  _otty_emit "{\"v\":1,\"id\":\"$prompt_id\",\"phase\":\"precmd\",\"cwd\":$cwd_json,\"time\":$now}"
 }
 
 preexec_functions+=(_otty_preexec)

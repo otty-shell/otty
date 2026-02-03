@@ -82,13 +82,27 @@ _otty_emit() {
 _otty_preexec() {
   local id="cmd-$((++otty_block_seq))"
   local cmd_json
+  local cwd_json
+  local now
   cmd_json=$(_otty_json_escape "$1")
-  _otty_emit "{\"v\":1,\"id\":\"$id\",\"phase\":\"preexec\",\"cmd\":$cmd_json}"
+  cwd_json=$(_otty_json_escape "$PWD")
+  now=${EPOCHSECONDS:-}
+  if [[ -z "$now" ]]; then
+    now=$(date +%s 2>/dev/null || echo 0)
+  fi
+  _otty_emit "{\"v\":1,\"id\":\"$id\",\"phase\":\"preexec\",\"cmd\":$cmd_json,\"cwd\":$cwd_json,\"time\":$now}"
 }
 
 _otty_precmd() {
   local prompt_id="prompt-$((++otty_prompt_seq))"
-  _otty_emit "{\"v\":1,\"id\":\"$prompt_id\",\"phase\":\"precmd\"}"
+  local cwd_json
+  local now
+  cwd_json=$(_otty_json_escape "$PWD")
+  now=${EPOCHSECONDS:-}
+  if [[ -z "$now" ]]; then
+    now=$(date +%s 2>/dev/null || echo 0)
+  fi
+  _otty_emit "{\"v\":1,\"id\":\"$prompt_id\",\"phase\":\"precmd\",\"cwd\":$cwd_json,\"time\":$now}"
 }
 
 add-zsh-hook preexec _otty_preexec

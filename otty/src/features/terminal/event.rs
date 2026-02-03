@@ -3,11 +3,12 @@ use otty_ui_term::settings::{SessionKind, Settings};
 use otty_ui_term::{BlockCommand, TerminalView};
 
 use crate::app::Event as AppEvent;
+use crate::features::explorer;
 use crate::features::tab::{TabContent, TabItem};
 use crate::state::State;
 
 use super::shell::ShellSession;
-use super::term::TerminalState;
+use super::term::{TerminalKind, TerminalState};
 
 /// Events emitted by the terminal tab view and routed into the terminal reducer.
 #[derive(Debug, Clone)]
@@ -89,10 +90,21 @@ pub(crate) fn terminal_tab_reducer(
         PasteIntoPrompt { terminal_id } => {
             paste_into_prompt(state, tab_id, terminal_id)
         },
-        SplitPane { pane, axis } => split_pane(state, tab_id, pane, axis),
-        ClosePane { pane } => close_pane_by_id(state, tab_id, pane),
+        SplitPane { pane, axis } => {
+            let task = split_pane(state, tab_id, pane, axis);
+            explorer::event::sync_explorer_from_active_terminal(state);
+            task
+        },
+        ClosePane { pane } => {
+            let task = close_pane_by_id(state, tab_id, pane);
+            explorer::event::sync_explorer_from_active_terminal(state);
+            task
+        },
         PaneClicked { pane } => {
-            with_terminal_tab(state, tab_id, |tab| tab.focus_pane(pane))
+            let task =
+                with_terminal_tab(state, tab_id, |tab| tab.focus_pane(pane));
+            explorer::event::sync_explorer_from_active_terminal(state);
+            task
         },
         PaneResized { event } => {
             if let Some(tab) = terminal_tab_mut(state, tab_id) {
@@ -125,6 +137,8 @@ pub(crate) fn internal_widget_event_reducer(
             | otty_ui_term::Event::ResetTitle { .. }
     );
 
+    let is_content_sync =
+        matches!(event, otty_ui_term::Event::ContentSync { .. });
     let selection_task = update_block_selection(state, tab_id, &event);
     let event_task = with_terminal_tab(state, tab_id, |tab| {
         tab.handle_terminal_event(event)
@@ -133,6 +147,14 @@ pub(crate) fn internal_widget_event_reducer(
 
     if refresh_titles {
         sync_tab_title(state, tab_id);
+    }
+
+    if is_content_sync {
+        explorer::event::sync_explorer_from_terminal_event(
+            state,
+            tab_id,
+            terminal_id,
+        );
     }
 
     update
@@ -156,6 +178,7 @@ pub(crate) fn create_terminal_tab(
         shell_session.name.clone(),
         terminal_id,
         settings,
+        TerminalKind::Shell,
     ) {
         Ok(result) => result,
         Err(err) => {
@@ -177,6 +200,7 @@ pub(crate) fn create_terminal_tab(
     state.active_tab_id = Some(tab_id);
 
     let sync_task = sync_tab_block_selection(state, tab_id);
+    explorer::event::sync_explorer_from_active_terminal(state);
 
     Task::batch(vec![focus_task, sync_task])
 }

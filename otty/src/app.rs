@@ -11,6 +11,7 @@ use otty_ui_term::settings::{
 use std::time::Duration;
 
 use crate::effects::close_window;
+use crate::features::explorer;
 use crate::features::quick_commands::editor::{
     QuickCommandEditorEvent, quick_command_editor_reducer,
 };
@@ -524,7 +525,8 @@ impl App {
         match event {
             sidebar::Event::SelectItem(item) => {
                 self.state.sidebar.active_item = item;
-                if item == SidebarItem::Terminal {
+                if matches!(item, SidebarItem::Terminal | SidebarItem::Explorer)
+                {
                     self.ensure_sidebar_workspace_open();
                 }
                 Task::none()
@@ -597,6 +599,13 @@ impl App {
             },
             sidebar_workspace::Event::QuickCommands(event) => {
                 quick_commands::quick_commands_reducer(
+                    &mut self.state,
+                    &self.terminal_settings,
+                    event,
+                )
+            },
+            sidebar_workspace::Event::Explorer(event) => {
+                explorer::event::explorer_reducer(
                     &mut self.state,
                     &self.terminal_settings,
                     event,

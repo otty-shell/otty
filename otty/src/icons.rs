@@ -11,11 +11,14 @@ pub(crate) const ADD_TAB_HEADER: &[u8] =
 pub(crate) const FOLDER: &[u8] = include_bytes!("../../assets/svg/folder.svg");
 pub(crate) const FOLDER_OPENED: &[u8] =
     include_bytes!("../../assets/svg/folder-opened.svg");
+pub(crate) const FILE: &[u8] = include_bytes!("../../assets/svg/file.svg");
 pub(crate) const PLAY: &[u8] = include_bytes!("../../assets/svg/play.svg");
 pub(crate) const SIDEBAR_TERMINAL: &[u8] =
     include_bytes!("../../assets/svg/terminal.svg");
 pub(crate) const SIDEBAR_SETTINGS: &[u8] =
     include_bytes!("../../assets/svg/sidebar-settings.svg");
+pub(crate) const SIDEBAR_EXPLORER: &[u8] =
+    include_bytes!("../../assets/svg/folder.svg");
 pub(crate) const SIDEBAR_COLLAPSE: &[u8] =
     include_bytes!("../../assets/svg/sidebar-collapse.svg");
 pub(crate) const SIDEBAR_EXPAND: &[u8] =

@@ -18,6 +18,13 @@ pub(crate) struct TerminalEntry {
     pub(crate) title: String,
 }
 
+/// Terminal context determining whether shell metadata is available.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TerminalKind {
+    Shell,
+    Command,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct BlockSelection {
     pub terminal_id: u64,
@@ -27,6 +34,7 @@ pub(crate) struct BlockSelection {
 pub(crate) struct TerminalState {
     tab_id: u64,
     title: String,
+    kind: TerminalKind,
     terminal_settings: Settings,
     panes: pane_grid::State<u64>,
     terminals: HashMap<u64, TerminalEntry>,
@@ -44,6 +52,7 @@ impl TerminalState {
         default_title: String,
         terminal_id: u64,
         settings: Settings,
+        kind: TerminalKind,
     ) -> Result<(Self, Task<AppEvent>), String> {
         let terminal =
             otty_ui_term::Terminal::new(terminal_id, settings.clone())
@@ -65,6 +74,7 @@ impl TerminalState {
         let tab = TerminalState {
             tab_id,
             title: default_title.clone(),
+            kind,
             terminal_settings: settings,
             panes,
             terminals,
@@ -81,6 +91,11 @@ impl TerminalState {
 
     pub fn title(&self) -> &str {
         &self.title
+    }
+
+    /// Report whether this terminal tab represents a shell session.
+    pub(crate) fn is_shell(&self) -> bool {
+        matches!(self.kind, TerminalKind::Shell)
     }
 
     pub fn panes(&self) -> &pane_grid::State<u64> {

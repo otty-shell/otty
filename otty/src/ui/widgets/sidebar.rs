@@ -48,7 +48,16 @@ pub(crate) fn menu_view<'a>(props: MenuProps<'a>) -> Element<'a, Event> {
         Event::SelectItem(SidebarItem::Terminal),
     );
 
-    let main_menu = column![terminal_button].spacing(0).width(Length::Fill);
+    let explorer_button = sidebar_button(
+        icons::SIDEBAR_EXPLORER,
+        props.active_item == SidebarItem::Explorer,
+        props.theme,
+        Event::SelectItem(SidebarItem::Explorer),
+    );
+
+    let main_menu = column![terminal_button, explorer_button]
+        .spacing(0)
+        .width(Length::Fill);
 
     let main_scroll = scrollable::Scrollable::with_direction(
         main_menu,

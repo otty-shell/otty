@@ -21,7 +21,7 @@ use crate::features::tab::{QuickCommandErrorState, TabContent, TabItem};
 use crate::features::terminal::event::{
     focus_active_terminal, settings_for_session, sync_tab_block_selection,
 };
-use crate::features::terminal::term::TerminalState;
+use crate::features::terminal::term::{TerminalKind, TerminalState};
 use crate::state::State;
 
 use super::model::{
@@ -955,6 +955,7 @@ fn launch_quick_command(
                 title.clone(),
                 terminal_id,
                 settings,
+                TerminalKind::Command,
             ) {
                 Ok((terminal, _)) => QuickCommandLaunchResult::Success {
                     path,

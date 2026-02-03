@@ -1,0 +1,199 @@
+use std::path::PathBuf;
+
+use iced::Task;
+use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
+use otty_ui_tree::TreePath;
+
+use crate::app::Event as AppEvent;
+use crate::features::tab::{TabContent, TabItem};
+use crate::features::terminal::event::{
+    settings_for_session, sync_tab_block_selection,
+};
+use crate::features::terminal::term::{TerminalKind, TerminalState};
+use crate::state::State;
+
+/// Events emitted by the explorer tree UI.
+#[derive(Debug, Clone)]
+pub(crate) enum ExplorerEvent {
+    NodePressed { path: TreePath },
+    NodeHovered { path: Option<TreePath> },
+}
+
+/// Handle explorer UI events and trigger side effects.
+pub(crate) fn explorer_reducer(
+    state: &mut State,
+    terminal_settings: &Settings,
+    event: ExplorerEvent,
+) -> Task<AppEvent> {
+    match event {
+        ExplorerEvent::NodePressed { path } => {
+            state.explorer.selected = Some(path.clone());
+
+            if state.explorer.node_is_folder(&path).unwrap_or(false) {
+                state.explorer.toggle_folder(&path);
+                return Task::none();
+            }
+
+            let Some(file_path) = state.explorer.node_path(&path) else {
+                return Task::none();
+            };
+
+            open_file_in_editor(state, terminal_settings, file_path)
+        },
+        ExplorerEvent::NodeHovered { path } => {
+            state.explorer.hovered = path;
+            Task::none()
+        },
+    }
+}
+
+/// Sync explorer state from the currently active shell tab, if any.
+pub(crate) fn sync_explorer_from_active_terminal(state: &mut State) {
+    let Some(tab_id) = state.active_tab_id else {
+        return;
+    };
+
+    let Some(terminal) = terminal_tab(state, tab_id) else {
+        return;
+    };
+
+    if !terminal.is_shell() {
+        return;
+    }
+
+    let Some(entry) = terminal.focused_terminal_entry() else {
+        return;
+    };
+
+    let blocks = entry.terminal.blocks();
+    if let Some(cwd) = terminal_cwd(&blocks) {
+        state.explorer.set_root(cwd);
+    }
+}
+
+/// Sync explorer state from a terminal event when it targets the focused pane.
+pub(crate) fn sync_explorer_from_terminal_event(
+    state: &mut State,
+    tab_id: u64,
+    terminal_id: u64,
+) {
+    if state.active_tab_id != Some(tab_id) {
+        return;
+    }
+
+    let Some(terminal) = terminal_tab(state, tab_id) else {
+        return;
+    };
+
+    if !terminal.is_shell() {
+        return;
+    }
+
+    if terminal.focused_terminal_id() != Some(terminal_id) {
+        return;
+    }
+
+    let Some(entry) = terminal.terminals().get(&terminal_id) else {
+        return;
+    };
+
+    let blocks = entry.terminal.blocks();
+    if let Some(cwd) = terminal_cwd(&blocks) {
+        state.explorer.set_root(cwd);
+    }
+}
+
+fn open_file_in_editor(
+    state: &mut State,
+    terminal_settings: &Settings,
+    file_path: PathBuf,
+) -> Task<AppEvent> {
+    let editor_raw = state.settings.draft.terminal.editor.trim();
+    let Some((program, mut args)) = parse_command_line(editor_raw) else {
+        log::warn!("default editor is empty; skipping open");
+        return Task::none();
+    };
+
+    let file_arg = file_path.to_string_lossy().into_owned();
+    args.push(file_arg);
+
+    let mut options = LocalSessionOptions::default()
+        .with_program(&program)
+        .with_args(args);
+
+    if let Some(parent) = file_path.parent() {
+        options = options.with_working_directory(parent.into());
+    }
+
+    let session = SessionKind::from_local_options(options);
+    let settings = settings_for_session(terminal_settings, session);
+
+    let tab_id = state.next_tab_id;
+    state.next_tab_id += 1;
+    let terminal_id = state.next_terminal_id;
+    state.next_terminal_id += 1;
+
+    let file_display = file_path.display();
+    let title = file_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("{file_display}"));
+
+    let (mut tab, focus_task) = match TerminalState::new(
+        tab_id,
+        title.clone(),
+        terminal_id,
+        settings,
+        TerminalKind::Command,
+    ) {
+        Ok(result) => result,
+        Err(err) => {
+            log::warn!("editor tab init failed: {err}");
+            return Task::none();
+        },
+    };
+
+    tab.set_grid_size(state.pane_grid_size());
+
+    state.tab_items.insert(
+        tab_id,
+        TabItem {
+            id: tab_id,
+            title,
+            content: TabContent::Terminal(Box::new(tab)),
+        },
+    );
+    state.active_tab_id = Some(tab_id);
+
+    let sync_task = sync_tab_block_selection(state, tab_id);
+
+    Task::batch(vec![focus_task, sync_task])
+}
+
+fn parse_command_line(input: &str) -> Option<(String, Vec<String>)> {
+    let mut parts = input.split_whitespace();
+    let program = parts.next()?.to_string();
+    let args = parts.map(ToString::to_string).collect();
+    Some((program, args))
+}
+
+fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
+    state
+        .tab_items
+        .get(&tab_id)
+        .and_then(|tab| match &tab.content {
+            TabContent::Terminal(terminal) => Some(terminal.as_ref()),
+            TabContent::Settings
+            | TabContent::QuickCommandEditor(_)
+            | TabContent::QuickCommandError(_) => None,
+        })
+}
+
+fn terminal_cwd(blocks: &[otty_ui_term::BlockSnapshot]) -> Option<PathBuf> {
+    blocks
+        .iter()
+        .rev()
+        .find_map(|block| block.meta.cwd.as_deref())
+        .map(PathBuf::from)
+}
