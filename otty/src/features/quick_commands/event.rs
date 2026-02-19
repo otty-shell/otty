@@ -37,8 +37,7 @@ use super::state::{
 #[derive(Debug, Clone)]
 pub(crate) enum QuickCommandsEvent {
     CursorMoved { position: Point },
-    HoverEntered { path: NodePath },
-    HoverLeft { path: NodePath },
+    NodeHovered { path: Option<NodePath> },
     NodePressed { path: NodePath },
     NodeReleased { path: NodePath },
     NodeRightClicked { path: NodePath },
@@ -130,28 +129,12 @@ pub(crate) fn quick_commands_reducer(
             update_drag_state(state);
             Task::none()
         },
-        HoverEntered { path } => {
+        NodeHovered { path } => {
             if state.sidebar.is_resizing() {
                 return Task::none();
             }
-            state.quick_commands.hovered = Some(path);
+            state.quick_commands.hovered = path;
             update_drag_drop_target(state);
-            Task::none()
-        },
-        HoverLeft { path } => {
-            if state.sidebar.is_resizing() {
-                return Task::none();
-            }
-            if state
-                .quick_commands
-                .hovered
-                .as_ref()
-                .map(|current| current == &path)
-                .unwrap_or(false)
-            {
-                state.quick_commands.hovered = None;
-                update_drag_drop_target(state);
-            }
             Task::none()
         },
         BackgroundPressed => {

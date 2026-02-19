@@ -85,7 +85,6 @@ fn quick_commands_tree<'a>(
 ) -> Element<'a, QuickCommandsEvent> {
     let row_props = props;
     let row_style_props = props;
-    let before_props = props;
     let after_props = props;
     let visible_props = props;
 
@@ -101,20 +100,24 @@ fn quick_commands_tree<'a>(
         .on_press(|path| QuickCommandsEvent::NodePressed { path })
         .on_release(|path| QuickCommandsEvent::NodeReleased { path })
         .on_right_press(|path| QuickCommandsEvent::NodeRightClicked { path })
-        .on_enter(|path| QuickCommandsEvent::HoverEntered { path })
-        .on_exit(|path| QuickCommandsEvent::HoverLeft { path })
+        .on_hover(|path| QuickCommandsEvent::NodeHovered { path })
         .row_style(move |context| {
             tree_row_style(row_style_props, &row_palette, context)
         })
         .row_visible(move |context| !is_rename_edit(visible_props, context))
-        .before_rows(move || inline_edit_root(before_props))
         .after_row(move |context| inline_edit_after(after_props, context))
         .indent_width(TREE_INDENT)
         .spacing(0.0);
 
     let palette = props.theme.theme.iced_palette().clone();
 
-    let scrollable = scrollable::Scrollable::new(tree_view.view())
+    let tree_content = if let Some(root_edit) = inline_edit_root(props) {
+        column![root_edit, tree_view.view()].into()
+    } else {
+        tree_view.view()
+    };
+
+    let scrollable = scrollable::Scrollable::new(tree_content)
         .width(Length::Fill)
         .height(Length::Fill)
         .direction(scrollable::Direction::Vertical(

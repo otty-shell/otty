@@ -113,7 +113,7 @@ fn settings_nav_tree<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
     })
     .selected(Some(&props.state.selected_path))
     .hovered(props.state.hovered_path.as_ref())
-    .on_select(|path| SettingsEvent::NodePressed { path })
+    .on_press(|path| SettingsEvent::NodePressed { path })
     .on_hover(|path| SettingsEvent::NodeHovered { path })
     .on_toggle_folder(|path| SettingsEvent::NodeToggled { path })
     .row_style(move |context| nav_row_style(&row_palette, context))

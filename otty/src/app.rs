@@ -862,8 +862,7 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
             quick_commands::QuickCommandsEvent::CursorMoved { .. },
         )) => Allow,
         Event::SidebarWorkspace(sidebar_workspace::Event::QuickCommands(
-            quick_commands::QuickCommandsEvent::HoverEntered { .. }
-            | quick_commands::QuickCommandsEvent::HoverLeft { .. },
+            quick_commands::QuickCommandsEvent::NodeHovered { .. },
         )) => Ignore,
         Event::ActionBar(_) => Allow,
         Event::Window(_) | Event::ResizeWindow(_) => Allow,
@@ -883,8 +882,7 @@ fn should_cancel_inline_edit(event: &Event) -> bool {
             QuickCommandsEvent::InlineEditChanged(_)
                 | QuickCommandsEvent::InlineEditSubmit
                 | QuickCommandsEvent::CursorMoved { .. }
-                | QuickCommandsEvent::HoverEntered { .. }
-                | QuickCommandsEvent::HoverLeft { .. }
+                | QuickCommandsEvent::NodeHovered { .. }
         ),
         Event::QuickCommandsTick | Event::QuickCommandLaunchFinished(_) => {
             false

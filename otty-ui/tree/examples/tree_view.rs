@@ -6,7 +6,6 @@ use otty_ui_tree::{TreeNode, TreePath, TreeRowContext, TreeView};
 enum Message {
     Select(TreePath),
     Hover(Option<TreePath>),
-    Toggle(TreePath),
 }
 
 #[derive(Clone)]
@@ -106,15 +105,14 @@ impl Default for AppState {
 fn update(state: &mut AppState, message: Message) {
     match message {
         Message::Select(path) => {
-            if !is_folder_at_path(&state.tree, &path) {
+            if is_folder_at_path(&state.tree, &path) {
+                let _ = toggle_folder(&mut state.tree, &path);
+            } else {
                 state.selected = Some(path);
             }
         },
         Message::Hover(path) => {
             state.hovered = path;
-        },
-        Message::Toggle(path) => {
-            toggle_folder(&mut state.tree, &path);
         },
     }
 }
@@ -123,9 +121,8 @@ fn view(state: &AppState) -> Element<'_, Message> {
     TreeView::new(&state.tree, render_row)
         .selected(state.selected.as_ref())
         .hovered(state.hovered.as_ref())
-        .on_select(Message::Select)
+        .on_press(Message::Select)
         .on_hover(Message::Hover)
-        .on_toggle_folder(Message::Toggle)
         .row_style(row_style)
         .toggle_content(toggle_icon)
         .toggle_width(16.0)
