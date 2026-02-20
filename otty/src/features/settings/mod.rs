@@ -140,7 +140,6 @@ pub(crate) struct SettingsState {
     pub(crate) selected_path: Vec<String>,
     pub(crate) hovered_path: Option<Vec<String>>,
     pub(crate) dirty: bool,
-    pub(crate) last_error: Option<String>,
 }
 
 impl SettingsState {
@@ -154,9 +153,7 @@ impl SettingsState {
             },
             Err(err) => {
                 log::warn!("settings load failed: {err}");
-                let mut state = Self::from_settings(SettingsData::default());
-                state.last_error = Some(format!("{err}"));
-                state
+                Self::from_settings(SettingsData::default())
             },
         }
     }
@@ -171,7 +168,6 @@ impl SettingsState {
             },
             Err(err) => {
                 log::warn!("settings reload failed: {err}");
-                self.last_error = Some(format!("{err}"));
             },
         }
     }
@@ -185,7 +181,6 @@ impl SettingsState {
 
     pub(crate) fn mark_saved(&mut self, settings: SettingsData) {
         self.reset_to_settings(settings);
-        self.last_error = None;
     }
 
     pub(crate) fn reset(&mut self) {
@@ -274,7 +269,6 @@ impl SettingsState {
             selected_path,
             hovered_path: None,
             dirty: false,
-            last_error: None,
         }
     }
 

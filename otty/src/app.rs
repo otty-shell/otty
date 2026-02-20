@@ -278,7 +278,7 @@ impl App {
                 match self.state.settings.persist() {
                     Ok(settings) => self.apply_settings(&settings),
                     Err(err) => {
-                        self.state.settings.last_error = Some(format!("{err}"));
+                        log::warn!("settings save failed: {err}");
                     },
                 }
                 Task::none()
