@@ -160,6 +160,7 @@ fn read_dir_nodes(path: &Path) -> std::io::Result<Vec<FileNode>> {
     Ok(nodes)
 }
 
+// TODO: реализовать трейт Ord для FileNode и использовать его
 fn compare_nodes(left: &FileNode, right: &FileNode) -> Ordering {
     match (!left.is_folder).cmp(&(!right.is_folder)) {
         Ordering::Equal => compare_names(&left.name, &right.name),
@@ -176,6 +177,7 @@ fn compare_names(left: &str, right: &str) -> Ordering {
     }
 }
 
+// TODO: у нас тут 2 одинаковые функции с разными сигнатурами мне кажктся можно решить это дженериками find_node / find_node_mut
 fn find_node<'a>(
     nodes: &'a [FileNode],
     path: &[String],

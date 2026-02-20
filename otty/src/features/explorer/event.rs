@@ -47,6 +47,7 @@ pub(crate) fn explorer_reducer(
     }
 }
 
+// TODO: sync_explorer_from_active_terminal / sync_explorer_from_terminal_event кажется одинаковыми нужно сделать из этого одну общую функцию
 /// Sync explorer state from the currently active shell tab, if any.
 pub(crate) fn sync_explorer_from_active_terminal(state: &mut State) {
     let Some(tab_id) = state.active_tab_id else {
@@ -165,6 +166,7 @@ fn parse_command_line(input: &str) -> Result<(String, Vec<String>), String> {
     let parts = shell_words::split(input)
         .map_err(|err| format!("Invalid editor command: {err}"))?;
     let Some((program, args)) = parts.split_first() else {
+        // TODO: Использовать thiserror
         return Err(String::from("Editor command is empty."));
     };
 
@@ -177,6 +179,7 @@ fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
         .get(&tab_id)
         .and_then(|tab| match &tab.content {
             TabContent::Terminal(terminal) => Some(terminal.as_ref()),
+            // TODO: убрать перечисление тут можно просто _ => None
             TabContent::Settings
             | TabContent::QuickCommandEditor(_)
             | TabContent::QuickCommandError(_) => None,
