@@ -45,7 +45,6 @@ pub(crate) struct InlineEditState {
 pub(crate) struct QuickCommandsState {
     pub(crate) data: QuickCommandsFile,
     pub(crate) dirty: bool,
-    pub(crate) last_error: Option<String>,
     pub(crate) selected: Option<NodePath>,
     pub(crate) hovered: Option<NodePath>,
     pub(crate) launching: HashMap<NodePath, LaunchInfo>,
@@ -74,7 +73,6 @@ impl QuickCommandsState {
             Ok(Some(data)) => Self {
                 data,
                 dirty: false,
-                last_error: None,
                 selected: None,
                 hovered: None,
                 launching: HashMap::new(),
@@ -91,10 +89,7 @@ impl QuickCommandsState {
             Ok(None) => Self::default(),
             Err(err) => {
                 log::warn!("quick commands load failed: {err}");
-                Self {
-                    last_error: Some(format!("{err}")),
-                    ..Self::default()
-                }
+                Self::default()
             },
         }
     }
@@ -102,7 +97,6 @@ impl QuickCommandsState {
     pub(crate) fn persist(&mut self) -> Result<(), QuickCommandsError> {
         save_quick_commands(&self.data)?;
         self.dirty = false;
-        self.last_error = None;
         Ok(())
     }
 
@@ -116,7 +110,6 @@ impl Default for QuickCommandsState {
         Self {
             data: QuickCommandsFile::empty(),
             dirty: false,
-            last_error: None,
             selected: None,
             hovered: None,
             launching: HashMap::new(),

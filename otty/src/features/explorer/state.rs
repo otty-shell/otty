@@ -25,6 +25,32 @@ impl FileNode {
     }
 }
 
+impl Ord for FileNode {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (!self.is_folder).cmp(&(!other.is_folder)) {
+            Ordering::Equal => match compare_names(&self.name, &other.name) {
+                Ordering::Equal => self.path.cmp(&other.path),
+                other => other,
+            },
+            other => other,
+        }
+    }
+}
+
+impl PartialOrd for FileNode {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for FileNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for FileNode {}
+
 /// Runtime state for the sidebar file explorer.
 #[derive(Debug, Default)]
 pub(crate) struct ExplorerState {
@@ -33,7 +59,6 @@ pub(crate) struct ExplorerState {
     pub(crate) tree: Vec<FileNode>,
     pub(crate) selected: Option<TreePath>,
     pub(crate) hovered: Option<TreePath>,
-    pub(crate) last_error: Option<String>,
 }
 
 impl ExplorerState {
@@ -64,18 +89,15 @@ impl ExplorerState {
     pub(crate) fn refresh_tree(&mut self) {
         let Some(root) = self.root.as_ref() else {
             self.tree.clear();
-            self.last_error = None;
             return;
         };
 
         match read_dir_nodes(root) {
             Ok(nodes) => {
                 self.tree = nodes;
-                self.last_error = None;
             },
             Err(err) => {
                 self.tree.clear();
-                self.last_error = Some(format!("{err}"));
                 log::warn!("explorer failed to read root: {err}");
             },
         }
@@ -97,10 +119,8 @@ impl ExplorerState {
             match read_dir_nodes(&node.path) {
                 Ok(children) => {
                     node.children = children;
-                    self.last_error = None;
                 },
                 Err(err) => {
-                    self.last_error = Some(format!("{err}"));
                     let path_display = node.path.display();
                     log::warn!(
                         "explorer failed to read folder {path_display}: {err}"
@@ -155,17 +175,9 @@ fn read_dir_nodes(path: &Path) -> std::io::Result<Vec<FileNode>> {
         nodes.push(FileNode::new(name, path, is_folder));
     }
 
-    nodes.sort_by(compare_nodes);
+    nodes.sort();
 
     Ok(nodes)
-}
-
-// TODO: реализовать трейт Ord для FileNode и использовать его
-fn compare_nodes(left: &FileNode, right: &FileNode) -> Ordering {
-    match (!left.is_folder).cmp(&(!right.is_folder)) {
-        Ordering::Equal => compare_names(&left.name, &right.name),
-        other => other,
-    }
 }
 
 fn compare_names(left: &str, right: &str) -> Ordering {
@@ -177,13 +189,13 @@ fn compare_names(left: &str, right: &str) -> Ordering {
     }
 }
 
-// TODO: у нас тут 2 одинаковые функции с разными сигнатурами мне кажктся можно решить это дженериками find_node / find_node_mut
 fn find_node<'a>(
     nodes: &'a [FileNode],
     path: &[String],
 ) -> Option<&'a FileNode> {
     let (head, tail) = path.split_first()?;
-    let node = nodes.iter().find(|node| node.name == *head)?;
+    let index = find_child_index(nodes, head)?;
+    let node = nodes.get(index)?;
 
     if tail.is_empty() {
         return Some(node);
@@ -201,16 +213,20 @@ fn find_node_mut<'a>(
     path: &[String],
 ) -> Option<&'a mut FileNode> {
     let (head, tail) = path.split_first()?;
-    let index = nodes.iter().position(|node| node.name == *head)?;
+    let index = find_child_index(nodes, head)?;
+    let node = nodes.get_mut(index)?;
 
     if tail.is_empty() {
-        return nodes.get_mut(index);
+        return Some(node);
     }
 
-    if !nodes[index].is_folder {
+    if !node.is_folder {
         return None;
     }
 
-    let children = &mut nodes[index].children;
-    find_node_mut(children, tail)
+    find_node_mut(&mut node.children, tail)
+}
+
+fn find_child_index(nodes: &[FileNode], name: &str) -> Option<usize> {
+    nodes.iter().position(|node| node.name == name)
 }

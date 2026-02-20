@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use iced::Task;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 use otty_ui_tree::TreePath;
+use thiserror::Error;
 
 use crate::app::Event as AppEvent;
 use crate::features::tab::TabContent;
@@ -47,27 +48,15 @@ pub(crate) fn explorer_reducer(
     }
 }
 
-// TODO: sync_explorer_from_active_terminal / sync_explorer_from_terminal_event кажется одинаковыми нужно сделать из этого одну общую функцию
 /// Sync explorer state from the currently active shell tab, if any.
 pub(crate) fn sync_explorer_from_active_terminal(state: &mut State) {
     let Some(tab_id) = state.active_tab_id else {
         return;
     };
 
-    let Some(terminal) = terminal_tab(state, tab_id) else {
-        return;
-    };
-
-    if !terminal.is_shell() {
-        return;
-    }
-
-    let Some(entry) = terminal.focused_terminal_entry() else {
-        return;
-    };
-
-    let blocks = entry.terminal.blocks();
-    if let Some(cwd) = terminal_cwd(&blocks) {
+    if let Some(cwd) =
+        terminal_cwd_for_sync(state, tab_id, ExplorerSyncTarget::FocusedPane)
+    {
         state.explorer.set_root(cwd);
     }
 }
@@ -82,24 +71,11 @@ pub(crate) fn sync_explorer_from_terminal_event(
         return;
     }
 
-    let Some(terminal) = terminal_tab(state, tab_id) else {
-        return;
-    };
-
-    if !terminal.is_shell() {
-        return;
-    }
-
-    if terminal.focused_terminal_id() != Some(terminal_id) {
-        return;
-    }
-
-    let Some(entry) = terminal.terminals().get(&terminal_id) else {
-        return;
-    };
-
-    let blocks = entry.terminal.blocks();
-    if let Some(cwd) = terminal_cwd(&blocks) {
+    if let Some(cwd) = terminal_cwd_for_sync(
+        state,
+        tab_id,
+        ExplorerSyncTarget::FocusedTerminal(terminal_id),
+    ) {
         state.explorer.set_root(cwd);
     }
 }
@@ -114,7 +90,6 @@ fn open_file_in_editor(
         Ok(parsed) => parsed,
         Err(err) => {
             log::warn!("default editor parse failed: {err}");
-            state.explorer.last_error = Some(err.to_string());
             return Task::none();
         },
     };
@@ -162,15 +137,58 @@ fn open_file_in_editor(
     insert_terminal_tab(state, tab_id, tab, focus_task, false)
 }
 
-fn parse_command_line(input: &str) -> Result<(String, Vec<String>), String> {
-    let parts = shell_words::split(input)
-        .map_err(|err| format!("Invalid editor command: {err}"))?;
+#[derive(Debug, Error)]
+enum EditorCommandParseError {
+    #[error("Invalid editor command: {0}")]
+    Invalid(#[from] shell_words::ParseError),
+    #[error("Editor command is empty.")]
+    Empty,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ExplorerSyncTarget {
+    FocusedPane,
+    FocusedTerminal(u64),
+}
+
+fn parse_command_line(
+    input: &str,
+) -> Result<(String, Vec<String>), EditorCommandParseError> {
+    let parts = shell_words::split(input)?;
     let Some((program, args)) = parts.split_first() else {
-        // TODO: Использовать thiserror
-        return Err(String::from("Editor command is empty."));
+        return Err(EditorCommandParseError::Empty);
     };
 
     Ok((program.clone(), args.to_vec()))
+}
+
+fn terminal_cwd_for_sync(
+    state: &State,
+    tab_id: u64,
+    target: ExplorerSyncTarget,
+) -> Option<PathBuf> {
+    let terminal = shell_terminal_tab(state, tab_id)?;
+
+    match target {
+        ExplorerSyncTarget::FocusedPane => terminal
+            .focused_terminal_entry()
+            .and_then(|entry| terminal_cwd(&entry.terminal.blocks())),
+        ExplorerSyncTarget::FocusedTerminal(terminal_id) => {
+            if terminal.focused_terminal_id() != Some(terminal_id) {
+                return None;
+            }
+
+            terminal
+                .terminals()
+                .get(&terminal_id)
+                .and_then(|entry| terminal_cwd(&entry.terminal.blocks()))
+        },
+    }
+}
+
+fn shell_terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
+    let terminal = terminal_tab(state, tab_id)?;
+    terminal.is_shell().then_some(terminal)
 }
 
 fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
@@ -179,10 +197,7 @@ fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
         .get(&tab_id)
         .and_then(|tab| match &tab.content {
             TabContent::Terminal(terminal) => Some(terminal.as_ref()),
-            // TODO: убрать перечисление тут можно просто _ => None
-            TabContent::Settings
-            | TabContent::QuickCommandEditor(_)
-            | TabContent::QuickCommandError(_) => None,
+            _ => None,
         })
 }
 

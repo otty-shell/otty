@@ -414,7 +414,6 @@ fn validate_unique_title(
 fn persist_quick_commands(state: &mut State) -> Result<(), String> {
     if let Err(err) = domain::persist_dirty(&mut state.quick_commands) {
         log::warn!("quick commands save failed: {err}");
-        state.quick_commands.last_error = Some(format!("{err}"));
         return Err(format!("{err}"));
     }
     Ok(())

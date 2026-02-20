@@ -662,8 +662,9 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
     if matches!(node, QuickCommandNode::Folder(_))
         && is_prefix(&source, &target_path)
     {
-        state.quick_commands.last_error =
-            Some(String::from("Cannot move a folder into itself."));
+        log::warn!(
+            "quick commands move failed: cannot move folder into itself"
+        );
         return;
     }
 
@@ -671,9 +672,9 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
     if let Some(target_folder) = state.quick_commands.data.folder(&target_path)
     {
         if target_folder.contains_title(&title) {
-            state.quick_commands.last_error = Some(String::from(
-                "Target folder already has an item with that title.",
-            ));
+            log::warn!(
+                "quick commands move failed: target already contains title"
+            );
             return;
         }
     } else {
@@ -834,7 +835,6 @@ fn duplicate_title(parent: &QuickCommandFolder, title: &str) -> String {
 fn persist_quick_commands(state: &mut State) {
     if let Err(err) = domain::persist_dirty(&mut state.quick_commands) {
         log::warn!("quick commands save failed: {err}");
-        state.quick_commands.last_error = Some(format!("{err}"));
     }
 }
 
