@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use iced::widget::pane_grid::{self, Highlight, Line, PaneGrid};
-use iced::widget::{Stack, container, mouse_area};
+use iced::widget::{Stack, container, mouse_area, text};
 use iced::{Border, Element, Length, Theme};
 use otty_ui_term::TerminalView;
 
@@ -89,9 +89,13 @@ fn view_single_pane<'a>(
     terminals: &'a HashMap<u64, TerminalEntry>,
     is_focused: bool,
 ) -> Element<'a, TerminalEvent> {
-    let terminal_entry = terminals
-        .get(&terminal_id)
-        .expect("terminal missing for pane");
+    let Some(terminal_entry) = terminals.get(&terminal_id) else {
+        log::warn!("terminal pane missing widget: terminal_id={terminal_id}");
+        return container(text("Terminal unavailable"))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+    };
 
     let focus_event = TerminalEvent::PaneClicked { pane };
 

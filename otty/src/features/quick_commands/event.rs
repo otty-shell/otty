@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc, Mutex,
+    Arc,
     atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant};
@@ -19,11 +19,12 @@ use crate::features::quick_commands::editor::{
 };
 use crate::features::tab::{QuickCommandErrorState, TabContent, TabItem};
 use crate::features::terminal::event::{
-    focus_active_terminal, settings_for_session, sync_tab_block_selection,
+    focus_active_terminal, insert_terminal_tab, settings_for_session,
 };
 use crate::features::terminal::term::{TerminalKind, TerminalState};
 use crate::state::State;
 
+use super::domain;
 use super::model::{
     CommandSpec, CustomCommand, EnvVar, NodePath, QuickCommand,
     QuickCommandFolder, QuickCommandNode, SshCommand,
@@ -62,13 +63,10 @@ pub(crate) enum QuickCommandLaunchResult {
         path: NodePath,
         launch_id: u64,
         tab_id: u64,
-        terminal: Arc<Mutex<Option<TerminalState>>>,
-    },
-    Error {
-        path: NodePath,
-        launch_id: u64,
+        terminal_id: u64,
         title: String,
-        message: String,
+        settings: Box<Settings>,
+        command: Box<QuickCommand>,
     },
 }
 
@@ -79,24 +77,16 @@ impl fmt::Debug for QuickCommandLaunchResult {
                 path,
                 launch_id,
                 tab_id,
+                terminal_id,
+                title,
                 ..
             } => f
                 .debug_struct("QuickCommandLaunchResult::Success")
                 .field("path", path)
                 .field("launch_id", launch_id)
                 .field("tab_id", tab_id)
-                .finish(),
-            Self::Error {
-                path,
-                launch_id,
-                title,
-                message,
-            } => f
-                .debug_struct("QuickCommandLaunchResult::Error")
-                .field("path", path)
-                .field("launch_id", launch_id)
+                .field("terminal_id", terminal_id)
                 .field("title", title)
-                .field("message", message)
                 .finish(),
         }
     }
@@ -263,60 +253,35 @@ pub(crate) fn handle_quick_command_launch_result(
             path,
             launch_id,
             tab_id,
-            terminal,
-        } => {
-            if state.quick_commands.canceled_launches.remove(&launch_id) {
-                remove_launch_by_id(state, launch_id);
-                return Task::none();
-            }
-            if let Some(info) = state.quick_commands.launching.get(&path) {
-                if info.id != launch_id {
-                    return Task::none();
-                }
-            }
-            remove_launch_by_id(state, launch_id);
-            let terminal =
-                terminal.lock().ok().and_then(|mut guard| guard.take());
-            let Some(terminal) = terminal else {
-                return Task::none();
-            };
-
-            let title = terminal.title().to_string();
-            state.tab_items.insert(
-                tab_id,
-                TabItem {
-                    id: tab_id,
-                    title,
-                    content: TabContent::Terminal(Box::new(terminal)),
-                },
-            );
-            state.active_tab_id = Some(tab_id);
-
-            let sync_task = sync_tab_block_selection(state, tab_id);
-            let focus_task = focus_active_terminal(state);
-            Task::batch(vec![focus_task, sync_task])
-        },
-        QuickCommandLaunchResult::Error {
-            path,
-            launch_id,
+            terminal_id,
             title,
-            message,
+            settings,
+            command,
         } => {
-            if state.quick_commands.canceled_launches.remove(&launch_id) {
-                remove_launch_by_id(state, launch_id);
+            if should_skip_launch_result(state, &path, launch_id) {
                 return Task::none();
             }
-            if let Some(info) = state.quick_commands.launching.get(&path) {
-                if info.id != launch_id {
-                    return Task::none();
-                }
-            }
-            remove_launch_by_id(state, launch_id);
-            open_error_tab(
-                state,
-                format!("Failed to launch \"{title}\""),
-                message,
-            )
+
+            let (terminal, focus_task) = match TerminalState::new(
+                tab_id,
+                title,
+                terminal_id,
+                *settings,
+                TerminalKind::Command,
+            ) {
+                Ok(result) => result,
+                Err(err) => {
+                    return open_error_tab(
+                        state,
+                        format!("Failed to launch \"{}\"", command.title),
+                        quick_command_error_message(&command, &err),
+                    );
+                },
+            };
+            let insert_task =
+                insert_terminal_tab(state, tab_id, terminal, focus_task, false);
+            let focus_active_task = focus_active_terminal(state);
+            Task::batch(vec![insert_task, focus_active_task])
         },
     }
 }
@@ -484,7 +449,7 @@ fn apply_inline_edit(state: &mut State) {
             else {
                 return;
             };
-            match validate_title(&edit.value, parent, None) {
+            match domain::normalize_title(&edit.value, parent, None) {
                 Ok(title) => {
                     parent.children.push(QuickCommandNode::Folder(
                         QuickCommandFolder {
@@ -495,11 +460,11 @@ fn apply_inline_edit(state: &mut State) {
                     ));
                     persist_quick_commands(state);
                 },
-                Err(message) => {
+                Err(err) => {
                     state.quick_commands.inline_edit = Some(InlineEditState {
                         kind: InlineEditKind::CreateFolder { parent_path },
                         value: edit.value,
-                        error: Some(message),
+                        error: Some(format!("{err}")),
                         id: edit.id,
                     });
                 },
@@ -512,61 +477,47 @@ fn apply_inline_edit(state: &mut State) {
                 return;
             };
             let current_title = path.last().cloned().unwrap_or_default();
-            match validate_title(&edit.value, parent, Some(&current_title)) {
+            match domain::normalize_title(
+                &edit.value,
+                parent,
+                Some(&current_title),
+            ) {
                 Ok(title) => {
+                    let mut renamed_path = path.clone();
+                    if let Some(last) = renamed_path.last_mut() {
+                        *last = title.clone();
+                    }
+
                     if let Some(node) =
                         state.quick_commands.data.node_mut(&path)
                     {
                         *node.title_mut() = title;
-                        if state
-                            .quick_commands
-                            .selected
-                            .as_ref()
-                            .map(|selected| selected == &path)
-                            .unwrap_or(false)
-                        {
-                            let mut updated = path.clone();
-                            if let Some(last) = updated.last_mut() {
-                                *last = node.title().to_string();
-                            }
-                            state.quick_commands.selected = Some(updated);
-                        }
-                        persist_quick_commands(state);
                     }
+
+                    update_launching_paths(state, &path, &renamed_path);
+                    if state
+                        .quick_commands
+                        .selected
+                        .as_ref()
+                        .map(|selected| selected == &path)
+                        .unwrap_or(false)
+                    {
+                        state.quick_commands.selected = Some(renamed_path);
+                    }
+
+                    persist_quick_commands(state);
                 },
-                Err(message) => {
+                Err(err) => {
                     state.quick_commands.inline_edit = Some(InlineEditState {
                         kind: InlineEditKind::Rename { path },
                         value: edit.value,
-                        error: Some(message),
+                        error: Some(format!("{err}")),
                         id: edit.id,
                     });
                 },
             }
         },
     }
-}
-
-fn validate_title(
-    raw: &str,
-    parent: &QuickCommandFolder,
-    current: Option<&str>,
-) -> Result<String, String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err(String::from("Title cannot be empty."));
-    }
-
-    let conflicts = match current {
-        Some(existing) => trimmed != existing && parent.contains_title(trimmed),
-        None => parent.contains_title(trimmed),
-    };
-
-    if conflicts {
-        return Err(String::from("Title already exists in this folder."));
-    }
-
-    Ok(trimmed.to_string())
 }
 
 fn toggle_folder_expanded(state: &mut State, path: &[String]) {
@@ -881,8 +832,7 @@ fn duplicate_title(parent: &QuickCommandFolder, title: &str) -> String {
 }
 
 fn persist_quick_commands(state: &mut State) {
-    state.quick_commands.mark_dirty();
-    if let Err(err) = state.quick_commands.persist() {
+    if let Err(err) = domain::persist_dirty(&mut state.quick_commands) {
         log::warn!("quick commands save failed: {err}");
         state.quick_commands.last_error = Some(format!("{err}"));
     }
@@ -933,29 +883,38 @@ fn launch_quick_command(
 
     Task::perform(
         async move {
-            match TerminalState::new(
+            QuickCommandLaunchResult::Success {
+                path,
+                launch_id,
                 tab_id,
-                title.clone(),
                 terminal_id,
-                settings,
-                TerminalKind::Command,
-            ) {
-                Ok((terminal, _)) => QuickCommandLaunchResult::Success {
-                    path,
-                    launch_id,
-                    tab_id,
-                    terminal: Arc::new(Mutex::new(Some(terminal))),
-                },
-                Err(err) => QuickCommandLaunchResult::Error {
-                    path,
-                    launch_id,
-                    title,
-                    message: quick_command_error_message(&command, &err),
-                },
+                title,
+                settings: Box::new(settings),
+                command: Box::new(command),
             }
         },
-        AppEvent::QuickCommandLaunchFinished,
+        |result| AppEvent::QuickCommandLaunchFinished(Box::new(result)),
     )
+}
+
+fn should_skip_launch_result(
+    state: &mut State,
+    path: &[String],
+    launch_id: u64,
+) -> bool {
+    if state.quick_commands.canceled_launches.remove(&launch_id) {
+        remove_launch_by_id(state, launch_id);
+        return true;
+    }
+
+    if let Some(info) = state.quick_commands.launching.get(path)
+        && info.id != launch_id
+    {
+        return true;
+    }
+
+    remove_launch_by_id(state, launch_id);
+    false
 }
 
 fn command_session(

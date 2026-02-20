@@ -168,9 +168,9 @@ fn compare_nodes(left: &FileNode, right: &FileNode) -> Ordering {
 }
 
 fn compare_names(left: &str, right: &str) -> Ordering {
-    let left_lower = left.to_lowercase();
-    let right_lower = right.to_lowercase();
-    match left_lower.cmp(&right_lower) {
+    let left_fold = left.bytes().map(|byte| byte.to_ascii_lowercase());
+    let right_fold = right.bytes().map(|byte| byte.to_ascii_lowercase());
+    match left_fold.cmp(right_fold) {
         Ordering::Equal => left.cmp(right),
         other => other,
     }

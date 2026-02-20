@@ -60,7 +60,7 @@ pub(crate) enum Event {
         event: QuickCommandEditorEvent,
     },
     Settings(settings::SettingsEvent),
-    QuickCommandLaunchFinished(quick_commands::QuickCommandLaunchResult),
+    QuickCommandLaunchFinished(Box<quick_commands::QuickCommandLaunchResult>),
     QuickCommandsTick,
     Keyboard(iced::keyboard::Event),
     Window(window::Event),
@@ -162,8 +162,6 @@ impl App {
     }
 
     pub(crate) fn update(&mut self, event: Event) -> Task<Event> {
-        use Event::*;
-
         if self.state.quick_commands.inline_edit.is_some()
             && should_cancel_inline_edit(&event)
         {
@@ -179,7 +177,19 @@ impl App {
         }
 
         let tabs_before = self.state.tab_items.len();
-        let task = match event {
+        let task = self.dispatch_event(event);
+
+        if self.state.tab_items.len() > tabs_before {
+            Task::batch(vec![task, snap_to_end(tab_bar::TAB_BAR_SCROLL_ID)])
+        } else {
+            task
+        }
+    }
+
+    fn dispatch_event(&mut self, event: Event) -> Task<Event> {
+        use Event::*;
+
+        match event {
             IcedReady => tab_reducer(
                 &mut self.state,
                 &self.terminal_settings,
@@ -200,7 +210,7 @@ impl App {
             QuickCommandLaunchFinished(result) => {
                 quick_commands::handle_quick_command_launch_result(
                     &mut self.state,
-                    result,
+                    *result,
                 )
             },
             QuickCommandsTick => {
@@ -229,12 +239,6 @@ impl App {
             Window(_) => Task::none(),
             ResizeWindow(dir) => window::latest()
                 .and_then(move |id| window::drag_resize(id, dir)),
-        };
-
-        if self.state.tab_items.len() > tabs_before {
-            Task::batch(vec![task, snap_to_end(tab_bar::TAB_BAR_SCROLL_ID)])
-        } else {
-            task
         }
     }
 
@@ -504,7 +508,7 @@ impl App {
 
         match event {
             ToggleFullScreen => self.toggle_full_screen(),
-            ToggleTray => {
+            MinimizeWindow => {
                 window::latest().and_then(|id| window::minimize(id, true))
             },
             CloseWindow => close_window(),

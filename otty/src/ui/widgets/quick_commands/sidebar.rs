@@ -4,7 +4,7 @@ use iced::widget::{
     Space, column, container, mouse_area, row, scrollable, svg, text,
     text_input,
 };
-use iced::{Background, Color, Element, Length};
+use iced::{Color, Element, Length};
 use std::time::{Duration, Instant};
 
 use crate::features::quick_commands::event::{
@@ -16,6 +16,7 @@ use crate::features::quick_commands::state::{
 };
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
+use crate::ui::widgets::helpers;
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 const HEADER_HEIGHT: f32 = 28.0;
@@ -128,28 +129,7 @@ fn quick_commands_tree<'a>(
                 .margin(0)
                 .scroller_width(4),
         ))
-        .style(move |theme, status| {
-            let mut style = scrollable::default(theme, status);
-            let radius = iced::border::Radius::from(0.0);
-
-            style.vertical_rail.border.radius = radius;
-            style.vertical_rail.scroller.border.radius = radius;
-            style.horizontal_rail.border.radius = radius;
-            style.horizontal_rail.scroller.border.radius = radius;
-
-            let mut scroller_color =
-                match style.vertical_rail.scroller.background {
-                    Background::Color(color) => color,
-                    _ => palette.dim_foreground,
-                };
-            scroller_color.a = (scroller_color.a * 0.7).min(1.0);
-            style.vertical_rail.scroller.background =
-                Background::Color(scroller_color);
-            style.horizontal_rail.scroller.background =
-                Background::Color(scroller_color);
-
-            style
-        });
+        .style(helpers::thin_scroll_style(palette));
 
     let scrollable = mouse_area(scrollable)
         .on_move(|position| QuickCommandsEvent::CursorMoved { position })
@@ -333,16 +313,13 @@ fn tree_row_style(
         let mut color = palette.overlay;
         color.a = 0.6;
         Some(color.into())
-    } else if context.is_selected {
-        let mut color = palette.dim_blue;
-        color.a = 0.7;
-        Some(color.into())
-    } else if context.is_hovered {
-        let mut color = palette.overlay;
-        color.a = 0.6;
-        Some(color.into())
     } else {
-        None
+        helpers::tree_row_style(
+            palette,
+            context.is_selected,
+            context.is_hovered,
+        )
+        .background
     };
 
     iced::widget::container::Style {

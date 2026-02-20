@@ -1,4 +1,3 @@
-use iced::border::Radius;
 use iced::widget::text_input;
 use iced::widget::{Column, Id, container, mouse_area};
 use iced::{Background, Element, Length, alignment};
@@ -9,7 +8,9 @@ use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
     MenuItem, MenuItemEvent, MenuItemProps,
 };
-use crate::ui::widgets::helpers::anchor_position;
+use crate::ui::widgets::helpers::{
+    anchor_position, menu_height_for_items, menu_panel_style,
+};
 
 const MENU_CONTAINER_WIDTH: f32 = 250.0;
 const MENU_ITEM_HEIGHT: f32 = 24.0;
@@ -91,7 +92,11 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         },
     ));
 
-    let menu_height = menu_height_for_items(buttons.len());
+    let menu_height = menu_height_for_items(
+        buttons.len(),
+        MENU_ITEM_HEIGHT,
+        MENU_VERTICAL_PADDING,
+    );
     let menu_column = buttons
         .into_iter()
         .fold(Column::new(), |column, button| column.push(button));
@@ -180,25 +185,4 @@ fn focus_trap(id: Id) -> Element<'static, TerminalEvent> {
             }
         })
         .into()
-}
-
-fn menu_panel_style(
-    theme: ThemeProps<'_>,
-) -> impl Fn(&iced::Theme) -> iced::widget::container::Style + 'static {
-    let palette = theme.theme.iced_palette().clone();
-    move |_theme: &iced::Theme| iced::widget::container::Style {
-        background: Some(palette.overlay.into()),
-        text_color: Some(palette.foreground),
-        border: iced::Border {
-            width: 0.25,
-            color: palette.overlay,
-            radius: Radius::new(4.0),
-        },
-
-        ..Default::default()
-    }
-}
-
-pub(crate) fn menu_height_for_items(item_count: usize) -> f32 {
-    MENU_VERTICAL_PADDING + MENU_ITEM_HEIGHT * item_count as f32
 }

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
 use iced::widget::pane_grid;
@@ -117,6 +117,7 @@ pub(crate) struct SidebarAddMenuState {
 pub(crate) struct State {
     pub(crate) active_tab_id: Option<u64>,
     pub(crate) tab_items: BTreeMap<u64, TabItem>,
+    pub(crate) terminal_to_tab: HashMap<u64, u64>,
     pub(crate) next_tab_id: u64,
     pub(crate) next_terminal_id: u64,
     pub(crate) window_size: Size,
@@ -151,10 +152,10 @@ impl State {
             .map(|tab| tab.title.as_str())
     }
 
-    pub(crate) fn tab_summaries(&self) -> Vec<(u64, String)> {
+    pub(crate) fn tab_summaries(&self) -> Vec<(u64, &str)> {
         self.tab_items
             .iter()
-            .map(|(id, item)| (*id, item.title.clone()))
+            .map(|(id, item)| (*id, item.title.as_str()))
             .collect()
     }
 
@@ -166,6 +167,34 @@ impl State {
     pub(crate) fn set_screen_size(&mut self, size: Size) {
         self.screen_size = size;
         self.sync_tab_grid_sizes();
+    }
+
+    pub(crate) fn register_terminal_for_tab(
+        &mut self,
+        terminal_id: u64,
+        tab_id: u64,
+    ) {
+        self.terminal_to_tab.insert(terminal_id, tab_id);
+    }
+
+    pub(crate) fn remove_tab_terminals(&mut self, tab_id: u64) {
+        self.terminal_to_tab
+            .retain(|_, mapped_tab| *mapped_tab != tab_id);
+    }
+
+    pub(crate) fn terminal_tab_id(&self, terminal_id: u64) -> Option<u64> {
+        self.terminal_to_tab.get(&terminal_id).copied()
+    }
+
+    pub(crate) fn reindex_terminal_tabs(&mut self) {
+        self.terminal_to_tab.clear();
+        for (&tab_id, tab) in &self.tab_items {
+            if let TabContent::Terminal(terminal) = &tab.content {
+                for terminal_id in terminal.terminals().keys().copied() {
+                    self.terminal_to_tab.insert(terminal_id, tab_id);
+                }
+            }
+        }
     }
 
     pub(crate) fn sync_tab_grid_sizes(&mut self) {

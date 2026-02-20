@@ -1,6 +1,7 @@
 use iced::Task;
 
 use crate::app::Event as AppEvent;
+use crate::features::quick_commands::domain;
 use crate::features::quick_commands::model::{
     CommandSpec, CustomCommand, EnvVar, NodePath, QuickCommand,
     QuickCommandFolder, QuickCommandNode, SshCommand,
@@ -405,23 +406,13 @@ fn validate_unique_title(
     title: &str,
     current: Option<&str>,
 ) -> Result<(), String> {
-    let conflicts = match current {
-        Some(existing) => title != existing && parent.contains_title(title),
-        None => parent.contains_title(title),
-    };
-
-    if conflicts {
-        return Err(String::from(
-            "Another command with this title already exists.",
-        ));
-    }
-
-    Ok(())
+    domain::normalize_title(title, parent, current)
+        .map(|_| ())
+        .map_err(|err| format!("{err}"))
 }
 
 fn persist_quick_commands(state: &mut State) -> Result<(), String> {
-    state.quick_commands.mark_dirty();
-    if let Err(err) = state.quick_commands.persist() {
+    if let Err(err) = domain::persist_dirty(&mut state.quick_commands) {
         log::warn!("quick commands save failed: {err}");
         state.quick_commands.last_error = Some(format!("{err}"));
         return Err(format!("{err}"));

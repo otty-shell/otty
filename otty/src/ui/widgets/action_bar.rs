@@ -23,7 +23,7 @@ const ACTION_BAR_CONTROLS_SPACING: f32 = 6.0;
 #[derive(Debug, Clone)]
 pub(crate) enum Event {
     ToggleFullScreen,
-    ToggleTray,
+    MinimizeWindow,
     CloseWindow,
     ToggleSidebarVisibility,
     StartWindowDrag,
@@ -44,7 +44,9 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
     let palette = props.theme.theme.iced_palette();
     let overrides = props.theme.overrides;
 
-    let detail_label = text(props.title).size(title_font_size);
+    let detail_label = text(props.title)
+        .size(title_font_size)
+        .font(props.fonts.ui.font_type);
 
     let logo = svg::Svg::new(svg::Handle::from_memory(LOGO_SMALL))
         .width(Length::Fixed(ACTION_BAR_LOGO_ICON_SIZE))
@@ -86,7 +88,7 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
         )
         .map(|_| Event::ToggleFullScreen),
         icon_button(WINDOW_TRAY, IconButtonVariant::Standard, props.theme)
-            .map(|_| Event::ToggleTray),
+            .map(|_| Event::MinimizeWindow),
         icon_button(WINDOW_CLOSE, IconButtonVariant::Danger, props.theme)
             .map(|_| Event::CloseWindow),
     ]

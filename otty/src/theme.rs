@@ -267,7 +267,6 @@ impl<'a> ThemeProps<'a> {
 #[derive(Debug, Clone)]
 pub struct ThemeManager {
     current: AppTheme,
-    _presets: Vec<AppTheme>,
 }
 
 impl ThemeManager {
@@ -276,24 +275,11 @@ impl ThemeManager {
 
         Self {
             current: default.clone(),
-            _presets: vec![default],
         }
     }
 
     pub fn current(&self) -> &AppTheme {
         &self.current
-    }
-
-    pub fn _set_current(&mut self, id: String) {
-        if self.current.id == id {
-            return;
-        }
-
-        if let Some(found) = self._presets.iter().find(|theme| theme.id == id) {
-            self.current = found.clone();
-        } else {
-            self.current = AppTheme::default();
-        }
     }
 
     pub fn iced_theme(&self) -> Theme {

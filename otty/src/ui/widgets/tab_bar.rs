@@ -24,7 +24,7 @@ const TAB_CLOSE_BUTTON_PADDING: f32 = 0.0;
 /// Props for rendering the tab bar.
 #[derive(Debug, Clone)]
 pub(crate) struct Props<'a> {
-    pub(crate) tabs: Vec<(u64, String)>,
+    pub(crate) tabs: Vec<(u64, &'a str)>,
     pub(crate) active_tab_id: u64,
     pub(crate) theme: ThemeProps<'a>,
 }
@@ -36,7 +36,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TabEvent> {
         let (id, title) = tab;
         tabs_row = tabs_row.push(tab_button(
             *id,
-            title.clone(),
+            title,
             props.active_tab_id == *id,
             props.theme,
         ));
@@ -70,7 +70,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TabEvent> {
 /// A clickable tab pill with close affordance.
 fn tab_button<'a>(
     tab_id: u64,
-    title: String,
+    title: &str,
     is_active: bool,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, TabEvent> {
@@ -81,7 +81,7 @@ fn tab_button<'a>(
     let background = palette.background;
     let dim_black = palette.dim_black;
 
-    let label = text(ellipsize(&title))
+    let label = text(ellipsize(title))
         .size(TAB_LABEL_FONT_SIZE)
         .width(Length::Fill)
         .height(Length::Shrink)
@@ -186,15 +186,15 @@ fn tab_button_style(
     style
 }
 
-const DEFAULT_MAX_CHAR_COUNT_BEFORE_ELIPSIZE: usize = 20;
+const DEFAULT_MAX_CHAR_COUNT_BEFORE_ELLIPSIZE: usize = 20;
 
 pub fn ellipsize(s: &str) -> String {
     let total = s.chars().count();
-    if total <= DEFAULT_MAX_CHAR_COUNT_BEFORE_ELIPSIZE {
+    if total <= DEFAULT_MAX_CHAR_COUNT_BEFORE_ELLIPSIZE {
         return s.to_owned();
     }
 
-    let keep = DEFAULT_MAX_CHAR_COUNT_BEFORE_ELIPSIZE - 2;
+    let keep = DEFAULT_MAX_CHAR_COUNT_BEFORE_ELLIPSIZE - 2;
     let tail: String = s
         .chars()
         .rev()

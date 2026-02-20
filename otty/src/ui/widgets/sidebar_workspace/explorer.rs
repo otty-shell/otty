@@ -1,7 +1,7 @@
 use iced::alignment;
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, scrollable, svg, text};
-use iced::{Background, Element, Length};
+use iced::{Element, Length};
 
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
@@ -9,6 +9,7 @@ use crate::features::explorer::event::ExplorerEvent;
 use crate::features::explorer::state::FileNode;
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
+use crate::ui::widgets::helpers;
 
 const HEADER_HEIGHT: f32 = 22.0;
 const HEADER_PADDING_X: f32 = 10.0;
@@ -130,28 +131,7 @@ fn explorer_tree<'a>(props: Props<'a>) -> Element<'a, ExplorerEvent> {
                 .margin(0)
                 .scroller_width(4),
         ))
-        .style(move |theme, status| {
-            let mut style = scrollable::default(theme, status);
-            let radius = iced::border::Radius::from(0.0);
-
-            style.vertical_rail.border.radius = radius;
-            style.vertical_rail.scroller.border.radius = radius;
-            style.horizontal_rail.border.radius = radius;
-            style.horizontal_rail.scroller.border.radius = radius;
-
-            let mut scroller_color =
-                match style.vertical_rail.scroller.background {
-                    Background::Color(color) => color,
-                    _ => palette.dim_foreground,
-                };
-            scroller_color.a = (scroller_color.a * 0.7).min(1.0);
-            style.vertical_rail.scroller.background =
-                Background::Color(scroller_color);
-            style.horizontal_rail.scroller.background =
-                Background::Color(scroller_color);
-
-            style
-        });
+        .style(helpers::thin_scroll_style(palette));
 
     container(scrollable)
         .width(Length::Fill)
@@ -207,23 +187,7 @@ fn tree_row_style(
     palette: &IcedColorPalette,
     context: &TreeRowContext<'_, FileNode>,
 ) -> iced::widget::container::Style {
-    let background = if context.is_selected {
-        let mut color = palette.dim_blue;
-        color.a = 0.7;
-        Some(color.into())
-    } else if context.is_hovered {
-        let mut color = palette.overlay;
-        color.a = 0.6;
-        Some(color.into())
-    } else {
-        None
-    };
-
-    iced::widget::container::Style {
-        background,
-        text_color: Some(palette.foreground),
-        ..Default::default()
-    }
+    helpers::tree_row_style(palette, context.is_selected, context.is_hovered)
 }
 
 fn svg_icon<'a>(

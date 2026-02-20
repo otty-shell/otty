@@ -96,7 +96,7 @@ pub(crate) fn terminal_tab_reducer(
             task
         },
         ClosePane { pane } => {
-            let task = close_pane_by_id(state, tab_id, pane);
+            let task = close_pane(state, tab_id, pane);
             explorer::event::sync_explorer_from_active_terminal(state);
             task
         },
@@ -139,11 +139,16 @@ pub(crate) fn internal_widget_event_reducer(
 
     let is_content_sync =
         matches!(event, otty_ui_term::Event::ContentSync { .. });
+    let is_shutdown = matches!(&event, otty_ui_term::Event::Shutdown { .. });
     let selection_task = update_block_selection(state, tab_id, &event);
     let event_task = with_terminal_tab(state, tab_id, |tab| {
         tab.handle_terminal_event(event)
     });
     let update = Task::batch(vec![selection_task, event_task]);
+
+    if is_shutdown {
+        state.reindex_terminal_tabs();
+    }
 
     if refresh_titles {
         sync_tab_title(state, tab_id);
@@ -173,7 +178,7 @@ pub(crate) fn create_terminal_tab(
 
     let settings =
         settings_for_session(terminal_settings, shell_session.session.clone());
-    let (mut tab, focus_task) = match TerminalState::new(
+    let (tab, focus_task) = match TerminalState::new(
         tab_id,
         shell_session.name.clone(),
         terminal_id,
@@ -186,7 +191,21 @@ pub(crate) fn create_terminal_tab(
             return Task::none();
         },
     };
+
+    insert_terminal_tab(state, tab_id, tab, focus_task, true)
+}
+
+pub(crate) fn insert_terminal_tab(
+    state: &mut State,
+    tab_id: u64,
+    mut tab: TerminalState,
+    focus_task: Task<AppEvent>,
+    sync_explorer: bool,
+) -> Task<AppEvent> {
     tab.set_grid_size(state.pane_grid_size());
+    for terminal_id in tab.terminals().keys().copied() {
+        state.register_terminal_for_tab(terminal_id, tab_id);
+    }
 
     let title = tab.title().to_string();
     state.tab_items.insert(
@@ -200,7 +219,9 @@ pub(crate) fn create_terminal_tab(
     state.active_tab_id = Some(tab_id);
 
     let sync_task = sync_tab_block_selection(state, tab_id);
-    explorer::event::sync_explorer_from_active_terminal(state);
+    if sync_explorer {
+        explorer::event::sync_explorer_from_active_terminal(state);
+    }
 
     Task::batch(vec![focus_task, sync_task])
 }
@@ -275,17 +296,28 @@ fn split_pane(
     let terminal_id = state.next_terminal_id;
     state.next_terminal_id += 1;
 
-    with_terminal_tab(state, tab_id, move |tab| {
+    let task = with_terminal_tab(state, tab_id, move |tab| {
         tab.split_pane(pane, axis, terminal_id)
-    })
+    });
+
+    if terminal_tab(state, tab_id)
+        .map(|tab| tab.contains_terminal(terminal_id))
+        .unwrap_or(false)
+    {
+        state.register_terminal_for_tab(terminal_id, tab_id);
+    }
+
+    task
 }
 
-fn close_pane_by_id(
+fn close_pane(
     state: &mut State,
     tab_id: u64,
     pane: pane_grid::Pane,
 ) -> Task<AppEvent> {
-    with_terminal_tab(state, tab_id, |tab| tab.close_pane(pane))
+    let task = with_terminal_tab(state, tab_id, |tab| tab.close_pane(pane));
+    state.reindex_terminal_tabs();
+    task
 }
 
 fn update_block_selection(
@@ -458,11 +490,7 @@ fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
 }
 
 fn tab_id_by_terminal(state: &State, terminal_id: u64) -> Option<u64> {
-    state.tab_items.keys().copied().find(|tab_id| {
-        terminal_tab(state, *tab_id)
-            .map(|terminal| terminal.contains_terminal(terminal_id))
-            .unwrap_or(false)
-    })
+    state.terminal_tab_id(terminal_id)
 }
 
 #[derive(Clone, Copy, Debug)]

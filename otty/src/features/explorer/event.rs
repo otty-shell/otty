@@ -5,9 +5,9 @@ use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 use otty_ui_tree::TreePath;
 
 use crate::app::Event as AppEvent;
-use crate::features::tab::{TabContent, TabItem};
+use crate::features::tab::TabContent;
 use crate::features::terminal::event::{
-    settings_for_session, sync_tab_block_selection,
+    insert_terminal_tab, settings_for_session,
 };
 use crate::features::terminal::term::{TerminalKind, TerminalState};
 use crate::state::State;
@@ -109,9 +109,13 @@ fn open_file_in_editor(
     file_path: PathBuf,
 ) -> Task<AppEvent> {
     let editor_raw = state.settings.draft.terminal.editor.trim();
-    let Some((program, mut args)) = parse_command_line(editor_raw) else {
-        log::warn!("default editor is empty; skipping open");
-        return Task::none();
+    let (program, mut args) = match parse_command_line(editor_raw) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            log::warn!("default editor parse failed: {err}");
+            state.explorer.last_error = Some(err.to_string());
+            return Task::none();
+        },
     };
 
     let file_arg = file_path.to_string_lossy().into_owned();
@@ -140,7 +144,7 @@ fn open_file_in_editor(
         .map(ToString::to_string)
         .unwrap_or_else(|| format!("{file_display}"));
 
-    let (mut tab, focus_task) = match TerminalState::new(
+    let (tab, focus_task) = match TerminalState::new(
         tab_id,
         title.clone(),
         terminal_id,
@@ -154,28 +158,17 @@ fn open_file_in_editor(
         },
     };
 
-    tab.set_grid_size(state.pane_grid_size());
-
-    state.tab_items.insert(
-        tab_id,
-        TabItem {
-            id: tab_id,
-            title,
-            content: TabContent::Terminal(Box::new(tab)),
-        },
-    );
-    state.active_tab_id = Some(tab_id);
-
-    let sync_task = sync_tab_block_selection(state, tab_id);
-
-    Task::batch(vec![focus_task, sync_task])
+    insert_terminal_tab(state, tab_id, tab, focus_task, false)
 }
 
-fn parse_command_line(input: &str) -> Option<(String, Vec<String>)> {
-    let mut parts = input.split_whitespace();
-    let program = parts.next()?.to_string();
-    let args = parts.map(ToString::to_string).collect();
-    Some((program, args))
+fn parse_command_line(input: &str) -> Result<(String, Vec<String>), String> {
+    let parts = shell_words::split(input)
+        .map_err(|err| format!("Invalid editor command: {err}"))?;
+    let Some((program, args)) = parts.split_first() else {
+        return Err(String::from("Editor command is empty."));
+    };
+
+    Ok((program.clone(), args.to_vec()))
 }
 
 fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {

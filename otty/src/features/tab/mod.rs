@@ -87,6 +87,7 @@ fn close_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {
     };
 
     state.tab_items.remove(&tab_id);
+    state.remove_tab_terminals(tab_id);
 
     if state.tab_items.is_empty() {
         state.active_tab_id = None;

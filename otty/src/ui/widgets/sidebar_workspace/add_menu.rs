@@ -1,4 +1,3 @@
-use iced::border::Radius;
 use iced::widget::{Column, container, mouse_area};
 use iced::{Element, Length, Size, alignment};
 
@@ -7,7 +6,9 @@ use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
     MenuItem, MenuItemEvent, MenuItemProps,
 };
-use crate::ui::widgets::helpers::anchor_position;
+use crate::ui::widgets::helpers::{
+    anchor_position, menu_height_for_items, menu_panel_style,
+};
 use crate::ui::widgets::sidebar_workspace::{AddMenuAction, Event};
 
 const MENU_CONTAINER_WIDTH: f32 = 220.0;
@@ -31,7 +32,11 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
         menu_item("Create folder", props.theme, AddMenuAction::CreateFolder),
     ];
 
-    let menu_height = menu_height_for_items(items.len());
+    let menu_height = menu_height_for_items(
+        items.len(),
+        MENU_ITEM_HEIGHT,
+        MENU_VERTICAL_PADDING,
+    );
     let menu_column = items
         .into_iter()
         .fold(Column::new(), |column, button| column.push(button))
@@ -89,24 +94,4 @@ fn menu_item<'a>(
     MenuItem::new(props).view().map(move |event| match event {
         MenuItemEvent::Pressed => Event::TerminalAddMenuAction(action),
     })
-}
-
-fn menu_panel_style(
-    theme: ThemeProps<'_>,
-) -> impl Fn(&iced::Theme) -> iced::widget::container::Style + 'static {
-    let palette = theme.theme.iced_palette().clone();
-    move |_theme: &iced::Theme| iced::widget::container::Style {
-        background: Some(palette.overlay.into()),
-        text_color: Some(palette.foreground),
-        border: iced::Border {
-            width: 0.25,
-            color: palette.overlay,
-            radius: Radius::new(4.0),
-        },
-        ..Default::default()
-    }
-}
-
-fn menu_height_for_items(item_count: usize) -> f32 {
-    MENU_VERTICAL_PADDING + MENU_ITEM_HEIGHT * item_count as f32
 }
