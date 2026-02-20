@@ -19,12 +19,6 @@ pub(crate) struct TerminalSettingsData {
     pub(crate) editor: String,
 }
 
-/// Theme-related settings.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct ThemeSettingsData {
-    pub(crate) palette: Vec<String>,
-}
-
 impl Default for TerminalSettingsData {
     fn default() -> Self {
         Self {
@@ -34,10 +28,23 @@ impl Default for TerminalSettingsData {
     }
 }
 
+/// Theme-related settings.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct ThemeSettingsData {
+    pub(crate) palette: Vec<String>,
+}
+
 impl Default for ThemeSettingsData {
     fn default() -> Self {
         let palette = default_palette();
         Self { palette }
+    }
+}
+
+impl ThemeSettingsData {
+    pub(crate) fn to_color_palette(&self) -> ColorPalette {
+        let base = ColorPalette::default();
+        apply_palette_overrides(&base, &self.palette)
     }
 }
 
@@ -93,13 +100,6 @@ impl SettingsData {
             terminal: TerminalSettingsData { shell, editor },
             theme: ThemeSettingsData { palette },
         }
-    }
-}
-
-impl ThemeSettingsData {
-    pub(crate) fn to_color_palette(&self) -> ColorPalette {
-        let base = ColorPalette::default();
-        apply_palette_overrides(&base, &self.palette)
     }
 }
 

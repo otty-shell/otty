@@ -4,6 +4,7 @@ use otty_ui_term::settings::Settings;
 use crate::app::Event as AppEvent;
 use crate::features::explorer;
 use crate::features::quick_commands::editor::QuickCommandEditorState;
+use crate::features::settings;
 use crate::features::terminal::event as terminal;
 use crate::features::terminal::shell::ShellSession;
 use crate::features::terminal::term::TerminalState;
@@ -13,7 +14,6 @@ use crate::state::State;
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum TabKind {
     Terminal,
-    /// Settings screen tab.
     Settings,
 }
 
@@ -28,11 +28,8 @@ pub(crate) enum TabEvent {
 /// Tab payloads stored in app state.
 pub(crate) enum TabContent {
     Terminal(Box<TerminalState>),
-    /// Settings screen tab.
     Settings,
-    /// Editor for quick command definitions.
     QuickCommandEditor(Box<QuickCommandEditorState>),
-    /// Error tab shown when quick command launch fails.
     QuickCommandError(QuickCommandErrorState),
 }
 
@@ -63,31 +60,11 @@ pub(crate) fn tab_reducer(
                 terminal_settings,
                 shell_session,
             ),
-            TabKind::Settings => create_settings_tab(state),
+            TabKind::Settings => settings::create_settings_tab(state),
         },
         TabEvent::ActivateTab { tab_id } => activate_tab(state, tab_id),
         TabEvent::CloseTab { tab_id } => close_tab(state, tab_id),
     }
-}
-
-fn create_settings_tab(state: &mut State) -> Task<AppEvent> {
-    let tab_id = state.next_tab_id;
-    state.next_tab_id += 1;
-
-    state.settings.reload();
-
-    state.tab_items.insert(
-        tab_id,
-        TabItem {
-            id: tab_id,
-            title: String::from("Settings"),
-            content: TabContent::Settings,
-        },
-    );
-    state.active_tab_id = Some(tab_id);
-    explorer::event::sync_explorer_from_active_terminal(state);
-
-    Task::none()
 }
 
 fn close_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {
