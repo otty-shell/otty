@@ -94,7 +94,6 @@ pub(crate) enum SettingsEvent {
     Save,
     Reset,
     NodePressed { path: Vec<String> },
-    NodeToggled { path: Vec<String> },
     NodeHovered { path: Option<Vec<String>> },
     ShellChanged(String),
     EditorChanged(String),
@@ -211,14 +210,6 @@ impl SettingsState {
             if let Some(section) = node.section_kind() {
                 self.selected_section = section;
                 self.selected_path = path.to_vec();
-            }
-        }
-    }
-
-    pub(crate) fn toggle_folder_path(&mut self, path: &[String]) {
-        if let Some(node) = find_node_mut(&mut self.tree, path) {
-            if node.is_folder() {
-                node.expanded = !node.expanded;
             }
         }
     }

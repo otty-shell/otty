@@ -111,14 +111,14 @@ fn explorer_tree<'a>(props: Props<'a>) -> Element<'a, ExplorerEvent> {
     let tree_view = TreeView::new(&props.explorer.tree, move |context| {
         render_entry(row_props, context)
     })
-    .selected(props.explorer.selected.as_ref())
-    .hovered(props.explorer.hovered.as_ref())
+    .selected_row(props.explorer.selected.as_ref())
+    .hovered_row(props.explorer.hovered.as_ref())
     .on_press(|path| ExplorerEvent::NodePressed { path })
     .on_hover(|path| ExplorerEvent::NodeHovered { path })
     .row_style(move |context| {
         tree_row_style(row_style_props, &row_palette, context)
     })
-    .indent_width(TREE_INDENT)
+    .indent_size(TREE_INDENT)
     .spacing(0.0);
 
     let scrollable = scrollable::Scrollable::new(tree_view.view())

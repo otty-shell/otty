@@ -119,14 +119,13 @@ fn update(state: &mut AppState, message: Message) {
 
 fn view(state: &AppState) -> Element<'_, Message> {
     TreeView::new(&state.tree, render_row)
-        .selected(state.selected.as_ref())
-        .hovered(state.hovered.as_ref())
+        .selected_row(state.selected.as_ref())
+        .hovered_row(state.hovered.as_ref())
         .on_press(Message::Select)
         .on_hover(Message::Hover)
         .row_style(row_style)
-        .toggle_content(toggle_icon)
-        .toggle_width(16.0)
-        .indent_width(14.0)
+        .row_leading_content(toggle_icon)
+        .indent_size(14.0)
         .spacing(0.0)
         .view()
 }

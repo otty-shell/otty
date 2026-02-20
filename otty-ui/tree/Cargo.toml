@@ -6,8 +6,9 @@ description = "Tree view utilities for OTTY widgets"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"
+readme = "./README.md"
 edition = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-iced = { version = "0.14" }
+iced = { workspace = true }

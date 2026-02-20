@@ -1,7 +1,13 @@
-/// Path of titles that identifies a tree node from the root.
+/// Path of node titles from root to the target row.
+///
+/// The path is built by concatenating [`TreeNode::title`] values while walking
+/// from the root to the current node.
+///
+/// Note: if siblings can have the same title, title-based paths become
+/// ambiguous. In that case you should ensure unique titles per sibling set.
 pub type TreePath = Vec<String>;
 
-/// Trait implemented by tree node types that expose children and expansion.
+/// Trait implemented by tree node types consumable by this crate.
 pub trait TreeNode {
     /// Title used to identify the node within its parent.
     fn title(&self) -> &str;
@@ -15,14 +21,24 @@ pub trait TreeNode {
     fn is_folder(&self) -> bool;
 }
 
-/// Flattened representation of a tree node with its depth and path.
+/// Flattened representation of a visible tree node.
 pub struct FlattenedNode<'a, T: TreeNode> {
+    /// Zero-based tree depth (`0` for root-level rows).
     pub depth: usize,
+    /// Borrowed source node.
     pub node: &'a T,
+    /// Title-based path from the root to this row.
     pub path: TreePath,
 }
 
-/// Flatten a tree of nodes into a depth-first list of visible entries.
+/// Flatten a tree into a depth-first list of visible rows.
+///
+/// The output is stable and sorted per level using these rules:
+/// - folders are placed before files;
+/// - nodes of the same kind use natural title ordering (case-insensitive first,
+///   then case-sensitive tiebreak).
+///
+/// Children are included only when `node.is_folder() && node.expanded()`.
 pub fn flatten_tree<'a, T: TreeNode>(
     nodes: &'a [T],
 ) -> Vec<FlattenedNode<'a, T>> {

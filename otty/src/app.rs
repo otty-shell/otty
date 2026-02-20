@@ -287,10 +287,6 @@ impl App {
                 self.state.settings.select_path(&path);
                 Task::none()
             },
-            settings::SettingsEvent::NodeToggled { path } => {
-                self.state.settings.toggle_folder_path(&path);
-                Task::none()
-            },
             settings::SettingsEvent::NodeHovered { path } => {
                 self.state.settings.set_hovered_path(path);
                 Task::none()

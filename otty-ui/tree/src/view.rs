@@ -7,17 +7,20 @@ use crate::model::{FlattenedNode, TreeNode, TreePath, flatten_tree};
 /// Flattened tree row used by [`TreeView`] render callbacks.
 pub type TreeRow<'a, T> = FlattenedNode<'a, T>;
 
-/// Rendering context passed to row callbacks.
+/// Per-row context passed to all render/style/filter callbacks.
 pub struct TreeRowContext<'a, T: TreeNode> {
+    /// Flattened node info for the current row.
     pub entry: TreeRow<'a, T>,
+    /// Whether this row matches [`TreeView::selected_row`].
     pub is_selected: bool,
+    /// Whether this row matches [`TreeView::hovered_row`].
     pub is_hovered: bool,
 }
 
 type RowRenderer<'a, T, Message> =
     dyn Fn(&TreeRowContext<'a, T>) -> Element<'a, Message> + 'a;
 type RowStyle<'a, T> = dyn Fn(&TreeRowContext<'a, T>) -> container::Style + 'a;
-type ToggleContent<'a, T, Message> =
+type RowLeadingContent<'a, T, Message> =
     dyn Fn(&TreeRowContext<'a, T>) -> Element<'a, Message> + 'a;
 type RowAction<'a, Message> = dyn Fn(TreePath) -> Message + 'a;
 type HoverAction<'a, Message> = dyn Fn(Option<TreePath>) -> Message + 'a;
@@ -25,7 +28,11 @@ type RowPredicate<'a, T> = dyn Fn(&TreeRowContext<'a, T>) -> bool + 'a;
 type RowExtra<'a, T, Message> =
     dyn Fn(&TreeRowContext<'a, T>) -> Option<Element<'a, Message>> + 'a;
 
-/// Lightweight tree view helper that wires selection to row rendering.
+/// Lightweight tree widget for `iced`.
+///
+/// `TreeView` is intentionally stateless: selection/hover are provided by the
+/// caller on each render via [`TreeView::selected_row`] and
+/// [`TreeView::hovered_row`].
 pub struct TreeView<'a, T: TreeNode, Message: Clone + 'a> {
     nodes: &'a [T],
     selected: Option<&'a TreePath>,
@@ -34,17 +41,15 @@ pub struct TreeView<'a, T: TreeNode, Message: Clone + 'a> {
     on_release: Option<Box<RowAction<'a, Message>>>,
     on_right_press: Option<Box<RowAction<'a, Message>>>,
     on_hover: Option<Box<HoverAction<'a, Message>>>,
-    on_toggle_folder: Option<Box<RowAction<'a, Message>>>,
     render_row: Box<RowRenderer<'a, T, Message>>,
     row_style: Option<Box<RowStyle<'a, T>>>,
-    toggle_content: Option<Box<ToggleContent<'a, T, Message>>>,
-    row_visible: Option<Box<RowPredicate<'a, T>>>,
-    row_interactive: Option<Box<RowPredicate<'a, T>>>,
+    row_leading_content: Option<Box<RowLeadingContent<'a, T, Message>>>,
+    row_visible_filter: Option<Box<RowPredicate<'a, T>>>,
+    row_interactive_filter: Option<Box<RowPredicate<'a, T>>>,
     before_row: Option<Box<RowExtra<'a, T, Message>>>,
     after_row: Option<Box<RowExtra<'a, T, Message>>>,
     spacing: f32,
-    indent_width: f32,
-    toggle_width: f32,
+    indent_size: f32,
 }
 
 impl<'a, T, Message> TreeView<'a, T, Message>
@@ -65,28 +70,32 @@ where
             on_release: None,
             on_right_press: None,
             on_hover: None,
-            on_toggle_folder: None,
             render_row: Box::new(render_row),
             row_style: None,
-            toggle_content: None,
-            row_visible: None,
-            row_interactive: None,
+            row_leading_content: None,
+            row_visible_filter: None,
+            row_interactive_filter: None,
             before_row: None,
             after_row: None,
             spacing: 0.0,
-            indent_width: 0.0,
-            toggle_width: 0.0,
+            indent_size: 0.0,
         }
     }
 
-    /// Provide the currently selected path to inform row rendering.
-    pub fn selected(mut self, path: Option<&'a TreePath>) -> Self {
+    /// Sets the selected row used for row styling and context flags.
+    ///
+    /// This does not emit messages by itself. Use [`TreeView::on_press`] (or
+    /// other callbacks) to update selection in your application state.
+    pub fn selected_row(mut self, path: Option<&'a TreePath>) -> Self {
         self.selected = path;
         self
     }
 
-    /// Provide the currently hovered path to inform row rendering.
-    pub fn hovered(mut self, path: Option<&'a TreePath>) -> Self {
+    /// Sets the hovered row used for row styling and context flags.
+    ///
+    /// This is render input state. Hover events are emitted separately via
+    /// [`TreeView::on_hover`].
+    pub fn hovered_row(mut self, path: Option<&'a TreePath>) -> Self {
         self.hovered = path;
         self
     }
@@ -119,20 +128,15 @@ where
     }
 
     /// Emit a message when the pointer enters or leaves a row.
+    ///
+    /// The callback receives:
+    /// - `Some(path)` when entering a row;
+    /// - `None` when leaving the tree area.
     pub fn on_hover(
         mut self,
         on_hover: impl Fn(Option<TreePath>) -> Message + 'a,
     ) -> Self {
         self.on_hover = Some(Box::new(on_hover));
-        self
-    }
-
-    /// Emit a message when a folder toggle is clicked.
-    pub fn on_toggle_folder(
-        mut self,
-        on_toggle: impl Fn(TreePath) -> Message + 'a,
-    ) -> Self {
-        self.on_toggle_folder = Some(Box::new(on_toggle));
         self
     }
 
@@ -145,34 +149,49 @@ where
         self
     }
 
-    /// Provide content to render inside the toggle area.
-    pub fn toggle_content(
+    /// Provide content rendered before each row body.
+    ///
+    /// Typical use is folder/file indicators, chevrons, badges, or fixed
+    /// placeholders to keep labels aligned.
+    pub fn row_leading_content(
         mut self,
-        toggle_content: impl Fn(&TreeRowContext<'a, T>) -> Element<'a, Message> + 'a,
+        row_leading_content: impl Fn(&TreeRowContext<'a, T>) -> Element<'a, Message>
+        + 'a,
     ) -> Self {
-        self.toggle_content = Some(Box::new(toggle_content));
+        self.row_leading_content = Some(Box::new(row_leading_content));
         self
     }
 
-    /// Control whether a row is rendered.
-    pub fn row_visible(
+    /// Predicate that controls whether the main row is rendered.
+    ///
+    /// `false` hides the row body and row mouse handlers, but
+    /// [`TreeView::before_row`] and [`TreeView::after_row`] hooks are still
+    /// evaluated for this entry.
+    pub fn row_visible_filter(
         mut self,
-        row_visible: impl Fn(&TreeRowContext<'a, T>) -> bool + 'a,
+        row_visible_filter: impl Fn(&TreeRowContext<'a, T>) -> bool + 'a,
     ) -> Self {
-        self.row_visible = Some(Box::new(row_visible));
+        self.row_visible_filter = Some(Box::new(row_visible_filter));
         self
     }
 
-    /// Control whether a row receives mouse interaction handlers.
-    pub fn row_interactive(
+    /// Predicate that controls whether row-level mouse handlers are attached.
+    ///
+    /// When `false`, the row still renders but row callbacks (`on_press`,
+    /// `on_release`, `on_right_press`, `on_hover`) are not wired for that row.
+    pub fn row_interactive_filter(
         mut self,
-        row_interactive: impl Fn(&TreeRowContext<'a, T>) -> bool + 'a,
+        row_interactive_filter: impl Fn(&TreeRowContext<'a, T>) -> bool + 'a,
     ) -> Self {
-        self.row_interactive = Some(Box::new(row_interactive));
+        self.row_interactive_filter = Some(Box::new(row_interactive_filter));
         self
     }
 
-    /// Insert content before a given row.
+    /// Insert an extra element before each entry for which callback returns
+    /// `Some`.
+    ///
+    /// This hook runs for every entry, even when the entry is hidden by
+    /// [`TreeView::row_visible_filter`].
     pub fn before_row(
         mut self,
         before_row: impl Fn(&TreeRowContext<'a, T>) -> Option<Element<'a, Message>>
@@ -182,7 +201,11 @@ where
         self
     }
 
-    /// Insert content after a given row.
+    /// Insert an extra element after each entry for which callback returns
+    /// `Some`.
+    ///
+    /// This hook runs for every entry, even when the entry is hidden by
+    /// [`TreeView::row_visible_filter`].
     pub fn after_row(
         mut self,
         after_row: impl Fn(&TreeRowContext<'a, T>) -> Option<Element<'a, Message>>
@@ -192,15 +215,9 @@ where
         self
     }
 
-    /// Set indentation width per tree depth level.
-    pub fn indent_width(mut self, width: f32) -> Self {
-        self.indent_width = width.max(0.0);
-        self
-    }
-
-    /// Set the width reserved for the toggle area.
-    pub fn toggle_width(mut self, width: f32) -> Self {
-        self.toggle_width = width.max(0.0);
+    /// Set indentation size per tree depth level.
+    pub fn indent_size(mut self, size: f32) -> Self {
+        self.indent_size = size.max(0.0);
         self
     }
 
@@ -210,7 +227,10 @@ where
         self
     }
 
-    /// Build the `Element` for the tree view.
+    /// Build the tree widget as an `iced::Element`.
+    ///
+    /// If [`TreeView::on_hover`] is configured, the resulting tree also emits
+    /// a final `on_hover(None)` when the pointer leaves the whole tree area.
     pub fn view(self) -> Element<'a, Message> {
         let mut column =
             Column::new().spacing(self.spacing).width(Length::Fill);
@@ -238,7 +258,7 @@ where
             }
 
             let is_visible = self
-                .row_visible
+                .row_visible_filter
                 .as_ref()
                 .map(|predicate| predicate(&context))
                 .unwrap_or(true);
@@ -249,31 +269,35 @@ where
                         .width(Length::Fill)
                         .into();
                 let is_interactive = self
-                    .row_interactive
+                    .row_interactive_filter
                     .as_ref()
                     .map(|predicate| predicate(&context))
                     .unwrap_or(true);
 
                 let mut row = Row::new().spacing(0.0).width(Length::Fill);
 
-                if self.indent_width > 0.0 {
+                if self.indent_size > 0.0 {
                     let indent =
-                        context.entry.depth as f32 * self.indent_width.max(0.0);
+                        context.entry.depth as f32 * self.indent_size.max(0.0);
                     if indent > 0.0 {
                         row =
                             row.push(Space::new().width(Length::Fixed(indent)));
                     }
                 }
 
-                if self.toggle_width > 0.0 || self.toggle_content.is_some() {
-                    let toggle_hover = if is_interactive {
+                if self.row_leading_content.is_some() {
+                    let leading_hover = if is_interactive {
                         None
                     } else {
                         self.on_hover.as_deref()
                     };
-                    let toggle_slot =
-                        build_toggle_slot(&context, &self, &path, toggle_hover);
-                    row = row.push(toggle_slot);
+                    let leading_slot = build_row_leading_slot(
+                        &context,
+                        &self,
+                        &path,
+                        leading_hover,
+                    );
+                    row = row.push(leading_slot);
                 }
 
                 row = row.push(content);
@@ -359,7 +383,7 @@ fn wrap_mouse_area<'a, Message: Clone + 'a>(
     area.interaction(mouse::Interaction::Pointer).into()
 }
 
-fn build_toggle_slot<'a, T, Message>(
+fn build_row_leading_slot<'a, T, Message>(
     context: &TreeRowContext<'a, T>,
     view: &TreeView<'a, T, Message>,
     path: &TreePath,
@@ -369,33 +393,17 @@ where
     T: TreeNode + 'a,
     Message: Clone + 'a,
 {
-    let width = view.toggle_width.max(0.0);
     let content = view
-        .toggle_content
+        .row_leading_content
         .as_ref()
         .map(|toggle| toggle(context))
         .unwrap_or_else(|| Space::new().into());
 
     let content = container(content)
-        .width(Length::Fixed(width))
         .height(Length::Fill)
         .align_x(alignment::Horizontal::Center)
         .align_y(alignment::Vertical::Center)
         .into();
-
-    if context.entry.node.is_folder() {
-        if let Some(on_toggle) = view.on_toggle_folder.as_ref() {
-            return wrap_mouse_area(
-                content,
-                Some(on_toggle),
-                None,
-                None,
-                on_hover,
-                false,
-                path,
-            );
-        }
-    }
 
     if on_hover.is_some() {
         wrap_mouse_area(content, None, None, None, on_hover, false, path)
@@ -471,7 +479,6 @@ mod tests {
         Release(TreePath),
         RightPress(TreePath),
         Hover(Option<TreePath>),
-        Toggle(TreePath),
     }
 
     fn path(parts: &[&str]) -> TreePath {
@@ -519,9 +526,9 @@ mod tests {
                 ));
                 Space::new().into()
             })
-            .selected(Some(&selected))
-            .hovered(Some(&hovered))
-            .indent_width(10.0)
+            .selected_row(Some(&selected))
+            .hovered_row(Some(&hovered))
+            .indent_size(10.0)
             .view();
 
         let seen = seen.borrow();
@@ -541,21 +548,19 @@ mod tests {
     }
 
     #[test]
-    fn builder_clamps_negative_widths_and_keeps_spacing() {
+    fn builder_clamps_negative_indent_and_keeps_spacing() {
         let nodes = one_file_tree();
         let selected = path(&["leaf"]);
         let hovered = path(&["leaf"]);
         let view = TreeView::<TestNode, TestMessage>::new(&nodes, |_| {
             Space::new().into()
         })
-        .selected(Some(&selected))
-        .hovered(Some(&hovered))
-        .indent_width(-3.0)
-        .toggle_width(-7.0)
+        .selected_row(Some(&selected))
+        .hovered_row(Some(&hovered))
+        .indent_size(-3.0)
         .spacing(1.5);
 
-        assert_eq!(view.indent_width, 0.0);
-        assert_eq!(view.toggle_width, 0.0);
+        assert_eq!(view.indent_size, 0.0);
         assert_eq!(view.spacing, 1.5);
     }
 
@@ -602,7 +607,9 @@ mod tests {
             styled_for_row.set(styled_for_row.get() + 1);
             container::Style::default()
         })
-        .row_visible(|context| context.entry.path != path(&["root", "child"]))
+        .row_visible_filter(|context| {
+            context.entry.path != path(&["root", "child"])
+        })
         .before_row(move |context| {
             before_calls_for_row.set(before_calls_for_row.get() + 1);
             if context.entry.path == path(&["root", "child"]) {
@@ -632,7 +639,7 @@ mod tests {
     }
 
     #[test]
-    fn row_interactive_false_skips_mouse_handlers() {
+    fn row_interactive_filter_false_skips_mouse_handlers() {
         let nodes = one_file_tree();
         let presses = Rc::new(Cell::new(0_usize));
         let presses_for_cb = Rc::clone(&presses);
@@ -644,7 +651,7 @@ mod tests {
             presses_for_cb.set(presses_for_cb.get() + 1);
             TestMessage::Press(tree_path)
         })
-        .row_interactive(|_| false)
+        .row_interactive_filter(|_| false)
         .view();
 
         assert_eq!(presses.get(), 0);
@@ -751,78 +758,80 @@ mod tests {
     }
 
     #[test]
-    fn toggle_slot_not_built_without_width_or_content() {
+    fn toggle_slot_not_built_without_content() {
         let nodes = one_folder_tree();
-        let toggles = Rc::new(Cell::new(0_usize));
-        let toggles_cb = Rc::clone(&toggles);
+        let hover_events = Rc::new(RefCell::new(Vec::new()));
+        let hover_cb = Rc::clone(&hover_events);
 
         let _ = TreeView::<TestNode, TestMessage>::new(&nodes, |_| {
             Space::new().into()
         })
-        .on_toggle_folder(move |tree_path| {
-            toggles_cb.set(toggles_cb.get() + 1);
-            TestMessage::Toggle(tree_path)
+        .row_interactive_filter(|_| false)
+        .on_hover(move |tree_path| {
+            hover_cb.borrow_mut().push(tree_path.clone());
+            TestMessage::Hover(tree_path)
         })
         .view();
 
-        assert_eq!(toggles.get(), 0);
+        assert_eq!(*hover_events.borrow(), vec![None]);
     }
 
     #[test]
-    fn toggle_slot_dispatches_for_folder_when_width_is_set() {
+    fn toggle_slot_emits_hover_for_folder_when_content_is_set() {
         let nodes = one_folder_tree();
-        let toggles = Rc::new(Cell::new(0_usize));
-        let toggles_cb = Rc::clone(&toggles);
+        let hover_events = Rc::new(RefCell::new(Vec::new()));
+        let hover_cb = Rc::clone(&hover_events);
 
         let _ = TreeView::<TestNode, TestMessage>::new(&nodes, |_| {
             Space::new().into()
         })
-        .toggle_width(12.0)
-        .on_toggle_folder(move |tree_path| {
-            toggles_cb.set(toggles_cb.get() + 1);
-            TestMessage::Toggle(tree_path)
+        .row_leading_content(|_| Space::new().into())
+        .row_interactive_filter(|_| false)
+        .on_hover(move |tree_path| {
+            hover_cb.borrow_mut().push(tree_path.clone());
+            TestMessage::Hover(tree_path)
         })
         .view();
 
-        assert_eq!(toggles.get(), 1);
+        assert_eq!(*hover_events.borrow(), vec![Some(path(&["folder"])), None]);
     }
 
     #[test]
-    fn toggle_content_is_used_even_with_zero_width() {
+    fn row_leading_content_is_used_when_configured() {
         let nodes = one_file_tree();
-        let toggle_content_calls = Rc::new(Cell::new(0_usize));
-        let toggle_content_cb = Rc::clone(&toggle_content_calls);
+        let row_leading_content_calls = Rc::new(Cell::new(0_usize));
+        let row_leading_content_cb = Rc::clone(&row_leading_content_calls);
 
         let _ = TreeView::<TestNode, TestMessage>::new(&nodes, |_| {
             Space::new().into()
         })
-        .toggle_content(move |_| {
-            toggle_content_cb.set(toggle_content_cb.get() + 1);
+        .row_leading_content(move |_| {
+            row_leading_content_cb.set(row_leading_content_cb.get() + 1);
             Space::new().into()
         })
         .view();
 
-        assert_eq!(toggle_content_calls.get(), 1);
+        assert_eq!(row_leading_content_calls.get(), 1);
     }
 
     #[test]
-    fn toggle_slot_does_not_dispatch_for_files() {
+    fn toggle_slot_emits_hover_for_files_when_content_is_set() {
         let nodes = one_file_tree();
-        let toggles = Rc::new(Cell::new(0_usize));
-        let toggles_cb = Rc::clone(&toggles);
+        let hover_events = Rc::new(RefCell::new(Vec::new()));
+        let hover_cb = Rc::clone(&hover_events);
 
         let _ = TreeView::<TestNode, TestMessage>::new(&nodes, |_| {
             Space::new().into()
         })
-        .toggle_width(10.0)
-        .on_toggle_folder(move |tree_path| {
-            toggles_cb.set(toggles_cb.get() + 1);
-            TestMessage::Toggle(tree_path)
+        .row_leading_content(|_| Space::new().into())
+        .row_interactive_filter(|_| false)
+        .on_hover(move |tree_path| {
+            hover_cb.borrow_mut().push(tree_path.clone());
+            TestMessage::Hover(tree_path)
         })
-        .row_interactive(|_| false)
         .view();
 
-        assert_eq!(toggles.get(), 0);
+        assert_eq!(*hover_events.borrow(), vec![Some(path(&["leaf"])), None]);
     }
 
     #[test]
@@ -834,8 +843,8 @@ mod tests {
         let _ = TreeView::<TestNode, TestMessage>::new(&nodes, |_| {
             Space::new().into()
         })
-        .toggle_width(10.0)
-        .row_interactive(|_| false)
+        .row_leading_content(|_| Space::new().into())
+        .row_interactive_filter(|_| false)
         .on_hover(move |tree_path| {
             hover_cb.borrow_mut().push(tree_path.clone());
             TestMessage::Hover(tree_path)

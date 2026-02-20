@@ -111,15 +111,13 @@ fn settings_nav_tree<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
     let tree_view = TreeView::new(&props.state.tree, move |context| {
         render_nav_row(props, context)
     })
-    .selected(Some(&props.state.selected_path))
-    .hovered(props.state.hovered_path.as_ref())
+    .selected_row(Some(&props.state.selected_path))
+    .hovered_row(props.state.hovered_path.as_ref())
     .on_press(|path| SettingsEvent::NodePressed { path })
     .on_hover(|path| SettingsEvent::NodeHovered { path })
-    .on_toggle_folder(|path| SettingsEvent::NodeToggled { path })
     .row_style(move |context| nav_row_style(&row_palette, context))
-    .toggle_content(move |context| nav_toggle_icon(context, icon_color))
-    .toggle_width(NAV_ICON_SIZE + NAV_ROW_SPACING)
-    .indent_width(NAV_INDENT)
+    .row_leading_content(move |context| nav_toggle_icon(context, icon_color))
+    .indent_size(NAV_INDENT)
     .spacing(0.0);
 
     let scrollable = scrollable::Scrollable::new(tree_view.view())

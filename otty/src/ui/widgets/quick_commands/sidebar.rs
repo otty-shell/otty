@@ -95,8 +95,8 @@ fn quick_commands_tree<'a>(
         TreeView::new(&props.state.data.root.children, move |context| {
             render_entry(row_props, context)
         })
-        .selected(props.state.selected.as_ref())
-        .hovered(props.state.hovered.as_ref())
+        .selected_row(props.state.selected.as_ref())
+        .hovered_row(props.state.hovered.as_ref())
         .on_press(|path| QuickCommandsEvent::NodePressed { path })
         .on_release(|path| QuickCommandsEvent::NodeReleased { path })
         .on_right_press(|path| QuickCommandsEvent::NodeRightClicked { path })
@@ -104,9 +104,11 @@ fn quick_commands_tree<'a>(
         .row_style(move |context| {
             tree_row_style(row_style_props, &row_palette, context)
         })
-        .row_visible(move |context| !is_rename_edit(visible_props, context))
+        .row_visible_filter(move |context| {
+            !is_rename_edit(visible_props, context)
+        })
         .after_row(move |context| inline_edit_after(after_props, context))
-        .indent_width(TREE_INDENT)
+        .indent_size(TREE_INDENT)
         .spacing(0.0);
 
     let palette = props.theme.theme.iced_palette().clone();
