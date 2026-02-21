@@ -8,8 +8,8 @@ use iced::{Element, Length, Padding};
 
 use crate::features::quick_commands::editor::{
     QuickCommandEditorEvent, QuickCommandEditorMode, QuickCommandEditorState,
-    QuickCommandType,
 };
+use crate::features::quick_commands::model::QuickCommandType;
 use crate::theme::{IcedColorPalette, ThemeProps};
 
 const SECTION_SPACING: f32 = 16.0;
@@ -45,39 +45,45 @@ pub(crate) fn view<'a>(
         props.theme,
     ));
 
+    let command_type = props.editor.command_type();
     content = match props.editor.mode {
         QuickCommandEditorMode::Create { .. } => {
             content.push(command_type_selector(props.editor))
         },
         QuickCommandEditorMode::Edit { .. } => {
-            let command_type = props.editor.command_type;
             let label = format!("Type: {command_type}");
             content.push(text(label).size(LABEL_SIZE))
         },
     };
 
-    match props.editor.command_type {
+    match command_type {
         QuickCommandType::Custom => {
+            let Some(custom) = props.editor.custom() else {
+                return container(text("Invalid custom editor state"))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into();
+            };
             content =
                 content.push(section_header("Custom command", props.theme));
             content = content.push(text_input_row(
                 "Program",
                 "/usr/bin/bash",
-                &props.editor.program,
+                &custom.program,
                 QuickCommandEditorEvent::UpdateProgram,
                 props.theme,
             ));
             content = content.push(list_editor(
                 "Arguments",
                 "--flag",
-                &props.editor.args,
+                &custom.args,
                 QuickCommandEditorEvent::AddArg,
                 QuickCommandEditorEvent::RemoveArg,
                 update_arg,
                 props.theme,
             ));
             content = content.push(env_editor(
-                &props.editor.env,
+                &custom.env,
                 "KEY",
                 "value",
                 props.theme,
@@ -85,25 +91,31 @@ pub(crate) fn view<'a>(
             content = content.push(text_input_row(
                 "Workdir (cwd)",
                 "/path/to/project",
-                &props.editor.working_directory,
+                &custom.working_directory,
                 QuickCommandEditorEvent::UpdateWorkingDirectory,
                 props.theme,
             ));
         },
         QuickCommandType::Ssh => {
+            let Some(ssh) = props.editor.ssh() else {
+                return container(text("Invalid SSH editor state"))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into();
+            };
             content =
                 content.push(section_header("SSH connection", props.theme));
             content = content.push(text_input_row(
                 "Host",
                 "example.com",
-                &props.editor.host,
+                &ssh.host,
                 QuickCommandEditorEvent::UpdateHost,
                 props.theme,
             ));
             let port_row = text_input_row(
                 "Port",
                 "22",
-                &props.editor.port,
+                &ssh.port,
                 QuickCommandEditorEvent::UpdatePort,
                 props.theme,
             );
@@ -111,21 +123,21 @@ pub(crate) fn view<'a>(
             content = content.push(text_input_row(
                 "User",
                 "ubuntu",
-                &props.editor.user,
+                &ssh.user,
                 QuickCommandEditorEvent::UpdateUser,
                 props.theme,
             ));
             content = content.push(text_input_row(
                 "Identity file",
                 "~/.ssh/id_ed25519",
-                &props.editor.identity_file,
+                &ssh.identity_file,
                 QuickCommandEditorEvent::UpdateIdentityFile,
                 props.theme,
             ));
             content = content.push(list_editor(
                 "Extra args",
                 "-A",
-                &props.editor.extra_args,
+                &ssh.extra_args,
                 QuickCommandEditorEvent::AddExtraArg,
                 QuickCommandEditorEvent::RemoveExtraArg,
                 update_extra_arg,
@@ -217,7 +229,7 @@ fn command_type_selector<'a>(
     let options = [QuickCommandType::Custom, QuickCommandType::Ssh];
     let selector = pick_list(
         options,
-        Some(editor.command_type),
+        Some(editor.command_type()),
         QuickCommandEditorEvent::SelectCommandType,
     )
     .placeholder("Select type")

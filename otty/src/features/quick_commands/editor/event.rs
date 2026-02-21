@@ -4,10 +4,13 @@ use crate::app::Event as AppEvent;
 use crate::features::quick_commands::domain;
 use crate::features::quick_commands::model::{
     CommandSpec, CustomCommand, EnvVar, NodePath, QuickCommand,
-    QuickCommandFolder, QuickCommandNode, SshCommand,
+    QuickCommandFolder, QuickCommandNode, QuickCommandType, SSH_DEFAULT_PORT,
+    SshCommand,
 };
 use crate::features::tab::{TabContent, TabEvent, TabItem};
 use crate::state::State;
+
+use super::model::{QuickCommandEditorMode, QuickCommandEditorState};
 
 /// Events emitted by the quick command editor UI.
 #[derive(Debug, Clone)]
@@ -32,111 +35,6 @@ pub(crate) enum QuickCommandEditorEvent {
     RemoveExtraArg(usize),
     UpdateExtraArg { index: usize, value: String },
     SelectCommandType(QuickCommandType),
-}
-
-/// Supported quick command types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum QuickCommandType {
-    Custom,
-    Ssh,
-}
-
-impl std::fmt::Display for QuickCommandType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let label = match self {
-            QuickCommandType::Custom => "Custom",
-            QuickCommandType::Ssh => "SSH",
-        };
-        write!(f, "{label}")
-    }
-}
-
-/// Mode for the editor tab.
-#[derive(Debug, Clone)]
-pub(crate) enum QuickCommandEditorMode {
-    Create { parent_path: NodePath },
-    Edit { path: NodePath },
-}
-
-/// Editor state stored in a tab.
-#[derive(Debug, Clone)]
-pub(crate) struct QuickCommandEditorState {
-    pub(crate) mode: QuickCommandEditorMode,
-    pub(crate) command_type: QuickCommandType,
-    pub(crate) title: String,
-    pub(crate) program: String,
-    pub(crate) args: Vec<String>,
-    pub(crate) env: Vec<(String, String)>,
-    pub(crate) working_directory: String,
-    pub(crate) host: String,
-    pub(crate) port: String,
-    pub(crate) user: String,
-    pub(crate) identity_file: String,
-    pub(crate) extra_args: Vec<String>,
-    pub(crate) error: Option<String>,
-}
-
-impl QuickCommandEditorState {
-    pub(crate) fn new_create(parent_path: NodePath) -> Self {
-        Self {
-            mode: QuickCommandEditorMode::Create { parent_path },
-            command_type: QuickCommandType::Custom,
-            title: String::new(),
-            program: String::new(),
-            args: Vec::new(),
-            env: Vec::new(),
-            working_directory: String::new(),
-            host: String::new(),
-            port: String::from("22"),
-            user: String::new(),
-            identity_file: String::new(),
-            extra_args: Vec::new(),
-            error: None,
-        }
-    }
-
-    /// Build an editor state from an existing command.
-    pub(crate) fn from_command(path: NodePath, command: &QuickCommand) -> Self {
-        match &command.spec {
-            CommandSpec::Custom { custom } => Self {
-                mode: QuickCommandEditorMode::Edit { path },
-                command_type: QuickCommandType::Custom,
-                title: command.title.clone(),
-                program: custom.program.clone(),
-                args: custom.args.clone(),
-                env: custom
-                    .env
-                    .iter()
-                    .map(|EnvVar { key, value }| (key.clone(), value.clone()))
-                    .collect(),
-                working_directory: custom
-                    .working_directory
-                    .clone()
-                    .unwrap_or_default(),
-                host: String::new(),
-                port: String::from("22"),
-                user: String::new(),
-                identity_file: String::new(),
-                extra_args: Vec::new(),
-                error: None,
-            },
-            CommandSpec::Ssh { ssh } => Self {
-                mode: QuickCommandEditorMode::Edit { path },
-                command_type: QuickCommandType::Ssh,
-                title: command.title.clone(),
-                program: String::new(),
-                args: Vec::new(),
-                env: Vec::new(),
-                working_directory: String::new(),
-                host: ssh.host.clone(),
-                port: ssh.port.to_string(),
-                user: ssh.user.clone().unwrap_or_default(),
-                identity_file: ssh.identity_file.clone().unwrap_or_default(),
-                extra_args: ssh.extra_args.clone(),
-                error: None,
-            },
-        }
-    }
 }
 
 /// Handle events from a quick command editor tab.
@@ -167,53 +65,103 @@ pub(crate) fn quick_command_editor_reducer(
             return Task::done(AppEvent::Tab(TabEvent::CloseTab { tab_id }));
         },
         UpdateTitle(value) => editor.title = value,
-        UpdateProgram(value) => editor.program = value,
-        UpdateHost(value) => editor.host = value,
-        UpdateUser(value) => editor.user = value,
-        UpdatePort(value) => editor.port = value,
-        UpdateIdentityFile(value) => editor.identity_file = value,
-        UpdateWorkingDirectory(value) => editor.working_directory = value,
-        AddArg => editor.args.push(String::new()),
+        UpdateProgram(value) => {
+            if let Some(custom) = editor.custom_mut() {
+                custom.program = value;
+            }
+        },
+        UpdateHost(value) => {
+            if let Some(ssh) = editor.ssh_mut() {
+                ssh.host = value;
+            }
+        },
+        UpdateUser(value) => {
+            if let Some(ssh) = editor.ssh_mut() {
+                ssh.user = value;
+            }
+        },
+        UpdatePort(value) => {
+            if let Some(ssh) = editor.ssh_mut() {
+                ssh.port = value;
+            }
+        },
+        UpdateIdentityFile(value) => {
+            if let Some(ssh) = editor.ssh_mut() {
+                ssh.identity_file = value;
+            }
+        },
+        UpdateWorkingDirectory(value) => {
+            if let Some(custom) = editor.custom_mut() {
+                custom.working_directory = value;
+            }
+        },
+        AddArg => {
+            if let Some(custom) = editor.custom_mut() {
+                custom.args.push(String::new());
+            }
+        },
         RemoveArg(index) => {
-            if index < editor.args.len() {
-                editor.args.remove(index);
+            if let Some(custom) = editor.custom_mut()
+                && index < custom.args.len()
+            {
+                custom.args.remove(index);
             }
         },
         UpdateArg { index, value } => {
-            if let Some(arg) = editor.args.get_mut(index) {
+            if let Some(custom) = editor.custom_mut()
+                && let Some(arg) = custom.args.get_mut(index)
+            {
                 *arg = value;
             }
         },
-        AddEnv => editor.env.push((String::new(), String::new())),
+        AddEnv => {
+            if let Some(custom) = editor.custom_mut() {
+                custom.env.push((String::new(), String::new()));
+            }
+        },
         RemoveEnv(index) => {
-            if index < editor.env.len() {
-                editor.env.remove(index);
+            if let Some(custom) = editor.custom_mut()
+                && index < custom.env.len()
+            {
+                custom.env.remove(index);
             }
         },
         UpdateEnvKey { index, value } => {
-            if let Some(pair) = editor.env.get_mut(index) {
+            if let Some(custom) = editor.custom_mut()
+                && let Some(pair) = custom.env.get_mut(index)
+            {
                 pair.0 = value;
             }
         },
         UpdateEnvValue { index, value } => {
-            if let Some(pair) = editor.env.get_mut(index) {
+            if let Some(custom) = editor.custom_mut()
+                && let Some(pair) = custom.env.get_mut(index)
+            {
                 pair.1 = value;
             }
         },
-        AddExtraArg => editor.extra_args.push(String::new()),
+        AddExtraArg => {
+            if let Some(ssh) = editor.ssh_mut() {
+                ssh.extra_args.push(String::new());
+            }
+        },
         RemoveExtraArg(index) => {
-            if index < editor.extra_args.len() {
-                editor.extra_args.remove(index);
+            if let Some(ssh) = editor.ssh_mut()
+                && index < ssh.extra_args.len()
+            {
+                ssh.extra_args.remove(index);
             }
         },
         UpdateExtraArg { index, value } => {
-            if let Some(arg) = editor.extra_args.get_mut(index) {
+            if let Some(ssh) = editor.ssh_mut()
+                && let Some(arg) = ssh.extra_args.get_mut(index)
+            {
                 *arg = value;
             }
         },
         SelectCommandType(command_type) => {
             if matches!(editor.mode, QuickCommandEditorMode::Create { .. }) {
-                editor.command_type = command_type;
+                editor.set_command_type(command_type);
             }
         },
     }
@@ -253,7 +201,8 @@ pub(crate) fn open_edit_editor_tab(
     let tab_id = state.next_tab_id;
     state.next_tab_id += 1;
 
-    let title = format!("Edit {title}", title = command.title);
+    let command_title = &command.title;
+    let title = format!("Edit {command_title}");
     let editor = QuickCommandEditorState::from_command(path, command);
     state.tab_items.insert(
         tab_id,
@@ -323,14 +272,17 @@ fn build_command(
         return Err(String::from("Title is required."));
     }
 
-    let spec = match editor.command_type {
+    let spec = match editor.command_type() {
         QuickCommandType::Custom => {
-            let program = editor.program.trim();
+            let Some(custom) = editor.custom() else {
+                return Err(String::from("Custom command draft is missing."));
+            };
+            let program = custom.program.trim();
             if program.is_empty() {
                 return Err(String::from("Program is required."));
             }
 
-            let env = editor
+            let env = custom
                 .env
                 .iter()
                 .filter_map(|(key, value)| {
@@ -345,12 +297,12 @@ fn build_command(
                 })
                 .collect::<Vec<_>>();
 
-            let working_directory = editor.working_directory.trim().to_string();
+            let working_directory = custom.working_directory.trim().to_string();
 
             CommandSpec::Custom {
                 custom: CustomCommand {
                     program: program.to_string(),
-                    args: editor.args.clone(),
+                    args: custom.args.clone(),
                     env,
                     working_directory: if working_directory.is_empty() {
                         None
@@ -361,13 +313,16 @@ fn build_command(
             }
         },
         QuickCommandType::Ssh => {
-            let host = editor.host.trim();
+            let Some(ssh) = editor.ssh() else {
+                return Err(String::from("SSH command draft is missing."));
+            };
+            let host = ssh.host.trim();
             if host.is_empty() {
                 return Err(String::from("Host is required."));
             }
-            let port_raw = editor.port.trim();
+            let port_raw = ssh.port.trim();
             let port = if port_raw.is_empty() {
-                22
+                SSH_DEFAULT_PORT
             } else {
                 port_raw
                     .parse::<u16>()
@@ -378,9 +333,9 @@ fn build_command(
                 ssh: SshCommand {
                     host: host.to_string(),
                     port,
-                    user: optional_string(&editor.user),
-                    identity_file: optional_string(&editor.identity_file),
-                    extra_args: editor.extra_args.clone(),
+                    user: optional_string(&ssh.user),
+                    identity_file: optional_string(&ssh.identity_file),
+                    extra_args: ssh.extra_args.clone(),
                 },
             }
         },

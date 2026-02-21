@@ -58,37 +58,25 @@ pub(crate) const QUICK_COMMANDS_TICK_MS: u64 = 200;
 const QUICK_COMMAND_SSH_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
-pub(crate) enum QuickCommandLaunchResult {
-    Success {
-        path: NodePath,
-        launch_id: u64,
-        tab_id: u64,
-        terminal_id: u64,
-        title: String,
-        settings: Box<Settings>,
-        command: Box<QuickCommand>,
-    },
+pub(crate) struct QuickCommandLaunchContext {
+    pub(crate) path: NodePath,
+    pub(crate) launch_id: u64,
+    pub(crate) tab_id: u64,
+    pub(crate) terminal_id: u64,
+    pub(crate) title: String,
+    pub(crate) settings: Box<Settings>,
+    pub(crate) command: Box<QuickCommand>,
 }
 
-impl fmt::Debug for QuickCommandLaunchResult {
+impl fmt::Debug for QuickCommandLaunchContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Success {
-                path,
-                launch_id,
-                tab_id,
-                terminal_id,
-                title,
-                ..
-            } => f
-                .debug_struct("QuickCommandLaunchResult::Success")
-                .field("path", path)
-                .field("launch_id", launch_id)
-                .field("tab_id", tab_id)
-                .field("terminal_id", terminal_id)
-                .field("title", title)
-                .finish(),
-        }
+        f.debug_struct("QuickCommandLaunchContext")
+            .field("path", &self.path)
+            .field("launch_id", &self.launch_id)
+            .field("tab_id", &self.tab_id)
+            .field("terminal_id", &self.terminal_id)
+            .field("title", &self.title)
+            .finish()
     }
 }
 
@@ -244,46 +232,45 @@ pub(crate) fn quick_commands_reducer(
     }
 }
 
-pub(crate) fn handle_quick_command_launch_result(
+pub(crate) fn handle_quick_command_launch(
     state: &mut State,
-    result: QuickCommandLaunchResult,
+    launch: QuickCommandLaunchContext,
 ) -> Task<AppEvent> {
-    match result {
-        QuickCommandLaunchResult::Success {
-            path,
-            launch_id,
-            tab_id,
-            terminal_id,
-            title,
-            settings,
-            command,
-        } => {
-            if should_skip_launch_result(state, &path, launch_id) {
-                return Task::none();
-            }
+    let QuickCommandLaunchContext {
+        path,
+        launch_id,
+        tab_id,
+        terminal_id,
+        title,
+        settings,
+        command,
+    } = launch;
 
-            let (terminal, focus_task) = match TerminalState::new(
-                tab_id,
-                title,
-                terminal_id,
-                *settings,
-                TerminalKind::Command,
-            ) {
-                Ok(result) => result,
-                Err(err) => {
-                    return open_error_tab(
-                        state,
-                        format!("Failed to launch \"{}\"", command.title),
-                        quick_command_error_message(&command, &err),
-                    );
-                },
-            };
-            let insert_task =
-                insert_terminal_tab(state, tab_id, terminal, focus_task, false);
-            let focus_active_task = focus_active_terminal(state);
-            Task::batch(vec![insert_task, focus_active_task])
-        },
+    if should_skip_launch_result(state, &path, launch_id) {
+        return Task::none();
     }
+
+    let (terminal, focus_task) = match TerminalState::new(
+        tab_id,
+        title,
+        terminal_id,
+        *settings,
+        TerminalKind::Command,
+    ) {
+        Ok(result) => result,
+        Err(err) => {
+            let command_title = &command.title;
+            return open_error_tab(
+                state,
+                format!("Failed to launch \"{command_title}\""),
+                quick_command_error_message(&command, &err),
+            );
+        },
+    };
+    let insert_task =
+        insert_terminal_tab(state, tab_id, terminal, focus_task, false);
+    let focus_active_task = focus_active_terminal(state);
+    Task::batch(vec![insert_task, focus_active_task])
 }
 
 fn handle_node_left_click(
@@ -849,9 +836,10 @@ fn launch_quick_command(
     }
 
     if let Some(validation_error) = validate_quick_command(&command) {
+        let command_title = &command.title;
         return open_error_tab(
             state,
-            format!("Failed to launch \"{}\"", command.title),
+            format!("Failed to launch \"{command_title}\""),
             quick_command_error_message(
                 &command,
                 &format!("Validation failed: {validation_error}"),
@@ -883,7 +871,7 @@ fn launch_quick_command(
 
     Task::perform(
         async move {
-            QuickCommandLaunchResult::Success {
+            QuickCommandLaunchContext {
                 path,
                 launch_id,
                 tab_id,

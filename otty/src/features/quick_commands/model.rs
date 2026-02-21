@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 /// Current quick commands schema version.
@@ -5,6 +7,26 @@ pub(crate) const QUICK_COMMANDS_VERSION: u8 = 1;
 
 /// Path of titles from the root to a node.
 pub(crate) type NodePath = Vec<String>;
+
+/// Default SSH port for quick command settings.
+pub(crate) const SSH_DEFAULT_PORT: u16 = 22;
+
+/// Supported quick command types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum QuickCommandType {
+    Custom,
+    Ssh,
+}
+
+impl fmt::Display for QuickCommandType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = match self {
+            QuickCommandType::Custom => "Custom",
+            QuickCommandType::Ssh => "SSH",
+        };
+        write!(f, "{label}")
+    }
+}
 
 /// Root payload persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,5 +227,5 @@ pub(crate) struct SshCommand {
 }
 
 fn default_ssh_port() -> u16 {
-    22
+    SSH_DEFAULT_PORT
 }

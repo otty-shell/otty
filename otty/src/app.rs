@@ -60,7 +60,7 @@ pub(crate) enum Event {
         event: QuickCommandEditorEvent,
     },
     Settings(settings::SettingsEvent),
-    QuickCommandLaunchFinished(Box<quick_commands::QuickCommandLaunchResult>),
+    QuickCommandLaunchFinished(Box<quick_commands::QuickCommandLaunchContext>),
     QuickCommandsTick,
     Keyboard(iced::keyboard::Event),
     Window(window::Event),
@@ -208,7 +208,7 @@ impl App {
                 event,
             ),
             QuickCommandLaunchFinished(result) => {
-                quick_commands::handle_quick_command_launch_result(
+                quick_commands::handle_quick_command_launch(
                     &mut self.state,
                     *result,
                 )
