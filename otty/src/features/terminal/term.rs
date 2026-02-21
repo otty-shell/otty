@@ -11,6 +11,8 @@ use crate::{
     features::terminal::pane_context_menu::PaneContextMenuState,
 };
 
+use super::errors::TerminalError;
+
 /// Terminal entry used by the tab view.
 pub(crate) struct TerminalEntry {
     pub(crate) pane: pane_grid::Pane,
@@ -53,10 +55,12 @@ impl TerminalState {
         terminal_id: u64,
         settings: Settings,
         kind: TerminalKind,
-    ) -> Result<(Self, Task<AppEvent>), String> {
+    ) -> Result<(Self, Task<AppEvent>), TerminalError> {
         let terminal =
             otty_ui_term::Terminal::new(terminal_id, settings.clone())
-                .map_err(|err| format!("{err}"))?;
+                .map_err(|err| TerminalError::Init {
+                    message: format!("{err}"),
+                })?;
         let widget_id = terminal.widget_id().clone();
 
         let (panes, initial_pane) = pane_grid::State::new(terminal_id);

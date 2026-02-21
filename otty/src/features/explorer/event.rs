@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use iced::Task;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 use otty_ui_tree::TreePath;
-use thiserror::Error;
 
 use crate::app::Event as AppEvent;
 use crate::features::tab::TabContent;
@@ -12,6 +11,8 @@ use crate::features::terminal::event::{
 };
 use crate::features::terminal::term::{TerminalKind, TerminalState};
 use crate::state::State;
+
+use super::errors::EditorCommandParseError;
 
 /// Events emitted by the explorer tree UI.
 #[derive(Debug, Clone)]
@@ -135,14 +136,6 @@ fn open_file_in_editor(
     };
 
     insert_terminal_tab(state, tab_id, tab, focus_task, false)
-}
-
-#[derive(Debug, Error)]
-enum EditorCommandParseError {
-    #[error("Invalid editor command: {0}")]
-    Invalid(#[from] shell_words::ParseError),
-    #[error("Editor command is empty.")]
-    Empty,
 }
 
 #[derive(Debug, Clone, Copy)]

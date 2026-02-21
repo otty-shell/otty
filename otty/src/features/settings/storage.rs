@@ -1,18 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use thiserror::Error;
-
+use super::errors::SettingsError;
 use super::model::SettingsData;
-
-/// Errors emitted while reading or writing the settings file.
-#[derive(Debug, Error)]
-pub(crate) enum SettingsError {
-    #[error("settings IO failed")]
-    Io(#[from] std::io::Error),
-    #[error("settings JSON failed")]
-    Json(#[from] serde_json::Error),
-}
 
 /// Status describing how settings were loaded from disk.
 #[derive(Debug, Clone)]

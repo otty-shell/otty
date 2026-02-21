@@ -3,7 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
-use thiserror::Error;
+
+use super::errors::ShellError;
 
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
 
@@ -11,13 +12,6 @@ const OTTY_ZSH_SCRIPT: &str =
     include_str!("../../../../assets/shell-integrations/otty.zsh");
 const OTTY_BASH_SCRIPT: &str =
     include_str!("../../../../assets/shell-integrations/otty.bash");
-
-/// Errors emitted by the shell integration setup.
-#[derive(Debug, Error)]
-pub(crate) enum ShellError {
-    #[error("shell integration IO failed")]
-    Io(#[from] std::io::Error),
-}
 
 /// Shell session information needed to start a terminal backend.
 #[derive(Debug, Clone)]

@@ -1,3 +1,4 @@
+pub(crate) mod errors;
 mod model;
 mod storage;
 
@@ -11,9 +12,9 @@ use crate::state::State;
 use model::is_hex_color_prefix;
 use storage::{SettingsLoadStatus, load_settings, save_settings};
 
+pub(crate) use errors::SettingsError;
 pub(crate) use model::is_valid_hex_color;
 pub(crate) use model::{SettingsData, default_palette, palette_label};
-pub(crate) use storage::SettingsError;
 
 /// Create and activate a settings tab, reloading settings from storage first.
 pub(crate) fn create_settings_tab(state: &mut State) -> Task<AppEvent> {
