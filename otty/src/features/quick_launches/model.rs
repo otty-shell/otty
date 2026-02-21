@@ -2,27 +2,27 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-/// Current quick commands schema version.
-pub(crate) const QUICK_COMMANDS_VERSION: u8 = 1;
+/// Current quick launches schema version.
+pub(crate) const QUICK_LAUNCHES_VERSION: u8 = 1;
 
 /// Path of titles from the root to a node.
 pub(crate) type NodePath = Vec<String>;
 
-/// Default SSH port for quick command settings.
+/// Default SSH port for quick launch settings.
 pub(crate) const SSH_DEFAULT_PORT: u16 = 22;
 
-/// Supported quick command types.
+/// Supported quick launch types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum QuickCommandType {
+pub(crate) enum QuickLaunchType {
     Custom,
     Ssh,
 }
 
-impl fmt::Display for QuickCommandType {
+impl fmt::Display for QuickLaunchType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let label = match self {
-            QuickCommandType::Custom => "Custom",
-            QuickCommandType::Ssh => "SSH",
+            QuickLaunchType::Custom => "Custom",
+            QuickLaunchType::Ssh => "SSH",
         };
         write!(f, "{label}")
     }
@@ -30,27 +30,24 @@ impl fmt::Display for QuickCommandType {
 
 /// Root payload persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct QuickCommandsFile {
+pub(crate) struct QuickLaunchesFile {
     pub(crate) version: u8,
-    pub(crate) root: QuickCommandFolder,
+    pub(crate) root: QuickLaunchFolder,
 }
 
-impl QuickCommandsFile {
+impl QuickLaunchesFile {
     pub(crate) fn empty() -> Self {
         Self {
-            version: QUICK_COMMANDS_VERSION,
-            root: QuickCommandFolder {
-                title: String::from("Quick Commands"),
+            version: QUICK_LAUNCHES_VERSION,
+            root: QuickLaunchFolder {
+                title: String::from("Quick Launces"),
                 expanded: true,
                 children: Vec::new(),
             },
         }
     }
 
-    pub(crate) fn folder(
-        &self,
-        path: &[String],
-    ) -> Option<&QuickCommandFolder> {
+    pub(crate) fn folder(&self, path: &[String]) -> Option<&QuickLaunchFolder> {
         if path.is_empty() {
             return Some(&self.root);
         }
@@ -58,7 +55,7 @@ impl QuickCommandsFile {
         let mut current = &self.root;
         for segment in path {
             let node = current.child(segment)?;
-            let QuickCommandNode::Folder(folder) = node else {
+            let QuickLaunchNode::Folder(folder) = node else {
                 return None;
             };
             current = folder;
@@ -70,7 +67,7 @@ impl QuickCommandsFile {
     pub(crate) fn folder_mut(
         &mut self,
         path: &[String],
-    ) -> Option<&mut QuickCommandFolder> {
+    ) -> Option<&mut QuickLaunchFolder> {
         if path.is_empty() {
             return Some(&mut self.root);
         }
@@ -78,7 +75,7 @@ impl QuickCommandsFile {
         let mut current = &mut self.root;
         for segment in path {
             let node = current.child_mut(segment)?;
-            let QuickCommandNode::Folder(folder) = node else {
+            let QuickLaunchNode::Folder(folder) = node else {
                 return None;
             };
             current = folder;
@@ -87,7 +84,7 @@ impl QuickCommandsFile {
         Some(current)
     }
 
-    pub(crate) fn node(&self, path: &[String]) -> Option<&QuickCommandNode> {
+    pub(crate) fn node(&self, path: &[String]) -> Option<&QuickLaunchNode> {
         let (title, parent_path) = path.split_last()?;
         let parent = self.folder(parent_path)?;
         parent.child(title)
@@ -96,7 +93,7 @@ impl QuickCommandsFile {
     pub(crate) fn node_mut(
         &mut self,
         path: &[String],
-    ) -> Option<&mut QuickCommandNode> {
+    ) -> Option<&mut QuickLaunchNode> {
         let (title, parent_path) = path.split_last()?;
         let parent = self.folder_mut(parent_path)?;
         parent.child_mut(title)
@@ -105,31 +102,31 @@ impl QuickCommandsFile {
     pub(crate) fn parent_folder_mut(
         &mut self,
         path: &[String],
-    ) -> Option<&mut QuickCommandFolder> {
+    ) -> Option<&mut QuickLaunchFolder> {
         let (_title, parent_path) = path.split_last()?;
         self.folder_mut(parent_path)
     }
 }
 
-/// Folder node in the quick commands tree.
+/// Folder node in the quick launches tree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct QuickCommandFolder {
+pub(crate) struct QuickLaunchFolder {
     pub(crate) title: String,
     #[serde(default)]
     pub(crate) expanded: bool,
     #[serde(default)]
-    pub(crate) children: Vec<QuickCommandNode>,
+    pub(crate) children: Vec<QuickLaunchNode>,
 }
 
-impl QuickCommandFolder {
-    pub(crate) fn child(&self, title: &str) -> Option<&QuickCommandNode> {
+impl QuickLaunchFolder {
+    pub(crate) fn child(&self, title: &str) -> Option<&QuickLaunchNode> {
         self.children.iter().find(|node| node.title() == title)
     }
 
     pub(crate) fn child_mut(
         &mut self,
         title: &str,
-    ) -> Option<&mut QuickCommandNode> {
+    ) -> Option<&mut QuickLaunchNode> {
         self.children.iter_mut().find(|node| node.title() == title)
     }
 
@@ -140,7 +137,7 @@ impl QuickCommandFolder {
     pub(crate) fn remove_child(
         &mut self,
         title: &str,
-    ) -> Option<QuickCommandNode> {
+    ) -> Option<QuickLaunchNode> {
         let index = self
             .children
             .iter()
@@ -152,34 +149,34 @@ impl QuickCommandFolder {
 /// Tree node representing either a folder or a command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub(crate) enum QuickCommandNode {
-    Folder(QuickCommandFolder),
-    Command(QuickCommand),
+pub(crate) enum QuickLaunchNode {
+    Folder(QuickLaunchFolder),
+    Command(QuickLaunch),
 }
 
-impl QuickCommandNode {
+impl QuickLaunchNode {
     pub(crate) fn title(&self) -> &str {
         match self {
-            QuickCommandNode::Folder(folder) => &folder.title,
-            QuickCommandNode::Command(command) => &command.title,
+            QuickLaunchNode::Folder(folder) => &folder.title,
+            QuickLaunchNode::Command(command) => &command.title,
         }
     }
 
     pub(crate) fn title_mut(&mut self) -> &mut String {
         match self {
-            QuickCommandNode::Folder(folder) => &mut folder.title,
-            QuickCommandNode::Command(command) => &mut command.title,
+            QuickLaunchNode::Folder(folder) => &mut folder.title,
+            QuickLaunchNode::Command(command) => &mut command.title,
         }
     }
 
     pub(crate) fn is_folder(&self) -> bool {
-        matches!(self, QuickCommandNode::Folder(_))
+        matches!(self, QuickLaunchNode::Folder(_))
     }
 }
 
 /// Leaf node describing a runnable command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct QuickCommand {
+pub(crate) struct QuickLaunch {
     pub(crate) title: String,
     #[serde(flatten)]
     pub(crate) spec: CommandSpec,

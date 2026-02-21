@@ -3,13 +3,13 @@ use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, text};
 use iced::{Element, Length, Theme};
 
-use crate::features::quick_commands::state::QuickCommandsState;
+use crate::features::quick_launches::state::QuickLaunchesState;
 use crate::icons;
 use crate::theme::ThemeProps;
 use crate::ui::components::icon_button::{
     IconButton, IconButtonProps, IconButtonVariant,
 };
-use crate::ui::widgets::quick_commands;
+use crate::ui::widgets::quick_launches;
 
 const WORKSPACE_TITLE_SIZE: f32 = 13.0;
 const WORKSPACE_HEADER_PADDING_HORIZONTAL: f32 = 10.0;
@@ -23,7 +23,7 @@ const WORKSPACE_ADD_ICON_SIZE: f32 = 16.0;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Props<'a> {
     pub(crate) theme: ThemeProps<'a>,
-    pub(crate) quick_commands: &'a QuickCommandsState,
+    pub(crate) quick_launches: &'a QuickLaunchesState,
 }
 
 pub(crate) fn view<'a>(
@@ -60,14 +60,14 @@ pub(crate) fn view<'a>(
         ])
         .align_y(alignment::Vertical::Center);
 
-    let quick_commands =
-        quick_commands::sidebar::view(quick_commands::sidebar::Props {
-            state: props.quick_commands,
+    let quick_launches =
+        quick_launches::sidebar::view(quick_launches::sidebar::Props {
+            state: props.quick_launches,
             theme: props.theme,
         })
-        .map(super::Event::QuickCommands);
+        .map(super::Event::QuickLaunches);
 
-    let content = column![header, quick_commands]
+    let content = column![header, quick_launches]
         .spacing(10)
         .width(Length::Fill)
         .height(Length::Fill)

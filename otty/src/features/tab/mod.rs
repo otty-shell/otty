@@ -3,7 +3,7 @@ use otty_ui_term::settings::Settings;
 
 use crate::app::Event as AppEvent;
 use crate::features::explorer;
-use crate::features::quick_commands::editor::QuickCommandEditorState;
+use crate::features::quick_launches::editor::QuickLaunchEditorState;
 use crate::features::settings;
 use crate::features::terminal::event as terminal;
 use crate::features::terminal::shell::ShellSession;
@@ -29,13 +29,13 @@ pub(crate) enum TabEvent {
 pub(crate) enum TabContent {
     Terminal(Box<TerminalState>),
     Settings,
-    QuickCommandEditor(Box<QuickCommandEditorState>),
-    QuickCommandError(QuickCommandErrorState),
+    QuickLaunchEditor(Box<QuickLaunchEditorState>),
+    QuickLaunchError(QuickLaunchErrorState),
 }
 
-/// Snapshot of a failed quick command launch.
+/// Snapshot of a failed quick launch.
 #[derive(Debug, Clone)]
-pub(crate) struct QuickCommandErrorState {
+pub(crate) struct QuickLaunchErrorState {
     pub(crate) title: String,
     pub(crate) message: String,
 }

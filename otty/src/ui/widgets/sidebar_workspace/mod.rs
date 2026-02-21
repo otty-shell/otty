@@ -1,7 +1,7 @@
 use iced::{Element, Point, Theme};
 
 use crate::features::explorer::event::ExplorerEvent;
-use crate::features::quick_commands::event::QuickCommandsEvent;
+use crate::features::quick_launches::event::QuickLaunchEvent;
 use crate::state::{SidebarItem, State};
 use crate::theme::ThemeProps;
 
@@ -16,7 +16,7 @@ pub(crate) enum Event {
     TerminalAddMenuDismiss,
     TerminalAddMenuAction(AddMenuAction),
     WorkspaceCursorMoved { position: Point },
-    QuickCommands(QuickCommandsEvent),
+    QuickLaunches(QuickLaunchEvent),
     Explorer(ExplorerEvent),
 }
 
@@ -36,7 +36,7 @@ pub(crate) fn view<'a>(
     match state.sidebar.active_item {
         SidebarItem::Terminal => terminal::view(terminal::Props {
             theme,
-            quick_commands: &state.quick_commands,
+            quick_launches: &state.quick_launches,
         }),
         SidebarItem::Explorer => explorer::view(explorer::Props {
             theme,

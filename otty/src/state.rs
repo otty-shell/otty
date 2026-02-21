@@ -5,7 +5,7 @@ use iced::widget::pane_grid;
 use iced::{Point, Size};
 
 use crate::features::explorer::state::ExplorerState;
-use crate::features::quick_commands::state::QuickCommandsState;
+use crate::features::quick_launches::state::QuickLaunchesState;
 use crate::features::settings::SettingsState;
 use crate::features::tab::{TabContent, TabItem};
 use crate::ui::widgets::tab_bar;
@@ -123,7 +123,7 @@ pub(crate) struct State {
     pub(crate) window_size: Size,
     pub(crate) screen_size: Size,
     pub(crate) sidebar: SidebarState,
-    pub(crate) quick_commands: QuickCommandsState,
+    pub(crate) quick_launches: QuickLaunchesState,
     pub(crate) explorer: ExplorerState,
     pub(crate) settings: SettingsState,
 }
@@ -134,12 +134,12 @@ impl State {
         screen_size: Size,
         settings: SettingsState,
     ) -> Self {
-        let quick_commands = QuickCommandsState::load();
+        let quick_launches = QuickLaunchesState::load();
         Self {
             window_size,
             screen_size,
             sidebar: SidebarState::new(),
-            quick_commands,
+            quick_launches,
             explorer: ExplorerState::new(),
             settings,
             ..Default::default()

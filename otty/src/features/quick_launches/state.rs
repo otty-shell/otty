@@ -4,12 +4,12 @@ use std::time::Instant;
 
 use iced::Point;
 
-use super::model::{NodePath, QuickCommandsFile};
+use super::model::{NodePath, QuickLaunchesFile};
 use super::storage::{
-    QuickCommandsError, load_quick_commands, save_quick_commands,
+    QuickLaunchesError, load_quick_launches, save_quick_launches,
 };
 
-/// Target location for quick command context menus.
+/// Target location for quick launch context menus.
 #[derive(Debug, Clone)]
 pub(crate) enum ContextMenuTarget {
     Command(NodePath),
@@ -40,10 +40,10 @@ pub(crate) struct InlineEditState {
     pub(crate) id: iced::widget::Id,
 }
 
-/// Workspace state for saved quick commands and their UI.
+/// Workspace state for saved quick launches and their UI.
 #[derive(Debug)]
-pub(crate) struct QuickCommandsState {
-    pub(crate) data: QuickCommandsFile,
+pub(crate) struct QuickLaunchesState {
+    pub(crate) data: QuickLaunchesFile,
     pub(crate) dirty: bool,
     pub(crate) selected: Option<NodePath>,
     pub(crate) hovered: Option<NodePath>,
@@ -59,7 +59,7 @@ pub(crate) struct QuickCommandsState {
     pub(crate) cursor: Point,
 }
 
-/// Runtime info for a pending quick command launch.
+/// Runtime info for a pending quick launch.
 #[derive(Debug, Clone)]
 pub(crate) struct LaunchInfo {
     pub(crate) id: u64,
@@ -67,9 +67,9 @@ pub(crate) struct LaunchInfo {
     pub(crate) cancel: Arc<AtomicBool>,
 }
 
-impl QuickCommandsState {
+impl QuickLaunchesState {
     pub(crate) fn load() -> Self {
-        match load_quick_commands() {
+        match load_quick_launches() {
             Ok(Some(data)) => Self {
                 data,
                 dirty: false,
@@ -88,14 +88,14 @@ impl QuickCommandsState {
             },
             Ok(None) => Self::default(),
             Err(err) => {
-                log::warn!("quick commands load failed: {err}");
+                log::warn!("quick launches load failed: {err}");
                 Self::default()
             },
         }
     }
 
-    pub(crate) fn persist(&mut self) -> Result<(), QuickCommandsError> {
-        save_quick_commands(&self.data)?;
+    pub(crate) fn persist(&mut self) -> Result<(), QuickLaunchesError> {
+        save_quick_launches(&self.data)?;
         self.dirty = false;
         Ok(())
     }
@@ -105,10 +105,10 @@ impl QuickCommandsState {
     }
 }
 
-impl Default for QuickCommandsState {
+impl Default for QuickLaunchesState {
     fn default() -> Self {
         Self {
-            data: QuickCommandsFile::empty(),
+            data: QuickLaunchesFile::empty(),
             dirty: false,
             selected: None,
             hovered: None,

@@ -1,11 +1,11 @@
-use crate::features::quick_commands::model::{
-    CommandSpec, EnvVar, NodePath, QuickCommand, QuickCommandType,
+use crate::features::quick_launches::model::{
+    CommandSpec, EnvVar, NodePath, QuickLaunch, QuickLaunchType,
     SSH_DEFAULT_PORT,
 };
 
 /// Mode for the editor tab.
 #[derive(Debug, Clone)]
-pub(crate) enum QuickCommandEditorMode {
+pub(crate) enum QuickLaunchEditorMode {
     Create { parent_path: NodePath },
     Edit { path: NodePath },
 }
@@ -49,28 +49,28 @@ pub(crate) enum QuickLaunchEditorOptions {
 }
 
 impl QuickLaunchEditorOptions {
-    fn command_type(&self) -> QuickCommandType {
+    fn command_type(&self) -> QuickLaunchType {
         match self {
-            QuickLaunchEditorOptions::Custom(_) => QuickCommandType::Custom,
-            QuickLaunchEditorOptions::Ssh(_) => QuickCommandType::Ssh,
+            QuickLaunchEditorOptions::Custom(_) => QuickLaunchType::Custom,
+            QuickLaunchEditorOptions::Ssh(_) => QuickLaunchType::Ssh,
         }
     }
 }
 
 /// Editor state stored in a tab.
 #[derive(Debug, Clone)]
-pub(crate) struct QuickCommandEditorState {
-    pub(crate) mode: QuickCommandEditorMode,
+pub(crate) struct QuickLaunchEditorState {
+    pub(crate) mode: QuickLaunchEditorMode,
     pub(crate) title: String,
     options: QuickLaunchEditorOptions,
     pub(crate) error: Option<String>,
 }
 
-impl QuickCommandEditorState {
+impl QuickLaunchEditorState {
     /// Build a state for creating a command in the target folder.
     pub(crate) fn new_create(parent_path: NodePath) -> Self {
         Self {
-            mode: QuickCommandEditorMode::Create { parent_path },
+            mode: QuickLaunchEditorMode::Create { parent_path },
             title: String::new(),
             options: QuickLaunchEditorOptions::Custom(
                 CommandLaunchOptions::default(),
@@ -80,10 +80,10 @@ impl QuickCommandEditorState {
     }
 
     /// Build an editor state from an existing command.
-    pub(crate) fn from_command(path: NodePath, command: &QuickCommand) -> Self {
+    pub(crate) fn from_command(path: NodePath, command: &QuickLaunch) -> Self {
         match &command.spec {
             CommandSpec::Custom { custom } => Self {
-                mode: QuickCommandEditorMode::Edit { path },
+                mode: QuickLaunchEditorMode::Edit { path },
                 title: command.title.clone(),
                 options: QuickLaunchEditorOptions::Custom(
                     CommandLaunchOptions {
@@ -105,7 +105,7 @@ impl QuickCommandEditorState {
                 error: None,
             },
             CommandSpec::Ssh { ssh } => Self {
-                mode: QuickCommandEditorMode::Edit { path },
+                mode: QuickLaunchEditorMode::Edit { path },
                 title: command.title.clone(),
                 options: QuickLaunchEditorOptions::Ssh(SshLaunchOptions {
                     host: ssh.host.clone(),
@@ -123,21 +123,21 @@ impl QuickCommandEditorState {
     }
 
     /// Return the active command type.
-    pub(crate) fn command_type(&self) -> QuickCommandType {
+    pub(crate) fn command_type(&self) -> QuickLaunchType {
         self.options.command_type()
     }
 
     /// Change active command type for create mode.
-    pub(crate) fn set_command_type(&mut self, command_type: QuickCommandType) {
+    pub(crate) fn set_command_type(&mut self, command_type: QuickLaunchType) {
         if self.command_type() == command_type {
             return;
         }
 
         self.options = match command_type {
-            QuickCommandType::Custom => {
+            QuickLaunchType::Custom => {
                 QuickLaunchEditorOptions::Custom(CommandLaunchOptions::default())
             },
-            QuickCommandType::Ssh => {
+            QuickLaunchType::Ssh => {
                 QuickLaunchEditorOptions::Ssh(SshLaunchOptions::default())
             },
         };

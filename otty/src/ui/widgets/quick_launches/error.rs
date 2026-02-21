@@ -2,13 +2,13 @@ use iced::alignment;
 use iced::widget::{column, container, text};
 use iced::{Element, Length};
 
-use crate::features::tab::QuickCommandErrorState;
+use crate::features::tab::QuickLaunchErrorState;
 use crate::theme::ThemeProps;
 
-/// Props for rendering a quick command error tab.
+/// Props for rendering a quick launch error tab.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Props<'a> {
-    pub(crate) error: &'a QuickCommandErrorState,
+    pub(crate) error: &'a QuickLaunchErrorState,
     pub(crate) theme: ThemeProps<'a>,
 }
 

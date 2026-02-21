@@ -14,10 +14,10 @@ use otty_ui_term::settings::{
 };
 
 use crate::app::Event as AppEvent;
-use crate::features::quick_commands::editor::{
+use crate::features::quick_launches::editor::{
     open_create_editor_tab, open_edit_editor_tab,
 };
-use crate::features::tab::{QuickCommandErrorState, TabContent, TabItem};
+use crate::features::tab::{QuickLaunchErrorState, TabContent, TabItem};
 use crate::features::terminal::event::{
     focus_active_terminal, insert_terminal_tab, settings_for_session,
 };
@@ -26,17 +26,17 @@ use crate::state::State;
 
 use super::domain;
 use super::model::{
-    CommandSpec, CustomCommand, EnvVar, NodePath, QuickCommand,
-    QuickCommandFolder, QuickCommandNode, SshCommand,
+    CommandSpec, CustomCommand, EnvVar, NodePath, QuickLaunch,
+    QuickLaunchFolder, QuickLaunchNode, SshCommand,
 };
 use super::state::{
     ContextMenuState, ContextMenuTarget, DragState, DropTarget, InlineEditKind,
     InlineEditState, LaunchInfo,
 };
 
-/// Events emitted by the quick commands sidebar tree.
+/// Events emitted by the quick launches sidebar tree.
 #[derive(Debug, Clone)]
-pub(crate) enum QuickCommandsEvent {
+pub(crate) enum QuickLaunchEvent {
     CursorMoved { position: Point },
     NodeHovered { path: Option<NodePath> },
     NodePressed { path: NodePath },
@@ -54,23 +54,23 @@ pub(crate) enum QuickCommandsEvent {
     InlineEditSubmit,
 }
 
-pub(crate) const QUICK_COMMANDS_TICK_MS: u64 = 200;
-const QUICK_COMMAND_SSH_TIMEOUT: Duration = Duration::from_secs(15);
+pub(crate) const QUICK_LAUNCHES_TICK_MS: u64 = 200;
+const QUICK_LAUNCH_SSH_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
-pub(crate) struct QuickCommandLaunchContext {
+pub(crate) struct QuickLaunchContext {
     pub(crate) path: NodePath,
     pub(crate) launch_id: u64,
     pub(crate) tab_id: u64,
     pub(crate) terminal_id: u64,
     pub(crate) title: String,
     pub(crate) settings: Box<Settings>,
-    pub(crate) command: Box<QuickCommand>,
+    pub(crate) command: Box<QuickLaunch>,
 }
 
-impl fmt::Debug for QuickCommandLaunchContext {
+impl fmt::Debug for QuickLaunchContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("QuickCommandLaunchContext")
+        f.debug_struct("QuickLaunchContext")
             .field("path", &self.path)
             .field("launch_id", &self.launch_id)
             .field("tab_id", &self.tab_id)
@@ -93,16 +93,16 @@ pub(crate) enum ContextMenuAction {
     Kill,
 }
 
-pub(crate) fn quick_commands_reducer(
+pub(crate) fn quick_launches_reducer(
     state: &mut State,
     terminal_settings: &Settings,
-    event: QuickCommandsEvent,
+    event: QuickLaunchEvent,
 ) -> Task<AppEvent> {
-    use QuickCommandsEvent::*;
+    use QuickLaunchEvent::*;
 
     match event {
         CursorMoved { position } => {
-            state.quick_commands.cursor = position;
+            state.quick_launches.cursor = position;
             state.sidebar.cursor = position;
             update_drag_state(state);
             Task::none()
@@ -111,60 +111,58 @@ pub(crate) fn quick_commands_reducer(
             if state.sidebar.is_resizing() {
                 return Task::none();
             }
-            state.quick_commands.hovered = path;
+            state.quick_launches.hovered = path;
             update_drag_drop_target(state);
             Task::none()
         },
         BackgroundPressed => {
-            state.quick_commands.context_menu = None;
-            state.quick_commands.inline_edit = None;
-            state.quick_commands.selected = None;
+            state.quick_launches.context_menu = None;
+            state.quick_launches.inline_edit = None;
+            state.quick_launches.selected = None;
             Task::none()
         },
         BackgroundReleased => {
             if state
-                .quick_commands
+                .quick_launches
                 .drag
                 .as_ref()
                 .map(|drag| drag.active)
                 .unwrap_or(false)
             {
-                state.quick_commands.drop_target = Some(DropTarget::Root);
+                state.quick_launches.drop_target = Some(DropTarget::Root);
             }
             if finish_drag(state) {
                 return Task::none();
             }
-            state.quick_commands.pressed = None;
+            state.quick_launches.pressed = None;
             Task::none()
         },
         BackgroundRightClicked => {
-            state.quick_commands.context_menu = Some(ContextMenuState {
+            state.quick_launches.context_menu = Some(ContextMenuState {
                 target: ContextMenuTarget::Background,
                 cursor: state.sidebar.cursor,
             });
-            state.quick_commands.selected = None;
+            state.quick_launches.selected = None;
             Task::none()
         },
         NodeRightClicked { path } => {
             let selected_path = path.clone();
-            let Some(node) = state.quick_commands.data.node(&path) else {
+            let Some(node) = state.quick_launches.data.node(&path) else {
                 return Task::none();
             };
             let target = match node {
-                QuickCommandNode::Folder(_) => ContextMenuTarget::Folder(path),
-                QuickCommandNode::Command(_) => {
-                    ContextMenuTarget::Command(path)
-                },
+                QuickLaunchNode::Folder(_) => ContextMenuTarget::Folder(path),
+                QuickLaunchNode::Command(_) => ContextMenuTarget::Command(path),
             };
-            state.quick_commands.context_menu = Some(ContextMenuState {
+            state.quick_launches.context_menu = Some(ContextMenuState {
                 target,
                 cursor: state.sidebar.cursor,
             });
-            state.quick_commands.selected = Some(selected_path);
+            state.quick_launches.selected = Some(selected_path);
             Task::none()
         },
         ContextMenuDismiss => {
-            state.quick_commands.context_menu = None;
+            state.quick_launches.context_menu = None;
             Task::none()
         },
         HeaderCreateFolder => {
@@ -177,24 +175,24 @@ pub(crate) fn quick_commands_reducer(
             open_create_command_tab(state, parent)
         },
         DeleteSelected => {
-            let Some(path) = state.quick_commands.selected.clone() else {
+            let Some(path) = state.quick_launches.selected.clone() else {
                 return Task::none();
             };
-            let Some(node) = state.quick_commands.data.node(&path) else {
+            let Some(node) = state.quick_launches.data.node(&path) else {
                 return Task::none();
             };
-            if matches!(node, QuickCommandNode::Folder(_)) {
+            if matches!(node, QuickLaunchNode::Folder(_)) {
                 remove_node(state, &path);
-                state.quick_commands.selected = None;
+                state.quick_launches.selected = None;
             }
             Task::none()
         },
         NodePressed { path } => {
-            state.quick_commands.pressed = Some(path.clone());
-            state.quick_commands.selected = Some(path.clone());
-            state.quick_commands.drag = Some(DragState {
+            state.quick_launches.pressed = Some(path.clone());
+            state.quick_launches.selected = Some(path.clone());
+            state.quick_launches.drag = Some(DragState {
                 source: path,
-                origin: state.quick_commands.cursor,
+                origin: state.quick_launches.cursor,
                 active: false,
             });
             Task::none()
@@ -204,19 +202,19 @@ pub(crate) fn quick_commands_reducer(
                 return Task::none();
             }
             let clicked = state
-                .quick_commands
+                .quick_launches
                 .pressed
                 .as_ref()
                 .map(|pressed| pressed == &path)
                 .unwrap_or(false);
-            state.quick_commands.pressed = None;
+            state.quick_launches.pressed = None;
             if clicked {
                 return handle_node_left_click(state, terminal_settings, path);
             }
             Task::none()
         },
         InlineEditChanged(value) => {
-            if let Some(edit) = state.quick_commands.inline_edit.as_mut() {
+            if let Some(edit) = state.quick_launches.inline_edit.as_mut() {
                 edit.value = value;
                 edit.error = None;
             }
@@ -232,11 +230,11 @@ pub(crate) fn quick_commands_reducer(
     }
 }
 
-pub(crate) fn handle_quick_command_launch(
+pub(crate) fn handle_quick_launch(
     state: &mut State,
-    launch: QuickCommandLaunchContext,
+    launch: QuickLaunchContext,
 ) -> Task<AppEvent> {
-    let QuickCommandLaunchContext {
+    let QuickLaunchContext {
         path,
         launch_id,
         tab_id,
@@ -263,7 +261,7 @@ pub(crate) fn handle_quick_command_launch(
             return open_error_tab(
                 state,
                 format!("Failed to launch \"{command_title}\""),
-                quick_command_error_message(&command, &err),
+                quick_launch_error_message(&command, &err),
             );
         },
     };
@@ -278,27 +276,27 @@ fn handle_node_left_click(
     terminal_settings: &Settings,
     path: NodePath,
 ) -> Task<AppEvent> {
-    let Some(node) = state.quick_commands.data.node(&path).cloned() else {
+    let Some(node) = state.quick_launches.data.node(&path).cloned() else {
         return Task::none();
     };
 
-    if matches!(state.quick_commands.inline_edit.as_ref(), Some(edit) if inline_edit_matches(edit, &path))
+    if matches!(state.quick_launches.inline_edit.as_ref(), Some(edit) if inline_edit_matches(edit, &path))
     {
         return Task::none();
     }
 
-    state.quick_commands.inline_edit = None;
-    state.quick_commands.context_menu = None;
-    state.quick_commands.selected = Some(path.clone());
+    state.quick_launches.inline_edit = None;
+    state.quick_launches.context_menu = None;
+    state.quick_launches.selected = Some(path.clone());
 
     match node {
-        QuickCommandNode::Folder(_) => {
+        QuickLaunchNode::Folder(_) => {
             toggle_folder_expanded(state, &path);
-            persist_quick_commands(state);
+            persist_quick_launches(state);
             Task::none()
         },
-        QuickCommandNode::Command(command) => {
-            launch_quick_command(state, terminal_settings, path, command)
+        QuickLaunchNode::Command(command) => {
+            launch_quick_launch(state, terminal_settings, path, command)
         },
     }
 }
@@ -308,11 +306,11 @@ fn handle_context_menu_action(
     _terminal_settings: &Settings,
     action: ContextMenuAction,
 ) -> Task<AppEvent> {
-    let Some(menu) = state.quick_commands.context_menu.clone() else {
+    let Some(menu) = state.quick_launches.context_menu.clone() else {
         return Task::none();
     };
 
-    state.quick_commands.context_menu = None;
+    state.quick_launches.context_menu = None;
 
     match action {
         ContextMenuAction::Edit => match menu.target {
@@ -387,8 +385,8 @@ fn handle_context_menu_action(
 
 fn begin_inline_create_folder(state: &mut State, parent_path: NodePath) {
     if !parent_path.is_empty()
-        && let Some(QuickCommandNode::Folder(folder)) =
-            state.quick_commands.data.node_mut(&parent_path)
+        && let Some(QuickLaunchNode::Folder(folder)) =
+            state.quick_launches.data.node_mut(&parent_path)
     {
         folder.expanded = true;
     }
@@ -399,12 +397,12 @@ fn begin_inline_create_folder(state: &mut State, parent_path: NodePath) {
         error: None,
         id: iced::widget::Id::unique(),
     };
-    state.quick_commands.inline_edit = Some(edit);
-    state.quick_commands.context_menu = None;
+    state.quick_launches.inline_edit = Some(edit);
+    state.quick_launches.context_menu = None;
 }
 
 fn begin_inline_rename(state: &mut State, path: NodePath) {
-    let Some(node) = state.quick_commands.data.node(&path) else {
+    let Some(node) = state.quick_launches.data.node(&path) else {
         return;
     };
 
@@ -414,7 +412,7 @@ fn begin_inline_rename(state: &mut State, path: NodePath) {
         error: None,
         id: iced::widget::Id::unique(),
     };
-    state.quick_commands.inline_edit = Some(edit);
+    state.quick_launches.inline_edit = Some(edit);
 }
 
 fn inline_edit_matches(edit: &InlineEditState, path: &[String]) -> bool {
@@ -425,30 +423,30 @@ fn inline_edit_matches(edit: &InlineEditState, path: &[String]) -> bool {
 }
 
 fn apply_inline_edit(state: &mut State) {
-    let Some(edit) = state.quick_commands.inline_edit.take() else {
+    let Some(edit) = state.quick_launches.inline_edit.take() else {
         return;
     };
 
     match edit.kind {
         InlineEditKind::CreateFolder { parent_path } => {
             let Some(parent) =
-                state.quick_commands.data.folder_mut(&parent_path)
+                state.quick_launches.data.folder_mut(&parent_path)
             else {
                 return;
             };
             match domain::normalize_title(&edit.value, parent, None) {
                 Ok(title) => {
-                    parent.children.push(QuickCommandNode::Folder(
-                        QuickCommandFolder {
+                    parent.children.push(QuickLaunchNode::Folder(
+                        QuickLaunchFolder {
                             title,
                             expanded: true,
                             children: Vec::new(),
                         },
                     ));
-                    persist_quick_commands(state);
+                    persist_quick_launches(state);
                 },
                 Err(err) => {
-                    state.quick_commands.inline_edit = Some(InlineEditState {
+                    state.quick_launches.inline_edit = Some(InlineEditState {
                         kind: InlineEditKind::CreateFolder { parent_path },
                         value: edit.value,
                         error: Some(format!("{err}")),
@@ -459,7 +457,7 @@ fn apply_inline_edit(state: &mut State) {
         },
         InlineEditKind::Rename { path } => {
             let Some(parent) =
-                state.quick_commands.data.parent_folder_mut(&path)
+                state.quick_launches.data.parent_folder_mut(&path)
             else {
                 return;
             };
@@ -476,26 +474,26 @@ fn apply_inline_edit(state: &mut State) {
                     }
 
                     if let Some(node) =
-                        state.quick_commands.data.node_mut(&path)
+                        state.quick_launches.data.node_mut(&path)
                     {
                         *node.title_mut() = title;
                     }
 
                     update_launching_paths(state, &path, &renamed_path);
                     if state
-                        .quick_commands
+                        .quick_launches
                         .selected
                         .as_ref()
                         .map(|selected| selected == &path)
                         .unwrap_or(false)
                     {
-                        state.quick_commands.selected = Some(renamed_path);
+                        state.quick_launches.selected = Some(renamed_path);
                     }
 
-                    persist_quick_commands(state);
+                    persist_quick_launches(state);
                 },
                 Err(err) => {
-                    state.quick_commands.inline_edit = Some(InlineEditState {
+                    state.quick_launches.inline_edit = Some(InlineEditState {
                         kind: InlineEditKind::Rename { path },
                         value: edit.value,
                         error: Some(format!("{err}")),
@@ -508,26 +506,26 @@ fn apply_inline_edit(state: &mut State) {
 }
 
 fn toggle_folder_expanded(state: &mut State, path: &[String]) {
-    let Some(node) = state.quick_commands.data.node_mut(path) else {
+    let Some(node) = state.quick_launches.data.node_mut(path) else {
         return;
     };
-    if let QuickCommandNode::Folder(folder) = node {
+    if let QuickLaunchNode::Folder(folder) = node {
         folder.expanded = !folder.expanded;
     }
 }
 
 fn selected_parent_path(state: &State) -> NodePath {
-    let Some(selected) = state.quick_commands.selected.as_ref() else {
+    let Some(selected) = state.quick_launches.selected.as_ref() else {
         return Vec::new();
     };
 
-    let Some(node) = state.quick_commands.data.node(selected) else {
+    let Some(node) = state.quick_launches.data.node(selected) else {
         return Vec::new();
     };
 
     match node {
-        QuickCommandNode::Folder(_) => selected.clone(),
-        QuickCommandNode::Command(_) => {
+        QuickLaunchNode::Folder(_) => selected.clone(),
+        QuickLaunchNode::Command(_) => {
             let mut parent = selected.clone();
             parent.pop();
             parent
@@ -536,7 +534,7 @@ fn selected_parent_path(state: &State) -> NodePath {
 }
 
 fn focus_inline_edit(state: &State) -> Task<AppEvent> {
-    let Some(edit) = state.quick_commands.inline_edit.as_ref() else {
+    let Some(edit) = state.quick_launches.inline_edit.as_ref() else {
         return Task::none();
     };
 
@@ -545,12 +543,12 @@ fn focus_inline_edit(state: &State) -> Task<AppEvent> {
 
 fn update_drag_state(state: &mut State) {
     let (active, source) = {
-        let Some(drag) = state.quick_commands.drag.as_mut() else {
+        let Some(drag) = state.quick_launches.drag.as_mut() else {
             return;
         };
 
-        let dx = state.quick_commands.cursor.x - drag.origin.x;
-        let dy = state.quick_commands.cursor.y - drag.origin.y;
+        let dx = state.quick_launches.cursor.x - drag.origin.x;
+        let dy = state.quick_launches.cursor.y - drag.origin.y;
         let distance_sq = dx * dx + dy * dy;
         let threshold = 4.0;
         if !drag.active && distance_sq >= threshold * threshold {
@@ -563,44 +561,44 @@ fn update_drag_state(state: &mut State) {
     if active {
         let target = drop_target_from_hover(state);
         if can_drop(state, &source, &target) {
-            state.quick_commands.drop_target = Some(target);
+            state.quick_launches.drop_target = Some(target);
         } else {
-            state.quick_commands.drop_target = None;
+            state.quick_launches.drop_target = None;
         }
     }
 }
 
 fn finish_drag(state: &mut State) -> bool {
-    let Some(drag) = state.quick_commands.drag.take() else {
+    let Some(drag) = state.quick_launches.drag.take() else {
         return false;
     };
 
     if !drag.active {
-        state.quick_commands.drop_target = None;
+        state.quick_launches.drop_target = None;
         return false;
     }
 
-    let target = match state.quick_commands.drop_target.take() {
+    let target = match state.quick_launches.drop_target.take() {
         Some(target) => target,
         None => return true,
     };
-    state.quick_commands.pressed = None;
+    state.quick_launches.pressed = None;
     move_node(state, drag.source, target);
     true
 }
 
 fn drop_target_from_hover(state: &State) -> DropTarget {
-    let Some(hovered) = state.quick_commands.hovered.as_ref() else {
+    let Some(hovered) = state.quick_launches.hovered.as_ref() else {
         return DropTarget::Root;
     };
 
-    let Some(node) = state.quick_commands.data.node(hovered) else {
+    let Some(node) = state.quick_launches.data.node(hovered) else {
         return DropTarget::Root;
     };
 
     match node {
-        QuickCommandNode::Folder(_) => DropTarget::Folder(hovered.clone()),
-        QuickCommandNode::Command(_) => {
+        QuickLaunchNode::Folder(_) => DropTarget::Folder(hovered.clone()),
+        QuickLaunchNode::Command(_) => {
             let mut parent = hovered.clone();
             parent.pop();
             if parent.is_empty() {
@@ -613,7 +611,7 @@ fn drop_target_from_hover(state: &State) -> DropTarget {
 }
 
 fn update_drag_drop_target(state: &mut State) {
-    let Some(drag) = state.quick_commands.drag.as_ref() else {
+    let Some(drag) = state.quick_launches.drag.as_ref() else {
         return;
     };
 
@@ -623,14 +621,14 @@ fn update_drag_drop_target(state: &mut State) {
 
     let target = drop_target_from_hover(state);
     if can_drop(state, &drag.source, &target) {
-        state.quick_commands.drop_target = Some(target);
+        state.quick_launches.drop_target = Some(target);
     } else {
-        state.quick_commands.drop_target = None;
+        state.quick_launches.drop_target = None;
     }
 }
 
 fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
-    let Some(node) = state.quick_commands.data.node(&source).cloned() else {
+    let Some(node) = state.quick_launches.data.node(&source).cloned() else {
         return;
     };
 
@@ -646,21 +644,21 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
         return;
     }
 
-    if matches!(node, QuickCommandNode::Folder(_))
+    if matches!(node, QuickLaunchNode::Folder(_))
         && is_prefix(&source, &target_path)
     {
         log::warn!(
-            "quick commands move failed: cannot move folder into itself"
+            "quick launches move failed: cannot move folder into itself"
         );
         return;
     }
 
     let title = source.last().cloned().unwrap_or_default();
-    if let Some(target_folder) = state.quick_commands.data.folder(&target_path)
+    if let Some(target_folder) = state.quick_launches.data.folder(&target_path)
     {
         if target_folder.contains_title(&title) {
             log::warn!(
-                "quick commands move failed: target already contains title"
+                "quick launches move failed: target already contains title"
             );
             return;
         }
@@ -670,7 +668,7 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
 
     let moved = {
         let Some(parent_folder) =
-            state.quick_commands.data.parent_folder_mut(&source)
+            state.quick_launches.data.parent_folder_mut(&source)
         else {
             return;
         };
@@ -681,7 +679,7 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
     };
 
     let Some(target_folder) =
-        state.quick_commands.data.folder_mut(&target_path)
+        state.quick_launches.data.folder_mut(&target_path)
     else {
         return;
     };
@@ -690,8 +688,8 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
     let mut new_path = target_path.clone();
     new_path.push(title);
     update_launching_paths(state, &source, &new_path);
-    state.quick_commands.selected = Some(new_path);
-    persist_quick_commands(state);
+    state.quick_launches.selected = Some(new_path);
+    persist_quick_launches(state);
 }
 
 fn update_launching_paths(
@@ -700,7 +698,7 @@ fn update_launching_paths(
     new_path: &[String],
 ) {
     let mut moved: Vec<(NodePath, LaunchInfo)> = Vec::new();
-    for (path, info) in &state.quick_commands.launching {
+    for (path, info) in &state.quick_launches.launching {
         if is_prefix(source, path) {
             moved.push((path.clone(), info.clone()));
         }
@@ -711,13 +709,13 @@ fn update_launching_paths(
     }
 
     for (path, _) in &moved {
-        state.quick_commands.launching.remove(path);
+        state.quick_launches.launching.remove(path);
     }
 
     for (old_path, info) in moved {
         let mut updated = new_path.to_vec();
         updated.extend_from_slice(&old_path[source.len()..]);
-        state.quick_commands.launching.insert(updated, info);
+        state.quick_launches.launching.insert(updated, info);
     }
 }
 
@@ -730,7 +728,7 @@ fn is_prefix(prefix: &[String], path: &[String]) -> bool {
 }
 
 fn can_drop(state: &State, source: &[String], target: &DropTarget) -> bool {
-    let Some(node) = state.quick_commands.data.node(source) else {
+    let Some(node) = state.quick_launches.data.node(source) else {
         return false;
     };
 
@@ -739,7 +737,7 @@ fn can_drop(state: &State, source: &[String], target: &DropTarget) -> bool {
         DropTarget::Folder(path) => path.clone(),
     };
 
-    if matches!(node, QuickCommandNode::Folder(_))
+    if matches!(node, QuickLaunchNode::Folder(_))
         && is_prefix(source, &target_path)
     {
         return false;
@@ -749,27 +747,27 @@ fn can_drop(state: &State, source: &[String], target: &DropTarget) -> bool {
 }
 
 fn remove_node(state: &mut State, path: &[String]) {
-    let Some(parent) = state.quick_commands.data.parent_folder_mut(path) else {
+    let Some(parent) = state.quick_launches.data.parent_folder_mut(path) else {
         return;
     };
     let Some(title) = path.last() else {
         return;
     };
     parent.remove_child(title);
-    persist_quick_commands(state);
+    persist_quick_launches(state);
 }
 
 fn kill_command_launch(state: &mut State, path: &[String]) {
-    if let Some(info) = state.quick_commands.launching.get(path) {
+    if let Some(info) = state.quick_launches.launching.get(path) {
         info.cancel.store(true, Ordering::Relaxed);
-        state.quick_commands.canceled_launches.insert(info.id);
+        state.quick_launches.canceled_launches.insert(info.id);
     }
 }
 
 fn remove_launch_by_id(state: &mut State, launch_id: u64) {
     let path =
         state
-            .quick_commands
+            .quick_launches
             .launching
             .iter()
             .find_map(|(path, info)| {
@@ -781,29 +779,29 @@ fn remove_launch_by_id(state: &mut State, launch_id: u64) {
             });
 
     if let Some(path) = path {
-        state.quick_commands.launching.remove(&path);
+        state.quick_launches.launching.remove(&path);
     }
 }
 
 fn duplicate_command(state: &mut State, path: &[String]) {
-    let Some(node) = state.quick_commands.data.node(path).cloned() else {
+    let Some(node) = state.quick_launches.data.node(path).cloned() else {
         return;
     };
-    let QuickCommandNode::Command(command) = node else {
+    let QuickLaunchNode::Command(command) = node else {
         return;
     };
 
-    let Some(parent) = state.quick_commands.data.parent_folder_mut(path) else {
+    let Some(parent) = state.quick_launches.data.parent_folder_mut(path) else {
         return;
     };
 
     let mut clone = command.clone();
     clone.title = duplicate_title(parent, &command.title);
-    parent.children.push(QuickCommandNode::Command(clone));
-    persist_quick_commands(state);
+    parent.children.push(QuickLaunchNode::Command(clone));
+    persist_quick_launches(state);
 }
 
-fn duplicate_title(parent: &QuickCommandFolder, title: &str) -> String {
+fn duplicate_title(parent: &QuickLaunchFolder, title: &str) -> String {
     let base = format!("{title} copy");
     if !parent.contains_title(&base) {
         return base;
@@ -819,39 +817,39 @@ fn duplicate_title(parent: &QuickCommandFolder, title: &str) -> String {
     }
 }
 
-fn persist_quick_commands(state: &mut State) {
-    if let Err(err) = domain::persist_dirty(&mut state.quick_commands) {
-        log::warn!("quick commands save failed: {err}");
+fn persist_quick_launches(state: &mut State) {
+    if let Err(err) = domain::persist_dirty(&mut state.quick_launches) {
+        log::warn!("quick launches save failed: {err}");
     }
 }
 
-fn launch_quick_command(
+fn launch_quick_launch(
     state: &mut State,
     terminal_settings: &Settings,
     path: NodePath,
-    command: QuickCommand,
+    command: QuickLaunch,
 ) -> Task<AppEvent> {
-    if state.quick_commands.launching.contains_key(&path) {
+    if state.quick_launches.launching.contains_key(&path) {
         return Task::none();
     }
 
-    if let Some(validation_error) = validate_quick_command(&command) {
+    if let Some(validation_error) = validate_quick_launch(&command) {
         let command_title = &command.title;
         return open_error_tab(
             state,
             format!("Failed to launch \"{command_title}\""),
-            quick_command_error_message(
+            quick_launch_error_message(
                 &command,
                 &format!("Validation failed: {validation_error}"),
             ),
         );
     }
 
-    let launch_id = state.quick_commands.next_launch_id;
-    state.quick_commands.next_launch_id =
-        state.quick_commands.next_launch_id.wrapping_add(1);
+    let launch_id = state.quick_launches.next_launch_id;
+    state.quick_launches.next_launch_id =
+        state.quick_launches.next_launch_id.wrapping_add(1);
     let cancel = Arc::new(AtomicBool::new(false));
-    state.quick_commands.launching.insert(
+    state.quick_launches.launching.insert(
         path.clone(),
         LaunchInfo {
             id: launch_id,
@@ -871,7 +869,7 @@ fn launch_quick_command(
 
     Task::perform(
         async move {
-            QuickCommandLaunchContext {
+            QuickLaunchContext {
                 path,
                 launch_id,
                 tab_id,
@@ -881,7 +879,7 @@ fn launch_quick_command(
                 command: Box::new(command),
             }
         },
-        |result| AppEvent::QuickCommandLaunchFinished(Box::new(result)),
+        |result| AppEvent::QuickLaunchFinished(Box::new(result)),
     )
 }
 
@@ -890,12 +888,12 @@ fn should_skip_launch_result(
     path: &[String],
     launch_id: u64,
 ) -> bool {
-    if state.quick_commands.canceled_launches.remove(&launch_id) {
+    if state.quick_launches.canceled_launches.remove(&launch_id) {
         remove_launch_by_id(state, launch_id);
         return true;
     }
 
-    if let Some(info) = state.quick_commands.launching.get(path)
+    if let Some(info) = state.quick_launches.launching.get(path)
         && info.id != launch_id
     {
         return true;
@@ -906,7 +904,7 @@ fn should_skip_launch_result(
 }
 
 fn command_session(
-    command: &QuickCommand,
+    command: &QuickLaunch,
     cancel: &Arc<AtomicBool>,
 ) -> SessionKind {
     match &command.spec {
@@ -919,7 +917,7 @@ fn command_session(
     }
 }
 
-fn validate_quick_command(command: &QuickCommand) -> Option<String> {
+fn validate_quick_launch(command: &QuickLaunch) -> Option<String> {
     match &command.spec {
         CommandSpec::Custom { custom } => validate_custom_command(custom).err(),
         CommandSpec::Ssh { ssh } => validate_ssh_command(ssh).err(),
@@ -1053,7 +1051,7 @@ fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
-fn quick_command_error_message(command: &QuickCommand, err: &str) -> String {
+fn quick_launch_error_message(command: &QuickLaunch, err: &str) -> String {
     match &command.spec {
         CommandSpec::Custom { custom } => {
             let program = custom.program.as_str();
@@ -1155,7 +1153,7 @@ fn ssh_session(
         .with_host(&host)
         .with_user(&user)
         .with_auth(auth)
-        .with_timeout(QUICK_COMMAND_SSH_TIMEOUT)
+        .with_timeout(QUICK_LAUNCH_SSH_TIMEOUT)
         .with_cancel_token(cancel.clone())
 }
 
@@ -1167,10 +1165,10 @@ fn open_create_command_tab(
 }
 
 fn open_edit_command_tab(state: &mut State, path: NodePath) -> Task<AppEvent> {
-    let Some(node) = state.quick_commands.data.node(&path).cloned() else {
+    let Some(node) = state.quick_launches.data.node(&path).cloned() else {
         return Task::none();
     };
-    let QuickCommandNode::Command(command) = node else {
+    let QuickLaunchNode::Command(command) = node else {
         return Task::none();
     };
 
@@ -1190,7 +1188,7 @@ fn open_error_tab(
         TabItem {
             id: tab_id,
             title: title.clone(),
-            content: TabContent::QuickCommandError(QuickCommandErrorState {
+            content: TabContent::QuickLaunchError(QuickLaunchErrorState {
                 title,
                 message,
             }),

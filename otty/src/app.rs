@@ -12,10 +12,10 @@ use std::time::Duration;
 
 use crate::effects::close_window;
 use crate::features::explorer;
-use crate::features::quick_commands::editor::{
-    QuickCommandEditorEvent, quick_command_editor_reducer,
+use crate::features::quick_launches::editor::{
+    QuickLaunchEditorEvent, quick_launch_editor_reducer,
 };
-use crate::features::quick_commands::event as quick_commands;
+use crate::features::quick_launches::event as quick_launches;
 use crate::features::settings;
 use crate::features::tab::{TabContent, TabEvent, TabKind, tab_reducer};
 use crate::features::terminal::event::{TerminalEvent, terminal_tab_reducer};
@@ -55,13 +55,13 @@ pub(crate) enum Event {
         tab_id: u64,
         event: TerminalEvent,
     },
-    QuickCommandEditor {
+    QuickLaunchEditor {
         tab_id: u64,
-        event: QuickCommandEditorEvent,
+        event: QuickLaunchEditorEvent,
     },
     Settings(settings::SettingsEvent),
-    QuickCommandLaunchFinished(Box<quick_commands::QuickCommandLaunchContext>),
-    QuickCommandsTick,
+    QuickLaunchFinished(Box<quick_launches::QuickLaunchContext>),
+    QuickLaunchesTick,
     Keyboard(iced::keyboard::Event),
     Window(window::Event),
     ResizeWindow(Direction),
@@ -149,12 +149,12 @@ impl App {
         let key_subs = iced::keyboard::listen().map(Event::Keyboard);
 
         let mut subs = vec![terminal_subs, win_subs, key_subs];
-        if !self.state.quick_commands.launching.is_empty() {
+        if !self.state.quick_launches.launching.is_empty() {
             subs.push(
                 iced::time::every(Duration::from_millis(
-                    quick_commands::QUICK_COMMANDS_TICK_MS,
+                    quick_launches::QUICK_LAUNCHES_TICK_MS,
                 ))
-                .map(|_| Event::QuickCommandsTick),
+                .map(|_| Event::QuickLaunchesTick),
             );
         }
 
@@ -162,10 +162,10 @@ impl App {
     }
 
     pub(crate) fn update(&mut self, event: Event) -> Task<Event> {
-        if self.state.quick_commands.inline_edit.is_some()
+        if self.state.quick_launches.inline_edit.is_some()
             && should_cancel_inline_edit(&event)
         {
-            self.state.quick_commands.inline_edit = None;
+            self.state.quick_launches.inline_edit = None;
         }
 
         if self.any_context_menu_open() {
@@ -207,25 +207,22 @@ impl App {
                 &self.shell_session,
                 event,
             ),
-            QuickCommandLaunchFinished(result) => {
-                quick_commands::handle_quick_command_launch(
-                    &mut self.state,
-                    *result,
-                )
+            QuickLaunchFinished(result) => {
+                quick_launches::handle_quick_launch(&mut self.state, *result)
             },
-            QuickCommandsTick => {
-                if self.state.quick_commands.launching.is_empty() {
+            QuickLaunchesTick => {
+                if self.state.quick_launches.launching.is_empty() {
                     return Task::none();
                 }
-                self.state.quick_commands.blink_nonce =
-                    self.state.quick_commands.blink_nonce.wrapping_add(1);
+                self.state.quick_launches.blink_nonce =
+                    self.state.quick_launches.blink_nonce.wrapping_add(1);
                 Task::none()
             },
             Terminal { tab_id, event } => {
                 terminal_tab_reducer(&mut self.state, tab_id, event)
             },
-            QuickCommandEditor { tab_id, event } => {
-                quick_command_editor_reducer(&mut self.state, tab_id, event)
+            QuickLaunchEditor { tab_id, event } => {
+                quick_launch_editor_reducer(&mut self.state, tab_id, event)
             },
             Settings(event) => self.handle_settings(event),
             Keyboard(event) => self.handle_keyboard(event),
@@ -247,21 +244,21 @@ impl App {
             if matches!(
                 key,
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
-            ) && self.state.quick_commands.inline_edit.is_some()
+            ) && self.state.quick_launches.inline_edit.is_some()
             {
-                self.state.quick_commands.inline_edit = None;
+                self.state.quick_launches.inline_edit = None;
                 return Task::none();
             }
 
             if matches!(
                 key,
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete)
-            ) && self.state.quick_commands.inline_edit.is_none()
+            ) && self.state.quick_launches.inline_edit.is_none()
             {
-                return quick_commands::quick_commands_reducer(
+                return quick_launches::quick_launches_reducer(
                     &mut self.state,
                     &self.terminal_settings,
-                    quick_commands::QuickCommandsEvent::DeleteSelected,
+                    quick_launches::QuickLaunchEvent::DeleteSelected,
                 );
             }
         }
@@ -578,17 +575,17 @@ impl App {
                         },
                     ),
                     sidebar_workspace::AddMenuAction::CreateCommand => {
-                        quick_commands::quick_commands_reducer(
+                        quick_launches::quick_launches_reducer(
                             &mut self.state,
                             &self.terminal_settings,
-                            quick_commands::QuickCommandsEvent::HeaderCreateCommand,
+                            quick_launches::QuickLaunchEvent::HeaderCreateCommand,
                         )
                     },
                     sidebar_workspace::AddMenuAction::CreateFolder => {
-                        quick_commands::quick_commands_reducer(
+                        quick_launches::quick_launches_reducer(
                             &mut self.state,
                             &self.terminal_settings,
-                            quick_commands::QuickCommandsEvent::HeaderCreateFolder,
+                            quick_launches::QuickLaunchEvent::HeaderCreateFolder,
                         )
                     },
                 }
@@ -597,8 +594,8 @@ impl App {
                 self.state.sidebar.cursor = position;
                 Task::none()
             },
-            sidebar_workspace::Event::QuickCommands(event) => {
-                quick_commands::quick_commands_reducer(
+            sidebar_workspace::Event::QuickLaunches(event) => {
+                quick_launches::quick_launches_reducer(
                     &mut self.state,
                     &self.terminal_settings,
                     event,
@@ -662,10 +659,10 @@ impl App {
 
     fn handle_sidebar_resize(&mut self, event: pane_grid::ResizeEvent) {
         self.state.sidebar.mark_resizing();
-        self.state.quick_commands.hovered = None;
-        self.state.quick_commands.pressed = None;
-        self.state.quick_commands.drag = None;
-        self.state.quick_commands.drop_target = None;
+        self.state.quick_launches.hovered = None;
+        self.state.quick_launches.pressed = None;
+        self.state.quick_launches.drag = None;
+        self.state.quick_launches.drop_target = None;
         let max_ratio = max_sidebar_workspace_ratio();
 
         if !self.state.sidebar.workspace_open {
@@ -729,7 +726,7 @@ impl App {
 
     fn any_context_menu_open(&self) -> bool {
         if self.state.sidebar.add_menu.is_some()
-            || self.state.quick_commands.context_menu.is_some()
+            || self.state.quick_launches.context_menu.is_some()
         {
             return true;
         }
@@ -747,7 +744,7 @@ impl App {
         let mut tasks = Vec::new();
 
         self.state.sidebar.add_menu = None;
-        self.state.quick_commands.context_menu = None;
+        self.state.quick_launches.context_menu = None;
 
         for tab in self.state.tab_items.values_mut() {
             if let TabContent::Terminal(terminal) = &mut tab.content {
@@ -778,19 +775,19 @@ impl App {
             );
         }
 
-        if let Some(menu) = self.state.quick_commands.context_menu.as_ref() {
+        if let Some(menu) = self.state.quick_launches.context_menu.as_ref() {
             return Some(
-                crate::ui::widgets::quick_commands::context_menu::view(
-                    crate::ui::widgets::quick_commands::context_menu::Props {
+                crate::ui::widgets::quick_launches::context_menu::view(
+                    crate::ui::widgets::quick_launches::context_menu::Props {
                         menu,
                         theme,
                         area_size,
-                        launching: &self.state.quick_commands.launching,
+                        launching: &self.state.quick_launches.launching,
                     },
                 )
                 .map(|event| {
                     Event::SidebarWorkspace(
-                        sidebar_workspace::Event::QuickCommands(event),
+                        sidebar_workspace::Event::QuickLaunches(event),
                     )
                 }),
             );
@@ -836,12 +833,12 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
             sidebar_workspace::Event::TerminalAddMenuAction(_)
             | sidebar_workspace::Event::TerminalAddMenuDismiss,
         )
-        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickCommands(
-            quick_commands::QuickCommandsEvent::ContextMenuAction(_)
-            | quick_commands::QuickCommandsEvent::ContextMenuDismiss,
+        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunches(
+            quick_launches::QuickLaunchEvent::ContextMenuAction(_)
+            | quick_launches::QuickLaunchEvent::ContextMenuDismiss,
         ))
-        | Event::QuickCommandLaunchFinished(_)
-        | Event::QuickCommandsTick => Allow,
+        | Event::QuickLaunchFinished(_)
+        | Event::QuickLaunchesTick => Allow,
         Event::Terminal { event, .. } => match event {
             TerminalEvent::CloseContextMenu
             | TerminalEvent::CopySelection { .. }
@@ -858,11 +855,11 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
         Event::SidebarWorkspace(
             sidebar_workspace::Event::WorkspaceCursorMoved { .. },
         )
-        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickCommands(
-            quick_commands::QuickCommandsEvent::CursorMoved { .. },
+        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunches(
+            quick_launches::QuickLaunchEvent::CursorMoved { .. },
         )) => Allow,
-        Event::SidebarWorkspace(sidebar_workspace::Event::QuickCommands(
-            quick_commands::QuickCommandsEvent::NodeHovered { .. },
+        Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunches(
+            quick_launches::QuickLaunchEvent::NodeHovered { .. },
         )) => Ignore,
         Event::ActionBar(_) => Allow,
         Event::Window(_) | Event::ResizeWindow(_) => Allow,
@@ -872,21 +869,19 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
 }
 
 fn should_cancel_inline_edit(event: &Event) -> bool {
-    use quick_commands::QuickCommandsEvent;
+    use quick_launches::QuickLaunchEvent;
 
     match event {
-        Event::SidebarWorkspace(sidebar_workspace::Event::QuickCommands(
-            quick_commands_event,
+        Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunches(
+            quick_launches_event,
         )) => !matches!(
-            quick_commands_event,
-            QuickCommandsEvent::InlineEditChanged(_)
-                | QuickCommandsEvent::InlineEditSubmit
-                | QuickCommandsEvent::CursorMoved { .. }
-                | QuickCommandsEvent::NodeHovered { .. }
+            quick_launches_event,
+            QuickLaunchEvent::InlineEditChanged(_)
+                | QuickLaunchEvent::InlineEditSubmit
+                | QuickLaunchEvent::CursorMoved { .. }
+                | QuickLaunchEvent::NodeHovered { .. }
         ),
-        Event::QuickCommandsTick | Event::QuickCommandLaunchFinished(_) => {
-            false
-        },
+        Event::QuickLaunchesTick | Event::QuickLaunchFinished(_) => false,
         Event::SidebarWorkspace(
             sidebar_workspace::Event::WorkspaceCursorMoved { .. },
         ) => false,

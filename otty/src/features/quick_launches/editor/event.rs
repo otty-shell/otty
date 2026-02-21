@@ -1,20 +1,20 @@
 use iced::Task;
 
 use crate::app::Event as AppEvent;
-use crate::features::quick_commands::domain;
-use crate::features::quick_commands::model::{
-    CommandSpec, CustomCommand, EnvVar, NodePath, QuickCommand,
-    QuickCommandFolder, QuickCommandNode, QuickCommandType, SSH_DEFAULT_PORT,
+use crate::features::quick_launches::domain;
+use crate::features::quick_launches::model::{
+    CommandSpec, CustomCommand, EnvVar, NodePath, QuickLaunch,
+    QuickLaunchFolder, QuickLaunchNode, QuickLaunchType, SSH_DEFAULT_PORT,
     SshCommand,
 };
 use crate::features::tab::{TabContent, TabEvent, TabItem};
 use crate::state::State;
 
-use super::model::{QuickCommandEditorMode, QuickCommandEditorState};
+use super::model::{QuickLaunchEditorMode, QuickLaunchEditorState};
 
-/// Events emitted by the quick command editor UI.
+/// Events emitted by the quick launch editor UI.
 #[derive(Debug, Clone)]
-pub(crate) enum QuickCommandEditorEvent {
+pub(crate) enum QuickLaunchEditorEvent {
     Cancel,
     Save,
     UpdateTitle(String),
@@ -34,16 +34,16 @@ pub(crate) enum QuickCommandEditorEvent {
     AddExtraArg,
     RemoveExtraArg(usize),
     UpdateExtraArg { index: usize, value: String },
-    SelectCommandType(QuickCommandType),
+    SelectCommandType(QuickLaunchType),
 }
 
-/// Handle events from a quick command editor tab.
-pub(crate) fn quick_command_editor_reducer(
+/// Handle events from a quick launch editor tab.
+pub(crate) fn quick_launch_editor_reducer(
     state: &mut State,
     tab_id: u64,
-    event: QuickCommandEditorEvent,
+    event: QuickLaunchEditorEvent,
 ) -> Task<AppEvent> {
-    use QuickCommandEditorEvent::*;
+    use QuickLaunchEditorEvent::*;
 
     let Some(editor) = editor_mut(state, tab_id) else {
         return Task::none();
@@ -160,7 +160,7 @@ pub(crate) fn quick_command_editor_reducer(
             }
         },
         SelectCommandType(command_type) => {
-            if matches!(editor.mode, QuickCommandEditorMode::Create { .. }) {
+            if matches!(editor.mode, QuickLaunchEditorMode::Create { .. }) {
                 editor.set_command_type(command_type);
             }
         },
@@ -178,13 +178,13 @@ pub(crate) fn open_create_editor_tab(
     let tab_id = state.next_tab_id;
     state.next_tab_id += 1;
 
-    let editor = QuickCommandEditorState::new_create(parent_path);
+    let editor = QuickLaunchEditorState::new_create(parent_path);
     state.tab_items.insert(
         tab_id,
         TabItem {
             id: tab_id,
-            title: String::from("Create command"),
-            content: TabContent::QuickCommandEditor(Box::new(editor)),
+            title: String::from("Create launch"),
+            content: TabContent::QuickLaunchEditor(Box::new(editor)),
         },
     );
     state.active_tab_id = Some(tab_id);
@@ -196,20 +196,20 @@ pub(crate) fn open_create_editor_tab(
 pub(crate) fn open_edit_editor_tab(
     state: &mut State,
     path: NodePath,
-    command: &QuickCommand,
+    command: &QuickLaunch,
 ) -> Task<AppEvent> {
     let tab_id = state.next_tab_id;
     state.next_tab_id += 1;
 
     let command_title = &command.title;
     let title = format!("Edit {command_title}");
-    let editor = QuickCommandEditorState::from_command(path, command);
+    let editor = QuickLaunchEditorState::from_command(path, command);
     state.tab_items.insert(
         tab_id,
         TabItem {
             id: tab_id,
             title,
-            content: TabContent::QuickCommandEditor(Box::new(editor)),
+            content: TabContent::QuickLaunchEditor(Box::new(editor)),
         },
     );
     state.active_tab_id = Some(tab_id);
@@ -220,9 +220,9 @@ pub(crate) fn open_edit_editor_tab(
 fn editor_mut(
     state: &mut State,
     tab_id: u64,
-) -> Option<&mut QuickCommandEditorState> {
+) -> Option<&mut QuickLaunchEditorState> {
     let tab = state.tab_items.get_mut(&tab_id)?;
-    let TabContent::QuickCommandEditor(editor) = &mut tab.content else {
+    let TabContent::QuickLaunchEditor(editor) = &mut tab.content else {
         return None;
     };
     Some(editor.as_mut())
@@ -230,50 +230,50 @@ fn editor_mut(
 
 fn apply_save(
     state: &mut State,
-    draft: QuickCommandEditorState,
+    draft: QuickLaunchEditorState,
 ) -> Result<(), String> {
     let command = build_command(&draft)?;
 
     match &draft.mode {
-        QuickCommandEditorMode::Create { parent_path } => {
+        QuickLaunchEditorMode::Create { parent_path } => {
             let Some(parent) =
-                state.quick_commands.data.folder_mut(parent_path)
+                state.quick_launches.data.folder_mut(parent_path)
             else {
                 return Err(String::from("Missing target folder."));
             };
             validate_unique_title(parent, &command.title, None)?;
-            parent.children.push(QuickCommandNode::Command(command));
+            parent.children.push(QuickLaunchNode::Command(command));
         },
-        QuickCommandEditorMode::Edit { path } => {
+        QuickLaunchEditorMode::Edit { path } => {
             let Some(parent) =
-                state.quick_commands.data.parent_folder_mut(path)
+                state.quick_launches.data.parent_folder_mut(path)
             else {
                 return Err(String::from("Missing parent folder."));
             };
             let current = path.last().map(String::as_str);
             validate_unique_title(parent, &command.title, current)?;
-            if let Some(node) = state.quick_commands.data.node_mut(path) {
-                *node = QuickCommandNode::Command(command);
+            if let Some(node) = state.quick_launches.data.node_mut(path) {
+                *node = QuickLaunchNode::Command(command);
             } else {
                 return Err(String::from("Command no longer exists."));
             }
         },
     }
 
-    persist_quick_commands(state)?;
+    persist_quick_launches(state)?;
     Ok(())
 }
 
 fn build_command(
-    editor: &QuickCommandEditorState,
-) -> Result<QuickCommand, String> {
+    editor: &QuickLaunchEditorState,
+) -> Result<QuickLaunch, String> {
     let title = editor.title.trim();
     if title.is_empty() {
         return Err(String::from("Title is required."));
     }
 
     let spec = match editor.command_type() {
-        QuickCommandType::Custom => {
+        QuickLaunchType::Custom => {
             let Some(custom) = editor.custom() else {
                 return Err(String::from("Custom command draft is missing."));
             };
@@ -312,7 +312,7 @@ fn build_command(
                 },
             }
         },
-        QuickCommandType::Ssh => {
+        QuickLaunchType::Ssh => {
             let Some(ssh) = editor.ssh() else {
                 return Err(String::from("SSH command draft is missing."));
             };
@@ -341,7 +341,7 @@ fn build_command(
         },
     };
 
-    Ok(QuickCommand {
+    Ok(QuickLaunch {
         title: title.to_string(),
         spec,
     })
@@ -357,7 +357,7 @@ fn optional_string(value: &str) -> Option<String> {
 }
 
 fn validate_unique_title(
-    parent: &QuickCommandFolder,
+    parent: &QuickLaunchFolder,
     title: &str,
     current: Option<&str>,
 ) -> Result<(), String> {
@@ -366,9 +366,9 @@ fn validate_unique_title(
         .map_err(|err| format!("{err}"))
 }
 
-fn persist_quick_commands(state: &mut State) -> Result<(), String> {
-    if let Err(err) = domain::persist_dirty(&mut state.quick_commands) {
-        log::warn!("quick commands save failed: {err}");
+fn persist_quick_launches(state: &mut State) -> Result<(), String> {
+    if let Err(err) = domain::persist_dirty(&mut state.quick_launches) {
+        log::warn!("quick launches save failed: {err}");
         return Err(format!("{err}"));
     }
     Ok(())

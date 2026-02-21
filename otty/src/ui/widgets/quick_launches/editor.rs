@@ -6,10 +6,10 @@ use iced::widget::{
 };
 use iced::{Element, Length, Padding};
 
-use crate::features::quick_commands::editor::{
-    QuickCommandEditorEvent, QuickCommandEditorMode, QuickCommandEditorState,
+use crate::features::quick_launches::editor::{
+    QuickLaunchEditorEvent, QuickLaunchEditorMode, QuickLaunchEditorState,
 };
-use crate::features::quick_commands::model::QuickCommandType;
+use crate::features::quick_launches::model::QuickLaunchType;
 use crate::theme::{IcedColorPalette, ThemeProps};
 
 const SECTION_SPACING: f32 = 16.0;
@@ -24,40 +24,40 @@ const BUTTON_PADDING_X: f32 = 12.0;
 const HEADER_PADDING: f32 = 16.0;
 const CONTENT_PADDING_RIGHT: f32 = 8.0;
 
-/// Props for rendering a quick command editor tab.
+/// Props for rendering a quick launch editor tab.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Props<'a> {
-    pub(crate) editor: &'a QuickCommandEditorState,
+    pub(crate) editor: &'a QuickLaunchEditorState,
     pub(crate) theme: ThemeProps<'a>,
 }
 
 pub(crate) fn view<'a>(
     props: Props<'a>,
-) -> Element<'a, QuickCommandEditorEvent> {
+) -> Element<'a, QuickLaunchEditorEvent> {
     let mut content = column![].spacing(SECTION_SPACING).width(Length::Fill);
 
-    content = content.push(section_header("Quick command", props.theme));
+    content = content.push(section_header("Quick launch", props.theme));
     content = content.push(text_input_row(
         "Title",
         "codex: review",
         &props.editor.title,
-        QuickCommandEditorEvent::UpdateTitle,
+        QuickLaunchEditorEvent::UpdateTitle,
         props.theme,
     ));
 
     let command_type = props.editor.command_type();
     content = match props.editor.mode {
-        QuickCommandEditorMode::Create { .. } => {
+        QuickLaunchEditorMode::Create { .. } => {
             content.push(command_type_selector(props.editor))
         },
-        QuickCommandEditorMode::Edit { .. } => {
+        QuickLaunchEditorMode::Edit { .. } => {
             let label = format!("Type: {command_type}");
             content.push(text(label).size(LABEL_SIZE))
         },
     };
 
     match command_type {
-        QuickCommandType::Custom => {
+        QuickLaunchType::Custom => {
             let Some(custom) = props.editor.custom() else {
                 return container(text("Invalid custom editor state"))
                     .width(Length::Fill)
@@ -70,15 +70,15 @@ pub(crate) fn view<'a>(
                 "Program",
                 "/usr/bin/bash",
                 &custom.program,
-                QuickCommandEditorEvent::UpdateProgram,
+                QuickLaunchEditorEvent::UpdateProgram,
                 props.theme,
             ));
             content = content.push(list_editor(
                 "Arguments",
                 "--flag",
                 &custom.args,
-                QuickCommandEditorEvent::AddArg,
-                QuickCommandEditorEvent::RemoveArg,
+                QuickLaunchEditorEvent::AddArg,
+                QuickLaunchEditorEvent::RemoveArg,
                 update_arg,
                 props.theme,
             ));
@@ -92,11 +92,11 @@ pub(crate) fn view<'a>(
                 "Workdir (cwd)",
                 "/path/to/project",
                 &custom.working_directory,
-                QuickCommandEditorEvent::UpdateWorkingDirectory,
+                QuickLaunchEditorEvent::UpdateWorkingDirectory,
                 props.theme,
             ));
         },
-        QuickCommandType::Ssh => {
+        QuickLaunchType::Ssh => {
             let Some(ssh) = props.editor.ssh() else {
                 return container(text("Invalid SSH editor state"))
                     .width(Length::Fill)
@@ -109,14 +109,14 @@ pub(crate) fn view<'a>(
                 "Host",
                 "example.com",
                 &ssh.host,
-                QuickCommandEditorEvent::UpdateHost,
+                QuickLaunchEditorEvent::UpdateHost,
                 props.theme,
             ));
             let port_row = text_input_row(
                 "Port",
                 "22",
                 &ssh.port,
-                QuickCommandEditorEvent::UpdatePort,
+                QuickLaunchEditorEvent::UpdatePort,
                 props.theme,
             );
             content = content.push(port_row);
@@ -124,22 +124,22 @@ pub(crate) fn view<'a>(
                 "User",
                 "ubuntu",
                 &ssh.user,
-                QuickCommandEditorEvent::UpdateUser,
+                QuickLaunchEditorEvent::UpdateUser,
                 props.theme,
             ));
             content = content.push(text_input_row(
                 "Identity file",
                 "~/.ssh/id_ed25519",
                 &ssh.identity_file,
-                QuickCommandEditorEvent::UpdateIdentityFile,
+                QuickLaunchEditorEvent::UpdateIdentityFile,
                 props.theme,
             ));
             content = content.push(list_editor(
                 "Extra args",
                 "-A",
                 &ssh.extra_args,
-                QuickCommandEditorEvent::AddExtraArg,
-                QuickCommandEditorEvent::RemoveExtraArg,
+                QuickLaunchEditorEvent::AddExtraArg,
+                QuickLaunchEditorEvent::RemoveExtraArg,
                 update_extra_arg,
                 props.theme,
             ));
@@ -156,8 +156,8 @@ pub(crate) fn view<'a>(
     }
 
     let action_row = row![
-        editor_button("Save", QuickCommandEditorEvent::Save, props.theme),
-        editor_button("Cancel", QuickCommandEditorEvent::Cancel, props.theme)
+        editor_button("Save", QuickLaunchEditorEvent::Save, props.theme),
+        editor_button("Cancel", QuickLaunchEditorEvent::Cancel, props.theme)
     ]
     .spacing(8);
 
@@ -190,7 +190,7 @@ pub(crate) fn view<'a>(
 fn section_header<'a>(
     label: &'a str,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickCommandEditorEvent> {
+) -> Element<'a, QuickLaunchEditorEvent> {
     let palette = theme.theme.iced_palette();
     container(text(label).size(LABEL_SIZE).style(move |_| {
         iced::widget::text::Style {
@@ -205,9 +205,9 @@ fn text_input_row<'a>(
     label: &'a str,
     placeholder: &'a str,
     value: &'a str,
-    on_input: fn(String) -> QuickCommandEditorEvent,
+    on_input: fn(String) -> QuickLaunchEditorEvent,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickCommandEditorEvent> {
+) -> Element<'a, QuickLaunchEditorEvent> {
     let label = field_label(label);
     let input = text_input(placeholder, value)
         .on_input(on_input)
@@ -224,13 +224,13 @@ fn text_input_row<'a>(
 }
 
 fn command_type_selector<'a>(
-    editor: &'a QuickCommandEditorState,
-) -> Element<'a, QuickCommandEditorEvent> {
-    let options = [QuickCommandType::Custom, QuickCommandType::Ssh];
+    editor: &'a QuickLaunchEditorState,
+) -> Element<'a, QuickLaunchEditorEvent> {
+    let options = [QuickLaunchType::Custom, QuickLaunchType::Ssh];
     let selector = pick_list(
         options,
         Some(editor.command_type()),
-        QuickCommandEditorEvent::SelectCommandType,
+        QuickLaunchEditorEvent::SelectCommandType,
     )
     .placeholder("Select type")
     .text_size(LABEL_SIZE)
@@ -246,11 +246,11 @@ fn list_editor<'a>(
     label: &'a str,
     placeholder: &'a str,
     values: &'a [String],
-    on_add: QuickCommandEditorEvent,
-    on_remove: fn(usize) -> QuickCommandEditorEvent,
-    on_update: fn(usize, String) -> QuickCommandEditorEvent,
+    on_add: QuickLaunchEditorEvent,
+    on_remove: fn(usize) -> QuickLaunchEditorEvent,
+    on_update: fn(usize, String) -> QuickLaunchEditorEvent,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickCommandEditorEvent> {
+) -> Element<'a, QuickLaunchEditorEvent> {
     let mut column = column![text(label).size(LABEL_SIZE)]
         .spacing(FIELD_SPACING)
         .width(Length::Fill);
@@ -276,14 +276,14 @@ fn env_editor<'a>(
     key_placeholder: &'a str,
     value_placeholder: &'a str,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickCommandEditorEvent> {
+) -> Element<'a, QuickLaunchEditorEvent> {
     let mut column = column![text("Environment").size(LABEL_SIZE)]
         .spacing(FIELD_SPACING)
         .width(Length::Fill);
 
     for (index, (key, value)) in env.iter().enumerate() {
         let key_input = text_input(key_placeholder, key)
-            .on_input(move |val| QuickCommandEditorEvent::UpdateEnvKey {
+            .on_input(move |val| QuickLaunchEditorEvent::UpdateEnvKey {
                 index,
                 value: val,
             })
@@ -293,7 +293,7 @@ fn env_editor<'a>(
             .width(Length::Fill);
 
         let value_input = text_input(value_placeholder, value)
-            .on_input(move |val| QuickCommandEditorEvent::UpdateEnvValue {
+            .on_input(move |val| QuickLaunchEditorEvent::UpdateEnvValue {
                 index,
                 value: val,
             })
@@ -304,7 +304,7 @@ fn env_editor<'a>(
 
         let remove = editor_button(
             "Remove",
-            QuickCommandEditorEvent::RemoveEnv(index),
+            QuickLaunchEditorEvent::RemoveEnv(index),
             theme,
         );
 
@@ -314,21 +314,21 @@ fn env_editor<'a>(
     column
         .push(editor_button(
             "Add env",
-            QuickCommandEditorEvent::AddEnv,
+            QuickLaunchEditorEvent::AddEnv,
             theme,
         ))
         .into()
 }
 
-fn update_arg(index: usize, value: String) -> QuickCommandEditorEvent {
-    QuickCommandEditorEvent::UpdateArg { index, value }
+fn update_arg(index: usize, value: String) -> QuickLaunchEditorEvent {
+    QuickLaunchEditorEvent::UpdateArg { index, value }
 }
 
-fn update_extra_arg(index: usize, value: String) -> QuickCommandEditorEvent {
-    QuickCommandEditorEvent::UpdateExtraArg { index, value }
+fn update_extra_arg(index: usize, value: String) -> QuickLaunchEditorEvent {
+    QuickLaunchEditorEvent::UpdateExtraArg { index, value }
 }
 
-fn field_label<'a>(label: &'a str) -> Element<'a, QuickCommandEditorEvent> {
+fn field_label<'a>(label: &'a str) -> Element<'a, QuickLaunchEditorEvent> {
     text(label)
         .size(LABEL_SIZE)
         .width(Length::Fixed(LABEL_WIDTH))
@@ -350,9 +350,9 @@ fn text_input_style(
 
 fn editor_button<'a>(
     label: &'a str,
-    on_press: QuickCommandEditorEvent,
+    on_press: QuickLaunchEditorEvent,
     theme: ThemeProps<'a>,
-) -> iced::widget::Button<'a, QuickCommandEditorEvent> {
+) -> iced::widget::Button<'a, QuickLaunchEditorEvent> {
     let palette = theme.theme.iced_palette().clone();
     let content = container(
         text(label)

@@ -241,8 +241,8 @@ pub(crate) fn focus_active_terminal(state: &State) -> Task<AppEvent> {
             }
         },
         TabContent::Settings
-        | TabContent::QuickCommandEditor(_)
-        | TabContent::QuickCommandError(_) => Task::none(),
+        | TabContent::QuickLaunchEditor(_)
+        | TabContent::QuickLaunchError(_) => Task::none(),
     }
 }
 
@@ -257,8 +257,8 @@ pub(crate) fn sync_tab_block_selection(
     let terminal = match &tab.content {
         TabContent::Terminal(terminal) => terminal,
         TabContent::Settings
-        | TabContent::QuickCommandEditor(_)
-        | TabContent::QuickCommandError(_) => {
+        | TabContent::QuickLaunchEditor(_)
+        | TabContent::QuickLaunchError(_) => {
             return Task::none();
         },
     };
@@ -462,8 +462,8 @@ fn terminal_tab_mut(
         .and_then(|tab| match &mut tab.content {
             TabContent::Terminal(terminal) => Some(terminal.as_mut()),
             TabContent::Settings
-            | TabContent::QuickCommandEditor(_)
-            | TabContent::QuickCommandError(_) => None,
+            | TabContent::QuickLaunchEditor(_)
+            | TabContent::QuickLaunchError(_) => None,
         })
 }
 
@@ -484,8 +484,8 @@ fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
         .and_then(|tab| match &tab.content {
             TabContent::Terminal(terminal) => Some(terminal.as_ref()),
             TabContent::Settings
-            | TabContent::QuickCommandEditor(_)
-            | TabContent::QuickCommandError(_) => None,
+            | TabContent::QuickLaunchEditor(_)
+            | TabContent::QuickLaunchError(_) => None,
         })
 }
 

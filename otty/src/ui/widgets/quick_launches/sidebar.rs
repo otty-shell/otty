@@ -7,12 +7,12 @@ use iced::widget::{
 use iced::{Color, Element, Length};
 use std::time::{Duration, Instant};
 
-use crate::features::quick_commands::event::{
-    QUICK_COMMANDS_TICK_MS, QuickCommandsEvent,
+use crate::features::quick_launches::event::{
+    QUICK_LAUNCHES_TICK_MS, QuickLaunchEvent,
 };
-use crate::features::quick_commands::model::QuickCommandNode;
-use crate::features::quick_commands::state::{
-    DropTarget, InlineEditKind, InlineEditState, QuickCommandsState,
+use crate::features::quick_launches::model::QuickLaunchNode;
+use crate::features::quick_launches::state::{
+    DropTarget, InlineEditKind, InlineEditState, QuickLaunchesState,
 };
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
@@ -36,17 +36,17 @@ const INPUT_PADDING_X: f32 = 6.0;
 const INPUT_PADDING_Y: f32 = 4.0;
 const INPUT_FONT_SIZE: f32 = 12.0;
 
-/// Props for rendering quick commands in the terminal sidebar.
+/// Props for rendering quick launches in the terminal sidebar.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Props<'a> {
-    pub(crate) state: &'a QuickCommandsState,
+    pub(crate) state: &'a QuickLaunchesState,
     pub(crate) theme: ThemeProps<'a>,
 }
 
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
-    let header = quick_commands_header(props.theme);
+pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickLaunchEvent> {
+    let header = quick_launches_header(props.theme);
 
-    let tree_list = quick_commands_tree(props);
+    let tree_list = quick_launches_tree(props);
 
     column![header, tree_list]
         .width(Length::Fill)
@@ -54,10 +54,10 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
         .into()
 }
 
-fn quick_commands_header<'a>(
+fn quick_launches_header<'a>(
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickCommandsEvent> {
-    let title = text("Quick commands")
+) -> Element<'a, QuickLaunchEvent> {
+    let title = text("Quick Launces")
         .size(HEADER_FONT_SIZE)
         .width(Length::Fill)
         .wrapping(Wrapping::None)
@@ -81,9 +81,7 @@ fn quick_commands_header<'a>(
         .into()
 }
 
-fn quick_commands_tree<'a>(
-    props: Props<'a>,
-) -> Element<'a, QuickCommandsEvent> {
+fn quick_launches_tree<'a>(props: Props<'a>) -> Element<'a, QuickLaunchEvent> {
     let row_props = props;
     let row_style_props = props;
     let after_props = props;
@@ -98,10 +96,10 @@ fn quick_commands_tree<'a>(
         })
         .selected_row(props.state.selected.as_ref())
         .hovered_row(props.state.hovered.as_ref())
-        .on_press(|path| QuickCommandsEvent::NodePressed { path })
-        .on_release(|path| QuickCommandsEvent::NodeReleased { path })
-        .on_right_press(|path| QuickCommandsEvent::NodeRightClicked { path })
-        .on_hover(|path| QuickCommandsEvent::NodeHovered { path })
+        .on_press(|path| QuickLaunchEvent::NodePressed { path })
+        .on_release(|path| QuickLaunchEvent::NodeReleased { path })
+        .on_right_press(|path| QuickLaunchEvent::NodeRightClicked { path })
+        .on_hover(|path| QuickLaunchEvent::NodeHovered { path })
         .row_style(move |context| {
             tree_row_style(row_style_props, &row_palette, context)
         })
@@ -132,10 +130,10 @@ fn quick_commands_tree<'a>(
         .style(helpers::thin_scroll_style(palette));
 
     let scrollable = mouse_area(scrollable)
-        .on_move(|position| QuickCommandsEvent::CursorMoved { position })
-        .on_press(QuickCommandsEvent::BackgroundPressed)
-        .on_release(QuickCommandsEvent::BackgroundReleased)
-        .on_right_press(QuickCommandsEvent::BackgroundRightClicked);
+        .on_move(|position| QuickLaunchEvent::CursorMoved { position })
+        .on_press(QuickLaunchEvent::BackgroundPressed)
+        .on_release(QuickLaunchEvent::BackgroundReleased)
+        .on_right_press(QuickLaunchEvent::BackgroundRightClicked);
 
     let is_root_drop =
         matches!(props.state.drop_target, Some(DropTarget::Root))
@@ -168,8 +166,8 @@ fn quick_commands_tree<'a>(
 
 fn render_entry<'a>(
     props: Props<'a>,
-    context: &TreeRowContext<'a, QuickCommandNode>,
-) -> Element<'a, QuickCommandsEvent> {
+    context: &TreeRowContext<'a, QuickLaunchNode>,
+) -> Element<'a, QuickLaunchEvent> {
     let launched_at = props
         .state
         .launching
@@ -177,7 +175,7 @@ fn render_entry<'a>(
         .map(|info| info.started_at);
 
     let icon_palette = props.theme.theme.iced_palette();
-    let icon_view: Element<'a, QuickCommandsEvent> =
+    let icon_view: Element<'a, QuickLaunchEvent> =
         if context.entry.node.is_folder() {
             let icon = if context.entry.node.expanded() {
                 icons::FOLDER_OPENED
@@ -218,11 +216,11 @@ fn render_entry<'a>(
 fn inline_edit_row<'a>(
     edit: &'a InlineEditState,
     depth: usize,
-) -> Element<'a, QuickCommandsEvent> {
+) -> Element<'a, QuickLaunchEvent> {
     let indent = depth as f32 * TREE_INDENT;
     let input = text_input("", &edit.value)
-        .on_input(QuickCommandsEvent::InlineEditChanged)
-        .on_submit(QuickCommandsEvent::InlineEditSubmit)
+        .on_input(QuickLaunchEvent::InlineEditChanged)
+        .on_submit(QuickLaunchEvent::InlineEditSubmit)
         .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
         .size(INPUT_FONT_SIZE)
         .width(Length::Fill)
@@ -251,9 +249,7 @@ fn inline_edit_row<'a>(
         .into()
 }
 
-fn inline_edit_root(
-    props: Props<'_>,
-) -> Option<Element<'_, QuickCommandsEvent>> {
+fn inline_edit_root(props: Props<'_>) -> Option<Element<'_, QuickLaunchEvent>> {
     let edit = props.state.inline_edit.as_ref()?;
     if matches!(
         &edit.kind,
@@ -267,8 +263,8 @@ fn inline_edit_root(
 
 fn inline_edit_after<'a>(
     props: Props<'a>,
-    context: &TreeRowContext<'a, QuickCommandNode>,
-) -> Option<Element<'a, QuickCommandsEvent>> {
+    context: &TreeRowContext<'a, QuickLaunchNode>,
+) -> Option<Element<'a, QuickLaunchEvent>> {
     let edit = props.state.inline_edit.as_ref()?;
 
     match &edit.kind {
@@ -286,7 +282,7 @@ fn inline_edit_after<'a>(
 
 fn is_rename_edit(
     props: Props<'_>,
-    context: &TreeRowContext<'_, QuickCommandNode>,
+    context: &TreeRowContext<'_, QuickLaunchNode>,
 ) -> bool {
     matches!(props.state.inline_edit.as_ref(), Some(edit)
         if matches!(&edit.kind, InlineEditKind::Rename { path } if path == &context.entry.path))
@@ -295,7 +291,7 @@ fn is_rename_edit(
 fn tree_row_style(
     props: Props<'_>,
     palette: &IcedColorPalette,
-    context: &TreeRowContext<'_, QuickCommandNode>,
+    context: &TreeRowContext<'_, QuickLaunchNode>,
 ) -> iced::widget::container::Style {
     let is_drop_target = props
         .state
@@ -333,14 +329,14 @@ fn command_icon<'a>(
     palette: &IcedColorPalette,
     launched_at: Option<Instant>,
     blink_nonce: u64,
-) -> Element<'a, QuickCommandsEvent> {
+) -> Element<'a, QuickLaunchEvent> {
     let show = launched_at
         .map(|start| start.elapsed())
         .filter(|elapsed| *elapsed >= LAUNCH_ICON_DELAY)
         .is_some();
 
     let color = if show {
-        let blink_step = (blink_nonce as u128 * QUICK_COMMANDS_TICK_MS as u128)
+        let blink_step = (blink_nonce as u128 * QUICK_LAUNCHES_TICK_MS as u128)
             / LAUNCH_ICON_BLINK_MS;
         let blink_on = blink_step.is_multiple_of(2);
         if blink_on {
@@ -358,7 +354,7 @@ fn command_icon<'a>(
 fn svg_icon<'a>(
     icon: &'static [u8],
     color: Color,
-) -> Element<'a, QuickCommandsEvent> {
+) -> Element<'a, QuickLaunchEvent> {
     let handle = svg::Handle::from_memory(icon);
     let svg_icon = svg::Svg::new(handle)
         .width(Length::Fixed(TREE_ICON_WIDTH))
@@ -380,26 +376,26 @@ fn is_prefix(prefix: &[String], path: &[String]) -> bool {
     prefix.iter().zip(path.iter()).all(|(a, b)| a == b)
 }
 
-impl TreeNode for QuickCommandNode {
+impl TreeNode for QuickLaunchNode {
     fn title(&self) -> &str {
-        QuickCommandNode::title(self)
+        QuickLaunchNode::title(self)
     }
 
     fn children(&self) -> Option<&[Self]> {
         match self {
-            QuickCommandNode::Folder(folder) => Some(&folder.children),
-            QuickCommandNode::Command(_) => None,
+            QuickLaunchNode::Folder(folder) => Some(&folder.children),
+            QuickLaunchNode::Command(_) => None,
         }
     }
 
     fn expanded(&self) -> bool {
         match self {
-            QuickCommandNode::Folder(folder) => folder.expanded,
-            QuickCommandNode::Command(_) => false,
+            QuickLaunchNode::Folder(folder) => folder.expanded,
+            QuickLaunchNode::Command(_) => false,
         }
     }
 
     fn is_folder(&self) -> bool {
-        QuickCommandNode::is_folder(self)
+        QuickLaunchNode::is_folder(self)
     }
 }

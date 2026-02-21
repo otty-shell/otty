@@ -2,11 +2,11 @@ use iced::widget::{Column, container, mouse_area};
 use iced::{Element, Length, Size, alignment};
 use std::collections::HashMap;
 
-use crate::features::quick_commands::event::{
-    ContextMenuAction, QuickCommandsEvent,
+use crate::features::quick_launches::event::{
+    ContextMenuAction, QuickLaunchEvent,
 };
-use crate::features::quick_commands::model::NodePath;
-use crate::features::quick_commands::state::{
+use crate::features::quick_launches::model::NodePath;
+use crate::features::quick_launches::state::{
     ContextMenuState, ContextMenuTarget, LaunchInfo,
 };
 use crate::theme::ThemeProps;
@@ -23,7 +23,7 @@ const MENU_VERTICAL_PADDING: f32 = 16.0;
 const MENU_MARGIN: f32 = 6.0;
 const MENU_CONTAINER_PADDING_X: f32 = 8.0;
 
-/// Props for rendering the quick commands context menu.
+/// Props for rendering the quick launches context menu.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Props<'a> {
     pub(crate) menu: &'a ContextMenuState,
@@ -32,8 +32,8 @@ pub(crate) struct Props<'a> {
     pub(crate) launching: &'a HashMap<NodePath, LaunchInfo>,
 }
 
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
-    let mut items: Vec<Element<'a, QuickCommandsEvent>> = Vec::new();
+pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickLaunchEvent> {
+    let mut items: Vec<Element<'a, QuickLaunchEvent>> = Vec::new();
 
     match &props.menu.target {
         ContextMenuTarget::Command(path) => {
@@ -69,7 +69,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
                 ContextMenuAction::CreateFolder,
             ));
             items.push(menu_item(
-                "Create command",
+                "Create launch",
                 props.theme,
                 ContextMenuAction::CreateCommand,
             ));
@@ -91,7 +91,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
                 ContextMenuAction::CreateFolder,
             ));
             items.push(menu_item(
-                "Create command",
+                "Create launch",
                 props.theme,
                 ContextMenuAction::CreateCommand,
             ));
@@ -141,9 +141,9 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickCommandsEvent> {
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(QuickCommandsEvent::ContextMenuDismiss)
-    .on_right_press(QuickCommandsEvent::ContextMenuDismiss)
-    .on_move(|position| QuickCommandsEvent::CursorMoved { position });
+    .on_press(QuickLaunchEvent::ContextMenuDismiss)
+    .on_right_press(QuickLaunchEvent::ContextMenuDismiss)
+    .on_move(|position| QuickLaunchEvent::CursorMoved { position });
 
     iced::widget::stack!(dismiss_layer, positioned_menu)
         .width(Length::Fill)
@@ -155,9 +155,9 @@ fn menu_item<'a>(
     label: &'a str,
     theme: ThemeProps<'a>,
     action: ContextMenuAction,
-) -> Element<'a, QuickCommandsEvent> {
+) -> Element<'a, QuickLaunchEvent> {
     let props = MenuItemProps { label, theme };
     MenuItem::new(props).view().map(move |event| match event {
-        MenuItemEvent::Pressed => QuickCommandsEvent::ContextMenuAction(action),
+        MenuItemEvent::Pressed => QuickLaunchEvent::ContextMenuAction(action),
     })
 }

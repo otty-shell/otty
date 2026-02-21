@@ -1,12 +1,12 @@
 use thiserror::Error;
 
-use super::model::QuickCommandFolder;
-use super::state::QuickCommandsState;
-use super::storage::QuickCommandsError;
+use super::model::QuickLaunchFolder;
+use super::state::QuickLaunchesState;
+use super::storage::QuickLaunchesError;
 
-/// Errors returned while validating quick command titles.
+/// Errors returned while validating quick launch titles.
 #[derive(Debug, Error)]
-pub(crate) enum QuickCommandTitleError {
+pub(crate) enum QuickLaunchTitleError {
     #[error("Title cannot be empty.")]
     Empty,
     #[error("Title already exists in this folder.")]
@@ -15,12 +15,12 @@ pub(crate) enum QuickCommandTitleError {
 
 pub(crate) fn normalize_title(
     raw: &str,
-    parent: &QuickCommandFolder,
+    parent: &QuickLaunchFolder,
     current: Option<&str>,
-) -> Result<String, QuickCommandTitleError> {
+) -> Result<String, QuickLaunchTitleError> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return Err(QuickCommandTitleError::Empty);
+        return Err(QuickLaunchTitleError::Empty);
     }
 
     let conflicts = match current {
@@ -28,15 +28,15 @@ pub(crate) fn normalize_title(
         None => parent.contains_title(trimmed),
     };
     if conflicts {
-        return Err(QuickCommandTitleError::Duplicate);
+        return Err(QuickLaunchTitleError::Duplicate);
     }
 
     Ok(trimmed.to_string())
 }
 
 pub(crate) fn persist_dirty(
-    state: &mut QuickCommandsState,
-) -> Result<(), QuickCommandsError> {
+    state: &mut QuickLaunchesState,
+) -> Result<(), QuickLaunchesError> {
     state.mark_dirty();
     state.persist()
 }
