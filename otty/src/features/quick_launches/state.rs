@@ -4,10 +4,9 @@ use std::time::Instant;
 
 use iced::Point;
 
+use super::errors::QuickLaunchError;
 use super::model::{NodePath, QuickLaunchFile};
-use super::storage::{
-    QuickLaunchError, load_quick_launches, save_quick_launches,
-};
+use super::storage::{load_quick_launches, save_quick_launches};
 
 /// Target location for quick launch context menus.
 #[derive(Debug, Clone)]

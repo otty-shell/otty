@@ -24,7 +24,7 @@ use crate::features::terminal::event::{
 use crate::features::terminal::term::{TerminalKind, TerminalState};
 use crate::state::State;
 
-use super::domain;
+use super::errors::QuickLaunchError;
 use super::model::{
     CommandSpec, CustomCommand, EnvVar, NodePath, QuickLaunch,
     QuickLaunchFolder, QuickLaunchNode, SshCommand,
@@ -58,7 +58,7 @@ pub(crate) const QUICK_LAUNCHES_TICK_MS: u64 = 200;
 const QUICK_LAUNCH_SSH_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
-pub(crate) struct QuickLaunchContext {
+pub(crate) struct PreparedQuickLaunch {
     pub(crate) path: NodePath,
     pub(crate) launch_id: u64,
     pub(crate) tab_id: u64,
@@ -68,9 +68,9 @@ pub(crate) struct QuickLaunchContext {
     pub(crate) command: Box<QuickLaunch>,
 }
 
-impl fmt::Debug for QuickLaunchContext {
+impl fmt::Debug for PreparedQuickLaunch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("QuickLaunchContext")
+        f.debug_struct("PreparedQuickLaunch")
             .field("path", &self.path)
             .field("launch_id", &self.launch_id)
             .field("tab_id", &self.tab_id)
@@ -78,6 +78,22 @@ impl fmt::Debug for QuickLaunchContext {
             .field("title", &self.title)
             .finish()
     }
+}
+
+/// Outcome of quick launch setup completion.
+#[derive(Debug, Clone)]
+pub(crate) enum QuickLaunchSetupOutcome {
+    Prepared(PreparedQuickLaunch),
+    Failed {
+        path: NodePath,
+        launch_id: u64,
+        command: Box<QuickLaunch>,
+        error: Arc<QuickLaunchError>,
+    },
+    Canceled {
+        path: NodePath,
+        launch_id: u64,
+    },
 }
 
 /// Actions that can be triggered from the context menu.
@@ -230,11 +246,43 @@ pub(crate) fn quick_launches_reducer(
     }
 }
 
-pub(crate) fn handle_quick_launch(
+pub(crate) fn handle_quick_launch_setup_completed(
     state: &mut State,
-    launch: QuickLaunchContext,
+    outcome: QuickLaunchSetupOutcome,
 ) -> Task<AppEvent> {
-    let QuickLaunchContext {
+    match outcome {
+        QuickLaunchSetupOutcome::Prepared(launch) => {
+            handle_prepared_quick_launch(state, launch)
+        },
+        QuickLaunchSetupOutcome::Failed {
+            path,
+            launch_id,
+            command,
+            error,
+        } => {
+            if should_skip_launch_result(state, &path, launch_id) {
+                return Task::none();
+            }
+
+            let command_title = &command.title;
+            open_error_tab(
+                state,
+                format!("Failed to launch \"{command_title}\""),
+                quick_launch_error_message(&command, error.as_ref()),
+            )
+        },
+        QuickLaunchSetupOutcome::Canceled { path, launch_id } => {
+            let _ = should_skip_launch_result(state, &path, launch_id);
+            Task::none()
+        },
+    }
+}
+
+fn handle_prepared_quick_launch(
+    state: &mut State,
+    launch: PreparedQuickLaunch,
+) -> Task<AppEvent> {
+    let PreparedQuickLaunch {
         path,
         launch_id,
         tab_id,
@@ -265,6 +313,7 @@ pub(crate) fn handle_quick_launch(
             );
         },
     };
+
     let insert_task =
         insert_terminal_tab(state, tab_id, terminal, focus_task, false);
     let focus_active_task = focus_active_terminal(state);
@@ -434,7 +483,7 @@ fn apply_inline_edit(state: &mut State) {
             else {
                 return;
             };
-            match domain::normalize_title(&edit.value, parent, None) {
+            match parent.normalize_title(&edit.value, None) {
                 Ok(title) => {
                     parent.children.push(QuickLaunchNode::Folder(
                         QuickLaunchFolder {
@@ -462,11 +511,7 @@ fn apply_inline_edit(state: &mut State) {
                 return;
             };
             let current_title = path.last().cloned().unwrap_or_default();
-            match domain::normalize_title(
-                &edit.value,
-                parent,
-                Some(&current_title),
-            ) {
+            match parent.normalize_title(&edit.value, Some(&current_title)) {
                 Ok(title) => {
                     let mut renamed_path = path.clone();
                     if let Some(last) = renamed_path.last_mut() {
@@ -818,7 +863,8 @@ fn duplicate_title(parent: &QuickLaunchFolder, title: &str) -> String {
 }
 
 fn persist_quick_launches(state: &mut State) {
-    if let Err(err) = domain::persist_dirty(&mut state.quick_launches) {
+    state.quick_launches.mark_dirty();
+    if let Err(err) = state.quick_launches.persist() {
         log::warn!("quick launches save failed: {err}");
     }
 }
@@ -831,18 +877,6 @@ fn launch_quick_launch(
 ) -> Task<AppEvent> {
     if state.quick_launches.launching.contains_key(&path) {
         return Task::none();
-    }
-
-    if let Some(validation_error) = validate_quick_launch(&command) {
-        let command_title = &command.title;
-        return open_error_tab(
-            state,
-            format!("Failed to launch \"{command_title}\""),
-            quick_launch_error_message(
-                &command,
-                &format!("Validation failed: {validation_error}"),
-            ),
-        );
     }
 
     let launch_id = state.quick_launches.next_launch_id;
@@ -863,24 +897,64 @@ fn launch_quick_launch(
     let terminal_id = state.next_terminal_id;
     state.next_terminal_id += 1;
 
+    Task::perform(
+        prepare_quick_launch_setup(
+            command,
+            path,
+            launch_id,
+            tab_id,
+            terminal_id,
+            terminal_settings.clone(),
+            cancel,
+        ),
+        |outcome| AppEvent::QuickLaunchSetupCompleted(Box::new(outcome)),
+    )
+}
+
+async fn prepare_quick_launch_setup(
+    command: QuickLaunch,
+    path: NodePath,
+    launch_id: u64,
+    tab_id: u64,
+    terminal_id: u64,
+    terminal_settings: Settings,
+    cancel: Arc<AtomicBool>,
+) -> QuickLaunchSetupOutcome {
+    if cancel.load(Ordering::Relaxed) {
+        return QuickLaunchSetupOutcome::Canceled { path, launch_id };
+    }
+
+    if let Some(validation_error) = validate_quick_launch(&command) {
+        return QuickLaunchSetupOutcome::Failed {
+            path,
+            launch_id,
+            command: Box::new(command),
+            error: Arc::new(QuickLaunchError::Validation {
+                message: validation_error,
+            }),
+        };
+    }
+
+    // Keep setup in an async pipeline so remote preflight can be added here.
+    std::future::ready(()).await;
+
     let session = command_session(&command, &cancel);
-    let settings = settings_for_session(terminal_settings, session);
+    let settings = settings_for_session(&terminal_settings, session);
     let title = command.title.clone();
 
-    Task::perform(
-        async move {
-            QuickLaunchContext {
-                path,
-                launch_id,
-                tab_id,
-                terminal_id,
-                title,
-                settings: Box::new(settings),
-                command: Box::new(command),
-            }
-        },
-        |result| AppEvent::QuickLaunchFinished(Box::new(result)),
-    )
+    if cancel.load(Ordering::Relaxed) {
+        return QuickLaunchSetupOutcome::Canceled { path, launch_id };
+    }
+
+    QuickLaunchSetupOutcome::Prepared(PreparedQuickLaunch {
+        path,
+        launch_id,
+        tab_id,
+        terminal_id,
+        title,
+        settings: Box::new(settings),
+        command: Box::new(command),
+    })
 }
 
 fn should_skip_launch_result(
@@ -1051,7 +1125,10 @@ fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
-fn quick_launch_error_message(command: &QuickLaunch, err: &str) -> String {
+fn quick_launch_error_message(
+    command: &QuickLaunch,
+    err: &dyn fmt::Display,
+) -> String {
     match &command.spec {
         CommandSpec::Custom { custom } => {
             let program = custom.program.as_str();

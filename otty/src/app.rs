@@ -60,7 +60,7 @@ pub(crate) enum Event {
         event: QuickLaunchEditorEvent,
     },
     Settings(settings::SettingsEvent),
-    QuickLaunchFinished(Box<quick_launches::QuickLaunchContext>),
+    QuickLaunchSetupCompleted(Box<quick_launches::QuickLaunchSetupOutcome>),
     QuickLaunchTick,
     Keyboard(iced::keyboard::Event),
     Window(window::Event),
@@ -207,8 +207,11 @@ impl App {
                 &self.shell_session,
                 event,
             ),
-            QuickLaunchFinished(result) => {
-                quick_launches::handle_quick_launch(&mut self.state, *result)
+            QuickLaunchSetupCompleted(result) => {
+                quick_launches::handle_quick_launch_setup_completed(
+                    &mut self.state,
+                    *result,
+                )
             },
             QuickLaunchTick => {
                 if self.state.quick_launches.launching.is_empty() {
@@ -837,7 +840,7 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
             quick_launches::QuickLaunchEvent::ContextMenuAction(_)
             | quick_launches::QuickLaunchEvent::ContextMenuDismiss,
         ))
-        | Event::QuickLaunchFinished(_)
+        | Event::QuickLaunchSetupCompleted(_)
         | Event::QuickLaunchTick => Allow,
         Event::Terminal { event, .. } => match event {
             TerminalEvent::CloseContextMenu
@@ -881,7 +884,7 @@ fn should_cancel_inline_edit(event: &Event) -> bool {
                 | QuickLaunchEvent::CursorMoved { .. }
                 | QuickLaunchEvent::NodeHovered { .. }
         ),
-        Event::QuickLaunchTick | Event::QuickLaunchFinished(_) => false,
+        Event::QuickLaunchTick | Event::QuickLaunchSetupCompleted(_) => false,
         Event::SidebarWorkspace(
             sidebar_workspace::Event::WorkspaceCursorMoved { .. },
         ) => false,

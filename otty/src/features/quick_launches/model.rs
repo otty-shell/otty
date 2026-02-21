@@ -2,6 +2,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use super::errors::QuickLaunchError;
+
 /// Current quick launches schema version.
 pub(crate) const QUICK_LAUNCHES_VERSION: u8 = 1;
 
@@ -132,6 +134,30 @@ impl QuickLaunchFolder {
 
     pub(crate) fn contains_title(&self, title: &str) -> bool {
         self.child(title).is_some()
+    }
+
+    /// Validate and normalize a title for this folder scope.
+    pub(crate) fn normalize_title(
+        &self,
+        raw: &str,
+        current: Option<&str>,
+    ) -> Result<String, QuickLaunchError> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(QuickLaunchError::TitleEmpty);
+        }
+
+        let conflicts = match current {
+            Some(existing) => {
+                trimmed != existing && self.contains_title(trimmed)
+            },
+            None => self.contains_title(trimmed),
+        };
+        if conflicts {
+            return Err(QuickLaunchError::TitleDuplicate);
+        }
+
+        Ok(trimmed.to_string())
     }
 
     pub(crate) fn remove_child(

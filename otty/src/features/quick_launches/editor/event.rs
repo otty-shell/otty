@@ -1,7 +1,6 @@
 use iced::Task;
 
 use crate::app::Event as AppEvent;
-use crate::features::quick_launches::domain;
 use crate::features::quick_launches::model::{
     CommandSpec, CustomCommand, EnvVar, NodePath, QuickLaunch,
     QuickLaunchFolder, QuickLaunchNode, QuickLaunchType, SSH_DEFAULT_PORT,
@@ -361,13 +360,15 @@ fn validate_unique_title(
     title: &str,
     current: Option<&str>,
 ) -> Result<(), String> {
-    domain::normalize_title(title, parent, current)
+    parent
+        .normalize_title(title, current)
         .map(|_| ())
         .map_err(|err| format!("{err}"))
 }
 
 fn persist_quick_launches(state: &mut State) -> Result<(), String> {
-    if let Err(err) = domain::persist_dirty(&mut state.quick_launches) {
+    state.quick_launches.mark_dirty();
+    if let Err(err) = state.quick_launches.persist() {
         log::warn!("quick launches save failed: {err}");
         return Err(format!("{err}"));
     }

@@ -1,18 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use thiserror::Error;
-
+use super::errors::QuickLaunchError;
 use super::model::QuickLaunchFile;
-
-/// Errors emitted while reading or writing quick launch storage.
-#[derive(Debug, Error)]
-pub(crate) enum QuickLaunchError {
-    #[error("quick launches IO failed")]
-    Io(#[from] std::io::Error),
-    #[error("quick launches JSON failed")]
-    Json(#[from] serde_json::Error),
-}
 
 pub(crate) fn load_quick_launches()
 -> Result<Option<QuickLaunchFile>, QuickLaunchError> {
