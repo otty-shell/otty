@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
-use super::errors::ShellError;
+use super::error::TerminalError;
+use super::model::ShellSession;
 
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
 
@@ -13,17 +14,10 @@ const OTTY_ZSH_SCRIPT: &str =
 const OTTY_BASH_SCRIPT: &str =
     include_str!("../../../../assets/shell-integrations/otty.bash");
 
-/// Shell session information needed to start a terminal backend.
-#[derive(Debug, Clone)]
-pub(crate) struct ShellSession {
-    pub name: String,
-    pub session: SessionKind,
-}
-
 /// Build a shell session configured with OTTY integrations for a given shell.
 pub(crate) fn setup_shell_session_with_shell(
     shell_path: &str,
-) -> Result<ShellSession, ShellError> {
+) -> Result<ShellSession, TerminalError> {
     let shell_name = shell_name(shell_path);
 
     let dir = config_dir();

@@ -3,7 +3,7 @@ use iced::widget::{Column, Id, container, mouse_area};
 use iced::{Background, Element, Length, alignment};
 
 use crate::features::terminal::event::TerminalEvent;
-use crate::features::terminal::pane_context_menu::PaneContextMenuState;
+use crate::features::terminal::state::PaneContextMenuState;
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
     MenuItem, MenuItemEvent, MenuItemProps,

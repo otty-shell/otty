@@ -1,38 +1,48 @@
 use std::collections::HashMap;
 
-use iced::{Point, Size, Task, widget::pane_grid};
+use iced::{Point, Size, Task, widget::Id, widget::pane_grid};
 use otty_ui_term::{
     BlockCommand, SurfaceMode, TerminalView,
     settings::{Settings, ThemeSettings},
 };
 
-use crate::{
-    app::Event as AppEvent, features::tab::TabEvent,
-    features::terminal::pane_context_menu::PaneContextMenuState,
-};
+use crate::{app::Event as AppEvent, features::tab::TabEvent};
 
-use super::errors::TerminalError;
+use super::error::TerminalError;
+use super::model::{BlockSelection, TerminalEntry, TerminalKind};
 
-/// Terminal entry used by the tab view.
-pub(crate) struct TerminalEntry {
+/// State for a pane context menu.
+#[derive(Debug, Clone)]
+pub(crate) struct PaneContextMenuState {
     pub(crate) pane: pane_grid::Pane,
-    pub(crate) terminal: otty_ui_term::Terminal,
-    pub(crate) title: String,
+    pub(crate) cursor: Point,
+    pub(crate) grid_size: Size,
+    pub(crate) terminal_id: u64,
+    pub(crate) focus_target: Id,
 }
 
-/// Terminal context determining whether shell metadata is available.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TerminalKind {
-    Shell,
-    Command,
+impl PaneContextMenuState {
+    pub fn new(
+        pane: pane_grid::Pane,
+        cursor: Point,
+        grid_size: Size,
+        terminal_id: u64,
+    ) -> Self {
+        Self {
+            pane,
+            cursor,
+            grid_size,
+            terminal_id,
+            focus_target: Id::unique(),
+        }
+    }
+
+    pub fn focus_task<Message: 'static>(&self) -> Task<Message> {
+        iced::widget::operation::focus(self.focus_target.clone())
+    }
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct BlockSelection {
-    pub terminal_id: u64,
-    pub block_id: String,
-}
-
+/// Runtime state for a terminal tab with pane management and selection.
 pub(crate) struct TerminalState {
     tab_id: u64,
     title: String,

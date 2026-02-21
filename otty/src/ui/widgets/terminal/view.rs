@@ -6,7 +6,7 @@ use iced::{Border, Element, Length, Theme};
 use otty_ui_term::TerminalView;
 
 use crate::features::terminal::event::TerminalEvent;
-use crate::features::terminal::term::TerminalEntry;
+use crate::features::terminal::model::TerminalEntry;
 
 const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_RESIZE_GRAB: f32 = 12.0;

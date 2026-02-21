@@ -5,11 +5,9 @@ use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 use otty_ui_tree::TreePath;
 
 use crate::app::Event as AppEvent;
-use crate::features::tab::TabContent;
-use crate::features::terminal::event::{
-    insert_terminal_tab, settings_for_session,
-};
-use crate::features::terminal::term::{TerminalKind, TerminalState};
+use crate::features::tab::{TabContent, TabEvent, TabOpenRequest};
+use crate::features::terminal::event::settings_for_session;
+use crate::features::terminal::state::TerminalState;
 use crate::state::State;
 
 use super::errors::EditorCommandParseError;
@@ -121,21 +119,14 @@ fn open_file_in_editor(
         .map(ToString::to_string)
         .unwrap_or_else(|| format!("{file_display}"));
 
-    let (tab, focus_task) = match TerminalState::new(
-        tab_id,
-        title.clone(),
-        terminal_id,
-        settings,
-        TerminalKind::Command,
-    ) {
-        Ok(result) => result,
-        Err(err) => {
-            log::warn!("editor tab init failed: {err}");
-            return Task::none();
+    Task::done(AppEvent::Tab(TabEvent::NewTab {
+        request: TabOpenRequest::CommandTerminal {
+            tab_id,
+            terminal_id,
+            title,
+            settings: Box::new(settings),
         },
-    };
-
-    insert_terminal_tab(state, tab_id, tab, focus_task, false)
+    }))
 }
 
 #[derive(Debug, Clone, Copy)]

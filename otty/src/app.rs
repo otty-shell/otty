@@ -17,11 +17,11 @@ use crate::features::quick_launches::editor::{
 };
 use crate::features::quick_launches::event as quick_launches;
 use crate::features::settings;
-use crate::features::tab::{TabContent, TabEvent, TabKind, tab_reducer};
+use crate::features::tab::{TabContent, TabEvent, TabOpenRequest, tab_reducer};
 use crate::features::terminal::event::{TerminalEvent, terminal_tab_reducer};
+use crate::features::terminal::model::ShellSession;
 use crate::features::terminal::shell::{
-    ShellSession, fallback_shell_session_with_shell,
-    setup_shell_session_with_shell,
+    fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
 use crate::fonts::FontsConfig;
 use crate::state::{
@@ -195,7 +195,7 @@ impl App {
                 &self.terminal_settings,
                 &self.shell_session,
                 TabEvent::NewTab {
-                    kind: TabKind::Terminal,
+                    request: TabOpenRequest::Terminal,
                 },
             ),
             ActionBar(event) => self.handle_action_bar(event),
@@ -536,7 +536,7 @@ impl App {
                 &self.terminal_settings,
                 &self.shell_session,
                 TabEvent::NewTab {
-                    kind: TabKind::Settings,
+                    request: TabOpenRequest::Settings,
                 },
             ),
             sidebar::Event::ToggleWorkspace => {
@@ -574,7 +574,7 @@ impl App {
                         &self.terminal_settings,
                         &self.shell_session,
                         TabEvent::NewTab {
-                            kind: TabKind::Terminal,
+                            request: TabOpenRequest::Terminal,
                         },
                     ),
                     sidebar_workspace::AddMenuAction::CreateCommand => {

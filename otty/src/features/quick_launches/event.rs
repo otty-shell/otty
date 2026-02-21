@@ -14,20 +14,14 @@ use otty_ui_term::settings::{
 };
 
 use crate::app::Event as AppEvent;
-use crate::features::quick_launches::editor::{
-    open_create_editor_tab, open_edit_editor_tab,
-};
-use crate::features::tab::{QuickLaunchErrorState, TabContent, TabItem};
-use crate::features::terminal::event::{
-    focus_active_terminal, insert_terminal_tab, settings_for_session,
-};
-use crate::features::terminal::term::{TerminalKind, TerminalState};
+use crate::features::tab::{TabEvent, TabOpenRequest};
+use crate::features::terminal::event::settings_for_session;
 use crate::state::State;
 
 use super::errors::QuickLaunchError;
 use super::model::{
     CommandSpec, CustomCommand, EnvVar, NodePath, QuickLaunch,
-    QuickLaunchFolder, QuickLaunchNode, SshCommand,
+    QuickLaunchFolder, QuickLaunchNode, SshCommand, quick_launch_error_message,
 };
 use super::state::{
     ContextMenuState, ContextMenuTarget, DragState, DropTarget, InlineEditKind,
@@ -265,8 +259,7 @@ pub(crate) fn handle_quick_launch_setup_completed(
             }
 
             let command_title = &command.title;
-            open_error_tab(
-                state,
+            request_open_error_tab(
                 format!("Failed to launch \"{command_title}\""),
                 quick_launch_error_message(&command, error.as_ref()),
             )
@@ -296,28 +289,15 @@ fn handle_prepared_quick_launch(
         return Task::none();
     }
 
-    let (terminal, focus_task) = match TerminalState::new(
-        tab_id,
-        title,
-        terminal_id,
-        *settings,
-        TerminalKind::Command,
-    ) {
-        Ok(result) => result,
-        Err(err) => {
-            let command_title = &command.title;
-            return open_error_tab(
-                state,
-                format!("Failed to launch \"{command_title}\""),
-                quick_launch_error_message(&command, &err),
-            );
+    Task::done(AppEvent::Tab(TabEvent::NewTab {
+        request: TabOpenRequest::QuickLaunchCommandTerminal {
+            tab_id,
+            terminal_id,
+            title,
+            settings,
+            command,
         },
-    };
-
-    let insert_task =
-        insert_terminal_tab(state, tab_id, terminal, focus_task, false);
-    let focus_active_task = focus_active_terminal(state);
-    Task::batch(vec![insert_task, focus_active_task])
+    }))
 }
 
 fn handle_node_left_click(
@@ -1125,64 +1105,6 @@ fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
-fn quick_launch_error_message(
-    command: &QuickLaunch,
-    err: &dyn fmt::Display,
-) -> String {
-    match &command.spec {
-        CommandSpec::Custom { custom } => {
-            let program = custom.program.as_str();
-            let args = if custom.args.is_empty() {
-                String::from("<none>")
-            } else {
-                custom.args.join(" ")
-            };
-            let cwd = custom
-                .working_directory
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or("<default>");
-            let env = if custom.env.is_empty() {
-                String::from("<none>")
-            } else {
-                custom
-                    .env
-                    .iter()
-                    .map(|entry| format!("{}={}", entry.key, entry.value))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
-
-            format!(
-                "Type: Custom\nProgram: {program}\nArgs: {args}\nWorking dir: {cwd}\nEnv: {env}\nError: {err}"
-            )
-        },
-        CommandSpec::Ssh { ssh } => {
-            let host = ssh.host.as_str();
-            let port = ssh.port;
-            let user = ssh
-                .user
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or("<default>");
-            let identity = ssh
-                .identity_file
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or("<default>");
-            let extra_args = if ssh.extra_args.is_empty() {
-                String::from("<none>")
-            } else {
-                ssh.extra_args.join(" ")
-            };
-
-            format!(
-                "Type: SSH\nHost: {host}\nPort: {port}\nUser: {user}\nIdentity file: {identity}\nExtra args: {extra_args}\nError: {err}"
-            )
-        },
-    }
-}
-
 fn custom_session(custom: &CustomCommand) -> LocalSessionOptions {
     let mut options = LocalSessionOptions::default()
         .with_program(&custom.program)
@@ -1235,10 +1157,14 @@ fn ssh_session(
 }
 
 fn open_create_command_tab(
-    state: &mut State,
+    _state: &mut State,
     parent: NodePath,
 ) -> Task<AppEvent> {
-    open_create_editor_tab(state, parent)
+    Task::done(AppEvent::Tab(TabEvent::NewTab {
+        request: TabOpenRequest::QuickLaunchEditorCreate {
+            parent_path: parent,
+        },
+    }))
 }
 
 fn open_edit_command_tab(state: &mut State, path: NodePath) -> Task<AppEvent> {
@@ -1249,29 +1175,16 @@ fn open_edit_command_tab(state: &mut State, path: NodePath) -> Task<AppEvent> {
         return Task::none();
     };
 
-    open_edit_editor_tab(state, path, &command)
+    Task::done(AppEvent::Tab(TabEvent::NewTab {
+        request: TabOpenRequest::QuickLaunchEditorEdit {
+            path,
+            command: Box::new(command),
+        },
+    }))
 }
 
-fn open_error_tab(
-    state: &mut State,
-    title: String,
-    message: String,
-) -> Task<AppEvent> {
-    let tab_id = state.next_tab_id;
-    state.next_tab_id += 1;
-
-    state.tab_items.insert(
-        tab_id,
-        TabItem {
-            id: tab_id,
-            title: title.clone(),
-            content: TabContent::QuickLaunchError(QuickLaunchErrorState {
-                title,
-                message,
-            }),
-        },
-    );
-    state.active_tab_id = Some(tab_id);
-
-    Task::none()
+fn request_open_error_tab(title: String, message: String) -> Task<AppEvent> {
+    Task::done(AppEvent::Tab(TabEvent::NewTab {
+        request: TabOpenRequest::QuickLaunchError { title, message },
+    }))
 }

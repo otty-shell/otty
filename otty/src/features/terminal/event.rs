@@ -7,8 +7,7 @@ use crate::features::explorer;
 use crate::features::tab::{TabContent, TabItem};
 use crate::state::State;
 
-use super::shell::ShellSession;
-use super::term::{TerminalKind, TerminalState};
+use super::state::TerminalState;
 
 /// Events emitted by the terminal tab view and routed into the terminal reducer.
 #[derive(Debug, Clone)]
@@ -165,36 +164,6 @@ pub(crate) fn internal_widget_event_reducer(
     update
 }
 
-pub(crate) fn create_terminal_tab(
-    state: &mut State,
-    terminal_settings: &Settings,
-    shell_session: &ShellSession,
-) -> Task<AppEvent> {
-    let tab_id = state.next_tab_id;
-    state.next_tab_id += 1;
-
-    let terminal_id = state.next_terminal_id;
-    state.next_terminal_id += 1;
-
-    let settings =
-        settings_for_session(terminal_settings, shell_session.session.clone());
-    let (tab, focus_task) = match TerminalState::new(
-        tab_id,
-        shell_session.name.clone(),
-        terminal_id,
-        settings,
-        TerminalKind::Shell,
-    ) {
-        Ok(result) => result,
-        Err(err) => {
-            log::warn!("failed to create terminal tab: {err}");
-            return Task::none();
-        },
-    };
-
-    insert_terminal_tab(state, tab_id, tab, focus_task, true)
-}
-
 pub(crate) fn insert_terminal_tab(
     state: &mut State,
     tab_id: u64,
@@ -240,9 +209,7 @@ pub(crate) fn focus_active_terminal(state: &State) -> Task<AppEvent> {
                 None => Task::none(),
             }
         },
-        TabContent::Settings
-        | TabContent::QuickLaunchEditor(_)
-        | TabContent::QuickLaunchError(_) => Task::none(),
+        _ => Task::none(),
     }
 }
 

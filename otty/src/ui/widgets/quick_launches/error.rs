@@ -2,7 +2,7 @@ use iced::alignment;
 use iced::widget::{column, container, text};
 use iced::{Element, Length};
 
-use crate::features::tab::QuickLaunchErrorState;
+use crate::features::quick_launches::QuickLaunchErrorState;
 use crate::theme::ThemeProps;
 
 /// Props for rendering a quick launch error tab.

@@ -2,40 +2,12 @@ pub(crate) mod errors;
 mod model;
 mod storage;
 
-use iced::Task;
-
-use crate::app::Event as AppEvent;
-use crate::features::explorer;
-use crate::features::tab::{TabContent, TabItem};
-use crate::state::State;
-
 use model::is_hex_color_prefix;
 use storage::{SettingsLoadStatus, load_settings, save_settings};
 
 pub(crate) use errors::SettingsError;
 pub(crate) use model::is_valid_hex_color;
 pub(crate) use model::{SettingsData, default_palette, palette_label};
-
-/// Create and activate a settings tab, reloading settings from storage first.
-pub(crate) fn create_settings_tab(state: &mut State) -> Task<AppEvent> {
-    let tab_id = state.next_tab_id;
-    state.next_tab_id += 1;
-
-    state.settings.reload();
-
-    state.tab_items.insert(
-        tab_id,
-        TabItem {
-            id: tab_id,
-            title: String::from("Settings"),
-            content: TabContent::Settings,
-        },
-    );
-    state.active_tab_id = Some(tab_id);
-    explorer::event::sync_explorer_from_active_terminal(state);
-
-    Task::none()
-}
 
 /// Top-level settings pages shown in the settings tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -252,3 +252,62 @@ pub(crate) struct SshCommand {
 fn default_ssh_port() -> u16 {
     SSH_DEFAULT_PORT
 }
+
+/// Build a detailed error message for a failed quick launch execution.
+pub(crate) fn quick_launch_error_message(
+    command: &QuickLaunch,
+    err: &dyn fmt::Display,
+) -> String {
+    match &command.spec {
+        CommandSpec::Custom { custom } => {
+            let program = custom.program.as_str();
+            let args = if custom.args.is_empty() {
+                String::from("<none>")
+            } else {
+                custom.args.join(" ")
+            };
+            let cwd = custom
+                .working_directory
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("<default>");
+            let env = if custom.env.is_empty() {
+                String::from("<none>")
+            } else {
+                custom
+                    .env
+                    .iter()
+                    .map(|entry| format!("{}={}", entry.key, entry.value))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+
+            format!(
+                "Type: Custom\nProgram: {program}\nArgs: {args}\nWorking dir: {cwd}\nEnv: {env}\nError: {err}"
+            )
+        },
+        CommandSpec::Ssh { ssh } => {
+            let host = ssh.host.as_str();
+            let port = ssh.port;
+            let user = ssh
+                .user
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("<default>");
+            let identity = ssh
+                .identity_file
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("<default>");
+            let extra_args = if ssh.extra_args.is_empty() {
+                String::from("<none>")
+            } else {
+                ssh.extra_args.join(" ")
+            };
+
+            format!(
+                "Type: SSH\nHost: {host}\nPort: {port}\nUser: {user}\nIdentity file: {identity}\nExtra args: {extra_args}\nError: {err}"
+            )
+        },
+    }
+}

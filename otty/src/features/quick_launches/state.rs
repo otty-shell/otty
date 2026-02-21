@@ -8,6 +8,13 @@ use super::errors::QuickLaunchError;
 use super::model::{NodePath, QuickLaunchFile};
 use super::storage::{load_quick_launches, save_quick_launches};
 
+/// Snapshot of a failed quick launch.
+#[derive(Debug, Clone)]
+pub(crate) struct QuickLaunchErrorState {
+    pub(crate) title: String,
+    pub(crate) message: String,
+}
+
 /// Target location for quick launch context menus.
 #[derive(Debug, Clone)]
 pub(crate) enum ContextMenuTarget {
