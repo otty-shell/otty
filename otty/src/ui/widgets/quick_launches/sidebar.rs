@@ -12,7 +12,7 @@ use crate::features::quick_launches::event::{
 };
 use crate::features::quick_launches::model::QuickLaunchNode;
 use crate::features::quick_launches::state::{
-    DropTarget, InlineEditKind, InlineEditState, QuickLaunchesState,
+    DropTarget, InlineEditKind, InlineEditState, QuickLaunchState,
 };
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
@@ -39,7 +39,7 @@ const INPUT_FONT_SIZE: f32 = 12.0;
 /// Props for rendering quick launches in the terminal sidebar.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Props<'a> {
-    pub(crate) state: &'a QuickLaunchesState,
+    pub(crate) state: &'a QuickLaunchState,
     pub(crate) theme: ThemeProps<'a>,
 }
 

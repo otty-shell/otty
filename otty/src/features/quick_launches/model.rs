@@ -30,12 +30,12 @@ impl fmt::Display for QuickLaunchType {
 
 /// Root payload persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct QuickLaunchesFile {
+pub(crate) struct QuickLaunchFile {
     pub(crate) version: u8,
     pub(crate) root: QuickLaunchFolder,
 }
 
-impl QuickLaunchesFile {
+impl QuickLaunchFile {
     pub(crate) fn empty() -> Self {
         Self {
             version: QUICK_LAUNCHES_VERSION,

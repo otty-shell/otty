@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use super::model::QuickLaunchesFile;
+use super::model::QuickLaunchFile;
 
 /// Errors emitted while reading or writing quick launch storage.
 #[derive(Debug, Error)]
-pub(crate) enum QuickLaunchesError {
+pub(crate) enum QuickLaunchError {
     #[error("quick launches IO failed")]
     Io(#[from] std::io::Error),
     #[error("quick launches JSON failed")]
@@ -15,7 +15,7 @@ pub(crate) enum QuickLaunchesError {
 }
 
 pub(crate) fn load_quick_launches()
--> Result<Option<QuickLaunchesFile>, QuickLaunchesError> {
+-> Result<Option<QuickLaunchFile>, QuickLaunchError> {
     let path = quick_launches_path();
     let data = match fs::read_to_string(&path) {
         Ok(contents) => contents,
@@ -30,8 +30,8 @@ pub(crate) fn load_quick_launches()
 }
 
 pub(crate) fn save_quick_launches(
-    data: &QuickLaunchesFile,
-) -> Result<(), QuickLaunchesError> {
+    data: &QuickLaunchFile,
+) -> Result<(), QuickLaunchError> {
     let path = quick_launches_path();
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;

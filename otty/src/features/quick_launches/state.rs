@@ -4,9 +4,9 @@ use std::time::Instant;
 
 use iced::Point;
 
-use super::model::{NodePath, QuickLaunchesFile};
+use super::model::{NodePath, QuickLaunchFile};
 use super::storage::{
-    QuickLaunchesError, load_quick_launches, save_quick_launches,
+    QuickLaunchError, load_quick_launches, save_quick_launches,
 };
 
 /// Target location for quick launch context menus.
@@ -42,8 +42,8 @@ pub(crate) struct InlineEditState {
 
 /// Workspace state for saved quick launches and their UI.
 #[derive(Debug)]
-pub(crate) struct QuickLaunchesState {
-    pub(crate) data: QuickLaunchesFile,
+pub(crate) struct QuickLaunchState {
+    pub(crate) data: QuickLaunchFile,
     pub(crate) dirty: bool,
     pub(crate) selected: Option<NodePath>,
     pub(crate) hovered: Option<NodePath>,
@@ -67,7 +67,7 @@ pub(crate) struct LaunchInfo {
     pub(crate) cancel: Arc<AtomicBool>,
 }
 
-impl QuickLaunchesState {
+impl QuickLaunchState {
     pub(crate) fn load() -> Self {
         match load_quick_launches() {
             Ok(Some(data)) => Self {
@@ -94,7 +94,7 @@ impl QuickLaunchesState {
         }
     }
 
-    pub(crate) fn persist(&mut self) -> Result<(), QuickLaunchesError> {
+    pub(crate) fn persist(&mut self) -> Result<(), QuickLaunchError> {
         save_quick_launches(&self.data)?;
         self.dirty = false;
         Ok(())
@@ -105,10 +105,10 @@ impl QuickLaunchesState {
     }
 }
 
-impl Default for QuickLaunchesState {
+impl Default for QuickLaunchState {
     fn default() -> Self {
         Self {
-            data: QuickLaunchesFile::empty(),
+            data: QuickLaunchFile::empty(),
             dirty: false,
             selected: None,
             hovered: None,

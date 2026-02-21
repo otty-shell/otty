@@ -16,7 +16,7 @@ pub(crate) enum Event {
     TerminalAddMenuDismiss,
     TerminalAddMenuAction(AddMenuAction),
     WorkspaceCursorMoved { position: Point },
-    QuickLaunches(QuickLaunchEvent),
+    QuickLaunch(QuickLaunchEvent),
     Explorer(ExplorerEvent),
 }
 

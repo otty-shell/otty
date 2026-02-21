@@ -61,7 +61,7 @@ pub(crate) enum Event {
     },
     Settings(settings::SettingsEvent),
     QuickLaunchFinished(Box<quick_launches::QuickLaunchContext>),
-    QuickLaunchesTick,
+    QuickLaunchTick,
     Keyboard(iced::keyboard::Event),
     Window(window::Event),
     ResizeWindow(Direction),
@@ -154,7 +154,7 @@ impl App {
                 iced::time::every(Duration::from_millis(
                     quick_launches::QUICK_LAUNCHES_TICK_MS,
                 ))
-                .map(|_| Event::QuickLaunchesTick),
+                .map(|_| Event::QuickLaunchTick),
             );
         }
 
@@ -210,7 +210,7 @@ impl App {
             QuickLaunchFinished(result) => {
                 quick_launches::handle_quick_launch(&mut self.state, *result)
             },
-            QuickLaunchesTick => {
+            QuickLaunchTick => {
                 if self.state.quick_launches.launching.is_empty() {
                     return Task::none();
                 }
@@ -594,7 +594,7 @@ impl App {
                 self.state.sidebar.cursor = position;
                 Task::none()
             },
-            sidebar_workspace::Event::QuickLaunches(event) => {
+            sidebar_workspace::Event::QuickLaunch(event) => {
                 quick_launches::quick_launches_reducer(
                     &mut self.state,
                     &self.terminal_settings,
@@ -787,7 +787,7 @@ impl App {
                 )
                 .map(|event| {
                     Event::SidebarWorkspace(
-                        sidebar_workspace::Event::QuickLaunches(event),
+                        sidebar_workspace::Event::QuickLaunch(event),
                     )
                 }),
             );
@@ -833,12 +833,12 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
             sidebar_workspace::Event::TerminalAddMenuAction(_)
             | sidebar_workspace::Event::TerminalAddMenuDismiss,
         )
-        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunches(
+        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunch(
             quick_launches::QuickLaunchEvent::ContextMenuAction(_)
             | quick_launches::QuickLaunchEvent::ContextMenuDismiss,
         ))
         | Event::QuickLaunchFinished(_)
-        | Event::QuickLaunchesTick => Allow,
+        | Event::QuickLaunchTick => Allow,
         Event::Terminal { event, .. } => match event {
             TerminalEvent::CloseContextMenu
             | TerminalEvent::CopySelection { .. }
@@ -855,10 +855,10 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
         Event::SidebarWorkspace(
             sidebar_workspace::Event::WorkspaceCursorMoved { .. },
         )
-        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunches(
+        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunch(
             quick_launches::QuickLaunchEvent::CursorMoved { .. },
         )) => Allow,
-        Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunches(
+        Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunch(
             quick_launches::QuickLaunchEvent::NodeHovered { .. },
         )) => Ignore,
         Event::ActionBar(_) => Allow,
@@ -872,7 +872,7 @@ fn should_cancel_inline_edit(event: &Event) -> bool {
     use quick_launches::QuickLaunchEvent;
 
     match event {
-        Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunches(
+        Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunch(
             quick_launches_event,
         )) => !matches!(
             quick_launches_event,
@@ -881,7 +881,7 @@ fn should_cancel_inline_edit(event: &Event) -> bool {
                 | QuickLaunchEvent::CursorMoved { .. }
                 | QuickLaunchEvent::NodeHovered { .. }
         ),
-        Event::QuickLaunchesTick | Event::QuickLaunchFinished(_) => false,
+        Event::QuickLaunchTick | Event::QuickLaunchFinished(_) => false,
         Event::SidebarWorkspace(
             sidebar_workspace::Event::WorkspaceCursorMoved { .. },
         ) => false,

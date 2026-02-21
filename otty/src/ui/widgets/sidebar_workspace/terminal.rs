@@ -3,7 +3,7 @@ use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, text};
 use iced::{Element, Length, Theme};
 
-use crate::features::quick_launches::state::QuickLaunchesState;
+use crate::features::quick_launches::state::QuickLaunchState;
 use crate::icons;
 use crate::theme::ThemeProps;
 use crate::ui::components::icon_button::{
@@ -23,7 +23,7 @@ const WORKSPACE_ADD_ICON_SIZE: f32 = 16.0;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Props<'a> {
     pub(crate) theme: ThemeProps<'a>,
-    pub(crate) quick_launches: &'a QuickLaunchesState,
+    pub(crate) quick_launches: &'a QuickLaunchState,
 }
 
 pub(crate) fn view<'a>(
@@ -65,7 +65,7 @@ pub(crate) fn view<'a>(
             state: props.quick_launches,
             theme: props.theme,
         })
-        .map(super::Event::QuickLaunches);
+        .map(super::Event::QuickLaunch);
 
     let content = column![header, quick_launches]
         .spacing(10)

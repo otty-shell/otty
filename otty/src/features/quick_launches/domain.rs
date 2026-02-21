@@ -1,8 +1,8 @@
 use thiserror::Error;
 
 use super::model::QuickLaunchFolder;
-use super::state::QuickLaunchesState;
-use super::storage::QuickLaunchesError;
+use super::state::QuickLaunchState;
+use super::storage::QuickLaunchError;
 
 /// Errors returned while validating quick launch titles.
 #[derive(Debug, Error)]
@@ -35,8 +35,8 @@ pub(crate) fn normalize_title(
 }
 
 pub(crate) fn persist_dirty(
-    state: &mut QuickLaunchesState,
-) -> Result<(), QuickLaunchesError> {
+    state: &mut QuickLaunchState,
+) -> Result<(), QuickLaunchError> {
     state.mark_dirty();
     state.persist()
 }
