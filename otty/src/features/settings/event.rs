@@ -5,10 +5,10 @@ use crate::state::State;
 
 use super::errors::SettingsError;
 use super::model::SettingsData;
-use super::state::{SettingsPreset, SettingsState};
-use super::storage::{
-    SettingsLoad, SettingsLoadStatus, load_settings, save_settings,
-};
+use super::state::{SettingsPreset, SettingsState, read_settings_payload};
+#[cfg(test)]
+use super::storage::SettingsLoadStatus;
+use super::storage::{SettingsLoad, load_settings, save_settings};
 
 /// UI and internal events handled by the settings feature reducer.
 #[derive(Debug, Clone)]
@@ -22,23 +22,6 @@ pub(crate) enum SettingsEvent {
     EditorChanged(String),
     PaletteChanged { index: usize, value: String },
     ApplyPreset(SettingsPreset),
-}
-
-/// Load settings state from persistence with graceful fallback to defaults.
-pub(crate) fn load_settings_state() -> SettingsState {
-    match load_settings() {
-        Ok(load) => {
-            let (settings, status) = load.into_parts();
-            if let SettingsLoadStatus::Invalid(message) = &status {
-                log::warn!("settings file invalid: {message}");
-            }
-            SettingsState::from_settings(settings)
-        },
-        Err(err) => {
-            log::warn!("settings load failed: {err}");
-            SettingsState::default()
-        },
-    }
 }
 
 /// Primary reducer entrypoint for settings events.
@@ -91,17 +74,8 @@ fn reload_settings_state<Load>(
 where
     Load: Fn() -> Result<SettingsLoad, SettingsError>,
 {
-    match load() {
-        Ok(load) => {
-            let (settings, status) = load.into_parts();
-            if let SettingsLoadStatus::Invalid(message) = &status {
-                log::warn!("settings file invalid: {message}");
-            }
-            state.replace_with_settings(settings);
-        },
-        Err(err) => {
-            log::warn!("settings reload failed: {err}");
-        },
+    if let Some(settings) = read_settings_payload(load) {
+        state.replace_with_settings(settings);
     }
 
     Task::none()

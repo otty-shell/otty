@@ -1,6 +1,8 @@
+use super::errors::SettingsError;
 use super::model::{
     SettingsData, default_palette, is_hex_color_prefix, is_valid_hex_color,
 };
+use super::storage::{SettingsLoad, SettingsLoadStatus, load_settings};
 
 /// Top-level settings pages shown in the settings tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,6 +110,12 @@ pub(crate) struct SettingsState {
 }
 
 impl SettingsState {
+    /// Load settings state from persistence with graceful fallback to defaults.
+    pub(crate) fn load() -> Self {
+        let settings = read_settings_payload(load_settings).unwrap_or_default();
+        Self::from_settings(settings)
+    }
+
     /// Return persisted settings currently used as dirty baseline.
     #[cfg(test)]
     pub(crate) fn baseline(&self) -> &SettingsData {
@@ -260,6 +268,27 @@ impl SettingsState {
 impl Default for SettingsState {
     fn default() -> Self {
         Self::from_settings(SettingsData::default())
+    }
+}
+
+/// Read settings payload from storage and log non-fatal diagnostics.
+pub(super) fn read_settings_payload<Load>(load: Load) -> Option<SettingsData>
+where
+    Load: Fn() -> Result<SettingsLoad, SettingsError>,
+{
+    match load() {
+        Ok(load) => {
+            let (settings, status) = load.into_parts();
+            if let SettingsLoadStatus::Invalid(message) = &status {
+                log::warn!("settings file invalid: {message}");
+            }
+
+            Some(settings)
+        },
+        Err(err) => {
+            log::warn!("settings read failed: {err}");
+            None
+        },
     }
 }
 
