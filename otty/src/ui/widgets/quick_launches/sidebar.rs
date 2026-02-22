@@ -301,7 +301,7 @@ fn tree_row_style(
             DropTarget::Folder(path) => {
                 Some(is_prefix(path, &context.entry.path))
             },
-            DropTarget::Root => None,
+            _ => None,
         })
         .unwrap_or(false);
 
@@ -384,14 +384,14 @@ impl TreeNode for QuickLaunchNode {
     fn children(&self) -> Option<&[Self]> {
         match self {
             QuickLaunchNode::Folder(folder) => Some(&folder.children),
-            QuickLaunchNode::Command(_) => None,
+            _ => None,
         }
     }
 
     fn expanded(&self) -> bool {
         match self {
             QuickLaunchNode::Folder(folder) => folder.expanded,
-            QuickLaunchNode::Command(_) => false,
+            _ => false,
         }
     }
 

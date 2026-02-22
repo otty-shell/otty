@@ -5,8 +5,7 @@ use iced::widget::{Stack, container, mouse_area, text};
 use iced::{Border, Element, Length, Theme};
 use otty_ui_term::TerminalView;
 
-use crate::features::terminal::event::TerminalEvent;
-use crate::features::terminal::model::TerminalEntry;
+use crate::features::terminal::{TerminalEntry, TerminalEvent};
 
 const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_RESIZE_GRAB: f32 = 12.0;
@@ -16,19 +15,21 @@ const PANE_BORDER_WIDTH: f32 = 1.0;
 /// Props for rendering a terminal tab.
 #[derive(Clone, Copy)]
 pub(crate) struct Props<'a> {
+    pub(crate) tab_id: u64,
     pub(crate) panes: &'a pane_grid::State<u64>,
     pub(crate) terminals: &'a HashMap<u64, TerminalEntry>,
     pub(crate) focus: Option<pane_grid::Pane>,
 }
 
 pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
+    let tab_id = props.tab_id;
     let focus = props.focus;
     let terminals = props.terminals;
 
     let pane_grid = PaneGrid::new(props.panes, move |pane, terminal_id, _| {
         let is_focused = focus == Some(pane);
         let content =
-            view_single_pane(pane, *terminal_id, terminals, is_focused);
+            view_single_pane(tab_id, pane, *terminal_id, terminals, is_focused);
 
         pane_grid::Content::new(content)
     })
@@ -55,8 +56,8 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
             },
         }
     })
-    .on_resize(PANE_RESIZE_GRAB, |event| TerminalEvent::PaneResized {
-        event,
+    .on_resize(PANE_RESIZE_GRAB, move |event| {
+        TerminalEvent::PaneResized { tab_id, event }
     });
 
     let pane_grid = container(pane_grid)
@@ -79,11 +80,15 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         .height(Length::Fill);
 
     mouse_area(stack_widget)
-        .on_move(|position| TerminalEvent::PaneGridCursorMoved { position })
+        .on_move(move |position| TerminalEvent::PaneGridCursorMoved {
+            tab_id,
+            position,
+        })
         .into()
 }
 
 fn view_single_pane<'a>(
+    tab_id: u64,
     pane: pane_grid::Pane,
     terminal_id: u64,
     terminals: &'a HashMap<u64, TerminalEntry>,
@@ -97,13 +102,17 @@ fn view_single_pane<'a>(
             .into();
     };
 
-    let focus_event = TerminalEvent::PaneClicked { pane };
+    let focus_event = TerminalEvent::PaneClicked { tab_id, pane };
 
-    let terminal_view = TerminalView::show(&terminal_entry.terminal)
-        .map(TerminalEvent::ProxyToInternalWidget);
+    let terminal_view =
+        TerminalView::show(&terminal_entry.terminal).map(TerminalEvent::Widget);
     let terminal_area = mouse_area(terminal_view)
         .on_press(focus_event)
-        .on_right_press(TerminalEvent::OpenContextMenu { pane, terminal_id })
+        .on_right_press(TerminalEvent::OpenContextMenu {
+            tab_id,
+            pane,
+            terminal_id,
+        })
         .into();
 
     let mut stack_widget = Stack::with_children(vec![terminal_area]);

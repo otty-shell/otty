@@ -8,9 +8,9 @@ use crate::features::quick_launches::editor::{
 };
 use crate::features::quick_launches::model::quick_launch_error_message;
 use crate::features::settings;
-use crate::features::terminal::event as terminal;
-use crate::features::terminal::model::{ShellSession, TerminalKind};
-use crate::features::terminal::state::TerminalState;
+use crate::features::terminal::{
+    self, ShellSession, TerminalEvent, TerminalKind,
+};
 use crate::state::State;
 
 use super::model::{TabContent, TabItem, TabOpenRequest};
@@ -107,25 +107,22 @@ fn open_shell_terminal_tab(
     let terminal_id = state.next_terminal_id;
     state.next_terminal_id += 1;
 
-    let settings = terminal::settings_for_session(
+    let settings = settings_for_session(
         terminal_settings,
-        shell_session.session.clone(),
+        shell_session.session().clone(),
     );
-    let (terminal, focus_task) = match TerminalState::new(
-        tab_id,
-        shell_session.name.clone(),
-        terminal_id,
-        settings,
-        TerminalKind::Shell,
-    ) {
-        Ok(result) => result,
-        Err(err) => {
-            log::warn!("failed to create terminal tab: {err}");
-            return Task::none();
+    terminal::terminal_reducer(
+        state,
+        TerminalEvent::InsertTab {
+            tab_id,
+            terminal_id,
+            default_title: shell_session.name().to_string(),
+            settings: Box::new(settings),
+            kind: TerminalKind::Shell,
+            sync_explorer: true,
+            error_tab: None,
         },
-    };
-
-    terminal::insert_terminal_tab(state, tab_id, terminal, focus_task, true)
+    )
 }
 
 fn close_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {
@@ -157,9 +154,13 @@ fn close_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {
         state.active_tab_id = next_active;
     }
 
-    let focus_task = terminal::focus_active_terminal(state);
+    let focus_task =
+        terminal::terminal_reducer(state, TerminalEvent::FocusActive);
     let sync_task = if let Some(active_id) = state.active_tab_id {
-        terminal::sync_tab_block_selection(state, active_id)
+        terminal::terminal_reducer(
+            state,
+            TerminalEvent::SyncSelection { tab_id: active_id },
+        )
     } else {
         Task::none()
     };
@@ -174,8 +175,12 @@ fn activate_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {
     }
 
     state.active_tab_id = Some(tab_id);
-    let focus_task = terminal::focus_active_terminal(state);
-    let sync_task = terminal::sync_tab_block_selection(state, tab_id);
+    let focus_task =
+        terminal::terminal_reducer(state, TerminalEvent::FocusActive);
+    let sync_task = terminal::terminal_reducer(
+        state,
+        TerminalEvent::SyncSelection { tab_id },
+    );
     explorer::event::sync_explorer_from_active_terminal(state);
 
     Task::batch(vec![focus_task, sync_task])
@@ -215,28 +220,29 @@ fn open_quick_launch_command_terminal_tab(
     settings: Settings,
     command: Box<crate::features::quick_launches::model::QuickLaunch>,
 ) -> Task<AppEvent> {
-    let (terminal, focus_task) = match TerminalState::new(
-        tab_id,
-        title,
-        terminal_id,
-        settings,
-        TerminalKind::Command,
-    ) {
-        Ok(result) => result,
-        Err(err) => {
-            let command_title = &command.title;
-            return open_quick_launch_error_tab(
-                state,
-                format!("Failed to launch \"{command_title}\""),
-                quick_launch_error_message(&command, &err),
-            );
-        },
-    };
-
-    let insert_task = terminal::insert_terminal_tab(
-        state, tab_id, terminal, focus_task, false,
+    let command_title = &command.title;
+    let init_error_message = quick_launch_error_message(
+        &command,
+        &"terminal tab initialization failed",
     );
-    let focus_active_task = terminal::focus_active_terminal(state);
+
+    let insert_task = terminal::terminal_reducer(
+        state,
+        TerminalEvent::InsertTab {
+            tab_id,
+            terminal_id,
+            default_title: title,
+            settings: Box::new(settings),
+            kind: TerminalKind::Command,
+            sync_explorer: false,
+            error_tab: Some((
+                format!("Failed to launch \"{command_title}\""),
+                init_error_message,
+            )),
+        },
+    );
+    let focus_active_task =
+        terminal::terminal_reducer(state, TerminalEvent::FocusActive);
     Task::batch(vec![insert_task, focus_active_task])
 }
 
@@ -247,19 +253,25 @@ fn open_command_terminal_tab(
     title: String,
     settings: Settings,
 ) -> Task<AppEvent> {
-    let (terminal, focus_task) = match TerminalState::new(
-        tab_id,
-        title,
-        terminal_id,
-        settings,
-        TerminalKind::Command,
-    ) {
-        Ok(result) => result,
-        Err(err) => {
-            log::warn!("command terminal tab init failed: {err}");
-            return Task::none();
+    terminal::terminal_reducer(
+        state,
+        TerminalEvent::InsertTab {
+            tab_id,
+            terminal_id,
+            default_title: title,
+            settings: Box::new(settings),
+            kind: TerminalKind::Command,
+            sync_explorer: false,
+            error_tab: None,
         },
-    };
+    )
+}
 
-    terminal::insert_terminal_tab(state, tab_id, terminal, focus_task, false)
+fn settings_for_session(
+    base_settings: &Settings,
+    session: otty_ui_term::settings::SessionKind,
+) -> Settings {
+    let mut settings = base_settings.clone();
+    settings.backend = settings.backend.clone().with_session(session);
+    settings
 }

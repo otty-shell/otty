@@ -1,9 +1,9 @@
+use iced::widget::pane_grid;
 use iced::widget::text_input;
 use iced::widget::{Column, Id, container, mouse_area};
-use iced::{Background, Element, Length, alignment};
+use iced::{Background, Element, Length, Point, Size, alignment};
 
-use crate::features::terminal::event::TerminalEvent;
-use crate::features::terminal::state::PaneContextMenuState;
+use crate::features::terminal::TerminalEvent;
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
     MenuItem, MenuItemEvent, MenuItemProps,
@@ -19,28 +19,35 @@ const MENU_MARGIN: f32 = 6.0;
 const MENU_CONTAINER_PADDING_X: f32 = 10.0;
 
 /// Props for rendering a pane context menu.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct Props<'a> {
-    pub(crate) menu: &'a PaneContextMenuState,
+    pub(crate) tab_id: u64,
+    pub(crate) pane: pane_grid::Pane,
+    pub(crate) cursor: Point,
+    pub(crate) grid_size: Size,
+    pub(crate) terminal_id: u64,
+    pub(crate) focus_target: Id,
     pub(crate) has_block_selection: bool,
     pub(crate) theme: ThemeProps<'a>,
 }
 
-pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
+pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
     let mut buttons: Vec<Element<'a, TerminalEvent>> = Vec::new();
 
     buttons.push(menu_item(
         "Copy selection",
         props.theme,
         TerminalEvent::CopySelection {
-            terminal_id: props.menu.terminal_id,
+            tab_id: props.tab_id,
+            terminal_id: props.terminal_id,
         },
     ));
     buttons.push(menu_item(
         "Paste",
         props.theme,
         TerminalEvent::PasteIntoPrompt {
-            terminal_id: props.menu.terminal_id,
+            tab_id: props.tab_id,
+            terminal_id: props.terminal_id,
         },
     ));
 
@@ -49,21 +56,24 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
             "Copy content",
             props.theme,
             TerminalEvent::CopySelectedBlockContent {
-                terminal_id: props.menu.terminal_id,
+                tab_id: props.tab_id,
+                terminal_id: props.terminal_id,
             },
         ));
         buttons.push(menu_item(
             "Copy prompt",
             props.theme,
             TerminalEvent::CopySelectedBlockPrompt {
-                terminal_id: props.menu.terminal_id,
+                tab_id: props.tab_id,
+                terminal_id: props.terminal_id,
             },
         ));
         buttons.push(menu_item(
             "Copy command",
             props.theme,
             TerminalEvent::CopySelectedBlockCommand {
-                terminal_id: props.menu.terminal_id,
+                tab_id: props.tab_id,
+                terminal_id: props.terminal_id,
             },
         ));
     }
@@ -72,7 +82,8 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         "Split horizontally",
         props.theme,
         TerminalEvent::SplitPane {
-            pane: props.menu.pane,
+            tab_id: props.tab_id,
+            pane: props.pane,
             axis: iced::widget::pane_grid::Axis::Horizontal,
         },
     ));
@@ -80,7 +91,8 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         "Split vertically",
         props.theme,
         TerminalEvent::SplitPane {
-            pane: props.menu.pane,
+            tab_id: props.tab_id,
+            pane: props.pane,
             axis: iced::widget::pane_grid::Axis::Vertical,
         },
     ));
@@ -88,7 +100,8 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         "Close",
         props.theme,
         TerminalEvent::ClosePane {
-            pane: props.menu.pane,
+            tab_id: props.tab_id,
+            pane: props.pane,
         },
     ));
 
@@ -106,8 +119,8 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         .align_x(alignment::Horizontal::Left);
 
     let anchor = anchor_position(
-        props.menu.cursor,
-        props.menu.grid_size,
+        props.cursor,
+        props.grid_size,
         MENU_CONTAINER_WIDTH,
         menu_height,
         MENU_MARGIN,
@@ -136,14 +149,21 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(TerminalEvent::CloseContextMenu)
-    .on_right_press(TerminalEvent::CloseContextMenu)
-    .on_move(|position| TerminalEvent::PaneGridCursorMoved { position });
+    .on_press(TerminalEvent::CloseContextMenu {
+        tab_id: props.tab_id,
+    })
+    .on_right_press(TerminalEvent::CloseContextMenu {
+        tab_id: props.tab_id,
+    })
+    .on_move(move |position| TerminalEvent::PaneGridCursorMoved {
+        tab_id: props.tab_id,
+        position,
+    });
 
     iced::widget::stack!(
         dismiss_layer,
         positioned_menu,
-        focus_trap(props.menu.focus_target.clone())
+        focus_trap(props.tab_id, props.focus_target.clone())
     )
     .width(Length::Fill)
     .height(Length::Fill)
@@ -163,9 +183,9 @@ fn menu_item<'a>(
         })
 }
 
-fn focus_trap(id: Id) -> Element<'static, TerminalEvent> {
+fn focus_trap(tab_id: u64, id: Id) -> Element<'static, TerminalEvent> {
     text_input("", "")
-        .on_input(|_| TerminalEvent::ContextMenuInput)
+        .on_input(move |_| TerminalEvent::ContextMenuInput { tab_id })
         .padding(0)
         .size(1)
         .width(Length::Fixed(1.0))

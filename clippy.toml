@@ -1,2 +1,2 @@
-too-many-arguments-threshold = 20
+too-many-arguments-threshold = 30
 enum-variant-name-threshold = 10

@@ -15,7 +15,6 @@ use otty_ui_term::settings::{
 
 use crate::app::Event as AppEvent;
 use crate::features::tab::{TabEvent, TabOpenRequest};
-use crate::features::terminal::event::settings_for_session;
 use crate::state::State;
 
 use super::errors::QuickLaunchError;
@@ -969,6 +968,15 @@ fn command_session(
             SessionKind::from_ssh_options(ssh_session(ssh, cancel))
         },
     }
+}
+
+fn settings_for_session(
+    base_settings: &Settings,
+    session: SessionKind,
+) -> Settings {
+    let mut settings = base_settings.clone();
+    settings.backend = settings.backend.clone().with_session(session);
+    settings
 }
 
 fn validate_quick_launch(command: &QuickLaunch) -> Option<String> {

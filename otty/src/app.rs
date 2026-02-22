@@ -18,10 +18,9 @@ use crate::features::quick_launches::editor::{
 use crate::features::quick_launches::event as quick_launches;
 use crate::features::settings;
 use crate::features::tab::{TabContent, TabEvent, TabOpenRequest, tab_reducer};
-use crate::features::terminal::event::{TerminalEvent, terminal_tab_reducer};
-use crate::features::terminal::model::ShellSession;
-use crate::features::terminal::shell::{
-    fallback_shell_session_with_shell, setup_shell_session_with_shell,
+use crate::features::terminal::{
+    ShellSession, TerminalEvent, fallback_shell_session_with_shell,
+    setup_shell_session_with_shell, terminal_reducer,
 };
 use crate::fonts::FontsConfig;
 use crate::state::{
@@ -51,10 +50,7 @@ pub(crate) enum Event {
     Sidebar(sidebar::Event),
     SidebarWorkspace(sidebar_workspace::Event),
     Tab(TabEvent),
-    Terminal {
-        tab_id: u64,
-        event: TerminalEvent,
-    },
+    Terminal(TerminalEvent),
     QuickLaunchEditor {
         tab_id: u64,
         event: QuickLaunchEditorEvent,
@@ -134,9 +130,8 @@ impl App {
             if let TabContent::Terminal(terminal) = &tab.content {
                 for entry in terminal.terminals().values() {
                     let sub = entry.terminal.subscription().with(tab_id).map(
-                        |(tab_id, event)| Event::Terminal {
-                            tab_id,
-                            event: TerminalEvent::ProxyToInternalWidget(event),
+                        |(_tab_id, event)| {
+                            Event::Terminal(TerminalEvent::Widget(event))
                         },
                     );
                     subscriptions.push(sub);
@@ -222,9 +217,7 @@ impl App {
                     self.state.quick_launches.blink_nonce.wrapping_add(1);
                 Task::none()
             },
-            Terminal { tab_id, event } => {
-                terminal_tab_reducer(&mut self.state, tab_id, event)
-            },
+            Terminal(event) => terminal_reducer(&mut self.state, event),
             QuickLaunchEditor { tab_id, event } => {
                 quick_launch_editor_reducer(&mut self.state, tab_id, event)
             },
@@ -764,17 +757,22 @@ impl App {
                 if let Some(menu) = terminal.context_menu() {
                     let has_block_selection = terminal
                         .selected_block_terminal()
-                        == Some(menu.terminal_id);
+                        == Some(menu.terminal_id());
                     let tab_id = tab.id;
                     return Some(
                         crate::ui::widgets::terminal::pane_context_menu::view(
                             crate::ui::widgets::terminal::pane_context_menu::Props {
-                                menu,
+                                tab_id,
+                                pane: menu.pane(),
+                                cursor: menu.cursor(),
+                                grid_size: menu.grid_size(),
+                                terminal_id: menu.terminal_id(),
+                                focus_target: menu.focus_target().clone(),
                                 has_block_selection,
                                 theme,
                             },
                         )
-                        .map(move |event| Event::Terminal { tab_id, event }),
+                        .map(Event::Terminal),
                     );
                 }
             }
@@ -805,8 +803,8 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
         ))
         | Event::QuickLaunchSetupCompleted(_)
         | Event::QuickLaunchTick => Allow,
-        Event::Terminal { event, .. } => match event {
-            TerminalEvent::CloseContextMenu
+        Event::Terminal(event) => match event {
+            TerminalEvent::CloseContextMenu { .. }
             | TerminalEvent::CopySelection { .. }
             | TerminalEvent::PasteIntoPrompt { .. }
             | TerminalEvent::CopySelectedBlockContent { .. }
@@ -814,7 +812,7 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
             | TerminalEvent::CopySelectedBlockCommand { .. }
             | TerminalEvent::SplitPane { .. }
             | TerminalEvent::ClosePane { .. } => Allow,
-            TerminalEvent::ProxyToInternalWidget(_) => Allow,
+            TerminalEvent::Widget(_) => Allow,
             TerminalEvent::PaneGridCursorMoved { .. } => Allow,
             _ => Dismiss,
         },
@@ -851,9 +849,9 @@ fn should_cancel_inline_edit(event: &Event) -> bool {
         Event::SidebarWorkspace(
             sidebar_workspace::Event::WorkspaceCursorMoved { .. },
         ) => false,
-        Event::Terminal { event, .. } => !matches!(
+        Event::Terminal(event) => !matches!(
             event,
-            TerminalEvent::ProxyToInternalWidget(_)
+            TerminalEvent::Widget(_)
                 | TerminalEvent::PaneGridCursorMoved { .. }
         ),
         Event::Keyboard(_) | Event::Window(_) => false,

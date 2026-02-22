@@ -8,21 +8,21 @@ use otty_ui_term::{
 
 use crate::{app::Event as AppEvent, features::tab::TabEvent};
 
-use super::error::TerminalError;
+use super::errors::TerminalError;
 use super::model::{BlockSelection, TerminalEntry, TerminalKind};
 
 /// State for a pane context menu.
 #[derive(Debug, Clone)]
 pub(crate) struct PaneContextMenuState {
-    pub(crate) pane: pane_grid::Pane,
-    pub(crate) cursor: Point,
-    pub(crate) grid_size: Size,
-    pub(crate) terminal_id: u64,
-    pub(crate) focus_target: Id,
+    pane: pane_grid::Pane,
+    cursor: Point,
+    grid_size: Size,
+    terminal_id: u64,
+    focus_target: Id,
 }
 
 impl PaneContextMenuState {
-    pub fn new(
+    pub(crate) fn new(
         pane: pane_grid::Pane,
         cursor: Point,
         grid_size: Size,
@@ -37,8 +37,28 @@ impl PaneContextMenuState {
         }
     }
 
-    pub fn focus_task<Message: 'static>(&self) -> Task<Message> {
+    pub(crate) fn focus_task<Message: 'static>(&self) -> Task<Message> {
         iced::widget::operation::focus(self.focus_target.clone())
+    }
+
+    pub(crate) fn pane(&self) -> pane_grid::Pane {
+        self.pane
+    }
+
+    pub(crate) fn cursor(&self) -> Point {
+        self.cursor
+    }
+
+    pub(crate) fn grid_size(&self) -> Size {
+        self.grid_size
+    }
+
+    pub(crate) fn terminal_id(&self) -> u64 {
+        self.terminal_id
+    }
+
+    pub(crate) fn focus_target(&self) -> &Id {
+        &self.focus_target
     }
 }
 
@@ -59,7 +79,7 @@ pub(crate) struct TerminalState {
 }
 
 impl TerminalState {
-    pub fn new(
+    pub(crate) fn new(
         tab_id: u64,
         default_title: String,
         terminal_id: u64,
@@ -103,7 +123,7 @@ impl TerminalState {
         Ok((tab, TerminalView::focus(widget_id)))
     }
 
-    pub fn title(&self) -> &str {
+    pub(crate) fn title(&self) -> &str {
         &self.title
     }
 
@@ -112,78 +132,87 @@ impl TerminalState {
         matches!(self.kind, TerminalKind::Shell)
     }
 
-    pub fn panes(&self) -> &pane_grid::State<u64> {
+    pub(crate) fn panes(&self) -> &pane_grid::State<u64> {
         &self.panes
     }
 
-    pub fn terminals(&self) -> &HashMap<u64, TerminalEntry> {
+    pub(crate) fn terminals(&self) -> &HashMap<u64, TerminalEntry> {
         &self.terminals
     }
 
-    pub fn focus(&self) -> Option<pane_grid::Pane> {
+    pub(crate) fn focus(&self) -> Option<pane_grid::Pane> {
         self.focus
     }
 
-    pub fn context_menu(&self) -> Option<&PaneContextMenuState> {
+    pub(crate) fn context_menu(&self) -> Option<&PaneContextMenuState> {
         self.context_menu.as_ref()
     }
 
-    pub fn selected_block(&self) -> Option<&BlockSelection> {
+    pub(crate) fn selected_block(&self) -> Option<&BlockSelection> {
         self.selected_block.as_ref()
     }
 
-    pub fn contains_terminal(&self, id: u64) -> bool {
+    pub(crate) fn contains_terminal(&self, id: u64) -> bool {
         self.terminals.contains_key(&id)
     }
 
-    pub fn pane_terminal_id(&self, pane: pane_grid::Pane) -> Option<u64> {
+    pub(crate) fn pane_terminal_id(
+        &self,
+        pane: pane_grid::Pane,
+    ) -> Option<u64> {
         self.panes.get(pane).copied()
     }
 
-    pub fn focused_terminal_id(&self) -> Option<u64> {
+    pub(crate) fn focused_terminal_id(&self) -> Option<u64> {
         let pane = self.focus?;
         self.pane_terminal_id(pane)
     }
 
-    pub fn focused_terminal_entry(&self) -> Option<&TerminalEntry> {
+    pub(crate) fn focused_terminal_entry(&self) -> Option<&TerminalEntry> {
         let terminal_id = self.focused_terminal_id()?;
         self.terminals.get(&terminal_id)
     }
 
-    pub fn terminal_entry_mut(
+    pub(crate) fn terminal_entry_mut(
         &mut self,
         terminal_id: u64,
     ) -> Option<&mut TerminalEntry> {
         self.terminals.get_mut(&terminal_id)
     }
 
-    pub fn selected_block_terminal(&self) -> Option<u64> {
-        self.selected_block.as_ref().map(|sel| sel.terminal_id)
+    pub(crate) fn selected_block_terminal(&self) -> Option<u64> {
+        self.selected_block
+            .as_ref()
+            .map(BlockSelection::terminal_id)
     }
 
-    pub fn set_selected_block(&mut self, terminal_id: u64, block_id: String) {
-        self.selected_block = Some(BlockSelection {
-            terminal_id,
-            block_id,
-        });
+    pub(crate) fn set_selected_block(
+        &mut self,
+        terminal_id: u64,
+        block_id: String,
+    ) {
+        self.selected_block = Some(BlockSelection::new(terminal_id, block_id));
     }
 
-    pub fn clear_selected_block(&mut self) {
+    pub(crate) fn clear_selected_block(&mut self) {
         self.selected_block = None;
     }
 
-    pub fn clear_selected_block_for_terminal(&mut self, terminal_id: u64) {
+    pub(crate) fn clear_selected_block_for_terminal(
+        &mut self,
+        terminal_id: u64,
+    ) {
         if self
             .selected_block
             .as_ref()
-            .map(|sel| sel.terminal_id == terminal_id)
+            .map(|sel| sel.terminal_id() == terminal_id)
             .unwrap_or(false)
         {
             self.selected_block = None;
         }
     }
 
-    pub fn split_pane(
+    pub(crate) fn split_pane(
         &mut self,
         pane: pane_grid::Pane,
         axis: pane_grid::Axis,
@@ -223,7 +252,10 @@ impl TerminalState {
         Task::none()
     }
 
-    pub fn close_pane(&mut self, pane: pane_grid::Pane) -> Task<AppEvent> {
+    pub(crate) fn close_pane(
+        &mut self,
+        pane: pane_grid::Pane,
+    ) -> Task<AppEvent> {
         if self.panes.len() == 1 {
             return Task::done(AppEvent::Tab(TabEvent::CloseTab {
                 tab_id: self.tab_id,
@@ -254,7 +286,7 @@ impl TerminalState {
         Task::none()
     }
 
-    pub fn apply_theme(&mut self, palette: otty_ui_term::ColorPalette) {
+    pub(crate) fn apply_theme(&mut self, palette: otty_ui_term::ColorPalette) {
         self.terminal_settings.theme =
             ThemeSettings::new(Box::new(palette.clone()));
         for entry in self.terminals.values_mut() {
@@ -262,15 +294,18 @@ impl TerminalState {
         }
     }
 
-    pub fn focus_pane(&mut self, pane: pane_grid::Pane) -> Task<AppEvent> {
+    pub(crate) fn focus_pane(
+        &mut self,
+        pane: pane_grid::Pane,
+    ) -> Task<AppEvent> {
         self.set_focus_on_pane(pane, true, true)
     }
 
-    pub fn resize(&mut self, event: pane_grid::ResizeEvent) {
+    pub(crate) fn resize(&mut self, event: pane_grid::ResizeEvent) {
         self.panes.resize(event.split, event.ratio);
     }
 
-    pub fn open_context_menu(
+    pub(crate) fn open_context_menu(
         &mut self,
         pane: pane_grid::Pane,
         terminal_id: u64,
@@ -306,7 +341,7 @@ impl TerminalState {
         Task::batch(vec![focus_task, select_task, menu_focus_task])
     }
 
-    pub fn close_context_menu(&mut self) -> Task<AppEvent> {
+    pub(crate) fn close_context_menu(&mut self) -> Task<AppEvent> {
         if self.context_menu.take().is_some() {
             if let Some(pane) = self.focus {
                 return self.set_focus_on_pane(pane, false, true);
@@ -316,7 +351,7 @@ impl TerminalState {
         Task::none()
     }
 
-    pub fn handle_terminal_event(
+    pub(crate) fn handle_terminal_event(
         &mut self,
         event: otty_ui_term::Event,
     ) -> Task<AppEvent> {
@@ -358,12 +393,15 @@ impl TerminalState {
         Task::none()
     }
 
-    pub fn update_grid_cursor(&mut self, position: Point) -> Task<AppEvent> {
+    pub(crate) fn update_grid_cursor(
+        &mut self,
+        position: Point,
+    ) -> Task<AppEvent> {
         self.grid_cursor = Some(Self::clamp_point(position, self.grid_size));
         Task::none()
     }
 
-    pub fn set_grid_size(&mut self, size: Size) {
+    pub(crate) fn set_grid_size(&mut self, size: Size) {
         self.grid_size = size;
         if let Some(cursor) = self.grid_cursor {
             self.grid_cursor = Some(Self::clamp_point(cursor, size));
@@ -417,5 +455,234 @@ impl TerminalState {
             point.x.clamp(0.0, bounds.width.max(0.0)),
             point.y.clamp(0.0, bounds.height.max(0.0)),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::ExitStatus;
+
+    use iced::{Point, Size, widget::pane_grid};
+    use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
+
+    use super::{PaneContextMenuState, TerminalState};
+    use crate::features::terminal::model::TerminalKind;
+
+    #[cfg(unix)]
+    const TEST_SHELL_PATH: &str = "/bin/sh";
+    #[cfg(target_os = "windows")]
+    const TEST_SHELL_PATH: &str = "cmd.exe";
+
+    fn test_settings() -> Settings {
+        let mut settings = Settings::default();
+        settings.backend = settings.backend.clone().with_session(
+            SessionKind::from_local_options(
+                LocalSessionOptions::default().with_program(TEST_SHELL_PATH),
+            ),
+        );
+        settings
+    }
+
+    fn build_terminal_state(default_title: &str) -> TerminalState {
+        let (state, _task) = TerminalState::new(
+            1,
+            String::from(default_title),
+            10,
+            test_settings(),
+            TerminalKind::Shell,
+        )
+        .expect("terminal state should initialize");
+        state
+    }
+
+    fn success_exit_status() -> ExitStatus {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            ExitStatus::from_raw(0)
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::ExitStatusExt;
+            ExitStatus::from_raw(0)
+        }
+    }
+
+    #[test]
+    fn given_context_menu_state_when_accessors_called_then_values_match() {
+        let (_grid, pane) = pane_grid::State::new(1_u64);
+        let menu_state = PaneContextMenuState::new(
+            pane,
+            Point::new(20.0, 30.0),
+            Size::new(300.0, 200.0),
+            77,
+        );
+
+        assert_eq!(menu_state.pane(), pane);
+        assert_eq!(menu_state.cursor(), Point::new(20.0, 30.0));
+        assert_eq!(menu_state.grid_size(), Size::new(300.0, 200.0));
+        assert_eq!(menu_state.terminal_id(), 77);
+        let _task = menu_state.focus_task::<()>();
+        let _focus_target = menu_state.focus_target();
+    }
+
+    #[test]
+    fn given_new_state_when_constructed_then_initial_terminal_is_focused() {
+        let state = build_terminal_state("Shell");
+        let focused_pane = state.focus().expect("focused pane");
+        let focused_terminal_id =
+            state.pane_terminal_id(focused_pane).expect("terminal id");
+
+        assert_eq!(state.title(), "Shell");
+        assert!(state.is_shell());
+        assert_eq!(state.panes().len(), 1);
+        assert_eq!(state.terminals().len(), 1);
+        assert_eq!(focused_terminal_id, 10);
+        assert_eq!(state.focused_terminal_id(), Some(10));
+        assert!(state.context_menu().is_none());
+        assert!(state.selected_block().is_none());
+    }
+
+    #[test]
+    fn given_selected_block_when_cleared_for_matching_terminal_then_selection_removed()
+     {
+        let mut state = build_terminal_state("Shell");
+        state.set_selected_block(10, String::from("block-1"));
+
+        state.clear_selected_block_for_terminal(11);
+        assert_eq!(state.selected_block_terminal(), Some(10));
+
+        state.clear_selected_block_for_terminal(10);
+        assert!(state.selected_block().is_none());
+    }
+
+    #[test]
+    fn given_existing_pane_when_split_then_new_terminal_is_added_and_focused() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11);
+
+        assert_eq!(state.panes().len(), 2);
+        assert_eq!(state.terminals().len(), 2);
+        assert!(state.contains_terminal(11));
+        assert_eq!(state.focused_terminal_id(), Some(11));
+    }
+
+    #[test]
+    fn given_single_pane_when_close_requested_then_state_keeps_terminal() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+
+        let _task = state.close_pane(pane);
+
+        assert_eq!(state.panes().len(), 1);
+        assert_eq!(state.terminals().len(), 1);
+        assert_eq!(state.focus(), Some(pane));
+    }
+
+    #[test]
+    fn given_two_panes_when_focused_pane_closed_then_focus_moves_to_sibling() {
+        let mut state = build_terminal_state("Shell");
+        let initial_pane = state.focus().expect("focused pane");
+        let _task =
+            state.split_pane(initial_pane, pane_grid::Axis::Horizontal, 11);
+        let closing_pane = state.focus().expect("split pane should be focused");
+        state.set_selected_block(11, String::from("block-2"));
+
+        let _task = state.close_pane(closing_pane);
+
+        assert_eq!(state.panes().len(), 1);
+        assert_eq!(state.terminals().len(), 1);
+        assert!(!state.contains_terminal(11));
+        assert_eq!(state.focus(), Some(initial_pane));
+        assert!(state.selected_block().is_none());
+    }
+
+    #[test]
+    fn given_unknown_terminal_when_open_context_menu_then_state_is_unchanged() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+
+        let _task = state.open_context_menu(
+            pane,
+            999,
+            Point::new(10.0, 10.0),
+            Size::new(100.0, 100.0),
+        );
+
+        assert!(state.context_menu().is_none());
+        assert_eq!(state.focus(), Some(pane));
+    }
+
+    #[test]
+    fn given_valid_terminal_when_open_and_close_context_menu_then_menu_toggles()
+    {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+
+        let _task = state.open_context_menu(
+            pane,
+            10,
+            Point::new(15.0, 25.0),
+            Size::new(500.0, 300.0),
+        );
+
+        let menu_state = state.context_menu().expect("context menu state");
+        assert_eq!(menu_state.pane(), pane);
+        assert_eq!(menu_state.terminal_id(), 10);
+        assert_eq!(menu_state.cursor(), Point::new(15.0, 25.0));
+        assert_eq!(menu_state.grid_size(), Size::new(500.0, 300.0));
+
+        let _task = state.close_context_menu();
+        assert!(state.context_menu().is_none());
+        assert_eq!(state.focus(), Some(pane));
+    }
+
+    #[test]
+    fn given_title_events_when_handled_then_tab_title_updates_and_resets() {
+        let mut state = build_terminal_state("Shell");
+
+        let _task =
+            state.handle_terminal_event(otty_ui_term::Event::TitleChanged {
+                id: 10,
+                title: String::from("Renamed"),
+            });
+        assert_eq!(state.title(), "Renamed");
+
+        let _task = state
+            .handle_terminal_event(otty_ui_term::Event::ResetTitle { id: 10 });
+        assert_eq!(state.title(), "Shell");
+    }
+
+    #[test]
+    fn given_secondary_terminal_shutdown_when_handled_then_terminal_is_closed()
+    {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11);
+        assert!(state.contains_terminal(11));
+
+        let _task =
+            state.handle_terminal_event(otty_ui_term::Event::Shutdown {
+                id: 11,
+                exit_status: success_exit_status(),
+            });
+
+        assert!(!state.contains_terminal(11));
+        assert_eq!(state.panes().len(), 1);
+    }
+
+    #[test]
+    fn given_grid_cursor_when_updated_and_resized_then_position_is_clamped() {
+        let mut state = build_terminal_state("Shell");
+        state.set_grid_size(Size::new(100.0, 80.0));
+
+        let _task = state.update_grid_cursor(Point::new(250.0, -5.0));
+        assert_eq!(state.grid_cursor, Some(Point::new(100.0, 0.0)));
+
+        state.set_grid_size(Size::new(10.0, 5.0));
+        assert_eq!(state.grid_cursor, Some(Point::new(10.0, 0.0)));
     }
 }

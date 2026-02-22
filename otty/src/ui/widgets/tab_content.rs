@@ -20,11 +20,12 @@ pub(crate) fn view<'a>(
             TabContent::Terminal(terminal) => {
                 let tab_id = tab.id;
                 terminal::view(terminal::Props {
+                    tab_id,
                     panes: terminal.panes(),
                     terminals: terminal.terminals(),
                     focus: terminal.focus(),
                 })
-                .map(move |event| AppEvent::Terminal { tab_id, event })
+                .map(AppEvent::Terminal)
             },
             TabContent::Settings => settings::view(settings::Props {
                 state: &state.settings,

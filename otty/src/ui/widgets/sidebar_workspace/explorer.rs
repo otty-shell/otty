@@ -44,7 +44,6 @@ pub(crate) fn view<'a>(
     let tree_list = explorer_tree(props);
 
     let content = column![header, current_dir, tree_list]
-        .spacing(8)
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(alignment::Horizontal::Left);

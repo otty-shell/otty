@@ -147,7 +147,7 @@ impl QuickLaunchEditorState {
     pub(crate) fn custom(&self) -> Option<&CommandLaunchOptions> {
         match &self.options {
             QuickLaunchEditorOptions::Custom(custom) => Some(custom),
-            QuickLaunchEditorOptions::Ssh(_) => None,
+            _ => None,
         }
     }
 
@@ -155,23 +155,23 @@ impl QuickLaunchEditorState {
     pub(crate) fn custom_mut(&mut self) -> Option<&mut CommandLaunchOptions> {
         match &mut self.options {
             QuickLaunchEditorOptions::Custom(custom) => Some(custom),
-            QuickLaunchEditorOptions::Ssh(_) => None,
+            _ => None,
         }
     }
 
     /// Access current SSH command options.
     pub(crate) fn ssh(&self) -> Option<&SshLaunchOptions> {
         match &self.options {
-            QuickLaunchEditorOptions::Custom(_) => None,
             QuickLaunchEditorOptions::Ssh(ssh) => Some(ssh),
+            _ => None,
         }
     }
 
     /// Access current SSH command options mutably.
     pub(crate) fn ssh_mut(&mut self) -> Option<&mut SshLaunchOptions> {
         match &mut self.options {
-            QuickLaunchEditorOptions::Custom(_) => None,
             QuickLaunchEditorOptions::Ssh(ssh) => Some(ssh),
+            _ => None,
         }
     }
 }

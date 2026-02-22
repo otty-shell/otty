@@ -3,7 +3,7 @@ use std::fmt;
 use crate::features::quick_launches::QuickLaunchErrorState;
 use crate::features::quick_launches::editor::QuickLaunchEditorState;
 use crate::features::quick_launches::model::{NodePath, QuickLaunch};
-use crate::features::terminal::state::TerminalState;
+use crate::features::terminal::TerminalState;
 use otty_ui_term::settings::Settings;
 
 /// Supported requests for opening a tab in the workspace.

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
-use super::error::TerminalError;
+use super::errors::TerminalError;
 use super::model::ShellSession;
 
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
@@ -33,10 +33,7 @@ pub(crate) fn setup_shell_session_with_shell(
         },
     };
 
-    Ok(ShellSession {
-        name: shell_name,
-        session,
-    })
+    Ok(ShellSession::new(shell_name, session))
 }
 
 /// Build a shell session without writing shell integration files for a shell.
@@ -46,10 +43,7 @@ pub(crate) fn fallback_shell_session_with_shell(
     let shell_name = shell_name(shell_path);
     let options = LocalSessionOptions::default().with_program(shell_path);
 
-    ShellSession {
-        name: shell_name,
-        session: SessionKind::from_local_options(options),
-    }
+    ShellSession::new(shell_name, SessionKind::from_local_options(options))
 }
 
 fn shell_name(shell_path: &str) -> String {
@@ -138,4 +132,113 @@ fi
         .with_args(vec!["--rcfile".to_string(), wrapper_path]);
 
     Ok(SessionKind::from_local_options(options))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::process;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use otty_ui_term::settings::SessionKind;
+
+    use super::{
+        fallback_shell_session_with_shell, setup_bash_session,
+        setup_zsh_session,
+    };
+
+    struct TempDirGuard {
+        path: PathBuf,
+    }
+
+    impl TempDirGuard {
+        fn new(prefix: &str) -> Self {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "otty-terminal-{prefix}-{}-{stamp}",
+                process::id(),
+            ));
+            fs::create_dir_all(&path)
+                .expect("failed to create temporary directory");
+            Self { path }
+        }
+    }
+
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn given_shell_path_when_fallback_session_created_then_uses_local_program()
+    {
+        let session = fallback_shell_session_with_shell("/usr/bin/bash");
+
+        assert_eq!(session.name(), "bash");
+        match session.session() {
+            SessionKind::Local(options) => {
+                assert_eq!(options.program(), "/usr/bin/bash");
+            },
+            SessionKind::Ssh(_) => {
+                panic!("expected local session kind");
+            },
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn given_temp_dir_when_setup_bash_session_then_wrapper_files_are_written() {
+        let temp_dir = TempDirGuard::new("bash");
+        let session =
+            setup_bash_session("/bin/bash", &temp_dir.path).expect("setup");
+
+        let script_path = temp_dir.path.join("otty.bash");
+        let wrapper_path = temp_dir.path.join("otty.bashrc");
+        assert!(script_path.exists());
+        assert!(wrapper_path.exists());
+
+        match session {
+            SessionKind::Local(options) => {
+                assert_eq!(options.program(), "/bin/bash");
+                assert_eq!(options.args().len(), 2);
+                assert_eq!(options.args()[0], "--rcfile");
+                assert_eq!(options.args()[1], wrapper_path.to_string_lossy());
+            },
+            SessionKind::Ssh(_) => {
+                panic!("expected local session kind");
+            },
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn given_temp_dir_when_setup_zsh_session_then_wrapper_files_are_written() {
+        let temp_dir = TempDirGuard::new("zsh");
+        let session =
+            setup_zsh_session("/bin/zsh", &temp_dir.path).expect("setup");
+
+        let script_path = temp_dir.path.join("otty.zsh");
+        let zshrc_path = temp_dir.path.join(".zshrc");
+        assert!(script_path.exists());
+        assert!(zshrc_path.exists());
+
+        match session {
+            SessionKind::Local(options) => {
+                assert_eq!(options.program(), "/bin/zsh");
+                let zdotdir = options.envs().get("ZDOTDIR");
+                assert_eq!(
+                    zdotdir,
+                    Some(&temp_dir.path.to_string_lossy().to_string()),
+                );
+            },
+            SessionKind::Ssh(_) => {
+                panic!("expected local session kind");
+            },
+        }
+    }
 }

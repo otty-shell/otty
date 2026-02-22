@@ -6,8 +6,7 @@ use otty_ui_tree::TreePath;
 
 use crate::app::Event as AppEvent;
 use crate::features::tab::{TabContent, TabEvent, TabOpenRequest};
-use crate::features::terminal::event::settings_for_session;
-use crate::features::terminal::state::TerminalState;
+use crate::features::terminal::TerminalState;
 use crate::state::State;
 
 use super::errors::EditorCommandParseError;
@@ -127,6 +126,15 @@ fn open_file_in_editor(
             settings: Box::new(settings),
         },
     }))
+}
+
+fn settings_for_session(
+    base_settings: &Settings,
+    session: SessionKind,
+) -> Settings {
+    let mut settings = base_settings.clone();
+    settings.backend = settings.backend.clone().with_session(session);
+    settings
 }
 
 #[derive(Debug, Clone, Copy)]
