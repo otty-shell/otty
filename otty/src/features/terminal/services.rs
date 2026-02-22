@@ -4,8 +4,12 @@ use std::path::{Path, PathBuf};
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
+use crate::features::tab::TabContent;
+use crate::state::State;
+
 use super::errors::TerminalError;
 use super::model::ShellSession;
+use super::state::TerminalState;
 
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
 
@@ -142,6 +146,33 @@ fi
         .with_args(vec!["--rcfile".to_string(), wrapper_path]);
 
     Ok(SessionKind::from_local_options(options))
+}
+
+/// Resolve current working directory from active shell terminal tab.
+pub(crate) fn shell_cwd_for_active_tab(state: &State) -> Option<PathBuf> {
+    let tab_id = state.active_tab_id()?;
+    let terminal = shell_terminal_tab(state, tab_id)?;
+    terminal
+        .focused_terminal_entry()
+        .and_then(|entry| terminal_cwd(&entry.terminal.blocks()))
+}
+
+fn shell_terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
+    let tab = state.tab_items().get(&tab_id)?;
+    match &tab.content {
+        TabContent::Terminal(terminal) if terminal.is_shell() => {
+            Some(terminal.as_ref())
+        },
+        _ => None,
+    }
+}
+
+fn terminal_cwd(blocks: &[otty_ui_term::BlockSnapshot]) -> Option<PathBuf> {
+    blocks
+        .iter()
+        .rev()
+        .find_map(|block| block.meta.cwd.as_deref())
+        .map(PathBuf::from)
 }
 
 #[cfg(test)]

@@ -1,16 +1,9 @@
-#[rustfmt::skip]
 mod errors;
-#[rustfmt::skip]
 mod event;
-#[rustfmt::skip]
 mod model;
-#[rustfmt::skip]
 mod state;
-#[rustfmt::skip]
 mod storage;
-#[rustfmt::skip]
 mod services;
-#[rustfmt::skip]
 mod editor;
 
 pub(crate) use editor::{
@@ -20,7 +13,7 @@ pub(crate) use editor::{
 pub(crate) use errors::QuickLaunchError;
 pub(crate) use event::{
     ContextMenuAction, QUICK_LAUNCHES_TICK_MS, QuickLaunchEvent,
-    QuickLaunchSetupOutcome, quick_launches_reducer,
+    QuickLaunchSetupOutcome, bootstrap_quick_launches, quick_launches_reducer,
 };
 pub(crate) use model::{
     CommandSpec, CustomCommand, EnvVar, NodePath, QuickLaunch,

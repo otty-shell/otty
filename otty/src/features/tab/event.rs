@@ -1,5 +1,5 @@
 use iced::Task;
-use otty_ui_term::settings::Settings;
+use otty_ui_term::{TerminalView, settings::Settings};
 
 use crate::app::Event as AppEvent;
 use crate::features::explorer::ExplorerEvent;
@@ -293,7 +293,7 @@ fn insert_terminal_tab(
     sync_explorer: bool,
     error_tab: Option<(String, String)>,
 ) -> Task<AppEvent> {
-    let (mut terminal, focus_task) = match TerminalState::new(
+    let (mut terminal, widget_id) = match TerminalState::new(
         tab_id,
         default_title,
         terminal_id,
@@ -331,7 +331,7 @@ fn insert_terminal_tab(
     state.tab.activate(Some(tab_id));
 
     let mut tasks = vec![
-        focus_task,
+        TerminalView::focus(widget_id),
         request_terminal_event(TerminalEvent::SyncSelection { tab_id }),
     ];
     if sync_explorer {

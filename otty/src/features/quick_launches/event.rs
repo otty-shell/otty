@@ -14,16 +14,15 @@ use crate::state::State;
 
 use super::errors::QuickLaunchError;
 use super::model::{
-    NodePath, QuickLaunch, QuickLaunchFile, QuickLaunchFolder,
-    QuickLaunchNode,
+    NodePath, QuickLaunch, QuickLaunchFile, QuickLaunchFolder, QuickLaunchNode,
     quick_launch_error_message,
 };
 use super::services::prepare_quick_launch_setup;
-use super::storage::save_quick_launches;
 use super::state::{
     ContextMenuState, ContextMenuTarget, DragState, DropTarget, InlineEditKind,
     InlineEditState, LaunchInfo,
 };
+use super::storage::save_quick_launches;
 
 /// Events emitted by the quick launches sidebar tree.
 #[derive(Debug, Clone)]
@@ -239,9 +238,7 @@ pub(crate) fn quick_launches_reducer(
             }
             Task::none()
         },
-        InlineEditSubmit => {
-            apply_inline_edit(state)
-        },
+        InlineEditSubmit => apply_inline_edit(state),
         ContextMenuAction(action) => {
             handle_context_menu_action(state, terminal_settings, action)
         },
@@ -986,6 +983,13 @@ fn request_open_error_tab(title: String, message: String) -> Task<AppEvent> {
     Task::done(AppEvent::Tab(TabEvent::NewTab {
         request: TabOpenRequest::QuickLaunchError { title, message },
     }))
+}
+
+/// Load quick launch state synchronously from persistent storage.
+pub(crate) fn bootstrap_quick_launches() -> super::state::QuickLaunchState {
+    super::state::QuickLaunchState::from_data(
+        super::storage::load_quick_launches().ok().flatten(),
+    )
 }
 
 #[cfg(test)]

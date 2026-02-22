@@ -4,9 +4,7 @@ use std::time::Instant;
 
 use iced::Point;
 
-use super::errors::QuickLaunchError;
 use super::model::{NodePath, QuickLaunchFile};
-use super::storage::load_quick_launches;
 
 /// Snapshot of a failed quick launch.
 #[derive(Debug, Clone)]
@@ -75,16 +73,10 @@ pub(crate) struct LaunchInfo {
 }
 
 impl QuickLaunchState {
-    /// Load quick launch state from persistent storage.
-    pub(crate) fn load() -> Self {
-        Self::from_loaded(load_quick_launches())
-    }
-
-    fn from_loaded(
-        loaded: Result<Option<QuickLaunchFile>, QuickLaunchError>,
-    ) -> Self {
-        match loaded {
-            Ok(Some(data)) => Self {
+    /// Construct state from a pre-loaded optional data payload.
+    pub(crate) fn from_data(data: Option<QuickLaunchFile>) -> Self {
+        match data {
+            Some(data) => Self {
                 data,
                 dirty: false,
                 persist_in_flight: false,
@@ -101,11 +93,7 @@ impl QuickLaunchState {
                 drop_target: None,
                 cursor: Point::ORIGIN,
             },
-            Ok(None) => Self::default(),
-            Err(err) => {
-                log::warn!("quick launches load failed: {err}");
-                Self::default()
-            },
+            None => Self::default(),
         }
     }
 
@@ -179,11 +167,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn given_load_error_when_loading_state_then_falls_back_to_default() {
-        let state =
-            QuickLaunchState::from_loaded(Err(QuickLaunchError::Validation {
-                message: String::from("broken payload"),
-            }));
+    fn given_no_data_when_loading_state_then_falls_back_to_default() {
+        let state = QuickLaunchState::from_data(None);
 
         assert!(state.data.root.children.is_empty());
         assert!(!state.dirty);
@@ -195,7 +180,7 @@ mod tests {
         let mut payload = QuickLaunchFile::empty();
         payload.root.title = String::from("Loaded");
 
-        let state = QuickLaunchState::from_loaded(Ok(Some(payload)));
+        let state = QuickLaunchState::from_data(Some(payload));
 
         assert_eq!(state.data.root.title, "Loaded");
         assert!(state.selected.is_none());

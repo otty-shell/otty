@@ -1,4 +1,3 @@
-use iced::widget::pane_grid;
 use otty_ui_term::settings::SessionKind;
 
 /// Shell session information needed to start a terminal backend.
@@ -27,7 +26,6 @@ impl ShellSession {
 
 /// Terminal entry used by the tab view.
 pub(crate) struct TerminalEntry {
-    pub(crate) pane: pane_grid::Pane,
     pub(crate) terminal: otty_ui_term::Terminal,
     pub(crate) title: String,
 }

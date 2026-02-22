@@ -79,7 +79,7 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) fn new() -> (Self, Task<Event>) {
-        let settings_state = settings::SettingsState::load();
+        let settings_state = settings::bootstrap_settings();
         let mut theme_manager = ThemeManager::new();
         let settings_palette = settings_state.draft().to_color_palette();
         theme_manager.set_custom_palette(settings_palette);

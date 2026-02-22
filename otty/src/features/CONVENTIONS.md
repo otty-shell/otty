@@ -142,6 +142,10 @@ pub(crate) fn feature_reducer(
   - primary reducer entrypoint
   - primary state type
   - feature error type (if exists)
+  - dependency struct for the reducer entrypoint (e.g., `FeatureDeps`), when required
+  - extended stable API: any types with verified external consumers in `app.rs`, `ui/widgets/`, or sibling
+    features. `ui/widgets/` is a first-class consumer; features MAY re-export types it needs directly without
+    requiring view-model indirection.
 - Wildcard re-exports (`pub use ...::*`) MUST NOT be used.
 - Storage internals and temporary helper types MUST NOT be re-exported.
 
@@ -155,6 +159,9 @@ pub(crate) fn feature_reducer(
 
 - `event.rs` MAY depend on `state.rs`, `model.rs`, `errors.rs`, `services.rs`, and shared crate utilities.
 - `state.rs` MAY depend on `model.rs` and `errors.rs`.
+- `state.rs` MAY import from external crates (`iced`, `std`, `otty_ui_term`, etc.). The restriction is on
+  **intra-feature module dependencies** only: within the feature's own module graph, `state.rs` MUST NOT
+  import from `storage.rs`, `services.rs`, or sibling features.
 - `model.rs` MUST remain UI-runtime agnostic.
 - `errors.rs` MAY depend only on std/core types, external error helpers (for example `thiserror`), and feature `model.rs` when needed for typed error payloads.
 - `storage.rs` MAY depend on `model.rs` and `errors.rs`.

@@ -1,15 +1,23 @@
 use std::collections::HashMap;
 
-use iced::{Point, Size, Task, widget::Id, widget::pane_grid};
+use iced::{Point, Size, widget::Id, widget::pane_grid};
 use otty_ui_term::{
-    BlockCommand, SurfaceMode, TerminalView,
+    SurfaceMode,
     settings::{Settings, ThemeSettings},
 };
 
-use crate::{app::Event as AppEvent, features::tab::TabEvent};
-
 use super::errors::TerminalError;
 use super::model::{BlockSelection, TerminalEntry, TerminalKind};
+
+/// Commands returned by state mutation helpers to be executed by the reducer.
+pub(crate) enum TerminalCommand {
+    None,
+    FocusTerminal(Id),
+    SelectHovered(Id),
+    FocusElement(Id),
+    CloseTab { tab_id: u64 },
+    Batch(Vec<TerminalCommand>),
+}
 
 /// State for a pane context menu.
 #[derive(Debug, Clone)]
@@ -35,10 +43,6 @@ impl PaneContextMenuState {
             terminal_id,
             focus_target: Id::unique(),
         }
-    }
-
-    pub(crate) fn focus_task<Message: 'static>(&self) -> Task<Message> {
-        iced::widget::operation::focus(self.focus_target.clone())
     }
 
     pub(crate) fn pane(&self) -> pane_grid::Pane {
@@ -85,7 +89,7 @@ impl TerminalState {
         terminal_id: u64,
         settings: Settings,
         kind: TerminalKind,
-    ) -> Result<(Self, Task<AppEvent>), TerminalError> {
+    ) -> Result<(Self, Id), TerminalError> {
         let terminal =
             otty_ui_term::Terminal::new(terminal_id, settings.clone())
                 .map_err(|err| TerminalError::Init {
@@ -99,7 +103,6 @@ impl TerminalState {
         terminals.insert(
             terminal_id,
             TerminalEntry {
-                pane: initial_pane,
                 terminal,
                 title: default_title.clone(),
             },
@@ -120,7 +123,7 @@ impl TerminalState {
             grid_size: Size::ZERO,
         };
 
-        Ok((tab, TerminalView::focus(widget_id)))
+        Ok((tab, widget_id))
     }
 
     pub(crate) fn title(&self) -> &str {
@@ -217,7 +220,7 @@ impl TerminalState {
         pane: pane_grid::Pane,
         axis: pane_grid::Axis,
         terminal_id: u64,
-    ) -> Task<AppEvent> {
+    ) -> TerminalCommand {
         let split = self.panes.split(axis, pane, terminal_id);
 
         if let Some((new_pane, _)) = split {
@@ -229,7 +232,7 @@ impl TerminalState {
                 Err(err) => {
                     log::warn!("split pane terminal init failed: {err}");
                     let _ = self.panes.close(new_pane);
-                    return Task::none();
+                    return TerminalCommand::None;
                 },
             };
             let widget_id = terminal.widget_id().clone();
@@ -237,7 +240,6 @@ impl TerminalState {
             self.terminals.insert(
                 terminal_id,
                 TerminalEntry {
-                    pane: new_pane,
                     terminal,
                     title: self.default_title.clone(),
                 },
@@ -246,20 +248,20 @@ impl TerminalState {
             self.context_menu = None;
             self.update_title_from_terminal(Some(terminal_id));
 
-            return TerminalView::focus(widget_id);
+            return TerminalCommand::FocusTerminal(widget_id);
         }
 
-        Task::none()
+        TerminalCommand::None
     }
 
     pub(crate) fn close_pane(
         &mut self,
         pane: pane_grid::Pane,
-    ) -> Task<AppEvent> {
+    ) -> TerminalCommand {
         if self.panes.len() == 1 {
-            return Task::done(AppEvent::Tab(TabEvent::CloseTab {
+            return TerminalCommand::CloseTab {
                 tab_id: self.tab_id,
-            }));
+            };
         }
 
         let result = self.panes.close(pane);
@@ -275,15 +277,15 @@ impl TerminalState {
                     if let Some(entry) = self.terminals.get(&next_id) {
                         let widget_id = entry.terminal.widget_id().clone();
                         self.update_title_from_terminal(Some(next_id));
-                        return TerminalView::focus(widget_id);
+                        return TerminalCommand::FocusTerminal(widget_id);
                     }
                 }
             }
 
-            return Task::none();
+            return TerminalCommand::None;
         }
 
-        Task::none()
+        TerminalCommand::None
     }
 
     pub(crate) fn apply_theme(&mut self, palette: otty_ui_term::ColorPalette) {
@@ -297,7 +299,7 @@ impl TerminalState {
     pub(crate) fn focus_pane(
         &mut self,
         pane: pane_grid::Pane,
-    ) -> Task<AppEvent> {
+    ) -> TerminalCommand {
         self.set_focus_on_pane(pane, true, true)
     }
 
@@ -311,7 +313,7 @@ impl TerminalState {
         terminal_id: u64,
         cursor: Point,
         grid_size: Size,
-    ) -> Task<AppEvent> {
+    ) -> TerminalCommand {
         let Some((widget_id, snapshot)) =
             self.terminals.get(&terminal_id).map(|entry| {
                 (
@@ -320,49 +322,44 @@ impl TerminalState {
                 )
             })
         else {
-            return Task::none();
+            return TerminalCommand::None;
         };
         if snapshot.view().mode.contains(SurfaceMode::ALT_SCREEN) {
-            return Task::none();
+            return TerminalCommand::None;
         }
 
-        let focus_task = self.set_focus_on_pane(pane, false, false);
-
-        let select_task = TerminalView::command(
-            widget_id.clone(),
-            BlockCommand::SelectHovered,
-        );
-
+        let focus_cmd = self.set_focus_on_pane(pane, false, false);
+        let select_cmd = TerminalCommand::SelectHovered(widget_id);
         let menu_state =
             PaneContextMenuState::new(pane, cursor, grid_size, terminal_id);
-        let menu_focus_task = menu_state.focus_task();
+        let menu_focus_cmd =
+            TerminalCommand::FocusElement(menu_state.focus_target().clone());
         self.context_menu = Some(menu_state);
 
-        Task::batch(vec![focus_task, select_task, menu_focus_task])
+        TerminalCommand::Batch(vec![focus_cmd, select_cmd, menu_focus_cmd])
     }
 
-    pub(crate) fn close_context_menu(&mut self) -> Task<AppEvent> {
+    pub(crate) fn close_context_menu(&mut self) -> TerminalCommand {
         if self.context_menu.take().is_some() {
             if let Some(pane) = self.focus {
                 return self.set_focus_on_pane(pane, false, true);
             }
         }
 
-        Task::none()
+        TerminalCommand::None
     }
 
     pub(crate) fn handle_terminal_event(
         &mut self,
         event: otty_ui_term::Event,
-    ) -> Task<AppEvent> {
+    ) -> TerminalCommand {
         use otty_ui_term::Event::*;
 
         let terminal_id = *event.terminal_id();
 
         match event {
             Shutdown { .. } => {
-                if let Some(entry) = self.terminals.get(&terminal_id) {
-                    let pane = entry.pane;
+                if let Some(pane) = self.pane_for_terminal(terminal_id) {
                     return self.close_pane(pane);
                 }
             },
@@ -390,15 +387,15 @@ impl TerminalState {
             },
         }
 
-        Task::none()
+        TerminalCommand::None
     }
 
     pub(crate) fn update_grid_cursor(
         &mut self,
         position: Point,
-    ) -> Task<AppEvent> {
+    ) -> TerminalCommand {
         self.grid_cursor = Some(Self::clamp_point(position, self.grid_size));
-        Task::none()
+        TerminalCommand::None
     }
 
     pub(crate) fn set_grid_size(&mut self, size: Size) {
@@ -414,14 +411,22 @@ impl TerminalState {
         self.grid_size
     }
 
+    fn pane_for_terminal(&self, terminal_id: u64) -> Option<pane_grid::Pane> {
+        self.panes
+            .iter()
+            .find(|&(_, &id)| id == terminal_id)
+            .map(|(pane, _)| pane)
+            .copied()
+    }
+
     fn set_focus_on_pane(
         &mut self,
         pane: pane_grid::Pane,
         close_menu: bool,
         focus_terminal_widget: bool,
-    ) -> Task<AppEvent> {
+    ) -> TerminalCommand {
         let Some(terminal_id) = self.pane_terminal_id(pane) else {
-            return Task::none();
+            return TerminalCommand::None;
         };
 
         self.focus = Some(pane);
@@ -432,11 +437,13 @@ impl TerminalState {
 
         if focus_terminal_widget {
             if let Some(entry) = self.terminals.get(&terminal_id) {
-                return TerminalView::focus(entry.terminal.widget_id().clone());
+                return TerminalCommand::FocusTerminal(
+                    entry.terminal.widget_id().clone(),
+                );
             }
         }
 
-        Task::none()
+        TerminalCommand::None
     }
 
     fn update_title_from_terminal(&mut self, terminal_id: Option<u64>) {
@@ -523,7 +530,6 @@ mod tests {
         assert_eq!(menu_state.cursor(), Point::new(20.0, 30.0));
         assert_eq!(menu_state.grid_size(), Size::new(300.0, 200.0));
         assert_eq!(menu_state.terminal_id(), 77);
-        let _task = menu_state.focus_task::<()>();
         let _focus_target = menu_state.focus_target();
     }
 

@@ -162,10 +162,6 @@ pub(crate) fn palette_from_colors(palette: &ColorPalette) -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn palette_label(index: usize) -> Option<&'static str> {
-    PALETTE_LABELS.get(index).copied()
-}
-
 fn apply_palette_overrides(
     base: &ColorPalette,
     values: &[String],
@@ -296,38 +292,6 @@ const PALETTE_FIELDS: [PaletteField; 29] = [
     PaletteField::DimWhite,
     PaletteField::DimForeground,
     PaletteField::Overlay,
-];
-
-const PALETTE_LABELS: [&str; 29] = [
-    "Foreground",
-    "Background",
-    "Black",
-    "Red",
-    "Green",
-    "Yellow",
-    "Blue",
-    "Magenta",
-    "Cyan",
-    "White",
-    "Bright Black",
-    "Bright Red",
-    "Bright Green",
-    "Bright Yellow",
-    "Bright Blue",
-    "Bright Magenta",
-    "Bright Cyan",
-    "Bright White",
-    "Bright Foreground",
-    "Dim Black",
-    "Dim Red",
-    "Dim Green",
-    "Dim Yellow",
-    "Dim Blue",
-    "Dim Magenta",
-    "Dim Cyan",
-    "Dim White",
-    "Dim Foreground",
-    "Overlay",
 ];
 
 fn palette_value(palette: &ColorPalette, field: PaletteField) -> &str {
