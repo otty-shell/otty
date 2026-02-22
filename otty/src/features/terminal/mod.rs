@@ -1,8 +1,8 @@
 mod errors;
 mod event;
 mod model;
-mod state;
 mod services;
+mod state;
 
 #[allow(unused_imports)]
 pub(crate) use errors::TerminalError;

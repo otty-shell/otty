@@ -1,9 +1,9 @@
 mod errors;
 mod event;
 mod model;
+mod services;
 mod state;
 mod storage;
-mod services;
 
 #[allow(unused_imports)]
 pub(crate) use errors::SettingsError;

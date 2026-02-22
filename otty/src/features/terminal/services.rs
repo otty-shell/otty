@@ -4,12 +4,10 @@ use std::path::{Path, PathBuf};
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-use crate::features::tab::TabContent;
 use crate::state::State;
 
 use super::errors::TerminalError;
 use super::model::ShellSession;
-use super::state::TerminalState;
 
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
 
@@ -157,14 +155,13 @@ pub(crate) fn shell_cwd_for_active_tab(state: &State) -> Option<PathBuf> {
         .and_then(|entry| terminal_cwd(&entry.terminal.blocks()))
 }
 
-fn shell_terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
-    let tab = state.tab_items().get(&tab_id)?;
-    match &tab.content {
-        TabContent::Terminal(terminal) if terminal.is_shell() => {
-            Some(terminal.as_ref())
-        },
-        _ => None,
-    }
+fn shell_terminal_tab(
+    state: &State,
+    tab_id: u64,
+) -> Option<&super::state::TerminalState> {
+    state
+        .terminal_tab(tab_id)
+        .filter(|terminal| terminal.is_shell())
 }
 
 fn terminal_cwd(blocks: &[otty_ui_term::BlockSnapshot]) -> Option<PathBuf> {

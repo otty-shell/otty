@@ -4,12 +4,13 @@ use iced::{Point, Task, widget::pane_grid};
 use otty_ui_term::{BlockCommand, TerminalView};
 
 use crate::app::Event as AppEvent;
-use crate::features::tab::{TabContent, TabEvent};
 use crate::state::State;
 
 #[cfg(test)]
 use super::model::TerminalKind;
-use super::state::{TerminalCommand, TerminalState};
+use super::state::TerminalCommand;
+#[cfg(test)]
+use super::state::TerminalState;
 
 /// Events emitted by terminal UI and terminal-related flows.
 #[derive(Clone)]
@@ -192,9 +193,9 @@ pub(crate) fn terminal_reducer(
             with_terminal_tab(state, tab_id, |tab| tab.focus_pane(pane))
         },
         PaneResized { tab_id, event } => {
-            if let Some(tab) = terminal_tab_mut(state, tab_id) {
+            if let Some(tab) = state.terminal_tab_mut(tab_id) {
                 tab.resize(event);
-                sync_tab_title(state, tab_id);
+                state.sync_terminal_tab_title(tab_id);
             }
             Task::none()
         },
@@ -216,7 +217,7 @@ pub(crate) fn terminal_reducer(
             })
         },
         CloseContextMenu { tab_id } => {
-            with_terminal_tab(state, tab_id, TerminalState::close_context_menu)
+            with_terminal_tab(state, tab_id, |tab| tab.close_context_menu())
         },
         ContextMenuInput { tab_id: _ } => Task::none(),
         SplitPane { tab_id, pane, axis } => {
@@ -277,27 +278,20 @@ fn reduce_widget_event(
     }
 
     if refresh_titles {
-        sync_tab_title(state, tab_id);
+        state.sync_terminal_tab_title(tab_id);
     }
 
     update
 }
 
 fn focus_active_terminal(state: &State) -> Task<AppEvent> {
-    let Some(tab) = state.active_tab() else {
+    let Some(terminal) = state.active_terminal_tab() else {
         return Task::none();
     };
 
-    match &tab.content {
-        TabContent::Terminal(terminal) => {
-            match terminal.focused_terminal_entry() {
-                Some(entry) => {
-                    TerminalView::focus(entry.terminal.widget_id().clone())
-                },
-                None => Task::none(),
-            }
-        },
-        _ => Task::none(),
+    match terminal.focused_terminal_entry() {
+        Some(entry) => TerminalView::focus(entry.terminal.widget_id().clone()),
+        None => Task::none(),
     }
 }
 
@@ -305,38 +299,27 @@ fn apply_terminal_theme(
     state: &mut State,
     palette: otty_ui_term::ColorPalette,
 ) -> Task<AppEvent> {
-    for tab in state.tab_items_mut().values_mut() {
-        if let TabContent::Terminal(terminal) = &mut tab.content {
-            terminal.apply_theme(palette.clone());
-        }
-    }
+    state.for_each_terminal_tab_mut(|terminal| {
+        terminal.apply_theme(palette.clone());
+    });
 
     Task::none()
 }
 
 fn close_all_context_menus(state: &mut State) -> Task<AppEvent> {
-    let mut tasks = Vec::new();
-    for tab in state.tab_items_mut().values_mut() {
-        if let TabContent::Terminal(terminal) = &mut tab.content
-            && terminal.context_menu().is_some()
-        {
-            tasks.push(execute_command(terminal.close_context_menu()));
+    let mut commands = Vec::new();
+    state.for_each_terminal_tab_mut(|terminal| {
+        if terminal.context_menu().is_some() {
+            commands.push(terminal.close_context_menu());
         }
-    }
+    });
 
-    Task::batch(tasks)
+    Task::batch(commands.into_iter().map(execute_command))
 }
 
 fn sync_tab_block_selection(state: &State, tab_id: u64) -> Task<AppEvent> {
-    let Some(tab) = state.tab_items().get(&tab_id) else {
+    let Some(terminal) = state.terminal_tab(tab_id) else {
         return Task::none();
-    };
-
-    let terminal = match &tab.content {
-        TabContent::Terminal(terminal) => terminal,
-        _ => {
-            return Task::none();
-        },
     };
     let selection = terminal.selected_block().cloned();
     let mut tasks = Vec::new();
@@ -375,7 +358,8 @@ fn split_pane(
         tab.split_pane(pane, axis, terminal_id)
     });
 
-    if terminal_tab(state, tab_id)
+    if state
+        .terminal_tab(tab_id)
         .map(|tab| tab.contains_terminal(terminal_id))
         .unwrap_or(false)
     {
@@ -405,7 +389,8 @@ fn update_block_selection(
     match event {
         BlockSelected { block_id, .. } => {
             let terminal_id = *event.terminal_id();
-            let other_widget_ids: Vec<_> = terminal_tab(state, tab_id)
+            let other_widget_ids: Vec<_> = state
+                .terminal_tab(tab_id)
                 .map(|tab| {
                     tab.terminals()
                         .values()
@@ -453,7 +438,7 @@ fn copy_selected_block(
     kind: CopyKind,
 ) -> Task<AppEvent> {
     let Some((block_id, widget_id)) =
-        terminal_tab(state, tab_id).and_then(|tab| {
+        state.terminal_tab(tab_id).and_then(|tab| {
             let selection = tab.selected_block()?;
             if selection.terminal_id() != terminal_id {
                 return None;
@@ -488,7 +473,8 @@ fn copy_selection(
     tab_id: u64,
     terminal_id: u64,
 ) -> Task<AppEvent> {
-    let Some(widget_id) = terminal_tab(state, tab_id)
+    let Some(widget_id) = state
+        .terminal_tab(tab_id)
         .and_then(|tab| tab.terminals().get(&terminal_id))
         .map(|entry| entry.terminal.widget_id().clone())
     else {
@@ -507,7 +493,8 @@ fn paste_into_prompt(
     tab_id: u64,
     terminal_id: u64,
 ) -> Task<AppEvent> {
-    let Some(widget_id) = terminal_tab(state, tab_id)
+    let Some(widget_id) = state
+        .terminal_tab(tab_id)
         .and_then(|tab| tab.terminals().get(&terminal_id))
         .map(|entry| entry.terminal.widget_id().clone())
     else {
@@ -523,14 +510,14 @@ fn paste_into_prompt(
 
 fn with_terminal_tab<F>(state: &mut State, tab_id: u64, f: F) -> Task<AppEvent>
 where
-    F: FnOnce(&mut TerminalState) -> TerminalCommand,
+    F: FnOnce(&mut super::state::TerminalState) -> TerminalCommand,
 {
-    let Some(tab) = terminal_tab_mut(state, tab_id) else {
+    let Some(tab) = state.terminal_tab_mut(tab_id) else {
         return Task::none();
     };
 
     let cmd = f(tab);
-    sync_tab_title(state, tab_id);
+    state.sync_terminal_tab_title(tab_id);
     execute_command(cmd)
 }
 
@@ -543,44 +530,12 @@ fn execute_command(command: TerminalCommand) -> Task<AppEvent> {
         },
         TerminalCommand::FocusElement(id) => iced::widget::operation::focus(id),
         TerminalCommand::CloseTab { tab_id } => {
-            Task::done(AppEvent::Tab(TabEvent::CloseTab { tab_id }))
+            Task::done(AppEvent::CloseTabRequested { tab_id })
         },
         TerminalCommand::Batch(cmds) => {
             Task::batch(cmds.into_iter().map(execute_command))
         },
     }
-}
-
-fn terminal_tab_mut(
-    state: &mut State,
-    tab_id: u64,
-) -> Option<&mut TerminalState> {
-    state.tab_items_mut().get_mut(&tab_id).and_then(|tab| {
-        match &mut tab.content {
-            TabContent::Terminal(terminal) => Some(terminal.as_mut()),
-            _ => None,
-        }
-    })
-}
-
-fn sync_tab_title(state: &mut State, tab_id: u64) {
-    let Some(tab) = state.tab_items_mut().get_mut(&tab_id) else {
-        return;
-    };
-
-    if let TabContent::Terminal(terminal) = &tab.content {
-        tab.title = terminal.title().to_string();
-    }
-}
-
-fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
-    state
-        .tab_items()
-        .get(&tab_id)
-        .and_then(|tab| match &tab.content {
-            TabContent::Terminal(terminal) => Some(terminal.as_ref()),
-            _ => None,
-        })
 }
 
 fn tab_id_by_terminal(state: &State, terminal_id: u64) -> Option<u64> {

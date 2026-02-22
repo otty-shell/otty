@@ -1,10 +1,10 @@
+mod editor;
 mod errors;
 mod event;
 mod model;
+mod services;
 mod state;
 mod storage;
-mod services;
-mod editor;
 
 pub(crate) use editor::{
     QuickLaunchEditorEvent, QuickLaunchEditorMode, QuickLaunchEditorState,

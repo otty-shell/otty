@@ -8,6 +8,7 @@ use crate::features::explorer::ExplorerState;
 use crate::features::quick_launches::{self, QuickLaunchState};
 use crate::features::settings::SettingsState;
 use crate::features::tab::{TabContent, TabItem, TabState};
+use crate::features::terminal::TerminalState;
 use crate::ui::widgets::tab_bar;
 
 /// Fixed width of the sidebar menu rail.
@@ -185,6 +186,55 @@ impl State {
 
     pub(crate) fn active_tab(&self) -> Option<&TabItem> {
         self.tab.active_tab()
+    }
+
+    pub(crate) fn active_terminal_tab(&self) -> Option<&TerminalState> {
+        let tab_id = self.active_tab_id()?;
+        self.terminal_tab(tab_id)
+    }
+
+    pub(crate) fn terminal_tab(&self, tab_id: u64) -> Option<&TerminalState> {
+        self.tab
+            .tab_items()
+            .get(&tab_id)
+            .and_then(|tab| match &tab.content {
+                TabContent::Terminal(terminal) => Some(terminal.as_ref()),
+                _ => None,
+            })
+    }
+
+    pub(crate) fn terminal_tab_mut(
+        &mut self,
+        tab_id: u64,
+    ) -> Option<&mut TerminalState> {
+        self.tab
+            .tab_items_mut()
+            .get_mut(&tab_id)
+            .and_then(|tab| match &mut tab.content {
+                TabContent::Terminal(terminal) => Some(terminal.as_mut()),
+                _ => None,
+            })
+    }
+
+    pub(crate) fn for_each_terminal_tab_mut<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&mut TerminalState),
+    {
+        for tab in self.tab.tab_items_mut().values_mut() {
+            if let TabContent::Terminal(terminal) = &mut tab.content {
+                f(terminal.as_mut());
+            }
+        }
+    }
+
+    pub(crate) fn sync_terminal_tab_title(&mut self, tab_id: u64) {
+        let Some(tab) = self.tab.tab_items_mut().get_mut(&tab_id) else {
+            return;
+        };
+
+        if let TabContent::Terminal(terminal) = &tab.content {
+            tab.title = terminal.title().to_string();
+        }
     }
 
     pub(crate) fn set_screen_size(&mut self, size: Size) {

@@ -53,6 +53,9 @@ pub(crate) enum Event {
     Explorer(ExplorerEvent),
     QuickLaunch(quick_launches::QuickLaunchEvent),
     Tab(TabEvent),
+    CloseTabRequested {
+        tab_id: u64,
+    },
     Terminal(TerminalEvent),
     QuickLaunchEditor {
         tab_id: u64,
@@ -228,6 +231,14 @@ impl App {
                     shell_session: &self.shell_session,
                 },
                 event,
+            ),
+            CloseTabRequested { tab_id } => tab_reducer(
+                &mut self.state,
+                TabDeps {
+                    terminal_settings: &self.terminal_settings,
+                    shell_session: &self.shell_session,
+                },
+                TabEvent::CloseTab { tab_id },
             ),
             Explorer(event) => {
                 let editor_command =
@@ -887,6 +898,7 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
         )) => Ignore,
         Event::ActionBar(_) => Allow,
         Event::Window(_) | Event::ResizeWindow(_) => Allow,
+        Event::CloseTabRequested { .. } => Allow,
         Event::Keyboard(_) => Ignore,
         _ => Dismiss,
     }
@@ -915,6 +927,7 @@ fn should_cancel_inline_edit(event: &Event) -> bool {
                 | QuickLaunchEvent::Tick
         ),
         Event::QuickLaunchTick | Event::QuickLaunchSetupCompleted(_) => false,
+        Event::CloseTabRequested { .. } => false,
         Event::SidebarWorkspace(
             sidebar_workspace::Event::WorkspaceCursorMoved { .. },
         ) => false,

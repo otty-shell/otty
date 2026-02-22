@@ -63,8 +63,6 @@ editor/               # optional subfeature; must mirror the same contract
   storage.rs          # optional
 ```
 
-- `mod.rs` MUST declare modules in this stable order if present:
-  `errors`, `event`, `model`, `state`, `storage`, `services`, then subfeatures.
 - `errors.rs` (plural) MUST be used for error definitions. `error.rs` is forbidden in strict profile.
 - Files outside canonical/optional lists MUST NOT be added without updating this specification.
 
