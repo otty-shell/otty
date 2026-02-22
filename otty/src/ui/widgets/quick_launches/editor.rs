@@ -40,13 +40,13 @@ pub(crate) fn view<'a>(
     content = content.push(text_input_row(
         "Title",
         "codex: review",
-        &props.editor.title,
+        props.editor.title(),
         QuickLaunchEditorEvent::UpdateTitle,
         props.theme,
     ));
 
     let command_type = props.editor.command_type();
-    content = match props.editor.mode {
+    content = match props.editor.mode() {
         QuickLaunchEditorMode::Create { .. } => {
             content.push(command_type_selector(props.editor))
         },
@@ -69,21 +69,21 @@ pub(crate) fn view<'a>(
             content = content.push(text_input_row(
                 "Program",
                 "/usr/bin/bash",
-                &custom.program,
+                custom.program(),
                 QuickLaunchEditorEvent::UpdateProgram,
                 props.theme,
             ));
             content = content.push(list_editor(
                 "Arguments",
                 "--flag",
-                &custom.args,
+                custom.args(),
                 QuickLaunchEditorEvent::AddArg,
                 QuickLaunchEditorEvent::RemoveArg,
                 update_arg,
                 props.theme,
             ));
             content = content.push(env_editor(
-                &custom.env,
+                custom.env(),
                 "KEY",
                 "value",
                 props.theme,
@@ -91,7 +91,7 @@ pub(crate) fn view<'a>(
             content = content.push(text_input_row(
                 "Workdir (cwd)",
                 "/path/to/project",
-                &custom.working_directory,
+                custom.working_directory(),
                 QuickLaunchEditorEvent::UpdateWorkingDirectory,
                 props.theme,
             ));
@@ -108,14 +108,14 @@ pub(crate) fn view<'a>(
             content = content.push(text_input_row(
                 "Host",
                 "example.com",
-                &ssh.host,
+                ssh.host(),
                 QuickLaunchEditorEvent::UpdateHost,
                 props.theme,
             ));
             let port_row = text_input_row(
                 "Port",
                 "22",
-                &ssh.port,
+                ssh.port(),
                 QuickLaunchEditorEvent::UpdatePort,
                 props.theme,
             );
@@ -123,21 +123,21 @@ pub(crate) fn view<'a>(
             content = content.push(text_input_row(
                 "User",
                 "ubuntu",
-                &ssh.user,
+                ssh.user(),
                 QuickLaunchEditorEvent::UpdateUser,
                 props.theme,
             ));
             content = content.push(text_input_row(
                 "Identity file",
                 "~/.ssh/id_ed25519",
-                &ssh.identity_file,
+                ssh.identity_file(),
                 QuickLaunchEditorEvent::UpdateIdentityFile,
                 props.theme,
             ));
             content = content.push(list_editor(
                 "Extra args",
                 "-A",
-                &ssh.extra_args,
+                ssh.extra_args(),
                 QuickLaunchEditorEvent::AddExtraArg,
                 QuickLaunchEditorEvent::RemoveExtraArg,
                 update_extra_arg,
@@ -146,7 +146,7 @@ pub(crate) fn view<'a>(
         },
     }
 
-    if let Some(error) = &props.editor.error {
+    if let Some(error) = props.editor.error() {
         let error_color = iced::Color::from_rgb(0.9, 0.4, 0.4);
         content = content.push(text(error).size(LABEL_SIZE).style(move |_| {
             iced::widget::text::Style {

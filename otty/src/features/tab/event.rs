@@ -3,9 +3,7 @@ use otty_ui_term::settings::Settings;
 
 use crate::app::Event as AppEvent;
 use crate::features::explorer;
-use crate::features::quick_launches::editor::{
-    open_create_editor_tab, open_edit_editor_tab,
-};
+use crate::features::quick_launches::editor::QuickLaunchEditorState;
 use crate::features::quick_launches::model::quick_launch_error_message;
 use crate::features::settings;
 use crate::features::terminal::{
@@ -36,10 +34,10 @@ pub(crate) fn tab_reducer(
             },
             TabOpenRequest::Settings => open_settings_tab(state),
             TabOpenRequest::QuickLaunchEditorCreate { parent_path } => {
-                open_create_editor_tab(state, parent_path)
+                open_quick_launch_editor_create_tab(state, parent_path)
             },
             TabOpenRequest::QuickLaunchEditorEdit { path, command } => {
-                open_edit_editor_tab(state, path, &command)
+                open_quick_launch_editor_edit_tab(state, path, *command)
             },
             TabOpenRequest::QuickLaunchError { title, message } => {
                 open_quick_launch_error_tab(state, title, message)
@@ -94,6 +92,51 @@ fn open_settings_tab(state: &mut State) -> Task<AppEvent> {
     explorer::event::sync_explorer_from_active_terminal(state);
 
     reload_task
+}
+
+fn open_quick_launch_editor_create_tab(
+    state: &mut State,
+    parent_path: crate::features::quick_launches::model::NodePath,
+) -> Task<AppEvent> {
+    let tab_id = state.next_tab_id;
+    state.next_tab_id += 1;
+
+    let editor = QuickLaunchEditorState::new_create(parent_path);
+    state.tab_items.insert(
+        tab_id,
+        TabItem {
+            id: tab_id,
+            title: String::from("Create launch"),
+            content: TabContent::QuickLaunchEditor(Box::new(editor)),
+        },
+    );
+    state.active_tab_id = Some(tab_id);
+
+    Task::none()
+}
+
+fn open_quick_launch_editor_edit_tab(
+    state: &mut State,
+    path: crate::features::quick_launches::model::NodePath,
+    command: crate::features::quick_launches::model::QuickLaunch,
+) -> Task<AppEvent> {
+    let tab_id = state.next_tab_id;
+    state.next_tab_id += 1;
+
+    let command_title = command.title.as_str();
+    let title = format!("Edit {command_title}");
+    let editor = QuickLaunchEditorState::from_command(path, &command);
+    state.tab_items.insert(
+        tab_id,
+        TabItem {
+            id: tab_id,
+            title,
+            content: TabContent::QuickLaunchEditor(Box::new(editor)),
+        },
+    );
+    state.active_tab_id = Some(tab_id);
+
+    Task::none()
 }
 
 fn open_shell_terminal_tab(

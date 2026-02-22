@@ -1,8 +1,8 @@
+mod errors;
 mod event;
 mod model;
+mod state;
 
-pub(crate) use event::{
-    QuickLaunchEditorEvent, open_create_editor_tab, open_edit_editor_tab,
-    quick_launch_editor_reducer,
-};
-pub(crate) use model::{QuickLaunchEditorMode, QuickLaunchEditorState};
+pub(crate) use errors::QuickLaunchEditorError;
+pub(crate) use event::{QuickLaunchEditorEvent, quick_launch_editor_reducer};
+pub(crate) use state::{QuickLaunchEditorMode, QuickLaunchEditorState};
