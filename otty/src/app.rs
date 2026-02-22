@@ -51,6 +51,7 @@ pub(crate) enum Event {
     Sidebar(sidebar::Event),
     SidebarWorkspace(sidebar_workspace::Event),
     Explorer(ExplorerEvent),
+    QuickLaunch(quick_launches::QuickLaunchEvent),
     Tab(TabEvent),
     Terminal(TerminalEvent),
     QuickLaunchEditor {
@@ -147,7 +148,10 @@ impl App {
         let key_subs = iced::keyboard::listen().map(Event::Keyboard);
 
         let mut subs = vec![terminal_subs, win_subs, key_subs];
-        if !self.state.quick_launches.launching.is_empty() {
+        if !self.state.quick_launches.launching.is_empty()
+            || self.state.quick_launches.is_dirty()
+            || self.state.quick_launches.is_persist_in_flight()
+        {
             subs.push(
                 iced::time::every(Duration::from_millis(
                     quick_launches::QUICK_LAUNCHES_TICK_MS,
@@ -160,10 +164,15 @@ impl App {
     }
 
     pub(crate) fn update(&mut self, event: Event) -> Task<Event> {
+        let mut pre_dispatch_tasks = Vec::new();
         if self.state.quick_launches.inline_edit.is_some()
             && should_cancel_inline_edit(&event)
         {
-            self.state.quick_launches.inline_edit = None;
+            pre_dispatch_tasks.push(quick_launches::quick_launches_reducer(
+                &mut self.state,
+                &self.terminal_settings,
+                quick_launches::QuickLaunchEvent::CancelInlineEdit,
+            ));
         }
 
         if self.any_context_menu_open() {
@@ -175,7 +184,13 @@ impl App {
         }
 
         let tabs_before = self.state.tab.len();
-        let task = self.dispatch_event(event);
+        let dispatch_task = self.dispatch_event(event);
+        let task = if pre_dispatch_tasks.is_empty() {
+            dispatch_task
+        } else {
+            pre_dispatch_tasks.push(dispatch_task);
+            Task::batch(pre_dispatch_tasks)
+        };
 
         if self.state.tab.len() > tabs_before {
             Task::batch(vec![task, snap_to_end(tab_bar::TAB_BAR_SCROLL_ID)])
@@ -201,6 +216,11 @@ impl App {
             ActionBar(event) => self.handle_action_bar(event),
             Sidebar(event) => self.handle_sidebar(event),
             SidebarWorkspace(event) => self.handle_sidebar_workspace(event),
+            QuickLaunch(event) => quick_launches::quick_launches_reducer(
+                &mut self.state,
+                &self.terminal_settings,
+                event,
+            ),
             Tab(event) => tab_reducer(
                 &mut self.state,
                 TabDeps {
@@ -209,36 +229,38 @@ impl App {
                 },
                 event,
             ),
-            Explorer(event) => explorer::explorer_reducer(
-                &mut self.state,
-                ExplorerDeps {
-                    terminal_settings: &self.terminal_settings,
-                },
-                event,
-            ),
-            QuickLaunchSetupCompleted(result) => {
-                quick_launches::quick_launches_reducer(
+            Explorer(event) => {
+                let editor_command =
+                    self.state.settings.draft().terminal_editor().to_string();
+                explorer::explorer_reducer(
                     &mut self.state,
-                    &self.terminal_settings,
-                    quick_launches::QuickLaunchEvent::SetupCompleted(*result),
+                    ExplorerDeps {
+                        terminal_settings: &self.terminal_settings,
+                        editor_command: &editor_command,
+                    },
+                    event,
                 )
             },
-            QuickLaunchTick => quick_launches::quick_launches_reducer(
-                &mut self.state,
-                &self.terminal_settings,
+            QuickLaunchSetupCompleted(result) => {
+                Task::done(Event::QuickLaunch(
+                    quick_launches::QuickLaunchEvent::SetupCompleted(*result),
+                ))
+            },
+            QuickLaunchTick => Task::done(Event::QuickLaunch(
                 quick_launches::QuickLaunchEvent::Tick,
-            ),
-            Terminal(event) => terminal_reducer(&mut self.state, event),
+            )),
+            Terminal(event) => {
+                let sync_task = self.terminal_sync_followup(&event);
+                let terminal_task = terminal_reducer(&mut self.state, event);
+                Task::batch(vec![terminal_task, sync_task])
+            },
             QuickLaunchEditor { tab_id, event } => {
                 quick_launch_editor_reducer(&mut self.state, tab_id, event)
             },
             Settings(event) => {
                 settings::settings_reducer(&mut self.state, event)
             },
-            SettingsApplied(settings) => {
-                self.apply_settings(&settings);
-                Task::none()
-            },
+            SettingsApplied(settings) => self.apply_settings(&settings),
             Keyboard(event) => self.handle_keyboard(event),
             Window(window::Event::Resized(size)) => {
                 self.window_size = size;
@@ -260,8 +282,11 @@ impl App {
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
             ) && self.state.quick_launches.inline_edit.is_some()
             {
-                self.state.quick_launches.inline_edit = None;
-                return Task::none();
+                return quick_launches::quick_launches_reducer(
+                    &mut self.state,
+                    &self.terminal_settings,
+                    quick_launches::QuickLaunchEvent::CancelInlineEdit,
+                );
             }
 
             if matches!(
@@ -280,17 +305,33 @@ impl App {
         Task::none()
     }
 
-    fn apply_settings(&mut self, settings: &settings::SettingsData) {
+    fn terminal_sync_followup(&self, event: &TerminalEvent) -> Task<Event> {
+        let should_sync = matches!(
+            event,
+            TerminalEvent::PaneClicked { .. }
+                | TerminalEvent::SplitPane { .. }
+                | TerminalEvent::ClosePane { .. }
+                | TerminalEvent::Widget(
+                    otty_ui_term::Event::ContentSync { .. }
+                )
+        );
+
+        if should_sync {
+            Task::done(Event::Explorer(ExplorerEvent::SyncFromActiveTerminal))
+        } else {
+            Task::none()
+        }
+    }
+
+    fn apply_settings(
+        &mut self,
+        settings: &settings::SettingsData,
+    ) -> Task<Event> {
         let palette = settings.to_color_palette();
         self.theme_manager.set_custom_palette(palette);
         let current_theme = self.theme_manager.current();
         self.terminal_settings = terminal_settings(current_theme, &self.fonts);
-        let terminal_palette = current_theme.terminal_palette();
-        for tab in self.state.tab_items_mut().values_mut() {
-            if let TabContent::Terminal(terminal) = &mut tab.content {
-                terminal.apply_theme(terminal_palette.clone());
-            }
-        }
+        let terminal_palette = current_theme.terminal_palette().clone();
 
         match setup_shell_session_with_shell(settings.terminal_shell()) {
             Ok(session) => self.shell_session = session,
@@ -301,6 +342,13 @@ impl App {
                 );
             },
         }
+
+        terminal_reducer(
+            &mut self.state,
+            TerminalEvent::ApplyTheme {
+                palette: Box::new(terminal_palette),
+            },
+        )
     }
 
     pub(crate) fn view(&self) -> Element<'_, Event, Theme, iced::Renderer> {
@@ -569,11 +617,7 @@ impl App {
                 Task::none()
             },
             sidebar_workspace::Event::QuickLaunch(event) => {
-                quick_launches::quick_launches_reducer(
-                    &mut self.state,
-                    &self.terminal_settings,
-                    event,
-                )
+                Task::done(Event::QuickLaunch(event))
             },
             sidebar_workspace::Event::Explorer(event) => {
                 Task::done(Event::Explorer(event))
@@ -629,10 +673,11 @@ impl App {
 
     fn handle_sidebar_resize(&mut self, event: pane_grid::ResizeEvent) {
         self.state.sidebar.mark_resizing();
-        self.state.quick_launches.hovered = None;
-        self.state.quick_launches.pressed = None;
-        self.state.quick_launches.drag = None;
-        self.state.quick_launches.drop_target = None;
+        let _task = quick_launches::quick_launches_reducer(
+            &mut self.state,
+            &self.terminal_settings,
+            quick_launches::QuickLaunchEvent::ResetInteractionState,
+        );
         let max_ratio = max_sidebar_workspace_ratio();
 
         if !self.state.sidebar.workspace_open {
@@ -711,20 +756,17 @@ impl App {
     }
 
     fn close_all_context_menus(&mut self) -> Task<Event> {
-        let mut tasks = Vec::new();
-
         self.state.sidebar.add_menu = None;
-        self.state.quick_launches.context_menu = None;
-
-        for tab in self.state.tab_items_mut().values_mut() {
-            if let TabContent::Terminal(terminal) = &mut tab.content {
-                if terminal.context_menu().is_some() {
-                    tasks.push(terminal.close_context_menu());
-                }
-            }
-        }
-
-        Task::batch(tasks)
+        let quick_launch_task = quick_launches::quick_launches_reducer(
+            &mut self.state,
+            &self.terminal_settings,
+            quick_launches::QuickLaunchEvent::ContextMenuDismiss,
+        );
+        let terminal_task = terminal_reducer(
+            &mut self.state,
+            TerminalEvent::CloseAllContextMenus,
+        );
+        Task::batch(vec![quick_launch_task, terminal_task])
     }
 
     fn context_menu_layer<'a>(
@@ -812,6 +854,12 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
             quick_launches::QuickLaunchEvent::ContextMenuAction(_)
             | quick_launches::QuickLaunchEvent::ContextMenuDismiss,
         ))
+        | Event::QuickLaunch(
+            quick_launches::QuickLaunchEvent::ContextMenuAction(_)
+            | quick_launches::QuickLaunchEvent::ContextMenuDismiss
+            | quick_launches::QuickLaunchEvent::SetupCompleted(_)
+            | quick_launches::QuickLaunchEvent::Tick,
+        )
         | Event::QuickLaunchSetupCompleted(_)
         | Event::QuickLaunchTick => Allow,
         Event::Terminal(event) => match event {
@@ -856,6 +904,15 @@ fn should_cancel_inline_edit(event: &Event) -> bool {
                 | QuickLaunchEvent::InlineEditSubmit
                 | QuickLaunchEvent::CursorMoved { .. }
                 | QuickLaunchEvent::NodeHovered { .. }
+        ),
+        Event::QuickLaunch(quick_launches_event) => !matches!(
+            quick_launches_event,
+            QuickLaunchEvent::InlineEditChanged(_)
+                | QuickLaunchEvent::InlineEditSubmit
+                | QuickLaunchEvent::CursorMoved { .. }
+                | QuickLaunchEvent::NodeHovered { .. }
+                | QuickLaunchEvent::SetupCompleted(_)
+                | QuickLaunchEvent::Tick
         ),
         Event::QuickLaunchTick | Event::QuickLaunchSetupCompleted(_) => false,
         Event::SidebarWorkspace(

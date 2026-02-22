@@ -14,10 +14,12 @@ use crate::state::State;
 
 use super::errors::QuickLaunchError;
 use super::model::{
-    NodePath, QuickLaunch, QuickLaunchFolder, QuickLaunchNode,
+    NodePath, QuickLaunch, QuickLaunchFile, QuickLaunchFolder,
+    QuickLaunchNode,
     quick_launch_error_message,
 };
 use super::services::prepare_quick_launch_setup;
+use super::storage::save_quick_launches;
 use super::state::{
     ContextMenuState, ContextMenuTarget, DragState, DropTarget, InlineEditKind,
     InlineEditState, LaunchInfo,
@@ -39,9 +41,13 @@ pub(crate) enum QuickLaunchEvent {
     DeleteSelected,
     ContextMenuAction(ContextMenuAction),
     ContextMenuDismiss,
+    CancelInlineEdit,
+    ResetInteractionState,
     InlineEditChanged(String),
     InlineEditSubmit,
     SetupCompleted(QuickLaunchSetupOutcome),
+    PersistCompleted,
+    PersistFailed(String),
     Tick,
 }
 
@@ -51,8 +57,6 @@ pub(crate) const QUICK_LAUNCHES_TICK_MS: u64 = 200;
 pub(crate) struct PreparedQuickLaunch {
     pub(crate) path: NodePath,
     pub(crate) launch_id: u64,
-    pub(crate) tab_id: u64,
-    pub(crate) terminal_id: u64,
     pub(crate) title: String,
     pub(crate) settings: Box<Settings>,
     pub(crate) command: Box<QuickLaunch>,
@@ -63,8 +67,6 @@ impl fmt::Debug for PreparedQuickLaunch {
         f.debug_struct("PreparedQuickLaunch")
             .field("path", &self.path)
             .field("launch_id", &self.launch_id)
-            .field("tab_id", &self.tab_id)
-            .field("terminal_id", &self.terminal_id)
             .field("title", &self.title)
             .finish()
     }
@@ -171,6 +173,17 @@ pub(crate) fn quick_launches_reducer(
             state.quick_launches.context_menu = None;
             Task::none()
         },
+        CancelInlineEdit => {
+            state.quick_launches.inline_edit = None;
+            Task::none()
+        },
+        ResetInteractionState => {
+            state.quick_launches.hovered = None;
+            state.quick_launches.pressed = None;
+            state.quick_launches.drag = None;
+            state.quick_launches.drop_target = None;
+            Task::none()
+        },
         HeaderCreateFolder => {
             let parent = selected_parent_path(state);
             begin_inline_create_folder(state, parent);
@@ -227,19 +240,41 @@ pub(crate) fn quick_launches_reducer(
             Task::none()
         },
         InlineEditSubmit => {
-            apply_inline_edit(state);
-            Task::none()
+            apply_inline_edit(state)
         },
         ContextMenuAction(action) => {
             handle_context_menu_action(state, terminal_settings, action)
         },
         SetupCompleted(outcome) => reduce_setup_completed(state, outcome),
+        PersistCompleted => {
+            state.quick_launches.complete_persist();
+            Task::none()
+        },
+        PersistFailed(message) => {
+            state.quick_launches.fail_persist();
+            log::warn!("quick launches save failed: {message}");
+            Task::none()
+        },
         Tick => {
+            let mut tasks = Vec::new();
             if !state.quick_launches.launching.is_empty() {
                 state.quick_launches.blink_nonce =
                     state.quick_launches.blink_nonce.wrapping_add(1);
             }
-            Task::none()
+            if state.quick_launches.is_dirty()
+                && !state.quick_launches.is_persist_in_flight()
+            {
+                state.quick_launches.begin_persist();
+                tasks.push(request_persist_quick_launches(
+                    state.quick_launches.data.clone(),
+                ));
+            }
+
+            if tasks.is_empty() {
+                Task::none()
+            } else {
+                Task::batch(tasks)
+            }
         },
     }
 }
@@ -282,8 +317,6 @@ fn handle_prepared_quick_launch(
     let PreparedQuickLaunch {
         path,
         launch_id,
-        tab_id,
-        terminal_id,
         title,
         settings,
         command,
@@ -295,8 +328,6 @@ fn handle_prepared_quick_launch(
 
     Task::done(AppEvent::Tab(TabEvent::NewTab {
         request: TabOpenRequest::QuickLaunchCommandTerminal {
-            tab_id,
-            terminal_id,
             title,
             settings,
             command,
@@ -325,8 +356,7 @@ fn handle_node_left_click(
     match node {
         QuickLaunchNode::Folder(_) => {
             toggle_folder_expanded(state, &path);
-            persist_quick_launches(state);
-            Task::none()
+            persist_quick_launches(state)
         },
         QuickLaunchNode::Command(command) => {
             launch_quick_launch(state, terminal_settings, path, command)
@@ -455,9 +485,9 @@ fn inline_edit_matches(edit: &InlineEditState, path: &[String]) -> bool {
     }
 }
 
-fn apply_inline_edit(state: &mut State) {
+fn apply_inline_edit(state: &mut State) -> Task<AppEvent> {
     let Some(edit) = state.quick_launches.inline_edit.take() else {
-        return;
+        return Task::none();
     };
 
     match edit.kind {
@@ -465,7 +495,7 @@ fn apply_inline_edit(state: &mut State) {
             let Some(parent) =
                 state.quick_launches.data.folder_mut(&parent_path)
             else {
-                return;
+                return Task::none();
             };
             match parent.normalize_title(&edit.value, None) {
                 Ok(title) => {
@@ -476,7 +506,7 @@ fn apply_inline_edit(state: &mut State) {
                             children: Vec::new(),
                         },
                     ));
-                    persist_quick_launches(state);
+                    persist_quick_launches(state)
                 },
                 Err(err) => {
                     state.quick_launches.inline_edit = Some(InlineEditState {
@@ -485,6 +515,7 @@ fn apply_inline_edit(state: &mut State) {
                         error: Some(format!("{err}")),
                         id: edit.id,
                     });
+                    Task::none()
                 },
             }
         },
@@ -492,7 +523,7 @@ fn apply_inline_edit(state: &mut State) {
             let Some(parent) =
                 state.quick_launches.data.parent_folder_mut(&path)
             else {
-                return;
+                return Task::none();
             };
             let current_title = path.last().cloned().unwrap_or_default();
             match parent.normalize_title(&edit.value, Some(&current_title)) {
@@ -519,7 +550,7 @@ fn apply_inline_edit(state: &mut State) {
                         state.quick_launches.selected = Some(renamed_path);
                     }
 
-                    persist_quick_launches(state);
+                    persist_quick_launches(state)
                 },
                 Err(err) => {
                     state.quick_launches.inline_edit = Some(InlineEditState {
@@ -528,6 +559,7 @@ fn apply_inline_edit(state: &mut State) {
                         error: Some(format!("{err}")),
                         id: edit.id,
                     });
+                    Task::none()
                 },
             }
         },
@@ -718,7 +750,7 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
     new_path.push(title);
     update_launching_paths(state, &source, &new_path);
     state.quick_launches.selected = Some(new_path);
-    persist_quick_launches(state);
+    let _task = persist_quick_launches(state);
 }
 
 fn update_launching_paths(
@@ -783,7 +815,7 @@ fn remove_node(state: &mut State, path: &[String]) {
         return;
     };
     parent.remove_child(title);
-    persist_quick_launches(state);
+    let _task = persist_quick_launches(state);
 }
 
 fn kill_command_launch(state: &mut State, path: &[String]) {
@@ -827,7 +859,7 @@ fn duplicate_command(state: &mut State, path: &[String]) {
     let mut clone = command.clone();
     clone.title = duplicate_title(parent, &command.title);
     parent.children.push(QuickLaunchNode::Command(clone));
-    persist_quick_launches(state);
+    let _task = persist_quick_launches(state);
 }
 
 fn duplicate_title(parent: &QuickLaunchFolder, title: &str) -> String {
@@ -846,16 +878,26 @@ fn duplicate_title(parent: &QuickLaunchFolder, title: &str) -> String {
     }
 }
 
-fn persist_quick_launches(state: &mut State) {
+fn persist_quick_launches(state: &mut State) -> Task<AppEvent> {
     state.quick_launches.mark_dirty();
+    Task::none()
+}
 
-    if cfg!(test) {
-        return;
-    }
-
-    if let Err(err) = state.quick_launches.persist() {
-        log::warn!("quick launches save failed: {err}");
-    }
+fn request_persist_quick_launches(data: QuickLaunchFile) -> Task<AppEvent> {
+    Task::perform(
+        async move {
+            match save_quick_launches(&data) {
+                Ok(()) => Ok(()),
+                Err(err) => Err(format!("{err}")),
+            }
+        },
+        |result| match result {
+            Ok(()) => AppEvent::QuickLaunch(QuickLaunchEvent::PersistCompleted),
+            Err(message) => {
+                AppEvent::QuickLaunch(QuickLaunchEvent::PersistFailed(message))
+            },
+        },
+    )
 }
 
 fn launch_quick_launch(
@@ -881,16 +923,11 @@ fn launch_quick_launch(
         },
     );
 
-    let tab_id = state.allocate_tab_id();
-    let terminal_id = state.allocate_terminal_id();
-
     Task::perform(
         prepare_quick_launch_setup(
             command,
             path,
             launch_id,
-            tab_id,
-            terminal_id,
             terminal_settings.clone(),
             cancel,
         ),

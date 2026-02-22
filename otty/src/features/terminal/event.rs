@@ -2,14 +2,13 @@ use std::fmt;
 use std::path::PathBuf;
 
 use iced::{Point, Task, widget::pane_grid};
-use otty_ui_term::settings::Settings;
 use otty_ui_term::{BlockCommand, TerminalView};
 
 use crate::app::Event as AppEvent;
-use crate::features::explorer::ExplorerEvent;
-use crate::features::tab::{TabContent, TabEvent, TabItem, TabOpenRequest};
+use crate::features::tab::TabContent;
 use crate::state::State;
 
+#[cfg(test)]
 use super::model::TerminalKind;
 use super::state::TerminalState;
 
@@ -69,15 +68,10 @@ pub(crate) enum TerminalEvent {
         tab_id: u64,
         terminal_id: u64,
     },
-    InsertTab {
-        tab_id: u64,
-        terminal_id: u64,
-        default_title: String,
-        settings: Box<Settings>,
-        kind: TerminalKind,
-        sync_explorer: bool,
-        error_tab: Option<(String, String)>,
+    ApplyTheme {
+        palette: Box<otty_ui_term::ColorPalette>,
     },
+    CloseAllContextMenus,
     FocusActive,
     SyncSelection {
         tab_id: u64,
@@ -174,23 +168,10 @@ impl fmt::Debug for TerminalEvent {
                 .field("tab_id", tab_id)
                 .field("terminal_id", terminal_id)
                 .finish(),
-            TerminalEvent::InsertTab {
-                tab_id,
-                terminal_id,
-                default_title,
-                kind,
-                sync_explorer,
-                error_tab,
-                ..
-            } => f
-                .debug_struct("InsertTab")
-                .field("tab_id", tab_id)
-                .field("terminal_id", terminal_id)
-                .field("default_title", default_title)
-                .field("kind", kind)
-                .field("sync_explorer", sync_explorer)
-                .field("error_tab", error_tab)
-                .finish(),
+            TerminalEvent::ApplyTheme { .. } => f.write_str("ApplyTheme"),
+            TerminalEvent::CloseAllContextMenus => {
+                f.write_str("CloseAllContextMenus")
+            },
             TerminalEvent::FocusActive => f.write_str("FocusActive"),
             TerminalEvent::SyncSelection { tab_id } => f
                 .debug_struct("SyncSelection")
@@ -209,9 +190,7 @@ pub(crate) fn terminal_reducer(
     match event {
         Widget(event) => reduce_widget_event(state, event),
         PaneClicked { tab_id, pane } => {
-            let task =
-                with_terminal_tab(state, tab_id, |tab| tab.focus_pane(pane));
-            Task::batch(vec![task, request_sync_explorer_from_active()])
+            with_terminal_tab(state, tab_id, |tab| tab.focus_pane(pane))
         },
         PaneResized { tab_id, event } => {
             if let Some(tab) = terminal_tab_mut(state, tab_id) {
@@ -242,13 +221,9 @@ pub(crate) fn terminal_reducer(
         },
         ContextMenuInput { tab_id: _ } => Task::none(),
         SplitPane { tab_id, pane, axis } => {
-            let task = split_pane(state, tab_id, pane, axis);
-            Task::batch(vec![task, request_sync_explorer_from_active()])
+            split_pane(state, tab_id, pane, axis)
         },
-        ClosePane { tab_id, pane } => {
-            let task = close_pane(state, tab_id, pane);
-            Task::batch(vec![task, request_sync_explorer_from_active()])
-        },
+        ClosePane { tab_id, pane } => close_pane(state, tab_id, pane),
         CopySelection {
             tab_id,
             terminal_id,
@@ -269,24 +244,8 @@ pub(crate) fn terminal_reducer(
             tab_id,
             terminal_id,
         } => copy_selected_block(state, tab_id, terminal_id, CopyKind::Command),
-        InsertTab {
-            tab_id,
-            terminal_id,
-            default_title,
-            settings,
-            kind,
-            sync_explorer,
-            error_tab,
-        } => insert_tab(
-            state,
-            tab_id,
-            terminal_id,
-            default_title,
-            *settings,
-            kind,
-            sync_explorer,
-            error_tab,
-        ),
+        ApplyTheme { palette } => apply_terminal_theme(state, *palette),
+        CloseAllContextMenus => close_all_context_menus(state),
         FocusActive => focus_active_terminal(state),
         SyncSelection { tab_id } => sync_tab_block_selection(state, tab_id),
     }
@@ -307,8 +266,6 @@ fn reduce_widget_event(
             | otty_ui_term::Event::ResetTitle { .. }
     );
 
-    let is_content_sync =
-        matches!(event, otty_ui_term::Event::ContentSync { .. });
     let is_shutdown = matches!(&event, otty_ui_term::Event::Shutdown { .. });
     let selection_task = update_block_selection(state, tab_id, &event);
     let event_task = with_terminal_tab(state, tab_id, |tab| {
@@ -324,70 +281,7 @@ fn reduce_widget_event(
         sync_tab_title(state, tab_id);
     }
 
-    if is_content_sync {
-        return Task::batch(vec![
-            update,
-            request_sync_explorer_from_terminal(tab_id, terminal_id),
-        ]);
-    }
-
     update
-}
-
-fn insert_tab(
-    state: &mut State,
-    tab_id: u64,
-    terminal_id: u64,
-    default_title: String,
-    settings: Settings,
-    kind: TerminalKind,
-    sync_explorer: bool,
-    error_tab: Option<(String, String)>,
-) -> Task<AppEvent> {
-    let (mut tab, focus_task) = match TerminalState::new(
-        tab_id,
-        default_title,
-        terminal_id,
-        settings,
-        kind,
-    ) {
-        Ok(result) => result,
-        Err(err) => {
-            log::warn!("failed to create terminal tab: {err}");
-            if let Some((title, message)) = error_tab {
-                return Task::done(AppEvent::Tab(TabEvent::NewTab {
-                    request: TabOpenRequest::QuickLaunchError {
-                        title,
-                        message: format!("{message}\nError: {err}"),
-                    },
-                }));
-            }
-            return Task::none();
-        },
-    };
-
-    tab.set_grid_size(state.pane_grid_size());
-    for terminal_id in tab.terminals().keys().copied() {
-        state.register_terminal_for_tab(terminal_id, tab_id);
-    }
-
-    let title = tab.title().to_string();
-    state.tab.insert(
-        tab_id,
-        TabItem {
-            id: tab_id,
-            title,
-            content: TabContent::Terminal(Box::new(tab)),
-        },
-    );
-    state.tab.activate(Some(tab_id));
-
-    let mut tasks = vec![focus_task, sync_tab_block_selection(state, tab_id)];
-    if sync_explorer {
-        tasks.push(request_sync_explorer_from_active());
-    }
-
-    Task::batch(tasks)
 }
 
 fn focus_active_terminal(state: &State) -> Task<AppEvent> {
@@ -406,6 +300,32 @@ fn focus_active_terminal(state: &State) -> Task<AppEvent> {
         },
         _ => Task::none(),
     }
+}
+
+fn apply_terminal_theme(
+    state: &mut State,
+    palette: otty_ui_term::ColorPalette,
+) -> Task<AppEvent> {
+    for tab in state.tab_items_mut().values_mut() {
+        if let TabContent::Terminal(terminal) = &mut tab.content {
+            terminal.apply_theme(palette.clone());
+        }
+    }
+
+    Task::none()
+}
+
+fn close_all_context_menus(state: &mut State) -> Task<AppEvent> {
+    let mut tasks = Vec::new();
+    for tab in state.tab_items_mut().values_mut() {
+        if let TabContent::Terminal(terminal) = &mut tab.content
+            && terminal.context_menu().is_some()
+        {
+            tasks.push(terminal.close_context_menu());
+        }
+    }
+
+    Task::batch(tasks)
 }
 
 fn sync_tab_block_selection(state: &State, tab_id: u64) -> Task<AppEvent> {
@@ -647,54 +567,10 @@ fn tab_id_by_terminal(state: &State, terminal_id: u64) -> Option<u64> {
 /// Resolve current working directory from active shell terminal tab.
 pub(crate) fn shell_cwd_for_active_tab(state: &State) -> Option<PathBuf> {
     let tab_id = state.active_tab_id()?;
-    shell_cwd_for_sync(state, tab_id, ExplorerSyncTarget::FocusedPane)
-}
-
-/// Resolve current working directory from a terminal content sync event.
-pub(crate) fn shell_cwd_for_terminal_event(
-    state: &State,
-    tab_id: u64,
-    terminal_id: u64,
-) -> Option<PathBuf> {
-    if state.active_tab_id() != Some(tab_id) {
-        return None;
-    }
-
-    shell_cwd_for_sync(
-        state,
-        tab_id,
-        ExplorerSyncTarget::FocusedTerminal(terminal_id),
-    )
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ExplorerSyncTarget {
-    FocusedPane,
-    FocusedTerminal(u64),
-}
-
-fn shell_cwd_for_sync(
-    state: &State,
-    tab_id: u64,
-    target: ExplorerSyncTarget,
-) -> Option<PathBuf> {
     let terminal = shell_terminal_tab(state, tab_id)?;
-
-    match target {
-        ExplorerSyncTarget::FocusedPane => terminal
-            .focused_terminal_entry()
-            .and_then(|entry| terminal_cwd(&entry.terminal.blocks())),
-        ExplorerSyncTarget::FocusedTerminal(terminal_id) => {
-            if terminal.focused_terminal_id() != Some(terminal_id) {
-                return None;
-            }
-
-            terminal
-                .terminals()
-                .get(&terminal_id)
-                .and_then(|entry| terminal_cwd(&entry.terminal.blocks()))
-        },
-    }
+    terminal
+        .focused_terminal_entry()
+        .and_then(|entry| terminal_cwd(&entry.terminal.blocks()))
 }
 
 fn shell_terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
@@ -708,20 +584,6 @@ fn terminal_cwd(blocks: &[otty_ui_term::BlockSnapshot]) -> Option<PathBuf> {
         .rev()
         .find_map(|block| block.meta.cwd.as_deref())
         .map(PathBuf::from)
-}
-
-fn request_sync_explorer_from_active() -> Task<AppEvent> {
-    Task::done(AppEvent::Explorer(ExplorerEvent::SyncFromActiveTerminal))
-}
-
-fn request_sync_explorer_from_terminal(
-    tab_id: u64,
-    terminal_id: u64,
-) -> Task<AppEvent> {
-    Task::done(AppEvent::Explorer(ExplorerEvent::SyncFromTerminal {
-        tab_id,
-        terminal_id,
-    }))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -748,11 +610,6 @@ mod tests {
     #[cfg(target_os = "windows")]
     const VALID_SHELL_PATH: &str = "cmd.exe";
 
-    #[cfg(unix)]
-    const INVALID_SHELL_PATH: &str = "/definitely/missing/otty-shell";
-    #[cfg(target_os = "windows")]
-    const INVALID_SHELL_PATH: &str = "Z:\\definitely\\missing\\otty-shell.exe";
-
     fn settings_with_program(program: &str) -> Settings {
         let mut settings = Settings::default();
         settings.backend = settings.backend.clone().with_session(
@@ -769,18 +626,55 @@ mod tests {
         terminal_id: u64,
         settings: Settings,
     ) {
-        let _task = terminal_reducer(
-            state,
-            TerminalEvent::InsertTab {
-                tab_id,
-                terminal_id,
-                default_title: String::from("Shell"),
-                settings: Box::new(settings),
-                kind: super::TerminalKind::Shell,
-                sync_explorer: false,
-                error_tab: None,
+        let (mut terminal, _task) = super::TerminalState::new(
+            tab_id,
+            String::from("Shell"),
+            terminal_id,
+            settings,
+            super::TerminalKind::Shell,
+        )
+        .expect("terminal should initialize");
+        terminal.set_grid_size(state.pane_grid_size());
+        state.register_terminal_for_tab(terminal_id, tab_id);
+        state.tab.insert(
+            tab_id,
+            TabItem {
+                id: tab_id,
+                title: terminal.title().to_string(),
+                content: TabContent::Terminal(Box::new(terminal)),
             },
         );
+        state.tab.activate(Some(tab_id));
+    }
+
+    fn try_insert_terminal_tab(
+        state: &mut State,
+        tab_id: u64,
+        terminal_id: u64,
+        settings: Settings,
+    ) -> bool {
+        let Ok((mut terminal, _task)) = super::TerminalState::new(
+            tab_id,
+            String::from("Shell"),
+            terminal_id,
+            settings,
+            super::TerminalKind::Shell,
+        ) else {
+            return false;
+        };
+
+        terminal.set_grid_size(state.pane_grid_size());
+        state.register_terminal_for_tab(terminal_id, tab_id);
+        state.tab.insert(
+            tab_id,
+            TabItem {
+                id: tab_id,
+                title: terminal.title().to_string(),
+                content: TabContent::Terminal(Box::new(terminal)),
+            },
+        );
+        state.tab.activate(Some(tab_id));
+        true
     }
 
     fn terminal_tab(state: &State, tab_id: u64) -> &super::TerminalState {
@@ -806,7 +700,7 @@ mod tests {
     }
 
     #[test]
-    fn given_insert_tab_event_when_terminal_initializes_then_state_updates() {
+    fn given_initialized_terminal_when_inserted_then_state_updates() {
         let mut state = State::default();
 
         insert_terminal_tab(
@@ -825,26 +719,17 @@ mod tests {
     }
 
     #[test]
-    fn given_insert_tab_event_when_terminal_init_fails_then_reducer_keeps_state_unchanged()
-     {
+    fn given_terminal_init_failure_when_inserting_then_state_stays_unchanged() {
         let mut state = State::default();
 
-        let _task = terminal_reducer(
+        let inserted = try_insert_terminal_tab(
             &mut state,
-            TerminalEvent::InsertTab {
-                tab_id: 1,
-                terminal_id: 10,
-                default_title: String::from("Shell"),
-                settings: Box::new(settings_with_program(INVALID_SHELL_PATH)),
-                kind: super::TerminalKind::Shell,
-                sync_explorer: false,
-                error_tab: Some((
-                    String::from("Error"),
-                    String::from("terminal init failed"),
-                )),
-            },
+            1,
+            10,
+            settings_with_program("/definitely/missing/otty-shell"),
         );
 
+        assert!(!inserted);
         assert!(state.tab.is_empty());
         assert_eq!(state.terminal_to_tab_len(), 0);
         assert!(state.active_tab_id().is_none());

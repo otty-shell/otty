@@ -6,9 +6,7 @@ use otty_ui_tree::TreePath;
 
 use crate::app::Event as AppEvent;
 use crate::features::tab::{TabEvent, TabOpenRequest};
-use crate::features::terminal::{
-    self, shell_cwd_for_active_tab, shell_cwd_for_terminal_event,
-};
+use crate::features::terminal::{self, shell_cwd_for_active_tab};
 use crate::state::State;
 
 use super::errors::ExplorerError;
@@ -25,10 +23,6 @@ pub(crate) enum ExplorerEvent {
         path: Option<TreePath>,
     },
     SyncFromActiveTerminal,
-    SyncFromTerminal {
-        tab_id: u64,
-        terminal_id: u64,
-    },
     RootLoaded {
         root: PathBuf,
         nodes: Vec<FileNode>,
@@ -46,6 +40,7 @@ pub(crate) enum ExplorerEvent {
 /// Runtime dependencies used by explorer reducer.
 pub(crate) struct ExplorerDeps<'a> {
     pub(crate) terminal_settings: &'a Settings,
+    pub(crate) editor_command: &'a str,
 }
 
 #[derive(Debug, Clone)]
@@ -71,10 +66,6 @@ pub(crate) fn explorer_reducer(
         ExplorerEvent::SyncFromActiveTerminal => {
             reduce_sync_from_active_terminal(state)
         },
-        ExplorerEvent::SyncFromTerminal {
-            tab_id,
-            terminal_id,
-        } => reduce_sync_from_terminal_event(state, tab_id, terminal_id),
         ExplorerEvent::RootLoaded { root, nodes } => {
             let _ = state.explorer.apply_root_nodes(&root, nodes);
             Task::none()
@@ -125,27 +116,11 @@ fn reduce_node_pressed(
         return Task::none();
     };
 
-    open_file_in_editor(state, deps.terminal_settings, file_path)
+    open_file_in_editor(deps.terminal_settings, deps.editor_command, file_path)
 }
 
 fn reduce_sync_from_active_terminal(state: &mut State) -> Task<AppEvent> {
     let Some(root) = shell_cwd_for_active_tab(state) else {
-        return Task::none();
-    };
-    if !state.explorer.set_root(Some(root.clone())) {
-        return Task::none();
-    }
-
-    request_load_root(root)
-}
-
-fn reduce_sync_from_terminal_event(
-    state: &mut State,
-    tab_id: u64,
-    terminal_id: u64,
-) -> Task<AppEvent> {
-    let Some(root) = shell_cwd_for_terminal_event(state, tab_id, terminal_id)
-    else {
         return Task::none();
     };
     if !state.explorer.set_root(Some(root.clone())) {
@@ -192,11 +167,11 @@ fn request_load_folder(path: TreePath, directory: PathBuf) -> Task<AppEvent> {
 }
 
 fn open_file_in_editor(
-    state: &mut State,
     terminal_settings: &Settings,
+    editor_command: &str,
     file_path: PathBuf,
 ) -> Task<AppEvent> {
-    let editor_raw = state.settings.draft().terminal_editor().trim();
+    let editor_raw = editor_command.trim();
     let (program, mut args) = match parse_command_line(editor_raw) {
         Ok(parsed) => parsed,
         Err(err) => {
@@ -220,9 +195,6 @@ fn open_file_in_editor(
     let settings =
         terminal::terminal_settings_for_session(terminal_settings, session);
 
-    let tab_id = state.allocate_tab_id();
-    let terminal_id = state.allocate_terminal_id();
-
     let file_display = file_path.display();
     let title = file_path
         .file_name()
@@ -232,8 +204,6 @@ fn open_file_in_editor(
 
     Task::done(AppEvent::Tab(TabEvent::NewTab {
         request: TabOpenRequest::CommandTerminal {
-            tab_id,
-            terminal_id,
             title,
             settings: Box::new(settings),
         },
@@ -259,9 +229,8 @@ mod tests {
 
     use super::{ExplorerDeps, ExplorerEvent, explorer_reducer};
     use crate::features::explorer::FileNode;
-    use crate::features::terminal::{
-        TerminalEvent, TerminalKind, terminal_reducer,
-    };
+    use crate::features::tab::{TabContent, TabItem};
+    use crate::features::terminal::{TerminalKind, TerminalState};
     use crate::state::State;
 
     #[cfg(unix)]
@@ -272,6 +241,7 @@ mod tests {
     fn deps() -> ExplorerDeps<'static> {
         ExplorerDeps {
             terminal_settings: Box::leak(Box::new(Settings::default())),
+            editor_command: "nano",
         }
     }
 
@@ -283,6 +253,33 @@ mod tests {
             ),
         );
         settings
+    }
+
+    fn insert_command_tab(
+        state: &mut State,
+        tab_id: u64,
+        terminal_id: u64,
+        settings: Settings,
+    ) {
+        let (mut terminal, _task) = TerminalState::new(
+            tab_id,
+            String::from("Command"),
+            terminal_id,
+            settings,
+            TerminalKind::Command,
+        )
+        .expect("terminal should initialize");
+        terminal.set_grid_size(state.pane_grid_size());
+        state.register_terminal_for_tab(terminal_id, tab_id);
+        state.tab.insert(
+            tab_id,
+            TabItem {
+                id: tab_id,
+                title: terminal.title().to_string(),
+                content: TabContent::Terminal(Box::new(terminal)),
+            },
+        );
+        state.tab.activate(Some(tab_id));
     }
 
     #[test]
@@ -350,7 +347,7 @@ mod tests {
     }
 
     #[test]
-    fn given_active_command_tab_when_sync_from_terminal_then_explorer_root_is_preserved()
+    fn given_active_command_tab_when_sync_from_active_then_explorer_root_is_preserved()
      {
         let mut state = State::default();
         let root = std::env::temp_dir().join("otty-shell-root");
@@ -360,26 +357,17 @@ mod tests {
             vec![FileNode::new(String::from("src"), root.join("src"), true)],
         );
 
-        let _task = terminal_reducer(
+        insert_command_tab(
             &mut state,
-            TerminalEvent::InsertTab {
-                tab_id: 1,
-                terminal_id: 10,
-                default_title: String::from("Command"),
-                settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
-                kind: TerminalKind::Command,
-                sync_explorer: false,
-                error_tab: None,
-            },
+            1,
+            10,
+            settings_with_program(VALID_SHELL_PATH),
         );
 
         let _task = explorer_reducer(
             &mut state,
             deps(),
-            ExplorerEvent::SyncFromTerminal {
-                tab_id: 1,
-                terminal_id: 10,
-            },
+            ExplorerEvent::SyncFromActiveTerminal,
         );
 
         assert_eq!(state.explorer.root_label(), Some("otty-shell-root"));

@@ -1,7 +1,5 @@
 use thiserror::Error;
 
-use crate::features::quick_launches::QuickLaunchError;
-
 /// Errors emitted by quick launch editor validation and persistence.
 #[derive(Debug, Error)]
 pub(crate) enum QuickLaunchEditorError {
@@ -27,9 +25,4 @@ pub(crate) enum QuickLaunchEditorError {
     MissingCommand,
     #[error("Validation failed: {message}")]
     Validation { message: String },
-    #[error("Failed to persist quick launches: {source}")]
-    Persist {
-        #[source]
-        source: QuickLaunchError,
-    },
 }

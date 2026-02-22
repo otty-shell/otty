@@ -24,14 +24,10 @@ pub(crate) enum TabOpenRequest {
         message: String,
     },
     CommandTerminal {
-        tab_id: u64,
-        terminal_id: u64,
         title: String,
         settings: Box<Settings>,
     },
     QuickLaunchCommandTerminal {
-        tab_id: u64,
-        terminal_id: u64,
         title: String,
         settings: Box<Settings>,
         command: Box<QuickLaunch>,
@@ -57,27 +53,16 @@ impl fmt::Debug for TabOpenRequest {
                 .field("title", title)
                 .field("message", message)
                 .finish(),
-            TabOpenRequest::CommandTerminal {
-                tab_id,
-                terminal_id,
-                title,
-                ..
-            } => f
+            TabOpenRequest::CommandTerminal { title, .. } => f
                 .debug_struct("CommandTerminal")
-                .field("tab_id", tab_id)
-                .field("terminal_id", terminal_id)
                 .field("title", title)
                 .finish(),
             TabOpenRequest::QuickLaunchCommandTerminal {
-                tab_id,
-                terminal_id,
                 title,
                 command,
                 ..
             } => f
                 .debug_struct("QuickLaunchCommandTerminal")
-                .field("tab_id", tab_id)
-                .field("terminal_id", terminal_id)
                 .field("title", title)
                 .field("command", command)
                 .finish(),

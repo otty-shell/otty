@@ -3,10 +3,8 @@ use iced::Task;
 use crate::app::Event as AppEvent;
 use crate::state::State;
 
-use super::errors::SettingsError;
 use super::model::SettingsData;
-use super::state::{SettingsPreset, SettingsState, read_settings_payload};
-#[cfg(test)]
+use super::state::{SettingsPreset, SettingsState};
 use super::storage::SettingsLoadStatus;
 use super::storage::{SettingsLoad, load_settings, save_settings};
 
@@ -14,7 +12,11 @@ use super::storage::{SettingsLoad, load_settings, save_settings};
 #[derive(Debug, Clone)]
 pub(crate) enum SettingsEvent {
     Reload,
+    ReloadLoaded(SettingsLoad),
+    ReloadFailed(String),
     Save,
+    SaveCompleted(SettingsData),
+    SaveFailed(String),
     Reset,
     NodePressed { path: Vec<String> },
     NodeHovered { path: Option<Vec<String>> },
@@ -30,11 +32,23 @@ pub(crate) fn settings_reducer(
     event: SettingsEvent,
 ) -> Task<AppEvent> {
     match event {
-        SettingsEvent::Reload => {
-            reload_settings_state(&mut state.settings, load_settings)
+        SettingsEvent::Reload => request_reload_settings(),
+        SettingsEvent::ReloadLoaded(load) => {
+            apply_loaded_settings(&mut state.settings, load);
+            Task::none()
         },
-        SettingsEvent::Save => {
-            persist_settings(&mut state.settings, save_settings)
+        SettingsEvent::ReloadFailed(message) => {
+            log::warn!("settings read failed: {message}");
+            Task::none()
+        },
+        SettingsEvent::Save => request_save_settings(&state.settings),
+        SettingsEvent::SaveCompleted(settings) => {
+            state.settings.mark_saved(settings.clone());
+            Task::done(AppEvent::SettingsApplied(settings))
+        },
+        SettingsEvent::SaveFailed(message) => {
+            log::warn!("settings save failed: {message}");
+            Task::none()
         },
         SettingsEvent::Reset => {
             state.settings.reset();
@@ -67,75 +81,82 @@ pub(crate) fn settings_reducer(
     }
 }
 
-fn reload_settings_state<Load>(
-    state: &mut SettingsState,
-    load: Load,
-) -> Task<AppEvent>
-where
-    Load: Fn() -> Result<SettingsLoad, SettingsError>,
-{
-    if let Some(settings) = read_settings_payload(load) {
-        state.replace_with_settings(settings);
-    }
-
-    Task::none()
+fn request_reload_settings() -> Task<AppEvent> {
+    Task::perform(async { load_settings() }, |result| match result {
+        Ok(load) => AppEvent::Settings(SettingsEvent::ReloadLoaded(load)),
+        Err(err) => {
+            AppEvent::Settings(SettingsEvent::ReloadFailed(format!("{err}")))
+        },
+    })
 }
 
-fn persist_settings<Save>(
-    state: &mut SettingsState,
-    save: Save,
-) -> Task<AppEvent>
-where
-    Save: Fn(&SettingsData) -> Result<(), SettingsError>,
-{
+fn request_save_settings(state: &SettingsState) -> Task<AppEvent> {
     let normalized = state.normalized_draft();
-    match save(&normalized) {
-        Ok(()) => {
-            state.mark_saved(normalized.clone());
-            Task::done(AppEvent::SettingsApplied(normalized))
+    Task::perform(
+        async move {
+            match save_settings(&normalized) {
+                Ok(()) => Ok(normalized),
+                Err(err) => Err(format!("{err}")),
+            }
         },
-        Err(err) => {
-            log::warn!("settings save failed: {err}");
-            Task::none()
+        |result| match result {
+            Ok(settings) => {
+                AppEvent::Settings(SettingsEvent::SaveCompleted(settings))
+            },
+            Err(message) => {
+                AppEvent::Settings(SettingsEvent::SaveFailed(message))
+            },
         },
+    )
+}
+
+fn apply_loaded_settings(state: &mut SettingsState, load: SettingsLoad) {
+    let (settings, status) = load.into_parts();
+    if let SettingsLoadStatus::Invalid(message) = &status {
+        log::warn!("settings file invalid: {message}");
     }
+
+    state.replace_with_settings(settings);
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::Error;
-
     use crate::state::State;
 
     use super::{
-        SettingsData, SettingsError, SettingsEvent, SettingsState,
-        persist_settings, settings_reducer,
+        SettingsData, SettingsEvent, SettingsState, apply_loaded_settings,
+        settings_reducer,
     };
 
     #[test]
     fn given_save_event_when_save_succeeds_then_marks_state_saved() {
-        let mut settings_state = SettingsState::default();
-        settings_state.set_shell(String::from("/bin/zsh"));
-        assert!(settings_state.is_dirty());
+        let mut state = State::default();
+        state.settings.set_shell(String::from("/bin/zsh"));
+        assert!(state.settings.is_dirty());
+        let normalized = state.settings.normalized_draft();
 
-        let _task = persist_settings(&mut settings_state, |_| Ok(()));
+        let _task = settings_reducer(
+            &mut state,
+            SettingsEvent::SaveCompleted(normalized),
+        );
 
-        assert!(!settings_state.is_dirty());
-        assert_eq!(settings_state.baseline(), settings_state.draft());
+        assert!(!state.settings.is_dirty());
+        assert_eq!(state.settings.baseline(), state.settings.draft());
     }
 
     #[test]
     fn given_save_event_when_save_fails_then_keeps_state_dirty() {
-        let mut settings_state = SettingsState::default();
-        settings_state.set_editor(String::from("vim"));
-        assert!(settings_state.is_dirty());
+        let mut state = State::default();
+        state.settings.set_editor(String::from("vim"));
+        assert!(state.settings.is_dirty());
 
-        let _task = persist_settings(&mut settings_state, |_| {
-            Err(SettingsError::Io(Error::other("save failed")))
-        });
+        let _task = settings_reducer(
+            &mut state,
+            SettingsEvent::SaveFailed(String::from("save failed")),
+        );
 
-        assert!(settings_state.is_dirty());
-        assert_ne!(settings_state.baseline(), settings_state.draft());
+        assert!(state.settings.is_dirty());
+        assert_ne!(state.settings.baseline(), state.settings.draft());
     }
 
     #[test]
@@ -161,12 +182,13 @@ mod tests {
         settings_state.set_shell(String::from("/bin/zsh"));
         let loaded = SettingsData::default();
 
-        let _task = super::reload_settings_state(&mut settings_state, || {
-            Ok(super::SettingsLoad::new(
+        apply_loaded_settings(
+            &mut settings_state,
+            super::SettingsLoad::new(
                 loaded.clone(),
                 super::SettingsLoadStatus::Loaded,
-            ))
-        });
+            ),
+        );
 
         assert_eq!(settings_state.draft(), &loaded);
         assert!(!settings_state.is_dirty());

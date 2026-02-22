@@ -27,8 +27,6 @@ pub(crate) async fn prepare_quick_launch_setup(
     command: QuickLaunch,
     path: NodePath,
     launch_id: u64,
-    tab_id: u64,
-    terminal_id: u64,
     terminal_settings: Settings,
     cancel: Arc<AtomicBool>,
 ) -> QuickLaunchSetupOutcome {
@@ -59,8 +57,6 @@ pub(crate) async fn prepare_quick_launch_setup(
     QuickLaunchSetupOutcome::Prepared(PreparedQuickLaunch {
         path,
         launch_id,
-        tab_id,
-        terminal_id,
         title,
         settings: Box::new(settings),
         command: Box::new(command),

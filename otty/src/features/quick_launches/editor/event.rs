@@ -210,17 +210,7 @@ fn persist_quick_launches(
     state: &mut State,
 ) -> Result<(), QuickLaunchEditorError> {
     state.quick_launches.mark_dirty();
-
-    if cfg!(test) {
-        Ok(())
-    } else {
-        if let Err(source) = state.quick_launches.persist() {
-            log::warn!("quick launches save failed: {source}");
-            return Err(QuickLaunchEditorError::Persist { source });
-        }
-
-        Ok(())
-    }
+    Ok(())
 }
 
 #[cfg(test)]

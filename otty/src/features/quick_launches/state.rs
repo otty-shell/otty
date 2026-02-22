@@ -6,7 +6,7 @@ use iced::Point;
 
 use super::errors::QuickLaunchError;
 use super::model::{NodePath, QuickLaunchFile};
-use super::storage::{load_quick_launches, save_quick_launches};
+use super::storage::load_quick_launches;
 
 /// Snapshot of a failed quick launch.
 #[derive(Debug, Clone)]
@@ -51,6 +51,7 @@ pub(crate) struct InlineEditState {
 pub(crate) struct QuickLaunchState {
     pub(crate) data: QuickLaunchFile,
     pub(crate) dirty: bool,
+    persist_in_flight: bool,
     pub(crate) selected: Option<NodePath>,
     pub(crate) hovered: Option<NodePath>,
     pub(crate) launching: HashMap<NodePath, LaunchInfo>,
@@ -86,6 +87,7 @@ impl QuickLaunchState {
             Ok(Some(data)) => Self {
                 data,
                 dirty: false,
+                persist_in_flight: false,
                 selected: None,
                 hovered: None,
                 launching: HashMap::new(),
@@ -107,14 +109,31 @@ impl QuickLaunchState {
         }
     }
 
-    pub(crate) fn persist(&mut self) -> Result<(), QuickLaunchError> {
-        save_quick_launches(&self.data)?;
-        self.dirty = false;
-        Ok(())
+    /// Return whether there are unsaved local changes.
+    pub(crate) fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Return whether persistence is currently in progress.
+    pub(crate) fn is_persist_in_flight(&self) -> bool {
+        self.persist_in_flight
     }
 
     pub(crate) fn mark_dirty(&mut self) {
         self.dirty = true;
+    }
+
+    pub(crate) fn begin_persist(&mut self) {
+        self.persist_in_flight = true;
+    }
+
+    pub(crate) fn complete_persist(&mut self) {
+        self.persist_in_flight = false;
+        self.dirty = false;
+    }
+
+    pub(crate) fn fail_persist(&mut self) {
+        self.persist_in_flight = false;
     }
 }
 
@@ -123,6 +142,7 @@ impl Default for QuickLaunchState {
         Self {
             data: QuickLaunchFile::empty(),
             dirty: false,
+            persist_in_flight: false,
             selected: None,
             hovered: None,
             launching: HashMap::new(),
