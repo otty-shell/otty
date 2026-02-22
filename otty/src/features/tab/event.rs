@@ -3,11 +3,13 @@ use otty_ui_term::settings::Settings;
 
 use crate::app::Event as AppEvent;
 use crate::features::explorer;
-use crate::features::quick_launches::editor::QuickLaunchEditorState;
-use crate::features::quick_launches::model::quick_launch_error_message;
+use crate::features::quick_launches::{
+    NodePath, QuickLaunch, QuickLaunchEditorState, quick_launch_error_message,
+};
 use crate::features::settings;
 use crate::features::terminal::{
     self, ShellSession, TerminalEvent, TerminalKind,
+    terminal_settings_for_session,
 };
 use crate::state::State;
 
@@ -96,7 +98,7 @@ fn open_settings_tab(state: &mut State) -> Task<AppEvent> {
 
 fn open_quick_launch_editor_create_tab(
     state: &mut State,
-    parent_path: crate::features::quick_launches::model::NodePath,
+    parent_path: NodePath,
 ) -> Task<AppEvent> {
     let tab_id = state.next_tab_id;
     state.next_tab_id += 1;
@@ -117,8 +119,8 @@ fn open_quick_launch_editor_create_tab(
 
 fn open_quick_launch_editor_edit_tab(
     state: &mut State,
-    path: crate::features::quick_launches::model::NodePath,
-    command: crate::features::quick_launches::model::QuickLaunch,
+    path: NodePath,
+    command: QuickLaunch,
 ) -> Task<AppEvent> {
     let tab_id = state.next_tab_id;
     state.next_tab_id += 1;
@@ -150,7 +152,7 @@ fn open_shell_terminal_tab(
     let terminal_id = state.next_terminal_id;
     state.next_terminal_id += 1;
 
-    let settings = settings_for_session(
+    let settings = terminal_settings_for_session(
         terminal_settings,
         shell_session.session().clone(),
     );
@@ -261,7 +263,7 @@ fn open_quick_launch_command_terminal_tab(
     terminal_id: u64,
     title: String,
     settings: Settings,
-    command: Box<crate::features::quick_launches::model::QuickLaunch>,
+    command: Box<QuickLaunch>,
 ) -> Task<AppEvent> {
     let command_title = &command.title;
     let init_error_message = quick_launch_error_message(
@@ -308,13 +310,4 @@ fn open_command_terminal_tab(
             error_tab: None,
         },
     )
-}
-
-fn settings_for_session(
-    base_settings: &Settings,
-    session: otty_ui_term::settings::SessionKind,
-) -> Settings {
-    let mut settings = base_settings.clone();
-    settings.backend = settings.backend.clone().with_session(session);
-    settings
 }

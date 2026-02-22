@@ -1,7 +1,7 @@
-use crate::features::quick_launches::errors::QuickLaunchError;
-use crate::features::quick_launches::model::{
-    CommandSpec, CustomCommand, EnvVar, QuickLaunch, QuickLaunchFolder,
-    QuickLaunchType, SSH_DEFAULT_PORT, SshCommand,
+use super::super::model::SshCommand;
+use crate::features::quick_launches::{
+    CommandSpec, CustomCommand, EnvVar, QuickLaunch, QuickLaunchError,
+    QuickLaunchFolder, QuickLaunchType, SSH_DEFAULT_PORT,
 };
 
 use super::errors::QuickLaunchEditorError;
@@ -127,9 +127,10 @@ fn optional_string(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::model::SshCommand;
     use super::super::state::QuickLaunchEditorState;
     use super::*;
-    use crate::features::quick_launches::model::{QuickLaunchNode, SshCommand};
+    use crate::features::quick_launches::QuickLaunchNode;
 
     #[test]
     fn given_empty_title_when_building_command_then_returns_title_required() {

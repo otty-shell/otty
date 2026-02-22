@@ -3,7 +3,7 @@ use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, text};
 use iced::{Element, Length, Theme};
 
-use crate::features::quick_launches::state::QuickLaunchState;
+use crate::features::quick_launches::QuickLaunchState;
 use crate::icons;
 use crate::theme::ThemeProps;
 use crate::ui::components::icon_button::{

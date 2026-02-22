@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::features::quick_launches::errors::QuickLaunchError;
+use crate::features::quick_launches::QuickLaunchError;
 
 /// Errors emitted by quick launch editor validation and persistence.
 #[derive(Debug, Error)]

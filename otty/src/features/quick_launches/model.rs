@@ -253,6 +253,47 @@ fn default_ssh_port() -> u16 {
     SSH_DEFAULT_PORT
 }
 
+/// Validate a custom command before runtime preflight.
+pub(crate) fn validate_custom_command(
+    custom: &CustomCommand,
+) -> Result<(), QuickLaunchError> {
+    let program = custom.program.trim();
+    if program.is_empty() {
+        return Err(QuickLaunchError::Validation {
+            message: String::from("Program is empty."),
+        });
+    }
+
+    if let Some(dir) = custom.working_directory.as_deref()
+        && dir.trim().is_empty()
+    {
+        return Err(QuickLaunchError::Validation {
+            message: String::from("Working directory is empty."),
+        });
+    }
+
+    Ok(())
+}
+
+/// Validate an SSH command before runtime preflight.
+pub(crate) fn validate_ssh_command(
+    ssh: &SshCommand,
+) -> Result<(), QuickLaunchError> {
+    if ssh.host.trim().is_empty() {
+        return Err(QuickLaunchError::Validation {
+            message: String::from("Host is empty."),
+        });
+    }
+
+    if ssh.port == 0 {
+        return Err(QuickLaunchError::Validation {
+            message: String::from("Port must be greater than 0."),
+        });
+    }
+
+    Ok(())
+}
+
 /// Build a detailed error message for a failed quick launch execution.
 pub(crate) fn quick_launch_error_message(
     command: &QuickLaunch,
@@ -309,5 +350,67 @@ pub(crate) fn quick_launch_error_message(
                 "Type: SSH\nHost: {host}\nPort: {port}\nUser: {user}\nIdentity file: {identity}\nExtra args: {extra_args}\nError: {err}"
             )
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn given_empty_custom_program_when_validating_then_returns_error() {
+        let custom = CustomCommand {
+            program: String::from(" "),
+            args: Vec::new(),
+            env: Vec::new(),
+            working_directory: None,
+        };
+
+        let result = validate_custom_command(&custom);
+
+        assert!(matches!(
+            result,
+            Err(QuickLaunchError::Validation { message })
+            if message == "Program is empty."
+        ));
+    }
+
+    #[test]
+    fn given_empty_ssh_host_when_validating_then_returns_error() {
+        let ssh = SshCommand {
+            host: String::from(""),
+            port: SSH_DEFAULT_PORT,
+            user: None,
+            identity_file: None,
+            extra_args: Vec::new(),
+        };
+
+        let result = validate_ssh_command(&ssh);
+
+        assert!(matches!(
+            result,
+            Err(QuickLaunchError::Validation { message })
+            if message == "Host is empty."
+        ));
+    }
+
+    #[test]
+    fn given_valid_commands_when_validating_then_returns_ok() {
+        let custom = CustomCommand {
+            program: String::from("bash"),
+            args: Vec::new(),
+            env: Vec::new(),
+            working_directory: Some(String::from("/tmp")),
+        };
+        let ssh = SshCommand {
+            host: String::from("example.com"),
+            port: SSH_DEFAULT_PORT,
+            user: None,
+            identity_file: None,
+            extra_args: Vec::new(),
+        };
+
+        assert!(validate_custom_command(&custom).is_ok());
+        assert!(validate_ssh_command(&ssh).is_ok());
     }
 }

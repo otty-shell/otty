@@ -1,7 +1,7 @@
 use iced::Task;
 
 use crate::app::Event as AppEvent;
-use crate::features::quick_launches::model::{
+use crate::features::quick_launches::{
     QuickLaunch, QuickLaunchNode, QuickLaunchType,
 };
 use crate::features::tab::{TabContent, TabEvent};
@@ -226,7 +226,7 @@ fn persist_quick_launches(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::quick_launches::model::{
+    use crate::features::quick_launches::{
         CommandSpec, CustomCommand, QuickLaunchFolder, QuickLaunchNode,
     };
     use crate::features::tab::TabItem;

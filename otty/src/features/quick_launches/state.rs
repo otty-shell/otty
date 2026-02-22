@@ -74,8 +74,15 @@ pub(crate) struct LaunchInfo {
 }
 
 impl QuickLaunchState {
+    /// Load quick launch state from persistent storage.
     pub(crate) fn load() -> Self {
-        match load_quick_launches() {
+        Self::from_loaded(load_quick_launches())
+    }
+
+    fn from_loaded(
+        loaded: Result<Option<QuickLaunchFile>, QuickLaunchError>,
+    ) -> Self {
+        match loaded {
             Ok(Some(data)) => Self {
                 data,
                 dirty: false,
@@ -145,4 +152,33 @@ pub(crate) struct DragState {
 pub(crate) enum DropTarget {
     Root,
     Folder(NodePath),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn given_load_error_when_loading_state_then_falls_back_to_default() {
+        let state =
+            QuickLaunchState::from_loaded(Err(QuickLaunchError::Validation {
+                message: String::from("broken payload"),
+            }));
+
+        assert!(state.data.root.children.is_empty());
+        assert!(!state.dirty);
+        assert!(state.launching.is_empty());
+    }
+
+    #[test]
+    fn given_loaded_payload_when_loading_state_then_uses_loaded_data() {
+        let mut payload = QuickLaunchFile::empty();
+        payload.root.title = String::from("Loaded");
+
+        let state = QuickLaunchState::from_loaded(Ok(Some(payload)));
+
+        assert_eq!(state.data.root.title, "Loaded");
+        assert!(state.selected.is_none());
+        assert!(state.hovered.is_none());
+    }
 }

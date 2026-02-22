@@ -12,10 +12,9 @@ use std::time::Duration;
 
 use crate::effects::close_window;
 use crate::features::explorer;
-use crate::features::quick_launches::editor::{
-    QuickLaunchEditorEvent, quick_launch_editor_reducer,
+use crate::features::quick_launches::{
+    self as quick_launches, QuickLaunchEditorEvent, quick_launch_editor_reducer,
 };
-use crate::features::quick_launches::event as quick_launches;
 use crate::features::settings;
 use crate::features::tab::{TabContent, TabEvent, TabOpenRequest, tab_reducer};
 use crate::features::terminal::{
@@ -204,19 +203,17 @@ impl App {
                 event,
             ),
             QuickLaunchSetupCompleted(result) => {
-                quick_launches::handle_quick_launch_setup_completed(
+                quick_launches::quick_launches_reducer(
                     &mut self.state,
-                    *result,
+                    &self.terminal_settings,
+                    quick_launches::QuickLaunchEvent::SetupCompleted(*result),
                 )
             },
-            QuickLaunchTick => {
-                if self.state.quick_launches.launching.is_empty() {
-                    return Task::none();
-                }
-                self.state.quick_launches.blink_nonce =
-                    self.state.quick_launches.blink_nonce.wrapping_add(1);
-                Task::none()
-            },
+            QuickLaunchTick => quick_launches::quick_launches_reducer(
+                &mut self.state,
+                &self.terminal_settings,
+                quick_launches::QuickLaunchEvent::Tick,
+            ),
             Terminal(event) => terminal_reducer(&mut self.state, event),
             QuickLaunchEditor { tab_id, event } => {
                 quick_launch_editor_reducer(&mut self.state, tab_id, event)

@@ -5,7 +5,7 @@ use iced::widget::pane_grid;
 use iced::{Point, Size};
 
 use crate::features::explorer::state::ExplorerState;
-use crate::features::quick_launches::state::QuickLaunchState;
+use crate::features::quick_launches::QuickLaunchState;
 use crate::features::settings::SettingsState;
 use crate::features::tab::{TabContent, TabItem};
 use crate::ui::widgets::tab_bar;

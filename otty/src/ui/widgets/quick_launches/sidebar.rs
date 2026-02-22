@@ -7,12 +7,9 @@ use iced::widget::{
 use iced::{Color, Element, Length};
 use std::time::{Duration, Instant};
 
-use crate::features::quick_launches::event::{
-    QUICK_LAUNCHES_TICK_MS, QuickLaunchEvent,
-};
-use crate::features::quick_launches::model::QuickLaunchNode;
-use crate::features::quick_launches::state::{
-    DropTarget, InlineEditKind, InlineEditState, QuickLaunchState,
+use crate::features::quick_launches::{
+    DropTarget, InlineEditKind, InlineEditState, QUICK_LAUNCHES_TICK_MS,
+    QuickLaunchEvent, QuickLaunchNode, QuickLaunchState,
 };
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};

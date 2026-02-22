@@ -1,8 +1,9 @@
 use std::fmt;
 
 use crate::features::quick_launches::QuickLaunchErrorState;
-use crate::features::quick_launches::editor::QuickLaunchEditorState;
-use crate::features::quick_launches::model::{NodePath, QuickLaunch};
+use crate::features::quick_launches::{
+    NodePath, QuickLaunch, QuickLaunchEditorState,
+};
 use crate::features::terminal::TerminalState;
 use otty_ui_term::settings::Settings;
 

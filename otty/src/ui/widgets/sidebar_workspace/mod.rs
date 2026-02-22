@@ -1,7 +1,7 @@
 use iced::{Element, Point, Theme};
 
 use crate::features::explorer::event::ExplorerEvent;
-use crate::features::quick_launches::event::QuickLaunchEvent;
+use crate::features::quick_launches::QuickLaunchEvent;
 use crate::state::{SidebarItem, State};
 use crate::theme::ThemeProps;
 

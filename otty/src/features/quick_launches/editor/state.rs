@@ -1,4 +1,4 @@
-use crate::features::quick_launches::model::{
+use crate::features::quick_launches::{
     CommandSpec, EnvVar, NodePath, QuickLaunch, QuickLaunchType,
     SSH_DEFAULT_PORT,
 };

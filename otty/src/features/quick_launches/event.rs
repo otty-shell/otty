@@ -1,17 +1,12 @@
-use std::collections::HashMap;
 use std::fmt;
-use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use iced::{Point, Task, widget::operation};
-use otty_libterm::pty::SSHAuth;
-use otty_ui_term::settings::{
-    LocalSessionOptions, SSHSessionOptions, SessionKind, Settings,
-};
+use otty_ui_term::settings::Settings;
 
 use crate::app::Event as AppEvent;
 use crate::features::tab::{TabEvent, TabOpenRequest};
@@ -19,9 +14,10 @@ use crate::state::State;
 
 use super::errors::QuickLaunchError;
 use super::model::{
-    CommandSpec, CustomCommand, EnvVar, NodePath, QuickLaunch,
-    QuickLaunchFolder, QuickLaunchNode, SshCommand, quick_launch_error_message,
+    NodePath, QuickLaunch, QuickLaunchFolder, QuickLaunchNode,
+    quick_launch_error_message,
 };
+use super::services::prepare_quick_launch_setup;
 use super::state::{
     ContextMenuState, ContextMenuTarget, DragState, DropTarget, InlineEditKind,
     InlineEditState, LaunchInfo,
@@ -45,10 +41,11 @@ pub(crate) enum QuickLaunchEvent {
     ContextMenuDismiss,
     InlineEditChanged(String),
     InlineEditSubmit,
+    SetupCompleted(QuickLaunchSetupOutcome),
+    Tick,
 }
 
 pub(crate) const QUICK_LAUNCHES_TICK_MS: u64 = 200;
-const QUICK_LAUNCH_SSH_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
 pub(crate) struct PreparedQuickLaunch {
@@ -236,10 +233,18 @@ pub(crate) fn quick_launches_reducer(
         ContextMenuAction(action) => {
             handle_context_menu_action(state, terminal_settings, action)
         },
+        SetupCompleted(outcome) => reduce_setup_completed(state, outcome),
+        Tick => {
+            if !state.quick_launches.launching.is_empty() {
+                state.quick_launches.blink_nonce =
+                    state.quick_launches.blink_nonce.wrapping_add(1);
+            }
+            Task::none()
+        },
     }
 }
 
-pub(crate) fn handle_quick_launch_setup_completed(
+fn reduce_setup_completed(
     state: &mut State,
     outcome: QuickLaunchSetupOutcome,
 ) -> Task<AppEvent> {
@@ -843,6 +848,11 @@ fn duplicate_title(parent: &QuickLaunchFolder, title: &str) -> String {
 
 fn persist_quick_launches(state: &mut State) {
     state.quick_launches.mark_dirty();
+
+    if cfg!(test) {
+        return;
+    }
+
     if let Err(err) = state.quick_launches.persist() {
         log::warn!("quick launches save failed: {err}");
     }
@@ -890,52 +900,6 @@ fn launch_quick_launch(
     )
 }
 
-async fn prepare_quick_launch_setup(
-    command: QuickLaunch,
-    path: NodePath,
-    launch_id: u64,
-    tab_id: u64,
-    terminal_id: u64,
-    terminal_settings: Settings,
-    cancel: Arc<AtomicBool>,
-) -> QuickLaunchSetupOutcome {
-    if cancel.load(Ordering::Relaxed) {
-        return QuickLaunchSetupOutcome::Canceled { path, launch_id };
-    }
-
-    if let Some(validation_error) = validate_quick_launch(&command) {
-        return QuickLaunchSetupOutcome::Failed {
-            path,
-            launch_id,
-            command: Box::new(command),
-            error: Arc::new(QuickLaunchError::Validation {
-                message: validation_error,
-            }),
-        };
-    }
-
-    // Keep setup in an async pipeline so remote preflight can be added here.
-    std::future::ready(()).await;
-
-    let session = command_session(&command, &cancel);
-    let settings = settings_for_session(&terminal_settings, session);
-    let title = command.title.clone();
-
-    if cancel.load(Ordering::Relaxed) {
-        return QuickLaunchSetupOutcome::Canceled { path, launch_id };
-    }
-
-    QuickLaunchSetupOutcome::Prepared(PreparedQuickLaunch {
-        path,
-        launch_id,
-        tab_id,
-        terminal_id,
-        title,
-        settings: Box::new(settings),
-        command: Box::new(command),
-    })
-}
-
 fn should_skip_launch_result(
     state: &mut State,
     path: &[String],
@@ -954,214 +918,6 @@ fn should_skip_launch_result(
 
     remove_launch_by_id(state, launch_id);
     false
-}
-
-fn command_session(
-    command: &QuickLaunch,
-    cancel: &Arc<AtomicBool>,
-) -> SessionKind {
-    match &command.spec {
-        CommandSpec::Custom { custom } => {
-            SessionKind::from_local_options(custom_session(custom))
-        },
-        CommandSpec::Ssh { ssh } => {
-            SessionKind::from_ssh_options(ssh_session(ssh, cancel))
-        },
-    }
-}
-
-fn settings_for_session(
-    base_settings: &Settings,
-    session: SessionKind,
-) -> Settings {
-    let mut settings = base_settings.clone();
-    settings.backend = settings.backend.clone().with_session(session);
-    settings
-}
-
-fn validate_quick_launch(command: &QuickLaunch) -> Option<String> {
-    match &command.spec {
-        CommandSpec::Custom { custom } => validate_custom_command(custom).err(),
-        CommandSpec::Ssh { ssh } => validate_ssh_command(ssh).err(),
-    }
-}
-
-fn validate_custom_command(custom: &CustomCommand) -> Result<(), String> {
-    let program = custom.program.trim();
-    if program.is_empty() {
-        return Err(String::from("Program is empty."));
-    }
-
-    let _program_path = find_program_path(program)?;
-
-    if let Some(dir) = custom.working_directory.as_deref() {
-        let dir = dir.trim();
-        if dir.is_empty() {
-            return Err(String::from("Working directory is empty."));
-        }
-
-        let expanded = expand_tilde(dir);
-        let path = Path::new(&expanded);
-        if !path.exists() {
-            return Err(format!("Working directory not found: {}", expanded));
-        }
-        if !path.is_dir() {
-            return Err(format!(
-                "Working directory is not a directory: {}",
-                expanded
-            ));
-        }
-    }
-
-    Ok(())
-}
-
-fn validate_ssh_command(ssh: &SshCommand) -> Result<(), String> {
-    if ssh.host.trim().is_empty() {
-        return Err(String::from("Host is empty."));
-    }
-
-    if ssh.port == 0 {
-        return Err(String::from("Port must be greater than 0."));
-    }
-
-    if let Some(identity) = ssh.identity_file.as_deref() {
-        let identity = identity.trim();
-        if !identity.is_empty() {
-            let expanded = expand_tilde(identity);
-            let path = Path::new(&expanded);
-            if !path.exists() {
-                return Err(format!("Identity file not found: {}", expanded));
-            }
-            if !path.is_file() {
-                return Err(format!(
-                    "Identity file is not a file: {}",
-                    expanded
-                ));
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn find_program_path(program: &str) -> Result<PathBuf, String> {
-    let program = program.trim();
-    let has_separator = program.contains('/') || program.contains('\\');
-    let is_explicit = has_separator || program.starts_with('~');
-
-    if is_explicit {
-        let expanded = expand_tilde(program);
-        let path = PathBuf::from(&expanded);
-        return validate_program_path(&path, &expanded);
-    }
-
-    let paths: Vec<PathBuf> = std::env::var_os("PATH")
-        .map(|value| std::env::split_paths(&value).collect())
-        .unwrap_or_default();
-    for dir in paths {
-        let candidate = dir.join(program);
-        if is_executable_path(&candidate) {
-            return Ok(candidate);
-        }
-    }
-
-    Err(format!("Program not found in PATH: {program}"))
-}
-
-fn validate_program_path(path: &Path, label: &str) -> Result<PathBuf, String> {
-    if !path.exists() {
-        return Err(format!("Program not found: {label}"));
-    }
-    if path.is_dir() {
-        return Err(format!("Program is a directory: {label}"));
-    }
-    if !is_executable_path(path) {
-        return Err(format!("Program is not executable: {label}"));
-    }
-    Ok(path.to_path_buf())
-}
-
-fn is_executable_path(path: &Path) -> bool {
-    if !path.is_file() {
-        return false;
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(path)
-            .map(|meta| meta.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-    }
-
-    #[cfg(not(unix))]
-    {
-        true
-    }
-}
-
-fn expand_tilde(path: &str) -> String {
-    if path == "~" {
-        return std::env::var("HOME").unwrap_or_else(|_| String::from("~"));
-    }
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{home}/{rest}");
-        }
-    }
-    path.to_string()
-}
-
-fn custom_session(custom: &CustomCommand) -> LocalSessionOptions {
-    let mut options = LocalSessionOptions::default()
-        .with_program(&custom.program)
-        .with_args(custom.args.clone());
-
-    if !custom.env.is_empty() {
-        let mut envs = HashMap::new();
-        for EnvVar { key, value } in &custom.env {
-            envs.insert(key.clone(), value.clone());
-        }
-        options = options.with_envs(envs);
-    }
-
-    if let Some(dir) = &custom.working_directory {
-        options = options.with_working_directory(dir.into());
-    }
-
-    options
-}
-
-fn ssh_session(
-    ssh: &SshCommand,
-    cancel: &Arc<AtomicBool>,
-) -> SSHSessionOptions {
-    let host = format!("{}:{}", ssh.host, ssh.port);
-    let user = ssh
-        .user
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| std::env::var("USER").ok())
-        .or_else(|| std::env::var("USERNAME").ok())
-        .unwrap_or_default();
-
-    let auth = ssh
-        .identity_file
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .map(|path| SSHAuth::KeyFile {
-            private_key_path: path,
-            passphrase: None,
-        })
-        .unwrap_or_else(|| SSHAuth::Password(String::new()));
-
-    SSHSessionOptions::default()
-        .with_host(&host)
-        .with_user(&user)
-        .with_auth(auth)
-        .with_timeout(QUICK_LAUNCH_SSH_TIMEOUT)
-        .with_cancel_token(cancel.clone())
 }
 
 fn open_create_command_tab(
@@ -1195,4 +951,127 @@ fn request_open_error_tab(title: String, message: String) -> Task<AppEvent> {
     Task::done(AppEvent::Tab(TabEvent::NewTab {
         request: TabOpenRequest::QuickLaunchError { title, message },
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, atomic::AtomicBool};
+    use std::time::Instant;
+
+    use otty_ui_term::settings::Settings;
+
+    use super::*;
+    use crate::state::State;
+
+    fn settings() -> Settings {
+        Settings::default()
+    }
+
+    fn sample_command() -> QuickLaunch {
+        QuickLaunch {
+            title: String::from("Demo"),
+            spec: super::super::model::CommandSpec::Custom {
+                custom: super::super::model::CustomCommand {
+                    program: String::from("bash"),
+                    args: Vec::new(),
+                    env: Vec::new(),
+                    working_directory: None,
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn given_selected_folder_when_delete_selected_then_folder_is_removed() {
+        let mut state = State::default();
+        state
+            .quick_launches
+            .data
+            .root
+            .children
+            .push(QuickLaunchNode::Folder(QuickLaunchFolder {
+                title: String::from("Folder"),
+                expanded: true,
+                children: Vec::new(),
+            }));
+        state.quick_launches.selected = Some(vec![String::from("Folder")]);
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            &settings(),
+            QuickLaunchEvent::DeleteSelected,
+        );
+
+        assert!(state.quick_launches.data.root.children.is_empty());
+        assert!(state.quick_launches.selected.is_none());
+    }
+
+    #[test]
+    fn given_unknown_node_when_released_then_reducer_ignores_event() {
+        let mut state = State::default();
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            &settings(),
+            QuickLaunchEvent::NodeReleased {
+                path: vec![String::from("Missing")],
+            },
+        );
+
+        assert!(state.quick_launches.selected.is_none());
+        assert!(state.quick_launches.launching.is_empty());
+    }
+
+    #[test]
+    fn given_tick_event_with_active_launch_when_reduced_then_blink_nonce_increments()
+     {
+        let mut state = State::default();
+        state.quick_launches.blink_nonce = 10;
+        state.quick_launches.launching.insert(
+            vec![String::from("Demo")],
+            LaunchInfo {
+                id: 1,
+                started_at: Instant::now(),
+                cancel: Arc::new(AtomicBool::new(false)),
+            },
+        );
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            &settings(),
+            QuickLaunchEvent::Tick,
+        );
+
+        assert_eq!(state.quick_launches.blink_nonce, 11);
+    }
+
+    #[test]
+    fn given_failed_setup_completion_when_reduced_then_launch_is_removed() {
+        let mut state = State::default();
+        let path = vec![String::from("Demo")];
+        state.quick_launches.launching.insert(
+            path.clone(),
+            LaunchInfo {
+                id: 9,
+                started_at: Instant::now(),
+                cancel: Arc::new(AtomicBool::new(false)),
+            },
+        );
+
+        let outcome = QuickLaunchSetupOutcome::Failed {
+            path: path.clone(),
+            launch_id: 9,
+            command: Box::new(sample_command()),
+            error: Arc::new(QuickLaunchError::Validation {
+                message: String::from("Program is empty."),
+            }),
+        };
+        let _task = quick_launches_reducer(
+            &mut state,
+            &settings(),
+            QuickLaunchEvent::SetupCompleted(outcome),
+        );
+
+        assert!(!state.quick_launches.launching.contains_key(&path));
+    }
 }

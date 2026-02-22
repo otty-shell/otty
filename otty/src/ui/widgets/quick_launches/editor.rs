@@ -6,10 +6,10 @@ use iced::widget::{
 };
 use iced::{Element, Length, Padding};
 
-use crate::features::quick_launches::editor::{
+use crate::features::quick_launches::{
     QuickLaunchEditorEvent, QuickLaunchEditorMode, QuickLaunchEditorState,
+    QuickLaunchType,
 };
-use crate::features::quick_launches::model::QuickLaunchType;
 use crate::theme::{IcedColorPalette, ThemeProps};
 
 const SECTION_SPACING: f32 = 16.0;

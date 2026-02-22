@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
+use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
 use super::errors::TerminalError;
 use super::model::ShellSession;
@@ -44,6 +44,16 @@ pub(crate) fn fallback_shell_session_with_shell(
     let options = LocalSessionOptions::default().with_program(shell_path);
 
     ShellSession::new(shell_name, SessionKind::from_local_options(options))
+}
+
+/// Clone terminal settings with a session descriptor for terminal startup.
+pub(crate) fn terminal_settings_for_session(
+    base_settings: &Settings,
+    session: SessionKind,
+) -> Settings {
+    let mut settings = base_settings.clone();
+    settings.backend = settings.backend.clone().with_session(session);
+    settings
 }
 
 fn shell_name(shell_path: &str) -> String {
