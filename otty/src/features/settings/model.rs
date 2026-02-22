@@ -8,15 +8,15 @@ const FALLBACK_SHELL: &str = "/bin/bash";
 /// Typed settings payload used for persistence and UI state.
 #[derive(Debug, Clone, PartialEq, Serialize, Default)]
 pub(crate) struct SettingsData {
-    pub(crate) terminal: TerminalSettingsData,
-    pub(crate) theme: ThemeSettingsData,
+    terminal: TerminalSettingsData,
+    theme: ThemeSettingsData,
 }
 
 /// Terminal-related settings.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct TerminalSettingsData {
-    pub(crate) shell: String,
-    pub(crate) editor: String,
+    shell: String,
+    editor: String,
 }
 
 impl Default for TerminalSettingsData {
@@ -31,7 +31,7 @@ impl Default for TerminalSettingsData {
 /// Theme-related settings.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct ThemeSettingsData {
-    pub(crate) palette: Vec<String>,
+    palette: Vec<String>,
 }
 
 impl Default for ThemeSettingsData {
@@ -42,13 +42,61 @@ impl Default for ThemeSettingsData {
 }
 
 impl ThemeSettingsData {
-    pub(crate) fn to_color_palette(&self) -> ColorPalette {
+    fn to_color_palette(&self) -> ColorPalette {
         let base = ColorPalette::default();
         apply_palette_overrides(&base, &self.palette)
     }
 }
 
 impl SettingsData {
+    /// Return shell command for terminal sessions.
+    pub(crate) fn terminal_shell(&self) -> &str {
+        &self.terminal.shell
+    }
+
+    /// Update shell command for terminal sessions.
+    pub(crate) fn set_terminal_shell(&mut self, value: String) {
+        self.terminal.shell = value;
+    }
+
+    /// Return editor command used by the explorer open action.
+    pub(crate) fn terminal_editor(&self) -> &str {
+        &self.terminal.editor
+    }
+
+    /// Update editor command used by the explorer open action.
+    pub(crate) fn set_terminal_editor(&mut self, value: String) {
+        self.terminal.editor = value;
+    }
+
+    /// Return palette values used by the theme form.
+    pub(crate) fn theme_palette(&self) -> &[String] {
+        &self.theme.palette
+    }
+
+    /// Replace full theme palette.
+    pub(crate) fn set_theme_palette(&mut self, value: Vec<String>) {
+        self.theme.palette = value;
+    }
+
+    /// Update one palette color by index.
+    pub(crate) fn set_theme_palette_entry(
+        &mut self,
+        index: usize,
+        value: String,
+    ) -> bool {
+        let Some(entry) = self.theme.palette.get_mut(index) else {
+            return false;
+        };
+        *entry = value;
+        true
+    }
+
+    /// Convert current theme settings to runtime terminal palette.
+    pub(crate) fn to_color_palette(&self) -> ColorPalette {
+        self.theme.to_color_palette()
+    }
+
     pub(crate) fn from_json(value: &serde_json::Value) -> Self {
         let mut settings = SettingsData::default();
 
@@ -351,5 +399,61 @@ fn set_palette_value(
         PaletteField::DimWhite => palette.dim_white = value,
         PaletteField::DimForeground => palette.dim_foreground = value,
         PaletteField::Overlay => palette.overlay = value,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{SettingsData, is_valid_hex_color};
+
+    #[test]
+    fn given_valid_palette_when_from_json_then_palette_is_loaded() {
+        let value = json!({
+            "theme": {
+                "palette": ["#112233", "#223344"]
+            }
+        });
+
+        let settings = SettingsData::from_json(&value);
+
+        assert_eq!(settings.theme.palette, vec!["#112233", "#223344"]);
+    }
+
+    #[test]
+    fn given_invalid_palette_when_from_json_then_defaults_are_used() {
+        let defaults = SettingsData::default();
+        let value = json!({
+            "theme": {
+                "palette": ["#112233", "not-a-color"]
+            }
+        });
+
+        let settings = SettingsData::from_json(&value);
+
+        assert_eq!(settings.theme.palette, defaults.theme.palette);
+    }
+
+    #[test]
+    fn given_invalid_fields_when_normalized_then_defaults_are_applied() {
+        let defaults = SettingsData::default();
+        let mut settings = SettingsData::default();
+        settings.terminal.shell = String::from("   ");
+        settings.terminal.editor = String::new();
+        settings.theme.palette = vec![String::from("bad-value")];
+
+        let normalized = settings.normalized();
+
+        assert_eq!(normalized.terminal.shell, defaults.terminal.shell);
+        assert_eq!(normalized.terminal.editor, defaults.terminal.editor);
+        assert_eq!(normalized.theme.palette, defaults.theme.palette);
+    }
+
+    #[test]
+    fn given_hex_color_value_when_validated_then_result_matches_format() {
+        assert!(is_valid_hex_color("#aBc123"));
+        assert!(!is_valid_hex_color("#12345"));
+        assert!(!is_valid_hex_color("123456"));
     }
 }

@@ -84,7 +84,7 @@ fn open_file_in_editor(
     terminal_settings: &Settings,
     file_path: PathBuf,
 ) -> Task<AppEvent> {
-    let editor_raw = state.settings.draft.terminal.editor.trim();
+    let editor_raw = state.settings.draft().terminal_editor().trim();
     let (program, mut args) = match parse_command_line(editor_raw) {
         Ok(parsed) => parsed,
         Err(err) => {

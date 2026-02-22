@@ -60,6 +60,7 @@ pub(crate) enum Event {
         event: QuickLaunchEditorEvent,
     },
     Settings(settings::SettingsEvent),
+    SettingsApplied(settings::SettingsData),
     QuickLaunchSetupCompleted(Box<quick_launches::QuickLaunchSetupOutcome>),
     QuickLaunchTick,
     Keyboard(iced::keyboard::Event),
@@ -79,22 +80,22 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) fn new() -> (Self, Task<Event>) {
-        let settings_state = settings::SettingsState::load();
+        let settings_state = settings::load_settings_state();
         let mut theme_manager = ThemeManager::new();
-        let settings_palette = settings_state.draft.theme.to_color_palette();
+        let settings_palette = settings_state.draft().to_color_palette();
         theme_manager.set_custom_palette(settings_palette);
         let current_theme = theme_manager.current();
         let fonts = FontsConfig::default();
 
         let terminal_settings = terminal_settings(current_theme, &fonts);
         let shell_session = match setup_shell_session_with_shell(
-            &settings_state.draft.terminal.shell,
+            settings_state.draft().terminal_shell(),
         ) {
             Ok(session) => session,
             Err(err) => {
                 log::warn!("shell integration setup failed: {err}");
                 fallback_shell_session_with_shell(
-                    &settings_state.draft.terminal.shell,
+                    settings_state.draft().terminal_shell(),
                 )
             },
         };
@@ -227,7 +228,13 @@ impl App {
             QuickLaunchEditor { tab_id, event } => {
                 quick_launch_editor_reducer(&mut self.state, tab_id, event)
             },
-            Settings(event) => self.handle_settings(event),
+            Settings(event) => {
+                settings::settings_reducer(&mut self.state, event)
+            },
+            SettingsApplied(settings) => {
+                self.apply_settings(&settings);
+                Task::none()
+            },
             Keyboard(event) => self.handle_keyboard(event),
             Window(window::Event::Resized(size)) => {
                 self.window_size = size;
@@ -269,53 +276,8 @@ impl App {
         Task::none()
     }
 
-    fn handle_settings(
-        &mut self,
-        event: settings::SettingsEvent,
-    ) -> Task<Event> {
-        match event {
-            settings::SettingsEvent::Save => {
-                match self.state.settings.persist() {
-                    Ok(settings) => self.apply_settings(&settings),
-                    Err(err) => {
-                        log::warn!("settings save failed: {err}");
-                    },
-                }
-                Task::none()
-            },
-            settings::SettingsEvent::Reset => {
-                self.state.settings.reset();
-                Task::none()
-            },
-            settings::SettingsEvent::NodePressed { path } => {
-                self.state.settings.select_path(&path);
-                Task::none()
-            },
-            settings::SettingsEvent::NodeHovered { path } => {
-                self.state.settings.set_hovered_path(path);
-                Task::none()
-            },
-            settings::SettingsEvent::ShellChanged(value) => {
-                self.state.settings.set_shell(value);
-                Task::none()
-            },
-            settings::SettingsEvent::EditorChanged(value) => {
-                self.state.settings.set_editor(value);
-                Task::none()
-            },
-            settings::SettingsEvent::PaletteChanged { index, value } => {
-                self.state.settings.set_palette_input(index, value);
-                Task::none()
-            },
-            settings::SettingsEvent::ApplyPreset(preset) => {
-                self.state.settings.apply_preset(preset);
-                Task::none()
-            },
-        }
-    }
-
     fn apply_settings(&mut self, settings: &settings::SettingsData) {
-        let palette = settings.theme.to_color_palette();
+        let palette = settings.to_color_palette();
         self.theme_manager.set_custom_palette(palette);
         let current_theme = self.theme_manager.current();
         self.terminal_settings = terminal_settings(current_theme, &self.fonts);
@@ -326,12 +288,13 @@ impl App {
             }
         }
 
-        match setup_shell_session_with_shell(&settings.terminal.shell) {
+        match setup_shell_session_with_shell(settings.terminal_shell()) {
             Ok(session) => self.shell_session = session,
             Err(err) => {
                 log::warn!("shell integration setup failed: {err}");
-                self.shell_session =
-                    fallback_shell_session_with_shell(&settings.terminal.shell);
+                self.shell_session = fallback_shell_session_with_shell(
+                    settings.terminal_shell(),
+                );
             },
         }
     }

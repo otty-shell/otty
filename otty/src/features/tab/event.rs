@@ -7,6 +7,7 @@ use crate::features::quick_launches::editor::{
     open_create_editor_tab, open_edit_editor_tab,
 };
 use crate::features::quick_launches::model::quick_launch_error_message;
+use crate::features::settings;
 use crate::features::terminal::event as terminal;
 use crate::features::terminal::model::{ShellSession, TerminalKind};
 use crate::features::terminal::state::TerminalState;
@@ -79,7 +80,8 @@ fn open_settings_tab(state: &mut State) -> Task<AppEvent> {
     let tab_id = state.next_tab_id;
     state.next_tab_id += 1;
 
-    state.settings.reload();
+    let reload_task =
+        settings::settings_reducer(state, settings::SettingsEvent::Reload);
     state.tab_items.insert(
         tab_id,
         TabItem {
@@ -91,7 +93,7 @@ fn open_settings_tab(state: &mut State) -> Task<AppEvent> {
     state.active_tab_id = Some(tab_id);
     explorer::event::sync_explorer_from_active_terminal(state);
 
-    Task::none()
+    reload_task
 }
 
 fn open_shell_terminal_tab(

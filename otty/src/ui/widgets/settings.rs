@@ -64,13 +64,13 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
 fn settings_header<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
     let save_button = action_button(
         "Save",
-        props.state.dirty,
+        props.state.is_dirty(),
         SettingsEvent::Save,
         props.theme,
     );
     let reset_button = action_button(
         "Reset",
-        props.state.dirty,
+        props.state.is_dirty(),
         SettingsEvent::Reset,
         props.theme,
     );
@@ -109,11 +109,11 @@ fn settings_nav_tree<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
     let row_palette = palette.clone();
     let icon_color = palette.dim_foreground;
 
-    let tree_view = TreeView::new(&props.state.tree, move |context| {
+    let tree_view = TreeView::new(props.state.tree(), move |context| {
         render_nav_row(props, context)
     })
-    .selected_row(Some(&props.state.selected_path))
-    .hovered_row(props.state.hovered_path.as_ref())
+    .selected_row(Some(props.state.selected_path()))
+    .hovered_row(props.state.hovered_path())
     .on_press(|path| SettingsEvent::NodePressed { path })
     .on_hover(|path| SettingsEvent::NodeHovered { path })
     .row_style(move |context| nav_row_style(&row_palette, context))
@@ -157,7 +157,7 @@ fn render_nav_row<'a>(
 }
 
 fn settings_form<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
-    let content = match props.state.selected_section {
+    let content = match props.state.selected_section() {
         SettingsSection::Terminal => terminal_form(props),
         SettingsSection::Theme => theme_form(props),
     };
@@ -182,14 +182,14 @@ fn settings_form<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
 }
 
 fn terminal_form<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
-    let shell_input = text_input("", &props.state.draft.terminal.shell)
+    let shell_input = text_input("", props.state.draft().terminal_shell())
         .on_input(SettingsEvent::ShellChanged)
         .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
         .size(FORM_INPUT_FONT_SIZE)
         .width(Length::Fill)
         .style(text_input_style(props.theme));
 
-    let editor_input = text_input("", &props.state.draft.terminal.editor)
+    let editor_input = text_input("", props.state.draft().terminal_editor())
         .on_input(SettingsEvent::EditorChanged)
         .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
         .size(FORM_INPUT_FONT_SIZE)
@@ -217,7 +217,7 @@ fn theme_form<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
     let presets = row![preset_button].spacing(HEADER_BUTTON_SPACING);
 
     let mut palette_column = Column::new().spacing(PALETTE_ROW_SPACING);
-    for (index, value) in props.state.palette_inputs.iter().enumerate() {
+    for (index, value) in props.state.palette_inputs().iter().enumerate() {
         let label = palette_label(index).map_or_else(
             || {
                 let index_display = index + 1;
@@ -397,7 +397,7 @@ fn nav_toggle_icon<'a>(
 
 fn nav_icon(node: &SettingsNode) -> Option<&'static [u8]> {
     if node.is_folder() {
-        Some(if node.expanded {
+        Some(if node.is_expanded() {
             icons::FOLDER_OPENED
         } else {
             icons::FOLDER
@@ -427,22 +427,22 @@ fn svg_icon<'a>(
 
 impl TreeNode for SettingsNode {
     fn title(&self) -> &str {
-        &self.title
+        SettingsNode::title(self)
     }
 
     fn children(&self) -> Option<&[Self]> {
-        if self.is_folder() {
-            Some(&self.children)
+        if SettingsNode::is_folder(self) {
+            Some(SettingsNode::children(self))
         } else {
             None
         }
     }
 
     fn expanded(&self) -> bool {
-        self.expanded
+        self.is_expanded()
     }
 
     fn is_folder(&self) -> bool {
-        self.is_folder()
+        SettingsNode::is_folder(self)
     }
 }
