@@ -1,119 +1,56 @@
 # 03. Аудит `quick_launches/editor` (subfeature)
 
 ## Зависимости
-- Выполнить `02-terminal.md` (стабилизировать общие tab/terminal контракты, используемые при открытии вкладок редактора).
+- Выполнить `04-quick-launches.md` (единая write-boundary quick launches и async persistence).
+- Выполнить `05-tab.md` (стабильный tab boundary для editor-tab orchestration).
 
-## Текущее состояние (Legacy)
-- Структура subfeature не каноническая: нет `state.rs` и `errors.rs`.
-- `otty/src/features/quick_launches/editor/model.rs:62` хранит runtime state (`QuickLaunchEditorState`) в `model.rs`.
-- `otty/src/features/quick_launches/editor/event.rs:173` и `:195` экспортируют внешние mutating API (`open_create_editor_tab`, `open_edit_editor_tab`) в обход reducer-границы.
-- Ошибки сохранения представлены строками (`Result<(), String>`), нет typed error boundary.
-- Тесты strict-матрицы отсутствуют.
+## Текущее состояние
+- Subfeature уже приведен к canonical структуре: `mod.rs`, `event.rs`, `state.rs`, `model.rs`, `errors.rs`.
+- Typed errors введены (`QuickLaunchEditorError`), строковые `Result<_, String>` убраны.
+- Primary contracts присутствуют: `QuickLaunchEditorState`, `QuickLaunchEditorEvent`, `quick_launch_editor_reducer`.
 
-## Нарушения CONVENTIONS.md
-- Раздел 3/4: subfeature не зеркалит canonical contract (`event/state/model/errors`).
-- Раздел 5.2: запись в состояние происходит не только через reducer.
-- Раздел 7: внешний слой зависит от editor internals (`crate::features::quick_launches::editor::...` пакетно, без тонкого API subfeature).
-- Раздел 10: нет детерминированных тестов.
+## Остаточные нарушения CONVENTIONS.md
+- Раздел 7.3 (blocking I/O в reducer path):
+  - `otty/src/features/quick_launches/editor/event.rs:217`
+  В save-path вызывается sync `state.quick_launches.persist()`.
+- Раздел 8 (write-boundary quick_launches размыта):
+  - `otty/src/features/quick_launches/editor/event.rs:145`
+  - `otty/src/features/quick_launches/editor/event.rs:170`
+  Editor reducer напрямую мутирует `state.quick_launches.data`.
+- Раздел 8 (обход reducer boundary из `app.rs` для связанного UI state):
+  - `otty/src/app.rs:163`
+  - `otty/src/app.rs:166`
+  - `otty/src/app.rs:263`
+  Inline-edit state закрывается прямой мутацией, не через feature events.
 
-## Детальный план миграции
+## Детальный план до 100% strict
 
-### 03.1 Нормализовать структуру subfeature
-- Добавить `otty/src/features/quick_launches/editor/state.rs`.
-- Добавить `otty/src/features/quick_launches/editor/errors.rs`.
-- Перенести `QuickLaunchEditorState`, `QuickLaunchEditorMode` и опции из `model.rs` в `state.rs`.
-- В `model.rs` оставить только чистые преобразования/валидацию draft -> domain model.
-
-Критерий готовности:
-- В `model.rs` нет runtime-состояния UI.
-
-### 03.2 Ввести typed ошибки
-- Заменить `Result<_, String>` на `Result<_, QuickLaunchEditorError>`.
-- Вынести все сообщения в `errors.rs`.
-- В reducer на границе UI преобразовывать ошибку в отображаемое сообщение.
+### 03.1 Убрать sync persistence из editor reducer
+- Перевести сохранение в async flow через события quick_launches feature.
+- Editor reducer должен только валидировать draft и формировать команду/intent.
 
 Критерий готовности:
-- В editor reducer нет строковых ad-hoc ошибок в API.
+- В `quick_launches/editor/event.rs` нет прямых вызовов `persist()`.
 
-### 03.3 Оставить один внешний write-entrypoint
-- Оставить публично только `quick_launch_editor_reducer`.
-- `open_create_editor_tab` и `open_edit_editor_tab` убрать из editor API:
-  - либо перенести в `tab` feature,
-  - либо заменить на `TabEvent::NewTab { request: ... }` фабрики в `tab`.
+### 03.2 Ограничить editor reducer ответственностью subfeature
+- Прекратить прямые записи в `state.quick_launches.data`.
+- Передавать результат через typed событие в `quick_launches_reducer`.
 
 Критерий готовности:
-- Внешние модули не вызывают editor-функции, которые напрямую мутируют `State`.
+- Мутации quick launches дерева выполняются только в `quick_launches_reducer`.
 
-### 03.4 Привести `editor/mod.rs` к strict-профилю
-- private `mod errors; mod event; mod model; mod state;`
-- Явные re-exports:
-  - `QuickLaunchEditorEvent`
-  - `quick_launch_editor_reducer`
-  - `QuickLaunchEditorState`
-  - `QuickLaunchEditorError`
+### 03.3 Закрыть внешние обходы UI state
+- Добавить explicit события `QuickLaunchEvent` для cancel/close inline edit.
+- Перевести текущие мутации из `app.rs` в событийный маршрут.
 
 Критерий готовности:
-- Нет wildcard/public module exports.
+- `app.rs` не пишет напрямую в editor/quick_launches UI state.
 
-### 03.5 Обновить внешние импорты
-- `app.rs`, `tab`, `ui/widgets/quick_launches/editor.rs` переключить на API из `crate::features::quick_launches::editor` re-exports.
-- Исключить доступ к `editor::model`/`editor::event` internals снаружи.
+### 03.4 Расширить тесты на новый flow
+- reducer: success/ignored/failure path при save-intent.
+- интеграция editor -> quick_launches: корректное обновление дерева и ошибок.
 
-Критерий готовности:
-- `rg "features::quick_launches::editor::(event|model|state|errors)" otty/src` не возвращает внешних импортов.
-
-### 03.6 Добавить strict-тесты subfeature
-- model: валидация draft/конвертация в `QuickLaunch`.
-- state: mutating transitions для каждого `QuickLaunchEditorEvent`.
-- reducer: success/ignored/failure.
-
-Критерий готовности:
-- Тесты deterministic, naming по `given_when_then`.
-
-### 03.7 Финальная верификация
+### 03.5 Финальная верификация
 - `cargo fmt`
 - `cargo clippy --workspace --all-targets`
 - `cargo test -p otty`
-
-## Пример кода после рефакторинга
-
-```rust
-// otty/src/features/quick_launches/editor/mod.rs
-mod errors;
-mod event;
-mod model;
-mod state;
-
-pub(crate) use errors::QuickLaunchEditorError;
-pub(crate) use event::{QuickLaunchEditorEvent, quick_launch_editor_reducer};
-pub(crate) use state::{QuickLaunchEditorMode, QuickLaunchEditorState};
-```
-
-```rust
-// otty/src/features/quick_launches/editor/event.rs
-pub(crate) fn quick_launch_editor_reducer(
-    state: &mut State,
-    tab_id: u64,
-    event: QuickLaunchEditorEvent,
-) -> Task<AppEvent> {
-    let Some(editor) = editor_mut(state, tab_id) else {
-        return Task::none();
-    };
-
-    match event {
-        QuickLaunchEditorEvent::Save => {
-            let draft = editor.clone();
-            match apply_save(state, draft) {
-                Ok(()) => Task::done(AppEvent::Tab(TabEvent::CloseTab { tab_id })),
-                Err(err) => {
-                    if let Some(editor) = editor_mut(state, tab_id) {
-                        editor.error = Some(format!("{err}"));
-                    }
-                    Task::none()
-                },
-            }
-        },
-        other => reduce_editor_fields(editor, other),
-    }
-}
-```

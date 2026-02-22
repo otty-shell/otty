@@ -1,16 +1,23 @@
 # Feature Migration Audits (Strict Conventions)
 
-Порядок выполнения и ссылки на отдельные аудиты:
+Актуальный порядок выполнения (обновлен по текущему состоянию кода и остаточным зависимостям):
 
-1. `01-settings.md`
+1. `05-tab.md`
 2. `02-terminal.md`
-3. `03-quick-launches-editor.md`
-4. `04-quick-launches.md`
-5. `05-tab.md`
-6. `06-explorer.md`
+3. `06-explorer.md`
+4. `01-settings.md`
+5. `04-quick-launches.md`
+6. `03-quick-launches-editor.md`
 
-Каждый файл содержит:
-- текущие нарушения относительно `otty/src/features/CONVENTIONS.md`;
-- детальные задачи миграции;
-- секцию `Зависимости`;
-- примеры целевого кода после рефакторинга.
+Логика порядка:
+- сначала фикс ownership и event boundaries в `tab`;
+- затем развязываем `terminal` и циклы зависимостей;
+- после этого стабилизируем `explorer`, который зависит от tab/terminal orchestration;
+- затем закрываем async/effect boundary для `settings`;
+- в конце доводим `quick_launches` и `quick_launches/editor`, которые завязаны на tab/terminal API.
+
+Каждый файл аудита содержит:
+- текущее состояние относительно `otty/src/features/CONVENTIONS.md`;
+- остаточные несоответствия с точками в коде;
+- пошаговый план миграции до 100% strict;
+- критерии готовности и финальную верификацию.

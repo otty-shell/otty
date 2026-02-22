@@ -1,120 +1,63 @@
 # 05. Аудит `tab`
 
 ## Зависимости
-- Выполнить `02-terminal.md`.
-- Выполнить `04-quick-launches.md`.
+- Нет. Это базовая задача для развязки feature ownership.
 
-## Текущее состояние (Legacy)
-- Структура неполная: отсутствует `state.rs` (`otty/src/features/tab/` содержит только `event.rs`, `model.rs`, `mod.rs`).
-- `otty/src/features/tab/mod.rs:1` использует `pub(crate) mod ...` вместо private declarations.
-- `otty/src/features/tab/event.rs` зависит от sibling internals:
-  - `quick_launches::editor` (`:6`)
-  - `quick_launches::model` (`:9`, `:214`)
-  - `terminal::event|model|state` (`:10-12`)
-  - `explorer::event::sync_explorer_from_*` (`:92`, `:164`, `:177`)
-- В reducer происходят записи в другие feature slices (`settings.reload`, `explorer sync`) напрямую.
-- Нет strict-тестов.
+## Текущее состояние
+- `TabState` выделен в отдельный файл (`state.rs`) и подключен в `State`.
+- Primary contracts присутствуют: `TabState`, `TabEvent`, `tab_reducer`.
+- Прямые импорты sibling internals (`::event::...`, `::state::...`) устранены.
 
-## Нарушения CONVENTIONS.md
-- Раздел 3: отсутствует обязательный `state.rs`.
-- Раздел 6/7: direct imports sibling internals.
-- Раздел 8: нет явного владельца tab-состояния как отдельного feature state.
-- Раздел 10: отсутствуют reducer/state/model tests.
+## Остаточные нарушения CONVENTIONS.md
+- Раздел 8 (ownership нарушен):
+  - `otty/src/features/terminal/event.rs:375`
+  - `otty/src/features/terminal/event.rs:383`
+  Terminal reducer напрямую мутирует `state.tab`, хотя tab — канонический owner.
+- Раздел 8/7 (tab reducer напрямую запускает sibling reducer):
+  - `otty/src/features/tab/event.rs:155`
+  - `otty/src/features/tab/event.rs:196`
+  - `otty/src/features/tab/event.rs:264`
+  `tab_reducer` вызывает `terminal::terminal_reducer(...)` напрямую вместо событийного обмена.
+- Раздел 7.3 (циклы feature dependency):
+  - `tab -> terminal` (`otty/src/features/tab/event.rs:10`)
+  - `terminal -> tab` (`otty/src/features/terminal/event.rs:10`)
+  - `tab -> quick_launches` (`otty/src/features/tab/model.rs:3-4`)
+  - `quick_launches -> tab` (`otty/src/features/quick_launches/event.rs:12`)
+- Раздел 10 (testing matrix):
+  - `otty/src/features/tab/model.rs` не содержит model-level тестов.
 
-## Детальный план миграции
+## Детальный план до 100% strict
 
-### 05.1 Ввести `TabState` и ownership таб-домена
-- Создать `otty/src/features/tab/state.rs`.
-- Перенести из `otty/src/state.rs` tab-данные в `TabState`:
-  - `active_tab_id`
-  - `tab_items`
-  - tab-счетчики (`next_tab_id`)
-- Явно определить границы владения (ID терминалов может остаться у terminal feature, но tab ownership должен быть формализован).
-
-Критерий готовности:
-- Табовые данные доступны через `state.tab` (или эквивалентный feature slice), а не плоско в `State`.
-
-### 05.2 Привести `mod.rs` к strict API
-- Private module declarations (`event`, `model`, `state`, `errors` при необходимости).
-- Реэкспорт только стабильных контрактов:
-  - `TabEvent`
-  - `tab_reducer`
-  - `TabState`
-  - минимально необходимые доменные типы (`TabContent`, `TabOpenRequest`, `TabItem`) при обосновании.
+### 05.1 Зафиксировать tab как единственного owner `TabState`
+- Убрать любые записи в `state.tab` из sibling features.
+- Все операции open/activate/close табов оставить только в `tab_reducer`.
 
 Критерий готовности:
-- Нет `pub(crate) mod ...` в `tab/mod.rs`.
+- В других feature нет `state.tab.insert/remove/activate`.
 
-### 05.3 Убрать sibling-internal зависимости
-- Заменить импорты в `tab/event.rs` на API через `crate::features::{quick_launches, terminal, explorer}` re-exports.
-- Запретить `crate::features::<other>::event|state|model` в tab feature.
-
-Критерий готовности:
-- `rg "crate::features::[a-z_]+::(event|state|model|storage|errors)" otty/src/features/tab` возвращает пусто.
-
-### 05.4 Формализовать runtime-зависимости reducer
-- Ввести `TabDeps<'a>` вместо длинного списка параметров.
-- Явно передавать внешние зависимости (`terminal_settings`, `shell_session`, возможно feature adapters).
+### 05.2 Перевести межфичевую оркестрацию на `Task<AppEvent>`
+- Вместо прямого вызова `terminal_reducer` в tab возвращать `Task::done(AppEvent::Terminal(...))`.
+- Сохранить детерминированный порядок через `Task::batch`.
 
 Критерий готовности:
-- Сигнатура reducer соответствует strict-стилю с `deps`.
+- `tab/event.rs` не вызывает sibling reducer-функции напрямую.
 
-### 05.5 Убрать прямую мутацию sibling state
-- Вместо прямых `explorer::event::sync_explorer_from_*` возвращать `Task<AppEvent>` для событий explorer.
-- Аналогично для settings reload/open flows: только через события соответствующей фичи.
-
-Критерий готовности:
-- tab reducer не вызывает напрямую функции, мутирующие state другой фичи.
-
-### 05.6 Очистить `TabOpenRequest` от внутренних типов sibling features
-- По возможности заменить payload-и из внутренних типов (`QuickLaunch`, `TerminalState`) на boundary DTO или re-exported stable types.
-- Для тяжелых payload использовать feature-prefixed request structs.
+### 05.3 Развязать модель tab от heavy sibling payload
+- Пересмотреть `TabOpenRequest`:
+  - исключить прямую зависимость от `QuickLaunch`/`TerminalState` где возможно;
+  - использовать boundary DTO + идентификаторы.
 
 Критерий готовности:
-- `tab/model.rs` не импортирует sibling internals напрямую.
+- `tab/model.rs` не тянет детальные типы sibling features без необходимости.
 
-### 05.7 Добавить strict-тесты
-- model: корректность `TabOpenRequest`/`Debug`.
-- state: activate/close/open transitions.
-- reducer: success/ignored/failure path.
+### 05.4 Дополнить tests matrix
+- model: тесты `TabOpenRequest`/`TabContent` invariants и `Debug` контракта.
+- reducer: отдельный failure path (например, недоступный terminal/open flow).
 
 Критерий готовности:
-- Все mutating события покрыты deterministic тестами.
+- Для `tab` есть model/state/reducer success/ignored/failure coverage.
 
-### 05.8 Финальная верификация
+### 05.5 Финальная верификация
 - `cargo fmt`
 - `cargo clippy --workspace --all-targets`
 - `cargo test -p otty`
-
-## Пример кода после рефакторинга
-
-```rust
-// otty/src/features/tab/mod.rs
-mod event;
-mod model;
-mod state;
-
-pub(crate) use event::{TabEvent, tab_reducer};
-pub(crate) use model::{TabContent, TabItem, TabOpenRequest};
-pub(crate) use state::TabState;
-```
-
-```rust
-// otty/src/features/tab/event.rs
-pub(crate) struct TabDeps<'a> {
-    pub(crate) terminal_settings: &'a Settings,
-    pub(crate) shell_session: &'a ShellSession,
-}
-
-pub(crate) fn tab_reducer(
-    state: &mut State,
-    deps: TabDeps<'_>,
-    event: TabEvent,
-) -> Task<AppEvent> {
-    match event {
-        TabEvent::NewTab { request } => reduce_open(state, deps, request),
-        TabEvent::ActivateTab { tab_id } => reduce_activate(state, tab_id),
-        TabEvent::CloseTab { tab_id } => reduce_close(state, tab_id),
-    }
-}
-```

@@ -1,145 +1,61 @@
 # 01. Аудит `settings`
 
 ## Зависимости
-- Нет. Это стартовая задача миграции.
+- Выполнить `02-terminal.md` для переноса применения настроек терминала в terminal reducer API (без прямых мутаций из `app.rs`).
 
-## Текущее состояние (Legacy)
-- `otty/src/features/settings/mod.rs:12` содержит бизнес-логику, события, состояние и редукцию через прямые методы состояния.
-- В структуре фичи отсутствуют обязательные `event.rs` и `state.rs`.
-- Внешний слой (`otty/src/app.rs:272`) напрямую мутирует `SettingsState`, обходя единый reducer-entrpoint.
-- Нет тестов матрицы strict-профиля (model/state/reducer/storage).
+## Текущее состояние
+- Канонический layout `settings` собран (`mod.rs`, `event.rs`, `state.rs`, `model.rs`, `errors.rs`, `storage.rs`).
+- Primary contracts присутствуют: `SettingsState`, `SettingsEvent`, `settings_reducer`.
+- Есть тесты для model/state/reducer/storage.
 
-## Нарушения CONVENTIONS.md
-- Раздел 3 (Canonical layout): нет `event.rs`, `state.rs`.
-- Раздел 4 (Responsibilities): `mod.rs` перегружен логикой.
-- Раздел 5.1/5.2: нет явного `settings_reducer`, отсутствует единая внешняя точка записи.
-- Раздел 6: `mod.rs` не является тонкой экспортной поверхностью.
-- Раздел 10: нет обязательных тестов.
+## Остаточные нарушения CONVENTIONS.md
+- Раздел 7.3 (blocking I/O в reducer path):
+  - `otty/src/features/settings/event.rs:34` вызывает sync `load_settings`.
+  - `otty/src/features/settings/event.rs:37` вызывает sync `save_settings`.
+- Раздел 6 (слишком широкая экспортная поверхность):
+  - `otty/src/features/settings/mod.rs:10`
+  - `otty/src/features/settings/mod.rs:11`
+  Экспортируются дополнительные внутренние типы/утилиты вместо минимального стабильного API.
+- Раздел 8 (обход reducer boundary для effects, связанных с settings):
+  - `otty/src/app.rs:289` прямой вызов `terminal.apply_theme(...)`.
+  - `otty/src/app.rs:291` прямые мутации терминальных вкладок после `SettingsApplied`.
 
-## Детальный план миграции
+## Детальный план до 100% strict
 
-### 01.1 Создать каноническую структуру файлов
-- Добавить `otty/src/features/settings/event.rs`.
-- Добавить `otty/src/features/settings/state.rs`.
-- Перенести `SettingsEvent`, `SettingsPreset`, `SettingsSection`, `SettingsNode`, `SettingsState` из `mod.rs` в `event.rs`/`state.rs` по ответственности.
-- Оставить в `mod.rs` только declarations + curated re-exports.
-
-Критерий готовности:
-- `mod.rs` не содержит бизнес-логики и методов состояния.
-
-### 01.2 Ввести единый reducer entrypoint
-- Реализовать `pub(crate) fn settings_reducer(state: &mut State, event: SettingsEvent) -> Task<AppEvent>` в `event.rs`.
-- Все ветки `SettingsEvent` должны обрабатываться только через reducer.
-- Сохранение (`Save`) возвращает явный эффект (`Task<AppEvent>`) вместо скрытой логики в `app.rs`.
+### 01.1 Перевести `Reload`/`Save` в async reducer flow
+- Добавить событийные результаты (`Loaded`, `LoadFailed`, `Saved`, `SaveFailed`) в `SettingsEvent`.
+- Использовать `Task::perform(...)` для чтения/записи через `storage.rs`.
+- Оставить reducer синхронным и без прямого filesystem I/O.
 
 Критерий готовности:
-- `app.rs` не мутирует `state.settings` напрямую в `handle_settings`.
+- В `settings_reducer` нет прямых вызовов sync storage операций.
 
-### 01.3 Привести `mod.rs` к strict-экспорту
-- Порядок модулей: `errors`, `event`, `model`, `state`, `storage`.
-- Все внутренние declarations только приватные `mod ...;`.
-- Переэкспорт только стабильных API:
+### 01.2 Сузить публичную поверхность `settings/mod.rs`
+- Оставить минимальный стабильный контракт:
   - `SettingsEvent`
   - `settings_reducer`
   - `SettingsState`
   - `SettingsError`
+- Дополнительные типы (`SettingsNode`, `SettingsPreset`, `SettingsSection`, утилиты model) экспортировать только при подтвержденной необходимости и через отдельный API-слой.
 
 Критерий готовности:
-- Нет `pub(crate) mod ...;` внутри `settings/mod.rs`.
+- `mod.rs` не реэкспортирует служебные детали без явной архитектурной причины.
 
-### 01.4 Убрать протекание internals в UI
-- Для `otty/src/ui/widgets/settings.rs:11` перейти на импорты только из `crate::features::settings` re-exports.
-- Если UI нужны дополнительные типы (`SettingsNode`, `SettingsSection`, `SettingsPreset`) — добавить явные стабильные re-exports из `mod.rs`.
-
-Критерий готовности:
-- Нет импорта `crate::features::settings::<internal_module>::...`.
-
-### 01.5 Разделить доменную и runtime-логику
-- В `model.rs` оставить только доменные типы/валидацию/нормализацию.
-- В `state.rs` оставить state-мутации и deterministic helper-методы.
-- В `storage.rs` оставить только I/O и сериализацию.
+### 01.3 Закрыть side-effect границу применения настроек
+- Убрать прямые терминальные мутации из `app.rs`.
+- Передавать применение темы/обновление shell session через typed события terminal feature.
 
 Критерий готовности:
-- Валидация цветов и нормализация настроек не зависят от `State`/UI.
+- `app.rs` не мутирует terminal internals напрямую в ветке `SettingsApplied`.
 
-### 01.6 Добавить строгие тесты
-- `model.rs`: валидные/невалидные палитры и `normalized`.
-- `state.rs`: переходы для каждого mutating-event.
-- `event.rs`: success/ignored/failure path reducer.
-- `storage.rs`: round-trip и corruption fallback.
-- Именование тестов: `given_<context>_when_<action>_then_<outcome>`.
+### 01.4 Дотестировать async/failure сценарии
+- reducer: `given_save_failed_when_save_then_state_remains_dirty`.
+- reducer: `given_load_failed_when_reload_then_state_preserved`.
 
 Критерий готовности:
-- Все тесты deterministic и не требуют пользовательского окружения.
+- Покрыты success/ignored/failure path после перехода на async flow.
 
-### 01.7 Финальная верификация
-- Выполнить `cargo fmt`.
-- Выполнить `cargo clippy --workspace --all-targets`.
-- Выполнить `cargo test -p otty`.
-
-## Пример кода после рефакторинга
-
-```rust
-// otty/src/features/settings/mod.rs
-mod errors;
-mod event;
-mod model;
-mod state;
-mod storage;
-
-pub(crate) use errors::SettingsError;
-pub(crate) use event::{SettingsEvent, settings_reducer};
-pub(crate) use state::SettingsState;
-```
-
-```rust
-// otty/src/features/settings/event.rs
-use iced::Task;
-
-use crate::app::Event as AppEvent;
-use crate::state::State;
-
-#[derive(Debug, Clone)]
-pub(crate) enum SettingsEvent {
-    Save,
-    Reset,
-    NodePressed { path: Vec<String> },
-    NodeHovered { path: Option<Vec<String>> },
-    ShellChanged(String),
-    EditorChanged(String),
-    PaletteChanged { index: usize, value: String },
-}
-
-pub(crate) fn settings_reducer(
-    state: &mut State,
-    event: SettingsEvent,
-) -> Task<AppEvent> {
-    match event {
-        SettingsEvent::Save => state.settings.persist_event(),
-        SettingsEvent::Reset => {
-            state.settings.reset();
-            Task::none()
-        },
-        SettingsEvent::NodePressed { path } => {
-            state.settings.select_path(&path);
-            Task::none()
-        },
-        SettingsEvent::NodeHovered { path } => {
-            state.settings.set_hovered_path(path);
-            Task::none()
-        },
-        SettingsEvent::ShellChanged(value) => {
-            state.settings.set_shell(value);
-            Task::none()
-        },
-        SettingsEvent::EditorChanged(value) => {
-            state.settings.set_editor(value);
-            Task::none()
-        },
-        SettingsEvent::PaletteChanged { index, value } => {
-            state.settings.set_palette_input(index, value);
-            Task::none()
-        },
-    }
-}
-```
+### 01.5 Финальная верификация
+- `cargo fmt`
+- `cargo clippy --workspace --all-targets`
+- `cargo test -p otty`
