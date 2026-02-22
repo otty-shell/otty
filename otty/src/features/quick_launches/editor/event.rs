@@ -188,7 +188,7 @@ fn set_editor_error(
 }
 
 fn editor_ref(state: &State, tab_id: u64) -> Option<&QuickLaunchEditorState> {
-    let tab = state.tab_items.get(&tab_id)?;
+    let tab = state.tab_items().get(&tab_id)?;
     let TabContent::QuickLaunchEditor(editor) = &tab.content else {
         return None;
     };
@@ -199,7 +199,7 @@ fn editor_mut(
     state: &mut State,
     tab_id: u64,
 ) -> Option<&mut QuickLaunchEditorState> {
-    let tab = state.tab_items.get_mut(&tab_id)?;
+    let tab = state.tab_items_mut().get_mut(&tab_id)?;
     let TabContent::QuickLaunchEditor(editor) = &mut tab.content else {
         return None;
     };
@@ -241,7 +241,7 @@ mod tests {
             QuickLaunchEditorEvent::UpdateTitle(String::from("x")),
         );
 
-        assert!(state.tab_items.is_empty());
+        assert!(state.tab.is_empty());
     }
 
     #[test]
@@ -445,11 +445,10 @@ mod tests {
 
     fn state_with_editor(editor: QuickLaunchEditorState) -> (State, u64) {
         let tab_id = 1;
-        let mut state = State {
-            next_tab_id: 2,
-            ..State::default()
-        };
-        state.tab_items.insert(
+        let mut state = State::default();
+        let _ = state.allocate_tab_id();
+        let _ = state.allocate_tab_id();
+        state.tab.insert(
             tab_id,
             TabItem {
                 id: tab_id,
@@ -457,7 +456,7 @@ mod tests {
                 content: TabContent::QuickLaunchEditor(Box::new(editor)),
             },
         );
-        state.active_tab_id = Some(tab_id);
+        state.tab.activate(Some(tab_id));
         (state, tab_id)
     }
 }

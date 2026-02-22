@@ -881,10 +881,8 @@ fn launch_quick_launch(
         },
     );
 
-    let tab_id = state.next_tab_id;
-    state.next_tab_id += 1;
-    let terminal_id = state.next_terminal_id;
-    state.next_terminal_id += 1;
+    let tab_id = state.allocate_tab_id();
+    let terminal_id = state.allocate_terminal_id();
 
     Task::perform(
         prepare_quick_launch_setup(

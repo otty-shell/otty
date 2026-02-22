@@ -11,12 +11,14 @@ use otty_ui_term::settings::{
 use std::time::Duration;
 
 use crate::effects::close_window;
-use crate::features::explorer;
+use crate::features::explorer::{self, ExplorerDeps, ExplorerEvent};
 use crate::features::quick_launches::{
     self as quick_launches, QuickLaunchEditorEvent, quick_launch_editor_reducer,
 };
 use crate::features::settings;
-use crate::features::tab::{TabContent, TabEvent, TabOpenRequest, tab_reducer};
+use crate::features::tab::{
+    TabContent, TabDeps, TabEvent, TabOpenRequest, tab_reducer,
+};
 use crate::features::terminal::{
     ShellSession, TerminalEvent, fallback_shell_session_with_shell,
     setup_shell_session_with_shell, terminal_reducer,
@@ -48,6 +50,7 @@ pub(crate) enum Event {
     ActionBar(action_bar::Event),
     Sidebar(sidebar::Event),
     SidebarWorkspace(sidebar_workspace::Event),
+    Explorer(ExplorerEvent),
     Tab(TabEvent),
     Terminal(TerminalEvent),
     QuickLaunchEditor {
@@ -125,7 +128,7 @@ impl App {
 
     pub(crate) fn subscription(&self) -> Subscription<Event> {
         let mut subscriptions = Vec::new();
-        for (&tab_id, tab) in &self.state.tab_items {
+        for (&tab_id, tab) in self.state.tab_items() {
             if let TabContent::Terminal(terminal) = &tab.content {
                 for entry in terminal.terminals().values() {
                     let sub = entry.terminal.subscription().with(tab_id).map(
@@ -171,10 +174,10 @@ impl App {
             }
         }
 
-        let tabs_before = self.state.tab_items.len();
+        let tabs_before = self.state.tab.len();
         let task = self.dispatch_event(event);
 
-        if self.state.tab_items.len() > tabs_before {
+        if self.state.tab.len() > tabs_before {
             Task::batch(vec![task, snap_to_end(tab_bar::TAB_BAR_SCROLL_ID)])
         } else {
             task
@@ -187,8 +190,10 @@ impl App {
         match event {
             IcedReady => tab_reducer(
                 &mut self.state,
-                &self.terminal_settings,
-                &self.shell_session,
+                TabDeps {
+                    terminal_settings: &self.terminal_settings,
+                    shell_session: &self.shell_session,
+                },
                 TabEvent::NewTab {
                     request: TabOpenRequest::Terminal,
                 },
@@ -198,8 +203,17 @@ impl App {
             SidebarWorkspace(event) => self.handle_sidebar_workspace(event),
             Tab(event) => tab_reducer(
                 &mut self.state,
-                &self.terminal_settings,
-                &self.shell_session,
+                TabDeps {
+                    terminal_settings: &self.terminal_settings,
+                    shell_session: &self.shell_session,
+                },
+                event,
+            ),
+            Explorer(event) => explorer::explorer_reducer(
+                &mut self.state,
+                ExplorerDeps {
+                    terminal_settings: &self.terminal_settings,
+                },
                 event,
             ),
             QuickLaunchSetupCompleted(result) => {
@@ -272,7 +286,7 @@ impl App {
         let current_theme = self.theme_manager.current();
         self.terminal_settings = terminal_settings(current_theme, &self.fonts);
         let terminal_palette = current_theme.terminal_palette();
-        for tab in self.state.tab_items.values_mut() {
+        for tab in self.state.tab_items_mut().values_mut() {
             if let TabContent::Terminal(terminal) = &mut tab.content {
                 terminal.apply_theme(terminal_palette.clone());
             }
@@ -303,7 +317,7 @@ impl App {
         .map(Event::ActionBar);
 
         let tab_summaries = self.state.tab_summaries();
-        let active_tab_id = self.state.active_tab_id.unwrap_or(0);
+        let active_tab_id = self.state.active_tab_id().unwrap_or(0);
 
         let palette = theme_props.theme.iced_palette();
 
@@ -486,8 +500,10 @@ impl App {
             },
             sidebar::Event::OpenSettings => tab_reducer(
                 &mut self.state,
-                &self.terminal_settings,
-                &self.shell_session,
+                TabDeps {
+                    terminal_settings: &self.terminal_settings,
+                    shell_session: &self.shell_session,
+                },
                 TabEvent::NewTab {
                     request: TabOpenRequest::Settings,
                 },
@@ -524,8 +540,10 @@ impl App {
                 match action {
                     sidebar_workspace::AddMenuAction::CreateTab => tab_reducer(
                         &mut self.state,
-                        &self.terminal_settings,
-                        &self.shell_session,
+                        TabDeps {
+                            terminal_settings: &self.terminal_settings,
+                            shell_session: &self.shell_session,
+                        },
                         TabEvent::NewTab {
                             request: TabOpenRequest::Terminal,
                         },
@@ -558,11 +576,7 @@ impl App {
                 )
             },
             sidebar_workspace::Event::Explorer(event) => {
-                explorer::event::explorer_reducer(
-                    &mut self.state,
-                    &self.terminal_settings,
-                    event,
-                )
+                Task::done(Event::Explorer(event))
             },
         }
     }
@@ -687,7 +701,7 @@ impl App {
             return true;
         }
 
-        self.state.tab_items.values().any(|tab| {
+        self.state.tab_items().values().any(|tab| {
             matches!(
                 &tab.content,
                 TabContent::Terminal(terminal)
@@ -702,7 +716,7 @@ impl App {
         self.state.sidebar.add_menu = None;
         self.state.quick_launches.context_menu = None;
 
-        for tab in self.state.tab_items.values_mut() {
+        for tab in self.state.tab_items_mut().values_mut() {
             if let TabContent::Terminal(terminal) = &mut tab.content {
                 if terminal.context_menu().is_some() {
                     tasks.push(terminal.close_context_menu());
@@ -749,7 +763,7 @@ impl App {
             );
         }
 
-        for tab in self.state.tab_items.values() {
+        for tab in self.state.tab_items().values() {
             if let TabContent::Terminal(terminal) = &tab.content {
                 if let Some(menu) = terminal.context_menu() {
                     let has_block_selection = terminal
@@ -818,7 +832,8 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
         )
         | Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunch(
             quick_launches::QuickLaunchEvent::CursorMoved { .. },
-        )) => Allow,
+        ))
+        | Event::Explorer(_) => Allow,
         Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunch(
             quick_launches::QuickLaunchEvent::NodeHovered { .. },
         )) => Ignore,

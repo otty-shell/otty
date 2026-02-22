@@ -1,64 +1,17 @@
-use std::cmp::Ordering;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use otty_ui_tree::TreePath;
 
-/// File system node used by the explorer tree.
-#[derive(Debug, Clone)]
-pub(crate) struct FileNode {
-    pub(crate) name: String,
-    pub(crate) path: PathBuf,
-    pub(crate) is_folder: bool,
-    pub(crate) expanded: bool,
-    pub(crate) children: Vec<FileNode>,
-}
-
-impl FileNode {
-    pub(crate) fn new(name: String, path: PathBuf, is_folder: bool) -> Self {
-        Self {
-            name,
-            path,
-            is_folder,
-            expanded: false,
-            children: Vec::new(),
-        }
-    }
-}
-
-impl Ord for FileNode {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (!self.is_folder).cmp(&(!other.is_folder)) {
-            Ordering::Equal => match compare_names(&self.name, &other.name) {
-                Ordering::Equal => self.path.cmp(&other.path),
-                other => other,
-            },
-            other => other,
-        }
-    }
-}
-
-impl PartialOrd for FileNode {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for FileNode {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
-    }
-}
-
-impl Eq for FileNode {}
+use super::model::{FileNode, root_label};
 
 /// Runtime state for the sidebar file explorer.
 #[derive(Debug, Default)]
 pub(crate) struct ExplorerState {
-    pub(crate) root: Option<PathBuf>,
-    pub(crate) root_label: Option<String>,
-    pub(crate) tree: Vec<FileNode>,
-    pub(crate) selected: Option<TreePath>,
-    pub(crate) hovered: Option<TreePath>,
+    root: Option<PathBuf>,
+    root_label: Option<String>,
+    tree: Vec<FileNode>,
+    selected: Option<TreePath>,
+    hovered: Option<TreePath>,
 }
 
 impl ExplorerState {
@@ -67,125 +20,105 @@ impl ExplorerState {
         Self::default()
     }
 
-    /// The current root label used in the explorer header.
+    /// Return current root label used in the explorer header.
     pub(crate) fn root_label(&self) -> Option<&str> {
         self.root_label.as_deref()
     }
 
-    /// Replace the explorer root and rebuild the tree if it changed.
-    pub(crate) fn set_root(&mut self, root: PathBuf) {
-        if self.root.as_ref() == Some(&root) {
-            return;
+    /// Return root tree entries.
+    pub(crate) fn tree(&self) -> &[FileNode] {
+        &self.tree
+    }
+
+    /// Return selected tree path.
+    pub(crate) fn selected_path(&self) -> Option<&TreePath> {
+        self.selected.as_ref()
+    }
+
+    /// Return hovered tree path.
+    pub(crate) fn hovered_path(&self) -> Option<&TreePath> {
+        self.hovered.as_ref()
+    }
+
+    /// Update selected tree path.
+    pub(crate) fn set_selected_path(&mut self, path: Option<TreePath>) {
+        self.selected = path;
+    }
+
+    /// Update hovered tree path.
+    pub(crate) fn set_hovered_path(&mut self, path: Option<TreePath>) {
+        self.hovered = path;
+    }
+
+    /// Set explorer root and clear current tree if changed.
+    pub(crate) fn set_root(&mut self, root: Option<PathBuf>) -> bool {
+        if self.root == root {
+            return false;
         }
 
-        self.root = Some(root.clone());
-        self.root_label = Some(root_label(&root));
+        self.root = root.clone();
+        self.root_label = root.as_deref().map(root_label);
+        self.tree.clear();
         self.selected = None;
         self.hovered = None;
-        self.refresh_tree();
+        true
     }
 
-    /// Rebuild the tree from the current root directory.
-    pub(crate) fn refresh_tree(&mut self) {
-        let Some(root) = self.root.as_ref() else {
-            self.tree.clear();
-            return;
-        };
-
-        match read_dir_nodes(root) {
-            Ok(nodes) => {
-                self.tree = nodes;
-            },
-            Err(err) => {
-                self.tree.clear();
-                log::warn!("explorer failed to read root: {err}");
-            },
+    /// Apply root children after async load completion.
+    pub(crate) fn apply_root_nodes(
+        &mut self,
+        root: &PathBuf,
+        nodes: Vec<FileNode>,
+    ) -> bool {
+        if self.root.as_ref() != Some(root) {
+            return false;
         }
+
+        self.tree = nodes;
+        true
     }
 
-    /// Toggle a folder node and lazily load its children.
-    pub(crate) fn toggle_folder(&mut self, path: &[String]) {
+    /// Toggle folder state and return path to lazily load, if required.
+    pub(crate) fn toggle_folder(&mut self, path: &[String]) -> Option<PathBuf> {
+        let node = find_node_mut(&mut self.tree, path)?;
+        if !node.is_folder() {
+            return None;
+        }
+
+        let should_expand = !node.is_expanded();
+        node.set_expanded(should_expand);
+        if should_expand && node.children().is_empty() {
+            return Some(node.path().to_path_buf());
+        }
+
+        None
+    }
+
+    /// Apply folder children after async load completion.
+    pub(crate) fn apply_folder_nodes(
+        &mut self,
+        path: &[String],
+        children: Vec<FileNode>,
+    ) -> bool {
         let Some(node) = find_node_mut(&mut self.tree, path) else {
-            return;
+            return false;
         };
-
-        if !node.is_folder {
-            return;
+        if !node.is_folder() || !node.is_expanded() {
+            return false;
         }
 
-        let should_expand = !node.expanded;
-        node.expanded = should_expand;
-        if should_expand && node.children.is_empty() {
-            match read_dir_nodes(&node.path) {
-                Ok(children) => {
-                    node.children = children;
-                },
-                Err(err) => {
-                    let path_display = node.path.display();
-                    log::warn!(
-                        "explorer failed to read folder {path_display}: {err}"
-                    );
-                },
-            }
-        }
+        node.set_children(children);
+        true
     }
 
     /// Return whether the node at the provided tree path is a folder.
     pub(crate) fn node_is_folder(&self, path: &[String]) -> Option<bool> {
-        find_node(&self.tree, path).map(|node| node.is_folder)
+        find_node(&self.tree, path).map(FileNode::is_folder)
     }
 
     /// Resolve a tree path into its filesystem path.
     pub(crate) fn node_path(&self, path: &[String]) -> Option<PathBuf> {
-        find_node(&self.tree, path).map(|node| node.path.clone())
-    }
-}
-
-fn root_label(path: &Path) -> String {
-    let display = path.display();
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| format!("{display}"))
-}
-
-fn read_dir_nodes(path: &Path) -> std::io::Result<Vec<FileNode>> {
-    let mut nodes = Vec::new();
-    for entry in std::fs::read_dir(path)? {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(err) => {
-                log::warn!("explorer failed to read entry: {err}");
-                continue;
-            },
-        };
-
-        let file_type = match entry.file_type() {
-            Ok(file_type) => file_type,
-            Err(err) => {
-                log::warn!("explorer failed to read entry type: {err}");
-                continue;
-            },
-        };
-
-        let name = entry.file_name().to_string_lossy().to_string();
-        let path = entry.path();
-        let is_folder = file_type.is_dir();
-
-        nodes.push(FileNode::new(name, path, is_folder));
-    }
-
-    nodes.sort();
-
-    Ok(nodes)
-}
-
-fn compare_names(left: &str, right: &str) -> Ordering {
-    let left_fold = left.bytes().map(|byte| byte.to_ascii_lowercase());
-    let right_fold = right.bytes().map(|byte| byte.to_ascii_lowercase());
-    match left_fold.cmp(right_fold) {
-        Ordering::Equal => left.cmp(right),
-        other => other,
+        find_node(&self.tree, path).map(|node| node.path().to_path_buf())
     }
 }
 
@@ -201,11 +134,11 @@ fn find_node<'a>(
         return Some(node);
     }
 
-    if !node.is_folder {
+    if !node.is_folder() {
         return None;
     }
 
-    find_node(&node.children, tail)
+    find_node(node.children(), tail)
 }
 
 fn find_node_mut<'a>(
@@ -220,13 +153,72 @@ fn find_node_mut<'a>(
         return Some(node);
     }
 
-    if !node.is_folder {
+    if !node.is_folder() {
         return None;
     }
 
-    find_node_mut(&mut node.children, tail)
+    find_node_mut(node.children_mut(), tail)
 }
 
 fn find_child_index(nodes: &[FileNode], name: &str) -> Option<usize> {
-    nodes.iter().position(|node| node.name == name)
+    nodes.iter().position(|node| node.name() == name)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::ExplorerState;
+    use crate::features::explorer::FileNode;
+
+    #[test]
+    fn given_new_root_when_set_root_then_tree_is_reset() {
+        let mut state = ExplorerState::new();
+
+        assert!(state.set_root(Some(PathBuf::from("/tmp"))));
+        assert_eq!(state.root_label(), Some("tmp"));
+        assert!(state.tree().is_empty());
+    }
+
+    #[test]
+    fn given_expand_folder_with_empty_children_when_toggled_then_load_path_returned()
+     {
+        let mut state = ExplorerState::new();
+        let root = PathBuf::from("/tmp");
+        state.set_root(Some(root.clone()));
+        let _ = state.apply_root_nodes(
+            &root,
+            vec![FileNode::new(String::from("src"), root.join("src"), true)],
+        );
+
+        let load_path = state.toggle_folder(&[String::from("src")]);
+
+        assert_eq!(load_path, Some(root.join("src")));
+    }
+
+    #[test]
+    fn given_loaded_folder_children_when_applied_then_node_children_updated() {
+        let mut state = ExplorerState::new();
+        let root = PathBuf::from("/tmp");
+        state.set_root(Some(root.clone()));
+        let _ = state.apply_root_nodes(
+            &root,
+            vec![FileNode::new(String::from("src"), root.join("src"), true)],
+        );
+        let _ = state.toggle_folder(&[String::from("src")]);
+
+        let changed = state.apply_folder_nodes(
+            &[String::from("src")],
+            vec![FileNode::new(
+                String::from("main.rs"),
+                root.join("src/main.rs"),
+                false,
+            )],
+        );
+
+        assert!(changed);
+        let path =
+            state.node_path(&[String::from("src"), String::from("main.rs")]);
+        assert_eq!(path, Some(root.join("src/main.rs")));
+    }
 }

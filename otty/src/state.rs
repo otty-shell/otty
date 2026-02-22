@@ -4,10 +4,10 @@ use std::time::{Duration, Instant};
 use iced::widget::pane_grid;
 use iced::{Point, Size};
 
-use crate::features::explorer::state::ExplorerState;
+use crate::features::explorer::ExplorerState;
 use crate::features::quick_launches::QuickLaunchState;
 use crate::features::settings::SettingsState;
-use crate::features::tab::{TabContent, TabItem};
+use crate::features::tab::{TabContent, TabItem, TabState};
 use crate::ui::widgets::tab_bar;
 
 /// Fixed width of the sidebar menu rail.
@@ -115,11 +115,9 @@ pub(crate) struct SidebarAddMenuState {
 
 #[derive(Default)]
 pub(crate) struct State {
-    pub(crate) active_tab_id: Option<u64>,
-    pub(crate) tab_items: BTreeMap<u64, TabItem>,
-    pub(crate) terminal_to_tab: HashMap<u64, u64>,
-    pub(crate) next_tab_id: u64,
-    pub(crate) next_terminal_id: u64,
+    pub(crate) tab: TabState,
+    terminal_to_tab: HashMap<u64, u64>,
+    next_terminal_id: u64,
     pub(crate) window_size: Size,
     pub(crate) screen_size: Size,
     pub(crate) sidebar: SidebarState,
@@ -146,22 +144,47 @@ impl State {
         }
     }
 
+    pub(crate) fn tab_items(&self) -> &BTreeMap<u64, TabItem> {
+        self.tab.tab_items()
+    }
+
+    pub(crate) fn tab_items_mut(&mut self) -> &mut BTreeMap<u64, TabItem> {
+        self.tab.tab_items_mut()
+    }
+
+    pub(crate) fn active_tab_id(&self) -> Option<u64> {
+        self.tab.active_tab_id()
+    }
+
+    pub(crate) fn allocate_tab_id(&mut self) -> u64 {
+        self.tab.allocate_tab_id()
+    }
+
+    pub(crate) fn allocate_terminal_id(&mut self) -> u64 {
+        let terminal_id = self.next_terminal_id;
+        self.next_terminal_id += 1;
+        terminal_id
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_next_terminal_id_for_tests(&mut self, value: u64) {
+        self.next_terminal_id = value;
+    }
+
     pub(crate) fn active_tab_title(&self) -> Option<&str> {
-        self.active_tab_id
-            .and_then(|id| self.tab_items.get(&id))
-            .map(|tab| tab.title.as_str())
+        self.tab.active_tab().map(|tab| tab.title.as_str())
     }
 
     pub(crate) fn tab_summaries(&self) -> Vec<(u64, &str)> {
-        self.tab_items
+        self.tab
+            .tab_items()
             .iter()
             .map(|(id, item)| (*id, item.title.as_str()))
             .collect()
     }
 
     pub(crate) fn active_tab(&self) -> Option<&TabItem> {
-        let id = self.active_tab_id?;
-        self.tab_items.get(&id)
+        self.tab.active_tab()
     }
 
     pub(crate) fn set_screen_size(&mut self, size: Size) {
@@ -188,7 +211,7 @@ impl State {
 
     pub(crate) fn reindex_terminal_tabs(&mut self) {
         self.terminal_to_tab.clear();
-        for (&tab_id, tab) in &self.tab_items {
+        for (&tab_id, tab) in self.tab.tab_items() {
             if let TabContent::Terminal(terminal) = &tab.content {
                 for terminal_id in terminal.terminals().keys().copied() {
                     self.terminal_to_tab.insert(terminal_id, tab_id);
@@ -199,7 +222,7 @@ impl State {
 
     pub(crate) fn sync_tab_grid_sizes(&mut self) {
         let size = self.pane_grid_size();
-        for tab in self.tab_items.values_mut() {
+        for tab in self.tab.tab_items_mut().values_mut() {
             if let TabContent::Terminal(terminal) = &mut tab.content {
                 terminal.set_grid_size(size);
             }
@@ -218,5 +241,10 @@ impl State {
         let workspace_ratio = self.sidebar.effective_workspace_ratio();
         let width = (available_width * (1.0 - workspace_ratio)).max(0.0);
         Size::new(width, height)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn terminal_to_tab_len(&self) -> usize {
+        self.terminal_to_tab.len()
     }
 }

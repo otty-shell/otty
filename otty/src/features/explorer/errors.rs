@@ -1,10 +1,12 @@
 use thiserror::Error;
 
-/// Errors emitted while parsing the configured editor command.
+/// Errors emitted by explorer services and command parsing.
 #[derive(Debug, Error)]
-pub(crate) enum EditorCommandParseError {
+pub(crate) enum ExplorerError {
+    #[error("Explorer I/O failed: {0}")]
+    Io(#[from] std::io::Error),
     #[error("Invalid editor command: {0}")]
-    Invalid(#[from] shell_words::ParseError),
+    InvalidEditorCommand(#[from] shell_words::ParseError),
     #[error("Editor command is empty.")]
-    Empty,
+    EmptyEditorCommand,
 }

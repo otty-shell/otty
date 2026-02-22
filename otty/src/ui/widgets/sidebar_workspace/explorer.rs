@@ -5,8 +5,7 @@ use iced::{Element, Length};
 
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
-use crate::features::explorer::event::ExplorerEvent;
-use crate::features::explorer::state::FileNode;
+use crate::features::explorer::{ExplorerEvent, ExplorerState, FileNode};
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::ui::widgets::helpers;
@@ -33,7 +32,7 @@ const WORKSPACE_PADDING_VERTICAL: f32 = 10.0;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Props<'a> {
     pub(crate) theme: ThemeProps<'a>,
-    pub(crate) explorer: &'a crate::features::explorer::state::ExplorerState,
+    pub(crate) explorer: &'a ExplorerState,
 }
 
 pub(crate) fn view<'a>(
@@ -108,11 +107,11 @@ fn explorer_tree<'a>(props: Props<'a>) -> Element<'a, ExplorerEvent> {
     let palette = props.theme.theme.iced_palette().clone();
     let row_palette = palette.clone();
 
-    let tree_view = TreeView::new(&props.explorer.tree, move |context| {
+    let tree_view = TreeView::new(props.explorer.tree(), move |context| {
         render_entry(row_props, context)
     })
-    .selected_row(props.explorer.selected.as_ref())
-    .hovered_row(props.explorer.hovered.as_ref())
+    .selected_row(props.explorer.selected_path())
+    .hovered_row(props.explorer.hovered_path())
     .on_press(|path| ExplorerEvent::NodePressed { path })
     .on_hover(|path| ExplorerEvent::NodeHovered { path })
     .row_style(move |context| {
@@ -143,20 +142,20 @@ fn render_entry<'a>(
     context: &TreeRowContext<'a, FileNode>,
 ) -> Element<'a, ExplorerEvent> {
     let icon_palette = props.theme.theme.iced_palette();
-    let icon_view: Element<'a, ExplorerEvent> = if context.entry.node.is_folder
-    {
-        let icon = if context.entry.node.expanded {
-            icons::FOLDER_OPENED
+    let icon_view: Element<'a, ExplorerEvent> =
+        if context.entry.node.is_folder() {
+            let icon = if context.entry.node.is_expanded() {
+                icons::FOLDER_OPENED
+            } else {
+                icons::FOLDER
+            };
+            svg_icon(icon, icon_palette.dim_foreground)
         } else {
-            icons::FOLDER
+            svg_icon(icons::FILE, icon_palette.dim_foreground)
         };
-        svg_icon(icon, icon_palette.dim_foreground)
-    } else {
-        svg_icon(icons::FILE, icon_palette.dim_foreground)
-    };
 
     let title = container(
-        text(&context.entry.node.name)
+        text(context.entry.node.name())
             .size(TREE_FONT_SIZE)
             .width(Length::Fill)
             .wrapping(Wrapping::None)
@@ -208,22 +207,22 @@ fn svg_icon<'a>(
 
 impl TreeNode for FileNode {
     fn title(&self) -> &str {
-        &self.name
+        self.name()
     }
 
     fn children(&self) -> Option<&[Self]> {
-        if self.is_folder {
-            Some(&self.children)
+        if self.is_folder() {
+            Some(self.children())
         } else {
             None
         }
     }
 
     fn expanded(&self) -> bool {
-        self.expanded
+        self.is_expanded()
     }
 
     fn is_folder(&self) -> bool {
-        self.is_folder
+        self.is_folder()
     }
 }

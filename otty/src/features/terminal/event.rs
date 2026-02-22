@@ -1,11 +1,12 @@
 use std::fmt;
+use std::path::PathBuf;
 
 use iced::{Point, Task, widget::pane_grid};
 use otty_ui_term::settings::Settings;
 use otty_ui_term::{BlockCommand, TerminalView};
 
 use crate::app::Event as AppEvent;
-use crate::features::explorer;
+use crate::features::explorer::ExplorerEvent;
 use crate::features::tab::{TabContent, TabEvent, TabItem, TabOpenRequest};
 use crate::state::State;
 
@@ -210,8 +211,7 @@ pub(crate) fn terminal_reducer(
         PaneClicked { tab_id, pane } => {
             let task =
                 with_terminal_tab(state, tab_id, |tab| tab.focus_pane(pane));
-            explorer::event::sync_explorer_from_active_terminal(state);
-            task
+            Task::batch(vec![task, request_sync_explorer_from_active()])
         },
         PaneResized { tab_id, event } => {
             if let Some(tab) = terminal_tab_mut(state, tab_id) {
@@ -243,13 +243,11 @@ pub(crate) fn terminal_reducer(
         ContextMenuInput { tab_id: _ } => Task::none(),
         SplitPane { tab_id, pane, axis } => {
             let task = split_pane(state, tab_id, pane, axis);
-            explorer::event::sync_explorer_from_active_terminal(state);
-            task
+            Task::batch(vec![task, request_sync_explorer_from_active()])
         },
         ClosePane { tab_id, pane } => {
             let task = close_pane(state, tab_id, pane);
-            explorer::event::sync_explorer_from_active_terminal(state);
-            task
+            Task::batch(vec![task, request_sync_explorer_from_active()])
         },
         CopySelection {
             tab_id,
@@ -327,11 +325,10 @@ fn reduce_widget_event(
     }
 
     if is_content_sync {
-        explorer::event::sync_explorer_from_terminal_event(
-            state,
-            tab_id,
-            terminal_id,
-        );
+        return Task::batch(vec![
+            update,
+            request_sync_explorer_from_terminal(tab_id, terminal_id),
+        ]);
     }
 
     update
@@ -375,7 +372,7 @@ fn insert_tab(
     }
 
     let title = tab.title().to_string();
-    state.tab_items.insert(
+    state.tab.insert(
         tab_id,
         TabItem {
             id: tab_id,
@@ -383,14 +380,14 @@ fn insert_tab(
             content: TabContent::Terminal(Box::new(tab)),
         },
     );
-    state.active_tab_id = Some(tab_id);
+    state.tab.activate(Some(tab_id));
 
-    let sync_task = sync_tab_block_selection(state, tab_id);
+    let mut tasks = vec![focus_task, sync_tab_block_selection(state, tab_id)];
     if sync_explorer {
-        explorer::event::sync_explorer_from_active_terminal(state);
+        tasks.push(request_sync_explorer_from_active());
     }
 
-    Task::batch(vec![focus_task, sync_task])
+    Task::batch(tasks)
 }
 
 fn focus_active_terminal(state: &State) -> Task<AppEvent> {
@@ -412,7 +409,7 @@ fn focus_active_terminal(state: &State) -> Task<AppEvent> {
 }
 
 fn sync_tab_block_selection(state: &State, tab_id: u64) -> Task<AppEvent> {
-    let Some(tab) = state.tab_items.get(&tab_id) else {
+    let Some(tab) = state.tab_items().get(&tab_id) else {
         return Task::none();
     };
 
@@ -453,8 +450,7 @@ fn split_pane(
     pane: pane_grid::Pane,
     axis: pane_grid::Axis,
 ) -> Task<AppEvent> {
-    let terminal_id = state.next_terminal_id;
-    state.next_terminal_id += 1;
+    let terminal_id = state.allocate_terminal_id();
 
     let task = with_terminal_tab(state, tab_id, move |tab| {
         tab.split_pane(pane, axis, terminal_id)
@@ -616,17 +612,16 @@ fn terminal_tab_mut(
     state: &mut State,
     tab_id: u64,
 ) -> Option<&mut TerminalState> {
-    state
-        .tab_items
-        .get_mut(&tab_id)
-        .and_then(|tab| match &mut tab.content {
+    state.tab_items_mut().get_mut(&tab_id).and_then(|tab| {
+        match &mut tab.content {
             TabContent::Terminal(terminal) => Some(terminal.as_mut()),
             _ => None,
-        })
+        }
+    })
 }
 
 fn sync_tab_title(state: &mut State, tab_id: u64) {
-    let Some(tab) = state.tab_items.get_mut(&tab_id) else {
+    let Some(tab) = state.tab_items_mut().get_mut(&tab_id) else {
         return;
     };
 
@@ -637,7 +632,7 @@ fn sync_tab_title(state: &mut State, tab_id: u64) {
 
 fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
     state
-        .tab_items
+        .tab_items()
         .get(&tab_id)
         .and_then(|tab| match &tab.content {
             TabContent::Terminal(terminal) => Some(terminal.as_ref()),
@@ -647,6 +642,86 @@ fn terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
 
 fn tab_id_by_terminal(state: &State, terminal_id: u64) -> Option<u64> {
     state.terminal_tab_id(terminal_id)
+}
+
+/// Resolve current working directory from active shell terminal tab.
+pub(crate) fn shell_cwd_for_active_tab(state: &State) -> Option<PathBuf> {
+    let tab_id = state.active_tab_id()?;
+    shell_cwd_for_sync(state, tab_id, ExplorerSyncTarget::FocusedPane)
+}
+
+/// Resolve current working directory from a terminal content sync event.
+pub(crate) fn shell_cwd_for_terminal_event(
+    state: &State,
+    tab_id: u64,
+    terminal_id: u64,
+) -> Option<PathBuf> {
+    if state.active_tab_id() != Some(tab_id) {
+        return None;
+    }
+
+    shell_cwd_for_sync(
+        state,
+        tab_id,
+        ExplorerSyncTarget::FocusedTerminal(terminal_id),
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ExplorerSyncTarget {
+    FocusedPane,
+    FocusedTerminal(u64),
+}
+
+fn shell_cwd_for_sync(
+    state: &State,
+    tab_id: u64,
+    target: ExplorerSyncTarget,
+) -> Option<PathBuf> {
+    let terminal = shell_terminal_tab(state, tab_id)?;
+
+    match target {
+        ExplorerSyncTarget::FocusedPane => terminal
+            .focused_terminal_entry()
+            .and_then(|entry| terminal_cwd(&entry.terminal.blocks())),
+        ExplorerSyncTarget::FocusedTerminal(terminal_id) => {
+            if terminal.focused_terminal_id() != Some(terminal_id) {
+                return None;
+            }
+
+            terminal
+                .terminals()
+                .get(&terminal_id)
+                .and_then(|entry| terminal_cwd(&entry.terminal.blocks()))
+        },
+    }
+}
+
+fn shell_terminal_tab(state: &State, tab_id: u64) -> Option<&TerminalState> {
+    let terminal = terminal_tab(state, tab_id)?;
+    terminal.is_shell().then_some(terminal)
+}
+
+fn terminal_cwd(blocks: &[otty_ui_term::BlockSnapshot]) -> Option<PathBuf> {
+    blocks
+        .iter()
+        .rev()
+        .find_map(|block| block.meta.cwd.as_deref())
+        .map(PathBuf::from)
+}
+
+fn request_sync_explorer_from_active() -> Task<AppEvent> {
+    Task::done(AppEvent::Explorer(ExplorerEvent::SyncFromActiveTerminal))
+}
+
+fn request_sync_explorer_from_terminal(
+    tab_id: u64,
+    terminal_id: u64,
+) -> Task<AppEvent> {
+    Task::done(AppEvent::Explorer(ExplorerEvent::SyncFromTerminal {
+        tab_id,
+        terminal_id,
+    }))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -709,7 +784,7 @@ mod tests {
     }
 
     fn terminal_tab(state: &State, tab_id: u64) -> &super::TerminalState {
-        let item = state.tab_items.get(&tab_id).expect("tab item");
+        let item = state.tab_items().get(&tab_id).expect("tab item");
         match &item.content {
             TabContent::Terminal(terminal) => terminal.as_ref(),
             _ => panic!("expected terminal tab"),
@@ -741,9 +816,9 @@ mod tests {
             settings_with_program(VALID_SHELL_PATH),
         );
 
-        assert_eq!(state.active_tab_id, Some(1));
+        assert_eq!(state.active_tab_id(), Some(1));
         assert_eq!(state.terminal_tab_id(10), Some(1));
-        let tab = state.tab_items.get(&1).expect("tab");
+        let tab = state.tab_items().get(&1).expect("tab");
         assert_eq!(tab.id, 1);
         assert_eq!(tab.title, "Shell");
         assert!(matches!(tab.content, TabContent::Terminal(_)));
@@ -770,9 +845,9 @@ mod tests {
             },
         );
 
-        assert!(state.tab_items.is_empty());
-        assert!(state.terminal_to_tab.is_empty());
-        assert!(state.active_tab_id.is_none());
+        assert!(state.tab.is_empty());
+        assert_eq!(state.terminal_to_tab_len(), 0);
+        assert!(state.active_tab_id().is_none());
     }
 
     #[test]
@@ -817,7 +892,7 @@ mod tests {
             }),
         );
 
-        let tab = state.tab_items.get(&1).expect("tab");
+        let tab = state.tab_items().get(&1).expect("tab");
         assert_eq!(tab.title, "Renamed");
         assert_eq!(terminal_tab(&state, 1).title(), "Renamed");
     }
@@ -887,7 +962,7 @@ mod tests {
             10,
             settings_with_program(VALID_SHELL_PATH),
         );
-        state.next_terminal_id = 11;
+        state.set_next_terminal_id_for_tests(11);
         let pane = terminal_tab(&state, 1).focus().expect("focused pane");
 
         let _task = terminal_reducer(
@@ -918,18 +993,18 @@ mod tests {
     fn given_empty_state_when_focus_active_event_dispatched_then_reducer_is_noop()
      {
         let mut state = State::default();
-        let before_tab_count = state.tab_items.len();
+        let before_tab_count = state.tab.len();
 
         let _task = terminal_reducer(&mut state, TerminalEvent::FocusActive);
 
-        assert_eq!(state.tab_items.len(), before_tab_count);
-        assert!(state.active_tab_id.is_none());
+        assert_eq!(state.tab.len(), before_tab_count);
+        assert!(state.active_tab_id().is_none());
     }
 
     #[test]
     fn given_non_terminal_tab_when_sync_selection_then_reducer_ignores_event() {
         let mut state = State::default();
-        state.tab_items.insert(
+        state.tab.insert(
             77,
             TabItem {
                 id: 77,
@@ -943,9 +1018,9 @@ mod tests {
             TerminalEvent::SyncSelection { tab_id: 77 },
         );
 
-        assert_eq!(state.tab_items.len(), 1);
+        assert_eq!(state.tab.len(), 1);
         assert_eq!(
-            state.tab_items.get(&77).map(|item| item.title.as_str()),
+            state.tab_items().get(&77).map(|item| item.title.as_str()),
             Some("Settings"),
         );
     }
@@ -1091,7 +1166,7 @@ mod tests {
 
         let _task = terminal_reducer(&mut state, TerminalEvent::FocusActive);
 
-        assert_eq!(state.active_tab_id, Some(1));
+        assert_eq!(state.active_tab_id(), Some(1));
         assert_eq!(terminal_tab(&state, 1).focused_terminal_id(), Some(10));
     }
 
@@ -1105,7 +1180,7 @@ mod tests {
             10,
             settings_with_program(VALID_SHELL_PATH),
         );
-        state.next_terminal_id = 11;
+        state.set_next_terminal_id_for_tests(11);
         let pane = terminal_tab(&state, 1).focus().expect("focused pane");
         let _task = terminal_reducer(
             &mut state,
@@ -1144,7 +1219,7 @@ mod tests {
             10,
             settings_with_program(VALID_SHELL_PATH),
         );
-        state.next_terminal_id = 11;
+        state.set_next_terminal_id_for_tests(11);
         let pane = terminal_tab(&state, 1).focus().expect("focused pane");
         let _task = terminal_reducer(
             &mut state,

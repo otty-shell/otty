@@ -1,5 +1,7 @@
-pub(crate) mod event;
-pub(crate) mod model;
+mod event;
+mod model;
+mod state;
 
-pub(crate) use event::{TabEvent, tab_reducer};
+pub(crate) use event::{TabDeps, TabEvent, tab_reducer};
 pub(crate) use model::{TabContent, TabItem, TabOpenRequest};
+pub(crate) use state::TabState;

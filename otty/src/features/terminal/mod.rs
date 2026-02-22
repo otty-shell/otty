@@ -6,7 +6,10 @@ mod state;
 
 #[allow(unused_imports)]
 pub(crate) use errors::TerminalError;
-pub(crate) use event::{TerminalEvent, terminal_reducer};
+pub(crate) use event::{
+    TerminalEvent, shell_cwd_for_active_tab, shell_cwd_for_terminal_event,
+    terminal_reducer,
+};
 pub(crate) use model::{ShellSession, TerminalEntry, TerminalKind};
 pub(crate) use services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
