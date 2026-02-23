@@ -1,6 +1,6 @@
 # AGENTS Instructions
 
-General context lives in `README.md` at the repository root.
+General context lives in [README.md](./README.md) at the repository root.
 
 ## Development workflow
 
@@ -16,7 +16,6 @@ General context lives in `README.md` at the repository root.
 - Keep APIs minimal and trait-based; use associated types for event/action contracts.
 - Do not expose struct fields as `pub`; use idiomatic Rust accessors for reads (`field()` or `is_*` for booleans), and prefer domain-specific mutators for writes (use `set_*` only when a generic setter is the clearest option, or keep mutation local to the module).
 - For `match` on `enum`, prefer a wildcard arm (`_ => ...`) by default for fallback logic.
-- Prefer `format!("{value}")` style interpolation for strings.
 - Document public items with concise doc comments and examples.
 - Run `cargo fmt`, `cargo clippy --workspace --all-targets`, and relevant `cargo test` targets after changes.
 

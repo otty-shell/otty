@@ -1,6 +1,6 @@
-# Features Package Conventions
+# Features Conventions
 
-## 1. Scope And Purpose
+## 1. Scope
 
 This document is a normative specification for `otty/src/features`.
 
@@ -8,11 +8,6 @@ This document is a normative specification for `otty/src/features`.
 - New feature modules MUST be created in `strict` profile (see section 2).
 - Existing modules MAY temporarily remain in `legacy` profile while being migrated.
 - The goal is deterministic architecture and near-identical module topology across features.
-
-### Rationale
-
-- Uniform feature shape reduces onboarding and review ambiguity.
-- Deterministic boundaries reduce accidental coupling and generated-code drift.
 
 ## 2. Compliance Profiles
 
@@ -32,10 +27,6 @@ Use only for pre-existing features during migration.
 - MAY keep historical structure temporarily.
 - MUST NOT add new violations.
 - MUST include a migration task to reach `strict` profile.
-
-### Rationale
-
-- Profile split allows incremental migration without blocking delivery.
 
 ## 3. Canonical Feature Layout
 
@@ -66,10 +57,6 @@ editor/               # optional subfeature; must mirror the same contract
 - `errors.rs` (plural) MUST be used for error definitions. `error.rs` is forbidden in strict profile.
 - Files outside canonical/optional lists MUST NOT be added without updating this specification.
 
-### Rationale
-
-- Stable topology enables mechanical generation and deterministic navigation.
-
 ## 4. Module Responsibilities
 
 - `mod.rs`: module declarations, curated re-exports, and zero business logic.
@@ -79,10 +66,6 @@ editor/               # optional subfeature; must mirror the same contract
 - `errors.rs`: explicit error types for feature boundaries.
 - `storage.rs`: serialization/deserialization and filesystem I/O only.
 - `services.rs`: bounded external interactions that are not pure model/state logic.
-
-### Rationale
-
-- Responsibility isolation improves testability and code search precision.
 
 ## 5. Primary Contracts
 
@@ -126,11 +109,7 @@ pub(crate) fn feature_reducer(
 ) -> Task<AppEvent>
 ```
 
-### Rationale
-
-- Single, explicit write boundary preserves invariants and auditability.
-
-## 6. API Exposure And Visibility
+## 6. API Exposure
 
 - `features/mod.rs` MUST register features as `pub(crate) mod <feature>;`.
 - A feature's `mod.rs` MUST be the only import surface for sibling features.
@@ -146,10 +125,6 @@ pub(crate) fn feature_reducer(
     requiring view-model indirection.
 - Wildcard re-exports (`pub use ...::*`) MUST NOT be used.
 - Storage internals and temporary helper types MUST NOT be re-exported.
-
-### Rationale
-
-- Minimal surfaces keep refactors safe and prevent API leaks.
 
 ## 7. Dependency Graph Rules
 
@@ -181,10 +156,6 @@ pub(crate) fn feature_reducer(
 - Blocking I/O in reducers and hot state paths.
 - Unmanaged background threads from reducers.
 
-### Rationale
-
-- Explicit dependency edges prevent boundary erosion.
-
 ## 8. State Ownership And Mutation
 
 - Each domain datum MUST have one canonical owner feature.
@@ -192,10 +163,6 @@ pub(crate) fn feature_reducer(
 - Reusable mutation logic SHOULD live on `<Feature>State` methods.
 - Feature internals MUST NOT be mutated directly from `app.rs` or sibling features.
 - State initialization MUST define explicit defaults and avoid hidden globals.
-
-### Rationale
-
-- Canonical ownership prevents split-brain state and non-local bugs.
 
 ## 9. Naming Rules
 
@@ -208,10 +175,6 @@ pub(crate) fn feature_reducer(
 - Constants: `UPPER_SNAKE_CASE`.
 - Boolean fields/functions: `is_`, `has_`, or `can_` prefix.
 - Public helper APIs SHOULD be feature-prefixed to avoid collisions.
-
-### Rationale
-
-- Predictable names reduce search friction and API drift.
 
 ## 10. Testing Matrix (Strict Profile)
 
@@ -230,10 +193,6 @@ Test naming MUST use:
 
 Tests MUST NOT require network or user-specific environment state.
 
-### Rationale
-
-- Boundary-focused tests catch most regressions with minimal noise.
-
 ## 11. Anti-Patterns
 
 Forbidden:
@@ -245,10 +204,6 @@ Forbidden:
 - Unbounded cloning when borrowing is sufficient.
 - Stringly-typed ad-hoc event channels replacing typed enums.
 - Hidden side effects in constructors/getters.
-
-### Rationale
-
-- These patterns create non-local behavior and fragile contracts.
 
 ## 12. Canonical Strict Template
 
