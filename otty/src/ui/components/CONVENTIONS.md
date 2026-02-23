@@ -29,13 +29,15 @@ Use only for pre-existing components during migration.
 
 ## 3. Canonical Component Layout
 
-Each strict component under `otty/src/ui/components/` MUST use single-file layout by default:
+Each strict component MAY use one of two canonical layouts.
+
+Simple component layout (single-file), for small reusable primitives with limited branching:
 
 ```text
 <component_name>.rs     # required: props + event + view + local pure helpers
 ```
 
-Optional strict extension for complex components:
+Complex component layout (module folder), for larger primitives with dense style/helper logic:
 
 ```text
 <component_name>/
@@ -48,8 +50,31 @@ Optional strict extension for complex components:
   tests.rs              # optional: tests when not inline
 ```
 
-- Folder-based layout MUST be used only when single-file layout is no longer maintainable.
+- A component MUST start as single-file unless complexity already justifies module-folder at creation time.
+- A component SHOULD be promoted to module-folder when at least one condition holds:
+  - substantial style logic that reduces readability of single-file layout
+  - multiple helper blocks (formatting, style derivation, layout calculations) requiring separation
+  - growing local event/props contracts where extraction improves navigation
 - Files outside canonical/optional lists MUST NOT be added without updating this specification.
+
+Simple component (single-file) expected contents:
+
+- `<Component>Props`
+- `<Component>Event`
+- `view`
+- local pure helpers (if needed)
+
+Complex component (module-folder) expected files:
+
+- `view.rs` (required)
+- `event.rs` and/or `props.rs` when extraction improves clarity
+- `style.rs` for reusable style factories
+- `helpers.rs` for pure deterministic utility logic
+
+Current tree analysis (informative): the current `ui/components` tree fits the simple/single-file layout:
+
+- `icon_button.rs`
+- `menu_item.rs`
 
 ## 4. Module Responsibilities
 

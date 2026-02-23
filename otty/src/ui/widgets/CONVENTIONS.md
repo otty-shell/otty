@@ -31,7 +31,15 @@ Use only for pre-existing widgets during migration.
 
 ## 3. Canonical Widget Layout
 
-Each strict widget SHOULD use module-folder layout:
+Each strict widget MAY use one of two canonical layouts.
+
+Simple widget layout (single-file), for small widgets with one render surface and limited branching:
+
+```text
+<widget_name>.rs        # required: <Widget>Props + <Widget>Event + view + local pure helpers
+```
+
+Complex widget layout (module folder), for large widgets with multiple visual regions, overlays, or dense helper logic:
 
 ```text
 <widget_name>/
@@ -51,20 +59,60 @@ helpers.rs             # optional: pure local helpers only
 tests.rs               # optional: tests when not inline
 ```
 
-Legacy temporary layout:
-
-```text
-<widget_name>.rs        # historical single-file widget
-```
-
-- New widgets MUST NOT be created as legacy single-file modules.
+- A widget MUST start as single-file unless complexity already justifies module-folder at creation time.
+- A widget SHOULD be promoted to module-folder when at least one condition holds:
+  - multiple independent render regions (for example: header + list + form + footer)
+  - overlay/context-menu rendering with separate lifecycle logic
+  - large amount of pure helper/style/layout code reducing readability
+  - growing event mapping branches where separation improves navigation
 - Files outside canonical/optional lists MUST NOT be added without updating this specification.
+
+Simple widget (single-file) expected contents:
+
+- `<Widget>Props`
+- `<Widget>Event`
+- `view`
+- local pure helpers (if needed)
+
+Complex widget (module-folder) expected files:
+
+- `view.rs` (required)
+- `event.rs` and/or `props.rs` when extraction improves clarity
+- `style.rs` for reusable style factories
+- `layout.rs` for geometry/placement calculations
+- `overlay.rs` for context menu/popup layers
+- `helpers.rs` for pure deterministic utility logic
+
+Current tree analysis (informative): the current `ui/widgets` tree shows both complexity classes.
+
+Simple/single-file fit (examples):
+
+- `tab_content.rs`
+- `quick_launches/error.rs`
+- `sidebar_workspace/terminal.rs`
+
+Complex/module-folder fit (examples):
+
+- `settings.rs`
+- `quick_launches/sidebar.rs`
+- `quick_launches/editor.rs`
+- `sidebar.rs`
+- `tab_bar.rs`
+
+Recommended migration for complex examples:
+
+- keep `view.rs` as primary composition
+- extract `props.rs` when props grow
+- extract `style.rs` when style closures dominate view code
+- extract `layout.rs` for geometry/clamping constants and helpers
+- extract `overlay.rs` for context menus/popups
+- keep only pure computation in `helpers.rs`
 
 ## 4. Module Responsibilities
 
 - `mod.rs`: module declarations, curated re-exports, and zero business logic.
 - `view.rs`: primary render composition and event mapping.
-- `event.rs`: local widget event enum when direct feature-event output is not used.
+- `event.rs`: local widget event enum `<Widget>Event`.
 - `props.rs`: borrowed render inputs and UI configuration.
 - `style.rs`: style closures/factories only.
 - `layout.rs`: deterministic geometry/layout calculations only.
@@ -77,8 +125,8 @@ Legacy temporary layout:
 
 Each widget MUST expose:
 
-- Exactly one primary props type named `Props<'a>`.
-- Exactly one primary output message contract named `Event`.
+- Exactly one primary props type named `<Widget>Props<'a>`.
+- Exactly one primary output message contract named `<Widget>Event`.
 - Exactly one primary render entrypoint named `view`.
 
 ### 5.2 Render Entrypoint Rules
@@ -90,7 +138,9 @@ Each widget MUST expose:
 Recommended signature:
 
 ```rust
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, Event>
+pub(crate) fn view<'a>(
+    props: ExampleWidgetProps<'a>,
+) -> Element<'a, ExampleWidgetEvent>
 ```
 
 ## 6. API Exposure
@@ -143,8 +193,8 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, Event>
 
 - Directory names MUST be `snake_case`.
 - File names MUST be lower `snake_case`.
-- Primary props type: `Props`.
-- Primary local event enum: `Event` (when local event type is used).
+- Primary props type: `<Widget>Props`.
+- Primary local event enum: `<Widget>Event`.
 - Render function: `view`.
 - Constants: `UPPER_SNAKE_CASE`.
 - Boolean fields/functions: `is_`, `has_`, or `can_` prefix.
@@ -178,28 +228,53 @@ Forbidden:
 ## 12. Canonical Strict Template
 
 ```rust
-// otty/src/ui/widgets/example/mod.rs
-mod view;
-
-pub(crate) use view::{Event, Props, view};
-
-// otty/src/ui/widgets/example/view.rs
+// otty/src/ui/widgets/example_simple.rs
 use iced::Element;
 
 /// Props for rendering example widget.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Props<'a> {
+pub(crate) struct ExampleWidgetProps<'a> {
     pub(crate) title: &'a str,
 }
 
 /// Events emitted by example widget.
 #[derive(Debug, Clone)]
-pub(crate) enum Event {
+pub(crate) enum ExampleWidgetEvent {
     Clicked,
 }
 
 /// Render example widget.
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
+pub(crate) fn view<'a>(
+    props: ExampleWidgetProps<'a>,
+) -> Element<'a, ExampleWidgetEvent> {
+    let _ = props;
+    iced::widget::text("example").into()
+}
+
+// otty/src/ui/widgets/example_complex/mod.rs
+mod view;
+
+pub(crate) use view::{ExampleWidgetEvent, ExampleWidgetProps, view};
+
+// otty/src/ui/widgets/example_complex/view.rs
+use iced::Element;
+
+/// Props for rendering example widget.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ExampleWidgetProps<'a> {
+    pub(crate) title: &'a str,
+}
+
+/// Events emitted by example widget.
+#[derive(Debug, Clone)]
+pub(crate) enum ExampleWidgetEvent {
+    Clicked,
+}
+
+/// Render example widget.
+pub(crate) fn view<'a>(
+    props: ExampleWidgetProps<'a>,
+) -> Element<'a, ExampleWidgetEvent> {
     let _ = props;
     iced::widget::text("example").into()
 }
@@ -209,7 +284,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
 
 A widget is compliant only if all checks pass:
 
-- Canonical file layout is satisfied.
+- Canonical file layout is satisfied (single-file or module-folder).
 - `mod.rs` is thin and exports only stable API (folder-based widgets).
 - Exactly one primary render entrypoint exists.
 - Props/event/view naming matches required patterns.
