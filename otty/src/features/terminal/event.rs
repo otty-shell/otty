@@ -1,16 +1,16 @@
 use std::fmt;
 
-use iced::{Point, Task, widget::pane_grid};
+use iced::widget::pane_grid;
+use iced::{Point, Task};
 use otty_ui_term::{BlockCommand, TerminalView};
-
-use crate::app::Event as AppEvent;
-use crate::state::State;
 
 #[cfg(test)]
 use super::model::TerminalKind;
 use super::state::TerminalCommand;
 #[cfg(test)]
 use super::state::TerminalState;
+use crate::app::Event as AppEvent;
+use crate::state::State;
 
 /// Events emitted by terminal UI and terminal-related flows.
 #[derive(Clone)]

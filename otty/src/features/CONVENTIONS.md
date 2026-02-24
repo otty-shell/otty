@@ -5,67 +5,52 @@
 This document is a normative specification for `otty/src/features`.
 
 - A feature module MUST encapsulate one domain slice: event contract, state contract, and reduction logic.
-- New feature modules MUST be created in `strict` profile (see section 2).
-- Existing modules MAY temporarily remain in `legacy` profile while being migrated.
 - The goal is deterministic architecture and near-identical module topology across features.
 
 ## 2. Compliance Profiles
 
-### 2.1 Strict Profile (Default)
-
-Use for all new features and all fully migrated features.
-
 - MUST satisfy all sections in this document.
 - MUST have canonical file topology from section 3.
-- MUST expose exactly one external reducer entrypoint from `mod.rs`.
-- MUST interact with other features only through that feature's `mod.rs` re-exports.
+- MUST expose exactly one external reducer entrypoint and events subset from `mod.rs`.
+- Feature reducers MUST NOT call other feature reducers directly.
+- Cross-feature influence MUST be expressed only by returning `Task<AppEvent>` that contains routed events.
+- Feature state MUST be stored inside the global App `State`.
+- Feature state MUST be mutated only by the feature reducer defined in `event.rs`.
+- External code MAY access feature state only through public getter methods.
+- `pub` fields on `<Feature>State` are forbidden.
 
-### 2.2 Legacy Profile (Temporary)
-
-Use only for pre-existing features during migration.
-
-- MAY keep historical structure temporarily.
-- MUST NOT add new violations.
-- MUST include a migration task to reach `strict` profile.
-
-## 3. Canonical Feature Layout
+## 3. Canonical Layout
 
 Each feature under `otty/src/features/<feature_name>/` MUST follow:
 
 ```text
-mod.rs                # required: public surface only
-event.rs              # required: <Feature>Event + <feature>_reducer
-state.rs              # required: <Feature>State + state helpers
-model.rs              # required: domain data, validation, pure transforms
-errors.rs             # required when explicit feature error exists
-storage.rs            # optional: persistence boundary only
+├── mod.rs         # required: public surface only
+├── event.rs       # required: <Feature>Event + <feature>_reducer
+├── state.rs       # required: <Feature>State + state helpers
+├── model.rs       # required: domain data
+├── errors.rs      # optional: feature errors
+├── storage.rs     # optional: persistence boundary only
+├── services.rs    # optional: non-UI integrations, adapters, process glue
+└── subfeature/    # optional: subfeature must mirror the same contract
+  ├── mod.rs
+  ├── event.rs
+  ├── state.rs
+  ├── model.rs
+  ├── errors.rs
+  └── storage.rs
 ```
 
-Optional extensions in strict profile:
-
-```text
-services.rs           # optional: non-UI integrations, adapters, process glue
-editor/               # optional subfeature; must mirror the same contract
-  mod.rs
-  event.rs
-  state.rs            # required if subfeature has state
-  model.rs
-  errors.rs           # required when explicit subfeature error exists
-  storage.rs          # optional
-```
-
-- `errors.rs` (plural) MUST be used for error definitions. `error.rs` is forbidden in strict profile.
-- Files outside canonical/optional lists MUST NOT be added without updating this specification.
+Files outside required/optional lists MUST NOT be added without updating this specification.
 
 ## 4. Module Responsibilities
 
-- `mod.rs`: module declarations, curated re-exports, and zero business logic.
+- `mod.rs`: module declarations, curated re-exports. Business logic MUST NOT be added here.
 - `event.rs`: public feature event enum, reducer entrypoint, event routing.
 - `state.rs`: state struct, deterministic state mutation helpers.
-- `model.rs`: domain types, validation, pure mapping/normalization.
-- `errors.rs`: explicit error types for feature boundaries.
+- `model.rs`: domain data structs declarations, domain data structs implementations and trait's implementations for domain data structs (e.g Display/Debug or etc).
+- `errors.rs`: explicit error type for feature boundaries.
 - `storage.rs`: serialization/deserialization and filesystem I/O only.
-- `services.rs`: bounded external interactions that are not pure model/state logic.
+- `services.rs`: bounded external interactions that are not pure `event/model/state/storage` logic.
 
 ## 5. Primary Contracts
 
@@ -86,7 +71,7 @@ Internal helper reducers MAY exist but MUST be private.
 - The reducer MUST be the only external write-entry point for feature state.
 - Side effects MUST be returned as `Task<AppEvent>` and never hidden.
 
-Recommended signatures:
+Signatures:
 
 ```rust
 pub(crate) fn feature_reducer(
@@ -109,20 +94,25 @@ pub(crate) fn feature_reducer(
 ) -> Task<AppEvent>
 ```
 
+### 5.3 State Rules
+
+- The feature's State MUST be `pub(crate)` and re-exported from `mod.rs`.
+- The feature's State fields MUST be private (without `pub`) and have getter methods.
+- The feature's State MUST NOT be mutated outside the feature.
+
 ## 6. API Exposure
 
 - `features/mod.rs` MUST register features as `pub(crate) mod <feature>;`.
 - A feature's `mod.rs` MUST be the only import surface for sibling features.
 - Feature-internal module declarations inside `<feature>/mod.rs` MUST use private `mod ...;`.
-- `mod.rs` MUST re-export only stable API items:
+- Feature-internal `mod.rs` MUST re-export only stable API items:
   - primary event enum
   - primary reducer entrypoint
   - primary state type
   - feature error type (if exists)
   - dependency struct for the reducer entrypoint (e.g., `FeatureDeps`), when required
-  - extended stable API: any types with verified external consumers in `app.rs`, `ui/widgets/`, or sibling
-    features. `ui/widgets/` is a first-class consumer; features MAY re-export types it needs directly without
-    requiring view-model indirection.
+  - domain models from `model.rs`
+  - service structs and functions from `services.rs` (if exists and required)
 - Wildcard re-exports (`pub use ...::*`) MUST NOT be used.
 - Storage internals and temporary helper types MUST NOT be re-exported.
 
@@ -130,14 +120,16 @@ pub(crate) fn feature_reducer(
 
 ### 7.1 Allowed Intra-Feature Dependencies
 
-- `event.rs` MAY depend on `state.rs`, `model.rs`, `errors.rs`, `services.rs`, and shared crate utilities.
-- `state.rs` MAY depend on `model.rs` and `errors.rs`.
-- `state.rs` MAY import from external crates (`iced`, `std`, `otty_ui_term`, etc.). The restriction is on
-  **intra-feature module dependencies** only: within the feature's own module graph, `state.rs` MUST NOT
-  import from `storage.rs`, `services.rs`, or sibling features.
-- `model.rs` MUST remain UI-runtime agnostic.
-- `errors.rs` MAY depend only on std/core types, external error helpers (for example `thiserror`), and feature `model.rs` when needed for typed error payloads.
-- `storage.rs` MAY depend on `model.rs` and `errors.rs`.
+| from \ to | model | errors | state | services | storage | event |
+| --------- | ----: | -----: | ----: | -------: | ------: | ----: |
+| model     |     - |      ✅ |     ❌ |        ❌ |       ❌ |     ❌ |
+| state     |     ✅ |      ✅ |     - |        ❌ |       ❌ |     ❌ |
+| services  |     ✅ |      ✅ |     ❌ |        - |       ❌ |     ❌ |
+| storage   |     ✅ |      ✅ |     ❌ |        ❌ |       - |     ❌ |
+| event     |     ✅ |      ✅ |     ✅ |        ✅ |       ✅ |     - |
+
+- `event.rs` is the orchestration layer and MAY depend on `state/model/errors/services/storage`.
+- No other module within the feature MAY depend on `event.rs`.
 
 ### 7.2 Cross-Feature Rules
 
@@ -176,7 +168,7 @@ pub(crate) fn feature_reducer(
 - Boolean fields/functions: `is_`, `has_`, or `can_` prefix.
 - Public helper APIs SHOULD be feature-prefixed to avoid collisions.
 
-## 10. Testing Matrix (Strict Profile)
+## 10. Testing Matrix
 
 Each feature MUST include deterministic tests for:
 
@@ -200,7 +192,6 @@ Forbidden:
 - Business logic in `mod.rs`.
 - Direct sibling internal imports.
 - Direct mutation of another feature's state.
-- `unwrap()` in production feature code.
 - Unbounded cloning when borrowing is sufficient.
 - Stringly-typed ad-hoc event channels replacing typed enums.
 - Hidden side effects in constructors/getters.
@@ -232,7 +223,13 @@ pub(crate) enum ExampleError {
 /// Domain entity for the example feature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExampleItem {
-    pub(crate) id: u64,
+    id: u64,
+}
+
+impl ExampleItem {
+    pub(crate) fn id(&self) -> u64 {
+        self.id
+    }
 }
 
 // otty/src/features/example/state.rs
@@ -241,7 +238,17 @@ use super::model::ExampleItem;
 /// Runtime state for the example feature.
 #[derive(Debug, Default)]
 pub(crate) struct ExampleState {
-    pub(crate) items: Vec<ExampleItem>,
+    items: Vec<ExampleItem>,
+}
+
+impl ExampleState {
+    pub(crate) fn items(&self) -> &[ExampleItem] {
+        &self.items
+    }
+
+    pub(crate) fn push_item(&mut self, id: u64) {
+        self.items.push(ExampleItem { id });
+    }
 }
 
 // otty/src/features/example/event.rs
@@ -263,7 +270,7 @@ pub(crate) fn example_reducer(
 ) -> Task<AppEvent> {
     match event {
         ExampleEvent::AddItem { id } => {
-            state.example.items.push(super::model::ExampleItem { id });
+            state.example.push_item(id);
             Task::none()
         },
     }

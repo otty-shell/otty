@@ -1,7 +1,5 @@
-use iced::{
-    Font,
-    font::{Family, Weight},
-};
+use iced::Font;
+use iced::font::{Family, Weight};
 
 pub(crate) const TERM_FONT_JET_BRAINS_BYTES: &[u8] = include_bytes!(
     "../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"

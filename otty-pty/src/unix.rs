@@ -15,10 +15,8 @@ use mio::Token;
 use mio::unix::SourceFd;
 use nix::libc;
 use nix::pty::{Winsize, openpty};
-use signal_hook::{
-    SigId,
-    low_level::{self, pipe},
-};
+use signal_hook::SigId;
+use signal_hook::low_level::{self, pipe};
 
 use crate::{Pollable, PtySize, Session, SessionError};
 
@@ -388,8 +386,9 @@ mod test {
     use std::thread;
     use std::time::Duration;
 
-    use super::{Session, SessionError, local};
     use nix::errno::Errno;
+
+    use super::{Session, SessionError, local};
 
     fn read_output(session: &mut impl Session) -> Result<String, SessionError> {
         let mut buffer = [0u8; 1024];

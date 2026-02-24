@@ -1,13 +1,11 @@
 use iced::keyboard::Modifiers;
 use iced::widget::container;
 use iced::{Element, Length, Size, Subscription, Task, Theme, window};
-use otty_ui_term::TerminalView;
-use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
-use otty_ui_term::{
-    self, SurfaceMode,
-    bindings::{Binding, BindingAction, InputKind, KeyboardBinding},
-    generate_bindings,
+use otty_ui_term::bindings::{
+    Binding, BindingAction, InputKind, KeyboardBinding,
 };
+use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
+use otty_ui_term::{self, SurfaceMode, TerminalView, generate_bindings};
 
 fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)

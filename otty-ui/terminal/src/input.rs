@@ -1,17 +1,15 @@
-use iced::{Point, Size, keyboard::Key, mouse::ScrollDelta};
+use iced::keyboard::Key;
+use iced::mouse::ScrollDelta;
+use iced::{Point, Size};
 use iced_core::clipboard::Kind as ClipboardKind;
 use iced_core::mouse::{self, Click};
-use otty_libterm::{
-    SnapshotArc, TerminalSize,
-    surface::{BlockKind, SelectionType, SurfaceMode},
-};
+use otty_libterm::surface::{BlockKind, SelectionType, SurfaceMode};
+use otty_libterm::{SnapshotArc, TerminalSize};
 
-use crate::{
-    bindings::{BindingAction, BindingsLayout, InputKind},
-    engine::{Engine, MouseButton},
-    font::TermFont,
-    view::TerminalViewState,
-};
+use crate::bindings::{BindingAction, BindingsLayout, InputKind};
+use crate::engine::{Engine, MouseButton};
+use crate::font::TermFont;
+use crate::view::TerminalViewState;
 
 pub(crate) struct InputManager<'a> {
     terminal_id: u64,
@@ -546,9 +544,8 @@ mod tests {
     mod handle_left_button_pressed_tests {
         use iced::keyboard::Modifiers;
 
-        use crate::bindings;
-
         use super::*;
+        use crate::bindings;
 
         #[test]
         fn handles_mouse_mode_with_left_click() {
@@ -620,9 +617,8 @@ mod tests {
     }
 
     mod handle_cursor_moved_tests {
-        use crate::bindings;
-
         use super::*;
+        use crate::bindings;
 
         #[test]
         fn updates_mouse_position_on_grid() {
@@ -973,9 +969,8 @@ mod tests {
     }
 
     mod handle_wheel_scrolled_tests {
-        use crate::bindings;
-
         use super::*;
+        use crate::bindings;
 
         #[test]
         fn scroll_with_lines_downward() {

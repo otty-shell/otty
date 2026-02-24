@@ -1,12 +1,12 @@
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::{Arc, atomic::AtomicBool},
-    time::Duration,
-};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use iced::Font;
-use otty_libterm::{TerminalSize, pty::SSHAuth};
+use otty_libterm::TerminalSize;
+use otty_libterm::pty::SSHAuth;
 
 use crate::theme::ColorPalette;
 

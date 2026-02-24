@@ -4,14 +4,13 @@ use iced::Task;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 use otty_ui_tree::TreePath;
 
+use super::errors::ExplorerError;
+use super::model::FileNode;
+use super::services::load_directory_nodes;
 use crate::app::Event as AppEvent;
 use crate::features::tab::{TabEvent, TabOpenRequest};
 use crate::features::terminal::{self, shell_cwd_for_active_tab};
 use crate::state::State;
-
-use super::errors::ExplorerError;
-use super::model::FileNode;
-use super::services::load_directory_nodes;
 
 /// Events emitted by explorer UI and async services.
 #[derive(Debug, Clone)]

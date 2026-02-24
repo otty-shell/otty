@@ -9,11 +9,10 @@
 //! Run with:
 //! `cargo run --package otty-pty --example ssh_shell`
 
-use std::env;
 use std::error::Error;
 use std::io::ErrorKind;
-use std::thread;
 use std::time::Duration;
+use std::{env, thread};
 
 use otty_pty::{SSHAuth, Session, SessionError, ssh};
 

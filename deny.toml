@@ -2,6 +2,9 @@
 ignore = [
     "RUSTSEC-2024-0436"
 ]
+unsound = "workspace"
+unmaintained = "workspace"
+yanked = "warn"
 
 [licenses]
 allow = [

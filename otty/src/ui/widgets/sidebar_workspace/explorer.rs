@@ -1,8 +1,6 @@
-use iced::alignment;
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, scrollable, svg, text};
-use iced::{Element, Length};
-
+use iced::{Element, Length, alignment};
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 use crate::features::explorer::{ExplorerEvent, ExplorerState, FileNode};

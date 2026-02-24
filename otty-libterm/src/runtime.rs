@@ -1,9 +1,7 @@
 use std::io::ErrorKind;
 use std::process::ExitStatus;
-use std::sync::{
-    Arc,
-    mpsc::{self, Receiver, Sender, TryRecvError},
-};
+use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
@@ -361,10 +359,9 @@ mod tests {
 
     use mio::{Interest, Registry, Token};
 
+    use super::{Driver, Runtime};
     use crate::tests::exit_ok;
     use crate::{Result, TerminalRequest};
-
-    use super::{Driver, Runtime};
 
     #[derive(Default)]
     struct StubDriver {

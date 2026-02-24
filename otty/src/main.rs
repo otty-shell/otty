@@ -11,11 +11,9 @@ use env_logger::Env;
 use iced::{Size, window};
 use image::ImageFormat;
 
-use crate::{
-    app::{App, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH},
-    fonts::TERM_FONT_JET_BRAINS_BYTES,
-    icons::APP_ICON_DATA,
-};
+use crate::app::{App, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
+use crate::fonts::TERM_FONT_JET_BRAINS_BYTES;
+use crate::icons::APP_ICON_DATA;
 
 fn main() -> iced::Result {
     env_logger::Builder::from_env(Env::default().default_filter_or("info"))

@@ -1,6 +1,5 @@
-use iced::alignment;
 use iced::widget::{Column, Row, Space, container, mouse_area};
-use iced::{Element, Length, mouse};
+use iced::{Element, Length, alignment, mouse};
 
 use crate::model::{FlattenedNode, TreeNode, TreePath, flatten_tree};
 
@@ -414,9 +413,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
+
+    use super::*;
 
     #[derive(Clone, Debug)]
     enum TestNode {

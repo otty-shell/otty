@@ -1,11 +1,10 @@
 use super::super::model::SshCommand;
+use super::errors::QuickLaunchEditorError;
+use super::state::QuickLaunchEditorState;
 use crate::features::quick_launches::{
     CommandSpec, CustomCommand, EnvVar, QuickLaunch, QuickLaunchError,
     QuickLaunchFolder, QuickLaunchType, SSH_DEFAULT_PORT,
 };
-
-use super::errors::QuickLaunchEditorError;
-use super::state::QuickLaunchEditorState;
 
 /// Build a domain quick launch command from editor draft state.
 pub(crate) fn build_command(

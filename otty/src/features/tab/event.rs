@@ -1,6 +1,8 @@
 use iced::Task;
-use otty_ui_term::{TerminalView, settings::Settings};
+use otty_ui_term::TerminalView;
+use otty_ui_term::settings::Settings;
 
+use super::model::{TabContent, TabItem, TabOpenRequest};
 use crate::app::Event as AppEvent;
 use crate::features::explorer::ExplorerEvent;
 use crate::features::quick_launches::{
@@ -12,8 +14,6 @@ use crate::features::terminal::{
     terminal_settings_for_session,
 };
 use crate::state::State;
-
-use super::model::{TabContent, TabItem, TabOpenRequest};
 
 /// High-level events routed to the tab reducer.
 #[derive(Debug, Clone)]

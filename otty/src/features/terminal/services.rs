@@ -1,13 +1,11 @@
-use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{env, fs};
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-use crate::state::State;
-
 use super::errors::TerminalError;
 use super::model::ShellSession;
+use crate::state::State;
 
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
 
@@ -174,10 +172,9 @@ fn terminal_cwd(blocks: &[otty_ui_term::BlockSnapshot]) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use std::path::PathBuf;
-    use std::process;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use std::{fs, process};
 
     use otty_ui_term::settings::SessionKind;
 

@@ -1,10 +1,9 @@
-use iced::alignment;
 use iced::widget::button::Status as ButtonStatus;
 use iced::widget::text::Wrapping;
 use iced::widget::{
     button, column, container, pick_list, row, scrollable, text, text_input,
 };
-use iced::{Element, Length, Padding};
+use iced::{Element, Length, Padding, alignment};
 
 use crate::features::quick_launches::{
     QuickLaunchEditorEvent, QuickLaunchEditorMode, QuickLaunchEditorState,

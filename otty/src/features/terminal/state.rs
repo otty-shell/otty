@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
-use iced::{Point, Size, widget::Id, widget::pane_grid};
-use otty_ui_term::{
-    SurfaceMode,
-    settings::{Settings, ThemeSettings},
-};
+use iced::widget::{Id, pane_grid};
+use iced::{Point, Size};
+use otty_ui_term::SurfaceMode;
+use otty_ui_term::settings::{Settings, ThemeSettings};
 
 use super::errors::TerminalError;
 use super::model::{BlockSelection, TerminalEntry, TerminalKind};
@@ -469,7 +468,8 @@ impl TerminalState {
 mod tests {
     use std::process::ExitStatus;
 
-    use iced::{Point, Size, widget::pane_grid};
+    use iced::widget::pane_grid;
+    use iced::{Point, Size};
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{PaneContextMenuState, TerminalState};

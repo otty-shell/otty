@@ -1,4 +1,8 @@
-edition="2021"
 max_width=80
 match_block_trailing_comma = true
 reorder_imports = true
+edition = "2021"
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"
+normalize_comments = true
+format_code_in_doc_comments = true

@@ -1,15 +1,14 @@
 use iced::Task;
 
+use super::QuickLaunchEditorError;
+use super::model::{build_command, validate_unique_title};
+use super::state::{QuickLaunchEditorMode, QuickLaunchEditorState};
 use crate::app::Event as AppEvent;
 use crate::features::quick_launches::{
     QuickLaunch, QuickLaunchNode, QuickLaunchType,
 };
 use crate::features::tab::{TabContent, TabEvent};
 use crate::state::State;
-
-use super::QuickLaunchEditorError;
-use super::model::{build_command, validate_unique_title};
-use super::state::{QuickLaunchEditorMode, QuickLaunchEditorState};
 
 /// Events emitted by the quick launch editor UI.
 #[derive(Debug, Clone)]

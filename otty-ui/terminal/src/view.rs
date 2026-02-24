@@ -17,16 +17,15 @@ use iced_graphics::core::Widget;
 use iced_graphics::core::widget::{Tree, tree};
 use iced_graphics::geometry::Stroke;
 use otty_libterm::escape::{self as ansi, CursorShape, StdColor};
-use otty_libterm::surface::SurfaceMode;
-use otty_libterm::surface::{BlockKind, Flags, Point as TerminalGridPoint};
+use otty_libterm::surface::{
+    BlockKind, Flags, Point as TerminalGridPoint, SurfaceMode,
+};
 
+use crate::block_controls::BlockActionButtonGeometry;
+use crate::block_layout::{self, BlockRect};
 use crate::input::InputManager;
 use crate::term::{BlockCommand, BlockUiMode, Event, Terminal};
 use crate::theme::TerminalStyle;
-use crate::{
-    block_controls::BlockActionButtonGeometry,
-    block_layout::{self, BlockRect},
-};
 
 #[derive(Default)]
 struct BlockUiVisuals {

@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use otty_libterm::pty::SSHAuth;
@@ -11,14 +9,13 @@ use otty_ui_term::settings::{
     LocalSessionOptions, SSHSessionOptions, SessionKind, Settings,
 };
 
-use crate::features::terminal::terminal_settings_for_session;
-
 use super::errors::QuickLaunchError;
 use super::event::{PreparedQuickLaunch, QuickLaunchSetupOutcome};
 use super::model::{
     CommandSpec, CustomCommand, EnvVar, NodePath, QuickLaunch, SshCommand,
     validate_custom_command, validate_ssh_command,
 };
+use crate::features::terminal::terminal_settings_for_session;
 
 const QUICK_LAUNCH_SSH_TIMEOUT: Duration = Duration::from_secs(15);
 

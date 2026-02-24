@@ -1,6 +1,5 @@
-use iced::alignment;
 use iced::widget::{button, container, svg};
-use iced::{Element, Length};
+use iced::{Element, Length, alignment};
 
 use crate::theme::{StyleOverrides, ThemeProps};
 

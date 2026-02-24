@@ -1,10 +1,12 @@
 use cursor_icon::CursorIcon;
 
+use crate::keyboard::{
+    KeyboardMode, KeyboardModeApplyBehavior, ModifyOtherKeysState,
+};
 use crate::{
     BlockEvent, CharacterAttribute, Charset, CharsetIndex, ClearMode,
     CursorShape, CursorStyle, Hyperlink, LineClearMode, Mode, PrivateMode, Rgb,
     TabClearMode,
-    keyboard::{KeyboardMode, KeyboardModeApplyBehavior, ModifyOtherKeysState},
 };
 
 #[derive(Debug, PartialEq, Eq)]

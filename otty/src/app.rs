@@ -1,14 +1,14 @@
-use iced::mouse;
+use std::time::Duration;
+
 use iced::widget::operation::snap_to_end;
 use iced::widget::{
     Space, column, container, mouse_area, pane_grid, row, stack, text,
 };
 use iced::window::Direction;
-use iced::{Element, Length, Size, Subscription, Task, Theme, window};
+use iced::{Element, Length, Size, Subscription, Task, Theme, mouse, window};
 use otty_ui_term::settings::{
     BackendSettings, FontSettings, Settings, ThemeSettings,
 };
-use std::time::Duration;
 
 use crate::effects::close_window;
 use crate::features::explorer::{self, ExplorerDeps, ExplorerEvent};
@@ -29,11 +29,9 @@ use crate::state::{
     SIDEBAR_MIN_TAB_CONTENT_RATIO, SidebarItem, SidebarPane, State,
 };
 use crate::theme::{AppTheme, ThemeManager, ThemeProps};
-use crate::ui::widgets::action_bar;
-use crate::ui::widgets::sidebar;
-use crate::ui::widgets::sidebar_workspace;
-use crate::ui::widgets::tab_bar;
-use crate::ui::widgets::tab_content;
+use crate::ui::widgets::{
+    action_bar, sidebar, sidebar_workspace, tab_bar, tab_content,
+};
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;

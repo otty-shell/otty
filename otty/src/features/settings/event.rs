@@ -1,13 +1,12 @@
 use iced::Task;
 
-use crate::app::Event as AppEvent;
-use crate::state::State;
-
 use super::model::SettingsData;
 use super::state::{SettingsPreset, SettingsState};
 use super::storage::{
     SettingsLoad, SettingsLoadStatus, load_settings, save_settings,
 };
+use crate::app::Event as AppEvent;
+use crate::state::State;
 
 /// UI and internal events handled by the settings feature reducer.
 #[derive(Debug, Clone)]
@@ -140,12 +139,11 @@ pub(crate) fn bootstrap_settings() -> SettingsState {
 
 #[cfg(test)]
 mod tests {
-    use crate::state::State;
-
     use super::{
         SettingsData, SettingsEvent, SettingsState, apply_loaded_settings,
         settings_reducer,
     };
+    use crate::state::State;
 
     #[test]
     fn given_save_event_when_save_succeeds_then_marks_state_saved() {

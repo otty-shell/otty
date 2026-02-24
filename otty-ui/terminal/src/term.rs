@@ -3,17 +3,15 @@ use std::hash::{Hash, Hasher};
 use std::process::ExitStatus;
 use std::sync::Arc;
 
-use iced::Size;
-use iced::Subscription;
 use iced::futures::stream::BoxStream;
 use iced::futures::{SinkExt, StreamExt};
 use iced::widget::canvas::Cache;
+use iced::{Size, Subscription};
 use log::debug;
-use otty_libterm::SnapshotArc;
-use otty_libterm::TerminalEvent;
 use otty_libterm::surface::{
     BlockSnapshot, Point, SelectionType, SnapshotOwned,
 };
+use otty_libterm::{SnapshotArc, TerminalEvent};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::{self, Receiver};
 
@@ -461,12 +459,13 @@ fn terminal_subscription_stream(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::settings::Settings;
     use otty_libterm::surface::{
         BlockKind, BlockMeta, Column, Dimensions, Line, Surface, SurfaceConfig,
         SurfaceModel,
     };
+
+    use super::*;
+    use crate::settings::Settings;
 
     struct TestDimensions {
         columns: usize,

@@ -1,7 +1,6 @@
 use std::cmp::{max, min};
 use std::sync::Arc;
 
-use crate::Flags;
 use crate::cell::Cell;
 use crate::escape::{
     BlockKind as EscapeBlockKind, BlockMeta as EscapeBlockMeta, BlockPhase,
@@ -14,7 +13,9 @@ use crate::snapshot::{
     CursorSnapshot, SnapshotCell, SnapshotDamage, SnapshotOwned, SnapshotSize,
     SurfaceModel,
 };
-use crate::{Dimensions, Surface, SurfaceActor, SurfaceConfig, SurfaceMode};
+use crate::{
+    Dimensions, Flags, Surface, SurfaceActor, SurfaceConfig, SurfaceMode,
+};
 
 /// Kind of a terminal block.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

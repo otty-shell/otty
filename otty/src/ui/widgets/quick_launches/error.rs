@@ -1,6 +1,5 @@
-use iced::alignment;
 use iced::widget::{column, container, text};
-use iced::{Element, Length};
+use iced::{Element, Length, alignment};
 
 use crate::features::quick_launches::QuickLaunchErrorState;
 use crate::theme::ThemeProps;

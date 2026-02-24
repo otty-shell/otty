@@ -68,10 +68,9 @@ fn write_atomic(path: &Path, payload: &[u8]) -> Result<(), std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use std::path::PathBuf;
-    use std::process;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use std::{fs, process};
 
     use super::super::model::QuickLaunchFile;
     use super::{load_quick_launches_from, save_quick_launches_to};

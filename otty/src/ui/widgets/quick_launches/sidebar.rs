@@ -1,11 +1,12 @@
-use iced::alignment;
+use std::time::{Duration, Instant};
+
 use iced::widget::text::Wrapping;
 use iced::widget::{
     Space, column, container, mouse_area, row, scrollable, svg, text,
     text_input,
 };
-use iced::{Color, Element, Length};
-use std::time::{Duration, Instant};
+use iced::{Color, Element, Length, alignment};
+use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 use crate::features::quick_launches::{
     DropTarget, InlineEditKind, InlineEditState, QUICK_LAUNCHES_TICK_MS,
@@ -14,7 +15,6 @@ use crate::features::quick_launches::{
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::ui::widgets::helpers;
-use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 const HEADER_HEIGHT: f32 = 28.0;
 const HEADER_PADDING_X: f32 = 10.0;

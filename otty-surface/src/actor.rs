@@ -7,10 +7,10 @@
 use std::collections::VecDeque;
 
 use crate::escape::{
-    CharacterAttribute, Charset, CharsetIndex, ClearMode, Hyperlink,
-    KeyboardMode, LineClearMode, Mode, PrivateMode, Rgb, TabClearMode,
+    CharacterAttribute, Charset, CharsetIndex, ClearMode, CursorShape,
+    CursorStyle, Hyperlink, KeyboardMode, KeyboardModeApplyBehavior,
+    LineClearMode, Mode, PrivateMode, Rgb, TabClearMode,
 };
-use crate::escape::{CursorShape, CursorStyle, KeyboardModeApplyBehavior};
 use crate::grid::{Dimensions, Scroll};
 use crate::index::Point;
 use crate::{SelectionType, Side};

@@ -1,11 +1,11 @@
 mod block;
 
+pub use block::{BlockEvent, BlockKind, BlockMeta, BlockPhase};
 use log::error;
 use memchr::memchr;
 use thiserror::Error;
 
 use crate::{Action, EscapeActor};
-pub use block::{BlockEvent, BlockKind, BlockMeta, BlockPhase};
 
 pub(crate) const DCS_PREFIX: &[u8] = b"otty-dcs;";
 pub(crate) const MAX_DCS_KIND_LEN: usize = 32;

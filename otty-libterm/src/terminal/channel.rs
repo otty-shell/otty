@@ -1,8 +1,9 @@
+use std::sync::Arc;
+
 use flume::{
     Receiver, Sender, TryRecvError as FlumeTryRecvError,
     TrySendError as FlumeTrySendError,
 };
-use std::sync::Arc;
 
 use crate::terminal::{TerminalEvent, TerminalRequest};
 

@@ -5,13 +5,9 @@
 This document is a normative specification for `otty/src/ui/components`.
 
 - A component module MUST encapsulate one reusable UI primitive.
-- New component modules MUST be created in `strict` profile (see section 2).
-- Existing modules MAY temporarily remain in `legacy` profile while being migrated.
 - The goal is deterministic, human-readable, presentation-only primitives with predictable runtime cost.
 
 ## 2. Compliance Profiles
-
-### 2.1 Strict Profile (Default)
 
 Use for all new components and fully migrated components.
 
@@ -19,17 +15,9 @@ Use for all new components and fully migrated components.
 - MUST use canonical layout from section 3.
 - MUST stay side-effect free in render paths.
 
-### 2.2 Legacy Profile (Temporary)
-
-Use only for pre-existing components during migration.
-
-- MAY keep historical structure temporarily.
-- MUST NOT add new violations.
-- MUST include a migration task to reach `strict` profile.
-
 ## 3. Canonical Component Layout
 
-Each strict component MAY use one of two canonical layouts.
+Each component MAY use one of two canonical layouts.
 
 Simple component layout (single-file), for small reusable primitives with limited branching:
 
@@ -41,50 +29,31 @@ Complex component layout (module folder), for larger primitives with dense style
 
 ```text
 <component_name>/
-  mod.rs                # required: public surface only
-  view.rs               # required: primary render implementation
-  event.rs              # optional: local event contract
-  props.rs              # optional: extracted props
-  style.rs              # optional: style factories only
-  helpers.rs            # optional: local pure helpers only
-  tests.rs              # optional: tests when not inline
+    ├── mod.rs       # required: public surface only
+    ├── view.rs      # required: primary render implementation
+    ├── event.rs     # optional: local event contract
+    ├── props.rs     # optional: extracted props
+    ├── style.rs     # optional: style factories only
+    └── services.rs  # optional: local pure helpers only
 ```
 
 - A component MUST start as single-file unless complexity already justifies module-folder at creation time.
-- A component SHOULD be promoted to module-folder when at least one condition holds:
-  - substantial style logic that reduces readability of single-file layout
-  - multiple helper blocks (formatting, style derivation, layout calculations) requiring separation
-  - growing local event/props contracts where extraction improves navigation
-- Files outside canonical/optional lists MUST NOT be added without updating this specification.
-
-Simple component (single-file) expected contents:
-
-- `<Component>Props`
-- `<Component>Event`
-- `view`
-- local pure helpers (if needed)
-
-Complex component (module-folder) expected files:
-
-- `view.rs` (required)
-- `event.rs` and/or `props.rs` when extraction improves clarity
-- `style.rs` for reusable style factories
-- `helpers.rs` for pure deterministic utility logic
-
-Current tree analysis (informative): the current `ui/components` tree fits the simple/single-file layout:
-
-- `icon_button.rs`
-- `menu_item.rs`
+- Files outside required/optional lists MUST NOT be added without updating this specification.
 
 ## 4. Module Responsibilities
 
-- Single-file component: keep props, event contract, view, and local pure helpers together.
-- `mod.rs` (folder-based): module declarations, curated re-exports, zero rendering logic.
+### 4.1 Signle-file component
+
+Single-file component: keep props, event contract, view, and local pure helpers together.
+
+### 4.2 Complex component
+
+- `mod.rs`: module declarations, curated re-exports. Rendering/Business logic MUST NOT be added here.
 - `view.rs`: layout and interaction-to-message mapping only.
 - `event.rs`: local component event enum only.
 - `props.rs`: borrowed render inputs only.
 - `style.rs`: style factories/closures only.
-- `helpers.rs`: deterministic pure helpers only.
+- `services.rs`: deterministic pure helpers only.
 
 ## 5. Primary Contracts
 
@@ -102,7 +71,13 @@ Each component MUST expose:
 - Side effects MUST NOT be hidden in `view`.
 - Component render code MUST NOT allocate async tasks or perform runtime I/O.
 
-Recommended signature:
+Signature:
+
+```rust
+pub(crate) fn view<'a>() -> Element<'a, ComponentEvent>
+```
+
+or when explicit runtime props are needed:
 
 ```rust
 pub(crate) fn view<'a>(
@@ -123,11 +98,18 @@ pub(crate) fn view<'a>(
 
 ## 7. Dependency Graph Rules
 
-### 7.1 Allowed Intra-Component Dependencies
+### 7.1 Allowed Intra-Component Dependencies (for Module-folder components only)
 
-- `view.rs` MAY depend on `event.rs`, `props.rs`, `style.rs`, `helpers.rs`, and shared crate UI utilities.
-- `style.rs` MAY depend on theme and pure helper functions.
-- `helpers.rs` MUST remain pure and deterministic.
+| from \ to | view | event | props | style | services |
+| --------- | ----: | -----: | ----: | -------: | ------: |
+| view      |     - |      ✅ |     ✅ |        ✅ |       ✅ |
+| event     |     ❌ |      - |     ❌ |        ❌ |       ✅ |
+| props     |     ❌ |      ❌ |     - |        ❌ |       ✅ |
+| style     |     ❌ |      ❌ |     ❌ |        - |       ✅ |
+| services  |     ❌ |      ❌ |     ❌ |        ❌ |       - |
+
+- `view.rs` is the orchestration layer and MAY depend on `event/props/style/services`.
+- No other module within the component MAY depend on `view.rs`.
 
 ### 7.2 Cross-Layer Rules
 
@@ -180,7 +162,6 @@ Forbidden:
 
 - Business logic in component modules.
 - Direct coupling to feature internals or app orchestrator logic.
-- `unwrap()` in production component code.
 - Hidden side effects in view/builders/helpers.
 - Wildcard re-exports.
 

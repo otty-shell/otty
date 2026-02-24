@@ -1,16 +1,11 @@
 use std::fmt;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
-use iced::{Point, Task, widget::operation};
+use iced::widget::operation;
+use iced::{Point, Task};
 use otty_ui_term::settings::Settings;
-
-use crate::app::Event as AppEvent;
-use crate::features::tab::{TabEvent, TabOpenRequest};
-use crate::state::State;
 
 use super::errors::QuickLaunchError;
 use super::model::{
@@ -23,6 +18,9 @@ use super::state::{
     InlineEditState, LaunchInfo,
 };
 use super::storage::save_quick_launches;
+use crate::app::Event as AppEvent;
+use crate::features::tab::{TabEvent, TabOpenRequest};
+use crate::state::State;
 
 /// Events emitted by the quick launches sidebar tree.
 #[derive(Debug, Clone)]
@@ -994,7 +992,8 @@ pub(crate) fn bootstrap_quick_launches() -> super::state::QuickLaunchState {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, atomic::AtomicBool};
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
     use std::time::Instant;
 
     use otty_ui_term::settings::Settings;

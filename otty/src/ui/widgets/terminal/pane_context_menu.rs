@@ -1,6 +1,4 @@
-use iced::widget::pane_grid;
-use iced::widget::text_input;
-use iced::widget::{Column, Id, container, mouse_area};
+use iced::widget::{Column, Id, container, mouse_area, pane_grid, text_input};
 use iced::{Background, Element, Length, Point, Size, alignment};
 
 use crate::features::terminal::TerminalEvent;

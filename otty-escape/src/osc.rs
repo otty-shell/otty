@@ -1,13 +1,14 @@
-use crate::{
-    Action, EscapeActor,
-    color::{Rgb, StdColor, xparse_color},
-    cursor::CursorShape,
-    hyperlink::Hyperlink,
-    parser::parse_number,
-};
+use std::fmt::Write;
+use std::str::FromStr;
+
 use cursor_icon::CursorIcon;
 use log::debug;
-use std::{fmt::Write, str::FromStr};
+
+use crate::color::{Rgb, StdColor, xparse_color};
+use crate::cursor::CursorShape;
+use crate::hyperlink::Hyperlink;
+use crate::parser::parse_number;
+use crate::{Action, EscapeActor};
 
 /// Operating system command with raw arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]

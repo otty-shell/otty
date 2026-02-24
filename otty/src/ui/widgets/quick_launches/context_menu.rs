@@ -1,6 +1,7 @@
+use std::collections::HashMap;
+
 use iced::widget::{Column, container, mouse_area};
 use iced::{Element, Length, Size, alignment};
-use std::collections::HashMap;
 
 use crate::features::quick_launches::{
     ContextMenuAction, ContextMenuState, ContextMenuTarget, LaunchInfo,

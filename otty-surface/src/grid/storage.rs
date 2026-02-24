@@ -3,9 +3,8 @@ use std::mem;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 
-use crate::index::Line;
-
 use super::row::Row;
+use crate::index::Line;
 
 /// Maximum number of buffered lines outside of the grid for performance optimization.
 const MAX_CACHE_SIZE: usize = 1_000;

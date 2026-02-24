@@ -7,11 +7,10 @@
 use std::cmp::{Ordering, max, min};
 use std::mem;
 
-use crate::cell::{Flags, ResetDiscriminant};
-use crate::index::{Boundary, Column, Line};
-
 use super::row::Row;
 use super::{Dimensions, Grid, GridCell};
+use crate::cell::{Flags, ResetDiscriminant};
+use crate::index::{Boundary, Column, Line};
 
 impl<T: GridCell + Default + PartialEq> Grid<T> {
     /// Resize the grid's width and/or height.

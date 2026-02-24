@@ -15,5 +15,5 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@stable
-    - run: cargo fmt --all -- --check
+    - run: cargo +nightly fmt --all -- --check
     - run: cargo lint

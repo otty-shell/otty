@@ -1,7 +1,6 @@
 use bitflags::bitflags;
 
 /// XTMODKEYS modifyOtherKeys state.
-///
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ModifyOtherKeysState {
     Reset,

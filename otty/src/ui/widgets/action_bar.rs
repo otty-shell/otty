@@ -1,6 +1,5 @@
-use iced::alignment;
 use iced::widget::{MouseArea, Space, Stack, container, row, svg, text};
-use iced::{Element, Length, mouse};
+use iced::{Element, Length, alignment, mouse};
 
 use crate::fonts::FontsConfig;
 use crate::icons::{LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY};

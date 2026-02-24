@@ -452,7 +452,6 @@ impl Selection {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use crate::index::{Column, Point, Side};
     use crate::surface::{Surface, SurfaceConfig};
 

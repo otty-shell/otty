@@ -1,7 +1,6 @@
-use iced::alignment;
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, text};
-use iced::{Element, Length, Theme};
+use iced::{Element, Length, Theme, alignment};
 
 use crate::features::quick_launches::QuickLaunchState;
 use crate::icons;

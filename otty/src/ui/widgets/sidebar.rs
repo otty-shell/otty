@@ -1,7 +1,7 @@
-use iced::alignment;
-use iced::widget::pane_grid;
-use iced::widget::{Space, button, column, container, row, scrollable, svg};
-use iced::{Border, Element, Length, Theme};
+use iced::widget::{
+    Space, button, column, container, pane_grid, row, scrollable, svg,
+};
+use iced::{Border, Element, Length, Theme, alignment};
 
 use crate::icons;
 use crate::state::{SIDEBAR_MENU_WIDTH, SidebarItem};

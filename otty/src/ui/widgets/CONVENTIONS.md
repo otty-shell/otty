@@ -5,29 +5,17 @@
 This document is a normative specification for `otty/src/ui/widgets`.
 
 - A widget module MUST encapsulate one domain-facing UI surface.
-- New widget modules MUST be created in `strict` profile (see section 2).
-- Existing modules MAY temporarily remain in `legacy` profile while being migrated.
 - The goal is deterministic, presentation-only composition with predictable boundaries and reusable behavior across the app UI.
 
 This file applies to flat widgets and nested widget folders under `otty/src/ui/widgets/**`.
 
 ## 2. Compliance Profiles
 
-### 2.1 Strict Profile (Default)
-
 Use for all new widgets and fully migrated widgets.
 
 - MUST satisfy all sections in this document.
 - MUST use canonical layout from section 3.
 - MUST keep render paths side-effect free.
-
-### 2.2 Legacy Profile (Temporary)
-
-Use only for pre-existing widgets during migration.
-
-- MAY keep historical structure temporarily.
-- MUST NOT add new violations.
-- MUST include a migration task to reach `strict` profile.
 
 ## 3. Canonical Widget Layout
 
@@ -43,81 +31,29 @@ Complex widget layout (module folder), for large widgets with multiple visual re
 
 ```text
 <widget_name>/
-  mod.rs                # required: public surface only
-  view.rs               # required: primary render entrypoint
-```
-
-Optional files:
-
-```text
-event.rs               # optional: local widget event contract
-props.rs               # optional: extracted props
-style.rs               # optional: style factories only
-layout.rs              # optional: pure geometry/layout helpers
-overlay.rs             # optional: overlays/context menus only
-helpers.rs             # optional: pure local helpers only
-tests.rs               # optional: tests when not inline
+    ├── mod.rs       # required: public surface only
+    ├── view.rs      # required: primary render entrypoint
+    ├── event.rs     # optional: local widget event contract
+    ├── props.rs     # optional: extracted props
+    ├── style.rs     # optional: style factories only
+    ├── layout.rs    # optional: pure geometry/layout helpers
+    ├── overlay.rs   # optional: overlays/context menus only
+    └── services.rs  # optional: pure local helpers only
 ```
 
 - A widget MUST start as single-file unless complexity already justifies module-folder at creation time.
-- A widget SHOULD be promoted to module-folder when at least one condition holds:
-  - multiple independent render regions (for example: header + list + form + footer)
-  - overlay/context-menu rendering with separate lifecycle logic
-  - large amount of pure helper/style/layout code reducing readability
-  - growing event mapping branches where separation improves navigation
-- Files outside canonical/optional lists MUST NOT be added without updating this specification.
-
-Simple widget (single-file) expected contents:
-
-- `<Widget>Props`
-- `<Widget>Event`
-- `view`
-- local pure helpers (if needed)
-
-Complex widget (module-folder) expected files:
-
-- `view.rs` (required)
-- `event.rs` and/or `props.rs` when extraction improves clarity
-- `style.rs` for reusable style factories
-- `layout.rs` for geometry/placement calculations
-- `overlay.rs` for context menu/popup layers
-- `helpers.rs` for pure deterministic utility logic
-
-Current tree analysis (informative): the current `ui/widgets` tree shows both complexity classes.
-
-Simple/single-file fit (examples):
-
-- `tab_content.rs`
-- `quick_launches/error.rs`
-- `sidebar_workspace/terminal.rs`
-
-Complex/module-folder fit (examples):
-
-- `settings.rs`
-- `quick_launches/sidebar.rs`
-- `quick_launches/editor.rs`
-- `sidebar.rs`
-- `tab_bar.rs`
-
-Recommended migration for complex examples:
-
-- keep `view.rs` as primary composition
-- extract `props.rs` when props grow
-- extract `style.rs` when style closures dominate view code
-- extract `layout.rs` for geometry/clamping constants and helpers
-- extract `overlay.rs` for context menus/popups
-- keep only pure computation in `helpers.rs`
+- Files outside required/optional lists MUST NOT be added without updating this specification.
 
 ## 4. Module Responsibilities
 
-- `mod.rs`: module declarations, curated re-exports, and zero business logic.
+- `mod.rs`: module declarations, curated re-exports. Rendering/Business logic MUST NOT be added here.
 - `view.rs`: primary render composition and event mapping.
 - `event.rs`: local widget event enum `<Widget>Event`.
 - `props.rs`: borrowed render inputs and UI configuration.
 - `style.rs`: style closures/factories only.
 - `layout.rs`: deterministic geometry/layout calculations only.
 - `overlay.rs`: layered overlays/context menus and dismiss behavior only.
-- `helpers.rs`: pure reusable local helpers only.
+- `services.rs`: pure reusable local helpers only.
 
 ## 5. Primary Contracts
 
@@ -135,7 +71,13 @@ Each widget MUST expose:
 - Widget render code MUST remain side-effect free.
 - Widgets MUST NOT schedule async tasks or perform runtime I/O.
 
-Recommended signature:
+Signature:
+
+```rust
+pub(crate) fn view<'a>() -> Element<'a, ExampleWidgetEvent>
+```
+
+or when explicit runtime props are needed:
 
 ```rust
 pub(crate) fn view<'a>(
@@ -158,9 +100,18 @@ pub(crate) fn view<'a>(
 
 ### 7.1 Allowed Intra-Widget Dependencies
 
-- `view.rs` MAY depend on `event.rs`, `props.rs`, `style.rs`, `layout.rs`, `overlay.rs`, `helpers.rs`, components, and shared UI utilities.
-- `layout.rs`/`helpers.rs` MUST remain pure.
-- `overlay.rs` MUST remain presentation-only.
+| from \ to | view | event | props | style | services | layout | overlay |
+| --------- | ----: | -----: | ----: | -------: | ------: | ------: | ------: |
+| view      |     - |      ✅ |     ✅ |        ✅ |       ✅ |       ✅ |       ✅ |
+| event     |     ❌ |      - |     ❌ |        ❌ |       ✅ |       ❌ |       ❌ |
+| props     |     ❌ |      ❌ |     - |        ❌ |       ✅ |       ❌ |       ❌ |
+| style     |     ❌ |      ❌ |     ✅ |        - |       ✅ |       ✅ |       ❌ |
+| services  |     ❌ |      ❌ |     ✅ |        ✅ |       - |       ✅ |       ❌ |
+| layout    |     ❌ |      ❌ |     ✅ |        ❌ |       ✅ |       - |       ❌ |
+| overlay   |     ❌ |      ✅ |     ✅ |        ✅ |       ✅ |       ✅ |       - |
+
+- `view.rs` is the orchestration layer and MAY depend on `event/props/style/services`.
+- No other module within the component MAY depend on `view.rs`.
 
 ### 7.2 Cross-Layer Rules
 
@@ -207,7 +158,7 @@ Each strict widget SHOULD include deterministic tests only for:
 - Overlay positioning and clamping helpers.
 - Other deterministic pure computation helpers.
 
-Widget `view` functions SHOULD NOT be unit-tested.
+Widget `view` functions MUST NOT be unit-tested.
 
 Test naming MUST use:
 `given_<context>_when_<action>_then_<outcome>`
@@ -221,7 +172,6 @@ Forbidden:
 - Business logic in `mod.rs` or render modules.
 - Direct feature internal imports.
 - Direct state mutation from widgets.
-- `unwrap()` in production widget code.
 - Hidden side effects in render helpers.
 - Wildcard re-exports.
 

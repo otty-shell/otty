@@ -5,9 +5,7 @@ use crate::app::Event as AppEvent;
 use crate::features::tab::TabContent;
 use crate::state::State;
 use crate::theme::ThemeProps;
-use crate::ui::widgets::quick_launches;
-use crate::ui::widgets::settings;
-use crate::ui::widgets::terminal;
+use crate::ui::widgets::{quick_launches, settings, terminal};
 
 pub(crate) fn view<'a>(
     state: &'a State,

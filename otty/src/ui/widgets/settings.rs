@@ -1,12 +1,12 @@
-use iced::alignment;
 use iced::widget::button::Status as ButtonStatus;
 use iced::widget::text::Wrapping;
 use iced::widget::{
     Column, Space, button, column, container, row, scrollable, svg, text,
     text_input,
 };
-use iced::{Color, Element, Length};
+use iced::{Color, Element, Length, alignment};
 use otty_ui_term::parse_hex_color;
+use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 use crate::features::settings::{
     SettingsEvent, SettingsNode, SettingsPreset, SettingsSection,
@@ -15,7 +15,6 @@ use crate::features::settings::{
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::ui::widgets::helpers;
-use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 const HEADER_HEIGHT: f32 = 32.0;
 const HEADER_PADDING_X: f32 = 12.0;

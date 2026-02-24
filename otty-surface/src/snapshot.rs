@@ -288,6 +288,7 @@ impl<'a> SnapshotView<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::actor::SurfaceActor;
     use crate::cell::Hyperlink;
     use crate::index::{Column, Line};
@@ -295,8 +296,6 @@ mod tests {
     use crate::{
         SnapshotDamage, SnapshotView, Surface, SurfaceConfig, SurfaceModel,
     };
-
-    use super::*;
 
     struct TestDimensions {
         columns: usize,

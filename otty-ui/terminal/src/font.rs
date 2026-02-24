@@ -1,8 +1,8 @@
 use iced::{Font, Size};
-use iced_core::{
-    Text,
-    alignment::Vertical,
-    text::{Alignment, LineHeight, Paragraph, Shaping as TextShaping},
+use iced_core::Text;
+use iced_core::alignment::Vertical;
+use iced_core::text::{
+    Alignment, LineHeight, Paragraph, Shaping as TextShaping,
 };
 use iced_graphics::text::paragraph;
 

@@ -1,5 +1,5 @@
-use iced::Theme;
-use iced::{Color, theme::Palette};
+use iced::theme::Palette;
+use iced::{Color, Theme};
 use otty_ui_term::{ColorPalette as TerminalColorPalette, parse_hex_color};
 
 #[derive(Debug, Clone)]

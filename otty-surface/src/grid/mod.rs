@@ -14,12 +14,12 @@ mod tests;
 use std::cmp::{max, min};
 use std::ops::{Bound, Deref, Index, IndexMut, Range, RangeBounds};
 
+pub(crate) use row::Row;
+use storage::Storage;
+
 use crate::cell::{Flags, ResetDiscriminant};
 use crate::escape::{Charset, CharsetIndex};
 use crate::index::{Column, Line, Point};
-
-pub(crate) use row::Row;
-use storage::Storage;
 
 /// Common interface required from grid cell types.
 ///
