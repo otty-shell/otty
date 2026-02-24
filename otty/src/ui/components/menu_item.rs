@@ -22,33 +22,23 @@ pub(crate) struct MenuItemProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// A single menu row used in context menus.
-pub(crate) struct MenuItem<'a> {
-    props: MenuItemProps<'a>,
-}
+/// Render a single menu row used in context menus.
+pub(crate) fn view<'a>(props: MenuItemProps<'a>) -> Element<'a, MenuItemEvent> {
+    let palette = props.theme.theme.iced_palette();
 
-impl<'a> MenuItem<'a> {
-    pub fn new(props: MenuItemProps<'a>) -> Self {
-        Self { props }
-    }
+    let label = text(props.label)
+        .size(MENU_ITEM_FONT_SIZE)
+        .width(Length::Fill)
+        .align_x(alignment::Horizontal::Left)
+        .align_y(alignment::Vertical::Center);
 
-    pub fn view(self) -> Element<'a, MenuItemEvent> {
-        let palette = self.props.theme.theme.iced_palette();
-
-        let label = text(self.props.label)
-            .size(MENU_ITEM_FONT_SIZE)
-            .width(Length::Fill)
-            .align_x(alignment::Horizontal::Left)
-            .align_y(alignment::Vertical::Center);
-
-        button(label)
-            .padding([MENU_ITEM_VERTICAL_PADDING, MENU_ITEM_HORIZONTAL_PADDING])
-            .width(Length::Fill)
-            .height(Length::Fixed(MENU_ITEM_HEIGHT))
-            .style(move |_, status| menu_button_style(palette, status))
-            .on_press(MenuItemEvent::Pressed)
-            .into()
-    }
+    button(label)
+        .padding([MENU_ITEM_VERTICAL_PADDING, MENU_ITEM_HORIZONTAL_PADDING])
+        .width(Length::Fill)
+        .height(Length::Fixed(MENU_ITEM_HEIGHT))
+        .style(move |_, status| menu_button_style(palette, status))
+        .on_press(MenuItemEvent::Pressed)
+        .into()
 }
 
 fn menu_button_style(
@@ -75,5 +65,35 @@ fn menu_button_style(
             ..Default::default()
         },
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::Background;
+    use iced::widget::button::Status as ButtonStatus;
+
+    use super::menu_button_style;
+
+    #[test]
+    fn given_hovered_status_when_building_style_then_uses_hover_colors() {
+        let theme = crate::theme::AppTheme::default();
+        let palette = theme.iced_palette();
+
+        let style = menu_button_style(palette, ButtonStatus::Hovered);
+
+        assert_eq!(style.text_color, palette.dim_black);
+        assert_eq!(style.background, Some(Background::Color(palette.dim_blue)),);
+    }
+
+    #[test]
+    fn given_active_status_when_building_style_then_uses_idle_colors() {
+        let theme = crate::theme::AppTheme::default();
+        let palette = theme.iced_palette();
+
+        let style = menu_button_style(palette, ButtonStatus::Active);
+
+        assert_eq!(style.text_color, palette.foreground);
+        assert_eq!(style.background, Some(Background::Color(palette.overlay)),);
     }
 }

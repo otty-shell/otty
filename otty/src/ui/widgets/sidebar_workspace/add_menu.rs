@@ -4,7 +4,7 @@ use iced::{Element, Length, Size, alignment};
 use crate::state::SidebarAddMenuState;
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
-    MenuItem, MenuItemEvent, MenuItemProps,
+    MenuItemEvent, MenuItemProps, view as menu_item_view,
 };
 use crate::ui::widgets::helpers::{
     anchor_position, menu_height_for_items, menu_panel_style,
@@ -91,7 +91,7 @@ fn menu_item<'a>(
     action: AddMenuAction,
 ) -> Element<'a, Event> {
     let props = MenuItemProps { label, theme };
-    MenuItem::new(props).view().map(move |event| match event {
+    menu_item_view(props).map(move |event| match event {
         MenuItemEvent::Pressed => Event::TerminalAddMenuAction(action),
     })
 }

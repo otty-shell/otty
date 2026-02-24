@@ -5,7 +5,8 @@ use crate::fonts::FontsConfig;
 use crate::icons::{LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY};
 use crate::theme::{StyleOverrides, ThemeProps};
 use crate::ui::components::icon_button::{
-    IconButton, IconButtonEvent, IconButtonProps, IconButtonVariant,
+    IconButtonEvent, IconButtonProps, IconButtonVariant,
+    view as icon_button_view,
 };
 
 pub(crate) const ACTION_BAR_HEIGHT: f32 = 30.0;
@@ -149,7 +150,7 @@ fn icon_button<'a>(
         variant,
     };
 
-    IconButton::new(props).view()
+    icon_button_view(props)
 }
 
 fn resolve_background(

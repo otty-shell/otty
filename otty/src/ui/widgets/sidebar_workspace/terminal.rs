@@ -6,7 +6,7 @@ use crate::features::quick_launches::QuickLaunchState;
 use crate::icons;
 use crate::theme::ThemeProps;
 use crate::ui::components::icon_button::{
-    IconButton, IconButtonProps, IconButtonVariant,
+    IconButtonProps, IconButtonVariant, view as icon_button_view,
 };
 use crate::ui::widgets::quick_launches;
 
@@ -34,14 +34,13 @@ pub(crate) fn view<'a>(
         .wrapping(Wrapping::None)
         .align_x(alignment::Horizontal::Left);
 
-    let add_button = IconButton::new(IconButtonProps {
+    let add_button = icon_button_view(IconButtonProps {
         icon: icons::ADD_TAB_HEADER,
         theme: props.theme,
         size: WORKSPACE_ADD_BUTTON_SIZE,
         icon_size: WORKSPACE_ADD_ICON_SIZE,
         variant: IconButtonVariant::Standard,
     })
-    .view()
     .map(|_| super::Event::TerminalAddMenuOpen);
 
     let title_container = container(title)

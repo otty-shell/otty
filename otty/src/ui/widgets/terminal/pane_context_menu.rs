@@ -4,7 +4,7 @@ use iced::{Background, Element, Length, Point, Size, alignment};
 use crate::features::terminal::TerminalEvent;
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
-    MenuItem, MenuItemEvent, MenuItemProps,
+    MenuItemEvent, MenuItemProps, view as menu_item_view,
 };
 use crate::ui::widgets::helpers::{
     anchor_position, menu_height_for_items, menu_panel_style,
@@ -174,11 +174,9 @@ fn menu_item<'a>(
     event: TerminalEvent,
 ) -> Element<'a, TerminalEvent> {
     let props = MenuItemProps { label, theme };
-    MenuItem::new(props)
-        .view()
-        .map(move |item_event| match item_event {
-            MenuItemEvent::Pressed => event.clone(),
-        })
+    menu_item_view(props).map(move |item_event| match item_event {
+        MenuItemEvent::Pressed => event.clone(),
+    })
 }
 
 fn focus_trap(tab_id: u64, id: Id) -> Element<'static, TerminalEvent> {
