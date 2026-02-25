@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use otty_ui_tree::TreePath;
 
-use super::model::{FileNode, root_label};
+use super::model::FileNode;
+use super::services::root_label;
 
 /// Runtime state for the sidebar file explorer.
 #[derive(Debug, Default)]
@@ -41,17 +42,17 @@ impl ExplorerState {
     }
 
     /// Update selected tree path.
-    pub(crate) fn set_selected_path(&mut self, path: Option<TreePath>) {
+    pub(super) fn set_selected_path(&mut self, path: Option<TreePath>) {
         self.selected = path;
     }
 
     /// Update hovered tree path.
-    pub(crate) fn set_hovered_path(&mut self, path: Option<TreePath>) {
+    pub(super) fn set_hovered_path(&mut self, path: Option<TreePath>) {
         self.hovered = path;
     }
 
     /// Set explorer root and clear current tree if changed.
-    pub(crate) fn set_root(&mut self, root: Option<PathBuf>) -> bool {
+    pub(super) fn set_root(&mut self, root: Option<PathBuf>) -> bool {
         if self.root == root {
             return false;
         }
@@ -65,7 +66,7 @@ impl ExplorerState {
     }
 
     /// Apply root children after async load completion.
-    pub(crate) fn apply_root_nodes(
+    pub(super) fn apply_root_nodes(
         &mut self,
         root: &PathBuf,
         nodes: Vec<FileNode>,
@@ -79,7 +80,7 @@ impl ExplorerState {
     }
 
     /// Toggle folder state and return path to lazily load, if required.
-    pub(crate) fn toggle_folder(&mut self, path: &[String]) -> Option<PathBuf> {
+    pub(super) fn toggle_folder(&mut self, path: &[String]) -> Option<PathBuf> {
         let node = find_node_mut(&mut self.tree, path)?;
         if !node.is_folder() {
             return None;
@@ -95,7 +96,7 @@ impl ExplorerState {
     }
 
     /// Apply folder children after async load completion.
-    pub(crate) fn apply_folder_nodes(
+    pub(super) fn apply_folder_nodes(
         &mut self,
         path: &[String],
         children: Vec<FileNode>,
@@ -112,12 +113,12 @@ impl ExplorerState {
     }
 
     /// Return whether the node at the provided tree path is a folder.
-    pub(crate) fn node_is_folder(&self, path: &[String]) -> Option<bool> {
+    pub(super) fn node_is_folder(&self, path: &[String]) -> Option<bool> {
         find_node(&self.tree, path).map(FileNode::is_folder)
     }
 
     /// Resolve a tree path into its filesystem path.
-    pub(crate) fn node_path(&self, path: &[String]) -> Option<PathBuf> {
+    pub(super) fn node_path(&self, path: &[String]) -> Option<PathBuf> {
         find_node(&self.tree, path).map(|node| node.path().to_path_buf())
     }
 }

@@ -156,7 +156,7 @@ pub(crate) fn shell_cwd_for_active_tab(state: &State) -> Option<PathBuf> {
 fn shell_terminal_tab(
     state: &State,
     tab_id: u64,
-) -> Option<&super::state::TerminalState> {
+) -> Option<&super::state::TerminalTabState> {
     state
         .terminal_tab(tab_id)
         .filter(|terminal| terminal.is_shell())

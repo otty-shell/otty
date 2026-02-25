@@ -2,11 +2,7 @@ use std::fmt;
 
 use otty_ui_term::settings::Settings;
 
-use crate::features::quick_launch_wizard::QuickLaunchWizardState;
-use crate::features::quick_launches::{
-    NodePath, QuickLaunch, QuickLaunchErrorState,
-};
-use crate::features::terminal::TerminalState;
+use crate::features::quick_launch::{NodePath, QuickLaunch};
 
 /// Supported requests for opening a tab in the workspace.
 #[derive(Clone)]
@@ -72,16 +68,44 @@ impl fmt::Debug for TabOpenRequest {
 }
 
 /// Tab payloads stored in app state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TabContent {
-    Terminal(Box<TerminalState>),
+    Terminal,
     Settings,
-    QuickLaunchWizard(Box<QuickLaunchWizardState>),
-    QuickLaunchError(QuickLaunchErrorState),
+    QuickLaunchWizard,
+    QuickLaunchError,
 }
 
 /// Metadata for a single tab entry.
 pub(crate) struct TabItem {
-    pub(crate) id: u64,
-    pub(crate) title: String,
-    pub(crate) content: TabContent,
+    id: u64,
+    title: String,
+    content: TabContent,
+}
+
+impl TabItem {
+    /// Create tab metadata with immutable identity and content kind.
+    pub(crate) fn new(id: u64, title: String, content: TabContent) -> Self {
+        Self { id, title, content }
+    }
+
+    /// Return tab identifier.
+    pub(crate) fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// Return tab title shown in the tab bar.
+    pub(crate) fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// Return content discriminator used by feature owners.
+    pub(crate) fn content(&self) -> TabContent {
+        self.content
+    }
+
+    /// Update tab title through tab reducer domain APIs.
+    pub(crate) fn set_title(&mut self, title: String) {
+        self.title = title;
+    }
 }

@@ -1,13 +1,15 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
+use otty_ui_tree::TreePath;
+
 /// File system node used by the explorer tree.
 #[derive(Debug, Clone)]
 pub(crate) struct FileNode {
     name: String,
     path: PathBuf,
     is_folder: bool,
-    expanded: bool,
+    is_expanded: bool,
     children: Vec<FileNode>,
 }
 
@@ -18,7 +20,7 @@ impl FileNode {
             name,
             path,
             is_folder,
-            expanded: false,
+            is_expanded: false,
             children: Vec::new(),
         }
     }
@@ -40,7 +42,7 @@ impl FileNode {
 
     /// Return whether folder children are currently expanded.
     pub(crate) fn is_expanded(&self) -> bool {
-        self.expanded
+        self.is_expanded
     }
 
     /// Return nested children.
@@ -60,7 +62,7 @@ impl FileNode {
 
     /// Mark folder expanded/collapsed.
     pub(crate) fn set_expanded(&mut self, expanded: bool) {
-        self.expanded = expanded;
+        self.is_expanded = expanded;
     }
 }
 
@@ -90,15 +92,6 @@ impl PartialEq for FileNode {
 
 impl Eq for FileNode {}
 
-/// Build explorer root label from file system path.
-pub(crate) fn root_label(path: &Path) -> String {
-    let display = path.display();
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| format!("{display}"))
-}
-
 fn compare_names(left: &str, right: &str) -> Ordering {
     let left_fold = left.bytes().map(|byte| byte.to_ascii_lowercase());
     let right_fold = right.bytes().map(|byte| byte.to_ascii_lowercase());
@@ -108,12 +101,37 @@ fn compare_names(left: &str, right: &str) -> Ordering {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum ExplorerLoadTarget {
+    Root { root: PathBuf },
+    Folder { path: TreePath, directory: PathBuf },
+}
+
+impl ExplorerLoadTarget {
+    pub(super) fn describe_load_target(&self) -> String {
+        match self {
+            ExplorerLoadTarget::Root { root } => {
+                let display = root.display();
+                format!("root directory {display}")
+            },
+            ExplorerLoadTarget::Folder { path, directory } => {
+                let directory_display = directory.display();
+                format!(
+                    "folder path {:?} from directory {directory_display}",
+                    path
+                )
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cmp::Ordering;
     use std::path::PathBuf;
 
-    use super::{FileNode, root_label};
+    use super::super::services::root_label;
+    use super::FileNode;
 
     #[test]
     fn given_mixed_nodes_when_sorted_then_folders_are_first() {

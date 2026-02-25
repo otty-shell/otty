@@ -5,11 +5,12 @@ use iced::widget::{
 };
 use iced::{Element, Length, Padding, alignment};
 
+use crate::features::quick_launch::QuickLaunchType;
 use crate::features::quick_launch_wizard::{
+    QuickLaunchWizardEditorState,
     QuickLaunchWizardEvent as FeatureQuickLaunchWizardEvent,
-    QuickLaunchWizardMode, QuickLaunchWizardState,
+    QuickLaunchWizardMode,
 };
-use crate::features::quick_launches::QuickLaunchType;
 use crate::theme::{IcedColorPalette, ThemeProps};
 
 const SECTION_SPACING: f32 = 16.0;
@@ -27,7 +28,7 @@ const CONTENT_PADDING_RIGHT: f32 = 8.0;
 /// Props for rendering a quick launch editor tab.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct QuickLaunchesWizardProps<'a> {
-    pub(crate) editor: &'a QuickLaunchWizardState,
+    pub(crate) editor: &'a QuickLaunchWizardEditorState,
     pub(crate) theme: ThemeProps<'a>,
 }
 
@@ -227,7 +228,7 @@ fn text_input_row<'a>(
 }
 
 fn command_type_selector<'a>(
-    editor: &'a QuickLaunchWizardState,
+    editor: &'a QuickLaunchWizardEditorState,
 ) -> Element<'a, QuickLaunchesWizardEvent> {
     let options = [QuickLaunchType::Custom, QuickLaunchType::Ssh];
     let selector = pick_list(

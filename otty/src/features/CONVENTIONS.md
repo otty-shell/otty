@@ -6,18 +6,19 @@ This document is a normative specification for `otty/src/features`.
 
 - A feature module MUST encapsulate one domain slice: event contract, state contract, and reduction logic.
 - The goal is deterministic architecture and near-identical module topology across features.
+- This specification defines the struct-based flow: each feature is a struct that owns its state and implements a shared `Feature` trait.
 
-## 2. Compliance Profiles
+## 2. Compliance Profile
 
 - MUST satisfy all sections in this document.
 - MUST have canonical file topology from section 3.
-- MUST expose exactly one external reducer entrypoint and events subset from `mod.rs`.
-- Feature reducers MUST NOT call other feature reducers directly.
-- Cross-feature influence MUST be expressed only by returning `Task<AppEvent>` that contains routed events.
-- Feature state MUST be stored inside the global App `State`.
-- Feature state MUST be mutated only by the feature reducer defined in `event.rs`.
-- External code MAY access feature state only through public getter methods.
-- `pub` fields on `<Feature>State` are forbidden.
+- MUST implement one feature struct and one feature event enum.
+- MUST implement the shared `Feature` trait with `reduce` as the only write entrypoint.
+- `otty/src/features/mod.rs` MUST define the shared `Feature` trait contract.
+- Feature state MUST be owned by the feature struct, not by global app state.
+- Feature state MUST be mutated only inside that feature's `reduce` implementation.
+- Cross-feature influence MUST be expressed only by returning `Task<AppEvent>` with routed events.
+- Feature internals MUST NOT be mutated directly from `app.rs` or sibling features.
 
 ## 3. Canonical Layout
 
@@ -25,19 +26,22 @@ Each feature under `otty/src/features/<feature_name>/` MUST follow:
 
 ```text
 ├── mod.rs         # required: public surface only
-├── event.rs       # required: <Feature>Event + <feature>_reducer
+├── feature.rs     # required: <Feature>Feature + impl Feature
+├── event.rs       # required: <Feature>Event
 ├── state.rs       # required: <Feature>State + state helpers
 ├── model.rs       # required: domain data
 ├── errors.rs      # optional: feature errors
 ├── storage.rs     # optional: persistence boundary only
-├── services.rs    # optional: non-UI integrations, adapters, process glue
-└── subfeature/    # optional: subfeature must mirror the same contract
+├── services.rs    # optional: side-effect adapters/integrations
+└── subfeature/    # optional: subfeature mirrors same contract
   ├── mod.rs
+  ├── feature.rs
   ├── event.rs
   ├── state.rs
   ├── model.rs
   ├── errors.rs
-  └── storage.rs
+  ├── storage.rs
+  └── services.rs
 ```
 
 Files outside required/optional lists MUST NOT be added without updating this specification.
@@ -45,130 +49,134 @@ Files outside required/optional lists MUST NOT be added without updating this sp
 ## 4. Module Responsibilities
 
 - `mod.rs`: module declarations, curated re-exports. Business logic MUST NOT be added here.
-- `event.rs`: public feature event enum, reducer entrypoint, event routing.
-- `state.rs`: state struct, deterministic state mutation helpers.
-- `model.rs`: domain data structs declarations, domain data structs implementations and trait's implementations for domain data structs (e.g Display/Debug or etc).
+- `feature.rs`: feature struct, owned state, `Feature` trait implementation, event orchestration.
+- `event.rs`: public feature event enum and event-only helpers.
+- `state.rs`: internal runtime state struct and deterministic state mutation helpers.
+- `model.rs`: domain data structs and their trait implementations.
 - `errors.rs`: explicit error type for feature boundaries.
 - `storage.rs`: serialization/deserialization and filesystem I/O only.
-- `services.rs`: bounded external interactions that are not pure `event/model/state/storage` logic.
+- `services.rs`: bounded external interactions and side-effect adapters.
 
-## 5. Primary Contracts
+## 5. Feature Trait Contract
 
-### 5.1 Required Primary Types
+### 5.1 Shared Trait
 
-Each feature MUST expose:
+All features MUST implement the shared trait contract.
 
+```rust
+pub(crate) trait Feature {
+    type Event;
+    type Ctx;
+
+    fn reduce(
+        &mut self,
+        event: Self::Event,
+        ctx: &Self::Ctx,
+    ) -> iced::Task<crate::app::Event>;
+}
+```
+
+### 5.2 Context Rules
+
+- `reduce` MUST always accept a context reference `&Self::Ctx`.
+- Features without runtime dependencies MUST use `type Ctx = ()` and ignore context.
+- Features with runtime dependencies MUST define a feature-specific context type (e.g. `ExplorerCtx`).
+- Context MUST be read-only and MUST NOT expose mutable access to other features.
+
+### 5.3 Primary Types
+
+Each feature MUST define:
+
+- Exactly one primary feature struct named `<Feature>Feature`.
 - Exactly one primary state type named `<Feature>State`.
 - Exactly one primary event enum named `<Feature>Event`.
-- Exactly one external reducer function named `<feature>_reducer`.
 
-`Exactly one` means one external entrypoint visible outside the feature.
-Internal helper reducers MAY exist but MUST be private.
+`Exactly one` means one external `reduce` entrypoint per feature via trait implementation.
 
-### 5.2 Reducer Entrypoint Rules
+## 6. State Ownership And Mutation
 
-- The reducer entrypoint MUST be `pub(crate)` and re-exported from `mod.rs`.
-- The reducer MUST be the only external write-entry point for feature state.
-- Side effects MUST be returned as `Task<AppEvent>` and never hidden.
+- `<Feature>Feature` MUST own `<Feature>State` as a private field.
+- `<Feature>State` fields MUST be private.
+- `<Feature>State` MUST NOT be stored as a separate mutable field in global app state.
+- External code MAY read feature data only through read-only feature APIs.
+- External code MUST NOT receive raw mutable references to feature state.
+- Reusable mutation logic SHOULD live on `<Feature>State` methods and be called only from `reduce`.
 
-Signatures:
+## 7. Feature Container And Registration
 
-```rust
-pub(crate) fn feature_reducer(
-    state: &mut State,
-    event: FeatureEvent,
-) -> Task<AppEvent>
-```
+- `features/mod.rs` MUST define the shared `Feature` trait and register features as `pub(crate) mod <feature>;`.
+- App composition SHOULD use a dedicated container struct (e.g. `Features`) that owns all `<Feature>Feature` instances.
+- `app.rs` MUST route `AppEvent` to the owning feature's `reduce` implementation.
+- Feature reducers MUST NOT call other features' `reduce` directly.
 
-or when explicit runtime dependencies are needed:
+## 8. API Exposure
 
-```rust
-pub(crate) struct FeatureDeps<'a> {
-    pub(crate) terminal_settings: &'a Settings,
-}
-
-pub(crate) fn feature_reducer(
-    state: &mut State,
-    deps: FeatureDeps<'_>,
-    event: FeatureEvent,
-) -> Task<AppEvent>
-```
-
-### 5.3 State Rules
-
-- The feature's State MUST be `pub(crate)` and re-exported from `mod.rs`.
-- The feature's State fields MUST be private (without `pub`) and have getter methods.
-- The feature's State MUST NOT be mutated outside the feature.
-
-## 6. API Exposure
-
-- `features/mod.rs` MUST register features as `pub(crate) mod <feature>;`.
-- A feature's `mod.rs` MUST be the only import surface for sibling features.
+- A feature's `mod.rs` MUST be the only import surface for sibling features and app wiring.
 - Feature-internal module declarations inside `<feature>/mod.rs` MUST use private `mod ...;`.
 - Feature-internal `mod.rs` MUST re-export only stable API items:
+  - primary feature struct
   - primary event enum
-  - primary reducer entrypoint
-  - primary state type
-  - feature error type (if exists)
-  - dependency struct for the reducer entrypoint (e.g., `FeatureDeps`), when required
-  - domain models from `model.rs`
-  - service structs and functions from `services.rs` (if exists and required)
+  - feature context type (if used)
+  - feature error type (if externally consumed)
+  - read-only query/view models if explicitly needed
 - Wildcard re-exports (`pub use ...::*`) MUST NOT be used.
-- Storage internals and temporary helper types MUST NOT be re-exported.
+- Mutable state internals and temporary helper types MUST NOT be re-exported.
 
-## 7. Dependency Graph Rules
+## 9. Dependency Graph Rules
 
-### 7.1 Allowed Intra-Feature Dependencies
+### 9.1 Allowed Intra-Feature Dependencies
 
-| from \ to | model | errors | state | services | storage | event |
-| --------- | ----: | -----: | ----: | -------: | ------: | ----: |
-| model     |     - |      ✅ |     ❌ |        ❌ |       ❌ |     ❌ |
-| state     |     ✅ |      ✅ |     - |        ❌ |       ❌ |     ❌ |
-| services  |     ✅ |      ✅ |     ❌ |        - |       ❌ |     ❌ |
-| storage   |     ✅ |      ✅ |     ❌ |        ❌ |       - |     ❌ |
-| event     |     ✅ |      ✅ |     ✅ |        ✅ |       ✅ |     - |
+| from \ to | model | errors | state | services | storage | event | feature |
+| --------- | ----: | -----: | ----: | -------: | ------: | ----: | ------: |
+| model     |     - |      ✅ |     ❌ |        ✅ |       ❌ |     ❌ |      ❌ |
+| state     |     ✅ |      ✅ |     - |        ✅ |       ❌ |     ❌ |      ❌ |
+| services  |     ✅ |      ✅ |     ❌ |        - |       ❌ |     ❌ |      ❌ |
+| storage   |     ✅ |      ✅ |     ❌ |        ✅ |       - |     ❌ |      ❌ |
+| event     |     ✅ |      ✅ |     ❌ |        ❌ |       ❌ |     - |      ❌ |
+| feature   |     ✅ |      ✅ |     ✅ |        ✅ |       ✅ |     ✅ |       - |
 
-- `event.rs` is the orchestration layer and MAY depend on `state/model/errors/services/storage`.
-- No other module within the feature MAY depend on `event.rs`.
+- `feature.rs` is the only orchestration layer and MAY depend on all feature modules.
+- No other module within the feature MAY depend on `feature.rs`.
 
-### 7.2 Cross-Feature Rules
+### 9.2 Cross-Feature Rules
 
 - Cross-feature imports MUST go through `crate::features::<other>` re-exports only.
 - Direct imports of sibling internals are forbidden, including:
+  - `crate::features::<other>::feature::...`
   - `crate::features::<other>::event::...`
   - `crate::features::<other>::state::...`
   - `crate::features::<other>::model::...`
   - `crate::features::<other>::storage::...`
   - `crate::features::<other>::errors::...`
-- If required behavior is missing, the owning feature MUST add explicit re-exports in its `mod.rs`.
+- If required behavior is missing, the owning feature MUST add explicit re-exports in `mod.rs`.
 
-### 7.3 Forbidden Behaviors
+### 9.3 Forbidden Behaviors
 
 - Cyclical dependencies between feature modules.
 - Blocking I/O in reducers and hot state paths.
 - Unmanaged background threads from reducers.
 
-## 8. State Ownership And Mutation
+## 10. Services And Side Effects
 
-- Each domain datum MUST have one canonical owner feature.
-- Duplicate ownership of mutable domain data across features is forbidden.
-- Reusable mutation logic SHOULD live on `<Feature>State` methods.
-- Feature internals MUST NOT be mutated directly from `app.rs` or sibling features.
-- State initialization MUST define explicit defaults and avoid hidden globals.
+- Pure deterministic helpers MAY remain free functions.
+- Side-effecting operations (filesystem/process/network/env/time) SHOULD be abstracted behind feature-specific service interfaces.
+- Feature context SHOULD provide service dependencies required by `reduce`.
+- Service abstractions MUST remain bounded to feature needs; avoid global god-services.
 
-## 9. Naming Rules
+## 11. Naming Rules
 
 - Directory names MUST be `snake_case`.
 - File names MUST be lower `snake_case`.
+- Feature struct: `<Feature>Feature`.
 - Event enum: `<Feature>Event`.
-- Reducer function: `<feature>_reducer`.
 - State type: `<Feature>State`.
+- Context type: `<Feature>Ctx` (or explicit domain name, e.g. `ExplorerCtx`).
 - Error type: `<Feature>Error`.
 - Constants: `UPPER_SNAKE_CASE`.
 - Boolean fields/functions: `is_`, `has_`, or `can_` prefix.
 - Public helper APIs SHOULD be feature-prefixed to avoid collisions.
 
-## 10. Testing Matrix
+## 12. Testing Matrix
 
 Each feature MUST include deterministic tests for:
 
@@ -177,6 +185,7 @@ Each feature MUST include deterministic tests for:
 - Reducer success path.
 - Reducer ignored/invalid-event path.
 - Reducer error/failure path.
+- Service adapter behavior (when `services.rs` contains side effects).
 - Storage round-trip (when `storage.rs` exists).
 - Storage corruption/fallback handling (when `storage.rs` exists).
 
@@ -185,106 +194,121 @@ Test naming MUST use:
 
 Tests MUST NOT require network or user-specific environment state.
 
-## 11. Anti-Patterns
+## 13. Anti-Patterns
 
 Forbidden:
 
 - Business logic in `mod.rs`.
 - Direct sibling internal imports.
 - Direct mutation of another feature's state.
+- Exposing mutable feature state to external modules.
 - Unbounded cloning when borrowing is sufficient.
 - Stringly-typed ad-hoc event channels replacing typed enums.
 - Hidden side effects in constructors/getters.
 
-## 12. Canonical Strict Template
+## 14. Canonical Strict Template
 
 ```rust
 // otty/src/features/example/mod.rs
 mod errors;
 mod event;
+mod feature;
 mod model;
 mod state;
 
-pub(crate) use errors::ExampleError;
-pub(crate) use event::{ExampleEvent, example_reducer};
-pub(crate) use state::ExampleState;
+pub(crate) use event::ExampleEvent;
+pub(crate) use feature::{ExampleCtx, ExampleFeature};
 
-// otty/src/features/example/errors.rs
-use thiserror::Error;
+// otty/src/features/mod.rs (shared contract + registrations)
+pub(crate) mod example;
 
-/// Errors emitted by the example feature.
-#[derive(Debug, Error)]
-pub(crate) enum ExampleError {
-    #[error("validation failed: {message}")]
-    Validation { message: String },
-}
+pub(crate) trait Feature {
+    type Event;
+    type Ctx;
 
-// otty/src/features/example/model.rs
-/// Domain entity for the example feature.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ExampleItem {
-    id: u64,
-}
-
-impl ExampleItem {
-    pub(crate) fn id(&self) -> u64 {
-        self.id
-    }
+    fn reduce(
+        &mut self,
+        event: Self::Event,
+        ctx: &Self::Ctx,
+    ) -> iced::Task<crate::app::Event>;
 }
 
 // otty/src/features/example/state.rs
-use super::model::ExampleItem;
-
-/// Runtime state for the example feature.
 #[derive(Debug, Default)]
 pub(crate) struct ExampleState {
-    items: Vec<ExampleItem>,
+    items: Vec<u64>,
 }
 
 impl ExampleState {
-    pub(crate) fn items(&self) -> &[ExampleItem] {
+    fn items(&self) -> &[u64] {
         &self.items
     }
 
-    pub(crate) fn push_item(&mut self, id: u64) {
-        self.items.push(ExampleItem { id });
+    fn push_item(&mut self, id: u64) {
+        self.items.push(id);
     }
 }
 
 // otty/src/features/example/event.rs
-use iced::Task;
-
-use crate::app::Event as AppEvent;
-use crate::state::State;
-
-/// Events emitted by the example feature UI.
 #[derive(Debug, Clone)]
 pub(crate) enum ExampleEvent {
     AddItem { id: u64 },
 }
 
-/// Reduce example events into state updates and side effects.
-pub(crate) fn example_reducer(
-    state: &mut State,
-    event: ExampleEvent,
-) -> Task<AppEvent> {
-    match event {
-        ExampleEvent::AddItem { id } => {
-            state.example.push_item(id);
-            Task::none()
-        },
+// otty/src/features/example/feature.rs
+use iced::Task;
+
+use crate::app::Event as AppEvent;
+use crate::features::Feature;
+
+/// Runtime dependencies for example feature.
+pub(crate) struct ExampleCtx;
+
+/// Feature root that owns state and reduction logic.
+pub(crate) struct ExampleFeature {
+    state: ExampleState,
+}
+
+impl ExampleFeature {
+    pub(crate) fn new() -> Self {
+        Self {
+            state: ExampleState::default(),
+        }
+    }
+
+    pub(crate) fn items(&self) -> &[u64] {
+        self.state.items()
+    }
+}
+
+impl Feature for ExampleFeature {
+    type Event = ExampleEvent;
+    type Ctx = ExampleCtx;
+
+    fn reduce(
+        &mut self,
+        event: ExampleEvent,
+        _ctx: &ExampleCtx,
+    ) -> Task<AppEvent> {
+        match event {
+            ExampleEvent::AddItem { id } => {
+                self.state.push_item(id);
+                Task::none()
+            },
+        }
     }
 }
 ```
 
-## 13. Compliance Checklist
+## 15. Compliance Checklist
 
 A feature is compliant only if all checks pass:
 
 - Canonical file layout is satisfied.
 - `mod.rs` is thin and exports only stable API.
-- Exactly one external reducer entrypoint exists.
-- Event/state/reducer/error naming matches required patterns.
+- Exactly one feature struct, one event enum, and one state type exist.
+- Feature struct implements `Feature` trait.
+- `reduce` accepts context (`Ctx = ()` allowed for no-deps features).
 - No forbidden dependency edges exist.
-- No direct external state mutation bypasses reducer boundary.
-- Required tests from section 10 exist and pass.
+- No external mutable access bypasses feature reducer boundary.
+- Required tests from section 12 exist and pass.

@@ -55,6 +55,19 @@ pub(crate) enum QuickLaunchWizardSaveTarget {
     Edit { path: NodePath },
 }
 
+/// Actions that can be triggered from the context menu.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ContextMenuAction {
+    Edit,
+    Rename,
+    Duplicate,
+    Remove,
+    Delete,
+    CreateFolder,
+    CreateCommand,
+    Kill,
+}
+
 /// Save request emitted by tab quick launch editor.
 #[derive(Debug, Clone)]
 pub(crate) struct QuickLaunchWizardSaveRequest {

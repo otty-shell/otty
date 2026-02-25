@@ -1,16 +1,21 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::errors::ExplorerError;
 use super::model::FileNode;
 
-/// Load direct children for a file system directory.
-pub(crate) fn load_directory_nodes(
-    path: PathBuf,
-) -> Result<Vec<FileNode>, ExplorerError> {
-    read_dir_nodes(&path)
+/// Build explorer root label from file system path.
+pub(crate) fn root_label(path: &Path) -> String {
+    let display = path.display();
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("{display}"))
 }
 
-fn read_dir_nodes(path: &Path) -> Result<Vec<FileNode>, ExplorerError> {
+/// Load direct children for a file system directory.
+pub(crate) fn read_dir_nodes(
+    path: &Path,
+) -> Result<Vec<FileNode>, ExplorerError> {
     let mut nodes = Vec::new();
     for entry in std::fs::read_dir(path)? {
         let entry = match entry {
@@ -46,7 +51,7 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::load_directory_nodes;
+    use super::read_dir_nodes;
 
     #[test]
     fn given_directory_with_files_when_loaded_then_nodes_are_returned() {
@@ -56,7 +61,7 @@ mod tests {
         fs::write(root.join("a.txt"), "ok").expect("file should be created");
 
         let nodes =
-            load_directory_nodes(root.clone()).expect("directory should load");
+            read_dir_nodes(&root.clone()).expect("directory should load");
 
         assert_eq!(nodes.len(), 2);
         assert!(nodes[0].is_folder());

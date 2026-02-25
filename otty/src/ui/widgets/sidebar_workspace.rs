@@ -1,7 +1,7 @@
 use iced::{Element, Point, Theme};
 
 use crate::features::explorer::{ExplorerEvent, ExplorerState};
-use crate::features::quick_launches::{QuickLaunchEvent, QuickLaunchState};
+use crate::features::quick_launch::{QuickLaunchEvent, QuickLaunchState};
 use crate::theme::ThemeProps;
 use crate::ui::widgets::{
     sidebar_workspace_explorer, sidebar_workspace_terminal,

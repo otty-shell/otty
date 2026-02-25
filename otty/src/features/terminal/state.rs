@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use iced::widget::{Id, pane_grid};
 use iced::{Point, Size};
@@ -16,6 +16,54 @@ pub(crate) enum TerminalCommand {
     FocusElement(Id),
     CloseTab { tab_id: u64 },
     Batch(Vec<TerminalCommand>),
+}
+
+/// Per-feature terminal state keyed by tab id.
+#[derive(Default)]
+pub(crate) struct TerminalState {
+    tabs: BTreeMap<u64, TerminalTabState>,
+}
+
+impl TerminalState {
+    /// Return terminal tab state by tab id.
+    pub(crate) fn tab(&self, tab_id: u64) -> Option<&TerminalTabState> {
+        self.tabs.get(&tab_id)
+    }
+
+    /// Return mutable terminal tab state by tab id.
+    pub(crate) fn tab_mut(
+        &mut self,
+        tab_id: u64,
+    ) -> Option<&mut TerminalTabState> {
+        self.tabs.get_mut(&tab_id)
+    }
+
+    /// Insert terminal tab state owned by the terminal feature.
+    pub(crate) fn insert_tab(&mut self, tab_id: u64, tab: TerminalTabState) {
+        self.tabs.insert(tab_id, tab);
+    }
+
+    /// Remove terminal tab state when tab metadata is closed.
+    pub(crate) fn remove_tab(
+        &mut self,
+        tab_id: u64,
+    ) -> Option<TerminalTabState> {
+        self.tabs.remove(&tab_id)
+    }
+
+    /// Iterate terminal tabs.
+    pub(crate) fn tabs(
+        &self,
+    ) -> impl Iterator<Item = (&u64, &TerminalTabState)> {
+        self.tabs.iter()
+    }
+
+    /// Iterate terminal tabs mutably.
+    pub(crate) fn tabs_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&u64, &mut TerminalTabState)> {
+        self.tabs.iter_mut()
+    }
 }
 
 /// State for a pane context menu.
@@ -65,8 +113,8 @@ impl PaneContextMenuState {
     }
 }
 
-/// Runtime state for a terminal tab with pane management and selection.
-pub(crate) struct TerminalState {
+/// Runtime state for a single terminal tab with pane management and selection.
+pub(crate) struct TerminalTabState {
     tab_id: u64,
     title: String,
     kind: TerminalKind,
@@ -81,7 +129,7 @@ pub(crate) struct TerminalState {
     grid_size: Size,
 }
 
-impl TerminalState {
+impl TerminalTabState {
     pub(crate) fn new(
         tab_id: u64,
         default_title: String,
@@ -107,7 +155,7 @@ impl TerminalState {
             },
         );
 
-        let tab = TerminalState {
+        let tab = TerminalTabState {
             tab_id,
             title: default_title.clone(),
             kind,
@@ -472,7 +520,7 @@ mod tests {
     use iced::{Point, Size};
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-    use super::{PaneContextMenuState, TerminalState};
+    use super::{PaneContextMenuState, TerminalTabState};
     use crate::features::terminal::model::TerminalKind;
 
     #[cfg(unix)]
@@ -490,8 +538,8 @@ mod tests {
         settings
     }
 
-    fn build_terminal_state(default_title: &str) -> TerminalState {
-        let (state, _task) = TerminalState::new(
+    fn build_terminal_state(default_title: &str) -> TerminalTabState {
+        let (state, _task) = TerminalTabState::new(
             1,
             String::from(default_title),
             10,

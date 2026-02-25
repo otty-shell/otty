@@ -2,21 +2,31 @@ use iced::Task;
 
 use super::QuickLaunchWizardError;
 use super::model::build_command;
-use super::state::{QuickLaunchWizardMode, QuickLaunchWizardState};
+use super::state::{QuickLaunchWizardEditorState, QuickLaunchWizardMode};
 use crate::app::Event as AppEvent;
-use crate::features::quick_launches::{
-    QuickLaunchEvent, QuickLaunchType, QuickLaunchWizardSaveRequest,
-    QuickLaunchWizardSaveTarget,
+use crate::features::quick_launch::{
+    QuickLaunch, QuickLaunchEvent, QuickLaunchType,
+    QuickLaunchWizardSaveRequest, QuickLaunchWizardSaveTarget,
 };
-use crate::features::tab::{TabContent, TabEvent};
+use crate::features::tab::TabEvent;
 use crate::state::State;
 
 /// Events emitted by the quick launch editor UI.
 #[derive(Debug, Clone)]
 pub(crate) enum QuickLaunchWizardEvent {
+    InitializeCreate {
+        parent_path: Vec<String>,
+    },
+    InitializeEdit {
+        path: Vec<String>,
+        command: Box<QuickLaunch>,
+    },
+    TabClosed,
     Cancel,
     Save,
-    SetError { message: String },
+    SetError {
+        message: String,
+    },
     UpdateTitle(String),
     UpdateProgram(String),
     UpdateHost(String),
@@ -26,14 +36,26 @@ pub(crate) enum QuickLaunchWizardEvent {
     UpdateWorkingDirectory(String),
     AddArg,
     RemoveArg(usize),
-    UpdateArg { index: usize, value: String },
+    UpdateArg {
+        index: usize,
+        value: String,
+    },
     AddEnv,
     RemoveEnv(usize),
-    UpdateEnvKey { index: usize, value: String },
-    UpdateEnvValue { index: usize, value: String },
+    UpdateEnvKey {
+        index: usize,
+        value: String,
+    },
+    UpdateEnvValue {
+        index: usize,
+        value: String,
+    },
     AddExtraArg,
     RemoveExtraArg(usize),
-    UpdateExtraArg { index: usize, value: String },
+    UpdateExtraArg {
+        index: usize,
+        value: String,
+    },
     SelectCommandType(QuickLaunchType),
 }
 
@@ -51,6 +73,24 @@ pub(crate) fn quick_launch_wizard_reducer(
     use QuickLaunchWizardEvent::*;
 
     match event {
+        InitializeCreate { parent_path } => {
+            state
+                .quick_launch_wizard
+                .initialize_create(deps.tab_id, parent_path);
+            Task::none()
+        },
+        InitializeEdit { path, command } => {
+            state.quick_launch_wizard.initialize_edit(
+                deps.tab_id,
+                path,
+                &command,
+            );
+            Task::none()
+        },
+        TabClosed => {
+            state.quick_launch_wizard.remove_tab(deps.tab_id);
+            Task::none()
+        },
         Cancel => Task::done(AppEvent::Tab(TabEvent::CloseTab {
             tab_id: deps.tab_id,
         })),
@@ -155,32 +195,24 @@ fn build_save_request(
     }))
 }
 
-fn editor_ref(state: &State, tab_id: u64) -> Option<&QuickLaunchWizardState> {
-    let tab = state.tab_items().get(&tab_id)?;
-    let TabContent::QuickLaunchWizard(editor) = &tab.content else {
-        return None;
-    };
-    Some(editor.as_ref())
+fn editor_ref(
+    state: &State,
+    tab_id: u64,
+) -> Option<&QuickLaunchWizardEditorState> {
+    state.quick_launch_wizard.editor(tab_id)
 }
 
 fn editor_mut(
     state: &mut State,
     tab_id: u64,
-) -> Option<&mut QuickLaunchWizardState> {
-    let tab = state.tab.tab_item_mut(tab_id)?;
-    let TabContent::QuickLaunchWizard(editor) = &mut tab.content else {
-        return None;
-    };
-    Some(editor.as_mut())
+) -> Option<&mut QuickLaunchWizardEditorState> {
+    state.quick_launch_wizard.editor_mut(tab_id)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::quick_launches::{
-        CommandSpec, CustomCommand, QuickLaunch,
-    };
-    use crate::features::tab::TabItem;
+    use crate::features::quick_launch::{CommandSpec, CustomCommand};
 
     fn deps(tab_id: u64) -> QuickLaunchWizardDeps {
         QuickLaunchWizardDeps { tab_id }
@@ -196,14 +228,14 @@ mod tests {
             QuickLaunchWizardEvent::UpdateTitle(String::from("x")),
         );
 
-        assert!(state.tab.is_empty());
+        assert!(state.quick_launch_wizard.editor(999).is_none());
     }
 
     #[test]
     fn given_custom_editor_when_field_events_are_reduced_then_state_is_updated()
     {
         let (mut state, tab_id) =
-            state_with_editor(QuickLaunchWizardState::new_create(vec![]));
+            state_with_editor(QuickLaunchWizardEditorState::new_create(vec![]));
 
         let _ = quick_launch_wizard_reducer(
             &mut state,
@@ -282,7 +314,7 @@ mod tests {
                 },
             },
         };
-        let editor = QuickLaunchWizardState::from_command(
+        let editor = QuickLaunchWizardEditorState::from_command(
             vec![String::from("Run")],
             &command,
         );
@@ -300,7 +332,7 @@ mod tests {
 
     #[test]
     fn given_invalid_editor_when_save_then_error_is_set() {
-        let editor = QuickLaunchWizardState::new_create(vec![]);
+        let editor = QuickLaunchWizardEditorState::new_create(vec![]);
         let (mut state, tab_id) = state_with_editor(editor);
 
         let _ = quick_launch_wizard_reducer(
@@ -316,7 +348,7 @@ mod tests {
     #[test]
     fn given_valid_editor_when_save_then_quick_launch_state_is_not_mutated_directly()
      {
-        let mut editor = QuickLaunchWizardState::new_create(vec![]);
+        let mut editor = QuickLaunchWizardEditorState::new_create(vec![]);
         editor.set_title(String::from("Run"));
         editor.set_program(String::from("bash"));
         let (mut state, tab_id) = state_with_editor(editor);
@@ -333,20 +365,10 @@ mod tests {
         assert_eq!(editor.error(), None);
     }
 
-    fn state_with_editor(editor: QuickLaunchWizardState) -> (State, u64) {
+    fn state_with_editor(editor: QuickLaunchWizardEditorState) -> (State, u64) {
         let tab_id = 1;
         let mut state = State::default();
-        let _ = state.allocate_tab_id();
-        let _ = state.allocate_tab_id();
-        state.tab.insert(
-            tab_id,
-            TabItem {
-                id: tab_id,
-                title: String::from("Editor"),
-                content: TabContent::QuickLaunchWizard(Box::new(editor)),
-            },
-        );
-        state.tab.activate(Some(tab_id));
+        state.quick_launch_wizard.set_editor(tab_id, editor);
         (state, tab_id)
     }
 }

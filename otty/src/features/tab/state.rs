@@ -26,13 +26,6 @@ impl TabState {
         self.tab_items.get_mut(&tab_id)
     }
 
-    /// Return mutable iterator over all tab items.
-    pub(crate) fn tab_values_mut(
-        &mut self,
-    ) -> impl Iterator<Item = &mut TabItem> {
-        self.tab_items.values_mut()
-    }
-
     /// Return number of tabs.
     pub(crate) fn len(&self) -> usize {
         self.tab_items.len()
@@ -76,6 +69,13 @@ impl TabState {
         self.active_tab_id = tab_id;
     }
 
+    /// Update title for an existing tab.
+    pub(crate) fn set_title(&mut self, tab_id: u64, title: String) {
+        if let Some(tab) = self.tab_item_mut(tab_id) {
+            tab.set_title(title);
+        }
+    }
+
     /// Return previous tab identifier before `tab_id`.
     pub(crate) fn previous_tab_id(&self, tab_id: u64) -> Option<u64> {
         self.tab_items
@@ -108,27 +108,15 @@ mod tests {
         let mut state = TabState::default();
         state.insert(
             1,
-            TabItem {
-                id: 1,
-                title: String::from("One"),
-                content: TabContent::Settings,
-            },
+            TabItem::new(1, String::from("One"), TabContent::Settings),
         );
         state.insert(
             5,
-            TabItem {
-                id: 5,
-                title: String::from("Five"),
-                content: TabContent::Settings,
-            },
+            TabItem::new(5, String::from("Five"), TabContent::Settings),
         );
         state.insert(
             8,
-            TabItem {
-                id: 8,
-                title: String::from("Eight"),
-                content: TabContent::Settings,
-            },
+            TabItem::new(8, String::from("Eight"), TabContent::Settings),
         );
 
         assert_eq!(state.previous_tab_id(8), Some(5));

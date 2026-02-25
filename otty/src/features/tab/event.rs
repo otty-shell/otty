@@ -1,18 +1,16 @@
 use iced::Task;
-use otty_ui_term::TerminalView;
 use otty_ui_term::settings::Settings;
 
 use super::model::{TabContent, TabItem, TabOpenRequest};
 use crate::app::Event as AppEvent;
 use crate::features::explorer::ExplorerEvent;
-use crate::features::quick_launch_wizard::QuickLaunchWizardState;
-use crate::features::quick_launches::{
-    NodePath, QuickLaunch, quick_launch_error_message,
+use crate::features::quick_launch::{
+    NodePath, QuickLaunch, QuickLaunchEvent, quick_launch_error_message,
 };
+use crate::features::quick_launch_wizard::QuickLaunchWizardEvent;
 use crate::features::settings::SettingsEvent;
 use crate::features::terminal::{
-    ShellSession, TerminalEvent, TerminalKind, TerminalState,
-    terminal_settings_for_session,
+    ShellSession, TerminalEvent, TerminalKind, terminal_settings_for_session,
 };
 use crate::state::State;
 
@@ -22,6 +20,7 @@ pub(crate) enum TabEvent {
     NewTab { request: TabOpenRequest },
     ActivateTab { tab_id: u64 },
     CloseTab { tab_id: u64 },
+    SetTitle { tab_id: u64, title: String },
 }
 
 /// Runtime dependencies used by tab reducer operations.
@@ -61,6 +60,10 @@ pub(crate) fn tab_reducer(
         },
         TabEvent::ActivateTab { tab_id } => activate_tab(state, tab_id),
         TabEvent::CloseTab { tab_id } => close_tab(state, tab_id),
+        TabEvent::SetTitle { tab_id, title } => {
+            state.tab.set_title(tab_id, title);
+            Task::none()
+        },
     }
 }
 
@@ -69,11 +72,7 @@ fn open_settings_tab(state: &mut State) -> Task<AppEvent> {
 
     state.tab.insert(
         tab_id,
-        TabItem {
-            id: tab_id,
-            title: String::from("Settings"),
-            content: TabContent::Settings,
-        },
+        TabItem::new(tab_id, String::from("Settings"), TabContent::Settings),
     );
     state.tab.activate(Some(tab_id));
 
@@ -89,18 +88,20 @@ fn open_quick_launch_wizard_create_tab(
 ) -> Task<AppEvent> {
     let tab_id = state.allocate_tab_id();
 
-    let editor = QuickLaunchWizardState::new_create(parent_path);
     state.tab.insert(
         tab_id,
-        TabItem {
-            id: tab_id,
-            title: String::from("Create launch"),
-            content: TabContent::QuickLaunchWizard(Box::new(editor)),
-        },
+        TabItem::new(
+            tab_id,
+            String::from("Create launch"),
+            TabContent::QuickLaunchWizard,
+        ),
     );
     state.tab.activate(Some(tab_id));
 
-    Task::none()
+    Task::done(AppEvent::QuickLaunchWizard {
+        tab_id,
+        event: QuickLaunchWizardEvent::InitializeCreate { parent_path },
+    })
 }
 
 fn open_quick_launch_wizard_edit_tab(
@@ -112,18 +113,19 @@ fn open_quick_launch_wizard_edit_tab(
 
     let command_title = command.title.as_str();
     let title = format!("Edit {command_title}");
-    let editor = QuickLaunchWizardState::from_command(path, &command);
     state.tab.insert(
         tab_id,
-        TabItem {
-            id: tab_id,
-            title,
-            content: TabContent::QuickLaunchWizard(Box::new(editor)),
-        },
+        TabItem::new(tab_id, title, TabContent::QuickLaunchWizard),
     );
     state.tab.activate(Some(tab_id));
 
-    Task::none()
+    Task::done(AppEvent::QuickLaunchWizard {
+        tab_id,
+        event: QuickLaunchWizardEvent::InitializeEdit {
+            path,
+            command: Box::new(command),
+        },
+    })
 }
 
 fn open_shell_terminal_tab(
@@ -133,20 +135,30 @@ fn open_shell_terminal_tab(
     let tab_id = state.allocate_tab_id();
     let terminal_id = state.allocate_terminal_id();
 
+    state.tab.insert(
+        tab_id,
+        TabItem::new(
+            tab_id,
+            deps.shell_session.name().to_string(),
+            TabContent::Terminal,
+        ),
+    );
+    state.tab.activate(Some(tab_id));
+
     let settings = terminal_settings_for_session(
         deps.terminal_settings,
         deps.shell_session.session().clone(),
     );
-    insert_terminal_tab(
-        state,
+
+    Task::done(AppEvent::Terminal(TerminalEvent::OpenTab {
         tab_id,
         terminal_id,
-        deps.shell_session.name().to_string(),
-        settings,
-        TerminalKind::Shell,
-        true,
-        None,
-    )
+        default_title: deps.shell_session.name().to_string(),
+        settings: Box::new(settings),
+        kind: TerminalKind::Shell,
+        sync_explorer: true,
+        error_tab: None,
+    }))
 }
 
 fn close_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {
@@ -164,27 +176,36 @@ fn close_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {
     };
 
     state.tab.remove(tab_id);
-    state.remove_tab_terminals(tab_id);
 
     if state.tab.is_empty() {
         state.tab.activate(None);
-        return request_sync_explorer();
-    }
-
-    if state.tab.active_tab_id() == Some(tab_id) {
+    } else if state.tab.active_tab_id() == Some(tab_id) {
         state.tab.activate(next_active);
     }
 
-    let focus_task = request_terminal_event(TerminalEvent::FocusActive);
-    let sync_task = if let Some(active_id) = state.tab.active_tab_id() {
-        request_terminal_event(TerminalEvent::SyncSelection {
-            tab_id: active_id,
-        })
-    } else {
-        Task::none()
-    };
+    let mut tasks = vec![
+        request_terminal_event(TerminalEvent::TabClosed { tab_id }),
+        Task::done(AppEvent::QuickLaunchWizard {
+            tab_id,
+            event: QuickLaunchWizardEvent::TabClosed,
+        }),
+        Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::TabClosed {
+            tab_id,
+        })),
+    ];
 
-    Task::batch(vec![focus_task, sync_task, request_sync_explorer()])
+    if !state.tab.is_empty() {
+        tasks.push(request_terminal_event(TerminalEvent::FocusActive));
+        if let Some(active_id) = state.tab.active_tab_id() {
+            tasks.push(request_terminal_event(TerminalEvent::SyncSelection {
+                tab_id: active_id,
+            }));
+        }
+    }
+
+    tasks.push(request_sync_explorer());
+
+    Task::batch(tasks)
 }
 
 fn activate_tab(state: &mut State, tab_id: u64) -> Task<AppEvent> {
@@ -209,19 +230,15 @@ fn open_quick_launch_error_tab(
 
     state.tab.insert(
         tab_id,
-        TabItem {
-            id: tab_id,
-            title: title.clone(),
-            content: TabContent::QuickLaunchError(
-                crate::features::quick_launches::QuickLaunchErrorState::new(
-                    title, message,
-                ),
-            ),
-        },
+        TabItem::new(tab_id, title.clone(), TabContent::QuickLaunchError),
     );
     state.tab.activate(Some(tab_id));
 
-    Task::none()
+    Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::OpenErrorTab {
+        tab_id,
+        title,
+        message,
+    }))
 }
 
 fn open_quick_launch_command_terminal_tab(
@@ -238,21 +255,26 @@ fn open_quick_launch_command_terminal_tab(
         &"terminal tab initialization failed",
     );
 
-    let insert_task = insert_terminal_tab(
-        state,
+    state.tab.insert(
+        tab_id,
+        TabItem::new(tab_id, title.clone(), TabContent::Terminal),
+    );
+    state.tab.activate(Some(tab_id));
+
+    let open_task = Task::done(AppEvent::Terminal(TerminalEvent::OpenTab {
         tab_id,
         terminal_id,
-        title,
-        settings,
-        TerminalKind::Command,
-        false,
-        Some((
+        default_title: title,
+        settings: Box::new(settings),
+        kind: TerminalKind::Command,
+        sync_explorer: false,
+        error_tab: Some((
             format!("Failed to launch \"{command_title}\""),
             init_error_message,
         )),
-    );
+    }));
     let focus_active_task = request_terminal_event(TerminalEvent::FocusActive);
-    Task::batch(vec![insert_task, focus_active_task])
+    Task::batch(vec![open_task, focus_active_task])
 }
 
 fn open_command_terminal_tab(
@@ -263,16 +285,21 @@ fn open_command_terminal_tab(
     let tab_id = state.allocate_tab_id();
     let terminal_id = state.allocate_terminal_id();
 
-    insert_terminal_tab(
-        state,
+    state.tab.insert(
+        tab_id,
+        TabItem::new(tab_id, title.clone(), TabContent::Terminal),
+    );
+    state.tab.activate(Some(tab_id));
+
+    Task::done(AppEvent::Terminal(TerminalEvent::OpenTab {
         tab_id,
         terminal_id,
-        title,
-        settings,
-        TerminalKind::Command,
-        false,
-        None,
-    )
+        default_title: title,
+        settings: Box::new(settings),
+        kind: TerminalKind::Command,
+        sync_explorer: false,
+        error_tab: None,
+    }))
 }
 
 fn request_sync_explorer() -> Task<AppEvent> {
@@ -283,71 +310,22 @@ fn request_terminal_event(event: TerminalEvent) -> Task<AppEvent> {
     Task::done(AppEvent::Terminal(event))
 }
 
-fn insert_terminal_tab(
-    state: &mut State,
-    tab_id: u64,
-    terminal_id: u64,
-    default_title: String,
-    settings: Settings,
-    kind: TerminalKind,
-    sync_explorer: bool,
-    error_tab: Option<(String, String)>,
-) -> Task<AppEvent> {
-    let (mut terminal, widget_id) = match TerminalState::new(
-        tab_id,
-        default_title,
-        terminal_id,
-        settings,
-        kind,
-    ) {
-        Ok(result) => result,
-        Err(err) => {
-            log::warn!("failed to create terminal tab: {err}");
-            if let Some((title, message)) = error_tab {
-                return Task::done(AppEvent::Tab(TabEvent::NewTab {
-                    request: TabOpenRequest::QuickLaunchError {
-                        title,
-                        message: format!("{message}\nError: {err}"),
-                    },
-                }));
-            }
-            return Task::none();
-        },
-    };
-
-    terminal.set_grid_size(state.pane_grid_size());
-    for terminal_id in terminal.terminals().keys().copied() {
-        state.register_terminal_for_tab(terminal_id, tab_id);
-    }
-
-    state.tab.insert(
-        tab_id,
-        TabItem {
-            id: tab_id,
-            title: terminal.title().to_string(),
-            content: TabContent::Terminal(Box::new(terminal)),
-        },
-    );
-    state.tab.activate(Some(tab_id));
-
-    let mut tasks = vec![
-        TerminalView::focus(widget_id),
-        request_terminal_event(TerminalEvent::SyncSelection { tab_id }),
-    ];
-    if sync_explorer {
-        tasks.push(request_sync_explorer());
-    }
-
-    Task::batch(tasks)
-}
-
 #[cfg(test)]
 mod tests {
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{TabDeps, TabEvent, tab_reducer};
+    use crate::features::quick_launch::{
+        QuickLaunchEvent, QuickLaunchesDeps, quick_launches_reducer,
+    };
+    use crate::features::quick_launch_wizard::{
+        QuickLaunchWizardDeps, QuickLaunchWizardEvent,
+        quick_launch_wizard_reducer,
+    };
     use crate::features::tab::TabOpenRequest;
-    use crate::features::terminal::ShellSession;
+    use crate::features::terminal::{
+        ShellSession, TerminalEvent, TerminalKind, terminal_reducer,
+    };
     use crate::state::State;
 
     #[cfg(unix)]
@@ -446,5 +424,123 @@ mod tests {
 
         assert!(state.tab.is_empty());
         assert_eq!(state.tab.active_tab_id(), None);
+    }
+
+    #[test]
+    fn given_wizard_tab_lifecycle_when_close_then_wizard_owner_state_is_cleaned()
+     {
+        let mut state = State::default();
+        let _ = tab_reducer(
+            &mut state,
+            deps(),
+            TabEvent::NewTab {
+                request: TabOpenRequest::QuickLaunchWizardCreate {
+                    parent_path: vec![String::from("Root")],
+                },
+            },
+        );
+        assert!(state.tab.contains(0));
+
+        let _ = quick_launch_wizard_reducer(
+            &mut state,
+            QuickLaunchWizardDeps { tab_id: 0 },
+            QuickLaunchWizardEvent::InitializeCreate {
+                parent_path: vec![String::from("Root")],
+            },
+        );
+        assert!(state.quick_launch_wizard.editor(0).is_some());
+
+        let _ =
+            tab_reducer(&mut state, deps(), TabEvent::CloseTab { tab_id: 0 });
+        let _ = quick_launch_wizard_reducer(
+            &mut state,
+            QuickLaunchWizardDeps { tab_id: 0 },
+            QuickLaunchWizardEvent::TabClosed,
+        );
+
+        assert!(!state.tab.contains(0));
+        assert!(state.quick_launch_wizard.editor(0).is_none());
+    }
+
+    #[test]
+    fn given_quick_launch_error_tab_lifecycle_when_close_then_error_payload_is_cleaned()
+     {
+        let mut state = State::default();
+        let _ = tab_reducer(
+            &mut state,
+            deps(),
+            TabEvent::NewTab {
+                request: TabOpenRequest::QuickLaunchError {
+                    title: String::from("Failed"),
+                    message: String::from("Boom"),
+                },
+            },
+        );
+        assert!(state.tab.contains(0));
+
+        let _ = quick_launches_reducer(
+            &mut state,
+            QuickLaunchesDeps {
+                terminal_settings: &Settings::default(),
+            },
+            QuickLaunchEvent::OpenErrorTab {
+                tab_id: 0,
+                title: String::from("Failed"),
+                message: String::from("Boom"),
+            },
+        );
+        assert!(state.quick_launches.error_tab(0).is_some());
+
+        let _ =
+            tab_reducer(&mut state, deps(), TabEvent::CloseTab { tab_id: 0 });
+        let _ = quick_launches_reducer(
+            &mut state,
+            QuickLaunchesDeps {
+                terminal_settings: &Settings::default(),
+            },
+            QuickLaunchEvent::TabClosed { tab_id: 0 },
+        );
+
+        assert!(!state.tab.contains(0));
+        assert!(state.quick_launches.error_tab(0).is_none());
+    }
+
+    #[test]
+    fn given_terminal_tab_lifecycle_when_close_then_terminal_owner_state_is_cleaned()
+     {
+        let mut state = State::default();
+        let _ = tab_reducer(
+            &mut state,
+            deps(),
+            TabEvent::NewTab {
+                request: TabOpenRequest::Terminal,
+            },
+        );
+        assert!(state.tab.contains(0));
+
+        let _ = terminal_reducer(
+            &mut state,
+            TerminalEvent::OpenTab {
+                tab_id: 0,
+                terminal_id: 0,
+                default_title: String::from("shell"),
+                settings: Box::new(Settings::default()),
+                kind: TerminalKind::Shell,
+                sync_explorer: false,
+                error_tab: None,
+            },
+        );
+        assert!(state.terminal.tab(0).is_some());
+
+        let _ =
+            tab_reducer(&mut state, deps(), TabEvent::CloseTab { tab_id: 0 });
+        let _ = terminal_reducer(
+            &mut state,
+            TerminalEvent::TabClosed { tab_id: 0 },
+        );
+
+        assert!(!state.tab.contains(0));
+        assert!(state.terminal.tab(0).is_none());
+        assert_eq!(state.terminal_tab_id(0), None);
     }
 }

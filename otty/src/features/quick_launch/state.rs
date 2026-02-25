@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use iced::Point;
 
@@ -98,21 +98,22 @@ impl InlineEditState {
 /// Workspace state for saved quick launches and their UI.
 #[derive(Debug)]
 pub(crate) struct QuickLaunchState {
-    pub(super) data: QuickLaunchFile,
-    pub(super) dirty: bool,
+    data: QuickLaunchFile,
+    error_tabs: HashMap<u64, QuickLaunchErrorState>,
+    dirty: bool,
     persist_in_flight: bool,
-    pub(super) selected: Option<NodePath>,
-    pub(super) hovered: Option<NodePath>,
-    pub(super) launching: HashMap<NodePath, LaunchInfo>,
-    pub(super) canceled_launches: HashSet<u64>,
-    pub(super) next_launch_id: u64,
-    pub(super) blink_nonce: u64,
-    pub(super) context_menu: Option<ContextMenuState>,
-    pub(super) inline_edit: Option<InlineEditState>,
-    pub(super) pressed: Option<NodePath>,
-    pub(super) drag: Option<DragState>,
-    pub(super) drop_target: Option<DropTarget>,
-    pub(super) cursor: Point,
+    selected: Option<NodePath>,
+    hovered: Option<NodePath>,
+    launching: HashMap<NodePath, LaunchInfo>,
+    canceled_launches: HashSet<u64>,
+    next_launch_id: u64,
+    blink_nonce: u64,
+    context_menu: Option<ContextMenuState>,
+    inline_edit: Option<InlineEditState>,
+    pressed: Option<NodePath>,
+    drag: Option<DragState>,
+    drop_target: Option<DropTarget>,
+    cursor: Point,
 }
 
 /// Runtime info for a pending quick launch.
@@ -137,6 +138,7 @@ impl QuickLaunchState {
         match data {
             Some(data) => Self {
                 data,
+                error_tabs: HashMap::new(),
                 dirty: false,
                 persist_in_flight: false,
                 selected: None,
@@ -161,6 +163,19 @@ impl QuickLaunchState {
         &self.data
     }
 
+    /// Return mutable quick launch data payload for reducer-owned updates.
+    pub(crate) fn data_mut(&mut self) -> &mut QuickLaunchFile {
+        &mut self.data
+    }
+
+    /// Return stored error payload for an error tab.
+    pub(crate) fn error_tab(
+        &self,
+        tab_id: u64,
+    ) -> Option<&QuickLaunchErrorState> {
+        self.error_tabs.get(&tab_id)
+    }
+
     /// Return whether there are unsaved local changes.
     pub(crate) fn is_dirty(&self) -> bool {
         self.dirty
@@ -181,9 +196,39 @@ impl QuickLaunchState {
         self.selected.as_ref()
     }
 
+    /// Return selected path by value.
+    pub(crate) fn selected_path_cloned(&self) -> Option<NodePath> {
+        self.selected.clone()
+    }
+
+    /// Update selected quick launch path.
+    pub(crate) fn set_selected_path(&mut self, path: Option<NodePath>) {
+        self.selected = path;
+    }
+
+    /// Clear selected quick launch path.
+    pub(crate) fn clear_selected_path(&mut self) {
+        self.selected = None;
+    }
+
     /// Return hovered quick launch path.
     pub(crate) fn hovered_path(&self) -> Option<&NodePath> {
         self.hovered.as_ref()
+    }
+
+    /// Update hovered quick launch path.
+    pub(crate) fn set_hovered_path(&mut self, path: Option<NodePath>) {
+        self.hovered = path;
+    }
+
+    /// Return cursor position used by quick launches interactions.
+    pub(crate) fn cursor(&self) -> Point {
+        self.cursor
+    }
+
+    /// Update interaction cursor position.
+    pub(crate) fn set_cursor(&mut self, cursor: Point) {
+        self.cursor = cursor;
     }
 
     /// Return in-flight launch map.
@@ -191,9 +236,92 @@ impl QuickLaunchState {
         &self.launching
     }
 
+    /// Return mutable in-flight launch map for reducer-owned updates.
+    pub(crate) fn launching_mut(
+        &mut self,
+    ) -> &mut HashMap<NodePath, LaunchInfo> {
+        &mut self.launching
+    }
+
+    /// Return launch info for a path.
+    pub(crate) fn launch_info(&self, path: &[String]) -> Option<&LaunchInfo> {
+        self.launching.get(path)
+    }
+
+    /// Return whether a path is currently launching.
+    pub(crate) fn is_launching(&self, path: &[String]) -> bool {
+        self.launching.contains_key(path)
+    }
+
+    /// Start launch tracking and allocate the next launch identifier.
+    pub(crate) fn begin_launch(
+        &mut self,
+        path: NodePath,
+        cancel: Arc<AtomicBool>,
+    ) -> u64 {
+        let launch_id = self.next_launch_id;
+        self.next_launch_id = self.next_launch_id.wrapping_add(1);
+        self.launching.insert(
+            path,
+            LaunchInfo {
+                id: launch_id,
+                launch_ticks: 0,
+                is_indicator_highlighted: false,
+                cancel,
+            },
+        );
+        launch_id
+    }
+
+    /// Remove launch tracking by path.
+    pub(crate) fn remove_launch(
+        &mut self,
+        path: &[String],
+    ) -> Option<LaunchInfo> {
+        self.launching.remove(path)
+    }
+
+    /// Mark launch as canceled by path, if present.
+    pub(crate) fn cancel_launch(&mut self, path: &[String]) {
+        if let Some(info) = self.launching.get(path) {
+            info.cancel.store(true, Ordering::Relaxed);
+            self.canceled_launches.insert(info.id);
+        }
+    }
+
+    /// Consume canceled mark for launch id.
+    pub(crate) fn take_canceled_launch(&mut self, launch_id: u64) -> bool {
+        self.canceled_launches.remove(&launch_id)
+    }
+
+    /// Return current launch indicator nonce.
+    pub(crate) fn blink_nonce(&self) -> u64 {
+        self.blink_nonce
+    }
+
+    /// Increment launch indicator blink nonce.
+    pub(crate) fn advance_blink_nonce(&mut self) {
+        self.blink_nonce = self.blink_nonce.wrapping_add(1);
+    }
+
     /// Return current context menu state.
     pub(crate) fn context_menu(&self) -> Option<&ContextMenuState> {
         self.context_menu.as_ref()
+    }
+
+    /// Return cloned context menu state.
+    pub(crate) fn context_menu_cloned(&self) -> Option<ContextMenuState> {
+        self.context_menu.clone()
+    }
+
+    /// Set current context menu state.
+    pub(crate) fn set_context_menu(&mut self, menu: Option<ContextMenuState>) {
+        self.context_menu = menu;
+    }
+
+    /// Clear current context menu state.
+    pub(crate) fn clear_context_menu(&mut self) {
+        self.context_menu = None;
     }
 
     /// Return active inline edit state.
@@ -201,14 +329,84 @@ impl QuickLaunchState {
         self.inline_edit.as_ref()
     }
 
+    /// Return mutable inline edit state.
+    pub(crate) fn inline_edit_mut(&mut self) -> Option<&mut InlineEditState> {
+        self.inline_edit.as_mut()
+    }
+
+    /// Set inline edit state.
+    pub(crate) fn set_inline_edit(&mut self, edit: Option<InlineEditState>) {
+        self.inline_edit = edit;
+    }
+
+    /// Clear inline edit state.
+    pub(crate) fn clear_inline_edit(&mut self) {
+        self.inline_edit = None;
+    }
+
+    /// Take and clear inline edit state.
+    pub(crate) fn take_inline_edit(&mut self) -> Option<InlineEditState> {
+        self.inline_edit.take()
+    }
+
+    /// Return currently pressed path.
+    pub(crate) fn pressed_path(&self) -> Option<&NodePath> {
+        self.pressed.as_ref()
+    }
+
+    /// Set currently pressed path.
+    pub(crate) fn set_pressed_path(&mut self, path: Option<NodePath>) {
+        self.pressed = path;
+    }
+
+    /// Clear currently pressed path.
+    pub(crate) fn clear_pressed_path(&mut self) {
+        self.pressed = None;
+    }
+
     /// Return drop target for drag and drop interactions.
     pub(crate) fn drop_target(&self) -> Option<&DropTarget> {
         self.drop_target.as_ref()
     }
 
+    /// Set drop target for drag and drop interactions.
+    pub(crate) fn set_drop_target(&mut self, target: Option<DropTarget>) {
+        self.drop_target = target;
+    }
+
+    /// Clear drop target for drag and drop interactions.
+    pub(crate) fn clear_drop_target(&mut self) {
+        self.drop_target = None;
+    }
+
+    /// Take and clear drop target.
+    pub(crate) fn take_drop_target(&mut self) -> Option<DropTarget> {
+        self.drop_target.take()
+    }
+
     /// Return drag state.
     pub(crate) fn drag(&self) -> Option<&DragState> {
         self.drag.as_ref()
+    }
+
+    /// Return mutable drag state.
+    pub(crate) fn drag_mut(&mut self) -> Option<&mut DragState> {
+        self.drag.as_mut()
+    }
+
+    /// Set drag state.
+    pub(crate) fn set_drag(&mut self, drag: Option<DragState>) {
+        self.drag = drag;
+    }
+
+    /// Clear drag state.
+    pub(crate) fn clear_drag(&mut self) {
+        self.drag = None;
+    }
+
+    /// Take and clear drag state.
+    pub(crate) fn take_drag(&mut self) -> Option<DragState> {
+        self.drag.take()
     }
 
     pub(crate) fn mark_dirty(&mut self) {
@@ -227,12 +425,32 @@ impl QuickLaunchState {
     pub(crate) fn fail_persist(&mut self) {
         self.persist_in_flight = false;
     }
+
+    /// Store or replace an error tab payload.
+    pub(crate) fn set_error_tab(
+        &mut self,
+        tab_id: u64,
+        error: QuickLaunchErrorState,
+    ) {
+        self.error_tabs.insert(tab_id, error);
+    }
+
+    /// Remove stored error payload for a closed tab.
+    pub(crate) fn remove_error_tab(&mut self, tab_id: u64) {
+        let _ = self.error_tabs.remove(&tab_id);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_blink_nonce_for_tests(&mut self, value: u64) {
+        self.blink_nonce = value;
+    }
 }
 
 impl Default for QuickLaunchState {
     fn default() -> Self {
         Self {
             data: QuickLaunchFile::empty(),
+            error_tabs: HashMap::new(),
             dirty: false,
             persist_in_flight: false,
             selected: None,

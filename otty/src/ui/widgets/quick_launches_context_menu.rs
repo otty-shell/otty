@@ -6,7 +6,7 @@ use iced::{Element, Length, Size, alignment};
 use super::services::{
     anchor_position, menu_height_for_items, menu_panel_style,
 };
-use crate::features::quick_launches::{
+use crate::features::quick_launch::{
     ContextMenuAction, ContextMenuState, ContextMenuTarget, LaunchInfo,
     NodePath, QuickLaunchEvent as FeatureQuickLaunchEvent,
 };

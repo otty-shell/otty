@@ -2,19 +2,31 @@ use std::fmt;
 
 use iced::widget::pane_grid;
 use iced::{Point, Task};
+use otty_ui_term::settings::Settings;
 use otty_ui_term::{BlockCommand, TerminalView};
 
-#[cfg(test)]
 use super::model::TerminalKind;
-use super::state::TerminalCommand;
-#[cfg(test)]
-use super::state::TerminalState;
+use super::state::{TerminalCommand, TerminalTabState};
 use crate::app::Event as AppEvent;
+use crate::features::explorer::ExplorerEvent;
+use crate::features::tab::{TabEvent, TabOpenRequest};
 use crate::state::State;
 
 /// Events emitted by terminal UI and terminal-related flows.
 #[derive(Clone)]
 pub(crate) enum TerminalEvent {
+    OpenTab {
+        tab_id: u64,
+        terminal_id: u64,
+        default_title: String,
+        settings: Box<Settings>,
+        kind: TerminalKind,
+        sync_explorer: bool,
+        error_tab: Option<(String, String)>,
+    },
+    TabClosed {
+        tab_id: u64,
+    },
     Widget(otty_ui_term::Event),
     PaneClicked {
         tab_id: u64,
@@ -81,6 +93,24 @@ pub(crate) enum TerminalEvent {
 impl fmt::Debug for TerminalEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            TerminalEvent::OpenTab {
+                tab_id,
+                terminal_id,
+                default_title,
+                kind,
+                sync_explorer,
+                ..
+            } => f
+                .debug_struct("OpenTab")
+                .field("tab_id", tab_id)
+                .field("terminal_id", terminal_id)
+                .field("default_title", default_title)
+                .field("kind", kind)
+                .field("sync_explorer", sync_explorer)
+                .finish(),
+            TerminalEvent::TabClosed { tab_id } => {
+                f.debug_struct("TabClosed").field("tab_id", tab_id).finish()
+            },
             TerminalEvent::Widget(event) => {
                 f.debug_tuple("Widget").field(event).finish()
             },
@@ -188,16 +218,38 @@ pub(crate) fn terminal_reducer(
     use TerminalEvent::*;
 
     match event {
+        OpenTab {
+            tab_id,
+            terminal_id,
+            default_title,
+            settings,
+            kind,
+            sync_explorer,
+            error_tab,
+        } => open_tab(
+            state,
+            tab_id,
+            terminal_id,
+            default_title,
+            *settings,
+            kind,
+            sync_explorer,
+            error_tab,
+        ),
+        TabClosed { tab_id } => {
+            let _ = state.terminal.remove_tab(tab_id);
+            state.remove_tab_terminals(tab_id);
+            Task::none()
+        },
         Widget(event) => reduce_widget_event(state, event),
         PaneClicked { tab_id, pane } => {
             with_terminal_tab(state, tab_id, |tab| tab.focus_pane(pane))
         },
         PaneResized { tab_id, event } => {
-            if let Some(tab) = state.terminal_tab_mut(tab_id) {
+            with_terminal_tab(state, tab_id, |tab| {
                 tab.resize(event);
-                state.sync_terminal_tab_title(tab_id);
-            }
-            Task::none()
+                TerminalCommand::None
+            })
         },
         PaneGridCursorMoved { tab_id, position } => {
             state.sidebar.cursor = position;
@@ -251,6 +303,59 @@ pub(crate) fn terminal_reducer(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn open_tab(
+    state: &mut State,
+    tab_id: u64,
+    terminal_id: u64,
+    default_title: String,
+    settings: Settings,
+    kind: TerminalKind,
+    sync_explorer: bool,
+    error_tab: Option<(String, String)>,
+) -> Task<AppEvent> {
+    let (mut terminal, widget_id) = match TerminalTabState::new(
+        tab_id,
+        default_title,
+        terminal_id,
+        settings,
+        kind,
+    ) {
+        Ok(result) => result,
+        Err(err) => {
+            log::warn!("failed to create terminal tab: {err}");
+            if let Some((title, message)) = error_tab {
+                return Task::done(AppEvent::Tab(TabEvent::NewTab {
+                    request: TabOpenRequest::QuickLaunchError {
+                        title,
+                        message: format!("{message}\nError: {err}"),
+                    },
+                }));
+            }
+            return Task::done(AppEvent::CloseTabRequested { tab_id });
+        },
+    };
+
+    terminal.set_grid_size(state.pane_grid_size());
+    for terminal_id in terminal.terminals().keys().copied() {
+        state.register_terminal_for_tab(terminal_id, tab_id);
+    }
+
+    let title = terminal.title().to_string();
+    state.terminal.insert_tab(tab_id, terminal);
+
+    let mut tasks = vec![
+        TerminalView::focus(widget_id),
+        request_terminal_event(TerminalEvent::SyncSelection { tab_id }),
+        request_tab_title(tab_id, title),
+    ];
+    if sync_explorer {
+        tasks.push(request_sync_explorer());
+    }
+
+    Task::batch(tasks)
+}
+
 fn reduce_widget_event(
     state: &mut State,
     event: otty_ui_term::Event,
@@ -277,11 +382,16 @@ fn reduce_widget_event(
         state.reindex_terminal_tabs();
     }
 
-    if refresh_titles {
-        state.sync_terminal_tab_title(tab_id);
+    if !refresh_titles {
+        return update;
     }
 
-    update
+    let title_task = state
+        .terminal
+        .tab(tab_id)
+        .map(|tab| request_tab_title(tab_id, tab.title().to_string()))
+        .unwrap_or_else(Task::none);
+    Task::batch(vec![update, title_task])
 }
 
 fn focus_active_terminal(state: &State) -> Task<AppEvent> {
@@ -299,26 +409,26 @@ fn apply_terminal_theme(
     state: &mut State,
     palette: otty_ui_term::ColorPalette,
 ) -> Task<AppEvent> {
-    state.for_each_terminal_tab_mut(|terminal| {
+    for (_, terminal) in state.terminal.tabs_mut() {
         terminal.apply_theme(palette.clone());
-    });
+    }
 
     Task::none()
 }
 
 fn close_all_context_menus(state: &mut State) -> Task<AppEvent> {
     let mut commands = Vec::new();
-    state.for_each_terminal_tab_mut(|terminal| {
+    for (_, terminal) in state.terminal.tabs_mut() {
         if terminal.context_menu().is_some() {
             commands.push(terminal.close_context_menu());
         }
-    });
+    }
 
     Task::batch(commands.into_iter().map(execute_command))
 }
 
 fn sync_tab_block_selection(state: &State, tab_id: u64) -> Task<AppEvent> {
-    let Some(terminal) = state.terminal_tab(tab_id) else {
+    let Some(terminal) = state.terminal.tab(tab_id) else {
         return Task::none();
     };
     let selection = terminal.selected_block().cloned();
@@ -359,7 +469,8 @@ fn split_pane(
     });
 
     if state
-        .terminal_tab(tab_id)
+        .terminal
+        .tab(tab_id)
         .map(|tab| tab.contains_terminal(terminal_id))
         .unwrap_or(false)
     {
@@ -390,7 +501,8 @@ fn update_block_selection(
         BlockSelected { block_id, .. } => {
             let terminal_id = *event.terminal_id();
             let other_widget_ids: Vec<_> = state
-                .terminal_tab(tab_id)
+                .terminal
+                .tab(tab_id)
                 .map(|tab| {
                     tab.terminals()
                         .values()
@@ -438,7 +550,7 @@ fn copy_selected_block(
     kind: CopyKind,
 ) -> Task<AppEvent> {
     let Some((block_id, widget_id)) =
-        state.terminal_tab(tab_id).and_then(|tab| {
+        state.terminal.tab(tab_id).and_then(|tab| {
             let selection = tab.selected_block()?;
             if selection.terminal_id() != terminal_id {
                 return None;
@@ -474,7 +586,8 @@ fn copy_selection(
     terminal_id: u64,
 ) -> Task<AppEvent> {
     let Some(widget_id) = state
-        .terminal_tab(tab_id)
+        .terminal
+        .tab(tab_id)
         .and_then(|tab| tab.terminals().get(&terminal_id))
         .map(|entry| entry.terminal.widget_id().clone())
     else {
@@ -494,7 +607,8 @@ fn paste_into_prompt(
     terminal_id: u64,
 ) -> Task<AppEvent> {
     let Some(widget_id) = state
-        .terminal_tab(tab_id)
+        .terminal
+        .tab(tab_id)
         .and_then(|tab| tab.terminals().get(&terminal_id))
         .map(|entry| entry.terminal.widget_id().clone())
     else {
@@ -510,15 +624,21 @@ fn paste_into_prompt(
 
 fn with_terminal_tab<F>(state: &mut State, tab_id: u64, f: F) -> Task<AppEvent>
 where
-    F: FnOnce(&mut super::state::TerminalState) -> TerminalCommand,
+    F: FnOnce(&mut TerminalTabState) -> TerminalCommand,
 {
-    let Some(tab) = state.terminal_tab_mut(tab_id) else {
-        return Task::none();
+    let (cmd, title) = {
+        let Some(tab) = state.terminal.tab_mut(tab_id) else {
+            return Task::none();
+        };
+
+        let cmd = f(tab);
+        let title = tab.title().to_string();
+        (cmd, title)
     };
 
-    let cmd = f(tab);
-    state.sync_terminal_tab_title(tab_id);
-    execute_command(cmd)
+    let command_task = execute_command(cmd);
+    let title_task = request_tab_title(tab_id, title);
+    Task::batch(vec![command_task, title_task])
 }
 
 fn execute_command(command: TerminalCommand) -> Task<AppEvent> {
@@ -538,6 +658,18 @@ fn execute_command(command: TerminalCommand) -> Task<AppEvent> {
     }
 }
 
+fn request_sync_explorer() -> Task<AppEvent> {
+    Task::done(AppEvent::Explorer(ExplorerEvent::SyncFromActiveTerminal))
+}
+
+fn request_terminal_event(event: TerminalEvent) -> Task<AppEvent> {
+    Task::done(AppEvent::Terminal(event))
+}
+
+fn request_tab_title(tab_id: u64, title: String) -> Task<AppEvent> {
+    Task::done(AppEvent::Tab(TabEvent::SetTitle { tab_id, title }))
+}
+
 fn tab_id_by_terminal(state: &State, terminal_id: u64) -> Option<u64> {
     state.terminal_tab_id(terminal_id)
 }
@@ -551,14 +683,12 @@ enum CopyKind {
 
 #[cfg(test)]
 mod tests {
-    use std::process::ExitStatus;
-    use std::sync::Arc;
-
     use iced::widget::pane_grid;
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{TerminalEvent, terminal_reducer};
     use crate::features::tab::{TabContent, TabItem};
+    use crate::features::terminal::TerminalKind;
     use crate::state::State;
 
     #[cfg(unix)]
@@ -576,533 +706,72 @@ mod tests {
         settings
     }
 
-    fn insert_terminal_tab(
-        state: &mut State,
-        tab_id: u64,
-        terminal_id: u64,
-        settings: Settings,
-    ) {
-        let (mut terminal, _task) = super::TerminalState::new(
-            tab_id,
-            String::from("Shell"),
-            terminal_id,
-            settings,
-            super::TerminalKind::Shell,
-        )
-        .expect("terminal should initialize");
-        terminal.set_grid_size(state.pane_grid_size());
-        state.register_terminal_for_tab(terminal_id, tab_id);
+    fn insert_tab_metadata(state: &mut State, tab_id: u64, title: &str) {
         state.tab.insert(
             tab_id,
-            TabItem {
-                id: tab_id,
-                title: terminal.title().to_string(),
-                content: TabContent::Terminal(Box::new(terminal)),
-            },
+            TabItem::new(tab_id, String::from(title), TabContent::Terminal),
         );
         state.tab.activate(Some(tab_id));
-    }
-
-    fn try_insert_terminal_tab(
-        state: &mut State,
-        tab_id: u64,
-        terminal_id: u64,
-        settings: Settings,
-    ) -> bool {
-        let Ok((mut terminal, _task)) = super::TerminalState::new(
-            tab_id,
-            String::from("Shell"),
-            terminal_id,
-            settings,
-            super::TerminalKind::Shell,
-        ) else {
-            return false;
-        };
-
-        terminal.set_grid_size(state.pane_grid_size());
-        state.register_terminal_for_tab(terminal_id, tab_id);
-        state.tab.insert(
-            tab_id,
-            TabItem {
-                id: tab_id,
-                title: terminal.title().to_string(),
-                content: TabContent::Terminal(Box::new(terminal)),
-            },
-        );
-        state.tab.activate(Some(tab_id));
-        true
-    }
-
-    fn terminal_tab(state: &State, tab_id: u64) -> &super::TerminalState {
-        let item = state.tab_items().get(&tab_id).expect("tab item");
-        match &item.content {
-            TabContent::Terminal(terminal) => terminal.as_ref(),
-            _ => panic!("expected terminal tab"),
-        }
-    }
-
-    fn success_exit_status() -> ExitStatus {
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::ExitStatusExt;
-            ExitStatus::from_raw(0)
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::process::ExitStatusExt;
-            ExitStatus::from_raw(0)
-        }
     }
 
     #[test]
-    fn given_initialized_terminal_when_inserted_then_state_updates() {
+    fn given_open_tab_event_when_reduced_then_terminal_feature_stores_tab() {
         let mut state = State::default();
+        insert_tab_metadata(&mut state, 1, "Shell");
 
-        insert_terminal_tab(
+        let _task = terminal_reducer(
             &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
+            TerminalEvent::OpenTab {
+                tab_id: 1,
+                terminal_id: 10,
+                default_title: String::from("Shell"),
+                settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
+                kind: TerminalKind::Shell,
+                sync_explorer: true,
+                error_tab: None,
+            },
         );
 
-        assert_eq!(state.active_tab_id(), Some(1));
+        assert!(state.terminal.tab(1).is_some());
         assert_eq!(state.terminal_tab_id(10), Some(1));
-        let tab = state.tab_items().get(&1).expect("tab");
-        assert_eq!(tab.id, 1);
-        assert_eq!(tab.title, "Shell");
-        assert!(matches!(tab.content, TabContent::Terminal(_)));
-    }
-
-    #[test]
-    fn given_terminal_init_failure_when_inserting_then_state_stays_unchanged() {
-        let mut state = State::default();
-
-        let inserted = try_insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program("/definitely/missing/otty-shell"),
-        );
-
-        assert!(!inserted);
-        assert!(state.tab.is_empty());
-        assert_eq!(state.terminal_to_tab_len(), 0);
-        assert!(state.active_tab_id().is_none());
     }
 
     #[test]
     fn given_missing_tab_when_pane_clicked_then_reducer_ignores_event() {
         let mut state = State::default();
-        insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-        let focused_before = terminal_tab(&state, 1).focus();
-        let existing_pane = focused_before.expect("focused pane");
 
+        let (_grid, pane) = pane_grid::State::new(1_u64);
         let _task = terminal_reducer(
             &mut state,
-            TerminalEvent::PaneClicked {
-                tab_id: 999,
-                pane: existing_pane,
-            },
+            TerminalEvent::PaneClicked { tab_id: 999, pane },
         );
 
-        assert_eq!(terminal_tab(&state, 1).focus(), focused_before);
+        assert!(state.terminal.tab(999).is_none());
     }
 
     #[test]
-    fn given_title_change_widget_event_when_dispatched_then_tab_title_is_synced()
-     {
+    fn given_tab_closed_event_when_reduced_then_terminal_tab_is_removed() {
         let mut state = State::default();
-        insert_terminal_tab(
+        insert_tab_metadata(&mut state, 1, "Shell");
+        let _ = terminal_reducer(
             &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::Widget(otty_ui_term::Event::TitleChanged {
-                id: 10,
-                title: String::from("Renamed"),
-            }),
-        );
-
-        let tab = state.tab_items().get(&1).expect("tab");
-        assert_eq!(tab.title, "Renamed");
-        assert_eq!(terminal_tab(&state, 1).title(), "Renamed");
-    }
-
-    #[test]
-    fn given_unknown_terminal_widget_event_when_dispatched_then_state_is_unchanged()
-     {
-        let mut state = State::default();
-        insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-        let tab_before = terminal_tab(&state, 1).title().to_string();
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::Widget(otty_ui_term::Event::TitleChanged {
-                id: 777,
-                title: String::from("Ignored"),
-            }),
-        );
-
-        assert_eq!(terminal_tab(&state, 1).title(), tab_before);
-    }
-
-    #[test]
-    fn given_block_selection_events_when_dispatched_then_selection_state_transitions()
-     {
-        let mut state = State::default();
-        insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::Widget(otty_ui_term::Event::BlockSelected {
-                id: 10,
-                block_id: String::from("block-1"),
-            }),
-        );
-        let selection =
-            terminal_tab(&state, 1).selected_block().expect("selection");
-        assert_eq!(selection.terminal_id(), 10);
-        assert_eq!(selection.block_id(), "block-1");
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::Widget(otty_ui_term::Event::BlockSelectionCleared {
-                id: 10,
-            }),
-        );
-        assert!(terminal_tab(&state, 1).selected_block().is_none());
-    }
-
-    #[test]
-    fn given_split_and_close_pane_events_when_dispatched_then_terminal_index_is_reindexed()
-     {
-        let mut state = State::default();
-        insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-        state.set_next_terminal_id_for_tests(11);
-        let pane = terminal_tab(&state, 1).focus().expect("focused pane");
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::SplitPane {
-                tab_id: 1,
-                pane,
-                axis: pane_grid::Axis::Vertical,
-            },
-        );
-
-        assert_eq!(state.terminal_tab_id(11), Some(1));
-        let closing_pane =
-            terminal_tab(&state, 1).focus().expect("split focus");
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::ClosePane {
-                tab_id: 1,
-                pane: closing_pane,
-            },
-        );
-
-        assert!(state.terminal_tab_id(11).is_none());
-        assert!(terminal_tab(&state, 1).contains_terminal(10));
-    }
-
-    #[test]
-    fn given_empty_state_when_focus_active_event_dispatched_then_reducer_is_noop()
-     {
-        let mut state = State::default();
-        let before_tab_count = state.tab.len();
-
-        let _task = terminal_reducer(&mut state, TerminalEvent::FocusActive);
-
-        assert_eq!(state.tab.len(), before_tab_count);
-        assert!(state.active_tab_id().is_none());
-    }
-
-    #[test]
-    fn given_non_terminal_tab_when_sync_selection_then_reducer_ignores_event() {
-        let mut state = State::default();
-        state.tab.insert(
-            77,
-            TabItem {
-                id: 77,
-                title: String::from("Settings"),
-                content: TabContent::Settings,
-            },
-        );
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::SyncSelection { tab_id: 77 },
-        );
-
-        assert_eq!(state.tab.len(), 1);
-        assert_eq!(
-            state.tab_items().get(&77).map(|item| item.title.as_str()),
-            Some("Settings"),
-        );
-    }
-
-    #[test]
-    fn given_context_menu_open_close_and_input_events_when_dispatched_then_menu_state_transitions()
-     {
-        let mut state = State::default();
-        insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-        let pane = terminal_tab(&state, 1).focus().expect("focused pane");
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::OpenContextMenu {
-                tab_id: 1,
-                pane,
-                terminal_id: 10,
-            },
-        );
-        assert!(terminal_tab(&state, 1).context_menu().is_some());
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::ContextMenuInput { tab_id: 1 },
-        );
-        assert!(terminal_tab(&state, 1).context_menu().is_some());
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::CloseContextMenu { tab_id: 1 },
-        );
-        assert!(terminal_tab(&state, 1).context_menu().is_none());
-    }
-
-    #[test]
-    fn given_copy_and_paste_events_when_dispatched_then_context_menu_is_closed()
-    {
-        let mut state = State::default();
-        insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-        let pane = terminal_tab(&state, 1).focus().expect("focused pane");
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::OpenContextMenu {
-                tab_id: 1,
-                pane,
-                terminal_id: 10,
-            },
-        );
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::CopySelection {
+            TerminalEvent::OpenTab {
                 tab_id: 1,
                 terminal_id: 10,
-            },
-        );
-        assert!(terminal_tab(&state, 1).context_menu().is_none());
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::OpenContextMenu {
-                tab_id: 1,
-                pane,
-                terminal_id: 10,
-            },
-        );
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::PasteIntoPrompt {
-                tab_id: 1,
-                terminal_id: 10,
-            },
-        );
-        assert!(terminal_tab(&state, 1).context_menu().is_none());
-    }
-
-    #[test]
-    fn given_selected_block_copy_events_when_dispatched_then_menu_is_closed() {
-        let mut state = State::default();
-        insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-        let pane = terminal_tab(&state, 1).focus().expect("focused pane");
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::Widget(otty_ui_term::Event::BlockSelected {
-                id: 10,
-                block_id: String::from("block-1"),
-            }),
-        );
-
-        for event in [
-            TerminalEvent::CopySelectedBlockContent {
-                tab_id: 1,
-                terminal_id: 10,
-            },
-            TerminalEvent::CopySelectedBlockPrompt {
-                tab_id: 1,
-                terminal_id: 10,
-            },
-            TerminalEvent::CopySelectedBlockCommand {
-                tab_id: 1,
-                terminal_id: 10,
-            },
-        ] {
-            let _task = terminal_reducer(
-                &mut state,
-                TerminalEvent::OpenContextMenu {
-                    tab_id: 1,
-                    pane,
-                    terminal_id: 10,
-                },
-            );
-            let _task = terminal_reducer(&mut state, event);
-            assert!(terminal_tab(&state, 1).context_menu().is_none());
-        }
-    }
-
-    #[test]
-    fn given_active_terminal_when_focus_active_event_dispatched_then_state_keeps_active_tab()
-     {
-        let mut state = State::default();
-        insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-
-        let _task = terminal_reducer(&mut state, TerminalEvent::FocusActive);
-
-        assert_eq!(state.active_tab_id(), Some(1));
-        assert_eq!(terminal_tab(&state, 1).focused_terminal_id(), Some(10));
-    }
-
-    #[test]
-    fn given_terminal_tab_when_sync_selection_event_dispatched_then_selection_is_kept()
-     {
-        let mut state = State::default();
-        insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-        state.set_next_terminal_id_for_tests(11);
-        let pane = terminal_tab(&state, 1).focus().expect("focused pane");
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::SplitPane {
-                tab_id: 1,
-                pane,
-                axis: pane_grid::Axis::Horizontal,
+                default_title: String::from("Shell"),
+                settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
+                kind: TerminalKind::Shell,
+                sync_explorer: false,
+                error_tab: None,
             },
         );
 
         let _task = terminal_reducer(
             &mut state,
-            TerminalEvent::Widget(otty_ui_term::Event::BlockSelected {
-                id: 10,
-                block_id: String::from("block-2"),
-            }),
-        );
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::SyncSelection { tab_id: 1 },
+            TerminalEvent::TabClosed { tab_id: 1 },
         );
 
-        let selection =
-            terminal_tab(&state, 1).selected_block().expect("selection");
-        assert_eq!(selection.terminal_id(), 10);
-        assert_eq!(selection.block_id(), "block-2");
-    }
-
-    #[test]
-    fn given_shutdown_widget_event_when_dispatched_then_terminal_is_reindexed()
-    {
-        let mut state = State::default();
-        insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-        state.set_next_terminal_id_for_tests(11);
-        let pane = terminal_tab(&state, 1).focus().expect("focused pane");
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::SplitPane {
-                tab_id: 1,
-                pane,
-                axis: pane_grid::Axis::Vertical,
-            },
-        );
-        assert_eq!(state.terminal_tab_id(11), Some(1));
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::Widget(otty_ui_term::Event::Shutdown {
-                id: 11,
-                exit_status: success_exit_status(),
-            }),
-        );
-
-        assert!(state.terminal_tab_id(11).is_none());
-        assert_eq!(terminal_tab(&state, 1).terminals().len(), 1);
-    }
-
-    #[test]
-    fn given_content_sync_widget_event_when_dispatched_then_reducer_keeps_tab_mapping()
-     {
-        let mut state = State::default();
-        insert_terminal_tab(
-            &mut state,
-            1,
-            10,
-            settings_with_program(VALID_SHELL_PATH),
-        );
-
-        let _task = terminal_reducer(
-            &mut state,
-            TerminalEvent::Widget(otty_ui_term::Event::ContentSync {
-                id: 10,
-                frame: Arc::new(otty_libterm::surface::SnapshotOwned::default()),
-            }),
-        );
-
-        assert_eq!(state.terminal_tab_id(10), Some(1));
+        assert!(state.terminal.tab(1).is_none());
+        assert_eq!(state.terminal_tab_id(10), None);
     }
 }

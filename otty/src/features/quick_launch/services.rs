@@ -15,9 +15,22 @@ use super::model::{
     QuickLaunch, QuickLaunchSetupOutcome, SshCommand, validate_custom_command,
     validate_ssh_command,
 };
+use super::state::QuickLaunchState;
+use super::storage::load_quick_launches;
 use crate::features::terminal::terminal_settings_for_session;
 
 const QUICK_LAUNCH_SSH_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Load quick launch state synchronously at startup.
+pub(crate) fn load_initial_quick_launch_state() -> QuickLaunchState {
+    match load_quick_launches() {
+        Ok(data) => QuickLaunchState::from_data(data),
+        Err(err) => {
+            log::warn!("quick launches read failed: {err}");
+            QuickLaunchState::default()
+        },
+    }
+}
 
 /// Build runtime data required for starting a quick launch terminal session.
 pub(crate) async fn prepare_quick_launch_setup(

@@ -1,14 +1,15 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use iced::widget::pane_grid;
 use iced::{Point, Size};
 
-use crate::features::explorer::ExplorerState;
-use crate::features::quick_launches::{self, QuickLaunchState};
+use crate::features::explorer::{ExplorerState, ExplorerWritePermit};
+use crate::features::quick_launch::{self, QuickLaunchState};
+use crate::features::quick_launch_wizard::QuickLaunchWizardState;
 use crate::features::settings::SettingsState;
-use crate::features::tab::{TabContent, TabItem, TabState};
-use crate::features::terminal::TerminalState;
+use crate::features::tab::{TabItem, TabState};
+use crate::features::terminal::{TerminalState, TerminalTabState};
 use crate::ui::widgets::tab_bar;
 
 /// Fixed width of the sidebar menu rail.
@@ -117,13 +118,15 @@ pub(crate) struct SidebarAddMenuState {
 #[derive(Default)]
 pub(crate) struct State {
     pub(crate) tab: TabState,
+    pub(crate) terminal: TerminalState,
+    pub(crate) quick_launch_wizard: QuickLaunchWizardState,
     terminal_to_tab: HashMap<u64, u64>,
     next_terminal_id: u64,
     pub(crate) window_size: Size,
     pub(crate) screen_size: Size,
     pub(crate) sidebar: SidebarState,
     pub(crate) quick_launches: QuickLaunchState,
-    pub(crate) explorer: ExplorerState,
+    explorer: ExplorerState,
     pub(crate) settings: SettingsState,
 }
 
@@ -133,7 +136,7 @@ impl State {
         screen_size: Size,
         settings: SettingsState,
     ) -> Self {
-        let quick_launches = quick_launches::bootstrap_quick_launches();
+        let quick_launches = quick_launch::load_initial_quick_launch_state();
         Self {
             window_size,
             screen_size,
@@ -145,12 +148,19 @@ impl State {
         }
     }
 
-    pub(crate) fn tab_items(&self) -> &BTreeMap<u64, TabItem> {
-        self.tab.tab_items()
-    }
-
     pub(crate) fn active_tab_id(&self) -> Option<u64> {
         self.tab.active_tab_id()
+    }
+
+    pub(crate) fn explorer(&self) -> &ExplorerState {
+        &self.explorer
+    }
+
+    pub(crate) fn explorer_mut(
+        &mut self,
+        _permit: ExplorerWritePermit,
+    ) -> &mut ExplorerState {
+        &mut self.explorer
     }
 
     pub(crate) fn allocate_tab_id(&mut self) -> u64 {
@@ -163,20 +173,15 @@ impl State {
         terminal_id
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_next_terminal_id_for_tests(&mut self, value: u64) {
-        self.next_terminal_id = value;
-    }
-
     pub(crate) fn active_tab_title(&self) -> Option<&str> {
-        self.tab.active_tab().map(|tab| tab.title.as_str())
+        self.tab.active_tab().map(|tab| tab.title())
     }
 
     pub(crate) fn tab_summaries(&self) -> Vec<(u64, &str)> {
         self.tab
             .tab_items()
             .iter()
-            .map(|(id, item)| (*id, item.title.as_str()))
+            .map(|(id, item)| (*id, item.title()))
             .collect()
     }
 
@@ -184,52 +189,16 @@ impl State {
         self.tab.active_tab()
     }
 
-    pub(crate) fn active_terminal_tab(&self) -> Option<&TerminalState> {
+    pub(crate) fn active_terminal_tab(&self) -> Option<&TerminalTabState> {
         let tab_id = self.active_tab_id()?;
         self.terminal_tab(tab_id)
     }
 
-    pub(crate) fn terminal_tab(&self, tab_id: u64) -> Option<&TerminalState> {
-        self.tab
-            .tab_items()
-            .get(&tab_id)
-            .and_then(|tab| match &tab.content {
-                TabContent::Terminal(terminal) => Some(terminal.as_ref()),
-                _ => None,
-            })
-    }
-
-    pub(crate) fn terminal_tab_mut(
-        &mut self,
+    pub(crate) fn terminal_tab(
+        &self,
         tab_id: u64,
-    ) -> Option<&mut TerminalState> {
-        self.tab
-            .tab_item_mut(tab_id)
-            .and_then(|tab| match &mut tab.content {
-                TabContent::Terminal(terminal) => Some(terminal.as_mut()),
-                _ => None,
-            })
-    }
-
-    pub(crate) fn for_each_terminal_tab_mut<F>(&mut self, mut f: F)
-    where
-        F: FnMut(&mut TerminalState),
-    {
-        for tab in self.tab.tab_values_mut() {
-            if let TabContent::Terminal(terminal) = &mut tab.content {
-                f(terminal.as_mut());
-            }
-        }
-    }
-
-    pub(crate) fn sync_terminal_tab_title(&mut self, tab_id: u64) {
-        let Some(tab) = self.tab.tab_item_mut(tab_id) else {
-            return;
-        };
-
-        if let TabContent::Terminal(terminal) = &tab.content {
-            tab.title = terminal.title().to_string();
-        }
+    ) -> Option<&TerminalTabState> {
+        self.terminal.tab(tab_id)
     }
 
     pub(crate) fn set_screen_size(&mut self, size: Size) {
@@ -256,21 +225,17 @@ impl State {
 
     pub(crate) fn reindex_terminal_tabs(&mut self) {
         self.terminal_to_tab.clear();
-        for (&tab_id, tab) in self.tab.tab_items() {
-            if let TabContent::Terminal(terminal) = &tab.content {
-                for terminal_id in terminal.terminals().keys().copied() {
-                    self.terminal_to_tab.insert(terminal_id, tab_id);
-                }
+        for (&tab_id, tab) in self.terminal.tabs() {
+            for terminal_id in tab.terminals().keys().copied() {
+                self.terminal_to_tab.insert(terminal_id, tab_id);
             }
         }
     }
 
     pub(crate) fn sync_tab_grid_sizes(&mut self) {
         let size = self.pane_grid_size();
-        for tab in self.tab.tab_values_mut() {
-            if let TabContent::Terminal(terminal) = &mut tab.content {
-                terminal.set_grid_size(size);
-            }
+        for (_, tab) in self.terminal.tabs_mut() {
+            tab.set_grid_size(size);
         }
     }
 
@@ -286,10 +251,5 @@ impl State {
         let workspace_ratio = self.sidebar.effective_workspace_ratio();
         let width = (available_width * (1.0 - workspace_ratio)).max(0.0);
         Size::new(width, height)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn terminal_to_tab_len(&self) -> usize {
-        self.terminal_to_tab.len()
     }
 }

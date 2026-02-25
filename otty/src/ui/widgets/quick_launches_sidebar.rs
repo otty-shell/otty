@@ -7,7 +7,7 @@ use iced::{Color, Element, Length, alignment};
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 use super::services as helpers;
-use crate::features::quick_launches::{
+use crate::features::quick_launch::{
     DropTarget, InlineEditKind, InlineEditState, LaunchInfo,
     QuickLaunchEvent as FeatureQuickLaunchEvent, QuickLaunchNode,
     QuickLaunchState,

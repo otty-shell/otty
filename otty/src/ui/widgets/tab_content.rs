@@ -1,9 +1,11 @@
 use iced::widget::{container, text};
 use iced::{Element, Length, Theme, alignment};
 
+use crate::features::quick_launch::QuickLaunchState;
+use crate::features::quick_launch_wizard::QuickLaunchWizardState;
 use crate::features::settings::SettingsState;
 use crate::features::tab::{TabContent, TabItem};
-use crate::features::terminal::TerminalEvent;
+use crate::features::terminal::{TerminalEvent, TerminalState};
 use crate::theme::ThemeProps;
 use crate::ui::widgets::{
     quick_launches_error, quick_launches_wizard, settings, terminal_tab,
@@ -13,6 +15,9 @@ use crate::ui::widgets::{
 #[derive(Clone, Copy)]
 pub(crate) struct TabContentProps<'a> {
     pub(crate) active_tab: Option<&'a TabItem>,
+    pub(crate) terminal: &'a TerminalState,
+    pub(crate) quick_launch_wizard: &'a QuickLaunchWizardState,
+    pub(crate) quick_launches: &'a QuickLaunchState,
     pub(crate) settings: &'a SettingsState,
     pub(crate) theme: ThemeProps<'a>,
 }
@@ -36,9 +41,14 @@ pub(crate) fn view<'a>(
 
     let main_content: Element<'a, TabContentEvent, Theme, iced::Renderer> =
         match props.active_tab {
-            Some(tab) => match &tab.content {
-                TabContent::Terminal(terminal) => {
-                    let tab_id = tab.id;
+            Some(tab) => match tab.content() {
+                TabContent::Terminal => {
+                    let tab_id = tab.id();
+                    let Some(terminal) = props.terminal.tab(tab_id) else {
+                        return missing_tab_state(
+                            "Terminal tab is not initialized.",
+                        );
+                    };
                     terminal_tab::view(terminal_tab::TerminalTabProps {
                         tab_id,
                         panes: terminal.panes(),
@@ -54,8 +64,14 @@ pub(crate) fn view<'a>(
                     })
                     .map(TabContentEvent::Settings)
                 },
-                TabContent::QuickLaunchWizard(editor) => {
-                    let tab_id = tab.id;
+                TabContent::QuickLaunchWizard => {
+                    let tab_id = tab.id();
+                    let Some(editor) = props.quick_launch_wizard.editor(tab_id)
+                    else {
+                        return missing_tab_state(
+                            "Quick launch editor is not initialized.",
+                        );
+                    };
                     quick_launches_wizard::view(
                         quick_launches_wizard::QuickLaunchesWizardProps {
                             editor,
@@ -66,7 +82,14 @@ pub(crate) fn view<'a>(
                         TabContentEvent::QuickLaunchWizard { tab_id, event }
                     })
                 },
-                TabContent::QuickLaunchError(error) => {
+                TabContent::QuickLaunchError => {
+                    let tab_id = tab.id();
+                    let Some(error) = props.quick_launches.error_tab(tab_id)
+                    else {
+                        return missing_tab_state(
+                            "Quick launch error payload is missing.",
+                        );
+                    };
                     quick_launches_error::view(
                         quick_launches_error::QuickLaunchesErrorProps {
                             error,
@@ -85,4 +108,15 @@ pub(crate) fn view<'a>(
         };
 
     main_content
+}
+
+fn missing_tab_state<'a>(
+    message: &'static str,
+) -> Element<'a, TabContentEvent, Theme, iced::Renderer> {
+    container(text(message))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(alignment::Horizontal::Center)
+        .align_y(alignment::Vertical::Center)
+        .into()
 }

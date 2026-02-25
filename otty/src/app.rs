@@ -15,15 +15,12 @@ use crate::features::explorer::{self, ExplorerDeps, ExplorerEvent};
 use crate::features::quick_launch_wizard::{
     QuickLaunchWizardDeps, QuickLaunchWizardEvent, quick_launch_wizard_reducer,
 };
-use crate::features::quick_launches::{self as quick_launches};
-use crate::features::settings;
-use crate::features::tab::{
-    TabContent, TabDeps, TabEvent, TabOpenRequest, tab_reducer,
-};
+use crate::features::tab::{TabDeps, TabEvent, TabOpenRequest, tab_reducer};
 use crate::features::terminal::{
     ShellSession, TerminalEvent, fallback_shell_session_with_shell,
     setup_shell_session_with_shell, terminal_reducer,
 };
+use crate::features::{quick_launch, settings};
 use crate::fonts::FontsConfig;
 use crate::state::{
     SIDEBAR_COLLAPSE_WORKSPACE_RATIO, SIDEBAR_DEFAULT_WORKSPACE_RATIO,
@@ -54,7 +51,7 @@ pub(crate) enum Event {
     Sidebar(sidebar_menu::SidebarMenuEvent),
     SidebarWorkspace(sidebar_workspace::SidebarWorkspaceEvent),
     Explorer(ExplorerEvent),
-    QuickLaunch(quick_launches::QuickLaunchEvent),
+    QuickLaunch(quick_launch::QuickLaunchEvent),
     Tab(TabEvent),
     CloseTabRequested {
         tab_id: u64,
@@ -66,7 +63,7 @@ pub(crate) enum Event {
     },
     Settings(settings::SettingsEvent),
     SettingsApplied(settings::SettingsData),
-    QuickLaunchSetupCompleted(Box<quick_launches::QuickLaunchSetupOutcome>),
+    QuickLaunchSetupCompleted(Box<quick_launch::QuickLaunchSetupOutcome>),
     QuickLaunchTick,
     Keyboard(iced::keyboard::Event),
     Window(window::Event),
@@ -85,7 +82,7 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) fn new() -> (Self, Task<Event>) {
-        let settings_state = settings::bootstrap_settings();
+        let settings_state = settings::load_initial_settings_state();
         let mut theme_manager = ThemeManager::new();
         let settings_palette = settings_state.draft().to_color_palette();
         theme_manager.set_custom_palette(settings_palette);
@@ -135,16 +132,14 @@ impl App {
 
     pub(crate) fn subscription(&self) -> Subscription<Event> {
         let mut subscriptions = Vec::new();
-        for (&tab_id, tab) in self.state.tab_items() {
-            if let TabContent::Terminal(terminal) = &tab.content {
-                for entry in terminal.terminals().values() {
-                    let sub = entry.terminal.subscription().with(tab_id).map(
-                        |(_tab_id, event)| {
-                            Event::Terminal(TerminalEvent::Widget(event))
-                        },
-                    );
-                    subscriptions.push(sub);
-                }
+        for (&tab_id, terminal) in self.state.terminal.tabs() {
+            for entry in terminal.terminals().values() {
+                let sub = entry.terminal.subscription().with(tab_id).map(
+                    |(_tab_id, event)| {
+                        Event::Terminal(TerminalEvent::Widget(event))
+                    },
+                );
+                subscriptions.push(sub);
             }
         }
 
@@ -160,7 +155,7 @@ impl App {
         {
             subs.push(
                 iced::time::every(Duration::from_millis(
-                    quick_launches::QUICK_LAUNCHES_TICK_MS,
+                    quick_launch::QUICK_LAUNCHES_TICK_MS,
                 ))
                 .map(|_| Event::QuickLaunchTick),
             );
@@ -174,10 +169,12 @@ impl App {
         if self.state.quick_launches.inline_edit().is_some()
             && should_cancel_inline_edit(&event)
         {
-            pre_dispatch_tasks.push(quick_launches::quick_launches_reducer(
+            pre_dispatch_tasks.push(quick_launch::quick_launches_reducer(
                 &mut self.state,
-                &self.terminal_settings,
-                quick_launches::QuickLaunchEvent::CancelInlineEdit,
+                quick_launch::QuickLaunchesDeps {
+                    terminal_settings: &self.terminal_settings,
+                },
+                quick_launch::QuickLaunchEvent::CancelInlineEdit,
             ));
         }
 
@@ -222,9 +219,11 @@ impl App {
             ActionBar(event) => self.handle_action_bar(event),
             Sidebar(event) => self.handle_sidebar(event),
             SidebarWorkspace(event) => self.handle_sidebar_workspace(event),
-            QuickLaunch(event) => quick_launches::quick_launches_reducer(
+            QuickLaunch(event) => quick_launch::quick_launches_reducer(
                 &mut self.state,
-                &self.terminal_settings,
+                quick_launch::QuickLaunchesDeps {
+                    terminal_settings: &self.terminal_settings,
+                },
                 event,
             ),
             Tab(event) => tab_reducer(
@@ -257,11 +256,11 @@ impl App {
             },
             QuickLaunchSetupCompleted(result) => {
                 Task::done(Event::QuickLaunch(
-                    quick_launches::QuickLaunchEvent::SetupCompleted(*result),
+                    quick_launch::QuickLaunchEvent::SetupCompleted(*result),
                 ))
             },
             QuickLaunchTick => Task::done(Event::QuickLaunch(
-                quick_launches::QuickLaunchEvent::Tick,
+                quick_launch::QuickLaunchEvent::Tick,
             )),
             Terminal(event) => {
                 let sync_task = self.terminal_sync_followup(&event);
@@ -298,10 +297,12 @@ impl App {
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
             ) && self.state.quick_launches.inline_edit().is_some()
             {
-                return quick_launches::quick_launches_reducer(
+                return quick_launch::quick_launches_reducer(
                     &mut self.state,
-                    &self.terminal_settings,
-                    quick_launches::QuickLaunchEvent::CancelInlineEdit,
+                    quick_launch::QuickLaunchesDeps {
+                        terminal_settings: &self.terminal_settings,
+                    },
+                    quick_launch::QuickLaunchEvent::CancelInlineEdit,
                 );
             }
 
@@ -310,10 +311,12 @@ impl App {
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete)
             ) && self.state.quick_launches.inline_edit().is_none()
             {
-                return quick_launches::quick_launches_reducer(
+                return quick_launch::quick_launches_reducer(
                     &mut self.state,
-                    &self.terminal_settings,
-                    quick_launches::QuickLaunchEvent::DeleteSelected,
+                    quick_launch::QuickLaunchesDeps {
+                        terminal_settings: &self.terminal_settings,
+                    },
+                    quick_launch::QuickLaunchEvent::DeleteSelected,
                 );
             }
         }
@@ -411,6 +414,9 @@ impl App {
 
             let content = tab_content::view(tab_content::TabContentProps {
                 active_tab: self.state.active_tab(),
+                terminal: &self.state.terminal,
+                quick_launch_wizard: &self.state.quick_launch_wizard,
+                quick_launches: &self.state.quick_launches,
                 settings: &self.state.settings,
                 theme: theme_props,
             })
@@ -459,7 +465,7 @@ impl App {
                                     sidebar_state.sidebar.active_item,
                                 ),
                                 quick_launches: &sidebar_state.quick_launches,
-                                explorer: &sidebar_state.explorer,
+                                explorer: sidebar_state.explorer(),
                                 theme: theme_props,
                             },
                         )
@@ -484,6 +490,9 @@ impl App {
                         let content = tab_content::view(
                             tab_content::TabContentProps {
                                 active_tab: sidebar_state.active_tab(),
+                                terminal: &sidebar_state.terminal,
+                                quick_launch_wizard: &sidebar_state.quick_launch_wizard,
+                                quick_launches: &sidebar_state.quick_launches,
                                 settings: &sidebar_state.settings,
                                 theme: theme_props,
                             },
@@ -643,17 +652,21 @@ impl App {
                         },
                     ),
                     sidebar_workspace::SidebarWorkspaceAddMenuAction::CreateCommand => {
-                        quick_launches::quick_launches_reducer(
+                        quick_launch::quick_launches_reducer(
                             &mut self.state,
-                            &self.terminal_settings,
-                            quick_launches::QuickLaunchEvent::HeaderCreateCommand,
+                            quick_launch::QuickLaunchesDeps {
+                                terminal_settings: &self.terminal_settings,
+                            },
+                            quick_launch::QuickLaunchEvent::HeaderCreateCommand,
                         )
                     },
                     sidebar_workspace::SidebarWorkspaceAddMenuAction::CreateFolder => {
-                        quick_launches::quick_launches_reducer(
+                        quick_launch::quick_launches_reducer(
                             &mut self.state,
-                            &self.terminal_settings,
-                            quick_launches::QuickLaunchEvent::HeaderCreateFolder,
+                            quick_launch::QuickLaunchesDeps {
+                                terminal_settings: &self.terminal_settings,
+                            },
+                            quick_launch::QuickLaunchEvent::HeaderCreateFolder,
                         )
                     },
                 }
@@ -719,10 +732,12 @@ impl App {
 
     fn handle_sidebar_resize(&mut self, event: pane_grid::ResizeEvent) {
         self.state.sidebar.mark_resizing();
-        let _task = quick_launches::quick_launches_reducer(
+        let _task = quick_launch::quick_launches_reducer(
             &mut self.state,
-            &self.terminal_settings,
-            quick_launches::QuickLaunchEvent::ResetInteractionState,
+            quick_launch::QuickLaunchesDeps {
+                terminal_settings: &self.terminal_settings,
+            },
+            quick_launch::QuickLaunchEvent::ResetInteractionState,
         );
         let max_ratio = max_sidebar_workspace_ratio();
 
@@ -792,21 +807,20 @@ impl App {
             return true;
         }
 
-        self.state.tab_items().values().any(|tab| {
-            matches!(
-                &tab.content,
-                TabContent::Terminal(terminal)
-                    if terminal.context_menu().is_some()
-            )
-        })
+        self.state
+            .terminal
+            .tabs()
+            .any(|(_, tab)| tab.context_menu().is_some())
     }
 
     fn close_all_context_menus(&mut self) -> Task<Event> {
         self.state.sidebar.add_menu = None;
-        let quick_launch_task = quick_launches::quick_launches_reducer(
+        let quick_launch_task = quick_launch::quick_launches_reducer(
             &mut self.state,
-            &self.terminal_settings,
-            quick_launches::QuickLaunchEvent::ContextMenuDismiss,
+            quick_launch::QuickLaunchesDeps {
+                terminal_settings: &self.terminal_settings,
+            },
+            quick_launch::QuickLaunchEvent::ContextMenuDismiss,
         );
         let terminal_task = terminal_reducer(
             &mut self.state,
@@ -853,29 +867,25 @@ impl App {
             );
         }
 
-        for tab in self.state.tab_items().values() {
-            if let TabContent::Terminal(terminal) = &tab.content {
-                if let Some(menu) = terminal.context_menu() {
-                    let has_block_selection = terminal
-                        .selected_block_terminal()
-                        == Some(menu.terminal_id());
-                    let tab_id = tab.id;
-                    return Some(
-                        terminal_pane_context_menu::view(
-                            terminal_pane_context_menu::TerminalPaneContextMenuProps {
-                                tab_id,
-                                pane: menu.pane(),
-                                cursor: menu.cursor(),
-                                grid_size: menu.grid_size(),
-                                terminal_id: menu.terminal_id(),
-                                focus_target: menu.focus_target().clone(),
-                                has_block_selection,
-                                theme,
-                            },
-                        )
-                        .map(Event::Terminal),
-                    );
-                }
+        for (&tab_id, terminal) in self.state.terminal.tabs() {
+            if let Some(menu) = terminal.context_menu() {
+                let has_block_selection = terminal.selected_block_terminal()
+                    == Some(menu.terminal_id());
+                return Some(
+                    terminal_pane_context_menu::view(
+                        terminal_pane_context_menu::TerminalPaneContextMenuProps {
+                            tab_id,
+                            pane: menu.pane(),
+                            cursor: menu.cursor(),
+                            grid_size: menu.grid_size(),
+                            terminal_id: menu.terminal_id(),
+                            focus_target: menu.focus_target().clone(),
+                            has_block_selection,
+                            theme,
+                        },
+                    )
+                    .map(Event::Terminal),
+                );
             }
         }
 
@@ -911,15 +921,15 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
         )
         | Event::SidebarWorkspace(
             sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
-                quick_launches::QuickLaunchEvent::ContextMenuAction(_)
-                | quick_launches::QuickLaunchEvent::ContextMenuDismiss,
+                quick_launch::QuickLaunchEvent::ContextMenuAction(_)
+                | quick_launch::QuickLaunchEvent::ContextMenuDismiss,
             ),
         )
         | Event::QuickLaunch(
-            quick_launches::QuickLaunchEvent::ContextMenuAction(_)
-            | quick_launches::QuickLaunchEvent::ContextMenuDismiss
-            | quick_launches::QuickLaunchEvent::SetupCompleted(_)
-            | quick_launches::QuickLaunchEvent::Tick,
+            quick_launch::QuickLaunchEvent::ContextMenuAction(_)
+            | quick_launch::QuickLaunchEvent::ContextMenuDismiss
+            | quick_launch::QuickLaunchEvent::SetupCompleted(_)
+            | quick_launch::QuickLaunchEvent::Tick,
         )
         | Event::QuickLaunchSetupCompleted(_)
         | Event::QuickLaunchTick => Allow,
@@ -943,13 +953,13 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
         )
         | Event::SidebarWorkspace(
             sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
-                quick_launches::QuickLaunchEvent::CursorMoved { .. },
+                quick_launch::QuickLaunchEvent::CursorMoved { .. },
             ),
         )
         | Event::Explorer(_) => Allow,
         Event::SidebarWorkspace(
             sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
-                quick_launches::QuickLaunchEvent::NodeHovered { .. },
+                quick_launch::QuickLaunchEvent::NodeHovered { .. },
             ),
         ) => Ignore,
         Event::ActionBar(_) => Allow,
@@ -961,7 +971,7 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
 }
 
 fn should_cancel_inline_edit(event: &Event) -> bool {
-    use quick_launches::QuickLaunchEvent;
+    use quick_launch::QuickLaunchEvent;
 
     match event {
         Event::SidebarWorkspace(

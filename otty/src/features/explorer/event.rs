@@ -4,10 +4,12 @@ use iced::Task;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 use otty_ui_tree::TreePath;
 
+use super::ExplorerWritePermit;
 use super::errors::ExplorerError;
 use super::model::FileNode;
-use super::services::load_directory_nodes;
+use super::services::read_dir_nodes;
 use crate::app::Event as AppEvent;
+use crate::features::explorer::model::ExplorerLoadTarget;
 use crate::features::tab::{TabEvent, TabOpenRequest};
 use crate::features::terminal::{self, shell_cwd_for_active_tab};
 use crate::state::State;
@@ -42,12 +44,6 @@ pub(crate) struct ExplorerDeps<'a> {
     pub(crate) editor_command: &'a str,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) enum ExplorerLoadTarget {
-    Root { root: PathBuf },
-    Folder { path: TreePath, directory: PathBuf },
-}
-
 /// Handle explorer events and trigger side effects.
 pub(crate) fn explorer_reducer(
     state: &mut State,
@@ -59,39 +55,32 @@ pub(crate) fn explorer_reducer(
             reduce_node_pressed(state, deps, path)
         },
         ExplorerEvent::NodeHovered { path } => {
-            state.explorer.set_hovered_path(path);
+            state
+                .explorer_mut(ExplorerWritePermit(()))
+                .set_hovered_path(path);
             Task::none()
         },
         ExplorerEvent::SyncFromActiveTerminal => {
             reduce_sync_from_active_terminal(state)
         },
         ExplorerEvent::RootLoaded { root, nodes } => {
-            let _ = state.explorer.apply_root_nodes(&root, nodes);
+            let _ = state
+                .explorer_mut(ExplorerWritePermit(()))
+                .apply_root_nodes(&root, nodes);
             Task::none()
         },
         ExplorerEvent::FolderLoaded { path, nodes } => {
-            let _ = state.explorer.apply_folder_nodes(&path, nodes);
+            let _ = state
+                .explorer_mut(ExplorerWritePermit(()))
+                .apply_folder_nodes(&path, nodes);
             Task::none()
         },
         ExplorerEvent::LoadFailed { target, message } => {
-            let target_description = describe_load_target(&target);
+            let target_description = target.describe_load_target();
             log::warn!(
                 "explorer failed to load {target_description}: {message}"
             );
             Task::none()
-        },
-    }
-}
-
-fn describe_load_target(target: &ExplorerLoadTarget) -> String {
-    match target {
-        ExplorerLoadTarget::Root { root } => {
-            let display = root.display();
-            format!("root directory {display}")
-        },
-        ExplorerLoadTarget::Folder { path, directory } => {
-            let directory_display = directory.display();
-            format!("folder path {:?} from directory {directory_display}", path)
         },
     }
 }
@@ -101,17 +90,22 @@ fn reduce_node_pressed(
     deps: ExplorerDeps<'_>,
     path: TreePath,
 ) -> Task<AppEvent> {
-    state.explorer.set_selected_path(Some(path.clone()));
+    state
+        .explorer_mut(ExplorerWritePermit(()))
+        .set_selected_path(Some(path.clone()));
 
-    if state.explorer.node_is_folder(&path).unwrap_or(false) {
-        let Some(load_path) = state.explorer.toggle_folder(&path) else {
+    if state.explorer().node_is_folder(&path).unwrap_or(false) {
+        let Some(load_path) = state
+            .explorer_mut(ExplorerWritePermit(()))
+            .toggle_folder(&path)
+        else {
             return Task::none();
         };
 
         return request_load_folder(path, load_path);
     }
 
-    let Some(file_path) = state.explorer.node_path(&path) else {
+    let Some(file_path) = state.explorer().node_path(&path) else {
         return Task::none();
     };
 
@@ -122,7 +116,10 @@ fn reduce_sync_from_active_terminal(state: &mut State) -> Task<AppEvent> {
     let Some(root) = shell_cwd_for_active_tab(state) else {
         return Task::none();
     };
-    if !state.explorer.set_root(Some(root.clone())) {
+    if !state
+        .explorer_mut(ExplorerWritePermit(()))
+        .set_root(Some(root.clone()))
+    {
         return Task::none();
     }
 
@@ -132,7 +129,7 @@ fn reduce_sync_from_active_terminal(state: &mut State) -> Task<AppEvent> {
 fn request_load_root(root: PathBuf) -> Task<AppEvent> {
     Task::perform(
         async move {
-            let loaded = load_directory_nodes(root.clone());
+            let loaded = read_dir_nodes(&root.clone());
             (root, loaded)
         },
         |(root, result)| match result {
@@ -150,7 +147,7 @@ fn request_load_root(root: PathBuf) -> Task<AppEvent> {
 fn request_load_folder(path: TreePath, directory: PathBuf) -> Task<AppEvent> {
     Task::perform(
         async move {
-            let loaded = load_directory_nodes(directory.clone());
+            let loaded = read_dir_nodes(&directory.clone());
             (path, directory, loaded)
         },
         |(path, directory, result)| match result {
@@ -226,10 +223,12 @@ mod tests {
 
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-    use super::{ExplorerDeps, ExplorerEvent, explorer_reducer};
+    use super::{
+        ExplorerDeps, ExplorerEvent, ExplorerWritePermit, explorer_reducer,
+    };
     use crate::features::explorer::FileNode;
     use crate::features::tab::{TabContent, TabItem};
-    use crate::features::terminal::{TerminalKind, TerminalState};
+    use crate::features::terminal::{TerminalKind, TerminalTabState};
     use crate::state::State;
 
     #[cfg(unix)]
@@ -260,7 +259,7 @@ mod tests {
         terminal_id: u64,
         settings: Settings,
     ) {
-        let (mut terminal, _task) = TerminalState::new(
+        let (mut terminal, _widget_id) = TerminalTabState::new(
             tab_id,
             String::from("Command"),
             terminal_id,
@@ -269,16 +268,19 @@ mod tests {
         )
         .expect("terminal should initialize");
         terminal.set_grid_size(state.pane_grid_size());
+        state.terminal.insert_tab(tab_id, terminal);
         state.register_terminal_for_tab(terminal_id, tab_id);
         state.tab.insert(
             tab_id,
-            TabItem {
-                id: tab_id,
-                title: terminal.title().to_string(),
-                content: TabContent::Terminal(Box::new(terminal)),
-            },
+            TabItem::new(tab_id, String::from("Command"), TabContent::Terminal),
         );
         state.tab.activate(Some(tab_id));
+    }
+
+    fn explorer_mut(
+        state: &mut State,
+    ) -> &mut crate::features::explorer::ExplorerState {
+        state.explorer_mut(ExplorerWritePermit(()))
     }
 
     #[test]
@@ -294,7 +296,7 @@ mod tests {
         );
 
         let hovered = state
-            .explorer
+            .explorer()
             .hovered_path()
             .expect("hover path should be set");
         assert_eq!(hovered, &vec![String::from("src")]);
@@ -304,7 +306,7 @@ mod tests {
     fn given_root_loaded_event_when_root_matches_then_tree_is_applied() {
         let mut state = State::default();
         let root = PathBuf::from("/tmp");
-        let _ = state.explorer.set_root(Some(root.clone()));
+        let _ = explorer_mut(&mut state).set_root(Some(root.clone()));
 
         let _task = explorer_reducer(
             &mut state,
@@ -319,15 +321,16 @@ mod tests {
             },
         );
 
-        assert_eq!(state.explorer.tree().len(), 1);
-        assert_eq!(state.explorer.tree()[0].name(), "main.rs");
+        assert_eq!(state.explorer().tree().len(), 1);
+        assert_eq!(state.explorer().tree()[0].name(), "main.rs");
     }
 
     #[test]
     fn given_root_loaded_event_for_stale_root_when_reduced_then_tree_is_ignored()
      {
         let mut state = State::default();
-        let _ = state.explorer.set_root(Some(PathBuf::from("/tmp/a")));
+        let _ =
+            explorer_mut(&mut state).set_root(Some(PathBuf::from("/tmp/a")));
 
         let _task = explorer_reducer(
             &mut state,
@@ -342,7 +345,7 @@ mod tests {
             },
         );
 
-        assert!(state.explorer.tree().is_empty());
+        assert!(state.explorer().tree().is_empty());
     }
 
     #[test]
@@ -350,8 +353,8 @@ mod tests {
      {
         let mut state = State::default();
         let root = std::env::temp_dir().join("otty-shell-root");
-        let _ = state.explorer.set_root(Some(root.clone()));
-        let _ = state.explorer.apply_root_nodes(
+        let _ = explorer_mut(&mut state).set_root(Some(root.clone()));
+        let _ = explorer_mut(&mut state).apply_root_nodes(
             &root,
             vec![FileNode::new(String::from("src"), root.join("src"), true)],
         );
@@ -369,17 +372,50 @@ mod tests {
             ExplorerEvent::SyncFromActiveTerminal,
         );
 
-        assert_eq!(state.explorer.root_label(), Some("otty-shell-root"));
-        assert_eq!(state.explorer.tree().len(), 1);
-        assert_eq!(state.explorer.tree()[0].name(), "src");
+        assert_eq!(state.explorer().root_label(), Some("otty-shell-root"));
+        assert_eq!(state.explorer().tree().len(), 1);
+        assert_eq!(state.explorer().tree()[0].name(), "src");
+    }
+
+    #[test]
+    fn given_folder_loaded_event_when_reduced_then_folder_children_are_applied()
+    {
+        let mut state = State::default();
+        let root = PathBuf::from("/tmp");
+        let _ = explorer_mut(&mut state).set_root(Some(root.clone()));
+        let _ = explorer_mut(&mut state).apply_root_nodes(
+            &root,
+            vec![FileNode::new(String::from("src"), root.join("src"), true)],
+        );
+        let _ = explorer_mut(&mut state).toggle_folder(&[String::from("src")]);
+
+        let _task = explorer_reducer(
+            &mut state,
+            deps(),
+            ExplorerEvent::FolderLoaded {
+                path: vec![String::from("src")],
+                nodes: vec![FileNode::new(
+                    String::from("main.rs"),
+                    root.join("src/main.rs"),
+                    false,
+                )],
+            },
+        );
+
+        assert_eq!(
+            state
+                .explorer()
+                .node_path(&[String::from("src"), String::from("main.rs")]),
+            Some(root.join("src/main.rs")),
+        );
     }
 
     #[test]
     fn given_folder_node_when_pressed_then_selection_is_set() {
         let mut state = State::default();
         let root = PathBuf::from("/tmp");
-        let _ = state.explorer.set_root(Some(root.clone()));
-        let _ = state.explorer.apply_root_nodes(
+        let _ = explorer_mut(&mut state).set_root(Some(root.clone()));
+        let _ = explorer_mut(&mut state).apply_root_nodes(
             &root,
             vec![FileNode::new(String::from("src"), root.join("src"), true)],
         );
@@ -393,7 +429,7 @@ mod tests {
         );
 
         assert_eq!(
-            state.explorer.selected_path(),
+            state.explorer().selected_path(),
             Some(&vec![String::from("src")]),
         );
     }
@@ -402,8 +438,8 @@ mod tests {
     fn given_load_failed_event_when_reduced_then_state_is_not_mutated() {
         let mut state = State::default();
         let root = PathBuf::from("/tmp");
-        let _ = state.explorer.set_root(Some(root.clone()));
-        let _ = state.explorer.apply_root_nodes(
+        let _ = explorer_mut(&mut state).set_root(Some(root.clone()));
+        let _ = explorer_mut(&mut state).apply_root_nodes(
             &root,
             vec![FileNode::new(
                 String::from("main.rs"),
@@ -421,7 +457,7 @@ mod tests {
             },
         );
 
-        assert_eq!(state.explorer.tree().len(), 1);
-        assert_eq!(state.explorer.tree()[0].name(), "main.rs");
+        assert_eq!(state.explorer().tree().len(), 1);
+        assert_eq!(state.explorer().tree()[0].name(), "main.rs");
     }
 }

@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use iced::widget::operation;
 use iced::{Point, Task};
@@ -16,10 +16,11 @@ use super::model::{
 use super::services::prepare_quick_launch_setup;
 use super::state::{
     ContextMenuState, ContextMenuTarget, DragState, DropTarget, InlineEditKind,
-    InlineEditState, LaunchInfo,
+    InlineEditState, LaunchInfo, QuickLaunchErrorState,
 };
 use super::storage::save_quick_launches;
 use crate::app::Event as AppEvent;
+use crate::features::quick_launch::model::ContextMenuAction;
 use crate::features::quick_launch_wizard::QuickLaunchWizardEvent;
 use crate::features::tab::{TabEvent, TabOpenRequest};
 use crate::state::State;
@@ -27,11 +28,29 @@ use crate::state::State;
 /// Events emitted by the quick launches sidebar tree.
 #[derive(Debug, Clone)]
 pub(crate) enum QuickLaunchEvent {
-    CursorMoved { position: Point },
-    NodeHovered { path: Option<NodePath> },
-    NodePressed { path: NodePath },
-    NodeReleased { path: NodePath },
-    NodeRightClicked { path: NodePath },
+    OpenErrorTab {
+        tab_id: u64,
+        title: String,
+        message: String,
+    },
+    TabClosed {
+        tab_id: u64,
+    },
+    CursorMoved {
+        position: Point,
+    },
+    NodeHovered {
+        path: Option<NodePath>,
+    },
+    NodePressed {
+        path: NodePath,
+    },
+    NodeReleased {
+        path: NodePath,
+    },
+    NodeRightClicked {
+        path: NodePath,
+    },
     BackgroundRightClicked,
     BackgroundPressed,
     BackgroundReleased,
@@ -55,29 +74,36 @@ pub(crate) const QUICK_LAUNCHES_TICK_MS: u64 = 200;
 const LAUNCH_ICON_DELAY_MS: u64 = 1_000;
 const LAUNCH_ICON_BLINK_MS: u128 = 500;
 
-/// Actions that can be triggered from the context menu.
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum ContextMenuAction {
-    Edit,
-    Rename,
-    Duplicate,
-    Remove,
-    Delete,
-    CreateFolder,
-    CreateCommand,
-    Kill,
+/// Runtime dependencies used by the quick launches reducer.
+pub(crate) struct QuickLaunchesDeps<'a> {
+    pub(crate) terminal_settings: &'a Settings,
 }
 
 pub(crate) fn quick_launches_reducer(
     state: &mut State,
-    terminal_settings: &Settings,
+    deps: QuickLaunchesDeps<'_>,
     event: QuickLaunchEvent,
 ) -> Task<AppEvent> {
     use QuickLaunchEvent::*;
 
     match event {
+        OpenErrorTab {
+            tab_id,
+            title,
+            message,
+        } => {
+            state.quick_launches.set_error_tab(
+                tab_id,
+                QuickLaunchErrorState::new(title, message),
+            );
+            Task::none()
+        },
+        TabClosed { tab_id } => {
+            state.quick_launches.remove_error_tab(tab_id);
+            Task::none()
+        },
         CursorMoved { position } => {
-            state.quick_launches.cursor = position;
+            state.quick_launches.set_cursor(position);
             state.sidebar.cursor = position;
             update_drag_state(state);
             Task::none()
@@ -86,69 +112,72 @@ pub(crate) fn quick_launches_reducer(
             if state.sidebar.is_resizing() {
                 return Task::none();
             }
-            state.quick_launches.hovered = path;
+            state.quick_launches.set_hovered_path(path);
             update_drag_drop_target(state);
             Task::none()
         },
         BackgroundPressed => {
-            state.quick_launches.context_menu = None;
-            state.quick_launches.inline_edit = None;
-            state.quick_launches.selected = None;
+            state.quick_launches.clear_context_menu();
+            state.quick_launches.clear_inline_edit();
+            state.quick_launches.clear_selected_path();
             Task::none()
         },
         BackgroundReleased => {
             if state
                 .quick_launches
-                .drag
-                .as_ref()
+                .drag()
                 .map(|drag| drag.active)
                 .unwrap_or(false)
             {
-                state.quick_launches.drop_target = Some(DropTarget::Root);
+                state.quick_launches.set_drop_target(Some(DropTarget::Root));
             }
             if finish_drag(state) {
                 return Task::none();
             }
-            state.quick_launches.pressed = None;
+            state.quick_launches.clear_pressed_path();
             Task::none()
         },
         BackgroundRightClicked => {
-            state.quick_launches.context_menu = Some(ContextMenuState {
-                target: ContextMenuTarget::Background,
-                cursor: state.sidebar.cursor,
-            });
-            state.quick_launches.selected = None;
+            state
+                .quick_launches
+                .set_context_menu(Some(ContextMenuState {
+                    target: ContextMenuTarget::Background,
+                    cursor: state.sidebar.cursor,
+                }));
+            state.quick_launches.clear_selected_path();
             Task::none()
         },
         NodeRightClicked { path } => {
             let selected_path = path.clone();
-            let Some(node) = state.quick_launches.data.node(&path) else {
+            let Some(node) = state.quick_launches.data().node(&path) else {
                 return Task::none();
             };
             let target = match node {
                 QuickLaunchNode::Folder(_) => ContextMenuTarget::Folder(path),
                 QuickLaunchNode::Command(_) => ContextMenuTarget::Command(path),
             };
-            state.quick_launches.context_menu = Some(ContextMenuState {
-                target,
-                cursor: state.sidebar.cursor,
-            });
-            state.quick_launches.selected = Some(selected_path);
+            state
+                .quick_launches
+                .set_context_menu(Some(ContextMenuState {
+                    target,
+                    cursor: state.sidebar.cursor,
+                }));
+            state.quick_launches.set_selected_path(Some(selected_path));
             Task::none()
         },
         ContextMenuDismiss => {
-            state.quick_launches.context_menu = None;
+            state.quick_launches.clear_context_menu();
             Task::none()
         },
         CancelInlineEdit => {
-            state.quick_launches.inline_edit = None;
+            state.quick_launches.clear_inline_edit();
             Task::none()
         },
         ResetInteractionState => {
-            state.quick_launches.hovered = None;
-            state.quick_launches.pressed = None;
-            state.quick_launches.drag = None;
-            state.quick_launches.drop_target = None;
+            state.quick_launches.set_hovered_path(None);
+            state.quick_launches.clear_pressed_path();
+            state.quick_launches.clear_drag();
+            state.quick_launches.clear_drop_target();
             Task::none()
         },
         HeaderCreateFolder => {
@@ -161,26 +190,26 @@ pub(crate) fn quick_launches_reducer(
             open_create_command_tab(state, parent)
         },
         DeleteSelected => {
-            let Some(path) = state.quick_launches.selected.clone() else {
+            let Some(path) = state.quick_launches.selected_path_cloned() else {
                 return Task::none();
             };
-            let Some(node) = state.quick_launches.data.node(&path) else {
+            let Some(node) = state.quick_launches.data().node(&path) else {
                 return Task::none();
             };
             if matches!(node, QuickLaunchNode::Folder(_)) {
                 remove_node(state, &path);
-                state.quick_launches.selected = None;
+                state.quick_launches.clear_selected_path();
             }
             Task::none()
         },
         NodePressed { path } => {
-            state.quick_launches.pressed = Some(path.clone());
-            state.quick_launches.selected = Some(path.clone());
-            state.quick_launches.drag = Some(DragState {
+            state.quick_launches.set_pressed_path(Some(path.clone()));
+            state.quick_launches.set_selected_path(Some(path.clone()));
+            state.quick_launches.set_drag(Some(DragState {
                 source: path,
-                origin: state.quick_launches.cursor,
+                origin: state.quick_launches.cursor(),
                 active: false,
-            });
+            }));
             Task::none()
         },
         NodeReleased { path } => {
@@ -189,18 +218,21 @@ pub(crate) fn quick_launches_reducer(
             }
             let clicked = state
                 .quick_launches
-                .pressed
-                .as_ref()
+                .pressed_path()
                 .map(|pressed| pressed == &path)
                 .unwrap_or(false);
-            state.quick_launches.pressed = None;
+            state.quick_launches.clear_pressed_path();
             if clicked {
-                return handle_node_left_click(state, terminal_settings, path);
+                return handle_node_left_click(
+                    state,
+                    deps.terminal_settings,
+                    path,
+                );
             }
             Task::none()
         },
         InlineEditChanged(value) => {
-            if let Some(edit) = state.quick_launches.inline_edit.as_mut() {
+            if let Some(edit) = state.quick_launches.inline_edit_mut() {
                 edit.value = value;
                 edit.error = None;
             }
@@ -211,7 +243,7 @@ pub(crate) fn quick_launches_reducer(
             apply_editor_save_request(state, request)
         },
         ContextMenuAction(action) => {
-            handle_context_menu_action(state, terminal_settings, action)
+            handle_context_menu_action(state, deps.terminal_settings, action)
         },
         SetupCompleted(outcome) => reduce_setup_completed(state, outcome),
         PersistCompleted => {
@@ -225,9 +257,8 @@ pub(crate) fn quick_launches_reducer(
         },
         Tick => {
             let mut tasks = Vec::new();
-            if !state.quick_launches.launching.is_empty() {
-                state.quick_launches.blink_nonce =
-                    state.quick_launches.blink_nonce.wrapping_add(1);
+            if state.quick_launches.has_active_launches() {
+                state.quick_launches.advance_blink_nonce();
                 update_launch_indicators(state);
             }
             if state.quick_launches.is_dirty()
@@ -235,7 +266,7 @@ pub(crate) fn quick_launches_reducer(
             {
                 state.quick_launches.begin_persist();
                 tasks.push(request_persist_quick_launches(
-                    state.quick_launches.data.clone(),
+                    state.quick_launches.data().clone(),
                 ));
             }
 
@@ -309,18 +340,18 @@ fn handle_node_left_click(
     terminal_settings: &Settings,
     path: NodePath,
 ) -> Task<AppEvent> {
-    let Some(node) = state.quick_launches.data.node(&path).cloned() else {
+    let Some(node) = state.quick_launches.data().node(&path).cloned() else {
         return Task::none();
     };
 
-    if matches!(state.quick_launches.inline_edit.as_ref(), Some(edit) if inline_edit_matches(edit, &path))
+    if matches!(state.quick_launches.inline_edit(), Some(edit) if inline_edit_matches(edit, &path))
     {
         return Task::none();
     }
 
-    state.quick_launches.inline_edit = None;
-    state.quick_launches.context_menu = None;
-    state.quick_launches.selected = Some(path.clone());
+    state.quick_launches.clear_inline_edit();
+    state.quick_launches.clear_context_menu();
+    state.quick_launches.set_selected_path(Some(path.clone()));
 
     match node {
         QuickLaunchNode::Folder(_) => {
@@ -338,11 +369,11 @@ fn handle_context_menu_action(
     _terminal_settings: &Settings,
     action: ContextMenuAction,
 ) -> Task<AppEvent> {
-    let Some(menu) = state.quick_launches.context_menu.clone() else {
+    let Some(menu) = state.quick_launches.context_menu_cloned() else {
         return Task::none();
     };
 
-    state.quick_launches.context_menu = None;
+    state.quick_launches.clear_context_menu();
 
     match action {
         ContextMenuAction::Edit => match menu.target {
@@ -418,7 +449,7 @@ fn handle_context_menu_action(
 fn begin_inline_create_folder(state: &mut State, parent_path: NodePath) {
     if !parent_path.is_empty()
         && let Some(QuickLaunchNode::Folder(folder)) =
-            state.quick_launches.data.node_mut(&parent_path)
+            state.quick_launches.data_mut().node_mut(&parent_path)
     {
         folder.expanded = true;
     }
@@ -429,12 +460,12 @@ fn begin_inline_create_folder(state: &mut State, parent_path: NodePath) {
         error: None,
         id: iced::widget::Id::unique(),
     };
-    state.quick_launches.inline_edit = Some(edit);
-    state.quick_launches.context_menu = None;
+    state.quick_launches.set_inline_edit(Some(edit));
+    state.quick_launches.clear_context_menu();
 }
 
 fn begin_inline_rename(state: &mut State, path: NodePath) {
-    let Some(node) = state.quick_launches.data.node(&path) else {
+    let Some(node) = state.quick_launches.data().node(&path) else {
         return;
     };
 
@@ -444,7 +475,7 @@ fn begin_inline_rename(state: &mut State, path: NodePath) {
         error: None,
         id: iced::widget::Id::unique(),
     };
-    state.quick_launches.inline_edit = Some(edit);
+    state.quick_launches.set_inline_edit(Some(edit));
 }
 
 fn inline_edit_matches(edit: &InlineEditState, path: &[String]) -> bool {
@@ -455,14 +486,14 @@ fn inline_edit_matches(edit: &InlineEditState, path: &[String]) -> bool {
 }
 
 fn apply_inline_edit(state: &mut State) -> Task<AppEvent> {
-    let Some(edit) = state.quick_launches.inline_edit.take() else {
+    let Some(edit) = state.quick_launches.take_inline_edit() else {
         return Task::none();
     };
 
     match edit.kind {
         InlineEditKind::CreateFolder { parent_path } => {
             let Some(parent) =
-                state.quick_launches.data.folder_mut(&parent_path)
+                state.quick_launches.data_mut().folder_mut(&parent_path)
             else {
                 return Task::none();
             };
@@ -478,19 +509,21 @@ fn apply_inline_edit(state: &mut State) -> Task<AppEvent> {
                     persist_quick_launches(state)
                 },
                 Err(err) => {
-                    state.quick_launches.inline_edit = Some(InlineEditState {
-                        kind: InlineEditKind::CreateFolder { parent_path },
-                        value: edit.value,
-                        error: Some(format!("{err}")),
-                        id: edit.id,
-                    });
+                    state.quick_launches.set_inline_edit(Some(
+                        InlineEditState {
+                            kind: InlineEditKind::CreateFolder { parent_path },
+                            value: edit.value,
+                            error: Some(format!("{err}")),
+                            id: edit.id,
+                        },
+                    ));
                     Task::none()
                 },
             }
         },
         InlineEditKind::Rename { path } => {
             let Some(parent) =
-                state.quick_launches.data.parent_folder_mut(&path)
+                state.quick_launches.data_mut().parent_folder_mut(&path)
             else {
                 return Task::none();
             };
@@ -503,7 +536,7 @@ fn apply_inline_edit(state: &mut State) -> Task<AppEvent> {
                     }
 
                     if let Some(node) =
-                        state.quick_launches.data.node_mut(&path)
+                        state.quick_launches.data_mut().node_mut(&path)
                     {
                         *node.title_mut() = title;
                     }
@@ -511,23 +544,26 @@ fn apply_inline_edit(state: &mut State) -> Task<AppEvent> {
                     update_launching_paths(state, &path, &renamed_path);
                     if state
                         .quick_launches
-                        .selected
-                        .as_ref()
+                        .selected_path()
                         .map(|selected| selected == &path)
                         .unwrap_or(false)
                     {
-                        state.quick_launches.selected = Some(renamed_path);
+                        state
+                            .quick_launches
+                            .set_selected_path(Some(renamed_path));
                     }
 
                     persist_quick_launches(state)
                 },
                 Err(err) => {
-                    state.quick_launches.inline_edit = Some(InlineEditState {
-                        kind: InlineEditKind::Rename { path },
-                        value: edit.value,
-                        error: Some(format!("{err}")),
-                        id: edit.id,
-                    });
+                    state.quick_launches.set_inline_edit(Some(
+                        InlineEditState {
+                            kind: InlineEditKind::Rename { path },
+                            value: edit.value,
+                            error: Some(format!("{err}")),
+                            id: edit.id,
+                        },
+                    ));
                     Task::none()
                 },
             }
@@ -542,7 +578,7 @@ fn apply_editor_save_request(
     match request.target {
         QuickLaunchWizardSaveTarget::Create { parent_path } => {
             let Some(parent) =
-                state.quick_launches.data.folder_mut(&parent_path)
+                state.quick_launches.data_mut().folder_mut(&parent_path)
             else {
                 return request_editor_error(
                     request.tab_id,
@@ -568,7 +604,7 @@ fn apply_editor_save_request(
         QuickLaunchWizardSaveTarget::Edit { path } => {
             {
                 let Some(parent) =
-                    state.quick_launches.data.parent_folder_mut(&path)
+                    state.quick_launches.data_mut().parent_folder_mut(&path)
                 else {
                     return request_editor_error(
                         request.tab_id,
@@ -586,7 +622,8 @@ fn apply_editor_save_request(
                 }
             }
 
-            let Some(node) = state.quick_launches.data.node_mut(&path) else {
+            let Some(node) = state.quick_launches.data_mut().node_mut(&path)
+            else {
                 return request_editor_error(
                     request.tab_id,
                     "Command no longer exists.",
@@ -612,7 +649,7 @@ fn request_editor_error(tab_id: u64, message: &str) -> Task<AppEvent> {
 }
 
 fn toggle_folder_expanded(state: &mut State, path: &[String]) {
-    let Some(node) = state.quick_launches.data.node_mut(path) else {
+    let Some(node) = state.quick_launches.data_mut().node_mut(path) else {
         return;
     };
     if let QuickLaunchNode::Folder(folder) = node {
@@ -621,11 +658,11 @@ fn toggle_folder_expanded(state: &mut State, path: &[String]) {
 }
 
 fn selected_parent_path(state: &State) -> NodePath {
-    let Some(selected) = state.quick_launches.selected.as_ref() else {
+    let Some(selected) = state.quick_launches.selected_path() else {
         return Vec::new();
     };
 
-    let Some(node) = state.quick_launches.data.node(selected) else {
+    let Some(node) = state.quick_launches.data().node(selected) else {
         return Vec::new();
     };
 
@@ -640,7 +677,7 @@ fn selected_parent_path(state: &State) -> NodePath {
 }
 
 fn focus_inline_edit(state: &State) -> Task<AppEvent> {
-    let Some(edit) = state.quick_launches.inline_edit.as_ref() else {
+    let Some(edit) = state.quick_launches.inline_edit() else {
         return Task::none();
     };
 
@@ -649,12 +686,13 @@ fn focus_inline_edit(state: &State) -> Task<AppEvent> {
 
 fn update_drag_state(state: &mut State) {
     let (active, source) = {
-        let Some(drag) = state.quick_launches.drag.as_mut() else {
+        let cursor = state.quick_launches.cursor();
+        let Some(drag) = state.quick_launches.drag_mut() else {
             return;
         };
 
-        let dx = state.quick_launches.cursor.x - drag.origin.x;
-        let dy = state.quick_launches.cursor.y - drag.origin.y;
+        let dx = cursor.x - drag.origin.x;
+        let dy = cursor.y - drag.origin.y;
         let distance_sq = dx * dx + dy * dy;
         let threshold = 4.0;
         if !drag.active && distance_sq >= threshold * threshold {
@@ -667,38 +705,38 @@ fn update_drag_state(state: &mut State) {
     if active {
         let target = drop_target_from_hover(state);
         if can_drop(state, &source, &target) {
-            state.quick_launches.drop_target = Some(target);
+            state.quick_launches.set_drop_target(Some(target));
         } else {
-            state.quick_launches.drop_target = None;
+            state.quick_launches.clear_drop_target();
         }
     }
 }
 
 fn finish_drag(state: &mut State) -> bool {
-    let Some(drag) = state.quick_launches.drag.take() else {
+    let Some(drag) = state.quick_launches.take_drag() else {
         return false;
     };
 
     if !drag.active {
-        state.quick_launches.drop_target = None;
+        state.quick_launches.clear_drop_target();
         return false;
     }
 
-    let target = match state.quick_launches.drop_target.take() {
+    let target = match state.quick_launches.take_drop_target() {
         Some(target) => target,
         None => return true,
     };
-    state.quick_launches.pressed = None;
+    state.quick_launches.clear_pressed_path();
     move_node(state, drag.source, target);
     true
 }
 
 fn drop_target_from_hover(state: &State) -> DropTarget {
-    let Some(hovered) = state.quick_launches.hovered.as_ref() else {
+    let Some(hovered) = state.quick_launches.hovered_path() else {
         return DropTarget::Root;
     };
 
-    let Some(node) = state.quick_launches.data.node(hovered) else {
+    let Some(node) = state.quick_launches.data().node(hovered) else {
         return DropTarget::Root;
     };
 
@@ -717,7 +755,7 @@ fn drop_target_from_hover(state: &State) -> DropTarget {
 }
 
 fn update_drag_drop_target(state: &mut State) {
-    let Some(drag) = state.quick_launches.drag.as_ref() else {
+    let Some(drag) = state.quick_launches.drag() else {
         return;
     };
 
@@ -727,14 +765,14 @@ fn update_drag_drop_target(state: &mut State) {
 
     let target = drop_target_from_hover(state);
     if can_drop(state, &drag.source, &target) {
-        state.quick_launches.drop_target = Some(target);
+        state.quick_launches.set_drop_target(Some(target));
     } else {
-        state.quick_launches.drop_target = None;
+        state.quick_launches.clear_drop_target();
     }
 }
 
 fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
-    let Some(node) = state.quick_launches.data.node(&source).cloned() else {
+    let Some(node) = state.quick_launches.data().node(&source).cloned() else {
         return;
     };
 
@@ -760,7 +798,8 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
     }
 
     let title = source.last().cloned().unwrap_or_default();
-    if let Some(target_folder) = state.quick_launches.data.folder(&target_path)
+    if let Some(target_folder) =
+        state.quick_launches.data().folder(&target_path)
     {
         if target_folder.contains_title(&title) {
             log::warn!(
@@ -774,7 +813,7 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
 
     let moved = {
         let Some(parent_folder) =
-            state.quick_launches.data.parent_folder_mut(&source)
+            state.quick_launches.data_mut().parent_folder_mut(&source)
         else {
             return;
         };
@@ -785,7 +824,7 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
     };
 
     let Some(target_folder) =
-        state.quick_launches.data.folder_mut(&target_path)
+        state.quick_launches.data_mut().folder_mut(&target_path)
     else {
         return;
     };
@@ -794,7 +833,7 @@ fn move_node(state: &mut State, source: NodePath, target: DropTarget) {
     let mut new_path = target_path.clone();
     new_path.push(title);
     update_launching_paths(state, &source, &new_path);
-    state.quick_launches.selected = Some(new_path);
+    state.quick_launches.set_selected_path(Some(new_path));
     let _task = persist_quick_launches(state);
 }
 
@@ -804,7 +843,7 @@ fn update_launching_paths(
     new_path: &[String],
 ) {
     let mut moved: Vec<(NodePath, LaunchInfo)> = Vec::new();
-    for (path, info) in &state.quick_launches.launching {
+    for (path, info) in state.quick_launches.launching() {
         if is_prefix(source, path) {
             moved.push((path.clone(), info.clone()));
         }
@@ -815,13 +854,13 @@ fn update_launching_paths(
     }
 
     for (path, _) in &moved {
-        state.quick_launches.launching.remove(path);
+        let _ = state.quick_launches.remove_launch(path);
     }
 
     for (old_path, info) in moved {
         let mut updated = new_path.to_vec();
         updated.extend_from_slice(&old_path[source.len()..]);
-        state.quick_launches.launching.insert(updated, info);
+        state.quick_launches.launching_mut().insert(updated, info);
     }
 }
 
@@ -834,7 +873,7 @@ fn is_prefix(prefix: &[String], path: &[String]) -> bool {
 }
 
 fn can_drop(state: &State, source: &[String], target: &DropTarget) -> bool {
-    let Some(node) = state.quick_launches.data.node(source) else {
+    let Some(node) = state.quick_launches.data().node(source) else {
         return false;
     };
 
@@ -853,7 +892,8 @@ fn can_drop(state: &State, source: &[String], target: &DropTarget) -> bool {
 }
 
 fn remove_node(state: &mut State, path: &[String]) {
-    let Some(parent) = state.quick_launches.data.parent_folder_mut(path) else {
+    let Some(parent) = state.quick_launches.data_mut().parent_folder_mut(path)
+    else {
         return;
     };
     let Some(title) = path.last() else {
@@ -864,17 +904,14 @@ fn remove_node(state: &mut State, path: &[String]) {
 }
 
 fn kill_command_launch(state: &mut State, path: &[String]) {
-    if let Some(info) = state.quick_launches.launching.get(path) {
-        info.cancel.store(true, Ordering::Relaxed);
-        state.quick_launches.canceled_launches.insert(info.id);
-    }
+    state.quick_launches.cancel_launch(path);
 }
 
 fn remove_launch_by_id(state: &mut State, launch_id: u64) {
     let path =
         state
             .quick_launches
-            .launching
+            .launching()
             .iter()
             .find_map(|(path, info)| {
                 if info.id == launch_id {
@@ -885,19 +922,20 @@ fn remove_launch_by_id(state: &mut State, launch_id: u64) {
             });
 
     if let Some(path) = path {
-        state.quick_launches.launching.remove(&path);
+        let _ = state.quick_launches.remove_launch(&path);
     }
 }
 
 fn duplicate_command(state: &mut State, path: &[String]) {
-    let Some(node) = state.quick_launches.data.node(path).cloned() else {
+    let Some(node) = state.quick_launches.data().node(path).cloned() else {
         return;
     };
     let QuickLaunchNode::Command(command) = node else {
         return;
     };
 
-    let Some(parent) = state.quick_launches.data.parent_folder_mut(path) else {
+    let Some(parent) = state.quick_launches.data_mut().parent_folder_mut(path)
+    else {
         return;
     };
 
@@ -951,23 +989,14 @@ fn launch_quick_launch(
     path: NodePath,
     command: QuickLaunch,
 ) -> Task<AppEvent> {
-    if state.quick_launches.launching.contains_key(&path) {
+    if state.quick_launches.is_launching(&path) {
         return Task::none();
     }
 
-    let launch_id = state.quick_launches.next_launch_id;
-    state.quick_launches.next_launch_id =
-        state.quick_launches.next_launch_id.wrapping_add(1);
     let cancel = Arc::new(AtomicBool::new(false));
-    state.quick_launches.launching.insert(
-        path.clone(),
-        LaunchInfo {
-            id: launch_id,
-            launch_ticks: 0,
-            is_indicator_highlighted: false,
-            cancel: cancel.clone(),
-        },
-    );
+    let launch_id = state
+        .quick_launches
+        .begin_launch(path.clone(), cancel.clone());
 
     Task::perform(
         prepare_quick_launch_setup(
@@ -986,12 +1015,12 @@ fn should_skip_launch_result(
     path: &[String],
     launch_id: u64,
 ) -> bool {
-    if state.quick_launches.canceled_launches.remove(&launch_id) {
+    if state.quick_launches.take_canceled_launch(launch_id) {
         remove_launch_by_id(state, launch_id);
         return true;
     }
 
-    if let Some(info) = state.quick_launches.launching.get(path)
+    if let Some(info) = state.quick_launches.launch_info(path)
         && info.id != launch_id
     {
         return true;
@@ -1002,8 +1031,8 @@ fn should_skip_launch_result(
 }
 
 fn update_launch_indicators(state: &mut State) {
-    let blink_nonce = state.quick_launches.blink_nonce;
-    for info in state.quick_launches.launching.values_mut() {
+    let blink_nonce = state.quick_launches.blink_nonce();
+    for info in state.quick_launches.launching_mut().values_mut() {
         info.launch_ticks = info.launch_ticks.wrapping_add(1);
         info.is_indicator_highlighted =
             should_highlight_launch_indicator(info.launch_ticks, blink_nonce);
@@ -1036,7 +1065,7 @@ fn open_create_command_tab(
 }
 
 fn open_edit_command_tab(state: &mut State, path: NodePath) -> Task<AppEvent> {
-    let Some(node) = state.quick_launches.data.node(&path).cloned() else {
+    let Some(node) = state.quick_launches.data().node(&path).cloned() else {
         return Task::none();
     };
     let QuickLaunchNode::Command(command) = node else {
@@ -1057,13 +1086,6 @@ fn request_open_error_tab(title: String, message: String) -> Task<AppEvent> {
     }))
 }
 
-/// Load quick launch state synchronously from persistent storage.
-pub(crate) fn bootstrap_quick_launches() -> super::state::QuickLaunchState {
-    super::state::QuickLaunchState::from_data(
-        super::storage::load_quick_launches().ok().flatten(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -1074,8 +1096,10 @@ mod tests {
     use super::*;
     use crate::state::State;
 
-    fn settings() -> Settings {
-        Settings::default()
+    fn deps(settings: &Settings) -> QuickLaunchesDeps<'_> {
+        QuickLaunchesDeps {
+            terminal_settings: settings,
+        }
     }
 
     fn sample_command() -> QuickLaunch {
@@ -1095,26 +1119,25 @@ mod tests {
     #[test]
     fn given_selected_folder_when_delete_selected_then_folder_is_removed() {
         let mut state = State::default();
-        state
-            .quick_launches
-            .data
-            .root
-            .children
-            .push(QuickLaunchNode::Folder(QuickLaunchFolder {
+        state.quick_launches.data_mut().root.children.push(
+            QuickLaunchNode::Folder(QuickLaunchFolder {
                 title: String::from("Folder"),
                 expanded: true,
                 children: Vec::new(),
-            }));
-        state.quick_launches.selected = Some(vec![String::from("Folder")]);
+            }),
+        );
+        state
+            .quick_launches
+            .set_selected_path(Some(vec![String::from("Folder")]));
 
         let _task = quick_launches_reducer(
             &mut state,
-            &settings(),
+            deps(&Settings::default()),
             QuickLaunchEvent::DeleteSelected,
         );
 
-        assert!(state.quick_launches.data.root.children.is_empty());
-        assert!(state.quick_launches.selected.is_none());
+        assert!(state.quick_launches.data().root.children.is_empty());
+        assert!(state.quick_launches.selected_path().is_none());
     }
 
     #[test]
@@ -1123,20 +1146,20 @@ mod tests {
 
         let _task = quick_launches_reducer(
             &mut state,
-            &settings(),
+            deps(&Settings::default()),
             QuickLaunchEvent::NodeReleased {
                 path: vec![String::from("Missing")],
             },
         );
 
-        assert!(state.quick_launches.selected.is_none());
-        assert!(state.quick_launches.launching.is_empty());
+        assert!(state.quick_launches.selected_path().is_none());
+        assert!(state.quick_launches.launching().is_empty());
     }
 
     #[test]
     fn given_editor_create_save_request_when_reduced_then_command_is_added() {
         let mut state = State::default();
-        state.quick_launches.data.root = QuickLaunchFolder {
+        state.quick_launches.data_mut().root = QuickLaunchFolder {
             title: String::from("Root"),
             expanded: true,
             children: Vec::new(),
@@ -1152,11 +1175,11 @@ mod tests {
 
         let _task = quick_launches_reducer(
             &mut state,
-            &settings(),
+            deps(&Settings::default()),
             QuickLaunchEvent::WizardSaveRequested(request),
         );
 
-        assert_eq!(state.quick_launches.data.root.children.len(), 1);
+        assert_eq!(state.quick_launches.data().root.children.len(), 1);
         assert!(state.quick_launches.is_dirty());
     }
 
@@ -1164,7 +1187,7 @@ mod tests {
     fn given_editor_save_with_duplicate_title_when_reduced_then_data_is_unchanged()
      {
         let mut state = State::default();
-        state.quick_launches.data.root = QuickLaunchFolder {
+        state.quick_launches.data_mut().root = QuickLaunchFolder {
             title: String::from("Root"),
             expanded: true,
             children: vec![
@@ -1213,11 +1236,11 @@ mod tests {
 
         let _task = quick_launches_reducer(
             &mut state,
-            &settings(),
+            deps(&Settings::default()),
             QuickLaunchEvent::WizardSaveRequested(request),
         );
 
-        assert_eq!(state.quick_launches.data.root.children.len(), 2);
+        assert_eq!(state.quick_launches.data().root.children.len(), 2);
         assert!(!state.quick_launches.is_dirty());
     }
 
@@ -1236,12 +1259,36 @@ mod tests {
 
         let _task = quick_launches_reducer(
             &mut state,
-            &settings(),
+            deps(&Settings::default()),
             QuickLaunchEvent::WizardSaveRequested(request),
         );
 
-        assert!(state.quick_launches.data.root.children.is_empty());
+        assert!(state.quick_launches.data().root.children.is_empty());
         assert!(!state.quick_launches.is_dirty());
+    }
+
+    #[test]
+    fn given_error_tab_opened_and_closed_when_reduced_then_payload_is_cleaned()
+    {
+        let mut state = State::default();
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            deps(&Settings::default()),
+            QuickLaunchEvent::OpenErrorTab {
+                tab_id: 42,
+                title: String::from("Failed"),
+                message: String::from("Boom"),
+            },
+        );
+        assert!(state.quick_launches.error_tab(42).is_some());
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            deps(&Settings::default()),
+            QuickLaunchEvent::TabClosed { tab_id: 42 },
+        );
+        assert!(state.quick_launches.error_tab(42).is_none());
     }
 
     #[test]
@@ -1249,8 +1296,8 @@ mod tests {
      {
         let mut state = State::default();
         let path = vec![String::from("Demo")];
-        state.quick_launches.blink_nonce = 10;
-        state.quick_launches.launching.insert(
+        state.quick_launches.set_blink_nonce_for_tests(10);
+        state.quick_launches.launching_mut().insert(
             path.clone(),
             LaunchInfo {
                 id: 1,
@@ -1262,14 +1309,14 @@ mod tests {
 
         let _task = quick_launches_reducer(
             &mut state,
-            &settings(),
+            deps(&Settings::default()),
             QuickLaunchEvent::Tick,
         );
 
-        assert_eq!(state.quick_launches.blink_nonce, 11);
+        assert_eq!(state.quick_launches.blink_nonce(), 11);
         let info = state
             .quick_launches
-            .launching
+            .launching()
             .get(&path)
             .expect("launch info must exist");
         assert_eq!(info.launch_ticks, 1);
@@ -1280,8 +1327,8 @@ mod tests {
     fn given_launch_before_delay_when_tick_then_indicator_is_off() {
         let mut state = State::default();
         let path = vec![String::from("Demo")];
-        state.quick_launches.blink_nonce = 4;
-        state.quick_launches.launching.insert(
+        state.quick_launches.set_blink_nonce_for_tests(4);
+        state.quick_launches.launching_mut().insert(
             path.clone(),
             LaunchInfo {
                 id: 1,
@@ -1293,13 +1340,13 @@ mod tests {
 
         let _task = quick_launches_reducer(
             &mut state,
-            &settings(),
+            deps(&Settings::default()),
             QuickLaunchEvent::Tick,
         );
 
         let info = state
             .quick_launches
-            .launching
+            .launching()
             .get(&path)
             .expect("launch info must exist");
         assert_eq!(info.launch_ticks, 4);
@@ -1310,8 +1357,8 @@ mod tests {
     fn given_launch_after_delay_when_tick_then_indicator_toggles_by_period() {
         let mut state = State::default();
         let path = vec![String::from("Demo")];
-        state.quick_launches.blink_nonce = 2;
-        state.quick_launches.launching.insert(
+        state.quick_launches.set_blink_nonce_for_tests(2);
+        state.quick_launches.launching_mut().insert(
             path.clone(),
             LaunchInfo {
                 id: 1,
@@ -1323,36 +1370,36 @@ mod tests {
 
         let _task = quick_launches_reducer(
             &mut state,
-            &settings(),
+            deps(&Settings::default()),
             QuickLaunchEvent::Tick,
         );
         let info = state
             .quick_launches
-            .launching
+            .launching()
             .get(&path)
             .expect("launch info must exist");
         assert!(!info.is_indicator_highlighted);
 
         let _task = quick_launches_reducer(
             &mut state,
-            &settings(),
+            deps(&Settings::default()),
             QuickLaunchEvent::Tick,
         );
         let info = state
             .quick_launches
-            .launching
+            .launching()
             .get(&path)
             .expect("launch info must exist");
         assert!(!info.is_indicator_highlighted);
 
         let _task = quick_launches_reducer(
             &mut state,
-            &settings(),
+            deps(&Settings::default()),
             QuickLaunchEvent::Tick,
         );
         let info = state
             .quick_launches
-            .launching
+            .launching()
             .get(&path)
             .expect("launch info must exist");
         assert!(info.is_indicator_highlighted);
@@ -1362,7 +1409,7 @@ mod tests {
     fn given_failed_setup_completion_when_reduced_then_launch_is_removed() {
         let mut state = State::default();
         let path = vec![String::from("Demo")];
-        state.quick_launches.launching.insert(
+        state.quick_launches.launching_mut().insert(
             path.clone(),
             LaunchInfo {
                 id: 9,
@@ -1382,10 +1429,79 @@ mod tests {
         };
         let _task = quick_launches_reducer(
             &mut state,
-            &settings(),
+            deps(&Settings::default()),
             QuickLaunchEvent::SetupCompleted(outcome),
         );
 
-        assert!(!state.quick_launches.launching.contains_key(&path));
+        assert!(!state.quick_launches.launching().contains_key(&path));
+    }
+
+    #[test]
+    fn given_canceled_launch_completion_when_reduced_then_result_is_ignored() {
+        let mut state = State::default();
+        let path = vec![String::from("Demo")];
+        state.quick_launches.launching_mut().insert(
+            path.clone(),
+            LaunchInfo {
+                id: 11,
+                launch_ticks: 0,
+                is_indicator_highlighted: false,
+                cancel: Arc::new(AtomicBool::new(false)),
+            },
+        );
+        state.quick_launches.cancel_launch(&path);
+
+        let outcome = QuickLaunchSetupOutcome::Failed {
+            path: path.clone(),
+            launch_id: 11,
+            command: Box::new(sample_command()),
+            error: Arc::new(QuickLaunchError::Validation {
+                message: String::from("Program is empty."),
+            }),
+        };
+        let _task = quick_launches_reducer(
+            &mut state,
+            deps(&Settings::default()),
+            QuickLaunchEvent::SetupCompleted(outcome),
+        );
+
+        assert!(state.quick_launches.launching().get(&path).is_none());
+    }
+
+    #[test]
+    fn given_stale_launch_completion_when_reduced_then_current_launch_is_kept()
+    {
+        let mut state = State::default();
+        let path = vec![String::from("Demo")];
+        state.quick_launches.launching_mut().insert(
+            path.clone(),
+            LaunchInfo {
+                id: 22,
+                launch_ticks: 0,
+                is_indicator_highlighted: false,
+                cancel: Arc::new(AtomicBool::new(false)),
+            },
+        );
+
+        let outcome = QuickLaunchSetupOutcome::Failed {
+            path: path.clone(),
+            launch_id: 21,
+            command: Box::new(sample_command()),
+            error: Arc::new(QuickLaunchError::Validation {
+                message: String::from("Program is empty."),
+            }),
+        };
+        let _task = quick_launches_reducer(
+            &mut state,
+            deps(&Settings::default()),
+            QuickLaunchEvent::SetupCompleted(outcome),
+        );
+
+        let active = state
+            .quick_launches
+            .launching()
+            .get(&path)
+            .expect("current launch must remain active");
+        assert_eq!(active.id, 22);
     }
 }

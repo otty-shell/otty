@@ -4,8 +4,9 @@ mod model;
 mod services;
 mod state;
 
-#[allow(unused_imports)]
-pub(crate) use errors::ExplorerError;
+/// Capability token that allows mutable explorer state access through app state.
+pub(crate) struct ExplorerWritePermit(());
+
 pub(crate) use event::{ExplorerDeps, ExplorerEvent, explorer_reducer};
 pub(crate) use model::FileNode;
 pub(crate) use state::ExplorerState;

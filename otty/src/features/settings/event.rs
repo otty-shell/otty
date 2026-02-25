@@ -119,24 +119,6 @@ fn apply_loaded_settings(state: &mut SettingsState, load: SettingsLoad) {
     state.replace_with_settings(settings);
 }
 
-/// Load settings state synchronously from persistent storage.
-pub(crate) fn bootstrap_settings() -> SettingsState {
-    let data = match load_settings() {
-        Ok(load) => {
-            let (data, status) = load.into_parts();
-            if let SettingsLoadStatus::Invalid(message) = status {
-                log::warn!("settings file invalid: {message}");
-            }
-            data
-        },
-        Err(err) => {
-            log::warn!("settings read failed: {err}");
-            SettingsData::default()
-        },
-    };
-    SettingsState::from_settings(data)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{

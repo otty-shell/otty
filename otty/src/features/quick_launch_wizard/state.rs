@@ -1,7 +1,67 @@
-use crate::features::quick_launches::{
+use std::collections::HashMap;
+
+use crate::features::quick_launch::{
     CommandSpec, EnvVar, NodePath, QuickLaunch, QuickLaunchType,
     SSH_DEFAULT_PORT,
 };
+
+/// Feature-owned editor states keyed by tab id.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct QuickLaunchWizardState {
+    editors: HashMap<u64, QuickLaunchWizardEditorState>,
+}
+
+impl QuickLaunchWizardState {
+    /// Return editor state for a tab id.
+    pub(crate) fn editor(
+        &self,
+        tab_id: u64,
+    ) -> Option<&QuickLaunchWizardEditorState> {
+        self.editors.get(&tab_id)
+    }
+
+    /// Return mutable editor state for a tab id.
+    pub(crate) fn editor_mut(
+        &mut self,
+        tab_id: u64,
+    ) -> Option<&mut QuickLaunchWizardEditorState> {
+        self.editors.get_mut(&tab_id)
+    }
+
+    /// Initialize editor in create mode for a tab.
+    pub(crate) fn initialize_create(&mut self, tab_id: u64, parent: NodePath) {
+        self.editors
+            .insert(tab_id, QuickLaunchWizardEditorState::new_create(parent));
+    }
+
+    /// Initialize editor in edit mode for a tab.
+    pub(crate) fn initialize_edit(
+        &mut self,
+        tab_id: u64,
+        path: NodePath,
+        command: &QuickLaunch,
+    ) {
+        self.editors.insert(
+            tab_id,
+            QuickLaunchWizardEditorState::from_command(path, command),
+        );
+    }
+
+    /// Replace editor state for a tab id in tests.
+    #[cfg(test)]
+    pub(crate) fn set_editor(
+        &mut self,
+        tab_id: u64,
+        editor: QuickLaunchWizardEditorState,
+    ) {
+        self.editors.insert(tab_id, editor);
+    }
+
+    /// Drop editor state when tab is closed.
+    pub(crate) fn remove_tab(&mut self, tab_id: u64) {
+        let _ = self.editors.remove(&tab_id);
+    }
+}
 
 /// Mode for a quick launch editor tab.
 #[derive(Debug, Clone)]
@@ -186,14 +246,14 @@ impl QuickLaunchWizardOptions {
 
 /// Runtime state for a quick launch editor tab.
 #[derive(Debug, Clone)]
-pub(crate) struct QuickLaunchWizardState {
+pub(crate) struct QuickLaunchWizardEditorState {
     mode: QuickLaunchWizardMode,
     title: String,
     options: QuickLaunchWizardOptions,
     error: Option<String>,
 }
 
-impl QuickLaunchWizardState {
+impl QuickLaunchWizardEditorState {
     /// Build state for creating a command in the target folder.
     pub(crate) fn new_create(parent_path: NodePath) -> Self {
         Self {
@@ -435,7 +495,7 @@ mod tests {
 
     #[test]
     fn given_create_editor_when_switching_command_type_then_options_reset() {
-        let mut editor = QuickLaunchWizardState::new_create(vec![]);
+        let mut editor = QuickLaunchWizardEditorState::new_create(vec![]);
         editor.set_program(String::from("bash"));
 
         editor.set_command_type(QuickLaunchType::Ssh);
@@ -449,7 +509,7 @@ mod tests {
     #[test]
     fn given_custom_editor_when_mutating_fields_then_custom_values_are_updated()
     {
-        let mut editor = QuickLaunchWizardState::new_create(vec![]);
+        let mut editor = QuickLaunchWizardEditorState::new_create(vec![]);
 
         editor.set_title(String::from("Demo"));
         editor.set_program(String::from("/bin/echo"));
@@ -473,7 +533,7 @@ mod tests {
 
     #[test]
     fn given_ssh_editor_when_mutating_fields_then_ssh_values_are_updated() {
-        let mut editor = QuickLaunchWizardState::new_create(vec![]);
+        let mut editor = QuickLaunchWizardEditorState::new_create(vec![]);
         editor.set_command_type(QuickLaunchType::Ssh);
 
         editor.set_host(String::from("example.com"));

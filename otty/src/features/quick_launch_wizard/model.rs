@@ -1,13 +1,13 @@
 use super::errors::QuickLaunchWizardError;
-use super::state::QuickLaunchWizardState;
-use crate::features::quick_launches::{
+use super::state::QuickLaunchWizardEditorState;
+use crate::features::quick_launch::{
     CommandSpec, CustomCommand, EnvVar, QuickLaunch, QuickLaunchType,
     SSH_DEFAULT_PORT, SshCommand,
 };
 
 /// Build a domain quick launch command from editor draft state.
 pub(crate) fn build_command(
-    editor: &QuickLaunchWizardState,
+    editor: &QuickLaunchWizardEditorState,
 ) -> Result<QuickLaunch, QuickLaunchWizardError> {
     let title = editor.title().trim();
     if title.is_empty() {
@@ -101,12 +101,12 @@ fn optional_string(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::state::QuickLaunchWizardState;
+    use super::super::state::QuickLaunchWizardEditorState;
     use super::*;
 
     #[test]
     fn given_empty_title_when_building_command_then_returns_title_required() {
-        let editor = QuickLaunchWizardState::new_create(vec![]);
+        let editor = QuickLaunchWizardEditorState::new_create(vec![]);
 
         let result = build_command(&editor);
 
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn given_custom_editor_when_building_command_then_returns_custom_launch() {
-        let mut editor = QuickLaunchWizardState::new_create(vec![]);
+        let mut editor = QuickLaunchWizardEditorState::new_create(vec![]);
         editor.set_title(String::from("Build"));
         editor.set_program(String::from("cargo"));
         editor.add_arg();
@@ -157,7 +157,7 @@ mod tests {
                 },
             },
         };
-        let mut editor = QuickLaunchWizardState::from_command(
+        let mut editor = QuickLaunchWizardEditorState::from_command(
             vec![String::from("SSH")],
             &command,
         );
