@@ -373,4 +373,55 @@ mod tests {
         assert_eq!(state.explorer.tree().len(), 1);
         assert_eq!(state.explorer.tree()[0].name(), "src");
     }
+
+    #[test]
+    fn given_folder_node_when_pressed_then_selection_is_set() {
+        let mut state = State::default();
+        let root = PathBuf::from("/tmp");
+        let _ = state.explorer.set_root(Some(root.clone()));
+        let _ = state.explorer.apply_root_nodes(
+            &root,
+            vec![FileNode::new(String::from("src"), root.join("src"), true)],
+        );
+
+        let _task = explorer_reducer(
+            &mut state,
+            deps(),
+            ExplorerEvent::NodePressed {
+                path: vec![String::from("src")],
+            },
+        );
+
+        assert_eq!(
+            state.explorer.selected_path(),
+            Some(&vec![String::from("src")]),
+        );
+    }
+
+    #[test]
+    fn given_load_failed_event_when_reduced_then_state_is_not_mutated() {
+        let mut state = State::default();
+        let root = PathBuf::from("/tmp");
+        let _ = state.explorer.set_root(Some(root.clone()));
+        let _ = state.explorer.apply_root_nodes(
+            &root,
+            vec![FileNode::new(
+                String::from("main.rs"),
+                root.join("main.rs"),
+                false,
+            )],
+        );
+
+        let _task = explorer_reducer(
+            &mut state,
+            deps(),
+            ExplorerEvent::LoadFailed {
+                target: super::ExplorerLoadTarget::Root { root: root.clone() },
+                message: String::from("boom"),
+            },
+        );
+
+        assert_eq!(state.explorer.tree().len(), 1);
+        assert_eq!(state.explorer.tree()[0].name(), "main.rs");
+    }
 }

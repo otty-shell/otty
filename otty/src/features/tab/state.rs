@@ -21,9 +21,16 @@ impl TabState {
         &self.tab_items
     }
 
-    /// Return mutable tab collection.
-    pub(crate) fn tab_items_mut(&mut self) -> &mut BTreeMap<u64, TabItem> {
-        &mut self.tab_items
+    /// Return mutable tab item by identifier.
+    pub(crate) fn tab_item_mut(&mut self, tab_id: u64) -> Option<&mut TabItem> {
+        self.tab_items.get_mut(&tab_id)
+    }
+
+    /// Return mutable iterator over all tab items.
+    pub(crate) fn tab_values_mut(
+        &mut self,
+    ) -> impl Iterator<Item = &mut TabItem> {
+        self.tab_items.values_mut()
     }
 
     /// Return number of tabs.

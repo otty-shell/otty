@@ -5,10 +5,11 @@ use iced::widget::{
 };
 use iced::{Element, Length, Padding, alignment};
 
-use crate::features::quick_launches::{
-    QuickLaunchEditorEvent as FeatureQuickLaunchEditorEvent,
-    QuickLaunchEditorMode, QuickLaunchEditorState, QuickLaunchType,
+use crate::features::quick_launch_wizard::{
+    QuickLaunchWizardEvent as FeatureQuickLaunchWizardEvent,
+    QuickLaunchWizardMode, QuickLaunchWizardState,
 };
+use crate::features::quick_launches::QuickLaunchType;
 use crate::theme::{IcedColorPalette, ThemeProps};
 
 const SECTION_SPACING: f32 = 16.0;
@@ -25,17 +26,17 @@ const CONTENT_PADDING_RIGHT: f32 = 8.0;
 
 /// Props for rendering a quick launch editor tab.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct QuickLaunchesEditorProps<'a> {
-    pub(crate) editor: &'a QuickLaunchEditorState,
+pub(crate) struct QuickLaunchesWizardProps<'a> {
+    pub(crate) editor: &'a QuickLaunchWizardState,
     pub(crate) theme: ThemeProps<'a>,
 }
 
 /// Events emitted by quick launch editor widget.
-pub(crate) type QuickLaunchesEditorEvent = FeatureQuickLaunchEditorEvent;
+pub(crate) type QuickLaunchesWizardEvent = FeatureQuickLaunchWizardEvent;
 
 pub(crate) fn view<'a>(
-    props: QuickLaunchesEditorProps<'a>,
-) -> Element<'a, QuickLaunchesEditorEvent> {
+    props: QuickLaunchesWizardProps<'a>,
+) -> Element<'a, QuickLaunchesWizardEvent> {
     let mut content = column![].spacing(SECTION_SPACING).width(Length::Fill);
 
     content = content.push(section_header("Quick launch", props.theme));
@@ -43,16 +44,16 @@ pub(crate) fn view<'a>(
         "Title",
         "codex: review",
         props.editor.title(),
-        QuickLaunchesEditorEvent::UpdateTitle,
+        QuickLaunchesWizardEvent::UpdateTitle,
         props.theme,
     ));
 
     let command_type = props.editor.command_type();
     content = match props.editor.mode() {
-        QuickLaunchEditorMode::Create { .. } => {
+        QuickLaunchWizardMode::Create { .. } => {
             content.push(command_type_selector(props.editor))
         },
-        QuickLaunchEditorMode::Edit { .. } => {
+        QuickLaunchWizardMode::Edit { .. } => {
             let label = format!("Type: {command_type}");
             content.push(text(label).size(LABEL_SIZE))
         },
@@ -72,15 +73,15 @@ pub(crate) fn view<'a>(
                 "Program",
                 "/usr/bin/bash",
                 custom.program(),
-                QuickLaunchesEditorEvent::UpdateProgram,
+                QuickLaunchesWizardEvent::UpdateProgram,
                 props.theme,
             ));
             content = content.push(list_editor(
                 "Arguments",
                 "--flag",
                 custom.args(),
-                QuickLaunchesEditorEvent::AddArg,
-                QuickLaunchesEditorEvent::RemoveArg,
+                QuickLaunchesWizardEvent::AddArg,
+                QuickLaunchesWizardEvent::RemoveArg,
                 update_arg,
                 props.theme,
             ));
@@ -94,7 +95,7 @@ pub(crate) fn view<'a>(
                 "Workdir (cwd)",
                 "/path/to/project",
                 custom.working_directory(),
-                QuickLaunchesEditorEvent::UpdateWorkingDirectory,
+                QuickLaunchesWizardEvent::UpdateWorkingDirectory,
                 props.theme,
             ));
         },
@@ -111,14 +112,14 @@ pub(crate) fn view<'a>(
                 "Host",
                 "example.com",
                 ssh.host(),
-                QuickLaunchesEditorEvent::UpdateHost,
+                QuickLaunchesWizardEvent::UpdateHost,
                 props.theme,
             ));
             let port_row = text_input_row(
                 "Port",
                 "22",
                 ssh.port(),
-                QuickLaunchesEditorEvent::UpdatePort,
+                QuickLaunchesWizardEvent::UpdatePort,
                 props.theme,
             );
             content = content.push(port_row);
@@ -126,22 +127,22 @@ pub(crate) fn view<'a>(
                 "User",
                 "ubuntu",
                 ssh.user(),
-                QuickLaunchesEditorEvent::UpdateUser,
+                QuickLaunchesWizardEvent::UpdateUser,
                 props.theme,
             ));
             content = content.push(text_input_row(
                 "Identity file",
                 "~/.ssh/id_ed25519",
                 ssh.identity_file(),
-                QuickLaunchesEditorEvent::UpdateIdentityFile,
+                QuickLaunchesWizardEvent::UpdateIdentityFile,
                 props.theme,
             ));
             content = content.push(list_editor(
                 "Extra args",
                 "-A",
                 ssh.extra_args(),
-                QuickLaunchesEditorEvent::AddExtraArg,
-                QuickLaunchesEditorEvent::RemoveExtraArg,
+                QuickLaunchesWizardEvent::AddExtraArg,
+                QuickLaunchesWizardEvent::RemoveExtraArg,
                 update_extra_arg,
                 props.theme,
             ));
@@ -158,8 +159,8 @@ pub(crate) fn view<'a>(
     }
 
     let action_row = row![
-        editor_button("Save", QuickLaunchesEditorEvent::Save, props.theme),
-        editor_button("Cancel", QuickLaunchesEditorEvent::Cancel, props.theme)
+        editor_button("Save", QuickLaunchesWizardEvent::Save, props.theme),
+        editor_button("Cancel", QuickLaunchesWizardEvent::Cancel, props.theme)
     ]
     .spacing(8);
 
@@ -192,7 +193,7 @@ pub(crate) fn view<'a>(
 fn section_header<'a>(
     label: &'a str,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchesEditorEvent> {
+) -> Element<'a, QuickLaunchesWizardEvent> {
     let palette = theme.theme.iced_palette();
     container(text(label).size(LABEL_SIZE).style(move |_| {
         iced::widget::text::Style {
@@ -207,9 +208,9 @@ fn text_input_row<'a>(
     label: &'a str,
     placeholder: &'a str,
     value: &'a str,
-    on_input: fn(String) -> QuickLaunchesEditorEvent,
+    on_input: fn(String) -> QuickLaunchesWizardEvent,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchesEditorEvent> {
+) -> Element<'a, QuickLaunchesWizardEvent> {
     let label = field_label(label);
     let input = text_input(placeholder, value)
         .on_input(on_input)
@@ -226,13 +227,13 @@ fn text_input_row<'a>(
 }
 
 fn command_type_selector<'a>(
-    editor: &'a QuickLaunchEditorState,
-) -> Element<'a, QuickLaunchesEditorEvent> {
+    editor: &'a QuickLaunchWizardState,
+) -> Element<'a, QuickLaunchesWizardEvent> {
     let options = [QuickLaunchType::Custom, QuickLaunchType::Ssh];
     let selector = pick_list(
         options,
         Some(editor.command_type()),
-        QuickLaunchesEditorEvent::SelectCommandType,
+        QuickLaunchesWizardEvent::SelectCommandType,
     )
     .placeholder("Select type")
     .text_size(LABEL_SIZE)
@@ -248,11 +249,11 @@ fn list_editor<'a>(
     label: &'a str,
     placeholder: &'a str,
     values: &'a [String],
-    on_add: QuickLaunchesEditorEvent,
-    on_remove: fn(usize) -> QuickLaunchesEditorEvent,
-    on_update: fn(usize, String) -> QuickLaunchesEditorEvent,
+    on_add: QuickLaunchesWizardEvent,
+    on_remove: fn(usize) -> QuickLaunchesWizardEvent,
+    on_update: fn(usize, String) -> QuickLaunchesWizardEvent,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchesEditorEvent> {
+) -> Element<'a, QuickLaunchesWizardEvent> {
     let mut column = column![text(label).size(LABEL_SIZE)]
         .spacing(FIELD_SPACING)
         .width(Length::Fill);
@@ -278,14 +279,14 @@ fn env_editor<'a>(
     key_placeholder: &'a str,
     value_placeholder: &'a str,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchesEditorEvent> {
+) -> Element<'a, QuickLaunchesWizardEvent> {
     let mut column = column![text("Environment").size(LABEL_SIZE)]
         .spacing(FIELD_SPACING)
         .width(Length::Fill);
 
     for (index, (key, value)) in env.iter().enumerate() {
         let key_input = text_input(key_placeholder, key)
-            .on_input(move |val| QuickLaunchesEditorEvent::UpdateEnvKey {
+            .on_input(move |val| QuickLaunchesWizardEvent::UpdateEnvKey {
                 index,
                 value: val,
             })
@@ -295,7 +296,7 @@ fn env_editor<'a>(
             .width(Length::Fill);
 
         let value_input = text_input(value_placeholder, value)
-            .on_input(move |val| QuickLaunchesEditorEvent::UpdateEnvValue {
+            .on_input(move |val| QuickLaunchesWizardEvent::UpdateEnvValue {
                 index,
                 value: val,
             })
@@ -306,7 +307,7 @@ fn env_editor<'a>(
 
         let remove = editor_button(
             "Remove",
-            QuickLaunchesEditorEvent::RemoveEnv(index),
+            QuickLaunchesWizardEvent::RemoveEnv(index),
             theme,
         );
 
@@ -316,21 +317,21 @@ fn env_editor<'a>(
     column
         .push(editor_button(
             "Add env",
-            QuickLaunchesEditorEvent::AddEnv,
+            QuickLaunchesWizardEvent::AddEnv,
             theme,
         ))
         .into()
 }
 
-fn update_arg(index: usize, value: String) -> QuickLaunchesEditorEvent {
-    QuickLaunchesEditorEvent::UpdateArg { index, value }
+fn update_arg(index: usize, value: String) -> QuickLaunchesWizardEvent {
+    QuickLaunchesWizardEvent::UpdateArg { index, value }
 }
 
-fn update_extra_arg(index: usize, value: String) -> QuickLaunchesEditorEvent {
-    QuickLaunchesEditorEvent::UpdateExtraArg { index, value }
+fn update_extra_arg(index: usize, value: String) -> QuickLaunchesWizardEvent {
+    QuickLaunchesWizardEvent::UpdateExtraArg { index, value }
 }
 
-fn field_label<'a>(label: &'a str) -> Element<'a, QuickLaunchesEditorEvent> {
+fn field_label<'a>(label: &'a str) -> Element<'a, QuickLaunchesWizardEvent> {
     text(label)
         .size(LABEL_SIZE)
         .width(Length::Fixed(LABEL_WIDTH))
@@ -352,9 +353,9 @@ fn text_input_style(
 
 fn editor_button<'a>(
     label: &'a str,
-    on_press: QuickLaunchesEditorEvent,
+    on_press: QuickLaunchesWizardEvent,
     theme: ThemeProps<'a>,
-) -> iced::widget::Button<'a, QuickLaunchesEditorEvent> {
+) -> iced::widget::Button<'a, QuickLaunchesWizardEvent> {
     let palette = theme.theme.iced_palette().clone();
     let content = container(
         text(label)

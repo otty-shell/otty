@@ -2,8 +2,9 @@ use std::fmt;
 
 use otty_ui_term::settings::Settings;
 
+use crate::features::quick_launch_wizard::QuickLaunchWizardState;
 use crate::features::quick_launches::{
-    NodePath, QuickLaunch, QuickLaunchEditorState, QuickLaunchErrorState,
+    NodePath, QuickLaunch, QuickLaunchErrorState,
 };
 use crate::features::terminal::TerminalState;
 
@@ -12,10 +13,10 @@ use crate::features::terminal::TerminalState;
 pub(crate) enum TabOpenRequest {
     Terminal,
     Settings,
-    QuickLaunchEditorCreate {
+    QuickLaunchWizardCreate {
         parent_path: NodePath,
     },
-    QuickLaunchEditorEdit {
+    QuickLaunchWizardEdit {
         path: NodePath,
         command: Box<QuickLaunch>,
     },
@@ -39,12 +40,12 @@ impl fmt::Debug for TabOpenRequest {
         match self {
             TabOpenRequest::Terminal => f.write_str("Terminal"),
             TabOpenRequest::Settings => f.write_str("Settings"),
-            TabOpenRequest::QuickLaunchEditorCreate { parent_path } => f
-                .debug_struct("QuickLaunchEditorCreate")
+            TabOpenRequest::QuickLaunchWizardCreate { parent_path } => f
+                .debug_struct("QuickLaunchWizardCreate")
                 .field("parent_path", parent_path)
                 .finish(),
-            TabOpenRequest::QuickLaunchEditorEdit { path, command } => f
-                .debug_struct("QuickLaunchEditorEdit")
+            TabOpenRequest::QuickLaunchWizardEdit { path, command } => f
+                .debug_struct("QuickLaunchWizardEdit")
                 .field("path", path)
                 .field("command", command)
                 .finish(),
@@ -74,7 +75,7 @@ impl fmt::Debug for TabOpenRequest {
 pub(crate) enum TabContent {
     Terminal(Box<TerminalState>),
     Settings,
-    QuickLaunchEditor(Box<QuickLaunchEditorState>),
+    QuickLaunchWizard(Box<QuickLaunchWizardState>),
     QuickLaunchError(QuickLaunchErrorState),
 }
 

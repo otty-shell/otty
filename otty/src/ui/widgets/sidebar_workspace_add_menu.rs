@@ -1,12 +1,12 @@
 use iced::widget::{Column, container, mouse_area};
 use iced::{Element, Length, Point, Size, alignment};
 
+use super::services::{
+    anchor_position, menu_height_for_items, menu_panel_style,
+};
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
     MenuItemEvent, MenuItemProps, view as menu_item_view,
-};
-use crate::ui::components::widget_helpers::{
-    anchor_position, menu_height_for_items, menu_panel_style,
 };
 use crate::ui::widgets::sidebar_workspace::{
     SidebarWorkspaceAddMenuAction, SidebarWorkspaceEvent,

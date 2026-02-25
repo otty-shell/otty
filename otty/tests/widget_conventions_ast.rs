@@ -22,7 +22,19 @@ fn given_ui_widgets_when_validating_conventions_then_all_modules_comply() {
     let mut declared_modules = BTreeSet::new();
     for item in &mod_file.items {
         if let Item::Mod(item_mod) = item {
-            if is_pub_crate(&item_mod.vis) && item_mod.content.is_none() {
+            let module_name = item_mod.ident.to_string();
+            if is_helper_module(&module_name) {
+                if item_mod.content.is_none() {
+                    continue;
+                } else {
+                    violations.push(format!(
+                        "{}: helper module '{}' must use file module declaration",
+                        mod_rs.display(),
+                        item_mod.ident
+                    ));
+                }
+            } else if is_pub_crate(&item_mod.vis) && item_mod.content.is_none()
+            {
                 declared_modules.insert(item_mod.ident.to_string());
             } else {
                 violations.push(format!(
@@ -86,7 +98,9 @@ fn given_ui_widgets_when_validating_conventions_then_all_modules_comply() {
             .unwrap_or_else(|| panic!("missing stem for {}", path.display()))
             .to_string_lossy()
             .to_string();
-        fs_modules.insert(stem);
+        if !is_helper_module(&stem) {
+            fs_modules.insert(stem);
+        }
     }
 
     if declared_modules != fs_modules {
@@ -329,4 +343,8 @@ fn is_pub_crate(vis: &Visibility) -> bool {
         },
         _ => false,
     }
+}
+
+fn is_helper_module(module_name: &str) -> bool {
+    module_name == "services"
 }

@@ -3,10 +3,10 @@ use iced::widget::{column, container, row, scrollable, svg, text};
 use iced::{Element, Length, alignment};
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
+use super::services as helpers;
 use crate::features::explorer::{ExplorerEvent, ExplorerState, FileNode};
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::ui::components::widget_helpers as helpers;
 
 const HEADER_HEIGHT: f32 = 22.0;
 const HEADER_PADDING_X: f32 = 10.0;

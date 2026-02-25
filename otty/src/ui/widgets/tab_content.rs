@@ -6,7 +6,7 @@ use crate::features::tab::{TabContent, TabItem};
 use crate::features::terminal::TerminalEvent;
 use crate::theme::ThemeProps;
 use crate::ui::widgets::{
-    quick_launches_editor, quick_launches_error, settings, terminal_tab,
+    quick_launches_error, quick_launches_wizard, settings, terminal_tab,
 };
 
 /// Props for rendering the active tab content.
@@ -22,9 +22,9 @@ pub(crate) struct TabContentProps<'a> {
 pub(crate) enum TabContentEvent {
     Terminal(TerminalEvent),
     Settings(settings::SettingsEvent),
-    QuickLaunchEditor {
+    QuickLaunchWizard {
         tab_id: u64,
-        event: quick_launches_editor::QuickLaunchesEditorEvent,
+        event: quick_launches_wizard::QuickLaunchesWizardEvent,
     },
     QuickLaunchError(quick_launches_error::QuickLaunchesErrorEvent),
 }
@@ -54,16 +54,16 @@ pub(crate) fn view<'a>(
                     })
                     .map(TabContentEvent::Settings)
                 },
-                TabContent::QuickLaunchEditor(editor) => {
+                TabContent::QuickLaunchWizard(editor) => {
                     let tab_id = tab.id;
-                    quick_launches_editor::view(
-                        quick_launches_editor::QuickLaunchesEditorProps {
+                    quick_launches_wizard::view(
+                        quick_launches_wizard::QuickLaunchesWizardProps {
                             editor,
                             theme,
                         },
                     )
                     .map(move |event| {
-                        TabContentEvent::QuickLaunchEditor { tab_id, event }
+                        TabContentEvent::QuickLaunchWizard { tab_id, event }
                     })
                 },
                 TabContent::QuickLaunchError(error) => {

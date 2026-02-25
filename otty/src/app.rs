@@ -12,9 +12,10 @@ use otty_ui_term::settings::{
 
 use crate::effects::close_window;
 use crate::features::explorer::{self, ExplorerDeps, ExplorerEvent};
-use crate::features::quick_launches::{
-    self as quick_launches, QuickLaunchEditorEvent, quick_launch_editor_reducer,
+use crate::features::quick_launch_wizard::{
+    QuickLaunchWizardDeps, QuickLaunchWizardEvent, quick_launch_wizard_reducer,
 };
+use crate::features::quick_launches::{self as quick_launches};
 use crate::features::settings;
 use crate::features::tab::{
     TabContent, TabDeps, TabEvent, TabOpenRequest, tab_reducer,
@@ -59,9 +60,9 @@ pub(crate) enum Event {
         tab_id: u64,
     },
     Terminal(TerminalEvent),
-    QuickLaunchEditor {
+    QuickLaunchWizard {
         tab_id: u64,
-        event: QuickLaunchEditorEvent,
+        event: QuickLaunchWizardEvent,
     },
     Settings(settings::SettingsEvent),
     SettingsApplied(settings::SettingsData),
@@ -153,7 +154,7 @@ impl App {
         let key_subs = iced::keyboard::listen().map(Event::Keyboard);
 
         let mut subs = vec![terminal_subs, win_subs, key_subs];
-        if !self.state.quick_launches.launching.is_empty()
+        if self.state.quick_launches.has_active_launches()
             || self.state.quick_launches.is_dirty()
             || self.state.quick_launches.is_persist_in_flight()
         {
@@ -170,7 +171,7 @@ impl App {
 
     pub(crate) fn update(&mut self, event: Event) -> Task<Event> {
         let mut pre_dispatch_tasks = Vec::new();
-        if self.state.quick_launches.inline_edit.is_some()
+        if self.state.quick_launches.inline_edit().is_some()
             && should_cancel_inline_edit(&event)
         {
             pre_dispatch_tasks.push(quick_launches::quick_launches_reducer(
@@ -267,9 +268,11 @@ impl App {
                 let terminal_task = terminal_reducer(&mut self.state, event);
                 Task::batch(vec![terminal_task, sync_task])
             },
-            QuickLaunchEditor { tab_id, event } => {
-                quick_launch_editor_reducer(&mut self.state, tab_id, event)
-            },
+            QuickLaunchWizard { tab_id, event } => quick_launch_wizard_reducer(
+                &mut self.state,
+                QuickLaunchWizardDeps { tab_id },
+                event,
+            ),
             Settings(event) => {
                 settings::settings_reducer(&mut self.state, event)
             },
@@ -293,7 +296,7 @@ impl App {
             if matches!(
                 key,
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
-            ) && self.state.quick_launches.inline_edit.is_some()
+            ) && self.state.quick_launches.inline_edit().is_some()
             {
                 return quick_launches::quick_launches_reducer(
                     &mut self.state,
@@ -305,7 +308,7 @@ impl App {
             if matches!(
                 key,
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete)
-            ) && self.state.quick_launches.inline_edit.is_none()
+            ) && self.state.quick_launches.inline_edit().is_none()
             {
                 return quick_launches::quick_launches_reducer(
                     &mut self.state,
@@ -784,7 +787,7 @@ impl App {
 
     fn any_context_menu_open(&self) -> bool {
         if self.state.sidebar.add_menu.is_some()
-            || self.state.quick_launches.context_menu.is_some()
+            || self.state.quick_launches.context_menu().is_some()
         {
             return true;
         }
@@ -830,14 +833,14 @@ impl App {
             );
         }
 
-        if let Some(menu) = self.state.quick_launches.context_menu.as_ref() {
+        if let Some(menu) = self.state.quick_launches.context_menu() {
             return Some(
                 quick_launches_context_menu::view(
                     quick_launches_context_menu::QuickLaunchesContextMenuProps {
                         menu,
                         theme,
                         area_size,
-                        launching: &self.state.quick_launches.launching,
+                        launching: self.state.quick_launches.launching(),
                     },
                 )
                 .map(|event| {
@@ -884,8 +887,8 @@ fn map_tab_content_event(event: tab_content::TabContentEvent) -> Event {
     match event {
         tab_content::TabContentEvent::Terminal(event) => Event::Terminal(event),
         tab_content::TabContentEvent::Settings(event) => Event::Settings(event),
-        tab_content::TabContentEvent::QuickLaunchEditor { tab_id, event } => {
-            Event::QuickLaunchEditor { tab_id, event }
+        tab_content::TabContentEvent::QuickLaunchWizard { tab_id, event } => {
+            Event::QuickLaunchWizard { tab_id, event }
         },
         tab_content::TabContentEvent::QuickLaunchError(event) => match event {},
     }

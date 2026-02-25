@@ -6,14 +6,14 @@ use iced::widget::{
 use iced::{Color, Element, Length, alignment};
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
+use super::services as helpers;
 use crate::features::quick_launches::{
-    DropTarget, InlineEditKind, InlineEditState,
+    DropTarget, InlineEditKind, InlineEditState, LaunchInfo,
     QuickLaunchEvent as FeatureQuickLaunchEvent, QuickLaunchNode,
     QuickLaunchState,
 };
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::ui::components::widget_helpers as helpers;
 
 const HEADER_HEIGHT: f32 = 28.0;
 const HEADER_PADDING_X: f32 = 10.0;
@@ -92,11 +92,11 @@ fn quick_launches_tree<'a>(
     let row_palette = palette.clone();
 
     let tree_view =
-        TreeView::new(&props.state.data.root.children, move |context| {
+        TreeView::new(&props.state.data().root.children, move |context| {
             render_entry(row_props, context)
         })
-        .selected_row(props.state.selected.as_ref())
-        .hovered_row(props.state.hovered.as_ref())
+        .selected_row(props.state.selected_path())
+        .hovered_row(props.state.hovered_path())
         .on_press(|path| QuickLaunchesSidebarEvent::NodePressed { path })
         .on_release(|path| QuickLaunchesSidebarEvent::NodeReleased { path })
         .on_right_press(|path| QuickLaunchesSidebarEvent::NodeRightClicked {
@@ -139,12 +139,11 @@ fn quick_launches_tree<'a>(
         .on_right_press(QuickLaunchesSidebarEvent::BackgroundRightClicked);
 
     let is_root_drop =
-        matches!(props.state.drop_target, Some(DropTarget::Root))
+        matches!(props.state.drop_target(), Some(DropTarget::Root))
             && props
                 .state
-                .drag
-                .as_ref()
-                .map(|drag| drag.active)
+                .drag()
+                .map(|drag| drag.is_active())
                 .unwrap_or(false);
     let palette = props.theme.theme.iced_palette().clone();
 
@@ -173,9 +172,9 @@ fn render_entry<'a>(
 ) -> Element<'a, QuickLaunchesSidebarEvent> {
     let is_indicator_highlighted = props
         .state
-        .launching
+        .launching()
         .get(&context.entry.path)
-        .map(|info| info.is_indicator_highlighted)
+        .map(LaunchInfo::is_indicator_highlighted)
         .unwrap_or(false);
 
     let icon_palette = props.theme.theme.iced_palette();
@@ -222,13 +221,13 @@ fn inline_edit_row<'a>(
     depth: usize,
 ) -> Element<'a, QuickLaunchesSidebarEvent> {
     let indent = depth as f32 * TREE_INDENT;
-    let input = text_input("", &edit.value)
+    let input = text_input("", edit.value())
         .on_input(QuickLaunchesSidebarEvent::InlineEditChanged)
         .on_submit(QuickLaunchesSidebarEvent::InlineEditSubmit)
         .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
         .size(INPUT_FONT_SIZE)
         .width(Length::Fill)
-        .id(edit.id.clone());
+        .id(edit.id().clone());
 
     let row = row![Space::new().width(Length::Fixed(indent)), input]
         .spacing(TREE_ROW_SPACING)
@@ -236,7 +235,7 @@ fn inline_edit_row<'a>(
 
     let mut column = column![row].width(Length::Fill).height(Length::Shrink);
 
-    if let Some(error) = &edit.error {
+    if let Some(error) = edit.error() {
         let error_color = iced::Color::from_rgb(0.9, 0.4, 0.4);
         let error_text =
             text(error)
@@ -256,9 +255,9 @@ fn inline_edit_row<'a>(
 fn inline_edit_root(
     props: QuickLaunchesSidebarProps<'_>,
 ) -> Option<Element<'_, QuickLaunchesSidebarEvent>> {
-    let edit = props.state.inline_edit.as_ref()?;
+    let edit = props.state.inline_edit()?;
     if matches!(
-        &edit.kind,
+        edit.kind(),
         InlineEditKind::CreateFolder { parent_path }
             if parent_path.is_empty()
     ) {
@@ -271,9 +270,9 @@ fn inline_edit_after<'a>(
     props: QuickLaunchesSidebarProps<'a>,
     context: &TreeRowContext<'a, QuickLaunchNode>,
 ) -> Option<Element<'a, QuickLaunchesSidebarEvent>> {
-    let edit = props.state.inline_edit.as_ref()?;
+    let edit = props.state.inline_edit()?;
 
-    match &edit.kind {
+    match edit.kind() {
         InlineEditKind::CreateFolder { parent_path }
             if parent_path == &context.entry.path =>
         {
@@ -290,8 +289,8 @@ fn is_rename_edit(
     props: QuickLaunchesSidebarProps<'_>,
     context: &TreeRowContext<'_, QuickLaunchNode>,
 ) -> bool {
-    matches!(props.state.inline_edit.as_ref(), Some(edit)
-        if matches!(&edit.kind, InlineEditKind::Rename { path } if path == &context.entry.path))
+    matches!(props.state.inline_edit(), Some(edit)
+        if matches!(edit.kind(), InlineEditKind::Rename { path } if path == &context.entry.path))
 }
 
 fn tree_row_style(
@@ -301,8 +300,7 @@ fn tree_row_style(
 ) -> iced::widget::container::Style {
     let is_drop_target = props
         .state
-        .drop_target
-        .as_ref()
+        .drop_target()
         .and_then(|target| match target {
             DropTarget::Folder(path) => {
                 Some(is_prefix(path, &context.entry.path))

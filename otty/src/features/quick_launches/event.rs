@@ -1,4 +1,3 @@
-use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -6,9 +5,12 @@ use iced::widget::operation;
 use iced::{Point, Task};
 use otty_ui_term::settings::Settings;
 
+#[cfg(test)]
 use super::errors::QuickLaunchError;
 use super::model::{
-    NodePath, QuickLaunch, QuickLaunchFile, QuickLaunchFolder, QuickLaunchNode,
+    NodePath, PreparedQuickLaunch, QuickLaunch, QuickLaunchFile,
+    QuickLaunchFolder, QuickLaunchNode, QuickLaunchSetupOutcome,
+    QuickLaunchWizardSaveRequest, QuickLaunchWizardSaveTarget,
     quick_launch_error_message,
 };
 use super::services::prepare_quick_launch_setup;
@@ -18,6 +20,7 @@ use super::state::{
 };
 use super::storage::save_quick_launches;
 use crate::app::Event as AppEvent;
+use crate::features::quick_launch_wizard::QuickLaunchWizardEvent;
 use crate::features::tab::{TabEvent, TabOpenRequest};
 use crate::state::State;
 
@@ -41,6 +44,7 @@ pub(crate) enum QuickLaunchEvent {
     ResetInteractionState,
     InlineEditChanged(String),
     InlineEditSubmit,
+    WizardSaveRequested(QuickLaunchWizardSaveRequest),
     SetupCompleted(QuickLaunchSetupOutcome),
     PersistCompleted,
     PersistFailed(String),
@@ -50,41 +54,6 @@ pub(crate) enum QuickLaunchEvent {
 pub(crate) const QUICK_LAUNCHES_TICK_MS: u64 = 200;
 const LAUNCH_ICON_DELAY_MS: u64 = 1_000;
 const LAUNCH_ICON_BLINK_MS: u128 = 500;
-
-#[derive(Clone)]
-pub(crate) struct PreparedQuickLaunch {
-    pub(crate) path: NodePath,
-    pub(crate) launch_id: u64,
-    pub(crate) title: String,
-    pub(crate) settings: Box<Settings>,
-    pub(crate) command: Box<QuickLaunch>,
-}
-
-impl fmt::Debug for PreparedQuickLaunch {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PreparedQuickLaunch")
-            .field("path", &self.path)
-            .field("launch_id", &self.launch_id)
-            .field("title", &self.title)
-            .finish()
-    }
-}
-
-/// Outcome of quick launch setup completion.
-#[derive(Debug, Clone)]
-pub(crate) enum QuickLaunchSetupOutcome {
-    Prepared(PreparedQuickLaunch),
-    Failed {
-        path: NodePath,
-        launch_id: u64,
-        command: Box<QuickLaunch>,
-        error: Arc<QuickLaunchError>,
-    },
-    Canceled {
-        path: NodePath,
-        launch_id: u64,
-    },
-}
 
 /// Actions that can be triggered from the context menu.
 #[derive(Debug, Clone, Copy)]
@@ -238,6 +207,9 @@ pub(crate) fn quick_launches_reducer(
             Task::none()
         },
         InlineEditSubmit => apply_inline_edit(state),
+        WizardSaveRequested(request) => {
+            apply_editor_save_request(state, request)
+        },
         ContextMenuAction(action) => {
             handle_context_menu_action(state, terminal_settings, action)
         },
@@ -561,6 +533,82 @@ fn apply_inline_edit(state: &mut State) -> Task<AppEvent> {
             }
         },
     }
+}
+
+fn apply_editor_save_request(
+    state: &mut State,
+    request: QuickLaunchWizardSaveRequest,
+) -> Task<AppEvent> {
+    match request.target {
+        QuickLaunchWizardSaveTarget::Create { parent_path } => {
+            let Some(parent) =
+                state.quick_launches.data.folder_mut(&parent_path)
+            else {
+                return request_editor_error(
+                    request.tab_id,
+                    "Missing target folder.",
+                );
+            };
+
+            let title =
+                match parent.normalize_title(&request.command.title, None) {
+                    Ok(title) => title,
+                    Err(err) => {
+                        return request_editor_error(
+                            request.tab_id,
+                            &format!("{err}"),
+                        );
+                    },
+                };
+
+            let mut command = request.command;
+            command.title = title;
+            parent.children.push(QuickLaunchNode::Command(command));
+        },
+        QuickLaunchWizardSaveTarget::Edit { path } => {
+            {
+                let Some(parent) =
+                    state.quick_launches.data.parent_folder_mut(&path)
+                else {
+                    return request_editor_error(
+                        request.tab_id,
+                        "Missing parent folder.",
+                    );
+                };
+                let current = path.last().map(String::as_str);
+                if let Err(err) =
+                    parent.normalize_title(&request.command.title, current)
+                {
+                    return request_editor_error(
+                        request.tab_id,
+                        &format!("{err}"),
+                    );
+                }
+            }
+
+            let Some(node) = state.quick_launches.data.node_mut(&path) else {
+                return request_editor_error(
+                    request.tab_id,
+                    "Command no longer exists.",
+                );
+            };
+            *node = QuickLaunchNode::Command(request.command);
+        },
+    }
+
+    state.quick_launches.mark_dirty();
+    Task::done(AppEvent::Tab(TabEvent::CloseTab {
+        tab_id: request.tab_id,
+    }))
+}
+
+fn request_editor_error(tab_id: u64, message: &str) -> Task<AppEvent> {
+    Task::done(AppEvent::QuickLaunchWizard {
+        tab_id,
+        event: QuickLaunchWizardEvent::SetError {
+            message: String::from(message),
+        },
+    })
 }
 
 fn toggle_folder_expanded(state: &mut State, path: &[String]) {
@@ -981,7 +1029,7 @@ fn open_create_command_tab(
     parent: NodePath,
 ) -> Task<AppEvent> {
     Task::done(AppEvent::Tab(TabEvent::NewTab {
-        request: TabOpenRequest::QuickLaunchEditorCreate {
+        request: TabOpenRequest::QuickLaunchWizardCreate {
             parent_path: parent,
         },
     }))
@@ -996,7 +1044,7 @@ fn open_edit_command_tab(state: &mut State, path: NodePath) -> Task<AppEvent> {
     };
 
     Task::done(AppEvent::Tab(TabEvent::NewTab {
-        request: TabOpenRequest::QuickLaunchEditorEdit {
+        request: TabOpenRequest::QuickLaunchWizardEdit {
             path,
             command: Box::new(command),
         },
@@ -1083,6 +1131,117 @@ mod tests {
 
         assert!(state.quick_launches.selected.is_none());
         assert!(state.quick_launches.launching.is_empty());
+    }
+
+    #[test]
+    fn given_editor_create_save_request_when_reduced_then_command_is_added() {
+        let mut state = State::default();
+        state.quick_launches.data.root = QuickLaunchFolder {
+            title: String::from("Root"),
+            expanded: true,
+            children: Vec::new(),
+        };
+
+        let request = QuickLaunchWizardSaveRequest {
+            tab_id: 7,
+            target: QuickLaunchWizardSaveTarget::Create {
+                parent_path: Vec::new(),
+            },
+            command: sample_command(),
+        };
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            &settings(),
+            QuickLaunchEvent::WizardSaveRequested(request),
+        );
+
+        assert_eq!(state.quick_launches.data.root.children.len(), 1);
+        assert!(state.quick_launches.is_dirty());
+    }
+
+    #[test]
+    fn given_editor_save_with_duplicate_title_when_reduced_then_data_is_unchanged()
+     {
+        let mut state = State::default();
+        state.quick_launches.data.root = QuickLaunchFolder {
+            title: String::from("Root"),
+            expanded: true,
+            children: vec![
+                QuickLaunchNode::Command(QuickLaunch {
+                    title: String::from("Run"),
+                    spec: super::super::model::CommandSpec::Custom {
+                        custom: super::super::model::CustomCommand {
+                            program: String::from("bash"),
+                            args: Vec::new(),
+                            env: Vec::new(),
+                            working_directory: None,
+                        },
+                    },
+                }),
+                QuickLaunchNode::Command(QuickLaunch {
+                    title: String::from("Copy"),
+                    spec: super::super::model::CommandSpec::Custom {
+                        custom: super::super::model::CustomCommand {
+                            program: String::from("bash"),
+                            args: Vec::new(),
+                            env: Vec::new(),
+                            working_directory: None,
+                        },
+                    },
+                }),
+            ],
+        };
+
+        let request = QuickLaunchWizardSaveRequest {
+            tab_id: 3,
+            target: QuickLaunchWizardSaveTarget::Edit {
+                path: vec![String::from("Run")],
+            },
+            command: QuickLaunch {
+                title: String::from("Copy"),
+                spec: super::super::model::CommandSpec::Custom {
+                    custom: super::super::model::CustomCommand {
+                        program: String::from("bash"),
+                        args: Vec::new(),
+                        env: Vec::new(),
+                        working_directory: None,
+                    },
+                },
+            },
+        };
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            &settings(),
+            QuickLaunchEvent::WizardSaveRequested(request),
+        );
+
+        assert_eq!(state.quick_launches.data.root.children.len(), 2);
+        assert!(!state.quick_launches.is_dirty());
+    }
+
+    #[test]
+    fn given_editor_save_with_missing_target_when_reduced_then_state_is_unchanged()
+     {
+        let mut state = State::default();
+
+        let request = QuickLaunchWizardSaveRequest {
+            tab_id: 42,
+            target: QuickLaunchWizardSaveTarget::Edit {
+                path: vec![String::from("Missing")],
+            },
+            command: sample_command(),
+        };
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            &settings(),
+            QuickLaunchEvent::WizardSaveRequested(request),
+        );
+
+        assert!(state.quick_launches.data.root.children.is_empty());
+        assert!(!state.quick_launches.is_dirty());
     }
 
     #[test]

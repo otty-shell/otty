@@ -5,8 +5,9 @@ use otty_ui_term::settings::Settings;
 use super::model::{TabContent, TabItem, TabOpenRequest};
 use crate::app::Event as AppEvent;
 use crate::features::explorer::ExplorerEvent;
+use crate::features::quick_launch_wizard::QuickLaunchWizardState;
 use crate::features::quick_launches::{
-    NodePath, QuickLaunch, QuickLaunchEditorState, quick_launch_error_message,
+    NodePath, QuickLaunch, quick_launch_error_message,
 };
 use crate::features::settings::SettingsEvent;
 use crate::features::terminal::{
@@ -38,11 +39,11 @@ pub(crate) fn tab_reducer(
         TabEvent::NewTab { request } => match request {
             TabOpenRequest::Terminal => open_shell_terminal_tab(state, deps),
             TabOpenRequest::Settings => open_settings_tab(state),
-            TabOpenRequest::QuickLaunchEditorCreate { parent_path } => {
-                open_quick_launch_editor_create_tab(state, parent_path)
+            TabOpenRequest::QuickLaunchWizardCreate { parent_path } => {
+                open_quick_launch_wizard_create_tab(state, parent_path)
             },
-            TabOpenRequest::QuickLaunchEditorEdit { path, command } => {
-                open_quick_launch_editor_edit_tab(state, path, *command)
+            TabOpenRequest::QuickLaunchWizardEdit { path, command } => {
+                open_quick_launch_wizard_edit_tab(state, path, *command)
             },
             TabOpenRequest::QuickLaunchError { title, message } => {
                 open_quick_launch_error_tab(state, title, message)
@@ -82,19 +83,19 @@ fn open_settings_tab(state: &mut State) -> Task<AppEvent> {
     ])
 }
 
-fn open_quick_launch_editor_create_tab(
+fn open_quick_launch_wizard_create_tab(
     state: &mut State,
     parent_path: NodePath,
 ) -> Task<AppEvent> {
     let tab_id = state.allocate_tab_id();
 
-    let editor = QuickLaunchEditorState::new_create(parent_path);
+    let editor = QuickLaunchWizardState::new_create(parent_path);
     state.tab.insert(
         tab_id,
         TabItem {
             id: tab_id,
             title: String::from("Create launch"),
-            content: TabContent::QuickLaunchEditor(Box::new(editor)),
+            content: TabContent::QuickLaunchWizard(Box::new(editor)),
         },
     );
     state.tab.activate(Some(tab_id));
@@ -102,7 +103,7 @@ fn open_quick_launch_editor_create_tab(
     Task::none()
 }
 
-fn open_quick_launch_editor_edit_tab(
+fn open_quick_launch_wizard_edit_tab(
     state: &mut State,
     path: NodePath,
     command: QuickLaunch,
@@ -111,13 +112,13 @@ fn open_quick_launch_editor_edit_tab(
 
     let command_title = command.title.as_str();
     let title = format!("Edit {command_title}");
-    let editor = QuickLaunchEditorState::from_command(path, &command);
+    let editor = QuickLaunchWizardState::from_command(path, &command);
     state.tab.insert(
         tab_id,
         TabItem {
             id: tab_id,
             title,
-            content: TabContent::QuickLaunchEditor(Box::new(editor)),
+            content: TabContent::QuickLaunchWizard(Box::new(editor)),
         },
     );
     state.tab.activate(Some(tab_id));
@@ -212,10 +213,9 @@ fn open_quick_launch_error_tab(
             id: tab_id,
             title: title.clone(),
             content: TabContent::QuickLaunchError(
-                crate::features::quick_launches::QuickLaunchErrorState {
-                    title,
-                    message,
-                },
+                crate::features::quick_launches::QuickLaunchErrorState::new(
+                    title, message,
+                ),
             ),
         },
     );
@@ -395,6 +395,54 @@ mod tests {
             deps(),
             TabEvent::ActivateTab { tab_id: 7 },
         );
+
+        assert!(state.tab.is_empty());
+        assert_eq!(state.tab.active_tab_id(), None);
+    }
+
+    #[test]
+    fn given_two_tabs_when_active_tab_closed_then_previous_tab_becomes_active()
+    {
+        let mut state = State::default();
+
+        let _ = tab_reducer(
+            &mut state,
+            deps(),
+            TabEvent::NewTab {
+                request: TabOpenRequest::Settings,
+            },
+        );
+        let _ = tab_reducer(
+            &mut state,
+            deps(),
+            TabEvent::NewTab {
+                request: TabOpenRequest::Settings,
+            },
+        );
+        assert_eq!(state.tab.active_tab_id(), Some(1));
+
+        let _ =
+            tab_reducer(&mut state, deps(), TabEvent::CloseTab { tab_id: 1 });
+
+        assert_eq!(state.tab.len(), 1);
+        assert_eq!(state.tab.active_tab_id(), Some(0));
+    }
+
+    #[test]
+    fn given_last_tab_when_closed_then_state_has_no_active_tab() {
+        let mut state = State::default();
+
+        let _ = tab_reducer(
+            &mut state,
+            deps(),
+            TabEvent::NewTab {
+                request: TabOpenRequest::Settings,
+            },
+        );
+        assert_eq!(state.tab.active_tab_id(), Some(0));
+
+        let _ =
+            tab_reducer(&mut state, deps(), TabEvent::CloseTab { tab_id: 0 });
 
         assert!(state.tab.is_empty());
         assert_eq!(state.tab.active_tab_id(), None);

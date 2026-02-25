@@ -1,13 +1,13 @@
 use iced::widget::{Column, Id, container, mouse_area, pane_grid, text_input};
 use iced::{Background, Element, Length, Point, Size, alignment};
 
+use super::services::{
+    anchor_position, menu_height_for_items, menu_panel_style,
+};
 use crate::features::terminal::TerminalEvent as FeatureTerminalEvent;
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
     MenuItemEvent, MenuItemProps, view as menu_item_view,
-};
-use crate::ui::components::widget_helpers::{
-    anchor_position, menu_height_for_items, menu_panel_style,
 };
 
 const MENU_CONTAINER_WIDTH: f32 = 250.0;

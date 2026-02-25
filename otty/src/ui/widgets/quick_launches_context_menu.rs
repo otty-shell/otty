@@ -3,6 +3,9 @@ use std::collections::HashMap;
 use iced::widget::{Column, container, mouse_area};
 use iced::{Element, Length, Size, alignment};
 
+use super::services::{
+    anchor_position, menu_height_for_items, menu_panel_style,
+};
 use crate::features::quick_launches::{
     ContextMenuAction, ContextMenuState, ContextMenuTarget, LaunchInfo,
     NodePath, QuickLaunchEvent as FeatureQuickLaunchEvent,
@@ -10,9 +13,6 @@ use crate::features::quick_launches::{
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
     MenuItemEvent, MenuItemProps, view as menu_item_view,
-};
-use crate::ui::components::widget_helpers::{
-    anchor_position, menu_height_for_items, menu_panel_style,
 };
 
 const MENU_CONTAINER_WIDTH: f32 = 220.0;
@@ -38,7 +38,7 @@ pub(crate) fn view<'a>(
 ) -> Element<'a, QuickLaunchesContextMenuEvent> {
     let mut items: Vec<Element<'a, QuickLaunchesContextMenuEvent>> = Vec::new();
 
-    match &props.menu.target {
+    match props.menu.target() {
         ContextMenuTarget::Command(path) => {
             let is_launching = props.launching.contains_key(path);
             if is_launching {
@@ -114,7 +114,7 @@ pub(crate) fn view<'a>(
         .align_x(alignment::Horizontal::Left);
 
     let anchor = anchor_position(
-        props.menu.cursor,
+        props.menu.cursor(),
         props.area_size,
         MENU_CONTAINER_WIDTH,
         menu_height,

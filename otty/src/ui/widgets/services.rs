@@ -7,14 +7,14 @@ use crate::theme::{IcedColorPalette, ThemeProps};
 ///
 /// ```rust,ignore
 /// # use iced::{Point, Size};
-/// # use crate::ui::components::widget_helpers::anchor_position;
+/// # use crate::ui::widgets::services::anchor_position;
 /// let cursor = Point::new(120.0, 80.0);
 /// let grid = Size::new(800.0, 600.0);
 /// let anchor = anchor_position(cursor, grid, 220.0, 160.0, 6.0);
 /// assert!(anchor.x >= 6.0);
 /// assert!(anchor.y >= 6.0);
 /// ```
-pub(crate) fn anchor_position(
+pub(super) fn anchor_position(
     cursor: Point,
     grid_size: Size,
     menu_width: f32,
@@ -46,7 +46,7 @@ pub(crate) fn anchor_position(
     Point::new(x.clamp(margin, max_x), y.clamp(margin, max_y))
 }
 
-pub(crate) fn thin_scroll_style(
+pub(super) fn thin_scroll_style(
     palette: IcedColorPalette,
 ) -> impl Fn(&iced::Theme, scrollable::Status) -> scrollable::Style + 'static {
     move |theme, status| {
@@ -72,7 +72,7 @@ pub(crate) fn thin_scroll_style(
     }
 }
 
-pub(crate) fn tree_row_style(
+pub(super) fn tree_row_style(
     palette: &IcedColorPalette,
     is_selected: bool,
     is_hovered: bool,
@@ -96,7 +96,7 @@ pub(crate) fn tree_row_style(
     }
 }
 
-pub(crate) fn menu_height_for_items(
+pub(super) fn menu_height_for_items(
     item_count: usize,
     item_height: f32,
     vertical_padding: f32,
@@ -104,7 +104,7 @@ pub(crate) fn menu_height_for_items(
     vertical_padding + item_height * item_count as f32
 }
 
-pub(crate) fn menu_panel_style(
+pub(super) fn menu_panel_style(
     theme: ThemeProps<'_>,
 ) -> impl Fn(&iced::Theme) -> container::Style + 'static {
     let palette = theme.theme.iced_palette().clone();

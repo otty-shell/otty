@@ -8,13 +8,13 @@ use iced::{Color, Element, Length, alignment};
 use otty_ui_term::parse_hex_color;
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
+use super::services as helpers;
 use crate::features::settings::{
     SettingsEvent as FeatureSettingsEvent, SettingsNode, SettingsPreset,
     SettingsSection, SettingsState, is_valid_hex_color, palette_label,
 };
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::ui::components::widget_helpers as helpers;
 
 const HEADER_HEIGHT: f32 = 32.0;
 const HEADER_PADDING_X: f32 = 12.0;

@@ -19,13 +19,13 @@ pub(crate) fn view<'a>(
     props: QuickLaunchesErrorProps<'a>,
 ) -> Element<'a, QuickLaunchesErrorEvent> {
     let palette = props.theme.theme.iced_palette();
-    let title = text(&props.error.title).size(18.0).style(move |_| {
+    let title = text(props.error.title()).size(18.0).style(move |_| {
         iced::widget::text::Style {
             color: Some(palette.red),
         }
     });
 
-    let message = text(&props.error.message).size(13.0).style(move |_| {
+    let message = text(props.error.message()).size(13.0).style(move |_| {
         iced::widget::text::Style {
             color: Some(palette.bright_red),
         }

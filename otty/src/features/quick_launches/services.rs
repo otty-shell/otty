@@ -10,10 +10,10 @@ use otty_ui_term::settings::{
 };
 
 use super::errors::QuickLaunchError;
-use super::event::{PreparedQuickLaunch, QuickLaunchSetupOutcome};
 use super::model::{
-    CommandSpec, CustomCommand, EnvVar, NodePath, QuickLaunch, SshCommand,
-    validate_custom_command, validate_ssh_command,
+    CommandSpec, CustomCommand, EnvVar, NodePath, PreparedQuickLaunch,
+    QuickLaunch, QuickLaunchSetupOutcome, SshCommand, validate_custom_command,
+    validate_ssh_command,
 };
 use crate::features::terminal::terminal_settings_for_session;
 

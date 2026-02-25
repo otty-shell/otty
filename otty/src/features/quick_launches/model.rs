@@ -1,5 +1,7 @@
 use std::fmt;
+use std::sync::Arc;
 
+use otty_ui_term::settings::Settings;
 use serde::{Deserialize, Serialize};
 
 use super::errors::QuickLaunchError;
@@ -9,6 +11,57 @@ pub(crate) const QUICK_LAUNCHES_VERSION: u8 = 1;
 
 /// Path of titles from the root to a node.
 pub(crate) type NodePath = Vec<String>;
+
+/// Prepared runtime payload for launching a quick launch command.
+#[derive(Clone)]
+pub(crate) struct PreparedQuickLaunch {
+    pub(crate) path: NodePath,
+    pub(crate) launch_id: u64,
+    pub(crate) title: String,
+    pub(crate) settings: Box<Settings>,
+    pub(crate) command: Box<QuickLaunch>,
+}
+
+impl fmt::Debug for PreparedQuickLaunch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PreparedQuickLaunch")
+            .field("path", &self.path)
+            .field("launch_id", &self.launch_id)
+            .field("title", &self.title)
+            .finish()
+    }
+}
+
+/// Outcome produced after quick launch preflight/setup.
+#[derive(Debug, Clone)]
+pub(crate) enum QuickLaunchSetupOutcome {
+    Prepared(PreparedQuickLaunch),
+    Failed {
+        path: NodePath,
+        launch_id: u64,
+        command: Box<QuickLaunch>,
+        error: Arc<QuickLaunchError>,
+    },
+    Canceled {
+        path: NodePath,
+        launch_id: u64,
+    },
+}
+
+/// Save target emitted by tab quick launch editor.
+#[derive(Debug, Clone)]
+pub(crate) enum QuickLaunchWizardSaveTarget {
+    Create { parent_path: NodePath },
+    Edit { path: NodePath },
+}
+
+/// Save request emitted by tab quick launch editor.
+#[derive(Debug, Clone)]
+pub(crate) struct QuickLaunchWizardSaveRequest {
+    pub(crate) tab_id: u64,
+    pub(crate) target: QuickLaunchWizardSaveTarget,
+    pub(crate) command: QuickLaunch,
+}
 
 /// Default SSH port for quick launch settings.
 pub(crate) const SSH_DEFAULT_PORT: u16 = 22;

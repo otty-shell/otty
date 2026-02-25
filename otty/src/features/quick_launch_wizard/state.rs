@@ -5,7 +5,7 @@ use crate::features::quick_launches::{
 
 /// Mode for a quick launch editor tab.
 #[derive(Debug, Clone)]
-pub(crate) enum QuickLaunchEditorMode {
+pub(crate) enum QuickLaunchWizardMode {
     Create { parent_path: NodePath },
     Edit { path: NodePath },
 }
@@ -170,12 +170,12 @@ impl SshLaunchOptions {
 
 /// Active editor options for the selected command type.
 #[derive(Debug, Clone)]
-enum QuickLaunchEditorOptions {
+enum QuickLaunchWizardOptions {
     Custom(CommandLaunchOptions),
     Ssh(SshLaunchOptions),
 }
 
-impl QuickLaunchEditorOptions {
+impl QuickLaunchWizardOptions {
     fn command_type(&self) -> QuickLaunchType {
         match self {
             Self::Custom(_) => QuickLaunchType::Custom,
@@ -186,20 +186,20 @@ impl QuickLaunchEditorOptions {
 
 /// Runtime state for a quick launch editor tab.
 #[derive(Debug, Clone)]
-pub(crate) struct QuickLaunchEditorState {
-    mode: QuickLaunchEditorMode,
+pub(crate) struct QuickLaunchWizardState {
+    mode: QuickLaunchWizardMode,
     title: String,
-    options: QuickLaunchEditorOptions,
+    options: QuickLaunchWizardOptions,
     error: Option<String>,
 }
 
-impl QuickLaunchEditorState {
+impl QuickLaunchWizardState {
     /// Build state for creating a command in the target folder.
     pub(crate) fn new_create(parent_path: NodePath) -> Self {
         Self {
-            mode: QuickLaunchEditorMode::Create { parent_path },
+            mode: QuickLaunchWizardMode::Create { parent_path },
             title: String::new(),
-            options: QuickLaunchEditorOptions::Custom(
+            options: QuickLaunchWizardOptions::Custom(
                 CommandLaunchOptions::default(),
             ),
             error: None,
@@ -210,9 +210,9 @@ impl QuickLaunchEditorState {
     pub(crate) fn from_command(path: NodePath, command: &QuickLaunch) -> Self {
         match &command.spec {
             CommandSpec::Custom { custom } => Self {
-                mode: QuickLaunchEditorMode::Edit { path },
+                mode: QuickLaunchWizardMode::Edit { path },
                 title: command.title.clone(),
-                options: QuickLaunchEditorOptions::Custom(
+                options: QuickLaunchWizardOptions::Custom(
                     CommandLaunchOptions {
                         program: custom.program.clone(),
                         args: custom.args.clone(),
@@ -232,9 +232,9 @@ impl QuickLaunchEditorState {
                 error: None,
             },
             CommandSpec::Ssh { ssh } => Self {
-                mode: QuickLaunchEditorMode::Edit { path },
+                mode: QuickLaunchWizardMode::Edit { path },
                 title: command.title.clone(),
-                options: QuickLaunchEditorOptions::Ssh(SshLaunchOptions {
+                options: QuickLaunchWizardOptions::Ssh(SshLaunchOptions {
                     host: ssh.host.clone(),
                     port: ssh.port.to_string(),
                     user: ssh.user.clone().unwrap_or_default(),
@@ -250,7 +250,7 @@ impl QuickLaunchEditorState {
     }
 
     /// Current editor mode.
-    pub(crate) fn mode(&self) -> &QuickLaunchEditorMode {
+    pub(crate) fn mode(&self) -> &QuickLaunchWizardMode {
         &self.mode
     }
 
@@ -271,7 +271,7 @@ impl QuickLaunchEditorState {
 
     /// Return true when editor is in create mode.
     pub(crate) fn is_create_mode(&self) -> bool {
-        matches!(self.mode, QuickLaunchEditorMode::Create { .. })
+        matches!(self.mode, QuickLaunchWizardMode::Create { .. })
     }
 
     pub(crate) fn set_title(&mut self, value: String) {
@@ -294,10 +294,10 @@ impl QuickLaunchEditorState {
 
         self.options = match command_type {
             QuickLaunchType::Custom => {
-                QuickLaunchEditorOptions::Custom(CommandLaunchOptions::default())
+                QuickLaunchWizardOptions::Custom(CommandLaunchOptions::default())
             },
             QuickLaunchType::Ssh => {
-                QuickLaunchEditorOptions::Ssh(SshLaunchOptions::default())
+                QuickLaunchWizardOptions::Ssh(SshLaunchOptions::default())
             },
         };
     }
@@ -305,7 +305,7 @@ impl QuickLaunchEditorState {
     /// Access current custom command options.
     pub(crate) fn custom(&self) -> Option<&CommandLaunchOptions> {
         match &self.options {
-            QuickLaunchEditorOptions::Custom(custom) => Some(custom),
+            QuickLaunchWizardOptions::Custom(custom) => Some(custom),
             _ => None,
         }
     }
@@ -313,7 +313,7 @@ impl QuickLaunchEditorState {
     /// Access current SSH command options.
     pub(crate) fn ssh(&self) -> Option<&SshLaunchOptions> {
         match &self.options {
-            QuickLaunchEditorOptions::Ssh(ssh) => Some(ssh),
+            QuickLaunchWizardOptions::Ssh(ssh) => Some(ssh),
             _ => None,
         }
     }
@@ -416,14 +416,14 @@ impl QuickLaunchEditorState {
 
     fn custom_mut(&mut self) -> Option<&mut CommandLaunchOptions> {
         match &mut self.options {
-            QuickLaunchEditorOptions::Custom(custom) => Some(custom),
+            QuickLaunchWizardOptions::Custom(custom) => Some(custom),
             _ => None,
         }
     }
 
     fn ssh_mut(&mut self) -> Option<&mut SshLaunchOptions> {
         match &mut self.options {
-            QuickLaunchEditorOptions::Ssh(ssh) => Some(ssh),
+            QuickLaunchWizardOptions::Ssh(ssh) => Some(ssh),
             _ => None,
         }
     }
@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn given_create_editor_when_switching_command_type_then_options_reset() {
-        let mut editor = QuickLaunchEditorState::new_create(vec![]);
+        let mut editor = QuickLaunchWizardState::new_create(vec![]);
         editor.set_program(String::from("bash"));
 
         editor.set_command_type(QuickLaunchType::Ssh);
@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn given_custom_editor_when_mutating_fields_then_custom_values_are_updated()
     {
-        let mut editor = QuickLaunchEditorState::new_create(vec![]);
+        let mut editor = QuickLaunchWizardState::new_create(vec![]);
 
         editor.set_title(String::from("Demo"));
         editor.set_program(String::from("/bin/echo"));
@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn given_ssh_editor_when_mutating_fields_then_ssh_values_are_updated() {
-        let mut editor = QuickLaunchEditorState::new_create(vec![]);
+        let mut editor = QuickLaunchWizardState::new_create(vec![]);
         editor.set_command_type(QuickLaunchType::Ssh);
 
         editor.set_host(String::from("example.com"));

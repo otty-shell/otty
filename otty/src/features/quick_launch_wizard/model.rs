@@ -1,28 +1,27 @@
-use super::super::model::SshCommand;
-use super::errors::QuickLaunchEditorError;
-use super::state::QuickLaunchEditorState;
+use super::errors::QuickLaunchWizardError;
+use super::state::QuickLaunchWizardState;
 use crate::features::quick_launches::{
-    CommandSpec, CustomCommand, EnvVar, QuickLaunch, QuickLaunchError,
-    QuickLaunchFolder, QuickLaunchType, SSH_DEFAULT_PORT,
+    CommandSpec, CustomCommand, EnvVar, QuickLaunch, QuickLaunchType,
+    SSH_DEFAULT_PORT, SshCommand,
 };
 
 /// Build a domain quick launch command from editor draft state.
 pub(crate) fn build_command(
-    editor: &QuickLaunchEditorState,
-) -> Result<QuickLaunch, QuickLaunchEditorError> {
+    editor: &QuickLaunchWizardState,
+) -> Result<QuickLaunch, QuickLaunchWizardError> {
     let title = editor.title().trim();
     if title.is_empty() {
-        return Err(QuickLaunchEditorError::TitleRequired);
+        return Err(QuickLaunchWizardError::TitleRequired);
     }
 
     let spec = match editor.command_type() {
         QuickLaunchType::Custom => {
             let Some(custom) = editor.custom() else {
-                return Err(QuickLaunchEditorError::MissingCustomDraft);
+                return Err(QuickLaunchWizardError::MissingCustomDraft);
             };
             let program = custom.program().trim();
             if program.is_empty() {
-                return Err(QuickLaunchEditorError::ProgramRequired);
+                return Err(QuickLaunchWizardError::ProgramRequired);
             }
 
             let env = custom
@@ -58,11 +57,11 @@ pub(crate) fn build_command(
         },
         QuickLaunchType::Ssh => {
             let Some(ssh) = editor.ssh() else {
-                return Err(QuickLaunchEditorError::MissingSshDraft);
+                return Err(QuickLaunchWizardError::MissingSshDraft);
             };
             let host = ssh.host().trim();
             if host.is_empty() {
-                return Err(QuickLaunchEditorError::HostRequired);
+                return Err(QuickLaunchWizardError::HostRequired);
             }
 
             let port = ssh.port().trim();
@@ -70,7 +69,7 @@ pub(crate) fn build_command(
                 SSH_DEFAULT_PORT
             } else {
                 port.parse::<u16>()
-                    .map_err(|_| QuickLaunchEditorError::InvalidPort)?
+                    .map_err(|_| QuickLaunchWizardError::InvalidPort)?
             };
 
             CommandSpec::Ssh {
@@ -91,30 +90,6 @@ pub(crate) fn build_command(
     })
 }
 
-/// Validate title uniqueness within the parent folder scope.
-pub(crate) fn validate_unique_title(
-    parent: &QuickLaunchFolder,
-    title: &str,
-    current: Option<&str>,
-) -> Result<(), QuickLaunchEditorError> {
-    parent
-        .normalize_title(title, current)
-        .map(|_| ())
-        .map_err(map_title_validation_error)
-}
-
-fn map_title_validation_error(err: QuickLaunchError) -> QuickLaunchEditorError {
-    match err {
-        QuickLaunchError::TitleEmpty => QuickLaunchEditorError::TitleRequired,
-        QuickLaunchError::TitleDuplicate => {
-            QuickLaunchEditorError::TitleDuplicate
-        },
-        other => QuickLaunchEditorError::Validation {
-            message: format!("{other}"),
-        },
-    }
-}
-
 fn optional_string(value: &str) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -126,23 +101,21 @@ fn optional_string(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::model::SshCommand;
-    use super::super::state::QuickLaunchEditorState;
+    use super::super::state::QuickLaunchWizardState;
     use super::*;
-    use crate::features::quick_launches::QuickLaunchNode;
 
     #[test]
     fn given_empty_title_when_building_command_then_returns_title_required() {
-        let editor = QuickLaunchEditorState::new_create(vec![]);
+        let editor = QuickLaunchWizardState::new_create(vec![]);
 
         let result = build_command(&editor);
 
-        assert!(matches!(result, Err(QuickLaunchEditorError::TitleRequired)));
+        assert!(matches!(result, Err(QuickLaunchWizardError::TitleRequired)));
     }
 
     #[test]
     fn given_custom_editor_when_building_command_then_returns_custom_launch() {
-        let mut editor = QuickLaunchEditorState::new_create(vec![]);
+        let mut editor = QuickLaunchWizardState::new_create(vec![]);
         editor.set_title(String::from("Build"));
         editor.set_program(String::from("cargo"));
         editor.add_arg();
@@ -184,7 +157,7 @@ mod tests {
                 },
             },
         };
-        let mut editor = QuickLaunchEditorState::from_command(
+        let mut editor = QuickLaunchWizardState::from_command(
             vec![String::from("SSH")],
             &command,
         );
@@ -192,32 +165,6 @@ mod tests {
 
         let result = build_command(&editor);
 
-        assert!(matches!(result, Err(QuickLaunchEditorError::InvalidPort)));
-    }
-
-    #[test]
-    fn given_conflicting_title_when_validating_then_returns_duplicate() {
-        let parent = QuickLaunchFolder {
-            title: String::from("Root"),
-            expanded: true,
-            children: vec![QuickLaunchNode::Command(QuickLaunch {
-                title: String::from("Run"),
-                spec: CommandSpec::Custom {
-                    custom: CustomCommand {
-                        program: String::from("echo"),
-                        args: Vec::new(),
-                        env: Vec::new(),
-                        working_directory: None,
-                    },
-                },
-            })],
-        };
-
-        let result = validate_unique_title(&parent, "Run", None);
-
-        assert!(matches!(
-            result,
-            Err(QuickLaunchEditorError::TitleDuplicate)
-        ));
+        assert!(matches!(result, Err(QuickLaunchWizardError::InvalidPort)));
     }
 }

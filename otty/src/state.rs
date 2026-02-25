@@ -149,10 +149,6 @@ impl State {
         self.tab.tab_items()
     }
 
-    pub(crate) fn tab_items_mut(&mut self) -> &mut BTreeMap<u64, TabItem> {
-        self.tab.tab_items_mut()
-    }
-
     pub(crate) fn active_tab_id(&self) -> Option<u64> {
         self.tab.active_tab_id()
     }
@@ -208,8 +204,7 @@ impl State {
         tab_id: u64,
     ) -> Option<&mut TerminalState> {
         self.tab
-            .tab_items_mut()
-            .get_mut(&tab_id)
+            .tab_item_mut(tab_id)
             .and_then(|tab| match &mut tab.content {
                 TabContent::Terminal(terminal) => Some(terminal.as_mut()),
                 _ => None,
@@ -220,7 +215,7 @@ impl State {
     where
         F: FnMut(&mut TerminalState),
     {
-        for tab in self.tab.tab_items_mut().values_mut() {
+        for tab in self.tab.tab_values_mut() {
             if let TabContent::Terminal(terminal) = &mut tab.content {
                 f(terminal.as_mut());
             }
@@ -228,7 +223,7 @@ impl State {
     }
 
     pub(crate) fn sync_terminal_tab_title(&mut self, tab_id: u64) {
-        let Some(tab) = self.tab.tab_items_mut().get_mut(&tab_id) else {
+        let Some(tab) = self.tab.tab_item_mut(tab_id) else {
             return;
         };
 
@@ -272,7 +267,7 @@ impl State {
 
     pub(crate) fn sync_tab_grid_sizes(&mut self) {
         let size = self.pane_grid_size();
-        for tab in self.tab.tab_items_mut().values_mut() {
+        for tab in self.tab.tab_values_mut() {
             if let TabContent::Terminal(terminal) = &mut tab.content {
                 terminal.set_grid_size(size);
             }

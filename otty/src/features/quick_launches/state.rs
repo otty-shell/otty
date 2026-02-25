@@ -9,8 +9,25 @@ use super::model::{NodePath, QuickLaunchFile};
 /// Snapshot of a failed quick launch.
 #[derive(Debug, Clone)]
 pub(crate) struct QuickLaunchErrorState {
-    pub(crate) title: String,
-    pub(crate) message: String,
+    title: String,
+    message: String,
+}
+
+impl QuickLaunchErrorState {
+    /// Create a new error state payload.
+    pub(crate) fn new(title: String, message: String) -> Self {
+        Self { title, message }
+    }
+
+    /// Return error title.
+    pub(crate) fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// Return error message.
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 /// Target location for quick launch context menus.
@@ -24,8 +41,20 @@ pub(crate) enum ContextMenuTarget {
 /// UI state for a visible context menu.
 #[derive(Debug, Clone)]
 pub(crate) struct ContextMenuState {
-    pub(crate) target: ContextMenuTarget,
-    pub(crate) cursor: Point,
+    pub(super) target: ContextMenuTarget,
+    pub(super) cursor: Point,
+}
+
+impl ContextMenuState {
+    /// Return context menu target.
+    pub(crate) fn target(&self) -> &ContextMenuTarget {
+        &self.target
+    }
+
+    /// Return cursor position for context menu anchoring.
+    pub(crate) fn cursor(&self) -> Point {
+        self.cursor
+    }
 }
 
 /// Inline edit modes supported in the tree.
@@ -38,39 +67,68 @@ pub(crate) enum InlineEditKind {
 /// Inline editing state for a single row.
 #[derive(Debug, Clone)]
 pub(crate) struct InlineEditState {
-    pub(crate) kind: InlineEditKind,
-    pub(crate) value: String,
-    pub(crate) error: Option<String>,
-    pub(crate) id: iced::widget::Id,
+    pub(super) kind: InlineEditKind,
+    pub(super) value: String,
+    pub(super) error: Option<String>,
+    pub(super) id: iced::widget::Id,
+}
+
+impl InlineEditState {
+    /// Return inline edit kind.
+    pub(crate) fn kind(&self) -> &InlineEditKind {
+        &self.kind
+    }
+
+    /// Return current inline edit input value.
+    pub(crate) fn value(&self) -> &str {
+        &self.value
+    }
+
+    /// Return optional inline edit error.
+    pub(crate) fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
+    /// Return input widget identifier.
+    pub(crate) fn id(&self) -> &iced::widget::Id {
+        &self.id
+    }
 }
 
 /// Workspace state for saved quick launches and their UI.
 #[derive(Debug)]
 pub(crate) struct QuickLaunchState {
-    pub(crate) data: QuickLaunchFile,
-    pub(crate) dirty: bool,
+    pub(super) data: QuickLaunchFile,
+    pub(super) dirty: bool,
     persist_in_flight: bool,
-    pub(crate) selected: Option<NodePath>,
-    pub(crate) hovered: Option<NodePath>,
-    pub(crate) launching: HashMap<NodePath, LaunchInfo>,
-    pub(crate) canceled_launches: HashSet<u64>,
-    pub(crate) next_launch_id: u64,
-    pub(crate) blink_nonce: u64,
-    pub(crate) context_menu: Option<ContextMenuState>,
-    pub(crate) inline_edit: Option<InlineEditState>,
-    pub(crate) pressed: Option<NodePath>,
-    pub(crate) drag: Option<DragState>,
-    pub(crate) drop_target: Option<DropTarget>,
-    pub(crate) cursor: Point,
+    pub(super) selected: Option<NodePath>,
+    pub(super) hovered: Option<NodePath>,
+    pub(super) launching: HashMap<NodePath, LaunchInfo>,
+    pub(super) canceled_launches: HashSet<u64>,
+    pub(super) next_launch_id: u64,
+    pub(super) blink_nonce: u64,
+    pub(super) context_menu: Option<ContextMenuState>,
+    pub(super) inline_edit: Option<InlineEditState>,
+    pub(super) pressed: Option<NodePath>,
+    pub(super) drag: Option<DragState>,
+    pub(super) drop_target: Option<DropTarget>,
+    pub(super) cursor: Point,
 }
 
 /// Runtime info for a pending quick launch.
 #[derive(Debug, Clone)]
 pub(crate) struct LaunchInfo {
-    pub(crate) id: u64,
-    pub(crate) launch_ticks: u64,
-    pub(crate) is_indicator_highlighted: bool,
-    pub(crate) cancel: Arc<AtomicBool>,
+    pub(super) id: u64,
+    pub(super) launch_ticks: u64,
+    pub(super) is_indicator_highlighted: bool,
+    pub(super) cancel: Arc<AtomicBool>,
+}
+
+impl LaunchInfo {
+    /// Return whether launch indicator is highlighted.
+    pub(crate) fn is_indicator_highlighted(&self) -> bool {
+        self.is_indicator_highlighted
+    }
 }
 
 impl QuickLaunchState {
@@ -98,6 +156,11 @@ impl QuickLaunchState {
         }
     }
 
+    /// Return immutable quick launch data payload.
+    pub(crate) fn data(&self) -> &QuickLaunchFile {
+        &self.data
+    }
+
     /// Return whether there are unsaved local changes.
     pub(crate) fn is_dirty(&self) -> bool {
         self.dirty
@@ -106,6 +169,46 @@ impl QuickLaunchState {
     /// Return whether persistence is currently in progress.
     pub(crate) fn is_persist_in_flight(&self) -> bool {
         self.persist_in_flight
+    }
+
+    /// Return whether any launch is currently in progress.
+    pub(crate) fn has_active_launches(&self) -> bool {
+        !self.launching.is_empty()
+    }
+
+    /// Return selected quick launch path.
+    pub(crate) fn selected_path(&self) -> Option<&NodePath> {
+        self.selected.as_ref()
+    }
+
+    /// Return hovered quick launch path.
+    pub(crate) fn hovered_path(&self) -> Option<&NodePath> {
+        self.hovered.as_ref()
+    }
+
+    /// Return in-flight launch map.
+    pub(crate) fn launching(&self) -> &HashMap<NodePath, LaunchInfo> {
+        &self.launching
+    }
+
+    /// Return current context menu state.
+    pub(crate) fn context_menu(&self) -> Option<&ContextMenuState> {
+        self.context_menu.as_ref()
+    }
+
+    /// Return active inline edit state.
+    pub(crate) fn inline_edit(&self) -> Option<&InlineEditState> {
+        self.inline_edit.as_ref()
+    }
+
+    /// Return drop target for drag and drop interactions.
+    pub(crate) fn drop_target(&self) -> Option<&DropTarget> {
+        self.drop_target.as_ref()
+    }
+
+    /// Return drag state.
+    pub(crate) fn drag(&self) -> Option<&DragState> {
+        self.drag.as_ref()
     }
 
     pub(crate) fn mark_dirty(&mut self) {
@@ -151,9 +254,16 @@ impl Default for QuickLaunchState {
 /// Active drag state for a tree node.
 #[derive(Debug, Clone)]
 pub(crate) struct DragState {
-    pub(crate) source: NodePath,
-    pub(crate) origin: Point,
-    pub(crate) active: bool,
+    pub(super) source: NodePath,
+    pub(super) origin: Point,
+    pub(super) active: bool,
+}
+
+impl DragState {
+    /// Return whether drag operation is active.
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
+    }
 }
 
 /// Drop target for a drag operation.
