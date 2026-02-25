@@ -7,7 +7,7 @@ use crate::theme::{IcedColorPalette, ThemeProps};
 ///
 /// ```rust,ignore
 /// # use iced::{Point, Size};
-/// # use crate::ui::widgets::helpers::anchor_position;
+/// # use crate::ui::components::widget_helpers::anchor_position;
 /// let cursor = Point::new(120.0, 80.0);
 /// let grid = Size::new(800.0, 600.0);
 /// let anchor = anchor_position(cursor, grid, 220.0, 160.0, 6.0);
@@ -128,7 +128,8 @@ mod tests {
     const MENU_MARGIN: f32 = 6.0;
 
     #[test]
-    fn anchor_position_clamps_inside_bounds() {
+    fn given_cursor_outside_bounds_when_anchor_position_then_clamps_inside_bounds()
+     {
         let grid = Size::new(400.0, 300.0);
         let cursor = Point::new(390.0, 290.0);
         let menu_height = 140.0;
@@ -141,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn anchor_position_stays_near_cursor_when_space_allows() {
+    fn given_space_available_when_anchor_position_then_stays_near_cursor() {
         let grid = Size::new(800.0, 600.0);
         let cursor = Point::new(100.0, 120.0);
         let menu_height = 140.0;
@@ -152,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn anchor_position_flips_when_near_right_edge() {
+    fn given_cursor_near_right_edge_when_anchor_position_then_flips_to_left() {
         let grid = Size::new(500.0, 400.0);
         let cursor = Point::new(490.0, 200.0);
         let menu_height = 140.0;

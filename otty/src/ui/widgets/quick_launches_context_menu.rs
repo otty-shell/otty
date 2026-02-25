@@ -5,13 +5,13 @@ use iced::{Element, Length, Size, alignment};
 
 use crate::features::quick_launches::{
     ContextMenuAction, ContextMenuState, ContextMenuTarget, LaunchInfo,
-    NodePath, QuickLaunchEvent,
+    NodePath, QuickLaunchEvent as FeatureQuickLaunchEvent,
 };
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
     MenuItemEvent, MenuItemProps, view as menu_item_view,
 };
-use crate::ui::widgets::helpers::{
+use crate::ui::components::widget_helpers::{
     anchor_position, menu_height_for_items, menu_panel_style,
 };
 
@@ -23,15 +23,20 @@ const MENU_CONTAINER_PADDING_X: f32 = 8.0;
 
 /// Props for rendering the quick launches context menu.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Props<'a> {
+pub(crate) struct QuickLaunchesContextMenuProps<'a> {
     pub(crate) menu: &'a ContextMenuState,
     pub(crate) theme: ThemeProps<'a>,
     pub(crate) area_size: Size,
     pub(crate) launching: &'a HashMap<NodePath, LaunchInfo>,
 }
 
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickLaunchEvent> {
-    let mut items: Vec<Element<'a, QuickLaunchEvent>> = Vec::new();
+/// Events emitted by quick launch context menu widget.
+pub(crate) type QuickLaunchesContextMenuEvent = FeatureQuickLaunchEvent;
+
+pub(crate) fn view<'a>(
+    props: QuickLaunchesContextMenuProps<'a>,
+) -> Element<'a, QuickLaunchesContextMenuEvent> {
+    let mut items: Vec<Element<'a, QuickLaunchesContextMenuEvent>> = Vec::new();
 
     match &props.menu.target {
         ContextMenuTarget::Command(path) => {
@@ -139,9 +144,11 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickLaunchEvent> {
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(QuickLaunchEvent::ContextMenuDismiss)
-    .on_right_press(QuickLaunchEvent::ContextMenuDismiss)
-    .on_move(|position| QuickLaunchEvent::CursorMoved { position });
+    .on_press(QuickLaunchesContextMenuEvent::ContextMenuDismiss)
+    .on_right_press(QuickLaunchesContextMenuEvent::ContextMenuDismiss)
+    .on_move(|position| QuickLaunchesContextMenuEvent::CursorMoved {
+        position,
+    });
 
     iced::widget::stack!(dismiss_layer, positioned_menu)
         .width(Length::Fill)
@@ -153,9 +160,11 @@ fn menu_item<'a>(
     label: &'a str,
     theme: ThemeProps<'a>,
     action: ContextMenuAction,
-) -> Element<'a, QuickLaunchEvent> {
+) -> Element<'a, QuickLaunchesContextMenuEvent> {
     let props = MenuItemProps { label, theme };
     menu_item_view(props).map(move |event| match event {
-        MenuItemEvent::Pressed => QuickLaunchEvent::ContextMenuAction(action),
+        MenuItemEvent::Pressed => {
+            QuickLaunchesContextMenuEvent::ContextMenuAction(action)
+        },
     })
 }

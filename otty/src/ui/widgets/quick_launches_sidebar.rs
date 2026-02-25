@@ -1,5 +1,3 @@
-use std::time::{Duration, Instant};
-
 use iced::widget::text::Wrapping;
 use iced::widget::{
     Space, column, container, mouse_area, row, scrollable, svg, text,
@@ -9,12 +7,13 @@ use iced::{Color, Element, Length, alignment};
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 use crate::features::quick_launches::{
-    DropTarget, InlineEditKind, InlineEditState, QUICK_LAUNCHES_TICK_MS,
-    QuickLaunchEvent, QuickLaunchNode, QuickLaunchState,
+    DropTarget, InlineEditKind, InlineEditState,
+    QuickLaunchEvent as FeatureQuickLaunchEvent, QuickLaunchNode,
+    QuickLaunchState,
 };
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::ui::widgets::helpers;
+use crate::ui::components::widget_helpers as helpers;
 
 const HEADER_HEIGHT: f32 = 28.0;
 const HEADER_PADDING_X: f32 = 10.0;
@@ -26,8 +25,6 @@ const TREE_INDENT: f32 = 14.0;
 const TREE_ICON_WIDTH: f32 = 14.0;
 const TREE_ROW_PADDING_X: f32 = 6.0;
 const TREE_ROW_SPACING: f32 = 6.0;
-const LAUNCH_ICON_DELAY: Duration = Duration::from_secs(1);
-const LAUNCH_ICON_BLINK_MS: u128 = 500;
 
 const INPUT_PADDING_X: f32 = 6.0;
 const INPUT_PADDING_Y: f32 = 4.0;
@@ -35,12 +32,17 @@ const INPUT_FONT_SIZE: f32 = 12.0;
 
 /// Props for rendering quick launches in the terminal sidebar.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Props<'a> {
+pub(crate) struct QuickLaunchesSidebarProps<'a> {
     pub(crate) state: &'a QuickLaunchState,
     pub(crate) theme: ThemeProps<'a>,
 }
 
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickLaunchEvent> {
+/// Events emitted by quick launch sidebar widget.
+pub(crate) type QuickLaunchesSidebarEvent = FeatureQuickLaunchEvent;
+
+pub(crate) fn view<'a>(
+    props: QuickLaunchesSidebarProps<'a>,
+) -> Element<'a, QuickLaunchesSidebarEvent> {
     let header = quick_launches_header(props.theme);
 
     let tree_list = quick_launches_tree(props);
@@ -53,8 +55,8 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, QuickLaunchEvent> {
 
 fn quick_launches_header<'a>(
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchEvent> {
-    let title = text("Quick Launces")
+) -> Element<'a, QuickLaunchesSidebarEvent> {
+    let title = text("Quick Launches")
         .size(HEADER_FONT_SIZE)
         .width(Length::Fill)
         .wrapping(Wrapping::None)
@@ -78,7 +80,9 @@ fn quick_launches_header<'a>(
         .into()
 }
 
-fn quick_launches_tree<'a>(props: Props<'a>) -> Element<'a, QuickLaunchEvent> {
+fn quick_launches_tree<'a>(
+    props: QuickLaunchesSidebarProps<'a>,
+) -> Element<'a, QuickLaunchesSidebarEvent> {
     let row_props = props;
     let row_style_props = props;
     let after_props = props;
@@ -93,10 +97,12 @@ fn quick_launches_tree<'a>(props: Props<'a>) -> Element<'a, QuickLaunchEvent> {
         })
         .selected_row(props.state.selected.as_ref())
         .hovered_row(props.state.hovered.as_ref())
-        .on_press(|path| QuickLaunchEvent::NodePressed { path })
-        .on_release(|path| QuickLaunchEvent::NodeReleased { path })
-        .on_right_press(|path| QuickLaunchEvent::NodeRightClicked { path })
-        .on_hover(|path| QuickLaunchEvent::NodeHovered { path })
+        .on_press(|path| QuickLaunchesSidebarEvent::NodePressed { path })
+        .on_release(|path| QuickLaunchesSidebarEvent::NodeReleased { path })
+        .on_right_press(|path| QuickLaunchesSidebarEvent::NodeRightClicked {
+            path,
+        })
+        .on_hover(|path| QuickLaunchesSidebarEvent::NodeHovered { path })
         .row_style(move |context| {
             tree_row_style(row_style_props, &row_palette, context)
         })
@@ -127,10 +133,10 @@ fn quick_launches_tree<'a>(props: Props<'a>) -> Element<'a, QuickLaunchEvent> {
         .style(helpers::thin_scroll_style(palette));
 
     let scrollable = mouse_area(scrollable)
-        .on_move(|position| QuickLaunchEvent::CursorMoved { position })
-        .on_press(QuickLaunchEvent::BackgroundPressed)
-        .on_release(QuickLaunchEvent::BackgroundReleased)
-        .on_right_press(QuickLaunchEvent::BackgroundRightClicked);
+        .on_move(|position| QuickLaunchesSidebarEvent::CursorMoved { position })
+        .on_press(QuickLaunchesSidebarEvent::BackgroundPressed)
+        .on_release(QuickLaunchesSidebarEvent::BackgroundReleased)
+        .on_right_press(QuickLaunchesSidebarEvent::BackgroundRightClicked);
 
     let is_root_drop =
         matches!(props.state.drop_target, Some(DropTarget::Root))
@@ -162,17 +168,18 @@ fn quick_launches_tree<'a>(props: Props<'a>) -> Element<'a, QuickLaunchEvent> {
 }
 
 fn render_entry<'a>(
-    props: Props<'a>,
+    props: QuickLaunchesSidebarProps<'a>,
     context: &TreeRowContext<'a, QuickLaunchNode>,
-) -> Element<'a, QuickLaunchEvent> {
-    let launched_at = props
+) -> Element<'a, QuickLaunchesSidebarEvent> {
+    let is_indicator_highlighted = props
         .state
         .launching
         .get(&context.entry.path)
-        .map(|info| info.started_at);
+        .map(|info| info.is_indicator_highlighted)
+        .unwrap_or(false);
 
     let icon_palette = props.theme.theme.iced_palette();
-    let icon_view: Element<'a, QuickLaunchEvent> =
+    let icon_view: Element<'a, QuickLaunchesSidebarEvent> =
         if context.entry.node.is_folder() {
             let icon = if context.entry.node.expanded() {
                 icons::FOLDER_OPENED
@@ -181,7 +188,7 @@ fn render_entry<'a>(
             };
             svg_icon(icon, icon_palette.dim_foreground)
         } else {
-            command_icon(icon_palette, launched_at, props.state.blink_nonce)
+            command_icon(icon_palette, is_indicator_highlighted)
         };
 
     let title = container(
@@ -213,11 +220,11 @@ fn render_entry<'a>(
 fn inline_edit_row<'a>(
     edit: &'a InlineEditState,
     depth: usize,
-) -> Element<'a, QuickLaunchEvent> {
+) -> Element<'a, QuickLaunchesSidebarEvent> {
     let indent = depth as f32 * TREE_INDENT;
     let input = text_input("", &edit.value)
-        .on_input(QuickLaunchEvent::InlineEditChanged)
-        .on_submit(QuickLaunchEvent::InlineEditSubmit)
+        .on_input(QuickLaunchesSidebarEvent::InlineEditChanged)
+        .on_submit(QuickLaunchesSidebarEvent::InlineEditSubmit)
         .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
         .size(INPUT_FONT_SIZE)
         .width(Length::Fill)
@@ -246,7 +253,9 @@ fn inline_edit_row<'a>(
         .into()
 }
 
-fn inline_edit_root(props: Props<'_>) -> Option<Element<'_, QuickLaunchEvent>> {
+fn inline_edit_root(
+    props: QuickLaunchesSidebarProps<'_>,
+) -> Option<Element<'_, QuickLaunchesSidebarEvent>> {
     let edit = props.state.inline_edit.as_ref()?;
     if matches!(
         &edit.kind,
@@ -259,9 +268,9 @@ fn inline_edit_root(props: Props<'_>) -> Option<Element<'_, QuickLaunchEvent>> {
 }
 
 fn inline_edit_after<'a>(
-    props: Props<'a>,
+    props: QuickLaunchesSidebarProps<'a>,
     context: &TreeRowContext<'a, QuickLaunchNode>,
-) -> Option<Element<'a, QuickLaunchEvent>> {
+) -> Option<Element<'a, QuickLaunchesSidebarEvent>> {
     let edit = props.state.inline_edit.as_ref()?;
 
     match &edit.kind {
@@ -278,7 +287,7 @@ fn inline_edit_after<'a>(
 }
 
 fn is_rename_edit(
-    props: Props<'_>,
+    props: QuickLaunchesSidebarProps<'_>,
     context: &TreeRowContext<'_, QuickLaunchNode>,
 ) -> bool {
     matches!(props.state.inline_edit.as_ref(), Some(edit)
@@ -286,7 +295,7 @@ fn is_rename_edit(
 }
 
 fn tree_row_style(
-    props: Props<'_>,
+    props: QuickLaunchesSidebarProps<'_>,
     palette: &IcedColorPalette,
     context: &TreeRowContext<'_, QuickLaunchNode>,
 ) -> iced::widget::container::Style {
@@ -324,23 +333,10 @@ fn tree_row_style(
 
 fn command_icon<'a>(
     palette: &IcedColorPalette,
-    launched_at: Option<Instant>,
-    blink_nonce: u64,
-) -> Element<'a, QuickLaunchEvent> {
-    let show = launched_at
-        .map(|start| start.elapsed())
-        .filter(|elapsed| *elapsed >= LAUNCH_ICON_DELAY)
-        .is_some();
-
-    let color = if show {
-        let blink_step = (blink_nonce as u128 * QUICK_LAUNCHES_TICK_MS as u128)
-            / LAUNCH_ICON_BLINK_MS;
-        let blink_on = blink_step.is_multiple_of(2);
-        if blink_on {
-            palette.foreground
-        } else {
-            palette.dim_foreground
-        }
+    is_indicator_highlighted: bool,
+) -> Element<'a, QuickLaunchesSidebarEvent> {
+    let color = if is_indicator_highlighted {
+        palette.foreground
     } else {
         palette.dim_foreground
     };
@@ -351,7 +347,7 @@ fn command_icon<'a>(
 fn svg_icon<'a>(
     icon: &'static [u8],
     color: Color,
-) -> Element<'a, QuickLaunchEvent> {
+) -> Element<'a, QuickLaunchesSidebarEvent> {
     let handle = svg::Handle::from_memory(icon);
     let svg_icon = svg::Svg::new(handle)
         .width(Length::Fixed(TREE_ICON_WIDTH))

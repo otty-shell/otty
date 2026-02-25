@@ -1,10 +1,9 @@
 use iced::widget::{
     Space, button, column, container, pane_grid, row, scrollable, svg,
 };
-use iced::{Border, Element, Length, Theme, alignment};
+use iced::{Border, Element, Length, alignment};
 
 use crate::icons;
-use crate::state::{SIDEBAR_MENU_WIDTH, SidebarItem};
 use crate::theme::ThemeProps;
 
 const MENU_BUTTON_SIZE: f32 = 44.0;
@@ -13,10 +12,17 @@ const MENU_BUTTON_PADDING: f32 = 8.0;
 const MENU_META_SPACING: f32 = 0.0;
 const ACTIVE_BORDER_WIDTH: f32 = 2.0;
 
-/// UI events emitted by the sidebar.
+/// Sidebar destinations displayed in the menu rail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SidebarMenuItem {
+    Terminal,
+    Explorer,
+}
+
+/// UI events emitted by the sidebar menu.
 #[derive(Debug, Clone)]
-pub(crate) enum Event {
-    SelectItem(SidebarItem),
+pub(crate) enum SidebarMenuEvent {
+    SelectItem(SidebarMenuItem),
     OpenSettings,
     ToggleWorkspace,
     Resized(pane_grid::ResizeEvent),
@@ -24,35 +30,31 @@ pub(crate) enum Event {
 
 /// Props for rendering the sidebar menu rail.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct MenuProps<'a> {
-    pub(crate) active_item: SidebarItem,
+pub(crate) struct SidebarMenuProps<'a> {
+    pub(crate) active_item: SidebarMenuItem,
     pub(crate) workspace_open: bool,
-    pub(crate) theme: ThemeProps<'a>,
-}
-
-/// Props for rendering the sidebar workspace area.
-pub(crate) struct WorkspaceProps<'a, Message> {
-    pub(crate) content: Element<'a, Message, Theme, iced::Renderer>,
-    pub(crate) visible: bool,
+    pub(crate) menu_width: f32,
     pub(crate) theme: ThemeProps<'a>,
 }
 
 /// Render the sidebar menu rail with scrollable primary items and fixed meta.
-pub(crate) fn menu_view<'a>(props: MenuProps<'a>) -> Element<'a, Event> {
+pub(crate) fn view<'a>(
+    props: SidebarMenuProps<'a>,
+) -> Element<'a, SidebarMenuEvent> {
     let palette = props.theme.theme.iced_palette();
 
     let terminal_button = sidebar_button(
         icons::SIDEBAR_TERMINAL,
-        props.active_item == SidebarItem::Terminal,
+        props.active_item == SidebarMenuItem::Terminal,
         props.theme,
-        Event::SelectItem(SidebarItem::Terminal),
+        SidebarMenuEvent::SelectItem(SidebarMenuItem::Terminal),
     );
 
     let explorer_button = sidebar_button(
         icons::SIDEBAR_EXPLORER,
-        props.active_item == SidebarItem::Explorer,
+        props.active_item == SidebarMenuItem::Explorer,
         props.theme,
-        Event::SelectItem(SidebarItem::Explorer),
+        SidebarMenuEvent::SelectItem(SidebarMenuItem::Explorer),
     );
 
     let main_menu = column![terminal_button, explorer_button]
@@ -75,7 +77,7 @@ pub(crate) fn menu_view<'a>(props: MenuProps<'a>) -> Element<'a, Event> {
         icons::SIDEBAR_SETTINGS,
         false,
         props.theme,
-        Event::OpenSettings,
+        SidebarMenuEvent::OpenSettings,
     );
 
     let toggle_icon = if props.workspace_open {
@@ -84,8 +86,12 @@ pub(crate) fn menu_view<'a>(props: MenuProps<'a>) -> Element<'a, Event> {
         icons::SIDEBAR_EXPAND
     };
 
-    let toggle_button =
-        sidebar_button(toggle_icon, false, props.theme, Event::ToggleWorkspace);
+    let toggle_button = sidebar_button(
+        toggle_icon,
+        false,
+        props.theme,
+        SidebarMenuEvent::ToggleWorkspace,
+    );
 
     let meta_menu =
         column![settings_button, toggle_button].spacing(MENU_META_SPACING);
@@ -95,34 +101,10 @@ pub(crate) fn menu_view<'a>(props: MenuProps<'a>) -> Element<'a, Event> {
         .height(Length::Fill);
 
     container(content)
-        .width(Length::Fixed(SIDEBAR_MENU_WIDTH))
+        .width(Length::Fixed(props.menu_width))
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
             background: Some(palette.dim_black.into()),
-            ..Default::default()
-        })
-        .into()
-}
-
-/// Render the sidebar workspace content area.
-pub(crate) fn workspace_view<'a, Message: 'a>(
-    props: WorkspaceProps<'a, Message>,
-) -> Element<'a, Message, Theme, iced::Renderer> {
-    if !props.visible {
-        return container(Space::new())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into();
-    }
-
-    let palette = props.theme.theme.iced_palette();
-    container(props.content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .clip(true)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(palette.dim_black.into()),
-            text_color: Some(palette.foreground),
             ..Default::default()
         })
         .into()
@@ -132,8 +114,8 @@ fn sidebar_button<'a>(
     icon: &'static [u8],
     is_active: bool,
     theme: ThemeProps<'a>,
-    on_press: Event,
-) -> Element<'a, Event> {
+    on_press: SidebarMenuEvent,
+) -> Element<'a, SidebarMenuEvent> {
     let palette = theme.theme.iced_palette();
     let base_color = palette.dim_foreground;
     let hover_color = palette.blue;

@@ -6,7 +6,7 @@ use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 use crate::features::explorer::{ExplorerEvent, ExplorerState, FileNode};
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::ui::widgets::helpers;
+use crate::ui::components::widget_helpers as helpers;
 
 const HEADER_HEIGHT: f32 = 22.0;
 const HEADER_PADDING_X: f32 = 10.0;
@@ -28,14 +28,17 @@ const WORKSPACE_PADDING_VERTICAL: f32 = 10.0;
 
 /// Props for rendering the explorer workspace.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Props<'a> {
+pub(crate) struct SidebarWorkspaceExplorerProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
     pub(crate) explorer: &'a ExplorerState,
 }
 
+/// Events emitted by sidebar workspace explorer widget.
+pub(crate) type SidebarWorkspaceExplorerEvent = ExplorerEvent;
+
 pub(crate) fn view<'a>(
-    props: Props<'a>,
-) -> Element<'a, ExplorerEvent, iced::Theme, iced::Renderer> {
+    props: SidebarWorkspaceExplorerProps<'a>,
+) -> Element<'a, SidebarWorkspaceExplorerEvent, iced::Theme, iced::Renderer> {
     let header = explorer_header(props.theme);
     let current_dir = current_directory_bar(props);
     let tree_list = explorer_tree(props);
@@ -52,7 +55,9 @@ pub(crate) fn view<'a>(
         .into()
 }
 
-fn explorer_header<'a>(theme: ThemeProps<'a>) -> Element<'a, ExplorerEvent> {
+fn explorer_header<'a>(
+    theme: ThemeProps<'a>,
+) -> Element<'a, SidebarWorkspaceExplorerEvent> {
     let title = text("EXPLORER")
         .size(HEADER_FONT_SIZE)
         .width(Length::Fill)
@@ -73,7 +78,9 @@ fn explorer_header<'a>(theme: ThemeProps<'a>) -> Element<'a, ExplorerEvent> {
         .into()
 }
 
-fn current_directory_bar<'a>(props: Props<'a>) -> Element<'a, ExplorerEvent> {
+fn current_directory_bar<'a>(
+    props: SidebarWorkspaceExplorerProps<'a>,
+) -> Element<'a, SidebarWorkspaceExplorerEvent> {
     let label = props.explorer.root_label().unwrap_or("No active folder");
 
     let text = text(label)
@@ -98,7 +105,9 @@ fn current_directory_bar<'a>(props: Props<'a>) -> Element<'a, ExplorerEvent> {
         .into()
 }
 
-fn explorer_tree<'a>(props: Props<'a>) -> Element<'a, ExplorerEvent> {
+fn explorer_tree<'a>(
+    props: SidebarWorkspaceExplorerProps<'a>,
+) -> Element<'a, SidebarWorkspaceExplorerEvent> {
     let row_props = props;
     let row_style_props = props;
 
@@ -136,11 +145,11 @@ fn explorer_tree<'a>(props: Props<'a>) -> Element<'a, ExplorerEvent> {
 }
 
 fn render_entry<'a>(
-    props: Props<'a>,
+    props: SidebarWorkspaceExplorerProps<'a>,
     context: &TreeRowContext<'a, FileNode>,
-) -> Element<'a, ExplorerEvent> {
+) -> Element<'a, SidebarWorkspaceExplorerEvent> {
     let icon_palette = props.theme.theme.iced_palette();
-    let icon_view: Element<'a, ExplorerEvent> =
+    let icon_view: Element<'a, SidebarWorkspaceExplorerEvent> =
         if context.entry.node.is_folder() {
             let icon = if context.entry.node.is_expanded() {
                 icons::FOLDER_OPENED
@@ -179,7 +188,7 @@ fn render_entry<'a>(
 }
 
 fn tree_row_style(
-    _props: Props<'_>,
+    _props: SidebarWorkspaceExplorerProps<'_>,
     palette: &IcedColorPalette,
     context: &TreeRowContext<'_, FileNode>,
 ) -> iced::widget::container::Style {
@@ -189,7 +198,7 @@ fn tree_row_style(
 fn svg_icon<'a>(
     icon: &'static [u8],
     color: iced::Color,
-) -> Element<'a, ExplorerEvent> {
+) -> Element<'a, SidebarWorkspaceExplorerEvent> {
     let handle = svg::Handle::from_memory(icon);
     let svg_icon = svg::Svg::new(handle)
         .width(Length::Fixed(TREE_ICON_WIDTH))

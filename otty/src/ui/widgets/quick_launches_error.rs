@@ -6,12 +6,18 @@ use crate::theme::ThemeProps;
 
 /// Props for rendering a quick launch error tab.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Props<'a> {
+pub(crate) struct QuickLaunchesErrorProps<'a> {
     pub(crate) error: &'a QuickLaunchErrorState,
     pub(crate) theme: ThemeProps<'a>,
 }
 
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, crate::app::Event> {
+/// Events emitted by quick launch error widget.
+#[derive(Debug, Clone)]
+pub(crate) enum QuickLaunchesErrorEvent {}
+
+pub(crate) fn view<'a>(
+    props: QuickLaunchesErrorProps<'a>,
+) -> Element<'a, QuickLaunchesErrorEvent> {
     let palette = props.theme.theme.iced_palette();
     let title = text(&props.error.title).size(18.0).style(move |_| {
         iced::widget::text::Style {

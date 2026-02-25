@@ -1,7 +1,6 @@
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
 
 use iced::widget::operation;
 use iced::{Point, Task};
@@ -49,6 +48,8 @@ pub(crate) enum QuickLaunchEvent {
 }
 
 pub(crate) const QUICK_LAUNCHES_TICK_MS: u64 = 200;
+const LAUNCH_ICON_DELAY_MS: u64 = 1_000;
+const LAUNCH_ICON_BLINK_MS: u128 = 500;
 
 #[derive(Clone)]
 pub(crate) struct PreparedQuickLaunch {
@@ -255,6 +256,7 @@ pub(crate) fn quick_launches_reducer(
             if !state.quick_launches.launching.is_empty() {
                 state.quick_launches.blink_nonce =
                     state.quick_launches.blink_nonce.wrapping_add(1);
+                update_launch_indicators(state);
             }
             if state.quick_launches.is_dirty()
                 && !state.quick_launches.is_persist_in_flight()
@@ -913,7 +915,8 @@ fn launch_quick_launch(
         path.clone(),
         LaunchInfo {
             id: launch_id,
-            started_at: Instant::now(),
+            launch_ticks: 0,
+            is_indicator_highlighted: false,
             cancel: cancel.clone(),
         },
     );
@@ -948,6 +951,29 @@ fn should_skip_launch_result(
 
     remove_launch_by_id(state, launch_id);
     false
+}
+
+fn update_launch_indicators(state: &mut State) {
+    let blink_nonce = state.quick_launches.blink_nonce;
+    for info in state.quick_launches.launching.values_mut() {
+        info.launch_ticks = info.launch_ticks.wrapping_add(1);
+        info.is_indicator_highlighted =
+            should_highlight_launch_indicator(info.launch_ticks, blink_nonce);
+    }
+}
+
+fn should_highlight_launch_indicator(
+    launch_ticks: u64,
+    blink_nonce: u64,
+) -> bool {
+    let launch_age_ms = launch_ticks.saturating_mul(QUICK_LAUNCHES_TICK_MS);
+    if launch_age_ms < LAUNCH_ICON_DELAY_MS {
+        return false;
+    }
+
+    let blink_step = (blink_nonce as u128 * QUICK_LAUNCHES_TICK_MS as u128)
+        / LAUNCH_ICON_BLINK_MS;
+    blink_step.is_multiple_of(2)
 }
 
 fn open_create_command_tab(
@@ -994,7 +1020,6 @@ pub(crate) fn bootstrap_quick_launches() -> super::state::QuickLaunchState {
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
-    use std::time::Instant;
 
     use otty_ui_term::settings::Settings;
 
@@ -1064,12 +1089,14 @@ mod tests {
     fn given_tick_event_with_active_launch_when_reduced_then_blink_nonce_increments()
      {
         let mut state = State::default();
+        let path = vec![String::from("Demo")];
         state.quick_launches.blink_nonce = 10;
         state.quick_launches.launching.insert(
-            vec![String::from("Demo")],
+            path.clone(),
             LaunchInfo {
                 id: 1,
-                started_at: Instant::now(),
+                launch_ticks: 0,
+                is_indicator_highlighted: false,
                 cancel: Arc::new(AtomicBool::new(false)),
             },
         );
@@ -1081,6 +1108,95 @@ mod tests {
         );
 
         assert_eq!(state.quick_launches.blink_nonce, 11);
+        let info = state
+            .quick_launches
+            .launching
+            .get(&path)
+            .expect("launch info must exist");
+        assert_eq!(info.launch_ticks, 1);
+        assert!(!info.is_indicator_highlighted);
+    }
+
+    #[test]
+    fn given_launch_before_delay_when_tick_then_indicator_is_off() {
+        let mut state = State::default();
+        let path = vec![String::from("Demo")];
+        state.quick_launches.blink_nonce = 4;
+        state.quick_launches.launching.insert(
+            path.clone(),
+            LaunchInfo {
+                id: 1,
+                launch_ticks: 3,
+                is_indicator_highlighted: true,
+                cancel: Arc::new(AtomicBool::new(false)),
+            },
+        );
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            &settings(),
+            QuickLaunchEvent::Tick,
+        );
+
+        let info = state
+            .quick_launches
+            .launching
+            .get(&path)
+            .expect("launch info must exist");
+        assert_eq!(info.launch_ticks, 4);
+        assert!(!info.is_indicator_highlighted);
+    }
+
+    #[test]
+    fn given_launch_after_delay_when_tick_then_indicator_toggles_by_period() {
+        let mut state = State::default();
+        let path = vec![String::from("Demo")];
+        state.quick_launches.blink_nonce = 2;
+        state.quick_launches.launching.insert(
+            path.clone(),
+            LaunchInfo {
+                id: 1,
+                launch_ticks: 4,
+                is_indicator_highlighted: false,
+                cancel: Arc::new(AtomicBool::new(false)),
+            },
+        );
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            &settings(),
+            QuickLaunchEvent::Tick,
+        );
+        let info = state
+            .quick_launches
+            .launching
+            .get(&path)
+            .expect("launch info must exist");
+        assert!(!info.is_indicator_highlighted);
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            &settings(),
+            QuickLaunchEvent::Tick,
+        );
+        let info = state
+            .quick_launches
+            .launching
+            .get(&path)
+            .expect("launch info must exist");
+        assert!(!info.is_indicator_highlighted);
+
+        let _task = quick_launches_reducer(
+            &mut state,
+            &settings(),
+            QuickLaunchEvent::Tick,
+        );
+        let info = state
+            .quick_launches
+            .launching
+            .get(&path)
+            .expect("launch info must exist");
+        assert!(info.is_indicator_highlighted);
     }
 
     #[test]
@@ -1091,7 +1207,8 @@ mod tests {
             path.clone(),
             LaunchInfo {
                 id: 9,
-                started_at: Instant::now(),
+                launch_ticks: 0,
+                is_indicator_highlighted: false,
                 cancel: Arc::new(AtomicBool::new(false)),
             },
         );

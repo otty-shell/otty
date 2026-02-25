@@ -1,12 +1,12 @@
 use iced::widget::{Column, Id, container, mouse_area, pane_grid, text_input};
 use iced::{Background, Element, Length, Point, Size, alignment};
 
-use crate::features::terminal::TerminalEvent;
+use crate::features::terminal::TerminalEvent as FeatureTerminalEvent;
 use crate::theme::ThemeProps;
 use crate::ui::components::menu_item::{
     MenuItemEvent, MenuItemProps, view as menu_item_view,
 };
-use crate::ui::widgets::helpers::{
+use crate::ui::components::widget_helpers::{
     anchor_position, menu_height_for_items, menu_panel_style,
 };
 
@@ -18,7 +18,7 @@ const MENU_CONTAINER_PADDING_X: f32 = 10.0;
 
 /// Props for rendering a pane context menu.
 #[derive(Debug, Clone)]
-pub(crate) struct Props<'a> {
+pub(crate) struct TerminalPaneContextMenuProps<'a> {
     pub(crate) tab_id: u64,
     pub(crate) pane: pane_grid::Pane,
     pub(crate) cursor: Point,
@@ -29,13 +29,19 @@ pub(crate) struct Props<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
-    let mut buttons: Vec<Element<'a, TerminalEvent>> = Vec::new();
+/// Events emitted by terminal pane context menu widget.
+pub(crate) type TerminalPaneContextMenuEvent = FeatureTerminalEvent;
+
+pub(crate) fn view<'a>(
+    props: TerminalPaneContextMenuProps<'a>,
+) -> Element<'a, TerminalPaneContextMenuEvent> {
+    let mut buttons: Vec<Element<'a, TerminalPaneContextMenuEvent>> =
+        Vec::new();
 
     buttons.push(menu_item(
         "Copy selection",
         props.theme,
-        TerminalEvent::CopySelection {
+        TerminalPaneContextMenuEvent::CopySelection {
             tab_id: props.tab_id,
             terminal_id: props.terminal_id,
         },
@@ -43,7 +49,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
     buttons.push(menu_item(
         "Paste",
         props.theme,
-        TerminalEvent::PasteIntoPrompt {
+        TerminalPaneContextMenuEvent::PasteIntoPrompt {
             tab_id: props.tab_id,
             terminal_id: props.terminal_id,
         },
@@ -53,7 +59,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         buttons.push(menu_item(
             "Copy content",
             props.theme,
-            TerminalEvent::CopySelectedBlockContent {
+            TerminalPaneContextMenuEvent::CopySelectedBlockContent {
                 tab_id: props.tab_id,
                 terminal_id: props.terminal_id,
             },
@@ -61,7 +67,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         buttons.push(menu_item(
             "Copy prompt",
             props.theme,
-            TerminalEvent::CopySelectedBlockPrompt {
+            TerminalPaneContextMenuEvent::CopySelectedBlockPrompt {
                 tab_id: props.tab_id,
                 terminal_id: props.terminal_id,
             },
@@ -69,7 +75,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         buttons.push(menu_item(
             "Copy command",
             props.theme,
-            TerminalEvent::CopySelectedBlockCommand {
+            TerminalPaneContextMenuEvent::CopySelectedBlockCommand {
                 tab_id: props.tab_id,
                 terminal_id: props.terminal_id,
             },
@@ -79,7 +85,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
     buttons.push(menu_item(
         "Split horizontally",
         props.theme,
-        TerminalEvent::SplitPane {
+        TerminalPaneContextMenuEvent::SplitPane {
             tab_id: props.tab_id,
             pane: props.pane,
             axis: iced::widget::pane_grid::Axis::Horizontal,
@@ -88,7 +94,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
     buttons.push(menu_item(
         "Split vertically",
         props.theme,
-        TerminalEvent::SplitPane {
+        TerminalPaneContextMenuEvent::SplitPane {
             tab_id: props.tab_id,
             pane: props.pane,
             axis: iced::widget::pane_grid::Axis::Vertical,
@@ -97,7 +103,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
     buttons.push(menu_item(
         "Close",
         props.theme,
-        TerminalEvent::ClosePane {
+        TerminalPaneContextMenuEvent::ClosePane {
             tab_id: props.tab_id,
             pane: props.pane,
         },
@@ -147,15 +153,17 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(TerminalEvent::CloseContextMenu {
+    .on_press(TerminalPaneContextMenuEvent::CloseContextMenu {
         tab_id: props.tab_id,
     })
-    .on_right_press(TerminalEvent::CloseContextMenu {
+    .on_right_press(TerminalPaneContextMenuEvent::CloseContextMenu {
         tab_id: props.tab_id,
     })
-    .on_move(move |position| TerminalEvent::PaneGridCursorMoved {
-        tab_id: props.tab_id,
-        position,
+    .on_move(move |position| {
+        TerminalPaneContextMenuEvent::PaneGridCursorMoved {
+            tab_id: props.tab_id,
+            position,
+        }
     });
 
     iced::widget::stack!(
@@ -171,17 +179,22 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
 fn menu_item<'a>(
     label: &'a str,
     theme: ThemeProps<'a>,
-    event: TerminalEvent,
-) -> Element<'a, TerminalEvent> {
+    event: TerminalPaneContextMenuEvent,
+) -> Element<'a, TerminalPaneContextMenuEvent> {
     let props = MenuItemProps { label, theme };
     menu_item_view(props).map(move |item_event| match item_event {
         MenuItemEvent::Pressed => event.clone(),
     })
 }
 
-fn focus_trap(tab_id: u64, id: Id) -> Element<'static, TerminalEvent> {
+fn focus_trap(
+    tab_id: u64,
+    id: Id,
+) -> Element<'static, TerminalPaneContextMenuEvent> {
     text_input("", "")
-        .on_input(move |_| TerminalEvent::ContextMenuInput { tab_id })
+        .on_input(move |_| TerminalPaneContextMenuEvent::ContextMenuInput {
+            tab_id,
+        })
         .padding(0)
         .size(1)
         .width(Length::Fixed(1.0))

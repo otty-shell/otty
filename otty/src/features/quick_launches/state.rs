@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::Instant;
 
 use iced::Point;
 
@@ -69,7 +68,8 @@ pub(crate) struct QuickLaunchState {
 #[derive(Debug, Clone)]
 pub(crate) struct LaunchInfo {
     pub(crate) id: u64,
-    pub(crate) started_at: Instant,
+    pub(crate) launch_ticks: u64,
+    pub(crate) is_indicator_highlighted: bool,
     pub(crate) cancel: Arc<AtomicBool>,
 }
 

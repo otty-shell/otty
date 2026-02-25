@@ -2910,6 +2910,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-words",
+ "syn",
  "thiserror 2.0.18",
 ]
 

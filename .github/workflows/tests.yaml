@@ -20,4 +20,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo test -p otty --test widget_conventions_ast --locked --all-features --verbose
       - run: cargo test --locked --all-features --verbose

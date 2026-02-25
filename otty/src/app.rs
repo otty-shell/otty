@@ -26,11 +26,15 @@ use crate::features::terminal::{
 use crate::fonts::FontsConfig;
 use crate::state::{
     SIDEBAR_COLLAPSE_WORKSPACE_RATIO, SIDEBAR_DEFAULT_WORKSPACE_RATIO,
-    SIDEBAR_MIN_TAB_CONTENT_RATIO, SidebarItem, SidebarPane, State,
+    SIDEBAR_MENU_WIDTH, SIDEBAR_MIN_TAB_CONTENT_RATIO, SidebarItem,
+    SidebarPane, State,
 };
 use crate::theme::{AppTheme, ThemeManager, ThemeProps};
+use crate::ui::components::sidebar_workspace_panel;
 use crate::ui::widgets::{
-    action_bar, sidebar, sidebar_workspace, tab_bar, tab_content,
+    action_bar, quick_launches_context_menu, sidebar_menu, sidebar_workspace,
+    sidebar_workspace_add_menu, tab_bar, tab_content,
+    terminal_pane_context_menu,
 };
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
@@ -45,9 +49,9 @@ const SEPARATOR_ALPHA: f32 = 0.3;
 #[derive(Debug, Clone)]
 pub(crate) enum Event {
     IcedReady,
-    ActionBar(action_bar::Event),
-    Sidebar(sidebar::Event),
-    SidebarWorkspace(sidebar_workspace::Event),
+    ActionBar(action_bar::ActionBarEvent),
+    Sidebar(sidebar_menu::SidebarMenuEvent),
+    SidebarWorkspace(sidebar_workspace::SidebarWorkspaceEvent),
     Explorer(ExplorerEvent),
     QuickLaunch(quick_launches::QuickLaunchEvent),
     Tab(TabEvent),
@@ -366,7 +370,7 @@ impl App {
 
         let header_title = self.state.active_tab_title().unwrap_or("OTTY");
 
-        let header = action_bar::view(action_bar::Props {
+        let header = action_bar::view(action_bar::ActionBarProps {
             title: header_title,
             theme: theme_props,
             fonts: &self.fonts,
@@ -395,14 +399,19 @@ impl App {
             .sidebar
             .hidden
         {
-            let tab_bar = tab_bar::view(tab_bar::Props {
+            let tab_bar = tab_bar::view(tab_bar::TabBarProps {
                 tabs: tab_summaries.clone(),
                 active_tab_id,
                 theme: theme_props,
             })
             .map(Event::Tab);
 
-            let content = tab_content::view(&self.state, theme_props);
+            let content = tab_content::view(tab_content::TabContentProps {
+                active_tab: self.state.active_tab(),
+                settings: &self.state.settings,
+                theme: theme_props,
+            })
+            .map(map_tab_content_event);
             let content_column = column![tab_bar, content]
                 .width(Length::Fill)
                 .height(Length::Fill);
@@ -411,12 +420,16 @@ impl App {
                 .height(Length::Fill)
                 .into()
         } else {
-            let sidebar_menu = sidebar::menu_view(sidebar::MenuProps {
-                active_item: self.state.sidebar.active_item,
-                workspace_open: self.state.sidebar.workspace_open,
-                theme: theme_props,
-            })
-            .map(Event::Sidebar);
+            let sidebar_menu =
+                sidebar_menu::view(sidebar_menu::SidebarMenuProps {
+                    active_item: sidebar_menu_item_from_state(
+                        self.state.sidebar.active_item,
+                    ),
+                    workspace_open: self.state.sidebar.workspace_open,
+                    menu_width: SIDEBAR_MENU_WIDTH,
+                    theme: theme_props,
+                })
+                .map(Event::Sidebar);
 
             let sidebar_separator = container(Space::new())
                 .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
@@ -437,27 +450,42 @@ impl App {
                 &self.state.sidebar.panes,
                 move |_, pane, _| match pane {
                     SidebarPane::Workspace => {
-                        let workspace_content =
-                            sidebar_workspace::view(sidebar_state, theme_props)
-                                .map(Event::SidebarWorkspace);
-                        let workspace =
-                            sidebar::workspace_view(sidebar::WorkspaceProps {
+                        let workspace_content = sidebar_workspace::view(
+                            sidebar_workspace::SidebarWorkspaceProps {
+                                active_item: sidebar_workspace_item_from_state(
+                                    sidebar_state.sidebar.active_item,
+                                ),
+                                quick_launches: &sidebar_state.quick_launches,
+                                explorer: &sidebar_state.explorer,
+                                theme: theme_props,
+                            },
+                        )
+                        .map(Event::SidebarWorkspace);
+                        let workspace = sidebar_workspace_panel::view(
+                            sidebar_workspace_panel::SidebarWorkspacePanelProps {
                                 content: workspace_content,
                                 visible: sidebar_open,
                                 theme: theme_props,
-                            });
+                            },
+                        );
                         pane_grid::Content::new(workspace)
                     },
                     SidebarPane::Content => {
-                        let tab_bar = tab_bar::view(tab_bar::Props {
+                        let tab_bar = tab_bar::view(tab_bar::TabBarProps {
                             tabs: tab_summaries.clone(),
                             active_tab_id,
                             theme: theme_props,
                         })
                         .map(Event::Tab);
 
-                        let content =
-                            tab_content::view(sidebar_state, theme_props);
+                        let content = tab_content::view(
+                            tab_content::TabContentProps {
+                                active_tab: sidebar_state.active_tab(),
+                                settings: &sidebar_state.settings,
+                                theme: theme_props,
+                            },
+                        )
+                        .map(map_tab_content_event);
 
                         let content_column = column![tab_bar, content]
                             .width(Length::Fill)
@@ -476,7 +504,7 @@ impl App {
             .spacing(0)
             .min_size(0)
             .on_resize(10.0, |event| {
-                Event::Sidebar(sidebar::Event::Resized(event))
+                Event::Sidebar(sidebar_menu::SidebarMenuEvent::Resized(event))
             });
 
             row![sidebar_menu, sidebar_separator, sidebar_split]
@@ -487,7 +515,9 @@ impl App {
 
         let content_row = mouse_area(content_row).on_move(|position| {
             Event::SidebarWorkspace(
-                sidebar_workspace::Event::WorkspaceCursorMoved { position },
+                sidebar_workspace::SidebarWorkspaceEvent::WorkspaceCursorMoved {
+                    position,
+                },
             )
         });
 
@@ -527,8 +557,11 @@ impl App {
             .into()
     }
 
-    fn handle_action_bar(&mut self, event: action_bar::Event) -> Task<Event> {
-        use action_bar::Event::*;
+    fn handle_action_bar(
+        &mut self,
+        event: action_bar::ActionBarEvent,
+    ) -> Task<Event> {
+        use action_bar::ActionBarEvent::*;
 
         match event {
             ToggleFullScreen => self.toggle_full_screen(),
@@ -545,17 +578,18 @@ impl App {
         }
     }
 
-    fn handle_sidebar(&mut self, event: sidebar::Event) -> Task<Event> {
+    fn handle_sidebar(
+        &mut self,
+        event: sidebar_menu::SidebarMenuEvent,
+    ) -> Task<Event> {
         match event {
-            sidebar::Event::SelectItem(item) => {
-                self.state.sidebar.active_item = item;
-                if matches!(item, SidebarItem::Terminal | SidebarItem::Explorer)
-                {
-                    self.ensure_sidebar_workspace_open();
-                }
+            sidebar_menu::SidebarMenuEvent::SelectItem(item) => {
+                self.state.sidebar.active_item =
+                    state_sidebar_item_from_menu(item);
+                self.ensure_sidebar_workspace_open();
                 Task::none()
             },
-            sidebar::Event::OpenSettings => tab_reducer(
+            sidebar_menu::SidebarMenuEvent::OpenSettings => tab_reducer(
                 &mut self.state,
                 TabDeps {
                     terminal_settings: &self.terminal_settings,
@@ -565,11 +599,11 @@ impl App {
                     request: TabOpenRequest::Settings,
                 },
             ),
-            sidebar::Event::ToggleWorkspace => {
+            sidebar_menu::SidebarMenuEvent::ToggleWorkspace => {
                 self.toggle_sidebar_workspace();
                 Task::none()
             },
-            sidebar::Event::Resized(event) => {
+            sidebar_menu::SidebarMenuEvent::Resized(event) => {
                 self.handle_sidebar_resize(event);
                 Task::none()
             },
@@ -578,24 +612,24 @@ impl App {
 
     fn handle_sidebar_workspace(
         &mut self,
-        event: sidebar_workspace::Event,
+        event: sidebar_workspace::SidebarWorkspaceEvent,
     ) -> Task<Event> {
         match event {
-            sidebar_workspace::Event::TerminalAddMenuOpen => {
+            sidebar_workspace::SidebarWorkspaceEvent::TerminalAddMenuOpen => {
                 self.state.sidebar.add_menu =
                     Some(crate::state::SidebarAddMenuState {
                         cursor: self.state.sidebar.cursor,
                     });
                 Task::none()
             },
-            sidebar_workspace::Event::TerminalAddMenuDismiss => {
+            sidebar_workspace::SidebarWorkspaceEvent::TerminalAddMenuDismiss => {
                 self.state.sidebar.add_menu = None;
                 Task::none()
             },
-            sidebar_workspace::Event::TerminalAddMenuAction(action) => {
+            sidebar_workspace::SidebarWorkspaceEvent::TerminalAddMenuAction(action) => {
                 self.state.sidebar.add_menu = None;
                 match action {
-                    sidebar_workspace::AddMenuAction::CreateTab => tab_reducer(
+                    sidebar_workspace::SidebarWorkspaceAddMenuAction::CreateTab => tab_reducer(
                         &mut self.state,
                         TabDeps {
                             terminal_settings: &self.terminal_settings,
@@ -605,14 +639,14 @@ impl App {
                             request: TabOpenRequest::Terminal,
                         },
                     ),
-                    sidebar_workspace::AddMenuAction::CreateCommand => {
+                    sidebar_workspace::SidebarWorkspaceAddMenuAction::CreateCommand => {
                         quick_launches::quick_launches_reducer(
                             &mut self.state,
                             &self.terminal_settings,
                             quick_launches::QuickLaunchEvent::HeaderCreateCommand,
                         )
                     },
-                    sidebar_workspace::AddMenuAction::CreateFolder => {
+                    sidebar_workspace::SidebarWorkspaceAddMenuAction::CreateFolder => {
                         quick_launches::quick_launches_reducer(
                             &mut self.state,
                             &self.terminal_settings,
@@ -621,14 +655,14 @@ impl App {
                     },
                 }
             },
-            sidebar_workspace::Event::WorkspaceCursorMoved { position } => {
+            sidebar_workspace::SidebarWorkspaceEvent::WorkspaceCursorMoved { position } => {
                 self.state.sidebar.cursor = position;
                 Task::none()
             },
-            sidebar_workspace::Event::QuickLaunch(event) => {
+            sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(event) => {
                 Task::done(Event::QuickLaunch(event))
             },
-            sidebar_workspace::Event::Explorer(event) => {
+            sidebar_workspace::SidebarWorkspaceEvent::Explorer(event) => {
                 Task::done(Event::Explorer(event))
             },
         }
@@ -785,9 +819,9 @@ impl App {
     ) -> Option<Element<'a, Event, Theme, iced::Renderer>> {
         if let Some(menu) = self.state.sidebar.add_menu.as_ref() {
             return Some(
-                sidebar_workspace::add_menu::view(
-                    sidebar_workspace::add_menu::Props {
-                        menu,
+                sidebar_workspace_add_menu::view(
+                    sidebar_workspace_add_menu::SidebarWorkspaceAddMenuProps {
+                        cursor: menu.cursor,
                         theme,
                         area_size,
                     },
@@ -798,8 +832,8 @@ impl App {
 
         if let Some(menu) = self.state.quick_launches.context_menu.as_ref() {
             return Some(
-                crate::ui::widgets::quick_launches::context_menu::view(
-                    crate::ui::widgets::quick_launches::context_menu::Props {
+                quick_launches_context_menu::view(
+                    quick_launches_context_menu::QuickLaunchesContextMenuProps {
                         menu,
                         theme,
                         area_size,
@@ -808,7 +842,9 @@ impl App {
                 )
                 .map(|event| {
                     Event::SidebarWorkspace(
-                        sidebar_workspace::Event::QuickLaunch(event),
+                        sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
+                            event,
+                        ),
                     )
                 }),
             );
@@ -822,8 +858,8 @@ impl App {
                         == Some(menu.terminal_id());
                     let tab_id = tab.id;
                     return Some(
-                        crate::ui::widgets::terminal::pane_context_menu::view(
-                            crate::ui::widgets::terminal::pane_context_menu::Props {
+                        terminal_pane_context_menu::view(
+                            terminal_pane_context_menu::TerminalPaneContextMenuProps {
                                 tab_id,
                                 pane: menu.pane(),
                                 cursor: menu.cursor(),
@@ -844,6 +880,17 @@ impl App {
     }
 }
 
+fn map_tab_content_event(event: tab_content::TabContentEvent) -> Event {
+    match event {
+        tab_content::TabContentEvent::Terminal(event) => Event::Terminal(event),
+        tab_content::TabContentEvent::Settings(event) => Event::Settings(event),
+        tab_content::TabContentEvent::QuickLaunchEditor { tab_id, event } => {
+            Event::QuickLaunchEditor { tab_id, event }
+        },
+        tab_content::TabContentEvent::QuickLaunchError(event) => match event {},
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum MenuGuard {
     Allow,
@@ -856,13 +903,15 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
 
     match event {
         Event::SidebarWorkspace(
-            sidebar_workspace::Event::TerminalAddMenuAction(_)
-            | sidebar_workspace::Event::TerminalAddMenuDismiss,
+            sidebar_workspace::SidebarWorkspaceEvent::TerminalAddMenuAction(_)
+            | sidebar_workspace::SidebarWorkspaceEvent::TerminalAddMenuDismiss,
         )
-        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunch(
-            quick_launches::QuickLaunchEvent::ContextMenuAction(_)
-            | quick_launches::QuickLaunchEvent::ContextMenuDismiss,
-        ))
+        | Event::SidebarWorkspace(
+            sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
+                quick_launches::QuickLaunchEvent::ContextMenuAction(_)
+                | quick_launches::QuickLaunchEvent::ContextMenuDismiss,
+            ),
+        )
         | Event::QuickLaunch(
             quick_launches::QuickLaunchEvent::ContextMenuAction(_)
             | quick_launches::QuickLaunchEvent::ContextMenuDismiss
@@ -885,15 +934,21 @@ fn context_menu_guard(event: &Event) -> MenuGuard {
             _ => Dismiss,
         },
         Event::SidebarWorkspace(
-            sidebar_workspace::Event::WorkspaceCursorMoved { .. },
+            sidebar_workspace::SidebarWorkspaceEvent::WorkspaceCursorMoved {
+                ..
+            },
         )
-        | Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunch(
-            quick_launches::QuickLaunchEvent::CursorMoved { .. },
-        ))
+        | Event::SidebarWorkspace(
+            sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
+                quick_launches::QuickLaunchEvent::CursorMoved { .. },
+            ),
+        )
         | Event::Explorer(_) => Allow,
-        Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunch(
-            quick_launches::QuickLaunchEvent::NodeHovered { .. },
-        )) => Ignore,
+        Event::SidebarWorkspace(
+            sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
+                quick_launches::QuickLaunchEvent::NodeHovered { .. },
+            ),
+        ) => Ignore,
         Event::ActionBar(_) => Allow,
         Event::Window(_) | Event::ResizeWindow(_) => Allow,
         Event::CloseTabRequested { .. } => Allow,
@@ -906,9 +961,11 @@ fn should_cancel_inline_edit(event: &Event) -> bool {
     use quick_launches::QuickLaunchEvent;
 
     match event {
-        Event::SidebarWorkspace(sidebar_workspace::Event::QuickLaunch(
-            quick_launches_event,
-        )) => !matches!(
+        Event::SidebarWorkspace(
+            sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
+                quick_launches_event,
+            ),
+        ) => !matches!(
             quick_launches_event,
             QuickLaunchEvent::InlineEditChanged(_)
                 | QuickLaunchEvent::InlineEditSubmit
@@ -927,7 +984,9 @@ fn should_cancel_inline_edit(event: &Event) -> bool {
         Event::QuickLaunchTick | Event::QuickLaunchSetupCompleted(_) => false,
         Event::CloseTabRequested { .. } => false,
         Event::SidebarWorkspace(
-            sidebar_workspace::Event::WorkspaceCursorMoved { .. },
+            sidebar_workspace::SidebarWorkspaceEvent::WorkspaceCursorMoved {
+                ..
+            },
         ) => false,
         Event::Terminal(event) => !matches!(
             event,
@@ -1063,4 +1122,35 @@ fn build_resize_grips() -> Element<'static, Event, Theme, iced::Renderer> {
 
 fn max_sidebar_workspace_ratio() -> f32 {
     (1.0 - SIDEBAR_MIN_TAB_CONTENT_RATIO).max(0.0)
+}
+
+fn sidebar_menu_item_from_state(
+    item: SidebarItem,
+) -> sidebar_menu::SidebarMenuItem {
+    match item {
+        SidebarItem::Terminal => sidebar_menu::SidebarMenuItem::Terminal,
+        SidebarItem::Explorer => sidebar_menu::SidebarMenuItem::Explorer,
+    }
+}
+
+fn sidebar_workspace_item_from_state(
+    item: SidebarItem,
+) -> sidebar_workspace::SidebarWorkspaceItem {
+    match item {
+        SidebarItem::Terminal => {
+            sidebar_workspace::SidebarWorkspaceItem::Terminal
+        },
+        SidebarItem::Explorer => {
+            sidebar_workspace::SidebarWorkspaceItem::Explorer
+        },
+    }
+}
+
+fn state_sidebar_item_from_menu(
+    item: sidebar_menu::SidebarMenuItem,
+) -> SidebarItem {
+    match item {
+        sidebar_menu::SidebarMenuItem::Terminal => SidebarItem::Terminal,
+        sidebar_menu::SidebarMenuItem::Explorer => SidebarItem::Explorer,
+    }
 }

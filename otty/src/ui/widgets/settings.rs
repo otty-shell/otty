@@ -9,12 +9,12 @@ use otty_ui_term::parse_hex_color;
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 use crate::features::settings::{
-    SettingsEvent, SettingsNode, SettingsPreset, SettingsSection,
-    SettingsState, is_valid_hex_color, palette_label,
+    SettingsEvent as FeatureSettingsEvent, SettingsNode, SettingsPreset,
+    SettingsSection, SettingsState, is_valid_hex_color, palette_label,
 };
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::ui::widgets::helpers;
+use crate::ui::components::widget_helpers as helpers;
 
 const HEADER_HEIGHT: f32 = 32.0;
 const HEADER_PADDING_X: f32 = 12.0;
@@ -45,12 +45,15 @@ const PALETTE_SWATCH_SIZE: f32 = 16.0;
 const PALETTE_SWATCH_BORDER: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Props<'a> {
+pub(crate) struct SettingsProps<'a> {
     pub(crate) state: &'a SettingsState,
     pub(crate) theme: ThemeProps<'a>,
 }
 
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
+/// Events emitted by settings widget.
+pub(crate) type SettingsEvent = FeatureSettingsEvent;
+
+pub(crate) fn view<'a>(props: SettingsProps<'a>) -> Element<'a, SettingsEvent> {
     let header = settings_header(props);
     let content = settings_split_view(props);
 
@@ -60,7 +63,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
         .into()
 }
 
-fn settings_header<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
+fn settings_header<'a>(props: SettingsProps<'a>) -> Element<'a, SettingsEvent> {
     let save_button = action_button(
         "Save",
         props.state.is_dirty(),
@@ -93,7 +96,9 @@ fn settings_header<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
         .into()
 }
 
-fn settings_split_view<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
+fn settings_split_view<'a>(
+    props: SettingsProps<'a>,
+) -> Element<'a, SettingsEvent> {
     let nav = settings_nav_tree(props);
     let form = settings_form(props);
 
@@ -103,7 +108,9 @@ fn settings_split_view<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
         .into()
 }
 
-fn settings_nav_tree<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
+fn settings_nav_tree<'a>(
+    props: SettingsProps<'a>,
+) -> Element<'a, SettingsEvent> {
     let palette = props.theme.theme.iced_palette().clone();
     let row_palette = palette.clone();
     let icon_color = palette.dim_foreground;
@@ -138,7 +145,7 @@ fn settings_nav_tree<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
 }
 
 fn render_nav_row<'a>(
-    _props: Props<'a>,
+    _props: SettingsProps<'a>,
     context: &TreeRowContext<'a, SettingsNode>,
 ) -> Element<'a, SettingsEvent> {
     let title = text(context.entry.node.title())
@@ -155,7 +162,7 @@ fn render_nav_row<'a>(
         .into()
 }
 
-fn settings_form<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
+fn settings_form<'a>(props: SettingsProps<'a>) -> Element<'a, SettingsEvent> {
     let content = match props.state.selected_section() {
         SettingsSection::Terminal => terminal_form(props),
         SettingsSection::Theme => theme_form(props),
@@ -180,7 +187,7 @@ fn settings_form<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
         .into()
 }
 
-fn terminal_form<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
+fn terminal_form<'a>(props: SettingsProps<'a>) -> Element<'a, SettingsEvent> {
     let shell_input = text_input("", props.state.draft().terminal_shell())
         .on_input(SettingsEvent::ShellChanged)
         .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
@@ -206,7 +213,7 @@ fn terminal_form<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
     content.into()
 }
 
-fn theme_form<'a>(props: Props<'a>) -> Element<'a, SettingsEvent> {
+fn theme_form<'a>(props: SettingsProps<'a>) -> Element<'a, SettingsEvent> {
     let preset_button = action_button(
         "OTTY Dark",
         true,

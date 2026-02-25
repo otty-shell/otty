@@ -5,7 +5,7 @@ use iced::widget::{
 };
 use iced::{Alignment, Element, Length, alignment};
 
-use crate::features::tab::TabEvent;
+use crate::features::tab::TabEvent as FeatureTabEvent;
 use crate::icons;
 use crate::theme::{StyleOverrides, ThemeProps};
 
@@ -23,13 +23,16 @@ const TAB_CLOSE_BUTTON_PADDING: f32 = 0.0;
 
 /// Props for rendering the tab bar.
 #[derive(Debug, Clone)]
-pub(crate) struct Props<'a> {
+pub(crate) struct TabBarProps<'a> {
     pub(crate) tabs: Vec<(u64, &'a str)>,
     pub(crate) active_tab_id: u64,
     pub(crate) theme: ThemeProps<'a>,
 }
 
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TabEvent> {
+/// Events emitted by the tab bar widget.
+pub(crate) type TabBarEvent = FeatureTabEvent;
+
+pub(crate) fn view<'a>(props: TabBarProps<'a>) -> Element<'a, TabBarEvent> {
     let mut tabs_row = row![].spacing(0);
 
     for tab in &props.tabs {
@@ -73,7 +76,7 @@ fn tab_button<'a>(
     title: &str,
     is_active: bool,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, TabEvent> {
+) -> Element<'a, TabBarEvent> {
     let palette = theme_props.theme.iced_palette();
     let foreground = palette.foreground;
     let dim_foreground = palette.dim_foreground;
@@ -114,7 +117,7 @@ fn tab_button<'a>(
         .align_y(alignment::Vertical::Center);
 
     let close_button = button(close_icon_view)
-        .on_press(TabEvent::CloseTab { tab_id })
+        .on_press(TabBarEvent::CloseTab { tab_id })
         .padding(TAB_CLOSE_BUTTON_PADDING)
         .height(Length::Fill)
         .style(|_, _| iced::widget::button::Style::default());
@@ -153,7 +156,7 @@ fn tab_button<'a>(
         });
 
     button(pill)
-        .on_press(TabEvent::ActivateTab { tab_id })
+        .on_press(TabBarEvent::ActivateTab { tab_id })
         .padding(TAB_BUTTON_PADDING)
         .width(TAB_BUTTON_WIDTH)
         .height(TAB_BUTTON_HEIGHT)
@@ -188,7 +191,7 @@ fn tab_button_style(
 
 const DEFAULT_MAX_CHAR_COUNT_BEFORE_ELLIPSIZE: usize = 20;
 
-pub fn ellipsize(s: &str) -> String {
+fn ellipsize(s: &str) -> String {
     let total = s.chars().count();
     if total <= DEFAULT_MAX_CHAR_COUNT_BEFORE_ELLIPSIZE {
         return s.to_owned();

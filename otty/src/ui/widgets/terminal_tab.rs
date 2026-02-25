@@ -5,7 +5,9 @@ use iced::widget::{Stack, container, mouse_area, text};
 use iced::{Border, Element, Length, Theme};
 use otty_ui_term::TerminalView;
 
-use crate::features::terminal::{TerminalEntry, TerminalEvent};
+use crate::features::terminal::{
+    TerminalEntry, TerminalEvent as FeatureTerminalEvent,
+};
 
 const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_RESIZE_GRAB: f32 = 12.0;
@@ -14,14 +16,19 @@ const PANE_BORDER_WIDTH: f32 = 1.0;
 
 /// Props for rendering a terminal tab.
 #[derive(Clone, Copy)]
-pub(crate) struct Props<'a> {
+pub(crate) struct TerminalTabProps<'a> {
     pub(crate) tab_id: u64,
     pub(crate) panes: &'a pane_grid::State<u64>,
     pub(crate) terminals: &'a HashMap<u64, TerminalEntry>,
     pub(crate) focus: Option<pane_grid::Pane>,
 }
 
-pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
+/// Events emitted by terminal tab widget.
+pub(crate) type TerminalTabEvent = FeatureTerminalEvent;
+
+pub(crate) fn view<'a>(
+    props: TerminalTabProps<'a>,
+) -> Element<'a, TerminalTabEvent> {
     let tab_id = props.tab_id;
     let focus = props.focus;
     let terminals = props.terminals;
@@ -57,7 +64,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         }
     })
     .on_resize(PANE_RESIZE_GRAB, move |event| {
-        TerminalEvent::PaneResized { tab_id, event }
+        TerminalTabEvent::PaneResized { tab_id, event }
     });
 
     let pane_grid = container(pane_grid)
@@ -80,7 +87,7 @@ pub(crate) fn view<'a>(props: Props<'a>) -> Element<'a, TerminalEvent> {
         .height(Length::Fill);
 
     mouse_area(stack_widget)
-        .on_move(move |position| TerminalEvent::PaneGridCursorMoved {
+        .on_move(move |position| TerminalTabEvent::PaneGridCursorMoved {
             tab_id,
             position,
         })
@@ -93,22 +100,21 @@ fn view_single_pane<'a>(
     terminal_id: u64,
     terminals: &'a HashMap<u64, TerminalEntry>,
     is_focused: bool,
-) -> Element<'a, TerminalEvent> {
+) -> Element<'a, TerminalTabEvent> {
     let Some(terminal_entry) = terminals.get(&terminal_id) else {
-        log::warn!("terminal pane missing widget: terminal_id={terminal_id}");
         return container(text("Terminal unavailable"))
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
     };
 
-    let focus_event = TerminalEvent::PaneClicked { tab_id, pane };
+    let focus_event = TerminalTabEvent::PaneClicked { tab_id, pane };
 
-    let terminal_view =
-        TerminalView::show(&terminal_entry.terminal).map(TerminalEvent::Widget);
+    let terminal_view = TerminalView::show(&terminal_entry.terminal)
+        .map(TerminalTabEvent::Widget);
     let terminal_area = mouse_area(terminal_view)
         .on_press(focus_event)
-        .on_right_press(TerminalEvent::OpenContextMenu {
+        .on_right_press(TerminalTabEvent::OpenContextMenu {
             tab_id,
             pane,
             terminal_id,

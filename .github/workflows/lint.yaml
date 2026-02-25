@@ -17,3 +17,4 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
     - run: cargo +nightly fmt --all -- --check
     - run: cargo lint
+    - run: cargo test -p otty --test widget_conventions_ast --locked --all-features

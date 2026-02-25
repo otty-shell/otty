@@ -8,7 +8,7 @@ use crate::theme::ThemeProps;
 use crate::ui::components::icon_button::{
     IconButtonProps, IconButtonVariant, view as icon_button_view,
 };
-use crate::ui::widgets::quick_launches;
+use crate::ui::widgets::{quick_launches_sidebar, sidebar_workspace};
 
 const WORKSPACE_TITLE_SIZE: f32 = 13.0;
 const WORKSPACE_HEADER_PADDING_HORIZONTAL: f32 = 10.0;
@@ -20,14 +20,18 @@ const WORKSPACE_ADD_ICON_SIZE: f32 = 16.0;
 
 /// Props for rendering the terminal workspace header.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Props<'a> {
+pub(crate) struct SidebarWorkspaceTerminalProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
     pub(crate) quick_launches: &'a QuickLaunchState,
 }
 
+/// Events emitted by sidebar workspace terminal widget.
+pub(crate) type SidebarWorkspaceTerminalEvent =
+    sidebar_workspace::SidebarWorkspaceEvent;
+
 pub(crate) fn view<'a>(
-    props: Props<'a>,
-) -> Element<'a, super::Event, Theme, iced::Renderer> {
+    props: SidebarWorkspaceTerminalProps<'a>,
+) -> Element<'a, SidebarWorkspaceTerminalEvent, Theme, iced::Renderer> {
     let title = text("SHELL")
         .size(WORKSPACE_TITLE_SIZE)
         .width(Length::Fill)
@@ -41,7 +45,7 @@ pub(crate) fn view<'a>(
         icon_size: WORKSPACE_ADD_ICON_SIZE,
         variant: IconButtonVariant::Standard,
     })
-    .map(|_| super::Event::TerminalAddMenuOpen);
+    .map(|_| SidebarWorkspaceTerminalEvent::TerminalAddMenuOpen);
 
     let title_container = container(title)
         .width(Length::Fill)
@@ -58,12 +62,13 @@ pub(crate) fn view<'a>(
         ])
         .align_y(alignment::Vertical::Center);
 
-    let quick_launches =
-        quick_launches::sidebar::view(quick_launches::sidebar::Props {
+    let quick_launches = quick_launches_sidebar::view(
+        quick_launches_sidebar::QuickLaunchesSidebarProps {
             state: props.quick_launches,
             theme: props.theme,
-        })
-        .map(super::Event::QuickLaunch);
+        },
+    )
+    .map(SidebarWorkspaceTerminalEvent::QuickLaunch);
 
     let content = column![header, quick_launches]
         .spacing(10)

@@ -21,7 +21,7 @@ const ACTION_BAR_CONTROLS_SPACING: f32 = 6.0;
 
 /// UI events emitted by the window action bar.
 #[derive(Debug, Clone)]
-pub(crate) enum Event {
+pub(crate) enum ActionBarEvent {
     ToggleFullScreen,
     MinimizeWindow,
     CloseWindow,
@@ -31,14 +31,16 @@ pub(crate) enum Event {
 
 /// Props for rendering the action bar.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Props<'a> {
+pub(crate) struct ActionBarProps<'a> {
     pub(crate) title: &'a str,
     pub(crate) theme: ThemeProps<'a>,
     pub(crate) fonts: &'a FontsConfig,
 }
 
 /// The draggable window header with controls.
-pub fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
+pub(crate) fn view<'a>(
+    props: ActionBarProps<'a>,
+) -> Element<'a, ActionBarEvent> {
     let title_font_size = props.fonts.ui.size * ACTION_BAR_TITLE_SCALE;
 
     let palette = props.theme.theme.iced_palette();
@@ -59,7 +61,7 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
         .align_y(alignment::Vertical::Center)
         .padding([0.0, ACTION_BAR_HORIZONTAL_PADDING]);
     let logo_container = MouseArea::new(logo_container)
-        .on_press(Event::ToggleSidebarVisibility)
+        .on_press(ActionBarEvent::ToggleSidebarVisibility)
         .interaction(mouse::Interaction::Pointer);
 
     let center_zone = container(detail_label)
@@ -86,11 +88,11 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
             IconButtonVariant::Standard,
             props.theme
         )
-        .map(|_| Event::ToggleFullScreen),
+        .map(|_| ActionBarEvent::ToggleFullScreen),
         icon_button(WINDOW_TRAY, IconButtonVariant::Standard, props.theme)
-            .map(|_| Event::MinimizeWindow),
+            .map(|_| ActionBarEvent::MinimizeWindow),
         icon_button(WINDOW_CLOSE, IconButtonVariant::Danger, props.theme)
-            .map(|_| Event::CloseWindow),
+            .map(|_| ActionBarEvent::CloseWindow),
     ]
     .spacing(ACTION_BAR_CONTROLS_SPACING)
     .align_y(alignment::Vertical::Center);
@@ -107,8 +109,8 @@ pub fn view<'a>(props: Props<'a>) -> Element<'a, Event> {
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(Event::StartWindowDrag)
-    .on_double_click(Event::ToggleFullScreen);
+    .on_press(ActionBarEvent::StartWindowDrag)
+    .on_double_click(ActionBarEvent::ToggleFullScreen);
 
     let base_row = row![
         left_controls,
