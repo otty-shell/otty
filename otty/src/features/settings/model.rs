@@ -5,13 +5,6 @@ use crate::theme::ColorPalette;
 const DEFAULT_EDITOR: &str = "nano";
 const FALLBACK_SHELL: &str = "/bin/bash";
 
-/// Typed settings payload used for persistence and UI state.
-#[derive(Debug, Clone, PartialEq, Serialize, Default)]
-pub(crate) struct SettingsData {
-    terminal: TerminalSettingsData,
-    theme: ThemeSettingsData,
-}
-
 /// Terminal-related settings.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct TerminalSettingsData {
@@ -46,6 +39,13 @@ impl ThemeSettingsData {
         let base = ColorPalette::default();
         apply_palette_overrides(&base, &self.palette)
     }
+}
+
+/// Typed settings payload used for persistence and UI state.
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+pub(crate) struct SettingsData {
+    terminal: TerminalSettingsData,
+    theme: ThemeSettingsData,
 }
 
 impl SettingsData {

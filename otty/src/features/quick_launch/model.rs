@@ -1,5 +1,6 @@
 use std::fmt;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use otty_ui_term::settings::Settings;
 use serde::{Deserialize, Serialize};
@@ -416,6 +417,30 @@ pub(crate) fn quick_launch_error_message(
                 "Type: SSH\nHost: {host}\nPort: {port}\nUser: {user}\nIdentity file: {identity}\nExtra args: {extra_args}\nError: {err}"
             )
         },
+    }
+}
+
+/// Target location for quick launch context menus.
+#[derive(Debug, Clone)]
+pub(crate) enum ContextMenuTarget {
+    Command(NodePath),
+    Folder(NodePath),
+    Background,
+}
+
+/// Runtime info for a pending quick launch.
+#[derive(Debug, Clone)]
+pub(crate) struct LaunchInfo {
+    pub(super) id: u64,
+    pub(super) launch_ticks: u64,
+    pub(super) is_indicator_highlighted: bool,
+    pub(super) cancel: Arc<AtomicBool>,
+}
+
+impl LaunchInfo {
+    /// Return whether launch indicator is highlighted.
+    pub(crate) fn is_indicator_highlighted(&self) -> bool {
+        self.is_indicator_highlighted
     }
 }
 

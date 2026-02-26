@@ -16,7 +16,7 @@ const DEFAULT_SHELL: &str = "cmd.exe";
 #[cfg(unix)]
 const DEFAULT_SHELL: &str = "/bin/bash";
 
-#[derive(Default, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Settings {
     pub font: FontSettings,
     pub theme: ThemeSettings,

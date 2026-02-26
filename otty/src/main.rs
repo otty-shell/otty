@@ -2,8 +2,10 @@ mod app;
 mod effects;
 mod features;
 mod fonts;
+mod guards;
 mod icons;
 mod state;
+mod tab;
 mod theme;
 mod ui;
 

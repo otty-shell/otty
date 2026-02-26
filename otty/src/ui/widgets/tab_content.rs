@@ -4,8 +4,8 @@ use iced::{Element, Length, Theme, alignment};
 use crate::features::quick_launch::QuickLaunchState;
 use crate::features::quick_launch_wizard::QuickLaunchWizardState;
 use crate::features::settings::SettingsState;
-use crate::features::tab::{TabContent, TabItem};
 use crate::features::terminal::{TerminalEvent, TerminalState};
+use crate::tab::{TabContent, TabItem};
 use crate::theme::ThemeProps;
 use crate::ui::widgets::{
     quick_launches_error, quick_launches_wizard, settings, terminal_tab,

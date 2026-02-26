@@ -1,34 +1,33 @@
 use std::time::Duration;
 
 use iced::widget::operation::snap_to_end;
-use iced::widget::{
-    Space, column, container, mouse_area, pane_grid, row, stack, text,
-};
+use iced::widget::{Space, column, container, mouse_area, pane_grid, row};
 use iced::window::Direction;
-use iced::{Element, Length, Size, Subscription, Task, Theme, mouse, window};
+use iced::{Element, Length, Size, Subscription, Task, Theme, window};
 use otty_ui_term::settings::{
     BackendSettings, FontSettings, Settings, ThemeSettings,
 };
 
 use crate::effects::close_window;
-use crate::features::explorer::{self, ExplorerDeps, ExplorerEvent};
+use crate::features::explorer::{ExplorerCtx, ExplorerEvent};
 use crate::features::quick_launch_wizard::{
-    QuickLaunchWizardDeps, QuickLaunchWizardEvent, quick_launch_wizard_reducer,
+    QuickLaunchWizardCtx, QuickLaunchWizardEvent,
 };
-use crate::features::tab::{TabDeps, TabEvent, TabOpenRequest, tab_reducer};
 use crate::features::terminal::{
-    ShellSession, TerminalEvent, fallback_shell_session_with_shell,
-    setup_shell_session_with_shell, terminal_reducer,
+    ShellSession, TerminalCtx, TerminalEvent,
+    fallback_shell_session_with_shell, setup_shell_session_with_shell,
+    shell_cwd_for_active_tab,
 };
-use crate::features::{quick_launch, settings};
+use crate::features::{Feature, Features, quick_launch, settings};
 use crate::fonts::FontsConfig;
+use crate::guards::{MenuGuard, context_menu_guard, inline_edit_guard};
 use crate::state::{
-    SIDEBAR_COLLAPSE_WORKSPACE_RATIO, SIDEBAR_DEFAULT_WORKSPACE_RATIO,
-    SIDEBAR_MENU_WIDTH, SIDEBAR_MIN_TAB_CONTENT_RATIO, SidebarItem,
-    SidebarPane, State,
+    SIDEBAR_MENU_WIDTH, SidebarItem, SidebarPane, State,
+    max_sidebar_workspace_ratio,
 };
+use crate::tab;
 use crate::theme::{AppTheme, ThemeManager, ThemeProps};
-use crate::ui::components::sidebar_workspace_panel;
+use crate::ui::components::{resize_grips, sidebar_workspace_panel};
 use crate::ui::widgets::{
     action_bar, quick_launches_context_menu, sidebar_menu, sidebar_workspace,
     sidebar_workspace_add_menu, tab_bar, tab_content,
@@ -37,14 +36,12 @@ use crate::ui::widgets::{
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
-const RESIZE_EDGE_MOUSE_AREA_THICKNESS: f32 = 6.0;
-const RESIZE_CORNER_MOUSE_AREA_THICKNESS: f32 = 12.0;
 const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
 const SIDEBAR_SEPARATOR_WIDTH: f32 = 0.3;
 const SEPARATOR_ALPHA: f32 = 0.3;
 
 /// App-wide events that drive the root update loop.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) enum Event {
     IcedReady,
     ActionBar(action_bar::ActionBarEvent),
@@ -52,9 +49,35 @@ pub(crate) enum Event {
     SidebarWorkspace(sidebar_workspace::SidebarWorkspaceEvent),
     Explorer(ExplorerEvent),
     QuickLaunch(quick_launch::QuickLaunchEvent),
-    Tab(TabEvent),
+    ActivateTab {
+        tab_id: u64,
+    },
     CloseTabRequested {
         tab_id: u64,
+    },
+    SetTabTitle {
+        tab_id: u64,
+        title: String,
+    },
+    OpenCommandTerminalTab {
+        title: String,
+        settings: Box<Settings>,
+    },
+    OpenQuickLaunchCommandTerminalTab {
+        title: String,
+        settings: Box<Settings>,
+        command: Box<quick_launch::QuickLaunch>,
+    },
+    OpenQuickLaunchWizardCreateTab {
+        parent_path: quick_launch::NodePath,
+    },
+    OpenQuickLaunchWizardEditTab {
+        path: quick_launch::NodePath,
+        command: Box<quick_launch::QuickLaunch>,
+    },
+    OpenQuickLaunchErrorTab {
+        title: String,
+        message: String,
     },
     Terminal(TerminalEvent),
     QuickLaunchWizard {
@@ -63,8 +86,6 @@ pub(crate) enum Event {
     },
     Settings(settings::SettingsEvent),
     SettingsApplied(settings::SettingsData),
-    QuickLaunchSetupCompleted(Box<quick_launch::QuickLaunchSetupOutcome>),
-    QuickLaunchTick,
     Keyboard(iced::keyboard::Event),
     Window(window::Event),
     ResizeWindow(Direction),
@@ -77,6 +98,7 @@ pub(crate) struct App {
     terminal_settings: Settings,
     shell_session: ShellSession,
     state: State,
+    features: Features,
     is_fullscreen: bool,
 }
 
@@ -90,15 +112,12 @@ impl App {
         let fonts = FontsConfig::default();
 
         let terminal_settings = terminal_settings(current_theme, &fonts);
-        let shell_session = match setup_shell_session_with_shell(
-            settings_state.draft().terminal_shell(),
-        ) {
+        let shell_path = settings_state.draft().terminal_shell().to_string();
+        let shell_session = match setup_shell_session_with_shell(&shell_path) {
             Ok(session) => session,
             Err(err) => {
                 log::warn!("shell integration setup failed: {err}");
-                fallback_shell_session_with_shell(
-                    settings_state.draft().terminal_shell(),
-                )
+                fallback_shell_session_with_shell(&shell_path)
             },
         };
 
@@ -107,7 +126,8 @@ impl App {
             height: MIN_WINDOW_HEIGHT,
         };
         let screen_size = Self::screen_size_from_window(window_size);
-        let state = State::new(window_size, screen_size, settings_state);
+        let state = State::new(window_size, screen_size);
+        let features = Features::new(settings_state);
 
         let app = App {
             window_size,
@@ -116,6 +136,7 @@ impl App {
             terminal_settings,
             shell_session,
             state,
+            features,
             is_fullscreen: false,
         };
 
@@ -132,7 +153,7 @@ impl App {
 
     pub(crate) fn subscription(&self) -> Subscription<Event> {
         let mut subscriptions = Vec::new();
-        for (&tab_id, terminal) in self.state.terminal.tabs() {
+        for (&tab_id, terminal) in self.features.terminal().tabs() {
             for entry in terminal.terminals().values() {
                 let sub = entry.terminal.subscription().with(tab_id).map(
                     |(_tab_id, event)| {
@@ -149,15 +170,17 @@ impl App {
         let key_subs = iced::keyboard::listen().map(Event::Keyboard);
 
         let mut subs = vec![terminal_subs, win_subs, key_subs];
-        if self.state.quick_launches.has_active_launches()
-            || self.state.quick_launches.is_dirty()
-            || self.state.quick_launches.is_persist_in_flight()
+        if self.features.quick_launch().has_active_launches()
+            || self.features.quick_launch().is_dirty()
+            || self.features.quick_launch().is_persist_in_flight()
         {
             subs.push(
                 iced::time::every(Duration::from_millis(
                     quick_launch::QUICK_LAUNCHES_TICK_MS,
                 ))
-                .map(|_| Event::QuickLaunchTick),
+                .map(|_| {
+                    Event::QuickLaunch(quick_launch::QuickLaunchEvent::Tick)
+                }),
             );
         }
 
@@ -166,15 +189,14 @@ impl App {
 
     pub(crate) fn update(&mut self, event: Event) -> Task<Event> {
         let mut pre_dispatch_tasks = Vec::new();
-        if self.state.quick_launches.inline_edit().is_some()
-            && should_cancel_inline_edit(&event)
+        if self.features.quick_launch().inline_edit().is_some()
+            && inline_edit_guard(&event)
         {
-            pre_dispatch_tasks.push(quick_launch::quick_launches_reducer(
-                &mut self.state,
-                quick_launch::QuickLaunchesDeps {
-                    terminal_settings: &self.terminal_settings,
-                },
+            let ctx =
+                quick_launch_ctx(&self.terminal_settings, &self.state.sidebar);
+            pre_dispatch_tasks.push(self.features.quick_launch_mut().reduce(
                 quick_launch::QuickLaunchEvent::CancelInlineEdit,
+                &ctx,
             ));
         }
 
@@ -206,75 +228,76 @@ impl App {
         use Event::*;
 
         match event {
-            IcedReady => tab_reducer(
-                &mut self.state,
-                TabDeps {
-                    terminal_settings: &self.terminal_settings,
-                    shell_session: &self.shell_session,
-                },
-                TabEvent::NewTab {
-                    request: TabOpenRequest::Terminal,
-                },
-            ),
+            IcedReady => self.open_terminal_tab(),
             ActionBar(event) => self.handle_action_bar(event),
             Sidebar(event) => self.handle_sidebar(event),
             SidebarWorkspace(event) => self.handle_sidebar_workspace(event),
-            QuickLaunch(event) => quick_launch::quick_launches_reducer(
-                &mut self.state,
-                quick_launch::QuickLaunchesDeps {
-                    terminal_settings: &self.terminal_settings,
-                },
-                event,
+            QuickLaunch(event) => {
+                let ctx = quick_launch_ctx(
+                    &self.terminal_settings,
+                    &self.state.sidebar,
+                );
+                self.features.quick_launch_mut().reduce(event, &ctx)
+            },
+            ActivateTab { tab_id } => self.activate_tab(tab_id),
+            CloseTabRequested { tab_id } => self.close_tab(tab_id),
+            SetTabTitle { tab_id, title } => {
+                self.state.tab.set_title(tab_id, title);
+                Task::none()
+            },
+            OpenCommandTerminalTab { title, settings } => {
+                self.open_command_terminal_tab(title, *settings)
+            },
+            OpenQuickLaunchCommandTerminalTab {
+                title,
+                settings,
+                command,
+            } => self.open_quick_launch_command_terminal_tab(
+                title, *settings, command,
             ),
-            Tab(event) => tab_reducer(
-                &mut self.state,
-                TabDeps {
-                    terminal_settings: &self.terminal_settings,
-                    shell_session: &self.shell_session,
-                },
-                event,
-            ),
-            CloseTabRequested { tab_id } => tab_reducer(
-                &mut self.state,
-                TabDeps {
-                    terminal_settings: &self.terminal_settings,
-                    shell_session: &self.shell_session,
-                },
-                TabEvent::CloseTab { tab_id },
-            ),
+            OpenQuickLaunchWizardCreateTab { parent_path } => {
+                self.open_quick_launch_wizard_create_tab(parent_path)
+            },
+            OpenQuickLaunchWizardEditTab { path, command } => {
+                self.open_quick_launch_wizard_edit_tab(path, *command)
+            },
+            OpenQuickLaunchErrorTab { title, message } => {
+                self.open_quick_launch_error_tab(title, message)
+            },
             Explorer(event) => {
+                let active_tab_id = self.state.active_tab_id();
                 let editor_command =
-                    self.state.settings.draft().terminal_editor().to_string();
-                explorer::explorer_reducer(
-                    &mut self.state,
-                    ExplorerDeps {
+                    self.features.settings().terminal_editor().to_string();
+                let active_shell_cwd = shell_cwd_for_active_tab(
+                    active_tab_id,
+                    self.features.terminal(),
+                );
+                self.features.explorer_mut().reduce(
+                    event,
+                    &ExplorerCtx {
+                        active_shell_cwd,
                         terminal_settings: &self.terminal_settings,
                         editor_command: &editor_command,
                     },
-                    event,
                 )
             },
-            QuickLaunchSetupCompleted(result) => {
-                Task::done(Event::QuickLaunch(
-                    quick_launch::QuickLaunchEvent::SetupCompleted(*result),
-                ))
-            },
-            QuickLaunchTick => Task::done(Event::QuickLaunch(
-                quick_launch::QuickLaunchEvent::Tick,
-            )),
             Terminal(event) => {
+                if let TerminalEvent::PaneGridCursorMoved { position, .. } =
+                    &event
+                {
+                    self.state.sidebar.update_cursor(*position);
+                }
+                let ctx = self.make_terminal_ctx();
                 let sync_task = self.terminal_sync_followup(&event);
-                let terminal_task = terminal_reducer(&mut self.state, event);
+                let terminal_task =
+                    self.features.terminal_mut().reduce(event, &ctx);
                 Task::batch(vec![terminal_task, sync_task])
             },
-            QuickLaunchWizard { tab_id, event } => quick_launch_wizard_reducer(
-                &mut self.state,
-                QuickLaunchWizardDeps { tab_id },
-                event,
-            ),
-            Settings(event) => {
-                settings::settings_reducer(&mut self.state, event)
-            },
+            QuickLaunchWizard { tab_id, event } => self
+                .features
+                .quick_launch_wizard_mut()
+                .reduce(event, &QuickLaunchWizardCtx { tab_id }),
+            Settings(event) => self.features.settings_mut().reduce(event, &()),
             SettingsApplied(settings) => self.apply_settings(&settings),
             Keyboard(event) => self.handle_keyboard(event),
             Window(window::Event::Resized(size)) => {
@@ -282,6 +305,7 @@ impl App {
                 self.state.window_size = size;
                 self.state
                     .set_screen_size(Self::screen_size_from_window(size));
+                self.sync_terminal_grid_sizes();
                 Task::none()
             },
             Window(_) => Task::none(),
@@ -292,31 +316,27 @@ impl App {
 
     fn handle_keyboard(&mut self, event: iced::keyboard::Event) -> Task<Event> {
         if let iced::keyboard::Event::KeyPressed { key, .. } = event {
+            let ctx =
+                quick_launch_ctx(&self.terminal_settings, &self.state.sidebar);
             if matches!(
                 key,
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
-            ) && self.state.quick_launches.inline_edit().is_some()
+            ) && self.features.quick_launch().inline_edit().is_some()
             {
-                return quick_launch::quick_launches_reducer(
-                    &mut self.state,
-                    quick_launch::QuickLaunchesDeps {
-                        terminal_settings: &self.terminal_settings,
-                    },
+                return self.features.quick_launch_mut().reduce(
                     quick_launch::QuickLaunchEvent::CancelInlineEdit,
+                    &ctx,
                 );
             }
 
             if matches!(
                 key,
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete)
-            ) && self.state.quick_launches.inline_edit().is_none()
+            ) && self.features.quick_launch().inline_edit().is_none()
             {
-                return quick_launch::quick_launches_reducer(
-                    &mut self.state,
-                    quick_launch::QuickLaunchesDeps {
-                        terminal_settings: &self.terminal_settings,
-                    },
+                return self.features.quick_launch_mut().reduce(
                     quick_launch::QuickLaunchEvent::DeleteSelected,
+                    &ctx,
                 );
             }
         }
@@ -362,11 +382,12 @@ impl App {
             },
         }
 
-        terminal_reducer(
-            &mut self.state,
+        let ctx = self.make_terminal_ctx();
+        self.features.terminal_mut().reduce(
             TerminalEvent::ApplyTheme {
                 palette: Box::new(terminal_palette),
             },
+            &ctx,
         )
     }
 
@@ -374,21 +395,78 @@ impl App {
         let theme = self.theme_manager.current();
         let theme_props: ThemeProps<'_> = ThemeProps::new(theme);
 
-        let header_title = self.state.active_tab_title().unwrap_or("OTTY");
+        let tab_summaries = self.state.tab_summaries();
+        let active_tab_id = self.state.active_tab_id().unwrap_or(0);
 
+        let header = self.view_header(theme_props);
+
+        let content_row: Element<'_, Event, Theme, iced::Renderer> = if self
+            .state
+            .sidebar
+            .is_hidden()
+        {
+            self.view_content_only(theme_props, &tab_summaries, active_tab_id)
+        } else {
+            self.view_sidebar_layout(theme_props, &tab_summaries, active_tab_id)
+        };
+
+        let content_row =
+            mouse_area(content_row).on_move(|position| {
+                Event::SidebarWorkspace(
+                    sidebar_workspace::SidebarWorkspaceEvent::WorkspaceCursorMoved {
+                        position,
+                    },
+                )
+            });
+
+        let mut content_layers: Vec<Element<'_, Event, Theme, iced::Renderer>> =
+            vec![content_row.into()];
+
+        if let Some(overlay) = self.view_context_menu_overlay(theme_props) {
+            content_layers.push(overlay);
+        }
+
+        let content_stack = iced::widget::Stack::with_children(content_layers)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        let resize_grips_layer = if self.any_context_menu_open() {
+            container(Space::new())
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            resize_grips::view()
+        };
+
+        let root_layers: Vec<Element<'_, Event, Theme, iced::Renderer>> = vec![
+            column![header, content_stack]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+            resize_grips_layer,
+        ];
+
+        iced::widget::Stack::with_children(root_layers)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+
+    /// Render the action bar and its bottom separator line.
+    fn view_header<'a>(
+        &'a self,
+        theme_props: ThemeProps<'a>,
+    ) -> Element<'a, Event, Theme, iced::Renderer> {
         let header = action_bar::view(action_bar::ActionBarProps {
-            title: header_title,
+            title: self.state.active_tab_title().unwrap_or("OTTY"),
             theme: theme_props,
             fonts: &self.fonts,
         })
         .map(Event::ActionBar);
 
-        let tab_summaries = self.state.tab_summaries();
-        let active_tab_id = self.state.active_tab_id().unwrap_or(0);
-
         let palette = theme_props.theme.iced_palette();
-
-        let header_separator = container(Space::new())
+        let separator = container(Space::new())
             .width(Length::Fill)
             .height(Length::Fixed(HEADER_SEPARATOR_HEIGHT))
             .style(move |_| {
@@ -400,173 +478,182 @@ impl App {
                 }
             });
 
-        let content_row: Element<'_, Event, Theme, iced::Renderer> = if self
-            .state
-            .sidebar
-            .hidden
-        {
-            let tab_bar = tab_bar::view(tab_bar::TabBarProps {
-                tabs: tab_summaries.clone(),
-                active_tab_id,
-                theme: theme_props,
-            })
-            .map(Event::Tab);
-
-            let content = tab_content::view(tab_content::TabContentProps {
-                active_tab: self.state.active_tab(),
-                terminal: &self.state.terminal,
-                quick_launch_wizard: &self.state.quick_launch_wizard,
-                quick_launches: &self.state.quick_launches,
-                settings: &self.state.settings,
-                theme: theme_props,
-            })
-            .map(map_tab_content_event);
-            let content_column = column![tab_bar, content]
-                .width(Length::Fill)
-                .height(Length::Fill);
-            container(content_column)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            let sidebar_menu =
-                sidebar_menu::view(sidebar_menu::SidebarMenuProps {
-                    active_item: sidebar_menu_item_from_state(
-                        self.state.sidebar.active_item,
-                    ),
-                    workspace_open: self.state.sidebar.workspace_open,
-                    menu_width: SIDEBAR_MENU_WIDTH,
-                    theme: theme_props,
-                })
-                .map(Event::Sidebar);
-
-            let sidebar_separator = container(Space::new())
-                .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
-                .height(Length::Fill)
-                .style(move |_| {
-                    let mut background = palette.dim_white;
-                    background.a = SEPARATOR_ALPHA;
-                    iced::widget::container::Style {
-                        background: Some(background.into()),
-                        ..Default::default()
-                    }
-                });
-
-            let sidebar_state = &self.state;
-            let sidebar_open = self.state.sidebar.workspace_open;
-
-            let sidebar_split = pane_grid::PaneGrid::new(
-                &self.state.sidebar.panes,
-                move |_, pane, _| match pane {
-                    SidebarPane::Workspace => {
-                        let workspace_content = sidebar_workspace::view(
-                            sidebar_workspace::SidebarWorkspaceProps {
-                                active_item: sidebar_workspace_item_from_state(
-                                    sidebar_state.sidebar.active_item,
-                                ),
-                                quick_launches: &sidebar_state.quick_launches,
-                                explorer: sidebar_state.explorer(),
-                                theme: theme_props,
-                            },
-                        )
-                        .map(Event::SidebarWorkspace);
-                        let workspace = sidebar_workspace_panel::view(
-                            sidebar_workspace_panel::SidebarWorkspacePanelProps {
-                                content: workspace_content,
-                                visible: sidebar_open,
-                                theme: theme_props,
-                            },
-                        );
-                        pane_grid::Content::new(workspace)
-                    },
-                    SidebarPane::Content => {
-                        let tab_bar = tab_bar::view(tab_bar::TabBarProps {
-                            tabs: tab_summaries.clone(),
-                            active_tab_id,
-                            theme: theme_props,
-                        })
-                        .map(Event::Tab);
-
-                        let content = tab_content::view(
-                            tab_content::TabContentProps {
-                                active_tab: sidebar_state.active_tab(),
-                                terminal: &sidebar_state.terminal,
-                                quick_launch_wizard: &sidebar_state.quick_launch_wizard,
-                                quick_launches: &sidebar_state.quick_launches,
-                                settings: &sidebar_state.settings,
-                                theme: theme_props,
-                            },
-                        )
-                        .map(map_tab_content_event);
-
-                        let content_column = column![tab_bar, content]
-                            .width(Length::Fill)
-                            .height(Length::Fill);
-
-                        let content_container = container(content_column)
-                            .width(Length::Fill)
-                            .height(Length::Fill);
-
-                        pane_grid::Content::new(content_container)
-                    },
-                },
-            )
+        column![header, separator]
             .width(Length::Fill)
-            .height(Length::Fill)
-            .spacing(0)
-            .min_size(0)
-            .on_resize(10.0, |event| {
-                Event::Sidebar(sidebar_menu::SidebarMenuEvent::Resized(event))
-            });
+            .height(Length::Shrink)
+            .into()
+    }
 
-            row![sidebar_menu, sidebar_separator, sidebar_split]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        };
-
-        let content_row = mouse_area(content_row).on_move(|position| {
-            Event::SidebarWorkspace(
-                sidebar_workspace::SidebarWorkspaceEvent::WorkspaceCursorMoved {
-                    position,
-                },
-            )
+    /// Render the tab bar + content area when the sidebar is hidden.
+    fn view_content_only<'a>(
+        &'a self,
+        theme_props: ThemeProps<'a>,
+        tab_summaries: &[(u64, &'a str)],
+        active_tab_id: u64,
+    ) -> Element<'a, Event, Theme, iced::Renderer> {
+        let tab_bar = tab_bar::view(tab_bar::TabBarProps {
+            tabs: tab_summaries.to_vec(),
+            active_tab_id,
+            theme: theme_props,
+        })
+        .map(|e| match e {
+            tab_bar::TabBarEvent::ActivateTab { tab_id } => {
+                Event::ActivateTab { tab_id }
+            },
+            tab_bar::TabBarEvent::CloseTab { tab_id } => {
+                Event::CloseTabRequested { tab_id }
+            },
         });
 
-        let mut content_layers: Vec<Element<'_, Event, Theme, iced::Renderer>> =
-            vec![content_row.into()];
+        let content = tab_content::view(tab_content::TabContentProps {
+            active_tab: self.state.active_tab(),
+            terminal: self.features.terminal().state(),
+            quick_launch_wizard: self.features.quick_launch_wizard().state(),
+            quick_launches: self.features.quick_launch().state(),
+            settings: self.features.settings().state(),
+            theme: theme_props,
+        })
+        .map(map_tab_content_event);
 
-        if let Some(menu_layer) =
-            self.context_menu_layer(theme_props, self.state.screen_size)
-        {
-            content_layers.push(menu_layer);
-        }
-
-        let content_stack = iced::widget::Stack::with_children(content_layers)
-            .width(Length::Fill)
-            .height(Length::Fill);
-
-        let resize_grips = if self.any_context_menu_open() {
-            container(Space::new())
+        container(
+            column![tab_bar, content]
                 .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            build_resize_grips()
-        };
+                .height(Length::Fill),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
 
-        let root_layers: Vec<Element<'_, Event, Theme, iced::Renderer>> = vec![
-            column![header, header_separator, content_stack]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-            resize_grips,
-        ];
+    /// Render the sidebar menu + workspace split + content area.
+    fn view_sidebar_layout<'a>(
+        &'a self,
+        theme_props: ThemeProps<'a>,
+        tab_summaries: &[(u64, &'a str)],
+        active_tab_id: u64,
+    ) -> Element<'a, Event, Theme, iced::Renderer> {
+        let sidebar_menu = sidebar_menu::view(sidebar_menu::SidebarMenuProps {
+            active_item: match self.state.sidebar.active_item() {
+                SidebarItem::Terminal => {
+                    sidebar_menu::SidebarMenuItem::Terminal
+                },
+                SidebarItem::Explorer => {
+                    sidebar_menu::SidebarMenuItem::Explorer
+                },
+            },
+            workspace_open: self.state.sidebar.is_workspace_open(),
+            menu_width: SIDEBAR_MENU_WIDTH,
+            theme: theme_props,
+        })
+        .map(Event::Sidebar);
 
-        iced::widget::Stack::with_children(root_layers)
+        let palette = theme_props.theme.iced_palette();
+        let sidebar_separator = container(Space::new())
+            .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
+            .height(Length::Fill)
+            .style(move |_| {
+                let mut background = palette.dim_white;
+                background.a = SEPARATOR_ALPHA;
+                iced::widget::container::Style {
+                    background: Some(background.into()),
+                    ..Default::default()
+                }
+            });
+
+        let state_ref = &self.state;
+        let explorer_feature = self.features.explorer();
+        let terminal_state = self.features.terminal().state();
+        let quick_launches_state = self.features.quick_launch().state();
+        let wizard_state = self.features.quick_launch_wizard().state();
+        let settings_state = self.features.settings().state();
+        let workspace_open = self.state.sidebar.is_workspace_open();
+
+        let sidebar_split = pane_grid::PaneGrid::new(
+            self.state.sidebar.panes(),
+            move |_, pane, _| match pane {
+                SidebarPane::Workspace => {
+                    let workspace_content = sidebar_workspace::view(
+                        sidebar_workspace::SidebarWorkspaceProps {
+                            active_item: match state_ref.sidebar.active_item() {
+                                SidebarItem::Terminal => {
+                                    sidebar_workspace::SidebarWorkspaceItem::Terminal
+                                },
+                                SidebarItem::Explorer => {
+                                    sidebar_workspace::SidebarWorkspaceItem::Explorer
+                                },
+                            },
+                            quick_launches: quick_launches_state,
+                            explorer: explorer_feature,
+                            theme: theme_props,
+                        },
+                    )
+                    .map(Event::SidebarWorkspace);
+                    let workspace = sidebar_workspace_panel::view(
+                        sidebar_workspace_panel::SidebarWorkspacePanelProps {
+                            content: workspace_content,
+                            visible: workspace_open,
+                            theme: theme_props,
+                        },
+                    );
+                    pane_grid::Content::new(workspace)
+                },
+                SidebarPane::Content => {
+                    let tab_bar = tab_bar::view(tab_bar::TabBarProps {
+                        tabs: tab_summaries.to_vec(),
+                        active_tab_id,
+                        theme: theme_props,
+                    })
+                    .map(|e| match e {
+                        tab_bar::TabBarEvent::ActivateTab { tab_id } => {
+                            Event::ActivateTab { tab_id }
+                        },
+                        tab_bar::TabBarEvent::CloseTab { tab_id } => {
+                            Event::CloseTabRequested { tab_id }
+                        },
+                    });
+
+                    let content = tab_content::view(tab_content::TabContentProps {
+                        active_tab: state_ref.active_tab(),
+                        terminal: terminal_state,
+                        quick_launch_wizard: wizard_state,
+                        quick_launches: quick_launches_state,
+                        settings: settings_state,
+                        theme: theme_props,
+                    })
+                    .map(map_tab_content_event);
+
+                    pane_grid::Content::new(
+                        container(
+                            column![tab_bar, content]
+                                .width(Length::Fill)
+                                .height(Length::Fill),
+                        )
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                    )
+                },
+            },
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .spacing(0)
+        .min_size(0)
+        .on_resize(10.0, |event| {
+            Event::Sidebar(sidebar_menu::SidebarMenuEvent::Resized(event))
+        });
+
+        row![sidebar_menu, sidebar_separator, sidebar_split]
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
+    }
+
+    /// Render the context menu overlay layer, if any menu is open.
+    fn view_context_menu_overlay<'a>(
+        &'a self,
+        theme_props: ThemeProps<'a>,
+    ) -> Option<Element<'a, Event, Theme, iced::Renderer>> {
+        self.context_menu_layer(theme_props, self.state.screen_size)
     }
 
     fn handle_action_bar(
@@ -582,8 +669,8 @@ impl App {
             },
             CloseWindow => close_window(),
             ToggleSidebarVisibility => {
-                self.state.sidebar.hidden = !self.state.sidebar.hidden;
-                self.state.sync_tab_grid_sizes();
+                self.state.sidebar.toggle_visibility();
+                self.sync_terminal_grid_sizes();
                 Task::none()
             },
             StartWindowDrag => window::latest().and_then(window::drag),
@@ -596,21 +683,21 @@ impl App {
     ) -> Task<Event> {
         match event {
             sidebar_menu::SidebarMenuEvent::SelectItem(item) => {
-                self.state.sidebar.active_item =
-                    state_sidebar_item_from_menu(item);
+                let canonical = match item {
+                    sidebar_menu::SidebarMenuItem::Terminal => {
+                        SidebarItem::Terminal
+                    },
+                    sidebar_menu::SidebarMenuItem::Explorer => {
+                        SidebarItem::Explorer
+                    },
+                };
+                self.state.sidebar.set_active_item(canonical);
                 self.ensure_sidebar_workspace_open();
                 Task::none()
             },
-            sidebar_menu::SidebarMenuEvent::OpenSettings => tab_reducer(
-                &mut self.state,
-                TabDeps {
-                    terminal_settings: &self.terminal_settings,
-                    shell_session: &self.shell_session,
-                },
-                TabEvent::NewTab {
-                    request: TabOpenRequest::Settings,
-                },
-            ),
+            sidebar_menu::SidebarMenuEvent::OpenSettings => {
+                self.open_settings_tab()
+            },
             sidebar_menu::SidebarMenuEvent::ToggleWorkspace => {
                 self.toggle_sidebar_workspace();
                 Task::none()
@@ -628,51 +715,43 @@ impl App {
     ) -> Task<Event> {
         match event {
             sidebar_workspace::SidebarWorkspaceEvent::TerminalAddMenuOpen => {
-                self.state.sidebar.add_menu =
-                    Some(crate::state::SidebarAddMenuState {
-                        cursor: self.state.sidebar.cursor,
-                    });
+                self.state.sidebar.open_add_menu();
                 Task::none()
             },
             sidebar_workspace::SidebarWorkspaceEvent::TerminalAddMenuDismiss => {
-                self.state.sidebar.add_menu = None;
+                self.state.sidebar.dismiss_add_menu();
                 Task::none()
             },
             sidebar_workspace::SidebarWorkspaceEvent::TerminalAddMenuAction(action) => {
-                self.state.sidebar.add_menu = None;
+                self.state.sidebar.dismiss_add_menu();
                 match action {
-                    sidebar_workspace::SidebarWorkspaceAddMenuAction::CreateTab => tab_reducer(
-                        &mut self.state,
-                        TabDeps {
-                            terminal_settings: &self.terminal_settings,
-                            shell_session: &self.shell_session,
-                        },
-                        TabEvent::NewTab {
-                            request: TabOpenRequest::Terminal,
-                        },
-                    ),
+                    sidebar_workspace::SidebarWorkspaceAddMenuAction::CreateTab => {
+                        self.open_terminal_tab()
+                    },
                     sidebar_workspace::SidebarWorkspaceAddMenuAction::CreateCommand => {
-                        quick_launch::quick_launches_reducer(
-                            &mut self.state,
-                            quick_launch::QuickLaunchesDeps {
-                                terminal_settings: &self.terminal_settings,
-                            },
+                        let ctx = quick_launch_ctx(
+                            &self.terminal_settings,
+                            &self.state.sidebar,
+                        );
+                        self.features.quick_launch_mut().reduce(
                             quick_launch::QuickLaunchEvent::HeaderCreateCommand,
+                            &ctx,
                         )
                     },
                     sidebar_workspace::SidebarWorkspaceAddMenuAction::CreateFolder => {
-                        quick_launch::quick_launches_reducer(
-                            &mut self.state,
-                            quick_launch::QuickLaunchesDeps {
-                                terminal_settings: &self.terminal_settings,
-                            },
+                        let ctx = quick_launch_ctx(
+                            &self.terminal_settings,
+                            &self.state.sidebar,
+                        );
+                        self.features.quick_launch_mut().reduce(
                             quick_launch::QuickLaunchEvent::HeaderCreateFolder,
+                            &ctx,
                         )
                     },
                 }
             },
             sidebar_workspace::SidebarWorkspaceEvent::WorkspaceCursorMoved { position } => {
-                self.state.sidebar.cursor = position;
+                self.state.sidebar.update_cursor(position);
                 Task::none()
             },
             sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(event) => {
@@ -685,99 +764,37 @@ impl App {
     }
 
     fn ensure_sidebar_workspace_open(&mut self) {
-        if self.state.sidebar.workspace_open {
-            return;
-        }
-
-        let ratio = self
+        if self
             .state
             .sidebar
-            .workspace_ratio
-            .max(SIDEBAR_DEFAULT_WORKSPACE_RATIO)
-            .min(max_sidebar_workspace_ratio());
-
-        self.state.sidebar.workspace_open = true;
-        self.state.sidebar.workspace_ratio = ratio;
-        self.state
-            .sidebar
-            .panes
-            .resize(self.state.sidebar.split, ratio);
-        self.state.sync_tab_grid_sizes();
+            .ensure_workspace_open(max_sidebar_workspace_ratio())
+        {
+            self.sync_terminal_grid_sizes();
+        }
     }
 
     fn toggle_sidebar_workspace(&mut self) {
-        if self.state.sidebar.workspace_open {
-            self.state.sidebar.workspace_open = false;
-            self.state
-                .sidebar
-                .panes
-                .resize(self.state.sidebar.split, 0.0);
-        } else {
-            let ratio = self
-                .state
-                .sidebar
-                .workspace_ratio
-                .max(SIDEBAR_DEFAULT_WORKSPACE_RATIO)
-                .min(max_sidebar_workspace_ratio());
-            self.state.sidebar.workspace_open = true;
-            self.state.sidebar.workspace_ratio = ratio;
-            self.state
-                .sidebar
-                .panes
-                .resize(self.state.sidebar.split, ratio);
-        }
-
-        self.state.sync_tab_grid_sizes();
+        self.state
+            .sidebar
+            .toggle_workspace(max_sidebar_workspace_ratio());
+        self.sync_terminal_grid_sizes();
     }
 
     fn handle_sidebar_resize(&mut self, event: pane_grid::ResizeEvent) {
         self.state.sidebar.mark_resizing();
-        let _task = quick_launch::quick_launches_reducer(
-            &mut self.state,
-            quick_launch::QuickLaunchesDeps {
-                terminal_settings: &self.terminal_settings,
-            },
+        let ctx =
+            quick_launch_ctx(&self.terminal_settings, &self.state.sidebar);
+        let _task = self.features.quick_launch_mut().reduce(
             quick_launch::QuickLaunchEvent::ResetInteractionState,
+            &ctx,
         );
-        let max_ratio = max_sidebar_workspace_ratio();
-
-        if !self.state.sidebar.workspace_open {
-            if event.ratio <= SIDEBAR_COLLAPSE_WORKSPACE_RATIO {
-                self.state
-                    .sidebar
-                    .panes
-                    .resize(self.state.sidebar.split, 0.0);
-                return;
-            }
-
-            let ratio = SIDEBAR_COLLAPSE_WORKSPACE_RATIO.min(max_ratio);
-            self.state.sidebar.workspace_open = true;
-            self.state.sidebar.workspace_ratio = ratio;
-            self.state
-                .sidebar
-                .panes
-                .resize(self.state.sidebar.split, ratio);
-            self.state.sync_tab_grid_sizes();
-            return;
-        }
-
-        if event.ratio <= SIDEBAR_COLLAPSE_WORKSPACE_RATIO {
-            self.state.sidebar.workspace_open = false;
-            self.state
-                .sidebar
-                .panes
-                .resize(self.state.sidebar.split, 0.0);
-            self.state.sync_tab_grid_sizes();
-            return;
-        }
-
-        let ratio = event.ratio.min(max_ratio);
-        self.state.sidebar.workspace_ratio = ratio;
-        self.state
+        if self
+            .state
             .sidebar
-            .panes
-            .resize(self.state.sidebar.split, ratio);
-        self.state.sync_tab_grid_sizes();
+            .apply_resize(event, max_sidebar_workspace_ratio())
+        {
+            self.sync_terminal_grid_sizes();
+        }
     }
 
     fn toggle_full_screen(&mut self) -> Task<Event> {
@@ -792,6 +809,22 @@ impl App {
         window::latest().and_then(move |id| window::set_mode(id, mode))
     }
 
+    /// Build a terminal context snapshot from the current app state.
+    fn make_terminal_ctx(&self) -> TerminalCtx {
+        TerminalCtx {
+            active_tab_id: self.state.active_tab_id(),
+            pane_grid_size: self.state.pane_grid_size(),
+            screen_size: self.state.screen_size,
+            sidebar_cursor: self.state.sidebar.cursor(),
+        }
+    }
+
+    /// Propagate the current pane grid size to the terminal feature.
+    fn sync_terminal_grid_sizes(&mut self) {
+        let size = self.state.pane_grid_size();
+        self.features.terminal_mut().set_grid_size(size);
+    }
+
     fn screen_size_from_window(window_size: Size) -> Size {
         let action_bar_height = action_bar::ACTION_BAR_HEIGHT;
         let height =
@@ -801,31 +834,28 @@ impl App {
     }
 
     fn any_context_menu_open(&self) -> bool {
-        if self.state.sidebar.add_menu.is_some()
-            || self.state.quick_launches.context_menu().is_some()
+        if self.state.sidebar.add_menu().is_some()
+            || self.features.quick_launch().context_menu().is_some()
         {
             return true;
         }
 
-        self.state
-            .terminal
-            .tabs()
-            .any(|(_, tab)| tab.context_menu().is_some())
+        self.features.terminal().has_any_context_menu()
     }
 
     fn close_all_context_menus(&mut self) -> Task<Event> {
-        self.state.sidebar.add_menu = None;
-        let quick_launch_task = quick_launch::quick_launches_reducer(
-            &mut self.state,
-            quick_launch::QuickLaunchesDeps {
-                terminal_settings: &self.terminal_settings,
-            },
-            quick_launch::QuickLaunchEvent::ContextMenuDismiss,
-        );
-        let terminal_task = terminal_reducer(
-            &mut self.state,
-            TerminalEvent::CloseAllContextMenus,
-        );
+        self.state.sidebar.dismiss_add_menu();
+        let ctx =
+            quick_launch_ctx(&self.terminal_settings, &self.state.sidebar);
+        let quick_launch_task = self
+            .features
+            .quick_launch_mut()
+            .reduce(quick_launch::QuickLaunchEvent::ContextMenuDismiss, &ctx);
+        let ctx = self.make_terminal_ctx();
+        let terminal_task = self
+            .features
+            .terminal_mut()
+            .reduce(TerminalEvent::CloseAllContextMenus, &ctx);
         Task::batch(vec![quick_launch_task, terminal_task])
     }
 
@@ -834,7 +864,7 @@ impl App {
         theme: ThemeProps<'a>,
         area_size: Size,
     ) -> Option<Element<'a, Event, Theme, iced::Renderer>> {
-        if let Some(menu) = self.state.sidebar.add_menu.as_ref() {
+        if let Some(menu) = self.state.sidebar.add_menu() {
             return Some(
                 sidebar_workspace_add_menu::view(
                     sidebar_workspace_add_menu::SidebarWorkspaceAddMenuProps {
@@ -847,14 +877,14 @@ impl App {
             );
         }
 
-        if let Some(menu) = self.state.quick_launches.context_menu() {
+        if let Some(menu) = self.features.quick_launch().context_menu() {
             return Some(
                 quick_launches_context_menu::view(
                     quick_launches_context_menu::QuickLaunchesContextMenuProps {
                         menu,
                         theme,
                         area_size,
-                        launching: self.state.quick_launches.launching(),
+                        launching: self.features.quick_launch().launching(),
                     },
                 )
                 .map(|event| {
@@ -867,7 +897,7 @@ impl App {
             );
         }
 
-        for (&tab_id, terminal) in self.state.terminal.tabs() {
+        for (&tab_id, terminal) in self.features.terminal().tabs() {
             if let Some(menu) = terminal.context_menu() {
                 let has_block_selection = terminal.selected_block_terminal()
                     == Some(menu.terminal_id());
@@ -891,6 +921,94 @@ impl App {
 
         None
     }
+
+    fn activate_tab(&mut self, tab_id: u64) -> Task<Event> {
+        tab::activate_tab(&mut self.state, tab_id)
+    }
+
+    fn close_tab(&mut self, tab_id: u64) -> Task<Event> {
+        tab::close_tab(&mut self.state, tab_id)
+    }
+
+    fn open_terminal_tab(&mut self) -> Task<Event> {
+        tab::open_terminal_tab(
+            &mut self.state,
+            self.features.terminal_mut(),
+            &self.shell_session,
+            &self.terminal_settings,
+        )
+    }
+
+    fn open_settings_tab(&mut self) -> Task<Event> {
+        tab::open_settings_tab(&mut self.state)
+    }
+
+    fn open_command_terminal_tab(
+        &mut self,
+        title: String,
+        tab_settings: Settings,
+    ) -> Task<Event> {
+        tab::open_command_terminal_tab(
+            &mut self.state,
+            self.features.terminal_mut(),
+            title,
+            tab_settings,
+        )
+    }
+
+    fn open_quick_launch_command_terminal_tab(
+        &mut self,
+        title: String,
+        tab_settings: Settings,
+        command: Box<quick_launch::QuickLaunch>,
+    ) -> Task<Event> {
+        tab::open_quick_launch_command_terminal_tab(
+            &mut self.state,
+            self.features.terminal_mut(),
+            title,
+            tab_settings,
+            command,
+        )
+    }
+
+    fn open_quick_launch_wizard_create_tab(
+        &mut self,
+        parent_path: quick_launch::NodePath,
+    ) -> Task<Event> {
+        tab::open_quick_launch_wizard_create_tab(&mut self.state, parent_path)
+    }
+
+    fn open_quick_launch_wizard_edit_tab(
+        &mut self,
+        path: quick_launch::NodePath,
+        command: quick_launch::QuickLaunch,
+    ) -> Task<Event> {
+        tab::open_quick_launch_wizard_edit_tab(&mut self.state, path, command)
+    }
+
+    fn open_quick_launch_error_tab(
+        &mut self,
+        title: String,
+        message: String,
+    ) -> Task<Event> {
+        tab::open_quick_launch_error_tab(&mut self.state, title, message)
+    }
+}
+
+/// Build a [`quick_launch::QuickLaunchCtx`] from individual app state fields.
+///
+/// Kept as a free function so Rust can split the field borrows: callers can
+/// take `&mut self.features` immediately after calling this with
+/// `&self.terminal_settings` and `&self.state.sidebar`.
+fn quick_launch_ctx<'a>(
+    terminal_settings: &'a otty_ui_term::settings::Settings,
+    sidebar: &crate::state::SidebarState,
+) -> quick_launch::QuickLaunchCtx<'a> {
+    quick_launch::QuickLaunchCtx {
+        terminal_settings,
+        sidebar_cursor: sidebar.cursor(),
+        sidebar_is_resizing: sidebar.is_resizing(),
+    }
 }
 
 fn map_tab_content_event(event: tab_content::TabContentEvent) -> Event {
@@ -901,113 +1019,6 @@ fn map_tab_content_event(event: tab_content::TabContentEvent) -> Event {
             Event::QuickLaunchWizard { tab_id, event }
         },
         tab_content::TabContentEvent::QuickLaunchError(event) => match event {},
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum MenuGuard {
-    Allow,
-    Ignore,
-    Dismiss,
-}
-
-fn context_menu_guard(event: &Event) -> MenuGuard {
-    use MenuGuard::*;
-
-    match event {
-        Event::SidebarWorkspace(
-            sidebar_workspace::SidebarWorkspaceEvent::TerminalAddMenuAction(_)
-            | sidebar_workspace::SidebarWorkspaceEvent::TerminalAddMenuDismiss,
-        )
-        | Event::SidebarWorkspace(
-            sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
-                quick_launch::QuickLaunchEvent::ContextMenuAction(_)
-                | quick_launch::QuickLaunchEvent::ContextMenuDismiss,
-            ),
-        )
-        | Event::QuickLaunch(
-            quick_launch::QuickLaunchEvent::ContextMenuAction(_)
-            | quick_launch::QuickLaunchEvent::ContextMenuDismiss
-            | quick_launch::QuickLaunchEvent::SetupCompleted(_)
-            | quick_launch::QuickLaunchEvent::Tick,
-        )
-        | Event::QuickLaunchSetupCompleted(_)
-        | Event::QuickLaunchTick => Allow,
-        Event::Terminal(event) => match event {
-            TerminalEvent::CloseContextMenu { .. }
-            | TerminalEvent::CopySelection { .. }
-            | TerminalEvent::PasteIntoPrompt { .. }
-            | TerminalEvent::CopySelectedBlockContent { .. }
-            | TerminalEvent::CopySelectedBlockPrompt { .. }
-            | TerminalEvent::CopySelectedBlockCommand { .. }
-            | TerminalEvent::SplitPane { .. }
-            | TerminalEvent::ClosePane { .. } => Allow,
-            TerminalEvent::Widget(_) => Allow,
-            TerminalEvent::PaneGridCursorMoved { .. } => Allow,
-            _ => Dismiss,
-        },
-        Event::SidebarWorkspace(
-            sidebar_workspace::SidebarWorkspaceEvent::WorkspaceCursorMoved {
-                ..
-            },
-        )
-        | Event::SidebarWorkspace(
-            sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
-                quick_launch::QuickLaunchEvent::CursorMoved { .. },
-            ),
-        )
-        | Event::Explorer(_) => Allow,
-        Event::SidebarWorkspace(
-            sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
-                quick_launch::QuickLaunchEvent::NodeHovered { .. },
-            ),
-        ) => Ignore,
-        Event::ActionBar(_) => Allow,
-        Event::Window(_) | Event::ResizeWindow(_) => Allow,
-        Event::CloseTabRequested { .. } => Allow,
-        Event::Keyboard(_) => Ignore,
-        _ => Dismiss,
-    }
-}
-
-fn should_cancel_inline_edit(event: &Event) -> bool {
-    use quick_launch::QuickLaunchEvent;
-
-    match event {
-        Event::SidebarWorkspace(
-            sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
-                quick_launches_event,
-            ),
-        ) => !matches!(
-            quick_launches_event,
-            QuickLaunchEvent::InlineEditChanged(_)
-                | QuickLaunchEvent::InlineEditSubmit
-                | QuickLaunchEvent::CursorMoved { .. }
-                | QuickLaunchEvent::NodeHovered { .. }
-        ),
-        Event::QuickLaunch(quick_launches_event) => !matches!(
-            quick_launches_event,
-            QuickLaunchEvent::InlineEditChanged(_)
-                | QuickLaunchEvent::InlineEditSubmit
-                | QuickLaunchEvent::CursorMoved { .. }
-                | QuickLaunchEvent::NodeHovered { .. }
-                | QuickLaunchEvent::SetupCompleted(_)
-                | QuickLaunchEvent::Tick
-        ),
-        Event::QuickLaunchTick | Event::QuickLaunchSetupCompleted(_) => false,
-        Event::CloseTabRequested { .. } => false,
-        Event::SidebarWorkspace(
-            sidebar_workspace::SidebarWorkspaceEvent::WorkspaceCursorMoved {
-                ..
-            },
-        ) => false,
-        Event::Terminal(event) => !matches!(
-            event,
-            TerminalEvent::Widget(_)
-                | TerminalEvent::PaneGridCursorMoved { .. }
-        ),
-        Event::Keyboard(_) | Event::Window(_) => false,
-        _ => true,
     }
 }
 
@@ -1024,146 +1035,5 @@ fn terminal_settings(theme: &AppTheme, fonts: &FontsConfig) -> Settings {
         font: font_settings,
         theme: theme_settings,
         backend: BackendSettings::default(),
-    }
-}
-
-fn build_resize_grips() -> Element<'static, Event, Theme, iced::Renderer> {
-    let n_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fill)
-            .height(Length::Fixed(RESIZE_EDGE_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::North))
-    .interaction(mouse::Interaction::ResizingVertically);
-
-    let s_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fill)
-            .height(Length::Fixed(RESIZE_EDGE_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::South))
-    .interaction(mouse::Interaction::ResizingVertically);
-
-    let e_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_EDGE_MOUSE_AREA_THICKNESS))
-            .height(Length::Fill),
-    )
-    .on_press(Event::ResizeWindow(Direction::East))
-    .interaction(mouse::Interaction::ResizingHorizontally);
-
-    let w_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_EDGE_MOUSE_AREA_THICKNESS))
-            .height(Length::Fill),
-    )
-    .on_press(Event::ResizeWindow(Direction::West))
-    .interaction(mouse::Interaction::ResizingHorizontally);
-
-    let nw_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS))
-            .height(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::NorthWest))
-    .interaction(mouse::Interaction::ResizingDiagonallyDown);
-
-    let ne_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS))
-            .height(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::NorthEast))
-    .interaction(mouse::Interaction::ResizingDiagonallyUp);
-
-    let sw_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS))
-            .height(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::SouthWest))
-    .interaction(mouse::Interaction::ResizingDiagonallyUp);
-
-    let se_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS))
-            .height(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::SouthEast))
-    .interaction(mouse::Interaction::ResizingDiagonallyDown);
-
-    stack!(
-        container(n_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_y(iced::alignment::Vertical::Top),
-        container(s_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_y(iced::alignment::Vertical::Bottom),
-        container(e_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right),
-        container(w_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Left),
-        container(nw_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Left)
-            .align_y(iced::alignment::Vertical::Top),
-        container(ne_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right)
-            .align_y(iced::alignment::Vertical::Top),
-        container(sw_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Left)
-            .align_y(iced::alignment::Vertical::Bottom),
-        container(se_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right)
-            .align_y(iced::alignment::Vertical::Bottom),
-    )
-    .into()
-}
-
-fn max_sidebar_workspace_ratio() -> f32 {
-    (1.0 - SIDEBAR_MIN_TAB_CONTENT_RATIO).max(0.0)
-}
-
-fn sidebar_menu_item_from_state(
-    item: SidebarItem,
-) -> sidebar_menu::SidebarMenuItem {
-    match item {
-        SidebarItem::Terminal => sidebar_menu::SidebarMenuItem::Terminal,
-        SidebarItem::Explorer => sidebar_menu::SidebarMenuItem::Explorer,
-    }
-}
-
-fn sidebar_workspace_item_from_state(
-    item: SidebarItem,
-) -> sidebar_workspace::SidebarWorkspaceItem {
-    match item {
-        SidebarItem::Terminal => {
-            sidebar_workspace::SidebarWorkspaceItem::Terminal
-        },
-        SidebarItem::Explorer => {
-            sidebar_workspace::SidebarWorkspaceItem::Explorer
-        },
-    }
-}
-
-fn state_sidebar_item_from_menu(
-    item: sidebar_menu::SidebarMenuItem,
-) -> SidebarItem {
-    match item {
-        sidebar_menu::SidebarMenuItem::Terminal => SidebarItem::Terminal,
-        sidebar_menu::SidebarMenuItem::Explorer => SidebarItem::Explorer,
     }
 }

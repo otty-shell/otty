@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use otty_libterm::pty::SSHAuth;
+use otty_libterm::pty::{self, SSHAuth, Session};
 use otty_ui_term::settings::{
     LocalSessionOptions, SSHSessionOptions, SessionKind, Settings,
 };
@@ -53,8 +53,14 @@ pub(crate) async fn prepare_quick_launch_setup(
         };
     }
 
-    // Keep setup in an async pipeline so remote preflight can be added here.
-    std::future::ready(()).await;
+    if let Err(error) = probe_launch_runtime(&command, &cancel) {
+        return QuickLaunchSetupOutcome::Failed {
+            path,
+            launch_id,
+            command: Box::new(command),
+            error: Arc::new(error),
+        };
+    }
 
     let session = command_session(&command, &cancel);
     let settings = terminal_settings_for_session(&terminal_settings, session);
@@ -71,6 +77,44 @@ pub(crate) async fn prepare_quick_launch_setup(
         settings: Box::new(settings),
         command: Box::new(command),
     })
+}
+
+fn probe_launch_runtime(
+    command: &QuickLaunch,
+    cancel: &Arc<AtomicBool>,
+) -> Result<(), QuickLaunchError> {
+    match &command.spec {
+        CommandSpec::Custom { .. } => Ok(()),
+        CommandSpec::Ssh { ssh } => probe_ssh_session(ssh, cancel),
+    }
+}
+
+fn probe_ssh_session(
+    ssh: &SshCommand,
+    cancel: &Arc<AtomicBool>,
+) -> Result<(), QuickLaunchError> {
+    let options = ssh_session(ssh, cancel);
+    let mut builder = pty::ssh()
+        .with_host(options.host())
+        .with_user(options.user())
+        .with_auth(options.auth());
+
+    if let Some(timeout) = options.timeout() {
+        builder = builder.with_timeout(timeout);
+    }
+
+    if let Some(cancel_token) = options.cancel_token() {
+        builder = builder.with_cancel_token(cancel_token.clone());
+    }
+
+    let mut session =
+        builder
+            .spawn()
+            .map_err(|err| QuickLaunchError::Validation {
+                message: format!("SSH connection failed: {err}"),
+            })?;
+    let _ = session.close();
+    Ok(())
 }
 
 fn validate_launch_for_setup(
@@ -94,20 +138,24 @@ fn validate_custom_runtime(
     custom: &CustomCommand,
 ) -> Result<(), QuickLaunchError> {
     let program = custom.program.trim();
-    let _program_path = find_program_path(program)?;
+    let _ = find_program_path(program)?;
 
     if let Some(dir) = custom.working_directory.as_deref() {
         let expanded = expand_tilde(dir);
         let path = Path::new(&expanded);
+
         if !path.exists() {
-            return Err(validation_error(format!(
-                "Working directory not found: {expanded}"
-            )));
+            return Err(QuickLaunchError::Validation {
+                message: format!("Working directory not found: {expanded}",),
+            });
         }
+
         if !path.is_dir() {
-            return Err(validation_error(format!(
-                "Working directory is not a directory: {expanded}"
-            )));
+            return Err(QuickLaunchError::Validation {
+                message: format!(
+                    "Working directory is not a directory: {expanded}"
+                ),
+            });
         }
     }
 
@@ -120,15 +168,17 @@ fn validate_ssh_runtime(ssh: &SshCommand) -> Result<(), QuickLaunchError> {
         if !identity.is_empty() {
             let expanded = expand_tilde(identity);
             let path = Path::new(&expanded);
+
             if !path.exists() {
-                return Err(validation_error(format!(
-                    "Identity file not found: {expanded}"
-                )));
+                return Err(QuickLaunchError::Validation {
+                    message: format!("Identity file not found: {expanded}"),
+                });
             }
+
             if !path.is_file() {
-                return Err(validation_error(format!(
-                    "Identity file is not a file: {expanded}"
-                )));
+                return Err(QuickLaunchError::Validation {
+                    message: format!("Identity file is not a file: {expanded}"),
+                });
             }
         }
     }
@@ -215,6 +265,7 @@ fn find_program_path(program: &str) -> Result<PathBuf, QuickLaunchError> {
     let paths: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|value| std::env::split_paths(&value).collect())
         .unwrap_or_default();
+
     for dir in paths {
         let candidate = dir.join(program);
         if is_executable_path(&candidate) {
@@ -222,9 +273,9 @@ fn find_program_path(program: &str) -> Result<PathBuf, QuickLaunchError> {
         }
     }
 
-    Err(validation_error(format!(
-        "Program not found in PATH: {program}"
-    )))
+    Err(QuickLaunchError::Validation {
+        message: format!("Program not found in PATH: {program}"),
+    })
 }
 
 fn validate_program_path(
@@ -232,17 +283,21 @@ fn validate_program_path(
     label: &str,
 ) -> Result<PathBuf, QuickLaunchError> {
     if !path.exists() {
-        return Err(validation_error(format!("Program not found: {label}")));
+        return Err(QuickLaunchError::Validation {
+            message: format!("Program not found: {label}"),
+        });
     }
+
     if path.is_dir() {
-        return Err(validation_error(format!(
-            "Program is a directory: {label}"
-        )));
+        return Err(QuickLaunchError::Validation {
+            message: format!("Program is a directory: {label}"),
+        });
     }
+
     if !is_executable_path(path) {
-        return Err(validation_error(format!(
-            "Program is not executable: {label}"
-        )));
+        return Err(QuickLaunchError::Validation {
+            message: format!("Program is not executable: {label}"),
+        });
     }
 
     Ok(path.to_path_buf())
@@ -271,6 +326,7 @@ fn expand_tilde(path: &str) -> String {
     if path == "~" {
         return std::env::var("HOME").unwrap_or_else(|_| String::from("~"));
     }
+
     if let Some(rest) = path.strip_prefix("~/")
         && let Ok(home) = std::env::var("HOME")
     {
@@ -278,8 +334,4 @@ fn expand_tilde(path: &str) -> String {
     }
 
     path.to_string()
-}
-
-fn validation_error(message: String) -> QuickLaunchError {
-    QuickLaunchError::Validation { message }
 }

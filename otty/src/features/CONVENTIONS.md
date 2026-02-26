@@ -52,7 +52,7 @@ Files outside required/optional lists MUST NOT be added without updating this sp
 - `feature.rs`: feature struct, owned state, `Feature` trait implementation, event orchestration.
 - `event.rs`: public feature event enum and event-only helpers.
 - `state.rs`: internal runtime state struct and deterministic state mutation helpers.
-- `model.rs`: domain data structs and their trait implementations.
+- `model.rs`: domain data structs and their trait implementations. A type belongs in `model.rs` if and only if it is used across **two or more** of the feature's modules (e.g. `state`, `services`, `event`, UI). If a type is used only inside a single module, it MUST be defined in that module instead.
 - `errors.rs`: explicit error type for feature boundaries.
 - `storage.rs`: serialization/deserialization and filesystem I/O only.
 - `services.rs`: bounded external interactions and side-effect adapters.
@@ -66,21 +66,23 @@ All features MUST implement the shared trait contract.
 ```rust
 pub(crate) trait Feature {
     type Event;
-    type Ctx;
+    type Ctx<'a>
+    where
+        Self: 'a;
 
-    fn reduce(
+    fn reduce<'a>(
         &mut self,
         event: Self::Event,
-        ctx: &Self::Ctx,
+        ctx: &Self::Ctx<'a>,
     ) -> iced::Task<crate::app::Event>;
 }
 ```
 
 ### 5.2 Context Rules
 
-- `reduce` MUST always accept a context reference `&Self::Ctx`.
-- Features without runtime dependencies MUST use `type Ctx = ()` and ignore context.
-- Features with runtime dependencies MUST define a feature-specific context type (e.g. `ExplorerCtx`).
+- `reduce` MUST always accept a context reference `&Self::Ctx<'a>`.
+- Features without runtime dependencies MUST use `type Ctx<'a> = () where Self: 'a;` and ignore context.
+- Features with runtime dependencies MUST define a feature-specific context type (e.g. `ExplorerCtx<'a>` or `ExampleCtx`).
 - Context MUST be read-only and MUST NOT expose mutable access to other features.
 
 ### 5.3 Primary Types
@@ -101,6 +103,7 @@ Each feature MUST define:
 - External code MAY read feature data only through read-only feature APIs.
 - External code MUST NOT receive raw mutable references to feature state.
 - Reusable mutation logic SHOULD live on `<Feature>State` methods and be called only from `reduce`.
+- **Test exception:** `#[cfg(test)]` code within the feature's own module tree MAY access `<Feature>State` methods directly to set up test fixtures without going through `reduce`. This exception MUST NOT be used outside the feature's own module tree.
 
 ## 7. Feature Container And Registration
 
@@ -113,12 +116,13 @@ Each feature MUST define:
 
 - A feature's `mod.rs` MUST be the only import surface for sibling features and app wiring.
 - Feature-internal module declarations inside `<feature>/mod.rs` MUST use private `mod ...;`.
-- Feature-internal `mod.rs` MUST re-export only stable API items:
-  - primary feature struct
-  - primary event enum
-  - feature context type (if used)
-  - feature error type (if externally consumed)
-  - read-only query/view models if explicitly needed
+- Feature-internal `mod.rs` MUST re-export only items that external consumers (sibling features, app wiring, or UI) actually need to name. Re-export a type only when it is confirmed to be referenced outside the feature — not pre-emptively because it appears inside another exported type:
+  - primary feature struct — if referenced by app wiring or container
+  - primary event enum — if routed from `app.rs`
+  - feature context type — if constructed outside the feature
+  - feature error type — if handled outside the feature
+  - types embedded in exported types (e.g. enum payload types) — only if external code needs to pattern-match or name them directly
+  - read-only query/view models — only if consumed by UI or sibling features
 - Wildcard re-exports (`pub use ...::*`) MUST NOT be used.
 - Mutable state internals and temporary helper types MUST NOT be re-exported.
 
@@ -130,8 +134,8 @@ Each feature MUST define:
 | --------- | ----: | -----: | ----: | -------: | ------: | ----: | ------: |
 | model     |     - |      ✅ |     ❌ |        ✅ |       ❌ |     ❌ |      ❌ |
 | state     |     ✅ |      ✅ |     - |        ✅ |       ❌ |     ❌ |      ❌ |
-| services  |     ✅ |      ✅ |     ❌ |        - |       ❌ |     ❌ |      ❌ |
-| storage   |     ✅ |      ✅ |     ❌ |        ✅ |       - |     ❌ |      ❌ |
+| services  |     ✅ |      ✅ |     ❌ |        - |       ✅ |     ❌ |      ❌ |
+| storage   |     ✅ |      ✅ |     ❌ |        ❌ |       - |     ❌ |      ❌ |
 | event     |     ✅ |      ✅ |     ❌ |        ❌ |       ❌ |     - |      ❌ |
 | feature   |     ✅ |      ✅ |     ✅ |        ✅ |       ✅ |     ✅ |       - |
 
@@ -162,6 +166,8 @@ Each feature MUST define:
 - Side-effecting operations (filesystem/process/network/env/time) SHOULD be abstracted behind feature-specific service interfaces.
 - Feature context SHOULD provide service dependencies required by `reduce`.
 - Service abstractions MUST remain bounded to feature needs; avoid global god-services.
+- `services.rs` is the right home for a helper when it: (a) is used from more than one module inside the feature, OR (b) directly crosses an external I/O boundary (filesystem, process, network, env, time).
+- Private orchestration helpers used exclusively inside `feature.rs` (e.g. `Task` builders, local command parsers called from a single `reduce` arm) MAY remain as private free functions in `feature.rs`. Moving them to `services.rs` would be premature if no other module needs them.
 
 ## 11. Naming Rules
 
@@ -224,12 +230,14 @@ pub(crate) mod example;
 
 pub(crate) trait Feature {
     type Event;
-    type Ctx;
+    type Ctx<'a>
+    where
+        Self: 'a;
 
-    fn reduce(
+    fn reduce<'a>(
         &mut self,
         event: Self::Event,
-        ctx: &Self::Ctx,
+        ctx: &Self::Ctx<'a>,
     ) -> iced::Task<crate::app::Event>;
 }
 
@@ -283,12 +291,15 @@ impl ExampleFeature {
 
 impl Feature for ExampleFeature {
     type Event = ExampleEvent;
-    type Ctx = ExampleCtx;
+    type Ctx<'a>
+        = ExampleCtx
+    where
+        Self: 'a;
 
-    fn reduce(
+    fn reduce<'a>(
         &mut self,
         event: ExampleEvent,
-        _ctx: &ExampleCtx,
+        _ctx: &Self::Ctx<'a>,
     ) -> Task<AppEvent> {
         match event {
             ExampleEvent::AddItem { id } => {
@@ -308,7 +319,7 @@ A feature is compliant only if all checks pass:
 - `mod.rs` is thin and exports only stable API.
 - Exactly one feature struct, one event enum, and one state type exist.
 - Feature struct implements `Feature` trait.
-- `reduce` accepts context (`Ctx = ()` allowed for no-deps features).
+- `reduce` accepts context (`type Ctx<'a> = () where Self: 'a;` allowed for no-deps features).
 - No forbidden dependency edges exist.
 - No external mutable access bypasses feature reducer boundary.
 - Required tests from section 12 exist and pass.

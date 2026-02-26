@@ -1,15 +1,10 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use iced::widget::pane_grid;
 use iced::{Point, Size};
 
-use crate::features::explorer::{ExplorerState, ExplorerWritePermit};
-use crate::features::quick_launch::{self, QuickLaunchState};
-use crate::features::quick_launch_wizard::QuickLaunchWizardState;
-use crate::features::settings::SettingsState;
-use crate::features::tab::{TabItem, TabState};
-use crate::features::terminal::{TerminalState, TerminalTabState};
+use crate::tab::TabItem;
 use crate::ui::widgets::tab_bar;
 
 /// Fixed width of the sidebar menu rail.
@@ -40,14 +35,14 @@ pub(crate) enum SidebarPane {
 /// Sidebar layout state shared across the app.
 #[derive(Debug)]
 pub(crate) struct SidebarState {
-    pub(crate) active_item: SidebarItem,
-    pub(crate) hidden: bool,
-    pub(crate) workspace_open: bool,
-    pub(crate) workspace_ratio: f32,
-    pub(crate) split: pane_grid::Split,
-    pub(crate) panes: pane_grid::State<SidebarPane>,
-    pub(crate) add_menu: Option<SidebarAddMenuState>,
-    pub(crate) cursor: Point,
+    active_item: SidebarItem,
+    hidden: bool,
+    workspace_open: bool,
+    workspace_ratio: f32,
+    split: pane_grid::Split,
+    panes: pane_grid::State<SidebarPane>,
+    add_menu: Option<SidebarAddMenuState>,
+    cursor: Point,
     last_resize_at: Option<Instant>,
 }
 
@@ -55,6 +50,38 @@ impl SidebarState {
     /// Build a default sidebar layout state.
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    // ── Accessors ──────────────────────────────────────────────────────────
+
+    /// Return the currently active sidebar menu item.
+    pub(crate) fn active_item(&self) -> SidebarItem {
+        self.active_item
+    }
+
+    /// Return whether the sidebar is hidden.
+    pub(crate) fn is_hidden(&self) -> bool {
+        self.hidden
+    }
+
+    /// Return whether the workspace panel is open.
+    pub(crate) fn is_workspace_open(&self) -> bool {
+        self.workspace_open
+    }
+
+    /// Return read-only access to the pane grid state.
+    pub(crate) fn panes(&self) -> &pane_grid::State<SidebarPane> {
+        &self.panes
+    }
+
+    /// Return the current cursor position snapshot.
+    pub(crate) fn cursor(&self) -> Point {
+        self.cursor
+    }
+
+    /// Return the add-menu state if the menu is open.
+    pub(crate) fn add_menu(&self) -> Option<&SidebarAddMenuState> {
+        self.add_menu.as_ref()
     }
 
     /// Workspace ratio used for sizing when the workspace is visible.
@@ -79,6 +106,116 @@ impl SidebarState {
                     <= Duration::from_millis(SIDEBAR_RESIZE_HOVER_SUPPRESS_MS)
             })
             .unwrap_or(false)
+    }
+
+    // ── Mutators ───────────────────────────────────────────────────────────
+
+    /// Toggle sidebar visibility between hidden and visible.
+    pub(crate) fn toggle_visibility(&mut self) {
+        self.hidden = !self.hidden;
+    }
+
+    /// Set the active sidebar menu item.
+    pub(crate) fn set_active_item(&mut self, item: SidebarItem) {
+        self.active_item = item;
+    }
+
+    /// Update the sidebar cursor position snapshot.
+    pub(crate) fn update_cursor(&mut self, position: Point) {
+        self.cursor = position;
+    }
+
+    /// Open the add-menu anchored at the current cursor position.
+    pub(crate) fn open_add_menu(&mut self) {
+        self.add_menu = Some(SidebarAddMenuState {
+            cursor: self.cursor,
+        });
+    }
+
+    /// Close and clear the add-menu.
+    pub(crate) fn dismiss_add_menu(&mut self) {
+        self.add_menu = None;
+    }
+
+    // ── Domain operations ──────────────────────────────────────────────────
+
+    /// Open the workspace at the given ratio, storing it for future use.
+    fn open_workspace(&mut self, ratio: f32) {
+        self.workspace_open = true;
+        self.workspace_ratio = ratio;
+        self.panes.resize(self.split, ratio);
+    }
+
+    /// Collapse the workspace panel to zero width.
+    fn close_workspace(&mut self) {
+        self.workspace_open = false;
+        self.panes.resize(self.split, 0.0);
+    }
+
+    /// Toggle the workspace open or closed.
+    ///
+    /// Returns `true` when the layout changed and terminal grids must be
+    /// re-synced by the caller.
+    pub(crate) fn toggle_workspace(&mut self, max_ratio: f32) -> bool {
+        if self.workspace_open {
+            self.close_workspace();
+        } else {
+            let ratio = self
+                .workspace_ratio
+                .max(SIDEBAR_DEFAULT_WORKSPACE_RATIO)
+                .min(max_ratio);
+            self.open_workspace(ratio);
+        }
+        true
+    }
+
+    /// Ensure the workspace is open, opening it at the default ratio if not.
+    ///
+    /// Returns `true` when the panel was opened and terminal grids must be
+    /// re-synced by the caller; `false` if it was already open.
+    pub(crate) fn ensure_workspace_open(&mut self, max_ratio: f32) -> bool {
+        if self.workspace_open {
+            return false;
+        }
+        let ratio = self
+            .workspace_ratio
+            .max(SIDEBAR_DEFAULT_WORKSPACE_RATIO)
+            .min(max_ratio);
+        self.open_workspace(ratio);
+        true
+    }
+
+    /// Apply a pane-grid resize event, clamping to `max_ratio` and
+    /// auto-collapsing when below the collapse threshold.
+    ///
+    /// Returns `true` when the layout changed and terminal grids must be
+    /// re-synced by the caller.
+    pub(crate) fn apply_resize(
+        &mut self,
+        event: pane_grid::ResizeEvent,
+        max_ratio: f32,
+    ) -> bool {
+        let collapse_threshold = SIDEBAR_COLLAPSE_WORKSPACE_RATIO;
+
+        if !self.workspace_open {
+            if event.ratio <= collapse_threshold {
+                self.panes.resize(self.split, 0.0);
+                return false;
+            }
+            let ratio = collapse_threshold.min(max_ratio);
+            self.open_workspace(ratio);
+            return true;
+        }
+
+        if event.ratio <= collapse_threshold {
+            self.close_workspace();
+            return true;
+        }
+
+        let ratio = event.ratio.min(max_ratio);
+        self.workspace_ratio = ratio;
+        self.panes.resize(self.split, ratio);
+        true
     }
 }
 
@@ -115,35 +252,108 @@ pub(crate) struct SidebarAddMenuState {
     pub(crate) cursor: Point,
 }
 
+/// Runtime state for workspace tabs.
+#[derive(Default)]
+pub(crate) struct TabState {
+    active_tab_id: Option<u64>,
+    tab_items: BTreeMap<u64, TabItem>,
+    next_tab_id: u64,
+}
+
+impl TabState {
+    /// Return active tab identifier.
+    pub(crate) fn active_tab_id(&self) -> Option<u64> {
+        self.active_tab_id
+    }
+
+    /// Return all tab items keyed by tab identifier.
+    pub(crate) fn tab_items(&self) -> &BTreeMap<u64, TabItem> {
+        &self.tab_items
+    }
+
+    /// Return mutable tab item by identifier.
+    pub(crate) fn tab_item_mut(&mut self, tab_id: u64) -> Option<&mut TabItem> {
+        self.tab_items.get_mut(&tab_id)
+    }
+
+    /// Return number of tabs.
+    pub(crate) fn len(&self) -> usize {
+        self.tab_items.len()
+    }
+
+    /// Return whether there are no tabs.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.tab_items.is_empty()
+    }
+
+    /// Return active tab item if present.
+    pub(crate) fn active_tab(&self) -> Option<&TabItem> {
+        let tab_id = self.active_tab_id?;
+        self.tab_items.get(&tab_id)
+    }
+
+    /// Check whether tab with the provided identifier exists.
+    pub(crate) fn contains(&self, tab_id: u64) -> bool {
+        self.tab_items.contains_key(&tab_id)
+    }
+
+    /// Allocate next unique tab identifier.
+    pub(crate) fn allocate_tab_id(&mut self) -> u64 {
+        let tab_id = self.next_tab_id;
+        self.next_tab_id += 1;
+        tab_id
+    }
+
+    /// Insert tab metadata by identifier.
+    pub(crate) fn insert(&mut self, tab_id: u64, item: TabItem) {
+        self.tab_items.insert(tab_id, item);
+    }
+
+    /// Remove tab metadata by identifier.
+    pub(crate) fn remove(&mut self, tab_id: u64) -> Option<TabItem> {
+        self.tab_items.remove(&tab_id)
+    }
+
+    /// Activate tab identifier.
+    pub(crate) fn activate(&mut self, tab_id: Option<u64>) {
+        self.active_tab_id = tab_id;
+    }
+
+    /// Update title for an existing tab.
+    pub(crate) fn set_title(&mut self, tab_id: u64, title: String) {
+        if let Some(tab) = self.tab_item_mut(tab_id) {
+            tab.set_title(title);
+        }
+    }
+
+    /// Return previous tab identifier before `tab_id`.
+    pub(crate) fn previous_tab_id(&self, tab_id: u64) -> Option<u64> {
+        self.tab_items
+            .range(..tab_id)
+            .next_back()
+            .map(|(&id, _)| id)
+    }
+
+    /// Return last tab identifier in order.
+    pub(crate) fn last_tab_id(&self) -> Option<u64> {
+        self.tab_items.keys().next_back().copied()
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct State {
     pub(crate) tab: TabState,
-    pub(crate) terminal: TerminalState,
-    pub(crate) quick_launch_wizard: QuickLaunchWizardState,
-    terminal_to_tab: HashMap<u64, u64>,
-    next_terminal_id: u64,
     pub(crate) window_size: Size,
     pub(crate) screen_size: Size,
     pub(crate) sidebar: SidebarState,
-    pub(crate) quick_launches: QuickLaunchState,
-    explorer: ExplorerState,
-    pub(crate) settings: SettingsState,
 }
 
 impl State {
-    pub(crate) fn new(
-        window_size: Size,
-        screen_size: Size,
-        settings: SettingsState,
-    ) -> Self {
-        let quick_launches = quick_launch::load_initial_quick_launch_state();
+    pub(crate) fn new(window_size: Size, screen_size: Size) -> Self {
         Self {
             window_size,
             screen_size,
             sidebar: SidebarState::new(),
-            quick_launches,
-            explorer: ExplorerState::new(),
-            settings,
             ..Default::default()
         }
     }
@@ -152,25 +362,8 @@ impl State {
         self.tab.active_tab_id()
     }
 
-    pub(crate) fn explorer(&self) -> &ExplorerState {
-        &self.explorer
-    }
-
-    pub(crate) fn explorer_mut(
-        &mut self,
-        _permit: ExplorerWritePermit,
-    ) -> &mut ExplorerState {
-        &mut self.explorer
-    }
-
     pub(crate) fn allocate_tab_id(&mut self) -> u64 {
         self.tab.allocate_tab_id()
-    }
-
-    pub(crate) fn allocate_terminal_id(&mut self) -> u64 {
-        let terminal_id = self.next_terminal_id;
-        self.next_terminal_id += 1;
-        terminal_id
     }
 
     pub(crate) fn active_tab_title(&self) -> Option<&str> {
@@ -189,60 +382,15 @@ impl State {
         self.tab.active_tab()
     }
 
-    pub(crate) fn active_terminal_tab(&self) -> Option<&TerminalTabState> {
-        let tab_id = self.active_tab_id()?;
-        self.terminal_tab(tab_id)
-    }
-
-    pub(crate) fn terminal_tab(
-        &self,
-        tab_id: u64,
-    ) -> Option<&TerminalTabState> {
-        self.terminal.tab(tab_id)
-    }
-
     pub(crate) fn set_screen_size(&mut self, size: Size) {
         self.screen_size = size;
-        self.sync_tab_grid_sizes();
     }
 
-    pub(crate) fn register_terminal_for_tab(
-        &mut self,
-        terminal_id: u64,
-        tab_id: u64,
-    ) {
-        self.terminal_to_tab.insert(terminal_id, tab_id);
-    }
-
-    pub(crate) fn remove_tab_terminals(&mut self, tab_id: u64) {
-        self.terminal_to_tab
-            .retain(|_, mapped_tab| *mapped_tab != tab_id);
-    }
-
-    pub(crate) fn terminal_tab_id(&self, terminal_id: u64) -> Option<u64> {
-        self.terminal_to_tab.get(&terminal_id).copied()
-    }
-
-    pub(crate) fn reindex_terminal_tabs(&mut self) {
-        self.terminal_to_tab.clear();
-        for (&tab_id, tab) in self.terminal.tabs() {
-            for terminal_id in tab.terminals().keys().copied() {
-                self.terminal_to_tab.insert(terminal_id, tab_id);
-            }
-        }
-    }
-
-    pub(crate) fn sync_tab_grid_sizes(&mut self) {
-        let size = self.pane_grid_size();
-        for (_, tab) in self.terminal.tabs_mut() {
-            tab.set_grid_size(size);
-        }
-    }
-
+    /// Compute available pane grid size from current screen and sidebar layout.
     pub(crate) fn pane_grid_size(&self) -> Size {
         let tab_bar_height = tab_bar::TAB_BAR_HEIGHT;
         let height = (self.screen_size.height - tab_bar_height).max(0.0);
-        let menu_width = if self.sidebar.hidden {
+        let menu_width = if self.sidebar.is_hidden() {
             0.0
         } else {
             SIDEBAR_MENU_WIDTH
@@ -252,4 +400,9 @@ impl State {
         let width = (available_width * (1.0 - workspace_ratio)).max(0.0);
         Size::new(width, height)
     }
+}
+
+/// Maximum workspace width ratio, leaving room for the minimum tab content.
+pub(crate) fn max_sidebar_workspace_ratio() -> f32 {
+    (1.0 - SIDEBAR_MIN_TAB_CONTENT_RATIO).max(0.0)
 }

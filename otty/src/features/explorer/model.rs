@@ -51,17 +51,17 @@ impl FileNode {
     }
 
     /// Return mutable nested children.
-    pub(crate) fn children_mut(&mut self) -> &mut Vec<FileNode> {
+    pub(super) fn children_mut(&mut self) -> &mut Vec<FileNode> {
         &mut self.children
     }
 
     /// Replace children with freshly loaded values.
-    pub(crate) fn set_children(&mut self, children: Vec<FileNode>) {
+    pub(super) fn set_children(&mut self, children: Vec<FileNode>) {
         self.children = children;
     }
 
     /// Mark folder expanded/collapsed.
-    pub(crate) fn set_expanded(&mut self, expanded: bool) {
+    pub(super) fn set_expanded(&mut self, expanded: bool) {
         self.is_expanded = expanded;
     }
 }
@@ -107,18 +107,17 @@ pub(crate) enum ExplorerLoadTarget {
     Folder { path: TreePath, directory: PathBuf },
 }
 
-impl ExplorerLoadTarget {
-    pub(super) fn describe_load_target(&self) -> String {
+impl std::fmt::Display for ExplorerLoadTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExplorerLoadTarget::Root { root } => {
-                let display = root.display();
-                format!("root directory {display}")
+                write!(f, "root directory {}", root.display())
             },
             ExplorerLoadTarget::Folder { path, directory } => {
-                let directory_display = directory.display();
-                format!(
-                    "folder path {:?} from directory {directory_display}",
-                    path
+                write!(
+                    f,
+                    "folder path {path:?} from directory {}",
+                    directory.display()
                 )
             },
         }

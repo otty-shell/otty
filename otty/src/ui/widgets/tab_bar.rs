@@ -5,7 +5,6 @@ use iced::widget::{
 };
 use iced::{Alignment, Element, Length, alignment};
 
-use crate::features::tab::TabEvent as FeatureTabEvent;
 use crate::icons;
 use crate::theme::{StyleOverrides, ThemeProps};
 
@@ -30,7 +29,11 @@ pub(crate) struct TabBarProps<'a> {
 }
 
 /// Events emitted by the tab bar widget.
-pub(crate) type TabBarEvent = FeatureTabEvent;
+#[derive(Debug, Clone)]
+pub(crate) enum TabBarEvent {
+    ActivateTab { tab_id: u64 },
+    CloseTab { tab_id: u64 },
+}
 
 pub(crate) fn view<'a>(props: TabBarProps<'a>) -> Element<'a, TabBarEvent> {
     let mut tabs_row = row![].spacing(0);

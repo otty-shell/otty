@@ -1,6 +1,6 @@
 use iced::{Element, Point, Theme};
 
-use crate::features::explorer::{ExplorerEvent, ExplorerState};
+use crate::features::explorer::{ExplorerEvent, ExplorerFeature};
 use crate::features::quick_launch::{QuickLaunchEvent, QuickLaunchState};
 use crate::theme::ThemeProps;
 use crate::ui::widgets::{
@@ -38,7 +38,7 @@ pub(crate) enum SidebarWorkspaceItem {
 pub(crate) struct SidebarWorkspaceProps<'a> {
     pub(crate) active_item: SidebarWorkspaceItem,
     pub(crate) quick_launches: &'a QuickLaunchState,
-    pub(crate) explorer: &'a ExplorerState,
+    pub(crate) explorer: &'a ExplorerFeature,
     pub(crate) theme: ThemeProps<'a>,
 }
 

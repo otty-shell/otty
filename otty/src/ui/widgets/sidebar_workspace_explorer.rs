@@ -4,7 +4,7 @@ use iced::{Element, Length, alignment};
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 use super::services as helpers;
-use crate::features::explorer::{ExplorerEvent, ExplorerState, FileNode};
+use crate::features::explorer::{ExplorerEvent, ExplorerFeature, FileNode};
 use crate::icons;
 use crate::theme::{IcedColorPalette, ThemeProps};
 
@@ -30,7 +30,7 @@ const WORKSPACE_PADDING_VERTICAL: f32 = 10.0;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SidebarWorkspaceExplorerProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
-    pub(crate) explorer: &'a ExplorerState,
+    pub(crate) explorer: &'a ExplorerFeature,
 }
 
 /// Events emitted by sidebar workspace explorer widget.
