@@ -138,9 +138,7 @@ impl SidebarFeature {
                     .state
                     .apply_resize(event, max_sidebar_workspace_ratio())
                 {
-                    tasks.push(
-                        Task::done(AppEvent::SyncTerminalGridSizes)
-                    );
+                    tasks.push(Task::done(AppEvent::SyncTerminalGridSizes));
                 }
 
                 Task::batch(tasks)

@@ -1,0 +1,17 @@
+mod services;
+
+pub(crate) mod action_bar;
+pub(crate) mod quick_launches_context_menu;
+pub(crate) mod quick_launches_error;
+pub(crate) mod quick_launches_sidebar;
+pub(crate) mod quick_launches_wizard;
+pub(crate) mod settings;
+pub(crate) mod sidebar_menu;
+pub(crate) mod sidebar_workspace;
+pub(crate) mod sidebar_workspace_add_menu;
+pub(crate) mod sidebar_workspace_explorer;
+pub(crate) mod sidebar_workspace_terminal;
+pub(crate) mod tab_bar;
+pub(crate) mod tab_content;
+pub(crate) mod terminal_pane_context_menu;
+pub(crate) mod terminal_tab;

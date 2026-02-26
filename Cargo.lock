@@ -2994,6 +2994,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "otty-v2"
+version = "0.1.0-beta1"
+dependencies = [
+ "env_logger",
+ "iced",
+ "image",
+ "log",
+ "otty-libterm",
+ "otty-ui-term",
+ "otty-ui-tree",
+ "serde",
+ "serde_json",
+ "shell-words",
+ "syn",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "otty-v3"
+version = "0.1.0-beta1"
+dependencies = [
+ "env_logger",
+ "iced",
+ "image",
+ "log",
+ "otty-libterm",
+ "otty-ui-term",
+ "otty-ui-tree",
+ "serde",
+ "serde_json",
+ "shell-words",
+ "syn",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "otty-vte"
 version = "0.1.0"
 dependencies = [

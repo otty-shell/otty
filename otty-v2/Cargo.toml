@@ -1,0 +1,45 @@
+[package]
+name = "otty-v2"
+description = "OTTY v2 widgets-first application"
+version = "0.1.0-beta1"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+homepage = "https://otty.sh"
+repository = "https://github.com/otty-shell/otty"
+readme = "../README.md"
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = "Apache-2.0"
+
+[dependencies]
+iced = { workspace = true, features = ["canvas", "lazy", "advanced", "svg", "image", "tokio"] }
+otty-ui-term = { path = "../otty-ui/terminal", version = "0.1.0" }
+otty-ui-tree = { path = "../otty-ui/tree", version = "0.1.0" }
+otty-libterm = { path = "../otty-libterm", version = "0.1.0" }
+log = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
+env_logger = "0.11"
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+shell-words = "1.1.0"
+
+[dev-dependencies]
+syn = { version = "2.0", features = ["full", "parsing"] }
+
+[package.metadata.generate-rpm]
+maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"
+
+assets = [
+    { source = "target/release/otty-v2", dest = "/usr/bin/otty-v2", mode = "755" },
+    { source = "assets/packages/linux/otty.desktop", dest = "/usr/share/applications/otty.desktop", mode = "644" },
+    { source = "assets/logo/logo-small.png", dest = "/usr/share/icons/hicolor/64x64/apps/otty.png", mode = "644" }
+]
+
+[package.metadata.deb]
+maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"
+
+assets = [
+    { source = "target/release/otty-v2", dest = "/usr/bin/otty-v2", mode = "755" },
+    { source = "../assets/packages/linux/otty.desktop", dest = "/usr/share/applications/otty.desktop", mode = "644" },
+    { source = "../assets/logo/logo-small.png", dest = "/usr/share/icons/hicolor/64x64/apps/otty.png", mode = "644" }
+]

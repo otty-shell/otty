@@ -7,7 +7,9 @@ use crate::features::explorer::{ExplorerCtx, ExplorerEvent};
 use crate::features::quick_launch_wizard::QuickLaunchWizardCtx;
 use crate::features::sidebar::{self, SidebarEvent};
 use crate::features::terminal::{
-    ShellSession, TerminalCtx, TerminalEvent, fallback_shell_session_with_shell, setup_shell_session_with_shell, shell_cwd_for_active_tab
+    ShellSession, TerminalCtx, TerminalEvent,
+    fallback_shell_session_with_shell, setup_shell_session_with_shell,
+    shell_cwd_for_active_tab,
 };
 use crate::features::{settings, tab};
 use crate::guards::{MenuGuard, context_menu_guard, inline_edit_guard};

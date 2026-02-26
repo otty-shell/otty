@@ -2,6 +2,8 @@
 resolver = "3"
 members = [
     "otty",
+    "otty-v2",
+    "otty-v3",
     "otty-escape",
     "otty-pty",
     "otty-surface",
