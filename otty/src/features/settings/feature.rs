@@ -6,7 +6,6 @@ use super::storage::{
     SettingsLoad, SettingsLoadStatus, load_settings, save_settings,
 };
 use crate::app::Event as AppEvent;
-use crate::features::Feature;
 
 /// Settings feature root that owns settings state and reduction logic.
 #[derive(Debug)]
@@ -31,14 +30,9 @@ impl SettingsFeature {
     }
 }
 
-impl Feature for SettingsFeature {
-    type Event = SettingsEvent;
-    type Ctx<'a>
-        = ()
-    where
-        Self: 'a;
-
-    fn reduce<'a>(
+impl SettingsFeature {
+    /// Reduce a settings event into state updates and routed app tasks.
+    pub(crate) fn reduce(
         &mut self,
         event: SettingsEvent,
         _ctx: &(),
@@ -135,7 +129,6 @@ fn apply_loaded_settings(state: &mut SettingsState, load: SettingsLoad) {
 #[cfg(test)]
 mod tests {
     use super::{SettingsFeature, apply_loaded_settings};
-    use crate::features::Feature;
     use crate::features::settings::event::SettingsEvent;
     use crate::features::settings::model::SettingsData;
     use crate::features::settings::state::SettingsState;

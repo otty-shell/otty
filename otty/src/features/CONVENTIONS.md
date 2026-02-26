@@ -6,15 +6,14 @@ This document is a normative specification for `otty/src/features`.
 
 - A feature module MUST encapsulate one domain slice: event contract, state contract, and reduction logic.
 - The goal is deterministic architecture and near-identical module topology across features.
-- This specification defines the struct-based flow: each feature is a struct that owns its state and implements a shared `Feature` trait.
+- This specification defines the struct-based flow: each feature is a struct that owns its state and exposes a single `reduce` method.
 
 ## 2. Compliance Profile
 
 - MUST satisfy all sections in this document.
 - MUST have canonical file topology from section 3.
 - MUST implement one feature struct and one feature event enum.
-- MUST implement the shared `Feature` trait with `reduce` as the only write entrypoint.
-- `otty/src/features/mod.rs` MUST define the shared `Feature` trait contract.
+- MUST expose `reduce` as the only write entrypoint.
 - Feature state MUST be owned by the feature struct, not by global app state.
 - Feature state MUST be mutated only inside that feature's `reduce` implementation.
 - Cross-feature influence MUST be expressed only by returning `Task<AppEvent>` with routed events.
@@ -26,7 +25,7 @@ Each feature under `otty/src/features/<feature_name>/` MUST follow:
 
 ```text
 ├── mod.rs         # required: public surface only
-├── feature.rs     # required: <Feature>Feature + impl Feature
+├── feature.rs     # required: <Feature>Feature + reducer implementation
 ├── event.rs       # required: <Feature>Event
 ├── state.rs       # required: <Feature>State + state helpers
 ├── model.rs       # required: domain data
@@ -49,7 +48,7 @@ Files outside required/optional lists MUST NOT be added without updating this sp
 ## 4. Module Responsibilities
 
 - `mod.rs`: module declarations, curated re-exports. Business logic MUST NOT be added here.
-- `feature.rs`: feature struct, owned state, `Feature` trait implementation, event orchestration.
+- `feature.rs`: feature struct, owned state, reducer implementation, event orchestration.
 - `event.rs`: public feature event enum and event-only helpers.
 - `state.rs`: internal runtime state struct and deterministic state mutation helpers.
 - `model.rs`: domain data structs and their trait implementations. A type belongs in `model.rs` if and only if it is used across **two or more** of the feature's modules (e.g. `state`, `services`, `event`, UI). If a type is used only inside a single module, it MUST be defined in that module instead.
@@ -57,31 +56,28 @@ Files outside required/optional lists MUST NOT be added without updating this sp
 - `storage.rs`: serialization/deserialization and filesystem I/O only.
 - `services.rs`: bounded external interactions and side-effect adapters.
 
-## 5. Feature Trait Contract
+## 5. Reducer Method Contract
 
-### 5.1 Shared Trait
+### 5.1 Method Shape
 
-All features MUST implement the shared trait contract.
+All features MUST expose a reducer method on the primary feature struct.
 
 ```rust
-pub(crate) trait Feature {
-    type Event;
-    type Ctx<'a>
-    where
-        Self: 'a;
-
-    fn reduce<'a>(
+impl ExampleFeature {
+    pub(crate) fn reduce(
         &mut self,
-        event: Self::Event,
-        ctx: &Self::Ctx<'a>,
-    ) -> iced::Task<crate::app::Event>;
+        event: ExampleEvent,
+        ctx: &ExampleCtx<'_>,
+    ) -> iced::Task<crate::app::Event> {
+        // ...
+    }
 }
 ```
 
 ### 5.2 Context Rules
 
-- `reduce` MUST always accept a context reference `&Self::Ctx<'a>`.
-- Features without runtime dependencies MUST use `type Ctx<'a> = () where Self: 'a;` and ignore context.
+- `reduce` MUST always accept a read-only context reference.
+- Features without runtime dependencies MUST accept `&()` and ignore context.
 - Features with runtime dependencies MUST define a feature-specific context type (e.g. `ExplorerCtx<'a>` or `ExampleCtx`).
 - Context MUST be read-only and MUST NOT expose mutable access to other features.
 
@@ -93,7 +89,7 @@ Each feature MUST define:
 - Exactly one primary state type named `<Feature>State`.
 - Exactly one primary event enum named `<Feature>Event`.
 
-`Exactly one` means one external `reduce` entrypoint per feature via trait implementation.
+`Exactly one` means one external `reduce` entrypoint per feature.
 
 ## 6. State Ownership And Mutation
 
@@ -107,7 +103,7 @@ Each feature MUST define:
 
 ## 7. Feature Container And Registration
 
-- `features/mod.rs` MUST define the shared `Feature` trait and register features as `pub(crate) mod <feature>;`.
+- `features/mod.rs` MUST register features as `pub(crate) mod <feature>;`.
 - App composition SHOULD use a dedicated container struct (e.g. `Features`) that owns all `<Feature>Feature` instances.
 - `app.rs` MUST route `AppEvent` to the owning feature's `reduce` implementation.
 - Feature reducers MUST NOT call other features' `reduce` directly.
@@ -225,21 +221,8 @@ mod state;
 pub(crate) use event::ExampleEvent;
 pub(crate) use feature::{ExampleCtx, ExampleFeature};
 
-// otty/src/features/mod.rs (shared contract + registrations)
+// otty/src/features/mod.rs (registrations)
 pub(crate) mod example;
-
-pub(crate) trait Feature {
-    type Event;
-    type Ctx<'a>
-    where
-        Self: 'a;
-
-    fn reduce<'a>(
-        &mut self,
-        event: Self::Event,
-        ctx: &Self::Ctx<'a>,
-    ) -> iced::Task<crate::app::Event>;
-}
 
 // otty/src/features/example/state.rs
 #[derive(Debug, Default)]
@@ -267,10 +250,11 @@ pub(crate) enum ExampleEvent {
 use iced::Task;
 
 use crate::app::Event as AppEvent;
-use crate::features::Feature;
 
 /// Runtime dependencies for example feature.
-pub(crate) struct ExampleCtx;
+pub(crate) struct ExampleCtx<'a> {
+    pub(crate) workspace_root: &'a str,
+}
 
 /// Feature root that owns state and reduction logic.
 pub(crate) struct ExampleFeature {
@@ -289,17 +273,11 @@ impl ExampleFeature {
     }
 }
 
-impl Feature for ExampleFeature {
-    type Event = ExampleEvent;
-    type Ctx<'a>
-        = ExampleCtx
-    where
-        Self: 'a;
-
-    fn reduce<'a>(
+impl ExampleFeature {
+    pub(crate) fn reduce(
         &mut self,
         event: ExampleEvent,
-        _ctx: &Self::Ctx<'a>,
+        _ctx: &ExampleCtx<'_>,
     ) -> Task<AppEvent> {
         match event {
             ExampleEvent::AddItem { id } => {
@@ -318,8 +296,8 @@ A feature is compliant only if all checks pass:
 - Canonical file layout is satisfied.
 - `mod.rs` is thin and exports only stable API.
 - Exactly one feature struct, one event enum, and one state type exist.
-- Feature struct implements `Feature` trait.
-- `reduce` accepts context (`type Ctx<'a> = () where Self: 'a;` allowed for no-deps features).
+- Feature struct exposes `reduce` as an inherent method.
+- `reduce` accepts read-only context (`&()` allowed for no-deps features).
 - No forbidden dependency edges exist.
 - No external mutable access bypasses feature reducer boundary.
 - Required tests from section 12 exist and pass.

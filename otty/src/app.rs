@@ -18,7 +18,7 @@ use crate::features::terminal::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
     shell_cwd_for_active_tab,
 };
-use crate::features::{Feature, Features, quick_launch, settings};
+use crate::features::{Features, quick_launch, settings};
 use crate::fonts::FontsConfig;
 use crate::guards::{MenuGuard, context_menu_guard, inline_edit_guard};
 use crate::state::{

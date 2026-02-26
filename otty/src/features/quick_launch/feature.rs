@@ -19,7 +19,6 @@ use super::state::{
 };
 use super::storage::save_quick_launches;
 use crate::app::Event as AppEvent;
-use crate::features::Feature;
 use crate::features::quick_launch_wizard::QuickLaunchWizardEvent;
 
 /// Runtime dependencies for the quick launches feature.
@@ -89,17 +88,12 @@ impl QuickLaunchFeature {
     }
 }
 
-impl Feature for QuickLaunchFeature {
-    type Event = QuickLaunchEvent;
-    type Ctx<'a>
-        = QuickLaunchCtx<'a>
-    where
-        Self: 'a;
-
-    fn reduce<'a>(
+impl QuickLaunchFeature {
+    /// Reduce a quick launch event into state updates and routed app tasks.
+    pub(crate) fn reduce(
         &mut self,
         event: QuickLaunchEvent,
-        ctx: &QuickLaunchCtx<'a>,
+        ctx: &QuickLaunchCtx<'_>,
     ) -> Task<AppEvent> {
         use QuickLaunchEvent::*;
 

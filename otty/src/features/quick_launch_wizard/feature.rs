@@ -7,7 +7,6 @@ use super::state::{
     QuickLaunchWizardEditorState, QuickLaunchWizardMode, QuickLaunchWizardState,
 };
 use crate::app::Event as AppEvent;
-use crate::features::Feature;
 use crate::features::quick_launch::{
     QuickLaunchEvent, QuickLaunchWizardSaveRequest, QuickLaunchWizardSaveTarget,
 };
@@ -46,14 +45,9 @@ impl QuickLaunchWizardFeature {
     }
 }
 
-impl Feature for QuickLaunchWizardFeature {
-    type Event = QuickLaunchWizardEvent;
-    type Ctx<'a>
-        = QuickLaunchWizardCtx
-    where
-        Self: 'a;
-
-    fn reduce<'a>(
+impl QuickLaunchWizardFeature {
+    /// Reduce a quick launch wizard event and emit follow-up app tasks.
+    pub(crate) fn reduce(
         &mut self,
         event: QuickLaunchWizardEvent,
         ctx: &QuickLaunchWizardCtx,

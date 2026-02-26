@@ -10,7 +10,6 @@ use super::event::TerminalEvent;
 use super::model::TerminalKind;
 use super::state::{TerminalCommand, TerminalState, TerminalTabState};
 use crate::app::Event as AppEvent;
-use crate::features::Feature;
 use crate::features::explorer::ExplorerEvent;
 
 /// Runtime context injected by `App` into each terminal reduce call.
@@ -456,11 +455,9 @@ impl TerminalFeature {
     }
 }
 
-impl Feature for TerminalFeature {
-    type Event = TerminalEvent;
-    type Ctx<'a> = TerminalCtx;
-
-    fn reduce<'a>(
+impl TerminalFeature {
+    /// Reduce a terminal event into state updates and routed app tasks.
+    pub(crate) fn reduce(
         &mut self,
         event: TerminalEvent,
         ctx: &TerminalCtx,
@@ -628,7 +625,6 @@ mod tests {
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{TerminalCtx, TerminalFeature};
-    use crate::features::Feature;
     use crate::features::terminal::TerminalKind;
     use crate::features::terminal::event::TerminalEvent;
 

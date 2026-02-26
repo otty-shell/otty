@@ -10,7 +10,6 @@ use super::model::{ExplorerLoadTarget, FileNode};
 use super::services::read_dir_nodes;
 use super::state::ExplorerState;
 use crate::app::Event as AppEvent;
-use crate::features::Feature;
 use crate::features::terminal::terminal_settings_for_session;
 
 /// Runtime context required by explorer feature reducer.
@@ -96,14 +95,12 @@ impl ExplorerFeature {
     }
 }
 
-impl Feature for ExplorerFeature {
-    type Event = ExplorerEvent;
-    type Ctx<'a> = ExplorerCtx<'a>;
-
-    fn reduce<'a>(
+impl ExplorerFeature {
+    /// Reduce an explorer event into state updates and routed app tasks.
+    pub(crate) fn reduce(
         &mut self,
         event: ExplorerEvent,
-        ctx: &Self::Ctx<'a>,
+        ctx: &ExplorerCtx<'_>,
     ) -> Task<AppEvent> {
         match event {
             ExplorerEvent::NodePressed { path } => {
@@ -227,7 +224,6 @@ mod tests {
     use otty_ui_term::settings::Settings;
 
     use super::{ExplorerCtx, ExplorerEvent, ExplorerFeature};
-    use crate::features::Feature;
     use crate::features::explorer::FileNode;
     use crate::features::explorer::model::ExplorerLoadTarget;
 

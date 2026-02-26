@@ -1,27 +1,8 @@
-use iced::Task;
-
-use crate::app::Event as AppEvent;
-
 pub(crate) mod explorer;
 pub(crate) mod quick_launch;
 pub(crate) mod quick_launch_wizard;
 pub(crate) mod settings;
 pub(crate) mod terminal;
-
-/// Shared feature contract for stateful domain modules.
-pub(crate) trait Feature {
-    type Event;
-    type Ctx<'a>
-    where
-        Self: 'a;
-
-    /// Reduce a typed feature event into state mutations and routed app tasks.
-    fn reduce<'a>(
-        &mut self,
-        event: Self::Event,
-        ctx: &Self::Ctx<'a>,
-    ) -> Task<AppEvent>;
-}
 
 /// Root container for migrated struct-based features.
 pub(crate) struct Features {
