@@ -12,7 +12,7 @@ use crate::widgets::tabs::TabsCommand;
 /// and uses the configured shell name as the tab title.
 pub(crate) fn open_terminal_tab(app: &mut App) -> Task<AppEvent> {
     let terminal_id = app.widgets.terminal_workspace.allocate_terminal_id();
-    let title = String::from("Terminal");
+    let title = app.shell_session.name().to_string();
 
     routers::tabs::route_command(
         app,

@@ -4,12 +4,22 @@ use crate::app::{App, AppEvent};
 use crate::widgets::quick_launch::{
     QuickLaunchCommand, QuickLaunchCtx, QuickLaunchEffect, QuickLaunchEvent,
 };
+use crate::widgets::sidebar::SidebarEvent;
 
 /// Route a quick launch UI event through the widget reducer and map effects.
 pub(crate) fn route_event(
     app: &mut App,
     event: QuickLaunchEvent,
 ) -> Task<AppEvent> {
+    // The add button lives in the quick launch panel but triggers the
+    // sidebar add-menu overlay, so redirect instead of reducing.
+    if matches!(event, QuickLaunchEvent::HeaderAddButtonPressed) {
+        return crate::routers::sidebar::route_event(
+            app,
+            SidebarEvent::AddMenuOpen,
+        );
+    }
+
     let command = map_quick_launch_ui_event_to_command(event);
     let ctx = build_ctx_from_parts(
         &app.terminal_settings,
@@ -75,6 +85,9 @@ fn map_quick_launch_ui_event_to_command(
         E::InlineEditChanged(value) => C::InlineEditChanged(value),
         E::InlineEditSubmit => C::InlineEditSubmit,
         E::CancelInlineEdit => C::CancelInlineEdit,
+        E::HeaderAddButtonPressed => {
+            unreachable!("handled in route_event before command mapping")
+        },
         E::HeaderCreateFolder => C::HeaderCreateFolder,
         E::HeaderCreateCommand => C::HeaderCreateCommand,
         E::DeleteSelected => C::DeleteSelected,
@@ -227,17 +240,21 @@ fn map_quick_launch_effect_to_app_task(
             }))
         },
         QuickLaunchEffect::CloseTabRequested { tab_id } => {
-            if tab_id == 0 {
-                // Dummy effect from canceled operations, ignore
-                Task::none()
-            } else {
-                Task::done(AppEvent::Flow(AppFlowEvent::CloseTab { tab_id }))
-            }
+            Task::done(AppEvent::Flow(AppFlowEvent::CloseTab { tab_id }))
         },
         QuickLaunchEffect::WizardSetError { tab_id, message } => {
             Task::done(AppEvent::QuickLaunchUi(
                 QuickLaunchEvent::WizardSetError { tab_id, message },
             ))
         },
+        QuickLaunchEffect::SetupCompleted(outcome) => Task::done(
+            AppEvent::QuickLaunchUi(QuickLaunchEvent::SetupCompleted(outcome)),
+        ),
+        QuickLaunchEffect::PersistCompleted => Task::done(
+            AppEvent::QuickLaunchUi(QuickLaunchEvent::PersistCompleted),
+        ),
+        QuickLaunchEffect::PersistFailed(message) => Task::done(
+            AppEvent::QuickLaunchUi(QuickLaunchEvent::PersistFailed(message)),
+        ),
     }
 }

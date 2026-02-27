@@ -93,7 +93,10 @@ fn open_wizard_tab(state: &mut TabsState, title: String) -> Task<TabsEffect> {
         TabItem::new(tab_id, title, TabContent::QuickLaunchWizard),
     );
     state.activate(Some(tab_id));
-    Task::done(TabsEffect::ScrollBarToEnd)
+    Task::batch(vec![
+        Task::done(TabsEffect::WizardTabOpened { tab_id }),
+        Task::done(TabsEffect::ScrollBarToEnd),
+    ])
 }
 
 fn open_error_tab(state: &mut TabsState, title: String) -> Task<TabsEffect> {
@@ -103,7 +106,10 @@ fn open_error_tab(state: &mut TabsState, title: String) -> Task<TabsEffect> {
         TabItem::new(tab_id, title, TabContent::QuickLaunchError),
     );
     state.activate(Some(tab_id));
-    Task::done(TabsEffect::ScrollBarToEnd)
+    Task::batch(vec![
+        Task::done(TabsEffect::ErrorTabOpened { tab_id }),
+        Task::done(TabsEffect::ScrollBarToEnd),
+    ])
 }
 
 fn open_settings_tab(state: &mut TabsState) -> Task<TabsEffect> {

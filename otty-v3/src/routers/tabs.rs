@@ -4,6 +4,7 @@ use iced::widget::operation::snap_to_end;
 use crate::app::{App, AppEvent};
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_SCROLL_ID;
 use crate::widgets::tabs::{TabsCommand, TabsEffect, TabsEvent};
+use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
 
 /// Route a tabs UI event through the widget reducer and map effects.
 pub(crate) fn route_event(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
@@ -97,7 +98,10 @@ pub(crate) fn route_effect(
             terminal_id,
             title,
         } => {
-            let settings = Box::new(app.terminal_settings.clone());
+            let settings = Box::new(terminal_settings_for_session(
+                &app.terminal_settings,
+                app.shell_session.session().clone(),
+            ));
             let kind =
                 crate::widgets::terminal_workspace::model::TerminalKind::Shell;
 
@@ -119,6 +123,8 @@ pub(crate) fn route_effect(
                 crate::widgets::settings::SettingsCommand::Reload,
             )
         },
+        TabsEffect::WizardTabOpened { .. } => Task::none(),
+        TabsEffect::ErrorTabOpened { .. } => Task::none(),
         TabsEffect::ScrollBarToEnd => snap_to_end(TAB_BAR_SCROLL_ID),
     }
 }

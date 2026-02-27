@@ -35,6 +35,12 @@ pub(crate) enum SettingsEvent {
 /// Effect events produced by the settings reducer, routed outward.
 #[derive(Debug, Clone)]
 pub(crate) enum SettingsEffect {
+    /// Reload completed and produced a load payload.
+    ReloadLoaded(SettingsLoad),
+    /// Reload failed.
+    ReloadFailed(String),
+    /// Save failed.
+    SaveFailed(String),
     /// Request the parent to apply the given theme palette.
     ApplyTheme(SettingsData),
     /// Notify the parent that a save completed.

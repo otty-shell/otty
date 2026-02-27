@@ -16,8 +16,11 @@ use crate::widgets::settings::view::settings_form;
 use crate::widgets::sidebar;
 use crate::widgets::sidebar::{SidebarItem, SidebarPane};
 use crate::widgets::tabs::model::TabContent;
-use crate::widgets::tabs::view::tab_bar::{self, TAB_BAR_HEIGHT};
-use crate::widgets::terminal_workspace::view::pane_grid as terminal_pane_grid;
+use crate::widgets::tabs::view::tab_bar;
+use crate::widgets::terminal_workspace::view::{
+    pane_context_menu as terminal_pane_context_menu,
+    pane_grid as terminal_pane_grid,
+};
 
 const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
 const SEPARATOR_ALPHA: f32 = 0.3;
@@ -81,12 +84,18 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         );
     }
 
+    if let Some(overlay) = view_terminal_context_menu_overlay(app, theme_props)
+    {
+        layers.push(overlay);
+    }
+
     let content_stack = iced::widget::Stack::with_children(layers)
         .width(Length::Fill)
         .height(Length::Fill);
 
     let resize_grips_layer = if app.widgets.sidebar.has_add_menu_open()
         || app.widgets.quick_launch.context_menu().is_some()
+        || app.widgets.terminal_workspace.has_any_context_menu()
     {
         container(Space::new())
             .width(Length::Fill)
@@ -327,6 +336,36 @@ fn view_tab_content<'a>(
     }
 }
 
+fn view_terminal_context_menu_overlay<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent, Theme, iced::Renderer>> {
+    for (&tab_id, terminal_tab) in app.widgets.terminal_workspace.tabs() {
+        let Some(menu) = terminal_tab.context_menu() else {
+            continue;
+        };
+        let has_block_selection =
+            terminal_tab.selected_block_terminal() == Some(menu.terminal_id());
+        return Some(
+            terminal_pane_context_menu::view(
+                terminal_pane_context_menu::PaneContextMenuProps {
+                    tab_id,
+                    pane: menu.pane(),
+                    cursor: menu.cursor(),
+                    grid_size: menu.grid_size(),
+                    terminal_id: menu.terminal_id(),
+                    focus_target: menu.focus_target().clone(),
+                    has_block_selection,
+                    theme: theme_props,
+                },
+            )
+            .map(AppEvent::TerminalWorkspaceUi),
+        );
+    }
+
+    None
+}
+
 /// Render an error placeholder for missing tab state.
 fn missing_tab_state<'a>(
     message: &'static str,
@@ -434,10 +473,8 @@ fn add_menu_item<'a>(
 
 /// Compute screen size from window size by subtracting header.
 pub(crate) fn screen_size_from_window(window_size: Size) -> Size {
-    let height = (window_size.height
-        - ACTION_BAR_HEIGHT
-        - HEADER_SEPARATOR_HEIGHT
-        - TAB_BAR_HEIGHT)
-        .max(0.0);
+    let height =
+        (window_size.height - ACTION_BAR_HEIGHT - HEADER_SEPARATOR_HEIGHT)
+            .max(0.0);
     Size::new(window_size.width, height)
 }

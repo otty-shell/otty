@@ -10,7 +10,7 @@ pub(crate) mod view;
 pub(crate) use command::SettingsCommand;
 pub(crate) use event::SettingsEffect;
 use iced::Task;
-use model::SettingsViewModel;
+use model::{SettingsData, SettingsViewModel};
 use state::SettingsState;
 
 /// Settings widget: manages application settings (terminal shell/editor,
@@ -63,6 +63,11 @@ impl SettingsWidget {
     /// Return the configured terminal editor command.
     pub(crate) fn terminal_editor(&self) -> &str {
         self.state.draft().terminal_editor()
+    }
+
+    /// Return current settings draft used by app-level orchestration.
+    pub(crate) fn settings_data(&self) -> &SettingsData {
+        self.state.draft()
     }
 
     /// Return whether the draft differs from the persisted baseline.

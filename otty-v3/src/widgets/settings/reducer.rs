@@ -15,8 +15,8 @@ pub(crate) fn reduce(
     match command {
         SettingsCommand::Reload => request_reload_settings(),
         SettingsCommand::ReloadLoaded(load) => {
-            apply_loaded_settings(state, load);
-            Task::none()
+            let settings = apply_loaded_settings(state, load);
+            Task::done(SettingsEffect::ApplyTheme(settings))
         },
         SettingsCommand::ReloadFailed(message) => {
             log::warn!("settings read failed: {message}");
@@ -25,7 +25,7 @@ pub(crate) fn reduce(
         SettingsCommand::Save => request_save_settings(state),
         SettingsCommand::SaveCompleted(settings) => {
             state.mark_saved(settings.clone());
-            Task::done(SettingsEffect::SaveCompleted(settings))
+            Task::done(SettingsEffect::ApplyTheme(settings))
         },
         SettingsCommand::SaveFailed(message) => {
             log::warn!("settings save failed: {message}");
@@ -64,14 +64,8 @@ pub(crate) fn reduce(
 
 fn request_reload_settings() -> Task<SettingsEffect> {
     Task::perform(async { load_settings() }, |result| match result {
-        Ok(load) => SettingsEffect::ApplyTheme(load.into_parts().0),
-        Err(err) => {
-            log::warn!("settings reload failed: {err}");
-            // On reload failure we cannot emit a meaningful effect;
-            // the caller should have routed ReloadFailed instead.
-            // We emit ApplyTheme with defaults so the chain continues.
-            SettingsEffect::ApplyTheme(super::model::SettingsData::default())
-        },
+        Ok(load) => SettingsEffect::ReloadLoaded(load),
+        Err(err) => SettingsEffect::ReloadFailed(format!("{err}")),
     })
 }
 
@@ -86,25 +80,22 @@ fn request_save_settings(state: &SettingsState) -> Task<SettingsEffect> {
         },
         |result| match result {
             Ok(settings) => SettingsEffect::SaveCompleted(settings),
-            Err(message) => {
-                log::warn!("settings save failed: {message}");
-                // Bubble a save-completed with the default so the
-                // router can decide what to do.
-                SettingsEffect::SaveCompleted(
-                    super::model::SettingsData::default(),
-                )
-            },
+            Err(message) => SettingsEffect::SaveFailed(message),
         },
     )
 }
 
-fn apply_loaded_settings(state: &mut SettingsState, load: SettingsLoad) {
+fn apply_loaded_settings(
+    state: &mut SettingsState,
+    load: SettingsLoad,
+) -> super::model::SettingsData {
     let (settings, status) = load.into_parts();
     if let SettingsLoadStatus::Invalid(message) = &status {
         log::warn!("settings file invalid: {message}");
     }
 
-    state.replace_with_settings(settings);
+    state.replace_with_settings(settings.clone());
+    settings
 }
 
 #[cfg(test)]

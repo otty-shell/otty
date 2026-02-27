@@ -44,13 +44,32 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 | E::PersistFailed(_)
                 | E::SetupCompleted(_)
                 | E::WizardSaveRequested(_) => Allow,
+                _ => Ignore,
+            }
+        },
+        AppEvent::TerminalWorkspaceUi(event) => {
+            use crate::widgets::terminal_workspace::TerminalWorkspaceEvent as E;
+            match event {
+                E::CloseContextMenu { .. }
+                | E::CopySelection { .. }
+                | E::PasteIntoPrompt { .. }
+                | E::CopySelectedBlockContent { .. }
+                | E::CopySelectedBlockPrompt { .. }
+                | E::CopySelectedBlockCommand { .. }
+                | E::SplitPane { .. }
+                | E::ClosePane { .. }
+                | E::ContextMenuInput { .. }
+                | E::Widget(_)
+                | E::PaneGridCursorMoved { .. } => Allow,
+                E::OpenContextMenu { .. } | E::PaneClicked { .. } => Ignore,
                 _ => Dismiss,
             }
         },
         AppEvent::SidebarEffect(_)
         | AppEvent::ChromeEffect(_)
         | AppEvent::TabsEffect(_)
-        | AppEvent::QuickLaunchEffect(_) => Allow,
+        | AppEvent::QuickLaunchEffect(_)
+        | AppEvent::TerminalWorkspaceEffect(_) => Allow,
         AppEvent::Window(_) | AppEvent::ResizeWindow(_) => Allow,
         AppEvent::Flow(_) | AppEvent::SyncTerminalGridSizes => Allow,
         AppEvent::Keyboard(_) => Ignore,
@@ -63,8 +82,22 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
 /// event is dispatched.
 pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
     match event {
-        // Quick launch reducer manages its own inline edit lifecycle
-        AppEvent::QuickLaunchUi(_) | AppEvent::QuickLaunchEffect(_) => false,
+        AppEvent::QuickLaunchUi(event) => {
+            use crate::widgets::quick_launch::QuickLaunchEvent as E;
+            !matches!(
+                event,
+                E::InlineEditChanged(_)
+                    | E::InlineEditSubmit
+                    | E::CursorMoved { .. }
+                    | E::NodeHovered { .. }
+                    | E::SetupCompleted(_)
+                    | E::PersistCompleted
+                    | E::PersistFailed(_)
+                    | E::Tick
+                    | E::WizardSaveRequested(_)
+            )
+        },
+        AppEvent::QuickLaunchEffect(_) => false,
         AppEvent::SidebarUi(event) => {
             use crate::widgets::sidebar::SidebarEvent as E;
             !matches!(
@@ -72,6 +105,11 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
                 E::WorkspaceCursorMoved { .. } | E::PaneGridCursorMoved { .. }
             )
         },
+        AppEvent::TerminalWorkspaceUi(event) => {
+            use crate::widgets::terminal_workspace::TerminalWorkspaceEvent as E;
+            !matches!(event, E::Widget(_) | E::PaneGridCursorMoved { .. })
+        },
+        AppEvent::TerminalWorkspaceEffect(_) => false,
         AppEvent::Flow(_) | AppEvent::SyncTerminalGridSizes => false,
         AppEvent::Keyboard(_) | AppEvent::Window(_) => false,
         AppEvent::SidebarEffect(_)

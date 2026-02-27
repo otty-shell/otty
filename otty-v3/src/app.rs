@@ -23,6 +23,10 @@ use crate::widgets::settings::SettingsWidget;
 use crate::widgets::settings::event::{SettingsEffect, SettingsEvent};
 use crate::widgets::sidebar::{SidebarEffect, SidebarEvent, SidebarWidget};
 use crate::widgets::tabs::{TabsEffect, TabsEvent, TabsWidget};
+use crate::widgets::terminal_workspace::model::ShellSession;
+use crate::widgets::terminal_workspace::services::{
+    fallback_shell_session_with_shell, setup_shell_session_with_shell,
+};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceWidget,
 };
@@ -38,7 +42,16 @@ pub(crate) enum AppFlowEvent {
     OpenQuickLaunchWizardCreateTab {
         parent_path: Vec<String>,
     },
+    QuickLaunchWizardCreateTabOpened {
+        tab_id: u64,
+        parent_path: Vec<String>,
+    },
     OpenQuickLaunchWizardEditTab {
+        path: Vec<String>,
+        command: Box<crate::widgets::quick_launch::model::QuickLaunch>,
+    },
+    QuickLaunchWizardEditTabOpened {
+        tab_id: u64,
         path: Vec<String>,
         command: Box<crate::widgets::quick_launch::model::QuickLaunch>,
     },
@@ -47,7 +60,18 @@ pub(crate) enum AppFlowEvent {
         settings: otty_ui_term::settings::Settings,
         command: Box<crate::widgets::quick_launch::model::QuickLaunch>,
     },
+    QuickLaunchCommandTerminalTabOpened {
+        tab_id: u64,
+        terminal_id: u64,
+        title: String,
+        settings: otty_ui_term::settings::Settings,
+    },
     OpenQuickLaunchErrorTab {
+        title: String,
+        message: String,
+    },
+    QuickLaunchErrorTabOpened {
+        tab_id: u64,
         title: String,
         message: String,
     },
@@ -110,6 +134,7 @@ pub(crate) struct App {
     pub(crate) theme_manager: ThemeManager,
     pub(crate) fonts: FontsConfig,
     pub(crate) terminal_settings: Settings,
+    pub(crate) shell_session: ShellSession,
     pub(crate) state: State,
     pub(crate) widgets: Widgets,
 }
@@ -117,10 +142,21 @@ pub(crate) struct App {
 impl App {
     /// Initialize the application and return the first task.
     pub(crate) fn new() -> (Self, Task<AppEvent>) {
-        let theme_manager = ThemeManager::new();
+        let settings = SettingsWidget::load();
+        let mut theme_manager = ThemeManager::new();
+        let initial_settings = settings.settings_data().clone();
+        theme_manager.set_custom_palette(initial_settings.to_color_palette());
         let current_theme = theme_manager.current();
         let fonts = FontsConfig::default();
         let terminal_settings = terminal_settings(current_theme, &fonts);
+        let shell_path = initial_settings.terminal_shell().to_string();
+        let shell_session = match setup_shell_session_with_shell(&shell_path) {
+            Ok(session) => session,
+            Err(err) => {
+                log::warn!("shell integration setup failed: {err}");
+                fallback_shell_session_with_shell(&shell_path)
+            },
+        };
 
         let window_size = Size {
             width: MIN_WINDOW_WIDTH,
@@ -136,7 +172,7 @@ impl App {
             quick_launch: QuickLaunchWidget::load(),
             terminal_workspace: TerminalWorkspaceWidget::new(),
             explorer: ExplorerWidget::new(),
-            settings: SettingsWidget::load(),
+            settings,
         };
 
         let app = App {
@@ -144,6 +180,7 @@ impl App {
             theme_manager,
             fonts,
             terminal_settings,
+            shell_session,
             state,
             widgets,
         };

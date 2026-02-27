@@ -96,6 +96,16 @@ impl QuickLaunchWidget {
         self.state.is_dirty()
     }
 
+    /// Return whether auto-persist is currently running.
+    pub(crate) fn persist_in_flight(&self) -> bool {
+        self.state.is_persist_in_flight()
+    }
+
+    /// Return whether inline edit is active.
+    pub(crate) fn has_inline_edit(&self) -> bool {
+        self.state.inline_edit().is_some()
+    }
+
     /// Return read-only access to state for tests.
     #[cfg(test)]
     pub(crate) fn state(&self) -> &QuickLaunchState {

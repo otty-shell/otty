@@ -24,6 +24,10 @@ pub(crate) enum TabsEffect {
     },
     /// Settings tab opened; router triggers settings reload.
     SettingsTabOpened,
+    /// Wizard tab opened; flow router initializes the wizard state.
+    WizardTabOpened { tab_id: u64 },
+    /// Error tab opened; flow router initializes the error payload.
+    ErrorTabOpened { tab_id: u64 },
     /// Tab bar should scroll to show the newest tab.
     ScrollBarToEnd,
 }

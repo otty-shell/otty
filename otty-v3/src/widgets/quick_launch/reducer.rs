@@ -1017,8 +1017,8 @@ fn request_persist_quick_launches(
             }
         },
         |result| match result {
-            Ok(()) => QuickLaunchEffect::CloseTabRequested { tab_id: 0 },
-            Err(_message) => QuickLaunchEffect::CloseTabRequested { tab_id: 0 },
+            Ok(()) => QuickLaunchEffect::PersistCompleted,
+            Err(message) => QuickLaunchEffect::PersistFailed(message),
         },
     )
 }
@@ -1042,26 +1042,7 @@ fn launch_quick_launch(
             terminal_settings.clone(),
             cancel,
         ),
-        |outcome| match outcome {
-            QuickLaunchSetupOutcome::Prepared(launch) => {
-                QuickLaunchEffect::OpenCommandTerminalTab {
-                    title: launch.title,
-                    settings: launch.settings,
-                    command: launch.command,
-                }
-            },
-            QuickLaunchSetupOutcome::Failed { command, error, .. } => {
-                let title = format!("Failed to launch \"{}\"", command.title());
-                QuickLaunchEffect::OpenErrorTab {
-                    title,
-                    message: format!("{error}"),
-                }
-            },
-            QuickLaunchSetupOutcome::Canceled { .. } => {
-                // No-op for canceled, emit dummy effect that router will ignore
-                QuickLaunchEffect::CloseTabRequested { tab_id: 0 }
-            },
-        },
+        QuickLaunchEffect::SetupCompleted,
     )
 }
 

@@ -42,6 +42,7 @@ pub(crate) enum QuickLaunchEvent {
     CancelInlineEdit,
 
     // Header actions
+    HeaderAddButtonPressed,
     HeaderCreateFolder,
     HeaderCreateCommand,
     DeleteSelected,
@@ -180,4 +181,10 @@ pub(crate) enum QuickLaunchEffect {
     CloseTabRequested { tab_id: u64 },
     /// Send an error back to the wizard editor.
     WizardSetError { tab_id: u64, message: String },
+    /// Launch setup async completion.
+    SetupCompleted(QuickLaunchSetupOutcome),
+    /// Persist operation completed successfully.
+    PersistCompleted,
+    /// Persist operation failed.
+    PersistFailed(String),
 }
