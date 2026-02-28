@@ -15,31 +15,33 @@ pub(crate) fn route_event(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
 
 /// Route a chrome effect event to an app-level task.
 pub(crate) fn route_effect(effect: ChromeEffect) -> Task<AppEvent> {
+    use ChromeEffect::*;
+
     match effect {
-        ChromeEffect::FullScreenToggled { mode } => {
+        FullScreenToggled { mode } => {
             window::latest().and_then(move |id| window::set_mode(id, mode))
         },
-        ChromeEffect::MinimizeWindow => {
+        MinimizeWindow => {
             window::latest().and_then(|id| window::minimize(id, true))
         },
-        ChromeEffect::CloseWindow => window::latest().and_then(window::close),
-        ChromeEffect::ToggleSidebarVisibility => {
+        CloseWindow => window::latest().and_then(window::close),
+        ToggleSidebarVisibility => {
             Task::done(AppEvent::SidebarUi(SidebarEvent::ToggleVisibility))
         },
-        ChromeEffect::StartWindowDrag => {
+        StartWindowDrag => {
             window::latest().and_then(window::drag)
         },
     }
 }
 
 fn map_chrome_event_to_command(event: ChromeEvent) -> ChromeCommand {
+    use {ChromeCommand as C, ChromeEvent as E};
+
     match event {
-        ChromeEvent::ToggleFullScreen => ChromeCommand::ToggleFullScreen,
-        ChromeEvent::MinimizeWindow => ChromeCommand::MinimizeWindow,
-        ChromeEvent::CloseWindow => ChromeCommand::CloseWindow,
-        ChromeEvent::ToggleSidebarVisibility => {
-            ChromeCommand::ToggleSidebarVisibility
-        },
-        ChromeEvent::StartWindowDrag => ChromeCommand::StartWindowDrag,
+        E::ToggleFullScreen => C::ToggleFullScreen,
+        E::MinimizeWindow => C::MinimizeWindow,
+        E::CloseWindow => C::CloseWindow,
+        E::ToggleSidebarVisibility => C::ToggleSidebarVisibility,
+        E::StartWindowDrag => C::StartWindowDrag,
     }
 }

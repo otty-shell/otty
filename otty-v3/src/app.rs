@@ -190,11 +190,7 @@ impl App {
 
     /// Return the window title.
     pub(crate) fn title(&self) -> String {
-        if let Some(tab_title) = self.widgets.tabs.active_tab_title() {
-            format!("{tab_title} — OTTY")
-        } else {
-            String::from("OTTY")
-        }
+        String::from("OTTY")
     }
 
     /// Return the current iced theme.

@@ -4,6 +4,7 @@ use iced::widget::operation::snap_to_end;
 use crate::app::{App, AppEvent};
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_SCROLL_ID;
 use crate::widgets::tabs::{TabsCommand, TabsEffect, TabsEvent};
+use crate::widgets::terminal_workspace::model::TerminalKind;
 use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
 
 /// Route a tabs UI event through the widget reducer and map effects.
@@ -36,6 +37,12 @@ pub(crate) fn route_effect(
                     crate::widgets::terminal_workspace::TerminalWorkspaceCommand::FocusActive,
                 ),
             );
+            tasks.push(
+                crate::routers::terminal_workspace::route_command(
+                    app,
+                    crate::widgets::terminal_workspace::TerminalWorkspaceCommand::SyncSelection { tab_id },
+                ),
+            );
 
             // Sync explorer from terminal CWD.
             let active_tab_id = Some(tab_id);
@@ -55,7 +62,7 @@ pub(crate) fn route_effect(
         TabsEffect::Closed {
             tab_id,
             new_active_id,
-            ..
+            remaining,
         } => {
             let mut tasks: Vec<Task<AppEvent>> = Vec::new();
 
@@ -91,6 +98,23 @@ pub(crate) fn route_effect(
                 }
             }
 
+            if remaining > 0 {
+                tasks.push(
+                    crate::routers::terminal_workspace::route_command(
+                        app,
+                        crate::widgets::terminal_workspace::TerminalWorkspaceCommand::FocusActive,
+                    ),
+                );
+                if let Some(active_id) = new_active_id {
+                    tasks.push(
+                        crate::routers::terminal_workspace::route_command(
+                            app,
+                            crate::widgets::terminal_workspace::TerminalWorkspaceCommand::SyncSelection { tab_id: active_id },
+                        ),
+                    );
+                }
+            }
+
             Task::batch(tasks)
         },
         TabsEffect::TerminalTabOpened {
@@ -102,8 +126,6 @@ pub(crate) fn route_effect(
                 &app.terminal_settings,
                 app.shell_session.session().clone(),
             ));
-            let kind =
-                crate::widgets::terminal_workspace::model::TerminalKind::Shell;
 
             crate::routers::terminal_workspace::route_command(
                 app,
@@ -112,11 +134,27 @@ pub(crate) fn route_effect(
                     terminal_id,
                     default_title: title,
                     settings,
-                    kind,
+                    kind: TerminalKind::Shell,
                     sync_explorer: true,
                 },
             )
         },
+        TabsEffect::CommandTabOpened {
+            tab_id,
+            terminal_id,
+            title,
+            settings,
+        } => crate::routers::terminal_workspace::route_command(
+            app,
+            crate::widgets::terminal_workspace::TerminalWorkspaceCommand::OpenTab {
+                tab_id,
+                terminal_id,
+                default_title: title,
+                settings,
+                kind: TerminalKind::Command,
+                sync_explorer: false,
+            },
+        ),
         TabsEffect::SettingsTabOpened => {
             crate::routers::settings::route_command(
                 app,
@@ -133,5 +171,52 @@ fn map_tabs_event_to_command(event: TabsEvent) -> TabsCommand {
     match event {
         TabsEvent::ActivateTab { tab_id } => TabsCommand::Activate { tab_id },
         TabsEvent::CloseTab { tab_id } => TabsCommand::Close { tab_id },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
+
+    use super::route_effect;
+    use crate::app::App;
+    use crate::widgets::tabs::TabsEffect;
+
+    #[cfg(unix)]
+    const VALID_PROGRAM: &str = "/bin/sh";
+    #[cfg(target_os = "windows")]
+    const VALID_PROGRAM: &str = "cmd.exe";
+
+    fn command_settings() -> Settings {
+        let mut settings = Settings::default();
+        settings.backend = settings.backend.clone().with_session(
+            SessionKind::from_local_options(
+                LocalSessionOptions::default().with_program(VALID_PROGRAM),
+            ),
+        );
+        settings
+    }
+
+    #[test]
+    fn given_command_tab_effect_when_routed_then_terminal_tab_is_command_kind()
+    {
+        let (mut app, _) = App::new();
+
+        let _ = route_effect(
+            &mut app,
+            TabsEffect::CommandTabOpened {
+                tab_id: 7,
+                terminal_id: 99,
+                title: String::from("edit main.rs"),
+                settings: Box::new(command_settings()),
+            },
+        );
+
+        let tab = app
+            .widgets
+            .terminal_workspace
+            .tab(7)
+            .expect("terminal tab should be opened");
+        assert!(!tab.is_shell());
     }
 }

@@ -25,7 +25,7 @@ const ACTION_BAR_CONTROLS_SPACING: f32 = 6.0;
 /// Props for rendering the action bar.
 #[derive(Debug, Clone)]
 pub(crate) struct ActionBarProps<'a> {
-    pub(crate) title: String,
+    pub(crate) title: &'a str,
     pub(crate) theme: ThemeProps<'a>,
     pub(crate) fonts: &'a FontsConfig,
 }

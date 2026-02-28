@@ -3,8 +3,9 @@ use iced::widget::{Space, column, container, mouse_area, row, text};
 use iced::{Element, Length, Size, Theme, alignment};
 
 use super::{App, AppEvent};
-use crate::components::composed::sidebar_workspace_panel;
-use crate::components::primitive::{menu_item, resize_grips};
+use crate::components::primitive::{
+    menu_item, resize_grips, sidebar_workspace_panel
+};
 use crate::shared::ui::theme::ThemeProps;
 use crate::shared::ui::{menu_geometry, menu_style};
 use crate::widgets::chrome::view::action_bar::{self, ACTION_BAR_HEIGHT};
@@ -133,7 +134,7 @@ fn view_header<'a>(
     let palette = theme_props.theme.iced_palette();
 
     let action_bar = action_bar::view(action_bar::ActionBarProps {
-        title: app.title(),
+        title: app.widgets.tabs.active_tab_title().unwrap_or("OTTY"),
         theme: theme_props,
         fonts: &app.fonts,
     })

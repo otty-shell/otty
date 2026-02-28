@@ -1,4 +1,5 @@
 use iced::Task;
+use otty_ui_term::settings::Settings;
 
 use super::command::TabsCommand;
 use super::event::TabsEffect;
@@ -20,6 +21,11 @@ pub(crate) fn reduce(
         TabsCommand::OpenTerminalTab { terminal_id, title } => {
             open_terminal_tab(state, terminal_id, title)
         },
+        TabsCommand::OpenCommandTab {
+            terminal_id,
+            title,
+            settings,
+        } => open_command_tab(state, terminal_id, title, *settings),
         TabsCommand::OpenSettingsTab => open_settings_tab(state),
         TabsCommand::OpenWizardTab { title } => open_wizard_tab(state, title),
         TabsCommand::OpenErrorTab { title } => open_error_tab(state, title),
@@ -81,6 +87,31 @@ fn open_terminal_tab(
             tab_id,
             terminal_id,
             title,
+        }),
+        Task::done(TabsEffect::ScrollBarToEnd),
+    ])
+}
+
+fn open_command_tab(
+    state: &mut TabsState,
+    terminal_id: u64,
+    title: String,
+    settings: Settings,
+) -> Task<TabsEffect> {
+    let tab_id = state.allocate_tab_id();
+
+    state.insert(
+        tab_id,
+        TabItem::new(tab_id, title.clone(), TabContent::Terminal),
+    );
+    state.activate(Some(tab_id));
+
+    Task::batch(vec![
+        Task::done(TabsEffect::CommandTabOpened {
+            tab_id,
+            terminal_id,
+            title,
+            settings: Box::new(settings),
         }),
         Task::done(TabsEffect::ScrollBarToEnd),
     ])
@@ -152,6 +183,36 @@ mod tests {
         assert_eq!(state.len(), 1);
         let active = state.active_tab().expect("should have active tab");
         assert_eq!(active.title(), "bash");
+        assert_eq!(active.content(), TabContent::Terminal);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_command_tab_activates_new_tab() {
+        use otty_ui_term::settings::{
+            LocalSessionOptions, SessionKind, Settings,
+        };
+
+        let mut settings = Settings::default();
+        settings.backend = settings.backend.clone().with_session(
+            SessionKind::from_local_options(
+                LocalSessionOptions::default().with_program("/bin/sh"),
+            ),
+        );
+
+        let mut state = TabsState::default();
+        let _ = reduce(
+            &mut state,
+            TabsCommand::OpenCommandTab {
+                terminal_id: 1,
+                title: String::from("nvim main.rs"),
+                settings: Box::new(settings),
+            },
+        );
+
+        assert_eq!(state.len(), 1);
+        let active = state.active_tab().expect("should have active tab");
+        assert_eq!(active.title(), "nvim main.rs");
         assert_eq!(active.content(), TabContent::Terminal);
     }
 

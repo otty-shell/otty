@@ -29,6 +29,6 @@ pub(crate) enum ExplorerEffect {
     LoadRootRequested { root: PathBuf },
     /// Request asynchronous loading of a folder's children.
     LoadFolderRequested { path: TreePath, directory: PathBuf },
-    /// Request opening a file in a new terminal tab.
+    /// Request opening a file in a command terminal tab.
     OpenFileTerminalTab { file_path: PathBuf },
 }

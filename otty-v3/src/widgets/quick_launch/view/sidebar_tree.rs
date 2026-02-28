@@ -71,13 +71,27 @@ pub(crate) fn view(
     let tree_area = iced::widget::mouse_area(
         scrollable(content).width(Length::Fill).height(Length::Fill),
     )
+    .on_move(|position| QuickLaunchEvent::CursorMoved { position })
     .on_press(QuickLaunchEvent::BackgroundPressed)
     .on_release(QuickLaunchEvent::BackgroundReleased)
     .on_right_press(QuickLaunchEvent::BackgroundRightClicked);
 
+    let root_drop_background =
+        if matches!(props.drop_target, Some(DropTarget::Root)) {
+            let mut color = palette.overlay;
+            color.a = 0.6;
+            Some(color)
+        } else {
+            None
+        };
+
     container(tree_area)
         .width(Length::Fill)
         .height(Length::Fill)
+        .style(move |_| iced::widget::container::Style {
+            background: root_drop_background.map(Into::into),
+            ..Default::default()
+        })
         .into()
 }
 
@@ -115,6 +129,7 @@ fn render_children<'a>(
                 is_selected,
                 is_hovered,
                 props.launching.get(&path),
+                props.drop_target,
                 palette,
             ));
         }
@@ -157,6 +172,7 @@ fn render_tree_row<'a>(
     is_selected: bool,
     is_hovered: bool,
     launch_info: Option<&'a LaunchInfo>,
+    drop_target: Option<&DropTarget>,
     palette: &'a crate::shared::ui::theme::IcedColorPalette,
 ) -> Element<'a, QuickLaunchEvent, Theme, iced::Renderer> {
     let indent = depth as f32 * TREE_INDENT;
@@ -215,7 +231,20 @@ fn render_tree_row<'a>(
         }
     }
 
-    let bg_color = if is_selected {
+    let is_drop_target = drop_target
+        .and_then(|target| match target {
+            DropTarget::Folder(folder_path) => {
+                Some(is_prefix(folder_path, path))
+            },
+            _ => None,
+        })
+        .unwrap_or(false);
+
+    let bg_color = if is_drop_target {
+        let mut c = palette.overlay;
+        c.a = 0.6;
+        Some(c)
+    } else if is_selected {
         let mut c = palette.overlay;
         c.a = 0.3;
         Some(c)
@@ -260,6 +289,14 @@ fn render_tree_row<'a>(
         });
 
     interactive.into()
+}
+
+fn is_prefix(prefix: &[String], path: &[String]) -> bool {
+    if prefix.len() > path.len() {
+        return false;
+    }
+
+    prefix.iter().zip(path.iter()).all(|(a, b)| a == b)
 }
 
 fn render_inline_edit<'a>(

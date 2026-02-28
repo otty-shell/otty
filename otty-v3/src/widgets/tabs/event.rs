@@ -22,6 +22,13 @@ pub(crate) enum TabsEffect {
         terminal_id: u64,
         title: String,
     },
+    /// Command tab opened; router creates command terminal instance.
+    CommandTabOpened {
+        tab_id: u64,
+        terminal_id: u64,
+        title: String,
+        settings: Box<otty_ui_term::settings::Settings>,
+    },
     /// Settings tab opened; router triggers settings reload.
     SettingsTabOpened,
     /// Wizard tab opened; flow router initializes the wizard state.

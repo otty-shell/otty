@@ -60,10 +60,6 @@ fn menu_button_style(
     button::Style {
         background,
         text_color,
-        border: iced::Border {
-            width: 0.0,
-            ..Default::default()
-        },
         ..Default::default()
     }
 }
