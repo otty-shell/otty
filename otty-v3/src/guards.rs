@@ -83,10 +83,6 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         AppEvent::Window(_) | AppEvent::ResizeWindow(_) => Allow,
         AppEvent::OpenTerminalTab
         | AppEvent::OpenSettingsTab
-        | AppEvent::OpenQuickLaunchWizardCreateTab { .. }
-        | AppEvent::OpenQuickLaunchWizardEditTab { .. }
-        | AppEvent::OpenQuickLaunchCommandTerminalTab { .. }
-        | AppEvent::OpenQuickLaunchErrorTab { .. }
         | AppEvent::OpenFileTerminalTab { .. }
         | AppEvent::CloseTab { .. }
         | AppEvent::SyncTerminalGridSizes => Allow,
@@ -140,10 +136,6 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
         | AppEvent::SettingsCommand(_) => false,
         AppEvent::OpenTerminalTab
         | AppEvent::OpenSettingsTab
-        | AppEvent::OpenQuickLaunchWizardCreateTab { .. }
-        | AppEvent::OpenQuickLaunchWizardEditTab { .. }
-        | AppEvent::OpenQuickLaunchCommandTerminalTab { .. }
-        | AppEvent::OpenQuickLaunchErrorTab { .. }
         | AppEvent::OpenFileTerminalTab { .. }
         | AppEvent::CloseTab { .. }
         | AppEvent::SyncTerminalGridSizes => false,

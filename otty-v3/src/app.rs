@@ -158,22 +158,6 @@ pub(crate) enum AppEvent {
     // Cross-widget workflows
     OpenTerminalTab,
     OpenSettingsTab,
-    OpenQuickLaunchWizardCreateTab {
-        parent_path: Vec<String>,
-    },
-    OpenQuickLaunchWizardEditTab {
-        path: Vec<String>,
-        command: Box<crate::widgets::quick_launch::model::QuickLaunch>,
-    },
-    OpenQuickLaunchCommandTerminalTab {
-        title: String,
-        settings: otty_ui_term::settings::Settings,
-        command: Box<crate::widgets::quick_launch::model::QuickLaunch>,
-    },
-    OpenQuickLaunchErrorTab {
-        title: String,
-        message: String,
-    },
     OpenFileTerminalTab {
         file_path: std::path::PathBuf,
     },

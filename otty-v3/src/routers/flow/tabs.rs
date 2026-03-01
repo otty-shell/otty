@@ -7,10 +7,6 @@ use crate::app::{App, AppEvent};
 use crate::widgets::tabs::TabsCommand;
 use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
 
-/// Orchestrate opening a new terminal tab.
-///
-/// Allocates a terminal_id from the terminal workspace widget
-/// and uses the configured shell name as the tab title.
 pub(crate) fn open_terminal_tab(app: &mut App) -> Task<AppEvent> {
     let terminal_id = app.widgets.terminal_workspace.allocate_terminal_id();
     let title = app.shell_session.name().to_string();
@@ -21,12 +17,10 @@ pub(crate) fn open_terminal_tab(app: &mut App) -> Task<AppEvent> {
     }))
 }
 
-/// Orchestrate opening a new settings tab.
 pub(crate) fn open_settings_tab(_app: &mut App) -> Task<AppEvent> {
     Task::done(AppEvent::TabsCommand(TabsCommand::OpenSettingsTab))
 }
 
-/// Orchestrate opening a file in a new terminal tab (from explorer).
 pub(crate) fn open_file_terminal_tab(
     app: &mut App,
     file_path: PathBuf,
