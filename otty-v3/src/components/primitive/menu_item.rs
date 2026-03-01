@@ -2,7 +2,7 @@ use iced::widget::button::Status as ButtonStatus;
 use iced::widget::{button, text};
 use iced::{Element, Length, alignment};
 
-use crate::shared::ui::theme::{IcedColorPalette, ThemeProps};
+use crate::theme::{IcedColorPalette, ThemeProps};
 
 const MENU_ITEM_HEIGHT: f32 = 24.0;
 const MENU_ITEM_FONT_SIZE: f32 = 13.0;
@@ -69,11 +69,12 @@ mod tests {
     use iced::Background;
     use iced::widget::button::Status as ButtonStatus;
 
+    use crate::theme::AppTheme;
     use super::menu_button_style;
 
     #[test]
     fn given_hovered_status_when_building_style_then_uses_hover_colors() {
-        let theme = crate::shared::ui::theme::AppTheme::default();
+        let theme = AppTheme::default();
         let palette = theme.iced_palette();
 
         let style = menu_button_style(palette, ButtonStatus::Hovered);
@@ -84,7 +85,7 @@ mod tests {
 
     #[test]
     fn given_active_status_when_building_style_then_uses_idle_colors() {
-        let theme = crate::shared::ui::theme::AppTheme::default();
+        let theme = AppTheme::default();
         let palette = theme.iced_palette();
 
         let style = menu_button_style(palette, ButtonStatus::Active);

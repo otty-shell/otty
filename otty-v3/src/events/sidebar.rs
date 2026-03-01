@@ -1,33 +1,32 @@
 use iced::Task;
 
-use crate::app::{App, AppEvent};
+use crate::app::App;
 use crate::widgets::sidebar::{
-    SidebarCtx, SidebarEffect, SidebarEvent, SidebarUiEvent,
+    SidebarCtx, SidebarEffect, SidebarEvent,
 };
+use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
+use super::AppEvent;
 
-/// Route a sidebar event through widget reduction or app orchestration.
-pub(crate) fn route(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
+pub(crate) fn handle(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
     match event {
-        SidebarEvent::Ui(event) => route_ui_event(app, event),
-        SidebarEvent::Effect(effect) => route_effect_event(effect),
+        SidebarEvent::Ui(event) => app.widgets
+            .sidebar
+            .reduce(event, &SidebarCtx)
+            .map(AppEvent::Sidebar),
+        SidebarEvent::Effect(effect) => handle_effect(effect),
     }
 }
 
-fn route_ui_event(app: &mut App, event: SidebarUiEvent) -> Task<AppEvent> {
-    app.widgets
-        .sidebar
-        .reduce(event, &SidebarCtx)
-        .map(AppEvent::Sidebar)
-}
-
-fn route_effect_event(event: SidebarEffect) -> Task<AppEvent> {
+fn handle_effect(event: SidebarEffect) -> Task<AppEvent> {
     use SidebarEffect as E;
 
     match event {
         E::SyncTerminalGridSizes => {
             Task::done(AppEvent::SyncTerminalGridSizes)
         },
-        E::OpenSettingsTab => Task::done(AppEvent::OpenSettingsTab),
+        E::OpenSettingsTab => {
+            Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenSettingsTab)))
+        },
         E::OpenTerminalTab => Task::done(AppEvent::OpenTerminalTab),
         E::QuickLaunchHeaderCreateCommand => {
             Task::done(AppEvent::QuickLaunch(

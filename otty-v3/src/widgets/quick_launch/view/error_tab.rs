@@ -1,7 +1,7 @@
 use iced::widget::{column, container, text};
 use iced::{Element, Length, Theme};
 
-use crate::shared::ui::theme::ThemeProps;
+use crate::theme::ThemeProps;
 use crate::widgets::quick_launch::event::QuickLaunchUiEvent;
 use crate::widgets::quick_launch::state::QuickLaunchErrorState;
 

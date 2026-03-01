@@ -3,7 +3,7 @@ use otty_ui_term::settings::{
     BackendSettings, FontSettings, Settings, ThemeSettings,
 };
 
-use crate::app::{App, AppEvent};
+use crate::app::App;
 use crate::widgets::settings::model::SettingsData;
 use crate::widgets::settings::{
     SettingsEffect, SettingsEvent, SettingsUiEvent,
@@ -14,20 +14,20 @@ use crate::widgets::terminal_workspace::services::{
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
 };
+use super::AppEvent;
 
-/// Route a settings event through widget reduction or app orchestration.
-pub(crate) fn route(app: &mut App, event: SettingsEvent) -> Task<AppEvent> {
+pub(crate) fn handle(app: &mut App, event: SettingsEvent) -> Task<AppEvent> {
     match event {
-        SettingsEvent::Ui(event) => route_ui_event(app, event),
-        SettingsEvent::Effect(effect) => route_effect_event(app, effect),
+        SettingsEvent::Ui(event) => app
+            .widgets
+            .settings
+            .reduce(event)
+            .map(AppEvent::Settings),
+        SettingsEvent::Effect(effect) => handle_effect(app, effect),
     }
 }
 
-fn route_ui_event(app: &mut App, event: SettingsUiEvent) -> Task<AppEvent> {
-    app.widgets.settings.reduce(event).map(AppEvent::Settings)
-}
-
-fn route_effect_event(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
+fn handle_effect(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
     use SettingsEffect::*;
 
     match effect {
@@ -47,7 +47,6 @@ fn route_effect_event(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
     }
 }
 
-/// Apply settings to app theme/runtime and propagate palette to terminals.
 fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
     app.theme_manager
         .set_custom_palette(data.to_color_palette());

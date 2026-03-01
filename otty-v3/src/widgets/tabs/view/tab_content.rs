@@ -2,7 +2,7 @@ use iced::widget::{container, text};
 use iced::{Element, Length, Theme, alignment};
 
 use super::super::model::TabsViewModel;
-use crate::shared::ui::theme::ThemeProps;
+use crate::theme::ThemeProps;
 
 /// Props for rendering tab content area.
 #[derive(Debug, Clone)]

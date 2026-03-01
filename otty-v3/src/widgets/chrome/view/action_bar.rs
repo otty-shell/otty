@@ -6,11 +6,11 @@ use crate::components::primitive::icon_button::{
     IconButtonEvent, IconButtonProps, IconButtonVariant,
     view as icon_button_view,
 };
-use crate::shared::ui::fonts::FontsConfig;
-use crate::shared::ui::icons::{
+use crate::fonts::FontsConfig;
+use crate::icons::{
     LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY,
 };
-use crate::shared::ui::theme::{StyleOverrides, ThemeProps};
+use crate::theme::{StyleOverrides, ThemeProps};
 
 pub(crate) const ACTION_BAR_HEIGHT: f32 = 30.0;
 const ACTION_BAR_TITLE_SCALE: f32 = 0.9;

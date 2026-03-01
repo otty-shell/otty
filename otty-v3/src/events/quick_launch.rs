@@ -1,22 +1,22 @@
 use iced::Task;
 
-use crate::app::{App, AppEvent};
+use crate::app::App;
 use crate::widgets::quick_launch::model::{NodePath, QuickLaunch};
 use crate::widgets::quick_launch::{
     QuickLaunchCtx, QuickLaunchEffect, QuickLaunchEvent, QuickLaunchUiEvent,
 };
 use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
 use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
+use super::AppEvent;
 
-/// Route a quick launch event through widget reduction or app orchestration.
-pub(crate) fn route(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
+pub(crate) fn handle(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
     match event {
-        QuickLaunchEvent::Ui(event) => route_ui_event(app, event),
-        QuickLaunchEvent::Effect(effect) => route_effect_event(app, effect),
+        QuickLaunchEvent::Ui(event) => handle_ui_event(app, event),
+        QuickLaunchEvent::Effect(effect) => handle_effect(app, effect),
     }
 }
 
-fn route_ui_event(app: &mut App, event: QuickLaunchUiEvent) -> Task<AppEvent> {
+fn handle_ui_event(app: &mut App, event: QuickLaunchUiEvent) -> Task<AppEvent> {
     // The add button lives in the quick launch panel but triggers the
     // sidebar add-menu overlay, so redirect instead of reducing.
     if matches!(event, QuickLaunchUiEvent::HeaderAddButtonPressed) {
@@ -36,7 +36,7 @@ fn route_ui_event(app: &mut App, event: QuickLaunchUiEvent) -> Task<AppEvent> {
         .map(AppEvent::QuickLaunch)
 }
 
-fn route_effect_event(
+fn handle_effect(
     app: &mut App,
     effect: QuickLaunchEffect,
 ) -> Task<AppEvent> {

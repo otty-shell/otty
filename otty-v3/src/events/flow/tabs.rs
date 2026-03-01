@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 use iced::Task;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-use crate::app::{App, AppEvent};
+use crate::app::App;
 use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
+use crate::events::AppEvent;
 
 pub(crate) fn open_terminal_tab(app: &mut App) -> Task<AppEvent> {
     let terminal_id = app.widgets.terminal_workspace.allocate_terminal_id();
@@ -14,10 +15,6 @@ pub(crate) fn open_terminal_tab(app: &mut App) -> Task<AppEvent> {
     Task::done(AppEvent::Tabs(TabsEvent::Ui(
         TabsUiEvent::OpenTerminalTab { terminal_id, title },
     )))
-}
-
-pub(crate) fn open_settings_tab(_app: &mut App) -> Task<AppEvent> {
-    Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenSettingsTab)))
 }
 
 pub(crate) fn open_file_terminal_tab(

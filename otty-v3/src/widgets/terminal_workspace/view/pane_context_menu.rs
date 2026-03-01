@@ -4,11 +4,11 @@ use iced::{Background, Element, Length, Point, Size, alignment};
 use crate::components::primitive::menu_item::{
     MenuItemEvent, MenuItemProps, view as menu_item_view,
 };
-use crate::shared::ui::menu_geometry::{
+use crate::geometry::{
     anchor_position, menu_height_for_items,
 };
-use crate::shared::ui::menu_style::menu_panel_style;
-use crate::shared::ui::theme::ThemeProps;
+use crate::style::menu_panel_style;
+use crate::theme::ThemeProps;
 use crate::widgets::terminal_workspace::event::TerminalWorkspaceUiEvent;
 
 const MENU_CONTAINER_WIDTH: f32 = 250.0;

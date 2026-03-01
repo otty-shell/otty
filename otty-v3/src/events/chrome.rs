@@ -1,22 +1,22 @@
 use iced::{Task, window};
 
-use crate::app::{App, AppEvent};
-use crate::widgets::chrome::{ChromeEffect, ChromeEvent, ChromeUiEvent};
+use crate::app::App;
+use crate::widgets::chrome::{ChromeEffect, ChromeEvent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
+use super::AppEvent;
 
-/// Route a chrome event through widget reduction or app orchestration.
-pub(crate) fn route(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
+pub(crate) fn handle(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
     match event {
-        ChromeEvent::Ui(event) => route_ui_event(app, event),
-        ChromeEvent::Effect(effect) => route_effect_event(effect),
+        ChromeEvent::Ui(event) => app
+            .widgets
+            .chrome
+            .reduce(event)
+            .map(AppEvent::Chrome),
+        ChromeEvent::Effect(effect) => handle_effect(effect),
     }
 }
 
-fn route_ui_event(app: &mut App, event: ChromeUiEvent) -> Task<AppEvent> {
-    app.widgets.chrome.reduce(event).map(AppEvent::Chrome)
-}
-
-fn route_effect_event(effect: ChromeEffect) -> Task<AppEvent> {
+fn handle_effect(effect: ChromeEffect) -> Task<AppEvent> {
     use ChromeEffect::*;
 
     match effect {

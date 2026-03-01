@@ -2,9 +2,9 @@ use iced::widget::{Space, column, container};
 use iced::{Element, Length, Size, Theme};
 
 use crate::components::primitive::menu_item;
-use crate::shared::ui::menu_geometry::anchor_position;
-use crate::shared::ui::menu_style::menu_panel_style;
-use crate::shared::ui::theme::ThemeProps;
+use crate::geometry::anchor_position;
+use crate::style::menu_panel_style;
+use crate::theme::ThemeProps;
 use crate::widgets::quick_launch::event::QuickLaunchUiEvent;
 use crate::widgets::quick_launch::model::{
     ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,

@@ -3,8 +3,8 @@ use iced::{Border, Element, Length, Theme, alignment};
 
 use super::event::SidebarUiEvent;
 use super::model::{SIDEBAR_MENU_WIDTH, SidebarItem, SidebarViewModel};
-use crate::shared::ui::icons;
-use crate::shared::ui::theme::ThemeProps;
+use crate::icons;
+use crate::theme::ThemeProps;
 
 const MENU_BUTTON_SIZE: f32 = 44.0;
 const MENU_ICON_SIZE: f32 = 20.0;

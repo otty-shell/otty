@@ -1,27 +1,28 @@
 use iced::Task;
 
-use crate::app::{App, AppEvent};
+use crate::app::App;
+use crate::helpers::pane_grid_size;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
 use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceCtx, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
     TerminalWorkspaceUiEvent,
 };
+use super::AppEvent;
 
-/// Route a terminal workspace event through widget reduction or app orchestration.
-pub(crate) fn route(
+pub(crate) fn handle(
     app: &mut App,
     event: TerminalWorkspaceEvent,
 ) -> Task<AppEvent> {
     match event {
-        TerminalWorkspaceEvent::Ui(event) => route_ui_event(app, event),
+        TerminalWorkspaceEvent::Ui(event) => handle_ui_event(app, event),
         TerminalWorkspaceEvent::Effect(effect) => {
-            route_effect_event(app, effect)
+            handle_effect_event(app, effect)
         },
     }
 }
 
-fn route_ui_event(
+fn handle_ui_event(
     app: &mut App,
     event: TerminalWorkspaceUiEvent,
 ) -> Task<AppEvent> {
@@ -37,8 +38,7 @@ fn route_ui_event(
         .map(AppEvent::TerminalWorkspace)
 }
 
-/// Route a terminal workspace effect event to app-level tasks.
-fn route_effect_event(
+fn handle_effect_event(
     app: &mut App,
     effect: TerminalWorkspaceEffect,
 ) -> Task<AppEvent> {
@@ -78,7 +78,8 @@ fn sync_explorer_from_terminal(app: &mut App) -> Task<AppEvent> {
 
 fn current_pane_grid_size_from_app(app: &App) -> iced::Size {
     let sidebar = &app.widgets.sidebar;
-    crate::state::pane_grid_size(
+    
+    pane_grid_size(
         app.state.screen_size,
         sidebar.is_hidden(),
         crate::widgets::sidebar::SIDEBAR_MENU_WIDTH,

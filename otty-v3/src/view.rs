@@ -6,10 +6,11 @@ use super::{App, AppEvent};
 use crate::components::primitive::{
     menu_item, resize_grips, sidebar_workspace_panel,
 };
-use crate::shared::ui::theme::ThemeProps;
-use crate::shared::ui::{menu_geometry, menu_style};
+use crate::theme::ThemeProps;
+use crate::geometry::{anchor_position, menu_height_for_items};
+use crate::style::menu_panel_style;
 use crate::widgets::chrome::ChromeEvent;
-use crate::widgets::chrome::view::action_bar::{self, ACTION_BAR_HEIGHT};
+use crate::widgets::chrome::view::action_bar;
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::quick_launch::QuickLaunchEvent;
@@ -31,7 +32,7 @@ use crate::widgets::terminal_workspace::view::{
     pane_grid as terminal_pane_grid,
 };
 
-const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
+pub(crate) const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
 const SEPARATOR_ALPHA: f32 = 0.3;
 const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_GRID_RESIZE_GRAB: f32 = 8.0;
@@ -423,7 +424,7 @@ fn view_add_menu_overlay<'a>(
         ),
     ];
 
-    let menu_height = menu_geometry::menu_height_for_items(
+    let menu_height = menu_height_for_items(
         menu_items.len(),
         ADD_MENU_ITEM_HEIGHT,
         ADD_MENU_VERTICAL_PADDING,
@@ -436,7 +437,7 @@ fn view_add_menu_overlay<'a>(
         .width(Length::Fill)
         .align_x(alignment::Horizontal::Left);
 
-    let anchor = menu_geometry::anchor_position(
+    let anchor = anchor_position(
         cursor,
         area_size,
         ADD_MENU_WIDTH,
@@ -453,7 +454,7 @@ fn view_add_menu_overlay<'a>(
     let menu_container = container(menu_column)
         .padding([ADD_MENU_CONTAINER_PADDING_X, 0.0])
         .width(ADD_MENU_WIDTH)
-        .style(menu_style::menu_panel_style(theme_props));
+        .style(menu_panel_style(theme_props));
 
     let positioned_menu = container(menu_container)
         .padding(padding)
@@ -475,7 +476,6 @@ fn view_add_menu_overlay<'a>(
         .into()
 }
 
-/// Create a single add menu item.
 fn add_menu_item<'a>(
     label: &'a str,
     theme_props: ThemeProps<'a>,
@@ -488,12 +488,4 @@ fn add_menu_item<'a>(
     .map(move |event| match event {
         menu_item::MenuItemEvent::Pressed => on_press.clone(),
     })
-}
-
-/// Compute screen size from window size by subtracting header.
-pub(crate) fn screen_size_from_window(window_size: Size) -> Size {
-    let height =
-        (window_size.height - ACTION_BAR_HEIGHT - HEADER_SEPARATOR_HEIGHT)
-            .max(0.0);
-    Size::new(window_size.width, height)
 }

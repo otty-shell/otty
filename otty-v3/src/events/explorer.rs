@@ -2,22 +2,22 @@ use std::path::PathBuf;
 
 use iced::Task;
 
-use crate::app::{App, AppEvent};
+use crate::app::App;
 use crate::widgets::explorer::model::FileNode;
 use crate::widgets::explorer::services::read_dir_nodes;
 use crate::widgets::explorer::{
     ExplorerCtx, ExplorerEffect, ExplorerEvent, ExplorerUiEvent,
 };
+use super::AppEvent;
 
-/// Route an explorer event through widget reduction or app orchestration.
-pub(crate) fn route(app: &mut App, event: ExplorerEvent) -> Task<AppEvent> {
+pub(crate) fn handle(app: &mut App, event: ExplorerEvent) -> Task<AppEvent> {
     match event {
-        ExplorerEvent::Ui(event) => route_ui_event(app, event),
-        ExplorerEvent::Effect(effect) => route_effect_event(effect),
+        ExplorerEvent::Ui(event) => handle_ui_event(app, event),
+        ExplorerEvent::Effect(effect) => handle_effect(effect),
     }
 }
 
-fn route_ui_event(app: &mut App, event: ExplorerUiEvent) -> Task<AppEvent> {
+fn handle_ui_event(app: &mut App, event: ExplorerUiEvent) -> Task<AppEvent> {
     let active_tab_id = app.widgets.tabs.active_tab_id();
     let ctx = ExplorerCtx {
         active_shell_cwd: app
@@ -31,7 +31,7 @@ fn route_ui_event(app: &mut App, event: ExplorerUiEvent) -> Task<AppEvent> {
         .map(AppEvent::Explorer)
 }
 
-fn route_effect_event(effect: ExplorerEffect) -> Task<AppEvent> {
+fn handle_effect(effect: ExplorerEffect) -> Task<AppEvent> {
     match effect {
         ExplorerEffect::LoadRootRequested { root } => {
             load_directory_async(root.clone(), move |nodes| {

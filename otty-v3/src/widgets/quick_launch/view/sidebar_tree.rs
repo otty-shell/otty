@@ -3,8 +3,8 @@ use iced::widget::{
 };
 use iced::{Element, Length, Theme};
 
-use crate::shared::ui::icons::{FOLDER, FOLDER_OPENED, PLAY};
-use crate::shared::ui::theme::ThemeProps;
+use crate::icons::{FOLDER, FOLDER_OPENED, PLAY};
+use crate::theme::ThemeProps;
 use crate::widgets::quick_launch::event::QuickLaunchUiEvent;
 use crate::widgets::quick_launch::model::{
     LaunchInfo, NodePath, QuickLaunchFile, QuickLaunchNode,
@@ -101,7 +101,7 @@ fn render_children<'a>(
     parent_path: &[String],
     depth: usize,
     props: &SidebarTreeProps<'a>,
-    palette: &'a crate::shared::ui::theme::IcedColorPalette,
+    palette: &'a crate::theme::IcedColorPalette,
     entries: &mut Vec<Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer>>,
 ) {
     for node in children {
@@ -174,7 +174,7 @@ fn render_tree_row<'a>(
     is_hovered: bool,
     launch_info: Option<&'a LaunchInfo>,
     drop_target: Option<&DropTarget>,
-    palette: &'a crate::shared::ui::theme::IcedColorPalette,
+    palette: &'a crate::theme::IcedColorPalette,
 ) -> Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
     let indent = depth as f32 * TREE_INDENT;
     let foreground = palette.foreground;
@@ -303,7 +303,7 @@ fn is_prefix(prefix: &[String], path: &[String]) -> bool {
 fn render_inline_edit<'a>(
     edit: &'a InlineEditState,
     depth: usize,
-    palette: &'a crate::shared::ui::theme::IcedColorPalette,
+    palette: &'a crate::theme::IcedColorPalette,
 ) -> Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
     let indent = depth as f32 * TREE_INDENT;
 

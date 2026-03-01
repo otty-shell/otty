@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::shared::ui::theme::ColorPalette;
+use crate::theme::ColorPalette;
 
 const DEFAULT_EDITOR: &str = "nano";
 const FALLBACK_SHELL: &str = "/bin/bash";

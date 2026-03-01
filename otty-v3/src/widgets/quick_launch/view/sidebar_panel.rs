@@ -5,8 +5,8 @@ use super::sidebar_tree;
 use crate::components::primitive::icon_button::{
     self, IconButtonProps, IconButtonVariant,
 };
-use crate::shared::ui::icons;
-use crate::shared::ui::theme::ThemeProps;
+use crate::icons;
+use crate::theme::ThemeProps;
 use crate::widgets::quick_launch::event::QuickLaunchUiEvent;
 use crate::widgets::quick_launch::model::QuickLaunchTreeViewModel;
 

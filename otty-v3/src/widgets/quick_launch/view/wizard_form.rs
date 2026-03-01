@@ -2,7 +2,7 @@ use iced::widget::button::Status as ButtonStatus;
 use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Element, Length, Theme, alignment};
 
-use crate::shared::ui::theme::{IcedColorPalette, ThemeProps};
+use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::widgets::quick_launch::event::QuickLaunchUiEvent;
 use crate::widgets::quick_launch::model::QuickLaunchType;
 use crate::widgets::quick_launch::state::WizardEditorState;

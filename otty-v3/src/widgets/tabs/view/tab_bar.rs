@@ -6,8 +6,8 @@ use iced::widget::{
 use iced::{Alignment, Element, Length, alignment};
 
 use super::super::event::TabsUiEvent;
-use crate::shared::ui::icons;
-use crate::shared::ui::theme::{StyleOverrides, ThemeProps};
+use crate::icons;
+use crate::theme::{StyleOverrides, ThemeProps};
 
 pub(crate) const TAB_BAR_HEIGHT: f32 = 25.0;
 pub(crate) const TAB_BAR_SCROLL_ID: &str = "tab_bar_scroll";

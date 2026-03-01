@@ -8,8 +8,8 @@ use iced::{Color, Element, Length, Theme, alignment};
 use otty_ui_term::parse_hex_color;
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
-use crate::shared::ui::theme::{IcedColorPalette, ThemeProps};
-use crate::shared::ui::tree_style;
+use crate::theme::{IcedColorPalette, ThemeProps};
+use crate::style::{tree_row_style, thin_scroll_style};
 use crate::widgets::settings::event::SettingsUiEvent;
 use crate::widgets::settings::model::{
     SettingsNode, SettingsPreset, SettingsSection, SettingsViewModel,
@@ -140,7 +140,7 @@ fn settings_nav_tree<'a>(
                 .margin(0)
                 .scroller_width(4),
         ))
-        .style(tree_style::thin_scroll_style(scroll_palette));
+        .style(thin_scroll_style(scroll_palette));
 
     container(scrollable)
         .width(Length::Fixed(NAV_WIDTH))
@@ -185,7 +185,7 @@ fn settings_form<'a>(
                 .margin(0)
                 .scroller_width(4),
         ))
-        .style(tree_style::thin_scroll_style(palette));
+        .style(thin_scroll_style(palette));
 
     container(scrollable)
         .width(Length::Fill)
@@ -398,7 +398,7 @@ fn nav_row_style(
     palette: &IcedColorPalette,
     context: &TreeRowContext<'_, SettingsNode>,
 ) -> container::Style {
-    tree_style::tree_row_style(palette, context.is_selected, context.is_hovered)
+    tree_row_style(palette, context.is_selected, context.is_hovered)
 }
 
 fn nav_toggle_icon<'a>(
@@ -413,9 +413,9 @@ fn nav_toggle_icon<'a>(
 fn nav_icon(node: &SettingsNode) -> Option<&'static [u8]> {
     if node.is_folder() {
         Some(if node.is_expanded() {
-            crate::shared::ui::icons::FOLDER_OPENED
+            crate::icons::FOLDER_OPENED
         } else {
-            crate::shared::ui::icons::FOLDER
+            crate::icons::FOLDER
         })
     } else {
         None

@@ -1,9 +1,8 @@
 use iced::Background;
 use iced::widget::{container, scrollable};
 
-use super::theme::IcedColorPalette;
+use super::theme::{ThemeProps, IcedColorPalette};
 
-/// Return a scrollbar style closure with thin rails and reduced alpha.
 pub(crate) fn thin_scroll_style(
     palette: IcedColorPalette,
 ) -> impl Fn(&iced::Theme, scrollable::Status) -> scrollable::Style + 'static {
@@ -30,7 +29,6 @@ pub(crate) fn thin_scroll_style(
     }
 }
 
-/// Return a container style for tree rows with selection/hover highlights.
 pub(crate) fn tree_row_style(
     palette: &IcedColorPalette,
     is_selected: bool,
@@ -51,6 +49,22 @@ pub(crate) fn tree_row_style(
     container::Style {
         background,
         text_color: Some(palette.foreground),
+        ..Default::default()
+    }
+}
+
+pub(crate) fn menu_panel_style(
+    theme: ThemeProps<'_>,
+) -> impl Fn(&iced::Theme) -> container::Style + 'static {
+    let palette = theme.theme.iced_palette().clone();
+    move |_theme: &iced::Theme| container::Style {
+        background: Some(palette.overlay.into()),
+        text_color: Some(palette.foreground),
+        border: iced::Border {
+            width: 0.25,
+            color: palette.overlay,
+            radius: iced::border::Radius::new(4.0),
+        },
         ..Default::default()
     }
 }

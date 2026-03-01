@@ -2,9 +2,9 @@ use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, scrollable, svg, text};
 use iced::{Element, Length, alignment};
 
-use crate::shared::ui::icons::{FILE, FOLDER, FOLDER_OPENED};
-use crate::shared::ui::theme::{IcedColorPalette, ThemeProps};
-use crate::shared::ui::tree_style;
+use crate::icons::{FILE, FOLDER, FOLDER_OPENED};
+use crate::theme::{IcedColorPalette, ThemeProps};
+use crate::style::{thin_scroll_style, tree_row_style};
 use crate::widgets::explorer::event::ExplorerUiEvent;
 use crate::widgets::explorer::model::{
     ExplorerTreeViewModel, FileNode, TreePath,
@@ -143,7 +143,7 @@ fn explorer_tree<'a>(
                 .margin(0)
                 .scroller_width(4),
         ))
-        .style(tree_style::thin_scroll_style(palette.clone()));
+        .style(thin_scroll_style(palette.clone()));
 
     container(scrollable)
         .width(Length::Fill)
@@ -253,7 +253,7 @@ fn render_tree_row<'a>(
     .align_y(alignment::Vertical::Center);
 
     let row_style =
-        tree_style::tree_row_style(palette, is_selected, is_hovered);
+        tree_row_style(palette, is_selected, is_hovered);
 
     let styled_row = container(content)
         .width(Length::Fill)

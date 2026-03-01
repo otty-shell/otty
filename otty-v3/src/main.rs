@@ -3,20 +3,25 @@
 #![allow(dead_code)]
 
 mod app;
+mod fonts;
+mod icons;
+mod style;
+mod theme;
+mod geometry;
 mod components;
 mod guards;
-mod routers;
-mod shared;
+mod events;
 mod state;
 mod widgets;
+mod helpers;
 
 use env_logger::Env;
 use iced::{Size, window};
 use image::ImageFormat;
 
 use crate::app::{App, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
-use crate::shared::ui::fonts::TERM_FONT_JET_BRAINS_BYTES;
-use crate::shared::ui::icons::APP_ICON_DATA;
+use crate::fonts::TERM_FONT_JET_BRAINS_BYTES;
+use crate::icons::APP_ICON_DATA;
 
 fn main() -> iced::Result {
     env_logger::Builder::from_env(Env::default().default_filter_or("info"))

@@ -1,7 +1,7 @@
 use iced::widget::{button, container, svg};
 use iced::{Element, Length, alignment};
 
-use crate::shared::ui::theme::{StyleOverrides, ThemeProps};
+use crate::theme::{StyleOverrides, ThemeProps};
 
 /// UI events emitted by an icon button.
 #[derive(Debug, Clone)]
@@ -91,7 +91,7 @@ fn resolve_variant_colors(
 #[cfg(test)]
 mod tests {
     use super::{IconButtonVariant, resolve_variant_colors};
-    use crate::shared::ui::theme::StyleOverrides;
+    use crate::theme::StyleOverrides;
 
     #[test]
     fn given_standard_variant_when_resolving_without_override_then_hover_uses_accent()

@@ -7,28 +7,27 @@ pub(crate) mod view;
 
 use std::collections::VecDeque;
 
-use iced::window::Direction;
 use iced::{Element, Size, Subscription, Task, Theme};
 use otty_ui_term::settings::{
     BackendSettings, FontSettings, Settings, ThemeSettings,
 };
 
-use crate::shared::ui::fonts::FontsConfig;
-use crate::shared::ui::theme::{AppTheme, ThemeManager};
+use crate::events::AppEvent;
+use crate::helpers;
+use crate::fonts::FontsConfig;
+use crate::theme::{AppTheme, ThemeManager};
 use crate::state::State;
-use crate::widgets::chrome::{ChromeEvent, ChromeWidget};
-use crate::widgets::explorer::{ExplorerEvent, ExplorerWidget};
-use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchWidget};
-use crate::widgets::settings::{SettingsEvent, SettingsWidget};
-use crate::widgets::sidebar::{SidebarEvent, SidebarWidget};
-use crate::widgets::tabs::{TabsEvent, TabsWidget};
+use crate::widgets::chrome::ChromeWidget;
+use crate::widgets::explorer::ExplorerWidget;
+use crate::widgets::quick_launch::QuickLaunchWidget;
+use crate::widgets::settings::SettingsWidget;
+use crate::widgets::sidebar::SidebarWidget;
+use crate::widgets::tabs::TabsWidget;
 use crate::widgets::terminal_workspace::model::ShellSession;
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
-use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceEvent, TerminalWorkspaceWidget,
-};
+use crate::widgets::terminal_workspace::TerminalWorkspaceWidget;
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
@@ -116,36 +115,6 @@ impl PendingWorkflows {
     }
 }
 
-/// App-wide events that drive the root update loop.
-#[derive(Clone)]
-pub(crate) enum AppEvent {
-    IcedReady,
-    // Sidebar widget
-    Sidebar(SidebarEvent),
-    // Chrome widget
-    Chrome(ChromeEvent),
-    // Tabs widget
-    Tabs(TabsEvent),
-    // Quick Launch widget
-    QuickLaunch(QuickLaunchEvent),
-    // Terminal Workspace widget
-    TerminalWorkspace(TerminalWorkspaceEvent),
-    // Explorer widget
-    Explorer(ExplorerEvent),
-    // Settings widget
-    Settings(SettingsEvent),
-    // Cross-widget workflows
-    OpenTerminalTab,
-    OpenSettingsTab,
-    OpenFileTerminalTab { file_path: std::path::PathBuf },
-    CloseTab { tab_id: u64 },
-    // Direct operations
-    SyncTerminalGridSizes,
-    Keyboard(iced::keyboard::Event),
-    Window(iced::window::Event),
-    ResizeWindow(Direction),
-}
-
 /// Container for all widget instances.
 pub(crate) struct Widgets {
     pub(crate) sidebar: SidebarWidget,
@@ -192,7 +161,7 @@ impl App {
             width: MIN_WINDOW_WIDTH,
             height: MIN_WINDOW_HEIGHT,
         };
-        let screen_size = view::screen_size_from_window(window_size);
+        let screen_size = helpers::screen_size_from_window(window_size);
         let state = State::new(window_size, screen_size);
 
         let widgets = Widgets {
@@ -252,6 +221,7 @@ fn terminal_settings(theme: &AppTheme, fonts: &FontsConfig) -> Settings {
         font_type: fonts.terminal.font_type,
         ..FontSettings::default()
     };
+
     let theme_settings =
         ThemeSettings::new(Box::new(theme.terminal_palette().clone()));
 

@@ -1,32 +1,31 @@
 use iced::Task;
 use iced::widget::operation::snap_to_end;
 
-use crate::app::{App, AppEvent, PendingQuickLaunchWizard};
+use crate::app::{App, PendingQuickLaunchWizard};
 use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
 use crate::widgets::settings::{SettingsEvent, SettingsUiEvent};
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_SCROLL_ID;
-use crate::widgets::tabs::{TabsEffect, TabsEvent, TabsUiEvent};
+use crate::widgets::tabs::{TabsEffect, TabsEvent};
 use crate::widgets::terminal_workspace::model::TerminalKind;
 use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
 };
+use super::AppEvent;
 
-/// Route a tabs event through widget reduction or app orchestration.
-pub(crate) fn route(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
+pub(crate) fn handle(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
     match event {
-        TabsEvent::Ui(event) => route_ui_event(app, event),
-        TabsEvent::Effect(effect) => route_effect_event(app, effect),
+        TabsEvent::Ui(event) => app
+            .widgets
+            .tabs
+            .reduce(event)
+            .map(AppEvent::Tabs),
+        TabsEvent::Effect(effect) => handle_effect(app, effect),
     }
 }
 
-fn route_ui_event(app: &mut App, event: TabsUiEvent) -> Task<AppEvent> {
-    app.widgets.tabs.reduce(event).map(AppEvent::Tabs)
-}
-
-/// Route a tabs effect event to app-level tasks.
-fn route_effect_event(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
+fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
     match effect {
         TabsEffect::Activated { tab_id } => {
             let mut tasks: Vec<Task<AppEvent>> = Vec::new();
@@ -190,7 +189,7 @@ fn route_effect_event(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
 
 #[cfg(test)]
 mod tests {
-    use super::route;
+    use super::handle;
     use crate::app::{App, PendingQuickLaunchWizard};
     use crate::widgets::tabs::{TabsEffect, TabsEvent};
 
@@ -201,7 +200,7 @@ mod tests {
         app.pending_workflows
             .push_quick_launch_wizard_create(vec![String::from("Demo")]);
 
-        let _ = route(
+        let _ = handle(
             &mut app,
             TabsEvent::Effect(TabsEffect::WizardTabOpened { tab_id: 7 }),
         );
@@ -218,7 +217,7 @@ mod tests {
             String::from("boom"),
         );
 
-        let _ = route(
+        let _ = handle(
             &mut app,
             TabsEvent::Effect(TabsEffect::ErrorTabOpened { tab_id: 11 }),
         );
@@ -230,7 +229,7 @@ mod tests {
     fn given_wizard_opened_effect_without_pending_then_queue_stays_empty() {
         let (mut app, _) = App::new();
 
-        let _ = route(
+        let _ = handle(
             &mut app,
             TabsEvent::Effect(TabsEffect::WizardTabOpened { tab_id: 1 }),
         );

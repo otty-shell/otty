@@ -1,4 +1,4 @@
-use crate::app::AppEvent;
+use crate::events::AppEvent;
 
 /// Determines how the event loop should treat an incoming event when a
 /// context menu is open.
@@ -96,7 +96,6 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         )) => Allow,
         AppEvent::Window(_) | AppEvent::ResizeWindow(_) => Allow,
         AppEvent::OpenTerminalTab
-        | AppEvent::OpenSettingsTab
         | AppEvent::OpenFileTerminalTab { .. }
         | AppEvent::CloseTab { .. }
         | AppEvent::SyncTerminalGridSizes => Allow,
@@ -169,7 +168,6 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             crate::widgets::explorer::ExplorerUiEvent::SyncRoot { .. },
         )) => false,
         AppEvent::OpenTerminalTab
-        | AppEvent::OpenSettingsTab
         | AppEvent::OpenFileTerminalTab { .. }
         | AppEvent::CloseTab { .. }
         | AppEvent::SyncTerminalGridSizes => false,
@@ -184,7 +182,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{MenuGuard, context_menu_guard, inline_edit_guard};
-    use crate::app::AppEvent;
+    use crate::events::AppEvent;
     use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
 
     #[test]

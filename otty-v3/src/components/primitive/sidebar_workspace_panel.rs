@@ -1,7 +1,7 @@
 use iced::widget::{Space, container};
 use iced::{Element, Length, Theme};
 
-use crate::shared::ui::theme::ThemeProps;
+use crate::theme::ThemeProps;
 
 /// Props for rendering sidebar workspace panel container.
 pub(crate) struct SidebarWorkspacePanelProps<'a, Message> {

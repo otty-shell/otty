@@ -2,19 +2,18 @@ use iced::Task;
 
 use super::{App, AppEvent};
 use crate::guards::{MenuGuard, context_menu_guard, inline_edit_guard};
-use crate::routers;
+use crate::events;
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
 };
 
-/// Thin dispatch: route each event to its owning router or handler.
 pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let mut pre_dispatch_tasks = Vec::new();
 
     if app.widgets.quick_launch.has_inline_edit() && inline_edit_guard(&event) {
-        pre_dispatch_tasks.push(routers::route(
+        pre_dispatch_tasks.push(events::handle(
             app,
             AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
                 QuickLaunchUiEvent::CancelInlineEdit,
@@ -30,7 +29,7 @@ pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         }
     }
 
-    let dispatch_task = routers::route(app, event);
+    let dispatch_task = events::handle(app, event);
     if pre_dispatch_tasks.is_empty() {
         dispatch_task
     } else {
@@ -53,17 +52,17 @@ pub(super) fn any_context_menu_open(app: &App) -> bool {
 /// Close all open context menus before dispatching a new event.
 fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch(vec![
-        routers::route(
+        events::handle(
             app,
             AppEvent::Sidebar(SidebarEvent::Ui(SidebarUiEvent::DismissAddMenu)),
         ),
-        routers::route(
+        events::handle(
             app,
             AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
                 QuickLaunchUiEvent::ContextMenuDismiss,
             )),
         ),
-        routers::route(
+        events::handle(
             app,
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Ui(
                 TerminalWorkspaceUiEvent::CloseAllContextMenus,
