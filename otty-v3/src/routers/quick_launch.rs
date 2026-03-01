@@ -6,7 +6,7 @@ use crate::widgets::quick_launch::{
     QuickLaunchCtx, QuickLaunchEffect, QuickLaunchEvent, QuickLaunchUiEvent,
 };
 use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
-use crate::widgets::tabs::TabsCommand;
+use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 
 /// Route a quick launch event through widget reduction or app orchestration.
 pub(crate) fn route(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
@@ -78,9 +78,9 @@ fn open_wizard_create_tab(
     app.pending_workflows
         .push_quick_launch_wizard_create(parent_path);
 
-    Task::done(AppEvent::TabsCommand(TabsCommand::OpenWizardTab {
+    Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenWizardTab {
         title: String::from("Create Quick Launch"),
-    }))
+    })))
 }
 
 fn open_wizard_edit_tab(
@@ -92,7 +92,9 @@ fn open_wizard_edit_tab(
     app.pending_workflows
         .push_quick_launch_wizard_edit(path, command);
 
-    Task::done(AppEvent::TabsCommand(TabsCommand::OpenWizardTab { title }))
+    Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenWizardTab {
+        title,
+    })))
 }
 
 fn open_command_terminal_tab(
@@ -102,11 +104,11 @@ fn open_command_terminal_tab(
 ) -> Task<AppEvent> {
     let terminal_id = app.widgets.terminal_workspace.allocate_terminal_id();
 
-    Task::done(AppEvent::TabsCommand(TabsCommand::OpenCommandTab {
+    Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenCommandTab {
         terminal_id,
         title,
         settings: Box::new(settings),
-    }))
+    })))
 }
 
 fn open_error_tab(
@@ -117,7 +119,9 @@ fn open_error_tab(
     app.pending_workflows
         .push_quick_launch_error_tab(title.clone(), message);
 
-    Task::done(AppEvent::TabsCommand(TabsCommand::OpenErrorTab { title }))
+    Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenErrorTab {
+        title,
+    })))
 }
 
 #[cfg(test)]

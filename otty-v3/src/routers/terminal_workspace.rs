@@ -2,7 +2,7 @@ use iced::Task;
 
 use crate::app::{App, AppEvent};
 use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
-use crate::widgets::tabs::TabsCommand;
+use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceCommand, TerminalWorkspaceCtx, TerminalWorkspaceEffect,
     TerminalWorkspaceEvent,
@@ -41,13 +41,15 @@ pub(crate) fn route_effect(
 ) -> Task<AppEvent> {
     match effect {
         TerminalWorkspaceEffect::TabClosed { tab_id } => {
-            Task::done(AppEvent::TabsCommand(TabsCommand::Close { tab_id }))
+            Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::CloseTab {
+                tab_id,
+            })))
         },
         TerminalWorkspaceEffect::TitleChanged { tab_id, title } => {
-            Task::done(AppEvent::TabsCommand(TabsCommand::SetTitle {
+            Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::SetTitle {
                 tab_id,
                 title,
-            }))
+            })))
         },
         TerminalWorkspaceEffect::SyncExplorer => {
             sync_explorer_from_terminal(app)

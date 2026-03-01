@@ -1,7 +1,7 @@
 use iced::Task;
 
 use crate::app::{App, AppEvent};
-use crate::widgets::tabs::TabsCommand;
+use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 
 pub(crate) mod chrome;
 pub(crate) mod explorer;
@@ -21,9 +21,7 @@ pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         // Chrome widget
         AppEvent::Chrome(event) => chrome::route(app, event),
         // Tabs widget
-        AppEvent::TabsUi(event) => tabs::route_event(app, event),
-        AppEvent::TabsEffect(effect) => tabs::route_effect(app, effect),
-        AppEvent::TabsCommand(command) => tabs::route_command(app, command),
+        AppEvent::Tabs(event) => tabs::route(app, event),
         // Quick Launch widget
         AppEvent::QuickLaunch(event) => quick_launch::route(app, event),
         // Terminal Workspace widget
@@ -47,7 +45,9 @@ pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             flow::tabs::open_file_terminal_tab(app, file_path)
         },
         AppEvent::CloseTab { tab_id } => {
-            Task::done(AppEvent::TabsCommand(TabsCommand::Close { tab_id }))
+            Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::CloseTab {
+                tab_id,
+            })))
         },
         // Direct operations
         AppEvent::SyncTerminalGridSizes => {

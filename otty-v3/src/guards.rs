@@ -69,14 +69,12 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         },
         AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Effect(_))
         | AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Effect(_))
-        | AppEvent::TabsEffect(_)
+        | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Effect(_))
         | AppEvent::QuickLaunch(
             crate::widgets::quick_launch::QuickLaunchEvent::Effect(_),
         )
         | AppEvent::TerminalWorkspaceEffect(_) => Allow,
-        AppEvent::TabsCommand(_) | AppEvent::TerminalWorkspaceCommand(_) => {
-            Allow
-        },
+        AppEvent::TerminalWorkspaceCommand(_) => Allow,
         AppEvent::Settings(
             crate::widgets::settings::SettingsEvent::Effect(_),
         )
@@ -97,7 +95,7 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         | AppEvent::SyncTerminalGridSizes => Allow,
         AppEvent::Keyboard(_) => Ignore,
         AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Ui(_))
-        | AppEvent::TabsUi(_) => Allow,
+        | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Ui(_)) => Allow,
         _ => Dismiss,
     }
 }
@@ -138,9 +136,11 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             !matches!(event, E::Widget(_) | E::PaneGridCursorMoved { .. })
         },
         AppEvent::TerminalWorkspaceEffect(_) => false,
-        AppEvent::TabsCommand(_) | AppEvent::TerminalWorkspaceCommand(_) => {
-            false
+        AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Ui(event)) => {
+            use crate::widgets::tabs::TabsUiEvent as E;
+            matches!(event, E::ActivateTab { .. } | E::CloseTab { .. })
         },
+        AppEvent::TerminalWorkspaceCommand(_) => false,
         AppEvent::Settings(
             crate::widgets::settings::SettingsEvent::Effect(_),
         )
@@ -162,7 +162,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
         AppEvent::Keyboard(_) | AppEvent::Window(_) => false,
         AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Effect(_))
         | AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Effect(_))
-        | AppEvent::TabsEffect(_) => false,
+        | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Effect(_)) => false,
         _ => true,
     }
 }

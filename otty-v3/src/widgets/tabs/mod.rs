@@ -1,4 +1,3 @@
-pub(crate) mod command;
 pub(crate) mod event;
 pub(crate) mod model;
 mod reducer;
@@ -7,8 +6,7 @@ pub(crate) mod view;
 
 use iced::Task;
 
-pub(crate) use self::command::TabsCommand;
-pub(crate) use self::event::{TabsEffect, TabsEvent};
+pub(crate) use self::event::{TabsEffect, TabsEvent, TabsUiEvent};
 use self::model::TabsViewModel;
 use self::state::TabsState;
 
@@ -25,9 +23,9 @@ impl TabsWidget {
         }
     }
 
-    /// Reduce a tabs command into state updates and effects.
-    pub(crate) fn reduce(&mut self, command: TabsCommand) -> Task<TabsEffect> {
-        reducer::reduce(&mut self.state, command)
+    /// Reduce a tabs UI event into state updates and effect events.
+    pub(crate) fn reduce(&mut self, event: TabsUiEvent) -> Task<TabsEvent> {
+        reducer::reduce(&mut self.state, event)
     }
 
     /// Produce the tabs view model for rendering.

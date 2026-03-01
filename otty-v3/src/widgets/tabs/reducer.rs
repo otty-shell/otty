@@ -1,47 +1,46 @@
 use iced::Task;
 use otty_ui_term::settings::Settings;
 
-use super::command::TabsCommand;
-use super::event::TabsEffect;
+use super::event::{TabsEffect, TabsEvent, TabsUiEvent};
 use super::model::{TabContent, TabItem};
 use super::state::TabsState;
 
-/// Reduce a tabs command into state mutation and effect tasks.
+/// Reduce a tabs UI event into state mutation and effect tasks.
 pub(crate) fn reduce(
     state: &mut TabsState,
-    command: TabsCommand,
-) -> Task<TabsEffect> {
-    match command {
-        TabsCommand::Activate { tab_id } => activate(state, tab_id),
-        TabsCommand::Close { tab_id } => close(state, tab_id),
-        TabsCommand::SetTitle { tab_id, title } => {
+    event: TabsUiEvent,
+) -> Task<TabsEvent> {
+    match event {
+        TabsUiEvent::ActivateTab { tab_id } => activate(state, tab_id),
+        TabsUiEvent::CloseTab { tab_id } => close(state, tab_id),
+        TabsUiEvent::SetTitle { tab_id, title } => {
             state.set_title(tab_id, title);
             Task::none()
         },
-        TabsCommand::OpenTerminalTab { terminal_id, title } => {
+        TabsUiEvent::OpenTerminalTab { terminal_id, title } => {
             open_terminal_tab(state, terminal_id, title)
         },
-        TabsCommand::OpenCommandTab {
+        TabsUiEvent::OpenCommandTab {
             terminal_id,
             title,
             settings,
         } => open_command_tab(state, terminal_id, title, *settings),
-        TabsCommand::OpenSettingsTab => open_settings_tab(state),
-        TabsCommand::OpenWizardTab { title } => open_wizard_tab(state, title),
-        TabsCommand::OpenErrorTab { title } => open_error_tab(state, title),
+        TabsUiEvent::OpenSettingsTab => open_settings_tab(state),
+        TabsUiEvent::OpenWizardTab { title } => open_wizard_tab(state, title),
+        TabsUiEvent::OpenErrorTab { title } => open_error_tab(state, title),
     }
 }
 
-fn activate(state: &mut TabsState, tab_id: u64) -> Task<TabsEffect> {
+fn activate(state: &mut TabsState, tab_id: u64) -> Task<TabsEvent> {
     if !state.contains(tab_id) {
         return Task::none();
     }
 
     state.activate(Some(tab_id));
-    Task::done(TabsEffect::Activated { tab_id })
+    Task::done(TabsEvent::Effect(TabsEffect::Activated { tab_id }))
 }
 
-fn close(state: &mut TabsState, tab_id: u64) -> Task<TabsEffect> {
+fn close(state: &mut TabsState, tab_id: u64) -> Task<TabsEvent> {
     if !state.contains(tab_id) {
         return Task::none();
     }
@@ -62,18 +61,18 @@ fn close(state: &mut TabsState, tab_id: u64) -> Task<TabsEffect> {
         state.activate(next_active);
     }
 
-    Task::done(TabsEffect::Closed {
+    Task::done(TabsEvent::Effect(TabsEffect::Closed {
         tab_id,
         new_active_id: state.active_tab_id(),
         remaining: state.len(),
-    })
+    }))
 }
 
 fn open_terminal_tab(
     state: &mut TabsState,
     terminal_id: u64,
     title: String,
-) -> Task<TabsEffect> {
+) -> Task<TabsEvent> {
     let tab_id = state.allocate_tab_id();
 
     state.insert(
@@ -83,12 +82,12 @@ fn open_terminal_tab(
     state.activate(Some(tab_id));
 
     Task::batch(vec![
-        Task::done(TabsEffect::TerminalTabOpened {
+        Task::done(TabsEvent::Effect(TabsEffect::TerminalTabOpened {
             tab_id,
             terminal_id,
             title,
-        }),
-        Task::done(TabsEffect::ScrollBarToEnd),
+        })),
+        Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
     ])
 }
 
@@ -97,7 +96,7 @@ fn open_command_tab(
     terminal_id: u64,
     title: String,
     settings: Settings,
-) -> Task<TabsEffect> {
+) -> Task<TabsEvent> {
     let tab_id = state.allocate_tab_id();
 
     state.insert(
@@ -107,17 +106,17 @@ fn open_command_tab(
     state.activate(Some(tab_id));
 
     Task::batch(vec![
-        Task::done(TabsEffect::CommandTabOpened {
+        Task::done(TabsEvent::Effect(TabsEffect::CommandTabOpened {
             tab_id,
             terminal_id,
             title,
             settings: Box::new(settings),
-        }),
-        Task::done(TabsEffect::ScrollBarToEnd),
+        })),
+        Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
     ])
 }
 
-fn open_wizard_tab(state: &mut TabsState, title: String) -> Task<TabsEffect> {
+fn open_wizard_tab(state: &mut TabsState, title: String) -> Task<TabsEvent> {
     let tab_id = state.allocate_tab_id();
     state.insert(
         tab_id,
@@ -125,12 +124,12 @@ fn open_wizard_tab(state: &mut TabsState, title: String) -> Task<TabsEffect> {
     );
     state.activate(Some(tab_id));
     Task::batch(vec![
-        Task::done(TabsEffect::WizardTabOpened { tab_id }),
-        Task::done(TabsEffect::ScrollBarToEnd),
+        Task::done(TabsEvent::Effect(TabsEffect::WizardTabOpened { tab_id })),
+        Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
     ])
 }
 
-fn open_error_tab(state: &mut TabsState, title: String) -> Task<TabsEffect> {
+fn open_error_tab(state: &mut TabsState, title: String) -> Task<TabsEvent> {
     let tab_id = state.allocate_tab_id();
     state.insert(
         tab_id,
@@ -138,12 +137,12 @@ fn open_error_tab(state: &mut TabsState, title: String) -> Task<TabsEffect> {
     );
     state.activate(Some(tab_id));
     Task::batch(vec![
-        Task::done(TabsEffect::ErrorTabOpened { tab_id }),
-        Task::done(TabsEffect::ScrollBarToEnd),
+        Task::done(TabsEvent::Effect(TabsEffect::ErrorTabOpened { tab_id })),
+        Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
     ])
 }
 
-fn open_settings_tab(state: &mut TabsState) -> Task<TabsEffect> {
+fn open_settings_tab(state: &mut TabsState) -> Task<TabsEvent> {
     let tab_id = state.allocate_tab_id();
 
     state.insert(
@@ -153,8 +152,8 @@ fn open_settings_tab(state: &mut TabsState) -> Task<TabsEffect> {
     state.activate(Some(tab_id));
 
     Task::batch(vec![
-        Task::done(TabsEffect::SettingsTabOpened),
-        Task::done(TabsEffect::ScrollBarToEnd),
+        Task::done(TabsEvent::Effect(TabsEffect::SettingsTabOpened)),
+        Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
     ])
 }
 
@@ -165,7 +164,7 @@ mod tests {
     #[test]
     fn activate_nonexistent_tab_is_noop() {
         let mut state = TabsState::default();
-        let _ = reduce(&mut state, TabsCommand::Activate { tab_id: 999 });
+        let _ = reduce(&mut state, TabsUiEvent::ActivateTab { tab_id: 999 });
         assert!(state.active_tab_id().is_none());
     }
 
@@ -174,7 +173,7 @@ mod tests {
         let mut state = TabsState::default();
         let _ = reduce(
             &mut state,
-            TabsCommand::OpenTerminalTab {
+            TabsUiEvent::OpenTerminalTab {
                 terminal_id: 1,
                 title: String::from("bash"),
             },
@@ -203,7 +202,7 @@ mod tests {
         let mut state = TabsState::default();
         let _ = reduce(
             &mut state,
-            TabsCommand::OpenCommandTab {
+            TabsUiEvent::OpenCommandTab {
                 terminal_id: 1,
                 title: String::from("nvim main.rs"),
                 settings: Box::new(settings),
@@ -219,7 +218,7 @@ mod tests {
     #[test]
     fn open_settings_tab_activates_settings() {
         let mut state = TabsState::default();
-        let _ = reduce(&mut state, TabsCommand::OpenSettingsTab);
+        let _ = reduce(&mut state, TabsUiEvent::OpenSettingsTab);
 
         assert_eq!(state.len(), 1);
         let active = state.active_tab().expect("should have active tab");
@@ -232,7 +231,7 @@ mod tests {
         let mut state = TabsState::default();
         let _ = reduce(
             &mut state,
-            TabsCommand::OpenTerminalTab {
+            TabsUiEvent::OpenTerminalTab {
                 terminal_id: 1,
                 title: String::from("First"),
             },
@@ -241,14 +240,14 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            TabsCommand::OpenTerminalTab {
+            TabsUiEvent::OpenTerminalTab {
                 terminal_id: 2,
                 title: String::from("Second"),
             },
         );
         let second_id = state.active_tab_id().unwrap();
 
-        let _ = reduce(&mut state, TabsCommand::Close { tab_id: second_id });
+        let _ = reduce(&mut state, TabsUiEvent::CloseTab { tab_id: second_id });
         assert_eq!(state.active_tab_id(), Some(first_id));
     }
 
@@ -257,14 +256,14 @@ mod tests {
         let mut state = TabsState::default();
         let _ = reduce(
             &mut state,
-            TabsCommand::OpenTerminalTab {
+            TabsUiEvent::OpenTerminalTab {
                 terminal_id: 1,
                 title: String::from("Only"),
             },
         );
         let tab_id = state.active_tab_id().unwrap();
 
-        let _ = reduce(&mut state, TabsCommand::Close { tab_id });
+        let _ = reduce(&mut state, TabsUiEvent::CloseTab { tab_id });
         assert!(state.active_tab_id().is_none());
         assert!(state.is_empty());
     }
@@ -274,7 +273,7 @@ mod tests {
         let mut state = TabsState::default();
         let _ = reduce(
             &mut state,
-            TabsCommand::OpenTerminalTab {
+            TabsUiEvent::OpenTerminalTab {
                 terminal_id: 1,
                 title: String::from("old"),
             },
@@ -283,7 +282,7 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            TabsCommand::SetTitle {
+            TabsUiEvent::SetTitle {
                 tab_id,
                 title: String::from("new"),
             },

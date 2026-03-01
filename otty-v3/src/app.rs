@@ -21,7 +21,7 @@ use crate::widgets::explorer::{ExplorerEvent, ExplorerWidget};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchWidget};
 use crate::widgets::settings::{SettingsEvent, SettingsWidget};
 use crate::widgets::sidebar::{SidebarEvent, SidebarWidget};
-use crate::widgets::tabs::{TabsCommand, TabsEffect, TabsEvent, TabsWidget};
+use crate::widgets::tabs::{TabsEvent, TabsWidget};
 use crate::widgets::terminal_workspace::model::ShellSession;
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
@@ -126,8 +126,7 @@ pub(crate) enum AppEvent {
     // Chrome widget
     Chrome(ChromeEvent),
     // Tabs widget
-    TabsUi(TabsEvent),
-    TabsEffect(TabsEffect),
+    Tabs(TabsEvent),
     // Quick Launch widget
     QuickLaunch(QuickLaunchEvent),
     // Terminal Workspace widget
@@ -138,7 +137,6 @@ pub(crate) enum AppEvent {
     // Settings widget
     Settings(SettingsEvent),
     // Widget command dispatch
-    TabsCommand(TabsCommand),
     TerminalWorkspaceCommand(TerminalWorkspaceCommand),
     // Cross-widget workflows
     OpenTerminalTab,

@@ -4,21 +4,20 @@ use iced::Task;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
 use crate::app::{App, AppEvent};
-use crate::widgets::tabs::TabsCommand;
+use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
 
 pub(crate) fn open_terminal_tab(app: &mut App) -> Task<AppEvent> {
     let terminal_id = app.widgets.terminal_workspace.allocate_terminal_id();
     let title = app.shell_session.name().to_string();
 
-    Task::done(AppEvent::TabsCommand(TabsCommand::OpenTerminalTab {
-        terminal_id,
-        title,
-    }))
+    Task::done(AppEvent::Tabs(TabsEvent::Ui(
+        TabsUiEvent::OpenTerminalTab { terminal_id, title },
+    )))
 }
 
 pub(crate) fn open_settings_tab(_app: &mut App) -> Task<AppEvent> {
-    Task::done(AppEvent::TabsCommand(TabsCommand::OpenSettingsTab))
+    Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenSettingsTab)))
 }
 
 pub(crate) fn open_file_terminal_tab(
@@ -37,11 +36,11 @@ pub(crate) fn open_file_terminal_tab(
         .map(ToString::to_string)
         .unwrap_or_else(|| format!("{file_display}"));
 
-    Task::done(AppEvent::TabsCommand(TabsCommand::OpenCommandTab {
+    Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenCommandTab {
         terminal_id,
         title,
         settings: Box::new(settings),
-    }))
+    })))
 }
 
 fn editor_terminal_settings(app: &App, file_path: &Path) -> Option<Settings> {

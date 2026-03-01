@@ -5,7 +5,7 @@ use iced::widget::{
 };
 use iced::{Alignment, Element, Length, alignment};
 
-use super::super::event::TabsEvent;
+use super::super::event::TabsUiEvent;
 use crate::shared::ui::icons;
 use crate::shared::ui::theme::{StyleOverrides, ThemeProps};
 
@@ -30,7 +30,7 @@ pub(crate) struct TabBarProps<'a> {
 }
 
 /// Render the tab bar as a horizontal scrollable row.
-pub(crate) fn view<'a>(props: TabBarProps<'a>) -> Element<'a, TabsEvent> {
+pub(crate) fn view<'a>(props: TabBarProps<'a>) -> Element<'a, TabsUiEvent> {
     let active_id = props.active_tab_id.unwrap_or(u64::MAX);
     let mut tabs_row = row![].spacing(0);
 
@@ -74,7 +74,7 @@ fn tab_button<'a>(
     title: &str,
     is_active: bool,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, TabsEvent> {
+) -> Element<'a, TabsUiEvent> {
     let palette = theme_props.theme.iced_palette();
     let foreground = palette.foreground;
     let dim_foreground = palette.dim_foreground;
@@ -114,7 +114,7 @@ fn tab_button<'a>(
         .align_y(alignment::Vertical::Center);
 
     let close_button = button(close_icon_view)
-        .on_press(TabsEvent::CloseTab { tab_id })
+        .on_press(TabsUiEvent::CloseTab { tab_id })
         .padding(TAB_CLOSE_BUTTON_PADDING)
         .height(Length::Fill)
         .style(|_, _| iced::widget::button::Style::default());
@@ -153,7 +153,7 @@ fn tab_button<'a>(
         });
 
     button(pill)
-        .on_press(TabsEvent::ActivateTab { tab_id })
+        .on_press(TabsUiEvent::ActivateTab { tab_id })
         .padding(TAB_BUTTON_PADDING)
         .width(TAB_BUTTON_WIDTH)
         .height(TAB_BUTTON_HEIGHT)

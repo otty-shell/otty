@@ -22,6 +22,7 @@ use crate::widgets::sidebar;
 use crate::widgets::sidebar::{
     SidebarEvent, SidebarItem, SidebarPane, SidebarUiEvent,
 };
+use crate::widgets::tabs::TabsEvent;
 use crate::widgets::tabs::model::TabContent;
 use crate::widgets::tabs::view::tab_bar;
 use crate::widgets::terminal_workspace::view::{
@@ -277,7 +278,8 @@ fn view_tab_area<'a>(
         theme: theme_props,
     };
 
-    let tab_bar = tab_bar::view(tab_bar_props).map(AppEvent::TabsUi);
+    let tab_bar = tab_bar::view(tab_bar_props)
+        .map(|event| AppEvent::Tabs(TabsEvent::Ui(event)));
 
     let content = view_tab_content(app, theme_props);
 

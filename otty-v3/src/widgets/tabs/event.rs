@@ -1,8 +1,34 @@
-/// UI events emitted by tab bar views.
+use otty_ui_term::settings::Settings;
+
+/// UI events emitted by tab bar views and cross-widget tab workflows.
 #[derive(Debug, Clone)]
-pub(crate) enum TabsEvent {
-    ActivateTab { tab_id: u64 },
-    CloseTab { tab_id: u64 },
+pub(crate) enum TabsUiEvent {
+    ActivateTab {
+        tab_id: u64,
+    },
+    CloseTab {
+        tab_id: u64,
+    },
+    SetTitle {
+        tab_id: u64,
+        title: String,
+    },
+    OpenTerminalTab {
+        terminal_id: u64,
+        title: String,
+    },
+    OpenCommandTab {
+        terminal_id: u64,
+        title: String,
+        settings: Box<Settings>,
+    },
+    OpenSettingsTab,
+    OpenWizardTab {
+        title: String,
+    },
+    OpenErrorTab {
+        title: String,
+    },
 }
 
 /// Effect events produced by the tabs reducer.
@@ -37,4 +63,13 @@ pub(crate) enum TabsEffect {
     ErrorTabOpened { tab_id: u64 },
     /// Tab bar should scroll to show the newest tab.
     ScrollBarToEnd,
+}
+
+/// Tabs event stream routed through the app update loop.
+#[derive(Debug, Clone)]
+pub(crate) enum TabsEvent {
+    /// UI/internal event reduced by the tabs widget.
+    Ui(TabsUiEvent),
+    /// External effect orchestrated by app-level routing.
+    Effect(TabsEffect),
 }
