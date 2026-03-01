@@ -1,9 +1,13 @@
 use iced::Task;
 use iced::widget::operation::snap_to_end;
 
-use crate::app::{App, AppEvent};
+use crate::app::{App, AppEvent, PendingQuickLaunchWizard};
+use crate::widgets::explorer::ExplorerCommand;
+use crate::widgets::quick_launch::QuickLaunchCommand;
+use crate::widgets::settings::SettingsCommand;
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_SCROLL_ID;
 use crate::widgets::tabs::{TabsCommand, TabsEffect, TabsEvent};
+use crate::widgets::terminal_workspace::TerminalWorkspaceCommand;
 use crate::widgets::terminal_workspace::model::TerminalKind;
 use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
 
@@ -31,18 +35,12 @@ pub(crate) fn route_effect(
             let mut tasks: Vec<Task<AppEvent>> = Vec::new();
 
             // Focus the terminal in the activated tab.
-            tasks.push(
-                crate::routers::terminal_workspace::route_command(
-                    app,
-                    crate::widgets::terminal_workspace::TerminalWorkspaceCommand::FocusActive,
-                ),
-            );
-            tasks.push(
-                crate::routers::terminal_workspace::route_command(
-                    app,
-                    crate::widgets::terminal_workspace::TerminalWorkspaceCommand::SyncSelection { tab_id },
-                ),
-            );
+            tasks.push(Task::done(AppEvent::TerminalWorkspaceCommand(
+                TerminalWorkspaceCommand::FocusActive,
+            )));
+            tasks.push(Task::done(AppEvent::TerminalWorkspaceCommand(
+                TerminalWorkspaceCommand::SyncSelection { tab_id },
+            )));
 
             // Sync explorer from terminal CWD.
             let active_tab_id = Some(tab_id);
@@ -51,10 +49,9 @@ pub(crate) fn route_effect(
                 .terminal_workspace
                 .shell_cwd_for_active_tab(active_tab_id)
             {
-                tasks.push(crate::routers::explorer::route_command(
-                    app,
-                    crate::widgets::explorer::ExplorerCommand::SyncRoot { cwd },
-                ));
+                tasks.push(Task::done(AppEvent::ExplorerCommand(
+                    ExplorerCommand::SyncRoot { cwd },
+                )));
             }
 
             Task::batch(tasks)
@@ -67,20 +64,14 @@ pub(crate) fn route_effect(
             let mut tasks: Vec<Task<AppEvent>> = Vec::new();
 
             // Notify terminal workspace of tab closure.
-            tasks.push(
-                crate::routers::terminal_workspace::route_command(
-                    app,
-                    crate::widgets::terminal_workspace::TerminalWorkspaceCommand::TabClosed { tab_id },
-                ),
-            );
+            tasks.push(Task::done(AppEvent::TerminalWorkspaceCommand(
+                TerminalWorkspaceCommand::TabClosed { tab_id },
+            )));
 
             // Notify quick launch of tab closure.
-            tasks.push(crate::routers::quick_launch::route_command(
-                app,
-                crate::widgets::quick_launch::QuickLaunchCommand::TabClosed {
-                    tab_id,
-                },
-            ));
+            tasks.push(Task::done(AppEvent::QuickLaunchCommand(
+                QuickLaunchCommand::TabClosed { tab_id },
+            )));
 
             // Sync explorer for the new active tab.
             if let Some(active_id) = new_active_id {
@@ -89,29 +80,22 @@ pub(crate) fn route_effect(
                     .terminal_workspace
                     .shell_cwd_for_active_tab(Some(active_id))
                 {
-                    tasks.push(crate::routers::explorer::route_command(
-                        app,
-                        crate::widgets::explorer::ExplorerCommand::SyncRoot {
-                            cwd,
-                        },
-                    ));
+                    tasks.push(Task::done(AppEvent::ExplorerCommand(
+                        ExplorerCommand::SyncRoot { cwd },
+                    )));
                 }
             }
 
             if remaining > 0 {
-                tasks.push(
-                    crate::routers::terminal_workspace::route_command(
-                        app,
-                        crate::widgets::terminal_workspace::TerminalWorkspaceCommand::FocusActive,
-                    ),
-                );
+                tasks.push(Task::done(AppEvent::TerminalWorkspaceCommand(
+                    TerminalWorkspaceCommand::FocusActive,
+                )));
                 if let Some(active_id) = new_active_id {
-                    tasks.push(
-                        crate::routers::terminal_workspace::route_command(
-                            app,
-                            crate::widgets::terminal_workspace::TerminalWorkspaceCommand::SyncSelection { tab_id: active_id },
-                        ),
-                    );
+                    tasks.push(Task::done(AppEvent::TerminalWorkspaceCommand(
+                        TerminalWorkspaceCommand::SyncSelection {
+                            tab_id: active_id,
+                        },
+                    )));
                 }
             }
 
@@ -127,9 +111,8 @@ pub(crate) fn route_effect(
                 app.shell_session.session().clone(),
             ));
 
-            crate::routers::terminal_workspace::route_command(
-                app,
-                crate::widgets::terminal_workspace::TerminalWorkspaceCommand::OpenTab {
+            Task::done(AppEvent::TerminalWorkspaceCommand(
+                TerminalWorkspaceCommand::OpenTab {
                     tab_id,
                     terminal_id,
                     default_title: title,
@@ -137,16 +120,15 @@ pub(crate) fn route_effect(
                     kind: TerminalKind::Shell,
                     sync_explorer: true,
                 },
-            )
+            ))
         },
         TabsEffect::CommandTabOpened {
             tab_id,
             terminal_id,
             title,
             settings,
-        } => crate::routers::terminal_workspace::route_command(
-            app,
-            crate::widgets::terminal_workspace::TerminalWorkspaceCommand::OpenTab {
+        } => Task::done(AppEvent::TerminalWorkspaceCommand(
+            TerminalWorkspaceCommand::OpenTab {
                 tab_id,
                 terminal_id,
                 default_title: title,
@@ -154,15 +136,47 @@ pub(crate) fn route_effect(
                 kind: TerminalKind::Command,
                 sync_explorer: false,
             },
-        ),
+        )),
         TabsEffect::SettingsTabOpened => {
-            crate::routers::settings::route_command(
-                app,
-                crate::widgets::settings::SettingsCommand::Reload,
-            )
+            Task::done(AppEvent::SettingsCommand(SettingsCommand::Reload))
         },
-        TabsEffect::WizardTabOpened { .. } => Task::none(),
-        TabsEffect::ErrorTabOpened { .. } => Task::none(),
+        TabsEffect::WizardTabOpened { tab_id } => {
+            match app.pending_workflows.pop_quick_launch_wizard() {
+                Some(PendingQuickLaunchWizard::Create { parent_path }) => {
+                    Task::done(AppEvent::QuickLaunchCommand(
+                        QuickLaunchCommand::WizardInitializeCreate {
+                            tab_id,
+                            parent_path,
+                        },
+                    ))
+                },
+                Some(PendingQuickLaunchWizard::Edit { path, command }) => {
+                    Task::done(AppEvent::QuickLaunchCommand(
+                        QuickLaunchCommand::WizardInitializeEdit {
+                            tab_id,
+                            path,
+                            command,
+                        },
+                    ))
+                },
+                None => Task::none(),
+            }
+        },
+        TabsEffect::ErrorTabOpened { tab_id } => {
+            let Some(payload) =
+                app.pending_workflows.pop_quick_launch_error_tab()
+            else {
+                return Task::none();
+            };
+            let (title, message) = payload.into_parts();
+            Task::done(AppEvent::QuickLaunchCommand(
+                QuickLaunchCommand::OpenErrorTab {
+                    tab_id,
+                    title,
+                    message,
+                },
+            ))
+        },
         TabsEffect::ScrollBarToEnd => snap_to_end(TAB_BAR_SCROLL_ID),
     }
 }
@@ -176,47 +190,51 @@ fn map_tabs_event_to_command(event: TabsEvent) -> TabsCommand {
 
 #[cfg(test)]
 mod tests {
-    use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
-
     use super::route_effect;
-    use crate::app::App;
+    use crate::app::{App, PendingQuickLaunchWizard};
     use crate::widgets::tabs::TabsEffect;
 
-    #[cfg(unix)]
-    const VALID_PROGRAM: &str = "/bin/sh";
-    #[cfg(target_os = "windows")]
-    const VALID_PROGRAM: &str = "cmd.exe";
+    #[test]
+    fn given_wizard_opened_effect_when_pending_wizard_exists_then_queue_is_consumed()
+     {
+        let (mut app, _) = App::new();
+        app.pending_workflows
+            .push_quick_launch_wizard_create(vec![String::from("Demo")]);
 
-    fn command_settings() -> Settings {
-        let mut settings = Settings::default();
-        settings.backend = settings.backend.clone().with_session(
-            SessionKind::from_local_options(
-                LocalSessionOptions::default().with_program(VALID_PROGRAM),
-            ),
-        );
-        settings
+        let _ =
+            route_effect(&mut app, TabsEffect::WizardTabOpened { tab_id: 7 });
+
+        assert!(app.pending_workflows.pop_quick_launch_wizard().is_none());
     }
 
     #[test]
-    fn given_command_tab_effect_when_routed_then_terminal_tab_is_command_kind()
-    {
+    fn given_error_tab_opened_effect_when_pending_payload_exists_then_queue_is_consumed()
+     {
         let (mut app, _) = App::new();
-
-        let _ = route_effect(
-            &mut app,
-            TabsEffect::CommandTabOpened {
-                tab_id: 7,
-                terminal_id: 99,
-                title: String::from("edit main.rs"),
-                settings: Box::new(command_settings()),
-            },
+        app.pending_workflows.push_quick_launch_error_tab(
+            String::from("Failed"),
+            String::from("boom"),
         );
 
-        let tab = app
-            .widgets
-            .terminal_workspace
-            .tab(7)
-            .expect("terminal tab should be opened");
-        assert!(!tab.is_shell());
+        let _ =
+            route_effect(&mut app, TabsEffect::ErrorTabOpened { tab_id: 11 });
+
+        assert!(app.pending_workflows.pop_quick_launch_error_tab().is_none());
+    }
+
+    #[test]
+    fn given_wizard_opened_effect_without_pending_then_queue_stays_empty() {
+        let (mut app, _) = App::new();
+
+        let _ =
+            route_effect(&mut app, TabsEffect::WizardTabOpened { tab_id: 1 });
+
+        match app.pending_workflows.pop_quick_launch_wizard() {
+            Some(PendingQuickLaunchWizard::Create { .. })
+            | Some(PendingQuickLaunchWizard::Edit { .. }) => {
+                panic!("queue should stay empty")
+            },
+            None => {},
+        }
     }
 }

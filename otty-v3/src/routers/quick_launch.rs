@@ -14,10 +14,7 @@ pub(crate) fn route_event(
     // The add button lives in the quick launch panel but triggers the
     // sidebar add-menu overlay, so redirect instead of reducing.
     if matches!(event, QuickLaunchEvent::HeaderAddButtonPressed) {
-        return crate::routers::sidebar::route_event(
-            app,
-            SidebarEvent::AddMenuOpen,
-        );
+        return Task::done(AppEvent::SidebarUi(SidebarEvent::AddMenuOpen));
     }
 
     let command = map_quick_launch_ui_event_to_command(event);
@@ -209,38 +206,27 @@ fn map_quick_launch_ui_event_to_command(
 fn map_quick_launch_effect_to_app_task(
     effect: QuickLaunchEffect,
 ) -> Task<AppEvent> {
-    use crate::app::AppFlowEvent;
-
     match effect {
         QuickLaunchEffect::OpenWizardCreateTab { parent_path } => {
-            Task::done(AppEvent::Flow(
-                AppFlowEvent::OpenQuickLaunchWizardCreateTab { parent_path },
-            ))
+            Task::done(AppEvent::OpenQuickLaunchWizardCreateTab { parent_path })
         },
         QuickLaunchEffect::OpenWizardEditTab { path, command } => {
-            Task::done(AppEvent::Flow(
-                AppFlowEvent::OpenQuickLaunchWizardEditTab { path, command },
-            ))
+            Task::done(AppEvent::OpenQuickLaunchWizardEditTab { path, command })
         },
         QuickLaunchEffect::OpenCommandTerminalTab {
             title,
             settings,
             command,
-        } => Task::done(AppEvent::Flow(
-            AppFlowEvent::OpenQuickLaunchCommandTerminalTab {
-                title,
-                settings,
-                command,
-            },
-        )),
+        } => Task::done(AppEvent::OpenQuickLaunchCommandTerminalTab {
+            title,
+            settings,
+            command,
+        }),
         QuickLaunchEffect::OpenErrorTab { title, message } => {
-            Task::done(AppEvent::Flow(AppFlowEvent::OpenQuickLaunchErrorTab {
-                title,
-                message,
-            }))
+            Task::done(AppEvent::OpenQuickLaunchErrorTab { title, message })
         },
         QuickLaunchEffect::CloseTabRequested { tab_id } => {
-            Task::done(AppEvent::Flow(AppFlowEvent::CloseTab { tab_id }))
+            Task::done(AppEvent::CloseTab { tab_id })
         },
         QuickLaunchEffect::WizardSetError { tab_id, message } => {
             Task::done(AppEvent::QuickLaunchUi(

@@ -73,7 +73,7 @@ Widgets-first уменьшает когнитивную нагрузку: оди
 - Использует типизированные маршруты `AppEvent::<Widget>Ui(WidgetUiEvent)` и `AppEvent::<Widget>Effect(WidgetEffectEvent)`.
 - Обрабатывает `UiEvent` только через `WidgetCommand`, а `EffectEvent` только как app task/action.
 - Применяет правило: одно событие (`Ui` или `Effect`) — одно действие, независимо от источника.
-- `src/update.rs` остается thin-dispatch слоем: только верхнеуровневый `match` по `AppEvent`.
+- `src/update.rs` остается thin-dispatch слоем: верхнеуровневый `match` по `AppEvent`; допускается app-wide pre-dispatch guard-блок перед dispatch, если он не выполняет widget-specific `map_*` и не содержит бизнес-логики конкретного widget-а.
 - Доменная маршрутизация и `map_*` (`Ui -> Command`, `Effect -> AppEvent/Task`) выносится в owning router-модули с entrypoint-ами `route_event/route_effect`.
 - Кросс-widget orchestration выполняется в слое `routers/*`: для простых one-hop сценариев допускается прямой `Task<AppEvent::<Target>...>` из owning router-а, для сложных/многошаговых/переиспользуемых сценариев используется `AppFlowEvent` + `routers/flow/*` (где `flow/mod.rs` делает только thin-dispatch по use-case).
 - Управляет общесистемными событиями окна/клавиатуры/subscriptions.
@@ -416,7 +416,7 @@ otty/src/
 17. Анти-цикл инвариант: запрещено `WidgetUiEvent::A -> WidgetCommand::A -> WidgetUiEvent::A -> ...`; `reduce` типизированно возвращает только `Effect`-события и не может эмитить `Ui`.
 18. Для многосоставных реакций допускается `Task::batch`, но каждое событие в batch должно оставаться детерминированным (один event -> одно действие).
 19. Чтобы оркестрация не разрасталась, `Ui` и `Effect` перечисления должны быть сгруппированы по поддоменам (`launch/*`, `tabs/*`) при росте и вынесены в `map_*` функции внутри router-модулей.
-20. `src/update.rs` НЕ содержит widget-specific mapping/бизнес-ветвления: только верхнеуровневая диспетчеризация `AppEvent -> routers::<domain>::route_event/route_effect`.
+20. `src/update.rs` НЕ содержит widget-specific mapping/бизнес-ветвления: верхнеуровневая диспетчеризация `AppEvent -> routers::<domain>::route_event/route_effect`; допускается app-wide pre-dispatch guard-блок (например interaction/menu gate), если он кросс-доменный и не выполняет `Ui -> Command` / `Effect -> AppEvent` mapping.
 21. Кросс-widget сценарии обрабатываются в `routers/*` через app-level события; для простых one-hop переходов допустим прямой dispatch в `AppEvent::<Target>...`, а для сложных/многошаговых/переиспользуемых сценариев используется `AppFlowEvent` + `routers/flow/*`.
 22. Роутеры могут знать несколько widget-ов и вызывать только их публичный API (например, `reduce/vm`); прямые зависимости `router -> router` запрещены.
 23. В `map_*_effect_event_to_app_task` допускается и рекомендуется wildcard fallback (`_ => Task::none()`) для неиспользуемых/будущих `Effect`-вариантов; это считается явным no-op, а не потерей события.
@@ -1098,7 +1098,7 @@ Blockers:
 10. Для каждого widget есть тест/проверка маршрутизации, подтверждающая отсутствие цикла `UiEvent -> Command -> same UiEvent`.
 11. В каждом widget-е есть отдельные типы `UiEvent` и `EffectEvent`; `view` возвращает `Element<UiEvent>`, а `reduce` возвращает `Task<EffectEvent>`.
 12. Для сценариев с несколькими side-effect шагами есть отдельные `Effect`-события подготовки и запуска (`Prepare*`, `Run*`, `Done*`).
-13. `src/update.rs` содержит только top-level dispatch (`AppEvent -> routers::<domain>::route_event/route_effect`) и не содержит widget-specific `map_*`.
+13. `src/update.rs` содержит top-level dispatch (`AppEvent -> routers::<domain>::route_event/route_effect`) и не содержит widget-specific `map_*`; допускается app-wide pre-dispatch guard-блок, если он не содержит доменной бизнес-логики widget-ов и не делает widget-specific routing mapping.
 14. Для каждого widget-а существует owning router модуль с явным `Ui -> Command` и `Effect -> AppEvent/Task` mapping через `route_event/route_effect`; для `Effect` разрешен wildcard no-op fallback.
 15. В каждом widget-е существует `view/mod.rs`; если `view/` разбит на несколько файлов, `view/mod.rs` используется как обязательный aggregator/root `view(...)`.
 16. Wildcard fallback в `map_*_effect_event_to_app_task` (`_ => Task::none()`) считается корректным поведением и не является нарушением детерминизма.

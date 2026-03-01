@@ -5,6 +5,8 @@ mod update;
 #[path = "view.rs"]
 pub(crate) mod view;
 
+use std::collections::VecDeque;
+
 use iced::window::Direction;
 use iced::{Element, Size, Subscription, Task, Theme};
 use otty_ui_term::settings::{
@@ -14,73 +16,114 @@ use otty_ui_term::settings::{
 use crate::shared::ui::fonts::FontsConfig;
 use crate::shared::ui::theme::{AppTheme, ThemeManager};
 use crate::state::State;
-use crate::widgets::chrome::{ChromeEffect, ChromeEvent, ChromeWidget};
-use crate::widgets::explorer::{ExplorerEffect, ExplorerEvent, ExplorerWidget};
-use crate::widgets::quick_launch::{
-    QuickLaunchEffect, QuickLaunchEvent, QuickLaunchWidget,
+use crate::widgets::chrome::{
+    ChromeCommand, ChromeEffect, ChromeEvent, ChromeWidget,
 };
-use crate::widgets::settings::SettingsWidget;
+use crate::widgets::explorer::{
+    ExplorerCommand, ExplorerEffect, ExplorerEvent, ExplorerWidget,
+};
+use crate::widgets::quick_launch::{
+    QuickLaunchCommand, QuickLaunchEffect, QuickLaunchEvent, QuickLaunchWidget,
+};
 use crate::widgets::settings::event::{SettingsEffect, SettingsEvent};
-use crate::widgets::sidebar::{SidebarEffect, SidebarEvent, SidebarWidget};
-use crate::widgets::tabs::{TabsEffect, TabsEvent, TabsWidget};
+use crate::widgets::settings::{SettingsCommand, SettingsWidget};
+use crate::widgets::sidebar::{
+    SidebarCommand, SidebarEffect, SidebarEvent, SidebarWidget,
+};
+use crate::widgets::tabs::{TabsCommand, TabsEffect, TabsEvent, TabsWidget};
 use crate::widgets::terminal_workspace::model::ShellSession;
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
 use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceWidget,
+    TerminalWorkspaceCommand, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
+    TerminalWorkspaceWidget,
 };
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
 
-/// Cross-widget orchestration events.
+/// A pending quick launch wizard initialization request.
 #[derive(Debug, Clone)]
-pub(crate) enum AppFlowEvent {
-    OpenTerminalTab,
-    OpenSettingsTab,
-    OpenQuickLaunchWizardCreateTab {
-        parent_path: Vec<String>,
-    },
-    QuickLaunchWizardCreateTabOpened {
-        tab_id: u64,
-        parent_path: Vec<String>,
-    },
-    OpenQuickLaunchWizardEditTab {
+pub(crate) enum PendingQuickLaunchWizard {
+    /// Initialize a create wizard after the tab has opened.
+    Create { parent_path: Vec<String> },
+    /// Initialize an edit wizard after the tab has opened.
+    Edit {
         path: Vec<String>,
         command: Box<crate::widgets::quick_launch::model::QuickLaunch>,
     },
-    QuickLaunchWizardEditTabOpened {
-        tab_id: u64,
+}
+
+/// A queue of cross-widget pending workflow continuations.
+#[derive(Default)]
+pub(crate) struct PendingWorkflows {
+    quick_launch_wizards: VecDeque<PendingQuickLaunchWizard>,
+    quick_launch_error_tabs: VecDeque<PendingQuickLaunchErrorTab>,
+}
+
+/// A pending quick launch error payload.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingQuickLaunchErrorTab {
+    title: String,
+    message: String,
+}
+
+impl PendingQuickLaunchErrorTab {
+    /// Create a pending quick launch error payload.
+    pub(crate) fn new(title: String, message: String) -> Self {
+        Self { title, message }
+    }
+
+    /// Consume payload and return `(title, message)`.
+    pub(crate) fn into_parts(self) -> (String, String) {
+        (self.title, self.message)
+    }
+}
+
+impl PendingWorkflows {
+    /// Queue quick launch create wizard initialization.
+    pub(crate) fn push_quick_launch_wizard_create(
+        &mut self,
+        parent_path: Vec<String>,
+    ) {
+        self.quick_launch_wizards
+            .push_back(PendingQuickLaunchWizard::Create { parent_path });
+    }
+
+    /// Queue quick launch edit wizard initialization.
+    pub(crate) fn push_quick_launch_wizard_edit(
+        &mut self,
         path: Vec<String>,
         command: Box<crate::widgets::quick_launch::model::QuickLaunch>,
-    },
-    OpenQuickLaunchCommandTerminalTab {
-        title: String,
-        settings: otty_ui_term::settings::Settings,
-        command: Box<crate::widgets::quick_launch::model::QuickLaunch>,
-    },
-    QuickLaunchCommandTerminalTabOpened {
-        tab_id: u64,
-        terminal_id: u64,
-        title: String,
-        settings: otty_ui_term::settings::Settings,
-    },
-    OpenQuickLaunchErrorTab {
-        title: String,
-        message: String,
-    },
-    QuickLaunchErrorTabOpened {
-        tab_id: u64,
+    ) {
+        self.quick_launch_wizards
+            .push_back(PendingQuickLaunchWizard::Edit { path, command });
+    }
+
+    /// Pop the next quick launch wizard initialization continuation.
+    pub(crate) fn pop_quick_launch_wizard(
+        &mut self,
+    ) -> Option<PendingQuickLaunchWizard> {
+        self.quick_launch_wizards.pop_front()
+    }
+
+    /// Queue quick launch error tab payload.
+    pub(crate) fn push_quick_launch_error_tab(
+        &mut self,
         title: String,
         message: String,
-    },
-    OpenFileTerminalTab {
-        file_path: std::path::PathBuf,
-    },
-    CloseTab {
-        tab_id: u64,
-    },
+    ) {
+        self.quick_launch_error_tabs
+            .push_back(PendingQuickLaunchErrorTab::new(title, message));
+    }
+
+    /// Pop the next quick launch error tab payload.
+    pub(crate) fn pop_quick_launch_error_tab(
+        &mut self,
+    ) -> Option<PendingQuickLaunchErrorTab> {
+        self.quick_launch_error_tabs.pop_front()
+    }
 }
 
 /// App-wide events that drive the root update loop.
@@ -108,8 +151,39 @@ pub(crate) enum AppEvent {
     // Settings widget
     SettingsUi(SettingsEvent),
     SettingsEffect(SettingsEffect),
-    // Cross-widget flows
-    Flow(AppFlowEvent),
+    // Widget command dispatch
+    SidebarCommand(SidebarCommand),
+    ChromeCommand(ChromeCommand),
+    TabsCommand(TabsCommand),
+    QuickLaunchCommand(QuickLaunchCommand),
+    TerminalWorkspaceCommand(TerminalWorkspaceCommand),
+    ExplorerCommand(ExplorerCommand),
+    SettingsCommand(SettingsCommand),
+    // Cross-widget workflows
+    OpenTerminalTab,
+    OpenSettingsTab,
+    OpenQuickLaunchWizardCreateTab {
+        parent_path: Vec<String>,
+    },
+    OpenQuickLaunchWizardEditTab {
+        path: Vec<String>,
+        command: Box<crate::widgets::quick_launch::model::QuickLaunch>,
+    },
+    OpenQuickLaunchCommandTerminalTab {
+        title: String,
+        settings: otty_ui_term::settings::Settings,
+        command: Box<crate::widgets::quick_launch::model::QuickLaunch>,
+    },
+    OpenQuickLaunchErrorTab {
+        title: String,
+        message: String,
+    },
+    OpenFileTerminalTab {
+        file_path: std::path::PathBuf,
+    },
+    CloseTab {
+        tab_id: u64,
+    },
     // Direct operations
     SyncTerminalGridSizes,
     Keyboard(iced::keyboard::Event),
@@ -136,6 +210,7 @@ pub(crate) struct App {
     pub(crate) terminal_settings: Settings,
     pub(crate) shell_session: ShellSession,
     pub(crate) state: State,
+    pub(crate) pending_workflows: PendingWorkflows,
     pub(crate) widgets: Widgets,
 }
 
@@ -182,6 +257,7 @@ impl App {
             terminal_settings,
             shell_session,
             state,
+            pending_workflows: PendingWorkflows::default(),
             widgets,
         };
 

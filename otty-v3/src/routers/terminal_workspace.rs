@@ -23,7 +23,7 @@ pub(crate) fn route_command(
 ) -> Task<AppEvent> {
     let ctx = build_ctx_from_parts(
         app.widgets.tabs.active_tab_id(),
-        crate::routers::window::current_pane_grid_size(app),
+        current_pane_grid_size_from_app(app),
         app.state.screen_size,
         app.widgets.sidebar.cursor(),
     );
@@ -40,16 +40,13 @@ pub(crate) fn route_effect(
 ) -> Task<AppEvent> {
     match effect {
         TerminalWorkspaceEffect::TabClosed { tab_id } => {
-            crate::routers::tabs::route_command(
-                app,
-                TabsCommand::Close { tab_id },
-            )
+            Task::done(AppEvent::TabsCommand(TabsCommand::Close { tab_id }))
         },
         TerminalWorkspaceEffect::TitleChanged { tab_id, title } => {
-            crate::routers::tabs::route_command(
-                app,
-                TabsCommand::SetTitle { tab_id, title },
-            )
+            Task::done(AppEvent::TabsCommand(TabsCommand::SetTitle {
+                tab_id,
+                title,
+            }))
         },
         TerminalWorkspaceEffect::SyncExplorer => {
             sync_explorer_from_terminal(app)
@@ -68,9 +65,18 @@ fn sync_explorer_from_terminal(app: &mut App) -> Task<AppEvent> {
         return Task::none();
     };
 
-    crate::routers::explorer::route_command(
-        app,
+    Task::done(AppEvent::ExplorerCommand(
         crate::widgets::explorer::ExplorerCommand::SyncRoot { cwd },
+    ))
+}
+
+fn current_pane_grid_size_from_app(app: &App) -> iced::Size {
+    let sidebar = &app.widgets.sidebar;
+    crate::state::pane_grid_size(
+        app.state.screen_size,
+        sidebar.is_hidden(),
+        crate::widgets::sidebar::SIDEBAR_MENU_WIDTH,
+        sidebar.effective_workspace_ratio(),
     )
 }
 

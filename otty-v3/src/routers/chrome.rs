@@ -7,6 +7,14 @@ use crate::widgets::sidebar::SidebarEvent;
 /// Route a chrome UI event through the widget reducer and map effects.
 pub(crate) fn route_event(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
     let command = map_chrome_event_to_command(event);
+    route_command(app, command)
+}
+
+/// Route a chrome command through the widget reducer and map effects.
+pub(crate) fn route_command(
+    app: &mut App,
+    command: ChromeCommand,
+) -> Task<AppEvent> {
     app.widgets
         .chrome
         .reduce(command)
@@ -28,9 +36,7 @@ pub(crate) fn route_effect(effect: ChromeEffect) -> Task<AppEvent> {
         ToggleSidebarVisibility => {
             Task::done(AppEvent::SidebarUi(SidebarEvent::ToggleVisibility))
         },
-        StartWindowDrag => {
-            window::latest().and_then(window::drag)
-        },
+        StartWindowDrag => window::latest().and_then(window::drag),
     }
 }
 

@@ -11,6 +11,14 @@ pub(crate) fn route_event(
     event: SidebarEvent,
 ) -> Task<AppEvent> {
     let command = map_sidebar_ui_event_to_command(event);
+    route_command(app, command)
+}
+
+/// Route a sidebar command through the widget reducer and map effects.
+pub(crate) fn route_command(
+    app: &mut App,
+    command: SidebarCommand,
+) -> Task<AppEvent> {
     app.widgets
         .sidebar
         .reduce(command, &SidebarCtx)
@@ -56,12 +64,8 @@ fn map_sidebar_effect_event_to_app_task(
         E::SyncTerminalGridSizes => {
             Task::done(AppEvent::SyncTerminalGridSizes)
         },
-        E::OpenSettingsTab => Task::done(AppEvent::Flow(
-            crate::app::AppFlowEvent::OpenSettingsTab,
-        )),
-        E::OpenTerminalTab => Task::done(AppEvent::Flow(
-            crate::app::AppFlowEvent::OpenTerminalTab,
-        )),
+        E::OpenSettingsTab => Task::done(AppEvent::OpenSettingsTab),
+        E::OpenTerminalTab => Task::done(AppEvent::OpenTerminalTab),
         E::QuickLaunchHeaderCreateCommand => {
             Task::done(AppEvent::QuickLaunchUi(
                 crate::widgets::quick_launch::QuickLaunchEvent::HeaderCreateCommand,

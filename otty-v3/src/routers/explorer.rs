@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use iced::Task;
 
 use crate::app::{App, AppEvent};
+use crate::widgets::explorer::model::FileNode;
+use crate::widgets::explorer::services::read_dir_nodes;
 use crate::widgets::explorer::{
     ExplorerCommand, ExplorerCtx, ExplorerEffect, ExplorerEvent,
 };
@@ -54,9 +56,7 @@ pub(crate) fn route_effect(effect: ExplorerEffect) -> Task<AppEvent> {
             })
         },
         ExplorerEffect::OpenFileTerminalTab { file_path } => {
-            Task::done(AppEvent::Flow(
-                crate::app::AppFlowEvent::OpenFileTerminalTab { file_path },
-            ))
+            Task::done(AppEvent::OpenFileTerminalTab { file_path })
         },
     }
 }
@@ -64,19 +64,16 @@ pub(crate) fn route_effect(effect: ExplorerEffect) -> Task<AppEvent> {
 /// Asynchronously read a directory and produce a completion event.
 fn load_directory_async<F>(dir: PathBuf, on_complete: F) -> Task<AppEvent>
 where
-    F: Fn(Vec<crate::widgets::explorer::model::FileNode>) -> AppEvent
-        + Send
-        + 'static,
+    F: Fn(Vec<FileNode>) -> AppEvent + Send + 'static,
 {
-    Task::perform(
-        async move { crate::widgets::explorer::services::read_dir_nodes(&dir) },
-        move |result| match result {
+    Task::perform(async move { read_dir_nodes(&dir) }, move |result| {
+        match result {
             Ok(nodes) => on_complete(nodes),
             Err(err) => AppEvent::ExplorerUi(ExplorerEvent::LoadFailed {
                 message: format!("{err}"),
             }),
-        },
-    )
+        }
+    })
 }
 
 fn map_event_to_command(event: ExplorerEvent) -> ExplorerCommand {

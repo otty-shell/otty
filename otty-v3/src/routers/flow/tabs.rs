@@ -4,7 +4,6 @@ use iced::Task;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
 use crate::app::{App, AppEvent};
-use crate::routers;
 use crate::widgets::tabs::TabsCommand;
 use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
 
@@ -16,15 +15,15 @@ pub(crate) fn open_terminal_tab(app: &mut App) -> Task<AppEvent> {
     let terminal_id = app.widgets.terminal_workspace.allocate_terminal_id();
     let title = app.shell_session.name().to_string();
 
-    routers::tabs::route_command(
-        app,
-        TabsCommand::OpenTerminalTab { terminal_id, title },
-    )
+    Task::done(AppEvent::TabsCommand(TabsCommand::OpenTerminalTab {
+        terminal_id,
+        title,
+    }))
 }
 
 /// Orchestrate opening a new settings tab.
-pub(crate) fn open_settings_tab(app: &mut App) -> Task<AppEvent> {
-    routers::tabs::route_command(app, TabsCommand::OpenSettingsTab)
+pub(crate) fn open_settings_tab(_app: &mut App) -> Task<AppEvent> {
+    Task::done(AppEvent::TabsCommand(TabsCommand::OpenSettingsTab))
 }
 
 /// Orchestrate opening a file in a new terminal tab (from explorer).
@@ -44,14 +43,11 @@ pub(crate) fn open_file_terminal_tab(
         .map(ToString::to_string)
         .unwrap_or_else(|| format!("{file_display}"));
 
-    routers::tabs::route_command(
-        app,
-        TabsCommand::OpenCommandTab {
-            terminal_id,
-            title,
-            settings: Box::new(settings),
-        },
-    )
+    Task::done(AppEvent::TabsCommand(TabsCommand::OpenCommandTab {
+        terminal_id,
+        title,
+        settings: Box::new(settings),
+    }))
 }
 
 fn editor_terminal_settings(app: &App, file_path: &Path) -> Option<Settings> {
@@ -93,42 +89,19 @@ fn parse_command_line(input: &str) -> Option<(String, Vec<String>)> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    use super::open_file_terminal_tab;
-    use crate::app::App;
-    use crate::widgets::settings::SettingsCommand;
-    use crate::widgets::tabs::model::TabContent;
+    use super::parse_command_line;
 
     #[test]
-    fn given_valid_editor_command_when_opening_file_then_command_tab_is_added()
+    fn given_valid_command_line_when_parsed_then_program_and_args_are_returned()
     {
-        let (mut app, _) = App::new();
-        let _ = crate::routers::settings::route_command(
-            &mut app,
-            SettingsCommand::EditorChanged(String::from("nvim -u NORC")),
-        );
-
-        let _ = open_file_terminal_tab(&mut app, PathBuf::from("/tmp/main.rs"));
-
-        assert_eq!(app.widgets.tabs.len(), 1);
-        assert_eq!(app.widgets.tabs.active_tab_title(), Some("main.rs"));
-        assert_eq!(
-            app.widgets.tabs.active_tab_content(),
-            Some(TabContent::Terminal),
-        );
+        let parsed =
+            parse_command_line("nvim -u NORC").expect("command should parse");
+        assert_eq!(parsed.0, "nvim");
+        assert_eq!(parsed.1, vec![String::from("-u"), String::from("NORC")]);
     }
 
     #[test]
-    fn given_invalid_editor_command_when_opening_file_then_no_tab_is_added() {
-        let (mut app, _) = App::new();
-        let _ = crate::routers::settings::route_command(
-            &mut app,
-            SettingsCommand::EditorChanged(String::from("nvim '")),
-        );
-
-        let _ = open_file_terminal_tab(&mut app, PathBuf::from("/tmp/main.rs"));
-
-        assert_eq!(app.widgets.tabs.len(), 0);
+    fn given_invalid_command_line_when_parsed_then_none_is_returned() {
+        assert!(parse_command_line("nvim '").is_none());
     }
 }

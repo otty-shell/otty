@@ -70,8 +70,23 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         | AppEvent::TabsEffect(_)
         | AppEvent::QuickLaunchEffect(_)
         | AppEvent::TerminalWorkspaceEffect(_) => Allow,
+        AppEvent::SidebarCommand(_)
+        | AppEvent::ChromeCommand(_)
+        | AppEvent::TabsCommand(_)
+        | AppEvent::QuickLaunchCommand(_)
+        | AppEvent::TerminalWorkspaceCommand(_)
+        | AppEvent::ExplorerCommand(_)
+        | AppEvent::SettingsCommand(_) => Allow,
         AppEvent::Window(_) | AppEvent::ResizeWindow(_) => Allow,
-        AppEvent::Flow(_) | AppEvent::SyncTerminalGridSizes => Allow,
+        AppEvent::OpenTerminalTab
+        | AppEvent::OpenSettingsTab
+        | AppEvent::OpenQuickLaunchWizardCreateTab { .. }
+        | AppEvent::OpenQuickLaunchWizardEditTab { .. }
+        | AppEvent::OpenQuickLaunchCommandTerminalTab { .. }
+        | AppEvent::OpenQuickLaunchErrorTab { .. }
+        | AppEvent::OpenFileTerminalTab { .. }
+        | AppEvent::CloseTab { .. }
+        | AppEvent::SyncTerminalGridSizes => Allow,
         AppEvent::Keyboard(_) => Ignore,
         AppEvent::ChromeUi(_) | AppEvent::TabsUi(_) => Allow,
         _ => Dismiss,
@@ -110,7 +125,22 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             !matches!(event, E::Widget(_) | E::PaneGridCursorMoved { .. })
         },
         AppEvent::TerminalWorkspaceEffect(_) => false,
-        AppEvent::Flow(_) | AppEvent::SyncTerminalGridSizes => false,
+        AppEvent::SidebarCommand(_)
+        | AppEvent::ChromeCommand(_)
+        | AppEvent::TabsCommand(_)
+        | AppEvent::QuickLaunchCommand(_)
+        | AppEvent::TerminalWorkspaceCommand(_)
+        | AppEvent::ExplorerCommand(_)
+        | AppEvent::SettingsCommand(_) => false,
+        AppEvent::OpenTerminalTab
+        | AppEvent::OpenSettingsTab
+        | AppEvent::OpenQuickLaunchWizardCreateTab { .. }
+        | AppEvent::OpenQuickLaunchWizardEditTab { .. }
+        | AppEvent::OpenQuickLaunchCommandTerminalTab { .. }
+        | AppEvent::OpenQuickLaunchErrorTab { .. }
+        | AppEvent::OpenFileTerminalTab { .. }
+        | AppEvent::CloseTab { .. }
+        | AppEvent::SyncTerminalGridSizes => false,
         AppEvent::Keyboard(_) | AppEvent::Window(_) => false,
         AppEvent::SidebarEffect(_)
         | AppEvent::ChromeEffect(_)
@@ -122,7 +152,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{MenuGuard, context_menu_guard, inline_edit_guard};
-    use crate::app::{AppEvent, AppFlowEvent};
+    use crate::app::AppEvent;
     use crate::widgets::sidebar::SidebarEvent;
 
     #[test]
@@ -134,9 +164,9 @@ mod tests {
     }
 
     #[test]
-    fn given_flow_event_when_context_menu_guard_runs_then_event_is_allowed() {
-        let guard =
-            context_menu_guard(&AppEvent::Flow(AppFlowEvent::OpenTerminalTab));
+    fn given_open_terminal_tab_when_context_menu_guard_runs_then_event_is_allowed()
+     {
+        let guard = context_menu_guard(&AppEvent::OpenTerminalTab);
         assert!(matches!(guard, MenuGuard::Allow));
     }
 

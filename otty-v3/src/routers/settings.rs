@@ -5,7 +5,9 @@ use otty_ui_term::settings::{
 
 use crate::app::{App, AppEvent};
 use crate::widgets::settings::event::SettingsEvent;
+use crate::widgets::settings::model::SettingsData;
 use crate::widgets::settings::{SettingsCommand, SettingsEffect};
+use crate::widgets::terminal_workspace::TerminalWorkspaceCommand;
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
@@ -35,28 +37,27 @@ pub(crate) fn route_effect(
     app: &mut App,
     effect: SettingsEffect,
 ) -> Task<AppEvent> {
+    use SettingsEffect::*;
+
     match effect {
-        SettingsEffect::ReloadLoaded(load) => {
+        ReloadLoaded(load) => {
             Task::done(AppEvent::SettingsUi(SettingsEvent::ReloadLoaded(load)))
         },
-        SettingsEffect::ReloadFailed(message) => Task::done(
-            AppEvent::SettingsUi(SettingsEvent::ReloadFailed(message)),
-        ),
-        SettingsEffect::SaveFailed(message) => {
+        ReloadFailed(message) => Task::done(AppEvent::SettingsUi(
+            SettingsEvent::ReloadFailed(message),
+        )),
+        SaveFailed(message) => {
             Task::done(AppEvent::SettingsUi(SettingsEvent::SaveFailed(message)))
         },
-        SettingsEffect::SaveCompleted(data) => {
+        SaveCompleted(data) => {
             Task::done(AppEvent::SettingsUi(SettingsEvent::SaveCompleted(data)))
         },
-        SettingsEffect::ApplyTheme(data) => apply_theme(app, &data),
+        ApplyTheme(data) => apply_theme(app, &data),
     }
 }
 
 /// Apply settings to app theme/runtime and propagate palette to terminals.
-fn apply_theme(
-    app: &mut App,
-    data: &crate::widgets::settings::model::SettingsData,
-) -> Task<AppEvent> {
+fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
     app.theme_manager
         .set_custom_palette(data.to_color_palette());
     let current_theme = app.theme_manager.current();
@@ -84,12 +85,11 @@ fn apply_theme(
     let palette = data.to_color_palette();
     let terminal_palette: otty_ui_term::ColorPalette = palette.into();
 
-    crate::routers::terminal_workspace::route_command(
-        app,
-        crate::widgets::terminal_workspace::TerminalWorkspaceCommand::ApplyTheme {
+    Task::done(AppEvent::TerminalWorkspaceCommand(
+        TerminalWorkspaceCommand::ApplyTheme {
             palette: Box::new(terminal_palette),
         },
-    )
+    ))
 }
 
 fn map_event_to_command(event: SettingsEvent) -> SettingsCommand {
