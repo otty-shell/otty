@@ -17,11 +17,7 @@ pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
         AppEvent::IcedReady => flow::tabs::open_terminal_tab(app),
         // Sidebar widget
-        AppEvent::SidebarUi(event) => sidebar::route_event(app, event),
-        AppEvent::SidebarEffect(event) => sidebar::route_effect(event),
-        AppEvent::SidebarCommand(command) => {
-            sidebar::route_command(app, command)
-        },
+        AppEvent::Sidebar(event) => sidebar::route(app, event),
         // Chrome widget
         AppEvent::Chrome(event) => chrome::route(app, event),
         // Tabs widget

@@ -1,7 +1,7 @@
 use iced::widget::{Space, button, column, container, row, scrollable, svg};
 use iced::{Border, Element, Length, Theme, alignment};
 
-use super::event::SidebarEvent;
+use super::event::SidebarUiEvent;
 use super::model::{SIDEBAR_MENU_WIDTH, SidebarItem, SidebarViewModel};
 use crate::shared::ui::icons;
 use crate::shared::ui::theme::ThemeProps;
@@ -21,7 +21,7 @@ pub(crate) struct SidebarViewProps<'a> {
 /// Render the sidebar menu rail. Workspace content is composed externally.
 pub(crate) fn view(
     props: SidebarViewProps<'_>,
-) -> Element<'_, SidebarEvent, Theme, iced::Renderer> {
+) -> Element<'_, SidebarUiEvent, Theme, iced::Renderer> {
     if props.vm.is_hidden {
         return container(Space::new())
             .width(Length::Shrink)
@@ -35,14 +35,14 @@ pub(crate) fn view(
         icons::SIDEBAR_TERMINAL,
         props.vm.active_item == SidebarItem::Terminal,
         props.theme,
-        SidebarEvent::SelectTerminal,
+        SidebarUiEvent::SelectTerminal,
     );
 
     let explorer_button = sidebar_button(
         icons::SIDEBAR_EXPLORER,
         props.vm.active_item == SidebarItem::Explorer,
         props.theme,
-        SidebarEvent::SelectExplorer,
+        SidebarUiEvent::SelectExplorer,
     );
 
     let main_menu = column![terminal_button, explorer_button]
@@ -65,7 +65,7 @@ pub(crate) fn view(
         icons::SIDEBAR_SETTINGS,
         false,
         props.theme,
-        SidebarEvent::OpenSettings,
+        SidebarUiEvent::OpenSettings,
     );
 
     let toggle_icon = if props.vm.is_workspace_open {
@@ -78,7 +78,7 @@ pub(crate) fn view(
         toggle_icon,
         false,
         props.theme,
-        SidebarEvent::ToggleWorkspace,
+        SidebarUiEvent::ToggleWorkspace,
     );
 
     let meta_menu = column![settings_button, toggle_button].spacing(0);
@@ -101,8 +101,8 @@ fn sidebar_button<'a>(
     icon: &'static [u8],
     is_active: bool,
     theme: ThemeProps<'a>,
-    on_press: SidebarEvent,
-) -> Element<'a, SidebarEvent, Theme, iced::Renderer> {
+    on_press: SidebarUiEvent,
+) -> Element<'a, SidebarUiEvent, Theme, iced::Renderer> {
     let palette = theme.theme.iced_palette();
     let base_color = palette.dim_foreground;
     let hover_color = palette.blue;

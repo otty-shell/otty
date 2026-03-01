@@ -19,7 +19,9 @@ use crate::widgets::quick_launch::view::{
 use crate::widgets::settings::SettingsEvent;
 use crate::widgets::settings::view::settings_form;
 use crate::widgets::sidebar;
-use crate::widgets::sidebar::{SidebarItem, SidebarPane};
+use crate::widgets::sidebar::{
+    SidebarEvent, SidebarItem, SidebarPane, SidebarUiEvent,
+};
 use crate::widgets::tabs::model::TabContent;
 use crate::widgets::tabs::view::tab_bar;
 use crate::widgets::terminal_workspace::view::{
@@ -54,9 +56,9 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         };
 
     let content_row = mouse_area(content_row).on_move(|position| {
-        AppEvent::SidebarUi(sidebar::SidebarEvent::WorkspaceCursorMoved {
-            position,
-        })
+        AppEvent::Sidebar(SidebarEvent::Ui(
+            SidebarUiEvent::WorkspaceCursorMoved { position },
+        ))
     });
 
     let mut layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> =
@@ -71,7 +73,7 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
                     app.state.screen_size,
                     theme_props,
                 )
-                .map(AppEvent::SidebarUi),
+                .map(|event| AppEvent::Sidebar(SidebarEvent::Ui(event))),
             );
         }
     }
@@ -181,7 +183,7 @@ fn view_sidebar_layout<'a>(
         vm: sidebar_vm,
         theme: theme_props,
     })
-    .map(AppEvent::SidebarUi);
+    .map(|event| AppEvent::Sidebar(SidebarEvent::Ui(event)));
 
     let palette = theme_props.theme.iced_palette();
 
@@ -208,7 +210,9 @@ fn view_sidebar_layout<'a>(
         .height(Length::Fill)
         .spacing(PANE_GRID_SPACING)
         .on_resize(PANE_GRID_RESIZE_GRAB, |event| {
-            AppEvent::SidebarUi(sidebar::SidebarEvent::Resized(event))
+            AppEvent::Sidebar(SidebarEvent::Ui(SidebarUiEvent::Resized(
+                event,
+            )))
         })
         .style(move |_: &Theme| {
             let mut separator = palette.dim_white;
@@ -392,22 +396,22 @@ fn view_add_menu_overlay<'a>(
     cursor: iced::Point,
     area_size: Size,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, sidebar::SidebarEvent, Theme, iced::Renderer> {
+) -> Element<'a, SidebarUiEvent, Theme, iced::Renderer> {
     let menu_items = [
         add_menu_item(
             "Create tab",
             theme_props,
-            sidebar::SidebarEvent::AddMenuCreateTab,
+            SidebarUiEvent::AddMenuCreateTab,
         ),
         add_menu_item(
             "Create command",
             theme_props,
-            sidebar::SidebarEvent::AddMenuCreateCommand,
+            SidebarUiEvent::AddMenuCreateCommand,
         ),
         add_menu_item(
             "Create folder",
             theme_props,
-            sidebar::SidebarEvent::AddMenuCreateFolder,
+            SidebarUiEvent::AddMenuCreateFolder,
         ),
     ];
 
@@ -453,11 +457,9 @@ fn view_add_menu_overlay<'a>(
     let dismiss_layer = mouse_area(
         container(text("")).width(Length::Fill).height(Length::Fill),
     )
-    .on_press(sidebar::SidebarEvent::DismissAddMenu)
-    .on_right_press(sidebar::SidebarEvent::DismissAddMenu)
-    .on_move(|position| sidebar::SidebarEvent::WorkspaceCursorMoved {
-        position,
-    });
+    .on_press(SidebarUiEvent::DismissAddMenu)
+    .on_right_press(SidebarUiEvent::DismissAddMenu)
+    .on_move(|position| SidebarUiEvent::WorkspaceCursorMoved { position });
 
     iced::widget::stack!(dismiss_layer, positioned_menu)
         .width(Length::Fill)
@@ -469,8 +471,8 @@ fn view_add_menu_overlay<'a>(
 fn add_menu_item<'a>(
     label: &'a str,
     theme_props: ThemeProps<'a>,
-    on_press: sidebar::SidebarEvent,
-) -> Element<'a, sidebar::SidebarEvent, Theme, iced::Renderer> {
+    on_press: SidebarUiEvent,
+) -> Element<'a, SidebarUiEvent, Theme, iced::Renderer> {
     menu_item::view(menu_item::MenuItemProps {
         label,
         theme: theme_props,

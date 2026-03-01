@@ -17,8 +17,8 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
     use MenuGuard::*;
 
     match event {
-        AppEvent::SidebarUi(event) => {
-            use crate::widgets::sidebar::SidebarEvent as E;
+        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Ui(event)) => {
+            use crate::widgets::sidebar::SidebarUiEvent as E;
             match event {
                 E::AddMenuDismiss
                 | E::AddMenuCreateTab
@@ -67,16 +67,16 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 _ => Dismiss,
             }
         },
-        AppEvent::SidebarEffect(_)
+        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Effect(_))
         | AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Effect(_))
         | AppEvent::TabsEffect(_)
         | AppEvent::QuickLaunch(
             crate::widgets::quick_launch::QuickLaunchEvent::Effect(_),
         )
         | AppEvent::TerminalWorkspaceEffect(_) => Allow,
-        AppEvent::SidebarCommand(_)
-        | AppEvent::TabsCommand(_)
-        | AppEvent::TerminalWorkspaceCommand(_) => Allow,
+        AppEvent::TabsCommand(_) | AppEvent::TerminalWorkspaceCommand(_) => {
+            Allow
+        },
         AppEvent::Settings(
             crate::widgets::settings::SettingsEvent::Effect(_),
         )
@@ -126,8 +126,8 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
         AppEvent::QuickLaunch(
             crate::widgets::quick_launch::QuickLaunchEvent::Effect(_),
         ) => false,
-        AppEvent::SidebarUi(event) => {
-            use crate::widgets::sidebar::SidebarEvent as E;
+        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Ui(event)) => {
+            use crate::widgets::sidebar::SidebarUiEvent as E;
             !matches!(
                 event,
                 E::WorkspaceCursorMoved { .. } | E::PaneGridCursorMoved { .. }
@@ -138,9 +138,9 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             !matches!(event, E::Widget(_) | E::PaneGridCursorMoved { .. })
         },
         AppEvent::TerminalWorkspaceEffect(_) => false,
-        AppEvent::SidebarCommand(_)
-        | AppEvent::TabsCommand(_)
-        | AppEvent::TerminalWorkspaceCommand(_) => false,
+        AppEvent::TabsCommand(_) | AppEvent::TerminalWorkspaceCommand(_) => {
+            false
+        },
         AppEvent::Settings(
             crate::widgets::settings::SettingsEvent::Effect(_),
         )
@@ -160,7 +160,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
         | AppEvent::CloseTab { .. }
         | AppEvent::SyncTerminalGridSizes => false,
         AppEvent::Keyboard(_) | AppEvent::Window(_) => false,
-        AppEvent::SidebarEffect(_)
+        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Effect(_))
         | AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Effect(_))
         | AppEvent::TabsEffect(_) => false,
         _ => true,
@@ -171,13 +171,14 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
 mod tests {
     use super::{MenuGuard, context_menu_guard, inline_edit_guard};
     use crate::app::AppEvent;
-    use crate::widgets::sidebar::SidebarEvent;
+    use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
 
     #[test]
     fn given_add_menu_open_when_context_menu_guard_runs_then_event_is_ignored()
     {
-        let guard =
-            context_menu_guard(&AppEvent::SidebarUi(SidebarEvent::AddMenuOpen));
+        let guard = context_menu_guard(&AppEvent::Sidebar(SidebarEvent::Ui(
+            SidebarUiEvent::AddMenuOpen,
+        )));
         assert!(matches!(guard, MenuGuard::Ignore));
     }
 

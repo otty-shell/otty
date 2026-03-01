@@ -1,6 +1,6 @@
 /// UI events emitted by the sidebar presentation layer.
 #[derive(Debug, Clone)]
-pub(crate) enum SidebarEvent {
+pub(crate) enum SidebarUiEvent {
     SelectTerminal,
     SelectExplorer,
     ToggleWorkspace,
@@ -26,4 +26,13 @@ pub(crate) enum SidebarEffect {
     QuickLaunchHeaderCreateCommand,
     QuickLaunchHeaderCreateFolder,
     QuickLaunchResetInteractionState,
+}
+
+/// Sidebar event stream routed through the app update loop.
+#[derive(Debug, Clone)]
+pub(crate) enum SidebarEvent {
+    /// UI/internal event reduced by the sidebar widget.
+    Ui(SidebarUiEvent),
+    /// External effect orchestrated by app-level routing.
+    Effect(SidebarEffect),
 }

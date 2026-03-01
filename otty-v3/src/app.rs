@@ -20,9 +20,7 @@ use crate::widgets::chrome::{ChromeEvent, ChromeWidget};
 use crate::widgets::explorer::{ExplorerEvent, ExplorerWidget};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchWidget};
 use crate::widgets::settings::{SettingsEvent, SettingsWidget};
-use crate::widgets::sidebar::{
-    SidebarCommand, SidebarEffect, SidebarEvent, SidebarWidget,
-};
+use crate::widgets::sidebar::{SidebarEvent, SidebarWidget};
 use crate::widgets::tabs::{TabsCommand, TabsEffect, TabsEvent, TabsWidget};
 use crate::widgets::terminal_workspace::model::ShellSession;
 use crate::widgets::terminal_workspace::services::{
@@ -124,8 +122,7 @@ impl PendingWorkflows {
 pub(crate) enum AppEvent {
     IcedReady,
     // Sidebar widget
-    SidebarUi(SidebarEvent),
-    SidebarEffect(SidebarEffect),
+    Sidebar(SidebarEvent),
     // Chrome widget
     Chrome(ChromeEvent),
     // Tabs widget
@@ -141,7 +138,6 @@ pub(crate) enum AppEvent {
     // Settings widget
     Settings(SettingsEvent),
     // Widget command dispatch
-    SidebarCommand(SidebarCommand),
     TabsCommand(TabsCommand),
     TerminalWorkspaceCommand(TerminalWorkspaceCommand),
     // Cross-widget workflows

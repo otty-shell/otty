@@ -1,7 +1,6 @@
 use iced::Task;
 
-use super::command::SidebarCommand;
-use super::event::SidebarEffect;
+use super::event::{SidebarEffect, SidebarEvent, SidebarUiEvent};
 use super::model::SidebarItem;
 use super::state::SidebarState;
 
@@ -10,81 +9,95 @@ const SIDEBAR_MIN_TAB_CONTENT_RATIO: f32 = 0.2;
 /// Read-only context for sidebar reduction.
 pub(crate) struct SidebarCtx;
 
-/// Reduce a sidebar command into state updates and effect events.
+/// Reduce a sidebar UI event into state updates and effect events.
 pub(crate) fn reduce(
     state: &mut SidebarState,
-    command: SidebarCommand,
+    event: SidebarUiEvent,
     _ctx: &SidebarCtx,
-) -> Task<SidebarEffect> {
-    match command {
-        SidebarCommand::SelectTerminal => {
+) -> Task<SidebarEvent> {
+    match event {
+        SidebarUiEvent::SelectTerminal => {
             state.set_active_item(SidebarItem::Terminal);
             if state.ensure_workspace_open(max_sidebar_workspace_ratio()) {
-                Task::done(SidebarEffect::SyncTerminalGridSizes)
+                Task::done(SidebarEvent::Effect(
+                    SidebarEffect::SyncTerminalGridSizes,
+                ))
             } else {
                 Task::none()
             }
         },
-        SidebarCommand::SelectExplorer => {
+        SidebarUiEvent::SelectExplorer => {
             state.set_active_item(SidebarItem::Explorer);
             if state.ensure_workspace_open(max_sidebar_workspace_ratio()) {
-                Task::done(SidebarEffect::SyncTerminalGridSizes)
+                Task::done(SidebarEvent::Effect(
+                    SidebarEffect::SyncTerminalGridSizes,
+                ))
             } else {
                 Task::none()
             }
         },
-        SidebarCommand::ToggleWorkspace => {
+        SidebarUiEvent::ToggleWorkspace => {
             let _ = state.toggle_workspace(max_sidebar_workspace_ratio());
-            Task::done(SidebarEffect::SyncTerminalGridSizes)
+            Task::done(SidebarEvent::Effect(
+                SidebarEffect::SyncTerminalGridSizes,
+            ))
         },
-        SidebarCommand::OpenSettings => {
-            Task::done(SidebarEffect::OpenSettingsTab)
+        SidebarUiEvent::OpenSettings => {
+            Task::done(SidebarEvent::Effect(SidebarEffect::OpenSettingsTab))
         },
-        SidebarCommand::AddMenuOpen => {
+        SidebarUiEvent::AddMenuOpen => {
             state.open_add_menu();
             Task::none()
         },
-        SidebarCommand::AddMenuDismiss => {
+        SidebarUiEvent::AddMenuDismiss => {
             state.dismiss_add_menu();
             Task::none()
         },
-        SidebarCommand::AddMenuCreateTab => {
+        SidebarUiEvent::AddMenuCreateTab => {
             state.dismiss_add_menu();
-            Task::done(SidebarEffect::OpenTerminalTab)
+            Task::done(SidebarEvent::Effect(SidebarEffect::OpenTerminalTab))
         },
-        SidebarCommand::AddMenuCreateCommand => {
+        SidebarUiEvent::AddMenuCreateCommand => {
             state.dismiss_add_menu();
-            Task::done(SidebarEffect::QuickLaunchHeaderCreateCommand)
+            Task::done(SidebarEvent::Effect(
+                SidebarEffect::QuickLaunchHeaderCreateCommand,
+            ))
         },
-        SidebarCommand::AddMenuCreateFolder => {
+        SidebarUiEvent::AddMenuCreateFolder => {
             state.dismiss_add_menu();
-            Task::done(SidebarEffect::QuickLaunchHeaderCreateFolder)
+            Task::done(SidebarEvent::Effect(
+                SidebarEffect::QuickLaunchHeaderCreateFolder,
+            ))
         },
-        SidebarCommand::WorkspaceCursorMoved { position } => {
+        SidebarUiEvent::WorkspaceCursorMoved { position } => {
             state.update_cursor(position);
             Task::none()
         },
-        SidebarCommand::ToggleVisibility => {
+        SidebarUiEvent::ToggleVisibility => {
             state.toggle_visibility();
-            Task::done(SidebarEffect::SyncTerminalGridSizes)
+            Task::done(SidebarEvent::Effect(
+                SidebarEffect::SyncTerminalGridSizes,
+            ))
         },
-        SidebarCommand::PaneGridCursorMoved { position } => {
+        SidebarUiEvent::PaneGridCursorMoved { position } => {
             state.update_cursor(position);
             Task::none()
         },
-        SidebarCommand::Resized(event) => {
+        SidebarUiEvent::Resized(event) => {
             state.mark_resizing();
-            let mut tasks = vec![Task::done(
+            let mut tasks = vec![Task::done(SidebarEvent::Effect(
                 SidebarEffect::QuickLaunchResetInteractionState,
-            )];
+            ))];
 
             if state.apply_resize(event, max_sidebar_workspace_ratio()) {
-                tasks.push(Task::done(SidebarEffect::SyncTerminalGridSizes));
+                tasks.push(Task::done(SidebarEvent::Effect(
+                    SidebarEffect::SyncTerminalGridSizes,
+                )));
             }
 
             Task::batch(tasks)
         },
-        SidebarCommand::DismissAddMenu => {
+        SidebarUiEvent::DismissAddMenu => {
             state.dismiss_add_menu();
             Task::none()
         },
@@ -101,23 +114,22 @@ mod tests {
     use iced::Point;
 
     use super::SidebarCtx;
-    use crate::widgets::sidebar::SidebarWidget;
-    use crate::widgets::sidebar::command::SidebarCommand;
     use crate::widgets::sidebar::model::SidebarItem;
+    use crate::widgets::sidebar::{SidebarUiEvent, SidebarWidget};
 
     #[test]
     fn given_toggle_visibility_command_when_reduced_then_sidebar_hidden_state_toggles()
      {
         let mut widget = SidebarWidget::new();
         let _task =
-            widget.reduce(SidebarCommand::ToggleVisibility, &SidebarCtx);
+            widget.reduce(SidebarUiEvent::ToggleVisibility, &SidebarCtx);
         assert!(widget.is_hidden());
     }
 
     #[test]
     fn given_select_explorer_command_when_reduced_then_active_item_changes() {
         let mut widget = SidebarWidget::new();
-        let _task = widget.reduce(SidebarCommand::SelectExplorer, &SidebarCtx);
+        let _task = widget.reduce(SidebarUiEvent::SelectExplorer, &SidebarCtx);
         let vm = widget.vm();
         assert_eq!(vm.active_item, SidebarItem::Explorer);
         assert!(vm.is_workspace_open);
@@ -128,11 +140,11 @@ mod tests {
      {
         let mut widget = SidebarWidget::new();
         let _open_task =
-            widget.reduce(SidebarCommand::AddMenuOpen, &SidebarCtx);
+            widget.reduce(SidebarUiEvent::AddMenuOpen, &SidebarCtx);
         assert!(widget.has_add_menu_open());
 
         let _dismiss_task =
-            widget.reduce(SidebarCommand::AddMenuDismiss, &SidebarCtx);
+            widget.reduce(SidebarUiEvent::AddMenuDismiss, &SidebarCtx);
         assert!(!widget.has_add_menu_open());
     }
 
@@ -142,7 +154,7 @@ mod tests {
         let mut widget = SidebarWidget::new();
         let expected = Point::new(42.0, 24.0);
         let _task = widget.reduce(
-            SidebarCommand::PaneGridCursorMoved { position: expected },
+            SidebarUiEvent::PaneGridCursorMoved { position: expected },
             &SidebarCtx,
         );
         assert_eq!(widget.cursor(), expected);

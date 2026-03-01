@@ -5,7 +5,7 @@ use crate::widgets::quick_launch::model::{NodePath, QuickLaunch};
 use crate::widgets::quick_launch::{
     QuickLaunchCtx, QuickLaunchEffect, QuickLaunchEvent, QuickLaunchUiEvent,
 };
-use crate::widgets::sidebar::SidebarEvent;
+use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
 use crate::widgets::tabs::TabsCommand;
 
 /// Route a quick launch event through widget reduction or app orchestration.
@@ -20,7 +20,9 @@ fn route_ui_event(app: &mut App, event: QuickLaunchUiEvent) -> Task<AppEvent> {
     // The add button lives in the quick launch panel but triggers the
     // sidebar add-menu overlay, so redirect instead of reducing.
     if matches!(event, QuickLaunchUiEvent::HeaderAddButtonPressed) {
-        return Task::done(AppEvent::SidebarUi(SidebarEvent::AddMenuOpen));
+        return Task::done(AppEvent::Sidebar(SidebarEvent::Ui(
+            SidebarUiEvent::AddMenuOpen,
+        )));
     }
 
     let ctx = build_ctx_from_parts(

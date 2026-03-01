@@ -4,7 +4,7 @@ use super::{App, AppEvent};
 use crate::guards::{MenuGuard, context_menu_guard, inline_edit_guard};
 use crate::routers;
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
-use crate::widgets::sidebar::SidebarEvent;
+use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
 use crate::widgets::terminal_workspace::TerminalWorkspaceCommand;
 
 /// Thin dispatch: route each event to its owning router or handler.
@@ -51,7 +51,10 @@ pub(super) fn any_context_menu_open(app: &App) -> bool {
 /// Close all open context menus before dispatching a new event.
 fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch(vec![
-        routers::route(app, AppEvent::SidebarUi(SidebarEvent::DismissAddMenu)),
+        routers::route(
+            app,
+            AppEvent::Sidebar(SidebarEvent::Ui(SidebarUiEvent::DismissAddMenu)),
+        ),
         routers::route(
             app,
             AppEvent::QuickLaunch(QuickLaunchEvent::Ui(

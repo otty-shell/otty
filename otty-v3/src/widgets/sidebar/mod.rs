@@ -1,12 +1,10 @@
-mod command;
 mod event;
 mod model;
 mod reducer;
 mod state;
 pub(crate) mod view;
 
-pub(crate) use command::SidebarCommand;
-pub(crate) use event::{SidebarEffect, SidebarEvent};
+pub(crate) use event::{SidebarEffect, SidebarEvent, SidebarUiEvent};
 use iced::widget::pane_grid;
 use iced::{Point, Task};
 pub(crate) use model::{
@@ -28,13 +26,13 @@ impl SidebarWidget {
         }
     }
 
-    /// Reduce a command into state updates and effect events.
+    /// Reduce a UI event into state updates and effect events.
     pub(crate) fn reduce(
         &mut self,
-        command: SidebarCommand,
+        event: SidebarUiEvent,
         ctx: &SidebarCtx,
-    ) -> Task<SidebarEffect> {
-        reducer::reduce(&mut self.state, command, ctx)
+    ) -> Task<SidebarEvent> {
+        reducer::reduce(&mut self.state, event, ctx)
     }
 
     /// Build a read-only view model for the presentation layer.

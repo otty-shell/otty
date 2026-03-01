@@ -2,7 +2,7 @@ use iced::{Task, window};
 
 use crate::app::{App, AppEvent};
 use crate::widgets::chrome::{ChromeEffect, ChromeEvent, ChromeUiEvent};
-use crate::widgets::sidebar::SidebarEvent;
+use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
 
 /// Route a chrome event through widget reduction or app orchestration.
 pub(crate) fn route(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
@@ -27,9 +27,9 @@ fn route_effect_event(effect: ChromeEffect) -> Task<AppEvent> {
             window::latest().and_then(|id| window::minimize(id, true))
         },
         CloseWindow => window::latest().and_then(window::close),
-        ToggleSidebarVisibility => {
-            Task::done(AppEvent::SidebarUi(SidebarEvent::ToggleVisibility))
-        },
+        ToggleSidebarVisibility => Task::done(AppEvent::Sidebar(
+            SidebarEvent::Ui(SidebarUiEvent::ToggleVisibility),
+        )),
         StartWindowDrag => window::latest().and_then(window::drag),
     }
 }
