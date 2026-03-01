@@ -68,14 +68,13 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             }
         },
         AppEvent::SidebarEffect(_)
-        | AppEvent::ChromeEffect(_)
+        | AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Effect(_))
         | AppEvent::TabsEffect(_)
         | AppEvent::QuickLaunch(
             crate::widgets::quick_launch::QuickLaunchEvent::Effect(_),
         )
         | AppEvent::TerminalWorkspaceEffect(_) => Allow,
         AppEvent::SidebarCommand(_)
-        | AppEvent::ChromeCommand(_)
         | AppEvent::TabsCommand(_)
         | AppEvent::TerminalWorkspaceCommand(_)
         | AppEvent::ExplorerCommand(_)
@@ -87,7 +86,8 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         | AppEvent::CloseTab { .. }
         | AppEvent::SyncTerminalGridSizes => Allow,
         AppEvent::Keyboard(_) => Ignore,
-        AppEvent::ChromeUi(_) | AppEvent::TabsUi(_) => Allow,
+        AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Ui(_))
+        | AppEvent::TabsUi(_) => Allow,
         _ => Dismiss,
     }
 }
@@ -129,7 +129,6 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
         },
         AppEvent::TerminalWorkspaceEffect(_) => false,
         AppEvent::SidebarCommand(_)
-        | AppEvent::ChromeCommand(_)
         | AppEvent::TabsCommand(_)
         | AppEvent::TerminalWorkspaceCommand(_)
         | AppEvent::ExplorerCommand(_)
@@ -141,7 +140,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
         | AppEvent::SyncTerminalGridSizes => false,
         AppEvent::Keyboard(_) | AppEvent::Window(_) => false,
         AppEvent::SidebarEffect(_)
-        | AppEvent::ChromeEffect(_)
+        | AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Effect(_))
         | AppEvent::TabsEffect(_) => false,
         _ => true,
     }

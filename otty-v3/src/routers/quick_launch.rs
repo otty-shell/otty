@@ -34,7 +34,10 @@ fn route_ui_event(app: &mut App, event: QuickLaunchUiEvent) -> Task<AppEvent> {
         .map(AppEvent::QuickLaunch)
 }
 
-fn route_effect_event(app: &mut App, effect: QuickLaunchEffect) -> Task<AppEvent> {
+fn route_effect_event(
+    app: &mut App,
+    effect: QuickLaunchEffect,
+) -> Task<AppEvent> {
     match effect {
         QuickLaunchEffect::OpenWizardCreateTab { parent_path } => {
             open_wizard_create_tab(app, parent_path)
@@ -43,9 +46,7 @@ fn route_effect_event(app: &mut App, effect: QuickLaunchEffect) -> Task<AppEvent
             open_wizard_edit_tab(app, path, command)
         },
         QuickLaunchEffect::OpenCommandTerminalTab {
-            title,
-            settings,
-            ..
+            title, settings, ..
         } => open_command_terminal_tab(app, title, settings),
         QuickLaunchEffect::OpenErrorTab { title, message } => {
             open_error_tab(app, title, message)
@@ -116,7 +117,6 @@ fn open_error_tab(
 
     Task::done(AppEvent::TabsCommand(TabsCommand::OpenErrorTab { title }))
 }
-
 
 #[cfg(test)]
 mod tests {

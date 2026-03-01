@@ -1,7 +1,7 @@
 use iced::widget::{MouseArea, Space, Stack, container, row, svg, text};
 use iced::{Element, Length, alignment, mouse};
 
-use super::super::event::ChromeEvent;
+use super::super::event::ChromeUiEvent;
 use crate::components::primitive::icon_button::{
     IconButtonEvent, IconButtonProps, IconButtonVariant,
     view as icon_button_view,
@@ -31,7 +31,9 @@ pub(crate) struct ActionBarProps<'a> {
 }
 
 /// Render the draggable window header with controls.
-pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeEvent> {
+pub(crate) fn view<'a>(
+    props: ActionBarProps<'a>,
+) -> Element<'a, ChromeUiEvent> {
     let title_font_size = props.fonts.ui.size * ACTION_BAR_TITLE_SCALE;
     let palette = props.theme.theme.iced_palette();
     let overrides = props.theme.overrides;
@@ -53,7 +55,7 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeEvent> {
         .align_y(alignment::Vertical::Center)
         .padding([0.0, ACTION_BAR_HORIZONTAL_PADDING]);
     let logo_container = MouseArea::new(logo_container)
-        .on_press(ChromeEvent::ToggleSidebarVisibility)
+        .on_press(ChromeUiEvent::ToggleSidebarVisibility)
         .interaction(mouse::Interaction::Pointer);
 
     let center_zone = container(detail_label)
@@ -77,11 +79,11 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeEvent> {
             IconButtonVariant::Standard,
             props.theme,
         )
-        .map(|_| ChromeEvent::ToggleFullScreen),
+        .map(|_| ChromeUiEvent::ToggleFullScreen),
         icon_button(WINDOW_TRAY, IconButtonVariant::Standard, props.theme)
-            .map(|_| ChromeEvent::MinimizeWindow),
+            .map(|_| ChromeUiEvent::MinimizeWindow),
         icon_button(WINDOW_CLOSE, IconButtonVariant::Danger, props.theme)
-            .map(|_| ChromeEvent::CloseWindow),
+            .map(|_| ChromeUiEvent::CloseWindow),
     ]
     .spacing(ACTION_BAR_CONTROLS_SPACING)
     .align_y(alignment::Vertical::Center);
@@ -98,8 +100,8 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeEvent> {
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(ChromeEvent::StartWindowDrag)
-    .on_double_click(ChromeEvent::ToggleFullScreen);
+    .on_press(ChromeUiEvent::StartWindowDrag)
+    .on_double_click(ChromeUiEvent::ToggleFullScreen);
 
     let base_row = row![
         left_controls,

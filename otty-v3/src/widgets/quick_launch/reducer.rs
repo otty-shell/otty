@@ -304,7 +304,7 @@ pub(crate) fn reduce(
             }
             Task::none()
         },
-        _ => Task::none()
+        _ => Task::none(),
     }
 }
 

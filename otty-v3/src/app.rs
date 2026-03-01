@@ -16,9 +16,7 @@ use otty_ui_term::settings::{
 use crate::shared::ui::fonts::FontsConfig;
 use crate::shared::ui::theme::{AppTheme, ThemeManager};
 use crate::state::State;
-use crate::widgets::chrome::{
-    ChromeCommand, ChromeEffect, ChromeEvent, ChromeWidget,
-};
+use crate::widgets::chrome::{ChromeEvent, ChromeWidget};
 use crate::widgets::explorer::{
     ExplorerCommand, ExplorerEffect, ExplorerEvent, ExplorerWidget,
 };
@@ -132,8 +130,7 @@ pub(crate) enum AppEvent {
     SidebarUi(SidebarEvent),
     SidebarEffect(SidebarEffect),
     // Chrome widget
-    ChromeUi(ChromeEvent),
-    ChromeEffect(ChromeEffect),
+    Chrome(ChromeEvent),
     // Tabs widget
     TabsUi(TabsEvent),
     TabsEffect(TabsEffect),
@@ -150,7 +147,6 @@ pub(crate) enum AppEvent {
     SettingsEffect(SettingsEffect),
     // Widget command dispatch
     SidebarCommand(SidebarCommand),
-    ChromeCommand(ChromeCommand),
     TabsCommand(TabsCommand),
     TerminalWorkspaceCommand(TerminalWorkspaceCommand),
     ExplorerCommand(ExplorerCommand),
@@ -158,12 +154,8 @@ pub(crate) enum AppEvent {
     // Cross-widget workflows
     OpenTerminalTab,
     OpenSettingsTab,
-    OpenFileTerminalTab {
-        file_path: std::path::PathBuf,
-    },
-    CloseTab {
-        tab_id: u64,
-    },
+    OpenFileTerminalTab { file_path: std::path::PathBuf },
+    CloseTab { tab_id: u64 },
     // Direct operations
     SyncTerminalGridSizes,
     Keyboard(iced::keyboard::Event),

@@ -8,6 +8,7 @@ use crate::components::primitive::{
 };
 use crate::shared::ui::theme::ThemeProps;
 use crate::shared::ui::{menu_geometry, menu_style};
+use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::view::action_bar::{self, ACTION_BAR_HEIGHT};
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::quick_launch::QuickLaunchEvent;
@@ -139,7 +140,7 @@ fn view_header<'a>(
         theme: theme_props,
         fonts: &app.fonts,
     })
-    .map(AppEvent::ChromeUi);
+    .map(|event| AppEvent::Chrome(ChromeEvent::Ui(event)));
 
     let separator = container(Space::new())
         .width(Length::Fill)

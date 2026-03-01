@@ -1,4 +1,3 @@
-pub(crate) mod command;
 pub(crate) mod event;
 pub(crate) mod model;
 mod reducer;
@@ -7,8 +6,7 @@ pub(crate) mod view;
 
 use iced::Task;
 
-pub(crate) use self::command::ChromeCommand;
-pub(crate) use self::event::{ChromeEffect, ChromeEvent};
+pub(crate) use self::event::{ChromeEffect, ChromeEvent, ChromeUiEvent};
 use self::model::ChromeViewModel;
 use self::state::ChromeState;
 
@@ -25,12 +23,9 @@ impl ChromeWidget {
         }
     }
 
-    /// Reduce a chrome command into state updates and effects.
-    pub(crate) fn reduce(
-        &mut self,
-        command: ChromeCommand,
-    ) -> Task<ChromeEffect> {
-        reducer::reduce(&mut self.state, command)
+    /// Reduce a chrome UI event into state updates and effects.
+    pub(crate) fn reduce(&mut self, event: ChromeUiEvent) -> Task<ChromeEvent> {
+        reducer::reduce(&mut self.state, event)
     }
 
     /// Produce the chrome view model for rendering.
