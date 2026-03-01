@@ -3,7 +3,7 @@ use super::storage::SettingsLoad;
 
 /// UI events emitted by the settings presentation layer.
 #[derive(Debug, Clone)]
-pub(crate) enum SettingsEvent {
+pub(crate) enum SettingsUiEvent {
     /// Request a fresh load from disk.
     Reload,
     /// Disk load completed successfully.
@@ -45,4 +45,13 @@ pub(crate) enum SettingsEffect {
     ApplyTheme(SettingsData),
     /// Notify the parent that a save completed.
     SaveCompleted(SettingsData),
+}
+
+/// Settings event stream routed through the app update loop.
+#[derive(Debug, Clone)]
+pub(crate) enum SettingsEvent {
+    /// UI/internal event reduced by the settings widget.
+    Ui(SettingsUiEvent),
+    /// External effect orchestrated by app-level routing.
+    Effect(SettingsEffect),
 }

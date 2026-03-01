@@ -4,7 +4,7 @@ use iced::widget::operation::snap_to_end;
 use crate::app::{App, AppEvent, PendingQuickLaunchWizard};
 use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
-use crate::widgets::settings::SettingsCommand;
+use crate::widgets::settings::{SettingsEvent, SettingsUiEvent};
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_SCROLL_ID;
 use crate::widgets::tabs::{TabsCommand, TabsEffect, TabsEvent};
 use crate::widgets::terminal_workspace::TerminalWorkspaceCommand;
@@ -137,9 +137,9 @@ pub(crate) fn route_effect(
                 sync_explorer: false,
             },
         )),
-        TabsEffect::SettingsTabOpened => {
-            Task::done(AppEvent::SettingsCommand(SettingsCommand::Reload))
-        },
+        TabsEffect::SettingsTabOpened => Task::done(AppEvent::Settings(
+            SettingsEvent::Ui(SettingsUiEvent::Reload),
+        )),
         TabsEffect::WizardTabOpened { tab_id } => {
             match app.pending_workflows.pop_quick_launch_wizard() {
                 Some(PendingQuickLaunchWizard::Create { parent_path }) => {

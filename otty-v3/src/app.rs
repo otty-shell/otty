@@ -19,8 +19,7 @@ use crate::state::State;
 use crate::widgets::chrome::{ChromeEvent, ChromeWidget};
 use crate::widgets::explorer::{ExplorerEvent, ExplorerWidget};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchWidget};
-use crate::widgets::settings::event::{SettingsEffect, SettingsEvent};
-use crate::widgets::settings::{SettingsCommand, SettingsWidget};
+use crate::widgets::settings::{SettingsEvent, SettingsWidget};
 use crate::widgets::sidebar::{
     SidebarCommand, SidebarEffect, SidebarEvent, SidebarWidget,
 };
@@ -140,13 +139,11 @@ pub(crate) enum AppEvent {
     // Explorer widget
     Explorer(ExplorerEvent),
     // Settings widget
-    SettingsUi(SettingsEvent),
-    SettingsEffect(SettingsEffect),
+    Settings(SettingsEvent),
     // Widget command dispatch
     SidebarCommand(SidebarCommand),
     TabsCommand(TabsCommand),
     TerminalWorkspaceCommand(TerminalWorkspaceCommand),
-    SettingsCommand(SettingsCommand),
     // Cross-widget workflows
     OpenTerminalTab,
     OpenSettingsTab,

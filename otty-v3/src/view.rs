@@ -16,6 +16,7 @@ use crate::widgets::quick_launch::QuickLaunchEvent;
 use crate::widgets::quick_launch::view::{
     context_menu as ql_context_menu, error_tab, sidebar_panel, wizard_form,
 };
+use crate::widgets::settings::SettingsEvent;
 use crate::widgets::settings::view::settings_form;
 use crate::widgets::sidebar;
 use crate::widgets::sidebar::{SidebarItem, SidebarPane};
@@ -304,7 +305,7 @@ fn view_tab_content<'a>(
                 vm: app.widgets.settings.vm(),
                 theme: theme_props,
             })
-            .map(AppEvent::SettingsUi)
+            .map(|event| AppEvent::Settings(SettingsEvent::Ui(event)))
         },
         (Some(tab_id), Some(TabContent::QuickLaunchWizard)) => {
             match app.widgets.quick_launch.wizard_editor(tab_id) {

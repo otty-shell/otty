@@ -76,8 +76,16 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         | AppEvent::TerminalWorkspaceEffect(_) => Allow,
         AppEvent::SidebarCommand(_)
         | AppEvent::TabsCommand(_)
-        | AppEvent::TerminalWorkspaceCommand(_)
-        | AppEvent::SettingsCommand(_) => Allow,
+        | AppEvent::TerminalWorkspaceCommand(_) => Allow,
+        AppEvent::Settings(
+            crate::widgets::settings::SettingsEvent::Effect(_),
+        )
+        | AppEvent::Settings(crate::widgets::settings::SettingsEvent::Ui(
+            crate::widgets::settings::SettingsUiEvent::ReloadLoaded(_)
+            | crate::widgets::settings::SettingsUiEvent::ReloadFailed(_)
+            | crate::widgets::settings::SettingsUiEvent::SaveCompleted(_)
+            | crate::widgets::settings::SettingsUiEvent::SaveFailed(_),
+        )) => Allow,
         AppEvent::Explorer(crate::widgets::explorer::ExplorerEvent::Ui(
             crate::widgets::explorer::ExplorerUiEvent::SyncRoot { .. },
         )) => Allow,
@@ -132,8 +140,17 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
         AppEvent::TerminalWorkspaceEffect(_) => false,
         AppEvent::SidebarCommand(_)
         | AppEvent::TabsCommand(_)
-        | AppEvent::TerminalWorkspaceCommand(_)
-        | AppEvent::SettingsCommand(_) => false,
+        | AppEvent::TerminalWorkspaceCommand(_) => false,
+        AppEvent::Settings(
+            crate::widgets::settings::SettingsEvent::Effect(_),
+        )
+        | AppEvent::Settings(crate::widgets::settings::SettingsEvent::Ui(
+            crate::widgets::settings::SettingsUiEvent::Reload
+            | crate::widgets::settings::SettingsUiEvent::ReloadLoaded(_)
+            | crate::widgets::settings::SettingsUiEvent::ReloadFailed(_)
+            | crate::widgets::settings::SettingsUiEvent::SaveCompleted(_)
+            | crate::widgets::settings::SettingsUiEvent::SaveFailed(_),
+        )) => false,
         AppEvent::Explorer(crate::widgets::explorer::ExplorerEvent::Ui(
             crate::widgets::explorer::ExplorerUiEvent::SyncRoot { .. },
         )) => false,

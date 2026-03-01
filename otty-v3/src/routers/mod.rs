@@ -43,11 +43,7 @@ pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         // Explorer widget
         AppEvent::Explorer(event) => explorer::route(app, event),
         // Settings widget
-        AppEvent::SettingsUi(event) => settings::route_event(app, event),
-        AppEvent::SettingsEffect(effect) => settings::route_effect(app, effect),
-        AppEvent::SettingsCommand(command) => {
-            settings::route_command(app, command)
-        },
+        AppEvent::Settings(event) => settings::route(app, event),
         // Cross-widget workflows
         AppEvent::OpenTerminalTab => flow::tabs::open_terminal_tab(app),
         AppEvent::OpenSettingsTab => flow::tabs::open_settings_tab(app),

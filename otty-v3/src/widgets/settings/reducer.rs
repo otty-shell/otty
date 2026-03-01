@@ -1,75 +1,80 @@
 use iced::Task;
 
-use super::command::SettingsCommand;
-use super::event::SettingsEffect;
+use super::event::{SettingsEffect, SettingsEvent, SettingsUiEvent};
 use super::state::SettingsState;
 use super::storage::{
     SettingsLoad, SettingsLoadStatus, load_settings, save_settings,
 };
 
-/// Reduce a settings command into state updates and effect tasks.
+/// Reduce a settings UI event into state updates and effect tasks.
 pub(crate) fn reduce(
     state: &mut SettingsState,
-    command: SettingsCommand,
-) -> Task<SettingsEffect> {
-    match command {
-        SettingsCommand::Reload => request_reload_settings(),
-        SettingsCommand::ReloadLoaded(load) => {
+    event: SettingsUiEvent,
+) -> Task<SettingsEvent> {
+    match event {
+        SettingsUiEvent::Reload => request_reload_settings(),
+        SettingsUiEvent::ReloadLoaded(load) => {
             let settings = apply_loaded_settings(state, load);
-            Task::done(SettingsEffect::ApplyTheme(settings))
+            Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
+                settings,
+            )))
         },
-        SettingsCommand::ReloadFailed(message) => {
+        SettingsUiEvent::ReloadFailed(message) => {
             log::warn!("settings read failed: {message}");
             Task::none()
         },
-        SettingsCommand::Save => request_save_settings(state),
-        SettingsCommand::SaveCompleted(settings) => {
+        SettingsUiEvent::Save => request_save_settings(state),
+        SettingsUiEvent::SaveCompleted(settings) => {
             state.mark_saved(settings.clone());
-            Task::done(SettingsEffect::ApplyTheme(settings))
+            Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
+                settings,
+            )))
         },
-        SettingsCommand::SaveFailed(message) => {
+        SettingsUiEvent::SaveFailed(message) => {
             log::warn!("settings save failed: {message}");
             Task::none()
         },
-        SettingsCommand::Reset => {
+        SettingsUiEvent::Reset => {
             state.reset();
             Task::none()
         },
-        SettingsCommand::NodePressed { path } => {
+        SettingsUiEvent::NodePressed { path } => {
             state.select_path(&path);
             Task::none()
         },
-        SettingsCommand::NodeHovered { path } => {
+        SettingsUiEvent::NodeHovered { path } => {
             state.set_hovered_path(path);
             Task::none()
         },
-        SettingsCommand::ShellChanged(value) => {
+        SettingsUiEvent::ShellChanged(value) => {
             state.set_shell(value);
             Task::none()
         },
-        SettingsCommand::EditorChanged(value) => {
+        SettingsUiEvent::EditorChanged(value) => {
             state.set_editor(value);
             Task::none()
         },
-        SettingsCommand::PaletteChanged { index, value } => {
+        SettingsUiEvent::PaletteChanged { index, value } => {
             state.set_palette_input(index, value);
             Task::none()
         },
-        SettingsCommand::ApplyPreset(preset) => {
+        SettingsUiEvent::ApplyPreset(preset) => {
             state.apply_preset(preset);
             Task::none()
         },
     }
 }
 
-fn request_reload_settings() -> Task<SettingsEffect> {
+fn request_reload_settings() -> Task<SettingsEvent> {
     Task::perform(async { load_settings() }, |result| match result {
-        Ok(load) => SettingsEffect::ReloadLoaded(load),
-        Err(err) => SettingsEffect::ReloadFailed(format!("{err}")),
+        Ok(load) => SettingsEvent::Effect(SettingsEffect::ReloadLoaded(load)),
+        Err(err) => SettingsEvent::Effect(SettingsEffect::ReloadFailed(
+            format!("{err}"),
+        )),
     })
 }
 
-fn request_save_settings(state: &SettingsState) -> Task<SettingsEffect> {
+fn request_save_settings(state: &SettingsState) -> Task<SettingsEvent> {
     let normalized = state.normalized_draft();
     Task::perform(
         async move {
@@ -79,8 +84,12 @@ fn request_save_settings(state: &SettingsState) -> Task<SettingsEffect> {
             }
         },
         |result| match result {
-            Ok(settings) => SettingsEffect::SaveCompleted(settings),
-            Err(message) => SettingsEffect::SaveFailed(message),
+            Ok(settings) => {
+                SettingsEvent::Effect(SettingsEffect::SaveCompleted(settings))
+            },
+            Err(message) => {
+                SettingsEvent::Effect(SettingsEffect::SaveFailed(message))
+            },
         },
     )
 }
@@ -101,7 +110,6 @@ fn apply_loaded_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widgets::settings::command::SettingsCommand;
     use crate::widgets::settings::model::{
         SettingsData, SettingsPreset, SettingsSection,
     };
@@ -120,7 +128,7 @@ mod tests {
         let normalized = state.normalized_draft();
 
         let _task =
-            reduce(&mut state, SettingsCommand::SaveCompleted(normalized));
+            reduce(&mut state, SettingsUiEvent::SaveCompleted(normalized));
 
         assert!(!state.is_dirty());
         assert_eq!(state.baseline(), state.draft());
@@ -134,7 +142,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsCommand::SaveFailed(String::from("write failed")),
+            SettingsUiEvent::SaveFailed(String::from("write failed")),
         );
 
         assert!(state.is_dirty());
@@ -149,7 +157,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsCommand::NodePressed {
+            SettingsUiEvent::NodePressed {
                 path: vec![String::from("Unknown")],
             },
         );
@@ -180,7 +188,7 @@ mod tests {
         state.set_editor(String::from("nvim"));
         assert!(state.is_dirty());
 
-        let _task = reduce(&mut state, SettingsCommand::Reset);
+        let _task = reduce(&mut state, SettingsUiEvent::Reset);
 
         assert!(!state.is_dirty());
         assert_eq!(state.draft(), state.baseline());
@@ -192,7 +200,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsCommand::ShellChanged(String::from("/usr/bin/fish")),
+            SettingsUiEvent::ShellChanged(String::from("/usr/bin/fish")),
         );
 
         assert_eq!(state.draft().terminal_shell(), "/usr/bin/fish");
@@ -205,7 +213,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsCommand::PaletteChanged {
+            SettingsUiEvent::PaletteChanged {
                 index: 0,
                 value: String::from("#AABB"),
             },
@@ -224,7 +232,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsCommand::ApplyPreset(SettingsPreset::OttyDark),
+            SettingsUiEvent::ApplyPreset(SettingsPreset::OttyDark),
         );
 
         let expected = SettingsPreset::OttyDark.palette();
@@ -238,7 +246,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsCommand::NodePressed {
+            SettingsUiEvent::NodePressed {
                 path: vec![String::from("General"), String::from("Theme")],
             },
         );

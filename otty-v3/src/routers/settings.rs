@@ -4,54 +4,43 @@ use otty_ui_term::settings::{
 };
 
 use crate::app::{App, AppEvent};
-use crate::widgets::settings::event::SettingsEvent;
 use crate::widgets::settings::model::SettingsData;
-use crate::widgets::settings::{SettingsCommand, SettingsEffect};
+use crate::widgets::settings::{
+    SettingsEffect, SettingsEvent, SettingsUiEvent,
+};
 use crate::widgets::terminal_workspace::TerminalWorkspaceCommand;
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
 
-/// Route a settings UI event through the widget reducer.
-pub(crate) fn route_event(
-    app: &mut App,
-    event: SettingsEvent,
-) -> Task<AppEvent> {
-    let command = map_event_to_command(event);
-    route_command(app, command)
+/// Route a settings event through widget reduction or app orchestration.
+pub(crate) fn route(app: &mut App, event: SettingsEvent) -> Task<AppEvent> {
+    match event {
+        SettingsEvent::Ui(event) => route_ui_event(app, event),
+        SettingsEvent::Effect(effect) => route_effect_event(app, effect),
+    }
 }
 
-/// Route a settings command directly (used by flow routers).
-pub(crate) fn route_command(
-    app: &mut App,
-    command: SettingsCommand,
-) -> Task<AppEvent> {
-    app.widgets
-        .settings
-        .reduce(command)
-        .map(AppEvent::SettingsEffect)
+fn route_ui_event(app: &mut App, event: SettingsUiEvent) -> Task<AppEvent> {
+    app.widgets.settings.reduce(event).map(AppEvent::Settings)
 }
 
-/// Route a settings effect event to app-level tasks.
-pub(crate) fn route_effect(
-    app: &mut App,
-    effect: SettingsEffect,
-) -> Task<AppEvent> {
+fn route_effect_event(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
     use SettingsEffect::*;
 
     match effect {
-        ReloadLoaded(load) => {
-            Task::done(AppEvent::SettingsUi(SettingsEvent::ReloadLoaded(load)))
-        },
-        ReloadFailed(message) => Task::done(AppEvent::SettingsUi(
-            SettingsEvent::ReloadFailed(message),
+        ReloadLoaded(load) => Task::done(AppEvent::Settings(
+            SettingsEvent::Ui(SettingsUiEvent::ReloadLoaded(load)),
         )),
-        SaveFailed(message) => {
-            Task::done(AppEvent::SettingsUi(SettingsEvent::SaveFailed(message)))
-        },
-        SaveCompleted(data) => {
-            Task::done(AppEvent::SettingsUi(SettingsEvent::SaveCompleted(data)))
-        },
+        ReloadFailed(message) => Task::done(AppEvent::Settings(
+            SettingsEvent::Ui(SettingsUiEvent::ReloadFailed(message)),
+        )),
+        SaveFailed(message) => Task::done(AppEvent::Settings(
+            SettingsEvent::Ui(SettingsUiEvent::SaveFailed(message)),
+        )),
+        SaveCompleted(data) => Task::done(AppEvent::Settings(
+            SettingsEvent::Ui(SettingsUiEvent::SaveCompleted(data)),
+        )),
         ApplyTheme(data) => apply_theme(app, &data),
     }
 }
@@ -90,26 +79,4 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
             palette: Box::new(terminal_palette),
         },
     ))
-}
-
-fn map_event_to_command(event: SettingsEvent) -> SettingsCommand {
-    use {SettingsCommand as C, SettingsEvent as E};
-
-    match event {
-        E::Reload => C::Reload,
-        E::ReloadLoaded(load) => C::ReloadLoaded(load),
-        E::ReloadFailed(msg) => C::ReloadFailed(msg),
-        E::Save => C::Save,
-        E::SaveCompleted(data) => C::SaveCompleted(data),
-        E::SaveFailed(msg) => C::SaveFailed(msg),
-        E::Reset => C::Reset,
-        E::NodePressed { path } => C::NodePressed { path },
-        E::NodeHovered { path } => C::NodeHovered { path },
-        E::ShellChanged(value) => C::ShellChanged(value),
-        E::EditorChanged(value) => C::EditorChanged(value),
-        E::PaletteChanged { index, value } => {
-            C::PaletteChanged { index, value }
-        },
-        E::ApplyPreset(preset) => C::ApplyPreset(preset),
-    }
 }

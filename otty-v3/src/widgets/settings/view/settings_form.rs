@@ -10,7 +10,7 @@ use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 use crate::shared::ui::theme::{IcedColorPalette, ThemeProps};
 use crate::shared::ui::tree_style;
-use crate::widgets::settings::event::SettingsEvent;
+use crate::widgets::settings::event::SettingsUiEvent;
 use crate::widgets::settings::model::{
     SettingsNode, SettingsPreset, SettingsSection, SettingsViewModel,
     is_valid_hex_color, palette_label,
@@ -53,7 +53,7 @@ pub(crate) struct SettingsFormProps<'a> {
 /// Render the full settings view (header + nav + form).
 pub(crate) fn view(
     props: SettingsFormProps<'_>,
-) -> Element<'_, SettingsEvent, Theme, iced::Renderer> {
+) -> Element<'_, SettingsUiEvent, Theme, iced::Renderer> {
     let header = settings_header(&props);
     let content = settings_split_view(&props);
 
@@ -65,17 +65,17 @@ pub(crate) fn view(
 
 fn settings_header<'a>(
     props: &SettingsFormProps<'a>,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
     let save_button = action_button(
         "Save",
         props.vm.is_dirty,
-        SettingsEvent::Save,
+        SettingsUiEvent::Save,
         props.theme,
     );
     let reset_button = action_button(
         "Reset",
         props.vm.is_dirty,
-        SettingsEvent::Reset,
+        SettingsUiEvent::Reset,
         props.theme,
     );
 
@@ -100,7 +100,7 @@ fn settings_header<'a>(
 
 fn settings_split_view<'a>(
     props: &SettingsFormProps<'a>,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
     let nav = settings_nav_tree(props);
     let form = settings_form(props);
 
@@ -112,7 +112,7 @@ fn settings_split_view<'a>(
 
 fn settings_nav_tree<'a>(
     props: &SettingsFormProps<'a>,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
     let palette = props.theme.theme.iced_palette().clone();
     let row_palette = palette.clone();
     let icon_color = palette.dim_foreground;
@@ -121,8 +121,8 @@ fn settings_nav_tree<'a>(
         TreeView::new(props.vm.tree, move |context| render_nav_row(context))
             .selected_row(Some(props.vm.selected_path))
             .hovered_row(props.vm.hovered_path)
-            .on_press(|path| SettingsEvent::NodePressed { path })
-            .on_hover(|path| SettingsEvent::NodeHovered { path })
+            .on_press(|path| SettingsUiEvent::NodePressed { path })
+            .on_hover(|path| SettingsUiEvent::NodeHovered { path })
             .row_style(move |context| nav_row_style(&row_palette, context))
             .row_leading_content(move |context| {
                 nav_toggle_icon(context, icon_color)
@@ -150,7 +150,7 @@ fn settings_nav_tree<'a>(
 
 fn render_nav_row<'a>(
     context: &TreeRowContext<'a, SettingsNode>,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
     let title = text(context.entry.node.title())
         .size(NAV_FONT_SIZE)
         .width(Length::Fill)
@@ -167,8 +167,8 @@ fn render_nav_row<'a>(
 
 fn settings_form<'a>(
     props: &SettingsFormProps<'a>,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
-    let content: Element<'a, SettingsEvent, Theme, iced::Renderer> =
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
+    let content: Element<'a, SettingsUiEvent, Theme, iced::Renderer> =
         match props.vm.selected_section {
             SettingsSection::Terminal => terminal_form(props),
             SettingsSection::Theme => theme_form(props),
@@ -195,16 +195,16 @@ fn settings_form<'a>(
 
 fn terminal_form<'a>(
     props: &SettingsFormProps<'a>,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
     let shell_input = text_input("", props.vm.draft.terminal_shell())
-        .on_input(SettingsEvent::ShellChanged)
+        .on_input(SettingsUiEvent::ShellChanged)
         .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
         .size(FORM_INPUT_FONT_SIZE)
         .width(Length::Fill)
         .style(text_input_style(props.theme));
 
     let editor_input = text_input("", props.vm.draft.terminal_editor())
-        .on_input(SettingsEvent::EditorChanged)
+        .on_input(SettingsUiEvent::EditorChanged)
         .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
         .size(FORM_INPUT_FONT_SIZE)
         .width(Length::Fill)
@@ -223,11 +223,11 @@ fn terminal_form<'a>(
 
 fn theme_form<'a>(
     props: &SettingsFormProps<'a>,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
     let preset_button = action_button(
         "OTTY Dark",
         true,
-        SettingsEvent::ApplyPreset(SettingsPreset::OttyDark),
+        SettingsUiEvent::ApplyPreset(SettingsPreset::OttyDark),
         props.theme,
     );
     let presets = row![preset_button].spacing(HEADER_BUTTON_SPACING);
@@ -248,7 +248,7 @@ fn theme_form<'a>(
             .wrapping(Wrapping::None);
 
         let input = text_input("", value)
-            .on_input(move |value| SettingsEvent::PaletteChanged {
+            .on_input(move |value| SettingsUiEvent::PaletteChanged {
                 index,
                 value,
             })
@@ -294,7 +294,7 @@ fn theme_form<'a>(
 fn section_title<'a>(
     title: &'a str,
     theme: ThemeProps<'a>,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
     let palette = theme.theme.iced_palette();
     let color = palette.dim_foreground;
     text(title)
@@ -305,8 +305,8 @@ fn section_title<'a>(
 
 fn form_row<'a>(
     label: &'a str,
-    input: iced::widget::TextInput<'a, SettingsEvent, Theme, iced::Renderer>,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
+    input: iced::widget::TextInput<'a, SettingsUiEvent, Theme, iced::Renderer>,
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
     let label = text(label)
         .size(FORM_INPUT_FONT_SIZE)
         .width(Length::Fixed(FORM_LABEL_WIDTH))
@@ -323,9 +323,9 @@ fn form_row<'a>(
 fn action_button<'a>(
     label: &'a str,
     enabled: bool,
-    event: SettingsEvent,
+    event: SettingsUiEvent,
     theme: ThemeProps<'a>,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
     let palette = theme.theme.iced_palette().clone();
     let content = container(
         text(label)
@@ -404,7 +404,7 @@ fn nav_row_style(
 fn nav_toggle_icon<'a>(
     context: &TreeRowContext<'a, SettingsNode>,
     color: Color,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
     nav_icon(context.entry.node)
         .map(|icon| svg_icon(icon, color))
         .unwrap_or_else(|| Space::new().into())
@@ -425,7 +425,7 @@ fn nav_icon(node: &SettingsNode) -> Option<&'static [u8]> {
 fn svg_icon<'a>(
     icon: &'static [u8],
     color: Color,
-) -> Element<'a, SettingsEvent, Theme, iced::Renderer> {
+) -> Element<'a, SettingsUiEvent, Theme, iced::Renderer> {
     let handle = svg::Handle::from_memory(icon);
     let svg_icon = svg::Svg::new(handle)
         .width(Length::Fixed(NAV_ICON_SIZE))
