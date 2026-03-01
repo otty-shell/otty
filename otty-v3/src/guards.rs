@@ -30,8 +30,10 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 _ => Dismiss,
             }
         },
-        AppEvent::QuickLaunchUi(event) => {
-            use crate::widgets::quick_launch::QuickLaunchEvent as E;
+        AppEvent::QuickLaunch(
+            crate::widgets::quick_launch::QuickLaunchEvent::Ui(event),
+        ) => {
+            use crate::widgets::quick_launch::QuickLaunchUiEvent as E;
             match event {
                 E::ContextMenuDismiss
                 | E::ContextMenuAction(_)
@@ -68,12 +70,13 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         AppEvent::SidebarEffect(_)
         | AppEvent::ChromeEffect(_)
         | AppEvent::TabsEffect(_)
-        | AppEvent::QuickLaunchEffect(_)
+        | AppEvent::QuickLaunch(
+            crate::widgets::quick_launch::QuickLaunchEvent::Effect(_),
+        )
         | AppEvent::TerminalWorkspaceEffect(_) => Allow,
         AppEvent::SidebarCommand(_)
         | AppEvent::ChromeCommand(_)
         | AppEvent::TabsCommand(_)
-        | AppEvent::QuickLaunchCommand(_)
         | AppEvent::TerminalWorkspaceCommand(_)
         | AppEvent::ExplorerCommand(_)
         | AppEvent::SettingsCommand(_) => Allow,
@@ -97,8 +100,10 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
 /// event is dispatched.
 pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
     match event {
-        AppEvent::QuickLaunchUi(event) => {
-            use crate::widgets::quick_launch::QuickLaunchEvent as E;
+        AppEvent::QuickLaunch(
+            crate::widgets::quick_launch::QuickLaunchEvent::Ui(event),
+        ) => {
+            use crate::widgets::quick_launch::QuickLaunchUiEvent as E;
             !matches!(
                 event,
                 E::InlineEditChanged(_)
@@ -112,7 +117,9 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
                     | E::WizardSaveRequested(_)
             )
         },
-        AppEvent::QuickLaunchEffect(_) => false,
+        AppEvent::QuickLaunch(
+            crate::widgets::quick_launch::QuickLaunchEvent::Effect(_),
+        ) => false,
         AppEvent::SidebarUi(event) => {
             use crate::widgets::sidebar::SidebarEvent as E;
             !matches!(
@@ -128,7 +135,6 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
         AppEvent::SidebarCommand(_)
         | AppEvent::ChromeCommand(_)
         | AppEvent::TabsCommand(_)
-        | AppEvent::QuickLaunchCommand(_)
         | AppEvent::TerminalWorkspaceCommand(_)
         | AppEvent::ExplorerCommand(_)
         | AppEvent::SettingsCommand(_) => false,

@@ -16,7 +16,7 @@
 
 1. `UiEvent` — событие из `view`, описывает пользовательское действие.
 2. `EffectEvent` — событие из `reduce`, описывает результат/запрос side-effect.
-3. `WidgetCommand` — внутренняя команда редьюсера виджета.
+3. `WidgetCommand` — (опционально) внутренняя команда редьюсера виджета.
 4. `Owning router` — модуль `src/routers/<domain>.rs`, владеющий mapping для одного widget-домена.
 5. `Flow router` — модуль `src/routers/flow/*`, координирующий многошаговый или переиспользуемый cross-widget сценарий.
 
@@ -25,14 +25,14 @@
 Архитектурный поток:
 
 ```text
-UI:     view -> AppEvent::<Widget>Ui -> route_event -> WidgetCommand -> reduce
-EFFECT: reduce -> WidgetEffectEvent -> AppEvent::<Widget>Effect -> route_effect -> app task/action
+UI:     view -> AppEvent::<Widget>Ui -> route_event -> (WidgetCommand)? -> reduce
+EFFECT: reduce -> WidgetAction/Event -> AppEvent::<Widget>Ui | AppEvent::<Widget>Effect -> route_effect -> app task/action
 ```
 
 Инварианты:
 
-1. `Ui`-события маппятся только в `WidgetCommand`.
-2. `Effect`-события маппятся только в app-level `Task<AppEvent>`/action.
+1. `Ui`-события обрабатываются только owning-router/виджетом.
+2. Внешние `Effect`-события маппятся только в app-level `Task<AppEvent>`/action.
 3. `reduce` не эмитит `Ui`-события.
 4. Для одного события существует одна стабильная ветка обработки.
 5. Роутеры не импортируют друг друга; cross-widget переходы выполняются через `AppEvent`/`AppFlowEvent`.
@@ -56,7 +56,7 @@ EFFECT: reduce -> WidgetEffectEvent -> AppEvent::<Widget>Effect -> route_effect 
 
 1. `route_event(app, WidgetUiEvent) -> Task<AppEvent>`
 2. `route_effect(..., WidgetEffectEvent) -> Task<AppEvent>`
-3. `map_*_ui_event_to_command(WidgetUiEvent) -> WidgetCommand`
+3. Опционально: `map_*_ui_event_to_command(WidgetUiEvent) -> WidgetCommand`
 4. `map_*_effect_event_to_app_task(WidgetEffectEvent) -> Task<AppEvent>`
 
 Допустимо:
@@ -68,7 +68,7 @@ EFFECT: reduce -> WidgetEffectEvent -> AppEvent::<Widget>Effect -> route_effect 
 Недопустимо:
 
 1. Дублировать одну и ту же реакцию одновременно в `route_event` и `route_effect`.
-2. Возвращать `WidgetUiEvent` из `reduce`.
+2. Возвращать `WidgetUiEvent` из `reduce` без явного `WidgetAction`-контракта.
 3. Мутировать `WidgetState` вне его `reduce`.
 
 ## 6. Контракт flow router
@@ -112,9 +112,9 @@ EFFECT: reduce -> WidgetEffectEvent -> AppEvent::<Widget>Effect -> route_effect 
 1. `view` эмитит `WidgetUiEvent`.
 2. `src/view.rs` маппит его в `AppEvent::<Widget>Ui`.
 3. `update.rs` делегирует в `routers::<widget>::route_event`.
-4. Роутер превращает `UiEvent` в `WidgetCommand`.
-5. `widget.reduce(command, ctx)` возвращает `Task<WidgetEffectEvent>`.
-6. Роутер маппит его в `AppEvent::<Widget>Effect`.
+4. Роутер передает событие в виджет напрямую или через `WidgetCommand`.
+5. `widget.reduce/update(..., ctx)` возвращает `Task<WidgetAction>`.
+6. Роутер маппит `WidgetAction` в `AppEvent::<Widget>Ui` (internal) или `AppEvent::<Widget>Effect` (external).
 
 ### 8.2 Effect path
 

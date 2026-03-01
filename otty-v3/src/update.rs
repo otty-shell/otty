@@ -1,9 +1,9 @@
-use iced::{Task, window};
+use iced::Task;
 
 use super::{App, AppEvent};
 use crate::guards::{MenuGuard, context_menu_guard, inline_edit_guard};
 use crate::routers;
-use crate::widgets::quick_launch::QuickLaunchCommand;
+use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
 use crate::widgets::sidebar::SidebarEvent;
 use crate::widgets::terminal_workspace::TerminalWorkspaceCommand;
 
@@ -12,9 +12,11 @@ pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let mut pre_dispatch_tasks = Vec::new();
 
     if app.widgets.quick_launch.has_inline_edit() && inline_edit_guard(&event) {
-        pre_dispatch_tasks.push(route(
+        pre_dispatch_tasks.push(routers::route(
             app,
-            AppEvent::QuickLaunchCommand(QuickLaunchCommand::CancelInlineEdit),
+            AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
+                QuickLaunchUiEvent::CancelInlineEdit,
+            )),
         ));
     }
 
@@ -26,123 +28,12 @@ pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         }
     }
 
-    let dispatch_task = route(app, event);
+    let dispatch_task = routers::route(app, event);
     if pre_dispatch_tasks.is_empty() {
         dispatch_task
     } else {
         pre_dispatch_tasks.push(dispatch_task);
         Task::batch(pre_dispatch_tasks)
-    }
-}
-
-fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
-    match event {
-        AppEvent::IcedReady => routers::flow::tabs::open_terminal_tab(app),
-        // Sidebar widget
-        AppEvent::SidebarUi(event) => routers::sidebar::route_event(app, event),
-        AppEvent::SidebarEffect(event) => routers::sidebar::route_effect(event),
-        AppEvent::SidebarCommand(command) => {
-            routers::sidebar::route_command(app, command)
-        },
-        // Chrome widget
-        AppEvent::ChromeUi(event) => routers::chrome::route_event(app, event),
-        AppEvent::ChromeEffect(effect) => routers::chrome::route_effect(effect),
-        AppEvent::ChromeCommand(command) => {
-            routers::chrome::route_command(app, command)
-        },
-        // Tabs widget
-        AppEvent::TabsUi(event) => routers::tabs::route_event(app, event),
-        AppEvent::TabsEffect(effect) => {
-            routers::tabs::route_effect(app, effect)
-        },
-        AppEvent::TabsCommand(command) => {
-            routers::tabs::route_command(app, command)
-        },
-        // Quick Launch widget
-        AppEvent::QuickLaunchUi(event) => {
-            routers::quick_launch::route_event(app, event)
-        },
-        AppEvent::QuickLaunchEffect(effect) => {
-            routers::quick_launch::route_effect(effect)
-        },
-        AppEvent::QuickLaunchCommand(command) => {
-            routers::quick_launch::route_command(app, command)
-        },
-        // Terminal Workspace widget
-        AppEvent::TerminalWorkspaceUi(event) => {
-            routers::terminal_workspace::route_event(app, event)
-        },
-        AppEvent::TerminalWorkspaceEffect(effect) => {
-            routers::terminal_workspace::route_effect(app, effect)
-        },
-        AppEvent::TerminalWorkspaceCommand(command) => {
-            routers::terminal_workspace::route_command(app, command)
-        },
-        // Explorer widget
-        AppEvent::ExplorerUi(event) => {
-            routers::explorer::route_event(app, event)
-        },
-        AppEvent::ExplorerEffect(effect) => {
-            routers::explorer::route_effect(effect)
-        },
-        AppEvent::ExplorerCommand(command) => {
-            routers::explorer::route_command(app, command)
-        },
-        // Settings widget
-        AppEvent::SettingsUi(event) => {
-            routers::settings::route_event(app, event)
-        },
-        AppEvent::SettingsEffect(effect) => {
-            routers::settings::route_effect(app, effect)
-        },
-        AppEvent::SettingsCommand(command) => {
-            routers::settings::route_command(app, command)
-        },
-        // Cross-widget workflows
-        AppEvent::OpenTerminalTab => {
-            routers::flow::tabs::open_terminal_tab(app)
-        },
-        AppEvent::OpenSettingsTab => {
-            routers::flow::tabs::open_settings_tab(app)
-        },
-        AppEvent::OpenQuickLaunchWizardCreateTab { parent_path } => {
-            routers::flow::quick_launch::open_wizard_create_tab(
-                app,
-                parent_path,
-            )
-        },
-        AppEvent::OpenQuickLaunchWizardEditTab { path, command } => {
-            routers::flow::quick_launch::open_wizard_edit_tab(
-                app, path, command,
-            )
-        },
-        AppEvent::OpenQuickLaunchCommandTerminalTab {
-            title,
-            settings,
-            command,
-        } => routers::flow::quick_launch::open_command_terminal_tab(
-            app, title, settings, *command,
-        ),
-        AppEvent::OpenQuickLaunchErrorTab { title, message } => {
-            routers::flow::quick_launch::open_error_tab(app, title, message)
-        },
-        AppEvent::OpenFileTerminalTab { file_path } => {
-            routers::flow::tabs::open_file_terminal_tab(app, file_path)
-        },
-        AppEvent::CloseTab { tab_id } => {
-            routers::flow::quick_launch::close_tab(app, tab_id)
-        },
-        // Direct operations
-        AppEvent::SyncTerminalGridSizes => {
-            routers::window::sync_terminal_grid_sizes(app);
-            Task::none()
-        },
-        AppEvent::Keyboard(_event) => Task::none(),
-        AppEvent::Window(window::Event::Resized(size)) => {
-            routers::window::handle_resize(app, size)
-        },
-        AppEvent::Window(_) => Task::none(),
-        AppEvent::ResizeWindow(dir) => routers::window::handle_drag_resize(dir),
     }
 }
 
@@ -160,14 +51,14 @@ pub(super) fn any_context_menu_open(app: &App) -> bool {
 /// Close all open context menus before dispatching a new event.
 fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch(vec![
-        route(app, AppEvent::SidebarUi(SidebarEvent::DismissAddMenu)),
-        route(
+        routers::route(app, AppEvent::SidebarUi(SidebarEvent::DismissAddMenu)),
+        routers::route(
             app,
-            AppEvent::QuickLaunchCommand(
-                QuickLaunchCommand::ContextMenuDismiss,
-            ),
+            AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
+                QuickLaunchUiEvent::ContextMenuDismiss,
+            )),
         ),
-        route(
+        routers::route(
             app,
             AppEvent::TerminalWorkspaceCommand(
                 TerminalWorkspaceCommand::CloseAllContextMenus,

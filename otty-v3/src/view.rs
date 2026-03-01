@@ -4,12 +4,13 @@ use iced::{Element, Length, Size, Theme, alignment};
 
 use super::{App, AppEvent};
 use crate::components::primitive::{
-    menu_item, resize_grips, sidebar_workspace_panel
+    menu_item, resize_grips, sidebar_workspace_panel,
 };
 use crate::shared::ui::theme::ThemeProps;
 use crate::shared::ui::{menu_geometry, menu_style};
 use crate::widgets::chrome::view::action_bar::{self, ACTION_BAR_HEIGHT};
 use crate::widgets::explorer::view::sidebar_tree;
+use crate::widgets::quick_launch::QuickLaunchEvent;
 use crate::widgets::quick_launch::view::{
     context_menu as ql_context_menu, error_tab, sidebar_panel, wizard_form,
 };
@@ -81,7 +82,7 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
                 area_size: app.state.screen_size,
                 launching: app.widgets.quick_launch.launching(),
             })
-            .map(AppEvent::QuickLaunchUi),
+            .map(|event| AppEvent::QuickLaunch(QuickLaunchEvent::Ui(event))),
         );
     }
 
@@ -244,7 +245,7 @@ fn view_workspace_content<'a>(
                 vm: app.widgets.quick_launch.tree_vm(),
                 theme: theme_props,
             })
-            .map(AppEvent::QuickLaunchUi)
+            .map(|event| AppEvent::QuickLaunch(QuickLaunchEvent::Ui(event)))
         },
         SidebarItem::Explorer => {
             sidebar_tree::view(sidebar_tree::SidebarTreeProps {
@@ -311,7 +312,9 @@ fn view_tab_content<'a>(
                         editor,
                         theme: theme_props,
                     })
-                    .map(AppEvent::QuickLaunchUi)
+                    .map(|event| {
+                        AppEvent::QuickLaunch(QuickLaunchEvent::Ui(event))
+                    })
                 },
                 None => {
                     missing_tab_state("Quick launch editor is not initialized.")
@@ -324,7 +327,9 @@ fn view_tab_content<'a>(
                     error,
                     theme: theme_props,
                 })
-                .map(AppEvent::QuickLaunchUi),
+                .map(|event| {
+                    AppEvent::QuickLaunch(QuickLaunchEvent::Ui(event))
+                }),
                 None => {
                     missing_tab_state("Quick launch error payload is missing.")
                 },

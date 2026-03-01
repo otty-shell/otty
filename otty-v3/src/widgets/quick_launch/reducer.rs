@@ -4,9 +4,8 @@ use std::sync::atomic::AtomicBool;
 use iced::Task;
 use iced::widget::operation;
 
-use super::command::QuickLaunchCommand;
 use super::errors::quick_launch_error_message;
-use super::event::QuickLaunchEffect;
+use super::event::{QuickLaunchEffect, QuickLaunchEvent, QuickLaunchUiEvent};
 use super::model::{
     ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,
     PreparedQuickLaunch, QuickLaunch, QuickLaunchFile, QuickLaunchFolder,
@@ -31,15 +30,15 @@ pub(crate) struct QuickLaunchCtx<'a> {
     pub(crate) sidebar_is_resizing: bool,
 }
 
-/// Reduce a quick launch command into state updates and effects.
+/// Reduce a quick launch event into state updates and follow-up actions.
 pub(crate) fn reduce(
     state: &mut QuickLaunchState,
-    command: QuickLaunchCommand,
+    event: QuickLaunchUiEvent,
     ctx: &QuickLaunchCtx<'_>,
-) -> Task<QuickLaunchEffect> {
-    use QuickLaunchCommand::*;
+) -> Task<QuickLaunchEvent> {
+    use QuickLaunchUiEvent::*;
 
-    match command {
+    match event {
         OpenErrorTab {
             tab_id,
             title,
@@ -131,7 +130,7 @@ pub(crate) fn reduce(
         },
         HeaderCreateCommand => {
             let parent = selected_parent_path(state);
-            Task::done(QuickLaunchEffect::OpenWizardCreateTab {
+            emit_effect(QuickLaunchEffect::OpenWizardCreateTab {
                 parent_path: parent,
             })
         },
@@ -201,8 +200,7 @@ pub(crate) fn reduce(
             Task::none()
         },
         Tick => reduce_tick(state),
-
-        // Wizard commands
+        // Wizard events
         WizardInitializeCreate {
             tab_id,
             parent_path,
@@ -219,7 +217,7 @@ pub(crate) fn reduce(
             Task::none()
         },
         WizardCancel { tab_id } => {
-            Task::done(QuickLaunchEffect::CloseTabRequested { tab_id })
+            emit_effect(QuickLaunchEffect::CloseTabRequested { tab_id })
         },
         WizardSave { tab_id } => reduce_wizard_save(state, tab_id),
         WizardSetError { tab_id, message } => {
@@ -306,7 +304,12 @@ pub(crate) fn reduce(
             }
             Task::none()
         },
+        _ => Task::none()
     }
+}
+
+fn emit_effect(effect: QuickLaunchEffect) -> Task<QuickLaunchEvent> {
+    Task::done(QuickLaunchEvent::Effect(effect))
 }
 
 // ---------------------------------------------------------------------------
@@ -317,7 +320,7 @@ fn reduce_wizard_field(
     state: &mut QuickLaunchState,
     tab_id: u64,
     apply: impl FnOnce(&mut super::state::WizardEditorState),
-) -> Task<QuickLaunchEffect> {
+) -> Task<QuickLaunchEvent> {
     if let Some(editor) = state.wizard_mut().editor_mut(tab_id) {
         apply(editor);
         editor.clear_error();
@@ -328,7 +331,7 @@ fn reduce_wizard_field(
 fn reduce_wizard_save(
     state: &mut QuickLaunchState,
     tab_id: u64,
-) -> Task<QuickLaunchEffect> {
+) -> Task<QuickLaunchEvent> {
     let Some(editor) = state.wizard().editor(tab_id) else {
         return Task::none();
     };
@@ -368,7 +371,7 @@ fn reduce_wizard_save(
 fn reduce_setup_completed(
     state: &mut QuickLaunchState,
     outcome: QuickLaunchSetupOutcome,
-) -> Task<QuickLaunchEffect> {
+) -> Task<QuickLaunchEvent> {
     match outcome {
         QuickLaunchSetupOutcome::Prepared(launch) => {
             handle_prepared_quick_launch(state, launch)
@@ -383,7 +386,7 @@ fn reduce_setup_completed(
                 return Task::none();
             }
             let command_title = command.title().to_string();
-            Task::done(QuickLaunchEffect::OpenErrorTab {
+            emit_effect(QuickLaunchEffect::OpenErrorTab {
                 title: format!("Failed to launch \"{command_title}\""),
                 message: quick_launch_error_message(&command, error.as_ref()),
             })
@@ -398,7 +401,7 @@ fn reduce_setup_completed(
 fn handle_prepared_quick_launch(
     state: &mut QuickLaunchState,
     launch: PreparedQuickLaunch,
-) -> Task<QuickLaunchEffect> {
+) -> Task<QuickLaunchEvent> {
     let PreparedQuickLaunch {
         path,
         launch_id,
@@ -411,7 +414,7 @@ fn handle_prepared_quick_launch(
         return Task::none();
     }
 
-    Task::done(QuickLaunchEffect::OpenCommandTerminalTab {
+    emit_effect(QuickLaunchEffect::OpenCommandTerminalTab {
         title,
         settings,
         command,
@@ -422,7 +425,7 @@ fn handle_node_left_click(
     state: &mut QuickLaunchState,
     terminal_settings: &otty_ui_term::settings::Settings,
     path: NodePath,
-) -> Task<QuickLaunchEffect> {
+) -> Task<QuickLaunchEvent> {
     let Some(node) = state.data().node(&path).cloned() else {
         return Task::none();
     };
@@ -452,7 +455,7 @@ fn handle_context_menu_action(
     state: &mut QuickLaunchState,
     _terminal_settings: &otty_ui_term::settings::Settings,
     action: ContextMenuAction,
-) -> Task<QuickLaunchEffect> {
+) -> Task<QuickLaunchEvent> {
     let Some(menu) = state.context_menu_cloned() else {
         return Task::none();
     };
@@ -509,18 +512,18 @@ fn handle_context_menu_action(
         },
         ContextMenuAction::CreateCommand => match menu.target {
             ContextMenuTarget::Folder(path) => {
-                Task::done(QuickLaunchEffect::OpenWizardCreateTab {
+                emit_effect(QuickLaunchEffect::OpenWizardCreateTab {
                     parent_path: path,
                 })
             },
             ContextMenuTarget::Command(path) => {
                 let parent = path[..path.len().saturating_sub(1)].to_vec();
-                Task::done(QuickLaunchEffect::OpenWizardCreateTab {
+                emit_effect(QuickLaunchEffect::OpenWizardCreateTab {
                     parent_path: parent,
                 })
             },
             ContextMenuTarget::Background => {
-                Task::done(QuickLaunchEffect::OpenWizardCreateTab {
+                emit_effect(QuickLaunchEffect::OpenWizardCreateTab {
                     parent_path: Vec::new(),
                 })
             },
@@ -535,8 +538,8 @@ fn handle_context_menu_action(
     }
 }
 
-fn reduce_tick(state: &mut QuickLaunchState) -> Task<QuickLaunchEffect> {
-    let mut tasks: Vec<Task<QuickLaunchEffect>> = Vec::new();
+fn reduce_tick(state: &mut QuickLaunchState) -> Task<QuickLaunchEvent> {
+    let mut tasks: Vec<Task<QuickLaunchEvent>> = Vec::new();
 
     if state.has_active_launches() {
         state.advance_blink_nonce();
@@ -600,7 +603,7 @@ fn inline_edit_matches(edit: &InlineEditState, path: &[String]) -> bool {
     }
 }
 
-fn apply_inline_edit(state: &mut QuickLaunchState) -> Task<QuickLaunchEffect> {
+fn apply_inline_edit(state: &mut QuickLaunchState) -> Task<QuickLaunchEvent> {
     let Some(edit) = state.take_inline_edit() else {
         return Task::none();
     };
@@ -674,23 +677,20 @@ fn apply_inline_edit(state: &mut QuickLaunchState) -> Task<QuickLaunchEffect> {
 fn apply_editor_save_request(
     state: &mut QuickLaunchState,
     request: QuickLaunchWizardSaveRequest,
-) -> Task<QuickLaunchEffect> {
+) -> Task<QuickLaunchEvent> {
+    let tab_id = request.tab_id;
     match request.target {
         QuickLaunchWizardSaveTarget::Create { parent_path } => {
             let Some(parent) = state.data_mut().folder_mut(&parent_path) else {
-                return Task::done(QuickLaunchEffect::WizardSetError {
-                    tab_id: request.tab_id,
-                    message: String::from("Missing target folder."),
-                });
+                set_wizard_error(state, tab_id, "Missing target folder.");
+                return Task::none();
             };
             let title =
                 match parent.normalize_title(&request.command.title, None) {
                     Ok(title) => title,
                     Err(err) => {
-                        return Task::done(QuickLaunchEffect::WizardSetError {
-                            tab_id: request.tab_id,
-                            message: format!("{err}"),
-                        });
+                        set_wizard_error(state, tab_id, &format!("{err}"));
+                        return Task::none();
                     },
                 };
             let mut command = request.command;
@@ -701,34 +701,32 @@ fn apply_editor_save_request(
             {
                 let Some(parent) = state.data_mut().parent_folder_mut(&path)
                 else {
-                    return Task::done(QuickLaunchEffect::WizardSetError {
-                        tab_id: request.tab_id,
-                        message: String::from("Missing parent folder."),
-                    });
+                    set_wizard_error(state, tab_id, "Missing parent folder.");
+                    return Task::none();
                 };
                 let current = path.last().map(String::as_str);
                 if let Err(err) =
                     parent.normalize_title(&request.command.title, current)
                 {
-                    return Task::done(QuickLaunchEffect::WizardSetError {
-                        tab_id: request.tab_id,
-                        message: format!("{err}"),
-                    });
+                    set_wizard_error(state, tab_id, &format!("{err}"));
+                    return Task::none();
                 }
             }
             let Some(node) = state.data_mut().node_mut(&path) else {
-                return Task::done(QuickLaunchEffect::WizardSetError {
-                    tab_id: request.tab_id,
-                    message: String::from("Command no longer exists."),
-                });
+                set_wizard_error(state, tab_id, "Command no longer exists.");
+                return Task::none();
             };
             *node = QuickLaunchNode::Command(request.command);
         },
     }
     state.mark_dirty();
-    Task::done(QuickLaunchEffect::CloseTabRequested {
-        tab_id: request.tab_id,
-    })
+    emit_effect(QuickLaunchEffect::CloseTabRequested { tab_id })
+}
+
+fn set_wizard_error(state: &mut QuickLaunchState, tab_id: u64, message: &str) {
+    if let Some(editor) = state.wizard_mut().editor_mut(tab_id) {
+        editor.set_error(message.to_string());
+    }
 }
 
 fn toggle_folder_expanded(state: &mut QuickLaunchState, path: &[String]) {
@@ -756,7 +754,7 @@ fn selected_parent_path(state: &QuickLaunchState) -> NodePath {
     }
 }
 
-fn focus_inline_edit(state: &QuickLaunchState) -> Task<QuickLaunchEffect> {
+fn focus_inline_edit(state: &QuickLaunchState) -> Task<QuickLaunchEvent> {
     let Some(edit) = state.inline_edit() else {
         return Task::none();
     };
@@ -1008,7 +1006,7 @@ fn duplicate_title(parent: &QuickLaunchFolder, title: &str) -> String {
 
 fn request_persist_quick_launches(
     data: QuickLaunchFile,
-) -> Task<QuickLaunchEffect> {
+) -> Task<QuickLaunchEvent> {
     Task::perform(
         async move {
             match save_quick_launches(&data) {
@@ -1017,8 +1015,12 @@ fn request_persist_quick_launches(
             }
         },
         |result| match result {
-            Ok(()) => QuickLaunchEffect::PersistCompleted,
-            Err(message) => QuickLaunchEffect::PersistFailed(message),
+            Ok(()) => {
+                QuickLaunchEvent::Ui(QuickLaunchUiEvent::PersistCompleted)
+            },
+            Err(message) => {
+                QuickLaunchEvent::Ui(QuickLaunchUiEvent::PersistFailed(message))
+            },
         },
     )
 }
@@ -1028,7 +1030,7 @@ fn launch_quick_launch(
     terminal_settings: &otty_ui_term::settings::Settings,
     path: NodePath,
     command: QuickLaunch,
-) -> Task<QuickLaunchEffect> {
+) -> Task<QuickLaunchEvent> {
     if state.is_launching(&path) {
         return Task::none();
     }
@@ -1042,7 +1044,9 @@ fn launch_quick_launch(
             terminal_settings.clone(),
             cancel,
         ),
-        QuickLaunchEffect::SetupCompleted,
+        |outcome| {
+            QuickLaunchEvent::Ui(QuickLaunchUiEvent::SetupCompleted(outcome))
+        },
     )
 }
 
@@ -1093,14 +1097,14 @@ fn should_highlight_launch_indicator(
 fn open_edit_command_tab(
     state: &QuickLaunchState,
     path: NodePath,
-) -> Task<QuickLaunchEffect> {
+) -> Task<QuickLaunchEvent> {
     let Some(node) = state.data().node(&path).cloned() else {
         return Task::none();
     };
     let QuickLaunchNode::Command(command) = node else {
         return Task::none();
     };
-    Task::done(QuickLaunchEffect::OpenWizardEditTab {
+    emit_effect(QuickLaunchEffect::OpenWizardEditTab {
         path,
         command: Box::new(command),
     })
@@ -1154,7 +1158,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::DeleteSelected,
+            QuickLaunchUiEvent::DeleteSelected,
             &ctx(&settings),
         );
 
@@ -1168,7 +1172,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::NodeReleased {
+            QuickLaunchUiEvent::NodeReleased {
                 path: vec![String::from("Missing")],
             },
             &ctx(&settings),
@@ -1197,7 +1201,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardSaveRequested(request),
+            QuickLaunchUiEvent::WizardSaveRequested(request),
             &ctx(&settings),
         );
 
@@ -1213,7 +1217,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::OpenErrorTab {
+            QuickLaunchUiEvent::OpenErrorTab {
                 tab_id: 5,
                 title: String::from("Err"),
                 message: String::from("something went wrong"),
@@ -1224,7 +1228,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::TabClosed { tab_id: 5 },
+            QuickLaunchUiEvent::TabClosed { tab_id: 5 },
             &ctx(&settings),
         );
         assert!(state.error_tab(5).is_none());
@@ -1239,7 +1243,7 @@ mod tests {
 
         let settings = Settings::default();
         let _task =
-            reduce(&mut state, QuickLaunchCommand::Tick, &ctx(&settings));
+            reduce(&mut state, QuickLaunchUiEvent::Tick, &ctx(&settings));
 
         assert_eq!(state.blink_nonce(), 1);
     }
@@ -1251,7 +1255,7 @@ mod tests {
 
         let settings = Settings::default();
         let _task =
-            reduce(&mut state, QuickLaunchCommand::Tick, &ctx(&settings));
+            reduce(&mut state, QuickLaunchUiEvent::Tick, &ctx(&settings));
 
         assert!(state.is_persist_in_flight());
         assert!(state.is_dirty());
@@ -1265,7 +1269,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardUpdateTitle {
+            QuickLaunchUiEvent::WizardUpdateTitle {
                 tab_id: 1,
                 value: String::from("MyCmd"),
             },
@@ -1284,7 +1288,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardSave { tab_id: 1 },
+            QuickLaunchUiEvent::WizardSave { tab_id: 1 },
             &ctx(&settings),
         );
 
@@ -1309,7 +1313,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::BackgroundPressed,
+            QuickLaunchUiEvent::BackgroundPressed,
             &ctx(&settings),
         );
 
@@ -1330,7 +1334,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::NodePressed { path: path.clone() },
+            QuickLaunchUiEvent::NodePressed { path: path.clone() },
             &ctx(&settings),
         );
 
@@ -1348,7 +1352,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::NodeHovered {
+            QuickLaunchUiEvent::NodeHovered {
                 path: vec![String::from("x")],
             },
             &resizing_ctx,
@@ -1364,7 +1368,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::NodeHovered {
+            QuickLaunchUiEvent::NodeHovered {
                 path: vec![String::from("x")],
             },
             &ctx(&settings),
@@ -1387,7 +1391,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::NodeRightClicked { path: path.clone() },
+            QuickLaunchUiEvent::NodeRightClicked { path: path.clone() },
             &ctx(&settings),
         );
 
@@ -1402,7 +1406,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::BackgroundRightClicked,
+            QuickLaunchUiEvent::BackgroundRightClicked,
             &ctx(&settings),
         );
 
@@ -1421,7 +1425,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::ContextMenuDismiss,
+            QuickLaunchUiEvent::ContextMenuDismiss,
             &ctx(&settings),
         );
 
@@ -1443,7 +1447,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::CancelInlineEdit,
+            QuickLaunchUiEvent::CancelInlineEdit,
             &ctx(&settings),
         );
 
@@ -1460,7 +1464,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::ResetInteractionState,
+            QuickLaunchUiEvent::ResetInteractionState,
             &ctx(&settings),
         );
 
@@ -1487,7 +1491,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::InlineEditChanged(String::from("NewFolder")),
+            QuickLaunchUiEvent::InlineEditChanged(String::from("NewFolder")),
             &ctx(&settings),
         );
 
@@ -1511,7 +1515,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::InlineEditSubmit,
+            QuickLaunchUiEvent::InlineEditSubmit,
             &ctx(&settings),
         );
 
@@ -1537,7 +1541,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::InlineEditSubmit,
+            QuickLaunchUiEvent::InlineEditSubmit,
             &ctx(&settings),
         );
 
@@ -1564,7 +1568,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::InlineEditSubmit,
+            QuickLaunchUiEvent::InlineEditSubmit,
             &ctx(&settings),
         );
 
@@ -1593,7 +1597,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::ContextMenuAction(ContextMenuAction::Remove),
+            QuickLaunchUiEvent::ContextMenuAction(ContextMenuAction::Remove),
             &ctx(&settings),
         );
 
@@ -1617,7 +1621,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::ContextMenuAction(ContextMenuAction::Duplicate),
+            QuickLaunchUiEvent::ContextMenuAction(ContextMenuAction::Duplicate),
             &ctx(&settings),
         );
 
@@ -1643,7 +1647,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::ContextMenuAction(ContextMenuAction::Delete),
+            QuickLaunchUiEvent::ContextMenuAction(ContextMenuAction::Delete),
             &ctx(&settings),
         );
 
@@ -1670,7 +1674,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::ContextMenuAction(ContextMenuAction::Kill),
+            QuickLaunchUiEvent::ContextMenuAction(ContextMenuAction::Kill),
             &ctx(&settings),
         );
 
@@ -1697,12 +1701,12 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::NodePressed { path: path.clone() },
+            QuickLaunchUiEvent::NodePressed { path: path.clone() },
             &ctx(&settings),
         );
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::NodeReleased { path: path.clone() },
+            QuickLaunchUiEvent::NodeReleased { path: path.clone() },
             &ctx(&settings),
         );
 
@@ -1720,7 +1724,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::HeaderCreateFolder,
+            QuickLaunchUiEvent::HeaderCreateFolder,
             &ctx(&settings),
         );
 
@@ -1740,7 +1744,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::PersistCompleted,
+            QuickLaunchUiEvent::PersistCompleted,
             &ctx(&settings),
         );
 
@@ -1756,7 +1760,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::PersistFailed(String::from("disk full")),
+            QuickLaunchUiEvent::PersistFailed(String::from("disk full")),
             &ctx(&settings),
         );
 
@@ -1775,7 +1779,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::CursorMoved { position: pos },
+            QuickLaunchUiEvent::CursorMoved { position: pos },
             &ctx(&settings),
         );
 
@@ -1801,7 +1805,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::SetupCompleted(
+            QuickLaunchUiEvent::SetupCompleted(
                 QuickLaunchSetupOutcome::Canceled {
                     path: path.clone(),
                     launch_id,
@@ -1823,7 +1827,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardInitializeCreate {
+            QuickLaunchUiEvent::WizardInitializeCreate {
                 tab_id: 10,
                 parent_path: vec![],
             },
@@ -1840,7 +1844,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardInitializeEdit {
+            QuickLaunchUiEvent::WizardInitializeEdit {
                 tab_id: 10,
                 path: vec![String::from("Demo")],
                 command: Box::new(cmd),
@@ -1859,7 +1863,7 @@ mod tests {
         // WizardCancel emits CloseTabRequested effect
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardCancel { tab_id: 5 },
+            QuickLaunchUiEvent::WizardCancel { tab_id: 5 },
             &ctx(&settings),
         );
         // Can't inspect Task directly, but at least it doesn't panic
@@ -1873,7 +1877,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardSetError {
+            QuickLaunchUiEvent::WizardSetError {
                 tab_id: 1,
                 message: String::from("oops"),
             },
@@ -1893,7 +1897,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardSelectCommandType {
+            QuickLaunchUiEvent::WizardSelectCommandType {
                 tab_id: 1,
                 command_type: super::super::model::QuickLaunchType::Ssh,
             },
@@ -1919,7 +1923,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardUpdateProgram {
+            QuickLaunchUiEvent::WizardUpdateProgram {
                 tab_id: 1,
                 value: String::from("/usr/bin/zsh"),
             },
@@ -1939,7 +1943,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardAddArg { tab_id: 1 },
+            QuickLaunchUiEvent::WizardAddArg { tab_id: 1 },
             &ctx(&settings),
         );
 
@@ -1956,7 +1960,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardAddEnv { tab_id: 1 },
+            QuickLaunchUiEvent::WizardAddEnv { tab_id: 1 },
             &ctx(&settings),
         );
 
@@ -2015,7 +2019,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardSaveRequested(request),
+            QuickLaunchUiEvent::WizardSaveRequested(request),
             &ctx(&settings),
         );
 
@@ -2041,7 +2045,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::DeleteSelected,
+            QuickLaunchUiEvent::DeleteSelected,
             &ctx(&settings),
         );
 
@@ -2055,7 +2059,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::DeleteSelected,
+            QuickLaunchUiEvent::DeleteSelected,
             &ctx(&settings),
         );
         assert!(state.data().root.children.is_empty());
@@ -2077,7 +2081,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::TabClosed { tab_id: 5 },
+            QuickLaunchUiEvent::TabClosed { tab_id: 5 },
             &ctx(&settings),
         );
 
@@ -2097,7 +2101,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::BackgroundReleased,
+            QuickLaunchUiEvent::BackgroundReleased,
             &ctx(&settings),
         );
 
@@ -2120,7 +2124,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardSave { tab_id: 1 },
+            QuickLaunchUiEvent::WizardSave { tab_id: 1 },
             &ctx(&settings),
         );
 
@@ -2143,7 +2147,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardUpdateHost {
+            QuickLaunchUiEvent::WizardUpdateHost {
                 tab_id: 1,
                 value: String::from("example.com"),
             },
@@ -2151,7 +2155,7 @@ mod tests {
         );
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardUpdateUser {
+            QuickLaunchUiEvent::WizardUpdateUser {
                 tab_id: 1,
                 value: String::from("admin"),
             },
@@ -2159,7 +2163,7 @@ mod tests {
         );
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardUpdatePort {
+            QuickLaunchUiEvent::WizardUpdatePort {
                 tab_id: 1,
                 value: String::from("2222"),
             },
@@ -2167,7 +2171,7 @@ mod tests {
         );
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardUpdateIdentityFile {
+            QuickLaunchUiEvent::WizardUpdateIdentityFile {
                 tab_id: 1,
                 value: String::from("~/.ssh/id_rsa"),
             },
@@ -2190,7 +2194,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardUpdateWorkingDirectory {
+            QuickLaunchUiEvent::WizardUpdateWorkingDirectory {
                 tab_id: 1,
                 value: String::from("/tmp"),
             },
@@ -2214,7 +2218,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardRemoveArg {
+            QuickLaunchUiEvent::WizardRemoveArg {
                 tab_id: 1,
                 index: 0,
             },
@@ -2237,7 +2241,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardUpdateArg {
+            QuickLaunchUiEvent::WizardUpdateArg {
                 tab_id: 1,
                 index: 0,
                 value: String::from("-v"),
@@ -2261,7 +2265,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardRemoveEnv {
+            QuickLaunchUiEvent::WizardRemoveEnv {
                 tab_id: 1,
                 index: 0,
             },
@@ -2284,7 +2288,7 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardUpdateEnvKey {
+            QuickLaunchUiEvent::WizardUpdateEnvKey {
                 tab_id: 1,
                 index: 0,
                 value: String::from("PATH"),
@@ -2293,7 +2297,7 @@ mod tests {
         );
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardUpdateEnvValue {
+            QuickLaunchUiEvent::WizardUpdateEnvValue {
                 tab_id: 1,
                 index: 0,
                 value: String::from("/usr/bin"),
@@ -2318,12 +2322,12 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardAddExtraArg { tab_id: 1 },
+            QuickLaunchUiEvent::WizardAddExtraArg { tab_id: 1 },
             &ctx(&settings),
         );
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardUpdateExtraArg {
+            QuickLaunchUiEvent::WizardUpdateExtraArg {
                 tab_id: 1,
                 index: 0,
                 value: String::from("-o StrictHostKeyChecking=no"),
@@ -2338,7 +2342,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            QuickLaunchCommand::WizardRemoveExtraArg {
+            QuickLaunchUiEvent::WizardRemoveExtraArg {
                 tab_id: 1,
                 index: 0,
             },

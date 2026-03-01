@@ -1,4 +1,3 @@
-mod command;
 mod errors;
 pub(crate) mod event;
 pub(crate) mod model;
@@ -9,8 +8,9 @@ mod storage;
 pub(crate) mod view;
 mod wizard_model;
 
-pub(crate) use command::QuickLaunchCommand;
-pub(crate) use event::{QuickLaunchEffect, QuickLaunchEvent};
+pub(crate) use event::{
+    QuickLaunchEffect, QuickLaunchEvent, QuickLaunchUiEvent,
+};
 use iced::Task;
 pub(crate) use reducer::QuickLaunchCtx;
 use state::QuickLaunchState;
@@ -37,13 +37,13 @@ impl QuickLaunchWidget {
         }
     }
 
-    /// Reduce a command into state updates and effects.
+    /// Process an event into state updates and follow-up actions.
     pub(crate) fn reduce(
         &mut self,
-        command: QuickLaunchCommand,
+        event: QuickLaunchUiEvent,
         ctx: &QuickLaunchCtx<'_>,
-    ) -> Task<QuickLaunchEffect> {
-        reducer::reduce(&mut self.state, command, ctx)
+    ) -> Task<QuickLaunchEvent> {
+        reducer::reduce(&mut self.state, event, ctx)
     }
 
     /// Return a tree view model for the sidebar panel.

@@ -5,7 +5,7 @@ use iced::{Element, Length, Theme};
 
 use crate::shared::ui::icons::{FOLDER, FOLDER_OPENED, PLAY};
 use crate::shared::ui::theme::ThemeProps;
-use crate::widgets::quick_launch::event::QuickLaunchEvent;
+use crate::widgets::quick_launch::event::QuickLaunchUiEvent;
 use crate::widgets::quick_launch::model::{
     LaunchInfo, NodePath, QuickLaunchFile, QuickLaunchNode,
 };
@@ -33,11 +33,12 @@ pub(crate) struct SidebarTreeProps<'a> {
 /// Render the quick launch sidebar tree.
 pub(crate) fn view(
     props: SidebarTreeProps<'_>,
-) -> Element<'_, QuickLaunchEvent, Theme, iced::Renderer> {
+) -> Element<'_, QuickLaunchUiEvent, Theme, iced::Renderer> {
     let palette = props.theme.theme.iced_palette();
 
-    let mut entries: Vec<Element<'_, QuickLaunchEvent, Theme, iced::Renderer>> =
-        Vec::new();
+    let mut entries: Vec<
+        Element<'_, QuickLaunchUiEvent, Theme, iced::Renderer>,
+    > = Vec::new();
 
     render_children(
         props.data.root().children(),
@@ -71,10 +72,10 @@ pub(crate) fn view(
     let tree_area = iced::widget::mouse_area(
         scrollable(content).width(Length::Fill).height(Length::Fill),
     )
-    .on_move(|position| QuickLaunchEvent::CursorMoved { position })
-    .on_press(QuickLaunchEvent::BackgroundPressed)
-    .on_release(QuickLaunchEvent::BackgroundReleased)
-    .on_right_press(QuickLaunchEvent::BackgroundRightClicked);
+    .on_move(|position| QuickLaunchUiEvent::CursorMoved { position })
+    .on_press(QuickLaunchUiEvent::BackgroundPressed)
+    .on_release(QuickLaunchUiEvent::BackgroundReleased)
+    .on_right_press(QuickLaunchUiEvent::BackgroundRightClicked);
 
     let root_drop_background =
         if matches!(props.drop_target, Some(DropTarget::Root)) {
@@ -101,7 +102,7 @@ fn render_children<'a>(
     depth: usize,
     props: &SidebarTreeProps<'a>,
     palette: &'a crate::shared::ui::theme::IcedColorPalette,
-    entries: &mut Vec<Element<'a, QuickLaunchEvent, Theme, iced::Renderer>>,
+    entries: &mut Vec<Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer>>,
 ) {
     for node in children {
         let mut path = parent_path.to_vec();
@@ -174,7 +175,7 @@ fn render_tree_row<'a>(
     launch_info: Option<&'a LaunchInfo>,
     drop_target: Option<&DropTarget>,
     palette: &'a crate::shared::ui::theme::IcedColorPalette,
-) -> Element<'a, QuickLaunchEvent, Theme, iced::Renderer> {
+) -> Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
     let indent = depth as f32 * TREE_INDENT;
     let foreground = palette.foreground;
     let dim_foreground = palette.dim_foreground;
@@ -275,16 +276,16 @@ fn render_tree_row<'a>(
         });
 
     let interactive = iced::widget::mouse_area(styled_row)
-        .on_enter(QuickLaunchEvent::NodeHovered {
+        .on_enter(QuickLaunchUiEvent::NodeHovered {
             path: path_for_hover,
         })
-        .on_press(QuickLaunchEvent::NodePressed {
+        .on_press(QuickLaunchUiEvent::NodePressed {
             path: path_for_press,
         })
-        .on_release(QuickLaunchEvent::NodeReleased {
+        .on_release(QuickLaunchUiEvent::NodeReleased {
             path: path_for_release,
         })
-        .on_right_press(QuickLaunchEvent::NodeRightClicked {
+        .on_right_press(QuickLaunchUiEvent::NodeRightClicked {
             path: path_for_right,
         });
 
@@ -303,12 +304,12 @@ fn render_inline_edit<'a>(
     edit: &'a InlineEditState,
     depth: usize,
     palette: &'a crate::shared::ui::theme::IcedColorPalette,
-) -> Element<'a, QuickLaunchEvent, Theme, iced::Renderer> {
+) -> Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
     let indent = depth as f32 * TREE_INDENT;
 
     let input = text_input("", &edit.value)
-        .on_input(QuickLaunchEvent::InlineEditChanged)
-        .on_submit(QuickLaunchEvent::InlineEditSubmit)
+        .on_input(QuickLaunchUiEvent::InlineEditChanged)
+        .on_submit(QuickLaunchUiEvent::InlineEditSubmit)
         .size(TREE_FONT_SIZE)
         .id(edit.id.clone());
 

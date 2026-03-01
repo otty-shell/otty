@@ -2,6 +2,7 @@ use iced::{Subscription, window};
 
 use crate::app::{App, AppEvent};
 use crate::widgets::quick_launch::event::QUICK_LAUNCHES_TICK_MS;
+use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
 use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
 
 /// Build the active subscription set from current app state.
@@ -32,9 +33,9 @@ pub(super) fn subscription(app: &App) -> Subscription<AppEvent> {
             QUICK_LAUNCHES_TICK_MS,
         ))
         .map(|_| {
-            AppEvent::QuickLaunchUi(
-                crate::widgets::quick_launch::QuickLaunchEvent::Tick,
-            )
+            AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
+                QuickLaunchUiEvent::Tick,
+            ))
         });
         subs.push(tick);
     }

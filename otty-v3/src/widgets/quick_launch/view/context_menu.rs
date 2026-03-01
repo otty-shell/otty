@@ -5,7 +5,7 @@ use crate::components::primitive::menu_item;
 use crate::shared::ui::menu_geometry::anchor_position;
 use crate::shared::ui::menu_style::menu_panel_style;
 use crate::shared::ui::theme::ThemeProps;
-use crate::widgets::quick_launch::event::QuickLaunchEvent;
+use crate::widgets::quick_launch::event::QuickLaunchUiEvent;
 use crate::widgets::quick_launch::model::{
     ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,
 };
@@ -28,8 +28,8 @@ pub(crate) struct ContextMenuProps<'a> {
 /// Render the quick launch context menu overlay.
 pub(crate) fn view(
     props: ContextMenuProps<'_>,
-) -> Element<'_, QuickLaunchEvent, Theme, iced::Renderer> {
-    let mut items: Vec<Element<'_, QuickLaunchEvent, Theme, iced::Renderer>> =
+) -> Element<'_, QuickLaunchUiEvent, Theme, iced::Renderer> {
+    let mut items: Vec<Element<'_, QuickLaunchUiEvent, Theme, iced::Renderer>> =
         Vec::new();
 
     match &props.menu.target {
@@ -133,7 +133,7 @@ pub(crate) fn view(
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(QuickLaunchEvent::ContextMenuDismiss);
+    .on_press(QuickLaunchUiEvent::ContextMenuDismiss);
 
     iced::widget::Stack::with_children(vec![
         dismiss_layer.into(),
@@ -148,7 +148,7 @@ fn menu_item_element<'a>(
     label: &'a str,
     action: ContextMenuAction,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchEvent, Theme, iced::Renderer> {
+) -> Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
     menu_item::view(menu_item::MenuItemProps { label, theme })
-        .map(move |_| QuickLaunchEvent::ContextMenuAction(action.clone()))
+        .map(move |_| QuickLaunchUiEvent::ContextMenuAction(action.clone()))
 }

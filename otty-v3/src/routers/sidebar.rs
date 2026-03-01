@@ -67,18 +67,24 @@ fn map_sidebar_effect_event_to_app_task(
         E::OpenSettingsTab => Task::done(AppEvent::OpenSettingsTab),
         E::OpenTerminalTab => Task::done(AppEvent::OpenTerminalTab),
         E::QuickLaunchHeaderCreateCommand => {
-            Task::done(AppEvent::QuickLaunchUi(
-                crate::widgets::quick_launch::QuickLaunchEvent::HeaderCreateCommand,
+            Task::done(AppEvent::QuickLaunch(
+                crate::widgets::quick_launch::QuickLaunchEvent::Ui(
+                    crate::widgets::quick_launch::QuickLaunchUiEvent::HeaderCreateCommand,
+                ),
             ))
         },
         E::QuickLaunchHeaderCreateFolder => {
-            Task::done(AppEvent::QuickLaunchUi(
-                crate::widgets::quick_launch::QuickLaunchEvent::HeaderCreateFolder,
+            Task::done(AppEvent::QuickLaunch(
+                crate::widgets::quick_launch::QuickLaunchEvent::Ui(
+                    crate::widgets::quick_launch::QuickLaunchUiEvent::HeaderCreateFolder,
+                ),
             ))
         },
         E::QuickLaunchResetInteractionState => {
-            Task::done(AppEvent::QuickLaunchUi(
-                crate::widgets::quick_launch::QuickLaunchEvent::ResetInteractionState,
+            Task::done(AppEvent::QuickLaunch(
+                crate::widgets::quick_launch::QuickLaunchEvent::Ui(
+                    crate::widgets::quick_launch::QuickLaunchUiEvent::ResetInteractionState,
+                ),
             ))
         },
     }

@@ -7,7 +7,7 @@ use crate::components::primitive::icon_button::{
 };
 use crate::shared::ui::icons;
 use crate::shared::ui::theme::ThemeProps;
-use crate::widgets::quick_launch::event::QuickLaunchEvent;
+use crate::widgets::quick_launch::event::QuickLaunchUiEvent;
 use crate::widgets::quick_launch::model::QuickLaunchTreeViewModel;
 
 const HEADER_HEIGHT: f32 = 28.0;
@@ -24,7 +24,7 @@ pub(crate) struct SidebarPanelProps<'a> {
 /// Render the quick launch sidebar panel with header and tree.
 pub(crate) fn view(
     props: SidebarPanelProps<'_>,
-) -> Element<'_, QuickLaunchEvent, Theme, iced::Renderer> {
+) -> Element<'_, QuickLaunchUiEvent, Theme, iced::Renderer> {
     let palette = props.theme.theme.iced_palette();
     let overlay_bg = palette.overlay;
 
@@ -35,7 +35,7 @@ pub(crate) fn view(
         icon_size: ADD_BUTTON_ICON_SIZE,
         variant: IconButtonVariant::Standard,
     })
-    .map(|_| QuickLaunchEvent::HeaderAddButtonPressed);
+    .map(|_| QuickLaunchUiEvent::HeaderAddButtonPressed);
 
     let header = container(
         row![

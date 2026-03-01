@@ -3,7 +3,7 @@ use iced::widget::operation::snap_to_end;
 
 use crate::app::{App, AppEvent, PendingQuickLaunchWizard};
 use crate::widgets::explorer::ExplorerCommand;
-use crate::widgets::quick_launch::QuickLaunchCommand;
+use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
 use crate::widgets::settings::SettingsCommand;
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_SCROLL_ID;
 use crate::widgets::tabs::{TabsCommand, TabsEffect, TabsEvent};
@@ -69,8 +69,8 @@ pub(crate) fn route_effect(
             )));
 
             // Notify quick launch of tab closure.
-            tasks.push(Task::done(AppEvent::QuickLaunchCommand(
-                QuickLaunchCommand::TabClosed { tab_id },
+            tasks.push(Task::done(AppEvent::QuickLaunch(
+                QuickLaunchEvent::Ui(QuickLaunchUiEvent::TabClosed { tab_id }),
             )));
 
             // Sync explorer for the new active tab.
@@ -143,21 +143,21 @@ pub(crate) fn route_effect(
         TabsEffect::WizardTabOpened { tab_id } => {
             match app.pending_workflows.pop_quick_launch_wizard() {
                 Some(PendingQuickLaunchWizard::Create { parent_path }) => {
-                    Task::done(AppEvent::QuickLaunchCommand(
-                        QuickLaunchCommand::WizardInitializeCreate {
+                    Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
+                        QuickLaunchUiEvent::WizardInitializeCreate {
                             tab_id,
                             parent_path,
                         },
-                    ))
+                    )))
                 },
                 Some(PendingQuickLaunchWizard::Edit { path, command }) => {
-                    Task::done(AppEvent::QuickLaunchCommand(
-                        QuickLaunchCommand::WizardInitializeEdit {
+                    Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
+                        QuickLaunchUiEvent::WizardInitializeEdit {
                             tab_id,
                             path,
                             command,
                         },
-                    ))
+                    )))
                 },
                 None => Task::none(),
             }
@@ -169,13 +169,13 @@ pub(crate) fn route_effect(
                 return Task::none();
             };
             let (title, message) = payload.into_parts();
-            Task::done(AppEvent::QuickLaunchCommand(
-                QuickLaunchCommand::OpenErrorTab {
+            Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
+                QuickLaunchUiEvent::OpenErrorTab {
                     tab_id,
                     title,
                     message,
                 },
-            ))
+            )))
         },
         TabsEffect::ScrollBarToEnd => snap_to_end(TAB_BAR_SCROLL_ID),
     }

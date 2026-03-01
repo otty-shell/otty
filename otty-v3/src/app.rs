@@ -22,9 +22,7 @@ use crate::widgets::chrome::{
 use crate::widgets::explorer::{
     ExplorerCommand, ExplorerEffect, ExplorerEvent, ExplorerWidget,
 };
-use crate::widgets::quick_launch::{
-    QuickLaunchCommand, QuickLaunchEffect, QuickLaunchEvent, QuickLaunchWidget,
-};
+use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchWidget};
 use crate::widgets::settings::event::{SettingsEffect, SettingsEvent};
 use crate::widgets::settings::{SettingsCommand, SettingsWidget};
 use crate::widgets::sidebar::{
@@ -140,8 +138,7 @@ pub(crate) enum AppEvent {
     TabsUi(TabsEvent),
     TabsEffect(TabsEffect),
     // Quick Launch widget
-    QuickLaunchUi(QuickLaunchEvent),
-    QuickLaunchEffect(QuickLaunchEffect),
+    QuickLaunch(QuickLaunchEvent),
     // Terminal Workspace widget
     TerminalWorkspaceUi(TerminalWorkspaceEvent),
     TerminalWorkspaceEffect(TerminalWorkspaceEffect),
@@ -155,7 +152,6 @@ pub(crate) enum AppEvent {
     SidebarCommand(SidebarCommand),
     ChromeCommand(ChromeCommand),
     TabsCommand(TabsCommand),
-    QuickLaunchCommand(QuickLaunchCommand),
     TerminalWorkspaceCommand(TerminalWorkspaceCommand),
     ExplorerCommand(ExplorerCommand),
     SettingsCommand(SettingsCommand),

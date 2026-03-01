@@ -10,7 +10,7 @@ pub(crate) const QUICK_LAUNCHES_TICK_MS: u64 = 200;
 
 /// UI events emitted by the quick launch presentation layer.
 #[derive(Debug, Clone)]
-pub(crate) enum QuickLaunchEvent {
+pub(crate) enum QuickLaunchUiEvent {
     // Tree interaction events
     NodeHovered {
         path: NodePath,
@@ -179,12 +179,13 @@ pub(crate) enum QuickLaunchEffect {
     OpenErrorTab { title: String, message: String },
     /// Request closing a tab.
     CloseTabRequested { tab_id: u64 },
-    /// Send an error back to the wizard editor.
-    WizardSetError { tab_id: u64, message: String },
-    /// Launch setup async completion.
-    SetupCompleted(QuickLaunchSetupOutcome),
-    /// Persist operation completed successfully.
-    PersistCompleted,
-    /// Persist operation failed.
-    PersistFailed(String),
+}
+
+/// Quick launch event stream routed through the app update loop.
+#[derive(Debug, Clone)]
+pub(crate) enum QuickLaunchEvent {
+    /// UI/internal event that should be reduced by the quick launch widget.
+    Ui(QuickLaunchUiEvent),
+    /// External effect that should be orchestrated by app-level routing.
+    Effect(QuickLaunchEffect),
 }
