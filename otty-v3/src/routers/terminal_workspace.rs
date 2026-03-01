@@ -4,23 +4,26 @@ use crate::app::{App, AppEvent};
 use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
 use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceCommand, TerminalWorkspaceCtx, TerminalWorkspaceEffect,
-    TerminalWorkspaceEvent,
+    TerminalWorkspaceCtx, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
+    TerminalWorkspaceUiEvent,
 };
 
-/// Route a terminal workspace UI event through the widget reducer.
-pub(crate) fn route_event(
+/// Route a terminal workspace event through widget reduction or app orchestration.
+pub(crate) fn route(
     app: &mut App,
     event: TerminalWorkspaceEvent,
 ) -> Task<AppEvent> {
-    let command = map_event_to_command(event);
-    route_command(app, command)
+    match event {
+        TerminalWorkspaceEvent::Ui(event) => route_ui_event(app, event),
+        TerminalWorkspaceEvent::Effect(effect) => {
+            route_effect_event(app, effect)
+        },
+    }
 }
 
-/// Route a terminal workspace command directly (used by flow routers).
-pub(crate) fn route_command(
+fn route_ui_event(
     app: &mut App,
-    command: TerminalWorkspaceCommand,
+    event: TerminalWorkspaceUiEvent,
 ) -> Task<AppEvent> {
     let ctx = build_ctx_from_parts(
         app.widgets.tabs.active_tab_id(),
@@ -30,12 +33,12 @@ pub(crate) fn route_command(
     );
     app.widgets
         .terminal_workspace
-        .reduce(command, &ctx)
-        .map(AppEvent::TerminalWorkspaceEffect)
+        .reduce(event, &ctx)
+        .map(AppEvent::TerminalWorkspace)
 }
 
 /// Route a terminal workspace effect event to app-level tasks.
-pub(crate) fn route_effect(
+fn route_effect_event(
     app: &mut App,
     effect: TerminalWorkspaceEffect,
 ) -> Task<AppEvent> {
@@ -94,90 +97,5 @@ fn build_ctx_from_parts(
         pane_grid_size,
         screen_size,
         sidebar_cursor,
-    }
-}
-
-fn map_event_to_command(
-    event: TerminalWorkspaceEvent,
-) -> TerminalWorkspaceCommand {
-    use {TerminalWorkspaceCommand as C, TerminalWorkspaceEvent as E};
-
-    match event {
-        E::OpenTab {
-            tab_id,
-            terminal_id,
-            default_title,
-            settings,
-            kind,
-            sync_explorer,
-        } => C::OpenTab {
-            tab_id,
-            terminal_id,
-            default_title,
-            settings,
-            kind,
-            sync_explorer,
-        },
-        E::TabClosed { tab_id } => C::TabClosed { tab_id },
-        E::Widget(event) => C::Widget(event),
-        E::PaneClicked { tab_id, pane } => C::PaneClicked { tab_id, pane },
-        E::PaneResized { tab_id, event } => C::PaneResized { tab_id, event },
-        E::PaneGridCursorMoved { tab_id, position } => {
-            C::PaneGridCursorMoved { tab_id, position }
-        },
-        E::OpenContextMenu {
-            tab_id,
-            pane,
-            terminal_id,
-        } => C::OpenContextMenu {
-            tab_id,
-            pane,
-            terminal_id,
-        },
-        E::CloseContextMenu { tab_id } => C::CloseContextMenu { tab_id },
-        E::ContextMenuInput { tab_id } => C::ContextMenuInput { tab_id },
-        E::SplitPane { tab_id, pane, axis } => {
-            C::SplitPane { tab_id, pane, axis }
-        },
-        E::ClosePane { tab_id, pane } => C::ClosePane { tab_id, pane },
-        E::CopySelection {
-            tab_id,
-            terminal_id,
-        } => C::CopySelection {
-            tab_id,
-            terminal_id,
-        },
-        E::PasteIntoPrompt {
-            tab_id,
-            terminal_id,
-        } => C::PasteIntoPrompt {
-            tab_id,
-            terminal_id,
-        },
-        E::CopySelectedBlockContent {
-            tab_id,
-            terminal_id,
-        } => C::CopySelectedBlockContent {
-            tab_id,
-            terminal_id,
-        },
-        E::CopySelectedBlockPrompt {
-            tab_id,
-            terminal_id,
-        } => C::CopySelectedBlockPrompt {
-            tab_id,
-            terminal_id,
-        },
-        E::CopySelectedBlockCommand {
-            tab_id,
-            terminal_id,
-        } => C::CopySelectedBlockCommand {
-            tab_id,
-            terminal_id,
-        },
-        E::ApplyTheme { palette } => C::ApplyTheme { palette },
-        E::CloseAllContextMenus => C::CloseAllContextMenus,
-        E::FocusActive => C::FocusActive,
-        E::SyncSelection { tab_id } => C::SyncSelection { tab_id },
     }
 }

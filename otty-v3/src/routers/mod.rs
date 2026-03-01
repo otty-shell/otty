@@ -25,14 +25,8 @@ pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         // Quick Launch widget
         AppEvent::QuickLaunch(event) => quick_launch::route(app, event),
         // Terminal Workspace widget
-        AppEvent::TerminalWorkspaceUi(event) => {
-            terminal_workspace::route_event(app, event)
-        },
-        AppEvent::TerminalWorkspaceEffect(effect) => {
-            terminal_workspace::route_effect(app, effect)
-        },
-        AppEvent::TerminalWorkspaceCommand(command) => {
-            terminal_workspace::route_command(app, command)
+        AppEvent::TerminalWorkspace(event) => {
+            terminal_workspace::route(app, event)
         },
         // Explorer widget
         AppEvent::Explorer(event) => explorer::route(app, event),

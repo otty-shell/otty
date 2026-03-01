@@ -5,7 +5,9 @@ use crate::guards::{MenuGuard, context_menu_guard, inline_edit_guard};
 use crate::routers;
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
-use crate::widgets::terminal_workspace::TerminalWorkspaceCommand;
+use crate::widgets::terminal_workspace::{
+    TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
+};
 
 /// Thin dispatch: route each event to its owning router or handler.
 pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
@@ -63,9 +65,9 @@ fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
         ),
         routers::route(
             app,
-            AppEvent::TerminalWorkspaceCommand(
-                TerminalWorkspaceCommand::CloseAllContextMenus,
-            ),
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Ui(
+                TerminalWorkspaceUiEvent::CloseAllContextMenus,
+            )),
         ),
     ])
 }

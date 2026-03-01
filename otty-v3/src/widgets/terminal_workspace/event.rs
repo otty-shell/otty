@@ -8,7 +8,7 @@ use super::model::TerminalKind;
 
 /// UI events emitted by the terminal workspace presentation layer.
 #[derive(Clone)]
-pub(crate) enum TerminalWorkspaceEvent {
+pub(crate) enum TerminalWorkspaceUiEvent {
     /// Request to open a new terminal tab.
     OpenTab {
         tab_id: u64,
@@ -71,7 +71,7 @@ pub(crate) enum TerminalWorkspaceEvent {
     SyncSelection { tab_id: u64 },
 }
 
-impl fmt::Debug for TerminalWorkspaceEvent {
+impl fmt::Debug for TerminalWorkspaceUiEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::OpenTab {
@@ -199,4 +199,13 @@ pub(crate) enum TerminalWorkspaceEffect {
     TitleChanged { tab_id: u64, title: String },
     /// Request the explorer to sync from the active terminal CWD.
     SyncExplorer,
+}
+
+/// Terminal workspace event stream routed through the app update loop.
+#[derive(Debug, Clone)]
+pub(crate) enum TerminalWorkspaceEvent {
+    /// UI/internal event reduced by the terminal workspace widget.
+    Ui(TerminalWorkspaceUiEvent),
+    /// External effect orchestrated by app-level routing.
+    Effect(TerminalWorkspaceEffect),
 }

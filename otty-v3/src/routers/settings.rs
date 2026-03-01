@@ -8,9 +8,11 @@ use crate::widgets::settings::model::SettingsData;
 use crate::widgets::settings::{
     SettingsEffect, SettingsEvent, SettingsUiEvent,
 };
-use crate::widgets::terminal_workspace::TerminalWorkspaceCommand;
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
+};
+use crate::widgets::terminal_workspace::{
+    TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
 };
 
 /// Route a settings event through widget reduction or app orchestration.
@@ -74,9 +76,9 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
     let palette = data.to_color_palette();
     let terminal_palette: otty_ui_term::ColorPalette = palette.into();
 
-    Task::done(AppEvent::TerminalWorkspaceCommand(
-        TerminalWorkspaceCommand::ApplyTheme {
+    Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Ui(
+        TerminalWorkspaceUiEvent::ApplyTheme {
             palette: Box::new(terminal_palette),
         },
-    ))
+    )))
 }

@@ -9,7 +9,7 @@ use crate::shared::ui::menu_geometry::{
 };
 use crate::shared::ui::menu_style::menu_panel_style;
 use crate::shared::ui::theme::ThemeProps;
-use crate::widgets::terminal_workspace::event::TerminalWorkspaceEvent;
+use crate::widgets::terminal_workspace::event::TerminalWorkspaceUiEvent;
 
 const MENU_CONTAINER_WIDTH: f32 = 250.0;
 const MENU_ITEM_HEIGHT: f32 = 24.0;
@@ -33,13 +33,13 @@ pub(crate) struct PaneContextMenuProps<'a> {
 /// Render the context menu overlay for a terminal pane.
 pub(crate) fn view<'a>(
     props: PaneContextMenuProps<'a>,
-) -> Element<'a, TerminalWorkspaceEvent> {
-    let mut buttons: Vec<Element<'a, TerminalWorkspaceEvent>> = Vec::new();
+) -> Element<'a, TerminalWorkspaceUiEvent> {
+    let mut buttons: Vec<Element<'a, TerminalWorkspaceUiEvent>> = Vec::new();
 
     buttons.push(menu_item(
         "Copy selection",
         props.theme,
-        TerminalWorkspaceEvent::CopySelection {
+        TerminalWorkspaceUiEvent::CopySelection {
             tab_id: props.tab_id,
             terminal_id: props.terminal_id,
         },
@@ -47,7 +47,7 @@ pub(crate) fn view<'a>(
     buttons.push(menu_item(
         "Paste",
         props.theme,
-        TerminalWorkspaceEvent::PasteIntoPrompt {
+        TerminalWorkspaceUiEvent::PasteIntoPrompt {
             tab_id: props.tab_id,
             terminal_id: props.terminal_id,
         },
@@ -57,7 +57,7 @@ pub(crate) fn view<'a>(
         buttons.push(menu_item(
             "Copy content",
             props.theme,
-            TerminalWorkspaceEvent::CopySelectedBlockContent {
+            TerminalWorkspaceUiEvent::CopySelectedBlockContent {
                 tab_id: props.tab_id,
                 terminal_id: props.terminal_id,
             },
@@ -65,7 +65,7 @@ pub(crate) fn view<'a>(
         buttons.push(menu_item(
             "Copy prompt",
             props.theme,
-            TerminalWorkspaceEvent::CopySelectedBlockPrompt {
+            TerminalWorkspaceUiEvent::CopySelectedBlockPrompt {
                 tab_id: props.tab_id,
                 terminal_id: props.terminal_id,
             },
@@ -73,7 +73,7 @@ pub(crate) fn view<'a>(
         buttons.push(menu_item(
             "Copy command",
             props.theme,
-            TerminalWorkspaceEvent::CopySelectedBlockCommand {
+            TerminalWorkspaceUiEvent::CopySelectedBlockCommand {
                 tab_id: props.tab_id,
                 terminal_id: props.terminal_id,
             },
@@ -83,7 +83,7 @@ pub(crate) fn view<'a>(
     buttons.push(menu_item(
         "Split horizontally",
         props.theme,
-        TerminalWorkspaceEvent::SplitPane {
+        TerminalWorkspaceUiEvent::SplitPane {
             tab_id: props.tab_id,
             pane: props.pane,
             axis: pane_grid::Axis::Horizontal,
@@ -92,7 +92,7 @@ pub(crate) fn view<'a>(
     buttons.push(menu_item(
         "Split vertically",
         props.theme,
-        TerminalWorkspaceEvent::SplitPane {
+        TerminalWorkspaceUiEvent::SplitPane {
             tab_id: props.tab_id,
             pane: props.pane,
             axis: pane_grid::Axis::Vertical,
@@ -101,7 +101,7 @@ pub(crate) fn view<'a>(
     buttons.push(menu_item(
         "Close",
         props.theme,
-        TerminalWorkspaceEvent::ClosePane {
+        TerminalWorkspaceUiEvent::ClosePane {
             tab_id: props.tab_id,
             pane: props.pane,
         },
@@ -151,18 +151,18 @@ pub(crate) fn view<'a>(
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(TerminalWorkspaceEvent::CloseContextMenu {
+    .on_press(TerminalWorkspaceUiEvent::CloseContextMenu {
         tab_id: props.tab_id,
     })
-    .on_right_press(TerminalWorkspaceEvent::CloseContextMenu {
+    .on_right_press(TerminalWorkspaceUiEvent::CloseContextMenu {
         tab_id: props.tab_id,
     })
-    .on_move(
-        move |position| TerminalWorkspaceEvent::PaneGridCursorMoved {
+    .on_move(move |position| {
+        TerminalWorkspaceUiEvent::PaneGridCursorMoved {
             tab_id: props.tab_id,
             position,
-        },
-    );
+        }
+    });
 
     iced::widget::stack!(
         dismiss_layer,
@@ -177,17 +177,22 @@ pub(crate) fn view<'a>(
 fn menu_item<'a>(
     label: &'a str,
     theme: ThemeProps<'a>,
-    event: TerminalWorkspaceEvent,
-) -> Element<'a, TerminalWorkspaceEvent> {
+    event: TerminalWorkspaceUiEvent,
+) -> Element<'a, TerminalWorkspaceUiEvent> {
     let props = MenuItemProps { label, theme };
     menu_item_view(props).map(move |item_event| match item_event {
         MenuItemEvent::Pressed => event.clone(),
     })
 }
 
-fn focus_trap(tab_id: u64, id: Id) -> Element<'static, TerminalWorkspaceEvent> {
+fn focus_trap(
+    tab_id: u64,
+    id: Id,
+) -> Element<'static, TerminalWorkspaceUiEvent> {
     text_input("", "")
-        .on_input(move |_| TerminalWorkspaceEvent::ContextMenuInput { tab_id })
+        .on_input(move |_| TerminalWorkspaceUiEvent::ContextMenuInput {
+            tab_id,
+        })
         .padding(0)
         .size(1)
         .width(Length::Fixed(1.0))

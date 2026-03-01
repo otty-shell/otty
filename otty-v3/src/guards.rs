@@ -49,8 +49,12 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 _ => Ignore,
             }
         },
-        AppEvent::TerminalWorkspaceUi(event) => {
-            use crate::widgets::terminal_workspace::TerminalWorkspaceEvent as E;
+        AppEvent::TerminalWorkspace(
+            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Ui(
+                event,
+            ),
+        ) => {
+            use crate::widgets::terminal_workspace::TerminalWorkspaceUiEvent as E;
             match event {
                 E::CloseContextMenu { .. }
                 | E::CopySelection { .. }
@@ -73,8 +77,11 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         | AppEvent::QuickLaunch(
             crate::widgets::quick_launch::QuickLaunchEvent::Effect(_),
         )
-        | AppEvent::TerminalWorkspaceEffect(_) => Allow,
-        AppEvent::TerminalWorkspaceCommand(_) => Allow,
+        | AppEvent::TerminalWorkspace(
+            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Effect(
+                _,
+            ),
+        ) => Allow,
         AppEvent::Settings(
             crate::widgets::settings::SettingsEvent::Effect(_),
         )
@@ -131,16 +138,23 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
                 E::WorkspaceCursorMoved { .. } | E::PaneGridCursorMoved { .. }
             )
         },
-        AppEvent::TerminalWorkspaceUi(event) => {
-            use crate::widgets::terminal_workspace::TerminalWorkspaceEvent as E;
+        AppEvent::TerminalWorkspace(
+            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Ui(
+                event,
+            ),
+        ) => {
+            use crate::widgets::terminal_workspace::TerminalWorkspaceUiEvent as E;
             !matches!(event, E::Widget(_) | E::PaneGridCursorMoved { .. })
         },
-        AppEvent::TerminalWorkspaceEffect(_) => false,
+        AppEvent::TerminalWorkspace(
+            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Effect(
+                _,
+            ),
+        ) => false,
         AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Ui(event)) => {
             use crate::widgets::tabs::TabsUiEvent as E;
             matches!(event, E::ActivateTab { .. } | E::CloseTab { .. })
         },
-        AppEvent::TerminalWorkspaceCommand(_) => false,
         AppEvent::Settings(
             crate::widgets::settings::SettingsEvent::Effect(_),
         )

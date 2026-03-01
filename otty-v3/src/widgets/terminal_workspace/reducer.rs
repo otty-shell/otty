@@ -4,8 +4,9 @@ use iced::widget::pane_grid;
 use iced::{Point, Size, Task};
 use otty_ui_term::{BlockCommand, TerminalView};
 
-use super::command::TerminalWorkspaceCommand;
-use super::event::TerminalWorkspaceEffect;
+use super::event::{
+    TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
+};
 use super::model::TerminalKind;
 use super::state::{StateCommand, TerminalTabState, TerminalWorkspaceState};
 
@@ -21,17 +22,17 @@ pub(crate) struct TerminalWorkspaceCtx {
     pub(crate) sidebar_cursor: Point,
 }
 
-/// Reduce a terminal workspace command into state updates and effects.
+/// Reduce a terminal workspace UI event into state updates and effects.
 pub(crate) fn reduce(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,
-    command: TerminalWorkspaceCommand,
+    event: TerminalWorkspaceUiEvent,
     ctx: &TerminalWorkspaceCtx,
-) -> Task<TerminalWorkspaceEffect> {
-    use TerminalWorkspaceCommand::*;
+) -> Task<TerminalWorkspaceEvent> {
+    use TerminalWorkspaceUiEvent::*;
 
-    match command {
+    match event {
         OpenTab {
             tab_id,
             terminal_id,
@@ -178,7 +179,7 @@ fn reduce_open_tab(
     settings: otty_ui_term::settings::Settings,
     kind: TerminalKind,
     sync_explorer: bool,
-) -> Task<TerminalWorkspaceEffect> {
+) -> Task<TerminalWorkspaceEvent> {
     let (mut terminal_tab, widget_id) = match TerminalTabState::new(
         tab_id,
         default_title,
@@ -189,7 +190,9 @@ fn reduce_open_tab(
         Ok(result) => result,
         Err(err) => {
             log::warn!("failed to create terminal tab: {err}");
-            return Task::done(TerminalWorkspaceEffect::TabClosed { tab_id });
+            return Task::done(TerminalWorkspaceEvent::Effect(
+                TerminalWorkspaceEffect::TabClosed { tab_id },
+            ));
         },
     };
 
@@ -201,12 +204,16 @@ fn reduce_open_tab(
     let title = terminal_tab.title().to_string();
     state.insert_tab(tab_id, terminal_tab);
 
-    let mut tasks: Vec<Task<TerminalWorkspaceEffect>> = vec![
+    let mut tasks: Vec<Task<TerminalWorkspaceEvent>> = vec![
         TerminalView::focus(widget_id),
-        Task::done(TerminalWorkspaceEffect::TitleChanged { tab_id, title }),
+        Task::done(TerminalWorkspaceEvent::Effect(
+            TerminalWorkspaceEffect::TitleChanged { tab_id, title },
+        )),
     ];
     if sync_explorer {
-        tasks.push(Task::done(TerminalWorkspaceEffect::SyncExplorer));
+        tasks.push(Task::done(TerminalWorkspaceEvent::Effect(
+            TerminalWorkspaceEffect::SyncExplorer,
+        )));
     }
 
     Task::batch(tasks)
@@ -217,7 +224,7 @@ fn reduce_widget_event(
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,
     event: otty_ui_term::Event,
-) -> Task<TerminalWorkspaceEffect> {
+) -> Task<TerminalWorkspaceEvent> {
     let terminal_id = *event.terminal_id();
     let Some(tab_id) = terminal_to_tab.get(&terminal_id).copied() else {
         return Task::none();
@@ -248,10 +255,12 @@ fn reduce_widget_event(
     let title_task = state
         .tab(tab_id)
         .map(|tab| {
-            Task::done(TerminalWorkspaceEffect::TitleChanged {
-                tab_id,
-                title: tab.title().to_string(),
-            })
+            Task::done(TerminalWorkspaceEvent::Effect(
+                TerminalWorkspaceEffect::TitleChanged {
+                    tab_id,
+                    title: tab.title().to_string(),
+                },
+            ))
         })
         .unwrap_or_else(Task::none);
 
@@ -261,7 +270,7 @@ fn reduce_widget_event(
 fn reduce_focus_active(
     state: &TerminalWorkspaceState,
     active_tab_id: Option<u64>,
-) -> Task<TerminalWorkspaceEffect> {
+) -> Task<TerminalWorkspaceEvent> {
     let Some(tab) = active_tab_id.and_then(|id| state.tab(id)) else {
         return Task::none();
     };
@@ -281,7 +290,7 @@ fn reduce_split_pane(
     tab_id: u64,
     pane: pane_grid::Pane,
     axis: pane_grid::Axis,
-) -> Task<TerminalWorkspaceEffect> {
+) -> Task<TerminalWorkspaceEvent> {
     let terminal_id = *next_terminal_id;
     *next_terminal_id += 1;
 
@@ -304,7 +313,7 @@ fn reduce_copy_selection(
     state: &mut TerminalWorkspaceState,
     tab_id: u64,
     terminal_id: u64,
-) -> Task<TerminalWorkspaceEffect> {
+) -> Task<TerminalWorkspaceEvent> {
     let Some(widget_id) = state
         .tab(tab_id)
         .and_then(|tab| tab.terminals().get(&terminal_id))
@@ -324,7 +333,7 @@ fn reduce_paste_into_prompt(
     state: &mut TerminalWorkspaceState,
     tab_id: u64,
     terminal_id: u64,
-) -> Task<TerminalWorkspaceEffect> {
+) -> Task<TerminalWorkspaceEvent> {
     let Some(widget_id) = state
         .tab(tab_id)
         .and_then(|tab| tab.terminals().get(&terminal_id))
@@ -345,7 +354,7 @@ fn reduce_copy_selected_block(
     tab_id: u64,
     terminal_id: u64,
     kind: CopyKind,
-) -> Task<TerminalWorkspaceEffect> {
+) -> Task<TerminalWorkspaceEvent> {
     let Some((block_id, widget_id)) = state.tab(tab_id).and_then(|tab| {
         let selection = tab.selected_block()?;
         if selection.terminal_id() != terminal_id {
@@ -378,7 +387,7 @@ fn reduce_copy_selected_block(
 fn reduce_sync_selection(
     state: &TerminalWorkspaceState,
     tab_id: u64,
-) -> Task<TerminalWorkspaceEffect> {
+) -> Task<TerminalWorkspaceEvent> {
     let Some(tab) = state.tab(tab_id) else {
         return Task::none();
     };
@@ -410,7 +419,7 @@ fn update_block_selection(
     state: &mut TerminalWorkspaceState,
     tab_id: u64,
     event: &otty_ui_term::Event,
-) -> Task<TerminalWorkspaceEffect> {
+) -> Task<TerminalWorkspaceEvent> {
     use otty_ui_term::Event::*;
 
     match event {
@@ -465,7 +474,7 @@ fn with_terminal_tab<F>(
     state: &mut TerminalWorkspaceState,
     tab_id: u64,
     f: F,
-) -> Task<TerminalWorkspaceEffect>
+) -> Task<TerminalWorkspaceEvent>
 where
     F: FnOnce(&mut TerminalTabState) -> StateCommand,
 {
@@ -479,12 +488,13 @@ where
     };
 
     let command_task = execute_command(cmd);
-    let title_task =
-        Task::done(TerminalWorkspaceEffect::TitleChanged { tab_id, title });
+    let title_task = Task::done(TerminalWorkspaceEvent::Effect(
+        TerminalWorkspaceEffect::TitleChanged { tab_id, title },
+    ));
     Task::batch(vec![command_task, title_task])
 }
 
-fn execute_command(command: StateCommand) -> Task<TerminalWorkspaceEffect> {
+fn execute_command(command: StateCommand) -> Task<TerminalWorkspaceEvent> {
     match command {
         StateCommand::None => Task::none(),
         StateCommand::FocusTerminal(id) => TerminalView::focus(id),
@@ -493,7 +503,9 @@ fn execute_command(command: StateCommand) -> Task<TerminalWorkspaceEffect> {
         },
         StateCommand::FocusElement(id) => iced::widget::operation::focus(id),
         StateCommand::CloseTab { tab_id } => {
-            Task::done(TerminalWorkspaceEffect::TabClosed { tab_id })
+            Task::done(TerminalWorkspaceEvent::Effect(
+                TerminalWorkspaceEffect::TabClosed { tab_id },
+            ))
         },
         StateCommand::Batch(cmds) => {
             Task::batch(cmds.into_iter().map(execute_command))
@@ -522,7 +534,7 @@ mod tests {
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{TerminalWorkspaceCtx, reduce};
-    use crate::widgets::terminal_workspace::command::TerminalWorkspaceCommand;
+    use crate::widgets::terminal_workspace::TerminalWorkspaceUiEvent;
     use crate::widgets::terminal_workspace::model::TerminalKind;
     use crate::widgets::terminal_workspace::state::TerminalWorkspaceState;
 
@@ -561,7 +573,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceCommand::OpenTab {
+            TerminalWorkspaceUiEvent::OpenTab {
                 tab_id: 1,
                 terminal_id: 10,
                 default_title: String::from("Shell"),
@@ -588,7 +600,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceCommand::PaneClicked { tab_id: 999, pane },
+            TerminalWorkspaceUiEvent::PaneClicked { tab_id: 999, pane },
             &ctx,
         );
 
@@ -606,7 +618,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceCommand::OpenTab {
+            TerminalWorkspaceUiEvent::OpenTab {
                 tab_id: 1,
                 terminal_id: 10,
                 default_title: String::from("Shell"),
@@ -621,7 +633,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceCommand::TabClosed { tab_id: 1 },
+            TerminalWorkspaceUiEvent::TabClosed { tab_id: 1 },
             &ctx,
         );
 
@@ -640,7 +652,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceCommand::CloseAllContextMenus,
+            TerminalWorkspaceUiEvent::CloseAllContextMenus,
             &ctx,
         );
     }
@@ -656,7 +668,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceCommand::ContextMenuInput { tab_id: 1 },
+            TerminalWorkspaceUiEvent::ContextMenuInput { tab_id: 1 },
             &ctx,
         );
     }
@@ -677,7 +689,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceCommand::FocusActive,
+            TerminalWorkspaceUiEvent::FocusActive,
             &ctx,
         );
     }

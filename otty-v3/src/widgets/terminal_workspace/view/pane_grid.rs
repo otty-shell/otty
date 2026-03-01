@@ -5,7 +5,7 @@ use iced::widget::{Stack, container, mouse_area, text};
 use iced::{Border, Element, Length, Theme};
 use otty_ui_term::TerminalView;
 
-use crate::widgets::terminal_workspace::event::TerminalWorkspaceEvent;
+use crate::widgets::terminal_workspace::event::TerminalWorkspaceUiEvent;
 use crate::widgets::terminal_workspace::model::{
     TerminalEntry, TerminalTabViewModel,
 };
@@ -18,7 +18,7 @@ const PANE_BORDER_WIDTH: f32 = 1.0;
 /// Render the pane grid for a terminal tab.
 pub(crate) fn view<'a>(
     vm: TerminalTabViewModel<'a>,
-) -> Element<'a, TerminalWorkspaceEvent> {
+) -> Element<'a, TerminalWorkspaceUiEvent> {
     let tab_id = vm.tab_id;
     let focus = vm.focus;
     let terminals = vm.terminals;
@@ -54,7 +54,7 @@ pub(crate) fn view<'a>(
         }
     })
     .on_resize(PANE_RESIZE_GRAB, move |event| {
-        TerminalWorkspaceEvent::PaneResized { tab_id, event }
+        TerminalWorkspaceUiEvent::PaneResized { tab_id, event }
     });
 
     let grid_container = container(grid)
@@ -77,12 +77,9 @@ pub(crate) fn view<'a>(
         .height(Length::Fill);
 
     mouse_area(stack_widget)
-        .on_move(
-            move |position| TerminalWorkspaceEvent::PaneGridCursorMoved {
-                tab_id,
-                position,
-            },
-        )
+        .on_move(move |position| {
+            TerminalWorkspaceUiEvent::PaneGridCursorMoved { tab_id, position }
+        })
         .into()
 }
 
@@ -92,7 +89,7 @@ fn view_single_pane<'a>(
     terminal_id: u64,
     terminals: &'a HashMap<u64, TerminalEntry>,
     is_focused: bool,
-) -> Element<'a, TerminalWorkspaceEvent> {
+) -> Element<'a, TerminalWorkspaceUiEvent> {
     let Some(terminal_entry) = terminals.get(&terminal_id) else {
         return container(text("Terminal unavailable"))
             .width(Length::Fill)
@@ -100,13 +97,13 @@ fn view_single_pane<'a>(
             .into();
     };
 
-    let focus_event = TerminalWorkspaceEvent::PaneClicked { tab_id, pane };
+    let focus_event = TerminalWorkspaceUiEvent::PaneClicked { tab_id, pane };
 
     let terminal_view = TerminalView::show(terminal_entry.terminal())
-        .map(TerminalWorkspaceEvent::Widget);
+        .map(TerminalWorkspaceUiEvent::Widget);
     let terminal_area = mouse_area(terminal_view)
         .on_press(focus_event)
-        .on_right_press(TerminalWorkspaceEvent::OpenContextMenu {
+        .on_right_press(TerminalWorkspaceUiEvent::OpenContextMenu {
             tab_id,
             pane,
             terminal_id,

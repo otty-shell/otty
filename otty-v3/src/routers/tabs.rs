@@ -7,9 +7,11 @@ use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
 use crate::widgets::settings::{SettingsEvent, SettingsUiEvent};
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_SCROLL_ID;
 use crate::widgets::tabs::{TabsEffect, TabsEvent, TabsUiEvent};
-use crate::widgets::terminal_workspace::TerminalWorkspaceCommand;
 use crate::widgets::terminal_workspace::model::TerminalKind;
 use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
+use crate::widgets::terminal_workspace::{
+    TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
+};
 
 /// Route a tabs event through widget reduction or app orchestration.
 pub(crate) fn route(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
@@ -30,11 +32,15 @@ fn route_effect_event(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
             let mut tasks: Vec<Task<AppEvent>> = Vec::new();
 
             // Focus the terminal in the activated tab.
-            tasks.push(Task::done(AppEvent::TerminalWorkspaceCommand(
-                TerminalWorkspaceCommand::FocusActive,
+            tasks.push(Task::done(AppEvent::TerminalWorkspace(
+                TerminalWorkspaceEvent::Ui(
+                    TerminalWorkspaceUiEvent::FocusActive,
+                ),
             )));
-            tasks.push(Task::done(AppEvent::TerminalWorkspaceCommand(
-                TerminalWorkspaceCommand::SyncSelection { tab_id },
+            tasks.push(Task::done(AppEvent::TerminalWorkspace(
+                TerminalWorkspaceEvent::Ui(
+                    TerminalWorkspaceUiEvent::SyncSelection { tab_id },
+                ),
             )));
 
             // Sync explorer from terminal CWD.
@@ -59,8 +65,10 @@ fn route_effect_event(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
             let mut tasks: Vec<Task<AppEvent>> = Vec::new();
 
             // Notify terminal workspace of tab closure.
-            tasks.push(Task::done(AppEvent::TerminalWorkspaceCommand(
-                TerminalWorkspaceCommand::TabClosed { tab_id },
+            tasks.push(Task::done(AppEvent::TerminalWorkspace(
+                TerminalWorkspaceEvent::Ui(
+                    TerminalWorkspaceUiEvent::TabClosed { tab_id },
+                ),
             )));
 
             // Notify quick launch of tab closure.
@@ -82,14 +90,18 @@ fn route_effect_event(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
             }
 
             if remaining > 0 {
-                tasks.push(Task::done(AppEvent::TerminalWorkspaceCommand(
-                    TerminalWorkspaceCommand::FocusActive,
+                tasks.push(Task::done(AppEvent::TerminalWorkspace(
+                    TerminalWorkspaceEvent::Ui(
+                        TerminalWorkspaceUiEvent::FocusActive,
+                    ),
                 )));
                 if let Some(active_id) = new_active_id {
-                    tasks.push(Task::done(AppEvent::TerminalWorkspaceCommand(
-                        TerminalWorkspaceCommand::SyncSelection {
-                            tab_id: active_id,
-                        },
+                    tasks.push(Task::done(AppEvent::TerminalWorkspace(
+                        TerminalWorkspaceEvent::Ui(
+                            TerminalWorkspaceUiEvent::SyncSelection {
+                                tab_id: active_id,
+                            },
+                        ),
                     )));
                 }
             }
@@ -106,8 +118,8 @@ fn route_effect_event(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                 app.shell_session.session().clone(),
             ));
 
-            Task::done(AppEvent::TerminalWorkspaceCommand(
-                TerminalWorkspaceCommand::OpenTab {
+            Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Ui(
+                TerminalWorkspaceUiEvent::OpenTab {
                     tab_id,
                     terminal_id,
                     default_title: title,
@@ -115,22 +127,22 @@ fn route_effect_event(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                     kind: TerminalKind::Shell,
                     sync_explorer: true,
                 },
-            ))
+            )))
         },
         TabsEffect::CommandTabOpened {
             tab_id,
             terminal_id,
             title,
             settings,
-        } => Task::done(AppEvent::TerminalWorkspaceCommand(
-            TerminalWorkspaceCommand::OpenTab {
+        } => Task::done(AppEvent::TerminalWorkspace(
+            TerminalWorkspaceEvent::Ui(TerminalWorkspaceUiEvent::OpenTab {
                 tab_id,
                 terminal_id,
                 default_title: title,
                 settings,
                 kind: TerminalKind::Command,
                 sync_explorer: false,
-            },
+            }),
         )),
         TabsEffect::SettingsTabOpened => Task::done(AppEvent::Settings(
             SettingsEvent::Ui(SettingsUiEvent::Reload),

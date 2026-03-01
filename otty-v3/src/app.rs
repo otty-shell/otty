@@ -27,8 +27,7 @@ use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
 use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceCommand, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
-    TerminalWorkspaceWidget,
+    TerminalWorkspaceEvent, TerminalWorkspaceWidget,
 };
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
@@ -130,14 +129,11 @@ pub(crate) enum AppEvent {
     // Quick Launch widget
     QuickLaunch(QuickLaunchEvent),
     // Terminal Workspace widget
-    TerminalWorkspaceUi(TerminalWorkspaceEvent),
-    TerminalWorkspaceEffect(TerminalWorkspaceEffect),
+    TerminalWorkspace(TerminalWorkspaceEvent),
     // Explorer widget
     Explorer(ExplorerEvent),
     // Settings widget
     Settings(SettingsEvent),
-    // Widget command dispatch
-    TerminalWorkspaceCommand(TerminalWorkspaceCommand),
     // Cross-widget workflows
     OpenTerminalTab,
     OpenSettingsTab,

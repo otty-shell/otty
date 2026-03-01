@@ -25,6 +25,7 @@ use crate::widgets::sidebar::{
 use crate::widgets::tabs::TabsEvent;
 use crate::widgets::tabs::model::TabContent;
 use crate::widgets::tabs::view::tab_bar;
+use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
 use crate::widgets::terminal_workspace::view::{
     pane_context_menu as terminal_pane_context_menu,
     pane_grid as terminal_pane_grid,
@@ -301,8 +302,11 @@ fn view_tab_content<'a>(
         (Some(tab_id), Some(TabContent::Terminal)) => {
             let vm = app.widgets.terminal_workspace.vm(Some(tab_id));
             match vm.tab {
-                Some(tab_vm) => terminal_pane_grid::view(tab_vm)
-                    .map(AppEvent::TerminalWorkspaceUi),
+                Some(tab_vm) => terminal_pane_grid::view(tab_vm).map(|event| {
+                    AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Ui(
+                        event,
+                    ))
+                }),
                 None => missing_tab_state("Terminal tab is not initialized."),
             }
         },
@@ -374,7 +378,9 @@ fn view_terminal_context_menu_overlay<'a>(
                     theme: theme_props,
                 },
             )
-            .map(AppEvent::TerminalWorkspaceUi),
+            .map(|event| {
+                AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Ui(event))
+            }),
         );
     }
 

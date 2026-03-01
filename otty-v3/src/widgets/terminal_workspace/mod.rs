@@ -1,4 +1,3 @@
-mod command;
 mod errors;
 pub(crate) mod event;
 pub(crate) mod model;
@@ -10,11 +9,9 @@ pub(crate) mod view;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub(crate) use command::TerminalWorkspaceCommand;
-#[allow(unused_imports)]
-pub(crate) use event::TerminalWorkspaceEffect;
-#[allow(unused_imports)]
-pub(crate) use event::TerminalWorkspaceEvent;
+pub(crate) use event::{
+    TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
+};
 use iced::{Size, Task};
 pub(crate) use reducer::TerminalWorkspaceCtx;
 use state::{TerminalTabState, TerminalWorkspaceState};
@@ -42,17 +39,17 @@ impl TerminalWorkspaceWidget {
         }
     }
 
-    /// Reduce a command into state updates and effects.
+    /// Reduce a UI event into state updates and effect events.
     pub(crate) fn reduce(
         &mut self,
-        command: TerminalWorkspaceCommand,
+        event: TerminalWorkspaceUiEvent,
         ctx: &TerminalWorkspaceCtx,
-    ) -> Task<TerminalWorkspaceEffect> {
+    ) -> Task<TerminalWorkspaceEvent> {
         reducer::reduce(
             &mut self.state,
             &mut self.terminal_to_tab,
             &mut self.next_terminal_id,
-            command,
+            event,
             ctx,
         )
     }
