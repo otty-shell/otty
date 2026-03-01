@@ -77,8 +77,10 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         AppEvent::SidebarCommand(_)
         | AppEvent::TabsCommand(_)
         | AppEvent::TerminalWorkspaceCommand(_)
-        | AppEvent::ExplorerCommand(_)
         | AppEvent::SettingsCommand(_) => Allow,
+        AppEvent::Explorer(crate::widgets::explorer::ExplorerEvent::Ui(
+            crate::widgets::explorer::ExplorerUiEvent::SyncRoot { .. },
+        )) => Allow,
         AppEvent::Window(_) | AppEvent::ResizeWindow(_) => Allow,
         AppEvent::OpenTerminalTab
         | AppEvent::OpenSettingsTab
@@ -131,8 +133,10 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
         AppEvent::SidebarCommand(_)
         | AppEvent::TabsCommand(_)
         | AppEvent::TerminalWorkspaceCommand(_)
-        | AppEvent::ExplorerCommand(_)
         | AppEvent::SettingsCommand(_) => false,
+        AppEvent::Explorer(crate::widgets::explorer::ExplorerEvent::Ui(
+            crate::widgets::explorer::ExplorerUiEvent::SyncRoot { .. },
+        )) => false,
         AppEvent::OpenTerminalTab
         | AppEvent::OpenSettingsTab
         | AppEvent::OpenFileTerminalTab { .. }

@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use iced::Task;
 
-use super::command::ExplorerCommand;
-use super::event::ExplorerEffect;
+use super::event::{ExplorerEffect, ExplorerEvent, ExplorerUiEvent};
 use super::state::ExplorerState;
 
 /// Runtime context for the explorer reducer.
@@ -12,30 +11,30 @@ pub(crate) struct ExplorerCtx {
     pub(crate) active_shell_cwd: Option<PathBuf>,
 }
 
-/// Reduce an explorer command into state updates and effects.
+/// Reduce an explorer UI event into state updates and effects.
 pub(crate) fn reduce(
     state: &mut ExplorerState,
-    command: ExplorerCommand,
+    event: ExplorerUiEvent,
     _ctx: &ExplorerCtx,
-) -> Task<ExplorerEffect> {
-    match command {
-        ExplorerCommand::NodePressed { path } => {
+) -> Task<ExplorerEvent> {
+    match event {
+        ExplorerUiEvent::NodePressed { path } => {
             reduce_node_pressed(state, path)
         },
-        ExplorerCommand::NodeHovered { path } => {
+        ExplorerUiEvent::NodeHovered { path } => {
             state.set_hovered_path(path);
             Task::none()
         },
-        ExplorerCommand::SyncRoot { cwd } => reduce_sync_root(state, cwd),
-        ExplorerCommand::RootLoaded { root, nodes } => {
+        ExplorerUiEvent::SyncRoot { cwd } => reduce_sync_root(state, cwd),
+        ExplorerUiEvent::RootLoaded { root, nodes } => {
             let _ = state.apply_root_nodes(&root, nodes);
             Task::none()
         },
-        ExplorerCommand::FolderLoaded { path, nodes } => {
+        ExplorerUiEvent::FolderLoaded { path, nodes } => {
             let _ = state.apply_folder_nodes(&path, nodes);
             Task::none()
         },
-        ExplorerCommand::LoadFailed { message } => {
+        ExplorerUiEvent::LoadFailed { message } => {
             log::warn!("explorer load failed: {message}");
             Task::none()
         },
@@ -46,7 +45,7 @@ pub(crate) fn reduce(
 fn reduce_node_pressed(
     state: &mut ExplorerState,
     path: Vec<String>,
-) -> Task<ExplorerEffect> {
+) -> Task<ExplorerEvent> {
     state.set_selected_path(Some(path.clone()));
 
     if state.node_is_folder(&path).unwrap_or(false) {
@@ -54,29 +53,35 @@ fn reduce_node_pressed(
             return Task::none();
         };
 
-        return Task::done(ExplorerEffect::LoadFolderRequested {
-            path,
-            directory: load_path,
-        });
+        return Task::done(ExplorerEvent::Effect(
+            ExplorerEffect::LoadFolderRequested {
+                path,
+                directory: load_path,
+            },
+        ));
     }
 
     let Some(file_path) = state.node_path(&path) else {
         return Task::none();
     };
 
-    Task::done(ExplorerEffect::OpenFileTerminalTab { file_path })
+    Task::done(ExplorerEvent::Effect(ExplorerEffect::OpenFileTerminalTab {
+        file_path,
+    }))
 }
 
 /// Handle root sync from the active terminal CWD.
 fn reduce_sync_root(
     state: &mut ExplorerState,
     cwd: PathBuf,
-) -> Task<ExplorerEffect> {
+) -> Task<ExplorerEvent> {
     if !state.set_root(Some(cwd.clone())) {
         return Task::none();
     }
 
-    Task::done(ExplorerEffect::LoadRootRequested { root: cwd })
+    Task::done(ExplorerEvent::Effect(ExplorerEffect::LoadRootRequested {
+        root: cwd,
+    }))
 }
 
 #[cfg(test)]
@@ -96,7 +101,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerCommand::NodeHovered {
+            ExplorerUiEvent::NodeHovered {
                 path: Some(vec![String::from("src")]),
             },
             &ctx(None),
@@ -115,7 +120,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerCommand::RootLoaded {
+            ExplorerUiEvent::RootLoaded {
                 root: root.clone(),
                 nodes: vec![FileNode::new(
                     String::from("main.rs"),
@@ -138,7 +143,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerCommand::RootLoaded {
+            ExplorerUiEvent::RootLoaded {
                 root: PathBuf::from("/tmp/b"),
                 nodes: vec![FileNode::new(
                     String::from("main.rs"),
@@ -164,7 +169,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerCommand::SyncRoot {
+            ExplorerUiEvent::SyncRoot {
                 cwd: PathBuf::from("/tmp/new-root"),
             },
             &ctx(None),
@@ -186,7 +191,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerCommand::SyncRoot {
+            ExplorerUiEvent::SyncRoot {
                 cwd: PathBuf::from("/tmp/original"),
             },
             &ctx(None),
@@ -209,7 +214,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerCommand::NodePressed {
+            ExplorerUiEvent::NodePressed {
                 path: vec![String::from("src")],
             },
             &ctx(None),
@@ -235,7 +240,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerCommand::LoadFailed {
+            ExplorerUiEvent::LoadFailed {
                 message: String::from("boom"),
             },
             &ctx(None),

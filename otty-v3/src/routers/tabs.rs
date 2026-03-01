@@ -2,7 +2,7 @@ use iced::Task;
 use iced::widget::operation::snap_to_end;
 
 use crate::app::{App, AppEvent, PendingQuickLaunchWizard};
-use crate::widgets::explorer::ExplorerCommand;
+use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
 use crate::widgets::settings::SettingsCommand;
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_SCROLL_ID;
@@ -49,9 +49,9 @@ pub(crate) fn route_effect(
                 .terminal_workspace
                 .shell_cwd_for_active_tab(active_tab_id)
             {
-                tasks.push(Task::done(AppEvent::ExplorerCommand(
-                    ExplorerCommand::SyncRoot { cwd },
-                )));
+                tasks.push(Task::done(AppEvent::Explorer(ExplorerEvent::Ui(
+                    ExplorerUiEvent::SyncRoot { cwd },
+                ))));
             }
 
             Task::batch(tasks)
@@ -80,8 +80,8 @@ pub(crate) fn route_effect(
                     .terminal_workspace
                     .shell_cwd_for_active_tab(Some(active_id))
                 {
-                    tasks.push(Task::done(AppEvent::ExplorerCommand(
-                        ExplorerCommand::SyncRoot { cwd },
+                    tasks.push(Task::done(AppEvent::Explorer(
+                        ExplorerEvent::Ui(ExplorerUiEvent::SyncRoot { cwd }),
                     )));
                 }
             }

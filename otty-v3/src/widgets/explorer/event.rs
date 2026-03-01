@@ -4,7 +4,7 @@ use super::model::{FileNode, TreePath};
 
 /// UI events emitted by the explorer presentation layer.
 #[derive(Debug, Clone)]
-pub(crate) enum ExplorerEvent {
+pub(crate) enum ExplorerUiEvent {
     /// A tree node was clicked.
     NodePressed { path: TreePath },
     /// The cursor entered a tree node.
@@ -31,4 +31,13 @@ pub(crate) enum ExplorerEffect {
     LoadFolderRequested { path: TreePath, directory: PathBuf },
     /// Request opening a file in a command terminal tab.
     OpenFileTerminalTab { file_path: PathBuf },
+}
+
+/// Explorer event stream routed through the app update loop.
+#[derive(Debug, Clone)]
+pub(crate) enum ExplorerEvent {
+    /// UI/internal event reduced by the explorer widget.
+    Ui(ExplorerUiEvent),
+    /// External effect orchestrated by app-level routing.
+    Effect(ExplorerEffect),
 }

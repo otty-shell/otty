@@ -10,6 +10,7 @@ use crate::shared::ui::theme::ThemeProps;
 use crate::shared::ui::{menu_geometry, menu_style};
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::view::action_bar::{self, ACTION_BAR_HEIGHT};
+use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::quick_launch::QuickLaunchEvent;
 use crate::widgets::quick_launch::view::{
@@ -253,7 +254,7 @@ fn view_workspace_content<'a>(
                 vm: app.widgets.explorer.tree_vm(),
                 theme: theme_props,
             })
-            .map(AppEvent::ExplorerUi)
+            .map(|event| AppEvent::Explorer(ExplorerEvent::Ui(event)))
         },
     }
 }

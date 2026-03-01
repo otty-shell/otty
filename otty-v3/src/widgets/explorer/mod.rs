@@ -1,4 +1,3 @@
-mod command;
 mod errors;
 pub(crate) mod event;
 pub(crate) mod model;
@@ -7,10 +6,7 @@ pub(crate) mod services;
 pub(crate) mod state;
 pub(crate) mod view;
 
-pub(crate) use command::ExplorerCommand;
-pub(crate) use event::ExplorerEffect;
-#[allow(unused_imports)] // re-exported for router wiring
-pub(crate) use event::ExplorerEvent;
+pub(crate) use event::{ExplorerEffect, ExplorerEvent, ExplorerUiEvent};
 use iced::Task;
 pub(crate) use reducer::ExplorerCtx;
 use state::ExplorerState;
@@ -30,13 +26,13 @@ impl ExplorerWidget {
         }
     }
 
-    /// Reduce a command into state updates and effects.
+    /// Reduce a UI event into state updates and effects.
     pub(crate) fn reduce(
         &mut self,
-        command: ExplorerCommand,
+        event: ExplorerUiEvent,
         ctx: &ExplorerCtx,
-    ) -> Task<ExplorerEffect> {
-        reducer::reduce(&mut self.state, command, ctx)
+    ) -> Task<ExplorerEvent> {
+        reducer::reduce(&mut self.state, event, ctx)
     }
 
     /// Return a tree view model for the sidebar panel.

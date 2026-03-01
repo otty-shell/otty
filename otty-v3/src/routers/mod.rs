@@ -41,11 +41,7 @@ pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             terminal_workspace::route_command(app, command)
         },
         // Explorer widget
-        AppEvent::ExplorerUi(event) => explorer::route_event(app, event),
-        AppEvent::ExplorerEffect(effect) => explorer::route_effect(effect),
-        AppEvent::ExplorerCommand(command) => {
-            explorer::route_command(app, command)
-        },
+        AppEvent::Explorer(event) => explorer::route(app, event),
         // Settings widget
         AppEvent::SettingsUi(event) => settings::route_event(app, event),
         AppEvent::SettingsEffect(effect) => settings::route_effect(app, effect),

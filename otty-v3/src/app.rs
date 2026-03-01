@@ -17,9 +17,7 @@ use crate::shared::ui::fonts::FontsConfig;
 use crate::shared::ui::theme::{AppTheme, ThemeManager};
 use crate::state::State;
 use crate::widgets::chrome::{ChromeEvent, ChromeWidget};
-use crate::widgets::explorer::{
-    ExplorerCommand, ExplorerEffect, ExplorerEvent, ExplorerWidget,
-};
+use crate::widgets::explorer::{ExplorerEvent, ExplorerWidget};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchWidget};
 use crate::widgets::settings::event::{SettingsEffect, SettingsEvent};
 use crate::widgets::settings::{SettingsCommand, SettingsWidget};
@@ -140,8 +138,7 @@ pub(crate) enum AppEvent {
     TerminalWorkspaceUi(TerminalWorkspaceEvent),
     TerminalWorkspaceEffect(TerminalWorkspaceEffect),
     // Explorer widget
-    ExplorerUi(ExplorerEvent),
-    ExplorerEffect(ExplorerEffect),
+    Explorer(ExplorerEvent),
     // Settings widget
     SettingsUi(SettingsEvent),
     SettingsEffect(SettingsEffect),
@@ -149,7 +146,6 @@ pub(crate) enum AppEvent {
     SidebarCommand(SidebarCommand),
     TabsCommand(TabsCommand),
     TerminalWorkspaceCommand(TerminalWorkspaceCommand),
-    ExplorerCommand(ExplorerCommand),
     SettingsCommand(SettingsCommand),
     // Cross-widget workflows
     OpenTerminalTab,

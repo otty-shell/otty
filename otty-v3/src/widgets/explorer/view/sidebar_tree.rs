@@ -5,7 +5,7 @@ use iced::{Element, Length, alignment};
 use crate::shared::ui::icons::{FILE, FOLDER, FOLDER_OPENED};
 use crate::shared::ui::theme::{IcedColorPalette, ThemeProps};
 use crate::shared::ui::tree_style;
-use crate::widgets::explorer::event::ExplorerEvent;
+use crate::widgets::explorer::event::ExplorerUiEvent;
 use crate::widgets::explorer::model::{
     ExplorerTreeViewModel, FileNode, TreePath,
 };
@@ -38,7 +38,7 @@ pub(crate) struct SidebarTreeProps<'a> {
 /// Render the full explorer sidebar panel (header + directory bar + tree).
 pub(crate) fn view(
     props: SidebarTreeProps<'_>,
-) -> Element<'_, ExplorerEvent, iced::Theme, iced::Renderer> {
+) -> Element<'_, ExplorerUiEvent, iced::Theme, iced::Renderer> {
     let palette = props.theme.theme.iced_palette();
 
     let header = explorer_header(palette);
@@ -60,7 +60,7 @@ pub(crate) fn view(
 /// Render the "EXPLORER" section header.
 fn explorer_header<'a>(
     palette: &'a IcedColorPalette,
-) -> Element<'a, ExplorerEvent, iced::Theme, iced::Renderer> {
+) -> Element<'a, ExplorerUiEvent, iced::Theme, iced::Renderer> {
     let foreground = palette.foreground;
 
     let title = text("EXPLORER")
@@ -87,7 +87,7 @@ fn explorer_header<'a>(
 fn current_directory_bar<'a>(
     root_label: Option<&'a str>,
     palette: &'a IcedColorPalette,
-) -> Element<'a, ExplorerEvent, iced::Theme, iced::Renderer> {
+) -> Element<'a, ExplorerUiEvent, iced::Theme, iced::Renderer> {
     let label = root_label.unwrap_or("No active folder");
     let overlay = palette.overlay;
     let foreground = palette.foreground;
@@ -116,9 +116,9 @@ fn current_directory_bar<'a>(
 fn explorer_tree<'a>(
     vm: &ExplorerTreeViewModel<'a>,
     palette: &'a IcedColorPalette,
-) -> Element<'a, ExplorerEvent, iced::Theme, iced::Renderer> {
+) -> Element<'a, ExplorerUiEvent, iced::Theme, iced::Renderer> {
     let mut entries: Vec<
-        Element<'_, ExplorerEvent, iced::Theme, iced::Renderer>,
+        Element<'_, ExplorerUiEvent, iced::Theme, iced::Renderer>,
     > = Vec::new();
 
     render_children(vm.tree, &[], 0, vm, palette, &mut entries);
@@ -158,7 +158,9 @@ fn render_children<'a>(
     depth: usize,
     vm: &ExplorerTreeViewModel<'a>,
     palette: &'a IcedColorPalette,
-    entries: &mut Vec<Element<'a, ExplorerEvent, iced::Theme, iced::Renderer>>,
+    entries: &mut Vec<
+        Element<'a, ExplorerUiEvent, iced::Theme, iced::Renderer>,
+    >,
 ) {
     for node in children {
         let mut path = parent_path.to_vec();
@@ -198,7 +200,7 @@ fn render_tree_row<'a>(
     is_selected: bool,
     is_hovered: bool,
     palette: &'a IcedColorPalette,
-) -> Element<'a, ExplorerEvent, iced::Theme, iced::Renderer> {
+) -> Element<'a, ExplorerUiEvent, iced::Theme, iced::Renderer> {
     let indent = depth as f32 * TREE_INDENT;
 
     let icon_color = palette.dim_foreground;
@@ -263,10 +265,10 @@ fn render_tree_row<'a>(
     let path_for_press = path.clone();
 
     let interactive = iced::widget::mouse_area(styled_row)
-        .on_enter(ExplorerEvent::NodeHovered {
+        .on_enter(ExplorerUiEvent::NodeHovered {
             path: Some(path_for_hover),
         })
-        .on_press(ExplorerEvent::NodePressed {
+        .on_press(ExplorerUiEvent::NodePressed {
             path: path_for_press,
         });
 

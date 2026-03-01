@@ -1,6 +1,7 @@
 use iced::Task;
 
 use crate::app::{App, AppEvent};
+use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
 use crate::widgets::tabs::TabsCommand;
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceCommand, TerminalWorkspaceCtx, TerminalWorkspaceEffect,
@@ -65,9 +66,9 @@ fn sync_explorer_from_terminal(app: &mut App) -> Task<AppEvent> {
         return Task::none();
     };
 
-    Task::done(AppEvent::ExplorerCommand(
-        crate::widgets::explorer::ExplorerCommand::SyncRoot { cwd },
-    ))
+    Task::done(AppEvent::Explorer(ExplorerEvent::Ui(
+        ExplorerUiEvent::SyncRoot { cwd },
+    )))
 }
 
 fn current_pane_grid_size_from_app(app: &App) -> iced::Size {
