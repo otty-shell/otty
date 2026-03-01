@@ -11,7 +11,6 @@ pub(crate) struct State {
 }
 
 impl State {
-    /// Create state with the given initial sizes.
     pub(crate) fn new(window_size: Size, screen_size: Size) -> Self {
         Self {
             window_size,
@@ -19,7 +18,6 @@ impl State {
         }
     }
 
-    /// Update the screen size after a window resize.
     pub(crate) fn set_screen_size(&mut self, size: Size) {
         self.screen_size = size;
     }

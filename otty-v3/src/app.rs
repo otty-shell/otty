@@ -13,10 +13,11 @@ use otty_ui_term::settings::{
 };
 
 use crate::events::AppEvent;
-use crate::helpers;
+use crate::layout;
 use crate::fonts::FontsConfig;
 use crate::theme::{AppTheme, ThemeManager};
 use crate::state::State;
+use crate::widgets::Widgets;
 use crate::widgets::chrome::ChromeWidget;
 use crate::widgets::explorer::ExplorerWidget;
 use crate::widgets::quick_launch::QuickLaunchWidget;
@@ -115,16 +116,6 @@ impl PendingWorkflows {
     }
 }
 
-/// Container for all widget instances.
-pub(crate) struct Widgets {
-    pub(crate) sidebar: SidebarWidget,
-    pub(crate) chrome: ChromeWidget,
-    pub(crate) tabs: TabsWidget,
-    pub(crate) quick_launch: QuickLaunchWidget,
-    pub(crate) terminal_workspace: TerminalWorkspaceWidget,
-    pub(crate) explorer: ExplorerWidget,
-    pub(crate) settings: SettingsWidget,
-}
 
 /// Root application state.
 pub(crate) struct App {
@@ -161,7 +152,7 @@ impl App {
             width: MIN_WINDOW_WIDTH,
             height: MIN_WINDOW_HEIGHT,
         };
-        let screen_size = helpers::screen_size_from_window(window_size);
+        let screen_size = layout::screen_size_from_window(window_size);
         let state = State::new(window_size, screen_size);
 
         let widgets = Widgets {

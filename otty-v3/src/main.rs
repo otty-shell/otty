@@ -13,7 +13,7 @@ mod guards;
 mod events;
 mod state;
 mod widgets;
-mod helpers;
+mod layout;
 
 use env_logger::Env;
 use iced::{Size, window};

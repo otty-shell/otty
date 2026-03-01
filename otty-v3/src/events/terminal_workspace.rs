@@ -1,8 +1,9 @@
 use iced::Task;
 
 use crate::app::App;
-use crate::helpers::pane_grid_size;
+use crate::layout::pane_grid_size;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
+use crate::widgets::sidebar::SIDEBAR_MENU_WIDTH;
 use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceCtx, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
@@ -26,12 +27,22 @@ fn handle_ui_event(
     app: &mut App,
     event: TerminalWorkspaceUiEvent,
 ) -> Task<AppEvent> {
+    let sidebar = &app.widgets.sidebar;
+    
+    let pane_grid_size = pane_grid_size(
+        app.state.screen_size,
+        sidebar.is_hidden(),
+        SIDEBAR_MENU_WIDTH,
+        sidebar.effective_workspace_ratio(),
+    );
+
     let ctx = build_ctx_from_parts(
         app.widgets.tabs.active_tab_id(),
-        current_pane_grid_size_from_app(app),
+        pane_grid_size,
         app.state.screen_size,
         app.widgets.sidebar.cursor(),
     );
+
     app.widgets
         .terminal_workspace
         .reduce(event, &ctx)
@@ -74,17 +85,6 @@ fn sync_explorer_from_terminal(app: &mut App) -> Task<AppEvent> {
     Task::done(AppEvent::Explorer(ExplorerEvent::Ui(
         ExplorerUiEvent::SyncRoot { cwd },
     )))
-}
-
-fn current_pane_grid_size_from_app(app: &App) -> iced::Size {
-    let sidebar = &app.widgets.sidebar;
-    
-    pane_grid_size(
-        app.state.screen_size,
-        sidebar.is_hidden(),
-        crate::widgets::sidebar::SIDEBAR_MENU_WIDTH,
-        sidebar.effective_workspace_ratio(),
-    )
 }
 
 fn build_ctx_from_parts(

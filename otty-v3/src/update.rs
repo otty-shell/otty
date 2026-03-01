@@ -38,8 +38,7 @@ pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     }
 }
 
-/// Return whether any context menu overlay is currently open.
-pub(super) fn any_context_menu_open(app: &App) -> bool {
+fn any_context_menu_open(app: &App) -> bool {
     if app.widgets.sidebar.has_add_menu_open()
         || app.widgets.quick_launch.context_menu().is_some()
     {
@@ -49,7 +48,6 @@ pub(super) fn any_context_menu_open(app: &App) -> bool {
     app.widgets.terminal_workspace.has_any_context_menu()
 }
 
-/// Close all open context menus before dispatching a new event.
 fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch(vec![
         events::handle(

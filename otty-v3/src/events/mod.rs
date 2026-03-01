@@ -1,12 +1,13 @@
-use iced::Task;
+use iced::{Task, window};
 use iced::window::Direction;
 
 use crate::app::App;
+use crate::layout::{pane_grid_size, screen_size_from_window};
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::quick_launch::QuickLaunchEvent;
 use crate::widgets::settings::SettingsEvent;
-use crate::widgets::sidebar::SidebarEvent;
+use crate::widgets::sidebar::{SIDEBAR_MENU_WIDTH, SidebarEvent};
 use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
 
@@ -18,7 +19,6 @@ pub(crate) mod settings;
 pub(crate) mod sidebar;
 pub(crate) mod tabs;
 pub(crate) mod terminal_workspace;
-pub(crate) mod window;
 
 /// App-wide events that drive the root update loop.
 #[derive(Clone)]
@@ -52,23 +52,15 @@ pub(crate) enum AppEvent {
 pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
         AppEvent::IcedReady => flow::tabs::open_terminal_tab(app),
-        // Sidebar widget
         AppEvent::Sidebar(event) => sidebar::handle(app, event),
-        // Chrome widget
         AppEvent::Chrome(event) => chrome::handle(app, event),
-        // Tabs widget
         AppEvent::Tabs(event) => tabs::handle(app, event),
-        // Quick Launch widget
         AppEvent::QuickLaunch(event) => quick_launch::handle(app, event),
-        // Terminal Workspace widget
         AppEvent::TerminalWorkspace(event) => {
             terminal_workspace::handle(app, event)
         },
-        // Explorer widget
         AppEvent::Explorer(event) => explorer::handle(app, event),
-        // Settings widget
         AppEvent::Settings(event) => settings::handle(app, event),
-        // Cross-widget workflows
         AppEvent::OpenTerminalTab => flow::tabs::open_terminal_tab(app),
         AppEvent::OpenFileTerminalTab { file_path } => {
             flow::tabs::open_file_terminal_tab(app, file_path)
@@ -78,16 +70,40 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
                 tab_id,
             })))
         },
-        // Direct operations
         AppEvent::SyncTerminalGridSizes => {
-            window::sync_terminal_grid_sizes(app);
+            sync_terminal_grid_sizes(app);
             Task::none()
         },
         AppEvent::Keyboard(_event) => Task::none(),
         AppEvent::Window(iced::window::Event::Resized(size)) => {
-            window::handle_resize(app, size)
+            handle_resize(app, size)
         },
-        AppEvent::ResizeWindow(dir) => window::handle_drag_resize(dir),
+        AppEvent::ResizeWindow(dir) => {
+            window::latest()
+                .and_then(move |id| window::drag_resize(id, dir))
+        },
         AppEvent::Window(_) => Task::none(),
     }
+}
+
+fn handle_resize(app: &mut App, size: iced::Size) -> Task<AppEvent> {
+    app.window_size = size;
+    app.state.window_size = size;
+    app.state
+        .set_screen_size(screen_size_from_window(size));
+
+    sync_terminal_grid_sizes(app);
+    Task::none()
+}
+
+fn sync_terminal_grid_sizes(app: &mut App) {
+    let sidebar = &app.widgets.sidebar;
+    let size = pane_grid_size(
+        app.state.screen_size,
+        sidebar.is_hidden(),
+        SIDEBAR_MENU_WIDTH,
+        sidebar.effective_workspace_ratio(),
+    );
+
+    app.widgets.terminal_workspace.set_grid_size(size);
 }

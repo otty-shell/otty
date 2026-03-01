@@ -4,6 +4,7 @@ use crate::app::view::HEADER_SEPARATOR_HEIGHT;
 use crate::widgets::chrome::view::action_bar::ACTION_BAR_HEIGHT;
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_HEIGHT;
 
+// TODO:
 pub(crate) fn screen_size_from_window(window_size: Size) -> Size {
     let height =
         (window_size.height - ACTION_BAR_HEIGHT - HEADER_SEPARATOR_HEIGHT)
