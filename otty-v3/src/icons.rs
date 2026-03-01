@@ -8,14 +8,11 @@ pub(crate) const LOGO_SMALL: &[u8] =
     include_bytes!("../../assets/svg/logo-small.svg");
 pub(crate) const ADD_TAB_HEADER: &[u8] =
     include_bytes!("../../assets/svg/add-tab.svg");
-pub(crate) const FOLDER: &[u8] =
-    include_bytes!("../../assets/svg/folder.svg");
+pub(crate) const FOLDER: &[u8] = include_bytes!("../../assets/svg/folder.svg");
 pub(crate) const FOLDER_OPENED: &[u8] =
     include_bytes!("../../assets/svg/folder-opened.svg");
-pub(crate) const FILE: &[u8] =
-    include_bytes!("../../assets/svg/file.svg");
-pub(crate) const PLAY: &[u8] =
-    include_bytes!("../../assets/svg/play.svg");
+pub(crate) const FILE: &[u8] = include_bytes!("../../assets/svg/file.svg");
+pub(crate) const PLAY: &[u8] = include_bytes!("../../assets/svg/play.svg");
 pub(crate) const SIDEBAR_TERMINAL: &[u8] =
     include_bytes!("../../assets/svg/terminal.svg");
 pub(crate) const SIDEBAR_SETTINGS: &[u8] =

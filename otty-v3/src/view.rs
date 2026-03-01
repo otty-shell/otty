@@ -6,9 +6,9 @@ use super::{App, AppEvent};
 use crate::components::primitive::{
     menu_item, resize_grips, sidebar_workspace_panel,
 };
-use crate::theme::ThemeProps;
 use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::style::menu_panel_style;
+use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::view::action_bar;
 use crate::widgets::explorer::ExplorerEvent;

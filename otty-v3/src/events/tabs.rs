@@ -1,6 +1,7 @@
 use iced::Task;
 use iced::widget::operation::snap_to_end;
 
+use super::AppEvent;
 use crate::app::{App, PendingQuickLaunchWizard};
 use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
@@ -12,15 +13,12 @@ use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
 };
-use super::AppEvent;
 
 pub(crate) fn handle(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
     match event {
-        TabsEvent::Ui(event) => app
-            .widgets
-            .tabs
-            .reduce(event)
-            .map(AppEvent::Tabs),
+        TabsEvent::Ui(event) => {
+            app.widgets.tabs.reduce(event).map(AppEvent::Tabs)
+        },
         TabsEvent::Effect(effect) => handle_effect(app, effect),
     }
 }

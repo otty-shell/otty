@@ -13,10 +13,10 @@ use otty_ui_term::settings::{
 };
 
 use crate::events::AppEvent;
-use crate::layout;
 use crate::fonts::FontsConfig;
-use crate::theme::{AppTheme, ThemeManager};
+use crate::layout;
 use crate::state::State;
+use crate::theme::{AppTheme, ThemeManager};
 use crate::widgets::Widgets;
 use crate::widgets::chrome::ChromeWidget;
 use crate::widgets::explorer::ExplorerWidget;
@@ -24,11 +24,11 @@ use crate::widgets::quick_launch::QuickLaunchWidget;
 use crate::widgets::settings::SettingsWidget;
 use crate::widgets::sidebar::SidebarWidget;
 use crate::widgets::tabs::TabsWidget;
+use crate::widgets::terminal_workspace::TerminalWorkspaceWidget;
 use crate::widgets::terminal_workspace::model::ShellSession;
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
-use crate::widgets::terminal_workspace::TerminalWorkspaceWidget;
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
@@ -115,7 +115,6 @@ impl PendingWorkflows {
         self.quick_launch_error_tabs.pop_front()
     }
 }
-
 
 /// Root application state.
 pub(crate) struct App {

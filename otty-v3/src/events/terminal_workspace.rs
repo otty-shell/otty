@@ -1,5 +1,6 @@
 use iced::Task;
 
+use super::AppEvent;
 use crate::app::App;
 use crate::layout::pane_grid_size;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
@@ -9,7 +10,6 @@ use crate::widgets::terminal_workspace::{
     TerminalWorkspaceCtx, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
     TerminalWorkspaceUiEvent,
 };
-use super::AppEvent;
 
 pub(crate) fn handle(
     app: &mut App,
@@ -28,7 +28,7 @@ fn handle_ui_event(
     event: TerminalWorkspaceUiEvent,
 ) -> Task<AppEvent> {
     let sidebar = &app.widgets.sidebar;
-    
+
     let pane_grid_size = pane_grid_size(
         app.state.screen_size,
         sidebar.is_hidden(),

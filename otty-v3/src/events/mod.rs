@@ -1,15 +1,17 @@
-use iced::{Task, window};
 use iced::window::Direction;
+use iced::{Task, window};
 
 use crate::app::App;
-use crate::layout::{pane_grid_size, screen_size_from_window};
+use crate::layout::screen_size_from_window;
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::quick_launch::QuickLaunchEvent;
 use crate::widgets::settings::SettingsEvent;
-use crate::widgets::sidebar::{SIDEBAR_MENU_WIDTH, SidebarEvent};
+use crate::widgets::sidebar::SidebarEvent;
 use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
-use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
+use crate::widgets::terminal_workspace::{
+    TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
+};
 
 pub(crate) mod chrome;
 pub(crate) mod explorer;
@@ -70,17 +72,13 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
                 tab_id,
             })))
         },
-        AppEvent::SyncTerminalGridSizes => {
-            sync_terminal_grid_sizes(app);
-            Task::none()
-        },
+        AppEvent::SyncTerminalGridSizes => sync_terminal_grid_sizes(),
         AppEvent::Keyboard(_event) => Task::none(),
         AppEvent::Window(iced::window::Event::Resized(size)) => {
             handle_resize(app, size)
         },
         AppEvent::ResizeWindow(dir) => {
-            window::latest()
-                .and_then(move |id| window::drag_resize(id, dir))
+            window::latest().and_then(move |id| window::drag_resize(id, dir))
         },
         AppEvent::Window(_) => Task::none(),
     }
@@ -89,21 +87,13 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
 fn handle_resize(app: &mut App, size: iced::Size) -> Task<AppEvent> {
     app.window_size = size;
     app.state.window_size = size;
-    app.state
-        .set_screen_size(screen_size_from_window(size));
+    app.state.set_screen_size(screen_size_from_window(size));
 
-    sync_terminal_grid_sizes(app);
-    Task::none()
+    sync_terminal_grid_sizes()
 }
 
-fn sync_terminal_grid_sizes(app: &mut App) {
-    let sidebar = &app.widgets.sidebar;
-    let size = pane_grid_size(
-        app.state.screen_size,
-        sidebar.is_hidden(),
-        SIDEBAR_MENU_WIDTH,
-        sidebar.effective_workspace_ratio(),
-    );
-
-    app.widgets.terminal_workspace.set_grid_size(size);
+fn sync_terminal_grid_sizes() -> Task<AppEvent> {
+    Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Ui(
+        TerminalWorkspaceUiEvent::SyncPaneGridSize,
+    )))
 }

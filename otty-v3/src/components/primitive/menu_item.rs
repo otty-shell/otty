@@ -69,8 +69,8 @@ mod tests {
     use iced::Background;
     use iced::widget::button::Status as ButtonStatus;
 
-    use crate::theme::AppTheme;
     use super::menu_button_style;
+    use crate::theme::AppTheme;
 
     #[test]
     fn given_hovered_status_when_building_style_then_uses_hover_colors() {

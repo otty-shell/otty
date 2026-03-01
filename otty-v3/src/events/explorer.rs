@@ -2,13 +2,13 @@ use std::path::PathBuf;
 
 use iced::Task;
 
+use super::AppEvent;
 use crate::app::App;
 use crate::widgets::explorer::model::FileNode;
 use crate::widgets::explorer::services::read_dir_nodes;
 use crate::widgets::explorer::{
     ExplorerCtx, ExplorerEffect, ExplorerEvent, ExplorerUiEvent,
 };
-use super::AppEvent;
 
 pub(crate) fn handle(app: &mut App, event: ExplorerEvent) -> Task<AppEvent> {
     match event {

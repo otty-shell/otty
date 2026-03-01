@@ -8,8 +8,8 @@ use iced::{Color, Element, Length, Theme, alignment};
 use otty_ui_term::parse_hex_color;
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
+use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::style::{tree_row_style, thin_scroll_style};
 use crate::widgets::settings::event::SettingsUiEvent;
 use crate::widgets::settings::model::{
     SettingsNode, SettingsPreset, SettingsSection, SettingsViewModel,

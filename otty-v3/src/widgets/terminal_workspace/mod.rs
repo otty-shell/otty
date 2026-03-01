@@ -12,7 +12,7 @@ use std::path::PathBuf;
 pub(crate) use event::{
     TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
 };
-use iced::{Size, Task};
+use iced::Task;
 pub(crate) use reducer::TerminalWorkspaceCtx;
 use state::{TerminalTabState, TerminalWorkspaceState};
 
@@ -106,13 +106,6 @@ impl TerminalWorkspaceWidget {
         let id = self.next_terminal_id;
         self.next_terminal_id += 1;
         id
-    }
-
-    /// Apply a new pane grid size to every terminal tab.
-    pub(crate) fn set_grid_size(&mut self, size: Size) {
-        for (_, tab) in self.state.tabs_mut() {
-            tab.set_grid_size(size);
-        }
     }
 
     /// Resolve the active terminal working directory from block metadata.

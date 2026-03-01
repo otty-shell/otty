@@ -3,17 +3,17 @@
 #![allow(dead_code)]
 
 mod app;
+mod components;
+mod events;
 mod fonts;
+mod geometry;
+mod guards;
 mod icons;
+mod layout;
+mod state;
 mod style;
 mod theme;
-mod geometry;
-mod components;
-mod guards;
-mod events;
-mod state;
 mod widgets;
-mod layout;
 
 use env_logger::Env;
 use iced::{Size, window};

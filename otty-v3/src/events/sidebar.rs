@@ -1,15 +1,14 @@
 use iced::Task;
 
-use crate::app::App;
-use crate::widgets::sidebar::{
-    SidebarCtx, SidebarEffect, SidebarEvent,
-};
-use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 use super::AppEvent;
+use crate::app::App;
+use crate::widgets::sidebar::{SidebarCtx, SidebarEffect, SidebarEvent};
+use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 
 pub(crate) fn handle(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
     match event {
-        SidebarEvent::Ui(event) => app.widgets
+        SidebarEvent::Ui(event) => app
+            .widgets
             .sidebar
             .reduce(event, &SidebarCtx)
             .map(AppEvent::Sidebar),

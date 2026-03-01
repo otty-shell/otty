@@ -154,6 +154,12 @@ pub(crate) fn reduce(
         },
         FocusActive => reduce_focus_active(state, ctx.active_tab_id),
         SyncSelection { tab_id } => reduce_sync_selection(state, tab_id),
+        SyncPaneGridSize => {
+            for (_, tab) in state.tabs_mut() {
+                tab.set_grid_size(ctx.pane_grid_size);
+            }
+            Task::none()
+        },
     }
 }
 
@@ -586,6 +592,53 @@ mod tests {
 
         assert!(state.tab(1).is_some());
         assert_eq!(terminal_to_tab.get(&10), Some(&1));
+    }
+
+    #[test]
+    fn given_sync_pane_grid_size_when_reduced_then_all_tab_grid_sizes_update() {
+        let mut state = TerminalWorkspaceState::default();
+        let mut terminal_to_tab = HashMap::new();
+        let mut next_id = 100_u64;
+
+        let open_ctx = TerminalWorkspaceCtx {
+            active_tab_id: None,
+            pane_grid_size: Size::new(120.0, 80.0),
+            screen_size: Size::ZERO,
+            sidebar_cursor: Point::ORIGIN,
+        };
+
+        let _ = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceUiEvent::OpenTab {
+                tab_id: 1,
+                terminal_id: 10,
+                default_title: String::from("Shell"),
+                settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
+                kind: TerminalKind::Shell,
+                sync_explorer: false,
+            },
+            &open_ctx,
+        );
+
+        let sync_ctx = TerminalWorkspaceCtx {
+            active_tab_id: None,
+            pane_grid_size: Size::new(480.0, 320.0),
+            screen_size: Size::ZERO,
+            sidebar_cursor: Point::ORIGIN,
+        };
+
+        let _ = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceUiEvent::SyncPaneGridSize,
+            &sync_ctx,
+        );
+
+        let tab = state.tab(1).expect("tab must exist after opening");
+        assert_eq!(tab.grid_size(), Size::new(480.0, 320.0));
     }
 
     #[test]

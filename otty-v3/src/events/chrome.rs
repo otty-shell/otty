@@ -1,17 +1,15 @@
 use iced::{Task, window};
 
+use super::AppEvent;
 use crate::app::App;
 use crate::widgets::chrome::{ChromeEffect, ChromeEvent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
-use super::AppEvent;
 
 pub(crate) fn handle(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
     match event {
-        ChromeEvent::Ui(event) => app
-            .widgets
-            .chrome
-            .reduce(event)
-            .map(AppEvent::Chrome),
+        ChromeEvent::Ui(event) => {
+            app.widgets.chrome.reduce(event).map(AppEvent::Chrome)
+        },
         ChromeEvent::Effect(effect) => handle_effect(effect),
     }
 }

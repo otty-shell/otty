@@ -3,6 +3,7 @@ use otty_ui_term::settings::{
     BackendSettings, FontSettings, Settings, ThemeSettings,
 };
 
+use super::AppEvent;
 use crate::app::App;
 use crate::widgets::settings::model::SettingsData;
 use crate::widgets::settings::{
@@ -14,15 +15,12 @@ use crate::widgets::terminal_workspace::services::{
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
 };
-use super::AppEvent;
 
 pub(crate) fn handle(app: &mut App, event: SettingsEvent) -> Task<AppEvent> {
     match event {
-        SettingsEvent::Ui(event) => app
-            .widgets
-            .settings
-            .reduce(event)
-            .map(AppEvent::Settings),
+        SettingsEvent::Ui(event) => {
+            app.widgets.settings.reduce(event).map(AppEvent::Settings)
+        },
         SettingsEvent::Effect(effect) => handle_effect(app, effect),
     }
 }

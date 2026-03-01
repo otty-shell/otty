@@ -66,7 +66,8 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 | E::ClosePane { .. }
                 | E::ContextMenuInput { .. }
                 | E::Widget(_)
-                | E::PaneGridCursorMoved { .. } => Allow,
+                | E::PaneGridCursorMoved { .. }
+                | E::SyncPaneGridSize => Allow,
                 E::OpenContextMenu { .. } | E::PaneClicked { .. } => Ignore,
                 _ => Dismiss,
             }
@@ -143,7 +144,12 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             ),
         ) => {
             use crate::widgets::terminal_workspace::TerminalWorkspaceUiEvent as E;
-            !matches!(event, E::Widget(_) | E::PaneGridCursorMoved { .. })
+            !matches!(
+                event,
+                E::Widget(_)
+                    | E::PaneGridCursorMoved { .. }
+                    | E::SyncPaneGridSize
+            )
         },
         AppEvent::TerminalWorkspace(
             crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Effect(

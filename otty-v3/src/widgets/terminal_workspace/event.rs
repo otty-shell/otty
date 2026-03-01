@@ -69,6 +69,8 @@ pub(crate) enum TerminalWorkspaceUiEvent {
     FocusActive,
     /// Synchronise block selection state for a tab.
     SyncSelection { tab_id: u64 },
+    /// Synchronise pane grid size across all tabs from current layout context.
+    SyncPaneGridSize,
 }
 
 impl fmt::Debug for TerminalWorkspaceUiEvent {
@@ -186,6 +188,7 @@ impl fmt::Debug for TerminalWorkspaceUiEvent {
                 .debug_struct("SyncSelection")
                 .field("tab_id", tab_id)
                 .finish(),
+            Self::SyncPaneGridSize => f.write_str("SyncPaneGridSize"),
         }
     }
 }

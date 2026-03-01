@@ -4,9 +4,9 @@ use iced::Task;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
 use crate::app::App;
+use crate::events::AppEvent;
 use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
 use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
-use crate::events::AppEvent;
 
 pub(crate) fn open_terminal_tab(app: &mut App) -> Task<AppEvent> {
     let terminal_id = app.widgets.terminal_workspace.allocate_terminal_id();

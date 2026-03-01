@@ -1,8 +1,8 @@
 use iced::Task;
 
 use super::{App, AppEvent};
-use crate::guards::{MenuGuard, context_menu_guard, inline_edit_guard};
 use crate::events;
+use crate::guards::{MenuGuard, context_menu_guard, inline_edit_guard};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
 use crate::widgets::terminal_workspace::{

@@ -1,7 +1,7 @@
 use iced::Background;
 use iced::widget::{container, scrollable};
 
-use super::theme::{ThemeProps, IcedColorPalette};
+use super::theme::{IcedColorPalette, ThemeProps};
 
 pub(crate) fn thin_scroll_style(
     palette: IcedColorPalette,

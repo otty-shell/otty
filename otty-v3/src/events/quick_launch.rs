@@ -1,5 +1,6 @@
 use iced::Task;
 
+use super::AppEvent;
 use crate::app::App;
 use crate::widgets::quick_launch::model::{NodePath, QuickLaunch};
 use crate::widgets::quick_launch::{
@@ -7,7 +8,6 @@ use crate::widgets::quick_launch::{
 };
 use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
 use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
-use super::AppEvent;
 
 pub(crate) fn handle(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
     match event {
@@ -36,10 +36,7 @@ fn handle_ui_event(app: &mut App, event: QuickLaunchUiEvent) -> Task<AppEvent> {
         .map(AppEvent::QuickLaunch)
 }
 
-fn handle_effect(
-    app: &mut App,
-    effect: QuickLaunchEffect,
-) -> Task<AppEvent> {
+fn handle_effect(app: &mut App, effect: QuickLaunchEffect) -> Task<AppEvent> {
     match effect {
         QuickLaunchEffect::OpenWizardCreateTab { parent_path } => {
             open_wizard_create_tab(app, parent_path)
