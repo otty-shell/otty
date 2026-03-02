@@ -45,10 +45,21 @@ fn handle_intent_event(
         app.widgets.sidebar.cursor(),
     );
 
-    app.widgets
+    let should_sync = should_sync_explorer(&event);
+    let workspace_task = app
+        .widgets
         .terminal_workspace
         .reduce(event, &ctx)
-        .map(AppEvent::TerminalWorkspace)
+        .map(AppEvent::TerminalWorkspace);
+
+    if !should_sync {
+        return workspace_task;
+    }
+
+    let sync_task = Task::done(AppEvent::TerminalWorkspace(
+        TerminalWorkspaceEvent::Effect(TerminalWorkspaceEffect::SyncExplorer),
+    ));
+    Task::batch(vec![workspace_task, sync_task])
 }
 
 fn handle_effect_event(
@@ -96,5 +107,55 @@ fn build_ctx_from_parts(
         pane_grid_size,
         screen_size,
         sidebar_cursor,
+    }
+}
+
+fn should_sync_explorer(event: &TerminalWorkspaceIntent) -> bool {
+    matches!(
+        event,
+        TerminalWorkspaceIntent::PaneClicked { .. }
+            | TerminalWorkspaceIntent::SplitPane { .. }
+            | TerminalWorkspaceIntent::ClosePane { .. }
+            | TerminalWorkspaceIntent::Widget(
+                otty_ui_term::Event::ContentSync { .. }
+            )
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::should_sync_explorer;
+    use crate::widgets::terminal_workspace::TerminalWorkspaceIntent;
+
+    #[test]
+    fn given_sync_relevant_terminal_intent_when_checked_then_returns_true() {
+        let (_grid, pane) = iced::widget::pane_grid::State::new(1_u64);
+        assert!(should_sync_explorer(
+            &TerminalWorkspaceIntent::PaneClicked { tab_id: 1, pane }
+        ));
+        assert!(should_sync_explorer(&TerminalWorkspaceIntent::SplitPane {
+            tab_id: 1,
+            pane,
+            axis: iced::widget::pane_grid::Axis::Vertical,
+        }));
+        assert!(should_sync_explorer(&TerminalWorkspaceIntent::ClosePane {
+            tab_id: 1,
+            pane,
+        }));
+        assert!(should_sync_explorer(&TerminalWorkspaceIntent::Widget(
+            otty_ui_term::Event::ContentSync {
+                id: 42,
+                frame: Arc::new(otty_libterm::surface::SnapshotOwned::default()),
+            }
+        )));
+    }
+
+    #[test]
+    fn given_non_sync_terminal_intent_when_checked_then_returns_false() {
+        assert!(!should_sync_explorer(
+            &TerminalWorkspaceIntent::SyncPaneGridSize
+        ));
     }
 }

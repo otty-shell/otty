@@ -79,7 +79,7 @@ where
 
 fn open_file_terminal_tab(app: &mut App, file_path: PathBuf) -> Task<AppEvent> {
     let Some(settings) = editor_terminal_settings(
-        app.shell_session.name().trim(),
+        app.widgets.settings.terminal_editor().trim(),
         &app.terminal_settings,
         &file_path,
     ) else {
