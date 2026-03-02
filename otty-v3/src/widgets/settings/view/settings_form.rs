@@ -6,7 +6,7 @@ use iced::widget::{
 };
 use iced::{Color, Element, Length, Theme, alignment};
 use otty_ui_term::parse_hex_color;
-use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
+use otty_ui_tree::{TreeRowContext, TreeView};
 
 use crate::icons::{FOLDER, FOLDER_OPENED, SIDEBAR_SETTINGS};
 use crate::style::{thin_scroll_style, tree_row_style};
@@ -439,26 +439,4 @@ fn svg_icon<'a>(
         .align_x(alignment::Horizontal::Center)
         .align_y(alignment::Vertical::Center)
         .into()
-}
-
-impl TreeNode for SettingsNode {
-    fn title(&self) -> &str {
-        SettingsNode::title(self)
-    }
-
-    fn children(&self) -> Option<&[Self]> {
-        if SettingsNode::is_folder(self) {
-            Some(SettingsNode::children(self))
-        } else {
-            None
-        }
-    }
-
-    fn expanded(&self) -> bool {
-        self.is_expanded()
-    }
-
-    fn is_folder(&self) -> bool {
-        SettingsNode::is_folder(self)
-    }
 }

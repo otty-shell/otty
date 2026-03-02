@@ -1,3 +1,4 @@
+use otty_ui_tree::TreeNode;
 use serde::Serialize;
 
 use crate::theme::ColorPalette;
@@ -190,6 +191,28 @@ pub(crate) struct SettingsNode {
     expanded: bool,
     kind: SettingsNodeKind,
     children: Vec<SettingsNode>,
+}
+
+impl TreeNode for SettingsNode {
+    fn title(&self) -> &str {
+        SettingsNode::title(self)
+    }
+
+    fn children(&self) -> Option<&[Self]> {
+        if SettingsNode::is_folder(self) {
+            Some(SettingsNode::children(self))
+        } else {
+            None
+        }
+    }
+
+    fn expanded(&self) -> bool {
+        self.is_expanded()
+    }
+
+    fn is_folder(&self) -> bool {
+        SettingsNode::is_folder(self)
+    }
 }
 
 impl SettingsNode {

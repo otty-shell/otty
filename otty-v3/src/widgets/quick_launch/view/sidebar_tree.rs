@@ -3,7 +3,7 @@ use iced::widget::{
     text_input,
 };
 use iced::{Color, Element, Length, Theme, alignment};
-use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
+use otty_ui_tree::{TreeRowContext, TreeView};
 
 use crate::icons::{FOLDER, FOLDER_OPENED, PLAY};
 use crate::style::{thin_scroll_style, tree_row_style};
@@ -320,7 +320,7 @@ fn render_inline_edit<'a>(
 
     container(col)
         .width(Length::Fill)
-        .padding([0.0, TREE_ROW_PADDING_X])
+        .padding(0.0)
         .into()
 }
 
@@ -340,28 +340,4 @@ fn svg_icon<'a>(
         .align_x(alignment::Horizontal::Center)
         .align_y(alignment::Vertical::Center)
         .into()
-}
-
-impl TreeNode for QuickLaunchNode {
-    fn title(&self) -> &str {
-        QuickLaunchNode::title(self)
-    }
-
-    fn children(&self) -> Option<&[Self]> {
-        match self {
-            QuickLaunchNode::Folder(folder) => Some(folder.children()),
-            QuickLaunchNode::Command(_) => None,
-        }
-    }
-
-    fn expanded(&self) -> bool {
-        match self {
-            QuickLaunchNode::Folder(folder) => folder.is_expanded(),
-            QuickLaunchNode::Command(_) => false,
-        }
-    }
-
-    fn is_folder(&self) -> bool {
-        matches!(self, QuickLaunchNode::Folder(_))
-    }
 }

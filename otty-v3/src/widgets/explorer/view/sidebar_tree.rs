@@ -1,7 +1,7 @@
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, scrollable, svg, text};
 use iced::{Element, Length, Padding, alignment};
-use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
+use otty_ui_tree::{TreeRowContext, TreeView};
 
 use crate::icons::{FILE, FOLDER, FOLDER_OPENED};
 use crate::style::{thin_scroll_style, tree_row_style};
@@ -175,26 +175,4 @@ fn nav_row_style(
     context: &TreeRowContext<'_, FileNode>,
 ) -> iced::widget::container::Style {
     tree_row_style(palette, context.is_selected, context.is_hovered)
-}
-
-impl TreeNode for FileNode {
-    fn title(&self) -> &str {
-        self.name()
-    }
-
-    fn children(&self) -> Option<&[Self]> {
-        if self.is_folder() {
-            Some(self.children())
-        } else {
-            None
-        }
-    }
-
-    fn expanded(&self) -> bool {
-        self.is_expanded()
-    }
-
-    fn is_folder(&self) -> bool {
-        self.is_folder()
-    }
 }

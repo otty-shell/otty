@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use otty_ui_tree::TreeNode;
 use serde::{Deserialize, Serialize};
 
 /// Path to a node in the quick launch tree.
@@ -287,6 +288,31 @@ pub(crate) enum QuickLaunchNode {
     Folder(QuickLaunchFolder),
     Command(QuickLaunch),
 }
+
+impl TreeNode for QuickLaunchNode {
+    fn title(&self) -> &str {
+        QuickLaunchNode::title(self)
+    }
+
+    fn children(&self) -> Option<&[Self]> {
+        match self {
+            QuickLaunchNode::Folder(folder) => Some(folder.children()),
+            QuickLaunchNode::Command(_) => None,
+        }
+    }
+
+    fn expanded(&self) -> bool {
+        match self {
+            QuickLaunchNode::Folder(folder) => folder.is_expanded(),
+            QuickLaunchNode::Command(_) => false,
+        }
+    }
+
+    fn is_folder(&self) -> bool {
+        matches!(self, QuickLaunchNode::Folder(_))
+    }
+}
+
 
 impl QuickLaunchNode {
     /// Return the title of this node.

@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
+use otty_ui_tree::TreeNode;
+
 /// Path to a node in the explorer tree, built from node names.
 pub(crate) type TreePath = Vec<String>;
 
@@ -12,6 +14,28 @@ pub(crate) struct FileNode {
     pub(super) is_folder: bool,
     pub(super) is_expanded: bool,
     pub(super) children: Vec<FileNode>,
+}
+
+impl TreeNode for FileNode {
+    fn title(&self) -> &str {
+        self.name()
+    }
+
+    fn children(&self) -> Option<&[Self]> {
+        if self.is_folder() {
+            Some(self.children())
+        } else {
+            None
+        }
+    }
+
+    fn expanded(&self) -> bool {
+        self.is_expanded()
+    }
+
+    fn is_folder(&self) -> bool {
+        self.is_folder()
+    }
 }
 
 impl FileNode {
