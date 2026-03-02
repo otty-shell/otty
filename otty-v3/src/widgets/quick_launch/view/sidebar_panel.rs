@@ -10,10 +10,10 @@ use crate::theme::ThemeProps;
 use crate::widgets::quick_launch::event::QuickLaunchIntent;
 use crate::widgets::quick_launch::model::QuickLaunchTreeViewModel;
 
-const HEADER_HEIGHT: f32 = 28.0;
+const HEADER_HEIGHT: f32 = 25.0;
 const TITLE_SIZE: f32 = 13.0;
 const HEADER_PADDING_H: f32 = 10.0;
-const ADD_BUTTON_ICON_SIZE: f32 = 14.0;
+const ADD_BUTTON_ICON_SIZE: f32 = 18.0;
 
 /// Props for the quick launch sidebar panel.
 pub(crate) struct SidebarPanelProps<'a> {
