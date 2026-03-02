@@ -3,11 +3,11 @@ use iced::{Task, window};
 use super::AppEvent;
 use crate::app::App;
 use crate::widgets::chrome::{ChromeEffect, ChromeEvent};
-use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
+use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 
 pub(crate) fn handle(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
     match event {
-        ChromeEvent::Ui(event) => {
+        ChromeEvent::Intent(event) => {
             app.widgets.chrome.reduce(event).map(AppEvent::Chrome)
         },
         ChromeEvent::Effect(effect) => handle_effect(effect),
@@ -26,7 +26,7 @@ fn handle_effect(effect: ChromeEffect) -> Task<AppEvent> {
         },
         CloseWindow => window::latest().and_then(window::close),
         ToggleSidebarVisibility => Task::done(AppEvent::Sidebar(
-            SidebarEvent::Ui(SidebarUiEvent::ToggleVisibility),
+            SidebarEvent::Intent(SidebarIntent::ToggleVisibility),
         )),
         StartWindowDrag => window::latest().and_then(window::drag),
     }

@@ -6,19 +6,17 @@ use otty_ui_term::settings::{
 use super::AppEvent;
 use crate::app::App;
 use crate::widgets::settings::model::SettingsData;
-use crate::widgets::settings::{
-    SettingsEffect, SettingsEvent, SettingsUiEvent,
-};
+use crate::widgets::settings::{SettingsEffect, SettingsEvent, SettingsIntent};
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
 use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
 pub(crate) fn handle(app: &mut App, event: SettingsEvent) -> Task<AppEvent> {
     match event {
-        SettingsEvent::Ui(event) => {
+        SettingsEvent::Intent(event) => {
             app.widgets.settings.reduce(event).map(AppEvent::Settings)
         },
         SettingsEvent::Effect(effect) => handle_effect(app, effect),
@@ -30,16 +28,16 @@ fn handle_effect(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
 
     match effect {
         ReloadLoaded(load) => Task::done(AppEvent::Settings(
-            SettingsEvent::Ui(SettingsUiEvent::ReloadLoaded(load)),
+            SettingsEvent::Intent(SettingsIntent::ReloadLoaded(load)),
         )),
         ReloadFailed(message) => Task::done(AppEvent::Settings(
-            SettingsEvent::Ui(SettingsUiEvent::ReloadFailed(message)),
+            SettingsEvent::Intent(SettingsIntent::ReloadFailed(message)),
         )),
         SaveFailed(message) => Task::done(AppEvent::Settings(
-            SettingsEvent::Ui(SettingsUiEvent::SaveFailed(message)),
+            SettingsEvent::Intent(SettingsIntent::SaveFailed(message)),
         )),
         SaveCompleted(data) => Task::done(AppEvent::Settings(
-            SettingsEvent::Ui(SettingsUiEvent::SaveCompleted(data)),
+            SettingsEvent::Intent(SettingsIntent::SaveCompleted(data)),
         )),
         ApplyTheme(data) => apply_theme(app, &data),
     }
@@ -73,8 +71,8 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
     let palette = data.to_color_palette();
     let terminal_palette: otty_ui_term::ColorPalette = palette.into();
 
-    Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Ui(
-        TerminalWorkspaceUiEvent::ApplyTheme {
+    Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+        TerminalWorkspaceIntent::ApplyTheme {
             palette: Box::new(terminal_palette),
         },
     )))

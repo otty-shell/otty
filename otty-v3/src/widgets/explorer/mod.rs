@@ -6,7 +6,7 @@ pub(crate) mod services;
 pub(crate) mod state;
 pub(crate) mod view;
 
-pub(crate) use event::{ExplorerEffect, ExplorerEvent, ExplorerUiEvent};
+pub(crate) use event::{ExplorerEffect, ExplorerEvent, ExplorerIntent};
 use iced::Task;
 pub(crate) use reducer::ExplorerCtx;
 use state::ExplorerState;
@@ -26,10 +26,10 @@ impl ExplorerWidget {
         }
     }
 
-    /// Reduce a UI event into state updates and effects.
+    /// Reduce an intent event into state updates and effects.
     pub(crate) fn reduce(
         &mut self,
-        event: ExplorerUiEvent,
+        event: ExplorerIntent,
         ctx: &ExplorerCtx,
     ) -> Task<ExplorerEvent> {
         reducer::reduce(&mut self.state, event, ctx)

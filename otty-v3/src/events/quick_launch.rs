@@ -4,24 +4,27 @@ use super::AppEvent;
 use crate::app::App;
 use crate::widgets::quick_launch::model::{NodePath, QuickLaunch};
 use crate::widgets::quick_launch::{
-    QuickLaunchCtx, QuickLaunchEffect, QuickLaunchEvent, QuickLaunchUiEvent,
+    QuickLaunchCtx, QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
 };
-use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
-use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
+use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
+use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 pub(crate) fn handle(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
     match event {
-        QuickLaunchEvent::Ui(event) => handle_ui_event(app, event),
+        QuickLaunchEvent::Intent(event) => handle_intent_event(app, event),
         QuickLaunchEvent::Effect(effect) => handle_effect(app, effect),
     }
 }
 
-fn handle_ui_event(app: &mut App, event: QuickLaunchUiEvent) -> Task<AppEvent> {
+fn handle_intent_event(
+    app: &mut App,
+    event: QuickLaunchIntent,
+) -> Task<AppEvent> {
     // The add button lives in the quick launch panel but triggers the
     // sidebar add-menu overlay, so redirect instead of reducing.
-    if matches!(event, QuickLaunchUiEvent::HeaderAddButtonPressed) {
-        return Task::done(AppEvent::Sidebar(SidebarEvent::Ui(
-            SidebarUiEvent::AddMenuOpen,
+    if matches!(event, QuickLaunchIntent::HeaderAddButtonPressed) {
+        return Task::done(AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::AddMenuOpen,
         )));
     }
 
@@ -51,7 +54,11 @@ fn handle_effect(app: &mut App, effect: QuickLaunchEffect) -> Task<AppEvent> {
             open_error_tab(app, title, message)
         },
         QuickLaunchEffect::CloseTabRequested { tab_id } => {
-            Task::done(AppEvent::CloseTab { tab_id })
+            Task::done(AppEvent::Tabs(
+                TabsEvent::Intent(
+                    TabsIntent::CloseTab { tab_id }
+                )
+            ))
         },
     }
 }
@@ -75,9 +82,11 @@ fn open_wizard_create_tab(
     app.pending_workflows
         .push_quick_launch_wizard_create(parent_path);
 
-    Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenWizardTab {
-        title: String::from("Create Quick Launch"),
-    })))
+    Task::done(AppEvent::Tabs(TabsEvent::Intent(
+        TabsIntent::OpenWizardTab {
+            title: String::from("Create Quick Launch"),
+        },
+    )))
 }
 
 fn open_wizard_edit_tab(
@@ -89,9 +98,9 @@ fn open_wizard_edit_tab(
     app.pending_workflows
         .push_quick_launch_wizard_edit(path, command);
 
-    Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenWizardTab {
-        title,
-    })))
+    Task::done(AppEvent::Tabs(TabsEvent::Intent(
+        TabsIntent::OpenWizardTab { title },
+    )))
 }
 
 fn open_command_terminal_tab(
@@ -101,11 +110,13 @@ fn open_command_terminal_tab(
 ) -> Task<AppEvent> {
     let terminal_id = app.widgets.terminal_workspace.allocate_terminal_id();
 
-    Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenCommandTab {
-        terminal_id,
-        title,
-        settings: Box::new(settings),
-    })))
+    Task::done(AppEvent::Tabs(TabsEvent::Intent(
+        TabsIntent::OpenCommandTab {
+            terminal_id,
+            title,
+            settings: Box::new(settings),
+        },
+    )))
 }
 
 fn open_error_tab(
@@ -116,9 +127,9 @@ fn open_error_tab(
     app.pending_workflows
         .push_quick_launch_error_tab(title.clone(), message);
 
-    Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenErrorTab {
-        title,
-    })))
+    Task::done(AppEvent::Tabs(TabsEvent::Intent(
+        TabsIntent::OpenErrorTab { title },
+    )))
 }
 
 #[cfg(test)]

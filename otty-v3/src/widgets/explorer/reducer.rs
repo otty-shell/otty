@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use iced::Task;
 
-use super::event::{ExplorerEffect, ExplorerEvent, ExplorerUiEvent};
+use super::event::{ExplorerEffect, ExplorerEvent, ExplorerIntent};
 use super::state::ExplorerState;
 
 /// Runtime context for the explorer reducer.
@@ -11,30 +11,30 @@ pub(crate) struct ExplorerCtx {
     pub(crate) active_shell_cwd: Option<PathBuf>,
 }
 
-/// Reduce an explorer UI event into state updates and effects.
+/// Reduce an explorer intent event into state updates and effects.
 pub(crate) fn reduce(
     state: &mut ExplorerState,
-    event: ExplorerUiEvent,
+    event: ExplorerIntent,
     _ctx: &ExplorerCtx,
 ) -> Task<ExplorerEvent> {
     match event {
-        ExplorerUiEvent::NodePressed { path } => {
+        ExplorerIntent::NodePressed { path } => {
             reduce_node_pressed(state, path)
         },
-        ExplorerUiEvent::NodeHovered { path } => {
+        ExplorerIntent::NodeHovered { path } => {
             state.set_hovered_path(path);
             Task::none()
         },
-        ExplorerUiEvent::SyncRoot { cwd } => reduce_sync_root(state, cwd),
-        ExplorerUiEvent::RootLoaded { root, nodes } => {
+        ExplorerIntent::SyncRoot { cwd } => reduce_sync_root(state, cwd),
+        ExplorerIntent::RootLoaded { root, nodes } => {
             let _ = state.apply_root_nodes(&root, nodes);
             Task::none()
         },
-        ExplorerUiEvent::FolderLoaded { path, nodes } => {
+        ExplorerIntent::FolderLoaded { path, nodes } => {
             let _ = state.apply_folder_nodes(&path, nodes);
             Task::none()
         },
-        ExplorerUiEvent::LoadFailed { message } => {
+        ExplorerIntent::LoadFailed { message } => {
             log::warn!("explorer load failed: {message}");
             Task::none()
         },
@@ -101,7 +101,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerUiEvent::NodeHovered {
+            ExplorerIntent::NodeHovered {
                 path: Some(vec![String::from("src")]),
             },
             &ctx(None),
@@ -120,7 +120,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerUiEvent::RootLoaded {
+            ExplorerIntent::RootLoaded {
                 root: root.clone(),
                 nodes: vec![FileNode::new(
                     String::from("main.rs"),
@@ -143,7 +143,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerUiEvent::RootLoaded {
+            ExplorerIntent::RootLoaded {
                 root: PathBuf::from("/tmp/b"),
                 nodes: vec![FileNode::new(
                     String::from("main.rs"),
@@ -169,7 +169,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerUiEvent::SyncRoot {
+            ExplorerIntent::SyncRoot {
                 cwd: PathBuf::from("/tmp/new-root"),
             },
             &ctx(None),
@@ -191,7 +191,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerUiEvent::SyncRoot {
+            ExplorerIntent::SyncRoot {
                 cwd: PathBuf::from("/tmp/original"),
             },
             &ctx(None),
@@ -214,7 +214,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerUiEvent::NodePressed {
+            ExplorerIntent::NodePressed {
                 path: vec![String::from("src")],
             },
             &ctx(None),
@@ -240,7 +240,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            ExplorerUiEvent::LoadFailed {
+            ExplorerIntent::LoadFailed {
                 message: String::from("boom"),
             },
             &ctx(None),

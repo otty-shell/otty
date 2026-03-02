@@ -2,12 +2,13 @@ use iced::Task;
 
 use super::AppEvent;
 use crate::app::App;
+use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::sidebar::{SidebarCtx, SidebarEffect, SidebarEvent};
-use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
+use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 pub(crate) fn handle(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
     match event {
-        SidebarEvent::Ui(event) => app
+        SidebarEvent::Intent(event) => app
             .widgets
             .sidebar
             .reduce(event, &SidebarCtx)
@@ -17,34 +18,34 @@ pub(crate) fn handle(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
 }
 
 fn handle_effect(event: SidebarEffect) -> Task<AppEvent> {
-    use SidebarEffect as E;
+    use SidebarEffect::*;
 
     match event {
-        E::SyncTerminalGridSizes => {
+        SyncTerminalGridSizes => {
             Task::done(AppEvent::SyncTerminalGridSizes)
         },
-        E::OpenSettingsTab => {
-            Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::OpenSettingsTab)))
+        OpenSettingsTab => {
+            Task::done(AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenSettingsTab)))
         },
-        E::OpenTerminalTab => Task::done(AppEvent::OpenTerminalTab),
-        E::QuickLaunchHeaderCreateCommand => {
+        OpenTerminalTab => Task::done(AppEvent::OpenTerminalTab),
+        QuickLaunchHeaderCreateCommand => {
             Task::done(AppEvent::QuickLaunch(
-                crate::widgets::quick_launch::QuickLaunchEvent::Ui(
-                    crate::widgets::quick_launch::QuickLaunchUiEvent::HeaderCreateCommand,
+                QuickLaunchEvent::Intent(
+                    QuickLaunchIntent::HeaderCreateCommand,
                 ),
             ))
         },
-        E::QuickLaunchHeaderCreateFolder => {
+        QuickLaunchHeaderCreateFolder => {
             Task::done(AppEvent::QuickLaunch(
-                crate::widgets::quick_launch::QuickLaunchEvent::Ui(
-                    crate::widgets::quick_launch::QuickLaunchUiEvent::HeaderCreateFolder,
+                QuickLaunchEvent::Intent(
+                    QuickLaunchIntent::HeaderCreateFolder,
                 ),
             ))
         },
-        E::QuickLaunchResetInteractionState => {
+        QuickLaunchResetInteractionState => {
             Task::done(AppEvent::QuickLaunch(
-                crate::widgets::quick_launch::QuickLaunchEvent::Ui(
-                    crate::widgets::quick_launch::QuickLaunchUiEvent::ResetInteractionState,
+                QuickLaunchEvent::Intent(
+                    QuickLaunchIntent::ResetInteractionState,
                 ),
             ))
         },

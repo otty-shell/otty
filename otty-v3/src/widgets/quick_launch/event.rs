@@ -8,9 +8,9 @@ use super::model::{
 /// Tick interval for launch indicator animations.
 pub(crate) const QUICK_LAUNCHES_TICK_MS: u64 = 200;
 
-/// UI events emitted by the quick launch presentation layer.
+/// Intent events handled by the quick launch presentation layer.
 #[derive(Debug, Clone)]
-pub(crate) enum QuickLaunchUiEvent {
+pub(crate) enum QuickLaunchIntent {
     // Tree interaction events
     NodeHovered {
         path: NodePath,
@@ -184,8 +184,8 @@ pub(crate) enum QuickLaunchEffect {
 /// Quick launch event stream routed through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum QuickLaunchEvent {
-    /// UI/internal event that should be reduced by the quick launch widget.
-    Ui(QuickLaunchUiEvent),
+    /// Intent event that should be reduced by the quick launch widget.
+    Intent(QuickLaunchIntent),
     /// External effect that should be orchestrated by app-level routing.
     Effect(QuickLaunchEffect),
 }

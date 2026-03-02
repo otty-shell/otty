@@ -1,6 +1,6 @@
-/// UI events emitted by the sidebar presentation layer.
+/// Intent events handled by the sidebar presentation layer.
 #[derive(Debug, Clone)]
-pub(crate) enum SidebarUiEvent {
+pub(crate) enum SidebarIntent {
     SelectTerminal,
     SelectExplorer,
     ToggleWorkspace,
@@ -31,8 +31,8 @@ pub(crate) enum SidebarEffect {
 /// Sidebar event stream routed through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum SidebarEvent {
-    /// UI/internal event reduced by the sidebar widget.
-    Ui(SidebarUiEvent),
+    /// Intent event reduced by the sidebar widget.
+    Intent(SidebarIntent),
     /// External effect orchestrated by app-level routing.
     Effect(SidebarEffect),
 }

@@ -4,7 +4,7 @@ mod reducer;
 mod state;
 pub(crate) mod view;
 
-pub(crate) use event::{SidebarEffect, SidebarEvent, SidebarUiEvent};
+pub(crate) use event::{SidebarEffect, SidebarEvent, SidebarIntent};
 use iced::widget::pane_grid;
 use iced::{Point, Task};
 pub(crate) use model::{
@@ -26,10 +26,10 @@ impl SidebarWidget {
         }
     }
 
-    /// Reduce a UI event into state updates and effect events.
+    /// Reduce an intent event into state updates and effect events.
     pub(crate) fn reduce(
         &mut self,
-        event: SidebarUiEvent,
+        event: SidebarIntent,
         ctx: &SidebarCtx,
     ) -> Task<SidebarEvent> {
         reducer::reduce(&mut self.state, event, ctx)

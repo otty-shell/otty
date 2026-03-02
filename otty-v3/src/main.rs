@@ -14,6 +14,7 @@ mod state;
 mod style;
 mod theme;
 mod widgets;
+mod services;
 
 use env_logger::Env;
 use iced::{Size, window};

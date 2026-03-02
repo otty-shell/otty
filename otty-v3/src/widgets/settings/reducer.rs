@@ -1,64 +1,64 @@
 use iced::Task;
 
-use super::event::{SettingsEffect, SettingsEvent, SettingsUiEvent};
+use super::event::{SettingsEffect, SettingsEvent, SettingsIntent};
 use super::state::SettingsState;
 use super::storage::{
     SettingsLoad, SettingsLoadStatus, load_settings, save_settings,
 };
 
-/// Reduce a settings UI event into state updates and effect tasks.
+/// Reduce a settings intent event into state updates and effect tasks.
 pub(crate) fn reduce(
     state: &mut SettingsState,
-    event: SettingsUiEvent,
+    event: SettingsIntent,
 ) -> Task<SettingsEvent> {
     match event {
-        SettingsUiEvent::Reload => request_reload_settings(),
-        SettingsUiEvent::ReloadLoaded(load) => {
+        SettingsIntent::Reload => request_reload_settings(),
+        SettingsIntent::ReloadLoaded(load) => {
             let settings = apply_loaded_settings(state, load);
             Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
                 settings,
             )))
         },
-        SettingsUiEvent::ReloadFailed(message) => {
+        SettingsIntent::ReloadFailed(message) => {
             log::warn!("settings read failed: {message}");
             Task::none()
         },
-        SettingsUiEvent::Save => request_save_settings(state),
-        SettingsUiEvent::SaveCompleted(settings) => {
+        SettingsIntent::Save => request_save_settings(state),
+        SettingsIntent::SaveCompleted(settings) => {
             state.mark_saved(settings.clone());
             Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
                 settings,
             )))
         },
-        SettingsUiEvent::SaveFailed(message) => {
+        SettingsIntent::SaveFailed(message) => {
             log::warn!("settings save failed: {message}");
             Task::none()
         },
-        SettingsUiEvent::Reset => {
+        SettingsIntent::Reset => {
             state.reset();
             Task::none()
         },
-        SettingsUiEvent::NodePressed { path } => {
+        SettingsIntent::NodePressed { path } => {
             state.select_path(&path);
             Task::none()
         },
-        SettingsUiEvent::NodeHovered { path } => {
+        SettingsIntent::NodeHovered { path } => {
             state.set_hovered_path(path);
             Task::none()
         },
-        SettingsUiEvent::ShellChanged(value) => {
+        SettingsIntent::ShellChanged(value) => {
             state.set_shell(value);
             Task::none()
         },
-        SettingsUiEvent::EditorChanged(value) => {
+        SettingsIntent::EditorChanged(value) => {
             state.set_editor(value);
             Task::none()
         },
-        SettingsUiEvent::PaletteChanged { index, value } => {
+        SettingsIntent::PaletteChanged { index, value } => {
             state.set_palette_input(index, value);
             Task::none()
         },
-        SettingsUiEvent::ApplyPreset(preset) => {
+        SettingsIntent::ApplyPreset(preset) => {
             state.apply_preset(preset);
             Task::none()
         },
@@ -128,7 +128,7 @@ mod tests {
         let normalized = state.normalized_draft();
 
         let _task =
-            reduce(&mut state, SettingsUiEvent::SaveCompleted(normalized));
+            reduce(&mut state, SettingsIntent::SaveCompleted(normalized));
 
         assert!(!state.is_dirty());
         assert_eq!(state.baseline(), state.draft());
@@ -142,7 +142,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsUiEvent::SaveFailed(String::from("write failed")),
+            SettingsIntent::SaveFailed(String::from("write failed")),
         );
 
         assert!(state.is_dirty());
@@ -157,7 +157,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsUiEvent::NodePressed {
+            SettingsIntent::NodePressed {
                 path: vec![String::from("Unknown")],
             },
         );
@@ -188,7 +188,7 @@ mod tests {
         state.set_editor(String::from("nvim"));
         assert!(state.is_dirty());
 
-        let _task = reduce(&mut state, SettingsUiEvent::Reset);
+        let _task = reduce(&mut state, SettingsIntent::Reset);
 
         assert!(!state.is_dirty());
         assert_eq!(state.draft(), state.baseline());
@@ -200,7 +200,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsUiEvent::ShellChanged(String::from("/usr/bin/fish")),
+            SettingsIntent::ShellChanged(String::from("/usr/bin/fish")),
         );
 
         assert_eq!(state.draft().terminal_shell(), "/usr/bin/fish");
@@ -213,7 +213,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsUiEvent::PaletteChanged {
+            SettingsIntent::PaletteChanged {
                 index: 0,
                 value: String::from("#AABB"),
             },
@@ -232,7 +232,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsUiEvent::ApplyPreset(SettingsPreset::OttyDark),
+            SettingsIntent::ApplyPreset(SettingsPreset::OttyDark),
         );
 
         let expected = SettingsPreset::OttyDark.palette();
@@ -246,7 +246,7 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsUiEvent::NodePressed {
+            SettingsIntent::NodePressed {
                 path: vec![String::from("General"), String::from("Theme")],
             },
         );

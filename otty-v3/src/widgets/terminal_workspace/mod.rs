@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub(crate) use event::{
-    TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
+    TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 use iced::Task;
 pub(crate) use reducer::TerminalWorkspaceCtx;
@@ -39,10 +39,10 @@ impl TerminalWorkspaceWidget {
         }
     }
 
-    /// Reduce a UI event into state updates and effect events.
+    /// Reduce an intent event into state updates and effect events.
     pub(crate) fn reduce(
         &mut self,
-        event: TerminalWorkspaceUiEvent,
+        event: TerminalWorkspaceIntent,
         ctx: &TerminalWorkspaceCtx,
     ) -> Task<TerminalWorkspaceEvent> {
         reducer::reduce(

@@ -3,7 +3,7 @@ use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Element, Length, Theme, alignment};
 
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::widgets::quick_launch::event::QuickLaunchUiEvent;
+use crate::widgets::quick_launch::event::QuickLaunchIntent;
 use crate::widgets::quick_launch::model::QuickLaunchType;
 use crate::widgets::quick_launch::state::WizardEditorState;
 
@@ -29,7 +29,7 @@ pub(crate) struct WizardFormProps<'a> {
 /// Render the quick launch wizard form.
 pub(crate) fn view(
     props: WizardFormProps<'_>,
-) -> Element<'_, QuickLaunchUiEvent, Theme, iced::Renderer> {
+) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
     let tab_id = props.tab_id;
     let editor = props.editor;
     let theme = props.theme;
@@ -41,7 +41,7 @@ pub(crate) fn view(
         "Title",
         "codex: review",
         editor.title(),
-        move |value| QuickLaunchUiEvent::WizardUpdateTitle { tab_id, value },
+        move |value| QuickLaunchIntent::WizardUpdateTitle { tab_id, value },
         theme,
     ));
 
@@ -73,7 +73,7 @@ pub(crate) fn view(
                 "Program",
                 "/usr/bin/bash",
                 custom.program(),
-                move |value| QuickLaunchUiEvent::WizardUpdateProgram {
+                move |value| QuickLaunchIntent::WizardUpdateProgram {
                     tab_id,
                     value,
                 },
@@ -100,7 +100,7 @@ pub(crate) fn view(
                 "Workdir (cwd)",
                 "/path/to/project",
                 custom.working_directory(),
-                move |value| QuickLaunchUiEvent::WizardUpdateWorkingDirectory {
+                move |value| QuickLaunchIntent::WizardUpdateWorkingDirectory {
                     tab_id,
                     value,
                 },
@@ -120,7 +120,7 @@ pub(crate) fn view(
                 "Host",
                 "example.com",
                 ssh.host(),
-                move |value| QuickLaunchUiEvent::WizardUpdateHost {
+                move |value| QuickLaunchIntent::WizardUpdateHost {
                     tab_id,
                     value,
                 },
@@ -130,7 +130,7 @@ pub(crate) fn view(
                 "Port",
                 "22",
                 ssh.port(),
-                move |value| QuickLaunchUiEvent::WizardUpdatePort {
+                move |value| QuickLaunchIntent::WizardUpdatePort {
                     tab_id,
                     value,
                 },
@@ -140,7 +140,7 @@ pub(crate) fn view(
                 "User",
                 "ubuntu",
                 ssh.user(),
-                move |value| QuickLaunchUiEvent::WizardUpdateUser {
+                move |value| QuickLaunchIntent::WizardUpdateUser {
                     tab_id,
                     value,
                 },
@@ -150,7 +150,7 @@ pub(crate) fn view(
                 "Identity file",
                 "~/.ssh/id_ed25519",
                 ssh.identity_file(),
-                move |value| QuickLaunchUiEvent::WizardUpdateIdentityFile {
+                move |value| QuickLaunchIntent::WizardUpdateIdentityFile {
                     tab_id,
                     value,
                 },
@@ -178,20 +178,15 @@ pub(crate) fn view(
         }));
     }
 
-    let action_row =
-        row![
-            editor_button(
-                "Save",
-                QuickLaunchUiEvent::WizardSave { tab_id },
-                theme,
-            ),
-            editor_button(
-                "Cancel",
-                QuickLaunchUiEvent::WizardCancel { tab_id },
-                theme,
-            ),
-        ]
-        .spacing(FIELD_SPACING);
+    let action_row = row![
+        editor_button("Save", QuickLaunchIntent::WizardSave { tab_id }, theme,),
+        editor_button(
+            "Cancel",
+            QuickLaunchIntent::WizardCancel { tab_id },
+            theme,
+        ),
+    ]
+    .spacing(FIELD_SPACING);
     content = content.push(action_row);
 
     let content = container(content).padding(iced::Padding {
@@ -222,7 +217,7 @@ fn quick_launch_type_label(command_type: QuickLaunchType) -> &'static str {
 fn section_header<'a>(
     label: &'a str,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
+) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
     let palette = theme.theme.iced_palette();
     container(text(label).size(LABEL_SIZE).style(move |_| {
         iced::widget::text::Style {
@@ -239,9 +234,9 @@ fn text_input_row<'a, F>(
     value: &'a str,
     on_input: F,
     _theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer>
+) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer>
 where
-    F: 'a + Fn(String) -> QuickLaunchUiEvent,
+    F: 'a + Fn(String) -> QuickLaunchIntent,
 {
     let input = text_input(placeholder, value)
         .on_input(on_input)
@@ -260,11 +255,11 @@ fn command_type_selector<'a>(
     tab_id: u64,
     selected: QuickLaunchType,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
+) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
     let custom = toggle_button(
         "Custom",
         selected == QuickLaunchType::Custom,
-        QuickLaunchUiEvent::WizardSelectCommandType {
+        QuickLaunchIntent::WizardSelectCommandType {
             tab_id,
             command_type: QuickLaunchType::Custom,
         },
@@ -273,7 +268,7 @@ fn command_type_selector<'a>(
     let ssh = toggle_button(
         "SSH",
         selected == QuickLaunchType::Ssh,
-        QuickLaunchUiEvent::WizardSelectCommandType {
+        QuickLaunchIntent::WizardSelectCommandType {
             tab_id,
             command_type: QuickLaunchType::Ssh,
         },
@@ -298,11 +293,11 @@ fn list_editor<'a>(
     placeholder: &'a str,
     values: &'a [String],
     tab_id: u64,
-    on_add: fn(u64) -> QuickLaunchUiEvent,
-    on_remove: fn(u64, usize) -> QuickLaunchUiEvent,
-    on_update: fn(u64, usize, String) -> QuickLaunchUiEvent,
+    on_add: fn(u64) -> QuickLaunchIntent,
+    on_remove: fn(u64, usize) -> QuickLaunchIntent,
+    on_update: fn(u64, usize, String) -> QuickLaunchIntent,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
+) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
     let mut col = column![text(label).size(LABEL_SIZE)]
         .spacing(FIELD_SPACING)
         .width(Length::Fill);
@@ -327,14 +322,14 @@ fn env_editor<'a>(
     value_placeholder: &'a str,
     tab_id: u64,
     theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
+) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
     let mut col = column![text("Environment").size(LABEL_SIZE)]
         .spacing(FIELD_SPACING)
         .width(Length::Fill);
 
     for (index, (key, value)) in env.iter().enumerate() {
         let key_input = text_input(key_placeholder, key)
-            .on_input(move |next| QuickLaunchUiEvent::WizardUpdateEnvKey {
+            .on_input(move |next| QuickLaunchIntent::WizardUpdateEnvKey {
                 tab_id,
                 index,
                 value: next,
@@ -343,7 +338,7 @@ fn env_editor<'a>(
             .size(INPUT_SIZE)
             .width(Length::Fill);
         let value_input = text_input(value_placeholder, value)
-            .on_input(move |next| QuickLaunchUiEvent::WizardUpdateEnvValue {
+            .on_input(move |next| QuickLaunchIntent::WizardUpdateEnvValue {
                 tab_id,
                 index,
                 value: next,
@@ -353,7 +348,7 @@ fn env_editor<'a>(
             .width(Length::Fill);
         let remove = editor_button(
             "Remove",
-            QuickLaunchUiEvent::WizardRemoveEnv { tab_id, index },
+            QuickLaunchIntent::WizardRemoveEnv { tab_id, index },
             theme,
         );
 
@@ -363,7 +358,7 @@ fn env_editor<'a>(
 
     col.push(editor_button(
         "Add env",
-        QuickLaunchUiEvent::WizardAddEnv { tab_id },
+        QuickLaunchIntent::WizardAddEnv { tab_id },
         theme,
     ))
     .into()
@@ -371,7 +366,7 @@ fn env_editor<'a>(
 
 fn field_label<'a>(
     label: &'a str,
-) -> Element<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
+) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
     text(label)
         .size(LABEL_SIZE)
         .width(Length::Fixed(LABEL_WIDTH))
@@ -381,9 +376,9 @@ fn field_label<'a>(
 
 fn editor_button<'a>(
     label: &'a str,
-    on_press: QuickLaunchUiEvent,
+    on_press: QuickLaunchIntent,
     theme: ThemeProps<'a>,
-) -> iced::widget::Button<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
+) -> iced::widget::Button<'a, QuickLaunchIntent, Theme, iced::Renderer> {
     let palette = theme.theme.iced_palette().clone();
     let content = container(
         text(label)
@@ -403,9 +398,9 @@ fn editor_button<'a>(
 fn toggle_button<'a>(
     label: &'a str,
     selected: bool,
-    on_press: QuickLaunchUiEvent,
+    on_press: QuickLaunchIntent,
     theme: ThemeProps<'a>,
-) -> iced::widget::Button<'a, QuickLaunchUiEvent, Theme, iced::Renderer> {
+) -> iced::widget::Button<'a, QuickLaunchIntent, Theme, iced::Renderer> {
     let palette = theme.theme.iced_palette().clone();
     let content = container(text(label).size(LABEL_SIZE))
         .align_x(alignment::Horizontal::Center)
@@ -449,40 +444,40 @@ fn button_style(
     }
 }
 
-fn wizard_add_arg(tab_id: u64) -> QuickLaunchUiEvent {
-    QuickLaunchUiEvent::WizardAddArg { tab_id }
+fn wizard_add_arg(tab_id: u64) -> QuickLaunchIntent {
+    QuickLaunchIntent::WizardAddArg { tab_id }
 }
 
-fn wizard_remove_arg(tab_id: u64, index: usize) -> QuickLaunchUiEvent {
-    QuickLaunchUiEvent::WizardRemoveArg { tab_id, index }
+fn wizard_remove_arg(tab_id: u64, index: usize) -> QuickLaunchIntent {
+    QuickLaunchIntent::WizardRemoveArg { tab_id, index }
 }
 
 fn wizard_update_arg(
     tab_id: u64,
     index: usize,
     value: String,
-) -> QuickLaunchUiEvent {
-    QuickLaunchUiEvent::WizardUpdateArg {
+) -> QuickLaunchIntent {
+    QuickLaunchIntent::WizardUpdateArg {
         tab_id,
         index,
         value,
     }
 }
 
-fn wizard_add_extra_arg(tab_id: u64) -> QuickLaunchUiEvent {
-    QuickLaunchUiEvent::WizardAddExtraArg { tab_id }
+fn wizard_add_extra_arg(tab_id: u64) -> QuickLaunchIntent {
+    QuickLaunchIntent::WizardAddExtraArg { tab_id }
 }
 
-fn wizard_remove_extra_arg(tab_id: u64, index: usize) -> QuickLaunchUiEvent {
-    QuickLaunchUiEvent::WizardRemoveExtraArg { tab_id, index }
+fn wizard_remove_extra_arg(tab_id: u64, index: usize) -> QuickLaunchIntent {
+    QuickLaunchIntent::WizardRemoveExtraArg { tab_id, index }
 }
 
 fn wizard_update_extra_arg(
     tab_id: u64,
     index: usize,
     value: String,
-) -> QuickLaunchUiEvent {
-    QuickLaunchUiEvent::WizardUpdateExtraArg {
+) -> QuickLaunchIntent {
+    QuickLaunchIntent::WizardUpdateExtraArg {
         tab_id,
         index,
         value,

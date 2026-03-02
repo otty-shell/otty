@@ -1,33 +1,33 @@
 use iced::Task;
 use otty_ui_term::settings::Settings;
 
-use super::event::{TabsEffect, TabsEvent, TabsUiEvent};
+use super::event::{TabsEffect, TabsEvent, TabsIntent};
 use super::model::{TabContent, TabItem};
 use super::state::TabsState;
 
-/// Reduce a tabs UI event into state mutation and effect tasks.
+/// Reduce a tabs intent event into state mutation and effect tasks.
 pub(crate) fn reduce(
     state: &mut TabsState,
-    event: TabsUiEvent,
+    event: TabsIntent,
 ) -> Task<TabsEvent> {
     match event {
-        TabsUiEvent::ActivateTab { tab_id } => activate(state, tab_id),
-        TabsUiEvent::CloseTab { tab_id } => close(state, tab_id),
-        TabsUiEvent::SetTitle { tab_id, title } => {
+        TabsIntent::ActivateTab { tab_id } => activate(state, tab_id),
+        TabsIntent::CloseTab { tab_id } => close(state, tab_id),
+        TabsIntent::SetTitle { tab_id, title } => {
             state.set_title(tab_id, title);
             Task::none()
         },
-        TabsUiEvent::OpenTerminalTab { terminal_id, title } => {
+        TabsIntent::OpenTerminalTab { terminal_id, title } => {
             open_terminal_tab(state, terminal_id, title)
         },
-        TabsUiEvent::OpenCommandTab {
+        TabsIntent::OpenCommandTab {
             terminal_id,
             title,
             settings,
         } => open_command_tab(state, terminal_id, title, *settings),
-        TabsUiEvent::OpenSettingsTab => open_settings_tab(state),
-        TabsUiEvent::OpenWizardTab { title } => open_wizard_tab(state, title),
-        TabsUiEvent::OpenErrorTab { title } => open_error_tab(state, title),
+        TabsIntent::OpenSettingsTab => open_settings_tab(state),
+        TabsIntent::OpenWizardTab { title } => open_wizard_tab(state, title),
+        TabsIntent::OpenErrorTab { title } => open_error_tab(state, title),
     }
 }
 
@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn activate_nonexistent_tab_is_noop() {
         let mut state = TabsState::default();
-        let _ = reduce(&mut state, TabsUiEvent::ActivateTab { tab_id: 999 });
+        let _ = reduce(&mut state, TabsIntent::ActivateTab { tab_id: 999 });
         assert!(state.active_tab_id().is_none());
     }
 
@@ -173,7 +173,7 @@ mod tests {
         let mut state = TabsState::default();
         let _ = reduce(
             &mut state,
-            TabsUiEvent::OpenTerminalTab {
+            TabsIntent::OpenTerminalTab {
                 terminal_id: 1,
                 title: String::from("bash"),
             },
@@ -202,7 +202,7 @@ mod tests {
         let mut state = TabsState::default();
         let _ = reduce(
             &mut state,
-            TabsUiEvent::OpenCommandTab {
+            TabsIntent::OpenCommandTab {
                 terminal_id: 1,
                 title: String::from("nvim main.rs"),
                 settings: Box::new(settings),
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn open_settings_tab_activates_settings() {
         let mut state = TabsState::default();
-        let _ = reduce(&mut state, TabsUiEvent::OpenSettingsTab);
+        let _ = reduce(&mut state, TabsIntent::OpenSettingsTab);
 
         assert_eq!(state.len(), 1);
         let active = state.active_tab().expect("should have active tab");
@@ -231,7 +231,7 @@ mod tests {
         let mut state = TabsState::default();
         let _ = reduce(
             &mut state,
-            TabsUiEvent::OpenTerminalTab {
+            TabsIntent::OpenTerminalTab {
                 terminal_id: 1,
                 title: String::from("First"),
             },
@@ -240,14 +240,14 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            TabsUiEvent::OpenTerminalTab {
+            TabsIntent::OpenTerminalTab {
                 terminal_id: 2,
                 title: String::from("Second"),
             },
         );
         let second_id = state.active_tab_id().unwrap();
 
-        let _ = reduce(&mut state, TabsUiEvent::CloseTab { tab_id: second_id });
+        let _ = reduce(&mut state, TabsIntent::CloseTab { tab_id: second_id });
         assert_eq!(state.active_tab_id(), Some(first_id));
     }
 
@@ -256,14 +256,14 @@ mod tests {
         let mut state = TabsState::default();
         let _ = reduce(
             &mut state,
-            TabsUiEvent::OpenTerminalTab {
+            TabsIntent::OpenTerminalTab {
                 terminal_id: 1,
                 title: String::from("Only"),
             },
         );
         let tab_id = state.active_tab_id().unwrap();
 
-        let _ = reduce(&mut state, TabsUiEvent::CloseTab { tab_id });
+        let _ = reduce(&mut state, TabsIntent::CloseTab { tab_id });
         assert!(state.active_tab_id().is_none());
         assert!(state.is_empty());
     }
@@ -273,7 +273,7 @@ mod tests {
         let mut state = TabsState::default();
         let _ = reduce(
             &mut state,
-            TabsUiEvent::OpenTerminalTab {
+            TabsIntent::OpenTerminalTab {
                 terminal_id: 1,
                 title: String::from("old"),
             },
@@ -282,7 +282,7 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            TabsUiEvent::SetTitle {
+            TabsIntent::SetTitle {
                 tab_id,
                 title: String::from("new"),
             },

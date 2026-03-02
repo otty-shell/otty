@@ -5,7 +5,7 @@ use iced::{Point, Size, Task};
 use otty_ui_term::{BlockCommand, TerminalView};
 
 use super::event::{
-    TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
+    TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 use super::model::TerminalKind;
 use super::state::{StateCommand, TerminalTabState, TerminalWorkspaceState};
@@ -22,15 +22,15 @@ pub(crate) struct TerminalWorkspaceCtx {
     pub(crate) sidebar_cursor: Point,
 }
 
-/// Reduce a terminal workspace UI event into state updates and effects.
+/// Reduce a terminal workspace intent event into state updates and effects.
 pub(crate) fn reduce(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,
-    event: TerminalWorkspaceUiEvent,
+    event: TerminalWorkspaceIntent,
     ctx: &TerminalWorkspaceCtx,
 ) -> Task<TerminalWorkspaceEvent> {
-    use TerminalWorkspaceUiEvent::*;
+    use TerminalWorkspaceIntent::*;
 
     match event {
         OpenTab {
@@ -540,7 +540,7 @@ mod tests {
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{TerminalWorkspaceCtx, reduce};
-    use crate::widgets::terminal_workspace::TerminalWorkspaceUiEvent;
+    use crate::widgets::terminal_workspace::TerminalWorkspaceIntent;
     use crate::widgets::terminal_workspace::model::TerminalKind;
     use crate::widgets::terminal_workspace::state::TerminalWorkspaceState;
 
@@ -579,7 +579,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceUiEvent::OpenTab {
+            TerminalWorkspaceIntent::OpenTab {
                 tab_id: 1,
                 terminal_id: 10,
                 default_title: String::from("Shell"),
@@ -611,7 +611,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceUiEvent::OpenTab {
+            TerminalWorkspaceIntent::OpenTab {
                 tab_id: 1,
                 terminal_id: 10,
                 default_title: String::from("Shell"),
@@ -633,7 +633,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceUiEvent::SyncPaneGridSize,
+            TerminalWorkspaceIntent::SyncPaneGridSize,
             &sync_ctx,
         );
 
@@ -653,7 +653,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceUiEvent::PaneClicked { tab_id: 999, pane },
+            TerminalWorkspaceIntent::PaneClicked { tab_id: 999, pane },
             &ctx,
         );
 
@@ -671,7 +671,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceUiEvent::OpenTab {
+            TerminalWorkspaceIntent::OpenTab {
                 tab_id: 1,
                 terminal_id: 10,
                 default_title: String::from("Shell"),
@@ -686,7 +686,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceUiEvent::TabClosed { tab_id: 1 },
+            TerminalWorkspaceIntent::TabClosed { tab_id: 1 },
             &ctx,
         );
 
@@ -705,7 +705,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceUiEvent::CloseAllContextMenus,
+            TerminalWorkspaceIntent::CloseAllContextMenus,
             &ctx,
         );
     }
@@ -721,7 +721,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceUiEvent::ContextMenuInput { tab_id: 1 },
+            TerminalWorkspaceIntent::ContextMenuInput { tab_id: 1 },
             &ctx,
         );
     }
@@ -742,7 +742,7 @@ mod tests {
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceUiEvent::FocusActive,
+            TerminalWorkspaceIntent::FocusActive,
             &ctx,
         );
     }

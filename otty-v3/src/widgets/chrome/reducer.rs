@@ -1,15 +1,15 @@
 use iced::{Task, window};
 
-use super::event::{ChromeEffect, ChromeEvent, ChromeUiEvent};
+use super::event::{ChromeEffect, ChromeEvent, ChromeIntent};
 use super::state::ChromeState;
 
-/// Reduce a chrome UI event into state mutation and effect tasks.
+/// Reduce a chrome intent event into state mutation and effect tasks.
 pub(crate) fn reduce(
     state: &mut ChromeState,
-    event: ChromeUiEvent,
+    event: ChromeIntent,
 ) -> Task<ChromeEvent> {
     match event {
-        ChromeUiEvent::ToggleFullScreen => {
+        ChromeIntent::ToggleFullScreen => {
             let is_fullscreen = state.toggle_fullscreen();
             let mode = if is_fullscreen {
                 window::Mode::Fullscreen
@@ -20,16 +20,16 @@ pub(crate) fn reduce(
                 mode,
             }))
         },
-        ChromeUiEvent::MinimizeWindow => {
+        ChromeIntent::MinimizeWindow => {
             Task::done(ChromeEvent::Effect(ChromeEffect::MinimizeWindow))
         },
-        ChromeUiEvent::CloseWindow => {
+        ChromeIntent::CloseWindow => {
             Task::done(ChromeEvent::Effect(ChromeEffect::CloseWindow))
         },
-        ChromeUiEvent::ToggleSidebarVisibility => Task::done(
+        ChromeIntent::ToggleSidebarVisibility => Task::done(
             ChromeEvent::Effect(ChromeEffect::ToggleSidebarVisibility),
         ),
-        ChromeUiEvent::StartWindowDrag => {
+        ChromeIntent::StartWindowDrag => {
             Task::done(ChromeEvent::Effect(ChromeEffect::StartWindowDrag))
         },
     }
@@ -44,10 +44,10 @@ mod tests {
         let mut state = ChromeState::default();
         assert!(!state.is_fullscreen());
 
-        let _ = reduce(&mut state, ChromeUiEvent::ToggleFullScreen);
+        let _ = reduce(&mut state, ChromeIntent::ToggleFullScreen);
         assert!(state.is_fullscreen());
 
-        let _ = reduce(&mut state, ChromeUiEvent::ToggleFullScreen);
+        let _ = reduce(&mut state, ChromeIntent::ToggleFullScreen);
         assert!(!state.is_fullscreen());
     }
 
@@ -55,13 +55,13 @@ mod tests {
     fn non_fullscreen_commands_preserve_state() {
         let mut state = ChromeState::default();
 
-        let _ = reduce(&mut state, ChromeUiEvent::MinimizeWindow);
+        let _ = reduce(&mut state, ChromeIntent::MinimizeWindow);
         assert!(!state.is_fullscreen());
 
-        let _ = reduce(&mut state, ChromeUiEvent::CloseWindow);
+        let _ = reduce(&mut state, ChromeIntent::CloseWindow);
         assert!(!state.is_fullscreen());
 
-        let _ = reduce(&mut state, ChromeUiEvent::StartWindowDrag);
+        let _ = reduce(&mut state, ChromeIntent::StartWindowDrag);
         assert!(!state.is_fullscreen());
     }
 }

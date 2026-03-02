@@ -1,8 +1,8 @@
 use iced::window;
 
-/// UI events emitted by chrome widget views.
+/// Intent events handled by chrome widget views.
 #[derive(Debug, Clone)]
-pub(crate) enum ChromeUiEvent {
+pub(crate) enum ChromeIntent {
     ToggleFullScreen,
     MinimizeWindow,
     CloseWindow,
@@ -23,8 +23,8 @@ pub(crate) enum ChromeEffect {
 /// Chrome event stream routed through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum ChromeEvent {
-    /// UI/internal event reduced by the chrome widget.
-    Ui(ChromeUiEvent),
+    /// Intent event reduced by the chrome widget.
+    Intent(ChromeIntent),
     /// External effect orchestrated by app-level routing.
     Effect(ChromeEffect),
 }

@@ -6,9 +6,9 @@ use otty_ui_term::settings::Settings;
 
 use super::model::TerminalKind;
 
-/// UI events emitted by the terminal workspace presentation layer.
+/// Intent events handled by the terminal workspace presentation layer.
 #[derive(Clone)]
-pub(crate) enum TerminalWorkspaceUiEvent {
+pub(crate) enum TerminalWorkspaceIntent {
     /// Request to open a new terminal tab.
     OpenTab {
         tab_id: u64,
@@ -73,7 +73,7 @@ pub(crate) enum TerminalWorkspaceUiEvent {
     SyncPaneGridSize,
 }
 
-impl fmt::Debug for TerminalWorkspaceUiEvent {
+impl fmt::Debug for TerminalWorkspaceIntent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::OpenTab {
@@ -207,8 +207,8 @@ pub(crate) enum TerminalWorkspaceEffect {
 /// Terminal workspace event stream routed through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum TerminalWorkspaceEvent {
-    /// UI/internal event reduced by the terminal workspace widget.
-    Ui(TerminalWorkspaceUiEvent),
+    /// Intent event reduced by the terminal workspace widget.
+    Intent(TerminalWorkspaceIntent),
     /// External effect orchestrated by app-level routing.
     Effect(TerminalWorkspaceEffect),
 }

@@ -17,8 +17,10 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
     use MenuGuard::*;
 
     match event {
-        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Ui(event)) => {
-            use crate::widgets::sidebar::SidebarUiEvent as E;
+        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Intent(
+            event,
+        )) => {
+            use crate::widgets::sidebar::SidebarIntent as E;
             match event {
                 E::AddMenuDismiss
                 | E::AddMenuCreateTab
@@ -31,9 +33,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             }
         },
         AppEvent::QuickLaunch(
-            crate::widgets::quick_launch::QuickLaunchEvent::Ui(event),
+            crate::widgets::quick_launch::QuickLaunchEvent::Intent(event),
         ) => {
-            use crate::widgets::quick_launch::QuickLaunchUiEvent as E;
+            use crate::widgets::quick_launch::QuickLaunchIntent as E;
             match event {
                 E::ContextMenuDismiss
                 | E::ContextMenuAction(_)
@@ -50,11 +52,11 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             }
         },
         AppEvent::TerminalWorkspace(
-            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Ui(
+            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Intent(
                 event,
             ),
         ) => {
-            use crate::widgets::terminal_workspace::TerminalWorkspaceUiEvent as E;
+            use crate::widgets::terminal_workspace::TerminalWorkspaceIntent as E;
             match event {
                 E::CloseContextMenu { .. }
                 | E::CopySelection { .. }
@@ -86,23 +88,25 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         AppEvent::Settings(
             crate::widgets::settings::SettingsEvent::Effect(_),
         )
-        | AppEvent::Settings(crate::widgets::settings::SettingsEvent::Ui(
-            crate::widgets::settings::SettingsUiEvent::ReloadLoaded(_)
-            | crate::widgets::settings::SettingsUiEvent::ReloadFailed(_)
-            | crate::widgets::settings::SettingsUiEvent::SaveCompleted(_)
-            | crate::widgets::settings::SettingsUiEvent::SaveFailed(_),
-        )) => Allow,
-        AppEvent::Explorer(crate::widgets::explorer::ExplorerEvent::Ui(
-            crate::widgets::explorer::ExplorerUiEvent::SyncRoot { .. },
-        )) => Allow,
+        | AppEvent::Settings(
+            crate::widgets::settings::SettingsEvent::Intent(
+                crate::widgets::settings::SettingsIntent::ReloadLoaded(_)
+                | crate::widgets::settings::SettingsIntent::ReloadFailed(_)
+                | crate::widgets::settings::SettingsIntent::SaveCompleted(_)
+                | crate::widgets::settings::SettingsIntent::SaveFailed(_),
+            ),
+        ) => Allow,
+        AppEvent::Explorer(
+            crate::widgets::explorer::ExplorerEvent::Intent(
+                crate::widgets::explorer::ExplorerIntent::SyncRoot { .. },
+            ),
+        ) => Allow,
         AppEvent::Window(_) | AppEvent::ResizeWindow(_) => Allow,
         AppEvent::OpenTerminalTab
-        | AppEvent::OpenFileTerminalTab { .. }
-        | AppEvent::CloseTab { .. }
         | AppEvent::SyncTerminalGridSizes => Allow,
         AppEvent::Keyboard(_) => Ignore,
-        AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Ui(_))
-        | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Ui(_)) => Allow,
+        AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Intent(_))
+        | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Intent(_)) => Allow,
         _ => Dismiss,
     }
 }
@@ -112,9 +116,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
 pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
     match event {
         AppEvent::QuickLaunch(
-            crate::widgets::quick_launch::QuickLaunchEvent::Ui(event),
+            crate::widgets::quick_launch::QuickLaunchEvent::Intent(event),
         ) => {
-            use crate::widgets::quick_launch::QuickLaunchUiEvent as E;
+            use crate::widgets::quick_launch::QuickLaunchIntent as E;
             !matches!(
                 event,
                 E::InlineEditChanged(_)
@@ -131,19 +135,21 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
         AppEvent::QuickLaunch(
             crate::widgets::quick_launch::QuickLaunchEvent::Effect(_),
         ) => false,
-        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Ui(event)) => {
-            use crate::widgets::sidebar::SidebarUiEvent as E;
+        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Intent(
+            event,
+        )) => {
+            use crate::widgets::sidebar::SidebarIntent as E;
             !matches!(
                 event,
                 E::WorkspaceCursorMoved { .. } | E::PaneGridCursorMoved { .. }
             )
         },
         AppEvent::TerminalWorkspace(
-            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Ui(
+            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Intent(
                 event,
             ),
         ) => {
-            use crate::widgets::terminal_workspace::TerminalWorkspaceUiEvent as E;
+            use crate::widgets::terminal_workspace::TerminalWorkspaceIntent as E;
             !matches!(
                 event,
                 E::Widget(_)
@@ -156,26 +162,28 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
                 _,
             ),
         ) => false,
-        AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Ui(event)) => {
-            use crate::widgets::tabs::TabsUiEvent as E;
+        AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Intent(event)) => {
+            use crate::widgets::tabs::TabsIntent as E;
             matches!(event, E::ActivateTab { .. } | E::CloseTab { .. })
         },
         AppEvent::Settings(
             crate::widgets::settings::SettingsEvent::Effect(_),
         )
-        | AppEvent::Settings(crate::widgets::settings::SettingsEvent::Ui(
-            crate::widgets::settings::SettingsUiEvent::Reload
-            | crate::widgets::settings::SettingsUiEvent::ReloadLoaded(_)
-            | crate::widgets::settings::SettingsUiEvent::ReloadFailed(_)
-            | crate::widgets::settings::SettingsUiEvent::SaveCompleted(_)
-            | crate::widgets::settings::SettingsUiEvent::SaveFailed(_),
-        )) => false,
-        AppEvent::Explorer(crate::widgets::explorer::ExplorerEvent::Ui(
-            crate::widgets::explorer::ExplorerUiEvent::SyncRoot { .. },
-        )) => false,
+        | AppEvent::Settings(
+            crate::widgets::settings::SettingsEvent::Intent(
+                crate::widgets::settings::SettingsIntent::Reload
+                | crate::widgets::settings::SettingsIntent::ReloadLoaded(_)
+                | crate::widgets::settings::SettingsIntent::ReloadFailed(_)
+                | crate::widgets::settings::SettingsIntent::SaveCompleted(_)
+                | crate::widgets::settings::SettingsIntent::SaveFailed(_),
+            ),
+        ) => false,
+        AppEvent::Explorer(
+            crate::widgets::explorer::ExplorerEvent::Intent(
+                crate::widgets::explorer::ExplorerIntent::SyncRoot { .. },
+            ),
+        ) => false,
         AppEvent::OpenTerminalTab
-        | AppEvent::OpenFileTerminalTab { .. }
-        | AppEvent::CloseTab { .. }
         | AppEvent::SyncTerminalGridSizes => false,
         AppEvent::Keyboard(_) | AppEvent::Window(_) => false,
         AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Effect(_))
@@ -189,14 +197,14 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
 mod tests {
     use super::{MenuGuard, context_menu_guard, inline_edit_guard};
     use crate::events::AppEvent;
-    use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
+    use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 
     #[test]
     fn given_add_menu_open_when_context_menu_guard_runs_then_event_is_ignored()
     {
-        let guard = context_menu_guard(&AppEvent::Sidebar(SidebarEvent::Ui(
-            SidebarUiEvent::AddMenuOpen,
-        )));
+        let guard = context_menu_guard(&AppEvent::Sidebar(
+            SidebarEvent::Intent(SidebarIntent::AddMenuOpen),
+        ));
         assert!(matches!(guard, MenuGuard::Ignore));
     }
 

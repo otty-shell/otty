@@ -6,7 +6,7 @@ pub(crate) mod view;
 
 use iced::Task;
 
-pub(crate) use self::event::{TabsEffect, TabsEvent, TabsUiEvent};
+pub(crate) use self::event::{TabsEffect, TabsEvent, TabsIntent};
 use self::model::TabsViewModel;
 use self::state::TabsState;
 
@@ -23,8 +23,8 @@ impl TabsWidget {
         }
     }
 
-    /// Reduce a tabs UI event into state updates and effect events.
-    pub(crate) fn reduce(&mut self, event: TabsUiEvent) -> Task<TabsEvent> {
+    /// Reduce a tabs intent event into state updates and effect events.
+    pub(crate) fn reduce(&mut self, event: TabsIntent) -> Task<TabsEvent> {
         reducer::reduce(&mut self.state, event)
     }
 

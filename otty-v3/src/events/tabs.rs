@@ -3,20 +3,20 @@ use iced::widget::operation::snap_to_end;
 
 use super::AppEvent;
 use crate::app::{App, PendingQuickLaunchWizard};
-use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
-use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
-use crate::widgets::settings::{SettingsEvent, SettingsUiEvent};
+use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
+use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+use crate::widgets::settings::{SettingsEvent, SettingsIntent};
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_SCROLL_ID;
 use crate::widgets::tabs::{TabsEffect, TabsEvent};
 use crate::widgets::terminal_workspace::model::TerminalKind;
 use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
 use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
 pub(crate) fn handle(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
     match event {
-        TabsEvent::Ui(event) => {
+        TabsEvent::Intent(event) => {
             app.widgets.tabs.reduce(event).map(AppEvent::Tabs)
         },
         TabsEvent::Effect(effect) => handle_effect(app, effect),
@@ -30,13 +30,13 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
 
             // Focus the terminal in the activated tab.
             tasks.push(Task::done(AppEvent::TerminalWorkspace(
-                TerminalWorkspaceEvent::Ui(
-                    TerminalWorkspaceUiEvent::FocusActive,
+                TerminalWorkspaceEvent::Intent(
+                    TerminalWorkspaceIntent::FocusActive,
                 ),
             )));
             tasks.push(Task::done(AppEvent::TerminalWorkspace(
-                TerminalWorkspaceEvent::Ui(
-                    TerminalWorkspaceUiEvent::SyncSelection { tab_id },
+                TerminalWorkspaceEvent::Intent(
+                    TerminalWorkspaceIntent::SyncSelection { tab_id },
                 ),
             )));
 
@@ -47,9 +47,9 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                 .terminal_workspace
                 .shell_cwd_for_active_tab(active_tab_id)
             {
-                tasks.push(Task::done(AppEvent::Explorer(ExplorerEvent::Ui(
-                    ExplorerUiEvent::SyncRoot { cwd },
-                ))));
+                tasks.push(Task::done(AppEvent::Explorer(
+                    ExplorerEvent::Intent(ExplorerIntent::SyncRoot { cwd }),
+                )));
             }
 
             Task::batch(tasks)
@@ -63,14 +63,16 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
 
             // Notify terminal workspace of tab closure.
             tasks.push(Task::done(AppEvent::TerminalWorkspace(
-                TerminalWorkspaceEvent::Ui(
-                    TerminalWorkspaceUiEvent::TabClosed { tab_id },
+                TerminalWorkspaceEvent::Intent(
+                    TerminalWorkspaceIntent::TabClosed { tab_id },
                 ),
             )));
 
             // Notify quick launch of tab closure.
             tasks.push(Task::done(AppEvent::QuickLaunch(
-                QuickLaunchEvent::Ui(QuickLaunchUiEvent::TabClosed { tab_id }),
+                QuickLaunchEvent::Intent(QuickLaunchIntent::TabClosed {
+                    tab_id,
+                }),
             )));
 
             // Sync explorer for the new active tab.
@@ -81,21 +83,21 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                     .shell_cwd_for_active_tab(Some(active_id))
                 {
                     tasks.push(Task::done(AppEvent::Explorer(
-                        ExplorerEvent::Ui(ExplorerUiEvent::SyncRoot { cwd }),
+                        ExplorerEvent::Intent(ExplorerIntent::SyncRoot { cwd }),
                     )));
                 }
             }
 
             if remaining > 0 {
                 tasks.push(Task::done(AppEvent::TerminalWorkspace(
-                    TerminalWorkspaceEvent::Ui(
-                        TerminalWorkspaceUiEvent::FocusActive,
+                    TerminalWorkspaceEvent::Intent(
+                        TerminalWorkspaceIntent::FocusActive,
                     ),
                 )));
                 if let Some(active_id) = new_active_id {
                     tasks.push(Task::done(AppEvent::TerminalWorkspace(
-                        TerminalWorkspaceEvent::Ui(
-                            TerminalWorkspaceUiEvent::SyncSelection {
+                        TerminalWorkspaceEvent::Intent(
+                            TerminalWorkspaceIntent::SyncSelection {
                                 tab_id: active_id,
                             },
                         ),
@@ -115,16 +117,18 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                 app.shell_session.session().clone(),
             ));
 
-            Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Ui(
-                TerminalWorkspaceUiEvent::OpenTab {
-                    tab_id,
-                    terminal_id,
-                    default_title: title,
-                    settings,
-                    kind: TerminalKind::Shell,
-                    sync_explorer: true,
-                },
-            )))
+            Task::done(AppEvent::TerminalWorkspace(
+                TerminalWorkspaceEvent::Intent(
+                    TerminalWorkspaceIntent::OpenTab {
+                        tab_id,
+                        terminal_id,
+                        default_title: title,
+                        settings,
+                        kind: TerminalKind::Shell,
+                        sync_explorer: true,
+                    },
+                ),
+            ))
         },
         TabsEffect::CommandTabOpened {
             tab_id,
@@ -132,7 +136,7 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
             title,
             settings,
         } => Task::done(AppEvent::TerminalWorkspace(
-            TerminalWorkspaceEvent::Ui(TerminalWorkspaceUiEvent::OpenTab {
+            TerminalWorkspaceEvent::Intent(TerminalWorkspaceIntent::OpenTab {
                 tab_id,
                 terminal_id,
                 default_title: title,
@@ -142,21 +146,21 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
             }),
         )),
         TabsEffect::SettingsTabOpened => Task::done(AppEvent::Settings(
-            SettingsEvent::Ui(SettingsUiEvent::Reload),
+            SettingsEvent::Intent(SettingsIntent::Reload),
         )),
         TabsEffect::WizardTabOpened { tab_id } => {
             match app.pending_workflows.pop_quick_launch_wizard() {
                 Some(PendingQuickLaunchWizard::Create { parent_path }) => {
-                    Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
-                        QuickLaunchUiEvent::WizardInitializeCreate {
+                    Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                        QuickLaunchIntent::WizardInitializeCreate {
                             tab_id,
                             parent_path,
                         },
                     )))
                 },
                 Some(PendingQuickLaunchWizard::Edit { path, command }) => {
-                    Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
-                        QuickLaunchUiEvent::WizardInitializeEdit {
+                    Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                        QuickLaunchIntent::WizardInitializeEdit {
                             tab_id,
                             path,
                             command,
@@ -173,8 +177,8 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                 return Task::none();
             };
             let (title, message) = payload.into_parts();
-            Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
-                QuickLaunchUiEvent::OpenErrorTab {
+            Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::OpenErrorTab {
                     tab_id,
                     title,
                     message,

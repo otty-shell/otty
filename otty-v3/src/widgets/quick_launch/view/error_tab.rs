@@ -2,7 +2,7 @@ use iced::widget::{column, container, text};
 use iced::{Element, Length, Theme};
 
 use crate::theme::ThemeProps;
-use crate::widgets::quick_launch::event::QuickLaunchUiEvent;
+use crate::widgets::quick_launch::event::QuickLaunchIntent;
 use crate::widgets::quick_launch::state::QuickLaunchErrorState;
 
 const ERROR_TITLE_SIZE: f32 = 18.0;
@@ -19,7 +19,7 @@ pub(crate) struct ErrorTabProps<'a> {
 /// Render the quick launch error tab content.
 pub(crate) fn view(
     props: ErrorTabProps<'_>,
-) -> Element<'_, QuickLaunchUiEvent, Theme, iced::Renderer> {
+) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
     let palette = props.theme.theme.iced_palette();
     let red = palette.red;
 

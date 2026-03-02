@@ -1,8 +1,8 @@
 use otty_ui_term::settings::Settings;
 
-/// UI events emitted by tab bar views and cross-widget tab workflows.
+/// Intent events handled by tab bar views and cross-widget tab workflows.
 #[derive(Debug, Clone)]
-pub(crate) enum TabsUiEvent {
+pub(crate) enum TabsIntent {
     ActivateTab {
         tab_id: u64,
     },
@@ -68,8 +68,8 @@ pub(crate) enum TabsEffect {
 /// Tabs event stream routed through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum TabsEvent {
-    /// UI/internal event reduced by the tabs widget.
-    Ui(TabsUiEvent),
+    /// Intent event reduced by the tabs widget.
+    Intent(TabsIntent),
     /// External effect orchestrated by app-level routing.
     Effect(TabsEffect),
 }

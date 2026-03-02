@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use super::model::{FileNode, TreePath};
 
-/// UI events emitted by the explorer presentation layer.
+/// Intent events handled by the explorer presentation layer.
 #[derive(Debug, Clone)]
-pub(crate) enum ExplorerUiEvent {
+pub(crate) enum ExplorerIntent {
     /// A tree node was clicked.
     NodePressed { path: TreePath },
     /// The cursor entered a tree node.
@@ -36,8 +36,8 @@ pub(crate) enum ExplorerEffect {
 /// Explorer event stream routed through the app update loop.
 #[derive(Debug, Clone)]
 pub(crate) enum ExplorerEvent {
-    /// UI/internal event reduced by the explorer widget.
-    Ui(ExplorerUiEvent),
+    /// Intent event reduced by the explorer widget.
+    Intent(ExplorerIntent),
     /// External effect orchestrated by app-level routing.
     Effect(ExplorerEffect),
 }

@@ -3,10 +3,10 @@ use iced::Task;
 use super::{App, AppEvent};
 use crate::events;
 use crate::guards::{MenuGuard, context_menu_guard, inline_edit_guard};
-use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchUiEvent};
-use crate::widgets::sidebar::{SidebarEvent, SidebarUiEvent};
+use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceEvent, TerminalWorkspaceUiEvent,
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
 pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
@@ -15,8 +15,8 @@ pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     if app.widgets.quick_launch.has_inline_edit() && inline_edit_guard(&event) {
         pre_dispatch_tasks.push(events::handle(
             app,
-            AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
-                QuickLaunchUiEvent::CancelInlineEdit,
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::CancelInlineEdit,
             )),
         ));
     }
@@ -52,18 +52,20 @@ fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch(vec![
         events::handle(
             app,
-            AppEvent::Sidebar(SidebarEvent::Ui(SidebarUiEvent::DismissAddMenu)),
-        ),
-        events::handle(
-            app,
-            AppEvent::QuickLaunch(QuickLaunchEvent::Ui(
-                QuickLaunchUiEvent::ContextMenuDismiss,
+            AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::DismissAddMenu,
             )),
         ),
         events::handle(
             app,
-            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Ui(
-                TerminalWorkspaceUiEvent::CloseAllContextMenus,
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::ContextMenuDismiss,
+            )),
+        ),
+        events::handle(
+            app,
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::CloseAllContextMenus,
             )),
         ),
     ])

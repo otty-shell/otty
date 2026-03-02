@@ -3,12 +3,12 @@ use iced::Task;
 use super::AppEvent;
 use crate::app::App;
 use crate::layout::pane_grid_size;
-use crate::widgets::explorer::{ExplorerEvent, ExplorerUiEvent};
+use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::sidebar::SIDEBAR_MENU_WIDTH;
-use crate::widgets::tabs::{TabsEvent, TabsUiEvent};
+use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceCtx, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
-    TerminalWorkspaceUiEvent,
+    TerminalWorkspaceIntent,
 };
 
 pub(crate) fn handle(
@@ -16,16 +16,18 @@ pub(crate) fn handle(
     event: TerminalWorkspaceEvent,
 ) -> Task<AppEvent> {
     match event {
-        TerminalWorkspaceEvent::Ui(event) => handle_ui_event(app, event),
+        TerminalWorkspaceEvent::Intent(event) => {
+            handle_intent_event(app, event)
+        },
         TerminalWorkspaceEvent::Effect(effect) => {
             handle_effect_event(app, effect)
         },
     }
 }
 
-fn handle_ui_event(
+fn handle_intent_event(
     app: &mut App,
-    event: TerminalWorkspaceUiEvent,
+    event: TerminalWorkspaceIntent,
 ) -> Task<AppEvent> {
     let sidebar = &app.widgets.sidebar;
 
@@ -54,16 +56,13 @@ fn handle_effect_event(
     effect: TerminalWorkspaceEffect,
 ) -> Task<AppEvent> {
     match effect {
-        TerminalWorkspaceEffect::TabClosed { tab_id } => {
-            Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::CloseTab {
-                tab_id,
-            })))
-        },
+        TerminalWorkspaceEffect::TabClosed { tab_id } => Task::done(
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseTab { tab_id })),
+        ),
         TerminalWorkspaceEffect::TitleChanged { tab_id, title } => {
-            Task::done(AppEvent::Tabs(TabsEvent::Ui(TabsUiEvent::SetTitle {
-                tab_id,
-                title,
-            })))
+            Task::done(AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::SetTitle { tab_id, title },
+            )))
         },
         TerminalWorkspaceEffect::SyncExplorer => {
             sync_explorer_from_terminal(app)
@@ -71,7 +70,6 @@ fn handle_effect_event(
     }
 }
 
-/// Sync the explorer widget root from the active terminal CWD.
 fn sync_explorer_from_terminal(app: &mut App) -> Task<AppEvent> {
     let active_tab_id = app.widgets.tabs.active_tab_id();
     let Some(cwd) = app
@@ -82,8 +80,8 @@ fn sync_explorer_from_terminal(app: &mut App) -> Task<AppEvent> {
         return Task::none();
     };
 
-    Task::done(AppEvent::Explorer(ExplorerEvent::Ui(
-        ExplorerUiEvent::SyncRoot { cwd },
+    Task::done(AppEvent::Explorer(ExplorerEvent::Intent(
+        ExplorerIntent::SyncRoot { cwd },
     )))
 }
 

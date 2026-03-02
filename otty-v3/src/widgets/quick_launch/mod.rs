@@ -9,7 +9,7 @@ pub(crate) mod view;
 mod wizard_model;
 
 pub(crate) use event::{
-    QuickLaunchEffect, QuickLaunchEvent, QuickLaunchUiEvent,
+    QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
 };
 use iced::Task;
 pub(crate) use reducer::QuickLaunchCtx;
@@ -40,7 +40,7 @@ impl QuickLaunchWidget {
     /// Process an event into state updates and follow-up actions.
     pub(crate) fn reduce(
         &mut self,
-        event: QuickLaunchUiEvent,
+        event: QuickLaunchIntent,
         ctx: &QuickLaunchCtx<'_>,
     ) -> Task<QuickLaunchEvent> {
         reducer::reduce(&mut self.state, event, ctx)

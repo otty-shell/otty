@@ -6,7 +6,7 @@ pub(crate) mod state;
 pub(crate) mod storage;
 pub(crate) mod view;
 
-pub(crate) use event::{SettingsEffect, SettingsEvent, SettingsUiEvent};
+pub(crate) use event::{SettingsEffect, SettingsEvent, SettingsIntent};
 use iced::Task;
 use model::{SettingsData, SettingsViewModel};
 use state::SettingsState;
@@ -32,10 +32,10 @@ impl SettingsWidget {
         }
     }
 
-    /// Reduce a UI event into state updates and effects.
+    /// Reduce an intent event into state updates and effects.
     pub(crate) fn reduce(
         &mut self,
-        event: SettingsUiEvent,
+        event: SettingsIntent,
     ) -> Task<SettingsEvent> {
         reducer::reduce(&mut self.state, event)
     }
