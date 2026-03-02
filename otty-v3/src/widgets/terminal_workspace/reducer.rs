@@ -35,7 +35,6 @@ pub(crate) fn reduce(
     match event {
         OpenTab {
             tab_id,
-            terminal_id,
             default_title,
             settings,
             kind,
@@ -43,9 +42,9 @@ pub(crate) fn reduce(
         } => reduce_open_tab(
             state,
             terminal_to_tab,
+            next_terminal_id,
             ctx,
             tab_id,
-            terminal_id,
             default_title,
             *settings,
             kind,
@@ -178,14 +177,17 @@ enum CopyKind {
 fn reduce_open_tab(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
+    next_terminal_id: &mut u64,
     ctx: &TerminalWorkspaceCtx,
     tab_id: u64,
-    terminal_id: u64,
     default_title: String,
     settings: otty_ui_term::settings::Settings,
     kind: TerminalKind,
     sync_explorer: bool,
 ) -> Task<TerminalWorkspaceEvent> {
+    let terminal_id = *next_terminal_id;
+    *next_terminal_id += 1;
+
     let (mut terminal_tab, widget_id) = match TerminalTabState::new(
         tab_id,
         default_title,
@@ -581,7 +583,6 @@ mod tests {
             &mut next_id,
             TerminalWorkspaceIntent::OpenTab {
                 tab_id: 1,
-                terminal_id: 10,
                 default_title: String::from("Shell"),
                 settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
                 kind: TerminalKind::Shell,
@@ -591,7 +592,7 @@ mod tests {
         );
 
         assert!(state.tab(1).is_some());
-        assert_eq!(terminal_to_tab.get(&10), Some(&1));
+        assert_eq!(terminal_to_tab.get(&100), Some(&1));
     }
 
     #[test]
@@ -613,7 +614,6 @@ mod tests {
             &mut next_id,
             TerminalWorkspaceIntent::OpenTab {
                 tab_id: 1,
-                terminal_id: 10,
                 default_title: String::from("Shell"),
                 settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
                 kind: TerminalKind::Shell,
@@ -673,7 +673,6 @@ mod tests {
             &mut next_id,
             TerminalWorkspaceIntent::OpenTab {
                 tab_id: 1,
-                terminal_id: 10,
                 default_title: String::from("Shell"),
                 settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
                 kind: TerminalKind::Shell,
@@ -691,7 +690,7 @@ mod tests {
         );
 
         assert!(state.tab(1).is_none());
-        assert_eq!(terminal_to_tab.get(&10), None);
+        assert_eq!(terminal_to_tab.get(&100), None);
     }
 
     #[test]

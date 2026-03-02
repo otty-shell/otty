@@ -12,7 +12,6 @@ pub(crate) enum TerminalWorkspaceIntent {
     /// Request to open a new terminal tab.
     OpenTab {
         tab_id: u64,
-        terminal_id: u64,
         default_title: String,
         settings: Box<Settings>,
         kind: TerminalKind,
@@ -78,7 +77,6 @@ impl fmt::Debug for TerminalWorkspaceIntent {
         match self {
             Self::OpenTab {
                 tab_id,
-                terminal_id,
                 default_title,
                 kind,
                 sync_explorer,
@@ -86,7 +84,6 @@ impl fmt::Debug for TerminalWorkspaceIntent {
             } => f
                 .debug_struct("OpenTab")
                 .field("tab_id", tab_id)
-                .field("terminal_id", terminal_id)
                 .field("default_title", default_title)
                 .field("kind", kind)
                 .field("sync_explorer", sync_explorer)

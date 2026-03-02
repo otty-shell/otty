@@ -107,11 +107,7 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
 
             Task::batch(tasks)
         },
-        TabsEffect::TerminalTabOpened {
-            tab_id,
-            terminal_id,
-            title,
-        } => {
+        TabsEffect::TerminalTabOpened { tab_id, title } => {
             let settings = Box::new(terminal_settings_for_session(
                 &app.terminal_settings,
                 app.shell_session.session().clone(),
@@ -121,7 +117,6 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                 TerminalWorkspaceEvent::Intent(
                     TerminalWorkspaceIntent::OpenTab {
                         tab_id,
-                        terminal_id,
                         default_title: title,
                         settings,
                         kind: TerminalKind::Shell,
@@ -132,13 +127,11 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
         },
         TabsEffect::CommandTabOpened {
             tab_id,
-            terminal_id,
             title,
             settings,
         } => Task::done(AppEvent::TerminalWorkspace(
             TerminalWorkspaceEvent::Intent(TerminalWorkspaceIntent::OpenTab {
                 tab_id,
-                terminal_id,
                 default_title: title,
                 settings,
                 kind: TerminalKind::Command,

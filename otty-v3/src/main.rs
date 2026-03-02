@@ -10,11 +10,11 @@ mod geometry;
 mod guards;
 mod icons;
 mod layout;
+mod services;
 mod state;
 mod style;
 mod theme;
 mod widgets;
-mod services;
 
 use env_logger::Env;
 use iced::{Size, window};

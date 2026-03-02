@@ -11,12 +11,12 @@ use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 pub(crate) fn handle(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
     match event {
-        QuickLaunchEvent::Intent(event) => handle_intent_event(app, event),
+        QuickLaunchEvent::Intent(event) => handle_intent(app, event),
         QuickLaunchEvent::Effect(effect) => handle_effect(app, effect),
     }
 }
 
-fn handle_intent_event(
+fn handle_intent(
     app: &mut App,
     event: QuickLaunchIntent,
 ) -> Task<AppEvent> {
@@ -33,6 +33,7 @@ fn handle_intent_event(
         app.widgets.sidebar.cursor(),
         app.widgets.sidebar.is_resizing(),
     );
+
     app.widgets
         .quick_launch
         .reduce(event, &ctx)
@@ -49,17 +50,13 @@ fn handle_effect(app: &mut App, effect: QuickLaunchEffect) -> Task<AppEvent> {
         },
         QuickLaunchEffect::OpenCommandTerminalTab {
             title, settings, ..
-        } => open_command_terminal_tab(app, title, settings),
+        } => open_command_terminal_tab(title, settings),
         QuickLaunchEffect::OpenErrorTab { title, message } => {
             open_error_tab(app, title, message)
         },
-        QuickLaunchEffect::CloseTabRequested { tab_id } => {
-            Task::done(AppEvent::Tabs(
-                TabsEvent::Intent(
-                    TabsIntent::CloseTab { tab_id }
-                )
-            ))
-        },
+        QuickLaunchEffect::CloseTabRequested { tab_id } => Task::done(
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseTab { tab_id })),
+        ),
     }
 }
 
@@ -104,15 +101,11 @@ fn open_wizard_edit_tab(
 }
 
 fn open_command_terminal_tab(
-    app: &mut App,
     title: String,
     settings: otty_ui_term::settings::Settings,
 ) -> Task<AppEvent> {
-    let terminal_id = app.widgets.terminal_workspace.allocate_terminal_id();
-
     Task::done(AppEvent::Tabs(TabsEvent::Intent(
         TabsIntent::OpenCommandTab {
-            terminal_id,
             title,
             settings: Box::new(settings),
         },

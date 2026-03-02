@@ -7,7 +7,7 @@ use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
 pub(crate) fn editor_terminal_settings(
     editor: &str,
     base_terminal_settings: &Settings,
-    file_path: &Path
+    file_path: &Path,
 ) -> Option<Settings> {
     let (program, mut args) = parse_command_line(editor)?;
 

@@ -101,13 +101,6 @@ impl TerminalWorkspaceWidget {
             .any(|(_, tab)| tab.context_menu().is_some())
     }
 
-    /// Allocate a new unique terminal identifier.
-    pub(crate) fn allocate_terminal_id(&mut self) -> u64 {
-        let id = self.next_terminal_id;
-        self.next_terminal_id += 1;
-        id
-    }
-
     /// Resolve the active terminal working directory from block metadata.
     pub(crate) fn shell_cwd_for_active_tab(
         &self,

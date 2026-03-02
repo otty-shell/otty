@@ -13,41 +13,31 @@ pub(crate) fn handle(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
             .sidebar
             .reduce(event, &SidebarCtx)
             .map(AppEvent::Sidebar),
-        SidebarEvent::Effect(effect) => handle_effect(effect),
+        SidebarEvent::Effect(effect) => handle_effect(app, effect),
     }
 }
 
-fn handle_effect(event: SidebarEffect) -> Task<AppEvent> {
+fn handle_effect(app: &App, event: SidebarEffect) -> Task<AppEvent> {
     use SidebarEffect::*;
 
     match event {
-        SyncTerminalGridSizes => {
-            Task::done(AppEvent::SyncTerminalGridSizes)
-        },
-        OpenSettingsTab => {
-            Task::done(AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenSettingsTab)))
-        },
-        OpenTerminalTab => Task::done(AppEvent::OpenTerminalTab),
-        QuickLaunchHeaderCreateCommand => {
-            Task::done(AppEvent::QuickLaunch(
-                QuickLaunchEvent::Intent(
-                    QuickLaunchIntent::HeaderCreateCommand,
-                ),
-            ))
-        },
-        QuickLaunchHeaderCreateFolder => {
-            Task::done(AppEvent::QuickLaunch(
-                QuickLaunchEvent::Intent(
-                    QuickLaunchIntent::HeaderCreateFolder,
-                ),
-            ))
-        },
-        QuickLaunchResetInteractionState => {
-            Task::done(AppEvent::QuickLaunch(
-                QuickLaunchEvent::Intent(
-                    QuickLaunchIntent::ResetInteractionState,
-                ),
-            ))
-        },
+        SyncTerminalGridSizes => Task::done(AppEvent::SyncTerminalGridSizes),
+        OpenSettingsTab => Task::done(AppEvent::Tabs(TabsEvent::Intent(
+            TabsIntent::OpenSettingsTab,
+        ))),
+        OpenTerminalTab => Task::done(AppEvent::Tabs(TabsEvent::Intent(
+            TabsIntent::OpenTerminalTab {
+                title: app.shell_session.name().to_string()
+            },
+        ))),
+        QuickLaunchHeaderCreateCommand => Task::done(AppEvent::QuickLaunch(
+            QuickLaunchEvent::Intent(QuickLaunchIntent::HeaderCreateCommand),
+        )),
+        QuickLaunchHeaderCreateFolder => Task::done(AppEvent::QuickLaunch(
+            QuickLaunchEvent::Intent(QuickLaunchIntent::HeaderCreateFolder),
+        )),
+        QuickLaunchResetInteractionState => Task::done(AppEvent::QuickLaunch(
+            QuickLaunchEvent::Intent(QuickLaunchIntent::ResetInteractionState),
+        )),
     }
 }

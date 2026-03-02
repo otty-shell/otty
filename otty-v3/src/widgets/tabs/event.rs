@@ -14,11 +14,9 @@ pub(crate) enum TabsIntent {
         title: String,
     },
     OpenTerminalTab {
-        terminal_id: u64,
         title: String,
     },
     OpenCommandTab {
-        terminal_id: u64,
         title: String,
         settings: Box<Settings>,
     },
@@ -43,15 +41,10 @@ pub(crate) enum TabsEffect {
         remaining: usize,
     },
     /// Terminal tab opened; router creates terminal instance.
-    TerminalTabOpened {
-        tab_id: u64,
-        terminal_id: u64,
-        title: String,
-    },
+    TerminalTabOpened { tab_id: u64, title: String },
     /// Command tab opened; router creates command terminal instance.
     CommandTabOpened {
         tab_id: u64,
-        terminal_id: u64,
         title: String,
         settings: Box<otty_ui_term::settings::Settings>,
     },

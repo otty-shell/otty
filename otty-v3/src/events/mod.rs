@@ -30,7 +30,6 @@ pub(crate) enum AppEvent {
     TerminalWorkspace(TerminalWorkspaceEvent),
     Explorer(ExplorerEvent),
     Settings(SettingsEvent),
-    OpenTerminalTab,
     IcedReady,
     SyncTerminalGridSizes,
     Keyboard(iced::keyboard::Event),
@@ -40,7 +39,11 @@ pub(crate) enum AppEvent {
 
 pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
-        AppEvent::IcedReady => open_terminal_tab(app),
+        AppEvent::IcedReady => Task::done(AppEvent::Tabs(TabsEvent::Intent(
+            TabsIntent::OpenTerminalTab {
+                title: app.shell_session.name().to_string()
+            },
+        ))),
         AppEvent::Sidebar(event) => sidebar::handle(app, event),
         AppEvent::Chrome(event) => chrome::handle(app, event),
         AppEvent::Tabs(event) => tabs::handle(app, event),
@@ -50,7 +53,6 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         },
         AppEvent::Explorer(event) => explorer::handle(app, event),
         AppEvent::Settings(event) => settings::handle(app, event),
-        AppEvent::OpenTerminalTab => open_terminal_tab(app),
         AppEvent::SyncTerminalGridSizes => Task::done(
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::SyncPaneGridSize,
@@ -62,22 +64,16 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             app.state.window_size = size;
             app.state.set_screen_size(screen_size_from_window(size));
 
-            terminal_workspace::handle(app, TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::SyncPaneGridSize,
-            ))
+            terminal_workspace::handle(
+                app,
+                TerminalWorkspaceEvent::Intent(
+                    TerminalWorkspaceIntent::SyncPaneGridSize,
+                ),
+            )
         },
         AppEvent::ResizeWindow(dir) => {
             window::latest().and_then(move |id| window::drag_resize(id, dir))
         },
         AppEvent::Window(_) => Task::none(),
     }
-}
-
-fn open_terminal_tab(app: &mut App) -> Task<AppEvent> {
-    let terminal_id = app.widgets.terminal_workspace.allocate_terminal_id();
-    let title = app.shell_session.name().to_string();
-
-    Task::done(AppEvent::Tabs(TabsEvent::Intent(
-        TabsIntent::OpenTerminalTab { terminal_id, title },
-    )))
 }

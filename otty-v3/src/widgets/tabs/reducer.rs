@@ -17,14 +17,12 @@ pub(crate) fn reduce(
             state.set_title(tab_id, title);
             Task::none()
         },
-        TabsIntent::OpenTerminalTab { terminal_id, title } => {
-            open_terminal_tab(state, terminal_id, title)
+        TabsIntent::OpenTerminalTab { title } => {
+            open_terminal_tab(state, title)
         },
-        TabsIntent::OpenCommandTab {
-            terminal_id,
-            title,
-            settings,
-        } => open_command_tab(state, terminal_id, title, *settings),
+        TabsIntent::OpenCommandTab { title, settings } => {
+            open_command_tab(state, title, *settings)
+        },
         TabsIntent::OpenSettingsTab => open_settings_tab(state),
         TabsIntent::OpenWizardTab { title } => open_wizard_tab(state, title),
         TabsIntent::OpenErrorTab { title } => open_error_tab(state, title),
@@ -68,11 +66,7 @@ fn close(state: &mut TabsState, tab_id: u64) -> Task<TabsEvent> {
     }))
 }
 
-fn open_terminal_tab(
-    state: &mut TabsState,
-    terminal_id: u64,
-    title: String,
-) -> Task<TabsEvent> {
+fn open_terminal_tab(state: &mut TabsState, title: String) -> Task<TabsEvent> {
     let tab_id = state.allocate_tab_id();
 
     state.insert(
@@ -84,7 +78,6 @@ fn open_terminal_tab(
     Task::batch(vec![
         Task::done(TabsEvent::Effect(TabsEffect::TerminalTabOpened {
             tab_id,
-            terminal_id,
             title,
         })),
         Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
@@ -93,7 +86,6 @@ fn open_terminal_tab(
 
 fn open_command_tab(
     state: &mut TabsState,
-    terminal_id: u64,
     title: String,
     settings: Settings,
 ) -> Task<TabsEvent> {
@@ -108,7 +100,6 @@ fn open_command_tab(
     Task::batch(vec![
         Task::done(TabsEvent::Effect(TabsEffect::CommandTabOpened {
             tab_id,
-            terminal_id,
             title,
             settings: Box::new(settings),
         })),
@@ -174,7 +165,6 @@ mod tests {
         let _ = reduce(
             &mut state,
             TabsIntent::OpenTerminalTab {
-                terminal_id: 1,
                 title: String::from("bash"),
             },
         );
@@ -203,7 +193,6 @@ mod tests {
         let _ = reduce(
             &mut state,
             TabsIntent::OpenCommandTab {
-                terminal_id: 1,
                 title: String::from("nvim main.rs"),
                 settings: Box::new(settings),
             },
@@ -232,7 +221,6 @@ mod tests {
         let _ = reduce(
             &mut state,
             TabsIntent::OpenTerminalTab {
-                terminal_id: 1,
                 title: String::from("First"),
             },
         );
@@ -241,7 +229,6 @@ mod tests {
         let _ = reduce(
             &mut state,
             TabsIntent::OpenTerminalTab {
-                terminal_id: 2,
                 title: String::from("Second"),
             },
         );
@@ -257,7 +244,6 @@ mod tests {
         let _ = reduce(
             &mut state,
             TabsIntent::OpenTerminalTab {
-                terminal_id: 1,
                 title: String::from("Only"),
             },
         );
@@ -274,7 +260,6 @@ mod tests {
         let _ = reduce(
             &mut state,
             TabsIntent::OpenTerminalTab {
-                terminal_id: 1,
                 title: String::from("old"),
             },
         );

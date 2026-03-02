@@ -102,8 +102,7 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             ),
         ) => Allow,
         AppEvent::Window(_) | AppEvent::ResizeWindow(_) => Allow,
-        AppEvent::OpenTerminalTab
-        | AppEvent::SyncTerminalGridSizes => Allow,
+        AppEvent::SyncTerminalGridSizes => Allow,
         AppEvent::Keyboard(_) => Ignore,
         AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Intent(_))
         | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Intent(_)) => Allow,
@@ -183,8 +182,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
                 crate::widgets::explorer::ExplorerIntent::SyncRoot { .. },
             ),
         ) => false,
-        AppEvent::OpenTerminalTab
-        | AppEvent::SyncTerminalGridSizes => false,
+        AppEvent::SyncTerminalGridSizes => false,
         AppEvent::Keyboard(_) | AppEvent::Window(_) => false,
         AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Effect(_))
         | AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Effect(_))
@@ -206,13 +204,6 @@ mod tests {
             SidebarEvent::Intent(SidebarIntent::AddMenuOpen),
         ));
         assert!(matches!(guard, MenuGuard::Ignore));
-    }
-
-    #[test]
-    fn given_open_terminal_tab_when_context_menu_guard_runs_then_event_is_allowed()
-     {
-        let guard = context_menu_guard(&AppEvent::OpenTerminalTab);
-        assert!(matches!(guard, MenuGuard::Allow));
     }
 
     #[test]

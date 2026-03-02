@@ -80,13 +80,12 @@ where
 fn open_file_terminal_tab(app: &mut App, file_path: PathBuf) -> Task<AppEvent> {
     let Some(settings) = editor_terminal_settings(
         app.shell_session.name().trim(),
-        &app.terminal_settings, 
-        &file_path
+        &app.terminal_settings,
+        &file_path,
     ) else {
         return Task::none();
     };
 
-    let terminal_id = app.widgets.terminal_workspace.allocate_terminal_id();
     let file_display = file_path.display();
     let title = file_path
         .file_name()
@@ -96,7 +95,6 @@ fn open_file_terminal_tab(app: &mut App, file_path: PathBuf) -> Task<AppEvent> {
 
     Task::done(AppEvent::Tabs(TabsEvent::Intent(
         TabsIntent::OpenCommandTab {
-            terminal_id,
             title,
             settings: Box::new(settings),
         },
