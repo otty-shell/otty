@@ -70,6 +70,18 @@ fn handle_effect_event(
         TerminalWorkspaceEffect::TabClosed { tab_id } => Task::done(
             AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseTab { tab_id })),
         ),
+        TerminalWorkspaceEffect::CommandTabOpenFailed {
+            tab_id,
+            title,
+            message,
+        } => Task::batch(vec![
+            Task::done(AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::CloseTab { tab_id },
+            ))),
+            Task::done(AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::OpenErrorTab { title, message },
+            ))),
+        ]),
         TerminalWorkspaceEffect::TitleChanged { tab_id, title } => {
             Task::done(AppEvent::Tabs(TabsEvent::Intent(
                 TabsIntent::SetTitle { tab_id, title },
@@ -126,8 +138,11 @@ fn should_sync_explorer(event: &TerminalWorkspaceIntent) -> bool {
 mod tests {
     use std::sync::Arc;
 
-    use super::should_sync_explorer;
-    use crate::widgets::terminal_workspace::TerminalWorkspaceIntent;
+    use super::{handle_effect_event, should_sync_explorer};
+    use crate::app::App;
+    use crate::widgets::terminal_workspace::{
+        TerminalWorkspaceEffect, TerminalWorkspaceIntent,
+    };
 
     #[test]
     fn given_sync_relevant_terminal_intent_when_checked_then_returns_true() {
@@ -157,5 +172,21 @@ mod tests {
         assert!(!should_sync_explorer(
             &TerminalWorkspaceIntent::SyncPaneGridSize
         ));
+    }
+
+    #[test]
+    fn given_command_tab_failed_effect_when_handled_then_close_and_error_tasks_emitted()
+     {
+        let (mut app, _) = App::new();
+        let task = handle_effect_event(
+            &mut app,
+            TerminalWorkspaceEffect::CommandTabOpenFailed {
+                tab_id: 5,
+                title: String::from("Failed"),
+                message: String::from("boom"),
+            },
+        );
+
+        assert_eq!(task.units(), 2);
     }
 }

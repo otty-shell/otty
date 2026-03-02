@@ -43,7 +43,6 @@ pub(crate) fn view(
     let palette = props.theme.theme.iced_palette().clone();
     let dim_foreground = palette.dim_foreground;
     let foreground = palette.foreground;
-    let indicator_color = palette.green;
     let error_color = palette.red;
     let overlay = palette.overlay;
     let row_palette = palette.clone();
@@ -54,13 +53,7 @@ pub(crate) fn view(
 
     let tree_view =
         TreeView::new(props.data.root().children(), move |context| {
-            render_entry(
-                context,
-                launching,
-                dim_foreground,
-                foreground,
-                indicator_color,
-            )
+            render_entry(context, launching, dim_foreground, foreground)
         })
         .selected_row(props.selected_path)
         .hovered_row(props.hovered_path)
@@ -127,7 +120,6 @@ fn render_entry<'a>(
     launching: &std::collections::HashMap<NodePath, LaunchInfo>,
     dim_foreground: Color,
     foreground: Color,
-    indicator_color: Color,
 ) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
     let is_indicator_highlighted = launching
         .get(&context.entry.path)
@@ -166,27 +158,9 @@ fn render_entry<'a>(
     .height(Length::Fill)
     .align_y(alignment::Vertical::Center);
 
-    let mut content = row![icon_view, title]
+    let content = row![icon_view, title]
         .spacing(TREE_ROW_SPACING)
         .align_y(alignment::Vertical::Center);
-
-    if is_indicator_highlighted {
-        content = content.push(
-            container(
-                Space::new()
-                    .width(Length::Fixed(6.0))
-                    .height(Length::Fixed(6.0)),
-            )
-            .style(move |_| iced::widget::container::Style {
-                background: Some(indicator_color.into()),
-                border: iced::Border {
-                    radius: 3.0.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }),
-        );
-    }
 
     mouse_area(
         container(content)

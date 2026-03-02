@@ -195,6 +195,12 @@ impl fmt::Debug for TerminalWorkspaceIntent {
 pub(crate) enum TerminalWorkspaceEffect {
     /// A terminal tab was closed (last pane shut down).
     TabClosed { tab_id: u64 },
+    /// A command tab failed to initialize and should show an error tab.
+    CommandTabOpenFailed {
+        tab_id: u64,
+        title: String,
+        message: String,
+    },
     /// The tab title changed.
     TitleChanged { tab_id: u64, title: String },
     /// Request the explorer to sync from the active terminal CWD.

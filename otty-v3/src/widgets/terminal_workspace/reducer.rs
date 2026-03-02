@@ -187,6 +187,7 @@ fn reduce_open_tab(
 ) -> Task<TerminalWorkspaceEvent> {
     let terminal_id = *next_terminal_id;
     *next_terminal_id += 1;
+    let failed_tab_title = default_title.clone();
 
     let (mut terminal_tab, widget_id) = match TerminalTabState::new(
         tab_id,
@@ -198,9 +199,26 @@ fn reduce_open_tab(
         Ok(result) => result,
         Err(err) => {
             log::warn!("failed to create terminal tab: {err}");
-            return Task::done(TerminalWorkspaceEvent::Effect(
+            let close_task = Task::done(TerminalWorkspaceEvent::Effect(
                 TerminalWorkspaceEffect::TabClosed { tab_id },
             ));
+
+            if kind == TerminalKind::Command {
+                let failed_title =
+                    format!("Failed to launch \"{failed_tab_title}\"");
+                let failed_message =
+                    format!("Terminal tab initialization failed: {err}");
+                let error_task = Task::done(TerminalWorkspaceEvent::Effect(
+                    TerminalWorkspaceEffect::CommandTabOpenFailed {
+                        tab_id,
+                        title: failed_title,
+                        message: failed_message,
+                    },
+                ));
+                return Task::batch(vec![close_task, error_task]);
+            }
+
+            return close_task;
         },
     };
 
@@ -548,8 +566,13 @@ mod tests {
 
     #[cfg(unix)]
     const VALID_SHELL_PATH: &str = "/bin/sh";
+    #[cfg(unix)]
+    const INVALID_COMMAND_PATH: &str =
+        "/definitely/not/existing/otty-v3-missing-command";
     #[cfg(target_os = "windows")]
     const VALID_SHELL_PATH: &str = "cmd.exe";
+    #[cfg(target_os = "windows")]
+    const INVALID_COMMAND_PATH: &str = "Z:\\otty-v3-missing-command\\nope.exe";
 
     fn settings_with_program(program: &str) -> Settings {
         let mut settings = Settings::default();
@@ -593,6 +616,33 @@ mod tests {
 
         assert!(state.tab(1).is_some());
         assert_eq!(terminal_to_tab.get(&100), Some(&1));
+    }
+
+    #[test]
+    fn given_invalid_command_tab_when_open_requested_then_close_and_error_effects_emitted()
+     {
+        let mut state = TerminalWorkspaceState::default();
+        let mut terminal_to_tab = HashMap::new();
+        let mut next_id = 100_u64;
+        let ctx = default_ctx();
+
+        let task = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::OpenTab {
+                tab_id: 99,
+                default_title: String::from("Broken command"),
+                settings: Box::new(settings_with_program(INVALID_COMMAND_PATH)),
+                kind: TerminalKind::Command,
+                sync_explorer: false,
+            },
+            &ctx,
+        );
+
+        assert!(state.tab(99).is_none());
+        assert_eq!(terminal_to_tab.len(), 0);
+        assert_eq!(task.units(), 2);
     }
 
     #[test]
