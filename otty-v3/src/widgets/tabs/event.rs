@@ -1,5 +1,7 @@
 use otty_ui_term::settings::Settings;
 
+use crate::domain::quick_launch::WizardTabInit;
+
 /// Intent events handled by tab bar views and cross-widget tab workflows.
 #[derive(Debug, Clone)]
 pub(crate) enum TabsIntent {
@@ -23,9 +25,11 @@ pub(crate) enum TabsIntent {
     OpenSettingsTab,
     OpenWizardTab {
         title: String,
+        init: WizardTabInit,
     },
     OpenErrorTab {
         title: String,
+        message: String,
     },
 }
 
@@ -51,9 +55,13 @@ pub(crate) enum TabsEffect {
     /// Settings tab opened; router triggers settings reload.
     SettingsTabOpened,
     /// Wizard tab opened; flow router initializes the wizard state.
-    WizardTabOpened { tab_id: u64 },
+    WizardTabOpened { tab_id: u64, init: WizardTabInit },
     /// Error tab opened; flow router initializes the error payload.
-    ErrorTabOpened { tab_id: u64 },
+    ErrorTabOpened {
+        tab_id: u64,
+        title: String,
+        message: String,
+    },
     /// Tab bar should scroll to show the newest tab.
     ScrollBarToEnd,
 }

@@ -2,7 +2,8 @@ use iced::Task;
 use iced::widget::operation::snap_to_end;
 
 use super::AppEvent;
-use crate::app::{App, PendingQuickLaunchWizard};
+use crate::app::App;
+use crate::domain::quick_launch::WizardTabInit;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::settings::{SettingsEvent, SettingsIntent};
@@ -141,43 +142,36 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
         TabsEffect::SettingsTabOpened => Task::done(AppEvent::Settings(
             SettingsEvent::Intent(SettingsIntent::Reload),
         )),
-        TabsEffect::WizardTabOpened { tab_id } => {
-            match app.pending_workflows.pop_quick_launch_wizard() {
-                Some(PendingQuickLaunchWizard::Create { parent_path }) => {
-                    Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                        QuickLaunchIntent::WizardInitializeCreate {
-                            tab_id,
-                            parent_path,
-                        },
-                    )))
-                },
-                Some(PendingQuickLaunchWizard::Edit { path, command }) => {
-                    Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                        QuickLaunchIntent::WizardInitializeEdit {
-                            tab_id,
-                            path,
-                            command,
-                        },
-                    )))
-                },
-                None => Task::none(),
-            }
+        TabsEffect::WizardTabOpened { tab_id, init } => match init {
+            WizardTabInit::Create { parent_path } => {
+                Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                    QuickLaunchIntent::WizardInitializeCreate {
+                        tab_id,
+                        parent_path,
+                    },
+                )))
+            },
+            WizardTabInit::Edit { path, command } => {
+                Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                    QuickLaunchIntent::WizardInitializeEdit {
+                        tab_id,
+                        path,
+                        command,
+                    },
+                )))
+            },
         },
-        TabsEffect::ErrorTabOpened { tab_id } => {
-            let Some(payload) =
-                app.pending_workflows.pop_quick_launch_error_tab()
-            else {
-                return Task::none();
-            };
-            let (title, message) = payload.into_parts();
-            Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                QuickLaunchIntent::OpenErrorTab {
-                    tab_id,
-                    title,
-                    message,
-                },
-            )))
-        },
+        TabsEffect::ErrorTabOpened {
+            tab_id,
+            title,
+            message,
+        } => Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::OpenErrorTab {
+                tab_id,
+                title,
+                message,
+            },
+        ))),
         TabsEffect::ScrollBarToEnd => snap_to_end(TAB_BAR_SCROLL_ID),
     }
 }
@@ -185,56 +179,39 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
 #[cfg(test)]
 mod tests {
     use super::handle;
-    use crate::app::{App, PendingQuickLaunchWizard};
+    use crate::app::App;
+    use crate::domain::quick_launch::WizardTabInit;
     use crate::widgets::tabs::{TabsEffect, TabsEvent};
 
     #[test]
-    fn given_wizard_opened_effect_when_pending_wizard_exists_then_queue_is_consumed()
-     {
+    fn given_wizard_opened_effect_when_create_init_exists_then_task_is_emitted()
+    {
         let (mut app, _) = App::new();
-        app.pending_workflows
-            .push_quick_launch_wizard_create(vec![String::from("Demo")]);
 
-        let _ = handle(
+        let task = handle(
             &mut app,
-            TabsEvent::Effect(TabsEffect::WizardTabOpened { tab_id: 7 }),
+            TabsEvent::Effect(TabsEffect::WizardTabOpened {
+                tab_id: 7,
+                init: WizardTabInit::Create {
+                    parent_path: vec![String::from("Demo")],
+                },
+            }),
         );
-
-        assert!(app.pending_workflows.pop_quick_launch_wizard().is_none());
+        assert_eq!(task.units(), 1);
     }
 
     #[test]
-    fn given_error_tab_opened_effect_when_pending_payload_exists_then_queue_is_consumed()
-     {
-        let (mut app, _) = App::new();
-        app.pending_workflows.push_quick_launch_error_tab(
-            String::from("Failed"),
-            String::from("boom"),
-        );
-
-        let _ = handle(
-            &mut app,
-            TabsEvent::Effect(TabsEffect::ErrorTabOpened { tab_id: 11 }),
-        );
-
-        assert!(app.pending_workflows.pop_quick_launch_error_tab().is_none());
-    }
-
-    #[test]
-    fn given_wizard_opened_effect_without_pending_then_queue_stays_empty() {
+    fn given_error_tab_opened_effect_then_task_is_emitted() {
         let (mut app, _) = App::new();
 
-        let _ = handle(
+        let task = handle(
             &mut app,
-            TabsEvent::Effect(TabsEffect::WizardTabOpened { tab_id: 1 }),
+            TabsEvent::Effect(TabsEffect::ErrorTabOpened {
+                tab_id: 11,
+                title: String::from("Failed"),
+                message: String::from("boom"),
+            }),
         );
-
-        match app.pending_workflows.pop_quick_launch_wizard() {
-            Some(PendingQuickLaunchWizard::Create { .. })
-            | Some(PendingQuickLaunchWizard::Edit { .. }) => {
-                panic!("queue should stay empty")
-            },
-            None => {},
-        }
+        assert_eq!(task.units(), 1);
     }
 }

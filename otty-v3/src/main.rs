@@ -4,6 +4,7 @@
 
 mod app;
 mod components;
+mod domain;
 mod events;
 mod fonts;
 mod geometry;

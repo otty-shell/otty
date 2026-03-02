@@ -1,8 +1,10 @@
 use iced::Task;
 use otty_ui_term::settings::Settings;
 
-use super::event::{TabsEffect, TabsEvent, TabsIntent};
+use crate::domain::quick_launch::WizardTabInit;
+
 use super::model::{TabContent, TabItem};
+use super::event::{TabsEffect, TabsEvent, TabsIntent};
 use super::state::TabsState;
 
 /// Reduce a tabs intent event into state mutation and effect tasks.
@@ -24,8 +26,12 @@ pub(crate) fn reduce(
             open_command_tab(state, title, *settings)
         },
         TabsIntent::OpenSettingsTab => open_settings_tab(state),
-        TabsIntent::OpenWizardTab { title } => open_wizard_tab(state, title),
-        TabsIntent::OpenErrorTab { title } => open_error_tab(state, title),
+        TabsIntent::OpenWizardTab { title, init } => {
+            open_wizard_tab(state, title, init)
+        },
+        TabsIntent::OpenErrorTab { title, message } => {
+            open_error_tab(state, title, message)
+        },
     }
 }
 
@@ -107,7 +113,11 @@ fn open_command_tab(
     ])
 }
 
-fn open_wizard_tab(state: &mut TabsState, title: String) -> Task<TabsEvent> {
+fn open_wizard_tab(
+    state: &mut TabsState,
+    title: String,
+    init: WizardTabInit,
+) -> Task<TabsEvent> {
     let tab_id = state.allocate_tab_id();
     state.insert(
         tab_id,
@@ -115,20 +125,31 @@ fn open_wizard_tab(state: &mut TabsState, title: String) -> Task<TabsEvent> {
     );
     state.activate(Some(tab_id));
     Task::batch(vec![
-        Task::done(TabsEvent::Effect(TabsEffect::WizardTabOpened { tab_id })),
+        Task::done(TabsEvent::Effect(TabsEffect::WizardTabOpened {
+            tab_id,
+            init,
+        })),
         Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
     ])
 }
 
-fn open_error_tab(state: &mut TabsState, title: String) -> Task<TabsEvent> {
+fn open_error_tab(
+    state: &mut TabsState,
+    title: String,
+    message: String,
+) -> Task<TabsEvent> {
     let tab_id = state.allocate_tab_id();
     state.insert(
         tab_id,
-        TabItem::new(tab_id, title, TabContent::QuickLaunchError),
+        TabItem::new(tab_id, title.clone(), TabContent::QuickLaunchError),
     );
     state.activate(Some(tab_id));
     Task::batch(vec![
-        Task::done(TabsEvent::Effect(TabsEffect::ErrorTabOpened { tab_id })),
+        Task::done(TabsEvent::Effect(TabsEffect::ErrorTabOpened {
+            tab_id,
+            title,
+            message,
+        })),
         Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
     ])
 }
