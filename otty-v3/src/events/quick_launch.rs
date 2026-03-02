@@ -25,7 +25,7 @@ fn handle_intent(app: &mut App, event: QuickLaunchIntent) -> Task<AppEvent> {
         )));
     }
 
-    let ctx =     QuickLaunchCtx {
+    let ctx = QuickLaunchCtx {
         terminal_settings: &app.terminal_settings,
         sidebar_cursor: app.widgets.sidebar.cursor(),
         sidebar_is_resizing: app.widgets.sidebar.is_resizing(),
@@ -39,32 +39,26 @@ fn handle_intent(app: &mut App, event: QuickLaunchIntent) -> Task<AppEvent> {
 
 fn handle_effect(effect: QuickLaunchEffect) -> Task<AppEvent> {
     match effect {
-        QuickLaunchEffect::OpenWizardCreateTab { parent_path } => {
-            Task::done(AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenWizardTab {
-                    title: String::from("Create Quick Launch"),
-                    init: WizardTabInit::Create { parent_path },
-                },
-            )))
-        },
-        QuickLaunchEffect::OpenWizardEditTab { path, command } => {
-            Task::done(AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenWizardTab {
-                    title: format!("Edit: {}", command.title()),
-                    init: WizardTabInit::Edit { path, command },
-                },
-            )))
-        },
+        QuickLaunchEffect::OpenWizardCreateTab { parent_path } => Task::done(
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenWizardTab {
+                title: String::from("Create Quick Launch"),
+                init: WizardTabInit::Create { parent_path },
+            })),
+        ),
+        QuickLaunchEffect::OpenWizardEditTab { path, command } => Task::done(
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenWizardTab {
+                title: format!("Edit: {}", command.title()),
+                init: WizardTabInit::Edit { path, command },
+            })),
+        ),
         QuickLaunchEffect::OpenCommandTerminalTab {
             title, settings, ..
-        } => {
-            Task::done(AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenCommandTab {
-                    title,
-                    settings: Box::new(settings),
-                },
-            )))
-        },
+        } => Task::done(AppEvent::Tabs(TabsEvent::Intent(
+            TabsIntent::OpenCommandTab {
+                title,
+                settings: Box::new(settings),
+            },
+        ))),
         QuickLaunchEffect::OpenErrorTab { title, message } => {
             Task::done(AppEvent::Tabs(TabsEvent::Intent(
                 TabsIntent::OpenErrorTab { title, message },
@@ -78,14 +72,13 @@ fn handle_effect(effect: QuickLaunchEffect) -> Task<AppEvent> {
 
 #[cfg(test)]
 mod tests {
-    use crate::widgets::quick_launch::QuickLaunchEffect;
-
     use super::handle_effect;
+    use crate::widgets::quick_launch::QuickLaunchEffect;
 
     #[test]
     fn given_wizard_create_request_when_opened_then_task_is_emitted() {
         let task = handle_effect(QuickLaunchEffect::OpenWizardCreateTab {
-            parent_path: vec![String::from("Demo")]
+            parent_path: vec![String::from("Demo")],
         });
         assert_eq!(task.units(), 1);
     }
@@ -94,7 +87,7 @@ mod tests {
     fn given_error_tab_request_when_opened_then_task_is_emitted() {
         let task = handle_effect(QuickLaunchEffect::OpenErrorTab {
             title: String::from("Failed"),
-            message: String::from("boom")
+            message: String::from("boom"),
         });
         assert_eq!(task.units(), 1);
     }

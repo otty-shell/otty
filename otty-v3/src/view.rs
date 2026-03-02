@@ -214,6 +214,7 @@ fn view_sidebar_layout<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .spacing(PANE_GRID_SPACING)
+        .min_size(0)
         .on_resize(PANE_GRID_RESIZE_GRAB, |event| {
             AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(
                 event,

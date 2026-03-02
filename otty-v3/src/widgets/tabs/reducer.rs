@@ -1,11 +1,10 @@
 use iced::Task;
 use otty_ui_term::settings::Settings;
 
-use crate::domain::quick_launch::WizardTabInit;
-
-use super::model::{TabContent, TabItem};
 use super::event::{TabsEffect, TabsEvent, TabsIntent};
+use super::model::{TabContent, TabItem};
 use super::state::TabsState;
+use crate::domain::quick_launch::WizardTabInit;
 
 /// Reduce a tabs intent event into state mutation and effect tasks.
 pub(crate) fn reduce(

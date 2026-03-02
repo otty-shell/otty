@@ -1,3 +1,4 @@
+use iced::widget::text::Wrapping;
 use iced::widget::{
     Space, column, container, mouse_area, row, scrollable, svg, text,
     text_input,
@@ -80,7 +81,7 @@ pub(crate) fn view(
 
     let tree_content =
         if let Some(root_edit) = inline_edit_root(inline_edit, error_color) {
-            column![tree_view.view(), root_edit].into()
+            column![root_edit, tree_view.view()].into()
         } else {
             tree_view.view()
         };
@@ -158,6 +159,7 @@ fn render_entry<'a>(
         text(context.entry.node.title())
             .size(TREE_FONT_SIZE)
             .width(Length::Fill)
+            .wrapping(Wrapping::None)
             .align_x(alignment::Horizontal::Left),
     )
     .width(Length::Fill)
@@ -318,10 +320,7 @@ fn render_inline_edit<'a>(
         );
     }
 
-    container(col)
-        .width(Length::Fill)
-        .padding(0.0)
-        .into()
+    container(col).width(Length::Fill).padding(0.0).into()
 }
 
 fn svg_icon<'a>(

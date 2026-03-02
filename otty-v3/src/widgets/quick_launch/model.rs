@@ -313,7 +313,6 @@ impl TreeNode for QuickLaunchNode {
     }
 }
 
-
 impl QuickLaunchNode {
     /// Return the title of this node.
     pub(crate) fn title(&self) -> &str {
