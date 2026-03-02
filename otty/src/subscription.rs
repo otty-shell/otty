@@ -1,39 +1,45 @@
-use std::time::Duration;
-
 use iced::{Subscription, window};
 
-use crate::app::{App, Event};
-use crate::features::quick_launch;
-use crate::features::terminal::TerminalEvent;
+use crate::app::{App, AppEvent};
+use crate::widgets::quick_launch::event::QUICK_LAUNCHES_TICK_MS;
+use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+use crate::widgets::terminal_workspace::{
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+};
 
-pub(super) fn subscription(app: &App) -> Subscription<Event> {
-    let mut subscriptions = Vec::new();
-    for (&tab_id, terminal) in app.features.terminal().tabs() {
-        for entry in terminal.terminals().values() {
-            let sub = entry.terminal.subscription().with(tab_id).map(
-                |(_tab_id, event)| {
-                    Event::Terminal(TerminalEvent::Widget(event))
-                },
-            );
-            subscriptions.push(sub);
+/// Build the active subscription set from current app state.
+pub(super) fn subscription(app: &App) -> Subscription<AppEvent> {
+    let win_subs = window::events().map(|(_id, event)| AppEvent::Window(event));
+    let key_subs = iced::keyboard::listen().map(AppEvent::Keyboard);
+
+    let mut subs = vec![win_subs, key_subs];
+
+    // Subscribe to terminal widget events for every open terminal pane.
+    for (&_tab_id, tab) in app.widgets.terminal_workspace.tabs() {
+        for entry in tab.terminals().values() {
+            let sub = entry.terminal().subscription().map(|event| {
+                AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                    TerminalWorkspaceIntent::Widget(event),
+                ))
+            });
+            subs.push(sub);
         }
     }
 
-    let terminal_subs = Subscription::batch(subscriptions);
-    let win_subs = window::events().map(|(_id, event)| Event::Window(event));
-    let key_subs = iced::keyboard::listen().map(Event::Keyboard);
-
-    let mut subs = vec![terminal_subs, win_subs, key_subs];
-    if app.features.quick_launch().has_active_launches()
-        || app.features.quick_launch().is_dirty()
-        || app.features.quick_launch().is_persist_in_flight()
+    // Quick launch tick for launch indicators and auto-persist
+    if app.widgets.quick_launch.has_active_launches()
+        || app.widgets.quick_launch.state_is_dirty()
+        || app.widgets.quick_launch.persist_in_flight()
     {
-        subs.push(
-            iced::time::every(Duration::from_millis(
-                quick_launch::QUICK_LAUNCHES_TICK_MS,
+        let tick = iced::time::every(std::time::Duration::from_millis(
+            QUICK_LAUNCHES_TICK_MS,
+        ))
+        .map(|_| {
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::Tick,
             ))
-            .map(|_| Event::QuickLaunch(quick_launch::QuickLaunchEvent::Tick)),
-        );
+        });
+        subs.push(tick);
     }
 
     Subscription::batch(subs)

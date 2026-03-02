@@ -1,66 +1,129 @@
-use iced::widget::{Space, column, container, mouse_area, pane_grid, row};
-use iced::{Element, Length, Size, Theme};
+use iced::widget::pane_grid::PaneGrid;
+use iced::widget::{Space, column, container, mouse_area, row, text};
+use iced::{Element, Length, Size, Theme, alignment};
 
-use super::{App, Event};
-use crate::features::sidebar::{SIDEBAR_MENU_WIDTH, SidebarItem, SidebarPane};
+use super::{App, AppEvent};
+use crate::components::primitive::{
+    menu_item, resize_grips, sidebar_workspace_panel,
+};
+use crate::geometry::{anchor_position, menu_height_for_items};
+use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
-use crate::ui::components::{resize_grips, sidebar_workspace_panel};
-use crate::ui::widgets::{
-    action_bar, quick_launches_context_menu, sidebar_menu, sidebar_workspace,
-    sidebar_workspace_add_menu, tab_bar, tab_content,
-    terminal_pane_context_menu,
+use crate::widgets::chrome::ChromeEvent;
+use crate::widgets::chrome::view::action_bar;
+use crate::widgets::explorer::ExplorerEvent;
+use crate::widgets::explorer::view::sidebar_tree;
+use crate::widgets::quick_launch::QuickLaunchEvent;
+use crate::widgets::quick_launch::view::{
+    context_menu as ql_context_menu, error_tab, sidebar_panel, wizard_form,
+};
+use crate::widgets::settings::SettingsEvent;
+use crate::widgets::settings::view::settings_form;
+use crate::widgets::sidebar;
+use crate::widgets::sidebar::{
+    SidebarEvent, SidebarIntent, SidebarItem, SidebarPane,
+};
+use crate::widgets::tabs::TabsEvent;
+use crate::widgets::tabs::model::TabContent;
+use crate::widgets::tabs::view::tab_bar;
+use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
+use crate::widgets::terminal_workspace::view::{
+    pane_context_menu as terminal_pane_context_menu,
+    pane_grid as terminal_pane_grid,
 };
 
-const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
-const SIDEBAR_SEPARATOR_WIDTH: f32 = 0.3;
+pub(crate) const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
 const SEPARATOR_ALPHA: f32 = 0.3;
+const PANE_GRID_SPACING: f32 = 1.0;
+const PANE_GRID_RESIZE_GRAB: f32 = 8.0;
 
-pub(super) fn view(app: &App) -> Element<'_, Event, Theme, iced::Renderer> {
+// Add menu overlay constants
+const ADD_MENU_WIDTH: f32 = 220.0;
+const ADD_MENU_ITEM_HEIGHT: f32 = 24.0;
+const ADD_MENU_VERTICAL_PADDING: f32 = 16.0;
+const ADD_MENU_MARGIN: f32 = 6.0;
+const ADD_MENU_CONTAINER_PADDING_X: f32 = 8.0;
+
+/// Render the root application view.
+pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     let theme = app.theme_manager.current();
     let theme_props: ThemeProps<'_> = ThemeProps::new(theme);
 
-    let tab_summaries = app.features.tab().tab_summaries();
-    let active_tab_id = app.features.tab().active_tab_id().unwrap_or(0);
+    let sidebar_vm = app.widgets.sidebar.vm();
 
-    let header = view_header(app, theme_props);
-    let sidebar = app.features.sidebar();
-
-    let content_row: Element<'_, Event, Theme, iced::Renderer> =
-        if sidebar.is_hidden() {
-            view_content_only(app, theme_props, &tab_summaries, active_tab_id)
+    let content_row: Element<'_, AppEvent, Theme, iced::Renderer> =
+        if sidebar_vm.is_hidden {
+            view_content_only(app, theme_props)
         } else {
-            view_sidebar_layout(app, theme_props, &tab_summaries, active_tab_id)
+            view_sidebar_layout(app, theme_props)
         };
 
     let content_row = mouse_area(content_row).on_move(|position| {
-        Event::SidebarWorkspace(
-            sidebar_workspace::SidebarWorkspaceEvent::WorkspaceCursorMoved {
-                position,
-            },
-        )
+        AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::WorkspaceCursorMoved { position },
+        ))
     });
 
-    let mut content_layers: Vec<Element<'_, Event, Theme, iced::Renderer>> =
+    let mut layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> =
         vec![content_row.into()];
 
-    if let Some(overlay) = view_context_menu_overlay(app, theme_props) {
-        content_layers.push(overlay);
+    // Add menu overlay
+    if sidebar_vm.has_add_menu_open {
+        if let Some(cursor) = sidebar_vm.add_menu_cursor {
+            layers.push(
+                view_add_menu_overlay(
+                    cursor,
+                    app.state.screen_size,
+                    theme_props,
+                )
+                .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event))),
+            );
+        }
     }
 
-    let content_stack = iced::widget::Stack::with_children(content_layers)
+    // Quick launch context menu overlay
+    if let Some(menu) = app.widgets.quick_launch.context_menu() {
+        layers.push(
+            ql_context_menu::view(ql_context_menu::ContextMenuProps {
+                menu,
+                theme: theme_props,
+                area_size: app.state.screen_size,
+                launching: app.widgets.quick_launch.launching(),
+            })
+            .map(|event| {
+                AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
+            }),
+        );
+    }
+
+    if let Some(overlay) = view_terminal_context_menu_overlay(app, theme_props)
+    {
+        layers.push(overlay);
+    }
+
+    let content_stack = iced::widget::Stack::with_children(layers)
         .width(Length::Fill)
         .height(Length::Fill);
 
-    let resize_grips_layer = if super::update::any_context_menu_open(app) {
+    let resize_grips_layer = if app.widgets.sidebar.has_add_menu_open()
+        || app.widgets.quick_launch.context_menu().is_some()
+        || app.widgets.terminal_workspace.has_any_context_menu()
+    {
         container(Space::new())
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
     } else {
-        resize_grips::view()
+        resize_grips::view().map(|event| match event {
+            resize_grips::ResizeGripEvent::Resize(dir) => {
+                AppEvent::ResizeWindow(dir)
+            },
+        })
     };
 
-    let root_layers: Vec<Element<'_, Event, Theme, iced::Renderer>> = vec![
+    let header = view_header(app, theme_props);
+
+    let root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
         column![header, content_stack]
             .width(Length::Fill)
             .height(Length::Fill)
@@ -74,19 +137,20 @@ pub(super) fn view(app: &App) -> Element<'_, Event, Theme, iced::Renderer> {
         .into()
 }
 
-/// Render the action bar and its bottom separator line.
+/// Render the header: action bar + separator.
 fn view_header<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, Event, Theme, iced::Renderer> {
-    let header = action_bar::view(action_bar::ActionBarProps {
-        title: app.features.tab().active_tab_title().unwrap_or("OTTY"),
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let palette = theme_props.theme.iced_palette();
+
+    let action_bar = action_bar::view(action_bar::ActionBarProps {
+        title: app.widgets.tabs.active_tab_title().unwrap_or("OTTY"),
         theme: theme_props,
         fonts: &app.fonts,
     })
-    .map(Event::ActionBar);
+    .map(|event| AppEvent::Chrome(ChromeEvent::Intent(event)));
 
-    let palette = theme_props.theme.iced_palette();
     let separator = container(Space::new())
         .width(Length::Fill)
         .height(Length::Fixed(HEADER_SEPARATOR_HEIGHT))
@@ -99,260 +163,334 @@ fn view_header<'a>(
             }
         });
 
-    column![header, separator]
+    column![action_bar, separator]
         .width(Length::Fill)
         .height(Length::Shrink)
         .into()
 }
 
-/// Render the tab bar + content area when the sidebar is hidden.
+/// Render content without sidebar.
 fn view_content_only<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-    tab_summaries: &[(u64, &'a str)],
-    active_tab_id: u64,
-) -> Element<'a, Event, Theme, iced::Renderer> {
-    let tab_bar = tab_bar::view(tab_bar::TabBarProps {
-        tabs: tab_summaries.to_vec(),
-        active_tab_id,
-        theme: theme_props,
-    })
-    .map(|e| match e {
-        tab_bar::TabBarEvent::ActivateTab { tab_id } => {
-            Event::ActivateTab { tab_id }
-        },
-        tab_bar::TabBarEvent::CloseTab { tab_id } => {
-            Event::CloseTabRequested { tab_id }
-        },
-    });
-
-    let content = tab_content::view(tab_content::TabContentProps {
-        active_tab: app.features.tab().active_tab(),
-        terminal: app.features.terminal().state(),
-        quick_launch_wizard: app.features.quick_launch_wizard().state(),
-        quick_launches: app.features.quick_launch().state(),
-        settings: app.features.settings().state(),
-        theme: theme_props,
-    })
-    .map(map_tab_content_event);
-
-    container(
-        column![tab_bar, content]
-            .width(Length::Fill)
-            .height(Length::Fill),
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .into()
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    view_tab_area(app, theme_props)
 }
 
-/// Render the sidebar menu + workspace split + content area.
+/// Render sidebar + content split layout with PaneGrid.
 fn view_sidebar_layout<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-    tab_summaries: &[(u64, &'a str)],
-    active_tab_id: u64,
-) -> Element<'a, Event, Theme, iced::Renderer> {
-    let sidebar_menu = sidebar_menu::view(sidebar_menu::SidebarMenuProps {
-        active_item: match app.features.sidebar().active_item() {
-            SidebarItem::Terminal => sidebar_menu::SidebarMenuItem::Terminal,
-            SidebarItem::Explorer => sidebar_menu::SidebarMenuItem::Explorer,
-        },
-        workspace_open: app.features.sidebar().is_workspace_open(),
-        menu_width: SIDEBAR_MENU_WIDTH,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let sidebar_vm = app.widgets.sidebar.vm();
+
+    let menu_rail = sidebar::view::view(sidebar::view::SidebarViewProps {
+        vm: sidebar_vm,
         theme: theme_props,
     })
-    .map(Event::Sidebar);
+    .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event)));
 
     let palette = theme_props.theme.iced_palette();
-    let sidebar_separator = container(Space::new())
-        .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
+
+    let sidebar_pane_grid =
+        PaneGrid::new(app.widgets.sidebar.panes(), move |_pane, pane_kind, _| {
+            let content: Element<'_, AppEvent, Theme, iced::Renderer> =
+                match *pane_kind {
+                    SidebarPane::Workspace => {
+                        let workspace_content =
+                            view_workspace_content(app, sidebar_vm, theme_props);
+                        sidebar_workspace_panel::view(
+                            sidebar_workspace_panel::SidebarWorkspacePanelProps {
+                                content: workspace_content,
+                                visible: sidebar_vm.is_workspace_open,
+                                theme: theme_props,
+                            },
+                        )
+                    },
+                    SidebarPane::Content => view_tab_area(app, theme_props),
+                };
+            iced::widget::pane_grid::Content::new(content)
+        })
+        .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| {
-            let mut background = palette.dim_white;
-            background.a = SEPARATOR_ALPHA;
-            iced::widget::container::Style {
-                background: Some(background.into()),
-                ..Default::default()
+        .spacing(PANE_GRID_SPACING)
+        .min_size(0)
+        .on_resize(PANE_GRID_RESIZE_GRAB, |event| {
+            AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(
+                event,
+            )))
+        })
+        .style(move |_: &Theme| {
+            let mut separator = palette.dim_white;
+            separator.a = SEPARATOR_ALPHA;
+
+            iced::widget::pane_grid::Style {
+                hovered_region: iced::widget::pane_grid::Highlight {
+                    background: separator.into(),
+                    border: iced::Border::default(),
+                },
+                picked_split: iced::widget::pane_grid::Line {
+                    color: separator,
+                    width: 1.0,
+                },
+                hovered_split: iced::widget::pane_grid::Line {
+                    color: separator,
+                    width: 1.0,
+                },
             }
         });
 
-    let sidebar = app.features.sidebar();
-    let explorer_feature = app.features.explorer();
-    let terminal_state = app.features.terminal().state();
-    let quick_launches_state = app.features.quick_launch().state();
-    let wizard_state = app.features.quick_launch_wizard().state();
-    let settings_state = app.features.settings().state();
-    let active_tab = app.features.tab().active_tab();
-    let workspace_open = sidebar.is_workspace_open();
-    let active_item = sidebar.active_item();
-
-    let sidebar_split = pane_grid::PaneGrid::new(
-        sidebar.panes(),
-        move |_, pane, _| match pane {
-            SidebarPane::Workspace => {
-                let workspace_content = sidebar_workspace::view(
-                    sidebar_workspace::SidebarWorkspaceProps {
-                        active_item: match active_item {
-                            SidebarItem::Terminal => {
-                                sidebar_workspace::SidebarWorkspaceItem::Terminal
-                            },
-                            SidebarItem::Explorer => {
-                                sidebar_workspace::SidebarWorkspaceItem::Explorer
-                            },
-                        },
-                        quick_launches: quick_launches_state,
-                        explorer: explorer_feature,
-                        theme: theme_props,
-                    },
-                )
-                .map(Event::SidebarWorkspace);
-                let workspace = sidebar_workspace_panel::view(
-                    sidebar_workspace_panel::SidebarWorkspacePanelProps {
-                        content: workspace_content,
-                        visible: workspace_open,
-                        theme: theme_props,
-                    },
-                );
-                pane_grid::Content::new(workspace)
-            },
-            SidebarPane::Content => {
-                let tab_bar = tab_bar::view(tab_bar::TabBarProps {
-                    tabs: tab_summaries.to_vec(),
-                    active_tab_id,
-                    theme: theme_props,
-                })
-                .map(|e| match e {
-                    tab_bar::TabBarEvent::ActivateTab { tab_id } => {
-                        Event::ActivateTab { tab_id }
-                    },
-                    tab_bar::TabBarEvent::CloseTab { tab_id } => {
-                        Event::CloseTabRequested { tab_id }
-                    },
-                });
-
-                let content = tab_content::view(tab_content::TabContentProps {
-                    active_tab,
-                    terminal: terminal_state,
-                    quick_launch_wizard: wizard_state,
-                    quick_launches: quick_launches_state,
-                    settings: settings_state,
-                    theme: theme_props,
-                })
-                .map(map_tab_content_event);
-
-                pane_grid::Content::new(
-                    container(
-                        column![tab_bar, content]
-                            .width(Length::Fill)
-                            .height(Length::Fill),
-                    )
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-                )
-            },
-        },
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .spacing(0)
-    .min_size(0)
-    .on_resize(10.0, |event| {
-        Event::Sidebar(sidebar_menu::SidebarMenuEvent::Resized(event))
-    });
-
-    row![sidebar_menu, sidebar_separator, sidebar_split]
+    row![menu_rail, sidebar_pane_grid]
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
 }
 
-/// Render the context menu overlay layer, if any menu is open.
-fn view_context_menu_overlay<'a>(
+/// Render workspace content based on the active sidebar item.
+fn view_workspace_content<'a>(
     app: &'a App,
+    sidebar_vm: sidebar::SidebarViewModel,
     theme_props: ThemeProps<'a>,
-) -> Option<Element<'a, Event, Theme, iced::Renderer>> {
-    context_menu_layer(app, theme_props, app.state.screen_size)
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    match sidebar_vm.active_item {
+        SidebarItem::Terminal => {
+            sidebar_panel::view(sidebar_panel::SidebarPanelProps {
+                vm: app.widgets.quick_launch.tree_vm(),
+                theme: theme_props,
+            })
+            .map(|event| AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event)))
+        },
+        SidebarItem::Explorer => {
+            sidebar_tree::view(sidebar_tree::SidebarTreeProps {
+                vm: app.widgets.explorer.tree_vm(),
+                theme: theme_props,
+            })
+            .map(|event| AppEvent::Explorer(ExplorerEvent::Intent(event)))
+        },
+    }
 }
 
-fn context_menu_layer<'a>(
+/// Render the tab bar + tab content area.
+fn view_tab_area<'a>(
     app: &'a App,
-    theme: ThemeProps<'a>,
-    area_size: Size,
-) -> Option<Element<'a, Event, Theme, iced::Renderer>> {
-    if let Some(cursor) = app.features.sidebar().add_menu_cursor() {
-        return Some(
-            sidebar_workspace_add_menu::view(
-                sidebar_workspace_add_menu::SidebarWorkspaceAddMenuProps {
-                    cursor,
-                    theme,
-                    area_size,
-                },
-            )
-            .map(Event::SidebarWorkspace),
-        );
-    }
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let tabs_vm = app.widgets.tabs.vm();
 
-    if let Some(menu) = app.features.quick_launch().context_menu() {
+    let tab_bar_props = tab_bar::TabBarProps {
+        tabs: tabs_vm.tabs,
+        active_tab_id: tabs_vm.active_tab_id,
+        theme: theme_props,
+    };
+
+    let tab_bar = tab_bar::view(tab_bar_props)
+        .map(|event| AppEvent::Tabs(TabsEvent::Intent(event)));
+
+    let content = view_tab_content(app, theme_props);
+
+    column![tab_bar, content]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+/// Render the active tab content based on its type.
+fn view_tab_content<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let active_tab_id = app.widgets.tabs.active_tab_id();
+    let active_tab_content = app.widgets.tabs.active_tab_content();
+
+    match (active_tab_id, active_tab_content) {
+        (Some(tab_id), Some(TabContent::Terminal)) => {
+            let vm = app.widgets.terminal_workspace.vm(Some(tab_id));
+            match vm.tab {
+                Some(tab_vm) => terminal_pane_grid::view(tab_vm).map(|event| {
+                    AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                        event,
+                    ))
+                }),
+                None => missing_tab_state("Terminal tab is not initialized."),
+            }
+        },
+        (Some(_tab_id), Some(TabContent::Settings)) => {
+            settings_form::view(settings_form::SettingsFormProps {
+                vm: app.widgets.settings.vm(),
+                theme: theme_props,
+            })
+            .map(|event| AppEvent::Settings(SettingsEvent::Intent(event)))
+        },
+        (Some(tab_id), Some(TabContent::QuickLaunchWizard)) => {
+            match app.widgets.quick_launch.wizard_editor(tab_id) {
+                Some(editor) => {
+                    wizard_form::view(wizard_form::WizardFormProps {
+                        tab_id,
+                        editor,
+                        theme: theme_props,
+                    })
+                    .map(|event| {
+                        AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
+                    })
+                },
+                None => {
+                    missing_tab_state("Quick launch editor is not initialized.")
+                },
+            }
+        },
+        (Some(tab_id), Some(TabContent::QuickLaunchError)) => {
+            match app.widgets.quick_launch.error_tab(tab_id) {
+                Some(error) => error_tab::view(error_tab::ErrorTabProps {
+                    error,
+                    theme: theme_props,
+                })
+                .map(|event| {
+                    AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
+                }),
+                None => {
+                    missing_tab_state("Quick launch error payload is missing.")
+                },
+            }
+        },
+        _ => container(Space::new())
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into(),
+    }
+}
+
+fn view_terminal_context_menu_overlay<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent, Theme, iced::Renderer>> {
+    for (&tab_id, terminal_tab) in app.widgets.terminal_workspace.tabs() {
+        let Some(menu) = terminal_tab.context_menu() else {
+            continue;
+        };
+        let has_block_selection =
+            terminal_tab.selected_block_terminal() == Some(menu.terminal_id());
         return Some(
-            quick_launches_context_menu::view(
-                quick_launches_context_menu::QuickLaunchesContextMenuProps {
-                    menu,
-                    theme,
-                    area_size,
-                    launching: app.features.quick_launch().launching(),
+            terminal_pane_context_menu::view(
+                terminal_pane_context_menu::PaneContextMenuProps {
+                    tab_id,
+                    pane: menu.pane(),
+                    cursor: menu.cursor(),
+                    grid_size: menu.grid_size(),
+                    terminal_id: menu.terminal_id(),
+                    focus_target: menu.focus_target().clone(),
+                    has_block_selection,
+                    theme: theme_props,
                 },
             )
             .map(|event| {
-                Event::SidebarWorkspace(
-                    sidebar_workspace::SidebarWorkspaceEvent::QuickLaunch(
-                        event,
-                    ),
-                )
+                AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                    event,
+                ))
             }),
         );
-    }
-
-    for (&tab_id, terminal) in app.features.terminal().tabs() {
-        if let Some(menu) = terminal.context_menu() {
-            let has_block_selection =
-                terminal.selected_block_terminal() == Some(menu.terminal_id());
-            return Some(
-                terminal_pane_context_menu::view(
-                    terminal_pane_context_menu::TerminalPaneContextMenuProps {
-                        tab_id,
-                        pane: menu.pane(),
-                        cursor: menu.cursor(),
-                        grid_size: menu.grid_size(),
-                        terminal_id: menu.terminal_id(),
-                        focus_target: menu.focus_target().clone(),
-                        has_block_selection,
-                        theme,
-                    },
-                )
-                .map(Event::Terminal),
-            );
-        }
     }
 
     None
 }
 
-fn map_tab_content_event(event: tab_content::TabContentEvent) -> Event {
-    match event {
-        tab_content::TabContentEvent::Terminal(event) => Event::Terminal(event),
-        tab_content::TabContentEvent::Settings(event) => Event::Settings(event),
-        tab_content::TabContentEvent::QuickLaunchWizard { tab_id, event } => {
-            Event::QuickLaunchWizard { tab_id, event }
-        },
-        tab_content::TabContentEvent::QuickLaunchError(event) => match event {},
-    }
+/// Render an error placeholder for missing tab state.
+fn missing_tab_state<'a>(
+    message: &'static str,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    container(text(message))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(alignment::Horizontal::Center)
+        .align_y(alignment::Vertical::Center)
+        .into()
 }
 
-pub(super) fn screen_size_from_window(window_size: Size) -> Size {
-    let action_bar_height = action_bar::ACTION_BAR_HEIGHT;
-    let height =
-        (window_size.height - action_bar_height - SIDEBAR_SEPARATOR_WIDTH)
-            .max(0.0);
-    Size::new(window_size.width, height)
+/// Render the add menu overlay with dismiss layer.
+fn view_add_menu_overlay<'a>(
+    cursor: iced::Point,
+    area_size: Size,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
+    let menu_items = [
+        add_menu_item(
+            "Create tab",
+            theme_props,
+            SidebarIntent::AddMenuCreateTab,
+        ),
+        add_menu_item(
+            "Create command",
+            theme_props,
+            SidebarIntent::AddMenuCreateCommand,
+        ),
+        add_menu_item(
+            "Create folder",
+            theme_props,
+            SidebarIntent::AddMenuCreateFolder,
+        ),
+    ];
+
+    let menu_height = menu_height_for_items(
+        menu_items.len(),
+        ADD_MENU_ITEM_HEIGHT,
+        ADD_MENU_VERTICAL_PADDING,
+    );
+
+    let menu_column = menu_items
+        .into_iter()
+        .fold(iced::widget::Column::new(), |col, item| col.push(item))
+        .spacing(0)
+        .width(Length::Fill)
+        .align_x(alignment::Horizontal::Left);
+
+    let anchor = anchor_position(
+        cursor,
+        area_size,
+        ADD_MENU_WIDTH,
+        menu_height,
+        ADD_MENU_MARGIN,
+    );
+
+    let padding = iced::Padding {
+        top: anchor.y,
+        left: anchor.x,
+        ..iced::Padding::ZERO
+    };
+
+    let menu_container = container(menu_column)
+        .padding([ADD_MENU_CONTAINER_PADDING_X, 0.0])
+        .width(ADD_MENU_WIDTH)
+        .style(menu_panel_style(theme_props));
+
+    let positioned_menu = container(menu_container)
+        .padding(padding)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(alignment::Horizontal::Left)
+        .align_y(alignment::Vertical::Top);
+
+    let dismiss_layer = mouse_area(
+        container(text("")).width(Length::Fill).height(Length::Fill),
+    )
+    .on_press(SidebarIntent::DismissAddMenu)
+    .on_right_press(SidebarIntent::DismissAddMenu)
+    .on_move(|position| SidebarIntent::WorkspaceCursorMoved { position });
+
+    iced::widget::stack!(dismiss_layer, positioned_menu)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+fn add_menu_item<'a>(
+    label: &'a str,
+    theme_props: ThemeProps<'a>,
+    on_press: SidebarIntent,
+) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
+    menu_item::view(menu_item::MenuItemProps {
+        label,
+        theme: theme_props,
+    })
+    .map(move |event| match event {
+        menu_item::MenuItemEvent::Pressed => on_press.clone(),
+    })
 }

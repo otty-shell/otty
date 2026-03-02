@@ -2,6 +2,7 @@ use iced::theme::Palette;
 use iced::{Color, Theme};
 use otty_ui_term::{ColorPalette as TerminalColorPalette, parse_hex_color};
 
+/// Raw string-based color palette used for serialization and settings.
 #[derive(Debug, Clone)]
 pub struct ColorPalette {
     pub foreground: String,
@@ -48,7 +49,6 @@ impl Default for ColorPalette {
             magenta: String::from("#C678DD"),
             cyan: String::from("#56B6C2"),
             white: String::from("#D1D5DB"),
-            // BRIGHT COLORS
             bright_black: String::from("#4F5666"),
             bright_red: String::from("#FF5C8D"),
             bright_green: String::from("#5AF78E"),
@@ -58,7 +58,6 @@ impl Default for ColorPalette {
             bright_cyan: String::from("#2CD4C8"),
             bright_white: String::from("#FFFFFF"),
             bright_foreground: String::from("#ECEFF4"),
-            // DIM COLORS
             dim_foreground: String::from("#6B7280"),
             dim_black: String::from("#0F1115"),
             dim_red: String::from("#8F3F4A"),
@@ -109,6 +108,7 @@ impl From<ColorPalette> for TerminalColorPalette {
     }
 }
 
+/// Parsed color palette ready for iced rendering.
 #[derive(Debug, Clone)]
 pub struct IcedColorPalette {
     pub foreground: Color,
@@ -234,20 +234,23 @@ impl AppTheme {
         }
     }
 
+    /// Return the theme identifier.
     pub fn id(&self) -> &String {
         &self.id
     }
 
+    /// Build terminal-compatible palette from the raw colors.
     pub fn terminal_palette(&self) -> TerminalColorPalette {
         TerminalColorPalette::from(self.raw_palette.clone())
     }
 
+    /// Return the parsed iced color palette.
     pub fn iced_palette(&self) -> &IcedColorPalette {
         &self.iced_palette
     }
 }
 
-/// Theme props passed through App -> Screen -> Widget -> Component.
+/// Theme props passed through the view tree for consistent styling.
 #[derive(Debug, Clone, Copy)]
 pub struct ThemeProps<'a> {
     pub theme: &'a AppTheme,
@@ -255,6 +258,7 @@ pub struct ThemeProps<'a> {
 }
 
 impl<'a> ThemeProps<'a> {
+    /// Create theme props with no overrides.
     pub fn new(theme: &'a AppTheme) -> Self {
         Self {
             theme,
@@ -270,18 +274,19 @@ pub struct ThemeManager {
 }
 
 impl ThemeManager {
+    /// Create a theme manager with the default palette.
     pub fn new() -> Self {
-        let default = AppTheme::default();
-
         Self {
-            current: default.clone(),
+            current: AppTheme::default(),
         }
     }
 
+    /// Return the current application theme.
     pub fn current(&self) -> &AppTheme {
         &self.current
     }
 
+    /// Build an iced theme from the current palette.
     pub fn iced_theme(&self) -> Theme {
         Theme::from(&self.current)
     }

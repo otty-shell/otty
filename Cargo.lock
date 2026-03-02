@@ -167,9 +167,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.101"
+version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
+checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "arbitrary"
@@ -1978,9 +1978,9 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "libc"
-version = "0.2.180"
+version = "0.2.182"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
+checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
 
 [[package]]
 name = "libfuzzer-sys"
@@ -2367,9 +2367,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.31.1"
+version = "0.31.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "225e7cfe711e0ba79a68baeddb2982723e4235247aefce1482f2f16c27865b66"
+checksum = "5d6d0705320c1e6ba1d912b5e37cf18071b6c2e9b7fa8215a1e8a7651966f5d3"
 dependencies = [
  "bitflags 2.11.0",
  "cfg-if",
@@ -2910,7 +2910,6 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-words",
- "syn",
  "thiserror 2.0.18",
 ]
 
@@ -2937,7 +2936,7 @@ dependencies = [
  "flume",
  "log",
  "mio",
- "nix 0.31.1",
+ "nix 0.31.2",
  "otty-escape",
  "otty-pty",
  "otty-surface",
@@ -2954,7 +2953,7 @@ dependencies = [
  "anyhow",
  "log",
  "mio",
- "nix 0.31.1",
+ "nix 0.31.2",
  "signal-hook",
  "ssh2",
  "thiserror 2.0.18",
@@ -2991,42 +2990,6 @@ name = "otty-ui-tree"
 version = "0.1.0"
 dependencies = [
  "iced",
-]
-
-[[package]]
-name = "otty-v2"
-version = "0.1.0-beta1"
-dependencies = [
- "env_logger",
- "iced",
- "image",
- "log",
- "otty-libterm",
- "otty-ui-term",
- "otty-ui-tree",
- "serde",
- "serde_json",
- "shell-words",
- "syn",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "otty-v3"
-version = "0.1.0-beta1"
-dependencies = [
- "env_logger",
- "iced",
- "image",
- "log",
- "otty-libterm",
- "otty-ui-term",
- "otty-ui-tree",
- "serde",
- "serde_json",
- "shell-words",
- "syn",
- "thiserror 2.0.18",
 ]
 
 [[package]]

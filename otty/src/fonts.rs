@@ -1,10 +1,12 @@
 use iced::Font;
 use iced::font::{Family, Weight};
 
+/// Embedded JetBrains Mono Nerd Font for terminal rendering.
 pub(crate) const TERM_FONT_JET_BRAINS_BYTES: &[u8] = include_bytes!(
     "../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"
 );
 
+/// UI font configuration.
 #[derive(Debug, Clone)]
 pub(crate) struct UiFonts {
     pub(crate) font_type: Font,
@@ -20,6 +22,7 @@ impl Default for UiFonts {
     }
 }
 
+/// Terminal font configuration.
 #[derive(Debug, Clone)]
 pub(crate) struct TerminalFonts {
     pub(crate) font_type: Font,
@@ -39,6 +42,7 @@ impl Default for TerminalFonts {
     }
 }
 
+/// Combined font configuration for UI and terminal rendering.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct FontsConfig {
     pub(crate) ui: UiFonts,
