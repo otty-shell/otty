@@ -75,7 +75,7 @@ mod tests {
                 "expanded": true,
                 "children": [
                     {
-                        "node_type": "Command",
+                        "kind": "Command",
                         "title": "Run",
                         "spec": {
                             "type": "Custom",

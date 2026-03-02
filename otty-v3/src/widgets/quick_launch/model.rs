@@ -282,7 +282,7 @@ impl QuickLaunchFolder {
 
 /// A node in the quick launch tree (folder or command).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "node_type")]
+#[serde(tag = "kind")]
 pub(crate) enum QuickLaunchNode {
     Folder(QuickLaunchFolder),
     Command(QuickLaunch),

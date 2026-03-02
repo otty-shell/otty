@@ -41,7 +41,7 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
         AppEvent::IcedReady => Task::done(AppEvent::Tabs(TabsEvent::Intent(
             TabsIntent::OpenTerminalTab {
-                title: app.shell_session.name().to_string()
+                title: app.shell_session.name().to_string(),
             },
         ))),
         AppEvent::Sidebar(event) => sidebar::handle(app, event),

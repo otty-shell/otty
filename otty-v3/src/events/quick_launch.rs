@@ -16,10 +16,7 @@ pub(crate) fn handle(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
     }
 }
 
-fn handle_intent(
-    app: &mut App,
-    event: QuickLaunchIntent,
-) -> Task<AppEvent> {
+fn handle_intent(app: &mut App, event: QuickLaunchIntent) -> Task<AppEvent> {
     // The add button lives in the quick launch panel but triggers the
     // sidebar add-menu overlay, so redirect instead of reducing.
     if matches!(event, QuickLaunchIntent::HeaderAddButtonPressed) {

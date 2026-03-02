@@ -27,7 +27,7 @@ fn handle_effect(app: &App, event: SidebarEffect) -> Task<AppEvent> {
         ))),
         OpenTerminalTab => Task::done(AppEvent::Tabs(TabsEvent::Intent(
             TabsIntent::OpenTerminalTab {
-                title: app.shell_session.name().to_string()
+                title: app.shell_session.name().to_string(),
             },
         ))),
         QuickLaunchHeaderCreateCommand => Task::done(AppEvent::QuickLaunch(
