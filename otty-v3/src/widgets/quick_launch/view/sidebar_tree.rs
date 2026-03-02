@@ -1,9 +1,12 @@
 use iced::widget::{
-    Space, column, container, row, scrollable, svg, text, text_input,
+    Space, column, container, mouse_area, row, scrollable, svg, text,
+    text_input,
 };
-use iced::{Element, Length, Theme};
+use iced::{Color, Element, Length, Theme, alignment};
+use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 use crate::icons::{FOLDER, FOLDER_OPENED, PLAY};
+use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::ThemeProps;
 use crate::widgets::quick_launch::event::QuickLaunchIntent;
 use crate::widgets::quick_launch::model::{
@@ -16,7 +19,9 @@ use crate::widgets::quick_launch::state::{
 const TREE_ROW_HEIGHT: f32 = 24.0;
 const TREE_FONT_SIZE: f32 = 12.0;
 const TREE_INDENT: f32 = 14.0;
-const ICON_WIDTH: f32 = 14.0;
+const TREE_ICON_WIDTH: f32 = 14.0;
+const TREE_ROW_PADDING_X: f32 = 6.0;
+const TREE_ROW_SPACING: f32 = 6.0;
 
 /// Props for the quick launch tree view.
 #[derive(Debug, Clone)]
@@ -34,57 +39,77 @@ pub(crate) struct SidebarTreeProps<'a> {
 pub(crate) fn view(
     props: SidebarTreeProps<'_>,
 ) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = props.theme.theme.iced_palette();
+    let palette = props.theme.theme.iced_palette().clone();
+    let dim_foreground = palette.dim_foreground;
+    let foreground = palette.foreground;
+    let indicator_color = palette.green;
+    let error_color = palette.red;
+    let overlay = palette.overlay;
+    let row_palette = palette.clone();
 
-    let mut entries: Vec<
-        Element<'_, QuickLaunchIntent, Theme, iced::Renderer>,
-    > = Vec::new();
+    let launching = props.launching;
+    let drop_target = props.drop_target;
+    let inline_edit = props.inline_edit;
 
-    render_children(
-        props.data.root().children(),
-        &[],
-        0,
-        &props,
-        palette,
-        &mut entries,
-    );
+    let tree_view =
+        TreeView::new(props.data.root().children(), move |context| {
+            render_entry(
+                context,
+                launching,
+                dim_foreground,
+                foreground,
+                indicator_color,
+            )
+        })
+        .selected_row(props.selected_path)
+        .hovered_row(props.hovered_path)
+        .on_press(|path| QuickLaunchIntent::NodePressed { path })
+        .on_release(|path| QuickLaunchIntent::NodeReleased { path })
+        .on_right_press(|path| QuickLaunchIntent::NodeRightClicked { path })
+        .row_style(move |context| {
+            quick_launch_row_style(drop_target, &row_palette, context)
+        })
+        .row_visible_filter(move |context| {
+            !is_rename_edit(inline_edit, context)
+        })
+        .after_row(move |context| {
+            inline_edit_after(inline_edit, context, error_color)
+        })
+        .indent_size(TREE_INDENT)
+        .spacing(0.0);
 
-    // Inline create folder at root level
-    if let Some(edit) = props.inline_edit {
-        if let InlineEditKind::CreateFolder { parent_path } = &edit.kind {
-            if parent_path.is_empty() {
-                entries.push(render_inline_edit(edit, 0, palette));
-            }
-        }
-    }
-
-    if entries.is_empty() {
-        entries.push(
-            container(Space::new())
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-        );
-    }
-
-    let content = column(entries).width(Length::Fill).spacing(0);
-
-    let tree_area = iced::widget::mouse_area(
-        scrollable(content).width(Length::Fill).height(Length::Fill),
-    )
-    .on_move(|position| QuickLaunchIntent::CursorMoved { position })
-    .on_press(QuickLaunchIntent::BackgroundPressed)
-    .on_release(QuickLaunchIntent::BackgroundReleased)
-    .on_right_press(QuickLaunchIntent::BackgroundRightClicked);
-
-    let root_drop_background =
-        if matches!(props.drop_target, Some(DropTarget::Root)) {
-            let mut color = palette.overlay;
-            color.a = 0.6;
-            Some(color)
+    let tree_content =
+        if let Some(root_edit) = inline_edit_root(inline_edit, error_color) {
+            column![tree_view.view(), root_edit].into()
         } else {
-            None
+            tree_view.view()
         };
+
+    let scrollable = scrollable::Scrollable::new(tree_content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .direction(scrollable::Direction::Vertical(
+            scrollable::Scrollbar::new()
+                .width(4)
+                .margin(0)
+                .scroller_width(4),
+        ))
+        .style(thin_scroll_style(palette.clone()));
+
+    let tree_area = mouse_area(scrollable)
+        .on_move(|position| QuickLaunchIntent::CursorMoved { position })
+        .on_press(QuickLaunchIntent::BackgroundPressed)
+        .on_release(QuickLaunchIntent::BackgroundReleased)
+        .on_right_press(QuickLaunchIntent::BackgroundRightClicked);
+
+    let root_drop_background = if matches!(drop_target, Some(DropTarget::Root))
+    {
+        let mut color = overlay;
+        color.a = 0.6;
+        Some(color)
+    } else {
+        None
+    };
 
     container(tree_area)
         .width(Length::Fill)
@@ -96,200 +121,154 @@ pub(crate) fn view(
         .into()
 }
 
-fn render_children<'a>(
-    children: &'a [QuickLaunchNode],
-    parent_path: &[String],
-    depth: usize,
-    props: &SidebarTreeProps<'a>,
-    palette: &'a crate::theme::IcedColorPalette,
-    entries: &mut Vec<Element<'a, QuickLaunchIntent, Theme, iced::Renderer>>,
-) {
-    for node in children {
-        let mut path = parent_path.to_vec();
-        path.push(node.title().to_string());
-
-        let is_selected =
-            props.selected_path.map(|s| s == &path).unwrap_or(false);
-        let is_hovered =
-            props.hovered_path.map(|h| h == &path).unwrap_or(false);
-
-        // Check if this node has an active inline rename
-        let is_renaming = props.inline_edit.is_some_and(|edit| {
-            matches!(&edit.kind, InlineEditKind::Rename { path: edit_path } if edit_path == &path)
-        });
-
-        if is_renaming {
-            if let Some(edit) = props.inline_edit {
-                entries.push(render_inline_edit(edit, depth, palette));
-            }
-        } else {
-            entries.push(render_tree_row(
-                node,
-                &path,
-                depth,
-                is_selected,
-                is_hovered,
-                props.launching.get(&path),
-                props.drop_target,
-                palette,
-            ));
-        }
-
-        // Recurse into expanded folders
-        if let QuickLaunchNode::Folder(folder) = node {
-            if folder.is_expanded() {
-                render_children(
-                    folder.children(),
-                    &path,
-                    depth + 1,
-                    props,
-                    palette,
-                    entries,
-                );
-
-                // Inline create folder inside this folder
-                if let Some(edit) = props.inline_edit {
-                    if let InlineEditKind::CreateFolder { parent_path } =
-                        &edit.kind
-                    {
-                        if parent_path == &path {
-                            entries.push(render_inline_edit(
-                                edit,
-                                depth + 1,
-                                palette,
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn render_tree_row<'a>(
-    node: &'a QuickLaunchNode,
-    path: &NodePath,
-    depth: usize,
-    is_selected: bool,
-    is_hovered: bool,
-    launch_info: Option<&'a LaunchInfo>,
-    drop_target: Option<&DropTarget>,
-    palette: &'a crate::theme::IcedColorPalette,
+fn render_entry<'a>(
+    context: &TreeRowContext<'a, QuickLaunchNode>,
+    launching: &std::collections::HashMap<NodePath, LaunchInfo>,
+    dim_foreground: Color,
+    foreground: Color,
+    indicator_color: Color,
 ) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let indent = depth as f32 * TREE_INDENT;
-    let foreground = palette.foreground;
-    let dim_foreground = palette.dim_foreground;
+    let is_indicator_highlighted = launching
+        .get(&context.entry.path)
+        .map(|launch| launch.is_indicator_highlighted)
+        .unwrap_or(false);
 
-    let icon_data = match node {
-        QuickLaunchNode::Folder(f) => {
-            if f.is_expanded() {
+    let (icon_data, icon_color) = match context.entry.node {
+        QuickLaunchNode::Folder(folder) => {
+            let icon = if folder.is_expanded() {
                 FOLDER_OPENED
             } else {
                 FOLDER
-            }
+            };
+            (icon, dim_foreground)
         },
-        QuickLaunchNode::Command(_) => PLAY,
-    };
-
-    let icon = svg::Svg::new(svg::Handle::from_memory(icon_data))
-        .width(Length::Fixed(ICON_WIDTH))
-        .height(Length::Fixed(ICON_WIDTH));
-
-    let label = text(node.title()).size(TREE_FONT_SIZE);
-
-    let mut row_content = row![
-        Space::new().width(Length::Fixed(indent)),
-        container(icon)
-            .width(Length::Fixed(ICON_WIDTH + 4.0))
-            .height(Length::Fixed(TREE_ROW_HEIGHT))
-            .align_y(iced::alignment::Vertical::Center),
-        label,
-    ]
-    .align_y(iced::alignment::Vertical::Center)
-    .width(Length::Fill)
-    .height(Length::Fixed(TREE_ROW_HEIGHT));
-
-    // Add launch indicator
-    if let Some(info) = launch_info {
-        if info.is_indicator_highlighted {
-            row_content = row_content.push(
-                container(
-                    Space::new()
-                        .width(Length::Fixed(6.0))
-                        .height(Length::Fixed(6.0)),
-                )
-                .style(move |_| {
-                    iced::widget::container::Style {
-                        background: Some(palette.green.into()),
-                        border: iced::Border {
-                            radius: 3.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }
-                }),
-            );
-        }
-    }
-
-    let is_drop_target = drop_target
-        .and_then(|target| match target {
-            DropTarget::Folder(folder_path) => {
-                Some(is_prefix(folder_path, path))
-            },
-            _ => None,
-        })
-        .unwrap_or(false);
-
-    let bg_color = if is_drop_target {
-        let mut c = palette.overlay;
-        c.a = 0.6;
-        Some(c)
-    } else if is_selected {
-        let mut c = palette.overlay;
-        c.a = 0.3;
-        Some(c)
-    } else if is_hovered {
-        let mut c = palette.overlay;
-        c.a = 0.15;
-        Some(c)
-    } else {
-        None
-    };
-
-    let path_for_hover = path.clone();
-    let path_for_press = path.clone();
-    let path_for_release = path.clone();
-    let path_for_right = path.clone();
-
-    let styled_row = container(row_content)
-        .width(Length::Fill)
-        .height(Length::Fixed(TREE_ROW_HEIGHT))
-        .style(move |_| iced::widget::container::Style {
-            background: bg_color.map(Into::into),
-            text_color: Some(if is_selected {
+        QuickLaunchNode::Command(_) => (
+            PLAY,
+            if is_indicator_highlighted {
                 foreground
             } else {
                 dim_foreground
+            },
+        ),
+    };
+
+    let icon_view = svg_icon(icon_data, icon_color);
+
+    let title = container(
+        text(context.entry.node.title())
+            .size(TREE_FONT_SIZE)
+            .width(Length::Fill)
+            .align_x(alignment::Horizontal::Left),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_y(alignment::Vertical::Center);
+
+    let mut content = row![icon_view, title]
+        .spacing(TREE_ROW_SPACING)
+        .align_y(alignment::Vertical::Center);
+
+    if is_indicator_highlighted {
+        content = content.push(
+            container(
+                Space::new()
+                    .width(Length::Fixed(6.0))
+                    .height(Length::Fixed(6.0)),
+            )
+            .style(move |_| iced::widget::container::Style {
+                background: Some(indicator_color.into()),
+                border: iced::Border {
+                    radius: 3.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
             }),
-            ..Default::default()
-        });
+        );
+    }
 
-    let interactive = iced::widget::mouse_area(styled_row)
-        .on_enter(QuickLaunchIntent::NodeHovered {
-            path: path_for_hover,
-        })
-        .on_press(QuickLaunchIntent::NodePressed {
-            path: path_for_press,
-        })
-        .on_release(QuickLaunchIntent::NodeReleased {
-            path: path_for_release,
-        })
-        .on_right_press(QuickLaunchIntent::NodeRightClicked {
-            path: path_for_right,
-        });
+    mouse_area(
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fixed(TREE_ROW_HEIGHT))
+            .padding([0.0, TREE_ROW_PADDING_X]),
+    )
+    .on_enter(QuickLaunchIntent::NodeHovered {
+        path: context.entry.path.clone(),
+    })
+    .into()
+}
 
-    interactive.into()
+fn quick_launch_row_style(
+    drop_target: Option<&DropTarget>,
+    palette: &crate::theme::IcedColorPalette,
+    context: &TreeRowContext<'_, QuickLaunchNode>,
+) -> iced::widget::container::Style {
+    let is_drop_target = drop_target
+        .and_then(|target| match target {
+            DropTarget::Folder(path) => {
+                Some(is_prefix(path, &context.entry.path))
+            },
+            DropTarget::Root => None,
+        })
+        .unwrap_or(false);
+
+    let mut style =
+        tree_row_style(palette, context.is_selected, context.is_hovered);
+
+    if is_drop_target {
+        let mut color = palette.overlay;
+        color.a = 0.6;
+        style.background = Some(color.into());
+    }
+
+    style
+}
+
+fn inline_edit_root<'a>(
+    inline_edit: Option<&'a InlineEditState>,
+    error_color: Color,
+) -> Option<Element<'a, QuickLaunchIntent, Theme, iced::Renderer>> {
+    let edit = inline_edit?;
+    if matches!(
+        edit.kind,
+        InlineEditKind::CreateFolder { ref parent_path }
+            if parent_path.is_empty()
+    ) {
+        return Some(render_inline_edit(edit, 0, error_color));
+    }
+    None
+}
+
+fn inline_edit_after<'a>(
+    inline_edit: Option<&'a InlineEditState>,
+    context: &TreeRowContext<'a, QuickLaunchNode>,
+    error_color: Color,
+) -> Option<Element<'a, QuickLaunchIntent, Theme, iced::Renderer>> {
+    let edit = inline_edit?;
+
+    match &edit.kind {
+        InlineEditKind::CreateFolder { parent_path }
+            if parent_path == &context.entry.path =>
+        {
+            Some(render_inline_edit(
+                edit,
+                context.entry.depth + 1,
+                error_color,
+            ))
+        },
+        InlineEditKind::Rename { path } if path == &context.entry.path => {
+            Some(render_inline_edit(edit, context.entry.depth, error_color))
+        },
+        _ => None,
+    }
+}
+
+fn is_rename_edit(
+    inline_edit: Option<&InlineEditState>,
+    context: &TreeRowContext<'_, QuickLaunchNode>,
+) -> bool {
+    matches!(inline_edit, Some(edit)
+        if matches!(&edit.kind, InlineEditKind::Rename { path } if path == &context.entry.path))
 }
 
 fn is_prefix(prefix: &[String], path: &[String]) -> bool {
@@ -303,7 +282,7 @@ fn is_prefix(prefix: &[String], path: &[String]) -> bool {
 fn render_inline_edit<'a>(
     edit: &'a InlineEditState,
     depth: usize,
-    palette: &'a crate::theme::IcedColorPalette,
+    error_color: Color,
 ) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
     let indent = depth as f32 * TREE_INDENT;
 
@@ -314,21 +293,23 @@ fn render_inline_edit<'a>(
         .id(edit.id.clone());
 
     let mut col = column![
-        row![Space::new().width(Length::Fixed(indent)), input,]
+        row![Space::new().width(Length::Fixed(indent)), input]
+            .spacing(TREE_ROW_SPACING)
             .width(Length::Fill)
             .height(Length::Fixed(TREE_ROW_HEIGHT))
-            .align_y(iced::alignment::Vertical::Center),
-    ];
+            .align_y(alignment::Vertical::Center),
+    ]
+    .width(Length::Fill)
+    .height(Length::Shrink);
 
     if let Some(error) = &edit.error {
-        let error_color = palette.red;
         col = col.push(
             container(text(error.as_str()).size(TREE_FONT_SIZE - 1.0))
                 .padding(iced::Padding {
                     top: 0.0,
                     right: 0.0,
                     bottom: 0.0,
-                    left: indent + 4.0,
+                    left: TREE_ROW_PADDING_X + indent + 4.0,
                 })
                 .style(move |_| iced::widget::container::Style {
                     text_color: Some(error_color),
@@ -337,5 +318,50 @@ fn render_inline_edit<'a>(
         );
     }
 
-    col.into()
+    container(col)
+        .width(Length::Fill)
+        .padding([0.0, TREE_ROW_PADDING_X])
+        .into()
+}
+
+fn svg_icon<'a>(
+    icon: &'static [u8],
+    color: Color,
+) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
+    let handle = svg::Handle::from_memory(icon);
+    let svg_icon = svg::Svg::new(handle)
+        .width(Length::Fixed(TREE_ICON_WIDTH))
+        .height(Length::Fixed(TREE_ICON_WIDTH))
+        .style(move |_, _| svg::Style { color: Some(color) });
+
+    container(svg_icon)
+        .width(Length::Fixed(TREE_ICON_WIDTH))
+        .height(Length::Fill)
+        .align_x(alignment::Horizontal::Center)
+        .align_y(alignment::Vertical::Center)
+        .into()
+}
+
+impl TreeNode for QuickLaunchNode {
+    fn title(&self) -> &str {
+        QuickLaunchNode::title(self)
+    }
+
+    fn children(&self) -> Option<&[Self]> {
+        match self {
+            QuickLaunchNode::Folder(folder) => Some(folder.children()),
+            QuickLaunchNode::Command(_) => None,
+        }
+    }
+
+    fn expanded(&self) -> bool {
+        match self {
+            QuickLaunchNode::Folder(folder) => folder.is_expanded(),
+            QuickLaunchNode::Command(_) => false,
+        }
+    }
+
+    fn is_folder(&self) -> bool {
+        matches!(self, QuickLaunchNode::Folder(_))
+    }
 }

@@ -1,14 +1,13 @@
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, scrollable, svg, text};
 use iced::{Element, Length, alignment};
+use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 use crate::icons::{FILE, FOLDER, FOLDER_OPENED};
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::widgets::explorer::event::ExplorerIntent;
-use crate::widgets::explorer::model::{
-    ExplorerTreeViewModel, FileNode, TreePath,
-};
+use crate::widgets::explorer::model::{ExplorerTreeViewModel, FileNode};
 
 const HEADER_HEIGHT: f32 = 22.0;
 const HEADER_PADDING_X: f32 = 10.0;
@@ -117,24 +116,19 @@ fn explorer_tree<'a>(
     vm: &ExplorerTreeViewModel<'a>,
     palette: &'a IcedColorPalette,
 ) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
-    let mut entries: Vec<
-        Element<'_, ExplorerIntent, iced::Theme, iced::Renderer>,
-    > = Vec::new();
+    let icon_color = palette.dim_foreground;
+    let tree_view = TreeView::new(vm.tree, move |context| {
+        render_entry(context, icon_color)
+    })
+    .selected_row(vm.selected_path)
+    .hovered_row(vm.hovered_path)
+    .on_press(|path| ExplorerIntent::NodePressed { path })
+    .on_hover(|path| ExplorerIntent::NodeHovered { path })
+    .row_style(move |context| nav_row_style(palette, context))
+    .indent_size(TREE_INDENT)
+    .spacing(0.0);
 
-    render_children(vm.tree, &[], 0, vm, palette, &mut entries);
-
-    if entries.is_empty() {
-        entries.push(
-            container(iced::widget::Space::new())
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-        );
-    }
-
-    let content = column(entries).width(Length::Fill).spacing(0);
-
-    let scrollable = scrollable::Scrollable::new(content)
+    let scrollable = scrollable::Scrollable::new(tree_view.view())
         .width(Length::Fill)
         .height(Length::Fill)
         .direction(scrollable::Direction::Vertical(
@@ -151,59 +145,12 @@ fn explorer_tree<'a>(
         .into()
 }
 
-/// Recursively render tree children.
-fn render_children<'a>(
-    children: &'a [FileNode],
-    parent_path: &[String],
-    depth: usize,
-    vm: &ExplorerTreeViewModel<'a>,
-    palette: &'a IcedColorPalette,
-    entries: &mut Vec<Element<'a, ExplorerIntent, iced::Theme, iced::Renderer>>,
-) {
-    for node in children {
-        let mut path = parent_path.to_vec();
-        path.push(node.name().to_string());
-
-        let is_selected = vm.selected_path.map(|s| s == &path).unwrap_or(false);
-        let is_hovered = vm.hovered_path.map(|h| h == &path).unwrap_or(false);
-
-        entries.push(render_tree_row(
-            node,
-            &path,
-            depth,
-            is_selected,
-            is_hovered,
-            palette,
-        ));
-
-        // Recurse into expanded folders.
-        if node.is_folder() && node.is_expanded() {
-            render_children(
-                node.children(),
-                &path,
-                depth + 1,
-                vm,
-                palette,
-                entries,
-            );
-        }
-    }
-}
-
-/// Render a single tree row with icon, label, and interaction events.
-fn render_tree_row<'a>(
-    node: &'a FileNode,
-    path: &TreePath,
-    depth: usize,
-    is_selected: bool,
-    is_hovered: bool,
-    palette: &'a IcedColorPalette,
+fn render_entry<'a>(
+    context: &TreeRowContext<'a, FileNode>,
+    icon_color: iced::Color,
 ) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
-    let indent = depth as f32 * TREE_INDENT;
-
-    let icon_color = palette.dim_foreground;
-    let icon_data = if node.is_folder() {
-        if node.is_expanded() {
+    let icon_data = if context.entry.node.is_folder() {
+        if context.entry.node.is_expanded() {
             FOLDER_OPENED
         } else {
             FOLDER
@@ -228,7 +175,7 @@ fn render_tree_row<'a>(
     };
 
     let title = container(
-        text(node.name())
+        text(context.entry.node.name())
             .size(TREE_FONT_SIZE)
             .width(Length::Fill)
             .wrapping(Wrapping::None)
@@ -242,32 +189,42 @@ fn render_tree_row<'a>(
         .spacing(0)
         .align_y(alignment::Vertical::Center);
 
-    let content = row![
-        iced::widget::Space::new().width(Length::Fixed(indent)),
-        leading,
-        title,
-    ]
-    .spacing(TREE_ROW_SPACING)
-    .align_y(alignment::Vertical::Center);
+    container(
+        row![leading, title]
+            .spacing(TREE_ROW_SPACING)
+            .align_y(alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .height(Length::Fixed(TREE_ROW_HEIGHT))
+    .padding([0.0, TREE_ROW_PADDING_X])
+    .into()
+}
 
-    let row_style = tree_row_style(palette, is_selected, is_hovered);
+fn nav_row_style(
+    palette: &IcedColorPalette,
+    context: &TreeRowContext<'_, FileNode>,
+) -> iced::widget::container::Style {
+    tree_row_style(palette, context.is_selected, context.is_hovered)
+}
 
-    let styled_row = container(content)
-        .width(Length::Fill)
-        .height(Length::Fixed(TREE_ROW_HEIGHT))
-        .padding([0.0, TREE_ROW_PADDING_X])
-        .style(move |_| row_style);
+impl TreeNode for FileNode {
+    fn title(&self) -> &str {
+        self.name()
+    }
 
-    let path_for_hover = path.clone();
-    let path_for_press = path.clone();
+    fn children(&self) -> Option<&[Self]> {
+        if self.is_folder() {
+            Some(self.children())
+        } else {
+            None
+        }
+    }
 
-    let interactive = iced::widget::mouse_area(styled_row)
-        .on_enter(ExplorerIntent::NodeHovered {
-            path: Some(path_for_hover),
-        })
-        .on_press(ExplorerIntent::NodePressed {
-            path: path_for_press,
-        });
+    fn expanded(&self) -> bool {
+        self.is_expanded()
+    }
 
-    interactive.into()
+    fn is_folder(&self) -> bool {
+        self.is_folder()
+    }
 }

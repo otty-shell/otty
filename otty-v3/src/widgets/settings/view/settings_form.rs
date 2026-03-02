@@ -8,6 +8,7 @@ use iced::{Color, Element, Length, Theme, alignment};
 use otty_ui_term::parse_hex_color;
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
+use crate::icons::{FILE, FOLDER, FOLDER_OPENED};
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::widgets::settings::event::SettingsIntent;
@@ -28,7 +29,7 @@ const NAV_ROW_HEIGHT: f32 = 24.0;
 const NAV_FONT_SIZE: f32 = 12.0;
 const NAV_INDENT: f32 = 14.0;
 const NAV_ICON_SIZE: f32 = 14.0;
-const NAV_ROW_PADDING_X: f32 = 8.0;
+const NAV_ROW_PADDING_X: f32 = 6.0;
 const NAV_ROW_SPACING: f32 = 6.0;
 
 const FORM_PADDING: f32 = 16.0;
@@ -114,21 +115,19 @@ fn settings_nav_tree<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
     let palette = props.theme.theme.iced_palette().clone();
-    let row_palette = palette.clone();
     let icon_color = palette.dim_foreground;
+    let row_palette = palette.clone();
 
-    let tree_view =
-        TreeView::new(props.vm.tree, move |context| render_nav_row(context))
-            .selected_row(Some(props.vm.selected_path))
-            .hovered_row(props.vm.hovered_path)
-            .on_press(|path| SettingsIntent::NodePressed { path })
-            .on_hover(|path| SettingsIntent::NodeHovered { path })
-            .row_style(move |context| nav_row_style(&row_palette, context))
-            .row_leading_content(move |context| {
-                nav_toggle_icon(context, icon_color)
-            })
-            .indent_size(NAV_INDENT)
-            .spacing(0.0);
+    let tree_view = TreeView::new(props.vm.tree, move |context| {
+        render_nav_row(context, icon_color)
+    })
+    .selected_row(Some(props.vm.selected_path))
+    .hovered_row(props.vm.hovered_path)
+    .on_press(|path| SettingsIntent::NodePressed { path })
+    .on_hover(|path| SettingsIntent::NodeHovered { path })
+    .row_style(move |context| nav_row_style(&row_palette, context))
+    .indent_size(NAV_INDENT)
+    .spacing(0.0);
 
     let scroll_palette = palette.clone();
     let scrollable = scrollable::Scrollable::new(tree_view.view())
@@ -150,19 +149,30 @@ fn settings_nav_tree<'a>(
 
 fn render_nav_row<'a>(
     context: &TreeRowContext<'a, SettingsNode>,
+    icon_color: Color,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let title = text(context.entry.node.title())
-        .size(NAV_FONT_SIZE)
-        .width(Length::Fill)
-        .wrapping(Wrapping::None)
-        .align_x(alignment::Horizontal::Left);
+    let icon_view = svg_icon(nav_icon(context.entry.node), icon_color);
 
-    container(title)
-        .width(Length::Fill)
-        .height(Length::Fixed(NAV_ROW_HEIGHT))
-        .padding([0.0, NAV_ROW_PADDING_X])
-        .align_y(alignment::Vertical::Center)
-        .into()
+    let title = container(
+        text(context.entry.node.title())
+            .size(NAV_FONT_SIZE)
+            .width(Length::Fill)
+            .wrapping(Wrapping::None)
+            .align_x(alignment::Horizontal::Left),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_y(alignment::Vertical::Center);
+
+    container(
+        row![icon_view, title]
+            .spacing(NAV_ROW_SPACING)
+            .align_y(alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .height(Length::Fixed(NAV_ROW_HEIGHT))
+    .padding([0.0, NAV_ROW_PADDING_X])
+    .into()
 }
 
 fn settings_form<'a>(
@@ -401,24 +411,15 @@ fn nav_row_style(
     tree_row_style(palette, context.is_selected, context.is_hovered)
 }
 
-fn nav_toggle_icon<'a>(
-    context: &TreeRowContext<'a, SettingsNode>,
-    color: Color,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    nav_icon(context.entry.node)
-        .map(|icon| svg_icon(icon, color))
-        .unwrap_or_else(|| Space::new().into())
-}
-
-fn nav_icon(node: &SettingsNode) -> Option<&'static [u8]> {
+fn nav_icon(node: &SettingsNode) -> &'static [u8] {
     if node.is_folder() {
-        Some(if node.is_expanded() {
-            crate::icons::FOLDER_OPENED
+        if node.is_expanded() {
+            FOLDER_OPENED
         } else {
-            crate::icons::FOLDER
-        })
+            FOLDER
+        }
     } else {
-        None
+        FILE
     }
 }
 
