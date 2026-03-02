@@ -1,6 +1,6 @@
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, scrollable, svg, text};
-use iced::{Element, Length, alignment};
+use iced::{Element, Length, Padding, alignment};
 use otty_ui_tree::{TreeNode, TreeRowContext, TreeView};
 
 use crate::icons::{FILE, FOLDER, FOLDER_OPENED};
@@ -9,23 +9,19 @@ use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::widgets::explorer::event::ExplorerIntent;
 use crate::widgets::explorer::model::{ExplorerTreeViewModel, FileNode};
 
-const HEADER_HEIGHT: f32 = 22.0;
+const HEADER_HEIGHT: f32 = 25.0;
 const HEADER_PADDING_X: f32 = 10.0;
 const HEADER_FONT_SIZE: f32 = 12.0;
-
-const BAR_HEIGHT: f32 = 28.0;
-const BAR_PADDING_X: f32 = 10.0;
-const BAR_FONT_SIZE: f32 = 12.0;
 
 const TREE_ROW_HEIGHT: f32 = 24.0;
 const TREE_FONT_SIZE: f32 = 12.0;
 const TREE_INDENT: f32 = 14.0;
+const TREE_PADDING_BOTTOM: f32 = 20.0;
 const TREE_ICON_WIDTH: f32 = 14.0;
 const TREE_ROW_PADDING_X: f32 = 6.0;
 const TREE_ROW_SPACING: f32 = 6.0;
 
-const WORKSPACE_PADDING_HORIZONTAL: f32 = 0.0;
-const WORKSPACE_PADDING_VERTICAL: f32 = 10.0;
+const WORKSPACE_PADDING: f32 = 0.0;
 
 /// Props for the explorer sidebar tree view.
 #[derive(Debug, Clone)]
@@ -40,11 +36,10 @@ pub(crate) fn view(
 ) -> Element<'_, ExplorerIntent, iced::Theme, iced::Renderer> {
     let palette = props.theme.theme.iced_palette();
 
-    let header = explorer_header(palette);
     let current_dir = current_directory_bar(props.vm.root_label, palette);
     let tree_list = explorer_tree(&props.vm, palette);
 
-    let content = column![header, current_dir, tree_list]
+    let content = column![current_dir, tree_list]
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(alignment::Horizontal::Left);
@@ -52,33 +47,7 @@ pub(crate) fn view(
     container(content)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding([WORKSPACE_PADDING_VERTICAL, WORKSPACE_PADDING_HORIZONTAL])
-        .into()
-}
-
-/// Render the "EXPLORER" section header.
-fn explorer_header<'a>(
-    palette: &'a IcedColorPalette,
-) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
-    let foreground = palette.foreground;
-
-    let title = text("EXPLORER")
-        .size(HEADER_FONT_SIZE)
-        .width(Length::Fill)
-        .wrapping(Wrapping::None)
-        .align_x(alignment::Horizontal::Left);
-
-    container(title)
-        .width(Length::Fill)
-        .height(Length::Fixed(HEADER_HEIGHT))
-        .padding([0.0, HEADER_PADDING_X])
-        .align_x(alignment::Horizontal::Left)
-        .align_y(alignment::Vertical::Center)
-        .style(move |_| iced::widget::container::Style {
-            background: None,
-            text_color: Some(foreground),
-            ..Default::default()
-        })
+        .padding(WORKSPACE_PADDING)
         .into()
 }
 
@@ -92,15 +61,15 @@ fn current_directory_bar<'a>(
     let foreground = palette.foreground;
 
     let label_text = text(label)
-        .size(BAR_FONT_SIZE)
+        .size(HEADER_FONT_SIZE)
         .width(Length::Fill)
         .wrapping(Wrapping::None)
         .align_x(alignment::Horizontal::Left);
 
     container(label_text)
         .width(Length::Fill)
-        .height(Length::Fixed(BAR_HEIGHT))
-        .padding([0.0, BAR_PADDING_X])
+        .height(Length::Fixed(HEADER_HEIGHT))
+        .padding([0.0, HEADER_PADDING_X])
         .align_x(alignment::Horizontal::Left)
         .align_y(alignment::Vertical::Center)
         .style(move |_| iced::widget::container::Style {
@@ -142,6 +111,7 @@ fn explorer_tree<'a>(
     container(scrollable)
         .width(Length::Fill)
         .height(Length::Fill)
+        .padding(Padding::default().bottom(TREE_PADDING_BOTTOM))
         .into()
 }
 
