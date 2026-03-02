@@ -134,6 +134,13 @@ fn open_error_tab(state: &mut TabsState, title: String) -> Task<TabsEvent> {
 }
 
 fn open_settings_tab(state: &mut TabsState) -> Task<TabsEvent> {
+    if let Some(tab_id) = state.tab_items().iter().find_map(|(tab_id, tab)| {
+        (tab.content() == TabContent::Settings).then_some(*tab_id)
+    }) {
+        state.activate(Some(tab_id));
+        return Task::done(TabsEvent::Effect(TabsEffect::Activated { tab_id }));
+    }
+
     let tab_id = state.allocate_tab_id();
 
     state.insert(
@@ -213,6 +220,27 @@ mod tests {
         let active = state.active_tab().expect("should have active tab");
         assert_eq!(active.title(), "Settings");
         assert_eq!(active.content(), TabContent::Settings);
+    }
+
+    #[test]
+    fn open_settings_tab_when_already_open_activates_existing_tab() {
+        let mut state = TabsState::default();
+        let _ = reduce(&mut state, TabsIntent::OpenSettingsTab);
+        let settings_id =
+            state.active_tab_id().expect("settings tab should open");
+
+        let _ = reduce(
+            &mut state,
+            TabsIntent::OpenTerminalTab {
+                title: String::from("shell"),
+            },
+        );
+        assert_eq!(state.len(), 2);
+
+        let _ = reduce(&mut state, TabsIntent::OpenSettingsTab);
+
+        assert_eq!(state.len(), 2);
+        assert_eq!(state.active_tab_id(), Some(settings_id));
     }
 
     #[test]
