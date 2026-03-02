@@ -21,6 +21,52 @@ pub struct Settings {
     pub font: FontSettings,
     pub theme: ThemeSettings,
     pub backend: BackendSettings,
+    pub interaction: InteractionSettings,
+}
+
+/// Determines how pointer clicks affect terminal block selection.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
+pub enum BlockSelectionMode {
+    /// Select a block when the primary (left) mouse button is clicked.
+    #[default]
+    PrimaryClick,
+    /// Ignore primary clicks for block selection and rely on external
+    /// commands (for example, context-menu actions).
+    CommandOnly,
+}
+
+/// Input settings controlling terminal interaction behavior.
+///
+/// # Example
+/// ```rust
+/// use otty_ui_term::settings::{BlockSelectionMode, InteractionSettings};
+///
+/// let interaction = InteractionSettings::default()
+///     .with_block_selection_mode(BlockSelectionMode::CommandOnly);
+/// assert_eq!(
+///     interaction.block_selection_mode(),
+///     BlockSelectionMode::CommandOnly
+/// );
+/// ```
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
+pub struct InteractionSettings {
+    block_selection_mode: BlockSelectionMode,
+}
+
+impl InteractionSettings {
+    /// Return the pointer block-selection mode.
+    pub fn block_selection_mode(&self) -> BlockSelectionMode {
+        self.block_selection_mode
+    }
+
+    /// Set the pointer block-selection mode.
+    pub fn with_block_selection_mode(
+        mut self,
+        mode: BlockSelectionMode,
+    ) -> Self {
+        self.block_selection_mode = mode;
+        self
+    }
 }
 
 #[derive(Default, Debug, Clone)]

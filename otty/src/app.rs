@@ -7,7 +7,8 @@ pub(crate) mod view;
 
 use iced::{Element, Size, Subscription, Task, Theme};
 use otty_ui_term::settings::{
-    BackendSettings, FontSettings, Settings, ThemeSettings,
+    BackendSettings, BlockSelectionMode, FontSettings, InteractionSettings,
+    Settings, ThemeSettings,
 };
 
 use crate::events::AppEvent;
@@ -132,5 +133,7 @@ fn terminal_settings(theme: &AppTheme, fonts: &FontsConfig) -> Settings {
         font: font_settings,
         theme: theme_settings,
         backend: BackendSettings::default(),
+        interaction: InteractionSettings::default()
+            .with_block_selection_mode(BlockSelectionMode::CommandOnly),
     }
 }

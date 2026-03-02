@@ -1,6 +1,7 @@
 use iced::Task;
 use otty_ui_term::settings::{
-    BackendSettings, FontSettings, Settings, ThemeSettings,
+    BackendSettings, BlockSelectionMode, FontSettings, InteractionSettings,
+    Settings, ThemeSettings,
 };
 
 use super::AppEvent;
@@ -57,6 +58,8 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
             current_theme.terminal_palette().clone(),
         )),
         backend: BackendSettings::default(),
+        interaction: InteractionSettings::default()
+            .with_block_selection_mode(BlockSelectionMode::CommandOnly),
     };
 
     let shell_path = data.terminal_shell().to_string();

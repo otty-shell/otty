@@ -20,6 +20,8 @@ pub(super) enum StateCommand {
     FocusTerminal(Id),
     /// Select the hovered block in a terminal widget.
     SelectHovered(Id),
+    /// Clear selected block highlight in a terminal widget.
+    ClearSelection(Id),
     /// Focus a generic iced element by id.
     FocusElement(Id),
     /// Close the tab (all panes were removed).
@@ -433,13 +435,25 @@ impl TerminalTabState {
 
     /// Close an open context menu.
     pub(super) fn close_context_menu(&mut self) -> StateCommand {
-        if self.context_menu.take().is_some() {
-            if let Some(pane) = self.focus {
-                return self.set_focus_on_pane(pane, false, true);
-            }
+        if self.context_menu.take().is_none() {
+            return StateCommand::None;
         }
 
-        StateCommand::None
+        self.selected_block = None;
+
+        let mut commands: Vec<StateCommand> = self
+            .terminals
+            .values()
+            .map(|entry| {
+                StateCommand::ClearSelection(entry.terminal.widget_id().clone())
+            })
+            .collect();
+
+        if let Some(pane) = self.focus {
+            commands.push(self.set_focus_on_pane(pane, false, true));
+        }
+
+        StateCommand::Batch(commands)
     }
 
     /// Handle a terminal widget event (title changes, shutdown, etc.).
@@ -727,6 +741,7 @@ mod tests {
     {
         let mut state = build_terminal_state("Shell");
         let pane = state.focus().expect("focused pane");
+        state.set_selected_block(10, String::from("block-1"));
 
         let _task = state.open_context_menu(
             pane,
@@ -743,6 +758,7 @@ mod tests {
 
         let _task = state.close_context_menu();
         assert!(state.context_menu().is_none());
+        assert!(state.selected_block().is_none());
         assert_eq!(state.focus(), Some(pane));
     }
 

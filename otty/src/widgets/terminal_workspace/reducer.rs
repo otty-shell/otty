@@ -527,6 +527,9 @@ fn execute_command(command: StateCommand) -> Task<TerminalWorkspaceEvent> {
         StateCommand::SelectHovered(id) => {
             TerminalView::command(id, BlockCommand::SelectHovered)
         },
+        StateCommand::ClearSelection(id) => {
+            TerminalView::command(id, BlockCommand::ClearSelection)
+        },
         StateCommand::FocusElement(id) => iced::widget::operation::focus(id),
         StateCommand::CloseTab { tab_id } => {
             Task::done(TerminalWorkspaceEvent::Effect(
