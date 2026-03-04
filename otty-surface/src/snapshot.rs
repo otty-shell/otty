@@ -183,8 +183,7 @@ impl SnapshotOwned {
             total_lines: surface.grid().total_lines(),
         };
         let visible_cell_count = size.columns * size.screen_lines;
-        let hyperlinks =
-            HyperlinkMap::build(surface, &cells, size, display_offset);
+        let hyperlinks = HyperlinkMap::build(&cells, size, display_offset);
 
         let damage = SnapshotDamage::from(surface.damage());
 

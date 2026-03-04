@@ -1435,11 +1435,7 @@ impl SurfaceModel for BlockSurface {
         };
         let visible_cell_count = size.columns * size.screen_lines;
 
-        let hyperlinks = HyperlinkMap::build_without_surface(
-            &cells,
-            size,
-            self.display_offset,
-        );
+        let hyperlinks = HyperlinkMap::build(&cells, size, self.display_offset);
 
         if selection.is_none() {
             if let Some(global_selection) = &self.global_selection {

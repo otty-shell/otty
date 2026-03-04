@@ -1,15 +1,20 @@
-use crate::cell::Hyperlink;
-use crate::index::{Boundary, Direction};
-use crate::search::{Match, RegexIter, RegexSearch};
-use crate::{
-    Flags, Point, SnapshotCell, SnapshotSize, Surface, point_to_viewport,
+use std::sync::LazyLock;
+
+use regex_automata::hybrid::regex::{
+    Cache as HybridRegexCache, Regex as HybridRegex,
 };
+use regex_automata::util::syntax::Config as RegexSyntaxConfig;
+
+use crate::cell::Hyperlink;
+use crate::{Flags, Point, SnapshotCell, SnapshotSize, point_to_viewport};
 
 /// Regex pattern for detecting URLs in terminal content.
 ///
 /// Matches common URL schemes including http(s), ftp, file, git, ssh, and various
 /// alternative protocols. Excludes whitespace and control characters.
 const URL_PATTERN: &str = "(?:ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file://|git://|ssh:|ftp://)[^\\s<>\\x00-\\x1F\\x7F-\\x9F\"']+";
+static URL_LINE_REGEX: LazyLock<HybridRegex> =
+    LazyLock::new(build_url_line_regex);
 
 /// Hyperlink span mapped to a contiguous range of cells.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,33 +63,8 @@ impl HyperlinkSpan {
 }
 
 impl HyperlinkMap {
-    /// Builds a hyperlink map from the given surface and snapshot cells.
-    ///
-    /// This method:
-    /// 1. Creates a cell-to-span index for O(1) lookups
-    /// 2. Processes OSC 8 hyperlinks (explicit terminal escape sequences)
-    /// 3. Detects URLs using regex pattern matching
-    ///
-    /// OSC 8 hyperlinks take precedence over detected URLs.
+    /// Builds a hyperlink map from a snapshot.
     pub(crate) fn build(
-        surface: &Surface,
-        cells: &[SnapshotCell],
-        size: SnapshotSize,
-        display_offset: usize,
-    ) -> Self {
-        Self::build_impl(Some(surface), cells, size, display_offset)
-    }
-
-    pub(crate) fn build_without_surface(
-        cells: &[SnapshotCell],
-        size: SnapshotSize,
-        display_offset: usize,
-    ) -> Self {
-        Self::build_impl(None, cells, size, display_offset)
-    }
-
-    fn build_impl(
-        surface: Option<&Surface>,
         cells: &[SnapshotCell],
         size: SnapshotSize,
         display_offset: usize,
@@ -102,9 +82,7 @@ impl HyperlinkMap {
         };
 
         map.ingest_osc_spans(cells, display_offset);
-        if let Some(surface) = surface {
-            map.ingest_detected_urls(surface, cells, display_offset);
-        }
+        map.ingest_detected_urls_from_cells(cells, display_offset);
         map
     }
 
@@ -269,95 +247,173 @@ impl HyperlinkMap {
         span_id
     }
 
-    /// Detects and processes URLs from cell content using regex pattern matching.
-    ///
-    /// URLs are detected using the URL_PATTERN regex. Only cells that are not
-    /// already assigned to an OSC 8 hyperlink are considered (OSC 8 takes precedence).
-    fn ingest_detected_urls(
+    fn is_cell_assigned(&self, cell_index: usize) -> bool {
+        self.cell_to_span
+            .get(cell_index)
+            .and_then(|id| *id)
+            .is_some()
+    }
+
+    fn ingest_detected_symbol(
         &mut self,
-        surface: &Surface,
+        segment: &mut DetectedSegment,
+        symbol: &DetectedSymbol,
+    ) {
+        if self.is_cell_assigned(symbol.cell_index) || symbol.is_spacer {
+            segment.flush(self);
+        } else {
+            segment.push(symbol.point, symbol.ch, symbol.cell_index);
+        }
+    }
+
+    /// Detects URLs from snapshot cells when no backing surface is available.
+    ///
+    /// This fallback path is used by composed snapshots (e.g. block surface)
+    /// where we only have visible cells in viewport order.
+    fn ingest_detected_urls_from_cells(
+        &mut self,
         cells: &[SnapshotCell],
         display_offset: usize,
     ) {
-        if cells.is_empty() {
+        if cells.is_empty() || self.columns == 0 {
             return;
         }
 
-        let start = cells.first().unwrap().point;
-        let end = cells.last().unwrap().point;
-        let (start, end) = if start <= end {
-            (start, end)
-        } else {
-            (end, start)
-        };
-
-        let mut regex = RegexSearch::new(URL_PATTERN)
-            .expect("hyperlink regex must compile");
-
-        let iter =
-            RegexIter::new(start, end, Direction::Right, surface, &mut regex);
-        for regex_match in iter {
-            self.ingest_detected_match(surface, display_offset, &regex_match);
-        }
-    }
-
-    /// Processes a single detected URL match from regex search.
-    ///
-    /// Iterates through each character of the URL, skipping cells that:
-    /// - Are already assigned to OSC 8 hyperlinks
-    /// - Are outside the viewport
-    /// - Are wide character spacers
-    ///
-    /// Contiguous segments are accumulated and flushed as separate spans when interrupted.
-    fn ingest_detected_match(
-        &mut self,
-        surface: &Surface,
-        display_offset: usize,
-        regex_match: &Match,
-    ) {
-        let mut point = *regex_match.start();
-        let end = *regex_match.end();
-        let mut segment = DetectedSegment::default();
-
-        loop {
-            let viewport_point = point_to_viewport(display_offset, point);
-            let mut assigned = true;
-            let mut cell_index = 0;
-
-            if let Some(view) = viewport_point {
-                if view.line < self.screen_lines {
-                    cell_index = view.line * self.columns + view.column.0;
-                    assigned = self
-                        .cell_to_span
-                        .get(cell_index)
-                        .and_then(|v| *v)
-                        .is_some();
-                }
-            }
-
-            if assigned || viewport_point.is_none() {
-                segment.flush(self);
-            } else {
-                let cell = &surface.grid()[point.line][point.column];
-                if !cell.flags.intersects(
-                    Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
-                ) {
-                    segment.push(point, cell.c, cell_index);
-                } else {
-                    segment.flush(self);
-                }
-            }
-
-            if point == end {
+        let regex = &*URL_LINE_REGEX;
+        let mut cache = regex.create_cache();
+        let mut line = LogicalLine::default();
+        for row in 0..self.screen_lines {
+            let row_start = row * self.columns;
+            let row_end = ((row + 1) * self.columns).min(cells.len());
+            if row_start >= row_end {
                 break;
             }
 
-            point = surface.expand_wide(point, Direction::Right);
-            point = point.add(surface, Boundary::None, 1);
+            let row_cells = &cells[row_start..row_end];
+            line.push_row(row_cells, row_start, self.columns, display_offset);
+
+            if !row_wraps(row_cells) {
+                self.ingest_detected_logical_line(&line, regex, &mut cache);
+                line.clear();
+            }
         }
 
-        segment.flush(self);
+        if !line.is_empty() {
+            self.ingest_detected_logical_line(&line, regex, &mut cache);
+        }
     }
+
+    fn ingest_detected_logical_line(
+        &mut self,
+        line: &LogicalLine,
+        regex: &HybridRegex,
+        cache: &mut HybridRegexCache,
+    ) {
+        if line.text.is_empty() {
+            return;
+        }
+
+        for matched in regex.find_iter(cache, line.text.as_str()) {
+            let mut segment = DetectedSegment::default();
+            let mut last_symbol_index = None;
+
+            for byte_index in matched.start()..matched.end() {
+                let Some(&symbol_index) = line.byte_to_symbol.get(byte_index)
+                else {
+                    continue;
+                };
+                if last_symbol_index == Some(symbol_index) {
+                    continue;
+                }
+                last_symbol_index = Some(symbol_index);
+
+                if let Some(symbol) = line.symbols.get(symbol_index) {
+                    self.ingest_detected_symbol(&mut segment, symbol);
+                }
+            }
+
+            segment.flush(self);
+        }
+    }
+}
+
+#[derive(Default)]
+struct LogicalLine {
+    text: String,
+    symbols: Vec<DetectedSymbol>,
+    byte_to_symbol: Vec<usize>,
+}
+
+impl LogicalLine {
+    fn push_row(
+        &mut self,
+        row_cells: &[SnapshotCell],
+        row_start: usize,
+        columns: usize,
+        display_offset: usize,
+    ) {
+        for (column, indexed) in row_cells.iter().enumerate() {
+            let ch = indexed.cell.c;
+            self.text.push(ch);
+            let fallback_index = row_start + column;
+            let cell_index = point_to_viewport(display_offset, indexed.point)
+                .map(|point| point.line * columns + point.column.0)
+                .unwrap_or(fallback_index);
+            let is_spacer = indexed.cell.flags.intersects(
+                Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
+            );
+
+            let symbol_index = self.symbols.len();
+            self.symbols.push(DetectedSymbol {
+                point: indexed.point,
+                ch,
+                cell_index,
+                is_spacer,
+            });
+
+            for _ in 0..ch.len_utf8() {
+                self.byte_to_symbol.push(symbol_index);
+            }
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+
+    fn clear(&mut self) {
+        self.text.clear();
+        self.symbols.clear();
+        self.byte_to_symbol.clear();
+    }
+}
+
+struct DetectedSymbol {
+    point: Point,
+    ch: char,
+    cell_index: usize,
+    is_spacer: bool,
+}
+
+fn row_wraps(row_cells: &[SnapshotCell]) -> bool {
+    row_cells
+        .iter()
+        .rev()
+        .find(|indexed| {
+            !indexed.cell.flags.intersects(
+                Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
+            )
+        })
+        .map(|indexed| indexed.cell.flags.contains(Flags::WRAPLINE))
+        .unwrap_or(false)
+}
+
+fn build_url_line_regex() -> HybridRegex {
+    let mut builder = HybridRegex::builder();
+    builder.syntax(RegexSyntaxConfig::new().case_insensitive(true));
+    builder
+        .build(URL_PATTERN)
+        .expect("hyperlink regex must compile")
 }
 
 /// Accumulates contiguous characters of a detected URL before flushing as a span.
@@ -398,8 +454,11 @@ impl DetectedSegment {
             return;
         }
 
+        let Some(start) = self.start else {
+            return;
+        };
         let link = Hyperlink::new(None::<String>, self.text.clone());
-        let span_id = map.push_span(link, self.start.unwrap(), self.end);
+        let span_id = map.push_span(link, start, self.end);
         for idx in &self.indices {
             map.set_span_for_index(span_id, *idx);
         }
@@ -407,5 +466,75 @@ impl DetectedSegment {
         self.text.clear();
         self.indices.clear();
         self.start = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cell::Cell;
+    use crate::index::{Column, Line};
+
+    fn cells_from_rows(rows: &[&str], columns: usize) -> Vec<SnapshotCell> {
+        let mut result = Vec::new();
+        for (line_index, row) in rows.iter().enumerate() {
+            let mut chars = row.chars();
+            for column in 0..columns {
+                let cell = Cell {
+                    c: chars.next().unwrap_or(' '),
+                    ..Cell::default()
+                };
+                result.push(SnapshotCell {
+                    point: Point::new(Line(line_index as i32), Column(column)),
+                    cell,
+                });
+            }
+        }
+        result
+    }
+
+    #[test]
+    fn build_detects_plain_url() {
+        let columns = 40;
+        let cells = cells_from_rows(&["visit https://otty.sh now"], columns);
+        let size = SnapshotSize {
+            columns,
+            screen_lines: 1,
+            total_lines: 1,
+        };
+        let map = HyperlinkMap::build(&cells, size, 0);
+
+        let span = map
+            .span_for_point(0, Point::new(Line(0), Column(8)))
+            .expect("url span");
+        assert_eq!(span.link.uri(), "https://otty.sh");
+        assert!(
+            map.span_for_point(0, Point::new(Line(0), Column(22)))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn build_detects_wrapped_url() {
+        let columns = 12;
+        let mut cells =
+            cells_from_rows(&["https://otty", ".sh and more"], columns);
+        cells[columns - 1].cell.flags.insert(Flags::WRAPLINE);
+        let size = SnapshotSize {
+            columns,
+            screen_lines: 2,
+            total_lines: 2,
+        };
+        let map = HyperlinkMap::build(&cells, size, 0);
+
+        let first = map
+            .span_for_point(0, Point::new(Line(0), Column(0)))
+            .expect("first row span");
+        let second = map
+            .span_for_point(0, Point::new(Line(1), Column(0)))
+            .expect("second row span");
+
+        assert_eq!(first.link.uri(), "https://otty.sh");
+        assert_eq!(second.link.uri(), "https://otty.sh");
     }
 }
