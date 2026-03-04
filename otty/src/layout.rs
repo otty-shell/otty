@@ -4,7 +4,13 @@ use crate::app::view::HEADER_SEPARATOR_HEIGHT;
 use crate::widgets::chrome::view::action_bar::ACTION_BAR_HEIGHT;
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_HEIGHT;
 
-// TODO:
+/// Shared compact control size used by dense toolbars and menus.
+pub(crate) const BUTTON_SIZE_COMPACT: f32 = 24.0;
+/// Shared regular control size used by form actions.
+pub(crate) const BUTTON_SIZE_REGULAR: f32 = 28.0;
+/// Shared large control size used by sidebar rail actions.
+pub(crate) const BUTTON_SIZE_RAIL: f32 = 44.0;
+
 pub(crate) fn screen_size_from_window(window_size: Size) -> Size {
     let height =
         (window_size.height - ACTION_BAR_HEIGHT - HEADER_SEPARATOR_HEIGHT)

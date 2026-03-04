@@ -3,6 +3,7 @@ use iced::{Element, Length, Size, Theme};
 
 use crate::components::primitive::menu_item;
 use crate::geometry::anchor_position;
+use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
 use crate::widgets::quick_launch::event::QuickLaunchIntent;
@@ -12,7 +13,7 @@ use crate::widgets::quick_launch::model::{
 use crate::widgets::quick_launch::state::ContextMenuState;
 
 const MENU_WIDTH: f32 = 220.0;
-const MENU_ITEM_HEIGHT: f32 = 24.0;
+const MENU_ITEM_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const MENU_VERTICAL_PADDING: f32 = 16.0;
 const MENU_MARGIN: f32 = 6.0;
 const MENU_CONTAINER_PADDING: f32 = 8.0;

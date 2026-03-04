@@ -2,6 +2,7 @@ use iced::widget::button::Status as ButtonStatus;
 use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Element, Length, Theme, alignment};
 
+use crate::layout::BUTTON_SIZE_REGULAR;
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::widgets::quick_launch::event::QuickLaunchIntent;
 use crate::widgets::quick_launch::model::QuickLaunchType;
@@ -14,7 +15,7 @@ const LABEL_WIDTH: f32 = 160.0;
 const INPUT_SIZE: f32 = 13.0;
 const INPUT_PADDING_X: f32 = 8.0;
 const INPUT_PADDING_Y: f32 = 6.0;
-const BUTTON_HEIGHT: f32 = 28.0;
+const BUTTON_HEIGHT: f32 = BUTTON_SIZE_REGULAR;
 const BUTTON_PADDING_X: f32 = 12.0;
 const FORM_PADDING: f32 = 16.0;
 const FORM_RIGHT_PADDING: f32 = 8.0;

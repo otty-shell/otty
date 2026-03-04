@@ -8,11 +8,11 @@ use crate::components::primitive::icon_button::{
 };
 use crate::fonts::FontsConfig;
 use crate::icons::{LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY};
+use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::theme::{StyleOverrides, ThemeProps};
 
 pub(crate) const ACTION_BAR_HEIGHT: f32 = 30.0;
 const ACTION_BAR_TITLE_SCALE: f32 = 0.9;
-const ACTION_BAR_CONTROL_BUTTON_SIZE: f32 = 24.0;
 const ACTION_BAR_CONTROL_ICON_SIZE: f32 = 18.0;
 const ACTION_BAR_LOGO_ICON_SIZE: f32 = 18.0;
 const ACTION_BAR_HORIZONTAL_PADDING: f32 = 12.0;
@@ -132,7 +132,7 @@ fn icon_button<'a>(
     let props = IconButtonProps {
         icon,
         theme,
-        size: ACTION_BAR_CONTROL_BUTTON_SIZE,
+        size: BUTTON_SIZE_COMPACT,
         icon_size: ACTION_BAR_CONTROL_ICON_SIZE,
         variant,
     };

@@ -7,17 +7,18 @@ use iced::{Alignment, Element, Length, alignment};
 
 use super::super::event::TabsIntent;
 use crate::icons;
+use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::theme::{StyleOverrides, ThemeProps};
 
-pub(crate) const TAB_BAR_HEIGHT: f32 = 25.0;
+pub(crate) const TAB_BAR_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 pub(crate) const TAB_BAR_SCROLL_ID: &str = "tab_bar_scroll";
 
-const TAB_BUTTON_HEIGHT: f32 = 25.0;
+const TAB_BUTTON_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const TAB_BUTTON_WIDTH: f32 = 235.0;
 const TAB_BUTTON_PADDING: f32 = 0.0;
 const TAB_LABEL_FONT_SIZE: f32 = 13.0;
 const TAB_PILL_PADDING: f32 = 2.0;
-const TAB_CLOSE_ICON_SIZE: f32 = 25.0;
+const TAB_CLOSE_ICON_SIZE: f32 = 18.0;
 const TAB_CLOSE_BUTTON_RIGHT_PADDING: f32 = 2.0;
 const TAB_CLOSE_BUTTON_PADDING: f32 = 0.0;
 

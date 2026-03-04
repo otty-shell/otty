@@ -2,9 +2,10 @@ use iced::widget::button::Status as ButtonStatus;
 use iced::widget::{button, text};
 use iced::{Element, Length, alignment};
 
+use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::theme::{IcedColorPalette, ThemeProps};
 
-const MENU_ITEM_HEIGHT: f32 = 24.0;
+const MENU_ITEM_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const MENU_ITEM_FONT_SIZE: f32 = 13.0;
 const MENU_ITEM_HORIZONTAL_PADDING: f32 = 10.0;
 const MENU_ITEM_VERTICAL_PADDING: f32 = 1.0;

@@ -1,8 +1,5 @@
 use iced::Size;
 
-/// Tab bar height for pane grid calculations.
-const TAB_BAR_HEIGHT: f32 = 25.0;
-
 /// Window and screen geometry state.
 #[derive(Default)]
 pub(crate) struct State {

@@ -7,6 +7,7 @@ use crate::components::primitive::{
     menu_item, resize_grips, sidebar_workspace_panel,
 };
 use crate::geometry::{anchor_position, menu_height_for_items};
+use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
@@ -33,13 +34,14 @@ use crate::widgets::terminal_workspace::view::{
 };
 
 pub(crate) const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
+const SIDEBAR_SEPARATOR_WIDTH: f32 = 0.5;
 const SEPARATOR_ALPHA: f32 = 0.3;
 const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_GRID_RESIZE_GRAB: f32 = 8.0;
 
 // Add menu overlay constants
 const ADD_MENU_WIDTH: f32 = 220.0;
-const ADD_MENU_ITEM_HEIGHT: f32 = 24.0;
+const ADD_MENU_ITEM_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const ADD_MENU_VERTICAL_PADDING: f32 = 16.0;
 const ADD_MENU_MARGIN: f32 = 6.0;
 const ADD_MENU_CONTAINER_PADDING_X: f32 = 8.0;
@@ -191,6 +193,16 @@ fn view_sidebar_layout<'a>(
     .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event)));
 
     let palette = theme_props.theme.iced_palette();
+    let mut sidebar_separator_color = palette.dim_white;
+    sidebar_separator_color.a = SEPARATOR_ALPHA;
+
+    let sidebar_separator = container(Space::new())
+        .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
+        .height(Length::Fill)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(sidebar_separator_color.into()),
+            ..Default::default()
+        });
 
     let sidebar_pane_grid =
         PaneGrid::new(app.widgets.sidebar.panes(), move |_pane, pane_kind, _| {
@@ -240,7 +252,7 @@ fn view_sidebar_layout<'a>(
             }
         });
 
-    row![menu_rail, sidebar_pane_grid]
+    row![menu_rail, sidebar_separator, sidebar_pane_grid]
         .width(Length::Fill)
         .height(Length::Fill)
         .into()

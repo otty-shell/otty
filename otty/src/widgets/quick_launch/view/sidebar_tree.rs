@@ -41,8 +41,8 @@ pub(crate) fn view(
     props: SidebarTreeProps<'_>,
 ) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
     let palette = props.theme.theme.iced_palette().clone();
-    let dim_foreground = palette.dim_foreground;
-    let foreground = palette.foreground;
+    let icon_color = palette.foreground;
+    let highlight_icon_color = palette.blue;
     let error_color = palette.red;
     let overlay = palette.overlay;
     let row_palette = palette.clone();
@@ -53,7 +53,7 @@ pub(crate) fn view(
 
     let tree_view =
         TreeView::new(props.data.root().children(), move |context| {
-            render_entry(context, launching, dim_foreground, foreground)
+            render_entry(context, launching, icon_color, highlight_icon_color)
         })
         .selected_row(props.selected_path)
         .hovered_row(props.hovered_path)
@@ -118,8 +118,8 @@ pub(crate) fn view(
 fn render_entry<'a>(
     context: &TreeRowContext<'a, QuickLaunchNode>,
     launching: &std::collections::HashMap<NodePath, LaunchInfo>,
-    dim_foreground: Color,
-    foreground: Color,
+    icon_color: Color,
+    highlight_icon_color: Color,
 ) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
     let is_indicator_highlighted = launching
         .get(&context.entry.path)
@@ -133,14 +133,14 @@ fn render_entry<'a>(
             } else {
                 FOLDER
             };
-            (icon, dim_foreground)
+            (icon, icon_color)
         },
         QuickLaunchNode::Command(_) => (
             PLAY,
             if is_indicator_highlighted {
-                foreground
+                highlight_icon_color
             } else {
-                dim_foreground
+                icon_color
             },
         ),
     };

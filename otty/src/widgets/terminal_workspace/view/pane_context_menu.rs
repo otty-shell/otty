@@ -5,12 +5,13 @@ use crate::components::primitive::menu_item::{
     MenuItemEvent, MenuItemProps, view as menu_item_view,
 };
 use crate::geometry::{anchor_position, menu_height_for_items};
+use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
 use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
 
 const MENU_CONTAINER_WIDTH: f32 = 250.0;
-const MENU_ITEM_HEIGHT: f32 = 24.0;
+const MENU_ITEM_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const MENU_VERTICAL_PADDING: f32 = 20.0;
 const MENU_MARGIN: f32 = 6.0;
 const MENU_CONTAINER_PADDING_X: f32 = 10.0;

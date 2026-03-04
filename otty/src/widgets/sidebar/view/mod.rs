@@ -4,9 +4,10 @@ use iced::{Border, Element, Length, Theme, alignment};
 use super::event::SidebarIntent;
 use super::model::{SIDEBAR_MENU_WIDTH, SidebarItem, SidebarViewModel};
 use crate::icons;
+use crate::layout::BUTTON_SIZE_RAIL;
 use crate::theme::ThemeProps;
 
-const MENU_BUTTON_SIZE: f32 = 44.0;
+const MENU_BUTTON_SIZE: f32 = BUTTON_SIZE_RAIL;
 const MENU_ICON_SIZE: f32 = 20.0;
 const MENU_BUTTON_PADDING: f32 = 8.0;
 const ACTIVE_BORDER_WIDTH: f32 = 2.0;

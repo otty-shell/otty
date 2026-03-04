@@ -4,12 +4,13 @@ use iced::{Element, Length, Padding, alignment};
 use otty_ui_tree::{TreeRowContext, TreeView};
 
 use crate::icons::{FILE, FOLDER, FOLDER_OPENED};
+use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::widgets::explorer::event::ExplorerIntent;
 use crate::widgets::explorer::model::{ExplorerTreeViewModel, FileNode};
 
-const HEADER_HEIGHT: f32 = 25.0;
+const HEADER_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const HEADER_PADDING_X: f32 = 10.0;
 const HEADER_FONT_SIZE: f32 = 12.0;
 
@@ -85,7 +86,7 @@ fn explorer_tree<'a>(
     vm: &ExplorerTreeViewModel<'a>,
     palette: &'a IcedColorPalette,
 ) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
-    let icon_color = palette.dim_foreground;
+    let icon_color = palette.foreground;
     let tree_view = TreeView::new(vm.tree, move |context| {
         render_entry(context, icon_color)
     })

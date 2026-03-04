@@ -9,6 +9,7 @@ use otty_ui_term::parse_hex_color;
 use otty_ui_tree::{TreeRowContext, TreeView};
 
 use crate::icons::{FOLDER, FOLDER_OPENED, SIDEBAR_SETTINGS};
+use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::widgets::settings::event::SettingsIntent;
@@ -20,7 +21,7 @@ use crate::widgets::settings::model::{
 const HEADER_HEIGHT: f32 = 32.0;
 const HEADER_PADDING_X: f32 = 12.0;
 const HEADER_FONT_SIZE: f32 = 12.0;
-const HEADER_BUTTON_HEIGHT: f32 = 22.0;
+const HEADER_BUTTON_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const HEADER_BUTTON_PADDING_X: f32 = 10.0;
 const HEADER_BUTTON_SPACING: f32 = 8.0;
 
@@ -115,7 +116,7 @@ fn settings_nav_tree<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
     let palette = props.theme.theme.iced_palette().clone();
-    let icon_color = palette.dim_foreground;
+    let icon_color = palette.foreground;
     let row_palette = palette.clone();
 
     let tree_view = TreeView::new(props.vm.tree, move |context| {

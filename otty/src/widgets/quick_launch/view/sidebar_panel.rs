@@ -6,11 +6,12 @@ use crate::components::primitive::icon_button::{
     self, IconButtonProps, IconButtonVariant,
 };
 use crate::icons;
+use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::theme::ThemeProps;
 use crate::widgets::quick_launch::event::QuickLaunchIntent;
 use crate::widgets::quick_launch::model::QuickLaunchTreeViewModel;
 
-const HEADER_HEIGHT: f32 = 25.0;
+const HEADER_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const TITLE_SIZE: f32 = 13.0;
 const HEADER_PADDING_H: f32 = 10.0;
 const ADD_BUTTON_ICON_SIZE: f32 = 18.0;
