@@ -16,7 +16,7 @@ const MENU_WIDTH: f32 = 220.0;
 const MENU_ITEM_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const MENU_VERTICAL_PADDING: f32 = 16.0;
 const MENU_MARGIN: f32 = 6.0;
-const MENU_CONTAINER_PADDING: f32 = 8.0;
+const MENU_CONTAINER_PADDING_Y: f32 = 8.0;
 
 /// Props for the quick launch context menu.
 pub(crate) struct ContextMenuProps<'a> {
@@ -101,9 +101,8 @@ pub(crate) fn view(
     }
 
     let item_count = items.len();
-    let menu_height = item_count as f32 * MENU_ITEM_HEIGHT
-        + MENU_VERTICAL_PADDING
-        + MENU_CONTAINER_PADDING * 2.0;
+    let menu_height =
+        item_count as f32 * MENU_ITEM_HEIGHT + MENU_VERTICAL_PADDING;
 
     let anchor = anchor_position(
         props.menu.cursor,
@@ -113,12 +112,12 @@ pub(crate) fn view(
         MENU_MARGIN,
     );
 
-    let menu_content = column(items).spacing(0);
+    let menu_content = column(items).spacing(0).width(Length::Fill);
 
     let style_fn = menu_panel_style(props.theme);
     let menu_panel = container(menu_content)
         .width(Length::Fixed(MENU_WIDTH))
-        .padding(MENU_CONTAINER_PADDING)
+        .padding([MENU_CONTAINER_PADDING_Y, 0.0])
         .style(style_fn);
 
     let positioned_menu = container(menu_panel).padding(iced::Padding {
