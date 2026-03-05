@@ -430,14 +430,14 @@ fn view_add_menu_overlay<'a>(
             SidebarIntent::AddMenuCreateTab,
         ),
         add_menu_item(
-            "Create command",
-            theme_props,
-            SidebarIntent::AddMenuCreateCommand,
-        ),
-        add_menu_item(
             "Create folder",
             theme_props,
             SidebarIntent::AddMenuCreateFolder,
+        ),
+        add_menu_item(
+            "Create quick launch",
+            theme_props,
+            SidebarIntent::AddMenuCreateCommand,
         ),
     ];
 

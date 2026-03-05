@@ -348,11 +348,11 @@ fn reduce_copy_selection(
         return Task::none();
     };
 
-    let close_cmd =
-        with_terminal_tab(state, tab_id, |tab| tab.close_context_menu());
     let copy_task =
         TerminalView::command(widget_id, BlockCommand::CopySelection);
-    Task::batch(vec![close_cmd, copy_task])
+    let close_cmd =
+        with_terminal_tab(state, tab_id, |tab| tab.close_context_menu());
+    Task::batch(vec![copy_task, close_cmd])
 }
 
 fn reduce_paste_into_prompt(
@@ -404,10 +404,10 @@ fn reduce_copy_selected_block(
         CopyKind::Command => BlockCommand::CopyCommand(block_id),
     };
 
+    let copy_task = TerminalView::command(widget_id, command);
     let close_cmd =
         with_terminal_tab(state, tab_id, |tab| tab.close_context_menu());
-    let copy_task = TerminalView::command(widget_id, command);
-    Task::batch(vec![close_cmd, copy_task])
+    Task::batch(vec![copy_task, close_cmd])
 }
 
 fn reduce_sync_selection(

@@ -71,7 +71,7 @@ pub(crate) fn view(
                 props.theme,
             ));
             items.push(menu_item_element(
-                "Create Launch",
+                "Create quick launch",
                 ContextMenuAction::CreateCommand,
                 props.theme,
             ));

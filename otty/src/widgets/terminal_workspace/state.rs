@@ -315,6 +315,11 @@ impl TerminalTabState {
         axis: pane_grid::Axis,
         terminal_id: u64,
     ) -> StateCommand {
+        let source_terminal = self.pane_terminal_id(pane).and_then(|id| {
+            self.terminals
+                .get(&id)
+                .map(|entry| (id, entry.terminal.widget_id().clone()))
+        });
         let split = self.panes.split(axis, pane, terminal_id);
 
         if let Some((new_pane, _)) = split {
@@ -340,9 +345,17 @@ impl TerminalTabState {
             );
             self.focus = Some(new_pane);
             self.context_menu = None;
+            if let Some((source_terminal_id, _)) = source_terminal.as_ref() {
+                self.clear_selected_block_for_terminal(*source_terminal_id);
+            }
             self.update_title_from_terminal(Some(terminal_id));
 
-            return StateCommand::FocusTerminal(widget_id);
+            let mut commands = Vec::new();
+            if let Some((_, source_widget_id)) = source_terminal {
+                commands.push(StateCommand::ClearSelection(source_widget_id));
+            }
+            commands.push(StateCommand::FocusTerminal(widget_id));
+            return StateCommand::Batch(commands);
         }
 
         StateCommand::None
@@ -585,7 +598,7 @@ mod tests {
     use iced::{Point, Size};
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-    use super::{PaneContextMenuState, TerminalTabState};
+    use super::{PaneContextMenuState, StateCommand, TerminalTabState};
     use crate::widgets::terminal_workspace::model::TerminalKind;
 
     #[cfg(unix)]
@@ -688,6 +701,18 @@ mod tests {
         assert_eq!(state.terminals().len(), 2);
         assert!(state.contains_terminal(11));
         assert_eq!(state.focused_terminal_id(), Some(11));
+    }
+
+    #[test]
+    fn given_selected_block_on_source_when_split_then_selection_is_cleared() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+        state.set_selected_block(10, String::from("block-1"));
+
+        let command = state.split_pane(pane, pane_grid::Axis::Vertical, 11);
+
+        assert!(state.selected_block().is_none());
+        assert!(matches!(command, StateCommand::Batch(_)));
     }
 
     #[test]
