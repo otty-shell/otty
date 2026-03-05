@@ -164,7 +164,7 @@ impl SettingsData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsSection {
     Terminal,
-    Theme,
+    Appearance,
 }
 
 impl SettingsSection {
@@ -172,7 +172,7 @@ impl SettingsSection {
     pub(crate) fn title(&self) -> &'static str {
         match self {
             Self::Terminal => "Terminal",
-            Self::Theme => "Theme",
+            Self::Appearance => "Appearance",
         }
     }
 }

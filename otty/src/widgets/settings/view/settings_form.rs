@@ -1,14 +1,12 @@
 use iced::widget::button::Status as ButtonStatus;
 use iced::widget::text::Wrapping;
 use iced::widget::{
-    Column, Space, button, column, container, row, scrollable, svg, text,
-    text_input,
+    Column, Space, button, column, container, row, scrollable, text, text_input,
 };
 use iced::{Color, Element, Length, Theme, alignment};
 use otty_ui_term::parse_hex_color;
 use otty_ui_tree::{TreeRowContext, TreeView};
 
-use crate::icons::{FOLDER, FOLDER_OPENED, SIDEBAR_SETTINGS};
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
@@ -26,12 +24,13 @@ const HEADER_BUTTON_PADDING_X: f32 = 10.0;
 const HEADER_BUTTON_SPACING: f32 = 8.0;
 
 const NAV_WIDTH: f32 = 220.0;
+const NAV_SEPARATOR_WIDTH: f32 = 0.5;
 const NAV_ROW_HEIGHT: f32 = 24.0;
 const NAV_FONT_SIZE: f32 = 12.0;
 const NAV_INDENT: f32 = 14.0;
-const NAV_ICON_SIZE: f32 = 14.0;
 const NAV_ROW_PADDING_X: f32 = 6.0;
 const NAV_ROW_SPACING: f32 = 6.0;
+const SEPARATOR_ALPHA: f32 = 0.3;
 
 const FORM_PADDING: f32 = 16.0;
 const FORM_SECTION_SPACING: f32 = 16.0;
@@ -104,9 +103,18 @@ fn settings_split_view<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
     let nav = settings_nav_tree(props);
+    let mut separator_color = props.theme.theme.iced_palette().dim_white;
+    separator_color.a = SEPARATOR_ALPHA;
+    let separator = container(Space::new())
+        .width(Length::Fixed(NAV_SEPARATOR_WIDTH))
+        .height(Length::Fill)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(separator_color.into()),
+            ..Default::default()
+        });
     let form = settings_form(props);
 
-    row![nav, form]
+    row![nav, separator, form]
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
@@ -116,19 +124,16 @@ fn settings_nav_tree<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
     let palette = props.theme.theme.iced_palette().clone();
-    let icon_color = palette.foreground;
     let row_palette = palette.clone();
 
-    let tree_view = TreeView::new(props.vm.tree, move |context| {
-        render_nav_row(context, icon_color)
-    })
-    .selected_row(Some(props.vm.selected_path))
-    .hovered_row(props.vm.hovered_path)
-    .on_press(|path| SettingsIntent::NodePressed { path })
-    .on_hover(|path| SettingsIntent::NodeHovered { path })
-    .row_style(move |context| nav_row_style(&row_palette, context))
-    .indent_size(NAV_INDENT)
-    .spacing(0.0);
+    let tree_view = TreeView::new(props.vm.tree, render_nav_row)
+        .selected_row(Some(props.vm.selected_path))
+        .hovered_row(props.vm.hovered_path)
+        .on_press(|path| SettingsIntent::NodePressed { path })
+        .on_hover(|path| SettingsIntent::NodeHovered { path })
+        .row_style(move |context| nav_row_style(&row_palette, context))
+        .indent_size(NAV_INDENT)
+        .spacing(0.0);
 
     let scroll_palette = palette.clone();
     let scrollable = scrollable::Scrollable::new(tree_view.view())
@@ -150,10 +155,7 @@ fn settings_nav_tree<'a>(
 
 fn render_nav_row<'a>(
     context: &TreeRowContext<'a, SettingsNode>,
-    icon_color: Color,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let icon_view = svg_icon(nav_icon(context.entry.node), icon_color);
-
     let title = container(
         text(context.entry.node.title())
             .size(NAV_FONT_SIZE)
@@ -166,7 +168,7 @@ fn render_nav_row<'a>(
     .align_y(alignment::Vertical::Center);
 
     container(
-        row![icon_view, title]
+        row![title]
             .spacing(NAV_ROW_SPACING)
             .align_y(alignment::Vertical::Center),
     )
@@ -182,7 +184,7 @@ fn settings_form<'a>(
     let content: Element<'a, SettingsIntent, Theme, iced::Renderer> =
         match props.vm.selected_section {
             SettingsSection::Terminal => terminal_form(props),
-            SettingsSection::Theme => theme_form(props),
+            SettingsSection::Appearance => theme_form(props),
         };
 
     let palette = props.theme.theme.iced_palette().clone();
@@ -294,10 +296,13 @@ fn theme_form<'a>(
         palette_column = palette_column.push(row);
     }
 
-    let content =
-        column![section_title("Theme", props.theme), presets, palette_column]
-            .spacing(FORM_SECTION_SPACING)
-            .padding(FORM_PADDING);
+    let content = column![
+        section_title("Appearance", props.theme),
+        presets,
+        palette_column
+    ]
+    .spacing(FORM_SECTION_SPACING)
+    .padding(FORM_PADDING);
 
     content.into()
 }
@@ -410,34 +415,4 @@ fn nav_row_style(
     context: &TreeRowContext<'_, SettingsNode>,
 ) -> container::Style {
     tree_row_style(palette, context.is_selected, context.is_hovered)
-}
-
-fn nav_icon(node: &SettingsNode) -> &'static [u8] {
-    if node.is_folder() {
-        if node.is_expanded() {
-            FOLDER_OPENED
-        } else {
-            FOLDER
-        }
-    } else {
-        SIDEBAR_SETTINGS
-    }
-}
-
-fn svg_icon<'a>(
-    icon: &'static [u8],
-    color: Color,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let handle = svg::Handle::from_memory(icon);
-    let svg_icon = svg::Svg::new(handle)
-        .width(Length::Fixed(NAV_ICON_SIZE))
-        .height(Length::Fixed(NAV_ICON_SIZE))
-        .style(move |_, _| svg::Style { color: Some(color) });
-
-    container(svg_icon)
-        .width(Length::Fixed(NAV_ICON_SIZE))
-        .height(Length::Fill)
-        .align_x(alignment::Horizontal::Center)
-        .align_y(alignment::Vertical::Center)
-        .into()
 }

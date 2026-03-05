@@ -247,10 +247,10 @@ mod tests {
         let _task = reduce(
             &mut state,
             SettingsIntent::NodePressed {
-                path: vec![String::from("General"), String::from("Theme")],
+                path: vec![String::from("Appearance")],
             },
         );
 
-        assert_eq!(state.selected_section(), SettingsSection::Theme);
+        assert_eq!(state.selected_section(), SettingsSection::Appearance);
     }
 }

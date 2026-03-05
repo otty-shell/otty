@@ -60,18 +60,12 @@ impl SettingsState {
 
     /// Create state from a persisted settings payload.
     pub(crate) fn from_settings(settings: SettingsData) -> Self {
-        let tree = vec![SettingsNode::folder(
-            "General",
-            vec![
-                SettingsNode::section(SettingsSection::Terminal),
-                SettingsNode::section(SettingsSection::Theme),
-            ],
-        )];
-        let selected_section = SettingsSection::Terminal;
-        let selected_path = vec![
-            String::from("General"),
-            selected_section.title().to_string(),
+        let tree = vec![
+            SettingsNode::section(SettingsSection::Terminal),
+            SettingsNode::section(SettingsSection::Appearance),
         ];
+        let selected_section = SettingsSection::Terminal;
+        let selected_path = vec![selected_section.title().to_string()];
         let palette_inputs = settings.theme_palette().to_vec();
 
         Self {
@@ -267,24 +261,13 @@ mod tests {
     }
 
     #[test]
-    fn given_folder_path_when_select_path_then_toggles_expansion() {
-        let mut state = SettingsState::default();
-        let path = vec![String::from("General")];
-        assert!(state.tree[0].is_expanded());
-
-        state.select_path(&path);
-
-        assert!(!state.tree[0].is_expanded());
-    }
-
-    #[test]
     fn given_section_path_when_select_path_then_updates_selected_section() {
         let mut state = SettingsState::default();
-        let path = vec![String::from("General"), String::from("Theme")];
+        let path = vec![String::from("Appearance")];
 
         state.select_path(&path);
 
-        assert_eq!(state.selected_section, SettingsSection::Theme);
+        assert_eq!(state.selected_section, SettingsSection::Appearance);
         assert_eq!(state.selected_path, path);
     }
 }
