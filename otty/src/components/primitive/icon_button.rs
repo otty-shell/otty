@@ -1,6 +1,7 @@
 use iced::widget::{button, container, svg};
 use iced::{Element, Length, alignment};
 
+use crate::layout::BUTTON_RADIUS_ROUNDED;
 use crate::theme::{StyleOverrides, ThemeProps};
 
 /// UI events emitted by an icon button.
@@ -65,7 +66,13 @@ pub(crate) fn view<'a>(
         .padding(ICON_BUTTON_PADDING)
         .width(Length::Fixed(props.size))
         .height(Length::Fixed(props.size))
-        .style(|_, _| iced::widget::button::Style::default())
+        .style(|_, _| iced::widget::button::Style {
+            border: iced::Border {
+                radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
         .into()
 }
 

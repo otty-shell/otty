@@ -7,7 +7,7 @@ use iced::{Color, Element, Length, Theme, alignment};
 use otty_ui_term::parse_hex_color;
 use otty_ui_tree::{TreeRowContext, TreeView};
 
-use crate::layout::BUTTON_SIZE_COMPACT;
+use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_COMPACT};
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::widgets::settings::event::SettingsIntent;
@@ -393,6 +393,7 @@ fn button_style(
         text_color,
         border: iced::Border {
             width: 0.0,
+            radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
             ..Default::default()
         },
         ..Default::default()

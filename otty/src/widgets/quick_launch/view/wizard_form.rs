@@ -2,7 +2,7 @@ use iced::widget::button::Status as ButtonStatus;
 use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Element, Length, Theme, alignment};
 
-use crate::layout::BUTTON_SIZE_REGULAR;
+use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_REGULAR};
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::widgets::quick_launch::event::QuickLaunchIntent;
 use crate::widgets::quick_launch::model::QuickLaunchType;
@@ -440,7 +440,10 @@ fn button_style(
     button::Style {
         background,
         text_color,
-        border: iced::Border::default(),
+        border: iced::Border {
+            radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
+            ..Default::default()
+        },
         ..Default::default()
     }
 }

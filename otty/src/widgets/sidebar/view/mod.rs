@@ -4,7 +4,7 @@ use iced::{Border, Element, Length, Theme, alignment};
 use super::event::SidebarIntent;
 use super::model::{SIDEBAR_MENU_WIDTH, SidebarItem, SidebarViewModel};
 use crate::icons;
-use crate::layout::BUTTON_SIZE_RAIL;
+use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_RAIL};
 use crate::theme::ThemeProps;
 
 const MENU_BUTTON_SIZE: f32 = BUTTON_SIZE_RAIL;
@@ -158,7 +158,10 @@ fn sidebar_button<'a>(
         .height(Length::Fixed(MENU_BUTTON_SIZE))
         .style(|_, _| iced::widget::button::Style {
             background: None,
-            border: Border::default(),
+            border: Border {
+                radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
+                ..Default::default()
+            },
             ..Default::default()
         })
         .into()

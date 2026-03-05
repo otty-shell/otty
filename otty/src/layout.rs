@@ -10,6 +10,8 @@ pub(crate) const BUTTON_SIZE_COMPACT: f32 = 24.0;
 pub(crate) const BUTTON_SIZE_REGULAR: f32 = 28.0;
 /// Shared large control size used by sidebar rail actions.
 pub(crate) const BUTTON_SIZE_RAIL: f32 = 44.0;
+/// Shared rounded corner radius for standard buttons.
+pub(crate) const BUTTON_RADIUS_ROUNDED: f32 = 6.0;
 
 pub(crate) fn screen_size_from_window(window_size: Size) -> Size {
     let height =
