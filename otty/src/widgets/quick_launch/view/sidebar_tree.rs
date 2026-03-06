@@ -9,12 +9,13 @@ use otty_ui_tree::{TreeRowContext, TreeView};
 use crate::icons::{FOLDER, FOLDER_OPENED, PLAY};
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::ThemeProps;
-use crate::widgets::quick_launch::event::QuickLaunchIntent;
-use crate::widgets::quick_launch::model::{
+use super::super::event::QuickLaunchIntent;
+use super::super::types::{
     LaunchInfo, NodePath, QuickLaunchFile, QuickLaunchNode,
+    InlineEditKind, DropTarget,
 };
-use crate::widgets::quick_launch::state::{
-    DropTarget, InlineEditKind, InlineEditState,
+use super::super::state::{
+    InlineEditState,
 };
 
 const TREE_ROW_HEIGHT: f32 = 24.0;

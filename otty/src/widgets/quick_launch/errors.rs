@@ -34,7 +34,7 @@ pub(crate) enum QuickLaunchWizardError {
 
 /// Build a human-readable error message for a failed launch.
 pub(crate) fn quick_launch_error_message(
-    command: &super::model::QuickLaunch,
+    command: &super::types::QuickLaunch,
     error: &dyn std::fmt::Display,
 ) -> String {
     format!("Command: {}\nError: {error}", command.title(),)

@@ -89,7 +89,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::widgets::explorer::model::FileNode;
+    use crate::widgets::explorer::types::FileNode;
 
     fn ctx(active_shell_cwd: Option<PathBuf>) -> ExplorerCtx {
         ExplorerCtx { active_shell_cwd }

@@ -10,10 +10,12 @@ use otty_ui_tree::{TreeRowContext, TreeView};
 use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_COMPACT};
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::widgets::settings::event::SettingsIntent;
-use crate::widgets::settings::model::{
-    SettingsNode, SettingsPreset, SettingsSection, SettingsViewModel,
-    is_valid_hex_color, palette_label,
+use crate::widgets::settings::types::PALETTE_LABELS;
+use super::super::model::SettingsViewModel;
+use super::super::event::SettingsIntent;
+use super::super::services::{is_valid_hex_color};
+use super::super::types::{
+    SettingsNode, SettingsPreset, SettingsSection,
 };
 
 const HEADER_HEIGHT: f32 = 32.0;
@@ -247,7 +249,7 @@ fn theme_form<'a>(
 
     let mut palette_column = Column::new().spacing(PALETTE_ROW_SPACING);
     for (index, value) in props.vm.palette_inputs.iter().enumerate() {
-        let label_text = palette_label(index).map_or_else(
+        let label_text = PALETTE_LABELS.get(index).copied().map_or_else(
             || {
                 let index_display = index + 1;
                 format!("Color {index_display}")

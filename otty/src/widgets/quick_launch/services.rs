@@ -8,12 +8,15 @@ use otty_ui_term::settings::{
     LocalSessionOptions, SSHSessionOptions, SessionKind,
 };
 
-use super::errors::QuickLaunchError;
-use super::model::{
+use crate::services::terminal_settings_for_session;
+use super::constants::SSH_DEFAULT_PORT;
+use super::errors::{QuickLaunchWizardError, QuickLaunchError};
+use super::types::{
     CommandSpec, NodePath, PreparedQuickLaunch, QuickLaunch,
     QuickLaunchSetupOutcome,
+    CustomCommand, EnvVar, QuickLaunchType, SshCommand,
 };
-use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
+use super::state::WizardEditorState;
 
 const QUICK_LAUNCH_SSH_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -112,7 +115,7 @@ fn probe_launch_runtime(
 }
 
 fn probe_ssh_session(
-    ssh: &super::model::SshCommand,
+    ssh: &super::types::SshCommand,
     cancel: &Arc<AtomicBool>,
 ) -> Result<(), QuickLaunchError> {
     let options = ssh_session(ssh, cancel);
@@ -153,7 +156,7 @@ fn command_session(
     }
 }
 
-fn custom_session(custom: &super::model::CustomCommand) -> LocalSessionOptions {
+fn custom_session(custom: &super::types::CustomCommand) -> LocalSessionOptions {
     let mut options = LocalSessionOptions::default()
         .with_program(custom.program())
         .with_args(custom.args().to_vec());
@@ -170,7 +173,7 @@ fn custom_session(custom: &super::model::CustomCommand) -> LocalSessionOptions {
 }
 
 fn ssh_session(
-    ssh: &super::model::SshCommand,
+    ssh: &super::types::SshCommand,
     cancel: &Arc<AtomicBool>,
 ) -> SSHSessionOptions {
     let host = format!("{}:{}", ssh.host(), ssh.port());
@@ -200,7 +203,7 @@ fn ssh_session(
 }
 
 fn validate_custom_runtime(
-    custom: &super::model::CustomCommand,
+    custom: &super::types::CustomCommand,
 ) -> Result<(), QuickLaunchError> {
     let program = custom.program().trim();
     let _ = find_program_path(program)?;
@@ -228,7 +231,7 @@ fn validate_custom_runtime(
 }
 
 fn validate_ssh_runtime(
-    ssh: &super::model::SshCommand,
+    ssh: &super::types::SshCommand,
 ) -> Result<(), QuickLaunchError> {
     if let Some(identity) = ssh.identity_file() {
         let identity = identity.trim();
@@ -338,13 +341,106 @@ fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
+/// Build a domain quick launch command from editor draft state.
+pub(crate) fn build_command(
+    editor: &WizardEditorState,
+) -> Result<QuickLaunch, QuickLaunchWizardError> {
+    let title = editor.title().trim();
+    if title.is_empty() {
+        return Err(QuickLaunchWizardError::TitleRequired);
+    }
+
+    let spec = match editor.command_type() {
+        QuickLaunchType::Custom => {
+            let Some(custom) = editor.custom() else {
+                return Err(QuickLaunchWizardError::MissingCustomDraft);
+            };
+            let program = custom.program().trim();
+            if program.is_empty() {
+                return Err(QuickLaunchWizardError::ProgramRequired);
+            }
+
+            let env = custom
+                .env()
+                .iter()
+                .filter_map(|(key, value)| {
+                    let key = key.trim();
+                    if key.is_empty() {
+                        return None;
+                    }
+                    Some(EnvVar {
+                        key: key.to_string(),
+                        value: value.clone(),
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            let working_directory = custom.working_directory().trim();
+
+            CommandSpec::Custom {
+                custom: CustomCommand {
+                    program: program.to_string(),
+                    args: custom.args().to_vec(),
+                    env,
+                    working_directory: if working_directory.is_empty() {
+                        None
+                    } else {
+                        Some(working_directory.to_string())
+                    },
+                },
+            }
+        },
+        QuickLaunchType::Ssh => {
+            let Some(ssh) = editor.ssh() else {
+                return Err(QuickLaunchWizardError::MissingSshDraft);
+            };
+            let host = ssh.host().trim();
+            if host.is_empty() {
+                return Err(QuickLaunchWizardError::HostRequired);
+            }
+
+            let port = ssh.port().trim();
+            let port = if port.is_empty() {
+                SSH_DEFAULT_PORT
+            } else {
+                port.parse::<u16>()
+                    .map_err(|_| QuickLaunchWizardError::InvalidPort)?
+            };
+
+            CommandSpec::Ssh {
+                ssh: SshCommand {
+                    host: host.to_string(),
+                    port,
+                    user: optional_string(ssh.user()),
+                    identity_file: optional_string(ssh.identity_file()),
+                    extra_args: ssh.extra_args().to_vec(),
+                },
+            }
+        },
+    };
+
+    Ok(QuickLaunch {
+        title: title.to_string(),
+        spec,
+    })
+}
+
+fn optional_string(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
     use super::*;
-    use crate::widgets::quick_launch::model::{CustomCommand, SshCommand};
+    use crate::widgets::quick_launch::types::{CustomCommand, SshCommand};
 
     #[test]
     fn given_empty_program_when_validating_then_error_returned() {
@@ -439,5 +535,50 @@ mod tests {
             options.args(),
             &[String::from("--sort-key"), String::from("PERCENT_CPU")]
         );
+    }
+
+    #[test]
+    fn given_empty_title_when_building_command_then_returns_title_required() {
+        let editor = WizardEditorState::new(vec![]);
+        let result = build_command(&editor);
+        assert!(matches!(result, Err(QuickLaunchWizardError::TitleRequired)));
+    }
+
+    #[test]
+    fn given_custom_editor_when_building_command_then_returns_custom_launch() {
+        let mut editor = WizardEditorState::new(vec![]);
+        editor.set_title(String::from("Build"));
+        editor.set_program(String::from("cargo"));
+        editor.add_arg();
+        editor.update_arg(0, String::from("check"));
+        editor.add_env();
+        editor.update_env_key(0, String::from("RUST_LOG"));
+        editor.update_env_value(0, String::from("debug"));
+        editor.set_working_directory(String::from("/tmp/project"));
+
+        let quick_launch =
+            build_command(&editor).expect("build should succeed");
+        assert_eq!(quick_launch.title(), "Build");
+        let CommandSpec::Custom { custom } = &quick_launch.spec else {
+            panic!("expected custom command");
+        };
+        assert_eq!(custom.program(), "cargo");
+        assert_eq!(custom.args(), &[String::from("check")]);
+        assert_eq!(custom.env().len(), 1);
+        assert_eq!(custom.env()[0].key(), "RUST_LOG");
+        assert_eq!(custom.env()[0].value(), "debug");
+        assert_eq!(custom.working_directory(), Some("/tmp/project"));
+    }
+
+    #[test]
+    fn given_invalid_ssh_port_when_building_command_then_returns_error() {
+        let mut editor = WizardEditorState::new(vec![]);
+        editor.set_title(String::from("SSH"));
+        editor.set_command_type(QuickLaunchType::Ssh);
+        editor.set_host(String::from("example.com"));
+        editor.set_port(String::from("not-a-port"));
+
+        let result = build_command(&editor);
+        assert!(matches!(result, Err(QuickLaunchWizardError::InvalidPort)));
     }
 }

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::model::{FileNode, TreePath};
+use super::types::{FileNode, TreePath};
 use super::services::root_label;
 
 /// Runtime state for the sidebar file explorer.
@@ -14,8 +14,6 @@ pub(crate) struct ExplorerState {
 }
 
 impl ExplorerState {
-    // --- Read access ---
-
     /// Return the current root directory path.
     pub(crate) fn root(&self) -> Option<&PathBuf> {
         self.root.as_ref()
@@ -40,8 +38,6 @@ impl ExplorerState {
     pub(crate) fn hovered_path(&self) -> Option<&TreePath> {
         self.hovered.as_ref()
     }
-
-    // --- Write access ---
 
     /// Update selected tree path.
     pub(super) fn set_selected_path(&mut self, path: Option<TreePath>) {
@@ -176,7 +172,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::ExplorerState;
-    use crate::widgets::explorer::model::FileNode;
+    use crate::widgets::explorer::types::FileNode;
 
     #[test]
     fn given_new_root_when_set_root_then_tree_is_reset() {

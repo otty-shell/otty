@@ -2,7 +2,7 @@ use iced::Task;
 use otty_ui_term::settings::Settings;
 
 use super::event::{TabsEffect, TabsEvent, TabsIntent};
-use super::model::{TabContent, TabItem};
+use super::types::{TabContent, TabItem};
 use super::state::TabsState;
 use crate::domain::quick_launch::WizardTabInit;
 

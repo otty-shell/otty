@@ -2,56 +2,23 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::errors::SettingsError;
-use super::model::SettingsData;
+use super::types::{SettingsLoad, SettingsLoadStatus, SettingsData};
 use super::state::SettingsState;
 
-/// Status describing how settings were loaded from disk.
-#[derive(Debug, Clone)]
-pub(crate) enum SettingsLoadStatus {
-    /// File existed and was parsed successfully.
-    Loaded,
-    /// File did not exist; defaults were used.
-    Missing,
-    /// File existed but contained invalid data.
-    Invalid(String),
-}
-
-/// Result of loading settings from disk.
-#[derive(Debug, Clone)]
-pub(crate) struct SettingsLoad {
-    settings: SettingsData,
-    status: SettingsLoadStatus,
-}
-
-impl SettingsLoad {
-    /// Build a settings load result from explicit parts.
-    pub(crate) fn new(
-        settings: SettingsData,
-        status: SettingsLoadStatus,
-    ) -> Self {
-        Self { settings, status }
-    }
-
-    /// Consume the value and return both payload and status.
-    pub(crate) fn into_parts(self) -> (SettingsData, SettingsLoadStatus) {
-        (self.settings, self.status)
-    }
-}
-
 /// Load settings from disk.
-pub(crate) fn load_settings() -> Result<SettingsLoad, SettingsError> {
+pub(super) fn load_settings() -> Result<SettingsLoad, SettingsError> {
     load_settings_from_path(&settings_path())
 }
 
 /// Save settings to disk.
-pub(crate) fn save_settings(
+pub(super) fn save_settings(
     settings: &SettingsData,
 ) -> Result<(), SettingsError> {
     save_settings_to_path(&settings_path(), settings)
 }
 
 /// Load settings state synchronously from persistent storage.
-pub(crate) fn load_initial_settings_state() -> SettingsState {
+pub(super) fn load_initial_settings_state() -> SettingsState {
     let data = match load_settings() {
         Ok(load) => {
             let (data, status) = load.into_parts();

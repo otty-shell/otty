@@ -5,10 +5,9 @@ use iced::widget::{Stack, container, mouse_area, text};
 use iced::{Border, Element, Length, Theme};
 use otty_ui_term::TerminalView;
 
-use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
-use crate::widgets::terminal_workspace::model::{
-    TerminalEntry, TerminalTabViewModel,
-};
+use super::super::event::TerminalWorkspaceIntent;
+use super::super::model::TerminalTabViewModel;
+use super::super::types::TerminalEntry;
 
 const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_RESIZE_GRAB: f32 = 12.0;

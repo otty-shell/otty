@@ -3,7 +3,7 @@ use iced::Task;
 use super::AppEvent;
 use crate::app::App;
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
-use crate::widgets::sidebar::{SidebarCtx, SidebarEffect, SidebarEvent};
+use crate::widgets::sidebar::{SidebarEffect, SidebarEvent};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 pub(crate) fn handle(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
@@ -11,7 +11,7 @@ pub(crate) fn handle(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
         SidebarEvent::Intent(event) => app
             .widgets
             .sidebar
-            .reduce(event, &SidebarCtx)
+            .reduce(event)
             .map(AppEvent::Sidebar),
         SidebarEvent::Effect(effect) => handle_effect(app, effect),
     }

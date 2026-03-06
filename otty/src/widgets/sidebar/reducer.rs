@@ -1,19 +1,15 @@
 use iced::Task;
 
 use super::event::{SidebarEffect, SidebarEvent, SidebarIntent};
-use super::model::SidebarItem;
+use super::types::SidebarItem;
 use super::state::SidebarState;
 
 const SIDEBAR_MIN_TAB_CONTENT_RATIO: f32 = 0.2;
-
-/// Read-only context for sidebar reduction.
-pub(crate) struct SidebarCtx;
 
 /// Reduce a sidebar intent event into state updates and effect events.
 pub(crate) fn reduce(
     state: &mut SidebarState,
     event: SidebarIntent,
-    _ctx: &SidebarCtx,
 ) -> Task<SidebarEvent> {
     match event {
         SidebarIntent::SelectTerminal => {
@@ -113,22 +109,21 @@ fn max_sidebar_workspace_ratio() -> f32 {
 mod tests {
     use iced::Point;
 
-    use super::SidebarCtx;
-    use crate::widgets::sidebar::model::SidebarItem;
+    use crate::widgets::sidebar::types::SidebarItem;
     use crate::widgets::sidebar::{SidebarIntent, SidebarWidget};
 
     #[test]
     fn given_toggle_visibility_command_when_reduced_then_sidebar_hidden_state_toggles()
      {
         let mut widget = SidebarWidget::new();
-        let _task = widget.reduce(SidebarIntent::ToggleVisibility, &SidebarCtx);
+        let _task = widget.reduce(SidebarIntent::ToggleVisibility);
         assert!(widget.is_hidden());
     }
 
     #[test]
     fn given_select_explorer_command_when_reduced_then_active_item_changes() {
         let mut widget = SidebarWidget::new();
-        let _task = widget.reduce(SidebarIntent::SelectExplorer, &SidebarCtx);
+        let _task = widget.reduce(SidebarIntent::SelectExplorer);
         let vm = widget.vm();
         assert_eq!(vm.active_item, SidebarItem::Explorer);
         assert!(vm.is_workspace_open);
@@ -138,11 +133,11 @@ mod tests {
     fn given_add_menu_open_and_dismiss_commands_when_reduced_then_overlay_state_changes()
      {
         let mut widget = SidebarWidget::new();
-        let _open_task = widget.reduce(SidebarIntent::AddMenuOpen, &SidebarCtx);
+        let _open_task = widget.reduce(SidebarIntent::AddMenuOpen);
         assert!(widget.has_add_menu_open());
 
         let _dismiss_task =
-            widget.reduce(SidebarIntent::AddMenuDismiss, &SidebarCtx);
+            widget.reduce(SidebarIntent::AddMenuDismiss);
         assert!(!widget.has_add_menu_open());
     }
 
@@ -153,7 +148,6 @@ mod tests {
         let expected = Point::new(42.0, 24.0);
         let _task = widget.reduce(
             SidebarIntent::PaneGridCursorMoved { position: expected },
-            &SidebarCtx,
         );
         assert_eq!(widget.cursor(), expected);
     }

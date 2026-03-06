@@ -1,4 +1,4 @@
-use crate::widgets::quick_launch::model::{NodePath, QuickLaunch};
+use crate::widgets::quick_launch::types::{NodePath, QuickLaunch};
 
 /// Quick launch wizard initialization payload bound to a newly opened tab.
 #[derive(Debug, Clone)]

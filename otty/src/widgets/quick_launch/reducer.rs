@@ -4,21 +4,22 @@ use std::sync::atomic::AtomicBool;
 use iced::Task;
 use iced::widget::operation;
 
+use super::constants::QUICK_LAUNCHES_TICK_MS;
 use super::errors::quick_launch_error_message;
 use super::event::{QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent};
-use super::model::{
+use super::types::{
     ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,
     PreparedQuickLaunch, QuickLaunch, QuickLaunchFile, QuickLaunchFolder,
     QuickLaunchNode, QuickLaunchSetupOutcome, QuickLaunchWizardSaveRequest,
-    QuickLaunchWizardSaveTarget,
+    QuickLaunchWizardSaveTarget, InlineEditKind, DropTarget, WizardMode
 };
-use super::services::prepare_quick_launch_setup;
+use super::services::{build_command, prepare_quick_launch_setup};
 use super::state::{
-    ContextMenuState, DragState, DropTarget, InlineEditKind, InlineEditState,
+    ContextMenuState, DragState, InlineEditState,
     QuickLaunchErrorState, QuickLaunchState,
 };
 use super::storage::save_quick_launches;
-use super::wizard_model::build_command;
+
 
 /// Runtime context for the quick launch reducer.
 pub(crate) struct QuickLaunchCtx<'a> {
@@ -85,10 +86,10 @@ pub(crate) fn reduce(
             Task::none()
         },
         BackgroundRightClicked => {
-            state.set_context_menu(Some(ContextMenuState {
-                target: ContextMenuTarget::Background,
-                cursor: ctx.sidebar_cursor,
-            }));
+            let context_menu_state = ContextMenuState::default()
+                .with_target(ContextMenuTarget::Background)
+                .with_cursor(ctx.sidebar_cursor);
+            state.set_context_menu(Some(context_menu_state));
             state.clear_selected_path();
             Task::none()
         },
@@ -101,10 +102,12 @@ pub(crate) fn reduce(
                 QuickLaunchNode::Folder(_) => ContextMenuTarget::Folder(path),
                 QuickLaunchNode::Command(_) => ContextMenuTarget::Command(path),
             };
-            state.set_context_menu(Some(ContextMenuState {
-                target,
-                cursor: ctx.sidebar_cursor,
-            }));
+
+            let context_menu_state = ContextMenuState::default()
+                .with_target(target)
+                .with_cursor(ctx.sidebar_cursor);
+
+            state.set_context_menu(Some(context_menu_state));
             state.set_selected_path(Some(selected_path));
             Task::none()
         },
@@ -312,10 +315,6 @@ fn emit_effect(effect: QuickLaunchEffect) -> Task<QuickLaunchEvent> {
     Task::done(QuickLaunchEvent::Effect(effect))
 }
 
-// ---------------------------------------------------------------------------
-// Wizard helpers
-// ---------------------------------------------------------------------------
-
 fn reduce_wizard_field(
     state: &mut QuickLaunchState,
     tab_id: u64,
@@ -338,12 +337,12 @@ fn reduce_wizard_save(
     match build_command(editor) {
         Ok(command) => {
             let target = match editor.mode() {
-                super::state::WizardMode::Create { parent_path } => {
+                WizardMode::Create { parent_path } => {
                     QuickLaunchWizardSaveTarget::Create {
                         parent_path: parent_path.clone(),
                     }
                 },
-                super::state::WizardMode::Edit { path } => {
+                WizardMode::Edit { path } => {
                     QuickLaunchWizardSaveTarget::Edit { path: path.clone() }
                 },
             };
@@ -462,13 +461,13 @@ fn handle_context_menu_action(
     state.clear_context_menu();
 
     match action {
-        ContextMenuAction::Edit => match menu.target {
+        ContextMenuAction::Edit => match menu.target() {
             ContextMenuTarget::Command(path) => {
                 open_edit_command_tab(state, path)
             },
             _ => Task::none(),
         },
-        ContextMenuAction::Rename => match menu.target {
+        ContextMenuAction::Rename => match menu.target() {
             ContextMenuTarget::Command(path)
             | ContextMenuTarget::Folder(path) => {
                 begin_inline_rename(state, path);
@@ -476,21 +475,21 @@ fn handle_context_menu_action(
             },
             ContextMenuTarget::Background => Task::none(),
         },
-        ContextMenuAction::Duplicate => match menu.target {
+        ContextMenuAction::Duplicate => match menu.target() {
             ContextMenuTarget::Command(path) => {
                 duplicate_command(state, &path);
                 Task::none()
             },
             _ => Task::none(),
         },
-        ContextMenuAction::Remove => match menu.target {
+        ContextMenuAction::Remove => match menu.target() {
             ContextMenuTarget::Command(path) => {
                 remove_node(state, &path);
                 Task::none()
             },
             _ => Task::none(),
         },
-        ContextMenuAction::Delete => match menu.target {
+        ContextMenuAction::Delete => match menu.target() {
             ContextMenuTarget::Folder(path) => {
                 remove_node(state, &path);
                 Task::none()
@@ -498,7 +497,7 @@ fn handle_context_menu_action(
             _ => Task::none(),
         },
         ContextMenuAction::CreateFolder => {
-            let parent = match menu.target {
+            let parent = match menu.target() {
                 ContextMenuTarget::Folder(path) => path,
                 ContextMenuTarget::Command(path) => {
                     let mut parent = path.clone();
@@ -510,7 +509,7 @@ fn handle_context_menu_action(
             begin_inline_create_folder(state, parent);
             focus_inline_edit(state)
         },
-        ContextMenuAction::CreateCommand => match menu.target {
+        ContextMenuAction::CreateCommand => match menu.target() {
             ContextMenuTarget::Folder(path) => {
                 emit_effect(QuickLaunchEffect::OpenWizardCreateTab {
                     parent_path: path,
@@ -528,7 +527,7 @@ fn handle_context_menu_action(
                 })
             },
         },
-        ContextMenuAction::Kill => match menu.target {
+        ContextMenuAction::Kill => match menu.target() {
             ContextMenuTarget::Command(path) => {
                 state.cancel_launch(&path);
                 Task::none()
@@ -557,10 +556,6 @@ fn reduce_tick(state: &mut QuickLaunchState) -> Task<QuickLaunchEvent> {
         Task::batch(tasks)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tree mutation helpers
-// ---------------------------------------------------------------------------
 
 fn begin_inline_create_folder(
     state: &mut QuickLaunchState,
@@ -1084,7 +1079,6 @@ fn should_highlight_launch_indicator(
     launch_ticks: u64,
     blink_nonce: u64,
 ) -> bool {
-    use super::event::QUICK_LAUNCHES_TICK_MS;
     let launch_age_ms = launch_ticks.saturating_mul(QUICK_LAUNCHES_TICK_MS);
     if launch_age_ms < LAUNCH_ICON_DELAY_MS {
         return false;
@@ -1118,7 +1112,7 @@ mod tests {
     use iced::Point;
     use otty_ui_term::settings::Settings;
 
-    use super::super::model::{CommandSpec, CustomCommand};
+    use super::super::types::{CommandSpec, CustomCommand};
     use super::*;
 
     fn ctx(settings: &Settings) -> QuickLaunchCtx<'_> {
@@ -1305,10 +1299,10 @@ mod tests {
      {
         let mut state = QuickLaunchState::default();
         state.set_selected_path(Some(vec![String::from("cmd")]));
-        state.set_context_menu(Some(ContextMenuState {
-            target: ContextMenuTarget::Background,
-            cursor: Point::ORIGIN,
-        }));
+        state.set_context_menu(Some(ContextMenuState::default()
+            .with_target(ContextMenuTarget::Background)
+            .with_cursor(Point::ORIGIN)
+        ));
 
         let settings = Settings::default();
         let _task = reduce(
@@ -1417,10 +1411,10 @@ mod tests {
     #[test]
     fn given_context_menu_dismiss_when_reduced_then_menu_is_cleared() {
         let mut state = QuickLaunchState::default();
-        state.set_context_menu(Some(ContextMenuState {
-            target: ContextMenuTarget::Background,
-            cursor: Point::ORIGIN,
-        }));
+        state.set_context_menu(Some(ContextMenuState::default()
+            .with_target(ContextMenuTarget::Background)
+            .with_cursor(Point::ORIGIN)
+        ));
 
         let settings = Settings::default();
         let _task = reduce(
@@ -1589,10 +1583,10 @@ mod tests {
             .root
             .children
             .push(QuickLaunchNode::Command(sample_command()));
-        state.set_context_menu(Some(ContextMenuState {
-            target: ContextMenuTarget::Command(vec![String::from("Demo")]),
-            cursor: Point::ORIGIN,
-        }));
+        state.set_context_menu(Some(ContextMenuState::default()
+            .with_target(ContextMenuTarget::Command(vec![String::from("Demo")]))
+            .with_cursor(Point::ORIGIN)
+        ));
 
         let settings = Settings::default();
         let _task = reduce(
@@ -1613,10 +1607,10 @@ mod tests {
             .root
             .children
             .push(QuickLaunchNode::Command(sample_command()));
-        state.set_context_menu(Some(ContextMenuState {
-            target: ContextMenuTarget::Command(vec![String::from("Demo")]),
-            cursor: Point::ORIGIN,
-        }));
+        state.set_context_menu(Some(ContextMenuState::default()
+            .with_target(ContextMenuTarget::Command(vec![String::from("Demo")]))
+            .with_cursor(Point::ORIGIN)
+        ));
 
         let settings = Settings::default();
         let _task = reduce(
@@ -1639,10 +1633,10 @@ mod tests {
                 children: Vec::new(),
             },
         ));
-        state.set_context_menu(Some(ContextMenuState {
-            target: ContextMenuTarget::Folder(vec![String::from("Dir")]),
-            cursor: Point::ORIGIN,
-        }));
+        state.set_context_menu(Some(ContextMenuState::default()
+            .with_target(ContextMenuTarget::Folder(vec![String::from("Dir")]))
+            .with_cursor(Point::ORIGIN)
+        ));
 
         let settings = Settings::default();
         let _task = reduce(
@@ -1666,10 +1660,10 @@ mod tests {
         let path = vec![String::from("Demo")];
         let cancel = Arc::new(AtomicBool::new(false));
         state.begin_launch(path.clone(), cancel.clone());
-        state.set_context_menu(Some(ContextMenuState {
-            target: ContextMenuTarget::Command(path),
-            cursor: Point::ORIGIN,
-        }));
+        state.set_context_menu(Some(ContextMenuState::default()
+            .with_target(ContextMenuTarget::Command(path))
+            .with_cursor(Point::ORIGIN)
+        ));
 
         let settings = Settings::default();
         let _task = reduce(
@@ -1899,7 +1893,7 @@ mod tests {
             &mut state,
             QuickLaunchIntent::WizardSelectCommandType {
                 tab_id: 1,
-                command_type: super::super::model::QuickLaunchType::Ssh,
+                command_type: super::super::types::QuickLaunchType::Ssh,
             },
             &ctx(&settings),
         );
@@ -1907,7 +1901,7 @@ mod tests {
         let editor = state.wizard().editor(1).expect("editor should exist");
         assert_eq!(
             editor.command_type(),
-            super::super::model::QuickLaunchType::Ssh
+            super::super::types::QuickLaunchType::Ssh
         );
     }
 
@@ -2141,7 +2135,7 @@ mod tests {
         let mut state = QuickLaunchState::default();
         state.wizard_mut().initialize_create(1, vec![]);
         if let Some(editor) = state.wizard_mut().editor_mut(1) {
-            editor.set_command_type(super::super::model::QuickLaunchType::Ssh);
+            editor.set_command_type(super::super::types::QuickLaunchType::Ssh);
         }
 
         let settings = Settings::default();
@@ -2316,7 +2310,7 @@ mod tests {
         let mut state = QuickLaunchState::default();
         state.wizard_mut().initialize_create(1, vec![]);
         if let Some(editor) = state.wizard_mut().editor_mut(1) {
-            editor.set_command_type(super::super::model::QuickLaunchType::Ssh);
+            editor.set_command_type(super::super::types::QuickLaunchType::Ssh);
         }
 
         let settings = Settings::default();

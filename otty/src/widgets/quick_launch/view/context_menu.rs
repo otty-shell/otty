@@ -6,11 +6,11 @@ use crate::geometry::anchor_position;
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
-use crate::widgets::quick_launch::event::QuickLaunchIntent;
-use crate::widgets::quick_launch::model::{
+use super::super::event::QuickLaunchIntent;
+use super::super::types::{
     ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,
 };
-use crate::widgets::quick_launch::state::ContextMenuState;
+use super::super::state::ContextMenuState;
 
 const MENU_WIDTH: f32 = 220.0;
 const MENU_ITEM_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
@@ -33,7 +33,7 @@ pub(crate) fn view(
     let mut items: Vec<Element<'_, QuickLaunchIntent, Theme, iced::Renderer>> =
         Vec::new();
 
-    match &props.menu.target {
+    match &props.menu.target() {
         ContextMenuTarget::Command(path) => {
             let is_launching = props.launching.contains_key(path);
             if is_launching {
@@ -105,7 +105,7 @@ pub(crate) fn view(
         item_count as f32 * MENU_ITEM_HEIGHT + MENU_VERTICAL_PADDING;
 
     let anchor = anchor_position(
-        props.menu.cursor,
+        props.menu.cursor(),
         props.area_size,
         MENU_WIDTH,
         menu_height,

@@ -1,7 +1,7 @@
 use iced::{Subscription, window};
 
 use crate::app::{App, AppEvent};
-use crate::widgets::quick_launch::event::QUICK_LAUNCHES_TICK_MS;
+use crate::widgets::quick_launch::constants::QUICK_LAUNCHES_TICK_MS;
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,

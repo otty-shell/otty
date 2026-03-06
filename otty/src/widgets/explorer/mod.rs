@@ -1,4 +1,5 @@
 mod errors;
+pub(crate) mod types;
 pub(crate) mod event;
 pub(crate) mod model;
 pub(crate) mod reducer;
@@ -36,7 +37,7 @@ impl ExplorerWidget {
     }
 
     /// Return a tree view model for the sidebar panel.
-    pub(crate) fn tree_vm(&self) -> model::ExplorerTreeViewModel<'_> {
+    pub(crate) fn vm(&self) -> model::ExplorerTreeViewModel<'_> {
         model::ExplorerTreeViewModel {
             root_label: self.state.root_label(),
             tree: self.state.tree(),
@@ -51,17 +52,17 @@ impl ExplorerWidget {
     }
 
     /// Return root tree entries.
-    pub(crate) fn tree(&self) -> &[model::FileNode] {
+    pub(crate) fn tree(&self) -> &[types::FileNode] {
         self.state.tree()
     }
 
     /// Return the selected tree path.
-    pub(crate) fn selected_path(&self) -> Option<&model::TreePath> {
+    pub(crate) fn selected_path(&self) -> Option<&types::TreePath> {
         self.state.selected_path()
     }
 
     /// Return the hovered tree path.
-    pub(crate) fn hovered_path(&self) -> Option<&model::TreePath> {
+    pub(crate) fn hovered_path(&self) -> Option<&types::TreePath> {
         self.state.hovered_path()
     }
 

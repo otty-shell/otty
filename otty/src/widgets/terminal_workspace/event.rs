@@ -4,7 +4,7 @@ use iced::Point;
 use iced::widget::pane_grid;
 use otty_ui_term::settings::Settings;
 
-use super::model::TerminalKind;
+use super::types::TerminalKind;
 
 /// Intent events handled by the terminal workspace presentation layer.
 #[derive(Clone)]

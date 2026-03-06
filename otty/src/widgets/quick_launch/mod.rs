@@ -1,17 +1,21 @@
 mod errors;
+pub(crate) mod constants;
 pub(crate) mod event;
-pub(crate) mod model;
+pub(crate) mod types;
 pub(crate) mod reducer;
 mod services;
 pub(crate) mod state;
 mod storage;
 pub(crate) mod view;
-mod wizard_model;
+pub(crate) mod model;
+
+use std::collections::HashMap;
+
+use iced::Task;
 
 pub(crate) use event::{
     QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
 };
-use iced::Task;
 pub(crate) use reducer::QuickLaunchCtx;
 use state::QuickLaunchState;
 
@@ -47,7 +51,7 @@ impl QuickLaunchWidget {
     }
 
     /// Return a tree view model for the sidebar panel.
-    pub(crate) fn tree_vm(&self) -> model::QuickLaunchTreeViewModel<'_> {
+    pub(crate) fn vm(&self) -> model::QuickLaunchTreeViewModel<'_> {
         model::QuickLaunchTreeViewModel {
             data: self.state.data(),
             selected_path: self.state.selected_path(),
@@ -87,7 +91,7 @@ impl QuickLaunchWidget {
     /// Return the launching map.
     pub(crate) fn launching(
         &self,
-    ) -> &std::collections::HashMap<model::NodePath, model::LaunchInfo> {
+    ) -> &HashMap<types::NodePath, types::LaunchInfo> {
         self.state.launching()
     }
 

@@ -1,6 +1,6 @@
-use super::model::{
+use super::services::{is_hex_color_prefix, is_valid_hex_color};
+use super::types::{
     SettingsData, SettingsNode, SettingsPreset, SettingsSection,
-    is_hex_color_prefix, is_valid_hex_color,
 };
 
 /// Stored and draft settings state for the settings widget.
@@ -81,7 +81,7 @@ impl SettingsState {
     }
 
     /// Replace persisted and draft values using freshly loaded settings.
-    pub(crate) fn replace_with_settings(&mut self, settings: SettingsData) {
+    pub(super) fn replace_with_settings(&mut self, settings: SettingsData) {
         self.baseline = settings.clone();
         self.draft = settings;
         self.palette_inputs = self.draft.theme_palette().to_vec();
@@ -95,30 +95,30 @@ impl SettingsState {
     }
 
     /// Mark the draft as saved by replacing baseline with the given data.
-    pub(crate) fn mark_saved(&mut self, settings: SettingsData) {
+    pub(super) fn mark_saved(&mut self, settings: SettingsData) {
         self.replace_with_settings(settings);
     }
 
     /// Reset draft to baseline.
-    pub(crate) fn reset(&mut self) {
+    pub(super) fn reset(&mut self) {
         let baseline = self.baseline.clone();
         self.replace_with_settings(baseline);
     }
 
     /// Update the shell field in the draft.
-    pub(crate) fn set_shell(&mut self, value: String) {
+    pub(super) fn set_shell(&mut self, value: String) {
         self.draft.set_terminal_shell(value);
         self.update_dirty();
     }
 
     /// Update the editor field in the draft.
-    pub(crate) fn set_editor(&mut self, value: String) {
+    pub(super) fn set_editor(&mut self, value: String) {
         self.draft.set_terminal_editor(value);
         self.update_dirty();
     }
 
     /// Update a palette input, propagating valid values to the draft.
-    pub(crate) fn set_palette_input(&mut self, index: usize, value: String) {
+    pub(super) fn set_palette_input(&mut self, index: usize, value: String) {
         if index >= self.palette_inputs.len() {
             return;
         }
@@ -136,7 +136,7 @@ impl SettingsState {
     }
 
     /// Apply a theme preset palette to the draft.
-    pub(crate) fn apply_preset(&mut self, preset: SettingsPreset) {
+    pub(super) fn apply_preset(&mut self, preset: SettingsPreset) {
         let palette = preset.palette();
         self.draft.set_theme_palette(palette.clone());
         self.palette_inputs = palette;
@@ -144,7 +144,7 @@ impl SettingsState {
     }
 
     /// Select a tree path (toggles folders, selects sections).
-    pub(crate) fn select_path(&mut self, path: &[String]) {
+    pub(super) fn select_path(&mut self, path: &[String]) {
         if let Some(node) = find_node_mut(&mut self.tree, path) {
             if node.is_folder() {
                 node.toggle_expanded();
@@ -159,7 +159,7 @@ impl SettingsState {
     }
 
     /// Set the currently hovered tree path.
-    pub(crate) fn set_hovered_path(&mut self, path: Option<Vec<String>>) {
+    pub(super) fn set_hovered_path(&mut self, path: Option<Vec<String>>) {
         self.hovered_path = path;
     }
 
@@ -198,7 +198,7 @@ fn find_node_mut<'a>(
 #[cfg(test)]
 mod tests {
     use super::SettingsState;
-    use crate::widgets::settings::model::{
+    use crate::widgets::settings::types::{
         SettingsData, SettingsPreset, SettingsSection,
     };
 

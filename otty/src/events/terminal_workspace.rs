@@ -4,7 +4,7 @@ use super::AppEvent;
 use crate::app::App;
 use crate::layout::pane_grid_size;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
-use crate::widgets::sidebar::SIDEBAR_MENU_WIDTH;
+use crate::widgets::sidebar::constants::SIDEBAR_MENU_WIDTH;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceCtx, TerminalWorkspaceEffect, TerminalWorkspaceEvent,

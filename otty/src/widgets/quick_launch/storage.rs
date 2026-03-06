@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use super::errors::QuickLaunchError;
-use super::model::QuickLaunchFile;
+use super::types::QuickLaunchFile;
 use super::state::QuickLaunchState;
 
 /// Return the path to the quick launches JSON file.
@@ -18,7 +18,7 @@ fn quick_launches_path() -> PathBuf {
 }
 
 /// Load quick launches from disk.
-pub(crate) fn load_quick_launches() -> Result<QuickLaunchFile, QuickLaunchError>
+pub(super) fn load_quick_launches() -> Result<QuickLaunchFile, QuickLaunchError>
 {
     let path = quick_launches_path();
     let content = match std::fs::read_to_string(&path) {
@@ -33,7 +33,7 @@ pub(crate) fn load_quick_launches() -> Result<QuickLaunchFile, QuickLaunchError>
 }
 
 /// Save quick launches to disk atomically.
-pub(crate) fn save_quick_launches(
+pub(super) fn save_quick_launches(
     data: &QuickLaunchFile,
 ) -> Result<(), QuickLaunchError> {
     let path = quick_launches_path();
@@ -48,7 +48,7 @@ pub(crate) fn save_quick_launches(
 }
 
 /// Load initial state from disk, falling back to defaults on error.
-pub(crate) fn load_initial_quick_launch_state() -> QuickLaunchState {
+pub(super) fn load_initial_quick_launch_state() -> QuickLaunchState {
     match load_quick_launches() {
         Ok(data) => QuickLaunchState::with_data(data),
         Err(err) => {
@@ -61,7 +61,7 @@ pub(crate) fn load_initial_quick_launch_state() -> QuickLaunchState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widgets::quick_launch::model::{
+    use crate::widgets::quick_launch::types::{
         CommandSpec, CustomCommand, QuickLaunch, QuickLaunchFolder,
         QuickLaunchNode,
     };

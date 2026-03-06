@@ -6,7 +6,7 @@ use otty_ui_term::settings::{
 
 use super::AppEvent;
 use crate::app::App;
-use crate::widgets::settings::model::SettingsData;
+use crate::widgets::settings::types::SettingsData;
 use crate::widgets::settings::{SettingsEffect, SettingsEvent, SettingsIntent};
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,

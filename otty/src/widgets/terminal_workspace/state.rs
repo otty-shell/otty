@@ -6,14 +6,10 @@ use otty_ui_term::SurfaceMode;
 use otty_ui_term::settings::{Settings, ThemeSettings};
 
 use super::errors::TerminalWorkspaceError;
-use super::model::{BlockSelection, TerminalEntry, TerminalKind};
-
-// ---------------------------------------------------------------------------
-// Internal commands returned by state mutation helpers
-// ---------------------------------------------------------------------------
+use super::types::{BlockSelection, TerminalEntry, TerminalKind};
 
 /// Commands returned by state mutation helpers to be executed by the reducer.
-pub(super) enum StateCommand {
+pub(crate) enum StateCommand {
     /// Nothing to do.
     None,
     /// Focus a terminal widget by its iced widget id.
@@ -29,10 +25,6 @@ pub(super) enum StateCommand {
     /// Execute multiple commands.
     Batch(Vec<StateCommand>),
 }
-
-// ---------------------------------------------------------------------------
-// Top-level workspace state
-// ---------------------------------------------------------------------------
 
 /// Per-widget terminal workspace state keyed by tab id.
 #[derive(Default)]
@@ -138,10 +130,6 @@ impl PaneContextMenuState {
         &self.focus_target
     }
 }
-
-// ---------------------------------------------------------------------------
-// Per-tab state
-// ---------------------------------------------------------------------------
 
 /// Runtime state for a single terminal tab with pane management and selection.
 pub(crate) struct TerminalTabState {
@@ -599,7 +587,7 @@ mod tests {
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{PaneContextMenuState, StateCommand, TerminalTabState};
-    use crate::widgets::terminal_workspace::model::TerminalKind;
+    use crate::widgets::terminal_workspace::types::TerminalKind;
 
     #[cfg(unix)]
     const TEST_SHELL_PATH: &str = "/bin/sh";

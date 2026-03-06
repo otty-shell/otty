@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::model::{FileNode, TreePath};
+use super::types::{FileNode, TreePath};
 
 /// Intent events handled by the explorer presentation layer.
 #[derive(Debug, Clone)]

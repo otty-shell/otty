@@ -1,8 +1,10 @@
 use iced::widget::{Space, button, column, container, row, scrollable, svg};
 use iced::{Border, Element, Length, Theme, alignment};
 
+use super::constants::SIDEBAR_MENU_WIDTH;
 use super::event::SidebarIntent;
-use super::model::{SIDEBAR_MENU_WIDTH, SidebarItem, SidebarViewModel};
+use super::model::SidebarViewModel;
+use super::types::SidebarItem;
 use crate::icons;
 use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_RAIL};
 use crate::theme::ThemeProps;

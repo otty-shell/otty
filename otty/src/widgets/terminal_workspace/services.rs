@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
-use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
+use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
 use super::errors::TerminalWorkspaceError;
-use super::model::ShellSession;
+use super::types::ShellSession;
 
 const SHELL_INTEGRATIONS_DIR: &str = "otty";
 
@@ -43,16 +43,6 @@ pub(crate) fn fallback_shell_session_with_shell(
     let options = LocalSessionOptions::default().with_program(shell_path);
 
     ShellSession::new(shell_name, SessionKind::from_local_options(options))
-}
-
-/// Clone terminal settings with a session descriptor.
-pub(crate) fn terminal_settings_for_session(
-    base_settings: &Settings,
-    session: SessionKind,
-) -> Settings {
-    let mut settings = base_settings.clone();
-    settings.backend = settings.backend.clone().with_session(session);
-    settings
 }
 
 /// Resolve the active terminal working directory from block metadata.

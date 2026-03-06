@@ -1,4 +1,5 @@
 mod errors;
+pub(crate) mod types;
 pub(crate) mod event;
 pub(crate) mod model;
 pub(crate) mod reducer;

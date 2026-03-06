@@ -7,8 +7,9 @@ use crate::icons::{FILE, FOLDER, FOLDER_OPENED};
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::widgets::explorer::event::ExplorerIntent;
-use crate::widgets::explorer::model::{ExplorerTreeViewModel, FileNode};
+use super::super::event::ExplorerIntent;
+use super::super::model::ExplorerTreeViewModel;
+use super::super::types::FileNode;
 
 const HEADER_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const HEADER_PADDING_X: f32 = 10.0;

@@ -2,15 +2,17 @@ mod event;
 mod model;
 mod reducer;
 mod state;
+pub(crate) mod types;
+pub(crate) mod constants;
 pub(crate) mod view;
 
-pub(crate) use event::{SidebarEffect, SidebarEvent, SidebarIntent};
 use iced::widget::pane_grid;
 use iced::{Point, Task};
+
+pub(crate) use event::{SidebarEffect, SidebarEvent, SidebarIntent};
 pub(crate) use model::{
-    SIDEBAR_MENU_WIDTH, SidebarItem, SidebarPane, SidebarViewModel,
+    SidebarViewModel,
 };
-pub(crate) use reducer::SidebarCtx;
 use state::SidebarState;
 
 /// Sidebar widget owning its private state.
@@ -30,9 +32,8 @@ impl SidebarWidget {
     pub(crate) fn reduce(
         &mut self,
         event: SidebarIntent,
-        ctx: &SidebarCtx,
     ) -> Task<SidebarEvent> {
-        reducer::reduce(&mut self.state, event, ctx)
+        reducer::reduce(&mut self.state, event)
     }
 
     /// Build a read-only view model for the presentation layer.
@@ -52,7 +53,7 @@ impl SidebarWidget {
     }
 
     /// Return read-only access to pane-grid slots for rendering.
-    pub(crate) fn panes(&self) -> &pane_grid::State<SidebarPane> {
+    pub(crate) fn panes(&self) -> &pane_grid::State<types::SidebarPane> {
         self.state.panes()
     }
 

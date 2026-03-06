@@ -2,7 +2,16 @@ use std::path::Path;
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
+/// Clone terminal settings with a session descriptor.
+pub(crate) fn terminal_settings_for_session(
+    base_settings: &Settings,
+    session: SessionKind,
+) -> Settings {
+    let mut settings = base_settings.clone();
+    settings.backend = settings.backend.clone().with_session(session);
+    settings
+}
+
 
 pub(crate) fn editor_terminal_settings(
     editor: &str,

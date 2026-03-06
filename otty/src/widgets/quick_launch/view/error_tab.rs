@@ -2,8 +2,8 @@ use iced::widget::{column, container, text};
 use iced::{Element, Length, Theme};
 
 use crate::theme::ThemeProps;
-use crate::widgets::quick_launch::event::QuickLaunchIntent;
-use crate::widgets::quick_launch::state::QuickLaunchErrorState;
+use super::super::event::QuickLaunchIntent;
+use super::super::state::QuickLaunchErrorState;
 
 const ERROR_TITLE_SIZE: f32 = 18.0;
 const ERROR_MESSAGE_SIZE: f32 = 13.0;

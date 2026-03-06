@@ -4,9 +4,9 @@ use iced::{Element, Length, Theme, alignment};
 
 use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_REGULAR};
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::widgets::quick_launch::event::QuickLaunchIntent;
-use crate::widgets::quick_launch::model::QuickLaunchType;
-use crate::widgets::quick_launch::state::WizardEditorState;
+use super::super::event::QuickLaunchIntent;
+use super::super::types::QuickLaunchType;
+use super::super::state::WizardEditorState;
 
 const SECTION_SPACING: f32 = 16.0;
 const FIELD_SPACING: f32 = 8.0;

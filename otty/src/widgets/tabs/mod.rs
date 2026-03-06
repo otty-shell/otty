@@ -2,6 +2,7 @@ pub(crate) mod event;
 pub(crate) mod model;
 mod reducer;
 mod state;
+pub(crate) mod types;
 pub(crate) mod view;
 
 use iced::Task;
@@ -48,7 +49,7 @@ impl TabsWidget {
     }
 
     /// Return the content kind of the active tab.
-    pub(crate) fn active_tab_content(&self) -> Option<model::TabContent> {
+    pub(crate) fn active_tab_content(&self) -> Option<types::TabContent> {
         self.state.active_tab().map(|tab| tab.content())
     }
 

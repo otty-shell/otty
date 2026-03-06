@@ -1,10 +1,9 @@
 use iced::Task;
 
+use super::types::{SettingsLoad, SettingsLoadStatus, SettingsData};
 use super::event::{SettingsEffect, SettingsEvent, SettingsIntent};
 use super::state::SettingsState;
-use super::storage::{
-    SettingsLoad, SettingsLoadStatus, load_settings, save_settings,
-};
+use super::storage::{load_settings, save_settings};
 
 /// Reduce a settings intent event into state updates and effect tasks.
 pub(crate) fn reduce(
@@ -97,7 +96,7 @@ fn request_save_settings(state: &SettingsState) -> Task<SettingsEvent> {
 fn apply_loaded_settings(
     state: &mut SettingsState,
     load: SettingsLoad,
-) -> super::model::SettingsData {
+) -> SettingsData {
     let (settings, status) = load.into_parts();
     if let SettingsLoadStatus::Invalid(message) = &status {
         log::warn!("settings file invalid: {message}");
@@ -110,11 +109,11 @@ fn apply_loaded_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widgets::settings::model::{
+    use crate::widgets::settings::types::{
         SettingsData, SettingsPreset, SettingsSection,
+        SettingsLoad, SettingsLoadStatus,
     };
     use crate::widgets::settings::state::SettingsState;
-    use crate::widgets::settings::storage::{SettingsLoad, SettingsLoadStatus};
 
     fn default_state() -> SettingsState {
         SettingsState::default()

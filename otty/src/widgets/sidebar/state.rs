@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use iced::Point;
 use iced::widget::pane_grid;
 
-use super::model::{SidebarItem, SidebarPane};
+use super::types::{SidebarItem, SidebarPane};
 
 const SIDEBAR_DEFAULT_WORKSPACE_RATIO: f32 = 0.2;
 const SIDEBAR_COLLAPSE_WORKSPACE_RATIO: f32 =

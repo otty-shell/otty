@@ -1,12 +1,9 @@
 use iced::Point;
 
-use super::model::{
+use super::types::{
     ContextMenuAction, NodePath, QuickLaunch, QuickLaunchSetupOutcome,
     QuickLaunchType, QuickLaunchWizardSaveRequest,
 };
-
-/// Tick interval for launch indicator animations.
-pub(crate) const QUICK_LAUNCHES_TICK_MS: u64 = 200;
 
 /// Intent events handled by the quick launch presentation layer.
 #[derive(Debug, Clone)]

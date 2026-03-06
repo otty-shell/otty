@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::errors::ExplorerError;
-use super::model::FileNode;
+use super::types::FileNode;
 
 /// Build explorer root label from a file system path.
 ///

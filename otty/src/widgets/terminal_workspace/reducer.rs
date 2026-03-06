@@ -7,7 +7,7 @@ use otty_ui_term::{BlockCommand, TerminalView};
 use super::event::{
     TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
-use super::model::TerminalKind;
+use super::types::TerminalKind;
 use super::state::{StateCommand, TerminalTabState, TerminalWorkspaceState};
 
 /// Runtime context injected into each reduce call.
@@ -564,7 +564,7 @@ mod tests {
 
     use super::{TerminalWorkspaceCtx, reduce};
     use crate::widgets::terminal_workspace::TerminalWorkspaceIntent;
-    use crate::widgets::terminal_workspace::model::TerminalKind;
+    use crate::widgets::terminal_workspace::types::TerminalKind;
     use crate::widgets::terminal_workspace::state::TerminalWorkspaceState;
 
     #[cfg(unix)]

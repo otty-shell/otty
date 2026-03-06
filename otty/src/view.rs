@@ -20,12 +20,10 @@ use crate::widgets::quick_launch::view::{
 };
 use crate::widgets::settings::SettingsEvent;
 use crate::widgets::settings::view::settings_form;
-use crate::widgets::sidebar;
-use crate::widgets::sidebar::{
-    SidebarEvent, SidebarIntent, SidebarItem, SidebarPane,
-};
+use crate::widgets::sidebar::{self, SidebarEvent, SidebarIntent};
+use crate::widgets::sidebar::types::{SidebarItem, SidebarPane};
 use crate::widgets::tabs::TabsEvent;
-use crate::widgets::tabs::model::TabContent;
+use crate::widgets::tabs::types::TabContent;
 use crate::widgets::tabs::view::tab_bar;
 use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
 use crate::widgets::terminal_workspace::view::{
@@ -267,14 +265,14 @@ fn view_workspace_content<'a>(
     match sidebar_vm.active_item {
         SidebarItem::Terminal => {
             sidebar_panel::view(sidebar_panel::SidebarPanelProps {
-                vm: app.widgets.quick_launch.tree_vm(),
+                vm: app.widgets.quick_launch.vm(),
                 theme: theme_props,
             })
             .map(|event| AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event)))
         },
         SidebarItem::Explorer => {
             sidebar_tree::view(sidebar_tree::SidebarTreeProps {
-                vm: app.widgets.explorer.tree_vm(),
+                vm: app.widgets.explorer.vm(),
                 theme: theme_props,
             })
             .map(|event| AppEvent::Explorer(ExplorerEvent::Intent(event)))

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::model::TabItem;
+use super::types::TabItem;
 
 /// Runtime state for workspace tabs.
 #[derive(Default)]
@@ -43,29 +43,29 @@ impl TabsState {
     }
 
     /// Allocate next unique tab identifier.
-    pub(crate) fn allocate_tab_id(&mut self) -> u64 {
+    pub(super) fn allocate_tab_id(&mut self) -> u64 {
         let tab_id = self.next_tab_id;
         self.next_tab_id += 1;
         tab_id
     }
 
     /// Insert tab metadata by identifier.
-    pub(crate) fn insert(&mut self, tab_id: u64, item: TabItem) {
+    pub(super) fn insert(&mut self, tab_id: u64, item: TabItem) {
         self.tab_items.insert(tab_id, item);
     }
 
     /// Remove tab metadata by identifier.
-    pub(crate) fn remove(&mut self, tab_id: u64) -> Option<TabItem> {
+    pub(super) fn remove(&mut self, tab_id: u64) -> Option<TabItem> {
         self.tab_items.remove(&tab_id)
     }
 
     /// Activate tab identifier.
-    pub(crate) fn activate(&mut self, tab_id: Option<u64>) {
+    pub(super) fn activate(&mut self, tab_id: Option<u64>) {
         self.active_tab_id = tab_id;
     }
 
     /// Update title for an existing tab.
-    pub(crate) fn set_title(&mut self, tab_id: u64, title: String) {
+    pub(super) fn set_title(&mut self, tab_id: u64, title: String) {
         if let Some(tab) = self.tab_items.get_mut(&tab_id) {
             tab.set_title(title);
         }

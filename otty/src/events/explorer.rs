@@ -5,7 +5,7 @@ use iced::Task;
 use super::AppEvent;
 use crate::app::App;
 use crate::services::editor_terminal_settings;
-use crate::widgets::explorer::model::FileNode;
+use crate::widgets::explorer::types::FileNode;
 use crate::widgets::explorer::services::read_dir_nodes;
 use crate::widgets::explorer::{
     ExplorerCtx, ExplorerEffect, ExplorerEvent, ExplorerIntent,

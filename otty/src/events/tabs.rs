@@ -4,13 +4,13 @@ use iced::widget::operation::snap_to_end;
 use super::AppEvent;
 use crate::app::App;
 use crate::domain::quick_launch::WizardTabInit;
+use crate::services::terminal_settings_for_session;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::settings::{SettingsEvent, SettingsIntent};
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_SCROLL_ID;
 use crate::widgets::tabs::{TabsEffect, TabsEvent};
-use crate::widgets::terminal_workspace::model::TerminalKind;
-use crate::widgets::terminal_workspace::services::terminal_settings_for_session;
+use crate::widgets::terminal_workspace::types::TerminalKind;
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
