@@ -213,7 +213,7 @@ impl From<&AppTheme> for Theme {
         let palette = Palette {
             background: palette.background,
             text: palette.foreground,
-            primary: palette.background,
+            primary: palette.blue,
             success: palette.green,
             danger: palette.red,
             warning: palette.yellow,
@@ -294,5 +294,24 @@ impl ThemeManager {
     /// Replace the current theme with a custom palette.
     pub fn set_custom_palette(&mut self, palette: ColorPalette) {
         self.current = AppTheme::from_palette(String::from("custom"), palette);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::Theme;
+
+    use super::{AppTheme, ColorPalette};
+
+    #[test]
+    fn given_app_theme_when_converted_to_iced_then_primary_uses_accent_blue() {
+        let app_theme = AppTheme::from_palette(
+            String::from("custom"),
+            ColorPalette::default(),
+        );
+
+        let theme = Theme::from(&app_theme);
+
+        assert_eq!(theme.palette().primary, app_theme.iced_palette().blue);
     }
 }
