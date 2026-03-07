@@ -9,6 +9,7 @@ pub(crate) struct SettingsState {
     baseline: SettingsData,
     draft: SettingsData,
     palette_inputs: Vec<String>,
+    selected_preset: Option<SettingsPreset>,
     tree: Vec<SettingsNode>,
     selected_section: SettingsSection,
     selected_path: Vec<String>,
@@ -36,6 +37,11 @@ impl SettingsState {
     /// Return sidebar tree nodes.
     pub(crate) fn tree(&self) -> &[SettingsNode] {
         &self.tree
+    }
+
+    /// Return the currently selected built-in palette preset.
+    pub(crate) fn selected_preset(&self) -> Option<SettingsPreset> {
+        self.selected_preset
     }
 
     /// Return currently selected settings section.
@@ -67,11 +73,13 @@ impl SettingsState {
         let selected_section = SettingsSection::Terminal;
         let selected_path = vec![selected_section.title().to_string()];
         let palette_inputs = settings.theme_palette().to_vec();
+        let selected_preset = SettingsPreset::from_palette(&palette_inputs);
 
         Self {
             baseline: settings.clone(),
             draft: settings,
             palette_inputs,
+            selected_preset,
             tree,
             selected_section,
             selected_path,
@@ -85,6 +93,8 @@ impl SettingsState {
         self.baseline = settings.clone();
         self.draft = settings;
         self.palette_inputs = self.draft.theme_palette().to_vec();
+        self.selected_preset =
+            SettingsPreset::from_palette(&self.palette_inputs);
         self.hovered_path = None;
         self.dirty = false;
     }
@@ -131,6 +141,7 @@ impl SettingsState {
         if is_valid_hex_color(&value)
             && self.draft.set_theme_palette_entry(index, value)
         {
+            self.sync_selected_preset();
             self.update_dirty();
         }
     }
@@ -140,6 +151,7 @@ impl SettingsState {
         let palette = preset.palette();
         self.draft.set_theme_palette(palette.clone());
         self.palette_inputs = palette;
+        self.selected_preset = Some(preset);
         self.update_dirty();
     }
 
@@ -165,6 +177,11 @@ impl SettingsState {
 
     fn update_dirty(&mut self) {
         self.dirty = self.draft != self.baseline;
+    }
+
+    fn sync_selected_preset(&mut self) {
+        self.selected_preset =
+            SettingsPreset::from_palette(self.draft.theme_palette());
     }
 }
 
@@ -257,7 +274,31 @@ mod tests {
         state.apply_preset(SettingsPreset::OttyDark);
 
         assert_eq!(state.palette_inputs, state.draft.theme_palette());
+        assert_eq!(state.selected_preset(), Some(SettingsPreset::OttyDark));
         assert!(state.dirty);
+    }
+
+    #[test]
+    fn given_matching_loaded_palette_when_state_created_then_preset_is_selected()
+     {
+        let mut settings = SettingsData::default();
+        settings.set_theme_palette(SettingsPreset::Dracula.palette());
+
+        let state = SettingsState::from_settings(settings);
+
+        assert_eq!(state.selected_preset(), Some(SettingsPreset::Dracula));
+    }
+
+    #[test]
+    fn given_manual_palette_edit_when_preset_no_longer_matches_then_selection_clears()
+     {
+        let mut settings = SettingsData::default();
+        settings.set_theme_palette(SettingsPreset::Dracula.palette());
+        let mut state = SettingsState::from_settings(settings);
+
+        state.set_palette_input(0, String::from("#F8F8F1"));
+
+        assert_eq!(state.selected_preset(), None);
     }
 
     #[test]

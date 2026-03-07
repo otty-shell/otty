@@ -1,21 +1,20 @@
-mod errors;
 pub(crate) mod constants;
+mod errors;
 pub(crate) mod event;
-pub(crate) mod types;
+pub(crate) mod model;
 pub(crate) mod reducer;
 mod services;
 pub(crate) mod state;
 mod storage;
+pub(crate) mod types;
 pub(crate) mod view;
-pub(crate) mod model;
 
 use std::collections::HashMap;
-
-use iced::Task;
 
 pub(crate) use event::{
     QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
 };
+use iced::Task;
 pub(crate) use reducer::QuickLaunchCtx;
 use state::QuickLaunchState;
 

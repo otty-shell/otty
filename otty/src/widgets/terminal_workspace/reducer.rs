@@ -7,8 +7,8 @@ use otty_ui_term::{BlockCommand, TerminalView};
 use super::event::{
     TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
-use super::types::TerminalKind;
 use super::state::{StateCommand, TerminalTabState, TerminalWorkspaceState};
+use super::types::TerminalKind;
 
 /// Runtime context injected into each reduce call.
 pub(crate) struct TerminalWorkspaceCtx {
@@ -564,8 +564,8 @@ mod tests {
 
     use super::{TerminalWorkspaceCtx, reduce};
     use crate::widgets::terminal_workspace::TerminalWorkspaceIntent;
-    use crate::widgets::terminal_workspace::types::TerminalKind;
     use crate::widgets::terminal_workspace::state::TerminalWorkspaceState;
+    use crate::widgets::terminal_workspace::types::TerminalKind;
 
     #[cfg(unix)]
     const VALID_SHELL_PATH: &str = "/bin/sh";

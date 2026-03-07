@@ -1,16 +1,16 @@
 use iced::widget::{Space, column, container};
 use iced::{Element, Length, Size, Theme};
 
+use super::super::event::QuickLaunchIntent;
+use super::super::state::ContextMenuState;
+use super::super::types::{
+    ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,
+};
 use crate::components::primitive::menu_item;
 use crate::geometry::anchor_position;
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
-use super::super::event::QuickLaunchIntent;
-use super::super::types::{
-    ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,
-};
-use super::super::state::ContextMenuState;
 
 const MENU_WIDTH: f32 = 220.0;
 const MENU_ITEM_HEIGHT: f32 = BUTTON_SIZE_COMPACT;

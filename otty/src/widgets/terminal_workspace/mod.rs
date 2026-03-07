@@ -1,10 +1,10 @@
 mod errors;
-pub(crate) mod types;
 pub(crate) mod event;
 pub(crate) mod model;
 pub(crate) mod reducer;
 pub(crate) mod services;
 pub(crate) mod state;
+pub(crate) mod types;
 pub(crate) mod view;
 
 use std::collections::HashMap;

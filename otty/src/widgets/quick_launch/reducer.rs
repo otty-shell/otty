@@ -7,19 +7,18 @@ use iced::widget::operation;
 use super::constants::QUICK_LAUNCHES_TICK_MS;
 use super::errors::quick_launch_error_message;
 use super::event::{QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent};
-use super::types::{
-    ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,
-    PreparedQuickLaunch, QuickLaunch, QuickLaunchFile, QuickLaunchFolder,
-    QuickLaunchNode, QuickLaunchSetupOutcome, QuickLaunchWizardSaveRequest,
-    QuickLaunchWizardSaveTarget, InlineEditKind, DropTarget, WizardMode
-};
 use super::services::{build_command, prepare_quick_launch_setup};
 use super::state::{
-    ContextMenuState, DragState, InlineEditState,
-    QuickLaunchErrorState, QuickLaunchState,
+    ContextMenuState, DragState, InlineEditState, QuickLaunchErrorState,
+    QuickLaunchState,
 };
 use super::storage::save_quick_launches;
-
+use super::types::{
+    ContextMenuAction, ContextMenuTarget, DropTarget, InlineEditKind,
+    LaunchInfo, NodePath, PreparedQuickLaunch, QuickLaunch, QuickLaunchFile,
+    QuickLaunchFolder, QuickLaunchNode, QuickLaunchSetupOutcome,
+    QuickLaunchWizardSaveRequest, QuickLaunchWizardSaveTarget, WizardMode,
+};
 
 /// Runtime context for the quick launch reducer.
 pub(crate) struct QuickLaunchCtx<'a> {
@@ -373,7 +372,7 @@ fn reduce_setup_completed(
 ) -> Task<QuickLaunchEvent> {
     match outcome {
         QuickLaunchSetupOutcome::Prepared(launch) => {
-            handle_prepared_quick_launch(state, launch)
+            handle_prepared_quick_launch(state, *launch)
         },
         QuickLaunchSetupOutcome::Failed {
             path,
@@ -1299,9 +1298,10 @@ mod tests {
      {
         let mut state = QuickLaunchState::default();
         state.set_selected_path(Some(vec![String::from("cmd")]));
-        state.set_context_menu(Some(ContextMenuState::default()
-            .with_target(ContextMenuTarget::Background)
-            .with_cursor(Point::ORIGIN)
+        state.set_context_menu(Some(
+            ContextMenuState::default()
+                .with_target(ContextMenuTarget::Background)
+                .with_cursor(Point::ORIGIN),
         ));
 
         let settings = Settings::default();
@@ -1411,9 +1411,10 @@ mod tests {
     #[test]
     fn given_context_menu_dismiss_when_reduced_then_menu_is_cleared() {
         let mut state = QuickLaunchState::default();
-        state.set_context_menu(Some(ContextMenuState::default()
-            .with_target(ContextMenuTarget::Background)
-            .with_cursor(Point::ORIGIN)
+        state.set_context_menu(Some(
+            ContextMenuState::default()
+                .with_target(ContextMenuTarget::Background)
+                .with_cursor(Point::ORIGIN),
         ));
 
         let settings = Settings::default();
@@ -1583,9 +1584,12 @@ mod tests {
             .root
             .children
             .push(QuickLaunchNode::Command(sample_command()));
-        state.set_context_menu(Some(ContextMenuState::default()
-            .with_target(ContextMenuTarget::Command(vec![String::from("Demo")]))
-            .with_cursor(Point::ORIGIN)
+        state.set_context_menu(Some(
+            ContextMenuState::default()
+                .with_target(ContextMenuTarget::Command(vec![String::from(
+                    "Demo",
+                )]))
+                .with_cursor(Point::ORIGIN),
         ));
 
         let settings = Settings::default();
@@ -1607,9 +1611,12 @@ mod tests {
             .root
             .children
             .push(QuickLaunchNode::Command(sample_command()));
-        state.set_context_menu(Some(ContextMenuState::default()
-            .with_target(ContextMenuTarget::Command(vec![String::from("Demo")]))
-            .with_cursor(Point::ORIGIN)
+        state.set_context_menu(Some(
+            ContextMenuState::default()
+                .with_target(ContextMenuTarget::Command(vec![String::from(
+                    "Demo",
+                )]))
+                .with_cursor(Point::ORIGIN),
         ));
 
         let settings = Settings::default();
@@ -1633,9 +1640,12 @@ mod tests {
                 children: Vec::new(),
             },
         ));
-        state.set_context_menu(Some(ContextMenuState::default()
-            .with_target(ContextMenuTarget::Folder(vec![String::from("Dir")]))
-            .with_cursor(Point::ORIGIN)
+        state.set_context_menu(Some(
+            ContextMenuState::default()
+                .with_target(ContextMenuTarget::Folder(vec![String::from(
+                    "Dir",
+                )]))
+                .with_cursor(Point::ORIGIN),
         ));
 
         let settings = Settings::default();
@@ -1660,9 +1670,10 @@ mod tests {
         let path = vec![String::from("Demo")];
         let cancel = Arc::new(AtomicBool::new(false));
         state.begin_launch(path.clone(), cancel.clone());
-        state.set_context_menu(Some(ContextMenuState::default()
-            .with_target(ContextMenuTarget::Command(path))
-            .with_cursor(Point::ORIGIN)
+        state.set_context_menu(Some(
+            ContextMenuState::default()
+                .with_target(ContextMenuTarget::Command(path))
+                .with_cursor(Point::ORIGIN),
         ));
 
         let settings = Settings::default();

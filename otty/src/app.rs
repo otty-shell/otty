@@ -24,10 +24,10 @@ use crate::widgets::settings::SettingsWidget;
 use crate::widgets::sidebar::SidebarWidget;
 use crate::widgets::tabs::TabsWidget;
 use crate::widgets::terminal_workspace::TerminalWorkspaceWidget;
-use crate::widgets::terminal_workspace::types::ShellSession;
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
+use crate::widgets::terminal_workspace::types::ShellSession;
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;

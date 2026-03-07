@@ -6,17 +6,15 @@ use iced::widget::{
 use iced::{Color, Element, Length, Theme, alignment};
 use otty_ui_tree::{TreeRowContext, TreeView};
 
+use super::super::event::QuickLaunchIntent;
+use super::super::state::InlineEditState;
+use super::super::types::{
+    DropTarget, InlineEditKind, LaunchInfo, NodePath, QuickLaunchFile,
+    QuickLaunchNode,
+};
 use crate::icons::{FOLDER, FOLDER_OPENED, PLAY};
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::ThemeProps;
-use super::super::event::QuickLaunchIntent;
-use super::super::types::{
-    LaunchInfo, NodePath, QuickLaunchFile, QuickLaunchNode,
-    InlineEditKind, DropTarget,
-};
-use super::super::state::{
-    InlineEditState,
-};
 
 const TREE_ROW_HEIGHT: f32 = 24.0;
 const TREE_FONT_SIZE: f32 = 12.0;

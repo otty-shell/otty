@@ -1,7 +1,10 @@
+use std::fmt;
+
 use otty_ui_tree::TreeNode;
 use serde::Serialize;
 
-use crate::{theme::ColorPalette, widgets::settings::services::is_valid_hex_color};
+use crate::theme::ColorPalette;
+use crate::widgets::settings::services::is_valid_hex_color;
 
 const DEFAULT_EDITOR: &str = "nano";
 const FALLBACK_SHELL: &str = "/bin/bash";
@@ -274,7 +277,6 @@ impl SettingsNode {
     }
 }
 
-
 /// Return the default palette as hex strings.
 fn default_palette() -> Vec<String> {
     palette_from_colors(&ColorPalette::default())
@@ -509,19 +511,84 @@ fn set_palette_value(
 }
 
 /// Palette presets available in the theme editor.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsPreset {
     /// Default OTTY dark theme.
     OttyDark,
+    /// One Dark-inspired palette.
+    OneDark,
+    /// Solarized Dark-inspired palette.
+    SolarizedDark,
+    /// Dracula-inspired palette.
+    Dracula,
 }
 
 impl SettingsPreset {
+    /// All built-in theme presets shown in the selector.
+    pub(crate) const ALL: [Self; 4] = [
+        Self::OttyDark,
+        Self::OneDark,
+        Self::SolarizedDark,
+        Self::Dracula,
+    ];
+
+    /// Return the selector label for this preset.
+    pub(crate) fn title(&self) -> &'static str {
+        match self {
+            Self::OttyDark => "OTTY Dark",
+            Self::OneDark => "One Dark",
+            Self::SolarizedDark => "Solarized Dark",
+            Self::Dracula => "Dracula",
+        }
+    }
+
     /// Return the palette hex values for this preset.
     pub(crate) fn palette(&self) -> Vec<String> {
         match self {
             Self::OttyDark => default_palette(),
+            Self::OneDark => palette_from_hexes([
+                "#ABB2BF", "#282C34", "#282C34", "#E06C75", "#98C379",
+                "#E5C07B", "#61AFEF", "#C678DD", "#56B6C2", "#ABB2BF",
+                "#5C6370", "#FF7A90", "#B5E890", "#FFD98E", "#7DCFFF",
+                "#DFA6FF", "#7FE4EA", "#FFFFFF", "#E6EDF7", "#1C2027",
+                "#8B434A", "#5E7748", "#8A744A", "#3A6A8F", "#784885",
+                "#326B73", "#7B8496", "#7B8496", "#323842",
+            ]),
+            Self::SolarizedDark => palette_from_hexes([
+                "#839496", "#002B36", "#073642", "#DC322F", "#859900",
+                "#B58900", "#268BD2", "#D33682", "#2AA198", "#EEE8D5",
+                "#002B36", "#CB4B16", "#586E75", "#657B83", "#839496",
+                "#6C71C4", "#93A1A1", "#FDF6E3", "#FDF6E3", "#001F27",
+                "#8A231F", "#536100", "#715900", "#175785", "#7E1F4D",
+                "#1A625D", "#A6A093", "#657B83", "#073642",
+            ]),
+            Self::Dracula => palette_from_hexes([
+                "#F8F8F2", "#282A36", "#21222C", "#FF5555", "#50FA7B",
+                "#F1FA8C", "#BD93F9", "#FF79C6", "#8BE9FD", "#F8F8F2",
+                "#6272A4", "#FF6E6E", "#69FF94", "#FFFFA5", "#D6ACFF",
+                "#FF92DF", "#A4FFFF", "#FFFFFF", "#FFFFFF", "#191A21",
+                "#9B3333", "#318F49", "#8F9554", "#715892", "#99508A",
+                "#5395A1", "#B7B7B2", "#B7B7B2", "#303341",
+            ]),
         }
     }
+
+    /// Detect a built-in preset that matches the given palette values.
+    pub(crate) fn from_palette(values: &[String]) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|preset| preset.palette().as_slice() == values)
+    }
+}
+
+impl fmt::Display for SettingsPreset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.title())
+    }
+}
+
+fn palette_from_hexes(values: [&str; 29]) -> Vec<String> {
+    values.into_iter().map(String::from).collect()
 }
 
 /// Status describing how settings were loaded from disk.
@@ -561,7 +628,7 @@ impl SettingsLoad {
 mod tests {
     use serde_json::json;
 
-    use super::{SettingsData, is_valid_hex_color};
+    use super::{SettingsData, SettingsPreset, is_valid_hex_color};
 
     #[test]
     fn given_valid_palette_when_from_json_then_palette_is_loaded() {
@@ -610,5 +677,15 @@ mod tests {
         assert!(is_valid_hex_color("#aBc123"));
         assert!(!is_valid_hex_color("#12345"));
         assert!(!is_valid_hex_color("123456"));
+    }
+
+    #[test]
+    fn given_known_preset_palette_when_detected_then_matching_preset_is_found()
+    {
+        let palette = SettingsPreset::Dracula.palette();
+
+        let preset = SettingsPreset::from_palette(&palette);
+
+        assert_eq!(preset, Some(SettingsPreset::Dracula));
     }
 }

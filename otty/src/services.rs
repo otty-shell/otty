@@ -12,7 +12,6 @@ pub(crate) fn terminal_settings_for_session(
     settings
 }
 
-
 pub(crate) fn editor_terminal_settings(
     editor: &str,
     base_terminal_settings: &Settings,

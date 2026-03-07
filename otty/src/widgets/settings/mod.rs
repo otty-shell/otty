@@ -1,18 +1,18 @@
 mod errors;
-pub(crate) mod types;
 pub(crate) mod event;
 pub(crate) mod model;
 pub(crate) mod reducer;
-pub(crate) mod state;
 pub(crate) mod services;
+pub(crate) mod state;
 pub(crate) mod storage;
+pub(crate) mod types;
 pub(crate) mod view;
 
 pub(crate) use event::{SettingsEffect, SettingsEvent, SettingsIntent};
 use iced::Task;
 use model::SettingsViewModel;
-use types::SettingsData;
 use state::SettingsState;
+use types::SettingsData;
 
 /// Settings widget: manages application settings (terminal shell/editor,
 /// theme palette colors) with a draft/baseline editing pattern.
@@ -48,6 +48,7 @@ impl SettingsWidget {
         SettingsViewModel {
             draft: self.state.draft(),
             palette_inputs: self.state.palette_inputs(),
+            selected_preset: self.state.selected_preset(),
             tree: self.state.tree(),
             selected_section: self.state.selected_section(),
             selected_path: self.state.selected_path(),

@@ -1,6 +1,8 @@
 use iced::widget::{Space, column, container, row, text};
 use iced::{Element, Length, Theme};
 
+use super::super::event::QuickLaunchIntent;
+use super::super::model::QuickLaunchTreeViewModel;
 use super::sidebar_tree;
 use crate::components::primitive::icon_button::{
     self, IconButtonProps, IconButtonVariant,
@@ -8,8 +10,6 @@ use crate::components::primitive::icon_button::{
 use crate::icons;
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::theme::ThemeProps;
-use super::super::event::QuickLaunchIntent;
-use super::super::model::QuickLaunchTreeViewModel;
 
 const HEADER_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const TITLE_SIZE: f32 = 13.0;

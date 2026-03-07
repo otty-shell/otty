@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use iced::widget::pane_grid;
 
-use super::types::TerminalEntry;
 use super::state::PaneContextMenuState;
+use super::types::TerminalEntry;
 
 /// View model for a single terminal tab, used by the pane grid view.
 #[derive(Clone, Copy)]

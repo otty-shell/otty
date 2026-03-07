@@ -2,8 +2,8 @@ use iced::Task;
 use otty_ui_term::settings::Settings;
 
 use super::event::{TabsEffect, TabsEvent, TabsIntent};
-use super::types::{TabContent, TabItem};
 use super::state::TabsState;
+use super::types::{TabContent, TabItem};
 use crate::domain::quick_launch::WizardTabInit;
 
 /// Reduce a tabs intent event into state mutation and effect tasks.

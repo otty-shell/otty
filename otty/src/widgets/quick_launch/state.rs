@@ -5,10 +5,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use iced::Point;
 
 use super::types::{
-    CommandSpec, EnvVar, LaunchInfo, NodePath, QuickLaunch, QuickLaunchFile,
-    QuickLaunchType, WizardOptions,
-    CommandLaunchOptions, ContextMenuTarget, DropTarget,
-    InlineEditKind, SshLaunchOptions, WizardMode
+    CommandLaunchOptions, CommandSpec, ContextMenuTarget, DropTarget, EnvVar,
+    InlineEditKind, LaunchInfo, NodePath, QuickLaunch, QuickLaunchFile,
+    QuickLaunchType, SshLaunchOptions, WizardMode, WizardOptions,
 };
 
 /// Core state for the quick launch tree and interactions.
@@ -367,7 +366,7 @@ impl ContextMenuState {
     }
 
     pub(crate) fn cursor(&self) -> Point {
-        self.cursor.clone()
+        self.cursor
     }
 }
 
@@ -407,8 +406,7 @@ impl WizardState {
     }
 
     pub(super) fn initialize_create(&mut self, tab_id: u64, parent: NodePath) {
-        self.editors
-            .insert(tab_id, WizardEditorState::new(parent));
+        self.editors.insert(tab_id, WizardEditorState::new(parent));
     }
 
     pub(super) fn initialize_edit(
@@ -462,10 +460,7 @@ impl WizardEditorState {
                 let mut options = CommandLaunchOptions::default();
                 options.set_program(custom.program.clone());
                 options.set_working_directory(
-                    custom
-                        .working_directory()
-                        .unwrap_or_default()
-                        .to_string()
+                    custom.working_directory().unwrap_or_default().to_string(),
                 );
                 options.set_args(custom.args.clone());
                 options.set_envs(
@@ -477,7 +472,6 @@ impl WizardEditorState {
                         })
                         .collect(),
                 );
-                
 
                 Self {
                     mode: WizardMode::Edit { path },
@@ -492,10 +486,7 @@ impl WizardEditorState {
                 options.set_port(ssh.port.to_string());
                 options.set_user(ssh.user.clone().unwrap_or_default());
                 options.set_identity_file(
-                    ssh
-                        .identity_file
-                        .clone()
-                        .unwrap_or_default()
+                    ssh.identity_file.clone().unwrap_or_default(),
                 );
                 options.set_extra_args(ssh.extra_args.clone());
 
@@ -505,7 +496,7 @@ impl WizardEditorState {
                     options: WizardOptions::Ssh(options),
                     error: None,
                 }
-            }
+            },
         }
     }
 
@@ -682,9 +673,8 @@ impl WizardEditorState {
 
 #[cfg(test)]
 mod tests {
-    use crate::widgets::quick_launch::constants::SSH_DEFAULT_PORT;
-
     use super::*;
+    use crate::widgets::quick_launch::constants::SSH_DEFAULT_PORT;
 
     #[test]
     fn given_default_state_when_created_then_not_dirty() {

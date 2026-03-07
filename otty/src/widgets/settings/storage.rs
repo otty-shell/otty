@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::errors::SettingsError;
-use super::types::{SettingsLoad, SettingsLoadStatus, SettingsData};
 use super::state::SettingsState;
+use super::types::{SettingsData, SettingsLoad, SettingsLoadStatus};
 
 /// Load settings from disk.
 pub(super) fn load_settings() -> Result<SettingsLoad, SettingsError> {

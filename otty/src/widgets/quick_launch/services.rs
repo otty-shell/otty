@@ -8,15 +8,14 @@ use otty_ui_term::settings::{
     LocalSessionOptions, SSHSessionOptions, SessionKind,
 };
 
-use crate::services::terminal_settings_for_session;
 use super::constants::SSH_DEFAULT_PORT;
-use super::errors::{QuickLaunchWizardError, QuickLaunchError};
-use super::types::{
-    CommandSpec, NodePath, PreparedQuickLaunch, QuickLaunch,
-    QuickLaunchSetupOutcome,
-    CustomCommand, EnvVar, QuickLaunchType, SshCommand,
-};
+use super::errors::{QuickLaunchError, QuickLaunchWizardError};
 use super::state::WizardEditorState;
+use super::types::{
+    CommandSpec, CustomCommand, EnvVar, NodePath, PreparedQuickLaunch,
+    QuickLaunch, QuickLaunchSetupOutcome, QuickLaunchType, SshCommand,
+};
+use crate::services::terminal_settings_for_session;
 
 const QUICK_LAUNCH_SSH_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -65,13 +64,13 @@ pub(crate) async fn prepare_quick_launch_setup(
         return QuickLaunchSetupOutcome::Canceled { path, launch_id };
     }
 
-    QuickLaunchSetupOutcome::Prepared(PreparedQuickLaunch {
+    QuickLaunchSetupOutcome::Prepared(Box::new(PreparedQuickLaunch {
         path,
         launch_id,
         title,
         settings,
         command: Box::new(command),
-    })
+    }))
 }
 
 /// Validate a quick launch command before execution.

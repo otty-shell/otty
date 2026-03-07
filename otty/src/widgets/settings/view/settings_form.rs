@@ -1,22 +1,22 @@
 use iced::widget::button::Status as ButtonStatus;
+use iced::widget::pick_list::Status as PickListStatus;
 use iced::widget::text::Wrapping;
 use iced::widget::{
-    Column, Space, button, column, container, row, scrollable, text, text_input,
+    Column, Space, button, column, container, pick_list, row, scrollable, text,
+    text_input,
 };
 use iced::{Color, Element, Length, Theme, alignment};
 use otty_ui_term::parse_hex_color;
 use otty_ui_tree::{TreeRowContext, TreeView};
 
+use super::super::event::SettingsIntent;
+use super::super::model::SettingsViewModel;
+use super::super::services::is_valid_hex_color;
+use super::super::types::{SettingsNode, SettingsPreset, SettingsSection};
 use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_COMPACT};
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::widgets::settings::types::PALETTE_LABELS;
-use super::super::model::SettingsViewModel;
-use super::super::event::SettingsIntent;
-use super::super::services::{is_valid_hex_color};
-use super::super::types::{
-    SettingsNode, SettingsPreset, SettingsSection,
-};
 
 const HEADER_HEIGHT: f32 = 32.0;
 const HEADER_PADDING_X: f32 = 12.0;
@@ -42,6 +42,7 @@ const FORM_INPUT_HEIGHT: f32 = 28.0;
 const FORM_INPUT_PADDING_X: f32 = 8.0;
 const FORM_INPUT_PADDING_Y: f32 = 4.0;
 const FORM_INPUT_FONT_SIZE: f32 = 12.0;
+const PRESET_MENU_MAX_HEIGHT: f32 = 240.0;
 
 const PALETTE_ROW_SPACING: f32 = 8.0;
 const PALETTE_SWATCH_SIZE: f32 = 16.0;
@@ -239,13 +240,18 @@ fn terminal_form<'a>(
 fn theme_form<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let preset_button = action_button(
-        "OTTY Dark",
-        true,
-        SettingsIntent::ApplyPreset(SettingsPreset::OttyDark),
-        props.theme,
-    );
-    let presets = row![preset_button].spacing(HEADER_BUTTON_SPACING);
+    let preset_selector = pick_list(
+        SettingsPreset::ALL,
+        props.vm.selected_preset,
+        SettingsIntent::ApplyPreset,
+    )
+    .placeholder("Custom")
+    .width(Length::Fill)
+    .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
+    .text_size(FORM_INPUT_FONT_SIZE)
+    .menu_height(Length::Fixed(PRESET_MENU_MAX_HEIGHT))
+    .style(pick_list_style(props.theme))
+    .menu_style(pick_list_menu_style(props.theme));
 
     let mut palette_column = Column::new().spacing(PALETTE_ROW_SPACING);
     for (index, value) in props.vm.palette_inputs.iter().enumerate() {
@@ -300,7 +306,7 @@ fn theme_form<'a>(
 
     let content = column![
         section_title("Appearance", props.theme),
-        presets,
+        form_row_content_height("Preset", preset_selector),
         palette_column
     ]
     .spacing(FORM_SECTION_SPACING)
@@ -323,7 +329,22 @@ fn section_title<'a>(
 
 fn form_row<'a>(
     label: &'a str,
-    input: iced::widget::TextInput<'a, SettingsIntent, Theme, iced::Renderer>,
+    control: impl Into<Element<'a, SettingsIntent, Theme, iced::Renderer>>,
+) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+    form_row_base(label, control, Some(Length::Fixed(FORM_INPUT_HEIGHT)))
+}
+
+fn form_row_content_height<'a>(
+    label: &'a str,
+    control: impl Into<Element<'a, SettingsIntent, Theme, iced::Renderer>>,
+) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+    form_row_base(label, control, None)
+}
+
+fn form_row_base<'a>(
+    label: &'a str,
+    control: impl Into<Element<'a, SettingsIntent, Theme, iced::Renderer>>,
+    height: Option<Length>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
     let label = text(label)
         .size(FORM_INPUT_FONT_SIZE)
@@ -331,11 +352,15 @@ fn form_row<'a>(
         .align_x(alignment::Horizontal::Left)
         .wrapping(Wrapping::None);
 
-    row![label, input]
+    let mut row = row![label, control.into()]
         .spacing(FORM_ROW_SPACING)
-        .align_y(alignment::Vertical::Center)
-        .height(Length::Fixed(FORM_INPUT_HEIGHT))
-        .into()
+        .align_y(alignment::Vertical::Center);
+
+    if let Some(height) = height {
+        row = row.height(height);
+    }
+
+    row.into()
 }
 
 fn action_button<'a>(
@@ -410,6 +435,50 @@ fn text_input_style(
         let mut style = iced::widget::text_input::default(base, status);
         style.selection = palette.blue;
         style
+    }
+}
+
+fn pick_list_style(
+    theme: ThemeProps<'_>,
+) -> impl Fn(&Theme, PickListStatus) -> pick_list::Style + 'static {
+    let palette = theme.theme.iced_palette().clone();
+    move |_, status| {
+        let border_color = match status {
+            PickListStatus::Hovered | PickListStatus::Opened { .. } => {
+                palette.blue
+            },
+            PickListStatus::Active => palette.overlay,
+        };
+
+        pick_list::Style {
+            text_color: palette.foreground,
+            placeholder_color: palette.dim_foreground,
+            handle_color: palette.dim_foreground,
+            background: palette.overlay.into(),
+            border: iced::Border {
+                width: 1.0,
+                color: border_color,
+                radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
+            },
+        }
+    }
+}
+
+fn pick_list_menu_style(
+    theme: ThemeProps<'_>,
+) -> impl Fn(&Theme) -> iced::overlay::menu::Style + 'static {
+    let palette = theme.theme.iced_palette().clone();
+    move |_| iced::overlay::menu::Style {
+        background: palette.overlay.into(),
+        border: iced::Border {
+            width: 1.0,
+            color: palette.overlay,
+            radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
+        },
+        text_color: palette.foreground,
+        selected_text_color: palette.dim_black,
+        selected_background: palette.dim_blue.into(),
+        shadow: iced::Shadow::default(),
     }
 }
 

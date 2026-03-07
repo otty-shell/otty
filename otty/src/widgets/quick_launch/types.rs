@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use super::constants::SSH_DEFAULT_PORT;
 
-
 /// Path to a node in the quick launch tree.
 pub(crate) type NodePath = Vec<String>;
 
@@ -353,7 +352,7 @@ pub(crate) struct PreparedQuickLaunch {
 /// Outcome of a quick launch setup attempt.
 #[derive(Debug, Clone)]
 pub(crate) enum QuickLaunchSetupOutcome {
-    Prepared(PreparedQuickLaunch),
+    Prepared(Box<PreparedQuickLaunch>),
     Failed {
         path: NodePath,
         launch_id: u64,

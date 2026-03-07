@@ -1,9 +1,9 @@
 use iced::Task;
 
-use super::types::{SettingsLoad, SettingsLoadStatus, SettingsData};
 use super::event::{SettingsEffect, SettingsEvent, SettingsIntent};
 use super::state::SettingsState;
 use super::storage::{load_settings, save_settings};
+use super::types::{SettingsData, SettingsLoad, SettingsLoadStatus};
 
 /// Reduce a settings intent event into state updates and effect tasks.
 pub(crate) fn reduce(
@@ -109,11 +109,11 @@ fn apply_loaded_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widgets::settings::types::{
-        SettingsData, SettingsPreset, SettingsSection,
-        SettingsLoad, SettingsLoadStatus,
-    };
     use crate::widgets::settings::state::SettingsState;
+    use crate::widgets::settings::types::{
+        SettingsData, SettingsLoad, SettingsLoadStatus, SettingsPreset,
+        SettingsSection,
+    };
 
     fn default_state() -> SettingsState {
         SettingsState::default()

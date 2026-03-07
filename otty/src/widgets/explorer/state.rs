@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use super::types::{FileNode, TreePath};
 use super::services::root_label;
+use super::types::{FileNode, TreePath};
 
 /// Runtime state for the sidebar file explorer.
 #[derive(Debug, Default)]

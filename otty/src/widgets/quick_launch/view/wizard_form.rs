@@ -2,11 +2,11 @@ use iced::widget::button::Status as ButtonStatus;
 use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Element, Length, Theme, alignment};
 
+use super::super::event::QuickLaunchIntent;
+use super::super::state::WizardEditorState;
+use super::super::types::QuickLaunchType;
 use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_REGULAR};
 use crate::theme::{IcedColorPalette, ThemeProps};
-use super::super::event::QuickLaunchIntent;
-use super::super::types::QuickLaunchType;
-use super::super::state::WizardEditorState;
 
 const SECTION_SPACING: f32 = 16.0;
 const FIELD_SPACING: f32 = 8.0;

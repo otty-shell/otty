@@ -8,11 +8,9 @@ use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 pub(crate) fn handle(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
     match event {
-        SidebarEvent::Intent(event) => app
-            .widgets
-            .sidebar
-            .reduce(event)
-            .map(AppEvent::Sidebar),
+        SidebarEvent::Intent(event) => {
+            app.widgets.sidebar.reduce(event).map(AppEvent::Sidebar)
+        },
         SidebarEvent::Effect(effect) => handle_effect(app, effect),
     }
 }

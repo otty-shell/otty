@@ -1,4 +1,4 @@
-use super::types::{SettingsData, SettingsPreset, SettingsLoad};
+use super::types::{SettingsData, SettingsLoad, SettingsPreset};
 
 /// Intent events handled by the settings presentation layer.
 #[derive(Debug, Clone)]

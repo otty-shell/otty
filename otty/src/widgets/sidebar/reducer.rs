@@ -1,8 +1,8 @@
 use iced::Task;
 
 use super::event::{SidebarEffect, SidebarEvent, SidebarIntent};
-use super::types::SidebarItem;
 use super::state::SidebarState;
+use super::types::SidebarItem;
 
 const SIDEBAR_MIN_TAB_CONTENT_RATIO: f32 = 0.2;
 
@@ -136,8 +136,7 @@ mod tests {
         let _open_task = widget.reduce(SidebarIntent::AddMenuOpen);
         assert!(widget.has_add_menu_open());
 
-        let _dismiss_task =
-            widget.reduce(SidebarIntent::AddMenuDismiss);
+        let _dismiss_task = widget.reduce(SidebarIntent::AddMenuDismiss);
         assert!(!widget.has_add_menu_open());
     }
 
@@ -146,9 +145,8 @@ mod tests {
     {
         let mut widget = SidebarWidget::new();
         let expected = Point::new(42.0, 24.0);
-        let _task = widget.reduce(
-            SidebarIntent::PaneGridCursorMoved { position: expected },
-        );
+        let _task = widget
+            .reduce(SidebarIntent::PaneGridCursorMoved { position: expected });
         assert_eq!(widget.cursor(), expected);
     }
 }

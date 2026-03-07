@@ -20,8 +20,8 @@ use crate::widgets::quick_launch::view::{
 };
 use crate::widgets::settings::SettingsEvent;
 use crate::widgets::settings::view::settings_form;
-use crate::widgets::sidebar::{self, SidebarEvent, SidebarIntent};
 use crate::widgets::sidebar::types::{SidebarItem, SidebarPane};
+use crate::widgets::sidebar::{self, SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::TabsEvent;
 use crate::widgets::tabs::types::TabContent;
 use crate::widgets::tabs::view::tab_bar;

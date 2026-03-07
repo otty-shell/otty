@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use super::errors::QuickLaunchError;
-use super::types::QuickLaunchFile;
 use super::state::QuickLaunchState;
+use super::types::QuickLaunchFile;
 
 /// Return the path to the quick launches JSON file.
 fn quick_launches_path() -> PathBuf {
