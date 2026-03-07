@@ -5,7 +5,7 @@ use super::super::event::QuickLaunchIntent;
 use super::super::model::QuickLaunchTreeViewModel;
 use super::sidebar_tree;
 use crate::components::primitive::icon_button::{
-    self, IconButtonProps, IconButtonVariant,
+    self, IconButtonHorizontalAlignment, IconButtonProps, IconButtonVariant,
 };
 use crate::icons;
 use crate::layout::BUTTON_SIZE_COMPACT;
@@ -35,6 +35,7 @@ pub(crate) fn view(
         size: HEADER_HEIGHT,
         icon_size: ADD_BUTTON_ICON_SIZE,
         variant: IconButtonVariant::Standard,
+        horizontal_alignment: IconButtonHorizontalAlignment::Right,
     })
     .map(|_| QuickLaunchIntent::HeaderAddButtonPressed);
 

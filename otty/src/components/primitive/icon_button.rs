@@ -17,6 +17,13 @@ pub(crate) enum IconButtonVariant {
     Danger,
 }
 
+/// Horizontal alignment for the icon within its button hitbox.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum IconButtonHorizontalAlignment {
+    Center,
+    Right,
+}
+
 /// Props for rendering an icon button.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct IconButtonProps<'a> {
@@ -25,6 +32,7 @@ pub(crate) struct IconButtonProps<'a> {
     pub(crate) size: f32,
     pub(crate) icon_size: f32,
     pub(crate) variant: IconButtonVariant,
+    pub(crate) horizontal_alignment: IconButtonHorizontalAlignment,
 }
 
 const ICON_BUTTON_PADDING: f32 = 0.0;
@@ -58,7 +66,7 @@ pub(crate) fn view<'a>(
     let icon_container = container(icon)
         .width(Length::Fill)
         .height(Length::Fill)
-        .align_x(alignment::Horizontal::Center)
+        .align_x(resolve_horizontal_alignment(props.horizontal_alignment))
         .align_y(alignment::Vertical::Center);
 
     button(icon_container)
@@ -74,6 +82,15 @@ pub(crate) fn view<'a>(
             ..Default::default()
         })
         .into()
+}
+
+fn resolve_horizontal_alignment(
+    alignment: IconButtonHorizontalAlignment,
+) -> alignment::Horizontal {
+    match alignment {
+        IconButtonHorizontalAlignment::Center => alignment::Horizontal::Center,
+        IconButtonHorizontalAlignment::Right => alignment::Horizontal::Right,
+    }
 }
 
 fn resolve_variant_colors(

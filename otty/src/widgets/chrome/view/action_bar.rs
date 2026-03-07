@@ -3,8 +3,8 @@ use iced::{Element, Length, alignment, mouse};
 
 use super::super::event::ChromeIntent;
 use crate::components::primitive::icon_button::{
-    IconButtonEvent, IconButtonProps, IconButtonVariant,
-    view as icon_button_view,
+    IconButtonEvent, IconButtonHorizontalAlignment, IconButtonProps,
+    IconButtonVariant, view as icon_button_view,
 };
 use crate::fonts::FontsConfig;
 use crate::icons::{LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY};
@@ -135,6 +135,7 @@ fn icon_button<'a>(
         size: BUTTON_SIZE_COMPACT,
         icon_size: ACTION_BAR_CONTROL_ICON_SIZE,
         variant,
+        horizontal_alignment: IconButtonHorizontalAlignment::Center,
     };
     icon_button_view(props)
 }
