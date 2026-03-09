@@ -1,62 +1,64 @@
-use iced::mouse;
-use iced::widget::{column, container, mouse_area, row, stack, text};
-use iced::window::Direction;
-use iced::{Element, Length, Size, Subscription, Task, Theme, window};
+#[path = "subscription.rs"]
+mod subscription;
+#[path = "update.rs"]
+mod update;
+#[path = "view.rs"]
+pub(crate) mod view;
+
+use iced::{Element, Size, Subscription, Task, Theme};
 use otty_ui_term::settings::{
-    BackendSettings, FontSettings, Settings, ThemeSettings,
+    BackendSettings, BlockSelectionMode, FontSettings, InteractionSettings,
+    Settings, ThemeSettings,
 };
 
-use crate::effects::close_window;
-use crate::features::tab::{TabContent, TabEvent, TabKind, tab_reducer};
-use crate::features::terminal::event::{TerminalEvent, terminal_tab_reducer};
-use crate::features::terminal::shell::{
-    ShellSession, fallback_shell_session, setup_shell_session,
-};
+use crate::events::AppEvent;
 use crate::fonts::FontsConfig;
+use crate::layout;
 use crate::state::State;
-use crate::theme::{AppTheme, ThemeManager, ThemeProps};
-use crate::ui::widgets::action_bar;
-use crate::ui::widgets::tab_bar;
-use crate::ui::widgets::tab_content;
+use crate::theme::{AppTheme, ThemeManager};
+use crate::widgets::Widgets;
+use crate::widgets::chrome::ChromeWidget;
+use crate::widgets::explorer::ExplorerWidget;
+use crate::widgets::quick_launch::QuickLaunchWidget;
+use crate::widgets::settings::SettingsWidget;
+use crate::widgets::sidebar::SidebarWidget;
+use crate::widgets::tabs::TabsWidget;
+use crate::widgets::terminal_workspace::TerminalWorkspaceWidget;
+use crate::widgets::terminal_workspace::services::{
+    fallback_shell_session_with_shell, setup_shell_session_with_shell,
+};
+use crate::widgets::terminal_workspace::types::ShellSession;
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
-const RESIZE_EDGE_MOUSE_AREA_THICKNESS: f32 = 6.0;
-const RESIZE_CORNER_MOUSE_AREA_THICKNESS: f32 = 12.0;
 
-/// App-wide events that drive the root update loop.
-#[derive(Debug, Clone)]
-pub(crate) enum Event {
-    IcedReady,
-    ActionBar(action_bar::Event),
-    Tab(TabEvent),
-    Terminal { tab_id: u64, event: TerminalEvent },
-    Window(window::Event),
-    ResizeWindow(Direction),
-}
-
+/// Root application state.
 pub(crate) struct App {
-    window_size: Size,
-    theme_manager: ThemeManager,
-    fonts: FontsConfig,
-    terminal_settings: Settings,
-    shell_session: ShellSession,
-    state: State,
-    is_fullscreen: bool,
+    pub(crate) window_size: Size,
+    pub(crate) theme_manager: ThemeManager,
+    pub(crate) fonts: FontsConfig,
+    pub(crate) terminal_settings: Settings,
+    pub(crate) shell_session: ShellSession,
+    pub(crate) state: State,
+    pub(crate) widgets: Widgets,
 }
 
 impl App {
-    pub(crate) fn new() -> (Self, Task<Event>) {
-        let theme_manager = ThemeManager::new();
+    /// Initialize the application and return the first task.
+    pub(crate) fn new() -> (Self, Task<AppEvent>) {
+        let settings = SettingsWidget::load();
+        let mut theme_manager = ThemeManager::new();
+        let initial_settings = settings.settings_data().clone();
+        theme_manager.set_custom_palette(initial_settings.to_color_palette());
         let current_theme = theme_manager.current();
         let fonts = FontsConfig::default();
-
         let terminal_settings = terminal_settings(current_theme, &fonts);
-        let shell_session = match setup_shell_session() {
+        let shell_path = initial_settings.terminal_shell().to_string();
+        let shell_session = match setup_shell_session_with_shell(&shell_path) {
             Ok(session) => session,
             Err(err) => {
                 log::warn!("shell integration setup failed: {err}");
-                fallback_shell_session()
+                fallback_shell_session_with_shell(&shell_path)
             },
         };
 
@@ -64,8 +66,18 @@ impl App {
             width: MIN_WINDOW_WIDTH,
             height: MIN_WINDOW_HEIGHT,
         };
-        let screen_size = Self::screen_size_from_window(window_size);
+        let screen_size = layout::screen_size_from_window(window_size);
         let state = State::new(window_size, screen_size);
+
+        let widgets = Widgets {
+            sidebar: SidebarWidget::new(),
+            chrome: ChromeWidget::new(),
+            tabs: TabsWidget::new(),
+            quick_launch: QuickLaunchWidget::load(),
+            terminal_workspace: TerminalWorkspaceWidget::new(),
+            explorer: ExplorerWidget::new(),
+            settings,
+        };
 
         let app = App {
             window_size,
@@ -74,162 +86,46 @@ impl App {
             terminal_settings,
             shell_session,
             state,
-            is_fullscreen: false,
+            widgets,
         };
 
-        (app, Task::done(()).map(|_: ()| Event::IcedReady))
+        (app, Task::done(()).map(|_: ()| AppEvent::IcedReady))
     }
 
+    /// Return the window title.
     pub(crate) fn title(&self) -> String {
         String::from("OTTY")
     }
 
+    /// Return the current iced theme.
     pub(crate) fn theme(&self) -> Theme {
         self.theme_manager.iced_theme()
     }
 
-    pub(crate) fn subscription(&self) -> Subscription<Event> {
-        let mut subscriptions = Vec::new();
-        for (&tab_id, tab) in &self.state.tab_items {
-            let TabContent::Terminal(terminal) = &tab.content;
-            for entry in terminal.terminals().values() {
-                let sub = entry.terminal.subscription().with(tab_id).map(
-                    |(tab_id, event)| Event::Terminal {
-                        tab_id,
-                        event: TerminalEvent::ProxyToInternalWidget(event),
-                    },
-                );
-                subscriptions.push(sub);
-            }
-        }
-
-        let terminal_subs = Subscription::batch(subscriptions);
-        let win_subs =
-            window::events().map(|(_id, event)| Event::Window(event));
-
-        Subscription::batch(vec![terminal_subs, win_subs])
+    /// Return active subscriptions.
+    pub(crate) fn subscription(&self) -> Subscription<AppEvent> {
+        subscription::subscription(self)
     }
 
-    pub(crate) fn update(&mut self, event: Event) -> Task<Event> {
-        use Event::*;
-
-        match event {
-            IcedReady => tab_reducer(
-                &mut self.state,
-                &self.terminal_settings,
-                &self.shell_session,
-                TabEvent::NewTab {
-                    kind: TabKind::Terminal,
-                },
-            ),
-            ActionBar(event) => self.handle_action_bar(event),
-            Tab(event) => tab_reducer(
-                &mut self.state,
-                &self.terminal_settings,
-                &self.shell_session,
-                event,
-            ),
-            Terminal { tab_id, event } => {
-                terminal_tab_reducer(&mut self.state, tab_id, event)
-            },
-            Window(window::Event::Resized(size)) => {
-                self.window_size = size;
-                self.state.window_size = size;
-                self.state
-                    .set_screen_size(Self::screen_size_from_window(size));
-                Task::none()
-            },
-            Window(_) => Task::none(),
-            ResizeWindow(dir) => window::latest()
-                .and_then(move |id| window::drag_resize(id, dir)),
-        }
+    /// Handle an incoming event.
+    pub(crate) fn update(&mut self, event: AppEvent) -> Task<AppEvent> {
+        update::update(self, event)
     }
 
-    pub(crate) fn view(&self) -> Element<'_, Event, Theme, iced::Renderer> {
-        let theme = self.theme_manager.current();
-        let theme_props: ThemeProps<'_> = ThemeProps::new(theme);
-
-        let header_title = self.state.active_tab_title().unwrap_or("OTTY");
-
-        let header = action_bar::view(action_bar::Props {
-            title: header_title,
-            theme: theme_props,
-            fonts: &self.fonts,
-        })
-        .map(Event::ActionBar);
-
-        let tab_summaries = self.state.tab_summaries();
-        let active_tab_id = self.state.active_tab_id.unwrap_or(0);
-
-        let tab_bar = tab_bar::view(tab_bar::Props {
-            tabs: tab_summaries,
-            active_tab_id,
-            theme: theme_props,
-        })
-        .map(Event::Tab);
-
-        let main_content = tab_content::view(&self.state, theme_props);
-
-        let content_row =
-            row![main_content].width(Length::Fill).height(Length::Fill);
-
-        let resize_grips = build_resize_grips();
-
-        stack!(
-            column![header, tab_bar, content_row]
-                .width(Length::Fill)
-                .height(Length::Fill),
-            resize_grips
-        )
-        .into()
-    }
-
-    fn handle_action_bar(&mut self, event: action_bar::Event) -> Task<Event> {
-        use action_bar::Event::*;
-
-        match event {
-            NewTab => tab_reducer(
-                &mut self.state,
-                &self.terminal_settings,
-                &self.shell_session,
-                TabEvent::NewTab {
-                    kind: TabKind::Terminal,
-                },
-            ),
-            ToggleFullScreen => self.toggle_full_screen(),
-            ToggleTray => {
-                window::latest().and_then(|id| window::minimize(id, true))
-            },
-            CloseWindow => close_window(),
-            StartWindowDrag => window::latest().and_then(window::drag),
-        }
-    }
-
-    fn toggle_full_screen(&mut self) -> Task<Event> {
-        self.is_fullscreen = !self.is_fullscreen;
-
-        let mode = if self.is_fullscreen {
-            window::Mode::Fullscreen
-        } else {
-            window::Mode::Windowed
-        };
-
-        window::latest().and_then(move |id| window::set_mode(id, mode))
-    }
-
-    fn screen_size_from_window(window_size: Size) -> Size {
-        let action_bar_height = action_bar::ACTION_BAR_HEIGHT;
-        let height = (window_size.height - action_bar_height).max(0.0);
-        Size::new(window_size.width, height)
+    /// Render the root view.
+    pub(crate) fn view(&self) -> Element<'_, AppEvent, Theme, iced::Renderer> {
+        view::view(self)
     }
 }
 
+/// Build terminal widget settings from theme and font config.
 fn terminal_settings(theme: &AppTheme, fonts: &FontsConfig) -> Settings {
     let font_settings = FontSettings {
         size: fonts.terminal.size,
         font_type: fonts.terminal.font_type,
         ..FontSettings::default()
     };
+
     let theme_settings =
         ThemeSettings::new(Box::new(theme.terminal_palette().clone()));
 
@@ -237,111 +133,7 @@ fn terminal_settings(theme: &AppTheme, fonts: &FontsConfig) -> Settings {
         font: font_settings,
         theme: theme_settings,
         backend: BackendSettings::default(),
+        interaction: InteractionSettings::default()
+            .with_block_selection_mode(BlockSelectionMode::CommandOnly),
     }
-}
-
-fn build_resize_grips() -> Element<'static, Event, Theme, iced::Renderer> {
-    let n_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fill)
-            .height(Length::Fixed(RESIZE_EDGE_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::North))
-    .interaction(mouse::Interaction::ResizingVertically);
-
-    let s_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fill)
-            .height(Length::Fixed(RESIZE_EDGE_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::South))
-    .interaction(mouse::Interaction::ResizingVertically);
-
-    let e_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_EDGE_MOUSE_AREA_THICKNESS))
-            .height(Length::Fill),
-    )
-    .on_press(Event::ResizeWindow(Direction::East))
-    .interaction(mouse::Interaction::ResizingHorizontally);
-
-    let w_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_EDGE_MOUSE_AREA_THICKNESS))
-            .height(Length::Fill),
-    )
-    .on_press(Event::ResizeWindow(Direction::West))
-    .interaction(mouse::Interaction::ResizingHorizontally);
-
-    let nw_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS))
-            .height(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::NorthWest))
-    .interaction(mouse::Interaction::ResizingDiagonallyDown);
-
-    let ne_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS))
-            .height(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::NorthEast))
-    .interaction(mouse::Interaction::ResizingDiagonallyUp);
-
-    let sw_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS))
-            .height(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::SouthWest))
-    .interaction(mouse::Interaction::ResizingDiagonallyUp);
-
-    let se_grip = mouse_area(
-        container(text(""))
-            .width(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS))
-            .height(Length::Fixed(RESIZE_CORNER_MOUSE_AREA_THICKNESS)),
-    )
-    .on_press(Event::ResizeWindow(Direction::SouthEast))
-    .interaction(mouse::Interaction::ResizingDiagonallyDown);
-
-    stack!(
-        container(n_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_y(iced::alignment::Vertical::Top),
-        container(s_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_y(iced::alignment::Vertical::Bottom),
-        container(e_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right),
-        container(w_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Left),
-        container(nw_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Left)
-            .align_y(iced::alignment::Vertical::Top),
-        container(ne_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right)
-            .align_y(iced::alignment::Vertical::Top),
-        container(sw_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Left)
-            .align_y(iced::alignment::Vertical::Bottom),
-        container(se_grip)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right)
-            .align_y(iced::alignment::Vertical::Bottom),
-    )
-    .into()
 }

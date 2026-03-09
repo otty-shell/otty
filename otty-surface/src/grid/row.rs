@@ -6,10 +6,9 @@ use std::ops::{
 };
 use std::{ptr, slice};
 
+use super::GridCell;
 use crate::cell::ResetDiscriminant;
 use crate::index::Column;
-
-use super::GridCell;
 
 /// A single logical row of cells in the grid.
 ///

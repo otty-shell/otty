@@ -3,22 +3,20 @@ use std::sync::Arc;
 
 use iced::keyboard::Modifiers;
 use iced_core::Size;
-use otty_libterm::pty;
+#[cfg(test)]
+use otty_libterm::Runtime;
 use otty_libterm::surface::{
     Column, Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceMode,
     viewport_to_point,
 };
 use otty_libterm::{
     DefaultParser, DefaultSurface, RuntimeRequestProxy, RuntimeTerminal,
-    TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize,
+    TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize, pty,
 };
 use tokio::sync::mpsc;
 
 use crate::error::Result;
 use crate::settings::{BackendSettings, SessionKind};
-
-#[cfg(test)]
-use otty_libterm::Runtime;
 
 #[derive(Debug, Clone)]
 pub enum MouseMode {
@@ -86,11 +84,19 @@ impl EngineInner {
                 Ok(EngineInner::Local(result))
             },
             SessionKind::Ssh(options) => {
-                let builder = pty::ssh()
+                let mut builder = pty::ssh()
                     .with_host(options.host())
                     .with_user(options.user())
                     .with_auth(options.auth())
                     .with_size(size.into());
+
+                if let Some(timeout) = options.timeout() {
+                    builder = builder.with_timeout(timeout);
+                }
+
+                if let Some(cancel) = options.cancel_token() {
+                    builder = builder.with_cancel_token(cancel.clone());
+                }
 
                 let result =
                     TerminalBuilder::from(builder).build_with_runtime()?;

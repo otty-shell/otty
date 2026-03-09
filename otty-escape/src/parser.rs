@@ -1,10 +1,8 @@
-use crate::{
-    Action, EscapeActor, EscapeParser, control, csi,
-    dcs::{self, max_dcs_buffer_len},
-    esc, osc,
-};
 use log::debug;
 use otty_vte::{self, CsiParam, VTActor, VTParser};
+
+use crate::dcs::{self, max_dcs_buffer_len};
+use crate::{Action, EscapeActor, EscapeParser, control, csi, esc, osc};
 
 struct Performer<'a, A: EscapeActor> {
     actor: &'a mut A,

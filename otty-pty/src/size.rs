@@ -45,8 +45,9 @@ impl From<PtySize> for winsize {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::*;
     use nix::libc::winsize;
+
+    use super::*;
 
     #[test]
     fn converts_to_winsize_without_loss() {

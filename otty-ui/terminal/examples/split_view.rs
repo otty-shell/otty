@@ -1,11 +1,12 @@
-use iced::Task;
-use iced::alignment;
+use std::collections::HashMap;
+
 use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{button, container, responsive, row, text};
-use iced::{Color, Element, Length, Size, Subscription, window};
+use iced::{
+    Color, Element, Length, Size, Subscription, Task, alignment, window,
+};
 use otty_ui_term::TerminalView;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
-use std::collections::HashMap;
 
 fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)

@@ -183,8 +183,7 @@ impl SnapshotOwned {
             total_lines: surface.grid().total_lines(),
         };
         let visible_cell_count = size.columns * size.screen_lines;
-        let hyperlinks =
-            HyperlinkMap::build(surface, &cells, size, display_offset);
+        let hyperlinks = HyperlinkMap::build(&cells, size, display_offset);
 
         let damage = SnapshotDamage::from(surface.damage());
 
@@ -288,6 +287,7 @@ impl<'a> SnapshotView<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::actor::SurfaceActor;
     use crate::cell::Hyperlink;
     use crate::index::{Column, Line};
@@ -295,8 +295,6 @@ mod tests {
     use crate::{
         SnapshotDamage, SnapshotView, Surface, SurfaceConfig, SurfaceModel,
     };
-
-    use super::*;
 
     struct TestDimensions {
         columns: usize,

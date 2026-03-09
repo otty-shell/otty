@@ -1045,13 +1045,11 @@ fn unexpected(params: &[CsiParam], byte: u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        EscapeParser,
-        color::Rgb,
-        keyboard::{KeyboardMode, KeyboardModeApplyBehavior},
-        mode::{NamedMode, NamedPrivateMode},
-        parser::Parser,
-    };
+    use crate::EscapeParser;
+    use crate::color::Rgb;
+    use crate::keyboard::{KeyboardMode, KeyboardModeApplyBehavior};
+    use crate::mode::{NamedMode, NamedPrivateMode};
+    use crate::parser::Parser;
 
     #[derive(Default)]
     struct RecordingEscapeActor {

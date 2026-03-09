@@ -16,12 +16,12 @@ mod unix;
 use std::process::ExitStatus;
 
 use mio::Token;
-
-pub use crate::errors::SessionError;
-pub use crate::size::PtySize;
 pub use ssh::{SSHAuth, SSHSession, SSHSessionBuilder, ssh};
 #[cfg(unix)]
 pub use unix::{LocalSession, LocalSessionBuilder, local};
+
+pub use crate::errors::SessionError;
+pub use crate::size::PtySize;
 
 /// Generic PTY session that can be used interchangeably across backends.
 pub trait Session {

@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use iced::alignment::Vertical;
 use iced::widget::canvas::{
     self, Canvas, Frame, Geometry, Path, Stroke, Text as CanvasText,
@@ -15,8 +17,6 @@ use otty_ui_term::{
     BlockCommand, BlockRect, BlockUiMode, Terminal, TerminalView, block_rects,
     compute_action_button_geometry,
 };
-
-use std::collections::VecDeque;
 
 const MAX_LOG_ENTRIES: usize = 5;
 

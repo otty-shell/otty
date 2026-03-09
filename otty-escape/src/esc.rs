@@ -1,8 +1,7 @@
-use crate::{
-    Action, EscapeActor,
-    charset::{Charset, CharsetIndex},
-};
 use log::debug;
+
+use crate::charset::{Charset, CharsetIndex};
+use crate::{Action, EscapeActor};
 
 pub(crate) fn perform<A: EscapeActor>(
     actor: &mut A,

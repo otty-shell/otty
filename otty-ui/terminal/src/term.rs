@@ -3,24 +3,24 @@ use std::hash::{Hash, Hasher};
 use std::process::ExitStatus;
 use std::sync::Arc;
 
-use iced::Size;
-use iced::Subscription;
 use iced::futures::stream::BoxStream;
 use iced::futures::{SinkExt, StreamExt};
 use iced::widget::canvas::Cache;
+use iced::{Size, Subscription};
 use log::debug;
-use otty_libterm::SnapshotArc;
-use otty_libterm::TerminalEvent;
 use otty_libterm::surface::{
     BlockSnapshot, Point, SelectionType, SnapshotOwned,
 };
+use otty_libterm::{SnapshotArc, TerminalEvent};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::{self, Receiver};
 
 use crate::bindings::{Binding, BindingAction, BindingsLayout, InputKind};
 use crate::engine::MouseButton;
 use crate::font::TermFont;
-use crate::settings::{FontSettings, Settings, ThemeSettings};
+use crate::settings::{
+    BlockSelectionMode, FontSettings, Settings, ThemeSettings,
+};
 use crate::theme::{ColorPalette, Theme};
 use crate::{engine, error};
 
@@ -239,6 +239,7 @@ pub struct Terminal {
     pub(crate) cache: Cache,
     pub(crate) bindings: BindingsLayout,
     pub(crate) engine: engine::Engine,
+    block_selection_mode: BlockSelectionMode,
     block_ui_mode: BlockUiMode,
     backend_event_rx: Arc<Mutex<Receiver<TerminalEvent>>>,
 }
@@ -258,9 +259,15 @@ impl Hash for TerminalSubscriptionData {
 impl Terminal {
     pub fn new(id: u64, settings: Settings) -> error::Result<Self> {
         let (backend_event_tx, backend_event_rx) = mpsc::channel(100);
-        let theme = Theme::new(settings.theme);
-        let font = TermFont::new(settings.font);
-        let engine = engine::Engine::new(backend_event_tx, settings.backend)?;
+        let Settings {
+            font,
+            theme,
+            backend,
+            interaction,
+        } = settings;
+        let theme = Theme::new(theme);
+        let font = TermFont::new(font);
+        let engine = engine::Engine::new(backend_event_tx, backend)?;
 
         Ok(Self {
             id,
@@ -270,6 +277,7 @@ impl Terminal {
             bindings: BindingsLayout::default(),
             cache: Cache::default(),
             engine,
+            block_selection_mode: interaction.block_selection_mode(),
             block_ui_mode: BlockUiMode::Internal,
             backend_event_rx: Arc::new(Mutex::new(backend_event_rx)),
         })
@@ -392,6 +400,11 @@ impl Terminal {
         self.cache.clear();
     }
 
+    /// Return how pointer clicks should affect block selection.
+    pub fn block_selection_mode(&self) -> BlockSelectionMode {
+        self.block_selection_mode
+    }
+
     /// Return the current block UI rendering mode.
     pub fn block_ui_mode(&self) -> BlockUiMode {
         self.block_ui_mode
@@ -461,12 +474,13 @@ fn terminal_subscription_stream(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::settings::Settings;
     use otty_libterm::surface::{
         BlockKind, BlockMeta, Column, Dimensions, Line, Surface, SurfaceConfig,
         SurfaceModel,
     };
+
+    use super::*;
+    use crate::settings::Settings;
 
     struct TestDimensions {
         columns: usize,
@@ -578,6 +592,7 @@ mod tests {
                 Arc::clone(&snapshot),
                 settings.backend.size,
             ),
+            block_selection_mode: settings.interaction.block_selection_mode(),
             block_ui_mode: BlockUiMode::Internal,
             backend_event_rx: Arc::new(Mutex::new(backend_event_rx)),
         }

@@ -3,12 +3,13 @@
 //! Run with:
 //! `cargo run --package otty-pty --example run_unix_shell`
 
-#[cfg(unix)]
-use otty_pty::{Session, SessionError, local};
 use std::error::Error;
 use std::io::ErrorKind;
 use std::thread;
 use std::time::Duration;
+
+#[cfg(unix)]
+use otty_pty::{Session, SessionError, local};
 
 #[cfg(not(unix))]
 fn main() -> Result<(), Box<dyn Error>> {
