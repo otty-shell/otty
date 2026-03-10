@@ -17,6 +17,7 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: nightly-2026-03-10
+        components: clippy, rustfmt
     - run: cargo +nightly-2026-03-10 fmt --all -- --check
 
   Lint:
