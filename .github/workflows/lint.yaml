@@ -10,10 +10,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  FmtCheck:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: nightly-2026-03-10
+    - run: cargo +nightly-2026-03-10 fmt --all -- --check
+
   Lint:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@stable
-    - run: cargo +nightly fmt --all -- --check
     - run: cargo lint
