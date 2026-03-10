@@ -1,5 +1,9 @@
 <div align="center">
-    <img src="./assets/svg/logo-full.svg" height="240">
+    <picture align=center>
+        <source media="(prefers-color-scheme: dark)" srcset="./assets/logo/logo-full.png">
+        <source media="(prefers-color-scheme: light)" srcset="./assets/logo/logo-full.png">
+        <img alt="OTTY logo." src="./assets/logo/logo-full.png">
+    </picture>
     <h4>OTTY - an open-source, terminal-centric workspace that transforms your shell into a true IDE.</h4>
 </div>
 
