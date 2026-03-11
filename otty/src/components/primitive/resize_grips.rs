@@ -5,11 +5,6 @@ use iced::{Element, Length, Theme, mouse};
 const RESIZE_EDGE_THICKNESS: f32 = 6.0;
 const RESIZE_CORNER_THICKNESS: f32 = 12.0;
 
-/// Return whether custom drag-resize grips are supported on this platform.
-pub(crate) const fn is_supported() -> bool {
-    !cfg!(target_os = "macos")
-}
-
 /// Events emitted by the window resize grips.
 #[derive(Debug, Clone)]
 pub(crate) enum ResizeGripEvent {
