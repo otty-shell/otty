@@ -72,7 +72,16 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             )
         },
         AppEvent::ResizeWindow(dir) => {
-            window::latest().and_then(move |id| window::drag_resize(id, dir))
+            #[cfg(target_os = "macos")]
+            {
+                Task::none()
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                window::latest()
+                    .and_then(move |id| window::drag_resize(id, dir))
+            }
         },
         AppEvent::Window(_) => Task::none(),
     }
