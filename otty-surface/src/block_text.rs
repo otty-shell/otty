@@ -172,6 +172,7 @@ impl SnapshotOwned {
 
 #[cfg(test)]
 mod tests {
+    use super::collect_block_text;
     use crate::block::{BlockKind, BlockMeta, BlockSnapshot};
     use crate::cell::{Cell, Flags};
     use crate::hyperlink::HyperlinkMap;
@@ -182,8 +183,6 @@ mod tests {
         SnapshotSize,
     };
     use crate::{Colors, SelectionRange};
-
-    use super::collect_block_text;
 
     fn block_snapshot(
         id: &str,

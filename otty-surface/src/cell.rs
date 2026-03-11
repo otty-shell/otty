@@ -317,10 +317,9 @@ impl LineLength for Row<Cell> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::mem;
 
+    use super::*;
     use crate::grid::Row;
 
     #[test]

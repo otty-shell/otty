@@ -12,7 +12,7 @@ rust-version = { workspace = true }
 
 [dependencies]
 thiserror = { workspace = true }
-iced = { version = "0.14", features = ["canvas", "lazy", "advanced"] }
+iced = { workspace = true, features = ["canvas", "lazy", "advanced"] }
 iced_graphics = { version = "0.14", default-features = false }
 iced_core = "0.14"
 otty-libterm = { path = "../../otty-libterm", version = "0.1.0" }

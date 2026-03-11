@@ -1,7 +1,12 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use iced::Font;
-use otty_libterm::{TerminalSize, pty::SSHAuth};
+use otty_libterm::TerminalSize;
+use otty_libterm::pty::SSHAuth;
 
 use crate::theme::ColorPalette;
 
@@ -11,11 +16,57 @@ const DEFAULT_SHELL: &str = "cmd.exe";
 #[cfg(unix)]
 const DEFAULT_SHELL: &str = "/bin/bash";
 
-#[derive(Default, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Settings {
     pub font: FontSettings,
     pub theme: ThemeSettings,
     pub backend: BackendSettings,
+    pub interaction: InteractionSettings,
+}
+
+/// Determines how pointer clicks affect terminal block selection.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
+pub enum BlockSelectionMode {
+    /// Select a block when the primary (left) mouse button is clicked.
+    #[default]
+    PrimaryClick,
+    /// Ignore primary clicks for block selection and rely on external
+    /// commands (for example, context-menu actions).
+    CommandOnly,
+}
+
+/// Input settings controlling terminal interaction behavior.
+///
+/// # Example
+/// ```rust
+/// use otty_ui_term::settings::{BlockSelectionMode, InteractionSettings};
+///
+/// let interaction = InteractionSettings::default()
+///     .with_block_selection_mode(BlockSelectionMode::CommandOnly);
+/// assert_eq!(
+///     interaction.block_selection_mode(),
+///     BlockSelectionMode::CommandOnly
+/// );
+/// ```
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
+pub struct InteractionSettings {
+    block_selection_mode: BlockSelectionMode,
+}
+
+impl InteractionSettings {
+    /// Return the pointer block-selection mode.
+    pub fn block_selection_mode(&self) -> BlockSelectionMode {
+        self.block_selection_mode
+    }
+
+    /// Set the pointer block-selection mode.
+    pub fn with_block_selection_mode(
+        mut self,
+        mode: BlockSelectionMode,
+    ) -> Self {
+        self.block_selection_mode = mode;
+        self
+    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -106,6 +157,8 @@ pub struct SSHSessionOptions {
     host: String,
     user: String,
     auth: SSHAuth,
+    timeout: Option<Duration>,
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 impl SSHSessionOptions {
@@ -124,6 +177,16 @@ impl SSHSessionOptions {
         self
     }
 
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    pub fn with_cancel_token(mut self, cancel: Arc<AtomicBool>) -> Self {
+        self.cancel = Some(cancel);
+        self
+    }
+
     pub fn host(&self) -> &String {
         &self.host
     }
@@ -134,6 +197,14 @@ impl SSHSessionOptions {
 
     pub fn auth(&self) -> SSHAuth {
         self.auth.clone()
+    }
+
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout
+    }
+
+    pub fn cancel_token(&self) -> Option<&Arc<AtomicBool>> {
+        self.cancel.as_ref()
     }
 }
 

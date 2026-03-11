@@ -15,8 +15,6 @@ mod selection;
 mod snapshot;
 mod surface;
 
-pub(crate) use otty_escape as escape;
-
 pub use actor::SurfaceActor;
 pub use block::{BlockKind, BlockMeta, BlockSnapshot, BlockSurface};
 pub use block_text::collect_block_text;
@@ -25,6 +23,7 @@ pub use color::Colors;
 pub use grid::{Dimensions, Grid, Scroll};
 pub use index::{Column, Line, Point, Side};
 pub use mode::SurfaceMode;
+pub(crate) use otty_escape as escape;
 pub use search::{Match, RegexIter, RegexSearch};
 pub use selection::{SelectionRange, SelectionType};
 pub use snapshot::{

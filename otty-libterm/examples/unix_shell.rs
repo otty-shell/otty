@@ -16,17 +16,18 @@ fn main() -> Result<()> {
 
 #[cfg(unix)]
 mod unix_shell {
-    use super::*;
-    use nix::fcntl::{FcntlArg, OFlag, fcntl};
-    use nix::libc;
-    use otty_libterm::{
-        TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize,
-        escape::{Color as AnsiColor, StdColor},
-        pty,
-        surface::{Colors, Flags, SnapshotCell, SnapshotOwned},
-    };
     use std::os::fd::{AsRawFd, BorrowedFd};
     use std::thread;
+
+    use nix::fcntl::{FcntlArg, OFlag, fcntl};
+    use nix::libc;
+    use otty_libterm::escape::{Color as AnsiColor, StdColor};
+    use otty_libterm::surface::{Colors, Flags, SnapshotCell, SnapshotOwned};
+    use otty_libterm::{
+        TerminalBuilder, TerminalEvent, TerminalRequest, TerminalSize, pty,
+    };
+
+    use super::*;
 
     pub fn run() -> Result<()> {
         let (rows, cols) = query_winsize().unwrap_or((24, 80));

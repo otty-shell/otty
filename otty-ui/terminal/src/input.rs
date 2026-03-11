@@ -1,28 +1,33 @@
-use iced::{Point, Size, keyboard::Key, mouse::ScrollDelta};
+use iced::keyboard::Key;
+use iced::mouse::ScrollDelta;
+use iced::{Point, Size};
 use iced_core::clipboard::Kind as ClipboardKind;
 use iced_core::mouse::{self, Click};
-use otty_libterm::{
-    SnapshotArc, TerminalSize,
-    surface::{BlockKind, SelectionType, SurfaceMode},
-};
+use otty_libterm::surface::{BlockKind, SelectionType, SurfaceMode};
+use otty_libterm::{SnapshotArc, TerminalSize};
 
-use crate::{
-    bindings::{BindingAction, BindingsLayout, InputKind},
-    engine::{Engine, MouseButton},
-    font::TermFont,
-    view::TerminalViewState,
-};
+use crate::bindings::{BindingAction, BindingsLayout, InputKind};
+use crate::engine::{Engine, MouseButton};
+use crate::font::TermFont;
+use crate::settings::BlockSelectionMode;
+use crate::view::TerminalViewState;
 
 pub(crate) struct InputManager<'a> {
     terminal_id: u64,
     bindings: &'a BindingsLayout,
+    block_selection_mode: BlockSelectionMode,
 }
 
 impl<'a> InputManager<'a> {
-    pub(crate) fn new(terminal_id: u64, bindings: &'a BindingsLayout) -> Self {
+    pub(crate) fn new(
+        terminal_id: u64,
+        bindings: &'a BindingsLayout,
+        block_selection_mode: BlockSelectionMode,
+    ) -> Self {
         Self {
             terminal_id,
             bindings,
+            block_selection_mode,
         }
     }
 
@@ -270,7 +275,8 @@ impl<'a> InputManager<'a> {
             }
         }
 
-        if !was_selecting
+        if self.block_selection_mode == BlockSelectionMode::PrimaryClick
+            && !was_selecting
             && !terminal_state.mode.intersects(SurfaceMode::MOUSE_MODE)
             && !terminal_state.mode.contains(SurfaceMode::ALT_SCREEN)
         {
@@ -546,9 +552,8 @@ mod tests {
     mod handle_left_button_pressed_tests {
         use iced::keyboard::Modifiers;
 
-        use crate::bindings;
-
         use super::*;
+        use crate::bindings;
 
         #[test]
         fn handles_mouse_mode_with_left_click() {
@@ -559,7 +564,11 @@ mod tests {
             let mut publish = |event| commands.push(event);
             let _modifiers = Modifiers::empty();
             let bindings = bindings::BindingsLayout::new();
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             input_manager.handle_left_button_pressed(
                 &mut state,
@@ -596,7 +605,11 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             input_manager.handle_left_button_pressed(
                 &mut state,
@@ -620,9 +633,8 @@ mod tests {
     }
 
     mod handle_cursor_moved_tests {
-        use crate::bindings;
-
         use super::*;
+        use crate::bindings;
 
         #[test]
         fn updates_mouse_position_on_grid() {
@@ -662,7 +674,11 @@ mod tests {
             ];
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             for (layout_position, cursor_position, expected) in cases {
                 input_manager.handle_cursor_moved(
@@ -690,7 +706,11 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             input_manager.handle_cursor_moved(
                 &mut state,
@@ -723,7 +743,11 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             input_manager.handle_cursor_moved(
                 &mut state,
@@ -759,7 +783,11 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             input_manager.handle_cursor_moved(
                 &mut state,
@@ -802,7 +830,11 @@ mod tests {
             let mut publish = |event| commands.push(event);
             let _modifiers = Modifiers::empty();
 
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             input_manager.handle_button_released(
                 &mut state,
@@ -839,7 +871,11 @@ mod tests {
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
 
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             input_manager.handle_button_released(
                 &mut state,
@@ -862,7 +898,11 @@ mod tests {
             let bindings = BindingsLayout::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             let status = input_manager.handle_button_released(
                 &mut state,
@@ -889,6 +929,33 @@ mod tests {
         }
 
         #[test]
+        fn does_not_select_block_on_click_in_command_only_mode() {
+            let mut state = TerminalViewState::new();
+            state.hovered_block_id = Some(String::from("block-1"));
+            state.hovered_block_kind = Some(BlockKind::Command);
+            let bindings = BindingsLayout::new();
+            let mut commands = Vec::new();
+            let mut publish = |event| commands.push(event);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::CommandOnly,
+            );
+
+            let status = input_manager.handle_button_released(
+                &mut state,
+                default_snapshot(),
+                &bindings,
+                &mut publish,
+            );
+
+            assert!(state.selected_block_id.is_none());
+            assert!(state.selected_block_kind.is_none());
+            assert!(commands.is_empty());
+            assert_eq!(status, iced::event::Status::Ignored);
+        }
+
+        #[test]
         fn ignores_prompt_blocks_when_selecting() {
             let mut state = TerminalViewState::new();
             state.hovered_block_id = Some(String::from("prompt"));
@@ -896,7 +963,11 @@ mod tests {
             let bindings = BindingsLayout::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             let status = input_manager.handle_button_released(
                 &mut state,
@@ -930,7 +1001,11 @@ mod tests {
             let bindings = BindingsLayout::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             let status = input_manager.handle_button_released(
                 &mut state,
@@ -957,7 +1032,11 @@ mod tests {
             let bindings = BindingsLayout::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             let status = input_manager.handle_button_released(
                 &mut state,
@@ -973,9 +1052,8 @@ mod tests {
     }
 
     mod handle_wheel_scrolled_tests {
-        use crate::bindings;
-
         use super::*;
+        use crate::bindings;
 
         #[test]
         fn scroll_with_lines_downward() {
@@ -985,7 +1063,11 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             input_manager.handle_wheel_scrolled(
                 &mut state,
@@ -1012,7 +1094,11 @@ mod tests {
             let mut publish = |event| commands.push(event);
 
             let bindings = bindings::BindingsLayout::new();
-            let input_manager = InputManager::new(TEST_ID, &bindings);
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
 
             input_manager.handle_wheel_scrolled(
                 &mut state,

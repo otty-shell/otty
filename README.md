@@ -1,6 +1,10 @@
 <div align="center">
-    <img src="./assets/svg/logo-full.svg" height="240">
-    <h4>OTTY - an open-source, terminal-centric workspace that transforms your shell into a true IDE.</h4>
+    <picture align=center>
+        <source media="(prefers-color-scheme: dark)" srcset="./assets/logo/logo-full.png">
+        <source media="(prefers-color-scheme: light)" srcset="./assets/logo/logo-full.png">
+        <img alt="OTTY logo." src="./assets/logo/logo-full.png">
+    </picture>
+    <h4>OTTY - an open-source terminal-centric workspace for development and operations.</h4>
 </div>
 
 > **WORK IN PROGRESS**: Now this project is under active development phase, you can support it by providing your thoughts, development ideas and even contributing as a developer.
@@ -11,51 +15,42 @@
     <img src="./assets/otty.png">
 </div>
 
-OTTY is not just one more blazing fast terminal emulator, OTTY rethinks the terminal itself as the only workspace you need for development or operation your system.
+OTTY is not just another blazing-fast terminal emulator. It starts from a different premise: the terminal should be the primary workspace for development and operations, not just a shell inside a fragmented toolchain.
 
-Developers spend most of their time in the terminal, but modern terminals remain minimal shells. As a result, engineers juggle between the terminal, code editors (AI and not), different dashboards, and SSH clients instead of working in one coherent space.
+Developers already spend much of their time in the terminal, yet modern terminals remain narrow interfaces. As a result, engineers constantly switch between the terminal, editors, dashboards, and SSH clients instead of working in one coherent environment. OTTY is built to turn the terminal into that environment.
 
-#### Install
+### Key feautres
+
+- **Explorer that stays in sync with your work**  
+  Browse project files from the sidebar and keep navigation aligned with the directory of the active terminal session.
+
+- **Quick Launch for saved commands and SSH targets**  
+  Save frequently used commands or SSH connections and launch them without retyping the same input every time.
+
+
+- **Block-based terminal UI**  
+  OTTY structures terminal output activity around atomic command blocks, making it easier to control each command and its output.
+
+
+### Install
+
+#### From artifacts
 
 Prebuilt artifacts are published on the GitHub Releases page: https://github.com/otty-shell/otty/releases
 
-#### Supported Platforms
+### Supported Platforms
 
 - Linux: DEB- and RPM-based distributions (`.deb` / `.rpm`).
 - macOS: Intel (`x86_64`) and Apple Silicon (`aarch64`) builds (`.dmg`).
 
-#### What works today
+### Roadmap
 
-- Desktop app:
-  - Tabs and split screen.
-  - Block-oriented terminal UX.
-    - Block highlight
-    - Semantic copy (prompt, content, command)
-- Terminal stack powering the app:
-  - `otty-ui-term`: the terminal widget for Iced.
-  - `otty-libterm`: request/event-driven terminal engine.
-  - `otty-surface`: in-memory surface model (grid, selection/search, snapshots, blocks).
-  - `otty-escape` + `otty-vte`: VT parser + semantic actions (see `otty-escape/docs/support_sequences.md`).
-  - `otty-pty`: PTY backends.
-
-#### What is planned (not implemented yet)
-
-- App settings and customizations (fonts, colors, profiles, shell, etc...).
-- SSH connections catalog.
-- Support windows platform.
-- Automatically app version upgrade.
-- Tool management (install/remove SDKs and CLIs).
-- Plugins system.
-- AI agent integrations.
-- Secret storage.
-- File tree widget.
-
-More details about the future plans will be appeared soon in roadmap.
+See [OTTY Project](https://github.com/orgs/otty-shell/projects/1)
 
 ### License
 
-See [LICENSE](./LICENSE).
+See [LICENSE](./LICENSE)
 
 ### CONTRIBUTORS
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+See [CONTRIBUTING.md](./CONTRIBUTING.md)

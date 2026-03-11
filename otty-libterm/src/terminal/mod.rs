@@ -13,23 +13,22 @@ use std::time::{Duration, Instant};
 use cursor_icon::CursorIcon;
 use flume::{Receiver, Sender};
 use log::debug;
+use options::TerminalOptions;
 
 use crate::Result;
+use crate::escape::{
+    Action, CursorShape, CursorStyle, EscapeParser, Hyperlink,
+};
+use crate::pty::{Pollable, Session, SessionError};
+use crate::surface::{
+    Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceActor,
+    SurfaceModel,
+};
 use crate::terminal::channel::{
     ChannelSendError, TerminalEvents, TerminalHandle, map_send_error,
 };
 use crate::terminal::size::TerminalSize;
 use crate::terminal::surface_actor::TerminalSurfaceActor;
-use crate::{
-    escape::{Action, CursorShape, CursorStyle, EscapeParser, Hyperlink},
-    pty::{Pollable, Session, SessionError},
-    surface::{
-        Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceActor,
-        SurfaceModel,
-    },
-};
-
-use options::TerminalOptions;
 
 /// Owned frame wrapper shared with terminal consumers.
 pub type SnapshotArc = Arc<SnapshotOwned>;
@@ -600,6 +599,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::surface::{Surface, SurfaceConfig};
     use crate::terminal::channel::ChannelConfig;
     use crate::tests::{
@@ -607,8 +607,6 @@ mod tests {
         collect_events, exit_ok,
     };
     use crate::{DefaultParser, Error};
-
-    use super::*;
 
     #[test]
     fn partial_writes_keep_pending_output_until_drained() -> Result<()> {

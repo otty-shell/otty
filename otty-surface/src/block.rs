@@ -1,7 +1,6 @@
 use std::cmp::{max, min};
 use std::sync::Arc;
 
-use crate::Flags;
 use crate::cell::Cell;
 use crate::escape::{
     BlockKind as EscapeBlockKind, BlockMeta as EscapeBlockMeta, BlockPhase,
@@ -14,7 +13,9 @@ use crate::snapshot::{
     CursorSnapshot, SnapshotCell, SnapshotDamage, SnapshotOwned, SnapshotSize,
     SurfaceModel,
 };
-use crate::{Dimensions, Surface, SurfaceActor, SurfaceConfig, SurfaceMode};
+use crate::{
+    Dimensions, Flags, Surface, SurfaceActor, SurfaceConfig, SurfaceMode,
+};
 
 /// Kind of a terminal block.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1434,11 +1435,7 @@ impl SurfaceModel for BlockSurface {
         };
         let visible_cell_count = size.columns * size.screen_lines;
 
-        let hyperlinks = HyperlinkMap::build_without_surface(
-            &cells,
-            size,
-            self.display_offset,
-        );
+        let hyperlinks = HyperlinkMap::build(&cells, size, self.display_offset);
 
         if selection.is_none() {
             if let Some(global_selection) = &self.global_selection {

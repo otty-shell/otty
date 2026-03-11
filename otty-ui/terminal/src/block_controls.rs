@@ -58,8 +58,9 @@ pub fn compute_action_button_geometry(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use otty_libterm::surface::BlockKind;
+
+    use super::*;
 
     fn make_block_rect(height: f32, width: f32) -> BlockRect {
         BlockRect {

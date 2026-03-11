@@ -1,9 +1,9 @@
-use crate::{
-    actor::{Action, EscapeActor},
-    charset::CharsetIndex,
-};
-use log::debug;
 use std::fmt;
+
+use log::debug;
+
+use crate::actor::{Action, EscapeActor};
+use crate::charset::CharsetIndex;
 
 /// Enumeration of the C0/C1 control codes that may be observed outside of an
 /// escape sequence.
@@ -134,7 +134,9 @@ pub(crate) fn perform<A: EscapeActor>(byte: u8, actor: &mut A) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EscapeParser, charset::CharsetIndex, parser::Parser};
+    use crate::EscapeParser;
+    use crate::charset::CharsetIndex;
+    use crate::parser::Parser;
 
     #[derive(Default)]
     struct RecordingActor {

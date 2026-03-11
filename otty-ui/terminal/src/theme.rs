@@ -1,6 +1,8 @@
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
+use std::str::FromStr;
 
-use iced::{Color, widget::container};
+use iced::Color;
+use iced::widget::container;
 use otty_libterm::escape::{self, Rgb, StdColor};
 
 use crate::settings::ThemeSettings;
@@ -244,9 +246,11 @@ pub fn parse_hex_color(value: &str) -> Color {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use otty_libterm::escape;
     use std::collections::HashMap;
+
+    use otty_libterm::escape;
+
+    use super::*;
 
     #[test]
     fn get_basic_indexed_colors() {

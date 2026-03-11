@@ -55,8 +55,9 @@ pub fn block_rects(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
+
+    use super::*;
 
     fn block(
         id: &str,

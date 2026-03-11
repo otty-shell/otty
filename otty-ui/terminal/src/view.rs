@@ -17,16 +17,15 @@ use iced_graphics::core::Widget;
 use iced_graphics::core::widget::{Tree, tree};
 use iced_graphics::geometry::Stroke;
 use otty_libterm::escape::{self as ansi, CursorShape, StdColor};
-use otty_libterm::surface::SurfaceMode;
-use otty_libterm::surface::{BlockKind, Flags, Point as TerminalGridPoint};
+use otty_libterm::surface::{
+    BlockKind, Flags, Point as TerminalGridPoint, SurfaceMode,
+};
 
+use crate::block_controls::BlockActionButtonGeometry;
+use crate::block_layout::{self, BlockRect};
 use crate::input::InputManager;
 use crate::term::{BlockCommand, BlockUiMode, Event, Terminal};
 use crate::theme::TerminalStyle;
-use crate::{
-    block_controls::BlockActionButtonGeometry,
-    block_layout::{self, BlockRect},
-};
 
 #[derive(Default)]
 struct BlockUiVisuals {
@@ -88,7 +87,11 @@ impl<'a> TerminalView<'a> {
     pub fn show(term: &'a Terminal) -> Element<'a, Event> {
         container(Self {
             term,
-            input_manager: InputManager::new(term.id, &term.bindings),
+            input_manager: InputManager::new(
+                term.id,
+                &term.bindings,
+                term.block_selection_mode(),
+            ),
         })
         .padding(10)
         .width(Length::Fill)
@@ -806,10 +809,6 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
             );
         }
 
-        if !view_state.is_focused {
-            return; // iced::event::Status::Ignored;
-        }
-
         let mut publish = |event: Event| {
             shell.publish(event);
         };
@@ -818,6 +817,15 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
             iced::Event::Mouse(mouse_event)
                 if self.is_cursor_in_layout(cursor, layout) =>
             {
+                if !view_state.is_focused
+                    && !matches!(
+                        mouse_event,
+                        iced::mouse::Event::CursorMoved { .. }
+                    )
+                {
+                    return;
+                }
+
                 self.input_manager.handle_mouse_event(
                     view_state,
                     terminal_state,
@@ -830,7 +838,7 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                     &mut publish,
                 )
             },
-            iced::Event::Keyboard(keyboard_event) => {
+            iced::Event::Keyboard(keyboard_event) if view_state.is_focused => {
                 self.input_manager.handle_keyboard_event(
                     view_state,
                     terminal_state,

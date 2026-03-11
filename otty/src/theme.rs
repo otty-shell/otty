@@ -1,7 +1,8 @@
-use iced::Theme;
-use iced::{Color, theme::Palette};
+use iced::theme::Palette;
+use iced::{Color, Theme};
 use otty_ui_term::{ColorPalette as TerminalColorPalette, parse_hex_color};
 
+/// Raw string-based color palette used for serialization and settings.
 #[derive(Debug, Clone)]
 pub struct ColorPalette {
     pub foreground: String,
@@ -48,7 +49,6 @@ impl Default for ColorPalette {
             magenta: String::from("#C678DD"),
             cyan: String::from("#56B6C2"),
             white: String::from("#D1D5DB"),
-            // BRIGHT COLORS
             bright_black: String::from("#4F5666"),
             bright_red: String::from("#FF5C8D"),
             bright_green: String::from("#5AF78E"),
@@ -58,7 +58,6 @@ impl Default for ColorPalette {
             bright_cyan: String::from("#2CD4C8"),
             bright_white: String::from("#FFFFFF"),
             bright_foreground: String::from("#ECEFF4"),
-            // DIM COLORS
             dim_foreground: String::from("#6B7280"),
             dim_black: String::from("#0F1115"),
             dim_red: String::from("#8F3F4A"),
@@ -109,6 +108,7 @@ impl From<ColorPalette> for TerminalColorPalette {
     }
 }
 
+/// Parsed color palette ready for iced rendering.
 #[derive(Debug, Clone)]
 pub struct IcedColorPalette {
     pub foreground: Color,
@@ -213,7 +213,7 @@ impl From<&AppTheme> for Theme {
         let palette = Palette {
             background: palette.background,
             text: palette.foreground,
-            primary: palette.background,
+            primary: palette.blue,
             success: palette.green,
             danger: palette.red,
             warning: palette.yellow,
@@ -224,20 +224,33 @@ impl From<&AppTheme> for Theme {
 }
 
 impl AppTheme {
+    /// Build an application theme from a custom palette.
+    pub fn from_palette(id: String, raw_palette: ColorPalette) -> Self {
+        let iced_palette = IcedColorPalette::from(&raw_palette);
+        Self {
+            id,
+            raw_palette,
+            iced_palette,
+        }
+    }
+
+    /// Return the theme identifier.
     pub fn id(&self) -> &String {
         &self.id
     }
 
+    /// Build terminal-compatible palette from the raw colors.
     pub fn terminal_palette(&self) -> TerminalColorPalette {
         TerminalColorPalette::from(self.raw_palette.clone())
     }
 
+    /// Return the parsed iced color palette.
     pub fn iced_palette(&self) -> &IcedColorPalette {
         &self.iced_palette
     }
 }
 
-/// Theme props passed through App -> Screen -> Widget -> Component.
+/// Theme props passed through the view tree for consistent styling.
 #[derive(Debug, Clone, Copy)]
 pub struct ThemeProps<'a> {
     pub theme: &'a AppTheme,
@@ -245,6 +258,7 @@ pub struct ThemeProps<'a> {
 }
 
 impl<'a> ThemeProps<'a> {
+    /// Create theme props with no overrides.
     pub fn new(theme: &'a AppTheme) -> Self {
         Self {
             theme,
@@ -257,36 +271,47 @@ impl<'a> ThemeProps<'a> {
 #[derive(Debug, Clone)]
 pub struct ThemeManager {
     current: AppTheme,
-    _presets: Vec<AppTheme>,
 }
 
 impl ThemeManager {
+    /// Create a theme manager with the default palette.
     pub fn new() -> Self {
-        let default = AppTheme::default();
-
         Self {
-            current: default.clone(),
-            _presets: vec![default],
+            current: AppTheme::default(),
         }
     }
 
+    /// Return the current application theme.
     pub fn current(&self) -> &AppTheme {
         &self.current
     }
 
-    pub fn _set_current(&mut self, id: String) {
-        if self.current.id == id {
-            return;
-        }
-
-        if let Some(found) = self._presets.iter().find(|theme| theme.id == id) {
-            self.current = found.clone();
-        } else {
-            self.current = AppTheme::default();
-        }
-    }
-
+    /// Build an iced theme from the current palette.
     pub fn iced_theme(&self) -> Theme {
         Theme::from(&self.current)
+    }
+
+    /// Replace the current theme with a custom palette.
+    pub fn set_custom_palette(&mut self, palette: ColorPalette) {
+        self.current = AppTheme::from_palette(String::from("custom"), palette);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::Theme;
+
+    use super::{AppTheme, ColorPalette};
+
+    #[test]
+    fn given_app_theme_when_converted_to_iced_then_primary_uses_accent_blue() {
+        let app_theme = AppTheme::from_palette(
+            String::from("custom"),
+            ColorPalette::default(),
+        );
+
+        let theme = Theme::from(&app_theme);
+
+        assert_eq!(theme.palette().primary, app_theme.iced_palette().blue);
     }
 }

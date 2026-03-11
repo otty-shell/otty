@@ -2197,13 +2197,12 @@ impl IndexMut<Column> for TabStops {
 mod tests {
     use std::mem;
 
+    use super::*;
     use crate::cell::{Cell, Flags};
     use crate::damage::LineDamageBounds;
     use crate::grid::{Grid, Scroll};
     use crate::index::{Column, Point, Side};
     use crate::selection::{Selection, SelectionType};
-
-    use super::*;
 
     pub struct SurfaceSize {
         pub columns: usize,

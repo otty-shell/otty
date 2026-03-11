@@ -1,8 +1,7 @@
 use std::io;
 
-use thiserror::Error;
-
 use otty_pty::SessionError;
+use thiserror::Error;
 
 /// Errors originating from the `otty-libterm` runtime.
 #[derive(Debug, Error)]

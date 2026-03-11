@@ -1,6 +1,7 @@
+use utf8parse::Receiver;
+
 use crate::enums::{Action, State};
 use crate::transitions;
-use utf8parse::Receiver;
 
 /// Result of advancing the UTF-8 parser by one byte.
 pub(crate) enum StepResult {

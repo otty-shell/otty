@@ -1,7 +1,6 @@
-use iced_core::{
-    keyboard::{Modifiers, key::Named},
-    mouse::Button,
-};
+use iced_core::keyboard::Modifiers;
+use iced_core::keyboard::key::Named;
+use iced_core::mouse::Button;
 use otty_libterm::surface::SurfaceMode;
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
@@ -351,14 +350,13 @@ fn mouse_default_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
 
 #[cfg(test)]
 mod tests {
-    use crate::bindings::MouseBinding;
+    use iced_core::keyboard::Modifiers;
+    use iced_core::keyboard::key::Named;
+    use iced_core::mouse::Button;
+    use otty_libterm::surface::SurfaceMode;
 
     use super::{BindingAction, BindingsLayout, InputKind, KeyboardBinding};
-    use iced_core::{
-        keyboard::{Modifiers, key::Named},
-        mouse::Button,
-    };
-    use otty_libterm::surface::SurfaceMode;
+    use crate::bindings::MouseBinding;
 
     #[test]
     fn add_new_custom_keyboard_binding() {
