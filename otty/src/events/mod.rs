@@ -72,7 +72,12 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             )
         },
         AppEvent::ResizeWindow(dir) => {
-            window::latest().and_then(move |id| window::drag_resize(id, dir))
+            if crate::components::primitive::resize_grips::is_supported() {
+                window::latest()
+                    .and_then(move |id| window::drag_resize(id, dir))
+            } else {
+                Task::none()
+            }
         },
         AppEvent::Window(_) => Task::none(),
     }

@@ -105,7 +105,8 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         .width(Length::Fill)
         .height(Length::Fill);
 
-    let resize_grips_layer = if app.widgets.sidebar.has_add_menu_open()
+    let resize_grips_layer = if !resize_grips::is_supported()
+        || app.widgets.sidebar.has_add_menu_open()
         || app.widgets.quick_launch.context_menu().is_some()
         || app.widgets.terminal_workspace.has_any_context_menu()
     {
