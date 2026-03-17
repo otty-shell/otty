@@ -7,6 +7,7 @@ members = [
     "otty-surface",
     "otty-vte",
     "otty-libterm",
+    "otty-vault",
     "otty-ui/*",
 ]
 
@@ -26,3 +27,6 @@ nix = { version = "0.31.2", features = ["term", "fs"]}
 signal-hook = "0.4.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.149"
+uuid = { version = "1.19.0", features = ["v4"] }
+secrecy = "0.10.3"
+zeroize = "1.8.2"
