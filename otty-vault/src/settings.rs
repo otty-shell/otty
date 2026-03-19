@@ -2,15 +2,30 @@ use std::time::Duration;
 
 use crate::errors::{VaultError, VaultResult};
 
-/// Vault runtime settings used by security-sensitive flows.
+/// Runtime settings that influence security-sensitive vault flows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VaultSettings {
+pub struct Settings {
     auto_lock_timeout: Duration,
     clipboard_clear_timeout: Duration,
 }
 
-impl VaultSettings {
-    /// Create settings with explicit timeout values.
+impl Settings {
+    /// Build settings with explicit timeout values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use otty_vault::Settings;
+    ///
+    /// let settings =
+    ///     Settings::new(Duration::from_secs(60), Duration::from_secs(15))
+    ///         .expect("settings should be valid");
+    ///
+    /// assert_eq!(settings.auto_lock_timeout(), Duration::from_secs(60));
+    /// assert_eq!(settings.clipboard_clear_timeout(), Duration::from_secs(15));
+    /// ```
     pub fn new(
         auto_lock_timeout: Duration,
         clipboard_clear_timeout: Duration,
@@ -23,12 +38,12 @@ impl VaultSettings {
         Ok(candidate)
     }
 
-    /// Duration after which an inactive unlocked vault should lock automatically.
+    /// Return the inactivity timeout after which the vault should auto-lock.
     pub fn auto_lock_timeout(&self) -> Duration {
         self.auto_lock_timeout
     }
 
-    /// Duration after which copied secret data should be cleared from clipboard.
+    /// Return the timeout after which copied secret data should be cleared.
     pub fn clipboard_clear_timeout(&self) -> Duration {
         self.clipboard_clear_timeout
     }
@@ -39,11 +54,12 @@ impl VaultSettings {
         {
             return Err(VaultError::InvalidSettings);
         }
+
         Ok(())
     }
 }
 
-impl Default for VaultSettings {
+impl Default for Settings {
     fn default() -> Self {
         Self {
             auto_lock_timeout: Duration::from_secs(30 * 60),
@@ -56,19 +72,25 @@ impl Default for VaultSettings {
 mod tests {
     use std::time::Duration;
 
-    use super::VaultSettings;
-    use crate::errors::VaultError;
+    use super::Settings;
+    use crate::VaultError;
 
     #[test]
     fn default_settings_match_contract_values() {
-        let settings = VaultSettings::default();
+        let settings = Settings::default();
+
         assert_eq!(settings.auto_lock_timeout(), Duration::from_secs(30 * 60));
         assert_eq!(settings.clipboard_clear_timeout(), Duration::from_secs(30));
     }
 
     #[test]
     fn settings_validation_rejects_zero_timeouts() {
-        let result = VaultSettings::new(Duration::ZERO, Duration::from_secs(1));
-        assert_eq!(result, Err(VaultError::InvalidSettings));
+        let auto_lock_error =
+            Settings::new(Duration::ZERO, Duration::from_secs(30));
+        let clipboard_error =
+            Settings::new(Duration::from_secs(30), Duration::ZERO);
+
+        assert_eq!(auto_lock_error, Err(VaultError::InvalidSettings));
+        assert_eq!(clipboard_error, Err(VaultError::InvalidSettings));
     }
 }
