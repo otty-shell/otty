@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 mod app;
+mod cli;
 mod components;
 mod domain;
 mod events;
@@ -17,15 +18,19 @@ mod style;
 mod theme;
 mod widgets;
 
+use clap::Parser;
 use env_logger::Env;
 use iced::{Size, window};
 use image::ImageFormat;
 
 use crate::app::{App, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
+use crate::cli::Cli;
 use crate::fonts::TERM_FONT_JET_BRAINS_BYTES;
 use crate::icons::APP_ICON_DATA;
 
 fn main() -> iced::Result {
+    Cli::parse();
+
     env_logger::Builder::from_env(Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();

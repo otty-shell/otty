@@ -15,7 +15,7 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 mio = { workspace = true, features = ["os-ext", "net"] }
-ssh2 = "0.9.5"
+ssh2 = { version = "0.9.5", features = ["vendored-openssl"] }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }

@@ -38,9 +38,15 @@ Developers already spend much of their time in the terminal, yet modern terminal
 
 Prebuilt artifacts are published on the GitHub Releases page: https://github.com/otty-shell/otty/releases
 
+The single `amd64` DEB artifact supports Ubuntu 20.04, 22.04, and 24.04. The
+OpenSSL used by OTTY's SSH backend is statically included for portability, so
+upgrading OTTY also upgrades its bundled OpenSSL. Compatibility with other
+Linux distributions is not implied by this Ubuntu test matrix.
+
 ### Supported Platforms
 
-- Linux: DEB- and RPM-based distributions (`.deb` / `.rpm`).
+- Linux DEB: Ubuntu 20.04, 22.04, and 24.04 on `amd64`.
+- Linux RPM: RPM package artifact (`x86_64`).
 - macOS: Intel (`x86_64`) and Apple Silicon (`aarch64`) builds (`.dmg`).
 
 ### Roadmap

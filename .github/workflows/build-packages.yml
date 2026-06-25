@@ -5,8 +5,72 @@ on:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
 
 jobs:
-  linux-packages:
-    name: Build RPM and DEB (Linux)
+  deb-package:
+    name: Build DEB (Ubuntu 20.04)
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - name: Install build environment
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            binutils \
+            build-essential \
+            ca-certificates \
+            cmake \
+            curl \
+            dpkg-dev \
+            git \
+            make \
+            openssh-client \
+            openssh-server \
+            perl \
+            pkg-config
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install DEB packaging tool
+        run: cargo install cargo-deb --version 3.7.0 --locked
+
+      - name: Build release binary
+        run: cargo build --locked --release -p otty
+
+      - name: Start local SSH test server
+        run: bash scripts/linux/start-ssh-smoke-server.sh
+
+      - name: Test vendored SSH backend
+        run: |
+          cargo test --locked --release -p otty-pty \
+            --test ssh_smoke \
+            ssh_backend_authenticates_opens_pty_and_exchanges_data \
+            -- --ignored --exact
+
+      - name: Build DEB package
+        run: cargo deb --no-build -p otty
+
+      - name: Verify DEB linkage and metadata
+        run: |
+          package_path="$(find target/debian -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          bash scripts/linux/verify-deb.sh "${package_path}"
+
+      - name: Upload DEB candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-deb-candidate-amd64
+          path: target/debian/*.deb
+          if-no-files-found: error
+          retention-days: 1
+
+  rpm-package:
+    name: Build RPM (Linux)
     runs-on: ubuntu-latest
 
     steps:
@@ -16,29 +80,90 @@ jobs:
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install packaging tools
-        run: cargo install cargo-deb cargo-generate-rpm
+      - name: Install RPM packaging tool
+        run: cargo install cargo-generate-rpm --version 0.21.0 --locked
 
       - name: Build release binary
-        run: cargo build --release -p otty
+        run: cargo build --locked --release -p otty
 
       - name: Build RPM package
         run: cargo generate-rpm -p otty
 
-      - name: Build DEB package
-        run: cargo deb -p otty
-
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
         with:
-          name: otty-rpm
+          name: otty-rpm-linux-x86_64
           path: target/generate-rpm/*.rpm
+          if-no-files-found: error
 
-      - name: Upload DEB artifact
+  deb-smoke-test:
+    name: Test DEB (Ubuntu ${{ matrix.ubuntu }})
+    needs: deb-package
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:${{ matrix.ubuntu }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ["20.04", "22.04", "24.04"]
+
+    steps:
+      - name: Install smoke-test environment
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            binutils \
+            ca-certificates \
+            git \
+            libegl1 \
+            libfontconfig1 \
+            libgl1 \
+            libvulkan1 \
+            libwayland-client0 \
+            libx11-6 \
+            libx11-xcb1 \
+            libxcursor1 \
+            libxi6 \
+            libxkbcommon0 \
+            libxkbcommon-x11-0 \
+            libxrandr2 \
+            mesa-vulkan-drivers
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Download DEB artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: otty-deb-candidate-amd64
+          path: artifacts/otty-deb
+
+      - name: Verify and install the DEB artifact
+        run: |
+          package_path="$(find artifacts/otty-deb -name '*.deb' -type f -print -quit)"
+          bash scripts/linux/verify-deb.sh "${package_path}"
+          bash scripts/linux/smoke-test-deb.sh "${package_path}"
+
+  publish-deb-artifact:
+    name: Publish verified DEB artifact
+    needs: [deb-package, deb-smoke-test]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download verified DEB candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: otty-deb-candidate-amd64
+          path: artifacts/otty-deb
+
+      - name: Upload verified DEB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: otty-deb
-          path: target/debian/*.deb
+          name: otty-deb-ubuntu-amd64
+          path: artifacts/otty-deb/*.deb
+          if-no-files-found: error
 
   macos-packages:
     name: Build DMG (macOS)

@@ -14,8 +14,9 @@ The crate is designed to integrate with `mio` runtime.
 ## Requirements
 
 - A Unix-like platform with PTY support.
-- `libssh2` at build/run time for the SSH backend (this is managed
-  automatically by the `ssh2` crate, but the native library must be available).
+- A C toolchain, `make`, and Perl when building the SSH backend. `libssh2` and
+  OpenSSL are built from source and statically included, so they are not
+  runtime system-library dependencies.
 
 ## Using the Library
 
