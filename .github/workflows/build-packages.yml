@@ -6,7 +6,7 @@ on:
 
 jobs:
   linux-packages:
-    name: Build RPM and DEB (Linux)
+    name: Build RPM and DEB (Linux, native)
     runs-on: ubuntu-latest
 
     steps:
@@ -39,6 +39,63 @@ jobs:
         with:
           name: otty-deb
           path: target/debian/*.deb
+
+  linux-deb-legacy:
+    name: Build DEB (Ubuntu 20.04 compatible)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      # Build inside an Ubuntu 20.04 container so the produced binary links
+      # against glibc 2.31 and libssl3, which remain available on Ubuntu
+      # 20.04, 22.04 and 24.04. See issue #53.
+      - name: Build DEB in Ubuntu 20.04 container
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ubuntu:20.04
+          options: -v ${{ github.workspace }}:/workspace -e HOME=/root
+          run: |
+            cd /workspace
+            bash scripts/linux/build-deb.sh
+
+      - name: Upload DEB artifact (Ubuntu 20.04)
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-deb-ubuntu-2004
+          path: target/debian/*.deb
+
+  linux-appimage:
+    name: Build AppImage (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install linuxdeploy
+        run: |
+          curl -sSL -o linuxdeploy.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy.AppImage
+
+      - name: Build release binary
+        run: cargo build --release -p otty
+
+      - name: Package as AppImage
+        env:
+          OUTPUT: otty-x86_64.AppImage
+        run: bash scripts/linux/build-appimage.sh
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-appimage
+          path: otty-*.AppImage
 
   macos-packages:
     name: Build DMG (macOS)

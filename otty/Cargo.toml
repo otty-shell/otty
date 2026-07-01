@@ -34,6 +34,12 @@ assets = [
 
 [package.metadata.deb]
 maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"
+# OpenSSL is statically linked (see otty-pty), so the package has no runtime
+# libssl dependency. libc6 >= 2.31 covers Ubuntu 20.04 (focal) and everything
+# newer. See issue #53.
+depends = "libc6 (>= 2.31)"
+section = "utils"
+priority = "optional"
 
 assets = [
     { source = "target/release/otty", dest = "/usr/bin/otty", mode = "755" },
