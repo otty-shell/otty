@@ -16,6 +16,14 @@ thiserror = { workspace = true }
 log = { workspace = true }
 mio = { workspace = true, features = ["os-ext", "net"] }
 ssh2 = "0.9.5"
+# Force a statically-linked (vendored) OpenSSL build. The `ssh2` crate pulls in
+# `libssh2-sys` -> `openssl-sys`, which by default links the host's libssl.
+# Different Ubuntu releases ship incompatible sonames (libssl1.1 on 20.04,
+# libssl3 on 22.04, libssl3t64 on 24.04), so a dynamically linked build can
+# only run on the exact distro it was built on. Vendoring OpenSSL removes that
+# runtime dependency entirely and lets a single .deb/AppImage run everywhere.
+# See: https://github.com/otty-shell/otty/issues/53
+openssl = { version = "0.10", features = ["vendored"] }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }
