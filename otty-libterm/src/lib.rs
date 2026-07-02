@@ -25,9 +25,6 @@ mod runtime;
 mod terminal;
 
 pub use error::{Error, Result};
-pub use otty_escape as escape;
-pub use otty_pty as pty;
-pub use otty_surface as surface;
 pub use runtime::{Driver, Runtime, RuntimeHooks, RuntimeRequestProxy};
 pub use terminal::builder::{
     DefaultParser, DefaultSurface, RuntimeTerminal, Terminal, TerminalBuilder,
@@ -41,6 +38,7 @@ pub use terminal::size::TerminalSize;
 pub use terminal::{
     SnapshotArc, TerminalEngine, TerminalEvent, TerminalRequest,
 };
+pub use {otty_escape as escape, otty_pty as pty, otty_surface as surface};
 
 #[cfg(test)]
 pub(crate) mod tests {
