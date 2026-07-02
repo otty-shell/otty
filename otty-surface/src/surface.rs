@@ -856,8 +856,34 @@ impl Dimensions for Surface {
     }
 }
 
+/// Decompose a Thai/Lao "AM" vowel into its zero-width mark and spacing
+/// vowel.
+///
+/// `THAI SARA AM` (U+0E33) and `LAO AM` (U+0EB3) have a display width of 1,
+/// so without decomposition they are shaped as standalone glyphs. Splitting
+/// them lets the nikhahit/niggahita ring render over the preceding
+/// consonant, matching how the character is actually drawn.
+fn decompose_am(ch: char) -> Option<(char, char)> {
+    match ch {
+        // THAI SARA AM -> THAI CHARACTER NIKHAHIT + THAI CHARACTER SARA AA.
+        '\u{0E33}' => Some(('\u{0E4D}', '\u{0E32}')),
+        // LAO AM -> LAO NIGGAHITA + LAO VOWEL SIGN AA.
+        '\u{0EB3}' => Some(('\u{0ECD}', '\u{0EB2}')),
+        _ => None,
+    }
+}
+
 impl SurfaceActor for Surface {
     fn print(&mut self, ch: char) {
+        // Split Thai/Lao "AM" vowels so their nikhahit/niggahita mark is
+        // placed over the preceding consonant cell, instead of standing
+        // alone in its own cell.
+        if let Some((mark, base)) = decompose_am(ch) {
+            self.print(mark);
+            self.print(base);
+            return;
+        }
+
         // Number of cells the char will occupy.
         let width = match ch.width() {
             Some(width) => width,
@@ -2523,6 +2549,51 @@ mod tests {
         surface.print('a');
 
         assert_eq!(surface.grid()[cursor].c, '▒');
+    }
+
+    #[test]
+    fn thai_sara_am_decomposes_over_preceding_consonant() {
+        let size = SurfaceSize::new(7, 17);
+        let mut surface = Surface::new(SurfaceConfig::default(), &size);
+        surface.print('\u{0E01}'); // THAI CHARACTER KO KAI (ก).
+        surface.print('\u{0E33}'); // THAI CHARACTER SARA AM (ำ).
+
+        let first = surface.grid()[Point::new(Line(0), Column(0))].clone();
+        let second = surface.grid()[Point::new(Line(0), Column(1))].clone();
+
+        assert_eq!(first.c, '\u{0E01}');
+        assert_eq!(first.zerowidth(), Some(&['\u{0E4D}'][..]));
+        assert_eq!(second.c, '\u{0E32}');
+    }
+
+    #[test]
+    fn lao_am_decomposes_over_preceding_consonant() {
+        let size = SurfaceSize::new(7, 17);
+        let mut surface = Surface::new(SurfaceConfig::default(), &size);
+        surface.print('\u{0E81}'); // LAO LETTER KO.
+        surface.print('\u{0EB3}'); // LAO AM.
+
+        let first = surface.grid()[Point::new(Line(0), Column(0))].clone();
+        let second = surface.grid()[Point::new(Line(0), Column(1))].clone();
+
+        assert_eq!(first.c, '\u{0E81}');
+        assert_eq!(first.zerowidth(), Some(&['\u{0ECD}'][..]));
+        assert_eq!(second.c, '\u{0EB2}');
+    }
+
+    #[test]
+    fn thai_sara_am_at_column_zero_does_not_panic() {
+        let size = SurfaceSize::new(7, 17);
+        let mut surface = Surface::new(SurfaceConfig::default(), &size);
+
+        // No preceding consonant: the nikhahit mark has no earlier cell to
+        // attach to, so it lands on the same cell as the spacing vowel that
+        // follows it and is overwritten. This mirrors how a bare zero-width
+        // combining mark at column 0 already behaves in `print`.
+        surface.print('\u{0E33}');
+
+        let cell = surface.grid()[Point::new(Line(0), Column(0))].clone();
+        assert_eq!(cell.c, '\u{0E32}');
     }
 
     #[test]
