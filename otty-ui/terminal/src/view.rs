@@ -687,7 +687,12 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                 }
 
                 // Draw text
-                if indexed.cell.c != ' ' && indexed.cell.c != '\t' {
+                let zerowidth = indexed.cell.zerowidth();
+                let has_zerowidth =
+                    zerowidth.is_some_and(|marks| !marks.is_empty());
+                if (indexed.cell.c != ' ' && indexed.cell.c != '\t')
+                    || has_zerowidth
+                {
                     if view.cursor.point == indexed.point
                         && !view.mode.contains(SurfaceMode::ALT_SCREEN)
                     {
@@ -701,8 +706,14 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                     if flags.contains(Flags::ITALIC) {
                         font.style = FontStyle::Italic;
                     }
+                    // Append zerowidth combining marks (e.g. Thai vowels/tone
+                    // marks) so cosmic-text shapes them over the base glyph.
+                    let mut content = indexed.cell.c.to_string();
+                    if let Some(marks) = zerowidth {
+                        content.extend(marks);
+                    }
                     let text = Text {
-                        content: indexed.cell.c.to_string(),
+                        content,
                         position: Point::new(cell_center_x, cell_center_y),
                         font,
                         size: iced_core::Pixels(font_size),
