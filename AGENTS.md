@@ -15,9 +15,9 @@ General context lives in [README.md](./README.md) at the repository root.
 - You MAY introduce an abstraction only when it has multiple real implementations, crosses an actual infrastructure boundary, protects domain or usecase code from infrastructure, removes duplication with the same business meaning and reason to change, or makes testing significantly simpler without hiding logic.
 - You MUST prefer meaningful domain names over generic names such as `Manager`, `Processor`, `Helper`, `Service`, or `Util`. Split functions, files, and layers only when doing so improves the current design and readability.
 - You MUST apply DRY only when duplicated logic has the same business meaning and changes for the same reason. Duplication is acceptable when extraction would create a vague or harder-to-read abstraction, and speculative traits, configuration, factories, placeholder layers, and unused extension points are forbidden by YAGNI.
-- Crate names stay prefixed with `otty-`.
+- crate names MUST stay prefixed with `otty-`.
 - Prefer `format!("{value}")`-style interpolation instead of passing variables as separate arguments when formatting strings.
-- Add concise documentation comments to new public items to communicate intent.
+- You MUST add concise documentation comments to new public items to communicate intent.
 - Prefer borrowing over cloning; pass `&T`/`&str` where possible and keep ownership at boundaries.
 - Avoid unnecessary heap allocations; use slices and references for read-only data.
 - Use `Result`/`Option` for error handling; no `unwrap()` in production code (prefer `expect()` with context during initialization).

@@ -1,3 +1,10 @@
+//! Builds shape-ready text runs from terminal snapshot cells.
+//!
+//! The renderer needs larger text runs for correct shaping of complex scripts,
+//! but terminal cells still define grid columns, colors, selection, cursor text,
+//! and hyperlink state. This module groups contiguous cells that can be shaped
+//! together while preserving per-cell foreground spans for drawing.
+
 use std::ops::Range;
 
 use iced::font::{Style as FontStyle, Weight as FontWeight};
@@ -8,6 +15,7 @@ use otty_libterm::surface::{
 
 use crate::theme::Theme;
 
+/// Shape-ready terminal text with grid position and foreground spans.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RenderRun {
     text: String,
@@ -18,6 +26,7 @@ pub(crate) struct RenderRun {
     color_spans: Vec<RenderTextSpan>,
 }
 
+/// Foreground color range within a [`RenderRun`].
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RenderTextSpan {
     byte_range: Range<usize>,
@@ -68,6 +77,7 @@ impl RenderTextSpan {
     }
 }
 
+/// Resolved text style for one terminal cell during run construction.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct RenderTextStyle {
     foreground: Color,
@@ -78,6 +88,7 @@ pub(crate) struct RenderTextStyle {
     hovered_hyperlink: bool,
 }
 
+/// Build shape-ready text runs for the current terminal snapshot view.
 pub(crate) fn build_render_runs(
     view: &SnapshotView<'_>,
     theme: &Theme,

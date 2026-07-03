@@ -1,3 +1,10 @@
+//! Shapes and draws terminal text runs with `cosmic_text`.
+//!
+//! This module owns the expensive text shaping step for terminal glyphs. It
+//! keeps shaped buffers alive for the renderer and reuses them while only the
+//! draw position changes, which is common during fast layout and window resize
+//! updates.
+
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -8,6 +15,7 @@ use iced_graphics::text::{self, Renderer as TextRenderer, cosmic_text};
 
 use crate::render_runs::RenderRun;
 
+/// Draw-time geometry and font metrics for terminal text runs.
 pub(crate) struct TextRunDrawConfig {
     layout_position: Point,
     display_offset: f32,
@@ -18,6 +26,7 @@ pub(crate) struct TextRunDrawConfig {
 }
 
 impl TextRunDrawConfig {
+    /// Create draw configuration from the current terminal layout metrics.
     pub(crate) fn new(
         layout_position: Point,
         display_offset: f32,
@@ -37,24 +46,42 @@ impl TextRunDrawConfig {
     }
 }
 
-/// Keeps raw shaped text buffers alive until the renderer consumes them.
+/// Keeps shaped text buffers alive and reuses them across unchanged draws.
 pub(crate) struct TextRunBufferStore {
-    buffers: RefCell<Vec<Arc<cosmic_text::Buffer>>>,
+    cache: RefCell<TextRunShapeCache>,
 }
 
 impl TextRunBufferStore {
     pub(crate) fn new() -> Self {
         Self {
-            buffers: RefCell::new(Vec::new()),
+            cache: RefCell::new(TextRunShapeCache::default()),
         }
     }
 
-    fn replace(&self, buffers: Vec<Arc<cosmic_text::Buffer>>) {
-        self.buffers.replace(buffers);
+    fn refresh(
+        &self,
+        runs: &[RenderRun],
+        config: &TextRunDrawConfig,
+        font_system: &mut cosmic_text::FontSystem,
+    ) {
+        let mut cache = self.cache.borrow_mut();
+        if cache
+            .key
+            .as_ref()
+            .is_some_and(|key| key.matches(runs, config))
+        {
+            return;
+        }
+
+        cache.shaped_runs = runs
+            .iter()
+            .map(|run| shape_render_run(run, config, font_system))
+            .collect();
+        cache.key = Some(TextRunShapeKey::new(runs, config));
     }
 
     fn buffer_count(&self) -> usize {
-        self.buffers.borrow().len()
+        self.cache.borrow().shaped_runs.len()
     }
 
     #[cfg(test)]
@@ -66,7 +93,7 @@ impl TextRunBufferStore {
 impl Clone for TextRunBufferStore {
     fn clone(&self) -> Self {
         Self {
-            buffers: RefCell::new(self.buffers.borrow().clone()),
+            cache: RefCell::new(self.cache.borrow().clone()),
         }
     }
 }
@@ -79,12 +106,48 @@ impl std::fmt::Debug for TextRunBufferStore {
     }
 }
 
+#[derive(Clone)]
 struct ShapedRenderRun {
     buffer: Arc<cosmic_text::Buffer>,
-    origin: Point,
     color: Color,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct TextRunShapeKey {
+    runs: Vec<RenderRun>,
+    cell_width: u32,
+    cell_height: u32,
+    font_size: u32,
+    font_scale_factor: u32,
+}
+
+impl TextRunShapeKey {
+    fn new(runs: &[RenderRun], config: &TextRunDrawConfig) -> Self {
+        Self {
+            runs: runs.to_vec(),
+            cell_width: config.cell_width.to_bits(),
+            cell_height: config.cell_height.to_bits(),
+            font_size: config.font_size.to_bits(),
+            font_scale_factor: config.font_scale_factor.to_bits(),
+        }
+    }
+
+    fn matches(&self, runs: &[RenderRun], config: &TextRunDrawConfig) -> bool {
+        self.cell_width == config.cell_width.to_bits()
+            && self.cell_height == config.cell_height.to_bits()
+            && self.font_size == config.font_size.to_bits()
+            && self.font_scale_factor == config.font_scale_factor.to_bits()
+            && self.runs == runs
+    }
+}
+
+#[derive(Clone, Default)]
+struct TextRunShapeCache {
+    key: Option<TextRunShapeKey>,
+    shaped_runs: Vec<ShapedRenderRun>,
+}
+
+/// Shape, cache, and draw terminal text runs through the Iced text renderer.
 pub(crate) fn draw_render_runs<Renderer>(
     renderer: &mut Renderer,
     runs: &[RenderRun],
@@ -97,30 +160,23 @@ pub(crate) fn draw_render_runs<Renderer>(
     let mut font_system =
         text::font_system().write().expect("Write font system");
     let font_system = font_system.raw();
+    retained_buffers.refresh(runs, config, font_system);
 
-    let shaped_runs = runs
-        .iter()
-        .map(|run| shape_render_run(run, config, font_system))
-        .collect::<Vec<_>>();
-    let line_baselines = collect_line_baselines(runs, &shaped_runs);
+    let cache = retained_buffers.cache.borrow();
+    let shaped_runs = &cache.shaped_runs;
+    let line_baselines = collect_line_baselines(runs, shaped_runs);
 
-    for (run, shaped) in runs.iter().zip(&shaped_runs) {
+    for (run, shaped) in runs.iter().zip(shaped_runs) {
+        let origin = render_run_origin(run, config);
         let line_baseline =
             baseline_for_line(&line_baselines, run.line(), shaped.baseline_y());
         let position = Point::new(
-            shaped.origin.x,
-            shaped.origin.y + line_baseline - shaped.baseline_y(),
+            origin.x,
+            origin.y + line_baseline - shaped.baseline_y(),
         );
 
         draw_shaped_run(renderer, shaped, position, clip_bounds);
     }
-
-    retained_buffers.replace(
-        shaped_runs
-            .into_iter()
-            .map(|shaped| shaped.buffer)
-            .collect(),
-    );
 }
 
 fn shape_render_run(
@@ -150,19 +206,20 @@ fn shape_render_run(
         );
     }
 
-    let origin = Point::new(
+    ShapedRenderRun {
+        buffer: Arc::new(buffer),
+        color: raw_color,
+    }
+}
+
+fn render_run_origin(run: &RenderRun, config: &TextRunDrawConfig) -> Point {
+    Point::new(
         config.layout_position.x
             + (run.start_column() as f32 * config.cell_width),
         config.layout_position.y
             + ((run.line() as f32 + config.display_offset)
                 * config.cell_height),
-    );
-
-    ShapedRenderRun {
-        buffer: Arc::new(buffer),
-        origin,
-        color: raw_color,
-    }
+    )
 }
 
 fn draw_shaped_run<Renderer>(
@@ -357,6 +414,21 @@ mod tests {
         )
     }
 
+    fn config_at(position: Point) -> TextRunDrawConfig {
+        TextRunDrawConfig::new(position, 1.0, 8.0, 16.0, 14.0, 1.2)
+    }
+
+    fn config_with_cell_width(cell_width: f32) -> TextRunDrawConfig {
+        TextRunDrawConfig::new(
+            Point::new(10.0, 20.0),
+            1.0,
+            cell_width,
+            16.0,
+            14.0,
+            1.2,
+        )
+    }
+
     #[test]
     fn shape_render_run_uses_terminal_grid_constraints() {
         let run = run("ab cd");
@@ -365,6 +437,7 @@ mod tests {
             text::font_system().write().expect("Write font system");
 
         let shaped = shape_render_run(&run, &config, font_system.raw());
+        let origin = render_run_origin(&run, &config);
         let first_glyph_x = shaped
             .buffer
             .layout_runs()
@@ -375,9 +448,9 @@ mod tests {
         assert_eq!(shaped.buffer.wrap(), cosmic_text::Wrap::None);
         assert_eq!(shaped.buffer.monospace_width(), Some(8.0));
         assert_eq!(shaped.buffer.size(), (Some(40.0), Some(16.0)));
-        assert_eq!(shaped.origin.x, 34.0);
+        assert_eq!(origin.x, 34.0);
         assert_eq!(first_glyph_x, Some(0.0));
-        assert!(shaped.origin.y.is_finite());
+        assert!(origin.y.is_finite());
     }
 
     #[test]
@@ -391,8 +464,12 @@ mod tests {
         let plain = shape_render_run(&plain_run, &config, font_system.raw());
         let complex =
             shape_render_run(&complex_run, &config, font_system.raw());
+        let plain_origin = render_run_origin(&plain_run, &config);
+        let complex_origin = render_run_origin(&complex_run, &config);
 
-        assert_eq!(plain.origin.y, complex.origin.y);
+        assert_eq!(plain_origin.y, complex_origin.y);
+        assert!(plain.baseline_y().is_finite());
+        assert!(complex.baseline_y().is_finite());
     }
 
     #[test]
@@ -627,6 +704,80 @@ mod tests {
 
         assert!(renderer.raw_text.is_empty());
         assert_eq!(retained_buffers.len(), 0);
+    }
+
+    #[test]
+    fn draw_render_runs_reuses_shaped_buffers_when_only_position_changes() {
+        let runs = [run("cached text")];
+        let clip_bounds =
+            Rectangle::new(Point::ORIGIN, Size::new(300.0, 120.0));
+        let retained_buffers = TextRunBufferStore::new();
+        let mut renderer = RecordingTextRenderer::default();
+
+        draw_render_runs(
+            &mut renderer,
+            &runs,
+            &config_at(Point::new(10.0, 20.0)),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let first_buffer = renderer.raw_text[0]
+            .buffer
+            .upgrade()
+            .expect("retained shaped buffer");
+
+        renderer.raw_text.clear();
+        draw_render_runs(
+            &mut renderer,
+            &runs,
+            &config_at(Point::new(40.0, 60.0)),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let second_buffer = renderer.raw_text[0]
+            .buffer
+            .upgrade()
+            .expect("retained shaped buffer");
+
+        assert!(Arc::ptr_eq(&first_buffer, &second_buffer));
+        assert_eq!(renderer.raw_text[0].position, Point::new(64.0, 108.0));
+    }
+
+    #[test]
+    fn draw_render_runs_reshapes_when_cell_width_changes() {
+        let runs = [run("cached text")];
+        let clip_bounds =
+            Rectangle::new(Point::ORIGIN, Size::new(300.0, 120.0));
+        let retained_buffers = TextRunBufferStore::new();
+        let mut renderer = RecordingTextRenderer::default();
+
+        draw_render_runs(
+            &mut renderer,
+            &runs,
+            &config_with_cell_width(8.0),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let first_buffer = renderer.raw_text[0]
+            .buffer
+            .upgrade()
+            .expect("retained shaped buffer");
+
+        renderer.raw_text.clear();
+        draw_render_runs(
+            &mut renderer,
+            &runs,
+            &config_with_cell_width(9.0),
+            clip_bounds,
+            &retained_buffers,
+        );
+        let second_buffer = renderer.raw_text[0]
+            .buffer
+            .upgrade()
+            .expect("retained shaped buffer");
+
+        assert!(!Arc::ptr_eq(&first_buffer, &second_buffer));
+        assert_eq!(second_buffer.monospace_width(), Some(9.0));
     }
 
     #[derive(Default)]

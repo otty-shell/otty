@@ -963,7 +963,9 @@ impl TerminalViewState {
             self.pending_cell_size = Some(cell_size);
             self.pending_resize_deadline =
                 self.last_resize_sent_at.map(|last| last + THROTTLE);
-            shell.request_redraw();
+            if let Some(deadline) = self.pending_resize_deadline {
+                shell.request_redraw_at(deadline);
+            }
         }
     }
 
@@ -1005,7 +1007,7 @@ impl TerminalViewState {
                     Instant::now(),
                 );
             } else {
-                shell.request_redraw();
+                shell.request_redraw_at(deadline);
             }
         }
     }
@@ -1165,5 +1167,27 @@ mod tests {
         assert!(visuals.highlights.is_empty());
         assert!(visuals.action_buttons.is_empty());
         assert_eq!(visuals.dividers.len(), 1);
+    }
+
+    #[test]
+    fn pending_resize_schedules_redraw_at_throttle_deadline() {
+        let mut state = TerminalViewState::new();
+        let mut events = Vec::new();
+        let mut shell = iced_graphics::core::Shell::new(&mut events);
+        let cell_size = Size::new(8.0, 16.0);
+
+        state.queue_resize(7, Size::new(640.0, 480.0), cell_size, &mut shell);
+        state.queue_resize(7, Size::new(641.0, 480.0), cell_size, &mut shell);
+
+        let Some(deadline) = state.pending_resize_deadline else {
+            panic!("expected pending resize deadline");
+        };
+        assert_eq!(
+            shell.redraw_request(),
+            iced_core::window::RedrawRequest::At(deadline)
+        );
+
+        drop(shell);
+        assert_eq!(events.len(), 1);
     }
 }
