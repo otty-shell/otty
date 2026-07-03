@@ -2,6 +2,10 @@
 unsound = "workspace"
 unmaintained = "workspace"
 yanked = "warn"
+ignore = [
+    { id = "RUSTSEC-2026-0194", reason = "wayland-scanner 0.31.10 is the latest compatible release and still constrains quick-xml to ^0.39; remove once the iced Wayland stack can use quick-xml >=0.41" },
+    { id = "RUSTSEC-2026-0195", reason = "wayland-scanner 0.31.10 is the latest compatible release and still constrains quick-xml to ^0.39; remove once the iced Wayland stack can use quick-xml >=0.41" },
+]
 
 [licenses]
 allow = [

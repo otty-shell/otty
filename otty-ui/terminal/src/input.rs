@@ -90,11 +90,11 @@ impl<'a> InputManager<'a> {
         publisher: &mut impl FnMut(crate::Event),
     ) -> iced::event::Status {
         state.selection_in_progress = false;
-        let cmd = if terminal_state
+        let is_mouse_mode = terminal_state
             .view()
             .mode
-            .intersects(SurfaceMode::MOUSE_MODE)
-        {
+            .intersects(SurfaceMode::MOUSE_MODE);
+        let cmd = if is_mouse_mode {
             crate::Event::MouseReport {
                 id: self.terminal_id,
                 button: MouseButton::LeftButton,
@@ -124,6 +124,11 @@ impl<'a> InputManager<'a> {
             }
         };
         publisher(cmd);
+        if !is_mouse_mode {
+            publisher(crate::Event::Redraw {
+                id: self.terminal_id,
+            });
+        }
         state.is_dragged = true;
         iced::event::Status::Captured
     }
@@ -182,6 +187,9 @@ impl<'a> InputManager<'a> {
             publisher(crate::Event::SelectUpdate {
                 id: self.terminal_id,
                 position: (cursor_x, cursor_y),
+            });
+            publisher(crate::Event::Redraw {
+                id: self.terminal_id,
             });
             return iced::event::Status::Captured;
         } else if !in_alt_screen {
@@ -619,7 +627,7 @@ mod tests {
                 &mut publish,
             );
 
-            assert_eq!(commands.len(), 1);
+            assert_eq!(commands.len(), 2);
             assert!(matches!(
                 commands[0],
                 crate::Event::SelectStart {
@@ -628,6 +636,7 @@ mod tests {
                     position: (150.0, 100.0)
                 }
             ));
+            assert!(matches!(commands[1], crate::Event::Redraw { .. }));
             assert!(state.is_dragged);
         }
     }
@@ -721,7 +730,7 @@ mod tests {
                 &mut publish,
             );
 
-            assert_eq!(commands.len(), 1);
+            assert_eq!(commands.len(), 2);
             assert!(matches!(
                 commands[0],
                 crate::Event::SelectUpdate {
@@ -729,6 +738,7 @@ mod tests {
                     position: (95.0, 145.0)
                 }
             ));
+            assert!(matches!(commands[1], crate::Event::Redraw { .. }));
         }
 
         #[test]
@@ -758,7 +768,7 @@ mod tests {
                 &mut publish,
             );
 
-            assert_eq!(commands.len(), 1);
+            assert_eq!(commands.len(), 2);
             assert!(matches!(
                 commands[0],
                 crate::Event::SelectUpdate {
@@ -766,6 +776,7 @@ mod tests {
                     position: (95.0, 145.0)
                 }
             ));
+            assert!(matches!(commands[1], crate::Event::Redraw { .. }));
             assert!(state.selection_in_progress);
         }
 
@@ -801,7 +812,7 @@ mod tests {
             assert!(state.selection_in_progress);
             assert!(state.selected_block_id.is_none());
             assert!(state.selected_block_kind.is_none());
-            assert_eq!(commands.len(), 3);
+            assert_eq!(commands.len(), 4);
             assert!(matches!(
                 commands[0],
                 crate::Event::BlockSelectionCleared { .. }
@@ -814,6 +825,7 @@ mod tests {
                     position: (95.0, 145.0)
                 }
             ));
+            assert!(matches!(commands[3], crate::Event::Redraw { .. }));
         }
     }
 

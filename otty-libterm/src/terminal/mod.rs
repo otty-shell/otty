@@ -818,6 +818,47 @@ mod tests {
     }
 
     #[test]
+    fn parses_hebrew_niqqud_into_zero_width_cells() -> anyhow::Result<()> {
+        let text = "ב\u{05b0}\u{05bc}ר\u{05b5}אש\u{05b4}\u{05c1}ית";
+        let session = FakeSession::with_reads(vec![text.as_bytes().to_vec()]);
+        let parser = DefaultParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, _handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+
+        engine.on_readable()?;
+
+        let collected = collect_events(&events);
+        let frame = match collected.last() {
+            Some(TerminalEvent::Frame { frame }) => frame,
+            _ => panic!("expected frame event last"),
+        };
+        let view = frame.view();
+        let visible_text = view
+            .cells
+            .iter()
+            .filter(|cell| cell.cell.c != ' ')
+            .map(|cell| {
+                let mut text = cell.cell.c.to_string();
+                if let Some(zerowidth) = cell.cell.zerowidth() {
+                    text.extend(zerowidth.iter());
+                }
+                text
+            })
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert_eq!(visible_text, text);
+
+        Ok(())
+    }
+
+    #[test]
     fn propagates_action_events_before_frame_delivery() -> anyhow::Result<()> {
         let actions = vec![
             Action::SetWindowTitle("title".to_string()),
