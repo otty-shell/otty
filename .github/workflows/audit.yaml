@@ -1,8 +1,10 @@
 name: Security Audit
 
 on:
-  push:
   pull_request:
+  push:
+    branches:
+      - main
   schedule:
     - cron: '0 2 * * *'
 
