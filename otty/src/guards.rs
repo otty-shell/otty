@@ -97,6 +97,24 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             ),
         ) => Allow,
         AppEvent::Explorer(
+            crate::widgets::explorer::ExplorerEvent::Effect(_),
+        )
+        | AppEvent::Explorer(
+            crate::widgets::explorer::ExplorerEvent::Intent(
+                crate::widgets::explorer::ExplorerIntent::RootLoaded { .. }
+                | crate::widgets::explorer::ExplorerIntent::FolderLoaded {
+                    ..
+                }
+                | crate::widgets::explorer::ExplorerIntent::DirectoryChanged {
+                    ..
+                }
+                | crate::widgets::explorer::ExplorerIntent::DirectoryReloaded {
+                    ..
+                }
+                | crate::widgets::explorer::ExplorerIntent::LoadFailed { .. },
+            ),
+        ) => Allow,
+        AppEvent::Explorer(
             crate::widgets::explorer::ExplorerEvent::Intent(
                 crate::widgets::explorer::ExplorerIntent::SyncRoot { .. },
             ),
@@ -178,8 +196,22 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             ),
         ) => false,
         AppEvent::Explorer(
+            crate::widgets::explorer::ExplorerEvent::Effect(_),
+        )
+        | AppEvent::Explorer(
             crate::widgets::explorer::ExplorerEvent::Intent(
-                crate::widgets::explorer::ExplorerIntent::SyncRoot { .. },
+                crate::widgets::explorer::ExplorerIntent::SyncRoot { .. }
+                | crate::widgets::explorer::ExplorerIntent::RootLoaded { .. }
+                | crate::widgets::explorer::ExplorerIntent::FolderLoaded {
+                    ..
+                }
+                | crate::widgets::explorer::ExplorerIntent::DirectoryChanged {
+                    ..
+                }
+                | crate::widgets::explorer::ExplorerIntent::DirectoryReloaded {
+                    ..
+                }
+                | crate::widgets::explorer::ExplorerIntent::LoadFailed { .. },
             ),
         ) => false,
         AppEvent::SyncTerminalGridSizes => false,
@@ -193,8 +225,11 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::{MenuGuard, context_menu_guard, inline_edit_guard};
     use crate::events::AppEvent;
+    use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 
     #[test]
@@ -210,5 +245,29 @@ mod tests {
     fn given_sync_terminal_grid_sizes_when_inline_edit_guard_runs_then_edit_is_not_cancelled()
      {
         assert!(!inline_edit_guard(&AppEvent::SyncTerminalGridSizes));
+    }
+
+    #[test]
+    fn given_explorer_directory_change_when_context_menu_guard_runs_then_event_is_allowed()
+     {
+        let guard = context_menu_guard(&AppEvent::Explorer(
+            ExplorerEvent::Intent(ExplorerIntent::DirectoryChanged {
+                directory: PathBuf::from("/tmp/project"),
+            }),
+        ));
+
+        assert!(matches!(guard, MenuGuard::Allow));
+    }
+
+    #[test]
+    fn given_explorer_directory_change_when_inline_edit_guard_runs_then_edit_is_not_cancelled()
+     {
+        let event = AppEvent::Explorer(ExplorerEvent::Intent(
+            ExplorerIntent::DirectoryChanged {
+                directory: PathBuf::from("/tmp/project"),
+            },
+        ));
+
+        assert!(!inline_edit_guard(&event));
     }
 }
