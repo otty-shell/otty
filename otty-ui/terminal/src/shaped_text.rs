@@ -52,6 +52,12 @@ pub(crate) struct TextRunBufferStore {
 }
 
 impl TextRunBufferStore {
+    fn buffer_count(&self) -> usize {
+        self.cache.borrow().shaped_runs.len()
+    }
+}
+
+impl TextRunBufferStore {
     pub(crate) fn new() -> Self {
         Self {
             cache: RefCell::new(TextRunShapeCache::default()),
@@ -79,15 +85,6 @@ impl TextRunBufferStore {
             .collect();
         cache.key = Some(TextRunShapeKey::new(runs, config));
     }
-
-    fn buffer_count(&self) -> usize {
-        self.cache.borrow().shaped_runs.len()
-    }
-
-    #[cfg(test)]
-    fn len(&self) -> usize {
-        self.buffer_count()
-    }
 }
 
 impl Clone for TextRunBufferStore {
@@ -110,6 +107,15 @@ impl std::fmt::Debug for TextRunBufferStore {
 struct ShapedRenderRun {
     buffer: Arc<cosmic_text::Buffer>,
     color: Color,
+}
+
+impl ShapedRenderRun {
+    fn baseline_y(&self) -> f32 {
+        self.buffer
+            .layout_runs()
+            .next()
+            .map_or(0.0, |layout_run| layout_run.line_y)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -145,6 +151,12 @@ impl TextRunShapeKey {
 struct TextRunShapeCache {
     key: Option<TextRunShapeKey>,
     shaped_runs: Vec<ShapedRenderRun>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct LineBaseline {
+    line: i32,
+    baseline: f32,
 }
 
 /// Shape, cache, and draw terminal text runs through the Iced text renderer.
@@ -337,21 +349,6 @@ fn grid_fit_letter_spacing(
     Some(width_delta / glyph_count as f32 / config.font_size)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct LineBaseline {
-    line: i32,
-    baseline: f32,
-}
-
-impl ShapedRenderRun {
-    fn baseline_y(&self) -> f32 {
-        self.buffer
-            .layout_runs()
-            .next()
-            .map_or(0.0, |layout_run| layout_run.line_y)
-    }
-}
-
 fn collect_line_baselines(
     runs: &[RenderRun],
     shaped_runs: &[ShapedRenderRun],
@@ -394,12 +391,12 @@ mod tests {
     use crate::render_runs::{RenderRun, RenderTextStyle};
 
     fn run(text: &str) -> RenderRun {
-        RenderRun::for_test(
+        RenderRun::new_empty_color_spans(
             text,
             2,
             3,
             5,
-            RenderTextStyle::for_test(Color::WHITE, Font::MONOSPACE),
+            RenderTextStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
         )
     }
 
@@ -496,12 +493,12 @@ mod tests {
     #[test]
     fn shape_render_run_uses_monospace_width_for_combining_marks() {
         let text = "e\u{0301}x";
-        let run = RenderRun::for_test(
+        let run = RenderRun::new_empty_color_spans(
             text,
             2,
             3,
             2,
-            RenderTextStyle::for_test(Color::WHITE, Font::MONOSPACE),
+            RenderTextStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
         );
         let config = config();
         let mut font_system =
@@ -514,12 +511,12 @@ mod tests {
     #[test]
     fn shape_render_run_keeps_hebrew_niqqud_in_layout_text() {
         let text = "ב\u{05b0}\u{05bc}";
-        let run = RenderRun::for_test(
+        let run = RenderRun::new_empty_color_spans(
             text,
             2,
             3,
             1,
-            RenderTextStyle::for_test(Color::WHITE, Font::MONOSPACE),
+            RenderTextStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
         );
         let config = config();
         let mut font_system =
@@ -547,14 +544,14 @@ mod tests {
     #[test]
     fn color_spans_keep_glyph_geometry_stable() {
         let selected_color = Color::from_rgb(0.2, 0.7, 0.9);
-        let plain = RenderRun::for_test(
+        let plain = RenderRun::new_empty_color_spans(
             "abc",
             2,
             3,
             3,
-            RenderTextStyle::for_test(Color::WHITE, Font::MONOSPACE),
+            RenderTextStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
         );
-        let colored = RenderRun::for_test_with_color_spans(
+        let colored = RenderRun::new_with_color_spans(
             "abc",
             2,
             3,
@@ -580,12 +577,12 @@ mod tests {
 
     #[test]
     fn shape_render_run_fits_monospace_advances_to_terminal_grid() {
-        let run = RenderRun::for_test(
+        let run = RenderRun::new_empty_color_spans(
             "otty git:(chars)x",
             0,
             0,
             17,
-            RenderTextStyle::for_test(Color::WHITE, Font::MONOSPACE),
+            RenderTextStyle::from_fg_and_font(Color::WHITE, Font::MONOSPACE),
         );
         let config = config();
         let mut font_system =
@@ -627,14 +624,14 @@ mod tests {
         assert_eq!(renderer.raw_text[0].position, Point::new(34.0, 68.0));
         assert_eq!(renderer.raw_text[0].color, Color::WHITE);
         assert_eq!(renderer.raw_text[0].clip_bounds, clip_bounds);
-        assert_eq!(retained_buffers.len(), 1);
+        assert_eq!(retained_buffers.buffer_count(), 1);
         assert!(renderer.raw_text[0].buffer.upgrade().is_some());
     }
 
     #[test]
     fn draw_render_runs_uses_glyph_colors_without_clipped_overlays() {
         let selected_color = Color::from_rgb(0.2, 0.7, 0.9);
-        let runs = [RenderRun::for_test_with_color_spans(
+        let runs = [RenderRun::new_with_color_spans(
             "abc",
             2,
             3,
@@ -662,7 +659,7 @@ mod tests {
         assert_eq!(renderer.raw_text.len(), 1);
         assert_eq!(renderer.raw_text[0].clip_bounds, clip_bounds);
         assert_eq!(renderer.raw_text[0].color, Color::WHITE);
-        assert_eq!(retained_buffers.len(), 1);
+        assert_eq!(retained_buffers.buffer_count(), 1);
 
         let buffer = renderer.raw_text[0]
             .buffer
@@ -703,7 +700,7 @@ mod tests {
         );
 
         assert!(renderer.raw_text.is_empty());
-        assert_eq!(retained_buffers.len(), 0);
+        assert_eq!(retained_buffers.buffer_count(), 0);
     }
 
     #[test]

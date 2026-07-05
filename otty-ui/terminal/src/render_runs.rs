@@ -16,7 +16,7 @@ use otty_libterm::surface::{
 use crate::theme::Theme;
 
 /// Shape-ready terminal text with grid position and foreground spans.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub(crate) struct RenderRun {
     text: String,
     line: i32,
@@ -24,15 +24,6 @@ pub(crate) struct RenderRun {
     cell_columns: usize,
     font: Font,
     color_spans: Vec<RenderTextSpan>,
-}
-
-/// Foreground color range within a [`RenderRun`].
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct RenderTextSpan {
-    byte_range: Range<usize>,
-    start_column: usize,
-    cell_columns: usize,
-    foreground: Color,
 }
 
 impl RenderRun {
@@ -67,6 +58,133 @@ impl RenderRun {
     }
 }
 
+impl RenderRun {
+    fn new(line: i32, start_column: usize, font: Font) -> Self {
+        Self {
+            text: String::new(),
+            line,
+            start_column,
+            font,
+            ..Default::default()
+        }
+    }
+
+    fn append_cell(
+        &mut self,
+        indexed: &SnapshotCell,
+        cell_columns: usize,
+    ) -> (Range<usize>, usize) {
+        let byte_start = self.text.len();
+        let span_start_column = self.cell_columns;
+        self.text.push(indexed.cell.c);
+
+        if let Some(zerowidth) = indexed.cell.zerowidth() {
+            self.text.extend(zerowidth.iter());
+        }
+
+        self.cell_columns += cell_columns;
+        (byte_start..self.text.len(), span_start_column)
+    }
+
+    fn append_color_span(
+        &mut self,
+        byte_range: Range<usize>,
+        start_column: usize,
+        cell_columns: usize,
+        foreground: Color,
+    ) {
+        if byte_range.is_empty() {
+            return;
+        };
+
+        if let Some(span) = self.color_spans.last_mut()
+            && span.foreground == foreground
+            && span.byte_range.end == byte_range.start
+            && span.start_column + span.cell_columns == start_column
+        {
+            span.byte_range.end = byte_range.end;
+            span.cell_columns += cell_columns;
+            return;
+        }
+
+        self.color_spans.push(RenderTextSpan {
+            byte_range,
+            start_column,
+            cell_columns,
+            foreground,
+        });
+    }
+
+    fn end_column(&self) -> usize {
+        self.start_column + self.cell_columns
+    }
+}
+
+#[cfg(test)]
+impl RenderRun {
+    pub(crate) fn new_empty_color_spans(
+        text: &str,
+        line: i32,
+        start_column: usize,
+        cell_columns: usize,
+        style: RenderTextStyle,
+    ) -> Self {
+        Self {
+            text: text.to_string(),
+            line,
+            start_column,
+            cell_columns,
+            font: style.font,
+            color_spans: (!text.is_empty())
+                .then_some(RenderTextSpan {
+                    byte_range: 0..text.len(),
+                    start_column: 0,
+                    cell_columns,
+                    foreground: style.foreground,
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    pub(crate) fn new_with_color_spans(
+        text: &str,
+        line: i32,
+        start_column: usize,
+        cell_columns: usize,
+        font: Font,
+        color_spans: Vec<(Range<usize>, usize, usize, Color)>,
+    ) -> Self {
+        Self {
+            text: text.to_string(),
+            line,
+            start_column,
+            cell_columns,
+            font,
+            color_spans: color_spans
+                .into_iter()
+                .map(|(byte_range, start_column, cell_columns, foreground)| {
+                    RenderTextSpan {
+                        byte_range,
+                        start_column,
+                        cell_columns,
+                        foreground,
+                    }
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Foreground color range within a [`RenderRun`].
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RenderTextSpan {
+    byte_range: Range<usize>,
+    start_column: usize,
+    cell_columns: usize,
+    foreground: Color,
+}
+
 impl RenderTextSpan {
     pub(crate) fn byte_range(&self) -> &Range<usize> {
         &self.byte_range
@@ -78,7 +196,7 @@ impl RenderTextSpan {
 }
 
 /// Resolved text style for one terminal cell during run construction.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(crate) struct RenderTextStyle {
     foreground: Color,
     font: Font,
@@ -86,6 +204,26 @@ pub(crate) struct RenderTextStyle {
     inverse: bool,
     cursor_override: bool,
     hovered_hyperlink: bool,
+}
+
+#[cfg(test)]
+impl RenderTextStyle {
+    pub(crate) fn from_fg_and_font(foreground: Color, font: Font) -> Self {
+        Self {
+            foreground,
+            font,
+            ..Default::default()
+        }
+    }
+}
+
+struct RenderRunBuildContext<'a> {
+    selection: Option<&'a SelectionRange>,
+    cursor_point: TerminalPoint,
+    theme: &'a Theme,
+    base_font: Font,
+    hovered_span_id: Option<u32>,
+    cursor_text_override: bool,
 }
 
 /// Build shape-ready text runs for the current terminal snapshot view.
@@ -108,15 +246,6 @@ pub(crate) fn build_render_runs(
     build_render_runs_from_cells(view.cells, &context, |point| {
         view.hyperlink_span_id_at(point)
     })
-}
-
-struct RenderRunBuildContext<'a> {
-    selection: Option<&'a SelectionRange>,
-    cursor_point: TerminalPoint,
-    theme: &'a Theme,
-    base_font: Font,
-    hovered_span_id: Option<u32>,
-    cursor_text_override: bool,
 }
 
 fn build_render_runs_from_cells<F>(
@@ -184,124 +313,6 @@ where
 
     flush_current_run(&mut runs, &mut current);
     runs
-}
-
-impl RenderRun {
-    fn new(line: i32, start_column: usize, font: Font) -> Self {
-        Self {
-            text: String::new(),
-            line,
-            start_column,
-            cell_columns: 0,
-            font,
-            color_spans: Vec::new(),
-        }
-    }
-
-    fn append_cell(
-        &mut self,
-        indexed: &SnapshotCell,
-        cell_columns: usize,
-    ) -> (Range<usize>, usize) {
-        let byte_start = self.text.len();
-        let span_start_column = self.cell_columns;
-        self.text.push(indexed.cell.c);
-
-        if let Some(zerowidth) = indexed.cell.zerowidth() {
-            self.text.extend(zerowidth.iter());
-        }
-
-        self.cell_columns += cell_columns;
-        (byte_start..self.text.len(), span_start_column)
-    }
-
-    fn append_color_span(
-        &mut self,
-        byte_range: Range<usize>,
-        start_column: usize,
-        cell_columns: usize,
-        foreground: Color,
-    ) {
-        if byte_range.is_empty() {
-            return;
-        };
-
-        if let Some(span) = self.color_spans.last_mut()
-            && span.foreground == foreground
-            && span.byte_range.end == byte_range.start
-            && span.start_column + span.cell_columns == start_column
-        {
-            span.byte_range.end = byte_range.end;
-            span.cell_columns += cell_columns;
-            return;
-        }
-
-        self.color_spans.push(RenderTextSpan {
-            byte_range,
-            start_column,
-            cell_columns,
-            foreground,
-        });
-    }
-
-    fn end_column(&self) -> usize {
-        self.start_column + self.cell_columns
-    }
-
-    #[cfg(test)]
-    pub(crate) fn for_test(
-        text: &str,
-        line: i32,
-        start_column: usize,
-        cell_columns: usize,
-        style: RenderTextStyle,
-    ) -> Self {
-        Self {
-            text: text.to_string(),
-            line,
-            start_column,
-            cell_columns,
-            font: style.font,
-            color_spans: (!text.is_empty())
-                .then_some(RenderTextSpan {
-                    byte_range: 0..text.len(),
-                    start_column: 0,
-                    cell_columns,
-                    foreground: style.foreground,
-                })
-                .into_iter()
-                .collect(),
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn for_test_with_color_spans(
-        text: &str,
-        line: i32,
-        start_column: usize,
-        cell_columns: usize,
-        font: Font,
-        color_spans: Vec<(Range<usize>, usize, usize, Color)>,
-    ) -> Self {
-        Self {
-            text: text.to_string(),
-            line,
-            start_column,
-            cell_columns,
-            font,
-            color_spans: color_spans
-                .into_iter()
-                .map(|(byte_range, start_column, cell_columns, foreground)| {
-                    RenderTextSpan {
-                        byte_range,
-                        start_column,
-                        cell_columns,
-                        foreground,
-                    }
-                })
-                .collect(),
-        }
-    }
 }
 
 fn flush_current_run(
@@ -380,20 +391,6 @@ where
         inverse: is_inverse,
         cursor_override,
         hovered_hyperlink,
-    }
-}
-
-#[cfg(test)]
-impl RenderTextStyle {
-    pub(crate) fn for_test(foreground: Color, font: Font) -> Self {
-        Self {
-            foreground,
-            font,
-            selected: false,
-            inverse: false,
-            cursor_override: false,
-            hovered_hyperlink: false,
-        }
     }
 }
 
