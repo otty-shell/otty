@@ -22,6 +22,7 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 shell-words = "1.1.0"
+notify = "8.2.0"
 
 [package.metadata.generate-rpm]
 maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"

@@ -18,6 +18,13 @@ pub(crate) enum ExplorerIntent {
         path: TreePath,
         nodes: Vec<FileNode>,
     },
+    /// A watched directory emitted a filesystem tree change.
+    DirectoryChanged { directory: PathBuf },
+    /// Watched directory contents reloaded successfully.
+    DirectoryReloaded {
+        directory: PathBuf,
+        nodes: Vec<FileNode>,
+    },
     /// A directory load operation failed.
     LoadFailed { message: String },
 }
@@ -29,6 +36,8 @@ pub(crate) enum ExplorerEffect {
     LoadRootRequested { root: PathBuf },
     /// Request asynchronous loading of a folder's children.
     LoadFolderRequested { path: TreePath, directory: PathBuf },
+    /// Request asynchronous reloading of a watched directory.
+    ReloadDirectoryRequested { directory: PathBuf },
     /// Request opening a file in a command terminal tab.
     OpenFileTerminalTab { file_path: PathBuf },
 }

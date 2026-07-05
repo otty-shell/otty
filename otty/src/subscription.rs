@@ -26,6 +26,8 @@ pub(super) fn subscription(app: &App) -> Subscription<AppEvent> {
         }
     }
 
+    subs.push(app.widgets.explorer.subscription().map(AppEvent::Explorer));
+
     // Quick launch tick for launch indicators and auto-persist
     if app.widgets.quick_launch.has_active_launches()
         || app.widgets.quick_launch.state_is_dirty()

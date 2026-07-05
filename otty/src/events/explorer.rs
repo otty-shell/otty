@@ -52,6 +52,14 @@ fn handle_effect(app: &mut App, effect: ExplorerEffect) -> Task<AppEvent> {
                 }
             })
         },
+        ExplorerEffect::ReloadDirectoryRequested { directory } => {
+            load_directory_async(directory.clone(), move |nodes| {
+                ExplorerIntent::DirectoryReloaded {
+                    directory: directory.clone(),
+                    nodes,
+                }
+            })
+        },
         ExplorerEffect::OpenFileTerminalTab { file_path } => {
             open_file_terminal_tab(app, file_path)
         },
@@ -99,4 +107,28 @@ fn open_file_terminal_tab(app: &mut App, file_path: PathBuf) -> Task<AppEvent> {
             settings: Box::new(settings),
         },
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::handle_effect;
+    use crate::app::App;
+    use crate::widgets::explorer::ExplorerEffect;
+
+    #[test]
+    fn given_reload_directory_requested_when_handled_then_load_task_is_emitted()
+    {
+        let (mut app, _) = App::new();
+
+        let task = handle_effect(
+            &mut app,
+            ExplorerEffect::ReloadDirectoryRequested {
+                directory: PathBuf::from("/tmp/project"),
+            },
+        );
+
+        assert_eq!(task.units(), 1);
+    }
 }

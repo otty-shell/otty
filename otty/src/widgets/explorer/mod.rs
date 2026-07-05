@@ -6,9 +6,10 @@ pub(crate) mod services;
 pub(crate) mod state;
 pub(crate) mod types;
 pub(crate) mod view;
+mod watcher;
 
 pub(crate) use event::{ExplorerEffect, ExplorerEvent, ExplorerIntent};
-use iced::Task;
+use iced::{Subscription, Task};
 pub(crate) use reducer::ExplorerCtx;
 use state::ExplorerState;
 
@@ -34,6 +35,11 @@ impl ExplorerWidget {
         ctx: &ExplorerCtx,
     ) -> Task<ExplorerEvent> {
         reducer::reduce(&mut self.state, event, ctx)
+    }
+
+    /// Return active filesystem watcher subscription for loaded directories.
+    pub(crate) fn subscription(&self) -> Subscription<ExplorerEvent> {
+        watcher::subscription(self.state.watched_directories())
     }
 
     /// Return a tree view model for the sidebar panel.
@@ -70,5 +76,38 @@ impl ExplorerWidget {
     #[cfg(test)]
     pub(crate) fn state(&self) -> &ExplorerState {
         &self.state
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{ExplorerCtx, ExplorerIntent, ExplorerWidget};
+
+    #[test]
+    fn given_empty_explorer_when_subscription_requested_then_no_units_are_registered()
+     {
+        let widget = ExplorerWidget::new();
+
+        assert_eq!(widget.subscription().units(), 0);
+    }
+
+    #[test]
+    fn given_rooted_explorer_when_subscription_requested_then_watcher_unit_is_registered()
+     {
+        let mut widget = ExplorerWidget::new();
+        let ctx = ExplorerCtx {
+            active_shell_cwd: None,
+        };
+
+        let _task = widget.reduce(
+            ExplorerIntent::SyncRoot {
+                cwd: PathBuf::from("/tmp/project"),
+            },
+            &ctx,
+        );
+
+        assert_eq!(widget.subscription().units(), 1);
     }
 }

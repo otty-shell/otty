@@ -34,6 +34,13 @@ pub(crate) fn reduce(
             let _ = state.apply_folder_nodes(&path, nodes);
             Task::none()
         },
+        ExplorerIntent::DirectoryChanged { directory } => {
+            reduce_directory_changed(state, directory)
+        },
+        ExplorerIntent::DirectoryReloaded { directory, nodes } => {
+            let _ = state.apply_directory_nodes(&directory, nodes);
+            Task::none()
+        },
         ExplorerIntent::LoadFailed { message } => {
             log::warn!("explorer load failed: {message}");
             Task::none()
@@ -82,6 +89,19 @@ fn reduce_sync_root(
     Task::done(ExplorerEvent::Effect(ExplorerEffect::LoadRootRequested {
         root: cwd,
     }))
+}
+
+fn reduce_directory_changed(
+    state: &ExplorerState,
+    directory: PathBuf,
+) -> Task<ExplorerEvent> {
+    if !state.is_watched_directory(&directory) {
+        return Task::none();
+    }
+
+    Task::done(ExplorerEvent::Effect(
+        ExplorerEffect::ReloadDirectoryRequested { directory },
+    ))
 }
 
 #[cfg(test)]
@@ -199,6 +219,75 @@ mod tests {
 
         assert_eq!(state.root_label(), Some("original"));
         assert_eq!(state.tree().len(), 1);
+    }
+
+    #[test]
+    fn given_watched_directory_changed_when_reduced_then_reload_is_requested() {
+        let mut state = ExplorerState::default();
+        let root = PathBuf::from("/tmp/project");
+        state.set_root(Some(root.clone()));
+        let _ = state.apply_root_nodes(
+            &root,
+            vec![FileNode::new(String::from("src"), root.join("src"), true)],
+        );
+
+        let task = reduce(
+            &mut state,
+            ExplorerIntent::DirectoryChanged {
+                directory: root.clone(),
+            },
+            &ctx(None),
+        );
+
+        assert_eq!(task.units(), 1);
+    }
+
+    #[test]
+    fn given_unknown_directory_changed_when_reduced_then_reload_is_ignored() {
+        let mut state = ExplorerState::default();
+        let root = PathBuf::from("/tmp/project");
+        state.set_root(Some(root.clone()));
+        let _ = state.apply_root_nodes(
+            &root,
+            vec![FileNode::new(String::from("src"), root.join("src"), true)],
+        );
+
+        let task = reduce(
+            &mut state,
+            ExplorerIntent::DirectoryChanged {
+                directory: PathBuf::from("/tmp/other"),
+            },
+            &ctx(None),
+        );
+
+        assert_eq!(task.units(), 0);
+    }
+
+    #[test]
+    fn given_directory_reload_when_reduced_then_directory_nodes_are_applied() {
+        let mut state = ExplorerState::default();
+        let root = PathBuf::from("/tmp/project");
+        state.set_root(Some(root.clone()));
+        let _ = state.apply_root_nodes(
+            &root,
+            vec![FileNode::new(String::from("src"), root.join("src"), true)],
+        );
+
+        let _task = reduce(
+            &mut state,
+            ExplorerIntent::DirectoryReloaded {
+                directory: root.clone(),
+                nodes: vec![FileNode::new(
+                    String::from("Cargo.toml"),
+                    root.join("Cargo.toml"),
+                    false,
+                )],
+            },
+            &ctx(None),
+        );
+
+        assert_eq!(state.tree().len(), 1);
+        assert_eq!(state.tree()[0].name(), "Cargo.toml");
     }
 
     #[test]
