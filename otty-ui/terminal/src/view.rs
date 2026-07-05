@@ -2,16 +2,13 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-use iced::alignment::Vertical;
-use iced::font::{Style as FontStyle, Weight as FontWeight};
 use iced::mouse::Cursor;
-use iced::widget::canvas::{Path, Text};
+use iced::widget::canvas::Path;
 use iced::widget::container;
 use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
 use iced_core::clipboard::Kind as ClipboardKind;
 use iced_core::keyboard::Modifiers;
 use iced_core::mouse;
-use iced_core::text::{Alignment, LineHeight, Shaping};
 use iced_core::widget::operation;
 use iced_graphics::core::Widget;
 use iced_graphics::core::widget::{Tree, tree};
@@ -24,6 +21,10 @@ use otty_libterm::surface::{
 use crate::block_controls::BlockActionButtonGeometry;
 use crate::block_layout::{self, BlockRect};
 use crate::input::InputManager;
+use crate::render_runs::build_render_runs;
+use crate::shaped_text::{
+    TextRunBufferStore, TextRunDrawConfig, draw_render_runs,
+};
 use crate::term::{BlockCommand, BlockUiMode, Event, Terminal};
 use crate::theme::TerminalStyle;
 
@@ -511,33 +512,48 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
         _cursor: Cursor,
         viewport: &Rectangle,
     ) {
-        let geom = self.term.cache.draw(renderer, viewport.size(), |frame| {
-            // Precompute constants used in the inner loop
-            let state = tree.state.downcast_ref::<TerminalViewState>();
-            let content = self.term.engine.snapshot();
-            let view = content.view();
-            let term_size = self.term.engine.terminal_size();
-            let cell_width = term_size.cell_width as f32;
-            let cell_height = term_size.cell_height as f32;
-            let font_size = self.term.font.size;
-            let font_scale_factor = self.term.font.scale_factor;
-            let layout_position = layout.position();
-            let layout_offset_x = layout_position.x;
-            let layout_offset_y = layout_position.y;
-            let layout_bounds = layout.bounds();
-            let display_offset = view.display_offset as f32;
-            let half_h = cell_height * 0.5;
-            let block_rects = if view.mode.contains(SurfaceMode::ALT_SCREEN) {
-                Vec::new()
-            } else {
-                block_layout::block_rects(
-                    &view,
-                    layout_position,
-                    layout_bounds.size(),
-                    cell_height,
-                )
-            };
+        let state = tree.state.downcast_ref::<TerminalViewState>();
+        let content = self.term.engine.snapshot();
+        let view = content.view();
+        let term_size = self.term.engine.terminal_size();
+        let cell_width = term_size.cell_width as f32;
+        let cell_height = term_size.cell_height as f32;
+        let font_size = self.term.font.size;
+        let font_scale_factor = self.term.font.scale_factor;
+        let layout_position = layout.position();
+        let layout_offset_x = layout_position.x;
+        let layout_offset_y = layout_position.y;
+        let layout_bounds = layout.bounds();
+        let display_offset = view.display_offset as f32;
+        let block_rects = if view.mode.contains(SurfaceMode::ALT_SCREEN) {
+            Vec::new()
+        } else {
+            block_layout::block_rects(
+                &view,
+                layout_position,
+                layout_bounds.size(),
+                cell_height,
+            )
+        };
+        let hovered_span_id =
+            view.hyperlink_span_id_at(state.mouse_position_on_grid);
+        let render_runs = build_render_runs(
+            &view,
+            &self.term.theme,
+            self.term.font.font_type,
+            hovered_span_id,
+            !view.mode.contains(SurfaceMode::ALT_SCREEN),
+        );
+        let text_config = TextRunDrawConfig::new(
+            layout_position,
+            display_offset,
+            cell_width,
+            cell_height,
+            font_size,
+            font_scale_factor,
+        );
 
+        let geom = self.term.cache.draw(renderer, viewport.size(), |frame| {
             // We use the background pallete color as a default
             // because the widget global background color must be the same
             let default_bg = self
@@ -545,8 +561,6 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                 .theme
                 .get_color(ansi::Color::Std(StdColor::Background));
 
-            let hovered_span_id =
-                view.hyperlink_span_id_at(state.mouse_position_on_grid);
             let block_ui_mode = self.term.block_ui_mode();
             let block_visuals = BlockUiVisuals::from_rects(
                 &block_rects,
@@ -590,8 +604,6 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                     cell_width
                 };
                 let cell_size = Size::new(cell_render_width, cell_height);
-                let cell_center_y = y + half_h;
-                let cell_center_x = x + (cell_render_width * 0.5);
 
                 // Resolve colors for this cell
                 let mut fg = self.term.theme.get_color(indexed.cell.fg);
@@ -685,36 +697,6 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                         Path::rectangle(Point::new(x, y), cell_size);
                     frame.fill(&cursor_rect, cursor_color);
                 }
-
-                // Draw text
-                if indexed.cell.c != ' ' && indexed.cell.c != '\t' {
-                    if view.cursor.point == indexed.point
-                        && !view.mode.contains(SurfaceMode::ALT_SCREEN)
-                    {
-                        fg = bg;
-                    }
-                    // Resolve font style (bold/italic) from cell flags
-                    let mut font = self.term.font.font_type;
-                    if flags.intersects(Flags::BOLD | Flags::DIM_BOLD) {
-                        font.weight = FontWeight::Bold;
-                    }
-                    if flags.contains(Flags::ITALIC) {
-                        font.style = FontStyle::Italic;
-                    }
-                    let text = Text {
-                        content: indexed.cell.c.to_string(),
-                        position: Point::new(cell_center_x, cell_center_y),
-                        font,
-                        size: iced_core::Pixels(font_size),
-                        color: fg,
-                        align_x: Alignment::Center,
-                        align_y: Vertical::Center,
-                        shaping: Shaping::Advanced,
-                        line_height: LineHeight::Relative(font_scale_factor),
-                        ..Default::default()
-                    };
-                    frame.fill_text(text);
-                }
             }
 
             // Flush any remaining background run at the end
@@ -773,6 +755,13 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
 
         use iced::advanced::graphics::geometry::Renderer as _;
         renderer.draw_geometry(geom);
+        draw_render_runs(
+            renderer,
+            &render_runs,
+            &text_config,
+            layout_bounds,
+            &state.text_buffers,
+        );
     }
 
     fn update(
@@ -917,6 +906,7 @@ pub(crate) struct TerminalViewState {
     pending_cell_size: Option<Size<f32>>,
     pending_resize_deadline: Option<Instant>,
     last_resize_sent_at: Option<Instant>,
+    text_buffers: TextRunBufferStore,
 }
 
 impl TerminalViewState {
@@ -942,6 +932,7 @@ impl TerminalViewState {
             pending_cell_size: None,
             pending_resize_deadline: None,
             last_resize_sent_at: None,
+            text_buffers: TextRunBufferStore::new(),
         }
     }
 
@@ -972,7 +963,9 @@ impl TerminalViewState {
             self.pending_cell_size = Some(cell_size);
             self.pending_resize_deadline =
                 self.last_resize_sent_at.map(|last| last + THROTTLE);
-            shell.request_redraw();
+            if let Some(deadline) = self.pending_resize_deadline {
+                shell.request_redraw_at(deadline);
+            }
         }
     }
 
@@ -1014,7 +1007,7 @@ impl TerminalViewState {
                     Instant::now(),
                 );
             } else {
-                shell.request_redraw();
+                shell.request_redraw_at(deadline);
             }
         }
     }
@@ -1174,5 +1167,27 @@ mod tests {
         assert!(visuals.highlights.is_empty());
         assert!(visuals.action_buttons.is_empty());
         assert_eq!(visuals.dividers.len(), 1);
+    }
+
+    #[test]
+    fn pending_resize_schedules_redraw_at_throttle_deadline() {
+        let mut state = TerminalViewState::new();
+        let mut events = Vec::new();
+        let mut shell = iced_graphics::core::Shell::new(&mut events);
+        let cell_size = Size::new(8.0, 16.0);
+
+        state.queue_resize(7, Size::new(640.0, 480.0), cell_size, &mut shell);
+        state.queue_resize(7, Size::new(641.0, 480.0), cell_size, &mut shell);
+
+        let Some(deadline) = state.pending_resize_deadline else {
+            panic!("expected pending resize deadline");
+        };
+        assert_eq!(
+            shell.redraw_request(),
+            iced_core::window::RedrawRequest::At(deadline)
+        );
+
+        drop(shell);
+        assert_eq!(events.len(), 1);
     }
 }

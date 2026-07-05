@@ -1,0 +1,35 @@
+minimum_pre_commit_version: "3.0.0"
+
+repos:
+  - repo: local
+    hooks:
+      - id: fmt-check
+        name: formatter check
+        entry: cargo +nightly fmt --check
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: clippy
+        name: clippy check
+        entry: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: lint
+        name: lint
+        entry: cargo lint
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: deny-check
+        name: cargo deny check
+        entry: cargo deny check
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: tests
+        name: Run tests
+        entry: cargo test --workspace --all-features
+        language: system
+        pass_filenames: false
+        always_run: true

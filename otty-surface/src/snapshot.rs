@@ -259,6 +259,9 @@ impl<'a> SnapshotView<'a> {
             for indexed in self.cells {
                 if range.contains(indexed.point) {
                     result.push(indexed.cell.c);
+                    if let Some(zerowidth) = indexed.cell.zerowidth() {
+                        result.extend(zerowidth.iter());
+                    }
                 }
             }
         }
@@ -290,7 +293,7 @@ mod tests {
     use super::*;
     use crate::actor::SurfaceActor;
     use crate::cell::Hyperlink;
-    use crate::index::{Column, Line};
+    use crate::index::{Column, Line, Side};
     use crate::selection::SelectionType;
     use crate::{
         SnapshotDamage, SnapshotView, Surface, SurfaceConfig, SurfaceModel,
@@ -360,14 +363,10 @@ mod tests {
         surface.reset_damage();
 
         let start = Point::new(crate::index::Line(0), crate::index::Column(0));
-        surface.start_selection(
-            SelectionType::Simple,
-            start,
-            crate::index::Side::Left,
-        );
+        surface.start_selection(SelectionType::Simple, start, Side::Left);
         surface.update_selection(
             Point::new(crate::index::Line(0), crate::index::Column(1)),
-            crate::index::Side::Right,
+            Side::Right,
         );
 
         let frame = surface.snapshot_owned();
@@ -375,6 +374,34 @@ mod tests {
 
         assert!(view.selection.is_some());
         assert_eq!(view.cursor.point, surface.grid().cursor.point);
+    }
+
+    #[test]
+    fn selectable_content_preserves_zero_width_marks() {
+        let mut surface =
+            Surface::new(SurfaceConfig::default(), &TestDimensions::new(40, 2));
+        let text = "ที่นี่, น้ำ, or กำลัง";
+        for ch in text.chars() {
+            surface.print(ch);
+        }
+
+        let has_zero_width_marks = surface.grid().display_iter().any(|cell| {
+            cell.cell.zerowidth().is_some_and(|marks| !marks.is_empty())
+        });
+        assert!(has_zero_width_marks);
+
+        surface.start_selection(
+            SelectionType::Simple,
+            Point::new(Line(0), Column(0)),
+            Side::Left,
+        );
+        let end_column = surface.grid().cursor.point.column - 1;
+        surface.update_selection(Point::new(Line(0), end_column), Side::Right);
+
+        let frame = surface.snapshot_owned();
+        let view = frame.view();
+
+        assert_eq!(view.selectable_content(), text);
     }
 
     #[test]
