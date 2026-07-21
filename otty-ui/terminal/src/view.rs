@@ -7,6 +7,7 @@ use iced::widget::canvas::Path;
 use iced::widget::container;
 use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
 use iced_core::clipboard::Kind as ClipboardKind;
+use iced_core::input_method::{self, InputMethod, Purpose};
 use iced_core::keyboard::Modifiers;
 use iced_core::mouse;
 use iced_core::widget::operation;
@@ -798,6 +799,41 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
             );
         }
 
+        // Keep the platform input method (IME) enabled while the terminal is
+        // focused so composed input such as Chinese, Japanese or Korean is
+        // delivered as `InputMethod` events instead of being lost. The cursor
+        // rectangle anchors the candidate window to the terminal caret. This is
+        // re-requested on every update because iced resets the input method
+        // state each cycle.
+        if view_state.is_focused {
+            let snapshot = self.term.engine.snapshot();
+            let view = snapshot.view();
+            let cursor_point = view.cursor.point;
+            let display_offset = view.display_offset as f32;
+            let cell_width = terminal_size.cell_width as f32;
+            let cell_height = terminal_size.cell_height as f32;
+            let layout_position = layout.position();
+
+            let cursor_area = Rectangle::new(
+                Point::new(
+                    layout_position.x
+                        + cursor_point.column.0 as f32 * cell_width,
+                    layout_position.y
+                        + (cursor_point.line.0 as f32 + display_offset)
+                            * cell_height,
+                ),
+                Size::new(cell_width, cell_height),
+            );
+
+            shell.request_input_method(&InputMethod::<String>::Enabled {
+                cursor: cursor_area,
+                purpose: Purpose::Normal,
+                // The composition string is rendered by the platform IME's own
+                // candidate window, so no over-the-spot preedit is requested.
+                preedit: None,
+            });
+        }
+
         let mut publish = |event: Event| {
             shell.publish(event);
         };
@@ -835,6 +871,15 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
                     keyboard_event,
                     &mut publish,
                 )
+            },
+            iced::Event::InputMethod(input_method::Event::Commit(text))
+                if view_state.is_focused =>
+            {
+                publish(Event::Write {
+                    id: terminal_id,
+                    data: text.as_bytes().to_vec(),
+                });
+                iced::event::Status::Captured
             },
             _ => iced::event::Status::Ignored,
         };
