@@ -253,7 +253,7 @@ fn unexpected(params: &[&[u8]]) {
         buf.push(']');
     }
 
-    debug!("[unexpected osc]: params: [{}], line: {}", &buf, line!());
+    debug!("[unexpected osc]: params: [{buf}], line: {}", line!());
 }
 
 #[cfg(test)]
