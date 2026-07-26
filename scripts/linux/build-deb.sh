@@ -27,7 +27,7 @@ apt-get install -y --no-install-recommends \
 # Install Rust via rustup (matches rust-toolchain.toml pinned version).
 if ! command -v cargo >/dev/null 2>&1; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --default-toolchain stable --profile minimal
+        | sh -s -- -y --default-toolchain 1.96 --profile minimal
     . "${HOME}/.cargo/env"
 fi
 
