@@ -272,7 +272,7 @@ Contributions are welcome! This project is part of the larger [OTTY](https://git
 
 ## Links
 
-- [Homepage](https://otty.sh)
+- [Homepage](https://otty.run)
 - [Repository](https://github.com/otty-shell/otty)
 - [Iced Framework](https://github.com/iced-rs/iced)
 

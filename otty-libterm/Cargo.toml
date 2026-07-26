@@ -1,6 +1,6 @@
 [package]
 name = "otty-libterm"
-homepage = "https://otty.sh"
+homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Library that allow you creating the terminal emulator"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]

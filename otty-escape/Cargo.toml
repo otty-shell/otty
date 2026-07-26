@@ -1,6 +1,6 @@
 [package]
 name = "otty-escape"
-homepage = "https://otty.sh"
+homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Library for parsing raw bytes to UI frendly actions"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
