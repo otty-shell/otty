@@ -100,10 +100,10 @@ fn resolve_variant_colors(
     danger: iced::Color,
     overrides: Option<StyleOverrides>,
 ) -> (iced::Color, iced::Color) {
-    if let Some(overrides) = overrides {
-        if let Some(color) = overrides.foreground {
-            return (color, color);
-        }
+    if let Some(overrides) = overrides
+        && let Some(color) = overrides.foreground
+    {
+        return (color, color);
     }
 
     match variant {

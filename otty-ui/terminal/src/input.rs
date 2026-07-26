@@ -271,16 +271,14 @@ impl<'a> InputManager<'a> {
             &state.keyboard_modifiers,
             terminal_state.mode,
         ) == BindingAction::LinkOpen
-        {
-            if let Some(span) =
+            && let Some(span) =
                 terminal_state.hyperlink_span_at(state.mouse_position_on_grid)
-            {
-                publisher(crate::Event::OpenLink {
-                    id: self.terminal_id,
-                    uri: span.link.uri().to_string(),
-                });
-                published = true;
-            }
+        {
+            publisher(crate::Event::OpenLink {
+                id: self.terminal_id,
+                uri: span.link.uri().to_string(),
+            });
+            published = true;
         }
 
         if self.block_selection_mode == BlockSelectionMode::PrimaryClick
@@ -428,14 +426,14 @@ impl<'a> InputManager<'a> {
                     );
 
                     // If no binding matched, only write printable text (when provided)
-                    if binding_action == BindingAction::Ignore {
-                        if let Some(c) = text {
-                            publisher(crate::Event::Write {
-                                id: self.terminal_id,
-                                data: c.as_bytes().to_vec(),
-                            });
-                            return iced::event::Status::Captured;
-                        }
+                    if binding_action == BindingAction::Ignore
+                        && let Some(c) = text
+                    {
+                        publisher(crate::Event::Write {
+                            id: self.terminal_id,
+                            data: c.as_bytes().to_vec(),
+                        });
+                        return iced::event::Status::Captured;
                     }
                 },
                 Key::Named(code) => {

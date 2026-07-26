@@ -104,10 +104,10 @@ fi
         .with_program(shell_path)
         .with_env("ZDOTDIR", dir_str.as_ref());
 
-    if let Some(value) = original_zdotdir {
-        if Path::new(&value) != dir {
-            options = options.with_env("OTTY_ORIG_ZDOTDIR", &value);
-        }
+    if let Some(value) = original_zdotdir
+        && Path::new(&value) != dir
+    {
+        options = options.with_env("OTTY_ORIG_ZDOTDIR", &value);
     }
 
     Ok(SessionKind::from_local_options(options))

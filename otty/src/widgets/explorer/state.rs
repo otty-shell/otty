@@ -222,10 +222,10 @@ fn find_folder_by_path<'a>(
             return Some(node);
         }
 
-        if node.is_folder() {
-            if let Some(found) = find_folder_by_path(node.children(), path) {
-                return Some(found);
-            }
+        if node.is_folder()
+            && let Some(found) = find_folder_by_path(node.children(), path)
+        {
+            return Some(found);
         }
     }
 
@@ -241,12 +241,11 @@ fn find_folder_mut_by_path<'a>(
             return Some(node);
         }
 
-        if node.is_folder() {
-            if let Some(found) =
+        if node.is_folder()
+            && let Some(found) =
                 find_folder_mut_by_path(&mut node.children, path)
-            {
-                return Some(found);
-            }
+        {
+            return Some(found);
         }
     }
 

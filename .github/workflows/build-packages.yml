@@ -13,10 +13,10 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain
+      - name: Install Rust ${{ vars.RUST_STABLE_TOOLCHAIN }}
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_STABLE_TOOLCHAIN }}
+          toolchain: ${{ vars.RUST_STABLE_TOOLCHAIN }}
 
       - name: Install packaging tools
         run: cargo install cargo-deb cargo-generate-rpm
@@ -117,10 +117,10 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain
+      - name: Install Rust ${{ vars.RUST_STABLE_TOOLCHAIN }}
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_STABLE_TOOLCHAIN }}
+          toolchain: ${{ vars.RUST_STABLE_TOOLCHAIN }}
           targets: ${{ matrix.arch }}
 
       - name: Build release binary

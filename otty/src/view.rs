@@ -68,17 +68,13 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         vec![content_row.into()];
 
     // Add menu overlay
-    if sidebar_vm.has_add_menu_open {
-        if let Some(cursor) = sidebar_vm.add_menu_cursor {
-            layers.push(
-                view_add_menu_overlay(
-                    cursor,
-                    app.state.screen_size,
-                    theme_props,
-                )
+    if sidebar_vm.has_add_menu_open
+        && let Some(cursor) = sidebar_vm.add_menu_cursor
+    {
+        layers.push(
+            view_add_menu_overlay(cursor, app.state.screen_size, theme_props)
                 .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event))),
-            );
-        }
+        );
     }
 
     // Quick launch context menu overlay

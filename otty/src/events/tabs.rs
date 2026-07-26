@@ -77,16 +77,15 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
             )));
 
             // Sync explorer for the new active tab.
-            if let Some(active_id) = new_active_id {
-                if let Some(cwd) = app
+            if let Some(active_id) = new_active_id
+                && let Some(cwd) = app
                     .widgets
                     .terminal_workspace
                     .shell_cwd_for_active_tab(Some(active_id))
-                {
-                    tasks.push(Task::done(AppEvent::Explorer(
-                        ExplorerEvent::Intent(ExplorerIntent::SyncRoot { cwd }),
-                    )));
-                }
+            {
+                tasks.push(Task::done(AppEvent::Explorer(
+                    ExplorerEvent::Intent(ExplorerIntent::SyncRoot { cwd }),
+                )));
             }
 
             if remaining > 0 {

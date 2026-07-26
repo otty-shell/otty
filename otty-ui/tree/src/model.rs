@@ -63,11 +63,12 @@ fn push_node<'a, T: TreeNode>(
         path: path.clone(),
     });
 
-    if node.is_folder() && node.expanded() {
-        if let Some(children) = node.children() {
-            for index in sorted_indices(children) {
-                push_node(&children[index], depth + 1, path, entries);
-            }
+    if node.is_folder()
+        && node.expanded()
+        && let Some(children) = node.children()
+    {
+        for index in sorted_indices(children) {
+            push_node(&children[index], depth + 1, path, entries);
         }
     }
 

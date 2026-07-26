@@ -16,9 +16,10 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust ${{ vars.RUST_STABLE_TOOLCHAIN }}
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_STABLE_TOOLCHAIN }}
+          toolchain: ${{ vars.RUST_STABLE_TOOLCHAIN }}
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}

@@ -250,10 +250,10 @@ where
                 is_hovered,
             };
 
-            if let Some(ref before_row) = self.before_row {
-                if let Some(extra) = before_row(&context) {
-                    column = column.push(extra);
-                }
+            if let Some(ref before_row) = self.before_row
+                && let Some(extra) = before_row(&context)
+            {
+                column = column.push(extra);
             }
 
             let is_visible = self
@@ -325,10 +325,10 @@ where
                 column = column.push(row_element);
             }
 
-            if let Some(ref after_row) = self.after_row {
-                if let Some(extra) = after_row(&context) {
-                    column = column.push(extra);
-                }
+            if let Some(ref after_row) = self.after_row
+                && let Some(extra) = after_row(&context)
+            {
+                column = column.push(extra);
             }
         }
 

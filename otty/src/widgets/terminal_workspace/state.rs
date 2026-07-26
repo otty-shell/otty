@@ -367,12 +367,12 @@ impl TerminalTabState {
             let needs_focus = self.focus == Some(pane) || self.focus.is_none();
             if needs_focus {
                 self.focus = Some(sibling);
-                if let Some(next_id) = self.pane_terminal_id(sibling) {
-                    if let Some(entry) = self.terminals.get(&next_id) {
-                        let widget_id = entry.terminal.widget_id().clone();
-                        self.update_title_from_terminal(Some(next_id));
-                        return StateCommand::FocusTerminal(widget_id);
-                    }
+                if let Some(next_id) = self.pane_terminal_id(sibling)
+                    && let Some(entry) = self.terminals.get(&next_id)
+                {
+                    let widget_id = entry.terminal.widget_id().clone();
+                    self.update_title_from_terminal(Some(next_id));
+                    return StateCommand::FocusTerminal(widget_id);
                 }
             }
 
@@ -548,23 +548,23 @@ impl TerminalTabState {
         }
         self.update_title_from_terminal(Some(terminal_id));
 
-        if focus_terminal_widget {
-            if let Some(entry) = self.terminals.get(&terminal_id) {
-                return StateCommand::FocusTerminal(
-                    entry.terminal.widget_id().clone(),
-                );
-            }
+        if focus_terminal_widget
+            && let Some(entry) = self.terminals.get(&terminal_id)
+        {
+            return StateCommand::FocusTerminal(
+                entry.terminal.widget_id().clone(),
+            );
         }
 
         StateCommand::None
     }
 
     fn update_title_from_terminal(&mut self, terminal_id: Option<u64>) {
-        if let Some(id) = terminal_id {
-            if let Some(entry) = self.terminals.get(&id) {
-                self.title = entry.title.clone();
-                return;
-            }
+        if let Some(id) = terminal_id
+            && let Some(entry) = self.terminals.get(&id)
+        {
+            self.title = entry.title.clone();
+            return;
         }
 
         self.title = self.default_title.clone();

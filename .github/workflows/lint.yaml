@@ -25,7 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@stable
+    - name: Install Rust ${{ vars.RUST_STABLE_TOOLCHAIN }}
+      uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: ${{ vars.RUST_STABLE_TOOLCHAIN }}
     - run: cargo lint

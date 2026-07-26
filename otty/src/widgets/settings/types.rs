@@ -121,10 +121,10 @@ impl SettingsData {
             }
         }
 
-        if let Some(theme) = value.get("theme") {
-            if let Some(palette) = read_palette(theme.get("palette")) {
-                settings.theme.palette = palette;
-            }
+        if let Some(theme) = value.get("theme")
+            && let Some(palette) = read_palette(theme.get("palette"))
+        {
+            settings.theme.palette = palette;
         }
 
         settings

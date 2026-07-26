@@ -162,11 +162,11 @@ fn changed_directories_from_event(
 
     let mut directories = BTreeSet::new();
     for path in &event.paths {
-        if let Some(parent) = path.parent() {
-            if watched.contains(parent) {
-                directories.insert(parent.to_path_buf());
-                continue;
-            }
+        if let Some(parent) = path.parent()
+            && watched.contains(parent)
+        {
+            directories.insert(parent.to_path_buf());
+            continue;
         }
 
         if watched.contains(path) {

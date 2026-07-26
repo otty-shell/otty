@@ -299,10 +299,10 @@ pub(crate) fn reduce(
             tab_id,
             command_type,
         } => {
-            if let Some(editor) = state.wizard_mut().editor_mut(tab_id) {
-                if editor.is_create_mode() {
-                    editor.set_command_type(command_type);
-                }
+            if let Some(editor) = state.wizard_mut().editor_mut(tab_id)
+                && editor.is_create_mode()
+            {
+                editor.set_command_type(command_type);
             }
             Task::none()
         },
@@ -560,12 +560,11 @@ fn begin_inline_create_folder(
     state: &mut QuickLaunchState,
     parent_path: NodePath,
 ) {
-    if !parent_path.is_empty() {
-        if let Some(QuickLaunchNode::Folder(folder)) =
+    if !parent_path.is_empty()
+        && let Some(QuickLaunchNode::Folder(folder)) =
             state.data_mut().node_mut(&parent_path)
-        {
-            folder.expanded = true;
-        }
+    {
+        folder.expanded = true;
     }
     let edit = InlineEditState {
         kind: InlineEditKind::CreateFolder { parent_path },
@@ -1053,10 +1052,10 @@ fn should_skip_launch_result(
         remove_launch_by_id(state, launch_id);
         return true;
     }
-    if let Some(info) = state.launch_info(path) {
-        if info.id != launch_id {
-            return true;
-        }
+    if let Some(info) = state.launch_info(path)
+        && info.id != launch_id
+    {
+        return true;
     }
     remove_launch_by_id(state, launch_id);
     false
