@@ -66,36 +66,37 @@ jobs:
           name: otty-deb-ubuntu-2004
           path: target/debian/*.deb
 
-  linux-appimage:
-    name: Build AppImage (Linux)
-    runs-on: ubuntu-latest
+  # TODO: Need to chose base package distribution methods
+  # linux-appimage:
+  #   name: Build AppImage (Linux)
+  #   runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: Checkout sources
+  #       uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+  #     - name: Set up Rust toolchain
+  #       uses: dtolnay/rust-toolchain@stable
 
-      - name: Install linuxdeploy
-        run: |
-          curl -sSL -o linuxdeploy.AppImage \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x linuxdeploy.AppImage
+  #     - name: Install linuxdeploy
+  #       run: |
+  #         curl -sSL -o linuxdeploy.AppImage \
+  #           https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+  #         chmod +x linuxdeploy.AppImage
 
-      - name: Build release binary
-        run: cargo build --release -p otty
+  #     - name: Build release binary
+  #       run: cargo build --release -p otty
 
-      - name: Package as AppImage
-        env:
-          OUTPUT: otty-x86_64.AppImage
-        run: bash scripts/linux/build-appimage.sh
+  #     - name: Package as AppImage
+  #       env:
+  #         OUTPUT: otty-x86_64.AppImage
+  #       run: bash scripts/linux/build-appimage.sh
 
-      - name: Upload AppImage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: otty-appimage
-          path: otty-*.AppImage
+  #     - name: Upload AppImage artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: otty-appimage
+  #         path: otty-*.AppImage
 
   macos-packages:
     name: Build DMG (macOS)
