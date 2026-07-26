@@ -2106,6 +2106,10 @@ impl SurfaceActor for Surface {
             s
         })
     }
+
+    fn clear_selection(&mut self) {
+        self.selection = None;
+    }
 }
 
 /// The state of the [`Mode`] and [`PrivateMode`].

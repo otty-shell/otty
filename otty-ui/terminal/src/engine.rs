@@ -5,6 +5,9 @@ use iced::keyboard::Modifiers;
 use iced_core::Size;
 #[cfg(test)]
 use otty_libterm::Runtime;
+use otty_libterm::mouse::{
+    TerminalMouseButton, TerminalMouseModifiers, encode_mouse_report,
+};
 use otty_libterm::surface::{
     Column, Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceMode,
     viewport_to_point,
@@ -19,24 +22,6 @@ use crate::error::Result;
 use crate::settings::{BackendSettings, SessionKind};
 
 #[derive(Debug, Clone)]
-pub enum MouseMode {
-    Sgr,
-    Normal(bool),
-}
-
-impl From<SurfaceMode> for MouseMode {
-    fn from(term_mode: SurfaceMode) -> Self {
-        if term_mode.contains(SurfaceMode::SGR_MOUSE) {
-            MouseMode::Sgr
-        } else if term_mode.contains(SurfaceMode::UTF8_MOUSE) {
-            MouseMode::Normal(true)
-        } else {
-            MouseMode::Normal(false)
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub enum MouseButton {
     LeftButton = 0,
     MiddleButton = 1,
@@ -48,6 +33,23 @@ pub enum MouseButton {
     ScrollUp = 64,
     ScrollDown = 65,
     Other = 99,
+}
+
+impl From<MouseButton> for TerminalMouseButton {
+    fn from(value: MouseButton) -> Self {
+        match value {
+            MouseButton::LeftButton => Self::Left,
+            MouseButton::MiddleButton => Self::Middle,
+            MouseButton::RightButton => Self::Right,
+            MouseButton::LeftMove => Self::LeftMove,
+            MouseButton::MiddleMove => Self::MiddleMove,
+            MouseButton::RightMove => Self::RightMove,
+            MouseButton::NoneMove => Self::Move,
+            MouseButton::ScrollUp => Self::ScrollUp,
+            MouseButton::ScrollDown => Self::ScrollDown,
+            MouseButton::Other => Self::Move,
+        }
+    }
 }
 
 type LocalTerminal =
@@ -216,81 +218,22 @@ impl Engine {
         point: Point,
         pressed: bool,
     ) {
-        let mut mods = 0;
-        if modifiers.contains(Modifiers::SHIFT) {
-            mods += 4;
-        }
-        if modifiers.contains(Modifiers::ALT) {
-            mods += 8;
-        }
-        if modifiers.contains(Modifiers::COMMAND) {
-            mods += 16;
-        }
-
-        match MouseMode::from(self.snapshot.view().mode) {
-            MouseMode::Sgr => {
-                self.sgr_mouse_report(point, button as u8 + mods, pressed)
-            },
-            MouseMode::Normal(is_utf8) => {
-                if pressed {
-                    self.normal_mouse_report(
-                        point,
-                        button as u8 + mods,
-                        is_utf8,
-                    )
-                } else {
-                    self.normal_mouse_report(point, 3 + mods, is_utf8)
-                }
-            },
-        }
-    }
-
-    fn sgr_mouse_report(&self, point: Point, button: u8, pressed: bool) {
-        let c = if pressed { 'M' } else { 'm' };
-
-        let msg = format!(
-            "\x1b[<{};{};{}{}",
-            button,
-            point.column + 1,
-            point.line + 1,
-            c
-        )
-        .as_bytes()
-        .to_vec();
-
-        let _ = self.request_proxy.send(TerminalRequest::WriteBytes(msg));
-    }
-
-    fn normal_mouse_report(&self, point: Point, button: u8, is_utf8: bool) {
-        let Point { line, column } = point;
-        let max_point = if is_utf8 { 2015 } else { 223 };
-
-        if line >= max_point || column >= max_point {
+        let modifiers = TerminalMouseModifiers::new(
+            modifiers.contains(Modifiers::SHIFT),
+            modifiers.contains(Modifiers::ALT),
+            modifiers.contains(Modifiers::COMMAND),
+        );
+        let Some(report) = encode_mouse_report(
+            self.snapshot.view().mode,
+            point,
+            button.into(),
+            modifiers,
+            pressed,
+        ) else {
             return;
-        }
-
-        let mut msg = vec![b'\x1b', b'[', b'M', 32 + button];
-
-        let mouse_pos_encode = |pos: usize| -> Vec<u8> {
-            let pos = 32 + 1 + pos;
-            let first = 0xC0 + pos / 64;
-            let second = 0x80 + (pos & 63);
-            vec![first as u8, second as u8]
         };
 
-        if is_utf8 && column >= Column(95) {
-            msg.append(&mut mouse_pos_encode(column.0));
-        } else {
-            msg.push(32 + 1 + column.0 as u8);
-        }
-
-        if is_utf8 && line >= 95 {
-            msg.append(&mut mouse_pos_encode(line.0 as usize));
-        } else {
-            msg.push(32 + 1 + line.0 as u8);
-        }
-
-        let _ = self.request_proxy.send(TerminalRequest::WriteBytes(msg));
+        let _ = self.request_proxy.send(TerminalRequest::WriteBytes(report));
     }
 
     pub(crate) fn start_selection(

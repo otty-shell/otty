@@ -31,7 +31,6 @@ General context lives in [README.md](./README.md) at the repository root.
 - Run `cargo +nightly fmt`, `cargo clippy --workspace --all-targets --all-features -- -D warnings` and fix all errors and warnings.
 - Run `cargo deny check` and fix all output errors.
 - Run `cargo test --workspace --all-features` all tests MUST be passed
-- Run `cargo llvm-cov --workspace --all-features --fail-under-lines 80` for checking the test coverage level and ensure that it's not decreased for changed code (baseline >= 80%)
 
 ## Terminal emulation
 

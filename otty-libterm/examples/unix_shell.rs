@@ -161,16 +161,16 @@ mod unix_shell {
 
         write!(out, "\x1b[0m")?;
 
-        if view.cursor.shape != otty_escape::CursorShape::Hidden {
-            if let Some(cursor) = otty_libterm::surface::point_to_viewport(
+        if view.cursor.shape != otty_escape::CursorShape::Hidden
+            && let Some(cursor) = otty_libterm::surface::point_to_viewport(
                 view.display_offset,
                 view.cursor.point,
-            ) {
-                let row = cursor.line;
-                let col = cursor.column.0;
-                if row < rows && col < cols {
-                    write!(out, "\x1b[{};{}H\x1b[?25h", row + 1, col + 1)?;
-                }
+            )
+        {
+            let row = cursor.line;
+            let col = cursor.column.0;
+            if row < rows && col < cols {
+                write!(out, "\x1b[{};{}H\x1b[?25h", row + 1, col + 1)?;
             }
         }
 

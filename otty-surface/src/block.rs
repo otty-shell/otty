@@ -1262,6 +1262,16 @@ impl SurfaceActor for BlockSurface {
         }
     }
 
+    /// Clear both local and cross-block selection state.
+    fn clear_selection(&mut self) {
+        for block in &mut self.blocks {
+            block.surface.clear_selection();
+        }
+        self.global_selection = None;
+        self.selection_block = None;
+        self.selection_anchor = None;
+    }
+
     /// React to prompt/command lifecycle events emitted by the parser.
     fn handle_block_event(&mut self, event: crate::escape::BlockEvent) {
         let escape_meta = event.meta;

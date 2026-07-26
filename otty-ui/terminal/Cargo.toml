@@ -19,3 +19,6 @@ otty-libterm = { path = "../../otty-libterm", version = "0.1.0" }
 tokio = { version = "1.47.1", features = ["full"] }
 open = "5.3.2"
 log = { workspace = true }
+# GPUI's renderer enables codespan's termcolor feature in combined workspace
+# builds, so Naga must select the matching diagnostic writer implementation.
+naga = { workspace = true }

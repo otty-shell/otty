@@ -16,6 +16,8 @@ rust-version = "1.96.0"
 
 [workspace.dependencies]
 iced = "0.14"
+gpui = "=0.2.2"
+naga = { version = "27.0.3", features = ["termcolor"] }
 thiserror = "2.0.18"
 bitflags = "2.11.0"
 log = "0.4.29"

@@ -311,15 +311,14 @@ impl canvas::Program<Message> for BlockOverlay {
                     }
                     if let Some(button) =
                         compute_action_button_geometry(rect, cell_height)
+                        && button.rect.contains(position)
                     {
-                        if button.rect.contains(position) {
-                            return Some(
-                                canvas::Action::publish(Message::OverlayCopy(
-                                    button.block_id.clone(),
-                                ))
-                                .and_capture(),
-                            );
-                        }
+                        return Some(
+                            canvas::Action::publish(Message::OverlayCopy(
+                                button.block_id.clone(),
+                            ))
+                            .and_capture(),
+                        );
                     }
                 }
                 None
@@ -342,10 +341,9 @@ impl canvas::Program<Message> for BlockOverlay {
                 }
                 if let Some(button) =
                     compute_action_button_geometry(rect, cell_height)
+                    && button.rect.contains(position)
                 {
-                    if button.rect.contains(position) {
-                        return iced::mouse::Interaction::Pointer;
-                    }
+                    return iced::mouse::Interaction::Pointer;
                 }
             }
         }

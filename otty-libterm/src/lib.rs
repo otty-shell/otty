@@ -21,6 +21,7 @@
 //!    readiness model, and drain [`TerminalEvent`]s from [`TerminalEvents`].
 
 mod error;
+pub mod mouse;
 mod runtime;
 mod terminal;
 

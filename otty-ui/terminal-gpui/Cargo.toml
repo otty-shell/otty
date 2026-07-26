@@ -1,0 +1,21 @@
+[package]
+name = "otty-ui-term-gpui"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Embeddable GPUI terminal widget for OTTY"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+readme = "README.md"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+cursor-icon = { workspace = true }
+gpui = { workspace = true }
+log = { workspace = true }
+otty-libterm = { path = "../../otty-libterm", version = "0.1.0" }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

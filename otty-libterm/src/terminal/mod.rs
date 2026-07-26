@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use cursor_icon::CursorIcon;
-use flume::{Receiver, Sender};
+use flume::{Receiver, Sender, TrySendError};
 use log::debug;
 use options::TerminalOptions;
 
@@ -24,9 +24,7 @@ use crate::surface::{
     Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceActor,
     SurfaceModel,
 };
-use crate::terminal::channel::{
-    ChannelSendError, TerminalEvents, TerminalHandle, map_send_error,
-};
+use crate::terminal::channel::{TerminalEvents, TerminalHandle};
 use crate::terminal::size::TerminalSize;
 use crate::terminal::surface_actor::TerminalSurfaceActor;
 
@@ -34,6 +32,7 @@ use crate::terminal::surface_actor::TerminalSurfaceActor;
 pub type SnapshotArc = Arc<SnapshotOwned>;
 
 const DEFAULT_READ_BUFFER_CAPACITY: usize = 1024;
+const MAX_READS_PER_BATCH: usize = 64;
 
 /// Events emitted by terminal implementations to interested clients.
 pub enum TerminalEvent {
@@ -76,6 +75,8 @@ pub enum TerminalRequest {
     },
     /// Update the active selection range on the surface.
     UpdateSelection { point: Point, direction: Side },
+    /// Clear the active selection range on the surface.
+    ClearSelection,
     /// Close the session and terminate the event loop.
     Shutdown,
 }
@@ -170,6 +171,7 @@ pub struct TerminalEngine<P, E, S> {
     pending_input: VecDeque<u8>,
     pending_requests: VecDeque<TerminalRequest>,
     events: VecDeque<TerminalEvent>,
+    read_retry_needed: bool,
     sync_state: SyncState,
 }
 
@@ -214,6 +216,7 @@ where
                 pending_input: VecDeque::new(),
                 pending_requests: VecDeque::new(),
                 events: VecDeque::new(),
+                read_retry_needed: false,
                 sync_state: SyncState::new(),
             },
             handle,
@@ -230,8 +233,15 @@ where
     /// Process readable PTY data and emit any resulting events.
     pub fn on_readable(&mut self) -> Result<bool> {
         self.process_pending_requests()?;
+        if !self.flush_event_queue()? {
+            self.read_retry_needed = true;
+            return Ok(false);
+        }
+        self.read_retry_needed = false;
 
         let mut updated = false;
+        let mut reached_read_limit = false;
+        let mut read_count = 0;
 
         loop {
             match self.session.read(self.read_buffer.as_mut_slice()) {
@@ -251,6 +261,11 @@ where
                         let _ = actor.flush_sync_timeout();
                     }
                     updated = true;
+                    read_count += 1;
+                    if read_count >= MAX_READS_PER_BATCH {
+                        reached_read_limit = true;
+                        break;
+                    }
                 },
                 Err(SessionError::IO(err))
                     if err.kind() == ErrorKind::Interrupted =>
@@ -278,7 +293,8 @@ where
 
         self.capture_exit()?;
 
-        self.flush_event_queue()?;
+        let event_backpressure = !self.flush_event_queue()?;
+        self.read_retry_needed = reached_read_limit || event_backpressure;
 
         Ok(updated)
     }
@@ -287,13 +303,21 @@ where
     pub fn on_writable(&mut self) -> Result<bool> {
         self.process_pending_requests()?;
         self.flush_pending_input()?;
-        self.flush_event_queue()?;
+        self.read_retry_needed = !self.flush_event_queue()?;
         Ok(!self.pending_input.is_empty())
     }
 
     /// Handle periodic maintenance ticks (e.g. sync-mode timeouts).
     pub fn tick(&mut self) -> Result<()> {
         self.process_pending_requests()?;
+        if !self.flush_event_queue()? {
+            self.read_retry_needed = true;
+            return Ok(());
+        }
+        if std::mem::take(&mut self.read_retry_needed) {
+            let _ = self.on_readable()?;
+            return Ok(());
+        }
 
         let flushed = {
             let mut actor = TerminalSurfaceActor {
@@ -311,7 +335,7 @@ where
 
         self.capture_exit()?;
 
-        self.flush_event_queue()?;
+        self.read_retry_needed = !self.flush_event_queue()?;
 
         Ok(())
     }
@@ -379,6 +403,10 @@ where
             },
             UpdateSelection { point, direction } => {
                 self.surface.update_selection(point, direction);
+                self.emit_frame()?;
+            },
+            ClearSelection => {
+                self.surface.clear_selection();
                 self.emit_frame()?;
             },
             Shutdown => {
@@ -501,6 +529,8 @@ where
     fn emit_frame(&mut self) -> Result<()> {
         let frame = self.surface.snapshot_owned();
         self.surface.reset_damage();
+        self.events
+            .retain(|event| !matches!(event, TerminalEvent::Frame { .. }));
         self.events.push_back(TerminalEvent::Frame {
             frame: Arc::new(frame),
         });
@@ -512,21 +542,23 @@ where
         Ok(())
     }
 
-    fn flush_event_queue(&mut self) -> Result<()> {
+    fn flush_event_queue(&mut self) -> Result<bool> {
         while let Some(event) = self.events.pop_front() {
             match self.event_tx.try_send(event) {
                 Ok(()) => {},
-                Err(err) => match map_send_error(err) {
-                    ChannelSendError::Full => {
-                        return Err(crate::Error::EventChannelFull);
+                Err(err) => match err {
+                    TrySendError::Full(event) => {
+                        self.events.push_front(event);
+                        return Ok(false);
                     },
-                    ChannelSendError::Disconnected => {
+                    TrySendError::Disconnected(_) => {
                         return Err(crate::Error::EventChannelClosed);
                     },
                 },
             }
         }
-        Ok(())
+
+        Ok(true)
     }
 }
 
@@ -600,13 +632,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DefaultParser;
     use crate::surface::{Surface, SurfaceConfig};
     use crate::terminal::channel::ChannelConfig;
     use crate::tests::{
         EioSession, FakeSession, PartialSession, StubParser, assert_frame,
         collect_events, exit_ok,
     };
-    use crate::{DefaultParser, Error};
 
     #[test]
     fn partial_writes_keep_pending_output_until_drained() -> Result<()> {
@@ -707,7 +739,7 @@ mod tests {
     }
 
     #[test]
-    fn bounded_event_channel_surfaces_backpressure() {
+    fn bounded_event_channel_preserves_critical_events_without_failing() {
         let session = FakeSession::with_reads(vec![b"payload".to_vec()])
             .with_exit(exit_ok());
         let parser = StubParser::with_actions(vec![Action::Print('x')]);
@@ -721,12 +753,114 @@ mod tests {
             ..TerminalOptions::default()
         };
 
-        let (mut engine, _handle, _events) =
+        let (mut engine, _handle, events) =
             TerminalEngine::new(session, parser, surface, options)
                 .expect("construct engine");
 
-        let err = engine.on_readable().expect_err("channel backpressure");
-        assert!(matches!(err, Error::EventChannelFull));
+        engine
+            .on_readable()
+            .expect("backpressure does not stop the engine");
+
+        assert!(matches!(
+            events.recv().expect("frame remains available"),
+            TerminalEvent::Frame { .. }
+        ));
+
+        engine.tick().expect("pending events flush after the drain");
+
+        assert!(matches!(
+            events.recv().expect("child exit is not lost"),
+            TerminalEvent::ChildExit { .. }
+        ));
+    }
+
+    #[test]
+    fn pending_frames_are_coalesced_to_one_latest_snapshot() {
+        let session = FakeSession::default();
+        let parser = StubParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, _handle, _events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )
+        .expect("construct engine");
+
+        engine.emit_frame().expect("first frame");
+        engine.emit_frame().expect("replacement frame");
+
+        assert_eq!(engine.events.len(), 1);
+        assert!(matches!(
+            engine.events.front(),
+            Some(TerminalEvent::Frame { .. })
+        ));
+    }
+
+    #[test]
+    fn draining_backpressure_resumes_pty_reads_on_the_next_tick() {
+        let session = FakeSession::with_reads(vec![b"payload".to_vec()]);
+        let parser = StubParser::with_actions(vec![Action::Print('x')]);
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let options = TerminalOptions {
+            channel_config: ChannelConfig {
+                event_capacity: Some(1),
+                request_capacity: None,
+            },
+            ..TerminalOptions::default()
+        };
+        let (mut engine, _handle, events) =
+            TerminalEngine::new(session, parser, surface, options)
+                .expect("construct engine");
+        engine.emit_frame().expect("occupy the event channel");
+        assert!(engine.flush_event_queue().expect("initial flush"));
+        engine.events.push_back(TerminalEvent::Bell);
+
+        assert!(!engine.on_readable().expect("pause instead of failing"));
+        assert!(matches!(
+            events.recv().expect("initial frame"),
+            TerminalEvent::Frame { .. }
+        ));
+
+        engine.tick().expect("drain and resume the PTY read");
+
+        assert!(
+            engine
+                .events
+                .iter()
+                .any(|event| matches!(event, TerminalEvent::Frame { .. }))
+        );
+    }
+
+    #[test]
+    fn readable_batches_are_bounded_and_resume_on_the_next_tick() {
+        let reads = (0..65).map(|_| b"x".to_vec()).collect();
+        let actions = (0..65).map(|_| Action::Print('x')).collect();
+        let session = FakeSession::with_reads(reads);
+        let parser = StubParser::with_actions(actions);
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, _handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )
+        .expect("construct engine");
+
+        engine.on_readable().expect("first bounded read batch");
+        assert!(matches!(
+            events.try_recv().expect("first frame"),
+            TerminalEvent::Frame { .. }
+        ));
+
+        engine.tick().expect("resume remaining PTY reads");
+        assert!(matches!(
+            events.try_recv().expect("second frame"),
+            TerminalEvent::Frame { .. }
+        ));
     }
 
     #[test]
@@ -755,6 +889,35 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn clear_selection_request_removes_the_active_selection() {
+        let session = FakeSession::default();
+        let parser = StubParser::default();
+        let surface =
+            Surface::new(SurfaceConfig::default(), &TerminalSize::default());
+        let (mut engine, _handle, _events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )
+        .expect("construct engine");
+        engine
+            .process_request(TerminalRequest::StartSelection {
+                ty: SelectionType::Simple,
+                point: Point::default(),
+                direction: Side::Left,
+            })
+            .expect("start selection");
+        assert!(engine.surface.selection.is_some());
+
+        engine
+            .process_request(TerminalRequest::ClearSelection)
+            .expect("clear selection");
+
+        assert!(engine.surface.selection.is_none());
     }
 
     #[cfg(unix)]

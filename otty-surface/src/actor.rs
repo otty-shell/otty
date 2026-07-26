@@ -256,6 +256,9 @@ pub trait SurfaceActor {
     /// Update the selection range
     fn update_selection(&mut self, _: Point, _: Side) {}
 
+    /// Clear the active selection range.
+    fn clear_selection(&mut self) {}
+
     /// Handle high‑level block lifecycle events coming from the parser.
     fn handle_block_event(&mut self, _: crate::escape::BlockEvent) {}
 }
