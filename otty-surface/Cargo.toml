@@ -1,6 +1,6 @@
 [package]
 name = "otty-surface"
-homepage = "https://otty.sh"
+homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Terminal surface (content) manager"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]

@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn build_detects_plain_url() {
         let columns = 40;
-        let cells = cells_from_rows(&["visit https://otty.sh now"], columns);
+        let cells = cells_from_rows(&["visit https://otty.run now"], columns);
         let size = SnapshotSize {
             columns,
             screen_lines: 1,
@@ -507,7 +507,7 @@ mod tests {
         let span = map
             .span_for_point(0, Point::new(Line(0), Column(8)))
             .expect("url span");
-        assert_eq!(span.link.uri(), "https://otty.sh");
+        assert_eq!(span.link.uri(), "https://otty.run");
         assert!(
             map.span_for_point(0, Point::new(Line(0), Column(22)))
                 .is_none()
@@ -518,7 +518,7 @@ mod tests {
     fn build_detects_wrapped_url() {
         let columns = 12;
         let mut cells =
-            cells_from_rows(&["https://otty", ".sh and more"], columns);
+            cells_from_rows(&["https://otty", ".run and more"], columns);
         cells[columns - 1].cell.flags.insert(Flags::WRAPLINE);
         let size = SnapshotSize {
             columns,
@@ -534,7 +534,7 @@ mod tests {
             .span_for_point(0, Point::new(Line(1), Column(0)))
             .expect("second row span");
 
-        assert_eq!(first.link.uri(), "https://otty.sh");
-        assert_eq!(second.link.uri(), "https://otty.sh");
+        assert_eq!(first.link.uri(), "https://otty.run");
+        assert_eq!(second.link.uri(), "https://otty.run");
     }
 }

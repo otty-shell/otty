@@ -3,7 +3,7 @@ name = "otty"
 description = "OTTY - an open-source terminal-centric workspace for development and operations"
 version = "0.1.0"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
-homepage = "https://otty.sh"
+homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 readme = "../README.md"
 edition = { workspace = true }

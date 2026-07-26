@@ -319,16 +319,16 @@ impl BlockSurface {
     /// Produce a list describing how each block maps into the concatenated
     /// history so snapshots can stitch them into a single viewport.
     fn block_slices(&self) -> Vec<BlockSliceInfo> {
-        if self.is_alt_screen_active() {
-            if let Some(block) = self.blocks.get(self.last_block_idx()) {
-                let (top_line, total_lines) = Self::block_visible_extent(block);
-                return vec![BlockSliceInfo {
-                    index: self.last_block_idx(),
-                    start: 0,
-                    end: total_lines,
-                    top_line,
-                }];
-            }
+        if self.is_alt_screen_active()
+            && let Some(block) = self.blocks.get(self.last_block_idx())
+        {
+            let (top_line, total_lines) = Self::block_visible_extent(block);
+            return vec![BlockSliceInfo {
+                index: self.last_block_idx(),
+                start: 0,
+                end: total_lines,
+                top_line,
+            }];
         }
 
         let mut start = 0;
@@ -1299,10 +1299,10 @@ impl SurfaceActor for BlockSurface {
                     return;
                 }
 
-                if let Some(index) = self.active_prompt_index() {
-                    if self.blocks.len() > 1 {
-                        self.remove_block_at(index);
-                    }
+                if let Some(index) = self.active_prompt_index()
+                    && self.blocks.len() > 1
+                {
+                    self.remove_block_at(index);
                 }
 
                 self.begin_block(meta);
@@ -1401,31 +1401,25 @@ impl SurfaceModel for BlockSurface {
         let active_block = &self.blocks[idx].surface;
         let mut cursor = CursorSnapshot::new(active_block);
         let active_slice = slices.iter().find(|slice| slice.index == idx);
-        if let Some(slice) = active_slice {
-            if let Some(point) =
+        if let Some(slice) = active_slice
+            && let Some(point) =
                 self.convert_point_to_view(slice, cursor.point, start)
-            {
-                cursor.point = point;
-            }
+        {
+            cursor.point = point;
         }
 
         let mut selection = None;
         if let Some(index) =
             self.selection_block.filter(|&idx| idx < self.blocks.len())
-        {
-            if let Some(slice) =
+            && let Some(slice) =
                 slices.iter().find(|slice| slice.index == index)
-            {
-                if let Some(range) = self.blocks[index]
-                    .surface
-                    .selection
-                    .as_ref()
-                    .and_then(|s| s.to_range(&self.blocks[index].surface))
-                {
-                    selection =
-                        self.convert_selection_to_view(range, slice, start);
-                }
-            }
+            && let Some(range) = self.blocks[index]
+                .surface
+                .selection
+                .as_ref()
+                .and_then(|s| s.to_range(&self.blocks[index].surface))
+        {
+            selection = self.convert_selection_to_view(range, slice, start);
         }
 
         let size = SnapshotSize {
@@ -1437,14 +1431,14 @@ impl SurfaceModel for BlockSurface {
 
         let hyperlinks = HyperlinkMap::build(&cells, size, self.display_offset);
 
-        if selection.is_none() {
-            if let Some(global_selection) = &self.global_selection {
-                selection = self.global_selection_to_view(
-                    global_selection,
-                    &context,
-                    viewport_lines,
-                );
-            }
+        if selection.is_none()
+            && let Some(global_selection) = &self.global_selection
+        {
+            selection = self.global_selection_to_view(
+                global_selection,
+                &context,
+                viewport_lines,
+            );
         }
 
         let padding_adjustment = bottom_padding as i32;

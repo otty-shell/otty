@@ -1,6 +1,6 @@
 [package]
 name = "otty-ui-tree"
-homepage = "https://otty.sh"
+homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Tree view utilities for OTTY widgets"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]

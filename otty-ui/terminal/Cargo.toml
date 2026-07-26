@@ -1,6 +1,6 @@
 [package]
 name = "otty-ui-term"
-homepage = "https://otty.sh"
+homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Terminal emulator widget for iced ui fraemwork"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]

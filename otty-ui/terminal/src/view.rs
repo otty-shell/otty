@@ -130,12 +130,11 @@ impl<'a> TerminalView<'a> {
                 _bounds: Rectangle,
                 state: &mut dyn Any,
             ) {
-                if id == Some(&self.id) {
-                    if let Some(state) =
+                if id == Some(&self.id)
+                    && let Some(state) =
                         state.downcast_mut::<TerminalViewState>()
-                    {
-                        state.queue_block_command(self.command.clone());
-                    }
+                {
+                    state.queue_block_command(self.command.clone());
                 }
             }
         }
@@ -197,10 +196,10 @@ impl<'a> TerminalView<'a> {
                 }
             },
             BlockCommand::SelectHovered => {
-                if let Some(block_id) = view_state.hovered_block_id.clone() {
-                    if self.select_block(&block_id, view_state) {
-                        self.notify_block_selected(&block_id, shell);
-                    }
+                if let Some(block_id) = view_state.hovered_block_id.clone()
+                    && self.select_block(&block_id, view_state)
+                {
+                    self.notify_block_selected(&block_id, shell);
                 }
             },
             BlockCommand::CopySelection => {

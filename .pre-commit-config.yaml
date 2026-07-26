@@ -5,13 +5,7 @@ repos:
     hooks:
       - id: fmt-check
         name: formatter check
-        entry: cargo +nightly fmt --check
-        language: system
-        pass_filenames: false
-        always_run: true
-      - id: clippy
-        name: clippy check
-        entry: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        entry: cargo +nightly-2026-03-10 fmt-check
         language: system
         pass_filenames: false
         always_run: true

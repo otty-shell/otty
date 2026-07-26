@@ -18,7 +18,7 @@ fn main() {
     let mut actor = LoggingActor::default();
 
     let bytes = b"Hello \x1b[1mOtty\x1b[0m!\n\
-                  \x1b]8;id=docs;https://otty.sh\x07click me\x1b]8;;\x07";
+                  \x1b]8;id=docs;https://otty.run\x07click me\x1b]8;;\x07";
 
     parser.advance(bytes, &mut actor);
 }

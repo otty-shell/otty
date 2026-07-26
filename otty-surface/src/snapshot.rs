@@ -429,7 +429,7 @@ mod tests {
     fn regex_detects_plain_url() {
         let mut surface =
             Surface::new(SurfaceConfig::default(), &TestDimensions::new(40, 2));
-        set_text(&mut surface, 0, "visit https://otty.sh now");
+        set_text(&mut surface, 0, "visit https://otty.run now");
 
         let snapshot = surface.snapshot_owned();
         let view = snapshot.view();
@@ -437,7 +437,7 @@ mod tests {
             .hyperlink_span_at(Point::new(Line(0), Column(8)))
             .expect("url span");
 
-        assert_eq!(span.link.uri(), "https://otty.sh");
+        assert_eq!(span.link.uri(), "https://otty.run");
         assert!(
             view.hyperlink_span_at(Point::new(Line(0), Column(22)))
                 .is_none()

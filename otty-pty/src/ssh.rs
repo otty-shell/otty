@@ -163,10 +163,10 @@ impl Session for SSHSession {
             Channel::close,
             Channel::wait_close,
         ] {
-            if let Err(err) = step(&mut self.channel) {
-                if !is_would_block(&err) {
-                    return Err(SessionError::SSH2(err));
-                }
+            if let Err(err) = step(&mut self.channel)
+                && !is_would_block(&err)
+            {
+                return Err(SessionError::SSH2(err));
             }
         }
 
@@ -316,27 +316,22 @@ impl SSHSessionBuilder {
         session.set_blocking(false);
         executor.exec("ssh handshake", || session.handshake())?;
 
-        if let Ok(mut agent) = session.agent() {
-            if executor
+        if let Ok(mut agent) = session.agent()
+            && executor
                 .exec("ssh agent connect", || agent.connect())
                 .is_ok()
-                && executor
-                    .exec("ssh agent identities", || agent.list_identities())
+            && executor
+                .exec("ssh agent identities", || agent.list_identities())
+                .is_ok()
+            && let Ok(ids) =
+                executor.exec("ssh agent list", || agent.identities())
+        {
+            for id in ids {
+                if executor
+                    .exec("ssh agent auth", || agent.userauth(&user, &id))
                     .is_ok()
-            {
-                if let Ok(ids) =
-                    executor.exec("ssh agent list", || agent.identities())
                 {
-                    for id in ids {
-                        if executor
-                            .exec("ssh agent auth", || {
-                                agent.userauth(&user, &id)
-                            })
-                            .is_ok()
-                        {
-                            break;
-                        }
-                    }
+                    break;
                 }
             }
         }
@@ -401,10 +396,10 @@ fn is_would_block(err: &SshError) -> bool {
 }
 
 fn check_cancel(cancel: Option<&Arc<AtomicBool>>) -> Result<(), SessionError> {
-    if let Some(cancel) = cancel {
-        if cancel.load(Ordering::Relaxed) {
-            return Err(SessionError::Cancelled);
-        }
+    if let Some(cancel) = cancel
+        && cancel.load(Ordering::Relaxed)
+    {
+        return Err(SessionError::Cancelled);
     }
     Ok(())
 }
@@ -414,13 +409,13 @@ fn check_timeout(
     timeout: Option<Duration>,
     step: &'static str,
 ) -> Result<(), SessionError> {
-    if let Some(timeout) = timeout {
-        if start.elapsed() >= timeout {
-            return Err(SessionError::Timeout {
-                step,
-                duration: timeout,
-            });
-        }
+    if let Some(timeout) = timeout
+        && start.elapsed() >= timeout
+    {
+        return Err(SessionError::Timeout {
+            step,
+            duration: timeout,
+        });
     }
     Ok(())
 }

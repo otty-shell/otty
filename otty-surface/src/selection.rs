@@ -321,23 +321,22 @@ impl Selection {
         mut start: Point,
         mut end: Point,
     ) -> SelectionRange {
-        if start == end {
-            if let Some(matching) = surface.bracket_search(start) {
-                if (matching.line == start.line
-                    && matching.column < start.column)
-                    || (matching.line < start.line)
-                {
-                    start = matching;
-                } else {
-                    end = matching;
-                }
-
-                return SelectionRange {
-                    start,
-                    end,
-                    is_block: false,
-                };
+        if start == end
+            && let Some(matching) = surface.bracket_search(start)
+        {
+            if (matching.line == start.line && matching.column < start.column)
+                || (matching.line < start.line)
+            {
+                start = matching;
+            } else {
+                end = matching;
             }
+
+            return SelectionRange {
+                start,
+                end,
+                is_block: false,
+            };
         }
 
         let start = surface.semantic_search_left(start);

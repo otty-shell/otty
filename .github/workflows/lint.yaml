@@ -14,15 +14,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@stable
+    - name: Install Rust ${{ vars.RUST_NIGHTLY_TOOLCHAIN }}
+      uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: nightly-2026-03-10
+        toolchain: ${{ vars.RUST_NIGHTLY_TOOLCHAIN }}
         components: clippy, rustfmt
-    - run: cargo +nightly-2026-03-10 fmt --all -- --check
+    - run: cargo +${{ vars.RUST_NIGHTLY_TOOLCHAIN }} fmt --all -- --check
 
   Lint:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@stable
+    - name: Install Rust ${{ vars.RUST_STABLE_TOOLCHAIN }}
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ vars.RUST_STABLE_TOOLCHAIN }}
     - run: cargo lint

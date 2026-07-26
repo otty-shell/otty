@@ -1,6 +1,6 @@
 [package]
 name = "otty-pty"
-homepage = "https://otty.sh"
+homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
 description = "Library for working with pty"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
