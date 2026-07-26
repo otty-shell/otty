@@ -5,7 +5,7 @@ pub(crate) const WINDOW_TRAY: &[u8] =
 pub(crate) const WINDOW_CLOSE: &[u8] =
     include_bytes!("../../assets/svg/window_close.svg");
 pub(crate) const LOGO_SMALL: &[u8] =
-    include_bytes!("../../assets/svg/logo-small.svg");
+    include_bytes!("../../assets/logo/logo-small.svg");
 pub(crate) const ADD_TAB_HEADER: &[u8] =
     include_bytes!("../../assets/svg/add-tab.svg");
 pub(crate) const FOLDER: &[u8] = include_bytes!("../../assets/svg/folder.svg");
