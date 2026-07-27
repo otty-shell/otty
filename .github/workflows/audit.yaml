@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+env:
+  rust_stable: "1.96"
+
 jobs:
   cargo-deny:
     permissions:
@@ -20,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-    - name: Install Rust ${{ vars.RUST_STABLE_TOOLCHAIN }}
+    - name: Install Rust ${{ env.rust_stable }}
       uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: ${{ vars.RUST_STABLE_TOOLCHAIN }}
+        toolchain: ${{ env.rust_stable }}
     - uses: EmbarkStudios/cargo-deny-action@v2

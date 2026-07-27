@@ -6,6 +6,9 @@ on:
     branches:
     - main
 
+env:
+  rust_stable: "1.96"
+
 jobs:
   Build:
     name: ${{ matrix.os }} / rust
@@ -16,10 +19,10 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust ${{ vars.RUST_STABLE_TOOLCHAIN }}
+      - name: Install Rust ${{ env.rust_stable }}
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ vars.RUST_STABLE_TOOLCHAIN }}
+          toolchain: ${{ env.rust_stable }}
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}

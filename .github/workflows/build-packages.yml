@@ -4,6 +4,9 @@ on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
 
+env:
+  rust_stable: "1.96"
+
 jobs:
   linux-packages:
     name: Build RPM and DEB (Linux, native)
@@ -13,10 +16,10 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install Rust ${{ vars.RUST_STABLE_TOOLCHAIN }}
+      - name: Install Rust ${{ env.rust_stable }}
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ vars.RUST_STABLE_TOOLCHAIN }}
+          toolchain: ${{ env.rust_stable }}
 
       - name: Install packaging tools
         run: cargo install cargo-deb cargo-generate-rpm
@@ -117,10 +120,10 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install Rust ${{ vars.RUST_STABLE_TOOLCHAIN }}
+      - name: Install Rust ${{ env.rust_stable }}
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ vars.RUST_STABLE_TOOLCHAIN }}
+          toolchain: ${{ env.rust_stable }}
           targets: ${{ matrix.arch }}
 
       - name: Build release binary
