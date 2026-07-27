@@ -8,8 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-
-env:
   rust_stable: "1.96"
   rust_nightly: "nightly-2026-03-10"
 
