@@ -67,6 +67,29 @@ impl SSHSession {
         }
     }
 
+    /// Re-arm mio's edge-triggered readiness after a raw-socket WouldBlock.
+    ///
+    /// All channel I/O bypasses mio (libssh2 owns the socket), so mio's
+    /// Windows backend never observes the WouldBlock it uses as the signal
+    /// to re-register interest, leaving the session permanently deaf after
+    /// the first event. Peeking one byte through the mio socket hits
+    /// WouldBlock once the kernel buffer is drained, which triggers mio's
+    /// internal re-registration without consuming any data.
+    #[cfg(windows)]
+    fn rearm_io_events(&mut self) -> Result<(), SessionError> {
+        match self.io.peek(&mut [0u8; 1]) {
+            Ok(_) => Ok(()),
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(()),
+            Err(err) => Err(SessionError::IO(err)),
+        }
+    }
+
+    /// No-op on unix: mio is level-triggered there and needs no re-arming.
+    #[cfg(not(windows))]
+    fn rearm_io_events(&mut self) -> Result<(), SessionError> {
+        Ok(())
+    }
+
     /// Notify the poller that the remote stream exited exactly once.
     fn notify_exit(&mut self) -> Result<(), SessionError> {
         if self.exit_notified {
@@ -118,7 +141,10 @@ impl Session for SSHSession {
                 Ok(0)
             },
             Ok(n) => Ok(n),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                self.rearm_io_events()?;
+                Ok(0)
+            },
             Err(e) => Err(SessionError::IO(e)),
         }
     }
@@ -131,7 +157,10 @@ impl Session for SSHSession {
                 let _ = self.channel.flush();
                 Ok(n)
             },
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                self.rearm_io_events()?;
+                Ok(0)
+            },
             Err(e) => Err(SessionError::IO(e)),
         }
     }
