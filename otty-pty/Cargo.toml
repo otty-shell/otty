@@ -16,8 +16,9 @@ thiserror = { workspace = true }
 log = { workspace = true }
 mio = { workspace = true, features = ["os-ext", "net"] }
 # `openssl-on-win32`: make the Windows build use the (vendored) OpenSSL
-# crypto backend instead of WinCNG. WinCNG offers only finite-field DH key
-# exchange, which modern servers (OpenSSH >= 10) no longer accept.
+# crypto backend instead of WinCNG. libssh2's WinCNG backend only
+# advertises finite-field DH key exchange (it does not implement ECDH or
+# curve25519), which modern servers (OpenSSH >= 10) no longer accept.
 ssh2 = { version = "0.9.5", features = ["openssl-on-win32"] }
 # Force a statically-linked (vendored) OpenSSL build. The `ssh2` crate pulls in
 # `libssh2-sys` -> `openssl-sys`, which by default links the host's libssl.
