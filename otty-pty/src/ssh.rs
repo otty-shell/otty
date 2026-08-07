@@ -67,27 +67,11 @@ impl SSHSession {
         }
     }
 
-    /// Re-arm mio's edge-triggered readiness after a raw-socket WouldBlock.
-    ///
-    /// All channel I/O bypasses mio (libssh2 owns the socket), so mio's
-    /// Windows backend never observes the WouldBlock it uses as the signal
-    /// to re-register interest, leaving the session permanently deaf after
-    /// the first event. Peeking one byte through the mio socket hits
-    /// WouldBlock once the kernel buffer is drained, which triggers mio's
-    /// internal re-registration without consuming any data.
-    #[cfg(windows)]
-    fn rearm_io_events(&mut self) -> Result<(), SessionError> {
-        match self.io.peek(&mut [0u8; 1]) {
-            Ok(_) => Ok(()),
-            Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(()),
-            Err(err) => Err(SessionError::IO(err)),
-        }
-    }
-
-    /// No-op on unix: mio is level-triggered there and needs no re-arming.
-    #[cfg(not(windows))]
-    fn rearm_io_events(&mut self) -> Result<(), SessionError> {
-        Ok(())
+    /// Handle channel EOF: cache the exit status and notify the poller.
+    fn finish_eof(&mut self) -> Result<usize, SessionError> {
+        let _ = self.try_get_exit_status();
+        self.notify_exit()?;
+        Ok(0)
     }
 
     /// Notify the poller that the remote stream exited exactly once.
@@ -135,15 +119,22 @@ impl Session for SSHSession {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, SessionError> {
         match self.channel.read(buf) {
             // Channel receive the EOF so we need to notify of exit
-            Ok(0) => {
-                let _ = self.try_get_exit_status();
-                self.notify_exit()?;
-                Ok(0)
-            },
+            Ok(0) => self.finish_eof(),
             Ok(n) => Ok(n),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                self.rearm_io_events()?;
-                Ok(0)
+                rearm_readiness(&self.io)?;
+
+                // Data may have arrived between the libssh2 call and the
+                // re-arm peek; retry once so the engine does not stall
+                // waiting for a readiness event that will not come.
+                match self.channel.read(buf) {
+                    Ok(0) => self.finish_eof(),
+                    Ok(n) => Ok(n),
+                    Err(retry) if retry.kind() == io::ErrorKind::WouldBlock => {
+                        Ok(0)
+                    },
+                    Err(retry) => Err(SessionError::IO(retry)),
+                }
             },
             Err(e) => Err(SessionError::IO(e)),
         }
@@ -158,8 +149,18 @@ impl Session for SSHSession {
                 Ok(n)
             },
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                self.rearm_io_events()?;
-                Ok(0)
+                rearm_readiness(&self.io)?;
+
+                match self.channel.write(input) {
+                    Ok(n) => {
+                        let _ = self.channel.flush();
+                        Ok(n)
+                    },
+                    Err(retry) if retry.kind() == io::ErrorKind::WouldBlock => {
+                        Ok(0)
+                    },
+                    Err(retry) => Err(SessionError::IO(retry)),
+                }
             },
             Err(e) => Err(SessionError::IO(e)),
         }
@@ -576,4 +577,69 @@ fn exit_status_from_code(code: i32) -> ExitStatus {
 #[cfg(windows)]
 fn exit_status_from_code(code: i32) -> ExitStatus {
     std::os::windows::process::ExitStatusExt::from_raw(code as u32)
+}
+
+/// Re-arm mio's edge-triggered readiness after a raw-socket WouldBlock.
+///
+/// All channel I/O bypasses mio (libssh2 owns the socket), so mio's
+/// Windows backend never observes the WouldBlock it uses as the signal
+/// to re-register interest, leaving the session permanently deaf after
+/// the first event. Peeking one byte through the mio socket hits
+/// WouldBlock once the kernel buffer is drained, which triggers mio's
+/// internal re-registration without consuming any data.
+#[cfg(windows)]
+fn rearm_readiness(io: &mio::net::TcpStream) -> Result<(), SessionError> {
+    match io.peek(&mut [0u8; 1]) {
+        Ok(_) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(()),
+        Err(err) => Err(SessionError::IO(err)),
+    }
+}
+
+/// No-op on unix: mio is level-triggered there and needs no re-arming.
+#[cfg(not(windows))]
+fn rearm_readiness(_io: &mio::net::TcpStream) -> Result<(), SessionError> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+
+    use super::rearm_readiness;
+
+    /// Connect a loopback pair and return the client as a mio socket.
+    fn loopback_pair() -> (mio::net::TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        let client = TcpStream::connect(addr).expect("connect");
+        let (server, _) = listener.accept().expect("accept");
+        client.set_nonblocking(true).expect("set nonblocking");
+        (mio::net::TcpStream::from_std(client), server)
+    }
+
+    #[test]
+    fn rearm_on_empty_socket_is_ok_and_nonblocking() {
+        let (client, _server) = loopback_pair();
+
+        let result = rearm_readiness(&client);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rearm_does_not_consume_pending_data() {
+        let (mut client, mut server) = loopback_pair();
+        server.write_all(b"x").expect("write payload");
+        thread::sleep(std::time::Duration::from_millis(50));
+
+        let result = rearm_readiness(&client);
+
+        assert!(result.is_ok());
+        let mut buf = [0u8; 1];
+        let read = client.read(&mut buf).expect("read after rearm");
+        assert_eq!(&buf[..read], b"x", "rearm must not consume data");
+    }
 }
