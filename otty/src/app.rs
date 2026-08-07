@@ -51,7 +51,9 @@ impl App {
         let initial_settings = settings.settings_data().clone();
         theme_manager.set_custom_palette(initial_settings.to_color_palette());
         let current_theme = theme_manager.current();
-        let fonts = FontsConfig::default();
+        let mut fonts = FontsConfig::default();
+        // 从 settings.json 的 font.size 读取终端字号
+        fonts.terminal.size = initial_settings.font_size();
         let terminal_settings = terminal_settings(current_theme, &fonts);
         let shell_path = initial_settings.terminal_shell().to_string();
         let shell_session = match setup_shell_session_with_shell(&shell_path) {

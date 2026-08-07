@@ -41,7 +41,7 @@ pub(crate) fn view(
 ) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
     let palette = props.theme.theme.iced_palette().clone();
     let icon_color = palette.foreground;
-    let highlight_icon_color = palette.blue;
+    let highlight_icon_color = palette.accent;
     let error_color = palette.red;
     let overlay = palette.overlay;
     let row_palette = palette.clone();

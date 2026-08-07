@@ -1,6 +1,7 @@
 use iced::widget::{Space, container};
 use iced::{Element, Length, Theme};
 
+use crate::layout::RADIUS_INNER;
 use crate::theme::ThemeProps;
 
 /// Props for rendering sidebar workspace panel container.
@@ -27,8 +28,13 @@ pub(crate) fn view<'a, Message: 'a>(
         .height(Length::Fill)
         .clip(true)
         .style(move |_| iced::widget::container::Style {
-            background: Some(palette.dim_black.into()),
+            // 侧边栏表面色（VS Code sideBar.background）
+            background: Some(palette.sidebar.into()),
             text_color: Some(palette.foreground),
+            border: iced::Border {
+                radius: iced::border::Radius::from(RADIUS_INNER),
+                ..Default::default()
+            },
             ..Default::default()
         })
         .into()

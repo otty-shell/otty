@@ -5,7 +5,7 @@ use iced::{Element, Length, Theme, alignment};
 use super::super::event::QuickLaunchIntent;
 use super::super::state::WizardEditorState;
 use super::super::types::QuickLaunchType;
-use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_REGULAR};
+use crate::layout::{BUTTON_SIZE_REGULAR, RADIUS_CONTROL};
 use crate::theme::{IcedColorPalette, ThemeProps};
 
 const SECTION_SPACING: f32 = 16.0;
@@ -441,7 +441,7 @@ fn button_style(
         background,
         text_color,
         border: iced::Border {
-            radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
+            radius: iced::border::Radius::from(RADIUS_CONTROL),
             ..Default::default()
         },
         ..Default::default()

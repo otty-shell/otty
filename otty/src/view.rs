@@ -7,9 +7,9 @@ use crate::components::primitive::{
     menu_item, resize_grips, sidebar_workspace_panel,
 };
 use crate::geometry::{anchor_position, menu_height_for_items};
-use crate::layout::BUTTON_SIZE_COMPACT;
+use crate::layout::{BUTTON_SIZE_COMPACT, RADIUS_OUTER};
 use crate::style::menu_panel_style;
-use crate::theme::ThemeProps;
+use crate::theme::{ThemeProps, mix_color};
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::view::action_bar;
 use crate::widgets::explorer::ExplorerEvent;
@@ -124,13 +124,8 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         })
     };
 
-    let header = view_header(app, theme_props);
-
     let root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
-        column![header, content_stack]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
+        content_stack.into(),
         resize_grips_layer,
     ];
 
@@ -301,9 +296,27 @@ fn view_tab_area<'a>(
 
     let content = view_tab_content(app, theme_props);
 
-    column![tab_bar, content]
+    // VS Code "Editor Border" 范式：编辑器区域 = 主角卡片
+    // 1px 边框（前景 12% 混合）+ 8px 圆角 + overflow hidden，
+    // 把编辑器从周围 chrome（侧边栏/活动栏/面板）中独立出来。
+    container(column![tab_bar, content])
         .width(Length::Fill)
         .height(Length::Fill)
+        .clip(true)
+        .style(move |_| {
+            let palette = theme_props.theme.iced_palette();
+            let border_color =
+                mix_color(palette.foreground, palette.background, 0.12);
+            iced::widget::container::Style {
+                border: iced::Border {
+                    width: 1.0,
+                    color: border_color,
+                    radius: iced::border::Radius::from(RADIUS_OUTER),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        })
         .into()
 }
 

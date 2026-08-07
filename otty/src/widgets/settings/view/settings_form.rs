@@ -13,7 +13,7 @@ use super::super::event::SettingsIntent;
 use super::super::model::SettingsViewModel;
 use super::super::services::is_valid_hex_color;
 use super::super::types::{SettingsNode, SettingsPreset, SettingsSection};
-use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_COMPACT};
+use crate::layout::{BUTTON_SIZE_COMPACT, RADIUS_CONTROL};
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
 use crate::widgets::settings::types::PALETTE_LABELS;
@@ -420,7 +420,7 @@ fn button_style(
         text_color,
         border: iced::Border {
             width: 0.0,
-            radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
+            radius: iced::border::Radius::from(RADIUS_CONTROL),
             ..Default::default()
         },
         ..Default::default()
@@ -433,7 +433,7 @@ fn text_input_style(
     let palette = theme.theme.iced_palette().clone();
     move |base: &Theme, status| {
         let mut style = iced::widget::text_input::default(base, status);
-        style.selection = palette.blue;
+        style.selection = palette.accent;
         style
     }
 }
@@ -445,7 +445,7 @@ fn pick_list_style(
     move |_, status| {
         let border_color = match status {
             PickListStatus::Hovered | PickListStatus::Opened { .. } => {
-                palette.blue
+                palette.accent
             },
             PickListStatus::Active => palette.overlay,
         };
@@ -458,7 +458,7 @@ fn pick_list_style(
             border: iced::Border {
                 width: 1.0,
                 color: border_color,
-                radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
+                radius: iced::border::Radius::from(RADIUS_CONTROL),
             },
         }
     }
@@ -473,7 +473,7 @@ fn pick_list_menu_style(
         border: iced::Border {
             width: 1.0,
             color: palette.overlay,
-            radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
+            radius: iced::border::Radius::from(RADIUS_CONTROL),
         },
         text_color: palette.foreground,
         selected_text_color: palette.dim_black,

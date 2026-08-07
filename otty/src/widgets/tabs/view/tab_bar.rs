@@ -7,8 +7,8 @@ use iced::{Alignment, Element, Length, alignment};
 
 use super::super::event::TabsIntent;
 use crate::icons;
-use crate::layout::BUTTON_SIZE_COMPACT;
-use crate::theme::{StyleOverrides, ThemeProps};
+use crate::layout::{BUTTON_SIZE_COMPACT, RADIUS_CONTROL};
+use crate::theme::{StyleOverrides, ThemeProps, mix_color};
 
 pub(crate) const TAB_BAR_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 pub(crate) const TAB_BAR_SCROLL_ID: &str = "tab_bar_scroll";
@@ -62,7 +62,8 @@ pub(crate) fn view<'a>(props: TabBarProps<'a>) -> Element<'a, TabsIntent> {
         .height(Length::Fixed(TAB_BAR_HEIGHT))
         .width(Length::Fill)
         .style(move |_| iced::widget::container::Style {
-            background: Some(palette.dim_black.into()),
+            // Modern UI：标签栏透明，仅药丸标签可见
+            background: Some(iced::Color::TRANSPARENT.into()),
             text_color: None,
             ..Default::default()
         })
@@ -146,9 +147,19 @@ fn tab_button<'a>(
             let overrides = theme_props.overrides;
             move |_| {
                 if is_active {
-                    tab_button_style(background, foreground, overrides)
+                    // Modern UI 药丸：前景色 16% 混合背景（color-mix 等价）
+                    tab_button_style(
+                        mix_color(foreground, background, 0.16),
+                        foreground,
+                        overrides,
+                    )
                 } else {
-                    tab_button_style(dim_black, dim_foreground, overrides)
+                    // 未激活：完全透明，仅悬停/激活才显示高亮
+                    tab_button_style(
+                        iced::Color::TRANSPARENT,
+                        dim_foreground,
+                        overrides,
+                    )
                 }
             }
         });
@@ -169,6 +180,11 @@ fn tab_button_style(
     let mut style = iced::widget::container::Style {
         background: Some(background.into()),
         text_color: Some(foreground),
+        // Modern UI 标签：控件级圆角 4px
+        border: iced::Border {
+            radius: iced::border::Radius::from(RADIUS_CONTROL),
+            ..Default::default()
+        },
         ..Default::default()
     };
 

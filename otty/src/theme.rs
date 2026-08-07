@@ -2,6 +2,17 @@ use iced::theme::Palette;
 use iced::{Color, Theme};
 use otty_ui_term::{ColorPalette as TerminalColorPalette, parse_hex_color};
 
+/// 自适应混合色：等价 CSS `color-mix(in srgb, fg P%, bg)`。
+/// 用前景色按百分比混合背景色，生成跟随主题的半透明态（hover/选中/高亮）。
+pub(crate) fn mix_color(foreground: Color, background: Color, percent: f32) -> Color {
+    Color::from_rgba(
+        foreground.r * percent + background.r * (1.0 - percent),
+        foreground.g * percent + background.g * (1.0 - percent),
+        foreground.b * percent + background.b * (1.0 - percent),
+        background.a,
+    )
+}
+
 /// Raw string-based color palette used for serialization and settings.
 #[derive(Debug, Clone)]
 pub struct ColorPalette {
@@ -34,6 +45,12 @@ pub struct ColorPalette {
     pub dim_white: String,
     pub dim_foreground: String,
     pub overlay: String,
+    /// 侧边栏表面色（对应 VS Code sideBar.background）
+    pub sidebar: String,
+    /// 活动栏表面色（对应 VS Code activityBar.background）
+    pub activity_bar: String,
+    /// UI 强调色（对应 VS Code statusBar.background / 主色）
+    pub accent: String,
 }
 
 impl Default for ColorPalette {
@@ -68,6 +85,9 @@ impl Default for ColorPalette {
             dim_cyan: String::from("#326B73"),
             dim_white: String::from("#6C7385"),
             overlay: String::from("#232530"),
+            sidebar: String::from("#232530"),
+            activity_bar: String::from("#1B1D23"),
+            accent: String::from("#C45A6D"),
         }
     }
 }
@@ -140,6 +160,9 @@ pub struct IcedColorPalette {
     pub dim_white: Color,
     pub dim_foreground: Color,
     pub overlay: Color,
+    pub sidebar: Color,
+    pub activity_bar: Color,
+    pub accent: Color,
 }
 
 impl From<&ColorPalette> for IcedColorPalette {
@@ -174,6 +197,9 @@ impl From<&ColorPalette> for IcedColorPalette {
             dim_white: parse_hex_color(&p.dim_white),
             dim_foreground: parse_hex_color(&p.dim_foreground),
             overlay: parse_hex_color(&p.overlay),
+            sidebar: parse_hex_color(&p.sidebar),
+            activity_bar: parse_hex_color(&p.activity_bar),
+            accent: parse_hex_color(&p.accent),
         }
     }
 }
@@ -213,7 +239,7 @@ impl From<&AppTheme> for Theme {
         let palette = Palette {
             background: palette.background,
             text: palette.foreground,
-            primary: palette.blue,
+            primary: palette.accent,
             success: palette.green,
             danger: palette.red,
             warning: palette.yellow,
@@ -312,6 +338,6 @@ mod tests {
 
         let theme = Theme::from(&app_theme);
 
-        assert_eq!(theme.palette().primary, app_theme.iced_palette().blue);
+        assert_eq!(theme.palette().primary, app_theme.iced_palette().accent);
     }
 }

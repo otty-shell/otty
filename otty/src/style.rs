@@ -1,14 +1,16 @@
 use iced::Background;
 use iced::widget::{container, scrollable};
 
-use super::theme::{IcedColorPalette, ThemeProps};
+use super::theme::{IcedColorPalette, ThemeProps, mix_color};
+use crate::layout::{RADIUS_CONTROL, RADIUS_OUTER};
 
 pub(crate) fn thin_scroll_style(
     palette: IcedColorPalette,
 ) -> impl Fn(&iced::Theme, scrollable::Status) -> scrollable::Style + 'static {
     move |theme, status| {
         let mut style = scrollable::default(theme, status);
-        let radius = iced::border::Radius::from(0.0);
+        // 滚动条滑块：控件级圆角（VS Code 范式 control=4px）
+        let radius = iced::border::Radius::from(RADIUS_CONTROL);
 
         style.vertical_rail.border.radius = radius;
         style.vertical_rail.scroller.border.radius = radius;
@@ -34,14 +36,11 @@ pub(crate) fn tree_row_style(
     is_selected: bool,
     is_hovered: bool,
 ) -> container::Style {
+    // 自适应混合（color-mix 等价）：选中=玫瑰红~35%（对应 VS Code list.activeSelectionBackground），hover=前景 8%
     let background = if is_selected {
-        let mut color = palette.dim_blue;
-        color.a = 0.7;
-        Some(color.into())
+        Some(mix_color(palette.accent, palette.background, 0.35).into())
     } else if is_hovered {
-        let mut color = palette.overlay;
-        color.a = 0.6;
-        Some(color.into())
+        Some(mix_color(palette.foreground, palette.background, 0.08).into())
     } else {
         None
     };
@@ -63,7 +62,8 @@ pub(crate) fn menu_panel_style(
         border: iced::Border {
             width: 0.25,
             color: palette.overlay,
-            radius: iced::border::Radius::new(4.0),
+            // 菜单属于悬浮层：外层圆角 8px（VS Code 范式 outer=8px）
+            radius: iced::border::Radius::new(RADIUS_OUTER),
         },
         ..Default::default()
     }

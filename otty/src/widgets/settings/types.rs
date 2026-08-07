@@ -47,11 +47,24 @@ impl ThemeSettingsData {
     }
 }
 
+/// Font-related settings.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct FontSettingsData {
+    size: f32,
+}
+
+impl Default for FontSettingsData {
+    fn default() -> Self {
+        Self { size: 14.0 }
+    }
+}
+
 /// Typed settings payload used for persistence and UI state.
 #[derive(Debug, Clone, PartialEq, Serialize, Default)]
 pub(crate) struct SettingsData {
     terminal: TerminalSettingsData,
     theme: ThemeSettingsData,
+    font: FontSettingsData,
 }
 
 impl SettingsData {
@@ -103,6 +116,11 @@ impl SettingsData {
         self.theme.to_color_palette()
     }
 
+    /// Return terminal font size (in points).
+    pub(crate) fn font_size(&self) -> f32 {
+        self.font.size
+    }
+
     /// Parse settings from a raw JSON value, falling back to defaults.
     pub(crate) fn from_json(value: &serde_json::Value) -> Self {
         let mut settings = SettingsData::default();
@@ -125,6 +143,12 @@ impl SettingsData {
             && let Some(palette) = read_palette(theme.get("palette"))
         {
             settings.theme.palette = palette;
+        }
+
+        if let Some(font) = value.get("font")
+            && let Some(size) = read_number_field(font, "size")
+        {
+            settings.font.size = size;
         }
 
         settings
@@ -152,9 +176,17 @@ impl SettingsData {
             defaults.theme.palette
         };
 
+        // 字体大小限制在合理范围（6.0 ~ 48.0）
+        let font_size = if (6.0..=48.0).contains(&self.font.size) {
+            self.font.size
+        } else {
+            defaults.font.size
+        };
+
         Self {
             terminal: TerminalSettingsData { shell, editor },
             theme: ThemeSettingsData { palette },
+            font: FontSettingsData { size: font_size },
         }
     }
 }
@@ -310,6 +342,13 @@ fn read_string_field(value: &serde_json::Value, key: &str) -> Option<String> {
         .map(ToString::to_string)
 }
 
+fn read_number_field(value: &serde_json::Value, key: &str) -> Option<f32> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_f64)
+        .map(|value| value as f32)
+}
+
 fn read_palette(value: Option<&serde_json::Value>) -> Option<Vec<String>> {
     let palette_value = value?;
     let entries = palette_value.as_array()?;
@@ -341,7 +380,7 @@ fn default_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.to_string())
 }
 
-pub(super) const PALETTE_LABELS: [&str; 29] = [
+pub(super) const PALETTE_LABELS: [&str; 32] = [
     "Foreground",
     "Background",
     "Black",
@@ -371,6 +410,9 @@ pub(super) const PALETTE_LABELS: [&str; 29] = [
     "Dim White",
     "Dim Foreground",
     "Overlay",
+    "Sidebar",
+    "Activity Bar",
+    "Accent",
 ];
 
 #[derive(Debug, Clone, Copy)]
@@ -404,9 +446,12 @@ enum PaletteField {
     DimWhite,
     DimForeground,
     Overlay,
+    Sidebar,
+    ActivityBar,
+    Accent,
 }
 
-const PALETTE_FIELDS: [PaletteField; 29] = [
+const PALETTE_FIELDS: [PaletteField; 32] = [
     PaletteField::Foreground,
     PaletteField::Background,
     PaletteField::Black,
@@ -436,6 +481,9 @@ const PALETTE_FIELDS: [PaletteField; 29] = [
     PaletteField::DimWhite,
     PaletteField::DimForeground,
     PaletteField::Overlay,
+    PaletteField::Sidebar,
+    PaletteField::ActivityBar,
+    PaletteField::Accent,
 ];
 
 fn palette_value(palette: &ColorPalette, field: PaletteField) -> &str {
@@ -469,6 +517,9 @@ fn palette_value(palette: &ColorPalette, field: PaletteField) -> &str {
         PaletteField::DimWhite => &palette.dim_white,
         PaletteField::DimForeground => &palette.dim_foreground,
         PaletteField::Overlay => &palette.overlay,
+        PaletteField::Sidebar => &palette.sidebar,
+        PaletteField::ActivityBar => &palette.activity_bar,
+        PaletteField::Accent => &palette.accent,
     }
 }
 
@@ -507,6 +558,9 @@ fn set_palette_value(
         PaletteField::DimWhite => palette.dim_white = value,
         PaletteField::DimForeground => palette.dim_foreground = value,
         PaletteField::Overlay => palette.overlay = value,
+        PaletteField::Sidebar => palette.sidebar = value,
+        PaletteField::ActivityBar => palette.activity_bar = value,
+        PaletteField::Accent => palette.accent = value,
     }
 }
 

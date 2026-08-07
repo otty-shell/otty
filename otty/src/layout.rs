@@ -1,7 +1,5 @@
 use iced::Size;
 
-use crate::app::view::HEADER_SEPARATOR_HEIGHT;
-use crate::widgets::chrome::view::action_bar::ACTION_BAR_HEIGHT;
 use crate::widgets::tabs::view::tab_bar::TAB_BAR_HEIGHT;
 
 /// Shared compact control size used by dense toolbars and menus.
@@ -13,12 +11,18 @@ pub(crate) const BUTTON_SIZE_RAIL: f32 = 44.0;
 /// Shared rounded corner radius for standard buttons.
 pub(crate) const BUTTON_RADIUS_ROUNDED: f32 = 6.0;
 
-pub(crate) fn screen_size_from_window(window_size: Size) -> Size {
-    let height =
-        (window_size.height - ACTION_BAR_HEIGHT - HEADER_SEPARATOR_HEIGHT)
-            .max(0.0);
+// ============================================================
+// Modern UI 分级圆角 token（精确对齐 VS Code styleOverrides 范式）：
+//   CONTROL(4px) = 可交互控件：按钮/输入/列表行/标签页
+//   INNER(6px)   = 内嵌容器：侧边栏/面板
+//   OUTER(8px)   = 悬浮层 + 编辑器主角卡片
+// ============================================================
+pub(crate) const RADIUS_CONTROL: f32 = 4.0;
+pub(crate) const RADIUS_INNER: f32 = 6.0;
+pub(crate) const RADIUS_OUTER: f32 = 8.0;
 
-    Size::new(window_size.width, height)
+pub(crate) fn screen_size_from_window(window_size: Size) -> Size {
+    Size::new(window_size.width, window_size.height)
 }
 
 pub(crate) fn pane_grid_size(
