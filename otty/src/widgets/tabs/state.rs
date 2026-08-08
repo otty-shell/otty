@@ -23,9 +23,11 @@ impl TabsState {
     }
 
     /// Return whether a tab should show its close action.
+    ///
+    /// The close action appears only while the tab is hovered, matching the
+    /// modern VS Code behavior where active tabs hide it until hovered.
     pub(crate) fn close_visible(&self, tab_id: u64) -> bool {
-        self.active_tab_id == Some(tab_id)
-            || self.hovered_tab_id == Some(tab_id)
+        self.hovered_tab_id == Some(tab_id)
     }
 
     /// Return all tab items keyed by tab identifier.
@@ -105,5 +107,61 @@ impl TabsState {
     /// Return last tab identifier in order.
     pub(crate) fn last_tab_id(&self) -> Option<u64> {
         self.tab_items.keys().next_back().copied()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::widgets::tabs::types::TabContent;
+
+    fn open_tab(state: &mut TabsState) -> u64 {
+        let tab_id = state.allocate_tab_id();
+        state.insert(
+            tab_id,
+            TabItem::new(tab_id, String::from("shell"), TabContent::Terminal),
+        );
+        tab_id
+    }
+
+    #[test]
+    fn close_visible_requires_hover_even_when_active() {
+        let mut state = TabsState::default();
+        let tab_id = open_tab(&mut state);
+        state.activate(Some(tab_id));
+
+        assert!(!state.close_visible(tab_id));
+    }
+
+    #[test]
+    fn close_visible_for_hovered_active_tab() {
+        let mut state = TabsState::default();
+        let tab_id = open_tab(&mut state);
+        state.activate(Some(tab_id));
+        state.set_hovered(Some(tab_id));
+
+        assert!(state.close_visible(tab_id));
+    }
+
+    #[test]
+    fn close_visible_for_hovered_inactive_tab() {
+        let mut state = TabsState::default();
+        let tab_id = open_tab(&mut state);
+        let other_id = open_tab(&mut state);
+        state.activate(Some(tab_id));
+        state.set_hovered(Some(other_id));
+
+        assert!(!state.close_visible(tab_id));
+        assert!(state.close_visible(other_id));
+    }
+
+    #[test]
+    fn close_visible_clears_when_hover_leaves() {
+        let mut state = TabsState::default();
+        let tab_id = open_tab(&mut state);
+        state.set_hovered(Some(tab_id));
+        state.set_hovered(None);
+
+        assert!(!state.close_visible(tab_id));
     }
 }

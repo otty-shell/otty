@@ -18,6 +18,35 @@ pub(crate) fn mix_color(
     )
 }
 
+/// Relative luminance of a color using Rec. 601 sRGB weights.
+fn luminance(color: Color) -> f32 {
+    color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722
+}
+
+/// Neutral gray with the same luminance as `color`, removing any hue cast.
+///
+/// Keeps muted text gray regardless of the surface tint underneath (e.g. a
+/// pink light background) instead of inheriting the surface hue.
+pub(crate) fn desaturated(color: Color) -> Color {
+    let gray = luminance(color);
+    Color::from_rgba(gray, gray, gray, color.a)
+}
+
+/// Return a legible text color for the given background.
+///
+/// Light backgrounds keep the theme foreground; dark backgrounds use a
+/// near-white derived from the surface so the label stays readable.
+pub(crate) fn readable_text_on(
+    background: Color,
+    palette: &UiColorPalette,
+) -> Color {
+    if luminance(background) > 0.5 {
+        palette.foreground
+    } else {
+        mix_color(Color::WHITE, palette.surface_background, 0.85)
+    }
+}
+
 /// Terminal ANSI/ECMA color configuration stored in settings.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct TerminalColorConfig {
@@ -838,9 +867,73 @@ impl ThemeManager {
 
 #[cfg(test)]
 mod tests {
-    use iced::Theme;
+    use iced::{Color, Theme};
 
-    use super::{AppTheme, DesignTokens, mix_hex_color};
+    use super::{
+        AppTheme, DesignTokens, UiColorConfig, UiColorPalette, desaturated,
+        mix_color, mix_hex_color, readable_text_on,
+    };
+
+    fn light_palette() -> UiColorPalette {
+        UiColorPalette::from(&UiColorConfig {
+            foreground: String::from("#3A3132"),
+            surface_background: String::from("#FFF6F8"),
+            ..UiColorConfig::default()
+        })
+    }
+
+    #[test]
+    fn given_hued_color_when_desaturated_then_channels_match_luminance() {
+        let color = Color::from_rgb(0.5, 0.1, 0.6);
+        let gray = desaturated(color);
+
+        let expected = color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722;
+        assert!((gray.r - expected).abs() < 1e-6);
+        assert!((gray.g - expected).abs() < 1e-6);
+        assert!((gray.b - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn given_light_background_when_readable_text_on_then_uses_foreground() {
+        let palette = light_palette();
+        let background = Color::from_rgb(0.95, 0.9, 0.9);
+
+        let text = readable_text_on(background, &palette);
+
+        assert_eq!(text, palette.foreground);
+    }
+
+    #[test]
+    fn given_dark_background_when_readable_text_on_then_near_white() {
+        let palette = UiColorPalette::from(&UiColorConfig::default());
+        let background = Color::from_rgb(0.1, 0.1, 0.2);
+
+        let text = readable_text_on(background, &palette);
+
+        assert!(text.r > 0.8 && text.g > 0.8 && text.b > 0.8);
+    }
+
+    #[test]
+    fn given_dark_background_when_readable_text_on_then_lightens_surface() {
+        let palette = light_palette();
+        let background = Color::from_rgb(0.3, 0.1, 0.15);
+
+        let text = readable_text_on(background, &palette);
+
+        assert!(text.r > 0.9 && text.g > 0.9 && text.b > 0.9);
+    }
+
+    #[test]
+    fn given_hued_mixed_color_when_desaturated_then_neutral_gray() {
+        let palette = light_palette();
+        let mixed =
+            mix_color(palette.foreground, palette.surface_background, 0.5);
+
+        let gray = desaturated(mixed);
+
+        assert!((gray.r - gray.g).abs() < 1e-6);
+        assert!((gray.g - gray.b).abs() < 1e-6);
+    }
 
     #[test]
     fn given_app_theme_when_converted_to_iced_then_primary_uses_accent() {

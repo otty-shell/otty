@@ -26,7 +26,25 @@ pub(crate) const SURFACE_GAP: f32 = 4.0;
 /// Border width of framed workspace surfaces.
 pub(crate) const SURFACE_BORDER: f32 = 1.0;
 /// Total height of the editor tab bar area.
-pub(crate) const TAB_BAR_HEIGHT: f32 = 28.0;
+pub(crate) const TAB_BAR_HEIGHT: f32 = 32.0;
+/// Height of an individual editor tab pill.
+pub(crate) const TAB_ITEM_HEIGHT: f32 = 24.0;
+/// Vertical padding above and below the tab pills inside the tab bar.
+pub(crate) const TAB_BAR_VERTICAL_PADDING: f32 = 4.0;
+/// Horizontal inset before the first tab pill.
+pub(crate) const TAB_BAR_HORIZONTAL_PADDING: f32 = 4.0;
+/// Spacing between adjacent tab pills.
+pub(crate) const TAB_ITEM_SPACING: f32 = 4.0;
+/// Width of the tab close-actions overlay surface.
+pub(crate) const TAB_ACTION_WIDTH: f32 = 24.0;
+/// Corner radius of the tab close-actions overlay surface.
+pub(crate) const TAB_ACTION_RADIUS: f32 = 2.0;
+
+const _: () = {
+    assert!(TAB_BAR_HEIGHT == TAB_ITEM_HEIGHT + TAB_BAR_VERTICAL_PADDING * 2.0);
+    assert!(TAB_ITEM_HEIGHT >= TAB_BAR_VERTICAL_PADDING * 2.0);
+};
+
 /// Minimum usable editor width before workspace ratio clamping.
 pub(crate) const MIN_EDITOR_WIDTH: f32 = 320.0;
 /// Fixed width of the sidebar menu rail.
