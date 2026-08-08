@@ -7,9 +7,12 @@ use crate::components::primitive::{
     menu_item, resize_grips, sidebar_workspace_panel,
 };
 use crate::geometry::{anchor_position, menu_height_for_items};
-use crate::layout::BUTTON_SIZE_COMPACT;
+use crate::layout::{
+    BUTTON_SIZE_COMPACT, RADIUS_OUTER, SURFACE_BORDER, SURFACE_GAP,
+    SURFACE_OUTER_MARGIN, WorkspaceGeometry,
+};
 use crate::style::menu_panel_style;
-use crate::theme::ThemeProps;
+use crate::theme::{ThemeProps, mix_color};
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::view::action_bar;
 use crate::widgets::explorer::ExplorerEvent;
@@ -32,9 +35,7 @@ use crate::widgets::terminal_workspace::view::{
 };
 
 pub(crate) const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
-const SIDEBAR_SEPARATOR_WIDTH: f32 = 0.5;
 const SEPARATOR_ALPHA: f32 = 0.3;
-const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_GRID_RESIZE_GRAB: f32 = 8.0;
 
 // Add menu overlay constants
@@ -57,6 +58,11 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         } else {
             view_sidebar_layout(app, theme_props)
         };
+
+    let content_row = container(content_row)
+        .padding(SURFACE_OUTER_MARGIN)
+        .width(Length::Fill)
+        .height(Length::Fill);
 
     let content_row = mouse_area(content_row).on_move(|position| {
         AppEvent::Sidebar(SidebarEvent::Intent(
@@ -124,15 +130,8 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         })
     };
 
-    let header = view_header(app, theme_props);
-
-    let root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
-        column![header, content_stack]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
-        resize_grips_layer,
-    ];
+    let root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> =
+        vec![content_stack.into(), resize_grips_layer];
 
     iced::widget::Stack::with_children(root_layers)
         .width(Length::Fill)
@@ -145,7 +144,7 @@ fn view_header<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let palette = theme_props.theme.iced_palette();
+    let palette = theme_props.theme.ui_palette();
 
     let action_bar = action_bar::view(action_bar::ActionBarProps {
         title: app.widgets.tabs.active_tab_title().unwrap_or("OTTY"),
@@ -158,7 +157,7 @@ fn view_header<'a>(
         .width(Length::Fill)
         .height(Length::Fixed(HEADER_SEPARATOR_HEIGHT))
         .style(move |_| {
-            let mut background = palette.dim_white;
+            let mut background = palette.separator;
             background.a = SEPARATOR_ALPHA;
             iced::widget::container::Style {
                 background: Some(background.into()),
@@ -186,6 +185,12 @@ fn view_sidebar_layout<'a>(
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     let sidebar_vm = app.widgets.sidebar.vm();
+    let geometry = WorkspaceGeometry::new(
+        app.state.screen_size,
+        !sidebar_vm.is_hidden,
+        sidebar_vm.is_workspace_open,
+        app.widgets.sidebar.effective_workspace_ratio(),
+    );
 
     let menu_rail = sidebar::view::view(sidebar::view::SidebarViewProps {
         vm: sidebar_vm,
@@ -193,17 +198,7 @@ fn view_sidebar_layout<'a>(
     })
     .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event)));
 
-    let palette = theme_props.theme.iced_palette();
-    let mut sidebar_separator_color = palette.dim_white;
-    sidebar_separator_color.a = SEPARATOR_ALPHA;
-
-    let sidebar_separator = container(Space::new())
-        .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
-        .height(Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(sidebar_separator_color.into()),
-            ..Default::default()
-        });
+    let palette = theme_props.theme.ui_palette();
 
     let sidebar_pane_grid =
         PaneGrid::new(app.widgets.sidebar.panes(), move |_pane, pane_kind, _| {
@@ -224,9 +219,9 @@ fn view_sidebar_layout<'a>(
                 };
             iced::widget::pane_grid::Content::new(content)
         })
-        .width(Length::Fill)
+        .width(Length::Fixed(geometry.pane_grid_width))
         .height(Length::Fill)
-        .spacing(PANE_GRID_SPACING)
+        .spacing(SURFACE_GAP)
         .min_size(0)
         .on_resize(PANE_GRID_RESIZE_GRAB, |event| {
             AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(
@@ -234,7 +229,7 @@ fn view_sidebar_layout<'a>(
             )))
         })
         .style(move |_: &Theme| {
-            let mut separator = palette.dim_white;
+            let mut separator = palette.separator;
             separator.a = SEPARATOR_ALPHA;
 
             iced::widget::pane_grid::Style {
@@ -244,19 +239,23 @@ fn view_sidebar_layout<'a>(
                 },
                 picked_split: iced::widget::pane_grid::Line {
                     color: separator,
-                    width: 1.0,
+                    width: SURFACE_BORDER,
                 },
                 hovered_split: iced::widget::pane_grid::Line {
                     color: separator,
-                    width: 1.0,
+                    width: SURFACE_BORDER,
                 },
             }
         });
 
-    row![menu_rail, sidebar_separator, sidebar_pane_grid]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    row![
+        menu_rail,
+        Space::new().width(Length::Fixed(SURFACE_GAP)),
+        sidebar_pane_grid
+    ]
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
 }
 
 /// Render workspace content based on the active sidebar item.
@@ -292,7 +291,6 @@ fn view_tab_area<'a>(
 
     let tab_bar_props = tab_bar::TabBarProps {
         tabs: tabs_vm.tabs,
-        active_tab_id: tabs_vm.active_tab_id,
         theme: theme_props,
     };
 
@@ -301,9 +299,26 @@ fn view_tab_area<'a>(
 
     let content = view_tab_content(app, theme_props);
 
-    column![tab_bar, content]
+    // VS Code "Editor Border" 范式：编辑器区域 = 主角卡片
+    // 1px 边框（前景 12% 混合）+ 8px 圆角 + overflow hidden，
+    // 把编辑器从周围 chrome（侧边栏/活动栏/面板）中独立出来。
+    container(column![tab_bar, content])
         .width(Length::Fill)
         .height(Length::Fill)
+        .clip(true)
+        .style(move |_| {
+            let palette = theme_props.theme.ui_palette();
+            let border_color =
+                mix_color(palette.foreground, palette.surface_background, 0.12);
+            iced::widget::container::Style {
+                border: iced::Border {
+                    width: SURFACE_BORDER,
+                    color: border_color,
+                    radius: iced::border::Radius::from(RADIUS_OUTER),
+                },
+                ..Default::default()
+            }
+        })
         .into()
 }
 
@@ -332,7 +347,9 @@ fn view_tab_content<'a>(
                 vm: app.widgets.settings.vm(),
                 theme: theme_props,
             })
-            .map(|event| AppEvent::Settings(SettingsEvent::Intent(event)))
+            .map(|event| {
+                AppEvent::Settings(Box::new(SettingsEvent::Intent(event)))
+            })
         },
         (Some(tab_id), Some(TabContent::QuickLaunchWizard)) => {
             match app.widgets.quick_launch.wizard_editor(tab_id) {

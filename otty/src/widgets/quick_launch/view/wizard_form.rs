@@ -5,8 +5,8 @@ use iced::{Element, Length, Theme, alignment};
 use super::super::event::QuickLaunchIntent;
 use super::super::state::WizardEditorState;
 use super::super::types::QuickLaunchType;
-use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_REGULAR};
-use crate::theme::{IcedColorPalette, ThemeProps};
+use crate::layout::{BUTTON_SIZE_REGULAR, RADIUS_CONTROL};
+use crate::theme::{ThemeProps, UiColorPalette};
 
 const SECTION_SPACING: f32 = 16.0;
 const FIELD_SPACING: f32 = 8.0;
@@ -171,7 +171,7 @@ pub(crate) fn view(
     }
 
     if let Some(error) = editor.error() {
-        let error_color = theme.theme.iced_palette().red;
+        let error_color = theme.theme.ui_palette().danger;
         content = content.push(text(error).size(LABEL_SIZE).style(move |_| {
             iced::widget::text::Style {
                 color: Some(error_color),
@@ -219,10 +219,10 @@ fn section_header<'a>(
     label: &'a str,
     theme: ThemeProps<'a>,
 ) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = theme.theme.iced_palette();
+    let palette = theme.theme.ui_palette();
     container(text(label).size(LABEL_SIZE).style(move |_| {
         iced::widget::text::Style {
-            color: Some(palette.bright_foreground),
+            color: Some(palette.emphasis_foreground),
         }
     }))
     .width(Length::Fill)
@@ -380,7 +380,7 @@ fn editor_button<'a>(
     on_press: QuickLaunchIntent,
     theme: ThemeProps<'a>,
 ) -> iced::widget::Button<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = theme.theme.iced_palette().clone();
+    let palette = theme.theme.ui_palette().clone();
     let content = container(
         text(label)
             .size(LABEL_SIZE)
@@ -402,7 +402,7 @@ fn toggle_button<'a>(
     on_press: QuickLaunchIntent,
     theme: ThemeProps<'a>,
 ) -> iced::widget::Button<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = theme.theme.iced_palette().clone();
+    let palette = theme.theme.ui_palette().clone();
     let content = container(text(label).size(LABEL_SIZE))
         .align_x(alignment::Horizontal::Center)
         .align_y(alignment::Vertical::Center);
@@ -414,26 +414,28 @@ fn toggle_button<'a>(
         .style(move |_, status| {
             let mut style = button_style(&palette, status);
             if selected {
-                style.background = Some(palette.dim_blue.into());
-                style.text_color = palette.dim_black;
+                style.background = Some(palette.selection_background.into());
+                style.text_color = palette.selection_foreground;
             }
             style
         })
 }
 
 fn button_style(
-    palette: &IcedColorPalette,
+    palette: &UiColorPalette,
     status: ButtonStatus,
 ) -> button::Style {
     let background = match status {
         ButtonStatus::Hovered | ButtonStatus::Pressed => {
-            Some(palette.dim_blue.into())
+            Some(palette.selection_background.into())
         },
         _ => Some(palette.overlay.into()),
     };
 
     let text_color = match status {
-        ButtonStatus::Hovered | ButtonStatus::Pressed => palette.dim_black,
+        ButtonStatus::Hovered | ButtonStatus::Pressed => {
+            palette.selection_foreground
+        },
         _ => palette.foreground,
     };
 
@@ -441,7 +443,7 @@ fn button_style(
         background,
         text_color,
         border: iced::Border {
-            radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
+            radius: iced::border::Radius::from(RADIUS_CONTROL),
             ..Default::default()
         },
         ..Default::default()

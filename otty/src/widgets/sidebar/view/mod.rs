@@ -1,12 +1,11 @@
 use iced::widget::{Space, button, column, container, row, scrollable, svg};
 use iced::{Border, Element, Length, Theme, alignment};
 
-use super::constants::SIDEBAR_MENU_WIDTH;
 use super::event::SidebarIntent;
 use super::model::SidebarViewModel;
 use super::types::SidebarItem;
 use crate::icons;
-use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_RAIL};
+use crate::layout::{BUTTON_SIZE_RAIL, RADIUS_CONTROL, SIDEBAR_RAIL_WIDTH};
 use crate::theme::ThemeProps;
 
 const MENU_BUTTON_SIZE: f32 = BUTTON_SIZE_RAIL;
@@ -32,7 +31,7 @@ pub(crate) fn view(
             .into();
     }
 
-    let palette = props.theme.theme.iced_palette();
+    let palette = props.theme.theme.ui_palette();
 
     let terminal_button = sidebar_button(
         icons::SIDEBAR_TERMINAL,
@@ -91,10 +90,11 @@ pub(crate) fn view(
         .height(Length::Fill);
 
     container(content)
-        .width(Length::Fixed(SIDEBAR_MENU_WIDTH))
+        .width(Length::Fixed(SIDEBAR_RAIL_WIDTH))
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
-            background: Some(palette.dim_black.into()),
+            // 活动栏表面色（VS Code activityBar.background）
+            background: Some(palette.activity_bar_background.into()),
             ..Default::default()
         })
         .into()
@@ -106,10 +106,10 @@ fn sidebar_button<'a>(
     theme: ThemeProps<'a>,
     on_press: SidebarIntent,
 ) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
-    let palette = theme.theme.iced_palette();
-    let base_color = palette.dim_foreground;
-    let hover_color = palette.blue;
-    let active_color = palette.blue;
+    let palette = theme.theme.ui_palette();
+    let base_color = palette.muted_foreground;
+    let hover_color = palette.accent;
+    let active_color = palette.accent;
 
     let icon_svg = svg::Svg::new(svg::Handle::from_memory(icon))
         .width(Length::Fixed(MENU_ICON_SIZE))
@@ -134,7 +134,7 @@ fn sidebar_button<'a>(
         .padding(MENU_BUTTON_PADDING);
 
     let border_color = if is_active {
-        palette.blue
+        palette.accent
     } else {
         iced::Color::TRANSPARENT
     };
@@ -161,7 +161,7 @@ fn sidebar_button<'a>(
         .style(|_, _| iced::widget::button::Style {
             background: None,
             border: Border {
-                radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
+                radius: iced::border::Radius::from(RADIUS_CONTROL),
                 ..Default::default()
             },
             ..Default::default()

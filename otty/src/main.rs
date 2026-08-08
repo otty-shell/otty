@@ -35,7 +35,7 @@ fn main() -> iced::Result {
         .theme(App::theme)
         .antialiasing(true)
         .window(window::Settings {
-            decorations: false,
+            decorations: true,
             min_size: Some(Size {
                 width: MIN_WINDOW_WIDTH,
                 height: MIN_WINDOW_HEIGHT,
