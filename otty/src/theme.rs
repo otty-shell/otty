@@ -465,11 +465,15 @@ impl DesignTokens {
         self.ui.foreground = self.terminal.foreground.clone();
         self.ui.muted_foreground = self.terminal.dim_foreground.clone();
         self.ui.surface_background = self.terminal.background.clone();
-        self.ui.surface_border = mix_hex_color(
-            &self.terminal.foreground,
-            &self.terminal.background,
-            0.12,
-        );
+        if is_valid_hex_color(&self.terminal.foreground)
+            && is_valid_hex_color(&self.terminal.background)
+        {
+            self.ui.surface_border = mix_hex_color(
+                &self.terminal.foreground,
+                &self.terminal.background,
+                0.12,
+            );
+        }
         self.ui.chrome_background = self.terminal.dim_black.clone();
         self.ui.danger = self.terminal.red.clone();
         self.ui.info = self.terminal.blue.clone();
@@ -836,7 +840,7 @@ impl ThemeManager {
 mod tests {
     use iced::Theme;
 
-    use super::{AppTheme, DesignTokens};
+    use super::{AppTheme, DesignTokens, mix_hex_color};
 
     #[test]
     fn given_app_theme_when_converted_to_iced_then_primary_uses_accent() {
@@ -906,5 +910,47 @@ mod tests {
         restored.apply_legacy_palette(&projection);
 
         assert_eq!(restored, tokens);
+    }
+
+    #[test]
+    fn given_legacy_palette_when_applied_then_ui_surface_uses_legacy_background()
+     {
+        let mut tokens = DesignTokens::default();
+
+        tokens.apply_legacy_palette(&[
+            String::from("#3A3132"),
+            String::from("#FFF6F8"),
+        ]);
+
+        assert_eq!(tokens.ui.foreground, "#3A3132");
+        assert_eq!(tokens.ui.surface_background, "#FFF6F8");
+        assert_eq!(
+            tokens.ui.surface_border,
+            mix_hex_color("#3A3132", "#FFF6F8", 0.12)
+        );
+    }
+
+    #[test]
+    fn given_legacy_entry_when_applied_then_ui_semantics_follow_terminal_slot()
+    {
+        let mut tokens = DesignTokens::default();
+
+        tokens.apply_legacy_palette_entry(3, "#123456");
+
+        assert_eq!(tokens.ui.danger, "#123456");
+    }
+
+    #[test]
+    fn given_invalid_legacy_colors_when_applied_then_surface_border_stays_default()
+     {
+        let mut tokens = DesignTokens::default();
+
+        tokens.apply_legacy_palette(&[
+            String::from("not-a-color"),
+            String::from("#FFF6F8"),
+        ]);
+
+        assert_eq!(tokens.ui.foreground, "not-a-color");
+        assert_eq!(tokens.ui.surface_border, "#2A2D37");
     }
 }

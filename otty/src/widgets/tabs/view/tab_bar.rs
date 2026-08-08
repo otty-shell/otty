@@ -55,8 +55,6 @@ pub(crate) fn view<'a>(props: TabBarProps<'a>) -> Element<'a, TabsIntent> {
     .id(TAB_BAR_SCROLL_ID)
     .width(Length::Fill);
 
-    let _palette = props.theme.theme.ui_palette();
-
     container(scroll)
         .height(Length::Fixed(TAB_BAR_HEIGHT))
         .width(Length::Fill)

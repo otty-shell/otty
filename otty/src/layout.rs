@@ -29,6 +29,8 @@ pub(crate) const SURFACE_BORDER: f32 = 1.0;
 pub(crate) const TAB_BAR_HEIGHT: f32 = 28.0;
 /// Minimum usable editor width before workspace ratio clamping.
 pub(crate) const MIN_EDITOR_WIDTH: f32 = 320.0;
+/// Fixed width of the sidebar menu rail.
+pub(crate) const SIDEBAR_RAIL_WIDTH: f32 = 52.0;
 
 pub(crate) fn screen_size_from_window(window_size: Size) -> Size {
     Size::new(window_size.width, window_size.height)
@@ -58,7 +60,11 @@ impl WorkspaceGeometry {
             (screen_size.width - SURFACE_OUTER_MARGIN * 2.0).max(0.0);
         let outer_height =
             (screen_size.height - SURFACE_OUTER_MARGIN * 2.0).max(0.0);
-        let rail_width = if sidebar_visible { 52.0 } else { 0.0 };
+        let rail_width = if sidebar_visible {
+            SIDEBAR_RAIL_WIDTH
+        } else {
+            0.0
+        };
         let workspace_open = workspace_open && sidebar_visible;
         let pane_grid_width = if sidebar_visible {
             (outer_width - rail_width - SURFACE_GAP).max(0.0)
@@ -77,7 +83,7 @@ impl WorkspaceGeometry {
             0.0
         };
         let sidebar_width = split_width * ratio;
-        let editor_width = if workspace_open {
+        let editor_width = if sidebar_visible {
             split_width * (1.0 - ratio)
         } else {
             pane_grid_width
@@ -111,8 +117,8 @@ mod tests {
     use iced::Size;
 
     use super::{
-        MIN_EDITOR_WIDTH, SURFACE_BORDER, SURFACE_OUTER_MARGIN, TAB_BAR_HEIGHT,
-        WorkspaceGeometry,
+        MIN_EDITOR_WIDTH, SURFACE_BORDER, SURFACE_GAP, SURFACE_OUTER_MARGIN,
+        TAB_BAR_HEIGHT, WorkspaceGeometry,
     };
 
     fn assert_close(actual: f32, expected: f32) {
@@ -163,12 +169,28 @@ mod tests {
     }
 
     #[test]
-    fn given_workspace_closed_when_geometry_computed_then_editor_uses_pane_width()
+    fn given_workspace_closed_when_geometry_computed_then_editor_keeps_content_pane_width()
      {
         let geometry =
             WorkspaceGeometry::new(Size::new(1280.0, 800.0), true, false, 0.6);
 
         assert_close(geometry.sidebar_width, 0.0);
+        assert_close(
+            geometry.editor_width,
+            geometry.pane_grid_width - SURFACE_GAP,
+        );
+        assert_close(
+            geometry.terminal_grid_size.width,
+            geometry.pane_grid_width - SURFACE_GAP - SURFACE_BORDER * 2.0,
+        );
+    }
+
+    #[test]
+    fn given_sidebar_hidden_when_geometry_computed_then_editor_is_full_pane() {
+        let geometry =
+            WorkspaceGeometry::new(Size::new(800.0, 600.0), false, false, 0.3);
+
+        assert_close(geometry.pane_grid_width, 792.0);
         assert_close(geometry.editor_width, geometry.pane_grid_width);
         assert_close(
             geometry.terminal_grid_size.width,

@@ -1,12 +1,11 @@
 use iced::widget::{Space, button, column, container, row, scrollable, svg};
 use iced::{Border, Element, Length, Theme, alignment};
 
-use super::constants::SIDEBAR_MENU_WIDTH;
 use super::event::SidebarIntent;
 use super::model::SidebarViewModel;
 use super::types::SidebarItem;
 use crate::icons;
-use crate::layout::{BUTTON_SIZE_RAIL, RADIUS_CONTROL};
+use crate::layout::{BUTTON_SIZE_RAIL, RADIUS_CONTROL, SIDEBAR_RAIL_WIDTH};
 use crate::theme::ThemeProps;
 
 const MENU_BUTTON_SIZE: f32 = BUTTON_SIZE_RAIL;
@@ -91,7 +90,7 @@ pub(crate) fn view(
         .height(Length::Fill);
 
     container(content)
-        .width(Length::Fixed(SIDEBAR_MENU_WIDTH))
+        .width(Length::Fixed(SIDEBAR_RAIL_WIDTH))
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
             // 活动栏表面色（VS Code activityBar.background）
