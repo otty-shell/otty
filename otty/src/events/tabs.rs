@@ -139,7 +139,7 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
             }),
         )),
         TabsEffect::SettingsTabOpened => Task::done(AppEvent::Settings(
-            SettingsEvent::Intent(SettingsIntent::Reload),
+            Box::new(SettingsEvent::Intent(SettingsIntent::Reload)),
         )),
         TabsEffect::WizardTabOpened { tab_id, init } => match init {
             WizardTabInit::Create { parent_path } => {

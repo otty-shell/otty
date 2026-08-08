@@ -14,6 +14,10 @@ pub(crate) fn reduce(
     match event {
         TabsIntent::ActivateTab { tab_id } => activate(state, tab_id),
         TabsIntent::CloseTab { tab_id } => close(state, tab_id),
+        TabsIntent::TabHovered { tab_id } => {
+            state.set_hovered(tab_id);
+            Task::none()
+        },
         TabsIntent::SetTitle { tab_id, title } => {
             state.set_title(tab_id, title);
             Task::none()
@@ -323,5 +327,81 @@ mod tests {
 
         let tab = state.active_tab().unwrap();
         assert_eq!(tab.title(), "new");
+    }
+
+    #[test]
+    fn hover_tab_sets_hovered_state() {
+        let mut state = TabsState::default();
+        let _ = reduce(
+            &mut state,
+            TabsIntent::OpenTerminalTab {
+                title: String::from("shell"),
+            },
+        );
+        let tab_id = state.active_tab_id().unwrap();
+
+        let _ = reduce(
+            &mut state,
+            TabsIntent::TabHovered {
+                tab_id: Some(tab_id),
+            },
+        );
+
+        assert_eq!(state.hovered_tab_id(), Some(tab_id));
+        assert!(state.close_visible(tab_id));
+    }
+
+    #[test]
+    fn exit_hover_clears_hovered_state() {
+        let mut state = TabsState::default();
+        let _ = reduce(
+            &mut state,
+            TabsIntent::OpenTerminalTab {
+                title: String::from("shell"),
+            },
+        );
+        let tab_id = state.active_tab_id().unwrap();
+
+        let _ = reduce(
+            &mut state,
+            TabsIntent::TabHovered {
+                tab_id: Some(tab_id),
+            },
+        );
+        let _ = reduce(&mut state, TabsIntent::TabHovered { tab_id: None });
+
+        assert_eq!(state.hovered_tab_id(), None);
+    }
+
+    #[test]
+    fn hover_nonexistent_tab_is_noop() {
+        let mut state = TabsState::default();
+
+        let _ =
+            reduce(&mut state, TabsIntent::TabHovered { tab_id: Some(999) });
+
+        assert_eq!(state.hovered_tab_id(), None);
+    }
+
+    #[test]
+    fn close_hovered_tab_clears_hovered_state() {
+        let mut state = TabsState::default();
+        let _ = reduce(
+            &mut state,
+            TabsIntent::OpenTerminalTab {
+                title: String::from("shell"),
+            },
+        );
+        let tab_id = state.active_tab_id().unwrap();
+        let _ = reduce(
+            &mut state,
+            TabsIntent::TabHovered {
+                tab_id: Some(tab_id),
+            },
+        );
+
+        let _ = reduce(&mut state, TabsIntent::CloseTab { tab_id });
+
+        assert_eq!(state.hovered_tab_id(), None);
     }
 }

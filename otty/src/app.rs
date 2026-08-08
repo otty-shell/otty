@@ -49,7 +49,7 @@ impl App {
         let settings = SettingsWidget::load();
         let mut theme_manager = ThemeManager::new();
         let initial_settings = settings.settings_data().clone();
-        theme_manager.set_custom_palette(initial_settings.to_color_palette());
+        theme_manager.set_design_tokens(initial_settings.to_design_tokens());
         let current_theme = theme_manager.current();
         let mut fonts = FontsConfig::default();
         // 从 settings.json 的 font.size 读取终端字号

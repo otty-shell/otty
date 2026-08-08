@@ -22,14 +22,14 @@ pub(crate) fn view<'a, Message: 'a>(
             .into();
     }
 
-    let palette = props.theme.theme.iced_palette();
+    let palette = props.theme.theme.ui_palette();
     container(props.content)
         .width(Length::Fill)
         .height(Length::Fill)
         .clip(true)
         .style(move |_| iced::widget::container::Style {
             // 侧边栏表面色（VS Code sideBar.background）
-            background: Some(palette.sidebar.into()),
+            background: Some(palette.sidebar_background.into()),
             text_color: Some(palette.foreground),
             border: iced::Border {
                 radius: iced::border::Radius::from(RADIUS_INNER),

@@ -1,11 +1,11 @@
 use iced::Background;
 use iced::widget::{container, scrollable};
 
-use super::theme::{IcedColorPalette, ThemeProps, mix_color};
+use super::theme::{ThemeProps, UiColorPalette, mix_color};
 use crate::layout::{RADIUS_CONTROL, RADIUS_OUTER};
 
 pub(crate) fn thin_scroll_style(
-    palette: IcedColorPalette,
+    palette: UiColorPalette,
 ) -> impl Fn(&iced::Theme, scrollable::Status) -> scrollable::Style + 'static {
     move |theme, status| {
         let mut style = scrollable::default(theme, status);
@@ -19,7 +19,7 @@ pub(crate) fn thin_scroll_style(
 
         let mut scroller_color = match style.vertical_rail.scroller.background {
             Background::Color(color) => color,
-            _ => palette.dim_foreground,
+            _ => palette.muted_foreground,
         };
         scroller_color.a = (scroller_color.a * 0.7).min(1.0);
         style.vertical_rail.scroller.background =
@@ -32,15 +32,18 @@ pub(crate) fn thin_scroll_style(
 }
 
 pub(crate) fn tree_row_style(
-    palette: &IcedColorPalette,
+    palette: &UiColorPalette,
     is_selected: bool,
     is_hovered: bool,
 ) -> container::Style {
     // 自适应混合（color-mix 等价）：选中=玫瑰红~35%（对应 VS Code list.activeSelectionBackground），hover=前景 8%
     let background = if is_selected {
-        Some(mix_color(palette.accent, palette.background, 0.35).into())
+        Some(mix_color(palette.accent, palette.surface_background, 0.35).into())
     } else if is_hovered {
-        Some(mix_color(palette.foreground, palette.background, 0.08).into())
+        Some(
+            mix_color(palette.foreground, palette.surface_background, 0.08)
+                .into(),
+        )
     } else {
         None
     };
@@ -55,7 +58,7 @@ pub(crate) fn tree_row_style(
 pub(crate) fn menu_panel_style(
     theme: ThemeProps<'_>,
 ) -> impl Fn(&iced::Theme) -> container::Style + 'static {
-    let palette = theme.theme.iced_palette().clone();
+    let palette = theme.theme.ui_palette().clone();
     move |_theme: &iced::Theme| container::Style {
         background: Some(palette.overlay.into()),
         text_color: Some(palette.foreground),

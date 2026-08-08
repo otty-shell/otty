@@ -32,7 +32,7 @@ pub(crate) fn view(
             .into();
     }
 
-    let palette = props.theme.theme.iced_palette();
+    let palette = props.theme.theme.ui_palette();
 
     let terminal_button = sidebar_button(
         icons::SIDEBAR_TERMINAL,
@@ -95,7 +95,7 @@ pub(crate) fn view(
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
             // 活动栏表面色（VS Code activityBar.background）
-            background: Some(palette.activity_bar.into()),
+            background: Some(palette.activity_bar_background.into()),
             ..Default::default()
         })
         .into()
@@ -107,8 +107,8 @@ fn sidebar_button<'a>(
     theme: ThemeProps<'a>,
     on_press: SidebarIntent,
 ) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
-    let palette = theme.theme.iced_palette();
-    let base_color = palette.dim_foreground;
+    let palette = theme.theme.ui_palette();
+    let base_color = palette.muted_foreground;
     let hover_color = palette.accent;
     let active_color = palette.accent;
 

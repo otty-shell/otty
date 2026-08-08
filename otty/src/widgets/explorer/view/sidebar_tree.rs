@@ -9,7 +9,7 @@ use super::super::types::FileNode;
 use crate::icons::{FILE, FOLDER, FOLDER_OPENED};
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::{thin_scroll_style, tree_row_style};
-use crate::theme::{IcedColorPalette, ThemeProps};
+use crate::theme::{ThemeProps, UiColorPalette};
 
 const HEADER_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const HEADER_PADDING_X: f32 = 10.0;
@@ -36,7 +36,7 @@ pub(crate) struct SidebarTreeProps<'a> {
 pub(crate) fn view(
     props: SidebarTreeProps<'_>,
 ) -> Element<'_, ExplorerIntent, iced::Theme, iced::Renderer> {
-    let palette = props.theme.theme.iced_palette();
+    let palette = props.theme.theme.ui_palette();
 
     let current_dir = current_directory_bar(props.vm.root_label, palette);
     let tree_list = explorer_tree(&props.vm, palette);
@@ -56,7 +56,7 @@ pub(crate) fn view(
 /// Render the current directory label bar.
 fn current_directory_bar<'a>(
     root_label: Option<&'a str>,
-    palette: &'a IcedColorPalette,
+    palette: &'a UiColorPalette,
 ) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
     let label = root_label.unwrap_or("No active folder");
     let overlay = palette.overlay;
@@ -85,7 +85,7 @@ fn current_directory_bar<'a>(
 /// Render the scrollable explorer tree.
 fn explorer_tree<'a>(
     vm: &ExplorerTreeViewModel<'a>,
-    palette: &'a IcedColorPalette,
+    palette: &'a UiColorPalette,
 ) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
     let icon_color = palette.foreground;
     let tree_view = TreeView::new(vm.tree, move |context| {
@@ -173,7 +173,7 @@ fn render_entry<'a>(
 }
 
 fn nav_row_style(
-    palette: &IcedColorPalette,
+    palette: &UiColorPalette,
     context: &TreeRowContext<'_, FileNode>,
 ) -> iced::widget::container::Style {
     tree_row_style(palette, context.is_selected, context.is_hovered)

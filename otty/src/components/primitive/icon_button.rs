@@ -2,7 +2,7 @@ use iced::widget::{button, container, svg};
 use iced::{Element, Length, alignment};
 
 use crate::layout::RADIUS_CONTROL;
-use crate::theme::{StyleOverrides, ThemeProps};
+use crate::theme::ThemeProps;
 
 /// UI events emitted by an icon button.
 #[derive(Debug, Clone)]
@@ -41,13 +41,12 @@ const ICON_BUTTON_PADDING: f32 = 0.0;
 pub(crate) fn view<'a>(
     props: IconButtonProps<'a>,
 ) -> Element<'a, IconButtonEvent> {
-    let palette = props.theme.theme.iced_palette();
+    let palette = props.theme.theme.ui_palette();
     let (base_color, hover_color) = resolve_variant_colors(
         props.variant,
-        palette.dim_foreground,
-        palette.blue,
-        palette.red,
-        props.theme.overrides,
+        palette.muted_foreground,
+        palette.info,
+        palette.danger,
     );
 
     let icon = svg::Svg::new(svg::Handle::from_memory(props.icon))
@@ -98,14 +97,7 @@ fn resolve_variant_colors(
     default_base: iced::Color,
     accent: iced::Color,
     danger: iced::Color,
-    overrides: Option<StyleOverrides>,
 ) -> (iced::Color, iced::Color) {
-    if let Some(overrides) = overrides
-        && let Some(color) = overrides.foreground
-    {
-        return (color, color);
-    }
-
     match variant {
         IconButtonVariant::Standard => (default_base, accent),
         IconButtonVariant::Danger => (default_base, danger),
@@ -115,7 +107,6 @@ fn resolve_variant_colors(
 #[cfg(test)]
 mod tests {
     use super::{IconButtonVariant, resolve_variant_colors};
-    use crate::theme::StyleOverrides;
 
     #[test]
     fn given_standard_variant_when_resolving_without_override_then_hover_uses_accent()
@@ -129,7 +120,6 @@ mod tests {
             default_base,
             accent,
             danger,
-            None,
         );
 
         assert_eq!(base, default_base);
@@ -148,35 +138,9 @@ mod tests {
             default_base,
             accent,
             danger,
-            None,
         );
 
         assert_eq!(base, default_base);
         assert_eq!(hover, danger);
-    }
-
-    #[test]
-    fn given_foreground_override_when_resolving_then_override_is_used_for_all_states()
-     {
-        let default_base = iced::Color::from_rgb(0.1, 0.2, 0.3);
-        let accent = iced::Color::from_rgb(0.4, 0.5, 0.6);
-        let danger = iced::Color::from_rgb(0.7, 0.8, 0.9);
-        let override_color = iced::Color::from_rgb(0.3, 0.2, 0.1);
-        let overrides = Some(StyleOverrides {
-            background: None,
-            foreground: Some(override_color),
-            border_radius: None,
-        });
-
-        let (base, hover) = resolve_variant_colors(
-            IconButtonVariant::Standard,
-            default_base,
-            accent,
-            danger,
-            overrides,
-        );
-
-        assert_eq!(base, override_color);
-        assert_eq!(hover, override_color);
     }
 }

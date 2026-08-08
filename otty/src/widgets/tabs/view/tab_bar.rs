@@ -1,16 +1,15 @@
-use iced::border::Radius;
 use iced::widget::text::Wrapping;
 use iced::widget::{
-    Space, button, container, row, scrollable, stack, svg, text,
+    Space, button, container, mouse_area, row, scrollable, stack, svg, text,
 };
 use iced::{Alignment, Element, Length, alignment};
 
 use super::super::event::TabsIntent;
+use super::super::model::TabBarItem;
 use crate::icons;
-use crate::layout::{BUTTON_SIZE_COMPACT, RADIUS_CONTROL};
-use crate::theme::{StyleOverrides, ThemeProps, mix_color};
+use crate::layout::{BUTTON_SIZE_COMPACT, RADIUS_CONTROL, TAB_BAR_HEIGHT};
+use crate::theme::{ThemeProps, mix_color};
 
-pub(crate) const TAB_BAR_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 pub(crate) const TAB_BAR_SCROLL_ID: &str = "tab_bar_scroll";
 
 const TAB_BUTTON_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
@@ -25,21 +24,21 @@ const TAB_CLOSE_BUTTON_PADDING: f32 = 0.0;
 /// Props for rendering the tab bar.
 #[derive(Debug, Clone)]
 pub(crate) struct TabBarProps<'a> {
-    pub(crate) tabs: Vec<(u64, String)>,
-    pub(crate) active_tab_id: Option<u64>,
+    pub(crate) tabs: Vec<TabBarItem>,
     pub(crate) theme: ThemeProps<'a>,
 }
 
 /// Render the tab bar as a horizontal scrollable row.
 pub(crate) fn view<'a>(props: TabBarProps<'a>) -> Element<'a, TabsIntent> {
-    let active_id = props.active_tab_id.unwrap_or(u64::MAX);
     let mut tabs_row = row![].spacing(0);
 
-    for (id, title) in &props.tabs {
+    for tab in &props.tabs {
         tabs_row = tabs_row.push(tab_button(
-            *id,
-            title,
-            active_id == *id,
+            tab.id,
+            tab.title.clone(),
+            tab.is_active,
+            tab.is_hovered,
+            tab.close_visible,
             props.theme,
         ));
     }
@@ -56,7 +55,7 @@ pub(crate) fn view<'a>(props: TabBarProps<'a>) -> Element<'a, TabsIntent> {
     .id(TAB_BAR_SCROLL_ID)
     .width(Length::Fill);
 
-    let palette = props.theme.theme.iced_palette();
+    let _palette = props.theme.theme.ui_palette();
 
     container(scroll)
         .height(Length::Fixed(TAB_BAR_HEIGHT))
@@ -73,18 +72,19 @@ pub(crate) fn view<'a>(props: TabBarProps<'a>) -> Element<'a, TabsIntent> {
 /// A clickable tab pill with close affordance.
 fn tab_button<'a>(
     tab_id: u64,
-    title: &str,
+    title: String,
     is_active: bool,
+    is_hovered: bool,
+    close_visible: bool,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, TabsIntent> {
-    let palette = theme_props.theme.iced_palette();
+    let palette = theme_props.theme.ui_palette();
     let foreground = palette.foreground;
-    let dim_foreground = palette.dim_foreground;
-    let red = palette.red;
-    let background = palette.background;
-    let dim_black = palette.dim_black;
+    let muted_foreground = palette.muted_foreground;
+    let danger = palette.danger;
+    let surface_background = palette.surface_background;
 
-    let label = text(ellipsize(title))
+    let label = text(title)
         .size(TAB_LABEL_FONT_SIZE)
         .width(Length::Fill)
         .height(Length::Shrink)
@@ -99,11 +99,11 @@ fn tab_button<'a>(
         .style({
             move |_, status| {
                 let color = if status == svg::Status::Hovered {
-                    red
+                    danger
                 } else if is_active {
                     foreground
                 } else {
-                    dim_foreground
+                    muted_foreground
                 };
                 svg::Style { color: Some(color) }
             }
@@ -121,11 +121,18 @@ fn tab_button<'a>(
         .height(Length::Fill)
         .style(|_, _| iced::widget::button::Style::default());
 
-    let close_button_row = row![
-        Space::new().width(Length::Fill),
-        close_button,
-        Space::new().width(Length::Fixed(TAB_CLOSE_BUTTON_RIGHT_PADDING))
-    ]
+    let close_button_row = if close_visible {
+        row![
+            Space::new().width(Length::Fill),
+            close_button,
+            Space::new().width(Length::Fixed(TAB_CLOSE_BUTTON_RIGHT_PADDING))
+        ]
+    } else {
+        row![
+            Space::new().width(Length::Fill),
+            Space::new().width(Length::Fixed(TAB_CLOSE_BUTTON_RIGHT_PADDING))
+        ]
+    }
     .width(Length::Fill)
     .height(Length::Fill)
     .align_y(Alignment::Center);
@@ -143,41 +150,44 @@ fn tab_button<'a>(
         .padding(TAB_PILL_PADDING)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style({
-            let overrides = theme_props.overrides;
-            move |_| {
-                if is_active {
-                    // Modern UI 药丸：前景色 16% 混合背景（color-mix 等价）
-                    tab_button_style(
-                        mix_color(foreground, background, 0.16),
-                        foreground,
-                        overrides,
-                    )
-                } else {
-                    // 未激活：完全透明，仅悬停/激活才显示高亮
-                    tab_button_style(
-                        iced::Color::TRANSPARENT,
-                        dim_foreground,
-                        overrides,
-                    )
-                }
+        .style(move |_| {
+            if is_active {
+                // Modern UI 药丸：前景色 16% 混合背景（color-mix 等价）
+                tab_button_style(
+                    mix_color(foreground, surface_background, 0.16),
+                    foreground,
+                )
+            } else if is_hovered {
+                tab_button_style(
+                    mix_color(foreground, surface_background, 0.08),
+                    foreground,
+                )
+            } else {
+                // 未激活：完全透明，仅悬停/激活才显示高亮
+                tab_button_style(iced::Color::TRANSPARENT, muted_foreground)
             }
         });
 
-    button(pill)
+    let button = button(pill)
         .on_press(TabsIntent::ActivateTab { tab_id })
+        .clip(true)
         .padding(TAB_BUTTON_PADDING)
         .width(TAB_BUTTON_WIDTH)
-        .height(TAB_BUTTON_HEIGHT)
+        .height(TAB_BUTTON_HEIGHT);
+
+    mouse_area(button)
+        .on_enter(TabsIntent::TabHovered {
+            tab_id: Some(tab_id),
+        })
+        .on_exit(TabsIntent::TabHovered { tab_id: None })
         .into()
 }
 
 fn tab_button_style(
     background: iced::Color,
     foreground: iced::Color,
-    overrides: Option<StyleOverrides>,
 ) -> iced::widget::container::Style {
-    let mut style = iced::widget::container::Style {
+    iced::widget::container::Style {
         background: Some(background.into()),
         text_color: Some(foreground),
         // Modern UI 标签：控件级圆角 4px
@@ -186,40 +196,5 @@ fn tab_button_style(
             ..Default::default()
         },
         ..Default::default()
-    };
-
-    if let Some(overrides) = overrides {
-        if let Some(color) = overrides.background {
-            style.background = Some(color.into());
-        }
-        if let Some(color) = overrides.foreground {
-            style.text_color = Some(color);
-        }
-        if let Some(radius) = overrides.border_radius {
-            style.border.radius = Radius::new(radius);
-        }
     }
-
-    style
-}
-
-const DEFAULT_MAX_CHAR_COUNT_BEFORE_ELLIPSIZE: usize = 20;
-
-fn ellipsize(s: &str) -> String {
-    let total = s.chars().count();
-    if total <= DEFAULT_MAX_CHAR_COUNT_BEFORE_ELLIPSIZE {
-        return s.to_owned();
-    }
-
-    let keep = DEFAULT_MAX_CHAR_COUNT_BEFORE_ELLIPSIZE - 2;
-    let tail: String = s
-        .chars()
-        .rev()
-        .take(keep)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-
-    format!("..{tail}")
 }

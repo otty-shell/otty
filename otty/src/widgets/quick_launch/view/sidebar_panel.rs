@@ -26,7 +26,7 @@ pub(crate) struct SidebarPanelProps<'a> {
 pub(crate) fn view(
     props: SidebarPanelProps<'_>,
 ) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = props.theme.theme.iced_palette();
+    let palette = props.theme.theme.ui_palette();
     let overlay_bg = palette.overlay;
 
     let add_button = icon_button::view(IconButtonProps {

@@ -3,7 +3,7 @@ use iced::widget::{button, text};
 use iced::{Element, Length, alignment};
 
 use crate::layout::BUTTON_SIZE_COMPACT;
-use crate::theme::{IcedColorPalette, ThemeProps};
+use crate::theme::{ThemeProps, UiColorPalette};
 
 const MENU_ITEM_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
 const MENU_ITEM_FONT_SIZE: f32 = 13.0;
@@ -25,7 +25,7 @@ pub(crate) struct MenuItemProps<'a> {
 
 /// Render a single menu row used in context menus.
 pub(crate) fn view<'a>(props: MenuItemProps<'a>) -> Element<'a, MenuItemEvent> {
-    let palette = props.theme.theme.iced_palette();
+    let palette = props.theme.theme.ui_palette();
 
     let label = text(props.label)
         .size(MENU_ITEM_FONT_SIZE)
@@ -43,18 +43,20 @@ pub(crate) fn view<'a>(props: MenuItemProps<'a>) -> Element<'a, MenuItemEvent> {
 }
 
 fn menu_button_style(
-    palette: &IcedColorPalette,
+    palette: &UiColorPalette,
     status: ButtonStatus,
 ) -> button::Style {
     let background = match status {
         ButtonStatus::Hovered | ButtonStatus::Pressed => {
-            Some(palette.dim_blue.into())
+            Some(palette.selection_background.into())
         },
         _ => Some(palette.overlay.into()),
     };
 
     let text_color = match status {
-        ButtonStatus::Hovered | ButtonStatus::Pressed => palette.dim_black,
+        ButtonStatus::Hovered | ButtonStatus::Pressed => {
+            palette.selection_foreground
+        },
         _ => palette.foreground,
     };
 
@@ -76,18 +78,21 @@ mod tests {
     #[test]
     fn given_hovered_status_when_building_style_then_uses_hover_colors() {
         let theme = AppTheme::default();
-        let palette = theme.iced_palette();
+        let palette = theme.ui_palette();
 
         let style = menu_button_style(palette, ButtonStatus::Hovered);
 
-        assert_eq!(style.text_color, palette.dim_black);
-        assert_eq!(style.background, Some(Background::Color(palette.dim_blue)),);
+        assert_eq!(style.text_color, palette.selection_foreground);
+        assert_eq!(
+            style.background,
+            Some(Background::Color(palette.selection_background)),
+        );
     }
 
     #[test]
     fn given_active_status_when_building_style_then_uses_idle_colors() {
         let theme = AppTheme::default();
-        let palette = theme.iced_palette();
+        let palette = theme.ui_palette();
 
         let style = menu_button_style(palette, ButtonStatus::Active);
 

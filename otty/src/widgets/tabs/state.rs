@@ -6,6 +6,7 @@ use super::types::TabItem;
 #[derive(Default)]
 pub(crate) struct TabsState {
     active_tab_id: Option<u64>,
+    hovered_tab_id: Option<u64>,
     tab_items: BTreeMap<u64, TabItem>,
     next_tab_id: u64,
 }
@@ -14,6 +15,17 @@ impl TabsState {
     /// Return active tab identifier.
     pub(crate) fn active_tab_id(&self) -> Option<u64> {
         self.active_tab_id
+    }
+
+    /// Return hovered tab identifier.
+    pub(crate) fn hovered_tab_id(&self) -> Option<u64> {
+        self.hovered_tab_id
+    }
+
+    /// Return whether a tab should show its close action.
+    pub(crate) fn close_visible(&self, tab_id: u64) -> bool {
+        self.active_tab_id == Some(tab_id)
+            || self.hovered_tab_id == Some(tab_id)
     }
 
     /// Return all tab items keyed by tab identifier.
@@ -56,7 +68,18 @@ impl TabsState {
 
     /// Remove tab metadata by identifier.
     pub(super) fn remove(&mut self, tab_id: u64) -> Option<TabItem> {
+        if self.hovered_tab_id == Some(tab_id) {
+            self.hovered_tab_id = None;
+        }
         self.tab_items.remove(&tab_id)
+    }
+
+    /// Set the hovered tab identifier.
+    pub(super) fn set_hovered(&mut self, tab_id: Option<u64>) {
+        if tab_id.is_some_and(|tab_id| !self.tab_items.contains_key(&tab_id)) {
+            return;
+        }
+        self.hovered_tab_id = tab_id;
     }
 
     /// Activate tab identifier.

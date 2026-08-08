@@ -18,10 +18,10 @@ pub(crate) struct TabContentProps<'a> {
 pub(crate) fn view<'a, Message: 'a>(
     props: TabContentProps<'a>,
 ) -> Element<'a, Message, Theme, iced::Renderer> {
-    let palette = props.theme.theme.iced_palette();
+    let palette = props.theme.theme.ui_palette();
 
     if !props.vm.has_tabs {
-        return container(text("No tabs").color(palette.dim_foreground))
+        return container(text("No tabs").color(palette.muted_foreground))
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(alignment::Horizontal::Center)
@@ -30,7 +30,7 @@ pub(crate) fn view<'a, Message: 'a>(
     }
 
     // TODO: render active tab content based on tab content type (Phase 4)
-    container(text("Tab content placeholder").color(palette.dim_foreground))
+    container(text("Tab content placeholder").color(palette.muted_foreground))
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(alignment::Horizontal::Center)

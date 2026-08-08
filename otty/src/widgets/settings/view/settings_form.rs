@@ -15,7 +15,7 @@ use super::super::services::is_valid_hex_color;
 use super::super::types::{SettingsNode, SettingsPreset, SettingsSection};
 use crate::layout::{BUTTON_SIZE_COMPACT, RADIUS_CONTROL};
 use crate::style::{thin_scroll_style, tree_row_style};
-use crate::theme::{IcedColorPalette, ThemeProps};
+use crate::theme::{ThemeProps, UiColorPalette};
 use crate::widgets::settings::types::PALETTE_LABELS;
 
 const HEADER_HEIGHT: f32 = 32.0;
@@ -86,7 +86,7 @@ fn settings_header<'a>(
     let actions =
         row![save_button, reset_button].spacing(HEADER_BUTTON_SPACING);
 
-    let palette = props.theme.theme.iced_palette().clone();
+    let palette = props.theme.theme.ui_palette().clone();
 
     container(actions)
         .width(Length::Fill)
@@ -106,7 +106,7 @@ fn settings_split_view<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
     let nav = settings_nav_tree(props);
-    let mut separator_color = props.theme.theme.iced_palette().dim_white;
+    let mut separator_color = props.theme.theme.ui_palette().separator;
     separator_color.a = SEPARATOR_ALPHA;
     let separator = container(Space::new())
         .width(Length::Fixed(NAV_SEPARATOR_WIDTH))
@@ -126,7 +126,7 @@ fn settings_split_view<'a>(
 fn settings_nav_tree<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let palette = props.theme.theme.iced_palette().clone();
+    let palette = props.theme.theme.ui_palette().clone();
     let row_palette = palette.clone();
 
     let tree_view = TreeView::new(props.vm.tree, render_nav_row)
@@ -190,7 +190,7 @@ fn settings_form<'a>(
             SettingsSection::Appearance => theme_form(props),
         };
 
-    let palette = props.theme.theme.iced_palette().clone();
+    let palette = props.theme.theme.ui_palette().clone();
 
     let scrollable = scrollable::Scrollable::new(content)
         .width(Length::Fill)
@@ -281,7 +281,7 @@ fn theme_form<'a>(
         let swatch_color = if is_valid_hex_color(value) {
             parse_hex_color(value)
         } else {
-            props.theme.theme.iced_palette().dim_black
+            props.theme.theme.ui_palette().surface_background
         };
 
         let swatch = container(Space::new())
@@ -319,8 +319,8 @@ fn section_title<'a>(
     title: &'a str,
     theme: ThemeProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let palette = theme.theme.iced_palette();
-    let color = palette.dim_foreground;
+    let palette = theme.theme.ui_palette();
+    let color = palette.muted_foreground;
     text(title)
         .size(HEADER_FONT_SIZE)
         .style(move |_| iced::widget::text::Style { color: Some(color) })
@@ -369,7 +369,7 @@ fn action_button<'a>(
     event: SettingsIntent,
     theme: ThemeProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let palette = theme.theme.iced_palette().clone();
+    let palette = theme.theme.ui_palette().clone();
     let content = container(
         text(label)
             .size(HEADER_FONT_SIZE)
@@ -391,13 +391,15 @@ fn action_button<'a>(
 }
 
 fn button_style(
-    palette: &IcedColorPalette,
+    palette: &UiColorPalette,
     status: ButtonStatus,
     enabled: bool,
 ) -> iced::widget::button::Style {
     let base_color = if enabled {
         match status {
-            ButtonStatus::Hovered | ButtonStatus::Pressed => palette.dim_blue,
+            ButtonStatus::Hovered | ButtonStatus::Pressed => {
+                palette.selection_background
+            },
             _ => palette.overlay,
         }
     } else {
@@ -408,11 +410,13 @@ fn button_style(
 
     let text_color = if enabled {
         match status {
-            ButtonStatus::Hovered | ButtonStatus::Pressed => palette.dim_black,
+            ButtonStatus::Hovered | ButtonStatus::Pressed => {
+                palette.selection_foreground
+            },
             _ => palette.foreground,
         }
     } else {
-        palette.dim_foreground
+        palette.muted_foreground
     };
 
     iced::widget::button::Style {
@@ -430,7 +434,7 @@ fn button_style(
 fn text_input_style(
     theme: ThemeProps<'_>,
 ) -> impl Fn(&Theme, text_input::Status) -> text_input::Style + 'static {
-    let palette = theme.theme.iced_palette().clone();
+    let palette = theme.theme.ui_palette().clone();
     move |base: &Theme, status| {
         let mut style = iced::widget::text_input::default(base, status);
         style.selection = palette.accent;
@@ -441,7 +445,7 @@ fn text_input_style(
 fn pick_list_style(
     theme: ThemeProps<'_>,
 ) -> impl Fn(&Theme, PickListStatus) -> pick_list::Style + 'static {
-    let palette = theme.theme.iced_palette().clone();
+    let palette = theme.theme.ui_palette().clone();
     move |_, status| {
         let border_color = match status {
             PickListStatus::Hovered | PickListStatus::Opened { .. } => {
@@ -452,8 +456,8 @@ fn pick_list_style(
 
         pick_list::Style {
             text_color: palette.foreground,
-            placeholder_color: palette.dim_foreground,
-            handle_color: palette.dim_foreground,
+            placeholder_color: palette.muted_foreground,
+            handle_color: palette.muted_foreground,
             background: palette.overlay.into(),
             border: iced::Border {
                 width: 1.0,
@@ -467,7 +471,7 @@ fn pick_list_style(
 fn pick_list_menu_style(
     theme: ThemeProps<'_>,
 ) -> impl Fn(&Theme) -> iced::overlay::menu::Style + 'static {
-    let palette = theme.theme.iced_palette().clone();
+    let palette = theme.theme.ui_palette().clone();
     move |_| iced::overlay::menu::Style {
         background: palette.overlay.into(),
         border: iced::Border {
@@ -476,14 +480,14 @@ fn pick_list_menu_style(
             radius: iced::border::Radius::from(RADIUS_CONTROL),
         },
         text_color: palette.foreground,
-        selected_text_color: palette.dim_black,
-        selected_background: palette.dim_blue.into(),
+        selected_text_color: palette.selection_foreground,
+        selected_background: palette.selection_background.into(),
         shadow: iced::Shadow::default(),
     }
 }
 
 fn nav_row_style(
-    palette: &IcedColorPalette,
+    palette: &UiColorPalette,
     context: &TreeRowContext<'_, SettingsNode>,
 ) -> container::Style {
     tree_row_style(palette, context.is_selected, context.is_hovered)
