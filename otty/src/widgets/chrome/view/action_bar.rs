@@ -9,7 +9,7 @@ use crate::components::primitive::icon_button::{
 use crate::fonts::FontsConfig;
 use crate::icons::{LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY};
 use crate::layout::BUTTON_SIZE_COMPACT;
-use crate::theme::{StyleOverrides, ThemeProps};
+use crate::theme::ThemeProps;
 
 pub(crate) const ACTION_BAR_HEIGHT: f32 = 30.0;
 const ACTION_BAR_TITLE_SCALE: f32 = 0.9;
@@ -31,10 +31,9 @@ pub(crate) struct ActionBarProps<'a> {
 /// Render the draggable window header with controls.
 pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
     let title_font_size = props.fonts.ui.size * ACTION_BAR_TITLE_SCALE;
-    let palette = props.theme.theme.iced_palette();
-    let overrides = props.theme.overrides;
-    let dim_foreground = palette.dim_foreground;
-    let dim_black = palette.dim_black;
+    let palette = props.theme.theme.ui_palette();
+    let muted_foreground = palette.muted_foreground;
+    let chrome_background = palette.chrome_background;
 
     let detail_label = text(props.title)
         .size(title_font_size)
@@ -61,7 +60,7 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
         .align_y(alignment::Vertical::Center)
         .padding([0.0, ACTION_BAR_HORIZONTAL_PADDING])
         .style(move |_| iced::widget::container::Style {
-            text_color: Some(resolve_text_color(dim_foreground, overrides)),
+            text_color: Some(muted_foreground),
             ..Default::default()
         });
 
@@ -118,7 +117,7 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
         .width(Length::Fill)
         .height(Length::Fixed(ACTION_BAR_HEIGHT))
         .style(move |_| iced::widget::container::Style {
-            background: Some(resolve_background(dim_black, overrides).into()),
+            background: Some(chrome_background.into()),
             ..Default::default()
         })
         .into()
@@ -138,22 +137,4 @@ fn icon_button<'a>(
         horizontal_alignment: IconButtonHorizontalAlignment::Center,
     };
     icon_button_view(props)
-}
-
-fn resolve_background(
-    default_color: iced::Color,
-    overrides: Option<StyleOverrides>,
-) -> iced::Color {
-    overrides
-        .and_then(|o| o.background)
-        .unwrap_or(default_color)
-}
-
-fn resolve_text_color(
-    default_color: iced::Color,
-    overrides: Option<StyleOverrides>,
-) -> iced::Color {
-    overrides
-        .and_then(|o| o.foreground)
-        .unwrap_or(default_color)
 }

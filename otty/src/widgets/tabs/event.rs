@@ -11,6 +11,9 @@ pub(crate) enum TabsIntent {
     CloseTab {
         tab_id: u64,
     },
+    TabHovered {
+        tab_id: Option<u64>,
+    },
     SetTitle {
         tab_id: u64,
         title: String,

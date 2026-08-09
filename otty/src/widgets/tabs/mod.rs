@@ -31,14 +31,28 @@ impl TabsWidget {
 
     /// Produce the tabs view model for rendering.
     pub(crate) fn vm(&self) -> TabsViewModel {
+        let active_tab_id = self.state.active_tab_id();
+        let hovered_tab_id = self.state.hovered_tab_id();
+
         TabsViewModel {
             tabs: self
                 .state
                 .tab_items()
                 .iter()
-                .map(|(id, item)| (*id, item.title().to_owned()))
+                .map(|(id, item)| {
+                    let is_active = active_tab_id == Some(*id);
+                    let is_hovered = hovered_tab_id == Some(*id);
+                    crate::widgets::tabs::model::TabBarItem {
+                        id: *id,
+                        title: item.title().to_owned(),
+                        is_active,
+                        is_hovered,
+                        close_visible: self.state.close_visible(*id),
+                    }
+                })
                 .collect(),
-            active_tab_id: self.state.active_tab_id(),
+            active_tab_id,
+            hovered_tab_id,
             has_tabs: !self.state.is_empty(),
         }
     }

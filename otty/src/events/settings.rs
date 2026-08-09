@@ -17,9 +17,11 @@ use crate::widgets::terminal_workspace::{
 
 pub(crate) fn handle(app: &mut App, event: SettingsEvent) -> Task<AppEvent> {
     match event {
-        SettingsEvent::Intent(event) => {
-            app.widgets.settings.reduce(event).map(AppEvent::Settings)
-        },
+        SettingsEvent::Intent(event) => app
+            .widgets
+            .settings
+            .reduce(event)
+            .map(|event| AppEvent::Settings(Box::new(event))),
         SettingsEvent::Effect(effect) => handle_effect(app, effect),
     }
 }
@@ -28,25 +30,24 @@ fn handle_effect(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
     use SettingsEffect::*;
 
     match effect {
-        ReloadLoaded(load) => Task::done(AppEvent::Settings(
+        ReloadLoaded(load) => Task::done(AppEvent::Settings(Box::new(
             SettingsEvent::Intent(SettingsIntent::ReloadLoaded(load)),
-        )),
-        ReloadFailed(message) => Task::done(AppEvent::Settings(
+        ))),
+        ReloadFailed(message) => Task::done(AppEvent::Settings(Box::new(
             SettingsEvent::Intent(SettingsIntent::ReloadFailed(message)),
-        )),
-        SaveFailed(message) => Task::done(AppEvent::Settings(
+        ))),
+        SaveFailed(message) => Task::done(AppEvent::Settings(Box::new(
             SettingsEvent::Intent(SettingsIntent::SaveFailed(message)),
-        )),
-        SaveCompleted(data) => Task::done(AppEvent::Settings(
+        ))),
+        SaveCompleted(data) => Task::done(AppEvent::Settings(Box::new(
             SettingsEvent::Intent(SettingsIntent::SaveCompleted(data)),
-        )),
+        ))),
         ApplyTheme(data) => apply_theme(app, &data),
     }
 }
 
 fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
-    app.theme_manager
-        .set_custom_palette(data.to_color_palette());
+    app.theme_manager.set_design_tokens(data.to_design_tokens());
     let current_theme = app.theme_manager.current();
     app.terminal_settings = Settings {
         font: FontSettings {
@@ -71,8 +72,7 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
         },
     };
 
-    let palette = data.to_color_palette();
-    let terminal_palette: otty_ui_term::ColorPalette = palette.into();
+    let terminal_palette = current_theme.terminal_palette();
 
     Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
         TerminalWorkspaceIntent::ApplyTheme {

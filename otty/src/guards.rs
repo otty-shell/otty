@@ -85,17 +85,20 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 _,
             ),
         ) => Allow,
-        AppEvent::Settings(
-            crate::widgets::settings::SettingsEvent::Effect(_),
-        )
-        | AppEvent::Settings(
-            crate::widgets::settings::SettingsEvent::Intent(
-                crate::widgets::settings::SettingsIntent::ReloadLoaded(_)
-                | crate::widgets::settings::SettingsIntent::ReloadFailed(_)
-                | crate::widgets::settings::SettingsIntent::SaveCompleted(_)
-                | crate::widgets::settings::SettingsIntent::SaveFailed(_),
-            ),
-        ) => Allow,
+        AppEvent::Settings(event) => {
+            use crate::widgets::settings::{SettingsEvent, SettingsIntent};
+
+            match &**event {
+                SettingsEvent::Effect(_) => Allow,
+                SettingsEvent::Intent(
+                    SettingsIntent::ReloadLoaded(_)
+                    | SettingsIntent::ReloadFailed(_)
+                    | SettingsIntent::SaveCompleted(_)
+                    | SettingsIntent::SaveFailed(_),
+                ) => Allow,
+                _ => Dismiss,
+            }
+        },
         AppEvent::Explorer(
             crate::widgets::explorer::ExplorerEvent::Effect(_),
         )
@@ -183,18 +186,21 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             use crate::widgets::tabs::TabsIntent as E;
             matches!(event, E::ActivateTab { .. } | E::CloseTab { .. })
         },
-        AppEvent::Settings(
-            crate::widgets::settings::SettingsEvent::Effect(_),
-        )
-        | AppEvent::Settings(
-            crate::widgets::settings::SettingsEvent::Intent(
-                crate::widgets::settings::SettingsIntent::Reload
-                | crate::widgets::settings::SettingsIntent::ReloadLoaded(_)
-                | crate::widgets::settings::SettingsIntent::ReloadFailed(_)
-                | crate::widgets::settings::SettingsIntent::SaveCompleted(_)
-                | crate::widgets::settings::SettingsIntent::SaveFailed(_),
-            ),
-        ) => false,
+        AppEvent::Settings(event) => {
+            use crate::widgets::settings::{SettingsEvent, SettingsIntent};
+
+            !matches!(
+                &**event,
+                SettingsEvent::Effect(_)
+                    | SettingsEvent::Intent(
+                        SettingsIntent::Reload
+                            | SettingsIntent::ReloadLoaded(_)
+                            | SettingsIntent::ReloadFailed(_)
+                            | SettingsIntent::SaveCompleted(_)
+                            | SettingsIntent::SaveFailed(_),
+                    )
+            )
+        },
         AppEvent::Explorer(
             crate::widgets::explorer::ExplorerEvent::Effect(_),
         )
@@ -231,6 +237,7 @@ mod tests {
     use crate::events::AppEvent;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
+    use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
     #[test]
     fn given_add_menu_open_when_context_menu_guard_runs_then_event_is_ignored()
@@ -269,5 +276,24 @@ mod tests {
         ));
 
         assert!(!inline_edit_guard(&event));
+    }
+
+    #[test]
+    fn given_tab_hovered_when_inline_edit_guard_runs_then_edit_is_not_cancelled()
+     {
+        let event = AppEvent::Tabs(TabsEvent::Intent(TabsIntent::TabHovered {
+            tab_id: Some(1),
+        }));
+
+        assert!(!inline_edit_guard(&event));
+    }
+
+    #[test]
+    fn given_tab_hovered_when_context_menu_guard_runs_then_event_is_allowed() {
+        let event = AppEvent::Tabs(TabsEvent::Intent(TabsIntent::TabHovered {
+            tab_id: Some(1),
+        }));
+
+        assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
     }
 }

@@ -2,9 +2,8 @@ use iced::Task;
 
 use super::AppEvent;
 use crate::app::App;
-use crate::layout::pane_grid_size;
+use crate::layout::WorkspaceGeometry;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
-use crate::widgets::sidebar::constants::SIDEBAR_MENU_WIDTH;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceCtx, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
@@ -31,12 +30,14 @@ fn handle_intent_event(
 ) -> Task<AppEvent> {
     let sidebar = &app.widgets.sidebar;
 
-    let pane_grid_size = pane_grid_size(
+    let sidebar_vm = sidebar.vm();
+    let pane_grid_size = WorkspaceGeometry::new(
         app.state.screen_size,
-        sidebar.is_hidden(),
-        SIDEBAR_MENU_WIDTH,
+        !sidebar_vm.is_hidden,
+        sidebar_vm.is_workspace_open,
         sidebar.effective_workspace_ratio(),
-    );
+    )
+    .pane_grid_size();
 
     let ctx = build_ctx_from_parts(
         app.widgets.tabs.active_tab_id(),

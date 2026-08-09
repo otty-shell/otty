@@ -20,8 +20,8 @@ pub(crate) struct ErrorTabProps<'a> {
 pub(crate) fn view(
     props: ErrorTabProps<'_>,
 ) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = props.theme.theme.iced_palette();
-    let red = palette.red;
+    let palette = props.theme.theme.ui_palette();
+    let red = palette.danger;
 
     let title = text(props.error.title()).size(ERROR_TITLE_SIZE);
 

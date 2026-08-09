@@ -29,7 +29,7 @@ pub(crate) enum AppEvent {
     QuickLaunch(QuickLaunchEvent),
     TerminalWorkspace(TerminalWorkspaceEvent),
     Explorer(ExplorerEvent),
-    Settings(SettingsEvent),
+    Settings(Box<SettingsEvent>),
     IcedReady,
     SyncTerminalGridSizes,
     Keyboard(iced::keyboard::Event),
@@ -52,7 +52,7 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             terminal_workspace::handle(app, event)
         },
         AppEvent::Explorer(event) => explorer::handle(app, event),
-        AppEvent::Settings(event) => settings::handle(app, event),
+        AppEvent::Settings(event) => settings::handle(app, *event),
         AppEvent::SyncTerminalGridSizes => Task::done(
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::SyncPaneGridSize,
