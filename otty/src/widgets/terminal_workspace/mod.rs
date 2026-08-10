@@ -68,6 +68,7 @@ impl TerminalWorkspaceWidget {
                 focus: tab.focus(),
                 context_menu: tab.context_menu(),
                 has_block_selection: tab.selected_block().is_some(),
+                is_shell: tab.is_shell(),
             },
         );
 

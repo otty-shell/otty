@@ -6,8 +6,8 @@ use iced_core::Size;
 #[cfg(test)]
 use otty_libterm::Runtime;
 use otty_libterm::surface::{
-    Column, Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceMode,
-    viewport_to_point,
+    BlockAlignment, BlockId, Column, DegradedReason, IntegrationStatus, Point,
+    Scroll, SelectionType, Side, SnapshotOwned, SurfaceMode, viewport_to_point,
 };
 use otty_libterm::{
     DefaultParser, DefaultSurface, RuntimeRequestProxy, RuntimeTerminal,
@@ -65,6 +65,12 @@ impl EngineInner {
     fn build(kind: SessionKind, size: TerminalSize) -> Result<Self> {
         match kind {
             SessionKind::Local(options) => {
+                let terminal_session_id =
+                    options.envs().get("OTTY_TERMINAL_SESSION_ID").cloned();
+                let unsupported_shell =
+                    options.envs().get("OTTY_INTEGRATION_UNSUPPORTED").cloned();
+                let degraded_reason =
+                    options.envs().get("OTTY_INTEGRATION_DEGRADED").cloned();
                 let mut builder = pty::local(options.program())
                     .with_args(options.args())
                     .with_size(size.into())
@@ -78,8 +84,22 @@ impl EngineInner {
                     builder = builder.with_cwd(cwd)
                 }
 
-                let result =
-                    TerminalBuilder::from(builder).build_with_runtime()?;
+                let mut terminal_builder = TerminalBuilder::from(builder);
+                if let Some(terminal_session_id) = terminal_session_id {
+                    terminal_builder = terminal_builder
+                        .with_terminal_session_id(terminal_session_id);
+                } else if let Some(shell) = unsupported_shell {
+                    terminal_builder = terminal_builder
+                        .with_integration_status(
+                            IntegrationStatus::Unsupported(shell),
+                        );
+                } else if let Some(reason) = degraded_reason {
+                    terminal_builder = terminal_builder
+                        .with_integration_status(IntegrationStatus::Degraded(
+                            DegradedReason::IntegrationError(reason),
+                        ));
+                }
+                let result = terminal_builder.build_with_runtime()?;
 
                 Ok(EngineInner::Local(result))
             },
@@ -415,6 +435,17 @@ impl Engine {
                     .send(TerminalRequest::ScrollDisplay(scroll));
             }
         }
+    }
+
+    pub(crate) fn scroll_to_block(
+        &self,
+        block_id: BlockId,
+        alignment: BlockAlignment,
+    ) {
+        let _ = self.request_proxy.send(TerminalRequest::ScrollToBlock {
+            id: block_id,
+            alignment,
+        });
     }
 }
 

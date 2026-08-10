@@ -7,6 +7,8 @@ use otty_libterm::surface::{BlockKind, SelectionType, SurfaceMode};
 use otty_libterm::{SnapshotArc, TerminalSize};
 
 use crate::bindings::{BindingAction, BindingsLayout, InputKind};
+use crate::block_controls::compute_action_button_geometry;
+use crate::block_layout::BlockRect;
 use crate::engine::{Engine, MouseButton};
 use crate::font::TermFont;
 use crate::settings::BlockSelectionMode;
@@ -40,7 +42,7 @@ impl<'a> InputManager<'a> {
         layout_position: Point,
         cursor_position: Point,
         event: &iced::mouse::Event,
-        _clipboard: &mut dyn iced_graphics::core::Clipboard,
+        clipboard: &mut dyn iced_graphics::core::Clipboard,
         publisher: &mut impl FnMut(crate::Event),
     ) -> iced::event::Status {
         match event {
@@ -51,6 +53,7 @@ impl<'a> InputManager<'a> {
                 terminal_content,
                 cursor_position,
                 layout_position,
+                clipboard,
                 publisher,
             ),
             iced_core::mouse::Event::CursorMoved { position } => self
@@ -87,9 +90,28 @@ impl<'a> InputManager<'a> {
         terminal_state: SnapshotArc,
         cursor_position: Point,
         layout_position: Point,
+        clipboard: &mut dyn iced_graphics::core::Clipboard,
         publisher: &mut impl FnMut(crate::Event),
     ) -> iced::event::Status {
         state.selection_in_progress = false;
+        if let Some(block_id) = state.hovered_action_block_id.clone() {
+            let content = terminal_state
+                .block_output_text(&block_id)
+                .or_else(|| terminal_state.block_text(&block_id));
+            if let Some(content) = content {
+                clipboard.write(ClipboardKind::Standard, content);
+                publisher(crate::Event::BlockCopied {
+                    id: self.terminal_id,
+                    block_id,
+                });
+                publisher(crate::Event::Redraw {
+                    id: self.terminal_id,
+                });
+                state.is_dragged = false;
+                return iced::event::Status::Captured;
+            }
+        }
+
         let is_mouse_mode = terminal_state
             .view()
             .mode
@@ -223,7 +245,34 @@ impl<'a> InputManager<'a> {
             }
 
             let prev_action_hover = state.hovered_action_block_id.clone();
-            let action_hover = None;
+            let action_hover = hovered_block.as_ref().and_then(|(id, kind)| {
+                if *kind == BlockKind::Prompt {
+                    return None;
+                }
+                let block = terminal_state
+                    .blocks()
+                    .iter()
+                    .find(|block| block.meta.id == *id)?;
+                let cell_height = terminal_size.cell_height as f32;
+                let block_rect = BlockRect {
+                    block_id: id.clone(),
+                    kind: kind.clone(),
+                    rect: iced::Rectangle {
+                        x: layout_position.x,
+                        y: layout_position.y
+                            + ((block.start_line as f32
+                                + terminal_state.display_offset as f32)
+                                * cell_height),
+                        width: terminal_size.cols as f32
+                            * terminal_size.cell_width as f32,
+                        height: block.line_count as f32 * cell_height,
+                    },
+                };
+                let button =
+                    compute_action_button_geometry(&block_rect, cell_height)?;
+
+                button.rect.contains(*position).then_some(id.clone())
+            });
 
             if action_hover != prev_action_hover {
                 state.hovered_action_block_id = action_hover;
@@ -550,6 +599,8 @@ mod tests {
             start_line,
             line_count,
             cached_text: None,
+            prompt_text: None,
+            output_text: None,
             is_alt_screen: false,
         });
         Arc::new(snapshot)
@@ -568,6 +619,7 @@ mod tests {
             let cursor_position = Point { x: 100.0, y: 150.0 };
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
+            let mut clipboard = iced_core::clipboard::Null;
             let _modifiers = Modifiers::empty();
             let bindings = bindings::BindingsLayout::new();
             let input_manager = InputManager::new(
@@ -581,6 +633,7 @@ mod tests {
                 snapshot_with_modes(&[NamedPrivateMode::ReportMouseClicks]),
                 cursor_position,
                 layout_position,
+                &mut clipboard,
                 &mut publish,
             );
 
@@ -609,6 +662,7 @@ mod tests {
             let mut state = TerminalViewState::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
+            let mut clipboard = iced_core::clipboard::Null;
 
             let bindings = bindings::BindingsLayout::new();
             let input_manager = InputManager::new(
@@ -622,6 +676,7 @@ mod tests {
                 default_snapshot(),
                 cursor_position,
                 layout_position,
+                &mut clipboard,
                 &mut publish,
             );
 

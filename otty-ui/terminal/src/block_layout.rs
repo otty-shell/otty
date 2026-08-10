@@ -74,6 +74,8 @@ mod tests {
             start_line,
             line_count,
             cached_text: None,
+            prompt_text: None,
+            output_text: None,
             is_alt_screen: false,
         }
     }

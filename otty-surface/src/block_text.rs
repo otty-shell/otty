@@ -95,6 +95,10 @@ impl<'a> SnapshotView<'a> {
         &self,
         block: &BlockSnapshot,
     ) -> Option<String> {
+        if let Some(prompt_text) = &block.prompt_text {
+            return Some(prompt_text.to_string());
+        }
+
         if let Some(text) = &block.cached_text {
             if block.meta.kind != BlockKind::Command {
                 return None;
@@ -140,6 +144,16 @@ impl<'a> SnapshotView<'a> {
             None
         }
     }
+
+    /// Return output text excluding prompt and canonical command sections.
+    pub fn block_output_text(&self, block_id: &str) -> Option<String> {
+        let block = self.blocks.iter().find(|b| b.meta.id == block_id)?;
+        block
+            .output_text
+            .as_ref()
+            .filter(|text| !text.is_empty())
+            .map(ToString::to_string)
+    }
 }
 
 impl SnapshotOwned {
@@ -167,6 +181,11 @@ impl SnapshotOwned {
         block: &BlockSnapshot,
     ) -> Option<String> {
         self.view().block_prompt_text_from_snapshot(block)
+    }
+
+    /// Return output text excluding prompt and canonical command sections.
+    pub fn block_output_text(&self, block_id: &str) -> Option<String> {
+        self.view().block_output_text(block_id)
     }
 }
 
@@ -199,6 +218,8 @@ mod tests {
             start_line,
             line_count,
             cached_text: None,
+            prompt_text: None,
+            output_text: None,
             is_alt_screen: false,
         }
     }
@@ -256,6 +277,24 @@ mod tests {
         let content = collect_block_text(&block, &cells);
 
         assert_eq!(content.as_deref(), Some("echo  hi\nok"));
+    }
+
+    #[test]
+    fn semantic_prompt_and_output_text_override_visual_heuristics() {
+        let mut block = block_snapshot("block-1", BlockKind::Command, 0, 1);
+        block.cached_text = Some("left\nright command\nactual output".into());
+        block.prompt_text = Some("left\nright ".into());
+        block.output_text = Some("actual output".into());
+        let snapshot = build_snapshot(Vec::new(), vec![block]);
+
+        assert_eq!(
+            snapshot.block_prompt_text("block-1").as_deref(),
+            Some("left\nright ")
+        );
+        assert_eq!(
+            snapshot.block_output_text("block-1").as_deref(),
+            Some("actual output")
+        );
     }
 
     #[test]

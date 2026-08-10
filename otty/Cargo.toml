@@ -15,6 +15,7 @@ iced = { workspace = true, features = ["canvas", "lazy", "advanced", "svg", "ima
 otty-ui-term = { path = "../otty-ui/terminal", version = "0.1.0" }
 otty-ui-tree = { path = "../otty-ui/tree", version = "0.1.0" }
 otty-libterm = { path = "../otty-libterm", version = "0.1.0" }
+otty-shell-bootstrap = { path = "../crates/shell-bootstrap", version = "0.1.0" }
 log = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
 env_logger = "0.11"

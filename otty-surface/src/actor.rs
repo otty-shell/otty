@@ -13,7 +13,7 @@ use crate::escape::{
 };
 use crate::grid::{Dimensions, Scroll};
 use crate::index::Point;
-use crate::{SelectionType, Side};
+use crate::{BlockAlignment, BlockId, SelectionType, Side};
 
 /// Consumer of semantic terminal actions.
 ///
@@ -121,6 +121,11 @@ pub trait SurfaceActor {
 
     /// Scroll the display viewport relative to the scrollback history.
     fn scroll_display(&mut self, _: Scroll) {}
+
+    /// Navigate to a retained block using model-owned history geometry.
+    fn scroll_to_block(&mut self, _: &BlockId, _: BlockAlignment) -> bool {
+        false
+    }
 
     /// Set the hyperlink associated with subsequent printed cells.
     fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
@@ -256,6 +261,16 @@ pub trait SurfaceActor {
     /// Update the selection range
     fn update_selection(&mut self, _: Point, _: Side) {}
 
-    /// Handle high‑level block lifecycle events coming from the parser.
-    fn handle_block_event(&mut self, _: crate::escape::BlockEvent) {}
+    /// Handle a validated protocol-v2 shell lifecycle event.
+    fn handle_protocol_event(&mut self, _: crate::escape::ProtocolEvent) {}
+
+    /// Handle a safe protocol diagnostic after session validation.
+    fn handle_protocol_diagnostic(
+        &mut self,
+        _: crate::escape::ProtocolDiagnostic,
+    ) {
+    }
+
+    /// Mark an OSC 133 prompt section boundary at the current cursor.
+    fn mark_prompt_boundary(&mut self, _: crate::escape::PromptBoundary) {}
 }

@@ -16,7 +16,14 @@ mod snapshot;
 mod surface;
 
 pub use actor::SurfaceActor;
-pub use block::{BlockKind, BlockMeta, BlockSnapshot, BlockSurface};
+pub use block::{
+    BlockAlignment, BlockId, BlockKind, BlockMemoryMetrics, BlockMeta,
+    BlockMetadata, BlockOutcome, BlockRecord, BlockSnapshot, BlockState,
+    BlockSurface, CommandRecord, CommandSource, DegradedReason,
+    IntegrationStatus, LifecycleDiagnostic, LifecycleEvent, LifecycleInput,
+    LifecycleReducer, LifecycleUpdate, ProtocolSequence, ShellInstanceId,
+    TerminalSessionId,
+};
 pub use block_text::collect_block_text;
 pub use cell::{Cell, Flags};
 pub use color::Colors;

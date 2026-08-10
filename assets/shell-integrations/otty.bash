@@ -2,21 +2,32 @@
 # OTTY Bash integration hooks
 # ============================
 #
-# Source this file from your interactive bash (e.g. in ~/.bashrc) to emit
-# otty-block events for each prompt/command pair.
+# Source this file from an interactive Bash to emit protocol-v2 lifecycle
+# events for each prompt/command pair.
 #
 # This script embeds a minimal copy of bash-preexec (MIT-licensed) to
 # provide zsh-like preexec/precmd hooks, and uses them to emit OTTY block
 # events. See https://github.com/rcaloras/bash-preexec for the original.
 
 [[ $- != *i* ]] && return 0
-[[ -n ${OTTY_BASH_HOOK_INITIALIZED:-} ]] && return 0
-OTTY_BASH_HOOK_INITIALIZED=1
+[[ -z ${OTTY_TERMINAL_SESSION_ID:-} ]] && return 0
+[[ ${OTTY_BASH_HOOK_PID:-} == "$$" ]] && return 0
+OTTY_BASH_HOOK_PID=$$
 
-otty_block_seq=0
-otty_prompt_seq=0
+_otty_parent_shell_instance_id=${OTTY_SHELL_INSTANCE_ID:-}
+_otty_shell_depth=$((${OTTY_SHELL_DEPTH:--1} + 1))
+_otty_shell_instance_id="${OTTY_TERMINAL_SESSION_ID}:bash:$$:${_otty_shell_depth}"
+OTTY_SHELL_INSTANCE_ID=$_otty_shell_instance_id
+OTTY_SHELL_DEPTH=$_otty_shell_depth
+export OTTY_SHELL_INSTANCE_ID OTTY_SHELL_DEPTH
 
-_otty_json_escape_fallback() {
+_otty_event_seq=0
+_otty_block_seq=0
+_otty_prepared_block_id=
+_otty_active_block_id=
+
+_otty_json_escape() {
+  local LC_ALL=C
   local input=$1
   local output='"'
   local len=${#input}
@@ -47,33 +58,51 @@ _otty_json_escape_fallback() {
   printf '%s' "$output"
 }
 
-_otty_json_escape() {
+_otty_hex_encode() {
+  local LC_ALL=C
   local input=$1
-  if command -v jq >/dev/null 2>&1; then
-    jq -Rn --arg s "$input" '$s'
-    return
-  fi
+  local output=
+  local len=${#input}
+  local i char code
 
-  if command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$input"
-    return
-  fi
+  for ((i = 0; i < len; ++i)); do
+    char=${input:i:1}
+    printf -v code '%d' "'$char"
+    printf -v output '%s%02X' "$output" "$code"
+  done
 
-  if command -v python >/dev/null 2>&1; then
-    python -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$input"
-    return
-  fi
-
-  if command -v perl >/dev/null 2>&1; then
-    perl -MJSON::PP -we 'print encode_json($ARGV[0])' "$input"
-    return
-  fi
-
-  _otty_json_escape_fallback "$input"
+  printf '%s' "$output"
 }
 
-_otty_emit() {
-  printf '\033P'; printf 'otty-dcs;block;%s' "$1"; printf '\033\\'
+_otty_emit_event() {
+  local event=$1
+  local block_id=${2:-}
+  local payload=$3
+  local session_json shell_json block_json block_field json encoded
+
+  session_json=$(_otty_json_escape "$OTTY_TERMINAL_SESSION_ID")
+  shell_json=$(_otty_json_escape "$_otty_shell_instance_id")
+  block_field=
+  if [[ -n $block_id ]]; then
+    block_json=$(_otty_json_escape "$block_id")
+    block_field=",\"block_id\":$block_json"
+  fi
+  _otty_event_seq=$((_otty_event_seq + 1))
+  json="{\"v\":2,\"event\":\"$event\",\"terminal_session_id\":$session_json,\"shell_instance_id\":$shell_json,\"seq\":$_otty_event_seq${block_field},\"payload\":$payload}"
+  encoded=$(_otty_hex_encode "$json")
+  printf '\033Potty-dcs;event-v2;h;%s\033\\' "$encoded"
+}
+
+_otty_emit_shell_hello() {
+  local shell_json version_json parent_json
+  shell_json=$(_otty_json_escape "bash")
+  version_json=$(_otty_json_escape "$BASH_VERSION")
+  if [[ -n $_otty_parent_shell_instance_id ]]; then
+    parent_json=$(_otty_json_escape "$_otty_parent_shell_instance_id")
+  else
+    parent_json=null
+  fi
+  _otty_emit_event "shell_hello" "" "{\"shell\":$shell_json,\"shell_version\":$version_json,\"parent_shell_instance_id\":$parent_json,\"capabilities\":[\"command_end\",\"osc_133\",\"nested_shell\"]}"
 }
 
 # ---- Minimal bash-preexec core (MIT) ----
@@ -244,29 +273,78 @@ else
   __bp_install_after_session_init
 fi
 
-# ---- OTTY-specific preexec/precmd using bash-preexec ----
+# ---- OTTY-specific protocol-v2 lifecycle using bash-preexec ----
 
 _otty_preexec() {
   local cmd=${1:-$BASH_COMMAND}
   [[ -z $cmd ]] && return 0
-  local id="cmd-$((++otty_block_seq))"
-  local cmd_json
-  local cwd_json
-  local now
+
+  if [[ -z $_otty_prepared_block_id ]]; then
+    _otty_block_seq=$((_otty_block_seq + 1))
+    _otty_prepared_block_id="${OTTY_TERMINAL_SESSION_ID}:${_otty_shell_instance_id}:${_otty_block_seq}"
+  fi
+  _otty_active_block_id=$_otty_prepared_block_id
+
+  local cmd_json cwd_json
   cmd_json=$(_otty_json_escape "$cmd")
   cwd_json=$(_otty_json_escape "$PWD")
-  now=$(date +%s 2>/dev/null || echo 0)
-  _otty_emit "{\"v\":1,\"id\":\"$id\",\"phase\":\"preexec\",\"cmd\":$cmd_json,\"cwd\":$cwd_json,\"time\":$now}"
+  _otty_emit_event "command_start" "$_otty_active_block_id" "{\"command\":$cmd_json,\"cwd\":$cwd_json,\"command_truncated\":false}"
 }
 
 _otty_precmd() {
-  local prompt_id="prompt-$((++otty_prompt_seq))"
-  local cwd_json
-  local now
+  local status=$?
+  local pipeline_status=("${BP_PIPESTATUS[@]:-$status}")
+  local cwd_json pipe_json separator value
+
   cwd_json=$(_otty_json_escape "$PWD")
-  now=$(date +%s 2>/dev/null || echo 0)
-  _otty_emit "{\"v\":1,\"id\":\"$prompt_id\",\"phase\":\"precmd\",\"cwd\":$cwd_json,\"time\":$now}"
+  if [[ -n $_otty_active_block_id ]]; then
+    pipe_json='['
+    separator=
+    for value in "${pipeline_status[@]}"; do
+      pipe_json+="${separator}${value}"
+      separator=,
+    done
+    pipe_json+=']'
+    _otty_emit_event "command_end" "$_otty_active_block_id" "{\"exit_code\":$status,\"pipe_status\":$pipe_json,\"cwd\":$cwd_json}"
+    _otty_active_block_id=
+  fi
+
+  _otty_block_seq=$((_otty_block_seq + 1))
+  _otty_prepared_block_id="${OTTY_TERMINAL_SESSION_ID}:${_otty_shell_instance_id}:${_otty_block_seq}"
+  _otty_emit_event "prompt_prepare" "$_otty_prepared_block_id" "{\"cwd\":$cwd_json}"
+
+  return "$status"
+}
+
+_otty_shell_exit() {
+  local status=$?
+  local cwd_json
+  cwd_json=$(_otty_json_escape "$PWD")
+
+  if [[ -n $_otty_active_block_id ]]; then
+    _otty_emit_event "command_end" "$_otty_active_block_id" "{\"exit_code\":$status,\"pipe_status\":[$status],\"cwd\":$cwd_json}"
+    _otty_active_block_id=
+  fi
+  _otty_emit_event "shell_exit" "" "{\"status\":$status}"
+
+  trap - EXIT
+  if [[ -n ${_otty_previous_exit_handler:-} ]]; then
+    eval -- "$_otty_previous_exit_handler"
+  fi
+  return "$status"
+}
+
+_otty_install_prompt_markers() {
+  PS1='\[\e]133;A\e\\\]'"${PS1:-}"'\[\e]133;B\e\\\]'
 }
 
 preexec_functions+=(_otty_preexec)
 precmd_functions+=(_otty_precmd)
+
+_otty_previous_exit_handler=$(trap -p EXIT)
+_otty_previous_exit_handler=${_otty_previous_exit_handler#trap -- \'}
+_otty_previous_exit_handler=${_otty_previous_exit_handler%\' EXIT}
+trap '_otty_shell_exit' EXIT
+
+_otty_install_prompt_markers
+_otty_emit_shell_hello

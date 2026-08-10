@@ -1,6 +1,83 @@
 # Blocks v2: стабильные и расширяемые блоки OTTY
 
-Статус: архитектурный план и поэтапный roadmap.
+Статус: архитектурный план и поэтапный roadmap; фаза 0 ожидает ручное GUI-подтверждение,
+остальные фазы частично выполнены.
+
+## Статус реализации на 2026-08-10
+
+Blocks v2 **не завершён** и пока не соответствует Definition of Done из раздела 16. Текущая
+итерация реализует рекомендованный в разделе 17 первый вертикальный срез, полный
+автоматический scope baseline-фазы и отдельные части последующих этапов. Оставшиеся пункты
+roadmap должны выполняться отдельными изменениями в порядке зависимостей из раздела 15.
+
+В текущую итерацию вошли:
+
+- typed IDs, lifecycle reducer, sparse metadata merge и защита от duplicate/stale protocol
+  events;
+- bounded protocol v2 parser, session validation, per-shell sequence diagnostics и OSC 133
+  A/B;
+- Bash/Zsh protocol v2 lifecycle, process-scoped guards, nested shell IDs и атомарный
+  bootstrap integration assets;
+- базовое семантическое разделение prompt/command/output для активного блока;
+- `ScrollPosition::FollowTail/Anchored`, model-level off-screen `ScrollToBlock` и сохранение
+  block anchor при ручной прокрутке;
+- latest-frame mailbox ёмкостью один, bounded lossless queues, базовые copy/action controls и
+  отображение integration status в UI;
+- regression, parser и real-shell PTY tests для реализованного среза;
+- ignored baseline-сценарий, snapshot/block memory estimates и queue observability;
+- удаление production v1 parser/action/lifecycle path с legacy-ignore regression.
+
+Текущая реализация является переходной и имеет следующие известные границы:
+
+- finished blocks всё ещё не замораживаются в read-only logical lines и продолжают хранить
+  mutable `Surface`;
+- не реализованы полный `HeaderGrid`/`OutputGrid`, `OutputRouter`, budgets/truncation и
+  ownership alt-screen;
+- отсутствуют `BlockHeightIndex`, stable `LineId`/`BlockPoint`, ленивый reflow и snapshot только
+  для видимого диапазона;
+- transport ещё не поддерживает model/viewport revisions, render ticks и partial damage;
+- не завершены presentation actions, collapse/pin/reorder/group/split, единый export/save
+  pipeline и session persistence;
+- не добавлены Fish/PowerShell и сложные tmux/SSH environments;
+- stitched-history snapshot ещё не удалён;
+- полный миллион строк и остальные финальные нагрузочные критерии раздела 13.5 ещё не
+  являются acceptance gate; baseline B2-004/B2-005 зафиксирован отдельно.
+
+Проверки текущего среза: shell syntax, `cargo +nightly fmt`, Clippy с `-D warnings`,
+`cargo deny check`, все workspace tests и `cargo llvm-cov` проходят. Line coverage вырос с
+51.05% до 51.16%. Фиксированного минимального порога нет: согласно `AGENTS.md`, общий line
+coverage после изменений не должен снижаться относительно baseline до изменений. Поэтому
+coverage не блокирует B2-101; общий Definition of Done остаётся незакрытым из-за перечисленных
+выше нереализованных частей и отсутствующей ручной приёмки.
+
+### Решение по protocol v1
+
+Protocol v1 не является публичным compatibility mode. OTTY не добавляет runtime switch
+`v1/v2`, compatibility adapter и migration window. Старые emitter, parser, actions и lifecycle
+path удалены из production; framing остаётся только в legacy-ignore tests и historical notes.
+Rollback выполняется предыдущим application artifact, а не вторым protocol path в новом
+бинарнике. Legacy `otty-dcs;block` безопасно игнорируется и не создаёт semantic event/block.
+
+### Отдельные задачи по фазам
+
+Подробный индекс находится в [tasks/blocks-v2/README.md](blocks-v2/README.md). Каждый файл
+содержит собственный scope, текущий статус, критерии готовности, автоматические команды и
+пошаговую ручную проверку:
+
+- [Описание и ручная проверка уже реализованного первого вертикального
+  среза](blocks-v2/implemented-slice-2026-08-09.md)
+
+1. [Фаза 0 — baseline и regression-сценарии](blocks-v2/phase-00-baseline.md)
+2. [Фаза 1 — typed identity и lifecycle reducer](blocks-v2/phase-01-lifecycle.md)
+3. [Фаза 2 — protocol v2 parser](blocks-v2/phase-02-protocol-v2.md)
+4. [Фаза 3 — Bash/Zsh lifecycle и bootstrap](blocks-v2/phase-03-shell-bootstrap.md)
+5. [Фаза 4 — раздельный block content и freeze](blocks-v2/phase-04-content-freeze.md)
+6. [Фаза 5 — height index, viewport и selection](blocks-v2/phase-05-viewport.md)
+7. [Фаза 6 — latest-frame transport](blocks-v2/phase-06-transport.md)
+8. [Фаза 7 — UI actions и presentation model](blocks-v2/phase-07-presentation.md)
+9. [Фаза 8 — export и сохранение](blocks-v2/phase-08-export.md)
+10. [Фаза 9 — дополнительные shells и окружения](blocks-v2/phase-09-shells.md)
+11. [Фаза 10 — финальная активация v2 и удаление legacy](blocks-v2/phase-10-rollout.md)
 
 Обозначения в этом документе:
 
@@ -29,9 +106,9 @@
 - При неработающей shell-интеграции терминал продолжает работать как обычный terminal и явно показывает degraded-state.
 - Очередь UI-кадров имеет жёсткую верхнюю границу; медленный UI не должен останавливать чтение PTY и накапливать сотни полных snapshots.
 
-## 2. Что именно сейчас нестабильно в OTTY
+## 2. Исходные проблемы OTTY, которые устраняет roadmap
 
-Текущий поток данных:
+Исходный поток данных до первого vertical slice:
 
 ```text
 shell hook
@@ -131,7 +208,7 @@ ID вида `cmd-1` и `prompt-1` уникальны только внутри �
 PTY byte stream
   -> VTE parser
      -> printable/control actions --------------------+
-     -> Protocol v1/v2 + OSC 133 semantic events -----|
+     -> Protocol v2 + OSC 133 semantic events --------|
                                                        v
                                              BlockLifecycle reducer
                                                        |
@@ -152,7 +229,7 @@ PTY byte stream
 `otty-escape`:
 
 - безопасно выделяет framing;
-- декодирует protocol v1/v2 и OSC 133;
+- декодирует protocol v2 и OSC 133;
 - ничего не знает о текущем активном блоке;
 - выдаёт typed semantic events.
 
@@ -511,7 +588,8 @@ ESC P otty-dcs;event-v2;h;<hex-encoded-utf8-json> ESC \
 - sender выставляет `command_truncated: true`, а receiver повторно применяет лимит;
 - при overflow parser переходит в discard-until-ST без неограниченного allocation;
 - chunking в P0 не нужен: lifecycle event должен оставаться маленьким; полный input при необходимости берётся из UI-side buffer;
-- v1 framing принимается только compatibility adapter-ом и удаляется после миграционного окна.
+- v1 framing не имеет compatibility adapter: после удаления legacy parser он безопасно
+  отбрасывается как unsupported DCS и не попадает в block model.
 
 ### 9.3. Envelope
 
@@ -786,7 +864,7 @@ Debug panel для session должен показывать shell, integration 
 - unsupported version;
 - missing session/shell/block/seq;
 - Unicode, newline, quotes и очень длинная command;
-- v1 adapter recovery;
+- legacy v1 framing safely ignored без semantic event, block и panic;
 - случайные DCS bytes не вызывают panic и allocation выше лимита.
 
 ### 13.4. Реальные shell tests через PTY
@@ -820,33 +898,42 @@ tmux, SSH и дополнительные shells запускаются отде
 ## 14. Поэтапный план реализации
 
 Задачи ниже сгруппированы по dependency order. Внутри каждого этапа test-задача выполняется раньше implementation-задачи.
+Этот checklist сохраняется как полный master scope. Актуальный item-level прогресс (`[x]`,
+частично выполнено и оставшиеся подпункты) ведётся в связанных файлах фаз, чтобы не объявлять
+исходный крупный пункт завершённым по неполному вертикальному срезу.
 
-### Этап 0. Зафиксировать baseline
+### [Этап 0. Зафиксировать baseline](blocks-v2/phase-00-baseline.md)
 
-- [ ] **B2-001** Добавить в `otty-surface/src/block.rs` regression tests для роста active block при manual scroll, resize, truncation и off-screen `ScrollTo` на уровне модели.
-- [ ] **B2-002** Добавить в `otty-escape/src/dcs/` tests текущих v1 gaps: ignored version, duplicate IDs, fragmented payload и отсутствующий фактический exit.
-- [ ] **B2-003** Добавить test harness запуска Bash/Zsh через PTY в `otty/tests/shell_integration.rs`; тест сначала должен воспроизвести потерю nested Bash integration и collision ID.
-- [ ] **B2-004** Добавить измерение snapshot size/time, frame queue depth и block memory estimate без логирования command/output.
-- [ ] **B2-005** Сохранить benchmark-сценарии в `otty/benches/blocks.rs` либо в ignored integration tests, используя только уже согласованные dependencies.
+- [x] **B2-001** Добавить в `otty-surface/src/block.rs` regression tests для роста active block при manual scroll, resize, truncation и off-screen `ScrollTo` на уровне модели.
+- [x] **B2-002** Сохранить v1 framing только как legacy test fixture и добавить regression:
+  после удаления v1 старые, fragmented и malformed `otty-dcs;block` sequences не создают
+  semantic event/block и не вызывают panic.
+- [x] **B2-003** Добавить test harness запуска Bash/Zsh через PTY в `otty/tests/shell_integration.rs`; тест сначала должен воспроизвести потерю nested Bash integration и collision ID.
+- [x] **B2-004** Добавить измерение snapshot size/time, frame queue depth и block memory estimate без логирования command/output.
+- [x] **B2-005** Сохранить benchmark-сценарии в `otty/benches/blocks.rs` либо в ignored integration tests, используя только уже согласованные dependencies.
 
 Выход этапа: текущие failures воспроизводимы автоматически и есть числа, с которыми сравнивается v2.
 
-### Этап 1. Typed identity и lifecycle reducer
+### [Этап 1. Typed identity и lifecycle reducer](blocks-v2/phase-01-lifecycle.md)
 
 - [ ] **B2-010** Сначала добавить table-driven tests всех state transitions и recovery cases в новом `otty-surface/src/block/lifecycle.rs`.
 - [ ] **B2-011** Ввести private/public по необходимости newtypes `BlockId`, `TerminalSessionId`, `ShellInstanceId` и `ProtocolSequence` в `otty-surface/src/block/id.rs`.
 - [ ] **B2-012** Ввести `BlockState`, `BlockOutcome`, `MetadataPatch` и reducer; запретить прямую замену всей metadata на completion event.
 - [ ] **B2-013** Добавить `block_id_to_index` и tests его корректности после append/remove/reorder.
-- [ ] **B2-014** Перевести текущие v1 `BlockEvent` через compatibility adapter в единый `LifecycleInput`.
+- [x] **B2-014** Удалить v1 `BlockEvent` lifecycle path; `LifecycleInput` и reducer принимают
+  только protocol-v2 semantic events. Compatibility adapter не добавлять.
 - [ ] **B2-015** Удалить логику duplicate string ID, которая вызывает `end_block_by_id()`; stale/duplicate должны решаться reducer-ом.
 - [ ] **B2-016** Разбить монолитный `otty-surface/src/block.rs` на focused modules `block/model.rs`, `block/lifecycle.rs`, `block/id.rs` и `block/list.rs`, сохранив минимальный public API.
 
-Выход этапа: block lifecycle детерминирован даже на старом protocol, metadata не теряется.
+Выход этапа: protocol-v2 block lifecycle детерминирован, metadata не теряется,
+а v1 lifecycle path удалён.
 
-### Этап 2. Protocol v2 parser
+### [Этап 2. Protocol v2 parser](blocks-v2/phase-02-protocol-v2.md)
 
 - [ ] **B2-020** Сначала добавить framing/schema/recovery tests в `otty-escape/src/dcs/event_v2.rs` и parser stream tests в `otty-escape/src/dcs/mod.rs`.
-- [ ] **B2-021** Выделить текущий parser в `otty-escape/src/dcs/block_v1.rs` как временный compatibility path.
+- [x] **B2-021** После падающего legacy-ignore regression из B2-002 удалить v1 parser/schema и
+  production dispatch в `Action::BlockEvent`; legacy
+  `otty-dcs;block` безопасно отбрасывается как unsupported DCS.
 - [ ] **B2-022** Реализовать bounded `event-v2;h` framing, hex decode и typed envelope с обязательным major version.
 - [ ] **B2-023** Добавить semantic actions для `shell_hello`, `prompt_prepare`, `command_start`, `command_end`, `context_update`, `shell_exit` и `integration_error`.
 - [ ] **B2-024** Добавить OSC 133 A/B parsing в `otty-escape/src/osc.rs` и semantic prompt boundary actions.
@@ -854,9 +941,10 @@ tmux, SSH и дополнительные shells запускаются отде
 - [ ] **B2-026** Добавить per-shell sequence validation и diagnostics, не содержащие payload.
 - [ ] **B2-027** Документировать wire format и limits в `otty-escape/README.md` с валидными Bash/Zsh examples.
 
-Выход этапа: backend может надёжно принимать v2, но v1 sessions продолжают работать через adapter.
+Выход этапа: backend надёжно принимает v2, production parser не декодирует v1, а legacy
+framing проверен только как safely ignored input.
 
-### Этап 3. Bash/Zsh lifecycle и bootstrap
+### [Этап 3. Bash/Zsh lifecycle и bootstrap](blocks-v2/phase-03-shell-bootstrap.md)
 
 - [ ] **B2-030** Сначала расширить real-shell tests: exit code, pipeline status, prompt boundaries, source-twice, nested shell, existing hooks.
 - [ ] **B2-031** Переписать `assets/shell-integrations/otty.bash` на protocol v2 с захватом status первым действием `precmd`.
@@ -871,7 +959,7 @@ tmux, SSH и дополнительные shells запускаются отде
 
 Выход этапа: root и persistent nested Bash/Zsh имеют полный lifecycle и уникальные IDs; отсутствие hooks видно пользователю.
 
-### Этап 4. Раздельный block content и freeze
+### [Этап 4. Раздельный block content и freeze](blocks-v2/phase-04-content-freeze.md)
 
 - [ ] **B2-040** Сначала добавить tests section boundaries для single/multiline/right prompt, edited command, output, empty command и background output.
 - [ ] **B2-041** Ввести `HeaderGrid`, prompt/command ranges и `OutputGrid` в `otty-surface/src/block/content.rs`.
@@ -884,7 +972,7 @@ tmux, SSH и дополнительные shells запускаются отде
 
 Выход этапа: prompt/command/output имеют точные границы, finished history компактна и не мутирует.
 
-### Этап 5. Height index, viewport и selection
+### [Этап 5. Height index, viewport и selection](blocks-v2/phase-05-viewport.md)
 
 - [ ] **B2-050** Сначала перенести viewport regression matrix из раздела 13.2 в `otty-surface/src/block/viewport.rs` tests.
 - [ ] **B2-051** Реализовать `BlockHeightIndex` в `otty-surface/src/block/height_index.rs` с randomized invariant test против простого `Vec` reference model.
@@ -898,7 +986,7 @@ tmux, SSH и дополнительные shells запускаются отде
 
 Выход этапа: рост output, resize, collapse и navigation не вызывают scroll jumps и линейный scan history на каждый frame.
 
-### Этап 6. Latest-frame transport
+### [Этап 6. Latest-frame transport](blocks-v2/phase-06-transport.md)
 
 - [ ] **B2-060** Сначала добавить slow-consumer tests в `otty-libterm/src/terminal/` с burst output и lossless child exit.
 - [ ] **B2-061** Разделить replaceable frame notification и lossless terminal events.
@@ -910,7 +998,7 @@ tmux, SSH и дополнительные shells запускаются отде
 
 Выход этапа: terminal остаётся отзывчивым при burst output, UI всегда стремится к последней revision.
 
-### Этап 7. UI actions и presentation model
+### [Этап 7. UI actions и presentation model](blocks-v2/phase-07-presentation.md)
 
 - [ ] **B2-070** Сначала добавить tests единого action path для internal controls, external overlay и keyboard/context menu.
 - [ ] **B2-071** Ввести exhaustive `BlockAction` и `available_actions()` в `otty-ui/terminal/src/block_actions.rs`.
@@ -924,7 +1012,7 @@ tmux, SSH и дополнительные shells запускаются отде
 
 Выход этапа: блоками и их секциями можно управлять независимо от их видимости и без нарушения PTY history.
 
-### Этап 8. Export и сохранение
+### [Этап 8. Export и сохранение](blocks-v2/phase-08-export.md)
 
 - [ ] **B2-080** Сначала добавить golden tests plain/ANSI/Markdown/JSON export, soft wrap, wide chars, hyperlinks и truncation markers.
 - [ ] **B2-081** Реализовать единый `ExportBlock` pipeline в `otty-surface/src/block/export.rs`.
@@ -935,7 +1023,7 @@ tmux, SSH и дополнительные shells запускаются отде
 
 Выход этапа: copy и save дают один и тот же детерминированный результат для on-screen и off-screen blocks.
 
-### Этап 9. Дополнительные shells и сложные окружения
+### [Этап 9. Дополнительные shells и сложные окружения](blocks-v2/phase-09-shells.md)
 
 - [ ] **B2-090** Добавить Fish protocol-v2 hooks и real-shell tests.
 - [ ] **B2-091** Добавить PowerShell protocol-v2 hooks и tests на доступных CI platforms.
@@ -943,20 +1031,27 @@ tmux, SSH и дополнительные shells запускаются отде
 - [ ] **B2-093** Спроектировать explicit remote bootstrap для SSH/container с отдельным threat/cleanup review.
 - [ ] **B2-094** Добавлять Nushell/прочие shells только вместе с real-shell lifecycle tests; иначе оставлять `Unsupported`.
 
-### Этап 10. Миграция и удаление v1
+### [Этап 10. Финальная активация v2 и удаление legacy](blocks-v2/phase-10-rollout.md)
 
-- [ ] **B2-100** Добавить временный runtime switch для сравнения old/new block engine и безопасного rollback во время разработки.
-- [ ] **B2-101** Запустить полный набор `cargo +nightly fmt`, clippy, deny, workspace tests и llvm-cov согласно `AGENTS.md`.
-- [ ] **B2-102** Сравнить baseline B2-004/B2-005 с v2 и зафиксировать memory/frame/scroll результаты в этом документе.
-- [ ] **B2-103** Сделать v2 default после прохождения Bash/Zsh, viewport и burst-output acceptance matrix.
-- [ ] **B2-104** После миграционного окна удалить v1 script emission, compatibility adapter, old stitched-history snapshot и временный runtime switch.
+- [x] **B2-100** Зафиксировать single-path release policy: runtime switch, compatibility adapter и
+  migration window не добавляются; rollback выполняется предыдущим application artifact.
+- [x] **B2-101** Запустить полный набор `cargo +nightly fmt`, clippy, deny, workspace tests и llvm-cov согласно `AGENTS.md`; подтвердить, что общий line coverage не снизился относительно baseline до изменений.
+- [ ] **B2-102** После завершения целевой архитектуры повторить B2-004/B2-005 и сравнить с ранее
+  сохранённым baseline report, не добавляя второй engine path в один бинарник.
+- [ ] **B2-103** Подтвердить v2-only для всех новых supported sessions после Bash/Zsh,
+  viewport, export и burst-output acceptance matrix; bootstrap failure даёт `Degraded`, а не v1 fallback.
+- [ ] **B2-104** До релиза завершить и подтвердить removal из B2-014/B2-021: удалить
+  оставшиеся v1 script emission, parser/schema/actions/handlers/tests кроме legacy-ignore fixture,
+  old stitched-history snapshot, временный
+  `integration_status_badge` и относящийся к нему `is_shell` plumbing из pane-grid; финальные
+  integration diagnostics оставить в итоговом status/debug UI.
 - [ ] **B2-105** Обновить `otty-surface/README.md`, `otty-escape/README.md` и `otty-ui/terminal/README.md` финальными контрактами.
 
 ## 15. Dependency order и рекомендуемые PR
 
 ```text
 PR 1:  B2-001..005  baseline/regressions
-PR 2:  B2-010..016  typed IDs + lifecycle reducer + v1 adapter
+PR 2:  B2-010..016  typed IDs + protocol-v2 lifecycle reducer
 PR 3:  B2-020..027  protocol v2 parser + OSC 133
 PR 4:  B2-030..039  Bash/Zsh v2 + integration status
 PR 5:  B2-040..047  sectioned content + freeze + routing
@@ -965,7 +1060,7 @@ PR 7:  B2-060..066  latest-frame transport
 PR 8:  B2-070..078  actions + presentation manipulation
 PR 9:  B2-080..085  export/save
 PR 10: B2-090..094  additional environments
-PR 11: B2-100..105  rollout and v1 removal
+PR 11: B2-100..105  v2 finalization and legacy removal
 ```
 
 Прямые зависимости:
@@ -975,9 +1070,12 @@ PR 11: B2-100..105  rollout and v1 removal
 - UI actions зависят от stable query API и sectioned content;
 - nested shell routing зависит от protocol v2 и `ShellContext`;
 - persistence зависит от frozen content и стабильной export schema;
-- удаление v1 возможно только после production-подобной проверки v2 scripts.
+- удаление v1 выполняется сразу после production-подобной проверки v2 scripts и до
+  релиза; migration window и dual-path нет.
 
-Не следует объединять весь roadmap в один большой rewrite PR. На границах каждого PR старый terminal path должен оставаться запускаемым, а v2 invariants — покрыты тестами.
+Не следует объединять весь roadmap в один большой rewrite PR. На границах каждого PR terminal
+должен оставаться запускаемым, ordinary shell без integration — рабочим, а v2 invariants —
+покрыты тестами. Это не требует сохранения v1 protocol path.
 
 ## 16. Definition of Done
 
@@ -994,7 +1092,7 @@ Blocks v2 считается готовым, когда одновременно
 - presentation reorder/split/group не изменяет canonical transcript;
 - malformed/spoofed/stale protocol events не corrupt-ят соседние блоки;
 - memory и latency соответствуют критериям раздела 13.5;
-- старый v1 path удалён после подтверждённой миграции;
+- старый v1 path удалён до релиза, а legacy v1 DCS безопасно игнорируется;
 - все обязательные проверки из `AGENTS.md` проходят, coverage не снижен.
 
 ## 17. Что делать первым
@@ -1002,7 +1100,7 @@ Blocks v2 считается готовым, когда одновременно
 Самый безопасный первый вертикальный срез:
 
 1. Написать regression tests на lifecycle metadata merge и scroll anchor.
-2. Ввести typed IDs + lifecycle reducer, оставив v1 adapter.
+2. Ввести typed IDs + protocol-v2 lifecycle reducer; v1 adapter не добавлять.
 3. Добавить `command_end` и unique session/shell IDs в Bash/Zsh v2.
 4. Разделить header/output для одного активного блока.
 5. Перевести scroll на `FollowTail/Anchored` и только затем менять UI controls.

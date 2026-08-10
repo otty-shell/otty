@@ -1,4 +1,7 @@
 use iced::Task;
+use otty_shell_bootstrap::{
+    fallback_shell_launch_with_shell, setup_shell_launch_with_shell,
+};
 use otty_ui_term::settings::{
     BackendSettings, BlockSelectionMode, FontSettings, InteractionSettings,
     Settings, ThemeSettings,
@@ -8,9 +11,6 @@ use super::AppEvent;
 use crate::app::App;
 use crate::widgets::settings::types::SettingsData;
 use crate::widgets::settings::{SettingsEffect, SettingsEvent, SettingsIntent};
-use crate::widgets::terminal_workspace::services::{
-    fallback_shell_session_with_shell, setup_shell_session_with_shell,
-};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
@@ -63,11 +63,11 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
     };
 
     let shell_path = data.terminal_shell().to_string();
-    app.shell_session = match setup_shell_session_with_shell(&shell_path) {
-        Ok(session) => session,
+    app.shell_launch = match setup_shell_launch_with_shell(&shell_path) {
+        Ok(launch) => launch,
         Err(err) => {
             log::warn!("shell integration setup failed: {err}");
-            fallback_shell_session_with_shell(&shell_path)
+            fallback_shell_launch_with_shell(&shell_path)
         },
     };
 

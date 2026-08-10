@@ -1,6 +1,6 @@
-mod block;
+mod event_v2;
 
-pub use block::{BlockEvent, BlockKind, BlockMeta, BlockPhase};
+pub use event_v2::{ProtocolDiagnostic, ProtocolEvent, ProtocolEventKind};
 use log::error;
 use memchr::memchr;
 use thiserror::Error;
@@ -9,10 +9,13 @@ use crate::{Action, EscapeActor};
 
 pub(crate) const DCS_PREFIX: &[u8] = b"otty-dcs;";
 pub(crate) const MAX_DCS_KIND_LEN: usize = 32;
-pub(crate) const MAX_DCS_CONTENT_BYTES: usize = 4096;
 
 pub(crate) const fn max_dcs_buffer_len() -> usize {
-    DCS_PREFIX.len() + MAX_DCS_KIND_LEN + 1 + MAX_DCS_CONTENT_BYTES
+    DCS_PREFIX.len()
+        + MAX_DCS_KIND_LEN
+        + 1
+        + event_v2::MAX_ENCODED_EVENT_BYTES
+        + 2
 }
 
 #[derive(Debug, Error)]
@@ -27,34 +30,7 @@ enum DcsMessageParsingError {
     UnsupportedKind(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum DcsMessageKind {
-    Block,
-}
-
-impl DcsMessageKind {
-    fn from_bytes(bytes: &[u8]) -> Result<Self, DcsMessageParsingError> {
-        match bytes {
-            b"block" => Ok(Self::Block),
-            kind_bytes => {
-                let kind = String::from_utf8_lossy(kind_bytes).to_string();
-                Err(DcsMessageParsingError::UnsupportedKind(kind))
-            },
-        }
-    }
-}
-
-impl std::fmt::Display for DcsMessageKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
-            Self::Block => "block",
-        };
-        f.write_str(name)
-    }
-}
-
 struct DcsMessage<'a> {
-    kind: DcsMessageKind,
     payload: &'a [u8],
 }
 
@@ -69,9 +45,12 @@ impl<'a> DcsMessage<'a> {
             .ok_or(DcsMessageParsingError::KindSeparatorMissed)?;
 
         let (kind_bytes, rest) = remaining.split_at(separator_idx);
+        if kind_bytes != b"event-v2" {
+            let kind = String::from_utf8_lossy(kind_bytes).to_string();
+            return Err(DcsMessageParsingError::UnsupportedKind(kind));
+        }
 
         Ok(Self {
-            kind: DcsMessageKind::from_bytes(kind_bytes)?,
             payload: &rest[1..],
         })
     }
@@ -86,14 +65,19 @@ pub(crate) fn perform<A: EscapeActor>(actor: &mut A, raw_message: &[u8]) {
         },
     };
 
-    match message.kind {
-        DcsMessageKind::Block => {
-            match block::parse_block_payload(message.payload) {
-                Ok(event) => actor.handle(Action::BlockEvent(event)),
-                Err(e) => {
-                    error!("[OTTY DCS] failed to parse otty block payload: {e}")
-                },
-            };
+    match event_v2::parse_event_v2_payload(message.payload) {
+        Ok(event) => actor.handle(Action::ProtocolEvent(event)),
+        Err(event_v2::EventV2ParsingError::UnsupportedVersion {
+            version,
+            terminal_session_id,
+        }) => actor.handle(Action::ProtocolDiagnostic(
+            ProtocolDiagnostic::UnsupportedVersion {
+                terminal_session_id,
+                version,
+            },
+        )),
+        Err(e) => {
+            error!("[OTTY DCS] failed to parse event-v2 payload: {e}")
         },
     }
 }
@@ -101,7 +85,7 @@ pub(crate) fn perform<A: EscapeActor>(actor: &mut A, raw_message: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Action, BlockKind, BlockPhase, EscapeParser, Parser};
+    use crate::{Action, EscapeParser, Parser};
 
     #[derive(Default)]
     struct CollectingActor {
@@ -122,90 +106,27 @@ mod tests {
     }
 
     #[test]
-    fn parses_block_event_from_dcs() {
-        let json =
-            r#"{"id":"1","phase":"preexec","cmd":"ls","cwd":"/","time":42}"#;
-        let payload = format!("\x1bPotty-dcs;block;{json}\x1b\\");
-        let actions = parse_with_bytes(payload.as_bytes());
+    fn legacy_block_frames_are_ignored_without_panicking() {
+        let valid = b"\x1bPotty-dcs;block;{\"id\":\"legacy\",\"phase\":\"preexec\",\"time\":1}\x1b\\";
+        let malformed = b"\x1bPotty-dcs;block;{not-json}\x1b\\";
+        let mut parser = Parser::<otty_vte::Parser>::new();
+        let mut actor = CollectingActor::default();
+
+        for byte in valid {
+            parser.advance(std::slice::from_ref(byte), &mut actor);
+        }
+        parser.advance(malformed, &mut actor);
+        let json = r#"{"v":2,"event":"shell_hello","terminal_session_id":"session","shell_instance_id":"shell","seq":1,"payload":{"shell":"bash"}}"#;
+        let encoded = json
+            .bytes()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let v2 = format!("\x1bPotty-dcs;event-v2;h;{encoded}\x1b\\");
+        parser.advance(v2.as_bytes(), &mut actor);
 
         assert!(
-            actions.iter().any(|action| match action {
-                Action::BlockEvent(event) => {
-                    assert_eq!(event.phase, BlockPhase::Preexec);
-                    assert_eq!(event.meta.id, "1");
-                    assert_eq!(event.meta.kind, BlockKind::Command);
-                    assert_eq!(event.meta.cmd.as_deref(), Some("ls"));
-                    assert_eq!(event.meta.cwd.as_deref(), Some("/"));
-                    assert_eq!(event.meta.started_at, Some(42));
-                    assert_eq!(event.meta.finished_at, None);
-                    true
-                },
-                _ => false,
-            }),
-            "expected at least one BlockEvent action"
-        );
-    }
-
-    #[test]
-    fn ignores_invalid_block_dcs() {
-        let json =
-            r#"{"id":"1","phase":"preexec","cmd":"ls","cwd":"/","time":42"#;
-        let payload = format!("\x1bPotty-dcs;block;{json}\x1b\\");
-        let actions = parse_with_bytes(payload.as_bytes());
-
-        assert!(
-            !actions
-                .iter()
-                .any(|action| matches!(action, Action::BlockEvent(_))),
-            "invalid JSON should not produce BlockEvent"
-        );
-    }
-
-    #[test]
-    fn parses_exit_block_event_from_dcs() {
-        let json = r#"{"id":"2","phase":"exit","time":99,"exit_code":3,"shell":"zsh"}"#;
-        let payload = format!("\x1bPotty-dcs;block;{json}\x1b\\");
-        let actions = parse_with_bytes(payload.as_bytes());
-
-        assert!(
-            actions.iter().any(|action| match action {
-                Action::BlockEvent(event) => {
-                    assert_eq!(event.phase, BlockPhase::Exit);
-                    assert_eq!(event.meta.kind, BlockKind::Command);
-                    assert_eq!(event.meta.id, "2");
-                    assert_eq!(event.meta.started_at, None);
-                    assert_eq!(event.meta.finished_at, Some(99));
-                    assert_eq!(event.meta.exit_code, Some(3));
-                    assert_eq!(event.meta.shell.as_deref(), Some("zsh"));
-                    true
-                },
-                _ => false,
-            }),
-            "expected BlockEvent for exit phase"
-        );
-    }
-
-    #[test]
-    fn parses_precmd_block_event_from_dcs() {
-        let json = r#"{"id":"3","phase":"precmd","time":7,"cwd":"/tmp"}"#;
-        let payload = format!("\x1bPotty-dcs;block;{json}\x1b\\");
-        let actions = parse_with_bytes(payload.as_bytes());
-
-        assert!(
-            actions.iter().any(|action| match action {
-                Action::BlockEvent(event) => {
-                    assert_eq!(event.phase, BlockPhase::Precmd);
-                    assert_eq!(event.meta.kind, BlockKind::Prompt);
-                    assert_eq!(event.meta.id, "3");
-                    assert_eq!(event.meta.cmd, None);
-                    assert_eq!(event.meta.cwd.as_deref(), Some("/tmp"));
-                    assert_eq!(event.meta.started_at, None);
-                    assert_eq!(event.meta.finished_at, Some(7));
-                    true
-                },
-                _ => false,
-            }),
-            "expected BlockEvent for precmd phase"
+            matches!(actor.actions.as_slice(), [Action::ProtocolEvent(_)]),
+            "legacy frames must be ignored and parser recovery must accept v2",
         );
     }
 
@@ -215,12 +136,29 @@ mod tests {
         let payload = format!("\x1bPotty-dcs;unknown;{json}\x1b\\");
         let actions = parse_with_bytes(payload.as_bytes());
 
-        assert!(
-            !actions
-                .iter()
-                .any(|action| matches!(action, Action::BlockEvent(_))),
-            "unsupported DCS kind should be ignored"
-        );
+        assert!(actions.is_empty(), "unsupported DCS kind should be ignored");
+    }
+
+    #[test]
+    fn reports_unsupported_protocol_version_without_exposing_payload() {
+        let json = r#"{"v":9,"event":"shell_hello","terminal_session_id":"session","shell_instance_id":"shell","seq":1,"payload":{"shell":"bash"}}"#;
+        let encoded = json
+            .bytes()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let payload = format!("\x1bPotty-dcs;event-v2;h;{encoded}\x1b\\");
+
+        let actions = parse_with_bytes(payload.as_bytes());
+
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            Action::ProtocolDiagnostic(
+                crate::ProtocolDiagnostic::UnsupportedVersion {
+                    terminal_session_id,
+                    version: 9,
+                }
+            ) if terminal_session_id == "session"
+        )));
     }
 
     #[test]
@@ -229,12 +167,7 @@ mod tests {
         let payload = format!("\x1bPnotty-dcs;block;{json}\x1b\\");
         let actions = parse_with_bytes(payload.as_bytes());
 
-        assert!(
-            !actions
-                .iter()
-                .any(|action| matches!(action, Action::BlockEvent(_))),
-            "wrong DCS prefix should be ignored"
-        );
+        assert!(actions.is_empty(), "wrong DCS prefix should be ignored");
     }
 
     #[test]
@@ -242,29 +175,7 @@ mod tests {
         let payload = "\x1bPotty-dcs;block;\x1b\\";
         let actions = parse_with_bytes(payload.as_bytes());
 
-        assert!(
-            !actions
-                .iter()
-                .any(|action| matches!(action, Action::BlockEvent(_))),
-            "empty payload should be ignored"
-        );
-    }
-
-    #[test]
-    fn parses_multiple_block_events_in_stream() {
-        let preexec = r#"{"id":"10","phase":"preexec","time":1,"cmd":"ls"}"#;
-        let exit = r#"{"id":"10","phase":"exit","time":2,"exit_code":0}"#;
-        let payload = format!(
-            "\x1bPotty-dcs;block;{preexec}\x1b\\\x1bPotty-dcs;block;{exit}\x1b\\"
-        );
-        let actions = parse_with_bytes(payload.as_bytes());
-
-        let block_events = actions
-            .into_iter()
-            .filter(|action| matches!(action, Action::BlockEvent(_)))
-            .count();
-
-        assert_eq!(block_events, 2, "expected two BlockEvent actions");
+        assert!(actions.is_empty(), "empty legacy payload should be ignored");
     }
 
     #[test]
@@ -283,5 +194,29 @@ mod tests {
             DcsMessage::parse(b"otty-dcs;unknown;{}"),
             Err(DcsMessageParsingError::UnsupportedKind(_))
         ));
+    }
+
+    #[test]
+    fn parses_fragmented_event_v2_hex_frame() {
+        let json = r#"{"v":2,"event":"command_start","terminal_session_id":"session","shell_instance_id":"shell","seq":3,"block_id":"session:shell:1","sent_at_unix_ms":10,"payload":{"command":"printf ok","cwd":"/tmp"}}"#;
+        let encoded = json
+            .as_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let frame = format!("\x1bPotty-dcs;event-v2;h;{encoded}\x1b\\");
+        let mut parser = Parser::<otty_vte::Parser>::new();
+        let mut actor = CollectingActor::default();
+
+        for byte in frame.bytes() {
+            parser.advance(&[byte], &mut actor);
+        }
+
+        assert!(actor.actions.iter().any(|action| matches!(
+            action,
+            Action::ProtocolEvent(event)
+                if event.sequence() == 3
+                    && event.terminal_session_id() == "session"
+        )));
     }
 }

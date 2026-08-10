@@ -155,8 +155,14 @@ impl<'a, S: SurfaceActor> TerminalSurfaceActor<'a, S> {
                 self.surface.set_window_title(Some(title.clone()));
                 self.dispatch_event(TerminalEvent::TitleChanged { title });
             },
-            BlockEvent(event) => {
-                self.surface.handle_block_event(event);
+            ProtocolEvent(event) => {
+                self.surface.handle_protocol_event(event);
+            },
+            ProtocolDiagnostic(diagnostic) => {
+                self.surface.handle_protocol_diagnostic(diagnostic);
+            },
+            PromptBoundary(boundary) => {
+                self.surface.mark_prompt_boundary(boundary);
             },
             action => debug!("unsupported action: {action:?}"),
         }

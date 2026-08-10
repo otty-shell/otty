@@ -4,7 +4,7 @@ use iced::widget::operation::snap_to_end;
 use super::AppEvent;
 use crate::app::App;
 use crate::domain::quick_launch::WizardTabInit;
-use crate::services::terminal_settings_for_session;
+use crate::services::terminal_settings_for_shell_launch;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::settings::{SettingsEvent, SettingsIntent};
@@ -108,9 +108,9 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
             Task::batch(tasks)
         },
         TabsEffect::TerminalTabOpened { tab_id, title } => {
-            let settings = Box::new(terminal_settings_for_session(
+            let settings = Box::new(terminal_settings_for_shell_launch(
                 &app.terminal_settings,
-                app.shell_session.session().clone(),
+                &app.shell_launch,
             ));
 
             Task::done(AppEvent::TerminalWorkspace(

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use cursor_icon::CursorIcon;
-use flume::{Receiver, Sender};
+use flume::Receiver;
 use log::debug;
 use options::TerminalOptions;
 
@@ -21,11 +21,11 @@ use crate::escape::{
 };
 use crate::pty::{Pollable, Session, SessionError};
 use crate::surface::{
-    Point, Scroll, SelectionType, Side, SnapshotOwned, SurfaceActor,
-    SurfaceModel,
+    BlockAlignment, BlockId, Point, Scroll, SelectionType, Side, SnapshotOwned,
+    SurfaceActor, SurfaceModel,
 };
 use crate::terminal::channel::{
-    ChannelSendError, TerminalEvents, TerminalHandle, map_send_error,
+    ChannelSendError, TerminalEventSender, TerminalEvents, TerminalHandle,
 };
 use crate::terminal::size::TerminalSize;
 use crate::terminal::surface_actor::TerminalSurfaceActor;
@@ -68,6 +68,11 @@ pub enum TerminalRequest {
     Resize(TerminalSize),
     /// Scroll the display viewport.
     ScrollDisplay(Scroll),
+    /// Navigate to any retained block by stable identity.
+    ScrollToBlock {
+        id: BlockId,
+        alignment: BlockAlignment,
+    },
     /// Initialize the selection range on the surface.
     StartSelection {
         ty: SelectionType,
@@ -165,7 +170,7 @@ pub struct TerminalEngine<P, E, S> {
     size: TerminalSize,
     read_buffer: Vec<u8>,
     exit_status: Option<ExitStatus>,
-    event_tx: Sender<TerminalEvent>,
+    event_tx: TerminalEventSender,
     request_rx: Receiver<TerminalRequest>,
     pending_input: VecDeque<u8>,
     pending_requests: VecDeque<TerminalRequest>,
@@ -185,11 +190,11 @@ where
         surface: S,
         options: TerminalOptions,
     ) -> Result<(Self, TerminalHandle, TerminalEvents)> {
-        let (event_tx, event_rx, request_tx, request_rx) =
+        let (event_tx, event_rx, frame_mailbox, request_tx, request_rx) =
             channel::build_channels(&options.channel_config);
 
         let handle = TerminalHandle::new(request_tx);
-        let events = TerminalEvents::new(event_rx);
+        let events = TerminalEvents::new(event_rx, frame_mailbox);
 
         let mut read_buffer = vec![
             0u8;
@@ -369,6 +374,11 @@ where
                 self.surface.scroll_display(direction);
                 self.emit_frame()?;
             },
+            ScrollToBlock { id, alignment } => {
+                if self.surface.scroll_to_block(&id, alignment) {
+                    self.emit_frame()?;
+                }
+            },
             StartSelection {
                 ty,
                 point,
@@ -516,13 +526,20 @@ where
         while let Some(event) = self.events.pop_front() {
             match self.event_tx.try_send(event) {
                 Ok(()) => {},
-                Err(err) => match map_send_error(err) {
-                    ChannelSendError::Full => {
-                        return Err(crate::Error::EventChannelFull);
-                    },
-                    ChannelSendError::Disconnected => {
-                        return Err(crate::Error::EventChannelClosed);
-                    },
+                Err(err) => {
+                    let (kind, unsent_event) = err.into_parts();
+                    if let Some(unsent_event) = unsent_event {
+                        self.events.push_front(unsent_event);
+                    }
+
+                    match kind {
+                        ChannelSendError::Full => {
+                            return Err(crate::Error::EventChannelFull);
+                        },
+                        ChannelSendError::Disconnected => {
+                            return Err(crate::Error::EventChannelClosed);
+                        },
+                    }
                 },
             }
         }
@@ -600,13 +617,23 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::surface::{Surface, SurfaceConfig};
+    use crate::surface::{
+        BlockSurface, Surface, SurfaceConfig, TerminalSessionId,
+    };
     use crate::terminal::channel::ChannelConfig;
     use crate::tests::{
         EioSession, FakeSession, PartialSession, StubParser, assert_frame,
         collect_events, exit_ok,
     };
     use crate::{DefaultParser, Error};
+
+    fn protocol_v2_frame(json: &str) -> Vec<u8> {
+        let encoded = json
+            .bytes()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        format!("\x1bPotty-dcs;event-v2;h;{encoded}\x1b\\").into_bytes()
+    }
 
     #[test]
     fn partial_writes_keep_pending_output_until_drained() -> Result<()> {
@@ -920,6 +947,66 @@ mod tests {
         assert!(matches!(first, TerminalEvent::Frame { .. }));
         let second = events.recv().expect("child exit after frame");
         assert!(matches!(second, TerminalEvent::ChildExit { .. }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn protocol_v2_keeps_prompt_command_and_output_sections_distinct()
+    -> anyhow::Result<()> {
+        let block_id = "session:shell:1";
+        let mut bytes = Vec::new();
+        bytes.extend(protocol_v2_frame(
+            r#"{"v":2,"event":"shell_hello","terminal_session_id":"session","shell_instance_id":"shell","seq":1,"payload":{"shell":"bash"}}"#,
+        ));
+        bytes.extend(protocol_v2_frame(&format!(
+            r#"{{"v":2,"event":"prompt_prepare","terminal_session_id":"session","shell_instance_id":"shell","seq":2,"block_id":"{block_id}","payload":{{"cwd":"/before"}}}}"#,
+        )));
+        bytes.extend_from_slice(
+            b"\x1b]133;A\x1b\\left\r\nright \x1b]133;B\x1b\\echo ok\r\n",
+        );
+        bytes.extend(protocol_v2_frame(&format!(
+            r#"{{"v":2,"event":"command_start","terminal_session_id":"session","shell_instance_id":"shell","seq":3,"block_id":"{block_id}","payload":{{"command":"echo ok","cwd":"/before"}}}}"#,
+        )));
+        bytes.extend_from_slice(b"done\r\n");
+        bytes.extend(protocol_v2_frame(&format!(
+            r#"{{"v":2,"event":"command_end","terminal_session_id":"session","shell_instance_id":"shell","seq":4,"block_id":"{block_id}","payload":{{"exit_code":0,"cwd":"/after"}}}}"#,
+        )));
+
+        let session = FakeSession::with_reads(vec![bytes]);
+        let parser = DefaultParser::default();
+        let mut surface = BlockSurface::new(
+            SurfaceConfig::default(),
+            &TerminalSize::default(),
+        );
+        surface.register_terminal_session(TerminalSessionId::new("session"));
+        let (mut engine, _handle, events) = TerminalEngine::new(
+            session,
+            parser,
+            surface,
+            TerminalOptions::default(),
+        )?;
+
+        engine.on_readable()?;
+
+        let frame = events.recv().expect("latest frame");
+        let TerminalEvent::Frame { frame } = frame else {
+            panic!("expected frame");
+        };
+        let block = frame
+            .view()
+            .blocks()
+            .iter()
+            .find(|block| block.meta.id == block_id)
+            .cloned()
+            .expect("protocol block");
+        assert_eq!(block.meta.cmd.as_deref(), Some("echo ok"));
+        assert_eq!(block.meta.cwd.as_deref(), Some("/after"));
+        assert_eq!(
+            frame.block_prompt_text(block_id).as_deref(),
+            Some("left\nright ")
+        );
+        assert_eq!(frame.block_output_text(block_id).as_deref(), Some("done"));
 
         Ok(())
     }

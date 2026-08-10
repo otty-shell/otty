@@ -114,6 +114,18 @@ impl HyperlinkMap {
         self.spans.get(id as usize)
     }
 
+    pub(crate) fn estimated_bytes(&self) -> usize {
+        let link_text_bytes = self
+            .spans
+            .iter()
+            .map(|span| span.link.id().len() + span.link.uri().len())
+            .sum::<usize>();
+
+        self.spans.capacity() * std::mem::size_of::<HyperlinkSpan>()
+            + self.cell_to_span.capacity() * std::mem::size_of::<Option<u32>>()
+            + link_text_bytes
+    }
+
     /// Associates a cell index with a hyperlink span ID.
     fn set_span_for_index(&mut self, span_id: u32, index: usize) {
         if let Some(slot) = self.cell_to_span.get_mut(index) {

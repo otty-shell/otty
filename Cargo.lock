@@ -3032,6 +3032,7 @@ dependencies = [
  "log",
  "notify",
  "otty-libterm",
+ "otty-shell-bootstrap",
  "otty-ui-term",
  "otty-ui-tree",
  "serde",
@@ -3084,6 +3085,14 @@ dependencies = [
  "openssl",
  "signal-hook",
  "ssh2",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "otty-shell-bootstrap"
+version = "0.1.0"
+dependencies = [
+ "shell-words",
  "thiserror 2.0.18",
 ]
 

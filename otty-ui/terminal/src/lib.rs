@@ -18,7 +18,10 @@ pub use block_controls::{
 };
 pub use block_layout::{BlockRect, block_rects};
 pub use font::font_measure;
-pub use otty_libterm::surface::{BlockKind, BlockSnapshot, SurfaceMode};
+pub use otty_libterm::surface::{
+    BlockKind, BlockSnapshot, DegradedReason, IntegrationStatus,
+    ProtocolSequence, SurfaceMode,
+};
 pub use otty_libterm::{SnapshotArc, TerminalEvent};
 pub use term::{BlockCommand, BlockUiMode, Event, Terminal};
 pub use theme::{ColorPalette, Theme, parse_hex_color};

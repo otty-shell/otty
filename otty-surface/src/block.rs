@@ -1,10 +1,22 @@
 use std::cmp::{max, min};
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::cell::Cell;
-use crate::escape::{
-    BlockKind as EscapeBlockKind, BlockMeta as EscapeBlockMeta, BlockPhase,
+mod content;
+mod id;
+mod lifecycle;
+mod metrics;
+
+pub use content::{CommandRecord, CommandSource};
+pub use id::{BlockId, ProtocolSequence, ShellInstanceId, TerminalSessionId};
+pub use lifecycle::{
+    BlockMetadata, BlockOutcome, BlockRecord, BlockState, DegradedReason,
+    IntegrationStatus, LifecycleDiagnostic, LifecycleEvent, LifecycleInput,
+    LifecycleReducer, LifecycleUpdate,
 };
+pub use metrics::BlockMemoryMetrics;
+
+use crate::cell::Cell;
 use crate::grid::{Grid, Scroll};
 use crate::hyperlink::HyperlinkMap;
 use crate::index::{Column, Line, Point};
@@ -24,16 +36,6 @@ pub enum BlockKind {
     Command,
     Prompt,
     FullScreen,
-}
-
-impl From<EscapeBlockKind> for BlockKind {
-    fn from(value: EscapeBlockKind) -> Self {
-        match value {
-            EscapeBlockKind::Command => Self::Command,
-            EscapeBlockKind::FullScreen => Self::FullScreen,
-            EscapeBlockKind::Prompt => Self::Prompt,
-        }
-    }
 }
 
 /// Minimal metadata associated with a terminal block.
@@ -61,20 +63,28 @@ pub struct BlockMeta {
     pub is_finished: bool,
 }
 
-impl From<EscapeBlockMeta> for BlockMeta {
-    fn from(value: EscapeBlockMeta) -> Self {
-        BlockMeta {
-            id: value.id,
-            kind: BlockKind::from(value.kind),
-            cmd: value.cmd,
-            cwd: value.cwd,
-            shell: value.shell,
-            started_at: value.started_at,
-            finished_at: value.finished_at,
-            exit_code: value.exit_code,
-            is_alt_screen: value.is_alt_screen,
-            is_finished: false,
+impl BlockMeta {
+    fn merge_completion(&mut self, patch: &Self) {
+        if let Some(cmd) = &patch.cmd {
+            self.cmd = Some(cmd.clone());
         }
+        if let Some(cwd) = &patch.cwd {
+            self.cwd = Some(cwd.clone());
+        }
+        if let Some(shell) = &patch.shell {
+            self.shell = Some(shell.clone());
+        }
+        if let Some(started_at) = patch.started_at {
+            self.started_at = Some(started_at);
+        }
+        if let Some(finished_at) = patch.finished_at {
+            self.finished_at = Some(finished_at);
+        }
+        if let Some(exit_code) = patch.exit_code {
+            self.exit_code = Some(exit_code);
+        }
+        self.is_alt_screen |= patch.is_alt_screen;
+        self.is_finished = true;
     }
 }
 
@@ -92,18 +102,28 @@ pub struct BlockSnapshot {
     /// This is intentionally detached from the viewport so UI actions like
     /// "copy content" can include scrollback lines that are currently off-screen.
     pub cached_text: Option<Arc<str>>,
+    /// Prompt section captured from OSC 133 boundaries.
+    pub prompt_text: Option<Arc<str>>,
+    /// Output section captured independently from prompt and command text.
+    pub output_text: Option<Arc<str>>,
     /// Whether this block snapshot corresponds to an alt screen.
     pub is_alt_screen: bool,
 }
 
 /// In‑memory representation of a single block.
 struct Block {
+    /// Stable typed identity used by model operations and indexes.
+    id: BlockId,
     /// Metadata describing the block's identity and lifecycle.
     pub meta: BlockMeta,
+    /// Explicit lifecycle state for routing and completion.
+    state: BlockState,
     /// Embedded surface that records the block's terminal contents.
     pub surface: Surface,
     /// Cached textual contents for finished blocks.
     pub cached_text: Option<Arc<str>>,
+    /// Semantic prompt, command and output sections.
+    content: content::BlockContent,
 }
 
 impl Block {
@@ -114,10 +134,26 @@ impl Block {
         dimensions: &D,
         meta: BlockMeta,
     ) -> Self {
+        let id = if meta.id.is_empty() {
+            BlockId::new("otty:bootstrap:0")
+        } else {
+            BlockId::new(meta.id.clone())
+        };
+        let state = if meta.is_finished {
+            BlockState::Finished(BlockOutcome::Unknown)
+        } else if meta.kind == BlockKind::Prompt {
+            BlockState::BeforeExecution
+        } else {
+            BlockState::Executing
+        };
+
         Self {
+            id,
             meta,
+            state,
             surface: Surface::new(config.clone(), dimensions),
             cached_text: None,
+            content: content::BlockContent::default(),
         }
     }
 
@@ -151,12 +187,17 @@ impl Block {
             lines.push(buffer.trim_end_matches(' ').to_string());
         }
 
+        while lines.last().is_some_and(String::is_empty) {
+            lines.pop();
+        }
+
         let text = lines.join("\n");
         if text.is_empty() {
             self.cached_text = None;
         } else {
             self.cached_text = Some(Arc::<str>::from(text));
         }
+        self.content.freeze(self.cached_text.as_ref());
     }
 }
 
@@ -183,6 +224,33 @@ struct ViewportContext {
     bottom_padding: usize,
     /// Effective viewport start taking bottom padding into account.
     effective_start: isize,
+}
+
+/// Requested placement when navigating to a retained block.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BlockAlignment {
+    /// Place the block at the first viewport row.
+    Start,
+    /// Center the block when enough surrounding content exists.
+    Center,
+    /// Place the block at the last viewport row.
+    End,
+    /// Keep the current viewport when the block is already visible.
+    #[default]
+    Nearest,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ScrollPosition {
+    FollowTail,
+    Anchored(ViewportAnchor),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ViewportAnchor {
+    block_id: BlockId,
+    block_row: usize,
+    viewport_row: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -234,18 +302,26 @@ impl Dimensions for BlockDimensions {
 pub struct BlockSurface {
     /// Ordered list of terminal blocks and their backing surfaces.
     blocks: Vec<Block>,
+    /// Stable identity lookup rebuilt after structural list changes.
+    block_id_to_index: HashMap<BlockId, usize>,
     /// Upper bound on how many blocks to retain in history.
     max_blocks: usize,
     /// Rendering configuration cloned into new blocks.
     config: SurfaceConfig,
     /// Global scroll offset expressed in lines from the bottom.
     display_offset: usize,
+    /// User intent for following live output or retaining a logical location.
+    scroll_position: ScrollPosition,
     /// Index of the block currently owning the local selection, if any.
     selection_block: Option<usize>,
     /// Fixed anchor used when a selection extends beyond its original block.
     selection_anchor: Option<GlobalPoint>,
     /// Selection that spans multiple blocks in global coordinates.
     global_selection: Option<GlobalSelection>,
+    /// Protocol-v2 reducer enabled after the application registers a session.
+    lifecycle_reducer: Option<LifecycleReducer>,
+    /// Explicit capability status for unsupported or failed bootstrap paths.
+    integration_status_override: Option<IntegrationStatus>,
 }
 
 impl Dimensions for BlockSurface {
@@ -285,16 +361,51 @@ impl BlockSurface {
     /// Create a new block surface with a single empty block.
     pub fn new<D: Dimensions>(config: SurfaceConfig, dimensions: &D) -> Self {
         let block = Block::new(&config, dimensions, BlockMeta::default());
+        let block_id_to_index = HashMap::from([(block.id.clone(), 0)]);
 
         Self {
             blocks: vec![block],
+            block_id_to_index,
             max_blocks: Self::DEFAULT_MAX_BLOCKS,
             config,
             display_offset: 0,
+            scroll_position: ScrollPosition::FollowTail,
             selection_anchor: None,
             selection_block: None,
             global_selection: None,
+            lifecycle_reducer: None,
+            integration_status_override: None,
         }
+    }
+
+    /// Register the only terminal session accepted by protocol-v2 events.
+    pub fn register_terminal_session(
+        &mut self,
+        terminal_session_id: TerminalSessionId,
+    ) {
+        self.lifecycle_reducer =
+            Some(LifecycleReducer::new(terminal_session_id));
+        self.integration_status_override = None;
+    }
+
+    /// Set a capability status when protocol-v2 registration is unavailable.
+    pub fn set_integration_status(&mut self, status: IntegrationStatus) {
+        self.lifecycle_reducer = None;
+        self.integration_status_override = Some(status);
+    }
+
+    /// Return the negotiated integration status for this terminal model.
+    pub fn integration_status(&self) -> &IntegrationStatus {
+        self.lifecycle_reducer
+            .as_ref()
+            .map(LifecycleReducer::status)
+            .or(self.integration_status_override.as_ref())
+            .unwrap_or(&IntegrationStatus::Pending)
+    }
+
+    /// Estimate retained block memory without exposing command or output text.
+    pub fn memory_metrics(&self) -> BlockMemoryMetrics {
+        BlockMemoryMetrics::from_blocks(&self.blocks)
     }
 
     /// Return the index of the last block, clamping to zero if no blocks exist.
@@ -313,7 +424,129 @@ impl BlockSurface {
     fn calculate_display_offset(&mut self) {
         let viewport_lines = self.screen_lines();
         let max_offset = self.total_lines().saturating_sub(viewport_lines);
-        self.display_offset = min(self.display_offset, max_offset);
+        match &self.scroll_position {
+            ScrollPosition::FollowTail => self.display_offset = 0,
+            ScrollPosition::Anchored(anchor) => {
+                let slices = self.block_slices();
+                let target = self
+                    .block_id_to_index
+                    .get(&anchor.block_id)
+                    .and_then(|index| {
+                        slices.iter().find(|slice| slice.index == *index)
+                    });
+
+                if let Some(target) = target {
+                    let anchor_global = target.start.saturating_add(min(
+                        anchor.block_row,
+                        target.end.saturating_sub(target.start + 1),
+                    ));
+                    let desired_start =
+                        anchor_global.saturating_sub(anchor.viewport_row);
+                    let viewport_start = min(desired_start, max_offset);
+                    self.display_offset =
+                        max_offset.saturating_sub(viewport_start);
+                } else {
+                    self.display_offset = min(self.display_offset, max_offset);
+                }
+            },
+        }
+    }
+
+    fn capture_scroll_anchor(&mut self) {
+        if self.display_offset == 0 {
+            self.scroll_position = ScrollPosition::FollowTail;
+            return;
+        }
+
+        let slices = self.block_slices();
+        let context = self.viewport_context(&slices);
+        let Some(slice) = slices.iter().find(|slice| {
+            context.start >= slice.start && context.start < slice.end
+        }) else {
+            return;
+        };
+        let block = &self.blocks[slice.index];
+
+        self.scroll_position = ScrollPosition::Anchored(ViewportAnchor {
+            block_id: block.id.clone(),
+            block_row: context.start.saturating_sub(slice.start),
+            viewport_row: 0,
+        });
+    }
+
+    fn rebuild_block_index(&mut self) {
+        self.block_id_to_index.clear();
+        self.block_id_to_index.extend(
+            self.blocks
+                .iter()
+                .enumerate()
+                .map(|(index, block)| (block.id.clone(), index)),
+        );
+    }
+
+    fn synchronize_lifecycle_update(&mut self, update: &LifecycleUpdate) {
+        let records = self
+            .lifecycle_reducer
+            .as_ref()
+            .map(|reducer| {
+                update
+                    .changed_blocks()
+                    .iter()
+                    .filter_map(|id| reducer.block(id).cloned())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        for record in records {
+            self.synchronize_block_record(record);
+        }
+    }
+
+    fn synchronize_block_record(&mut self, record: BlockRecord) {
+        let metadata = record.metadata();
+        let state = record.state().clone();
+        let meta = BlockMeta {
+            id: record.id().as_str().to_string(),
+            kind: if state == BlockState::BeforeExecution {
+                BlockKind::Prompt
+            } else {
+                BlockKind::Command
+            },
+            cmd: metadata.command().map(ToString::to_string),
+            cwd: metadata
+                .cwd_after()
+                .or_else(|| metadata.cwd_before())
+                .map(ToString::to_string),
+            shell: None,
+            exit_code: metadata.exit_code(),
+            started_at: metadata.started_at(),
+            finished_at: metadata.finished_at(),
+            is_alt_screen: false,
+            is_finished: matches!(state, BlockState::Finished(_)),
+        };
+
+        if let Some(index) = self.block_id_to_index.get(record.id()).copied()
+            && let Some(block) = self.blocks.get_mut(index)
+        {
+            let was_before_execution =
+                block.state == BlockState::BeforeExecution;
+            block.meta = meta;
+            block.state = state;
+            if was_before_execution && block.state == BlockState::Executing {
+                block
+                    .content
+                    .capture_header(&block.surface, block.meta.cmd.as_deref());
+            }
+            block.update_cached_text();
+            return;
+        }
+
+        self.begin_block(meta);
+        if let Some(index) = self.block_id_to_index.get(record.id()).copied()
+            && let Some(block) = self.blocks.get_mut(index)
+        {
+            block.state = state;
+        }
     }
 
     /// Produce a list describing how each block maps into the concatenated
@@ -456,7 +689,24 @@ impl BlockSurface {
             return;
         }
 
-        self.blocks.remove(index);
+        let removed = self.blocks.remove(index);
+        if matches!(
+            &self.scroll_position,
+            ScrollPosition::Anchored(anchor) if anchor.block_id == removed.id
+        ) {
+            let neighbor = self.blocks.get(index).or_else(|| {
+                index.checked_sub(1).and_then(|i| self.blocks.get(i))
+            });
+            self.scroll_position =
+                neighbor.map_or(ScrollPosition::FollowTail, |block| {
+                    ScrollPosition::Anchored(ViewportAnchor {
+                        block_id: block.id.clone(),
+                        block_row: 0,
+                        viewport_row: 0,
+                    })
+                });
+        }
+        self.rebuild_block_index();
 
         if let Some(selection_index) = self.selection_block {
             if selection_index == index {
@@ -474,11 +724,17 @@ impl BlockSurface {
     /// Terminates the current block (if it's still running), creates a new block
     /// with a new `Surface`, and makes it active.
     fn begin_block(&mut self, meta: BlockMeta) {
+        let id = BlockId::new(meta.id.clone());
+        if !meta.id.is_empty() && self.block_id_to_index.contains_key(&id) {
+            return;
+        }
+
         // Mark the active block as complete if it is not already marked.
         let idx = self.last_block_idx();
         if let Some(active) = self.blocks.get_mut(idx) {
             if !active.meta.is_finished {
                 active.meta.is_finished = true;
+                active.state = BlockState::Finished(BlockOutcome::Unknown);
 
                 if active.meta.finished_at.is_none() {
                     active.meta.finished_at =
@@ -497,41 +753,91 @@ impl BlockSurface {
             }
         };
 
-        self.blocks.push(Block::new(&self.config, &size, meta));
+        let block = Block::new(&self.config, &size, meta);
+        let block_id = block.id.clone();
+        let index = self.blocks.len();
+        self.blocks.push(block);
+        self.block_id_to_index.insert(block_id, index);
 
         self.enforce_max_blocks();
         self.calculate_display_offset();
     }
 
-    /// Return the index of the currently active unfinished prompt block, if any.
-    fn active_prompt_index(&self) -> Option<usize> {
-        let idx = self.last_block_idx();
-        self.blocks.get(idx).and_then(|block| {
-            if block.meta.kind == BlockKind::Prompt && !block.meta.is_finished {
-                Some(idx)
-            } else {
-                None
-            }
-        })
-    }
-
     /// Updates the metadata and marks the block with the given `id` as complete.
     pub fn end_block_by_id(&mut self, meta: &BlockMeta) {
-        if let Some(block) =
-            self.blocks.iter_mut().find(|b| b.meta.id == meta.id)
+        let block_id = BlockId::new(meta.id.clone());
+        if let Some(index) = self.block_id_to_index.get(&block_id).copied()
+            && let Some(block) = self.blocks.get_mut(index)
         {
-            block.meta = meta.clone();
-            block.meta.is_finished = true;
+            block.meta.merge_completion(meta);
+            let outcome = meta
+                .exit_code
+                .map(BlockOutcome::Exited)
+                .unwrap_or(BlockOutcome::Unknown);
+            block.state = BlockState::Finished(outcome);
             block.update_cached_text();
         }
 
         self.enforce_max_blocks();
     }
 
+    /// Scroll a retained block into view without relying on frame geometry.
+    pub fn scroll_to_block(
+        &mut self,
+        block_id: &BlockId,
+        alignment: BlockAlignment,
+    ) -> bool {
+        self.calculate_display_offset();
+
+        let Some(index) = self.block_id_to_index.get(block_id).copied() else {
+            return false;
+        };
+        let slices = self.block_slices();
+        let Some(target) = slices.iter().find(|slice| slice.index == index)
+        else {
+            return false;
+        };
+        if target.start == target.end {
+            return false;
+        }
+
+        let viewport_lines = self.screen_lines();
+        let content_lines = slices.last().map_or(0, |slice| slice.end);
+        let max_start = content_lines.saturating_sub(viewport_lines);
+        let current_start = max_start.saturating_sub(self.display_offset);
+        let current_end = current_start.saturating_add(viewport_lines);
+        let target_height = target.end.saturating_sub(target.start);
+        let desired_start = match alignment {
+            BlockAlignment::Start => target.start,
+            BlockAlignment::Center => target.start.saturating_sub(
+                viewport_lines.saturating_sub(target_height) / 2,
+            ),
+            BlockAlignment::End => target.end.saturating_sub(viewport_lines),
+            BlockAlignment::Nearest
+                if target.start >= current_start
+                    && target.end <= current_end =>
+            {
+                current_start
+            },
+            BlockAlignment::Nearest if target.start < current_start => {
+                target.start
+            },
+            BlockAlignment::Nearest => {
+                target.end.saturating_sub(viewport_lines)
+            },
+        };
+        let desired_start = min(desired_start, max_start);
+        self.display_offset = max_start.saturating_sub(desired_start);
+        self.capture_scroll_anchor();
+
+        true
+    }
+
     /// Generate a snapshot for the active block when it occupies the alt screen.
     fn snapshot_active_alt_screen_block(&mut self) -> SnapshotOwned {
         self.display_offset = 0;
         let idx = self.last_block_idx();
+        let integration_status = self.integration_status().clone();
         let Some(block) = self.blocks.get_mut(idx) else {
             return SnapshotOwned::default();
         };
@@ -540,12 +846,15 @@ impl BlockSurface {
             block.surface.mode().contains(SurfaceMode::ALT_SCREEN);
 
         let mut snapshot = SnapshotOwned::from_surface(&mut block.surface);
+        snapshot.set_integration_status(integration_status);
         let line_count = snapshot.view().size.screen_lines;
         snapshot.blocks = vec![BlockSnapshot {
             meta: block.meta.clone(),
             start_line: 0,
             line_count,
             cached_text: block.cached_text.clone(),
+            prompt_text: block.content.prompt_text(),
+            output_text: block.content.output_text(),
             is_alt_screen: block.meta.is_alt_screen,
         }];
 
@@ -985,6 +1294,15 @@ impl SurfaceActor for BlockSurface {
             Scroll::Top => max_offset,
             Scroll::Bottom => 0,
         };
+        self.capture_scroll_anchor();
+    }
+
+    fn scroll_to_block(
+        &mut self,
+        block_id: &BlockId,
+        alignment: BlockAlignment,
+    ) -> bool {
+        BlockSurface::scroll_to_block(self, block_id, alignment)
     }
 
     /// Apply or clear the active hyperlink for subsequently printed cells.
@@ -1262,53 +1580,130 @@ impl SurfaceActor for BlockSurface {
         }
     }
 
-    /// React to prompt/command lifecycle events emitted by the parser.
-    fn handle_block_event(&mut self, event: crate::escape::BlockEvent) {
-        let escape_meta = event.meta;
-        let mut meta = BlockMeta::from(escape_meta);
+    fn handle_protocol_event(&mut self, event: crate::escape::ProtocolEvent) {
+        let input = protocol_event_to_lifecycle_input(&event);
+        let Some(reducer) = self.lifecycle_reducer.as_mut() else {
+            return;
+        };
 
-        // BlockPhase mirrors the shell lifecycle:
-        // - `Precmd` fires right before the prompt is drawn, so we ensure the
-        //   last block is a prompt pinned to the bottom.
-        // - `Preexec` signals that the user just submitted that prompt; we flip
-        //   the same block into `Command` so stdout appears directly beneath the
-        //   initiating prompt.
-        // - `Exit` finalizes metadata once the running command finishes.
-        match event.phase {
-            // Command start hook
-            BlockPhase::Preexec => {
-                // Reuse the active prompt block so the pending command produces
-                // output directly under the prompt instead of opening a new block.
-                meta.kind = BlockKind::Command;
-                if let Some(prompt_idx) = self.active_prompt_index() {
-                    self.blocks[prompt_idx].meta = meta;
-                    self.calculate_display_offset();
-                } else {
-                    self.begin_block(meta);
-                }
-            },
-            BlockPhase::Exit => {
-                self.end_block_by_id(&meta);
-            },
-            // Prompt block start hook
-            BlockPhase::Precmd => {
-                meta.kind = BlockKind::Prompt;
+        let update = reducer.apply(input);
+        self.synchronize_lifecycle_update(&update);
+        self.enforce_max_blocks();
+        self.calculate_display_offset();
+    }
 
-                if self.blocks.iter().any(|b| b.meta.id == meta.id) {
-                    self.end_block_by_id(&meta);
-                    return;
-                }
+    fn handle_protocol_diagnostic(
+        &mut self,
+        diagnostic: crate::escape::ProtocolDiagnostic,
+    ) {
+        let Some(reducer) = self.lifecycle_reducer.as_mut() else {
+            return;
+        };
 
-                if let Some(index) = self.active_prompt_index()
-                    && self.blocks.len() > 1
-                {
-                    self.remove_block_at(index);
-                }
-
-                self.begin_block(meta);
+        match diagnostic {
+            crate::escape::ProtocolDiagnostic::UnsupportedVersion {
+                terminal_session_id,
+                version,
+            } => {
+                reducer.mark_unsupported_version(
+                    TerminalSessionId::new(terminal_session_id),
+                    version,
+                );
             },
         }
     }
+
+    fn mark_prompt_boundary(
+        &mut self,
+        boundary: crate::escape::PromptBoundary,
+    ) {
+        let block = self.active_block_mut();
+        let point = block.surface.grid().cursor.point;
+        match boundary {
+            crate::escape::PromptBoundary::Start => {
+                block.content.mark_prompt_start(point);
+            },
+            crate::escape::PromptBoundary::End => {
+                block.content.mark_prompt_end(&block.surface, point);
+            },
+        }
+    }
+}
+
+fn protocol_event_to_lifecycle_input(
+    event: &crate::escape::ProtocolEvent,
+) -> LifecycleInput {
+    use crate::escape::ProtocolEventKind;
+
+    let semantic_event = match event.kind() {
+        ProtocolEventKind::ShellHello {
+            shell,
+            shell_version,
+            parent_shell_instance_id,
+            ..
+        } => LifecycleEvent::ShellHello {
+            parent_shell_instance_id: parent_shell_instance_id
+                .as_deref()
+                .map(ShellInstanceId::new),
+            shell: shell.clone(),
+            shell_version: shell_version.clone(),
+        },
+        ProtocolEventKind::PromptPrepare { block_id, cwd } => {
+            LifecycleEvent::PromptPrepare {
+                block_id: BlockId::new(block_id),
+                cwd: cwd.clone(),
+                prepared_at: event.sent_at_unix_ms(),
+            }
+        },
+        ProtocolEventKind::CommandStart {
+            block_id,
+            command,
+            cwd,
+            ..
+        } => LifecycleEvent::CommandStart {
+            block_id: BlockId::new(block_id),
+            command: command.clone(),
+            cwd: cwd.clone(),
+            started_at: event.sent_at_unix_ms(),
+        },
+        ProtocolEventKind::CommandEnd {
+            block_id,
+            exit_code,
+            signal,
+            cwd,
+            ..
+        } => {
+            let outcome = signal
+                .map(BlockOutcome::Signaled)
+                .or_else(|| exit_code.map(BlockOutcome::Exited))
+                .unwrap_or(BlockOutcome::Unknown);
+            LifecycleEvent::CommandEnd {
+                block_id: BlockId::new(block_id),
+                outcome,
+                cwd: cwd.clone(),
+                finished_at: event.sent_at_unix_ms(),
+            }
+        },
+        ProtocolEventKind::ContextUpdate { cwd } => {
+            LifecycleEvent::ContextUpdate { cwd: cwd.clone() }
+        },
+        ProtocolEventKind::ShellExit { status, .. } => {
+            LifecycleEvent::ShellExit {
+                status: *status,
+                finished_at: event.sent_at_unix_ms(),
+            }
+        },
+        ProtocolEventKind::IntegrationError { code } => {
+            LifecycleEvent::IntegrationError { code: code.clone() }
+        },
+    };
+
+    LifecycleInput::new(
+        TerminalSessionId::new(event.terminal_session_id()),
+        ShellInstanceId::new(event.shell_instance_id()),
+        ProtocolSequence::new(event.sequence()),
+        semantic_event,
+    )
 }
 
 impl SurfaceModel for BlockSurface {
@@ -1467,11 +1862,14 @@ impl SurfaceModel for BlockSurface {
                 start_line,
                 line_count,
                 cached_text: block.cached_text.clone(),
+                prompt_text: block.content.prompt_text(),
+                output_text: block.content.output_text(),
                 is_alt_screen: block.meta.is_alt_screen,
             });
         }
 
-        SnapshotOwned::from_parts(
+        let integration_status = self.integration_status().clone();
+        let mut snapshot = SnapshotOwned::from_parts(
             cells,
             selection,
             hyperlinks,
@@ -1483,7 +1881,9 @@ impl SurfaceModel for BlockSurface {
             SnapshotDamage::Full,
             visible_cell_count,
             block_snapshots,
-        )
+        );
+        snapshot.set_integration_status(integration_status);
+        snapshot
     }
 
     /// Propagate damage reset to the active block surface.
@@ -1640,6 +2040,258 @@ mod tests {
     }
 
     #[test]
+    fn completion_patch_preserves_command_cwd_and_start_time() {
+        let dims = TestDimensions::new(8, 3);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        let start_meta = BlockMeta {
+            id: String::from("cmd-merge"),
+            kind: BlockKind::Command,
+            cmd: Some(String::from("printf stable")),
+            cwd: Some(String::from("/before")),
+            shell: Some(String::from("bash")),
+            started_at: Some(10),
+            ..BlockMeta::default()
+        };
+        surface.begin_block(start_meta);
+        let completion = BlockMeta {
+            id: String::from("cmd-merge"),
+            kind: BlockKind::Command,
+            cwd: Some(String::from("/after")),
+            finished_at: Some(20),
+            exit_code: Some(7),
+            ..BlockMeta::default()
+        };
+
+        surface.end_block_by_id(&completion);
+
+        let block = surface
+            .blocks
+            .iter()
+            .find(|block| block.meta.id == "cmd-merge")
+            .expect("block should exist");
+        assert_eq!(block.meta.cmd.as_deref(), Some("printf stable"));
+        assert_eq!(block.meta.cwd.as_deref(), Some("/after"));
+        assert_eq!(block.meta.shell.as_deref(), Some("bash"));
+        assert_eq!(block.meta.started_at, Some(10));
+        assert_eq!(block.meta.finished_at, Some(20));
+        assert_eq!(block.meta.exit_code, Some(7));
+    }
+
+    #[test]
+    fn snapshot_exposes_integration_status_and_degraded_reason() {
+        let dims = TestDimensions::new(8, 3);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        surface.register_terminal_session(TerminalSessionId::new("session"));
+
+        let hello = LifecycleInput::new(
+            TerminalSessionId::new("session"),
+            ShellInstanceId::new("shell"),
+            ProtocolSequence::new(1),
+            LifecycleEvent::ShellHello {
+                parent_shell_instance_id: None,
+                shell: String::from("bash"),
+                shell_version: None,
+            },
+        );
+        let update = surface
+            .lifecycle_reducer
+            .as_mut()
+            .expect("registered reducer")
+            .apply(hello);
+        surface.synchronize_lifecycle_update(&update);
+
+        assert_eq!(
+            surface.snapshot_owned().view().integration_status,
+            &IntegrationStatus::Active(2)
+        );
+
+        let gap = LifecycleInput::new(
+            TerminalSessionId::new("session"),
+            ShellInstanceId::new("shell"),
+            ProtocolSequence::new(3),
+            LifecycleEvent::ContextUpdate { cwd: None },
+        );
+        let update = surface
+            .lifecycle_reducer
+            .as_mut()
+            .expect("registered reducer")
+            .apply(gap);
+        surface.synchronize_lifecycle_update(&update);
+
+        assert!(matches!(
+            surface.snapshot_owned().view().integration_status,
+            IntegrationStatus::Degraded(DegradedReason::SequenceGap {
+                expected,
+                received,
+            }) if expected.value() == 2 && received.value() == 3
+        ));
+    }
+
+    #[test]
+    fn manual_scroll_anchor_stays_stable_when_active_block_grows() {
+        let dims = TestDimensions::new(4, 3);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+
+        for marker in ['A', 'B', 'C', 'D', 'E', 'F'] {
+            surface.print(marker);
+            surface.carriage_return();
+            surface.line_feed();
+        }
+        surface.scroll_display(Scroll::Top);
+        let before = surface.snapshot_owned();
+        let before_text = before
+            .view()
+            .cells
+            .iter()
+            .map(|cell| cell.cell.c)
+            .collect::<String>();
+
+        for marker in ['G', 'H', 'I', 'J'] {
+            surface.print(marker);
+            surface.carriage_return();
+            surface.line_feed();
+        }
+        let after = surface.snapshot_owned();
+        let after_text = after
+            .view()
+            .cells
+            .iter()
+            .map(|cell| cell.cell.c)
+            .collect::<String>();
+
+        assert_eq!(after_text, before_text);
+    }
+
+    #[test]
+    fn manual_scroll_anchor_survives_resize_matrix() {
+        let dims = TestDimensions::new(8, 3);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+
+        for marker in ['A', 'B', 'C', 'D', 'E', 'F'] {
+            surface.print(marker);
+            surface.carriage_return();
+            surface.line_feed();
+        }
+        surface.scroll_display(Scroll::Top);
+
+        for columns in [20, 4, 8] {
+            surface.resize(TestDimensions::new(columns, 3));
+            let snapshot = surface.snapshot_owned();
+            let visible = snapshot
+                .view()
+                .cells
+                .iter()
+                .map(|cell| cell.cell.c)
+                .collect::<String>();
+
+            assert!(
+                visible.contains('A'),
+                "anchor lost after resize to {columns}",
+            );
+        }
+    }
+
+    #[test]
+    fn head_truncation_keeps_retained_anchor_and_rehomes_removed_anchor() {
+        let dims = TestDimensions::new(4, 2);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        surface.max_blocks = 3;
+
+        for id in ["one", "two"] {
+            surface.begin_block(BlockMeta {
+                id: id.to_string(),
+                kind: BlockKind::Command,
+                ..BlockMeta::default()
+            });
+            surface.print(id.chars().next().expect("marker"));
+            surface.carriage_return();
+            surface.line_feed();
+        }
+
+        assert!(
+            surface
+                .scroll_to_block(&BlockId::new("one"), BlockAlignment::Start,)
+        );
+        surface.begin_block(BlockMeta {
+            id: String::from("three"),
+            kind: BlockKind::Command,
+            ..BlockMeta::default()
+        });
+        assert!(matches!(
+            &surface.scroll_position,
+            ScrollPosition::Anchored(anchor)
+                if anchor.block_id == BlockId::new("one")
+        ));
+
+        surface.begin_block(BlockMeta {
+            id: String::from("four"),
+            kind: BlockKind::Command,
+            ..BlockMeta::default()
+        });
+        assert!(matches!(
+            &surface.scroll_position,
+            ScrollPosition::Anchored(anchor)
+                if anchor.block_id == BlockId::new("two")
+        ));
+    }
+
+    #[test]
+    fn block_memory_metrics_separate_active_and_finished_content() {
+        let dims = TestDimensions::new(8, 3);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        surface.print('F');
+        surface.begin_block(BlockMeta {
+            id: String::from("active"),
+            kind: BlockKind::Command,
+            ..BlockMeta::default()
+        });
+        surface.print('A');
+
+        let metrics = surface.memory_metrics();
+
+        assert_eq!(metrics.active_block_count(), 1);
+        assert_eq!(metrics.finished_block_count(), 1);
+        assert!(metrics.active_lines() > 0);
+        assert!(metrics.finished_lines() > 0);
+        assert!(metrics.active_bytes() > 0);
+        assert!(metrics.finished_bytes() > 0);
+        assert_eq!(
+            metrics.total_bytes(),
+            metrics.active_bytes() + metrics.finished_bytes(),
+        );
+    }
+
+    #[test]
+    fn scroll_to_block_finds_a_fully_offscreen_block() {
+        let dims = TestDimensions::new(4, 2);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+
+        for sequence in 1..=3 {
+            let meta = BlockMeta {
+                id: format!("block-{sequence}"),
+                kind: BlockKind::Command,
+                ..BlockMeta::default()
+            };
+            surface.begin_block(meta);
+            surface.print(char::from_digit(sequence, 10).expect("digit"));
+            surface.carriage_return();
+            surface.line_feed();
+        }
+
+        let target = BlockId::new("block-1");
+        assert!(surface.scroll_to_block(&target, BlockAlignment::Start));
+
+        let snapshot = surface.snapshot_owned();
+        let view = snapshot.view();
+        let target = view
+            .blocks()
+            .iter()
+            .find(|block| block.meta.id == "block-1")
+            .expect("target block snapshot");
+        assert!(target.line_count > 0);
+    }
+
+    #[test]
     fn block_surface_respects_max_blocks_and_keeps_unfinished() {
         let dims = TestDimensions::new(4, 2);
         let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
@@ -1670,6 +2322,28 @@ mod tests {
             surface.blocks.iter().any(|b| !b.meta.is_finished),
             "unfinished blocks should not be deleted when applying max_blocks",
         );
+    }
+
+    #[test]
+    fn block_id_index_matches_list_after_append_and_head_removal() {
+        let dims = TestDimensions::new(4, 2);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        surface.max_blocks = 2;
+
+        for id in ["one", "two", "three"] {
+            surface.begin_block(BlockMeta {
+                id: id.to_string(),
+                kind: BlockKind::Command,
+                ..BlockMeta::default()
+            });
+        }
+
+        assert_eq!(surface.blocks.len(), 2);
+        assert_eq!(surface.block_id_to_index.len(), surface.blocks.len());
+        for (index, block) in surface.blocks.iter().enumerate() {
+            assert_eq!(surface.block_id_to_index.get(&block.id), Some(&index));
+        }
+        assert!(!surface.block_id_to_index.contains_key(&BlockId::new("one")));
     }
 
     #[test]

@@ -14,6 +14,7 @@ pub(crate) struct TerminalTabViewModel<'a> {
     pub(crate) focus: Option<pane_grid::Pane>,
     pub(crate) context_menu: Option<&'a PaneContextMenuState>,
     pub(crate) has_block_selection: bool,
+    pub(crate) is_shell: bool,
 }
 
 /// View model for the entire terminal workspace, keyed by active tab id.

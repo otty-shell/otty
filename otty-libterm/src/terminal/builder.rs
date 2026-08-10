@@ -1,6 +1,9 @@
 use crate::escape::{self, EscapeParser};
 use crate::pty::{self, Pollable, Session};
-use crate::surface::{BlockSurface, SurfaceActor, SurfaceConfig, SurfaceModel};
+use crate::surface::{
+    BlockSurface, IntegrationStatus, SurfaceActor, SurfaceConfig, SurfaceModel,
+    TerminalSessionId,
+};
 use crate::terminal::TerminalEngine;
 use crate::terminal::channel::{ChannelConfig, TerminalEvents, TerminalHandle};
 use crate::terminal::options::TerminalOptions;
@@ -185,6 +188,27 @@ impl<P, E> TerminalBuilder<P, E, DefaultSurface>
 where
     P: Session,
 {
+    /// Register the protocol-v2 terminal session accepted by the block model.
+    pub fn with_terminal_session_id(
+        mut self,
+        terminal_session_id: impl Into<String>,
+    ) -> Self {
+        self.surface
+            .register_terminal_session(TerminalSessionId::new(
+                terminal_session_id,
+            ));
+        self
+    }
+
+    /// Set the shell-integration capability when no v2 session is registered.
+    pub fn with_integration_status(
+        mut self,
+        integration_status: IntegrationStatus,
+    ) -> Self {
+        self.surface.set_integration_status(integration_status);
+        self
+    }
+
     /// Override the surface configuration used by the default surface.
     pub fn with_surface_config(mut self, config: SurfaceConfig) -> Self {
         self.surface = DefaultSurface::new(config, &self.size);

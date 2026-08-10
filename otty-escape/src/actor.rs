@@ -3,10 +3,11 @@ use cursor_icon::CursorIcon;
 use crate::keyboard::{
     KeyboardMode, KeyboardModeApplyBehavior, ModifyOtherKeysState,
 };
+use crate::prompt::PromptBoundary;
 use crate::{
-    BlockEvent, CharacterAttribute, Charset, CharsetIndex, ClearMode,
-    CursorShape, CursorStyle, Hyperlink, LineClearMode, Mode, PrivateMode, Rgb,
-    TabClearMode,
+    CharacterAttribute, Charset, CharsetIndex, ClearMode, CursorShape,
+    CursorStyle, Hyperlink, LineClearMode, Mode, PrivateMode,
+    ProtocolDiagnostic, ProtocolEvent, Rgb, TabClearMode,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -153,8 +154,12 @@ pub enum Action {
     PopWindowTitle,
     /// Window: set the terminal window title.
     SetWindowTitle(String),
-    /// High-level block lifecycle event parsed from DCS JSON.
-    BlockEvent(BlockEvent),
+    /// Validated protocol-v2 shell lifecycle event.
+    ProtocolEvent(ProtocolEvent),
+    /// Protocol diagnostic with no command or output payload.
+    ProtocolDiagnostic(ProtocolDiagnostic),
+    /// OSC 133 prompt section boundary.
+    PromptBoundary(PromptBoundary),
 }
 
 pub trait EscapeActor {

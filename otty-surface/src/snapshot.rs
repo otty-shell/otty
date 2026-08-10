@@ -1,4 +1,4 @@
-use crate::block::BlockSnapshot;
+use crate::block::{BlockSnapshot, IntegrationStatus};
 use crate::cell::{Cell, Flags};
 use crate::color::Colors;
 use crate::damage::{LineDamageBounds, SurfaceDamage};
@@ -86,6 +86,7 @@ pub struct SnapshotOwned {
     size: SnapshotSize,
     damage: SnapshotDamage,
     visible_cell_count: usize,
+    integration_status: IntegrationStatus,
     pub blocks: Vec<BlockSnapshot>,
 }
 
@@ -111,6 +112,8 @@ pub struct SnapshotView<'a> {
     pub damage: &'a SnapshotDamage,
     /// Total number of cells across visible viewport (cols × rows).
     pub visible_cell_count: usize,
+    /// Current shell-integration handshake or recovery status.
+    pub integration_status: &'a IntegrationStatus,
     /// Ordered list of block metadata captured alongside this snapshot.
     pub(crate) blocks: &'a [BlockSnapshot],
 }
@@ -129,8 +132,31 @@ impl SnapshotOwned {
             size: self.size,
             damage: &self.damage,
             visible_cell_count: self.visible_cell_count,
+            integration_status: &self.integration_status,
             blocks: &self.blocks,
         }
+    }
+
+    /// Estimate bytes retained by this frame without exposing its text.
+    pub fn estimated_bytes(&self) -> usize {
+        let damage_bytes = match &self.damage {
+            SnapshotDamage::Partial(lines) => {
+                lines.capacity() * std::mem::size_of::<LineDamageBounds>()
+            },
+            _ => 0,
+        };
+        let block_text_bytes = self
+            .blocks
+            .iter()
+            .map(estimated_block_snapshot_text_bytes)
+            .sum::<usize>();
+
+        std::mem::size_of::<Self>()
+            + self.cells.capacity() * std::mem::size_of::<SnapshotCell>()
+            + self.blocks.capacity() * std::mem::size_of::<BlockSnapshot>()
+            + self.hyperlinks.estimated_bytes()
+            + damage_bytes
+            + block_text_bytes
     }
 
     pub(crate) fn from_parts(
@@ -157,8 +183,16 @@ impl SnapshotOwned {
             size,
             damage,
             visible_cell_count,
+            integration_status: IntegrationStatus::default(),
             blocks,
         }
+    }
+
+    pub(crate) fn set_integration_status(
+        &mut self,
+        integration_status: IntegrationStatus,
+    ) {
+        self.integration_status = integration_status;
     }
 
     pub fn from_surface(surface: &mut Surface) -> SnapshotOwned {
@@ -198,9 +232,28 @@ impl SnapshotOwned {
             size,
             damage,
             visible_cell_count,
+            integration_status: IntegrationStatus::default(),
             blocks: Vec::new(),
         }
     }
+}
+
+fn estimated_block_snapshot_text_bytes(block: &BlockSnapshot) -> usize {
+    block.meta.id.capacity()
+        + option_string_capacity(&block.meta.cmd)
+        + option_string_capacity(&block.meta.cwd)
+        + option_string_capacity(&block.meta.shell)
+        + option_arc_length(&block.cached_text)
+        + option_arc_length(&block.prompt_text)
+        + option_arc_length(&block.output_text)
+}
+
+fn option_string_capacity(value: &Option<String>) -> usize {
+    value.as_ref().map_or(0, String::capacity)
+}
+
+fn option_arc_length(value: &Option<std::sync::Arc<str>>) -> usize {
+    value.as_ref().map_or(0, |text| text.len())
 }
 
 impl From<&mut Surface> for SnapshotOwned {
@@ -354,6 +407,21 @@ mod tests {
                 panic!("expected partial damage after single print")
             },
         }
+    }
+
+    #[test]
+    fn estimates_owned_snapshot_bytes_without_exposing_content() {
+        let dims = TestDimensions::new(8, 3);
+        let mut surface = Surface::new(SurfaceConfig::default(), &dims);
+        surface.print('X');
+
+        let snapshot = surface.snapshot_owned();
+
+        assert!(
+            snapshot.estimated_bytes()
+                >= std::mem::size_of::<SnapshotOwned>()
+                    + std::mem::size_of_val(snapshot.view().cells),
+        );
     }
 
     #[test]

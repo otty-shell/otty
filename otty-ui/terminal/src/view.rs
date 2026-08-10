@@ -19,7 +19,9 @@ use otty_libterm::surface::{
     BlockKind, Flags, Point as TerminalGridPoint, SurfaceMode,
 };
 
-use crate::block_controls::BlockActionButtonGeometry;
+use crate::block_controls::{
+    BlockActionButtonGeometry, compute_action_button_geometry,
+};
 use crate::block_layout::{self, BlockRect};
 use crate::input::InputManager;
 use crate::render_runs::build_render_runs;
@@ -40,7 +42,7 @@ impl BlockUiVisuals {
     fn from_rects(
         rects: &[BlockRect],
         state: &TerminalViewState,
-        _cell_height: f32,
+        cell_height: f32,
         mode: BlockUiMode,
     ) -> Self {
         let mut visuals = BlockUiVisuals::default();
@@ -73,6 +75,17 @@ impl BlockUiVisuals {
                     Point::new(rect.rect.x, rect.rect.y),
                     Size::new(rect.rect.width, rect.rect.height),
                 ));
+            }
+
+            let shows_actions = Some(block_id)
+                == state.selected_block_id.as_deref()
+                || Some(block_id) == state.hovered_block_id.as_deref();
+            if shows_actions
+                && !is_prompt
+                && let Some(button) =
+                    compute_action_button_geometry(rect, cell_height)
+            {
+                visuals.action_buttons.push(button);
             }
         }
 
@@ -361,6 +374,11 @@ impl<'a> TerminalView<'a> {
         clipboard: &mut dyn iced_graphics::core::Clipboard,
     ) -> bool {
         let snapshot = self.term.engine.snapshot();
+        if let Some(content) = snapshot.block_output_text(block_id) {
+            clipboard.write(ClipboardKind::Standard, content);
+            return true;
+        }
+
         let Some(raw) = snapshot.block_text(block_id) else {
             return false;
         };
@@ -414,52 +432,14 @@ impl<'a> TerminalView<'a> {
     fn scroll_block_into_view(
         &self,
         block_id: &str,
-        layout: iced_graphics::core::Layout<'_>,
+        _layout: iced_graphics::core::Layout<'_>,
         shell: &mut iced_graphics::core::Shell<'_, Event>,
     ) {
-        let snapshot = self.term.engine.snapshot();
-        let view = snapshot.view();
-        let layout_bounds = layout.bounds();
-        let layout_position = Point::new(layout_bounds.x, layout_bounds.y);
-        let cell_height = self.term.engine.terminal_size().cell_height as f32;
-        let rects = block_layout::block_rects(
-            &view,
-            layout_position,
-            layout_bounds.size(),
-            cell_height,
-        );
-
-        let Some(block_rect) = rects
-            .into_iter()
-            .find(|rect| rect.block_id.as_str() == block_id)
-        else {
-            return;
-        };
-
-        let viewport_top = layout_bounds.y;
-        let viewport_bottom = viewport_top + layout_bounds.height;
-        let block_top = block_rect.rect.y;
-        let block_bottom = block_rect.rect.y + block_rect.rect.height;
-
-        if block_top < viewport_top {
-            let delta_lines =
-                ((viewport_top - block_top) / cell_height).ceil() as i32;
-            if delta_lines != 0 {
-                shell.publish(Event::Scroll {
-                    id: self.term.id,
-                    delta: delta_lines,
-                });
-            }
-        } else if block_bottom > viewport_bottom {
-            let delta_lines =
-                ((block_bottom - viewport_bottom) / cell_height).ceil() as i32;
-            if delta_lines != 0 {
-                shell.publish(Event::Scroll {
-                    id: self.term.id,
-                    delta: -delta_lines,
-                });
-            }
-        }
+        shell.publish(Event::ScrollToBlock {
+            id: self.term.id,
+            block_id: otty_libterm::surface::BlockId::new(block_id),
+            alignment: otty_libterm::surface::BlockAlignment::Nearest,
+        });
     }
 }
 
@@ -1191,7 +1171,7 @@ mod tests {
         );
 
         assert_eq!(visuals.highlights.len(), 1);
-        assert_eq!(visuals.action_buttons.len(), 0);
+        assert_eq!(visuals.action_buttons.len(), 1);
         assert_eq!(visuals.dividers.len(), 1);
     }
 

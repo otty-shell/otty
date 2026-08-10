@@ -9,7 +9,7 @@ use iced::widget::canvas::Cache;
 use iced::{Size, Subscription};
 use log::debug;
 use otty_libterm::surface::{
-    BlockSnapshot, Point, SelectionType, SnapshotOwned,
+    BlockAlignment, BlockId, BlockSnapshot, Point, SelectionType, SnapshotOwned,
 };
 use otty_libterm::{SnapshotArc, TerminalEvent};
 use tokio::sync::Mutex;
@@ -79,6 +79,11 @@ pub enum Event {
     Scroll {
         id: u64,
         delta: i32,
+    },
+    ScrollToBlock {
+        id: u64,
+        block_id: BlockId,
+        alignment: BlockAlignment,
     },
     SelectStart {
         id: u64,
@@ -150,6 +155,13 @@ impl Debug for Event {
                 id,
                 delta,
             } => f.write_fmt(format_args!("Event::Scroll id: {id}, delta: {delta}")),
+            ScrollToBlock {
+                id,
+                block_id,
+                alignment,
+            } => f.write_fmt(format_args!(
+                "Event::ScrollToBlock id: {id}, block_id: {block_id}, alignment: {alignment:?}"
+            )),
             SelectStart {
                 id,
                 selection_type,
@@ -201,6 +213,7 @@ impl Event {
             Shutdown { id, .. } => id,
             Write { id, .. } => id,
             Scroll { id, .. } => id,
+            ScrollToBlock { id, .. } => id,
             SelectStart { id, .. } => id,
             SelectUpdate { id, .. } => id,
             MouseReport { id, .. } => id,
@@ -258,7 +271,7 @@ impl Hash for TerminalSubscriptionData {
 
 impl Terminal {
     pub fn new(id: u64, settings: Settings) -> error::Result<Self> {
-        let (backend_event_tx, backend_event_rx) = mpsc::channel(100);
+        let (backend_event_tx, backend_event_rx) = mpsc::channel(1);
         let Settings {
             font,
             theme,
@@ -349,6 +362,11 @@ impl Terminal {
                 self.engine.write(data);
             },
             Scroll { delta, .. } => self.engine.scroll_delta(delta),
+            ScrollToBlock {
+                block_id,
+                alignment,
+                ..
+            } => self.engine.scroll_to_block(block_id, alignment),
             SelectStart {
                 selection_type,
                 position,
@@ -436,7 +454,7 @@ fn terminal_subscription_stream(
 ) -> BoxStream<'static, Event> {
     let id = data.id;
     let event_receiver = data.event_receiver.clone();
-    iced::stream::channel(1000, async move |mut output| {
+    iced::stream::channel(1, async move |mut output| {
         let mut shutdown = false;
         loop {
             let mut event_receiver = event_receiver.lock().await;
@@ -519,6 +537,8 @@ mod tests {
                 start_line: 0,
                 line_count: 4,
                 cached_text: None,
+                prompt_text: None,
+                output_text: None,
                 is_alt_screen: false,
             },
             BlockSnapshot {
@@ -530,6 +550,8 @@ mod tests {
                 start_line: 4,
                 line_count: 1,
                 cached_text: None,
+                prompt_text: None,
+                output_text: None,
                 is_alt_screen: false,
             },
         ];
@@ -559,6 +581,8 @@ mod tests {
                 start_line: 0,
                 line_count: 2,
                 cached_text: None,
+                prompt_text: None,
+                output_text: None,
                 is_alt_screen: false,
             },
             BlockSnapshot {
@@ -570,6 +594,8 @@ mod tests {
                 start_line: 2,
                 line_count: 1,
                 cached_text: None,
+                prompt_text: None,
+                output_text: None,
                 is_alt_screen: false,
             },
         ];

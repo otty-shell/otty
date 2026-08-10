@@ -8,7 +8,7 @@ use crate::color::{Rgb, StdColor, xparse_color};
 use crate::cursor::CursorShape;
 use crate::hyperlink::Hyperlink;
 use crate::parser::parse_number;
-use crate::{Action, EscapeActor};
+use crate::{Action, EscapeActor, PromptBoundary};
 
 /// Operating system command with raw arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,6 +27,7 @@ enum OSC {
     ResetForegroundColor,
     ResetBackgroundColor,
     ResetCursorColor,
+    PromptBoundary,
     Unhandled,
 }
 
@@ -47,6 +48,7 @@ impl From<&[u8]> for OSC {
             b"110" => Self::ResetForegroundColor,
             b"111" => Self::ResetBackgroundColor,
             b"112" => Self::ResetCursorColor,
+            b"133" => Self::PromptBoundary,
             _ => Self::Unhandled,
         }
     }
@@ -84,8 +86,19 @@ pub(crate) fn perform<A: EscapeActor>(actor: &mut A, params: &[&[u8]]) {
         OSC::SetTextCursorColor => {
             set_dynamic_std_color(actor, params, StdColor::Cursor)
         },
+        OSC::PromptBoundary => prompt_boundary(actor, params),
         _ => unexpected(params),
     }
+}
+
+fn prompt_boundary<A: EscapeActor>(actor: &mut A, params: &[&[u8]]) {
+    let boundary = match params.get(1).copied() {
+        Some(b"A") => PromptBoundary::Start,
+        Some(b"B") => PromptBoundary::End,
+        _ => return unexpected(params),
+    };
+
+    actor.handle(Action::PromptBoundary(boundary));
 }
 
 fn set_titile<A: EscapeActor>(actor: &mut A, params: &[&[u8]]) {
@@ -454,5 +467,22 @@ mod tests {
             let actual = RecordingActor::parse(input).actions;
             assert_eq!(expected, actual)
         }
+    }
+
+    #[test]
+    fn emits_osc_133_prompt_boundaries() {
+        let actor =
+            RecordingActor::parse("\x1b]133;A\x1b\\prompt\x1b]133;B\x07");
+
+        assert!(
+            actor.actions.contains(&Action::PromptBoundary(
+                crate::PromptBoundary::Start,
+            ))
+        );
+        assert!(
+            actor
+                .actions
+                .contains(&Action::PromptBoundary(crate::PromptBoundary::End,))
+        );
     }
 }

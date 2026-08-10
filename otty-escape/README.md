@@ -53,6 +53,11 @@ the parser.
 
 Run any example with `cargo run --example <name>`.
 
+## Documentation
+
+- [Blocks and shell event protocol](./docs/blocks.md)
+- [Supported terminal sequences](./docs/support_sequences.md)
+
 ## References
 
 - [kitty](https://sw.kovidgoyal.net/kitty)

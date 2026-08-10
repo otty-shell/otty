@@ -1,0 +1,14 @@
+[package]
+name = "otty-shell-bootstrap"
+description = "Shell session bootstrap and integration setup for OTTY"
+version = "0.1.0"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = "Apache-2.0"
+
+[dependencies]
+thiserror = { workspace = true }
+shell-words = "1.1.0"

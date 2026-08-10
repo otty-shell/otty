@@ -6,6 +6,10 @@ mod update;
 pub(crate) mod view;
 
 use iced::{Element, Size, Subscription, Task, Theme};
+use otty_shell_bootstrap::{
+    ShellLaunch, fallback_shell_launch_with_shell,
+    setup_shell_launch_with_shell,
+};
 use otty_ui_term::settings::{
     BackendSettings, BlockSelectionMode, FontSettings, InteractionSettings,
     Settings, ThemeSettings,
@@ -24,10 +28,6 @@ use crate::widgets::settings::SettingsWidget;
 use crate::widgets::sidebar::SidebarWidget;
 use crate::widgets::tabs::TabsWidget;
 use crate::widgets::terminal_workspace::TerminalWorkspaceWidget;
-use crate::widgets::terminal_workspace::services::{
-    fallback_shell_session_with_shell, setup_shell_session_with_shell,
-};
-use crate::widgets::terminal_workspace::types::ShellSession;
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
@@ -38,7 +38,7 @@ pub(crate) struct App {
     pub(crate) theme_manager: ThemeManager,
     pub(crate) fonts: FontsConfig,
     pub(crate) terminal_settings: Settings,
-    pub(crate) shell_session: ShellSession,
+    pub(crate) shell_launch: ShellLaunch,
     pub(crate) state: State,
     pub(crate) widgets: Widgets,
 }
@@ -54,11 +54,11 @@ impl App {
         let fonts = FontsConfig::default();
         let terminal_settings = terminal_settings(current_theme, &fonts);
         let shell_path = initial_settings.terminal_shell().to_string();
-        let shell_session = match setup_shell_session_with_shell(&shell_path) {
-            Ok(session) => session,
+        let shell_launch = match setup_shell_launch_with_shell(&shell_path) {
+            Ok(launch) => launch,
             Err(err) => {
                 log::warn!("shell integration setup failed: {err}");
-                fallback_shell_session_with_shell(&shell_path)
+                fallback_shell_launch_with_shell(&shell_path)
             },
         };
 
@@ -84,7 +84,7 @@ impl App {
             theme_manager,
             fonts,
             terminal_settings,
-            shell_session,
+            shell_launch,
             state,
             widgets,
         };
