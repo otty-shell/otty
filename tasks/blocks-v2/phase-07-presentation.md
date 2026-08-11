@@ -1,50 +1,54 @@
-# Фаза 7: UI actions и presentation model
+# Phase 7: UI actions and presentation model
 
-Статус: **частично выполнено**.
+Status: **partially complete**.
 
-Родительский документ: [Blocks v2](../blocks-v2.md). Идентификаторы: B2-070–B2-078.
+Parent document: [Blocks v2 specification](spec.md). IDs: B2-070–B2-078.
 
-## Цель
+## Goal
 
-Дать внутреннему BlockUI, overlay, keyboard и context menu единый action/query contract.
-Пользовательские reorder/group/split/collapse операции меняют только presentation references,
-не canonical PTY transcript и не immutable finished content.
+Give internal BlockUI controls, overlay, keyboard, and context menu one action and query
+contract. User reorder, group, split, and collapse operations modify only presentation
+references, never canonical PTY transcript or immutable finished content.
 
-## Текущее состояние
+## Current state
 
-Подключены существующая geometry action button, hover/click и базовое копирование semantic
-output/whole. Off-screen `ScrollToBlock` идёт через model request, а не только через текущий
-frame.
+The existing geometric action button, hover and click handling, and basic semantic
+output/whole copy are connected. Off-screen `ScrollToBlock` uses a model request rather than
+only the current frame.
 
-Фаза не завершена: отсутствуют exhaustive `BlockAction`, `available_actions`, backend export
-queries, collapse/pin/hide/rerun, presentation order/groups/slices, единый summary API и
-полная keyboard accessibility.
+Exhaustive `BlockAction`, `available_actions`, backend export queries, collapse/pin/hide/rerun,
+presentation order, groups and slices, one summary API, and complete keyboard accessibility
+remain unimplemented.
 
-## Объём работ
+## Scope
 
-- [ ] **B2-070** Сначала протестировать один action path для internal controls, overlay,
-  keyboard и context menu.
-- [ ] **B2-071** Ввести exhaustive `BlockAction` и state-aware `available_actions()`.
-- [x] **B2-072** Подключить action-button hover/click; дополнить focus и overlap tests.
-- [ ] **B2-073** Перевести copy prompt/command/output/whole на backend `ExportBlock` query;
-  текущие snapshot helpers являются временными.
-- [ ] **B2-074** Collapse/expand, pin/hide и rerun через stable `BlockId`.
-- [ ] **B2-075** Presentation order/groups/slices отдельно от canonical transcript.
-- [ ] **B2-076** Move/group/split меняют references; physical mutation active content
-  запрещена.
-- [ ] **B2-077** Один `BlockSummary`/`BlockAction` API для внутреннего и внешнего UI.
-- [ ] **B2-078** Keyboard focus/accessibility без перехвата обычного terminal input.
+- [ ] **B2-070** First test one action path shared by internal controls, overlay, keyboard,
+  and context menu.
+- [ ] **B2-071** Introduce exhaustive `BlockAction` and state-aware `available_actions()`.
+- [x] **B2-072** Connect action-button hover and click; add focus and overlap tests.
+- [ ] **B2-073** Move copy prompt/command/output/whole to backend `ExportBlock` queries;
+  current snapshot helpers are temporary.
+- [ ] **B2-074** Implement collapse/expand, pin/hide, and rerun through stable `BlockId`.
+- [ ] **B2-075** Store presentation order, groups, and slices separately from canonical
+  transcript.
+- [ ] **B2-076** Make move, group, and split modify references; physical mutation of active
+  content is forbidden.
+- [ ] **B2-077** Use one `BlockSummary` and `BlockAction` API for internal and external UI.
+- [ ] **B2-078** Add keyboard focus and accessibility without intercepting ordinary terminal
+  input.
 
-## Правила presentation model
+## Presentation-model rules
 
-- Canonical transcript остаётся append-only, кроме документированной retention/truncation.
-- Active block нельзя физически split/move; UI может создавать только presentation slice.
-- Action availability зависит от lifecycle/content capability, а не от видимости block.
-- Rerun создаёт новый command execution/block и не мутирует старый outcome.
-- Hidden/collapsed/pinned state не меняет export content.
-- Internal и external controls публикуют одну semantic action, без дублирования business logic.
+- Canonical transcript is append-only except for documented retention and truncation.
+- An active block cannot be physically split or moved; the UI may create only a presentation
+  slice.
+- Action availability depends on lifecycle and content capability rather than visibility.
+- Rerun creates a new command execution and block without changing the old outcome.
+- Hidden, collapsed, and pinned state does not change exported content.
+- Internal and external controls publish the same semantic action without duplicated business
+  logic.
 
-## Автоматическая проверка
+## Automated verification
 
 ```bash
 cargo test -p otty-ui-term --all-features
@@ -52,28 +56,27 @@ cargo test -p otty-surface block
 cargo test -p otty terminal_workspace
 ```
 
-Добавить table-driven tests `available_actions` для active/finished/static/background/
-truncated states и contract test, который отправляет одинаковое действие из четырёх UI paths.
+Add table-driven `available_actions` tests for active, finished, static, background, and
+truncated states, plus a contract test that sends the same action through all four UI paths.
 
-## Ручная проверка
+## Manual verification
 
-1. Запустить `cargo run -p otty`, создать несколько success/failure blocks и навести курсор на
-   action area. Hover target и click target должны совпадать с нарисованной кнопкой.
-2. Выполнить Copy Prompt/Command/Output/Whole из внутренней кнопки, overlay, context menu и
-   keyboard. Для одного action все четыре пути должны возвращать идентичный результат.
-3. Прокрутить block полностью за viewport и вызвать действие из внешнего списка. Оно должно
-   адресовать тот же `BlockId` без предварительного render block.
-4. Collapse/expand старый block; viewport anchor не должен прыгать. Pin/hide не меняют
-   canonical transcript или export.
-5. Rerun finished command. Должен появиться новый block с новым ID, старый outcome остаётся
-   неизменным.
-6. Создать group, изменить presentation order и split reference. Вернуть исходное
-   представление и убедиться, что canonical order/content не изменились.
-7. Попытаться split/move active block. Недоступное действие должно отсутствовать или вернуть
-   явный отказ без частичной mutation.
-8. Пройти controls только клавиатурой, проверить видимый focus и screen-reader labels. В
-   обычном terminal mode печатные клавиши должны по-прежнему идти в PTY.
+1. Launch `cargo run -p otty`, create successful and failed blocks, and hover over the action
+   area. Hover and click targets must match the rendered button.
+2. Run Copy Prompt, Command, Output, and Whole from the internal button, overlay, context menu,
+   and keyboard. All four paths must produce an identical result for the same action.
+3. Scroll a block fully outside the viewport and invoke an action from the external list. It
+   must target the same `BlockId` without rendering the block first.
+4. Collapse and expand an old block; the viewport anchor must not jump. Pin and hide must not
+   change canonical transcript or export.
+5. Rerun a finished command. A new block with a new ID must appear while the old outcome remains
+   unchanged.
+6. Create a group, change presentation order, and split a reference. Restore the original view
+   and confirm that canonical order and content remain unchanged.
+7. Attempt to split or move an active block. The unavailable action must be absent or return an
+   explicit rejection without partial mutation.
+8. Navigate controls using only the keyboard and verify visible focus and screen-reader labels.
+   Printable keys in ordinary terminal mode must still reach the PTY.
 
-Фаза готова, когда все UI entry points используют один action API, off-screen operations не
-зависят от snapshot geometry, а presentation changes не мутируют transcript.
-
+The phase is complete when every UI entry point uses one action API, off-screen operations do
+not depend on snapshot geometry, and presentation changes never mutate transcript.

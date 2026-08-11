@@ -1,49 +1,50 @@
-# Фаза 6: latest-frame transport
+# Phase 6: latest-frame transport
 
-Статус: **частично выполнено**.
+Status: **partially complete**.
 
-Родительский документ: [Blocks v2](../blocks-v2.md). Идентификаторы: B2-060–B2-066.
+Parent document: [Blocks v2 specification](spec.md). IDs: B2-060–B2-066.
 
-## Цель
+## Goal
 
-Разделить заменяемое визуальное состояние и lossless terminal events. Медленный UI должен
-получать последнюю доступную frame revision, не создавая backlog полных snapshots, при этом
-child exit, errors и другие критические события не теряются.
+Separate replaceable visual state from lossless terminal events. A slow UI must receive the
+latest available frame revision without accumulating full-snapshot backlog, while child exit,
+errors, and other critical events remain lossless.
 
-## Текущее состояние
+## Current state
 
-Добавлен latest-frame mailbox ёмкостью один, frame replacement counter, отдельная
-`FrameReady` notification и bounded default capacities для event/request queues. Slow/full/
-disconnected channel cases покрыты tests.
+A latest-frame mailbox with capacity one, a frame-replacement counter, a separate `FrameReady`
+notification, and bounded default capacities for event and request queues are implemented.
+Tests cover slow, full, and disconnected channel cases.
 
-Фаза не завершена: PTY reads не coalesce-ятся в render ticks, отсутствуют model/viewport
-revisions, stale coordinate handling и partial damage. Нужен полноценный burst test с
-искусственно медленным consumer и гарантированным lossless child exit.
+The phase remains incomplete because PTY reads are not coalesced into render ticks, model and
+viewport revisions are absent, stale-coordinate handling and partial damage are not
+implemented, and a complete burst test with an artificially slow consumer and guaranteed
+lossless child exit is still required.
 
-## Объём работ
+## Scope
 
-- [ ] **B2-060** Расширить slow-consumer tests до burst PTY output + lossless child exit;
-  текущие mailbox/channel tests являются частью пункта.
-- [x] **B2-061** Разделить replaceable frame notification и lossless terminal events.
-- [x] **B2-062** Latest-frame mailbox ёмкостью один без новой dependency.
-- [x] **B2-063** Bounded default queues и явные full/disconnected semantics.
-- [ ] **B2-064** Coalesce PTY reads в render ticks; resize/scroll/selection должны запрашивать
-  immediate render.
-- [ ] **B2-065** Передавать `model_revision`/`viewport_revision` и reject/re-resolve stale
-  coordinate requests через stable positions.
-- [ ] **B2-066** Реализовать partial damage для output и full damage для resize/reset/
-  alt-screen transitions.
+- [ ] **B2-060** Extend slow-consumer tests to burst PTY output plus lossless child exit;
+  current mailbox and channel tests cover only part of this item.
+- [x] **B2-061** Separate replaceable frame notification from lossless terminal events.
+- [x] **B2-062** Implement a latest-frame mailbox with capacity one and no new dependency.
+- [x] **B2-063** Use bounded default queues with explicit full and disconnected semantics.
+- [ ] **B2-064** Coalesce PTY reads into render ticks; resize, scroll, and selection must be
+  able to request an immediate render.
+- [ ] **B2-065** Carry `model_revision` and `viewport_revision`; reject or resolve stale
+  coordinate requests again through stable positions.
+- [ ] **B2-066** Implement partial damage for output and full damage for resize, reset, and
+  alternate-screen transitions.
 
-## Инварианты transport
+## Transport invariants
 
-- В памяти находится не более одного непрочитанного replaceable frame.
-- Замена frame не блокирует PTY reader и учитывается безопасным counter.
-- Lossless event никогда не маскируется frame notification и явно обрабатывает full queue.
-- Presented revision не должна откатываться назад.
-- Coordinate request либо относится к объявленной revision, либо разрешается через stable ID.
-- Shutdown/disconnect не оставляет producer в бесконечном retry loop.
+- At most one unread replaceable frame is retained in memory.
+- Frame replacement does not block the PTY reader and increments a safe counter.
+- A lossless event is never hidden by frame notification and explicitly handles a full queue.
+- Presented revision never moves backward.
+- A coordinate request either targets a declared revision or resolves through a stable ID.
+- Shutdown or disconnect never leaves a producer in an infinite retry loop.
 
-## Автоматическая проверка
+## Automated verification
 
 ```bash
 cargo test -p otty-libterm terminal::channel
@@ -51,25 +52,26 @@ cargo test -p otty-libterm --all-features
 cargo test -p otty-ui-term --all-features
 ```
 
-Добавить deterministic test с paused/slow consumer: producer отправляет burst frames и child
-exit, backlog остаётся ≤ 1 frame, consumer получает последнюю revision и child exit.
+Add a deterministic test with a paused or slow consumer: the producer sends burst frames and a
+child exit, backlog remains at most one frame, and the consumer receives both the latest
+revision and the child exit.
 
-## Ручная проверка
+## Manual verification
 
-1. Запустить `cargo run -p otty` и команду `yes transport | head -n 1000000`.
-2. Во время вывода менять размер окна, переключать terminal tabs и прокручивать history. UI
-   должен оставаться отзывчивым, а PTY output — завершиться без зависания.
-3. На время искусственно замедлить UI consumer через test/debug option. По diagnostics
-   проверить: replaceable backlog ≤ 1, `replaced_frames` растёт, lossless depth ограничена.
-4. Запустить короткоживущий child одновременно с burst output. Его exit event должен прийти
-   даже если несколько frames были заменены.
-5. Выполнить scroll/selection request на старой revision. Backend должен явно отклонить его
-   либо повторно разрешить через stable `BlockPoint`, но не применить к другому тексту.
-6. Проверить resize, reset и alt-screen transition: они создают full damage; обычный append
-   output сообщает только изменённую область.
-7. Закрыть terminal tab во время burst. Процессы и channels должны завершиться без panic,
-   deadlock или бесконечного CPU loop.
+1. Launch `cargo run -p otty` and run `yes transport | head -n 1000000`.
+2. Resize, switch terminal tabs, and scroll history during output. The UI must remain
+   responsive and PTY output must finish without hanging.
+3. Artificially slow the UI consumer through a test or debug option. Diagnostics must show a
+   replaceable backlog of at most one, increasing `replaced_frames`, and bounded lossless
+   depth.
+4. Start a short-lived child during burst output. Its exit event must arrive even if several
+   frames are replaced.
+5. Send a scroll or selection request for an old revision. The backend must explicitly reject
+   it or resolve it again through stable `BlockPoint`, never apply it to different text.
+6. Verify resize, reset, and alternate-screen transitions produce full damage while ordinary
+   append output reports only the changed region.
+7. Close a terminal tab during the burst. Processes and channels must finish without panic,
+   deadlock, or an infinite CPU loop.
 
-Фаза готова, когда миллион строк не создаёт frame backlog, последняя revision достигает UI, а
-lossless lifecycle events подтверждённо доставляются.
-
+The phase is complete when one million lines create no frame backlog, the latest revision
+reaches the UI, and lossless lifecycle events are demonstrably delivered.

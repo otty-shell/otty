@@ -42,6 +42,60 @@ fn parse_events(bytes: &[u8]) -> Vec<ProtocolEvent> {
     actor.events
 }
 
+fn assert_empty_enter_completion(events: &[ProtocolEvent]) {
+    let completed_empty_block =
+        events
+            .iter()
+            .enumerate()
+            .find_map(|(completion_index, event)| match event.kind() {
+                ProtocolEventKind::CommandEnd {
+                    block_id,
+                    exit_code: Some(0),
+                    ..
+                } => {
+                    let was_prepared =
+                        events[..completion_index].iter().any(|candidate| {
+                            matches!(
+                                candidate.kind(),
+                                ProtocolEventKind::PromptPrepare {
+                                    block_id: prepared_id,
+                                    ..
+                                } if prepared_id == block_id
+                            )
+                        });
+                    let was_started = events.iter().any(|candidate| {
+                        matches!(
+                            candidate.kind(),
+                            ProtocolEventKind::CommandStart {
+                                block_id: started_id,
+                                ..
+                            } if started_id == block_id
+                        )
+                    });
+                    let next_prompt_exists = events[completion_index + 1..]
+                        .iter()
+                        .any(|candidate| {
+                            matches!(
+                                candidate.kind(),
+                                ProtocolEventKind::PromptPrepare {
+                                    block_id: next_id,
+                                    ..
+                                } if next_id != block_id
+                            )
+                        });
+
+                    (was_prepared && !was_started && next_prompt_exists)
+                        .then(|| block_id.clone())
+                },
+                _ => None,
+            });
+
+    assert!(
+        completed_empty_block.is_some(),
+        "an empty Enter should complete its own prepared block: {events:#?}",
+    );
+}
+
 fn run_shell(shell: &str, args: &[&str], script: &str) -> ShellOutput {
     let integration = integration_asset(&format!("otty.{shell}"));
     let integration = integration
@@ -244,6 +298,33 @@ exit 0
 }
 
 #[test]
+fn bash_v2_reports_empty_enter_as_own_completion() {
+    let output = run_shell(
+        "bash",
+        &["--noprofile", "--norc", "-i", "-c"],
+        r#"
+source "$OTTY_TEST_INTEGRATION"
+trap - DEBUG
+PROMPT_COMMAND=
+_otty_active_block_id=
+_otty_prepared_block_id=
+_otty_precmd
+_otty_precmd
+exit 0
+"#,
+    );
+    assert!(
+        output.status.success(),
+        "bash PTY output: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let events = parse_events(&output.stdout);
+
+    assert_empty_enter_completion(&events);
+}
+
+#[test]
 fn bash_v2_prompt_markers_preserve_fedora_prompt_expansion() {
     let output = run_shell(
         "bash",
@@ -379,4 +460,35 @@ exit 0
         "events: {events:#?}; PTY output: {}",
         String::from_utf8_lossy(&output.stdout),
     );
+}
+
+#[test]
+fn zsh_v2_reports_empty_enter_as_own_completion_when_zsh_is_available() {
+    if Command::new("zsh").arg("--version").output().is_err() {
+        return;
+    }
+
+    let output = run_shell(
+        "zsh",
+        &["-d", "-f", "-i", "-c"],
+        r#"
+source "$OTTY_TEST_INTEGRATION"
+add-zsh-hook -d preexec _otty_preexec
+add-zsh-hook -d precmd _otty_precmd
+_otty_active_block_id=
+_otty_prepared_block_id=
+_otty_precmd
+_otty_precmd
+exit 0
+"#,
+    );
+    assert!(
+        output.status.success(),
+        "zsh PTY output: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let events = parse_events(&output.stdout);
+
+    assert_empty_enter_completion(&events);
 }

@@ -1,54 +1,57 @@
-# Фаза 4: раздельный block content и freeze
+# Phase 4: sectioned block content and freeze
 
-Статус: **частично выполнено**.
+Status: **partially complete**.
 
-Родительский документ: [Blocks v2](../blocks-v2.md). Идентификаторы: B2-040–B2-047.
+Parent document: [Blocks v2 specification](spec.md). IDs: B2-040–B2-047.
 
-## Цель
+## Goal
 
-Хранить prompt, canonical command и output как самостоятельные семантические секции. Пока
-команда активна, mutable terminal state разрешён только владельцу output. После completion
-блок замораживается в компактные read-only logical lines и больше не хранит полный `Surface`.
+Store prompt, canonical command, and output as independent semantic sections. While a command
+is active, mutable terminal state is permitted only for the output owner. On completion, the
+block freezes into compact read-only logical lines and no longer retains a full `Surface`.
 
-## Текущее состояние
+## Current state
 
-Добавлены `BlockContent` и `CommandRecord`, базовый capture prompt range, command header и
-output, а snapshot/query может возвращать semantic prompt/output. Это минимальный первый срез,
-а не завершённая sectioned-content model.
+`BlockContent`, `CommandRecord`, basic prompt-range capture, a command header and output, and
+semantic prompt/output snapshot queries are implemented. This is a minimal initial slice, not
+the completed sectioned-content model.
 
-Фаза не завершена: нет самостоятельных `HeaderGrid`/`OutputGrid`, output routing, immutable
-freeze, budgets/truncation, alt-screen ownership и отказа от `cached_text`/mutable historical
-surfaces.
+Independent `HeaderGrid` and `OutputGrid`, output routing, immutable freeze, budgets and
+truncation, alternate-screen ownership, and removal of `cached_text` and mutable historical
+surfaces remain incomplete.
 
-## Объём работ
+## Scope
 
-- [ ] **B2-040** Сначала покрыть section boundaries для single/multiline/right prompt,
-  отредактированной команды, empty command, output и background output.
-- [ ] **B2-041** Ввести явные `HeaderGrid`, prompt/command ranges и `OutputGrid`; текущий
-  `BlockContent` считать подготовкой.
-- [ ] **B2-042** Реализовать `OutputRouter` для root/child active block, header, output,
-  background stream и alt screen.
-- [ ] **B2-043** Дополнить существующий `CommandRecord` явным confidence и всеми source cases;
-  shell command уже используется как основной source.
-- [ ] **B2-044** При completion конвертировать block в read-only logical lines и освобождать
-  runtime-only `Surface` state.
-- [ ] **B2-045** Добавить per-block/global budgets, явную truncation metadata и безопасное
-  обновление anchors/selections.
-- [ ] **B2-046** Связать alt screen с owning command block и восстановлением normal viewport.
-- [ ] **B2-047** Удалить per-snapshot `cached_text`; все off-screen queries должны читать
-  frozen content.
+- [ ] **B2-040** First test section boundaries for single-line, multiline, and right prompts,
+  edited and empty commands, output, and background output.
+- [ ] **B2-041** Introduce explicit `HeaderGrid`, prompt/command ranges, and `OutputGrid`;
+  retain current `BlockContent` only as preparation.
+- [ ] **B2-042** Implement `OutputRouter` for root and child active blocks, headers, output,
+  background streams, and alternate screen.
+- [ ] **B2-043** Add explicit confidence and every source case to `CommandRecord`; the shell
+  command is already the primary source.
+- [ ] **B2-044** Convert completed blocks to read-only logical lines and release runtime-only
+  `Surface` state.
+- [ ] **B2-045** Add per-block and global budgets, explicit truncation metadata, and safe
+  anchor and selection updates.
+- [ ] **B2-046** Associate alternate-screen state with the owning command block and restore the
+  normal viewport afterward.
+- [ ] **B2-047** Remove per-snapshot `cached_text`; every off-screen query must use frozen
+  content.
 
-## Инварианты данных
+## Data invariants
 
-- Prompt не входит в `Output`, а command не извлекается из первой визуальной строки как
-  основной путь.
-- Soft wrap меняет visual rows, но не logical content или section ranges.
-- Finished content неизменяем; дальнейший PTY output маршрутизируется только в active owner
-  либо документированный background destination.
-- Truncation всегда видима в metadata/export и не оставляет anchor внутри удалённого range.
-- Alt-screen content принадлежит запустившему его command block и не загрязняет normal output.
+- Prompt is not part of `Output`, and the primary command path never derives command text from
+  the first visual line.
+- Soft wrap changes visual rows without changing logical content or section ranges.
+- Finished content is immutable; later PTY output routes only to the active owner or a
+  documented background destination.
+- Truncation is always visible in metadata and export and never leaves an anchor inside the
+  removed range.
+- Alternate-screen content belongs to the command that launched it and does not pollute normal
+  output.
 
-## Автоматическая проверка
+## Automated verification
 
 ```bash
 cargo test -p otty-surface block::content
@@ -56,26 +59,26 @@ cargo test -p otty-surface block
 cargo test -p otty-ui-term block
 ```
 
-Добавить memory assertion или metric-based ignored test, доказывающий, что после freeze число
-полных mutable `Surface` не растёт линейно с числом finished blocks.
+Add a memory assertion or metric-based ignored test proving that the number of full mutable
+`Surface` instances does not grow linearly with finished blocks after freeze.
 
-## Ручная проверка
+## Manual verification
 
-1. Запустить `cargo run -p otty` и выполнить команды с обычным prompt, пустым output, несколькими
-   строками output и multiline heredoc.
-2. Набрать команду, отредактировать её стрелками до Enter и проверить, что Copy Command
-   возвращает исполненный текст, а не исходные keystrokes или первую визуальную строку.
-3. В Zsh включить правый prompt и повторить копирование prompt/command/output по отдельности.
-4. Запустить background command, который печатает между двумя prompts. Его output не должен
-   попадать в случайный завершённый блок.
-5. Для одного блока выполнить Copy Prompt, Copy Command, Copy Output и Copy Whole. Каждая
-   операция должна содержать только заявленные секции в стабильном порядке.
-6. Запустить `less` или полноэкранное TUI, выйти из него и проверить восстановление normal
-   viewport и принадлежность alt-screen правильному block.
-7. Завершить 1 000 небольших команд, изменить ширину окна и продолжить печать. Содержимое
-   старых блоков не должно меняться, а metric mutable surfaces должна оставаться ограниченной.
-8. Превысить per-block и global budgets. UI/export должны показать truncation marker и число
-   потерянных строк.
+1. Launch `cargo run -p otty` and run commands with a normal prompt, empty output, multiline
+   output, and a multiline heredoc.
+2. Type a command, edit it with arrow keys before Enter, and confirm that Copy Command returns
+   the executed text rather than original keystrokes or the first visual line.
+3. Enable a right prompt in Zsh and repeat separate prompt, command, and output copies.
+4. Start a background command that prints between two prompts. Its output must not enter an
+   arbitrary completed block.
+5. Run Copy Prompt, Copy Command, Copy Output, and Copy Whole for one block. Each operation
+   must contain only the requested sections in stable order.
+6. Run `less` or another full-screen TUI, exit it, and verify restoration of the normal
+   viewport and alternate-screen ownership by the correct block.
+7. Complete 1,000 small commands, resize, and continue printing. Old block contents must not
+   change, and the mutable-surface metric must remain bounded.
+8. Exceed per-block and global budgets. The UI and export must show a truncation marker and the
+   number of lost lines.
 
-Фаза готова только после удаления mutable `Surface` из finished history и прохождения всех
-section-boundary сценариев без viewport-based эвристик.
+The phase is complete only after finished history no longer stores mutable `Surface` state and
+all section-boundary scenarios pass without viewport-based heuristics.

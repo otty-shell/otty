@@ -3,38 +3,7 @@ use std::collections::HashMap;
 use super::id::{
     BlockId, ProtocolSequence, ShellInstanceId, TerminalSessionId,
 };
-
-/// Terminal execution state governed by the lifecycle reducer.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BlockState {
-    /// Prompt and command input exist, but execution has not started.
-    BeforeExecution,
-    /// The command currently owns ordinary PTY output.
-    Executing,
-    /// The command completed with a stable outcome.
-    Finished(BlockOutcome),
-    /// A background command is still producing output.
-    BackgroundRunning,
-    /// A background command has stopped producing output.
-    BackgroundFinished,
-    /// Content is not connected to a running shell command.
-    Static,
-}
-
-/// Stable completion result for a terminal block.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BlockOutcome {
-    /// The process exited with the supplied status code.
-    Exited(i32),
-    /// The process was terminated by the supplied signal number.
-    Signaled(i32),
-    /// Execution was cancelled before a process outcome was available.
-    Cancelled,
-    /// The owning shell exited before sending command completion.
-    ShellExited,
-    /// Completion was recovered without an exact process outcome.
-    Unknown,
-}
+use super::model::{BlockOutcome, BlockRecord, BlockState};
 
 /// Current shell-integration capability state.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -100,7 +69,7 @@ pub enum LifecycleEvent {
         /// Execution start timestamp.
         started_at: Option<i64>,
     },
-    /// Finish one exact command block.
+    /// Finish one exact command block, including a successful empty submission.
     CommandEnd {
         /// Stable block identity.
         block_id: BlockId,
@@ -183,164 +152,20 @@ pub enum LifecycleDiagnostic {
         /// State observed by the reducer.
         state: BlockState,
     },
+    /// An event targeted a block owned by another shell context.
+    ForeignShellBlock {
+        /// Stable identity of the rejected block target.
+        block_id: BlockId,
+        /// Shell context that owns the block.
+        expected_shell_instance_id: ShellInstanceId,
+        /// Shell context that emitted the rejected event.
+        received_shell_instance_id: ShellInstanceId,
+    },
     /// A non-handshake event arrived before shell registration.
     MissingShellHello {
         /// Unregistered shell identity.
         shell_instance_id: ShellInstanceId,
     },
-}
-
-/// Metadata accumulated by sparse lifecycle patches.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct BlockMetadata {
-    command: Option<String>,
-    cwd_before: Option<String>,
-    cwd_after: Option<String>,
-    started_at: Option<i64>,
-    finished_at: Option<i64>,
-    exit_code: Option<i32>,
-}
-
-impl BlockMetadata {
-    /// Return the canonical command text when known.
-    pub fn command(&self) -> Option<&str> {
-        self.command.as_deref()
-    }
-
-    /// Return the working directory captured before execution.
-    pub fn cwd_before(&self) -> Option<&str> {
-        self.cwd_before.as_deref()
-    }
-
-    /// Return the working directory captured after execution.
-    pub fn cwd_after(&self) -> Option<&str> {
-        self.cwd_after.as_deref()
-    }
-
-    /// Return the execution start timestamp.
-    pub fn started_at(&self) -> Option<i64> {
-        self.started_at
-    }
-
-    /// Return the execution finish timestamp.
-    pub fn finished_at(&self) -> Option<i64> {
-        self.finished_at
-    }
-
-    /// Return the process exit code when completion used an exit status.
-    pub fn exit_code(&self) -> Option<i32> {
-        self.exit_code
-    }
-
-    fn patch_prompt(&mut self, cwd: Option<String>) {
-        if let Some(cwd) = cwd {
-            self.cwd_before = Some(cwd);
-        }
-    }
-
-    fn patch_start(
-        &mut self,
-        command: Option<String>,
-        cwd: Option<String>,
-        started_at: Option<i64>,
-    ) {
-        if let Some(command) = command {
-            self.command = Some(command);
-        }
-        if let Some(cwd) = cwd {
-            self.cwd_before = Some(cwd);
-        }
-        if let Some(started_at) = started_at {
-            self.started_at = Some(started_at);
-        }
-    }
-
-    fn patch_completion(
-        &mut self,
-        outcome: &BlockOutcome,
-        cwd: Option<String>,
-        finished_at: Option<i64>,
-    ) {
-        if let Some(cwd) = cwd {
-            self.cwd_after = Some(cwd);
-        }
-        if let Some(finished_at) = finished_at {
-            self.finished_at = Some(finished_at);
-        }
-        if let BlockOutcome::Exited(exit_code) = outcome {
-            self.exit_code = Some(*exit_code);
-        }
-    }
-}
-
-/// Canonical lifecycle record for one terminal block.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BlockRecord {
-    id: BlockId,
-    shell_instance_id: ShellInstanceId,
-    state: BlockState,
-    metadata: BlockMetadata,
-}
-
-impl BlockRecord {
-    /// Return the stable block identity.
-    pub fn id(&self) -> &BlockId {
-        &self.id
-    }
-
-    /// Return the shell context that owns this block.
-    pub fn shell_instance_id(&self) -> &ShellInstanceId {
-        &self.shell_instance_id
-    }
-
-    /// Return the current lifecycle state.
-    pub fn state(&self) -> &BlockState {
-        &self.state
-    }
-
-    /// Return the merged block metadata.
-    pub fn metadata(&self) -> &BlockMetadata {
-        &self.metadata
-    }
-
-    fn prepared(
-        id: BlockId,
-        shell_instance_id: ShellInstanceId,
-        cwd: Option<String>,
-    ) -> Self {
-        let mut metadata = BlockMetadata::default();
-        metadata.patch_prompt(cwd);
-
-        Self {
-            id,
-            shell_instance_id,
-            state: BlockState::BeforeExecution,
-            metadata,
-        }
-    }
-
-    fn executing(
-        id: BlockId,
-        shell_instance_id: ShellInstanceId,
-        command: Option<String>,
-        cwd: Option<String>,
-        started_at: Option<i64>,
-    ) -> Self {
-        let mut record = Self::prepared(id, shell_instance_id, None);
-        record.metadata.patch_start(command, cwd, started_at);
-        record.state = BlockState::Executing;
-        record
-    }
-
-    fn finish(
-        &mut self,
-        outcome: BlockOutcome,
-        cwd: Option<String>,
-        finished_at: Option<i64>,
-    ) {
-        self.metadata.patch_completion(&outcome, cwd, finished_at);
-        self.state = BlockState::Finished(outcome);
-    }
 }
 
 /// Protocol envelope fields paired with one semantic lifecycle event.
@@ -656,39 +481,49 @@ impl LifecycleReducer {
         cwd: Option<String>,
         prepared_at: Option<i64>,
     ) -> LifecycleUpdate {
-        let active_block_id = self
-            .shells
-            .get(&shell_instance_id)
-            .and_then(|shell| shell.active_block_id.clone());
-        let mut changed_blocks = Vec::new();
-
-        if let Some(active_block_id) = active_block_id
-            && active_block_id != block_id
-            && let Some(active) = self.blocks.get_mut(&active_block_id)
-            && active.state == BlockState::Executing
-        {
-            active.finish(BlockOutcome::Unknown, None, prepared_at);
-            changed_blocks.push(active_block_id.clone());
-            self.diagnostics
-                .push(LifecycleDiagnostic::SynthesizedCompletion {
-                    block_id: active_block_id,
-                });
+        if self.reject_foreign_shell_block(&shell_instance_id, &block_id) {
+            return LifecycleUpdate::ignored();
         }
 
+        let mut changed_blocks = Vec::new();
+
         match self.blocks.get_mut(&block_id) {
-            Some(block) if block.state == BlockState::BeforeExecution => {
-                block.metadata.patch_prompt(cwd.clone());
+            Some(block) if block.state() == &BlockState::BeforeExecution => {
+                let is_active = self
+                    .shells
+                    .get(&shell_instance_id)
+                    .and_then(|shell| shell.active_block_id.as_ref())
+                    == Some(&block_id);
+                if !is_active {
+                    self.diagnostics.push(
+                        LifecycleDiagnostic::InvalidTransition {
+                            block_id: block_id.clone(),
+                            state: block.state().clone(),
+                        },
+                    );
+                    return LifecycleUpdate::ignored();
+                }
+
+                block.patch_prompt(cwd.clone());
                 changed_blocks.push(block_id.clone());
             },
             Some(block) => {
                 self.diagnostics
                     .push(LifecycleDiagnostic::InvalidTransition {
                         block_id: block_id.clone(),
-                        state: block.state.clone(),
+                        state: block.state().clone(),
                     });
                 return LifecycleUpdate::ignored();
             },
             None => {
+                if let Some(recovered) = self.finish_active_for_recovery(
+                    &shell_instance_id,
+                    &block_id,
+                    prepared_at,
+                ) {
+                    changed_blocks.push(recovered);
+                }
+
                 self.blocks.insert(
                     block_id.clone(),
                     BlockRecord::prepared(
@@ -724,23 +559,51 @@ impl LifecycleReducer {
         cwd: Option<String>,
         started_at: Option<i64>,
     ) -> LifecycleUpdate {
+        if self.reject_foreign_shell_block(&shell_instance_id, &block_id) {
+            return LifecycleUpdate::ignored();
+        }
+
+        let mut changed_blocks = Vec::new();
         match self.blocks.get_mut(&block_id) {
-            Some(block) if block.state == BlockState::BeforeExecution => {
-                block.metadata.patch_start(command, cwd.clone(), started_at);
-                block.state = BlockState::Executing;
+            Some(block) if block.state() == &BlockState::BeforeExecution => {
+                let is_active = self
+                    .shells
+                    .get(&shell_instance_id)
+                    .and_then(|shell| shell.active_block_id.as_ref())
+                    == Some(&block_id);
+                if !is_active {
+                    self.diagnostics.push(
+                        LifecycleDiagnostic::InvalidTransition {
+                            block_id: block_id.clone(),
+                            state: block.state().clone(),
+                        },
+                    );
+                    return LifecycleUpdate::ignored();
+                }
+
+                block.start(command, cwd.clone(), started_at);
+                changed_blocks.push(block_id.clone());
             },
-            Some(block) if block.state == BlockState::Executing => {
+            Some(block) if block.state() == &BlockState::Executing => {
                 return LifecycleUpdate::ignored();
             },
             Some(block) => {
                 self.diagnostics
                     .push(LifecycleDiagnostic::InvalidTransition {
                         block_id,
-                        state: block.state.clone(),
+                        state: block.state().clone(),
                     });
                 return LifecycleUpdate::ignored();
             },
             None => {
+                if let Some(recovered) = self.finish_active_for_recovery(
+                    &shell_instance_id,
+                    &block_id,
+                    started_at,
+                ) {
+                    changed_blocks.push(recovered);
+                }
+
                 self.diagnostics.push(
                     LifecycleDiagnostic::RecoveredCommandStart {
                         block_id: block_id.clone(),
@@ -756,6 +619,7 @@ impl LifecycleReducer {
                         started_at,
                     ),
                 );
+                changed_blocks.push(block_id.clone());
             },
         }
 
@@ -768,7 +632,10 @@ impl LifecycleReducer {
             context.cwd = cwd;
         }
 
-        LifecycleUpdate::changed(block_id)
+        LifecycleUpdate {
+            changed_blocks,
+            ignored: false,
+        }
     }
 
     fn apply_command_end(
@@ -779,14 +646,29 @@ impl LifecycleReducer {
         cwd: Option<String>,
         finished_at: Option<i64>,
     ) -> LifecycleUpdate {
+        if self.reject_foreign_shell_block(shell_instance_id, &block_id) {
+            return LifecycleUpdate::ignored();
+        }
+
         let Some(block) = self.blocks.get_mut(&block_id) else {
             self.diagnostics
                 .push(LifecycleDiagnostic::OrphanCommandEnd { block_id });
             return LifecycleUpdate::ignored();
         };
 
-        match block.state {
+        let is_active = self
+            .shells
+            .get(shell_instance_id)
+            .and_then(|shell| shell.active_block_id.as_ref())
+            == Some(&block_id);
+        let is_successful_empty_completion =
+            is_active && outcome == BlockOutcome::Exited(0);
+
+        match block.state().clone() {
             BlockState::Executing | BlockState::BackgroundRunning => {
+                block.finish(outcome, cwd.clone(), finished_at);
+            },
+            BlockState::BeforeExecution if is_successful_empty_completion => {
                 block.finish(outcome, cwd.clone(), finished_at);
             },
             BlockState::Finished(_) | BlockState::BackgroundFinished => {
@@ -796,7 +678,7 @@ impl LifecycleReducer {
                 self.diagnostics
                     .push(LifecycleDiagnostic::InvalidTransition {
                         block_id,
-                        state: block.state.clone(),
+                        state: block.state().clone(),
                     });
                 return LifecycleUpdate::ignored();
             },
@@ -849,24 +731,80 @@ impl LifecycleReducer {
             return LifecycleUpdate::default();
         };
 
-        if !matches!(block.state, BlockState::Finished(_)) {
+        if !matches!(block.state(), BlockState::Finished(_)) {
             block.finish(BlockOutcome::ShellExited, None, finished_at);
             return LifecycleUpdate::changed(active_block_id);
         }
 
         LifecycleUpdate::default()
     }
+
+    fn reject_foreign_shell_block(
+        &mut self,
+        received_shell_instance_id: &ShellInstanceId,
+        block_id: &BlockId,
+    ) -> bool {
+        let expected_shell_instance_id = self
+            .blocks
+            .get(block_id)
+            .map(|block| block.shell_instance_id().clone());
+        let Some(expected_shell_instance_id) = expected_shell_instance_id
+        else {
+            return false;
+        };
+        if expected_shell_instance_id == *received_shell_instance_id {
+            return false;
+        }
+
+        self.diagnostics
+            .push(LifecycleDiagnostic::ForeignShellBlock {
+                block_id: block_id.clone(),
+                expected_shell_instance_id,
+                received_shell_instance_id: received_shell_instance_id.clone(),
+            });
+
+        true
+    }
+
+    fn finish_active_for_recovery(
+        &mut self,
+        shell_instance_id: &ShellInstanceId,
+        next_block_id: &BlockId,
+        finished_at: Option<i64>,
+    ) -> Option<BlockId> {
+        let active_block_id = self
+            .shells
+            .get(shell_instance_id)
+            .and_then(|shell| shell.active_block_id.clone())?;
+        if active_block_id == *next_block_id {
+            return None;
+        }
+
+        let active = self.blocks.get_mut(&active_block_id)?;
+        if active.state() != &BlockState::Executing {
+            return None;
+        }
+
+        active.finish(BlockOutcome::Unknown, None, finished_at);
+        self.diagnostics
+            .push(LifecycleDiagnostic::SynthesizedCompletion {
+                block_id: active_block_id.clone(),
+            });
+
+        Some(active_block_id)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        BlockOutcome, BlockState, DegradedReason, IntegrationStatus,
-        LifecycleDiagnostic, LifecycleEvent, LifecycleInput, LifecycleReducer,
+        DegradedReason, IntegrationStatus, LifecycleDiagnostic, LifecycleEvent,
+        LifecycleInput, LifecycleReducer,
     };
     use crate::block::id::{
         BlockId, ProtocolSequence, ShellInstanceId, TerminalSessionId,
     };
+    use crate::block::{BlockOutcome, BlockState};
 
     fn session_id() -> TerminalSessionId {
         TerminalSessionId::new("session")
@@ -904,6 +842,7 @@ mod tests {
     fn normal_lifecycle_preserves_start_metadata_on_completion() {
         let mut reducer = LifecycleReducer::new(session_id());
         let id = block_id(1);
+        let next_id = block_id(2);
 
         reducer.apply(hello(1));
         reducer.apply(input(
@@ -932,6 +871,14 @@ mod tests {
                 finished_at: Some(20),
             },
         ));
+        reducer.apply(input(
+            5,
+            LifecycleEvent::PromptPrepare {
+                block_id: next_id.clone(),
+                cwd: Some(String::from("/after")),
+                prepared_at: Some(21),
+            },
+        ));
 
         let block = reducer.block(&id).expect("block should exist");
         assert_eq!(
@@ -943,6 +890,96 @@ mod tests {
         assert_eq!(block.metadata().cwd_after(), Some("/after"));
         assert_eq!(block.metadata().started_at(), Some(11));
         assert_eq!(block.metadata().finished_at(), Some(20));
+        assert_eq!(
+            reducer.block(&next_id).map(|block| block.state()),
+            Some(&BlockState::BeforeExecution),
+        );
+    }
+
+    #[test]
+    fn empty_enter_without_command_start_finishes_only_its_own_block() {
+        let mut reducer = LifecycleReducer::new(session_id());
+        let previous = block_id(1);
+        let empty = block_id(2);
+        let next = block_id(3);
+
+        reducer.apply(hello(1));
+        reducer.apply(input(
+            2,
+            LifecycleEvent::PromptPrepare {
+                block_id: previous.clone(),
+                cwd: Some(String::from("/before-true")),
+                prepared_at: Some(2),
+            },
+        ));
+        reducer.apply(input(
+            3,
+            LifecycleEvent::CommandStart {
+                block_id: previous.clone(),
+                command: Some(String::from("true")),
+                cwd: None,
+                started_at: Some(3),
+            },
+        ));
+        reducer.apply(input(
+            4,
+            LifecycleEvent::CommandEnd {
+                block_id: previous.clone(),
+                outcome: BlockOutcome::Exited(0),
+                cwd: Some(String::from("/after-true")),
+                finished_at: Some(4),
+            },
+        ));
+        let previous_after_completion = reducer
+            .block(&previous)
+            .cloned()
+            .expect("previous command block should exist");
+
+        reducer.apply(input(
+            5,
+            LifecycleEvent::PromptPrepare {
+                block_id: empty.clone(),
+                cwd: Some(String::from("/after-true")),
+                prepared_at: Some(5),
+            },
+        ));
+        let completion = reducer.apply(input(
+            6,
+            LifecycleEvent::CommandEnd {
+                block_id: empty.clone(),
+                outcome: BlockOutcome::Exited(0),
+                cwd: Some(String::from("/after-empty")),
+                finished_at: Some(6),
+            },
+        ));
+        reducer.apply(input(
+            7,
+            LifecycleEvent::PromptPrepare {
+                block_id: next.clone(),
+                cwd: Some(String::from("/after-empty")),
+                prepared_at: Some(7),
+            },
+        ));
+
+        assert!(!completion.is_ignored());
+        assert_eq!(completion.changed_blocks(), std::slice::from_ref(&empty));
+        assert_eq!(reducer.block(&previous), Some(&previous_after_completion));
+
+        let empty_block = reducer
+            .block(&empty)
+            .expect("empty command block should exist");
+        assert_eq!(
+            empty_block.state(),
+            &BlockState::Finished(BlockOutcome::Exited(0))
+        );
+        assert_eq!(empty_block.metadata().command(), None);
+        assert_eq!(empty_block.metadata().started_at(), None);
+        assert_eq!(empty_block.metadata().finished_at(), Some(6));
+        assert_eq!(empty_block.metadata().exit_code(), Some(0));
+        assert_eq!(
+            reducer.block(&next).map(|block| block.state()),
+            Some(&BlockState::BeforeExecution)
+        );
     }
 
     #[test]
@@ -1068,6 +1105,137 @@ mod tests {
             diagnostic,
             LifecycleDiagnostic::SynthesizedCompletion { block_id }
                 if block_id == &running
+        )));
+    }
+
+    #[test]
+    fn stale_prepared_block_id_does_not_finish_active_neighbor() {
+        let mut reducer = LifecycleReducer::new(session_id());
+        let stale = block_id(1);
+        let active = block_id(2);
+
+        reducer.apply(hello(1));
+        reducer.apply(input(
+            2,
+            LifecycleEvent::PromptPrepare {
+                block_id: stale.clone(),
+                cwd: None,
+                prepared_at: None,
+            },
+        ));
+        reducer.apply(input(
+            3,
+            LifecycleEvent::PromptPrepare {
+                block_id: active.clone(),
+                cwd: None,
+                prepared_at: None,
+            },
+        ));
+        reducer.apply(input(
+            4,
+            LifecycleEvent::CommandStart {
+                block_id: active.clone(),
+                command: Some(String::from("sleep 10")),
+                cwd: None,
+                started_at: None,
+            },
+        ));
+
+        let update = reducer.apply(input(
+            5,
+            LifecycleEvent::PromptPrepare {
+                block_id: stale.clone(),
+                cwd: None,
+                prepared_at: None,
+            },
+        ));
+
+        assert!(update.is_ignored());
+        assert_eq!(
+            reducer.block(&active).map(|block| block.state()),
+            Some(&BlockState::Executing),
+        );
+        assert_eq!(
+            reducer.block(&stale).map(|block| block.state()),
+            Some(&BlockState::BeforeExecution),
+        );
+        assert!(matches!(
+            reducer.diagnostics().last(),
+            Some(LifecycleDiagnostic::InvalidTransition {
+                block_id,
+                state: BlockState::BeforeExecution,
+            }) if block_id == &stale
+        ));
+
+        let update = reducer.apply(input(
+            6,
+            LifecycleEvent::CommandStart {
+                block_id: stale.clone(),
+                command: Some(String::from("must stay stale")),
+                cwd: None,
+                started_at: None,
+            },
+        ));
+
+        assert!(update.is_ignored());
+        assert_eq!(
+            reducer.block(&active).map(|block| block.state()),
+            Some(&BlockState::Executing),
+        );
+        assert_eq!(
+            reducer.block(&stale).map(|block| block.state()),
+            Some(&BlockState::BeforeExecution),
+        );
+    }
+
+    #[test]
+    fn command_start_recovers_missing_end_and_prepare_together() {
+        let mut reducer = LifecycleReducer::new(session_id());
+        let previous = block_id(1);
+        let recovered = block_id(2);
+
+        reducer.apply(hello(1));
+        reducer.apply(input(
+            2,
+            LifecycleEvent::CommandStart {
+                block_id: previous.clone(),
+                command: Some(String::from("first")),
+                cwd: None,
+                started_at: Some(2),
+            },
+        ));
+
+        let update = reducer.apply(input(
+            4,
+            LifecycleEvent::CommandStart {
+                block_id: recovered.clone(),
+                command: Some(String::from("second")),
+                cwd: None,
+                started_at: Some(4),
+            },
+        ));
+
+        assert_eq!(
+            reducer.block(&previous).map(|block| block.state()),
+            Some(&BlockState::Finished(BlockOutcome::Unknown)),
+        );
+        assert_eq!(
+            reducer.block(&recovered).map(|block| block.state()),
+            Some(&BlockState::Executing),
+        );
+        assert_eq!(
+            update.changed_blocks(),
+            &[previous.clone(), recovered.clone()],
+        );
+        assert!(reducer.diagnostics().iter().any(|diagnostic| matches!(
+            diagnostic,
+            LifecycleDiagnostic::SynthesizedCompletion { block_id }
+                if block_id == &previous
+        )));
+        assert!(reducer.diagnostics().iter().any(|diagnostic| matches!(
+            diagnostic,
+            LifecycleDiagnostic::RecoveredCommandStart { block_id }
+                if block_id == &recovered
         )));
     }
 
@@ -1199,5 +1367,372 @@ mod tests {
 
         assert!(reducer.mark_unsupported_version(session_id(), 7));
         assert_eq!(reducer.status(), &IntegrationStatus::UnsupportedVersion(7));
+    }
+
+    #[test]
+    fn integration_status_transition_matrix_is_explicit() {
+        struct Case {
+            name: &'static str,
+            send_hello: bool,
+            event: LifecycleEvent,
+            expected: IntegrationStatus,
+        }
+
+        let cases = [
+            Case {
+                name: "event before hello degrades integration",
+                send_hello: false,
+                event: LifecycleEvent::ContextUpdate {
+                    cwd: Some(String::from("/tmp")),
+                },
+                expected: IntegrationStatus::Degraded(
+                    DegradedReason::MissingShellHello,
+                ),
+            },
+            Case {
+                name: "integration error degrades active integration",
+                send_hello: true,
+                event: LifecycleEvent::IntegrationError {
+                    code: String::from("hook-lost"),
+                },
+                expected: IntegrationStatus::Degraded(
+                    DegradedReason::IntegrationError(String::from("hook-lost")),
+                ),
+            },
+        ];
+
+        for case in cases {
+            let mut reducer = LifecycleReducer::new(session_id());
+            let sequence = if case.send_hello {
+                reducer.apply(hello(1));
+                2
+            } else {
+                1
+            };
+
+            reducer.apply(input(sequence, case.event));
+
+            assert_eq!(reducer.status(), &case.expected, "{}", case.name);
+        }
+    }
+
+    #[test]
+    fn interruption_transition_matrix_is_deterministic() {
+        struct Case {
+            name: &'static str,
+            start_command: bool,
+            outcome: Option<BlockOutcome>,
+            expected_state: BlockState,
+        }
+
+        let cases = [
+            Case {
+                name: "ctrl-c before command start",
+                start_command: false,
+                outcome: None,
+                expected_state: BlockState::BeforeExecution,
+            },
+            Case {
+                name: "ctrl-c after command start",
+                start_command: true,
+                outcome: Some(BlockOutcome::Signaled(2)),
+                expected_state: BlockState::Finished(BlockOutcome::Signaled(2)),
+            },
+        ];
+
+        for case in cases {
+            let mut reducer = LifecycleReducer::new(session_id());
+            let current = block_id(1);
+            let next = block_id(2);
+            let mut sequence = 1;
+            reducer.apply(hello(sequence));
+            sequence += 1;
+            reducer.apply(input(
+                sequence,
+                LifecycleEvent::PromptPrepare {
+                    block_id: current.clone(),
+                    cwd: Some(String::from("/before")),
+                    prepared_at: Some(sequence as i64),
+                },
+            ));
+
+            if case.start_command {
+                sequence += 1;
+                reducer.apply(input(
+                    sequence,
+                    LifecycleEvent::CommandStart {
+                        block_id: current.clone(),
+                        command: Some(String::from("sleep 10")),
+                        cwd: None,
+                        started_at: Some(sequence as i64),
+                    },
+                ));
+            }
+            if let Some(outcome) = case.outcome {
+                sequence += 1;
+                reducer.apply(input(
+                    sequence,
+                    LifecycleEvent::CommandEnd {
+                        block_id: current.clone(),
+                        outcome,
+                        cwd: None,
+                        finished_at: Some(sequence as i64),
+                    },
+                ));
+            }
+
+            sequence += 1;
+            reducer.apply(input(
+                sequence,
+                LifecycleEvent::PromptPrepare {
+                    block_id: next.clone(),
+                    cwd: None,
+                    prepared_at: Some(sequence as i64),
+                },
+            ));
+
+            assert_eq!(
+                reducer.block(&current).map(|block| block.state()),
+                Some(&case.expected_state),
+                "{}",
+                case.name,
+            );
+            assert_eq!(
+                reducer.block(&next).map(|block| block.state()),
+                Some(&BlockState::BeforeExecution),
+                "{}",
+                case.name,
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_transition_matrix_emits_payload_free_diagnostics() {
+        enum InvalidEvent {
+            EndBeforeStart,
+            StartAfterFinish,
+            PrepareAfterFinish,
+        }
+
+        for case in [
+            InvalidEvent::EndBeforeStart,
+            InvalidEvent::StartAfterFinish,
+            InvalidEvent::PrepareAfterFinish,
+        ] {
+            let mut reducer = LifecycleReducer::new(session_id());
+            let id = block_id(1);
+            reducer.apply(hello(1));
+            reducer.apply(input(
+                2,
+                LifecycleEvent::PromptPrepare {
+                    block_id: id.clone(),
+                    cwd: None,
+                    prepared_at: None,
+                },
+            ));
+
+            let invalid = match case {
+                InvalidEvent::EndBeforeStart => LifecycleEvent::CommandEnd {
+                    block_id: id.clone(),
+                    outcome: BlockOutcome::Cancelled,
+                    cwd: None,
+                    finished_at: None,
+                },
+                InvalidEvent::StartAfterFinish
+                | InvalidEvent::PrepareAfterFinish => {
+                    reducer.apply(input(
+                        3,
+                        LifecycleEvent::CommandStart {
+                            block_id: id.clone(),
+                            command: Some(String::from("secret command")),
+                            cwd: None,
+                            started_at: None,
+                        },
+                    ));
+                    reducer.apply(input(
+                        4,
+                        LifecycleEvent::CommandEnd {
+                            block_id: id.clone(),
+                            outcome: BlockOutcome::Exited(0),
+                            cwd: None,
+                            finished_at: None,
+                        },
+                    ));
+                    match case {
+                        InvalidEvent::StartAfterFinish => {
+                            LifecycleEvent::CommandStart {
+                                block_id: id.clone(),
+                                command: Some(String::from(
+                                    "must not be logged",
+                                )),
+                                cwd: None,
+                                started_at: None,
+                            }
+                        },
+                        InvalidEvent::PrepareAfterFinish => {
+                            LifecycleEvent::PromptPrepare {
+                                block_id: id.clone(),
+                                cwd: None,
+                                prepared_at: None,
+                            }
+                        },
+                        InvalidEvent::EndBeforeStart => unreachable!(),
+                    }
+                },
+            };
+            let sequence = match case {
+                InvalidEvent::EndBeforeStart => 3,
+                _ => 5,
+            };
+
+            let update = reducer.apply(input(sequence, invalid));
+
+            assert!(update.is_ignored());
+            assert!(matches!(
+                reducer.diagnostics().last(),
+                Some(LifecycleDiagnostic::InvalidTransition {
+                    block_id,
+                    ..
+                }) if block_id == &id
+            ));
+        }
+    }
+
+    #[test]
+    fn block_events_cannot_cross_shell_ownership() {
+        let mut reducer = LifecycleReducer::new(session_id());
+        let root = ShellInstanceId::new("root");
+        let child = ShellInstanceId::new("child");
+        let root_block = BlockId::terminal(&session_id(), &root, 1);
+
+        reducer.apply(LifecycleInput::new(
+            session_id(),
+            root.clone(),
+            ProtocolSequence::new(1),
+            LifecycleEvent::ShellHello {
+                parent_shell_instance_id: None,
+                shell: String::from("bash"),
+                shell_version: None,
+            },
+        ));
+        reducer.apply(LifecycleInput::new(
+            session_id(),
+            root.clone(),
+            ProtocolSequence::new(2),
+            LifecycleEvent::CommandStart {
+                block_id: root_block.clone(),
+                command: Some(String::from("sleep 10")),
+                cwd: None,
+                started_at: None,
+            },
+        ));
+        reducer.apply(LifecycleInput::new(
+            session_id(),
+            child.clone(),
+            ProtocolSequence::new(1),
+            LifecycleEvent::ShellHello {
+                parent_shell_instance_id: Some(root.clone()),
+                shell: String::from("bash"),
+                shell_version: None,
+            },
+        ));
+
+        let update = reducer.apply(LifecycleInput::new(
+            session_id(),
+            child.clone(),
+            ProtocolSequence::new(2),
+            LifecycleEvent::CommandEnd {
+                block_id: root_block.clone(),
+                outcome: BlockOutcome::Exited(0),
+                cwd: None,
+                finished_at: None,
+            },
+        ));
+
+        assert!(update.is_ignored());
+        assert_eq!(
+            reducer.block(&root_block).map(|block| block.state()),
+            Some(&BlockState::Executing),
+        );
+        assert!(matches!(
+            reducer.diagnostics().last(),
+            Some(LifecycleDiagnostic::ForeignShellBlock {
+                block_id,
+                expected_shell_instance_id,
+                received_shell_instance_id,
+            }) if block_id == &root_block
+                && expected_shell_instance_id == &root
+                && received_shell_instance_id == &child
+        ));
+    }
+
+    #[test]
+    fn nested_and_root_shell_exit_finish_only_owned_active_blocks() {
+        let mut reducer = LifecycleReducer::new(session_id());
+        let root = ShellInstanceId::new("root");
+        let child = ShellInstanceId::new("child");
+        let root_block = BlockId::terminal(&session_id(), &root, 1);
+        let child_block = BlockId::terminal(&session_id(), &child, 1);
+
+        for (shell, parent, block) in [
+            (root.clone(), None, root_block.clone()),
+            (child.clone(), Some(root.clone()), child_block.clone()),
+        ] {
+            reducer.apply(LifecycleInput::new(
+                session_id(),
+                shell.clone(),
+                ProtocolSequence::new(1),
+                LifecycleEvent::ShellHello {
+                    parent_shell_instance_id: parent,
+                    shell: String::from("bash"),
+                    shell_version: None,
+                },
+            ));
+            reducer.apply(LifecycleInput::new(
+                session_id(),
+                shell,
+                ProtocolSequence::new(2),
+                LifecycleEvent::CommandStart {
+                    block_id: block,
+                    command: Some(String::from("sleep 10")),
+                    cwd: None,
+                    started_at: None,
+                },
+            ));
+        }
+
+        reducer.apply(LifecycleInput::new(
+            session_id(),
+            child.clone(),
+            ProtocolSequence::new(3),
+            LifecycleEvent::ShellExit {
+                status: Some(1),
+                finished_at: Some(30),
+            },
+        ));
+
+        assert_eq!(
+            reducer.block(&child_block).map(|block| block.state()),
+            Some(&BlockState::Finished(BlockOutcome::ShellExited)),
+        );
+        assert_eq!(
+            reducer.block(&root_block).map(|block| block.state()),
+            Some(&BlockState::Executing),
+        );
+
+        reducer.apply(LifecycleInput::new(
+            session_id(),
+            root,
+            ProtocolSequence::new(3),
+            LifecycleEvent::ShellExit {
+                status: Some(0),
+                finished_at: Some(31),
+            },
+        ));
+
+        assert_eq!(
+            reducer.block(&root_block).map(|block| block.state()),
+            Some(&BlockState::Finished(BlockOutcome::ShellExited)),
+        );
     }
 }

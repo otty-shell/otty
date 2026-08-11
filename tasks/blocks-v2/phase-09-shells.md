@@ -1,83 +1,83 @@
-# Фаза 9: дополнительные shells и сложные окружения
+# Phase 9: additional shells and complex environments
 
-Статус: **не начато**.
+Status: **not started**.
 
-Родительский документ: [Blocks v2](../blocks-v2.md). Идентификаторы: B2-090–B2-094.
+Parent document: [Blocks v2 specification](spec.md). IDs: B2-090–B2-094.
 
-## Цель
+## Goal
 
-Расширить protocol v2 за пределы локальных Bash/Zsh только там, где integration можно
-проверить реальным shell lifecycle test. Неподдерживаемое окружение должно честно показывать
-`Unsupported`/`Degraded`, а terminal обязан оставаться полностью пригодным без hooks.
+Extend protocol v2 beyond local Bash/Zsh only where integration can be verified by a real
+shell-lifecycle test. An unsupported environment must honestly report `Unsupported` or
+`Degraded`, while the terminal remains fully usable without hooks.
 
-## Зависимости
+## Dependencies
 
-Фаза начинается после стабилизации protocol v2, lifecycle reducer, output routing и
-integration status. Установка новых test/runtime dependencies требует предварительного
-согласования. Отсутствующий shell binary в CI оформляется capability-gated skip, а не ложный
-success.
+This phase starts after protocol v2, the lifecycle reducer, output routing, and integration
+status are stable. New test or runtime dependencies require prior approval. A missing shell
+binary in CI produces a capability-gated skip rather than a false success.
 
-## Объём работ
+## Scope
 
-- [ ] **B2-090** Fish protocol-v2 hooks и real-shell tests полного lifecycle.
-- [ ] **B2-091** PowerShell protocol-v2 hooks и tests на доступных Linux/macOS/Windows CI
-  platforms с учётом различий quoting/status.
-- [ ] **B2-092** tmux/screen detection, self-test и документированный passthrough без
-  автоматического изменения user config.
-- [ ] **B2-093** Спроектировать explicit SSH/container bootstrap с threat model, capability
-  negotiation, versioning и cleanup review.
-- [ ] **B2-094** Добавлять Nushell/другой shell только одновременно с real-shell tests; до
-  этого оставлять его `Unsupported`.
+- [ ] **B2-090** Add Fish protocol-v2 hooks and real-shell tests for the full lifecycle.
+- [ ] **B2-091** Add PowerShell protocol-v2 hooks and tests on available Linux, macOS, and
+  Windows CI platforms, accounting for quoting and status differences.
+- [ ] **B2-092** Add tmux/screen detection, self-test, and documented passthrough without
+  automatically changing user configuration.
+- [ ] **B2-093** Design explicit SSH/container bootstrap with threat model, capability
+  negotiation, versioning, and cleanup review.
+- [ ] **B2-094** Add Nushell or another shell only together with real-shell tests; report it as
+  `Unsupported` until then.
 
-## Общая lifecycle matrix для каждого shell
+## Shared lifecycle matrix for each shell
 
-- source/import integration дважды в одном process;
-- root и nested shell с уникальными IDs и parent link;
-- success, non-zero exit, pipeline status, command-not-found, signal и Ctrl-C;
-- multiline command, Unicode, quotes и control-like text;
-- сохранение существующих prompt/preexec/precmd/exit hooks;
-- shell restart/`exec`, missing loader и unsupported protocol version;
-- отсутствие optional external tools;
-- clean shell exit и recovery после потерянного command-end.
+- source or import integration twice in one process;
+- root and nested shell with unique IDs and a parent link;
+- success, non-zero exit, pipeline status, command-not-found, signal, and Ctrl-C;
+- multiline command, Unicode, quotes, and control-like text;
+- preservation of existing prompt, preexec, precmd, and exit hooks;
+- shell restart or `exec`, missing loader, and unsupported protocol version;
+- absence of optional external tools;
+- clean shell exit and recovery from a missing command-end.
 
-## Правила безопасности окружений
+## Environment security rules
 
-- Никогда не менять tmux/screen/SSH/shell user config автоматически.
-- Remote bootstrap запускается только явным действием и показывает устанавливаемую версию и
+- Never modify tmux, screen, SSH, or shell user configuration automatically.
+- Remote bootstrap runs only through an explicit action and displays the installed version and
   target path.
-- Session ID и доверие к local terminal нельзя переносить на remote side без negotiation.
-- Временные remote assets имеют ограниченные permissions и документированный cleanup.
-- Shell command/output не попадают в connection diagnostics.
+- Session identity and trust in the local terminal are not transferred to the remote side
+  without negotiation.
+- Temporary remote assets use restricted permissions and documented cleanup.
+- Shell command and output contents do not enter connection diagnostics.
 
-## Автоматическая проверка
+## Automated verification
 
-После реализации каждого adapter добавить отдельную capability-gated команду, например:
+After implementing each adapter, add a separate capability-gated command, for example:
 
 ```bash
 cargo test -p otty --test shell_integration -- --nocapture
 ```
 
-CI matrix должна явно перечислять найденные `bash`, `zsh`, `fish`, `pwsh`, `tmux` и `screen`.
-Merge конкретного adapter запрещён, если его binary доступен, но lifecycle tests skipped.
+The CI matrix must explicitly list detected `bash`, `zsh`, `fish`, `pwsh`, `tmux`, and
+`screen` binaries. An adapter cannot merge when its binary is available but lifecycle tests
+are skipped.
 
-## Ручная проверка
+## Manual verification
 
-1. Запустить OTTY с Fish, дождаться `Active v2` и пройти общую lifecycle matrix выше.
-2. Повторить в PowerShell на каждой поддерживаемой платформе, отдельно проверив `$LASTEXITCODE`,
-   native process exit и pipeline semantics.
-3. Запустить Bash/Zsh/Fish внутри tmux и screen. Выполнить команды, nested shell и alt-screen
-   приложение; protocol events не должны появляться как видимый мусор или теряться.
-4. Отключить passthrough/configuration. UI должен показать диагностируемый degraded status и
-   предложить инструкцию, но не редактировать config.
-5. Подключиться по SSH/container без remote bootstrap. Terminal работает обычно, integration
-   честно сообщает unsupported/degraded.
-6. Выполнить explicit remote bootstrap после просмотра target/version. Проверить lifecycle,
-   reconnect, version mismatch и cleanup.
-7. Отказать в bootstrap или оборвать соединение посередине. Remote user files не должны быть
-   повреждены; partial temporary assets удаляются или документированно обнаруживаются.
-8. Выбрать неизвестный shell. Приложение не падает и не имитирует block lifecycle, а показывает
-   `Unsupported(<shell>)`.
+1. Launch OTTY with Fish, wait for `Active v2`, and complete the shared lifecycle matrix.
+2. Repeat in PowerShell on every supported platform, separately checking `$LASTEXITCODE`,
+   native-process exit, and pipeline semantics.
+3. Run Bash, Zsh, and Fish inside tmux and screen. Exercise commands, a nested shell, and an
+   alternate-screen application; protocol events must not become visible garbage or disappear.
+4. Disable passthrough or configuration. The UI must show a diagnosable degraded status and
+   offer instructions without editing configuration.
+5. Connect through SSH or to a container without remote bootstrap. The terminal must work
+   normally and integration must honestly report unsupported or degraded.
+6. Run explicit remote bootstrap after reviewing target and version. Verify lifecycle,
+   reconnect, version mismatch, and cleanup.
+7. Reject bootstrap or interrupt it halfway through. Remote user files must remain intact;
+   partial temporary assets are removed or discoverable through documented cleanup.
+8. Select an unknown shell. The application must not crash or imitate block lifecycle and must
+   report `Unsupported(<shell>)`.
 
-Фаза готова только для тех environments, которые прошли реальный lifecycle matrix. Наличие
-непроверенного script prototype не считается поддержкой.
-
+The phase is complete only for environments that pass a real lifecycle matrix. An unverified
+script prototype does not constitute support.

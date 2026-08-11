@@ -1,74 +1,71 @@
-# Фаза 10: финальная активация v2 и удаление legacy
+# Phase 10: final v2 rollout and legacy removal
 
-Статус: **частично выполнена: зафиксировано решение по v1 и выполнена проверочная
-подготовка**.
+Status: **partially complete: the v1 decision and verification groundwork are recorded**.
 
-Родительский документ: [Blocks v2](../blocks-v2.md). Идентификаторы: B2-100–B2-105.
+Parent document: [Blocks v2 specification](spec.md). IDs: B2-100–B2-105.
 
-## Цель
+## Goal
 
-После прохождения полной acceptance matrix сделать Blocks v2 единственным production
-path и до релиза удалить v1 emission/parser/actions/lifecycle, а также старую
-stitched-history architecture.
+After the full acceptance matrix passes, make Blocks v2 the only production path and remove v1
+emission, parser, actions, and lifecycle plus the old stitched-history architecture before
+release.
 
-## Фиксированное решение по v1
+## Fixed v1 decision
 
-- V1 не является публичным compatibility mode и не остаётся в production бинарнике
-  вместе с v2.
-- Runtime switch `old/v2`, compatibility adapter и migration window не реализуются.
-- Shell integration и parser поставляются одним application artifact, поэтом user-data
-  migration между protocol versions не требуется.
-- Rollback выполняется установкой предыдущего application artifact. Предыдущий path не
-  хранится в новом бинарнике ради rollback.
-- После удаления v1 старое `otty-dcs;block` сообщение безопасно игнорируется
-  общим DCS parser-ом, не создаёт block/event и не вызывает panic.
+- V1 is not a public compatibility mode and does not coexist with v2 in the production binary.
+- No `old/v2` runtime switch, compatibility adapter, or migration window is implemented.
+- Shell integration and parser ship in one application artifact, so no user-data migration is
+  required between protocol versions.
+- Rollback installs the previous application artifact. The new binary does not retain the
+  previous path solely for rollback.
+- After v1 removal, the shared DCS parser safely ignores old `otty-dcs;block` messages without
+  creating a block or event or causing a panic.
 
-## Текущее состояние
+## Current state
 
-В рамках первого среза запускались format, Clippy, deny, workspace tests и coverage. Все
-команды проходят. Зафиксированное глобальное line coverage составляет 51.16%;
-фиксированного минимального порога нет, а последующие изменения не должны снижать общий
-line coverage относительно baseline до изменений. `cargo deny` сообщает существующие
-warnings о yanked transitive `core2 0.4.0` и `spin 0.9.8`, но завершается успешно.
+Formatting, Clippy, deny, workspace tests, and coverage were run for the initial slice and all
+commands pass. Recorded global line coverage is 51.16%; there is no fixed minimum, but later
+changes must not reduce overall line coverage from their pre-change baseline. `cargo deny`
+reports existing warnings for yanked transitive `core2 0.4.0` and `spin 0.9.8` and exits
+successfully.
 
-Архитектурное решение B2-100 зафиксировано. V1 script emission, parser/schema,
-actions/handlers и lifecycle удалены из production; framing сохранён только в ignore-тестах и
-исторической документации. Baseline фазы 0 зафиксирован. Полная acceptance matrix, сравнение с
-финальной архитектурой и удаление old stitched-history ещё не выполнены.
+The B2-100 architectural decision is fixed. V1 script emission, parser and schema, actions and
+handlers, and lifecycle are removed from production; framing remains only in ignore tests and
+historical documentation. The phase 0 baseline is recorded. The complete acceptance matrix,
+comparison with the final architecture, and removal of old stitched history are not complete.
 
-## Объём работ
+## Scope
 
-- [x] **B2-100** Зафиксировать single-path release policy: не добавлять runtime switch,
-  compatibility adapter и migration window; rollback выполняется предыдущим artifact.
-- [x] **B2-101** Добиться успешного прохождения полного обязательного набора проверок,
-  включая `cargo llvm-cov`, подтвердить, что общий line coverage не снизился относительно
-  baseline до изменений, и не допустить новых deny errors/warnings.
-- [ ] **B2-102** После завершения целевой архитектуры повторить B2-004/B2-005 и сравнить с ранее
-  зафиксированным `baseline-results.md`; не собирать два engine path в одном бинарнике
-  ради сравнения. Зафиксировать memory, frame, latency и scroll correctness.
-- [ ] **B2-103** Подтвердить, что каждая новая supported terminal session использует только
-  v2 после Bash/Zsh, viewport, export и burst-output acceptance matrix; bootstrap failure оставляет
-  рабочий ordinary terminal с `Degraded`, а не переключает его на v1.
-- [ ] **B2-104** До релиза завершить и подтвердить removal из B2-014/B2-021: удалить
-  оставшиеся v1 script emission, parser/schema/actions/handlers/tests кроме legacy-ignore fixture,
-  а также old stitched-history snapshot,
-  временный `integration_status_badge` и относящийся к нему `is_shell` plumbing из pane-grid;
-  финальные integration diagnostics оставить в status/debug UI. Подтвердить отсутствие
-  production search matches для v1.
-- [ ] **B2-105** Обновить `otty-surface`, `otty-escape` и `otty-ui/terminal` README финальными
-  контрактами, limits, examples и troubleshooting без инструкций по миграции v1.
+- [x] **B2-100** Define a single-path release policy: no runtime switch, compatibility adapter,
+  or migration window; rollback uses the previous artifact.
+- [x] **B2-101** Pass the complete required check set, including `cargo llvm-cov`, confirm that
+  overall line coverage does not decrease from the pre-change baseline, and introduce no new
+  deny errors or warnings.
+- [ ] **B2-102** After the target architecture is complete, repeat B2-004/B2-005 and compare
+  with `baseline-results.md`. Do not build two engine paths into one binary for comparison.
+  Record memory, frames, latency, and scroll correctness.
+- [ ] **B2-103** Confirm that every new supported terminal session uses only v2 after the
+  Bash/Zsh, viewport, export, and burst-output acceptance matrix. Bootstrap failure leaves a
+  working ordinary terminal in `Degraded`, never a v1 fallback.
+- [ ] **B2-104** Before release, complete and confirm removal from B2-014/B2-021: remove any
+  remaining v1 script emission, parser/schema, actions/handlers, and tests except the
+  legacy-ignore fixture; also remove the old stitched-history snapshot, temporary
+  `integration_status_badge`, and related `is_shell` plumbing from pane-grid. Retain final
+  integration diagnostics in status/debug UI and confirm no production v1 search matches.
+- [ ] **B2-105** Update the `otty-surface`, `otty-escape`, and `otty-ui/terminal` READMEs with
+  final contracts, limits, examples, and troubleshooting without v1 migration instructions.
 
-## Условия финализации
+## Finalization conditions
 
-- Фазы 0–8 закрыты, а применимые пункты фазы 9 имеют честные capability statuses.
-- Finished history не хранит mutable Surface на block.
-- Off-screen copy/save и stable viewport/selection проверены вручную.
-- Replaceable backlog ограничен одним frame при burst output.
-- Protocol spoof/malformed/stale matrix не corrupt-ит model.
-- Final v2 и сохранённый baseline измерены одинаковыми сценариями на сопоставимой
-  машине.
+- Phases 0–8 are closed and applicable phase 9 items have honest capability statuses.
+- Finished history does not retain a mutable `Surface` per block.
+- Off-screen copy/save and stable viewport/selection are manually verified.
+- Replaceable backlog is limited to one frame during burst output.
+- Protocol spoof, malformed-input, and stale-event matrices do not corrupt the model.
+- Final v2 and the saved baseline are measured with identical scenarios on comparable
+  machines.
 
-## Автоматическая проверка
+## Automated verification
 
 ```bash
 cargo +nightly fmt --all -- --check
@@ -78,31 +75,30 @@ cargo test --workspace --all-features
 cargo llvm-cov --workspace --all-features
 ```
 
-Coverage запускать одной и той же командой до и после изменений; итоговый overall line
-coverage не должен быть ниже исходного. Фиксированный минимальный процент не применяется.
+Run coverage with the same command before and after changes; final overall line coverage must
+not be lower than the starting value. No fixed minimum percentage applies.
 
-Дополнительно выполнить benchmark/ignored scenarios фазы 0 для финального v2 и сравнить с
-ранее сохранённым baseline report. Результат должен содержать не только среднее время,
-но и параметры history/viewport, peak memory, replaced frame count и факт прохождения scroll assertions.
+Also run the phase 0 benchmark and ignored scenarios against final v2 and compare with the
+saved baseline report. Results must include not only average time but history and viewport
+parameters, peak memory, replaced-frame count, and scroll-assertion status.
 
-## Ручная проверка
+## Manual verification
 
-1. Запустить финальную сборку и убедиться, что каждая новая Bash/Zsh terminal session
-   получает v2 без user-visible protocol selector.
-2. Пройти Bash и Zsh root/nested lifecycle, manual-scroll/resize/selection matrix, миллион строк
-   burst output и off-screen copy/save.
-3. Сравнить результаты с `baseline-results.md`: v2 должен удовлетворять limits раздела
-   13.5, а любое ухудшение документируется и блокирует релиз.
-4. Принудительно вызвать bootstrap/protocol failure: terminal остаётся рабочим, UI показывает
-   причину `Degraded`, v1 fallback не запускается.
-5. Отправить старое v1 DCS событие. Оно должно безопасно игнорироваться, не создавать
-   block/event и не вызывать panic.
-6. Выполнить repository search по `otty-dcs;block`, `BlockEvent`, `BlockPhase`, old stitched snapshot и
-   runtime switch. Production references должны отсутствовать; v1 framing допустим только как
-   legacy-ignore test fixture и в historical notes.
-7. По финальным README с чистого окружения настроить Bash/Zsh и воспроизвести active/degraded/
-   unsupported cases без знания внутренней реализации.
+1. Launch the final build and confirm that every new Bash/Zsh terminal session receives v2
+   without a user-visible protocol selector.
+2. Complete the root/nested Bash/Zsh lifecycle, manual scroll/resize/selection matrix, one
+   million lines of burst output, and off-screen copy/save.
+3. Compare results with `baseline-results.md`: v2 must satisfy the
+   [load criteria](spec.md#load-criteria), and any regression is documented and blocks release.
+4. Force bootstrap or protocol failure. The terminal must remain usable, the UI must show the
+   `Degraded` reason, and no v1 fallback may start.
+5. Send an old v1 DCS event. It must be safely ignored without creating a block/event or panic.
+6. Search the repository for `otty-dcs;block`, `BlockEvent`, `BlockPhase`, the old stitched
+   snapshot, and runtime switches. Production references must be absent; v1 framing is allowed
+   only in the legacy-ignore test fixture and historical notes.
+7. From a clean environment, use the final READMEs to configure Bash/Zsh and reproduce active,
+   degraded, and unsupported states without knowledge of internals.
 
-Фаза и весь Blocks v2 готовы только когда v2 является единственным production path,
-старый код удалён до релиза, все команды выше проходят, а Definition of Done общего roadmap
-подтверждён ручной acceptance matrix.
+This phase and Blocks v2 as a whole are complete only when v2 is the sole production path, old
+code is removed before release, every command above passes, and the shared
+[Definition of Done](spec.md#definition-of-done) is confirmed by the manual acceptance matrix.

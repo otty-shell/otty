@@ -1,23 +1,28 @@
 use std::cmp::{max, min};
-use std::collections::HashMap;
-use std::sync::Arc;
 
 mod content;
 mod id;
 mod lifecycle;
+mod list;
 mod metrics;
+mod model;
 
 pub use content::{CommandRecord, CommandSource};
 pub use id::{BlockId, ProtocolSequence, ShellInstanceId, TerminalSessionId};
 pub use lifecycle::{
-    BlockMetadata, BlockOutcome, BlockRecord, BlockState, DegradedReason,
-    IntegrationStatus, LifecycleDiagnostic, LifecycleEvent, LifecycleInput,
-    LifecycleReducer, LifecycleUpdate,
+    DegradedReason, IntegrationStatus, LifecycleDiagnostic, LifecycleEvent,
+    LifecycleInput, LifecycleReducer, LifecycleUpdate,
 };
+use list::BlockList;
 pub use metrics::BlockMemoryMetrics;
+use model::Block;
+pub use model::{
+    BlockKind, BlockMeta, BlockMetadata, BlockOutcome, BlockRecord,
+    BlockSnapshot, BlockState,
+};
 
 use crate::cell::Cell;
-use crate::grid::{Grid, Scroll};
+use crate::grid::Scroll;
 use crate::hyperlink::HyperlinkMap;
 use crate::index::{Column, Line, Point};
 use crate::selection::SelectionRange;
@@ -25,181 +30,7 @@ use crate::snapshot::{
     CursorSnapshot, SnapshotCell, SnapshotDamage, SnapshotOwned, SnapshotSize,
     SurfaceModel,
 };
-use crate::{
-    Dimensions, Flags, Surface, SurfaceActor, SurfaceConfig, SurfaceMode,
-};
-
-/// Kind of a terminal block.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub enum BlockKind {
-    #[default]
-    Command,
-    Prompt,
-    FullScreen,
-}
-
-/// Minimal metadata associated with a terminal block.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct BlockMeta {
-    /// Unique identifier reported by the escape handler for this block.
-    pub id: String,
-    /// Semantic category (prompt, command, fullscreen) of the block.
-    pub kind: BlockKind,
-    /// Command line (if known) that generated the block.
-    pub cmd: Option<String>,
-    /// Working directory captured when the block started.
-    pub cwd: Option<String>,
-    /// Shell executable responsible for the block.
-    pub shell: Option<String>,
-    /// Exit status of the command, once finished.
-    pub exit_code: Option<i32>,
-    /// Timestamp marking when the block started executing.
-    pub started_at: Option<i64>,
-    /// Timestamp marking when the block finished executing.
-    pub finished_at: Option<i64>,
-    /// Whether the block ever entered alt-screen mode.
-    pub is_alt_screen: bool,
-    /// Whether the block has finished producing output.
-    pub is_finished: bool,
-}
-
-impl BlockMeta {
-    fn merge_completion(&mut self, patch: &Self) {
-        if let Some(cmd) = &patch.cmd {
-            self.cmd = Some(cmd.clone());
-        }
-        if let Some(cwd) = &patch.cwd {
-            self.cwd = Some(cwd.clone());
-        }
-        if let Some(shell) = &patch.shell {
-            self.shell = Some(shell.clone());
-        }
-        if let Some(started_at) = patch.started_at {
-            self.started_at = Some(started_at);
-        }
-        if let Some(finished_at) = patch.finished_at {
-            self.finished_at = Some(finished_at);
-        }
-        if let Some(exit_code) = patch.exit_code {
-            self.exit_code = Some(exit_code);
-        }
-        self.is_alt_screen |= patch.is_alt_screen;
-        self.is_finished = true;
-    }
-}
-
-/// Snapshot entry describing a block's extent within the viewport.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct BlockSnapshot {
-    /// Metadata describing the block captured in this snapshot entry.
-    pub meta: BlockMeta,
-    /// Viewport-relative line where this block begins.
-    pub start_line: i32,
-    /// Number of visible lines contributed by this block.
-    pub line_count: usize,
-    /// Cached full textual contents for finished blocks.
-    ///
-    /// This is intentionally detached from the viewport so UI actions like
-    /// "copy content" can include scrollback lines that are currently off-screen.
-    pub cached_text: Option<Arc<str>>,
-    /// Prompt section captured from OSC 133 boundaries.
-    pub prompt_text: Option<Arc<str>>,
-    /// Output section captured independently from prompt and command text.
-    pub output_text: Option<Arc<str>>,
-    /// Whether this block snapshot corresponds to an alt screen.
-    pub is_alt_screen: bool,
-}
-
-/// In‑memory representation of a single block.
-struct Block {
-    /// Stable typed identity used by model operations and indexes.
-    id: BlockId,
-    /// Metadata describing the block's identity and lifecycle.
-    pub meta: BlockMeta,
-    /// Explicit lifecycle state for routing and completion.
-    state: BlockState,
-    /// Embedded surface that records the block's terminal contents.
-    pub surface: Surface,
-    /// Cached textual contents for finished blocks.
-    pub cached_text: Option<Arc<str>>,
-    /// Semantic prompt, command and output sections.
-    content: content::BlockContent,
-}
-
-impl Block {
-    /// Construct a block with its own `Surface` configured for the provided
-    /// dimensions so it can capture terminal output independently.
-    fn new<D: Dimensions>(
-        config: &SurfaceConfig,
-        dimensions: &D,
-        meta: BlockMeta,
-    ) -> Self {
-        let id = if meta.id.is_empty() {
-            BlockId::new("otty:bootstrap:0")
-        } else {
-            BlockId::new(meta.id.clone())
-        };
-        let state = if meta.is_finished {
-            BlockState::Finished(BlockOutcome::Unknown)
-        } else if meta.kind == BlockKind::Prompt {
-            BlockState::BeforeExecution
-        } else {
-            BlockState::Executing
-        };
-
-        Self {
-            id,
-            meta,
-            state,
-            surface: Surface::new(config.clone(), dimensions),
-            cached_text: None,
-            content: content::BlockContent::default(),
-        }
-    }
-
-    fn update_cached_text(&mut self) {
-        if self.meta.kind == BlockKind::Prompt || !self.meta.is_finished {
-            return;
-        }
-
-        let grid = self.surface.grid();
-        let (top_line, total_lines) = BlockSurface::block_visible_extent(self);
-        if total_lines == 0 || self.surface.columns() == 0 {
-            self.cached_text = None;
-            return;
-        }
-
-        let columns = self.surface.columns();
-        let start = top_line.0;
-        let end = start + total_lines as i32;
-
-        let mut lines = Vec::with_capacity(total_lines);
-        for line_value in start..end {
-            let line = Line(line_value);
-            let mut buffer = String::with_capacity(columns);
-            for col in 0..columns {
-                let column = Column(col);
-                let cell = &grid[line][column];
-                if !cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
-                    buffer.push(cell.c);
-                }
-            }
-            lines.push(buffer.trim_end_matches(' ').to_string());
-        }
-
-        while lines.last().is_some_and(String::is_empty) {
-            lines.pop();
-        }
-
-        let text = lines.join("\n");
-        if text.is_empty() {
-            self.cached_text = None;
-        } else {
-            self.cached_text = Some(Arc::<str>::from(text));
-        }
-        self.content.freeze(self.cached_text.as_ref());
-    }
-}
+use crate::{Dimensions, SurfaceActor, SurfaceConfig, SurfaceMode};
 
 /// Aggregate geometry for a block within the concatenated history.
 struct BlockSliceInfo {
@@ -301,9 +132,7 @@ impl Dimensions for BlockDimensions {
 /// snapshots are exported only for that block.
 pub struct BlockSurface {
     /// Ordered list of terminal blocks and their backing surfaces.
-    blocks: Vec<Block>,
-    /// Stable identity lookup rebuilt after structural list changes.
-    block_id_to_index: HashMap<BlockId, usize>,
+    blocks: BlockList,
     /// Upper bound on how many blocks to retain in history.
     max_blocks: usize,
     /// Rendering configuration cloned into new blocks.
@@ -347,7 +176,7 @@ impl Dimensions for BlockSurface {
         let history = self
             .blocks
             .iter()
-            .map(Self::block_visible_line_count)
+            .map(Block::visible_line_count)
             .sum::<usize>();
 
         max(viewport, history)
@@ -361,11 +190,9 @@ impl BlockSurface {
     /// Create a new block surface with a single empty block.
     pub fn new<D: Dimensions>(config: SurfaceConfig, dimensions: &D) -> Self {
         let block = Block::new(&config, dimensions, BlockMeta::default());
-        let block_id_to_index = HashMap::from([(block.id.clone(), 0)]);
 
         Self {
-            blocks: vec![block],
-            block_id_to_index,
+            blocks: BlockList::new(block),
             max_blocks: Self::DEFAULT_MAX_BLOCKS,
             config,
             display_offset: 0,
@@ -405,7 +232,7 @@ impl BlockSurface {
 
     /// Estimate retained block memory without exposing command or output text.
     pub fn memory_metrics(&self) -> BlockMemoryMetrics {
-        BlockMemoryMetrics::from_blocks(&self.blocks)
+        BlockMemoryMetrics::from_blocks(self.blocks.as_slice())
     }
 
     /// Return the index of the last block, clamping to zero if no blocks exist.
@@ -428,11 +255,9 @@ impl BlockSurface {
             ScrollPosition::FollowTail => self.display_offset = 0,
             ScrollPosition::Anchored(anchor) => {
                 let slices = self.block_slices();
-                let target = self
-                    .block_id_to_index
-                    .get(&anchor.block_id)
-                    .and_then(|index| {
-                        slices.iter().find(|slice| slice.index == *index)
+                let target =
+                    self.blocks.index_of(&anchor.block_id).and_then(|index| {
+                        slices.iter().find(|slice| slice.index == index)
                     });
 
                 if let Some(target) = target {
@@ -472,16 +297,6 @@ impl BlockSurface {
             block_row: context.start.saturating_sub(slice.start),
             viewport_row: 0,
         });
-    }
-
-    fn rebuild_block_index(&mut self) {
-        self.block_id_to_index.clear();
-        self.block_id_to_index.extend(
-            self.blocks
-                .iter()
-                .enumerate()
-                .map(|(index, block)| (block.id.clone(), index)),
-        );
     }
 
     fn synchronize_lifecycle_update(&mut self, update: &LifecycleUpdate) {
@@ -525,7 +340,7 @@ impl BlockSurface {
             is_finished: matches!(state, BlockState::Finished(_)),
         };
 
-        if let Some(index) = self.block_id_to_index.get(record.id()).copied()
+        if let Some(index) = self.blocks.index_of(record.id())
             && let Some(block) = self.blocks.get_mut(index)
         {
             let was_before_execution =
@@ -541,8 +356,8 @@ impl BlockSurface {
             return;
         }
 
-        self.begin_block(meta);
-        if let Some(index) = self.block_id_to_index.get(record.id()).copied()
+        self.append_block(meta);
+        if let Some(index) = self.blocks.index_of(record.id())
             && let Some(block) = self.blocks.get_mut(index)
         {
             block.state = state;
@@ -555,7 +370,7 @@ impl BlockSurface {
         if self.is_alt_screen_active()
             && let Some(block) = self.blocks.get(self.last_block_idx())
         {
-            let (top_line, total_lines) = Self::block_visible_extent(block);
+            let (top_line, total_lines) = block.visible_extent();
             return vec![BlockSliceInfo {
                 index: self.last_block_idx(),
                 start: 0,
@@ -568,7 +383,7 @@ impl BlockSurface {
         let mut result = Vec::with_capacity(self.blocks.len());
 
         for (index, block) in self.blocks.iter().enumerate() {
-            let (top_line, total_lines) = Self::block_visible_extent(block);
+            let (top_line, total_lines) = block.visible_extent();
             let slice = BlockSliceInfo {
                 index,
                 start,
@@ -689,7 +504,9 @@ impl BlockSurface {
             return;
         }
 
-        let removed = self.blocks.remove(index);
+        let Some(removed) = self.blocks.remove(index) else {
+            return;
+        };
         if matches!(
             &self.scroll_position,
             ScrollPosition::Anchored(anchor) if anchor.block_id == removed.id
@@ -706,8 +523,6 @@ impl BlockSurface {
                     })
                 });
         }
-        self.rebuild_block_index();
-
         if let Some(selection_index) = self.selection_block {
             if selection_index == index {
                 self.selection_block = None;
@@ -721,15 +536,29 @@ impl BlockSurface {
         self.calculate_display_offset();
     }
 
-    /// Terminates the current block (if it's still running), creates a new block
-    /// with a new `Surface`, and makes it active.
-    fn begin_block(&mut self, meta: BlockMeta) {
+    fn append_block(&mut self, meta: BlockMeta) {
         let id = BlockId::new(meta.id.clone());
-        if !meta.id.is_empty() && self.block_id_to_index.contains_key(&id) {
+        if !meta.id.is_empty() && self.blocks.contains(&id) {
             return;
         }
 
-        // Mark the active block as complete if it is not already marked.
+        let size = {
+            let surface = &self.blocks[self.last_block_idx()].surface;
+            BlockDimensions {
+                columns: surface.columns(),
+                screen_lines: surface.screen_lines(),
+            }
+        };
+
+        let block = Block::new(&self.config, &size, meta);
+        self.blocks.append(block);
+
+        self.enforce_max_blocks();
+        self.calculate_display_offset();
+    }
+
+    #[cfg(test)]
+    fn begin_block(&mut self, meta: BlockMeta) {
         let idx = self.last_block_idx();
         if let Some(active) = self.blocks.get_mut(idx) {
             if !active.meta.is_finished {
@@ -744,41 +573,7 @@ impl BlockSurface {
             active.update_cached_text();
         }
 
-        // A new block is created with the current surface dimensions.
-        let size = {
-            let surface = &self.blocks[self.last_block_idx()].surface;
-            BlockDimensions {
-                columns: surface.columns(),
-                screen_lines: surface.screen_lines(),
-            }
-        };
-
-        let block = Block::new(&self.config, &size, meta);
-        let block_id = block.id.clone();
-        let index = self.blocks.len();
-        self.blocks.push(block);
-        self.block_id_to_index.insert(block_id, index);
-
-        self.enforce_max_blocks();
-        self.calculate_display_offset();
-    }
-
-    /// Updates the metadata and marks the block with the given `id` as complete.
-    pub fn end_block_by_id(&mut self, meta: &BlockMeta) {
-        let block_id = BlockId::new(meta.id.clone());
-        if let Some(index) = self.block_id_to_index.get(&block_id).copied()
-            && let Some(block) = self.blocks.get_mut(index)
-        {
-            block.meta.merge_completion(meta);
-            let outcome = meta
-                .exit_code
-                .map(BlockOutcome::Exited)
-                .unwrap_or(BlockOutcome::Unknown);
-            block.state = BlockState::Finished(outcome);
-            block.update_cached_text();
-        }
-
-        self.enforce_max_blocks();
+        self.append_block(meta);
     }
 
     /// Scroll a retained block into view without relying on frame geometry.
@@ -789,7 +584,7 @@ impl BlockSurface {
     ) -> bool {
         self.calculate_display_offset();
 
-        let Some(index) = self.block_id_to_index.get(block_id).copied() else {
+        let Some(index) = self.blocks.index_of(block_id) else {
             return false;
         };
         let slices = self.block_slices();
@@ -861,30 +656,6 @@ impl BlockSurface {
         snapshot
     }
 
-    /// Return the number of visible lines from a block, including trimmed
-    /// viewport content and scrollback.
-    fn block_visible_line_count(block: &Block) -> usize {
-        Self::block_visible_extent(block).1
-    }
-
-    /// Calculate the top-most visible line and total visible line count for a
-    /// block by trimming empty viewport rows.
-    fn block_visible_extent(block: &Block) -> (Line, usize) {
-        let grid = block.surface.grid();
-        let history_lines = grid.history_size();
-        let screen_lines = grid.screen_lines();
-        let (viewport_head, viewport_tail) =
-            Self::viewport_content_bounds(grid);
-        let trim_head = if history_lines == 0 { viewport_head } else { 0 };
-        let trim_tail = screen_lines.saturating_sub(viewport_tail);
-        let visible_viewport =
-            screen_lines.saturating_sub(trim_head + trim_tail);
-        let total_lines = history_lines + visible_viewport;
-        let top_line = grid.topmost_line() + trim_head;
-
-        (top_line, total_lines)
-    }
-
     /// Resolve a viewport-relative point into the owning block together with
     /// its local coordinates and global history index.
     fn resolve_block_point_with(
@@ -942,32 +713,6 @@ impl BlockSurface {
                 point: Point::new(line, column),
                 cell: blank_cell.clone(),
             });
-        }
-    }
-
-    /// Determine the first/last meaningful viewport rows (non-empty or cursor
-    /// row) to trim empty top/bottom padding.
-    fn viewport_content_bounds(grid: &Grid<Cell>) -> (usize, usize) {
-        let screen_lines = grid.screen_lines();
-        let mut first_non_empty = None;
-        let mut last_non_empty = None;
-        let cursor_line = grid.cursor.point.line;
-
-        for row_idx in 0..screen_lines {
-            let line = Line(row_idx as i32);
-            let row = &grid[line];
-            let is_cursor_row = cursor_line == line;
-            if is_cursor_row || !row.is_clear() {
-                if first_non_empty.is_none() {
-                    first_non_empty = Some(row_idx);
-                }
-                last_non_empty = Some(row_idx + 1);
-            }
-        }
-
-        match (first_non_empty, last_non_empty) {
-            (Some(start), Some(end)) => (start, end),
-            _ => (screen_lines, screen_lines),
         }
     }
 
@@ -1995,89 +1740,6 @@ mod tests {
     }
 
     #[test]
-    fn block_surface_end_block_by_id_marks_block_finished() {
-        let dims = TestDimensions::new(4, 2);
-        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
-
-        let start_meta = BlockMeta {
-            id: String::from("cmd-1"),
-            kind: BlockKind::Command,
-            cmd: None,
-            cwd: None,
-            shell: None,
-            started_at: Some(10),
-            finished_at: None,
-            exit_code: None,
-            is_alt_screen: false,
-            is_finished: false,
-        };
-
-        surface.begin_block(start_meta);
-
-        let meta = BlockMeta {
-            id: String::from("cmd-1"),
-            kind: BlockKind::Command,
-            cmd: None,
-            cwd: None,
-            shell: None,
-            started_at: Some(10),
-            finished_at: Some(20),
-            exit_code: Some(0),
-            is_alt_screen: false,
-            is_finished: false,
-        };
-
-        surface.end_block_by_id(&meta);
-
-        let block = surface
-            .blocks
-            .iter()
-            .find(|b| b.meta.id == "cmd-1")
-            .expect("block exists");
-        assert_eq!(block.meta.exit_code, Some(0));
-        assert_eq!(block.meta.finished_at, Some(20));
-        assert!(block.meta.is_finished);
-    }
-
-    #[test]
-    fn completion_patch_preserves_command_cwd_and_start_time() {
-        let dims = TestDimensions::new(8, 3);
-        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
-        let start_meta = BlockMeta {
-            id: String::from("cmd-merge"),
-            kind: BlockKind::Command,
-            cmd: Some(String::from("printf stable")),
-            cwd: Some(String::from("/before")),
-            shell: Some(String::from("bash")),
-            started_at: Some(10),
-            ..BlockMeta::default()
-        };
-        surface.begin_block(start_meta);
-        let completion = BlockMeta {
-            id: String::from("cmd-merge"),
-            kind: BlockKind::Command,
-            cwd: Some(String::from("/after")),
-            finished_at: Some(20),
-            exit_code: Some(7),
-            ..BlockMeta::default()
-        };
-
-        surface.end_block_by_id(&completion);
-
-        let block = surface
-            .blocks
-            .iter()
-            .find(|block| block.meta.id == "cmd-merge")
-            .expect("block should exist");
-        assert_eq!(block.meta.cmd.as_deref(), Some("printf stable"));
-        assert_eq!(block.meta.cwd.as_deref(), Some("/after"));
-        assert_eq!(block.meta.shell.as_deref(), Some("bash"));
-        assert_eq!(block.meta.started_at, Some(10));
-        assert_eq!(block.meta.finished_at, Some(20));
-        assert_eq!(block.meta.exit_code, Some(7));
-    }
-
-    #[test]
     fn snapshot_exposes_integration_status_and_degraded_reason() {
         let dims = TestDimensions::new(8, 3);
         let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
@@ -2125,6 +1787,69 @@ mod tests {
                 received,
             }) if expected.value() == 2 && received.value() == 3
         ));
+    }
+
+    #[test]
+    fn consecutive_prepared_blocks_do_not_finish_each_other_in_surface_model() {
+        let dims = TestDimensions::new(8, 3);
+        let mut surface = BlockSurface::new(SurfaceConfig::default(), &dims);
+        let session_id = TerminalSessionId::new("session");
+        let shell_id = ShellInstanceId::new("shell");
+        let first_id = BlockId::new("session:shell:1");
+        let second_id = BlockId::new("session:shell:2");
+        surface.register_terminal_session(session_id.clone());
+
+        for input in [
+            LifecycleInput::new(
+                session_id.clone(),
+                shell_id.clone(),
+                ProtocolSequence::new(1),
+                LifecycleEvent::ShellHello {
+                    parent_shell_instance_id: None,
+                    shell: String::from("bash"),
+                    shell_version: None,
+                },
+            ),
+            LifecycleInput::new(
+                session_id.clone(),
+                shell_id.clone(),
+                ProtocolSequence::new(2),
+                LifecycleEvent::PromptPrepare {
+                    block_id: first_id.clone(),
+                    cwd: Some(String::from("/before")),
+                    prepared_at: Some(2),
+                },
+            ),
+            LifecycleInput::new(
+                session_id,
+                shell_id,
+                ProtocolSequence::new(3),
+                LifecycleEvent::PromptPrepare {
+                    block_id: second_id.clone(),
+                    cwd: Some(String::from("/after-empty-enter")),
+                    prepared_at: Some(3),
+                },
+            ),
+        ] {
+            let update = surface
+                .lifecycle_reducer
+                .as_mut()
+                .expect("registered reducer")
+                .apply(input);
+            surface.synchronize_lifecycle_update(&update);
+        }
+
+        for id in [&first_id, &second_id] {
+            let index = surface
+                .blocks
+                .index_of(id)
+                .expect("prepared block should be indexed");
+            assert_eq!(
+                surface.blocks[index].state,
+                BlockState::BeforeExecution
+            );
+            assert!(!surface.blocks[index].meta.is_finished);
+        }
     }
 
     #[test]
@@ -2339,11 +2064,11 @@ mod tests {
         }
 
         assert_eq!(surface.blocks.len(), 2);
-        assert_eq!(surface.block_id_to_index.len(), surface.blocks.len());
+        assert_eq!(surface.blocks.index_len(), surface.blocks.len());
         for (index, block) in surface.blocks.iter().enumerate() {
-            assert_eq!(surface.block_id_to_index.get(&block.id), Some(&index));
+            assert_eq!(surface.blocks.index_of(&block.id), Some(index));
         }
-        assert!(!surface.block_id_to_index.contains_key(&BlockId::new("one")));
+        assert!(surface.blocks.index_of(&BlockId::new("one")).is_none());
     }
 
     #[test]

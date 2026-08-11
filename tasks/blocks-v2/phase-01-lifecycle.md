@@ -1,54 +1,54 @@
-# Фаза 1: typed identity и lifecycle reducer
+# Phase 1: typed identity and lifecycle reducer
 
-Статус: **частично выполнено**.
+Status: **complete**.
 
-Родительский документ: [Blocks v2](../blocks-v2.md). Идентификаторы: B2-010–B2-016.
+Parent document: [Blocks v2 specification](spec.md). IDs: B2-010–B2-016.
 
-## Цель
+## Goal
 
-Сделать lifecycle блока детерминированным и независимым от эвристик UI. Каждое событие должно
-адресовать terminal session, shell instance и block через отдельные типы. Duplicate, stale,
-missing и out-of-order events обрабатываются reducer-ом и не могут завершить соседний блок.
+Make block lifecycle deterministic and independent of UI heuristics. Every event addresses the
+terminal session, shell instance, and block through distinct types. Duplicate, stale, missing,
+and out-of-order events are handled by the reducer and cannot finish an adjacent block.
 
-## Текущее состояние
+## Current state
 
-В первом вертикальном срезе добавлены `BlockId`, `TerminalSessionId`, `ShellInstanceId`,
-`ProtocolSequence`, lifecycle states/outcomes, sparse metadata merge, diagnostics,
-`block_id_to_index` и tests основных recovery cases. Старая duplicate-ID логика больше не
-завершает предыдущий блок.
+`BlockId`, `TerminalSessionId`, `ShellInstanceId`, `ProtocolSequence`, lifecycle states and
+outcomes, a separate sparse `MetadataPatch`, safe diagnostics, and one protocol-v2 reducer are
+implemented. Lifecycle verifies block ownership against the shell instance, so stale IDs,
+cross-shell events, and orphan completions cannot change an adjacent block.
 
-Старый `BlockEvent` lifecycle path удалён: production lifecycle принимает только
-protocol-v2 semantic events. Фаза не завершена, потому что `block.rs` ещё не разбит на
-окончательные focused `model`/`list` modules, transition matrix неполна, а reorder invariants
-нужно проверить вместе с будущей presentation model.
+The model is split into focused `id`, `model`, `lifecycle`, and `list` modules. `BlockList`
+encapsulates ordered storage and `block_id_to_index`; a deterministic randomized test compares
+the index with a linear search after every append, remove, and reorder. Production
+synchronization adds reducer records without heuristically finishing the preceding UI block.
 
-## Объём работ
+## Scope
 
-- [ ] **B2-010** Дополнить tests до всех transitions/recovery cases; normal, duplicate/stale,
-  gap, missing prepare/end, orphan end и shell exit уже покрыты.
-- [x] **B2-011** Ввести typed IDs и минимальные публичные accessors.
-- [ ] **B2-012** Формализовать отдельный `MetadataPatch`; lifecycle state/outcome и sparse
-  metadata update без полной замены известных полей уже реализованы.
-- [ ] **B2-013** Довести index tests до append/remove/reorder и randomized sequences; append и
-  remove уже покрыты.
-- [x] **B2-014** Удалить v1 `BlockEvent` lifecycle path; `LifecycleInput` и reducer принимают
-  только protocol-v2 semantic events. Compatibility adapter не добавлять.
-- [x] **B2-015** Duplicate/stale ID больше не должен вызывать completion другого блока.
-- [ ] **B2-016** Разделить оставшийся монолит на cohesive `model`, `lifecycle`, `id` и `list`
-  без pass-through модулей и расширения public API.
+- [x] **B2-010** Extend tests to cover every transition and recovery case.
+- [x] **B2-011** Introduce typed IDs and minimal public accessors.
+- [x] **B2-012** Define a separate `MetadataPatch`, lifecycle state and outcome, and sparse
+  metadata updates that do not replace known fields.
+- [x] **B2-013** Extend index tests through append, remove, reorder, and randomized sequences.
+- [x] **B2-014** Remove the v1 `BlockEvent` lifecycle path; `LifecycleInput` and the reducer
+  accept only protocol-v2 semantic events. Do not add a compatibility adapter.
+- [x] **B2-015** Ensure duplicate or stale IDs cannot complete another block.
+- [x] **B2-016** Split the remaining monolith into cohesive `model`, `lifecycle`, `id`, and
+  `list` modules without pass-through modules or a larger public API.
 
-## Обязательные lifecycle cases
+## Required lifecycle cases
 
 - normal prompt → command start → command end → next prompt;
-- empty Enter и Ctrl-C до/после command start;
-- duplicate/stale sequences и sequence gap;
-- missing `prompt_prepare` и missing `command_end` с документированным recovery;
-- sparse completion не стирает command, cwd-before или start time;
-- unknown block ID не меняет соседний block;
-- nested/root shell exit завершает только принадлежащие ему active blocks;
-- invalid transition создаёт безопасную diagnostic без command/output payload.
+- empty Enter without `command_start` finishes its own prepared block as
+  `Finished(Exited(0))` without changing the previous finished block;
+- Ctrl-C before and after command start;
+- duplicate or stale sequences and a sequence gap;
+- missing `prompt_prepare` and missing `command_end` with documented recovery;
+- sparse completion preserves command, cwd-before, and start time;
+- an unknown block ID does not change an adjacent block;
+- nested or root shell exit finishes only blocks owned by that shell;
+- an invalid transition emits a safe diagnostic without command or output payload.
 
-## Автоматическая проверка
+## Automated verification
 
 ```bash
 cargo test -p otty-surface block::lifecycle
@@ -56,24 +56,25 @@ cargo test -p otty-surface block
 cargo clippy -p otty-surface --all-targets --all-features -- -D warnings
 ```
 
-Перед закрытием добавить table-driven test для каждого пункта выше и invariant test, который
-после произвольной последовательности append/remove/reorder сравнивает `block_id_to_index` с
-простым линейным поиском.
+Before closing the phase, add a table-driven test for every case above and an invariant test
+that compares `block_id_to_index` with a simple linear search after arbitrary append, remove,
+and reorder sequences.
 
-## Ручная проверка
+## Manual verification
 
-1. Запустить `cargo run -p otty` с Bash.
-2. Выполнить последовательно `pwd`, `false`, `cd /tmp`, `true` и пустой Enter.
-3. Убедиться, что каждой реально запущенной команде соответствует ровно один блок, а пустой
-   Enter не завершает предыдущую команду повторно.
-4. Из корня репозитория дважды выполнить `source assets/shell-integrations/otty.bash`, затем
-   запустить `printf 'duplicate-check\n'`. Должен появиться один command block.
-5. Запустить nested `bash --noprofile --norc -i`, выполнить в нём `false`, выйти и выполнить
-   `true` в родительском shell. Child exit не должен завершить или изменить parent block.
-6. Повторить сценарий в Zsh с `assets/shell-integrations/otty.zsh`.
-7. Прокрутить назад и визуально проверить, что команды, cwd и завершённые блоки не изменяются
-   после следующих prompt events.
+1. Launch `cargo run -p otty` with Bash.
+2. Run `pwd`, `false`, `cd /tmp`, `true`, and an empty Enter in sequence.
+3. Confirm that every executed command has exactly one block. Empty Enter must create and
+   finish its own empty block with exit code `0`, without finishing the previous `true` block
+   again or changing its metadata.
+4. From the repository root, run `source assets/shell-integrations/otty.bash` twice and then
+   `printf 'duplicate-check\n'`. Exactly one command block must appear.
+5. Start nested `bash --noprofile --norc -i`, run `false`, exit it, and run `true` in the parent
+   shell. Child exit must not finish or modify the parent block.
+6. Repeat the scenario in Zsh with `assets/shell-integrations/otty.zsh`.
+7. Scroll back and visually confirm that commands, cwd values, and finished blocks do not
+   change after later prompt events.
 
-Фаза готова, когда production lifecycle имеет один protocol-v2 reducer, старый
-`BlockEvent` path отсутствует, все recovery rules выражены тестами, а ручной сценарий не
-создаёт duplicate/missing/cross-shell blocks.
+The phase is complete when production lifecycle has one protocol-v2 reducer, the old
+`BlockEvent` path is absent, every recovery rule is covered by tests, and the manual scenario
+creates no duplicate, missing, or cross-shell blocks.

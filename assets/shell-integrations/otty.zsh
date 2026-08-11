@@ -124,14 +124,19 @@ _otty_precmd() {
   _otty_saved_status=("$?" "${pipestatus[@]}")
   local exit_status=${_otty_saved_status[1]}
   local -a pipeline_status=("${_otty_saved_status[2,-1]}")
+  local completed_block_id=$_otty_active_block_id
   local cwd_json pipe_json separator value
 
   if (( ${#pipeline_status[@]} == 0 )); then
     pipeline_status=("$exit_status")
   fi
+  if [[ -z $completed_block_id && $exit_status -eq 0 ]]; then
+    completed_block_id=$_otty_prepared_block_id
+    pipeline_status=("$exit_status")
+  fi
 
   cwd_json=$(_otty_json_escape "$PWD")
-  if [[ -n $_otty_active_block_id ]]; then
+  if [[ -n $completed_block_id ]]; then
     pipe_json='['
     separator=
     for value in "${pipeline_status[@]}"; do
@@ -139,7 +144,7 @@ _otty_precmd() {
       separator=,
     done
     pipe_json+=']'
-    _otty_emit_event "command_end" "$_otty_active_block_id" "{\"exit_code\":$exit_status,\"pipe_status\":$pipe_json,\"cwd\":$cwd_json}"
+    _otty_emit_event "command_end" "$completed_block_id" "{\"exit_code\":$exit_status,\"pipe_status\":$pipe_json,\"cwd\":$cwd_json}"
     _otty_active_block_id=
   fi
 

@@ -1,53 +1,54 @@
-# Фаза 2: protocol v2 parser
+# Phase 2: protocol v2 parser
 
-Статус: **частично выполнено**.
+Status: **partially complete**.
 
-Родительский документ: [Blocks v2](../blocks-v2.md). Идентификаторы: B2-020–B2-027.
+Parent document: [Blocks v2 specification](spec.md). IDs: B2-020–B2-027.
 
-## Цель
+## Goal
 
-Ввести bounded и версионированный wire protocol между shell hooks и terminal backend. Parser
-должен переживать fragmentation, malformed/oversized input и чужие session events без panic,
-unbounded allocation или повреждения block lifecycle.
+Introduce a bounded, versioned wire protocol between shell hooks and the terminal backend. The
+parser must survive fragmented, malformed, and oversized input plus foreign-session events
+without panic, unbounded allocation, or block-lifecycle corruption.
 
-## Текущее состояние
+## Current state
 
-Реализованы `event-v2;h`, bounded hex/JSON parsing, typed envelope, все основные semantic
-events, OSC 133 A/B, terminal session validation, per-shell sequence diagnostics и wire-format
-documentation. Session ID создаётся из системного `/dev/urandom`, поэтому новая dependency не
-потребовалась.
+`event-v2;h`, bounded hex and JSON parsing, the typed envelope, all primary semantic events,
+OSC 133 A/B, terminal-session validation, per-shell sequence diagnostics, and wire-format
+documentation are implemented. Session IDs come from system `/dev/urandom`, so no new
+dependency was required.
 
-V1 `block` parser, schema и production action dispatch удалены; legacy-v1 fragmented и
-malformed frames безопасно игнорируются, после чего parser продолжает принимать v2. Фаза не
-завершена: остаётся randomized arbitrary-DCS allocation/panic test.
+The v1 `block` parser, schema, and production action dispatch have been removed. Fragmented and
+malformed legacy-v1 frames are safely ignored, after which the parser continues accepting v2.
+The remaining work is a randomized arbitrary-DCS allocation and panic test.
 
-## Объём работ
+## Scope
 
-- [x] **B2-020** Framing/schema/recovery tests для v2 и fragmented stream tests.
-- [x] **B2-021** После падающего legacy-ignore regression из B2-002 удалить v1
-  `dcs/block.rs`, `DcsMessageKind::Block` и production dispatch в
-  `Action::BlockEvent`; legacy `otty-dcs;block` должен безопасно отбрасываться как
-  unsupported DCS и не создавать semantic event.
-- [x] **B2-022** Bounded framing, hex decode и обязательная major version.
-- [x] **B2-023** Semantic events `shell_hello`, `prompt_prepare`, `command_start`,
-  `command_end`, `context_update`, `shell_exit`, `integration_error`.
-- [x] **B2-024** OSC 133 A/B и semantic prompt boundaries.
-- [x] **B2-025** System-random session registration и rejection foreign/missing session.
-- [x] **B2-026** Per-shell sequence validation и payload-free diagnostics.
-- [x] **B2-027** Wire format, limits и Bash/Zsh examples в `otty-escape/README.md`.
-- [ ] Добавить deterministic/random byte-stream test, доказывающий bounded buffer для
-  произвольного DCS input.
+- [x] **B2-020** Add v2 framing, schema, recovery, and fragmented-stream tests.
+- [x] **B2-021** After the failing legacy-ignore regression from B2-002, remove v1
+  `dcs/block.rs`, `DcsMessageKind::Block`, and production dispatch to `Action::BlockEvent`.
+  Legacy `otty-dcs;block` must be discarded as unsupported DCS without creating a semantic
+  event.
+- [x] **B2-022** Add bounded framing and hex decoding with a required major version.
+- [x] **B2-023** Add semantic events `shell_hello`, `prompt_prepare`, `command_start`,
+  `command_end`, `context_update`, `shell_exit`, and `integration_error`.
+- [x] **B2-024** Add OSC 133 A/B and semantic prompt boundaries.
+- [x] **B2-025** Register system-random sessions and reject foreign or missing sessions.
+- [x] **B2-026** Validate per-shell sequences and emit payload-free diagnostics.
+- [x] **B2-027** Document wire format, limits, and Bash/Zsh examples in
+  `otty-escape/README.md`.
+- [ ] Add a deterministic or randomized byte-stream test proving that the buffer remains
+  bounded for arbitrary DCS input.
 
-## Контракт безопасности
+## Security contract
 
-- decoded payload не больше 32 KiB, encoded payload не больше 64 KiB;
-- command и идентификаторы имеют отдельные меньшие limits;
-- неизвестная major version не применяется к model;
-- malformed hex/JSON/UTF-8 отбрасывается и parser продолжает принимать последующие bytes;
-- diagnostic содержит только тип ошибки и безопасные IDs/revisions, но не command/output;
-- terminal принимает event только для зарегистрированной `TerminalSessionId`.
+- decoded payload is at most 32 KiB and encoded payload at most 64 KiB;
+- commands and identifiers have separate, smaller limits;
+- an unknown major version is not applied to the model;
+- malformed hex, JSON, or UTF-8 is discarded and the parser continues accepting later bytes;
+- diagnostics contain only an error type and safe IDs or revisions, never command/output text;
+- the terminal accepts events only for a registered `TerminalSessionId`.
 
-## Автоматическая проверка
+## Automated verification
 
 ```bash
 cargo test -p otty-escape dcs
@@ -56,21 +57,21 @@ cargo test -p otty-surface block::lifecycle
 cargo clippy -p otty-escape --all-targets --all-features -- -D warnings
 ```
 
-## Ручная проверка
+## Manual verification
 
-1. Запустить `cargo run -p otty` и дождаться статуса `Integration v2 active`.
-2. Выполнить несколько обычных команд и убедиться, что prompt/command completion продолжают
-   создавать блоки.
-3. Отправить malformed DCS: `printf '\033Pevent-v2;h;zz\033\\'`.
-4. Сразу выполнить `printf 'parser-alive\n'`. Терминал должен продолжить работу, malformed
-   sequence не должна создать или завершить блок.
-5. Отправить encoded payload больше 64 KiB, затем снова выполнить обычную команду. UI не
-   должен зависнуть или заметно увеличить retained memory после discard.
-6. Открыть вторую terminal tab. События и block IDs двух вкладок не должны смешиваться.
-7. В Bash и Zsh выполнить команды с Unicode, кавычками, newline/heredoc и текстом, похожим на
-   ESC/BEL. В block metadata должен попасть исходный command без инъекции control sequence.
-8. Повторить fragmented и unsupported-version cases через соответствующие parser tests с
-   `--nocapture` и убедиться, что diagnostic не печатает payload.
+1. Launch `cargo run -p otty` and wait for `Integration v2 active`.
+2. Run several ordinary commands and confirm that prompt and command completion still create
+   blocks.
+3. Send malformed DCS with `printf '\033Pevent-v2;h;zz\033\\'`.
+4. Immediately run `printf 'parser-alive\n'`. The terminal must continue working and the
+   malformed sequence must not create or finish a block.
+5. Send an encoded payload larger than 64 KiB, then run another ordinary command. The UI must
+   neither hang nor retain noticeably more memory after discard.
+6. Open a second terminal tab. Events and block IDs from the two tabs must not mix.
+7. In Bash and Zsh, run commands containing Unicode, quotes, newline/heredoc, and ESC/BEL-like
+   text. Block metadata must contain the original command without control-sequence injection.
+8. Repeat fragmented and unsupported-version cases through the matching parser tests with
+   `--nocapture`, confirming that diagnostics never print the payload.
 
-Фаза готова после удаления v1 production parser, прохождения legacy-ignore теста и
-malformed/oversized/foreign session scenarios без corruption соседних блоков.
+The phase is complete after the production v1 parser is removed and legacy-ignore,
+malformed, oversized, and foreign-session scenarios cannot corrupt adjacent blocks.
