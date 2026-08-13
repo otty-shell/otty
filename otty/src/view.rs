@@ -3,9 +3,9 @@ use iced::widget::{Space, column, container, mouse_area, row, text};
 use iced::{Element, Length, Size, Theme, alignment};
 
 use super::{App, AppEvent};
-use crate::components::primitive::{
-    menu_item, resize_grips, sidebar_workspace_panel,
-};
+#[cfg(not(target_os = "macos"))]
+use crate::components::primitive::resize_grips;
+use crate::components::primitive::{menu_item, sidebar_workspace_panel};
 use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::menu_panel_style;

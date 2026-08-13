@@ -222,10 +222,13 @@ mod tests {
     #[test]
     fn given_default_state_when_set_shell_then_marks_dirty() {
         let mut state = SettingsState::default();
+        // The baseline shell comes from $SHELL, so derive a value that
+        // always differs from it.
+        let changed = format!("{}-changed", state.draft.terminal_shell());
 
-        state.set_shell(String::from("/bin/zsh"));
+        state.set_shell(changed.clone());
 
-        assert_eq!(state.draft.terminal_shell(), "/bin/zsh");
+        assert_eq!(state.draft.terminal_shell(), changed);
         assert!(state.dirty);
     }
 
