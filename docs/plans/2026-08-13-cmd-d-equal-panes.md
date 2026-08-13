@@ -5,7 +5,7 @@ Author: williammiller20250731@gmail.com
 Agent: Claude Code
 Status: VERIFIED
 Approved: Yes
-Rounds: 1
+Rounds: 2
 Worktree: No
 Type: Build
 
@@ -126,3 +126,15 @@ Type: Build
   按改写后措辞的判定证据：`cargo test --workspace --all-features` 507 passed / 0 failed 退出码 0；`cargo deny check` 退出码 0；业务逻辑模块 `pane_balance.rs` 94.41%（新增）、`state.rs` 91.58%，均 ≥ 80%。
 
   另外两个改动文件不计入该门槛，理由如实记录：`events/mod.rs` 32.14%，属事件分发装配层（AGENTS.md 明确不要求为此类模块补测试），且改动前该文件无任何测试、覆盖率为 0%，本次为净提升；`input.rs` 79.01% 为该文件既有水平，本次仅新增 3 行条件判断并为其补了 2 个单元测试，覆盖只增不减。
+
+- Round 2（Codex 分支 review 后）: 对 `main...HEAD` 跑 Codex review，报出三条，全部属实并已修复。三条的共同根源是 Round 1 的验收标准只有 macOS 证据，跨平台维度从起草时就缺席，因此这套标准不可能发现它们。
+
+  1. **[P1] Linux 上 Ctrl+D 会同时发 EOF 和分屏。** `iced_core/keyboard/modifiers.rs:39-43` 定义 `COMMAND` 在非 macOS 等于 `CTRL`，而 `bindings.rs:213` 把 `"d" + CTRL` 绑为 `Char('\x04')`。我起初以为终端的 `Captured` 会挡住订阅，实际 `otty-ui/terminal/src/view.rs` 全文没有 `capture_event` 调用，`handle_keyboard_event` 的返回值被丢弃，事件照样流向 `keyboard::listen()`。改为仅在 macOS 注册该快捷键。
+  2. **[P1] 自动重复未被过滤。** `KeyPressed` 带 `repeat` 字段，原实现用 `..` 丢弃，长按会按重复事件逐个派发 `SplitPane`，每次新建 Terminal 与 shell 进程。现在派发前拒绝 `repeat == true`。
+  3. **[P2] 字符分支读缓存 modifiers。** 这正是 Task 4 里写了"附带核实"却没做的那一条。新建 pane 的 `TerminalViewState` 初始 modifiers 为空，且因修饰键未变化不会收到 `ModifiersChanged`，导致按住 Cmd 连续分屏时 `d` 泄漏进新 pty。绑定查询与 Command guard 均改读事件自带的 `modifiers`。
+
+  验证：新增三个单元测试（拒绝重复、非 macOS 路径、陈旧修饰键缓存），其中第三条先复现红灯再转绿。`pre-commit run --all-files` 四个 hook 全 Passed，严格 clippy（含 examples）与全量测试退出码 0。实机在 macOS 上确认普通字符输入未受影响（`echo regression-check` 正常执行），并由用户手动确认两次 Cmd+D 得到三个等宽 pane、提示符无多余字符。
+
+  **未能验证的两项，如实记录：** 非 macOS 分支无法在本机验证 —— 交叉编译缺 `x86_64-linux-gnu-gcc`，`openssl-sys` 需编译 C 代码，只能依赖 CI；`#[cfg(not(target_os = "macos"))]` 的那个测试同理只在 Linux CI 上运行。
+
+  **过程中的两个观察（既有问题，未处理）：** `otty` 包的 pty 创建在并发下偶发失败，`otty-ui-term` 的 `double_click_clears_selection` 依赖 `Click` 的时间语义、并发下偶发失败，两者均多次全量重跑通过，属既有 flaky，不在本次 lineage 内。
