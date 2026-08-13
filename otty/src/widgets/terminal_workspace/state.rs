@@ -6,6 +6,7 @@ use otty_ui_term::SurfaceMode;
 use otty_ui_term::settings::{Settings, ThemeSettings};
 
 use super::errors::TerminalWorkspaceError;
+use super::pane_balance;
 use super::types::{BlockSelection, TerminalEntry, TerminalKind};
 
 /// Commands returned by state mutation helpers to be executed by the reducer.
@@ -331,6 +332,12 @@ impl TerminalTabState {
                     title: self.default_title.clone(),
                 },
             );
+            for (split, ratio) in
+                pane_balance::equalized_ratios(self.panes.layout(), new_pane)
+            {
+                self.panes.resize(split, ratio);
+            }
+
             self.focus = Some(new_pane);
             self.context_menu = None;
             if let Some((source_terminal_id, _)) = source_terminal.as_ref() {
@@ -689,6 +696,30 @@ mod tests {
         assert_eq!(state.terminals().len(), 2);
         assert!(state.contains_terminal(11));
         assert_eq!(state.focused_terminal_id(), Some(11));
+    }
+
+    #[test]
+    fn given_two_panes_when_split_again_then_widths_are_equalized() {
+        let mut state = build_terminal_state("Shell");
+        let first = state.focus().expect("focused pane");
+        let _task = state.split_pane(first, pane_grid::Axis::Vertical, 11);
+        let second = state.focus().expect("split pane should be focused");
+
+        let _task = state.split_pane(second, pane_grid::Axis::Vertical, 12);
+
+        let regions = state.panes().layout().pane_regions(
+            0.0,
+            0.0,
+            Size::new(900.0, 600.0),
+        );
+        assert_eq!(regions.len(), 3);
+        for region in regions.values() {
+            assert!(
+                (region.width - 300.0).abs() <= 0.5,
+                "expected each pane near 300.0, got {}",
+                region.width
+            );
+        }
     }
 
     #[test]

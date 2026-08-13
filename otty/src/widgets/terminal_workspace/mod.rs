@@ -1,6 +1,7 @@
 mod errors;
 pub(crate) mod event;
 pub(crate) mod model;
+mod pane_balance;
 pub(crate) mod reducer;
 pub(crate) mod services;
 pub(crate) mod state;

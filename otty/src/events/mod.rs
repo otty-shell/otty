@@ -1,5 +1,9 @@
+use iced::Task;
+use iced::keyboard::{Key, Modifiers};
+use iced::widget::pane_grid;
+#[cfg(not(target_os = "macos"))]
+use iced::window;
 use iced::window::Direction;
-use iced::{Task, window};
 
 use crate::app::App;
 use crate::layout::screen_size_from_window;
@@ -58,7 +62,7 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
                 TerminalWorkspaceIntent::SyncPaneGridSize,
             )),
         ),
-        AppEvent::Keyboard(_event) => Task::none(),
+        AppEvent::Keyboard(event) => handle_keyboard(app, &event),
         AppEvent::Window(iced::window::Event::Resized(size)) => {
             app.window_size = size;
             app.state.window_size = size;
@@ -74,6 +78,7 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::ResizeWindow(dir) => {
             #[cfg(target_os = "macos")]
             {
+                let _ = dir;
                 Task::none()
             }
 
@@ -84,5 +89,94 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             }
         },
         AppEvent::Window(_) => Task::none(),
+    }
+}
+
+/// Turn a keyboard shortcut into the event it triggers.
+///
+/// Only Cmd+D is bound today: it splits the focused pane of the active
+/// tab side by side. Every other key is left to the focused widget.
+fn handle_keyboard(app: &App, event: &iced::keyboard::Event) -> Task<AppEvent> {
+    let iced::keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
+        return Task::none();
+    };
+
+    if !is_split_pane_shortcut(key, modifiers) {
+        return Task::none();
+    }
+
+    let Some(tab_id) = app.widgets.tabs.active_tab_id() else {
+        return Task::none();
+    };
+    let Some(pane) = app
+        .widgets
+        .terminal_workspace
+        .tab(tab_id)
+        .and_then(|tab| tab.focus())
+    else {
+        return Task::none();
+    };
+
+    Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+        TerminalWorkspaceIntent::SplitPane {
+            tab_id,
+            pane,
+            axis: pane_grid::Axis::Vertical,
+        },
+    )))
+}
+
+/// Return whether this key press is the split-pane shortcut, Cmd+D.
+///
+/// The modifier set must match exactly, so Cmd+Shift+D and friends stay
+/// free for other bindings.
+fn is_split_pane_shortcut(key: &Key, modifiers: &Modifiers) -> bool {
+    if *modifiers != Modifiers::COMMAND {
+        return false;
+    }
+
+    matches!(key, Key::Character(c) if c.eq_ignore_ascii_case("d"))
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::keyboard::key::Named;
+
+    use super::*;
+
+    #[test]
+    fn given_command_d_when_checked_then_it_is_the_split_shortcut() {
+        let key = Key::Character("d".into());
+
+        assert!(is_split_pane_shortcut(&key, &Modifiers::COMMAND));
+    }
+
+    #[test]
+    fn given_command_shift_d_when_checked_then_it_is_not_the_shortcut() {
+        let key = Key::Character("D".into());
+        let modifiers = Modifiers::COMMAND | Modifiers::SHIFT;
+
+        assert!(!is_split_pane_shortcut(&key, &modifiers));
+    }
+
+    #[test]
+    fn given_bare_d_when_checked_then_it_is_not_the_shortcut() {
+        let key = Key::Character("d".into());
+
+        assert!(!is_split_pane_shortcut(&key, &Modifiers::empty()));
+    }
+
+    #[test]
+    fn given_command_c_when_checked_then_it_is_not_the_shortcut() {
+        let key = Key::Character("c".into());
+
+        assert!(!is_split_pane_shortcut(&key, &Modifiers::COMMAND));
+    }
+
+    #[test]
+    fn given_named_key_when_checked_then_it_is_not_the_shortcut() {
+        let key = Key::Named(Named::Enter);
+
+        assert!(!is_split_pane_shortcut(&key, &Modifiers::COMMAND));
     }
 }

@@ -1,4 +1,4 @@
-use iced::keyboard::Key;
+use iced::keyboard::{Key, Modifiers};
 use iced::mouse::ScrollDelta;
 use iced::{Point, Size};
 use iced_core::clipboard::Kind as ClipboardKind;
@@ -425,8 +425,14 @@ impl<'a> InputManager<'a> {
                         terminal_state_ref.mode,
                     );
 
-                    // If no binding matched, only write printable text (when provided)
+                    // If no binding matched, only write printable text
+                    // (when provided). Command combinations are
+                    // application shortcuts on macOS and never produce
+                    // terminal input, so they are left for the app.
                     if binding_action == BindingAction::Ignore
+                        && !view_state
+                            .keyboard_modifiers
+                            .contains(Modifiers::COMMAND)
                         && let Some(c) = text
                     {
                         publisher(crate::Event::Write {
@@ -553,6 +559,85 @@ mod tests {
             is_alt_screen: false,
         });
         Arc::new(snapshot)
+    }
+
+    mod handle_keyboard_event_tests {
+        use iced::keyboard::key::{Code, Physical};
+        use iced::keyboard::{Event, Key, Location, Modifiers};
+
+        use super::*;
+        use crate::bindings;
+
+        fn key_pressed(character: &str, modifiers: Modifiers) -> Event {
+            let key = Key::Character(character.into());
+
+            Event::KeyPressed {
+                key: key.clone(),
+                modified_key: key,
+                physical_key: Physical::Code(Code::KeyD),
+                location: Location::Standard,
+                modifiers,
+                text: Some(character.into()),
+                repeat: false,
+            }
+        }
+
+        fn dispatch(event: &Event) -> (iced::event::Status, Vec<crate::Event>) {
+            let mut state = TerminalViewState::new();
+            state.keyboard_modifiers = match event {
+                Event::KeyPressed { modifiers, .. } => *modifiers,
+                _ => Modifiers::empty(),
+            };
+            let bindings = bindings::BindingsLayout::new();
+            let mut clipboard = iced_core::clipboard::Null;
+            let mut commands = Vec::new();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+
+            let status = {
+                let mut publish = |event| commands.push(event);
+                input_manager.handle_keyboard_event(
+                    &mut state,
+                    default_snapshot(),
+                    &mut clipboard,
+                    event,
+                    &mut publish,
+                )
+            };
+
+            (status, commands)
+        }
+
+        #[test]
+        fn command_modified_character_is_left_for_the_application() {
+            let event = key_pressed("d", Modifiers::COMMAND);
+
+            let (status, commands) = dispatch(&event);
+
+            assert_eq!(status, iced::event::Status::Ignored);
+            assert!(
+                !commands
+                    .iter()
+                    .any(|event| matches!(event, crate::Event::Write { .. })),
+                "Cmd+D must not reach the pty, got {commands:?}"
+            );
+        }
+
+        #[test]
+        fn plain_character_is_written_to_the_pty() {
+            let event = key_pressed("d", Modifiers::empty());
+
+            let (status, commands) = dispatch(&event);
+
+            assert_eq!(status, iced::event::Status::Captured);
+            assert!(commands.iter().any(|event| matches!(
+                event,
+                crate::Event::Write { id: TEST_ID, data } if data == b"d"
+            )));
+        }
     }
 
     mod handle_left_button_pressed_tests {
