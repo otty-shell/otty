@@ -419,9 +419,13 @@ impl<'a> InputManager<'a> {
                 // Use the physical character key for bindings even when text is None (e.g., Ctrl/Cmd combos)
                 Key::Character(k) => {
                     let lower = k.to_ascii_lowercase();
+                    // Read the modifiers off the event rather than the
+                    // cached state: a pane created by a split starts
+                    // empty and never sees a ModifiersChanged, because
+                    // the modifiers did not change while it was born.
                     binding_action = self.bindings.get_action(
                         InputKind::Char(lower),
-                        &view_state.keyboard_modifiers,
+                        modifiers,
                         terminal_state_ref.mode,
                     );
 
@@ -430,9 +434,7 @@ impl<'a> InputManager<'a> {
                     // application shortcuts on macOS and never produce
                     // terminal input, so they are left for the app.
                     if binding_action == BindingAction::Ignore
-                        && !view_state
-                            .keyboard_modifiers
-                            .contains(Modifiers::COMMAND)
+                        && !modifiers.contains(Modifiers::COMMAND)
                         && let Some(c) = text
                     {
                         publisher(crate::Event::Write {
@@ -583,11 +585,23 @@ mod tests {
         }
 
         fn dispatch(event: &Event) -> (iced::event::Status, Vec<crate::Event>) {
-            let mut state = TerminalViewState::new();
-            state.keyboard_modifiers = match event {
+            let cached = match event {
                 Event::KeyPressed { modifiers, .. } => *modifiers,
                 _ => Modifiers::empty(),
             };
+
+            dispatch_with_stale_modifiers(event, cached)
+        }
+
+        /// Dispatch with an explicit cached modifier state, so a test can
+        /// reproduce a freshly split pane whose view state has not seen a
+        /// `ModifiersChanged` yet.
+        fn dispatch_with_stale_modifiers(
+            event: &Event,
+            cached: Modifiers,
+        ) -> (iced::event::Status, Vec<crate::Event>) {
+            let mut state = TerminalViewState::new();
+            state.keyboard_modifiers = cached;
             let bindings = bindings::BindingsLayout::new();
             let mut clipboard = iced_core::clipboard::Null;
             let mut commands = Vec::new();
@@ -623,6 +637,26 @@ mod tests {
                     .iter()
                     .any(|event| matches!(event, crate::Event::Write { .. })),
                 "Cmd+D must not reach the pty, got {commands:?}"
+            );
+        }
+
+        #[test]
+        fn command_modifier_is_read_from_the_event_not_the_cache() {
+            // A pane created by the split itself starts with empty
+            // modifiers and never sees a ModifiersChanged, because the
+            // modifiers did not change while it was being created.
+            let event = key_pressed("d", Modifiers::COMMAND);
+
+            let (status, commands) =
+                dispatch_with_stale_modifiers(&event, Modifiers::empty());
+
+            assert_eq!(status, iced::event::Status::Ignored);
+            assert!(
+                !commands
+                    .iter()
+                    .any(|event| matches!(event, crate::Event::Write { .. })),
+                "a stale modifier cache must not leak Cmd+D into a new pty, \
+                 got {commands:?}"
             );
         }
 

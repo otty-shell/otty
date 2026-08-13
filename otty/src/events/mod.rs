@@ -94,14 +94,21 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
 
 /// Turn a keyboard shortcut into the event it triggers.
 ///
-/// Only Cmd+D is bound today: it splits the focused pane of the active
-/// tab side by side. Every other key is left to the focused widget.
+/// Only Cmd+D on macOS is bound today: it splits the focused pane of the
+/// active tab side by side. Every other key is left to the focused
+/// widget.
 fn handle_keyboard(app: &App, event: &iced::keyboard::Event) -> Task<AppEvent> {
-    let iced::keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
+    let iced::keyboard::Event::KeyPressed {
+        key,
+        modifiers,
+        repeat,
+        ..
+    } = event
+    else {
         return Task::none();
     };
 
-    if !is_split_pane_shortcut(key, modifiers) {
+    if !is_split_pane_shortcut(key, modifiers, *repeat) {
         return Task::none();
     }
 
@@ -128,9 +135,27 @@ fn handle_keyboard(app: &App, event: &iced::keyboard::Event) -> Task<AppEvent> {
 
 /// Return whether this key press is the split-pane shortcut, Cmd+D.
 ///
+/// Bound on macOS only. Elsewhere `Modifiers::COMMAND` resolves to
+/// `CTRL`, and the terminal already binds Ctrl+D to EOF. The terminal
+/// widget never marks keyboard events as captured, so claiming that
+/// combination here would both send the control character and split the
+/// pane. Binding this on other platforms needs a key that does not
+/// collide with terminal control characters.
+///
+/// Auto-repeat is rejected: holding the shortcut down would otherwise
+/// spawn one pane, terminal and shell process per repeat event.
+///
 /// The modifier set must match exactly, so Cmd+Shift+D and friends stay
 /// free for other bindings.
-fn is_split_pane_shortcut(key: &Key, modifiers: &Modifiers) -> bool {
+fn is_split_pane_shortcut(
+    key: &Key,
+    modifiers: &Modifiers,
+    repeat: bool,
+) -> bool {
+    if !cfg!(target_os = "macos") || repeat {
+        return false;
+    }
+
     if *modifiers != Modifiers::COMMAND {
         return false;
     }
@@ -144,11 +169,30 @@ mod tests {
 
     use super::*;
 
+    #[cfg(target_os = "macos")]
     #[test]
-    fn given_command_d_when_checked_then_it_is_the_split_shortcut() {
+    fn given_command_d_on_macos_when_checked_then_it_is_the_shortcut() {
         let key = Key::Character("d".into());
 
-        assert!(is_split_pane_shortcut(&key, &Modifiers::COMMAND));
+        assert!(is_split_pane_shortcut(&key, &Modifiers::COMMAND, false));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn given_command_d_off_macos_when_checked_then_it_is_not_the_shortcut() {
+        // Off macOS `Modifiers::COMMAND` is `CTRL`, and the terminal
+        // binds Ctrl+D to EOF. Claiming it here would both send the
+        // control character and split the pane.
+        let key = Key::Character("d".into());
+
+        assert!(!is_split_pane_shortcut(&key, &Modifiers::COMMAND, false));
+    }
+
+    #[test]
+    fn given_repeated_command_d_when_checked_then_it_is_not_the_shortcut() {
+        let key = Key::Character("d".into());
+
+        assert!(!is_split_pane_shortcut(&key, &Modifiers::COMMAND, true));
     }
 
     #[test]
@@ -156,27 +200,27 @@ mod tests {
         let key = Key::Character("D".into());
         let modifiers = Modifiers::COMMAND | Modifiers::SHIFT;
 
-        assert!(!is_split_pane_shortcut(&key, &modifiers));
+        assert!(!is_split_pane_shortcut(&key, &modifiers, false));
     }
 
     #[test]
     fn given_bare_d_when_checked_then_it_is_not_the_shortcut() {
         let key = Key::Character("d".into());
 
-        assert!(!is_split_pane_shortcut(&key, &Modifiers::empty()));
+        assert!(!is_split_pane_shortcut(&key, &Modifiers::empty(), false));
     }
 
     #[test]
     fn given_command_c_when_checked_then_it_is_not_the_shortcut() {
         let key = Key::Character("c".into());
 
-        assert!(!is_split_pane_shortcut(&key, &Modifiers::COMMAND));
+        assert!(!is_split_pane_shortcut(&key, &Modifiers::COMMAND, false));
     }
 
     #[test]
     fn given_named_key_when_checked_then_it_is_not_the_shortcut() {
         let key = Key::Named(Named::Enter);
 
-        assert!(!is_split_pane_shortcut(&key, &Modifiers::COMMAND));
+        assert!(!is_split_pane_shortcut(&key, &Modifiers::COMMAND, false));
     }
 }
