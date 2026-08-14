@@ -430,11 +430,12 @@ impl<'a> InputManager<'a> {
                     );
 
                     // If no binding matched, only write printable text
-                    // (when provided). Command combinations are
-                    // application shortcuts on macOS and never produce
-                    // terminal input, so they are left for the app.
+                    // (when provided). Logo combinations (Cmd on macOS,
+                    // Super elsewhere) are application shortcuts and
+                    // never produce terminal input, so they are left
+                    // for the app.
                     if binding_action == BindingAction::Ignore
-                        && !modifiers.contains(Modifiers::COMMAND)
+                        && !modifiers.contains(Modifiers::LOGO)
                         && let Some(c) = text
                     {
                         publisher(crate::Event::Write {
@@ -571,6 +572,17 @@ mod tests {
         use crate::bindings;
 
         fn key_pressed(character: &str, modifiers: Modifiers) -> Event {
+            key_pressed_with_text(character, Some(character), modifiers)
+        }
+
+        /// Build a key press whose `text` differs from the character key,
+        /// as happens when the platform applies a Ctrl transformation or
+        /// produces no text at all.
+        fn key_pressed_with_text(
+            character: &str,
+            text: Option<&str>,
+            modifiers: Modifiers,
+        ) -> Event {
             let key = Key::Character(character.into());
 
             Event::KeyPressed {
@@ -579,7 +591,7 @@ mod tests {
                 physical_key: Physical::Code(Code::KeyD),
                 location: Location::Standard,
                 modifiers,
-                text: Some(character.into()),
+                text: text.map(Into::into),
                 repeat: false,
             }
         }
@@ -626,8 +638,8 @@ mod tests {
         }
 
         #[test]
-        fn command_modified_character_is_left_for_the_application() {
-            let event = key_pressed("d", Modifiers::COMMAND);
+        fn logo_modified_character_is_left_for_the_application() {
+            let event = key_pressed("d", Modifiers::LOGO);
 
             let (status, commands) = dispatch(&event);
 
@@ -636,16 +648,16 @@ mod tests {
                 !commands
                     .iter()
                     .any(|event| matches!(event, crate::Event::Write { .. })),
-                "Cmd+D must not reach the pty, got {commands:?}"
+                "a logo-modified key must not reach the pty, got {commands:?}"
             );
         }
 
         #[test]
-        fn command_modifier_is_read_from_the_event_not_the_cache() {
+        fn logo_modifier_is_read_from_the_event_not_the_cache() {
             // A pane created by the split itself starts with empty
             // modifiers and never sees a ModifiersChanged, because the
             // modifiers did not change while it was being created.
-            let event = key_pressed("d", Modifiers::COMMAND);
+            let event = key_pressed("d", Modifiers::LOGO);
 
             let (status, commands) =
                 dispatch_with_stale_modifiers(&event, Modifiers::empty());
@@ -655,8 +667,8 @@ mod tests {
                 !commands
                     .iter()
                     .any(|event| matches!(event, crate::Event::Write { .. })),
-                "a stale modifier cache must not leak Cmd+D into a new pty, \
-                 got {commands:?}"
+                "a stale modifier cache must not leak a logo-modified key \
+                 into a new pty, got {commands:?}"
             );
         }
 
@@ -671,6 +683,80 @@ mod tests {
                 event,
                 crate::Event::Write { id: TEST_ID, data } if data == b"d"
             )));
+        }
+
+        #[test]
+        fn ctrl_modified_character_matches_its_binding() {
+            // Ctrl+D is bound to EOF in the binding table on every
+            // platform; the logo guard must not shadow it.
+            let event = key_pressed("d", Modifiers::CTRL);
+
+            let (status, commands) = dispatch(&event);
+
+            assert_eq!(status, iced::event::Status::Captured);
+            assert!(
+                commands.iter().any(|event| matches!(
+                    event,
+                    crate::Event::Write { id: TEST_ID, data } if data == b"\x04"
+                )),
+                "Ctrl+D must send EOF through its binding, got {commands:?}"
+            );
+        }
+
+        #[test]
+        fn ctrl_u_sends_nak() {
+            for modifiers in
+                [Modifiers::CTRL, Modifiers::SHIFT | Modifiers::CTRL]
+            {
+                let (status, commands) = dispatch(&key_pressed("u", modifiers));
+
+                assert_eq!(status, iced::event::Status::Captured);
+                assert!(
+                    commands.iter().any(|event| matches!(
+                        event,
+                        crate::Event::Write { id: TEST_ID, data } if data == b"\x15"
+                    )),
+                    "Ctrl+U must send NAK, got {commands:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn unbound_ctrl_character_still_writes_its_text() {
+            // Ctrl+9 has no binding; whatever text the platform
+            // delivers must reach the pty unfiltered.
+            let event = key_pressed("9", Modifiers::CTRL);
+
+            let (status, commands) = dispatch(&event);
+
+            assert_eq!(status, iced::event::Status::Captured);
+            assert!(
+                commands.iter().any(|event| matches!(
+                    event,
+                    crate::Event::Write { id: TEST_ID, data } if data == b"9"
+                )),
+                "an unbound Ctrl combination must keep its text fallback, \
+                 got {commands:?}"
+            );
+        }
+
+        #[test]
+        fn ctrl_backslash_sends_fs() {
+            // Ctrl+\ carries no text on some platforms, so the FS
+            // control character must come from the binding table.
+            let event = key_pressed_with_text("\\", None, Modifiers::CTRL);
+
+            let (status, commands) = dispatch(&event);
+
+            assert_eq!(status, iced::event::Status::Captured);
+            assert!(
+                commands.iter().any(|event| matches!(
+                    event,
+                    crate::Event::Write { id: TEST_ID, data } if data == b"\x1c"
+                )),
+                "Ctrl+backslash must send FS through its binding, \
+                 got {commands:?}"
+            );
         }
     }
 

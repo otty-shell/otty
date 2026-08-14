@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn wide_char_spacer_does_not_emit_a_glyph() {
-        let mut wide = cell(0, 0, '界');
+        let mut wide = cell(0, 0, 'あ');
         wide.cell.flags.insert(Flags::WIDE_CHAR);
         let mut spacer = cell(0, 1, ' ');
         spacer.cell.flags.insert(Flags::WIDE_CHAR_SPACER);
@@ -561,7 +561,7 @@ mod tests {
         let runs = build(&[wide, spacer, next]);
 
         assert_eq!(runs.len(), 2);
-        assert_eq!(runs[0].text(), "界");
+        assert_eq!(runs[0].text(), "あ");
         assert_eq!(runs[0].start_column(), 0);
         assert_eq!(runs[0].cell_columns(), 2);
         assert_eq!(runs[1].text(), "x");
