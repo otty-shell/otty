@@ -4,7 +4,7 @@ use iced::Point;
 use iced::widget::pane_grid;
 use otty_ui_term::settings::Settings;
 
-use super::types::TerminalKind;
+use super::types::{TerminalEvent, TerminalKind};
 
 /// Intent events handled by the terminal workspace presentation layer.
 #[derive(Clone)]
@@ -20,7 +20,7 @@ pub(crate) enum TerminalWorkspaceIntent {
     /// Notification that a tab has been closed externally.
     TabClosed { tab_id: u64 },
     /// Terminal widget event forwarded from `otty_ui_term`.
-    Widget(otty_ui_term::Event),
+    Widget(TerminalEvent),
     /// A pane was clicked.
     PaneClicked { tab_id: u64, pane: pane_grid::Pane },
     /// A pane resize was performed.

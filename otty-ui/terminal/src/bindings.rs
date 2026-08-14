@@ -3,13 +3,25 @@ use iced_core::keyboard::key::Named;
 use iced_core::mouse::Button;
 use otty_libterm::surface::SurfaceMode;
 
+/// What a matched binding does.
+///
+/// `T` is the host application's own action type. It defaults to `()`
+/// for embedders that only need the terminal's built-in behaviours, so
+/// plain `BindingAction` keeps meaning what it always did.
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
-pub enum BindingAction {
+pub enum BindingAction<T = ()> {
     Copy,
     Paste,
     Char(char),
     Esc(String),
     LinkOpen,
+    /// An application-defined action, surfaced to the host as
+    /// [`crate::Event::Action`] instead of being handled here.
+    ///
+    /// The action is opaque to this crate: the host registers the
+    /// binding with [`crate::Terminal::add_bindings`] and gives the
+    /// value meaning when it receives the event.
+    Action(T),
     Ignore,
 }
 
@@ -81,17 +93,17 @@ macro_rules! generate_bindings {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct BindingsLayout {
-    layout: Vec<(Binding<InputKind>, BindingAction)>,
+pub(crate) struct BindingsLayout<T = ()> {
+    layout: Vec<(Binding<InputKind>, BindingAction<T>)>,
 }
 
-impl Default for BindingsLayout {
+impl<T> Default for BindingsLayout<T> {
     fn default() -> Self {
         BindingsLayout::new()
     }
 }
 
-impl BindingsLayout {
+impl<T> BindingsLayout<T> {
     pub(crate) fn new() -> Self {
         let mut layout = Self {
             layout: default_keyboard_bindings(),
@@ -103,7 +115,7 @@ impl BindingsLayout {
 
     pub(crate) fn add_bindings(
         &mut self,
-        bindings: Vec<(Binding<InputKind>, BindingAction)>,
+        bindings: Vec<(Binding<InputKind>, BindingAction<T>)>,
     ) {
         for (binding, action) in bindings {
             match self
@@ -122,7 +134,10 @@ impl BindingsLayout {
         input: InputKind,
         modifiers: &Modifiers,
         mode: SurfaceMode,
-    ) -> BindingAction {
+    ) -> BindingAction<T>
+    where
+        T: Clone,
+    {
         for (binding, action) in &self.layout {
             let is_trigered = binding.target == input
                 && &binding.modifiers == modifiers
@@ -138,7 +153,8 @@ impl BindingsLayout {
     }
 }
 
-fn default_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
+fn default_keyboard_bindings<T>() -> Vec<(Binding<InputKind>, BindingAction<T>)>
+{
     generate_bindings!(
         KeyboardBinding;
         // ANY
@@ -324,7 +340,8 @@ fn default_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
 }
 
 #[cfg(target_os = "macos")]
-fn platform_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
+fn platform_keyboard_bindings<T>() -> Vec<(Binding<InputKind>, BindingAction<T>)>
+{
     generate_bindings!(
         KeyboardBinding;
         "c", Modifiers::COMMAND; BindingAction::Copy;
@@ -333,7 +350,8 @@ fn platform_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn platform_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
+fn platform_keyboard_bindings<T>() -> Vec<(Binding<InputKind>, BindingAction<T>)>
+{
     generate_bindings!(
         KeyboardBinding;
         "c", Modifiers::SHIFT | Modifiers::COMMAND; BindingAction::Copy;
@@ -341,7 +359,7 @@ fn platform_keyboard_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
     )
 }
 
-fn mouse_default_bindings() -> Vec<(Binding<InputKind>, BindingAction)> {
+fn mouse_default_bindings<T>() -> Vec<(Binding<InputKind>, BindingAction<T>)> {
     generate_bindings!(
         MouseBinding;
         Left, Modifiers::COMMAND; BindingAction::LinkOpen;
@@ -360,7 +378,7 @@ mod tests {
 
     #[test]
     fn add_new_custom_keyboard_binding() {
-        let mut current_layout = BindingsLayout::default();
+        let mut current_layout = BindingsLayout::<()>::default();
         let custom_bindings = generate_bindings!(
             KeyboardBinding;
             "c", Modifiers::SHIFT | Modifiers::ALT; BindingAction::Copy;
@@ -408,7 +426,7 @@ mod tests {
 
     #[test]
     fn add_custom_keyboard_bindings_that_replace_current() {
-        let mut current_layout = BindingsLayout::default();
+        let mut current_layout = BindingsLayout::<()>::default();
         let custom_bindings = generate_bindings!(
             KeyboardBinding;
             "c", Modifiers::SHIFT, +SurfaceMode::ALT_SCREEN; BindingAction::Paste;
@@ -443,7 +461,7 @@ mod tests {
 
     #[test]
     fn add_mouse_binding() {
-        let mut current_layout = BindingsLayout::default();
+        let mut current_layout = BindingsLayout::<()>::default();
         let custom_bindings = generate_bindings!(
             MouseBinding;
             Left,  Modifiers::SHIFT, +SurfaceMode::ALT_SCREEN; BindingAction::Paste;
@@ -463,7 +481,7 @@ mod tests {
 
     #[test]
     fn get_action() {
-        let current_layout = BindingsLayout::default();
+        let current_layout = BindingsLayout::<()>::default();
         for (bind, action) in &current_layout.layout {
             let found_action = current_layout.get_action(
                 bind.target.clone(),
@@ -476,7 +494,7 @@ mod tests {
 
     #[test]
     fn get_action_with_custom_bindings() {
-        let mut current_layout = BindingsLayout::default();
+        let mut current_layout = BindingsLayout::<()>::default();
         let custom_bindings = generate_bindings!(
             KeyboardBinding;
             "c", Modifiers::SHIFT, +SurfaceMode::ALT_SCREEN; BindingAction::Paste;

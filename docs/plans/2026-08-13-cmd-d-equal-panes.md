@@ -5,7 +5,7 @@ Author: williammiller20250731@gmail.com
 Agent: Claude Code
 Status: VERIFIED
 Approved: Yes
-Rounds: 3
+Rounds: 4
 Worktree: No
 Type: Build
 
@@ -316,3 +316,65 @@ user-visible shortcut is a documentation-sync trigger; add one Cmd+D entry
   with red-green regression tests (`ctrl_u_sends_nak`,
   `ctrl_backslash_sends_fs`); the adversarial review round that found the
   second typo approved the final diff with no remaining findings.
+
+- Round 4 (after the GitHub review on PR #85): the repository owner rejected
+  the whole delivery mechanism, not a detail of it. Task 3 above had put the
+  shortcut in `otty/src/events/mod.rs` as a global `AppEvent::Keyboard`
+  interception; the owner asked for key matching to live inside the terminal
+  widget and for the application to define the action it produces. The
+  objection was well founded beyond style: a global interception acts on the
+  active tab's focused pane regardless of which widget actually holds
+  keyboard focus, so the shortcut fired while focus sat elsewhere.
+
+  Reworked accordingly. `BindingAction::Action(String)` and
+  `Event::Action { id, action }` were added to the terminal crate, the
+  auto-repeat guard moved next to the point where the widget turns a key
+  into an application action, and
+  `otty/src/widgets/terminal_workspace/shortcuts.rs` now registers Cmd+D on
+  macOS only. `reduce_terminal_action` splits the *reporting* pane, so the
+  pane that had focus when the key fired is the pane that splits. The whole
+  of Task 3's global handler and its tests were deleted.
+
+  The action type is the owner's own sketch, a generic
+  `BindingAction<T = ()>`, carried through `BindingsLayout<T>`,
+  `InputManager<'a, T>`, `Terminal<T>`, `Event<T>` and
+  `TerminalView<'a, T>`. An opaque `Action(String)` was built first and
+  discarded: it made the action name stringly typed across the crate
+  boundary and left an unreachable "unknown action" branch in the
+  reducer that could only be covered by a test asserting nothing
+  happens. With `TerminalWorkspaceAction` as `T`, the reducer destructures
+  the single variant and a future variant becomes a compile error rather
+  than a silent no-op.
+
+  The `T = ()` default is what keeps the cost contained: every existing
+  embedder, including all six examples, compiles unchanged because
+  `Terminal` and `Event` are held in type-annotated fields where the
+  default applies. Two things had to move for that to hold:
+  `TerminalView::focus` and `TerminalView::command` address a widget by
+  id and never touch `T`, so they now live in a non-generic `impl` block
+  (otherwise every call site would need a turbofish), and the app side
+  took two aliases, `Terminal` and `TerminalEvent`, so the parameter is
+  written once rather than at every mention.
+
+  Two defects the adversarial review of the generic rework found, both
+  fixed: the `From<TerminalView> for Element` conversion had stayed
+  non-generic, so only a `T = ()` view could convert and `show` had to
+  route around it through `Element::new`; and the routing test asserted
+  pane parentage but not the split axis, so hardcoding
+  `Axis::Horizontal` in the reducer still passed. The test now asserts
+  the axis and was red-green checked against exactly that mutation.
+  Rejected from the same review: a `MaybeSend` bound for wasm embedders
+  (the crate has no wasm target, and `BoxStream` already requires `Send`,
+  so the bound only names an obligation that was always there), and
+  deleting the now-idle `iced::keyboard::listen()` subscription (it is
+  unchanged from `main` and out of this PR's lineage).
+
+  Also in this round: the split shortcut now syncs the explorer the way the
+  context-menu split already did — `should_sync_explorer` only matched the
+  `SplitPane` intent, so a shortcut-driven split left the explorer on the
+  old directory (`otty/src/events/terminal_workspace.rs`).
+
+  Reverted at the owner's request, as unrelated to the issue: the README
+  feature entry and the `collapsible_if` cleanups in
+  `otty-libterm/examples/unix_shell.rs` and
+  `otty-ui/terminal/examples/blocks_overlay.rs`.

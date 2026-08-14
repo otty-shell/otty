@@ -4,6 +4,7 @@ pub(crate) mod model;
 mod pane_balance;
 pub(crate) mod reducer;
 pub(crate) mod services;
+pub(crate) mod shortcuts;
 pub(crate) mod state;
 pub(crate) mod types;
 pub(crate) mod view;

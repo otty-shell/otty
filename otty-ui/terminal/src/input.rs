@@ -12,16 +12,16 @@ use crate::font::TermFont;
 use crate::settings::BlockSelectionMode;
 use crate::view::TerminalViewState;
 
-pub(crate) struct InputManager<'a> {
+pub(crate) struct InputManager<'a, T = ()> {
     terminal_id: u64,
-    bindings: &'a BindingsLayout,
+    bindings: &'a BindingsLayout<T>,
     block_selection_mode: BlockSelectionMode,
 }
 
-impl<'a> InputManager<'a> {
+impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
     pub(crate) fn new(
         terminal_id: u64,
-        bindings: &'a BindingsLayout,
+        bindings: &'a BindingsLayout<T>,
         block_selection_mode: BlockSelectionMode,
     ) -> Self {
         Self {
@@ -41,7 +41,7 @@ impl<'a> InputManager<'a> {
         cursor_position: Point,
         event: &iced::mouse::Event,
         _clipboard: &mut dyn iced_graphics::core::Clipboard,
-        publisher: &mut impl FnMut(crate::Event),
+        publisher: &mut impl FnMut(crate::Event<T>),
     ) -> iced::event::Status {
         match event {
             iced_core::mouse::Event::ButtonPressed(
@@ -87,7 +87,7 @@ impl<'a> InputManager<'a> {
         terminal_state: SnapshotArc,
         cursor_position: Point,
         layout_position: Point,
-        publisher: &mut impl FnMut(crate::Event),
+        publisher: &mut impl FnMut(crate::Event<T>),
     ) -> iced::event::Status {
         state.selection_in_progress = false;
         let is_mouse_mode = terminal_state
@@ -140,7 +140,7 @@ impl<'a> InputManager<'a> {
         terminal_size: TerminalSize,
         position: &Point,
         layout_position: Point,
-        publisher: &mut impl FnMut(crate::Event),
+        publisher: &mut impl FnMut(crate::Event<T>),
     ) -> iced::event::Status {
         let terminal_state = terminal_state.view();
         let in_alt_screen =
@@ -245,8 +245,8 @@ impl<'a> InputManager<'a> {
         &self,
         state: &mut TerminalViewState,
         terminal_state: SnapshotArc,
-        bindings: &BindingsLayout, // Use the actual type of your bindings here
-        publisher: &mut impl FnMut(crate::Event),
+        bindings: &BindingsLayout<T>,
+        publisher: &mut impl FnMut(crate::Event<T>),
     ) -> iced::event::Status {
         state.is_dragged = false;
         let was_selecting = state.selection_in_progress;
@@ -371,7 +371,7 @@ impl<'a> InputManager<'a> {
         state: &mut TerminalViewState,
         delta: &ScrollDelta,
         font_measure: &Size<f32>,
-        publisher: &mut impl FnMut(crate::Event),
+        publisher: &mut impl FnMut(crate::Event<T>),
     ) -> iced::event::Status {
         let lines = match delta {
             ScrollDelta::Lines { y, .. } => y.signum() * y.abs().round(),
@@ -401,9 +401,10 @@ impl<'a> InputManager<'a> {
         terminal_state: SnapshotArc,
         clipboard: &mut dyn iced_graphics::core::Clipboard,
         event: &iced::keyboard::Event,
-        publisher: &mut impl FnMut(crate::Event),
+        publisher: &mut impl FnMut(crate::Event<T>),
     ) -> iced::event::Status {
         let mut binding_action = BindingAction::Ignore;
+        let mut is_repeat = false;
         let terminal_state_ref = terminal_state.view();
 
         match event {
@@ -414,45 +415,50 @@ impl<'a> InputManager<'a> {
                 key,
                 modifiers,
                 text,
+                repeat,
                 ..
-            } => match &key {
-                // Use the physical character key for bindings even when text is None (e.g., Ctrl/Cmd combos)
-                Key::Character(k) => {
-                    let lower = k.to_ascii_lowercase();
-                    // Read the modifiers off the event rather than the
-                    // cached state: a pane created by a split starts
-                    // empty and never sees a ModifiersChanged, because
-                    // the modifiers did not change while it was born.
-                    binding_action = self.bindings.get_action(
-                        InputKind::Char(lower),
-                        modifiers,
-                        terminal_state_ref.mode,
-                    );
+            } => {
+                is_repeat = *repeat;
 
-                    // If no binding matched, only write printable text
-                    // (when provided). Logo combinations (Cmd on macOS,
-                    // Super elsewhere) are application shortcuts and
-                    // never produce terminal input, so they are left
-                    // for the app.
-                    if binding_action == BindingAction::Ignore
-                        && !modifiers.contains(Modifiers::LOGO)
-                        && let Some(c) = text
-                    {
-                        publisher(crate::Event::Write {
-                            id: self.terminal_id,
-                            data: c.as_bytes().to_vec(),
-                        });
-                        return iced::event::Status::Captured;
-                    }
-                },
-                Key::Named(code) => {
-                    binding_action = self.bindings.get_action(
-                        InputKind::KeyCode(*code),
-                        modifiers,
-                        terminal_state_ref.mode,
-                    );
-                },
-                _ => {},
+                match &key {
+                    // Use the physical character key for bindings even when text is None (e.g., Ctrl/Cmd combos)
+                    Key::Character(k) => {
+                        let lower = k.to_ascii_lowercase();
+                        // Read the modifiers off the event rather than the
+                        // cached state: a pane created by a split starts
+                        // empty and never sees a ModifiersChanged, because
+                        // the modifiers did not change while it was born.
+                        binding_action = self.bindings.get_action(
+                            InputKind::Char(lower),
+                            modifiers,
+                            terminal_state_ref.mode,
+                        );
+
+                        // If no binding matched, only write printable text
+                        // (when provided). Logo combinations (Cmd on macOS,
+                        // Super elsewhere) are application shortcuts and
+                        // never produce terminal input, so they are left
+                        // for the app.
+                        if binding_action == BindingAction::Ignore
+                            && !modifiers.contains(Modifiers::LOGO)
+                            && let Some(c) = text
+                        {
+                            publisher(crate::Event::Write {
+                                id: self.terminal_id,
+                                data: c.as_bytes().to_vec(),
+                            });
+                            return iced::event::Status::Captured;
+                        }
+                    },
+                    Key::Named(code) => {
+                        binding_action = self.bindings.get_action(
+                            InputKind::KeyCode(*code),
+                            modifiers,
+                            terminal_state_ref.mode,
+                        );
+                    },
+                    _ => {},
+                }
             },
             _ => {},
         }
@@ -492,6 +498,17 @@ impl<'a> InputManager<'a> {
                     terminal_state_ref.selectable_content(),
                 );
                 iced::event::Status::Ignored
+            },
+            // Auto-repeat is dropped here rather than in the host: an
+            // application action fires once per press, and a split action
+            // would otherwise spawn a pane, terminal and shell process for
+            // every repeat event while the key is held.
+            BindingAction::Action(action) if !is_repeat => {
+                publisher(crate::Event::Action {
+                    id: self.terminal_id,
+                    action,
+                });
+                iced::event::Status::Captured
             },
             _ => iced::event::Status::Ignored,
         }
@@ -570,6 +587,7 @@ mod tests {
 
         use super::*;
         use crate::bindings;
+        use crate::bindings::KeyboardBinding;
 
         fn key_pressed(character: &str, modifiers: Modifiers) -> Event {
             key_pressed_with_text(character, Some(character), modifiers)
@@ -596,13 +614,73 @@ mod tests {
             }
         }
 
+        /// Build an auto-repeat key press, as the platform delivers while
+        /// the key is held down.
+        fn key_pressed_repeat(character: &str, modifiers: Modifiers) -> Event {
+            let Event::KeyPressed {
+                key,
+                modified_key,
+                physical_key,
+                location,
+                modifiers,
+                text,
+                ..
+            } = key_pressed(character, modifiers)
+            else {
+                unreachable!("key_pressed always builds a KeyPressed event")
+            };
+
+            Event::KeyPressed {
+                key,
+                modified_key,
+                physical_key,
+                location,
+                modifiers,
+                text,
+                repeat: true,
+            }
+        }
+
+        /// A stand-in for a host application's action type; the terminal
+        /// crate never interprets it.
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        enum TestAction {
+            Split,
+        }
+
+        /// Build the binding layout an application registers when it wants
+        /// a shortcut to surface as [`crate::Event::Action`].
+        fn bindings_with_action() -> bindings::BindingsLayout<TestAction> {
+            let mut layout = bindings::BindingsLayout::new();
+            layout.add_bindings(crate::generate_bindings!(
+                KeyboardBinding;
+                "d", Modifiers::LOGO; BindingAction::Action(TestAction::Split);
+            ));
+
+            layout
+        }
+
         fn dispatch(event: &Event) -> (iced::event::Status, Vec<crate::Event>) {
             let cached = match event {
                 Event::KeyPressed { modifiers, .. } => *modifiers,
                 _ => Modifiers::empty(),
             };
 
-            dispatch_with_stale_modifiers(event, cached)
+            dispatch_with(event, cached, bindings::BindingsLayout::new())
+        }
+
+        /// Dispatch against a custom binding layout, so a test can register
+        /// an application action the way the app does at startup.
+        fn dispatch_with_bindings(
+            event: &Event,
+            bindings: bindings::BindingsLayout<TestAction>,
+        ) -> (iced::event::Status, Vec<crate::Event<TestAction>>) {
+            let cached = match event {
+                Event::KeyPressed { modifiers, .. } => *modifiers,
+                _ => Modifiers::empty(),
+            };
+
+            dispatch_with(event, cached, bindings)
         }
 
         /// Dispatch with an explicit cached modifier state, so a test can
@@ -612,9 +690,16 @@ mod tests {
             event: &Event,
             cached: Modifiers,
         ) -> (iced::event::Status, Vec<crate::Event>) {
+            dispatch_with(event, cached, bindings::BindingsLayout::new())
+        }
+
+        fn dispatch_with<T: Clone + PartialEq>(
+            event: &Event,
+            cached: Modifiers,
+            bindings: bindings::BindingsLayout<T>,
+        ) -> (iced::event::Status, Vec<crate::Event<T>>) {
             let mut state = TerminalViewState::new();
             state.keyboard_modifiers = cached;
-            let bindings = bindings::BindingsLayout::new();
             let mut clipboard = iced_core::clipboard::Null;
             let mut commands = Vec::new();
             let input_manager = InputManager::new(
@@ -635,6 +720,48 @@ mod tests {
             };
 
             (status, commands)
+        }
+
+        #[test]
+        fn a_bound_action_is_published_to_the_application() {
+            let event = key_pressed("d", Modifiers::LOGO);
+
+            let (status, commands) =
+                dispatch_with_bindings(&event, bindings_with_action());
+
+            assert_eq!(status, iced::event::Status::Captured);
+            assert!(
+                commands.iter().any(|event| matches!(
+                    event,
+                    crate::Event::Action { id: TEST_ID, action }
+                        if *action == TestAction::Split
+                )),
+                "a bound action must surface as Event::Action, got {commands:?}"
+            );
+            assert!(
+                !commands
+                    .iter()
+                    .any(|event| matches!(event, crate::Event::Write { .. })),
+                "an action binding must not also reach the pty, got {commands:?}"
+            );
+        }
+
+        #[test]
+        fn a_repeated_action_is_dropped() {
+            // Holding the shortcut down would otherwise spawn one pane,
+            // terminal and shell process per repeat event.
+            let event = key_pressed_repeat("d", Modifiers::LOGO);
+
+            let (status, commands) =
+                dispatch_with_bindings(&event, bindings_with_action());
+
+            assert_eq!(status, iced::event::Status::Ignored);
+            assert!(
+                !commands
+                    .iter()
+                    .any(|event| matches!(event, crate::Event::Action { .. })),
+                "auto-repeat must not publish an action, got {commands:?}"
+            );
         }
 
         #[test]
@@ -774,7 +901,7 @@ mod tests {
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
             let _modifiers = Modifiers::empty();
-            let bindings = bindings::BindingsLayout::new();
+            let bindings = bindings::BindingsLayout::<()>::new();
             let input_manager = InputManager::new(
                 TEST_ID,
                 &bindings,
@@ -815,7 +942,7 @@ mod tests {
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
 
-            let bindings = bindings::BindingsLayout::new();
+            let bindings = bindings::BindingsLayout::<()>::new();
             let input_manager = InputManager::new(
                 TEST_ID,
                 &bindings,
@@ -885,7 +1012,7 @@ mod tests {
                 ),
             ];
 
-            let bindings = bindings::BindingsLayout::new();
+            let bindings = bindings::BindingsLayout::<()>::new();
             let input_manager = InputManager::new(
                 TEST_ID,
                 &bindings,
@@ -917,7 +1044,7 @@ mod tests {
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
 
-            let bindings = bindings::BindingsLayout::new();
+            let bindings = bindings::BindingsLayout::<()>::new();
             let input_manager = InputManager::new(
                 TEST_ID,
                 &bindings,
@@ -955,7 +1082,7 @@ mod tests {
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
 
-            let bindings = bindings::BindingsLayout::new();
+            let bindings = bindings::BindingsLayout::<()>::new();
             let input_manager = InputManager::new(
                 TEST_ID,
                 &bindings,
@@ -996,7 +1123,7 @@ mod tests {
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
 
-            let bindings = bindings::BindingsLayout::new();
+            let bindings = bindings::BindingsLayout::<()>::new();
             let input_manager = InputManager::new(
                 TEST_ID,
                 &bindings,
@@ -1040,7 +1167,7 @@ mod tests {
         #[test]
         fn mouse_mode_activated() {
             let mut state = TerminalViewState::new();
-            let bindings = BindingsLayout::new();
+            let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
             let _modifiers = Modifiers::empty();
@@ -1082,7 +1209,7 @@ mod tests {
                 line: Line(0),
                 column: Column(0),
             };
-            let bindings = BindingsLayout::new();
+            let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
 
@@ -1110,7 +1237,7 @@ mod tests {
             let mut state = TerminalViewState::new();
             state.hovered_block_id = Some(String::from("block-1"));
             state.hovered_block_kind = Some(BlockKind::Command);
-            let bindings = BindingsLayout::new();
+            let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
             let input_manager = InputManager::new(
@@ -1148,7 +1275,7 @@ mod tests {
             let mut state = TerminalViewState::new();
             state.hovered_block_id = Some(String::from("block-1"));
             state.hovered_block_kind = Some(BlockKind::Command);
-            let bindings = BindingsLayout::new();
+            let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
             let input_manager = InputManager::new(
@@ -1175,7 +1302,7 @@ mod tests {
             let mut state = TerminalViewState::new();
             state.hovered_block_id = Some(String::from("prompt"));
             state.hovered_block_kind = Some(BlockKind::Prompt);
-            let bindings = BindingsLayout::new();
+            let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
             let input_manager = InputManager::new(
@@ -1213,7 +1340,7 @@ mod tests {
                 mouse::Button::Left,
                 Some(first_click),
             ));
-            let bindings = BindingsLayout::new();
+            let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
             let input_manager = InputManager::new(
@@ -1244,7 +1371,7 @@ mod tests {
             state.hovered_block_id = Some(String::from("block-1"));
             state.hovered_block_kind = Some(BlockKind::Command);
             state.selection_in_progress = true;
-            let bindings = BindingsLayout::new();
+            let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
             let input_manager = InputManager::new(
@@ -1277,7 +1404,7 @@ mod tests {
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
 
-            let bindings = bindings::BindingsLayout::new();
+            let bindings = bindings::BindingsLayout::<()>::new();
             let input_manager = InputManager::new(
                 TEST_ID,
                 &bindings,
@@ -1308,7 +1435,7 @@ mod tests {
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
 
-            let bindings = bindings::BindingsLayout::new();
+            let bindings = bindings::BindingsLayout::<()>::new();
             let input_manager = InputManager::new(
                 TEST_ID,
                 &bindings,

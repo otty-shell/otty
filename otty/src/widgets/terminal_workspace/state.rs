@@ -6,8 +6,10 @@ use otty_ui_term::SurfaceMode;
 use otty_ui_term::settings::{Settings, ThemeSettings};
 
 use super::errors::TerminalWorkspaceError;
-use super::pane_balance;
-use super::types::{BlockSelection, TerminalEntry, TerminalKind};
+use super::types::{
+    BlockSelection, Terminal, TerminalEntry, TerminalEvent, TerminalKind,
+};
+use super::{pane_balance, shortcuts};
 
 /// Commands returned by state mutation helpers to be executed by the reducer.
 pub(crate) enum StateCommand {
@@ -157,11 +159,7 @@ impl TerminalTabState {
         settings: Settings,
         kind: TerminalKind,
     ) -> Result<(Self, Id), TerminalWorkspaceError> {
-        let terminal =
-            otty_ui_term::Terminal::new(terminal_id, settings.clone())
-                .map_err(|err| TerminalWorkspaceError::Init {
-                    message: format!("{err}"),
-                })?;
+        let terminal = new_terminal(terminal_id, settings.clone())?;
         let widget_id = terminal.widget_id().clone();
 
         let (panes, initial_pane) = pane_grid::State::new(terminal_id);
@@ -241,6 +239,17 @@ impl TerminalTabState {
         self.panes.get(pane).copied()
     }
 
+    /// Return the pane hosting the given terminal.
+    pub(crate) fn pane_for_terminal(
+        &self,
+        terminal_id: u64,
+    ) -> Option<pane_grid::Pane> {
+        self.panes
+            .iter()
+            .find(|(_, id)| **id == terminal_id)
+            .map(|(pane, _)| *pane)
+    }
+
     /// Return the terminal id of the focused pane.
     pub(crate) fn focused_terminal_id(&self) -> Option<u64> {
         let pane = self.focus?;
@@ -312,17 +321,16 @@ impl TerminalTabState {
         let split = self.panes.split(axis, pane, terminal_id);
 
         if let Some((new_pane, _)) = split {
-            let terminal = match otty_ui_term::Terminal::new(
-                terminal_id,
-                self.terminal_settings.clone(),
-            ) {
-                Ok(terminal) => terminal,
-                Err(err) => {
-                    log::warn!("split pane terminal init failed: {err}");
-                    let _ = self.panes.close(new_pane);
-                    return StateCommand::None;
-                },
-            };
+            let terminal =
+                match new_terminal(terminal_id, self.terminal_settings.clone())
+                {
+                    Ok(terminal) => terminal,
+                    Err(err) => {
+                        log::warn!("split pane terminal init failed: {err}");
+                        let _ = self.panes.close(new_pane);
+                        return StateCommand::None;
+                    },
+                };
             let widget_id = terminal.widget_id().clone();
 
             self.terminals.insert(
@@ -467,7 +475,7 @@ impl TerminalTabState {
     /// Handle a terminal widget event (title changes, shutdown, etc.).
     pub(super) fn handle_terminal_event(
         &mut self,
-        event: otty_ui_term::Event,
+        event: TerminalEvent,
     ) -> StateCommand {
         use otty_ui_term::Event::*;
 
@@ -531,14 +539,6 @@ impl TerminalTabState {
 
     // --- Private helpers ---
 
-    fn pane_for_terminal(&self, terminal_id: u64) -> Option<pane_grid::Pane> {
-        self.panes
-            .iter()
-            .find(|&(_, &id)| id == terminal_id)
-            .map(|(pane, _)| pane)
-            .copied()
-    }
-
     fn set_focus_on_pane(
         &mut self,
         pane: pane_grid::Pane,
@@ -583,6 +583,24 @@ impl TerminalTabState {
             point.y.clamp(0.0, bounds.height.max(0.0)),
         )
     }
+}
+
+/// Build a terminal that already carries the application shortcuts.
+///
+/// Every terminal is created through here so a pane born from a split
+/// answers the same shortcuts as the pane it was split from.
+fn new_terminal(
+    terminal_id: u64,
+    settings: Settings,
+) -> Result<Terminal, TerminalWorkspaceError> {
+    let mut terminal = Terminal::new(terminal_id, settings).map_err(|err| {
+        TerminalWorkspaceError::Init {
+            message: format!("{err}"),
+        }
+    })?;
+    terminal.add_bindings(shortcuts::app_bindings());
+
+    Ok(terminal)
 }
 
 #[cfg(test)]

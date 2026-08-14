@@ -60,7 +60,11 @@ pub enum BlockUiMode {
 }
 
 #[derive(Clone)]
-pub enum Event {
+/// Events a terminal widget reports to its host.
+///
+/// `T` is the host application's own action type, defaulting to `()`
+/// for embedders that register no application bindings.
+pub enum Event<T = ()> {
     Redraw {
         id: u64,
     },
@@ -123,12 +127,21 @@ pub enum Event {
     BlockSelectionCleared {
         id: u64,
     },
+    /// An application-defined shortcut fired inside this terminal.
+    ///
+    /// Emitted when a key press matches a [`BindingAction::Action`]
+    /// binding the host registered. The value is opaque here; the host
+    /// decides what it means.
+    Action {
+        id: u64,
+        action: T,
+    },
     Ignore {
         id: u64,
     },
 }
 
-impl Debug for Event {
+impl<T: Debug> Debug for Event<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Event::*;
 
@@ -186,12 +199,15 @@ impl Debug for Event {
             BlockSelectionCleared { id } => {
                 f.write_fmt(format_args!("Event::BlockSelectionCleared id: {id}"))
             }
+            Action { id, action } => {
+                f.write_fmt(format_args!("Event::Action id: {id}, action: {action:?}"))
+            }
             Ignore { id } => f.write_fmt(format_args!("Event::Ignore id: {id}")),
         }
     }
 }
 
-impl Event {
+impl<T> Event<T> {
     pub fn terminal_id(&self) -> &u64 {
         use Event::*;
 
@@ -211,11 +227,12 @@ impl Event {
             BlockSelected { id, .. } => id,
             BlockCopied { id, .. } => id,
             BlockSelectionCleared { id } => id,
+            Action { id, .. } => id,
             Ignore { id } => id,
         }
     }
 
-    fn from_terminal_event(id: u64, event: TerminalEvent) -> Event {
+    fn from_terminal_event(id: u64, event: TerminalEvent) -> Event<T> {
         match event {
             TerminalEvent::ChildExit { status } => Event::Shutdown {
                 id,
@@ -231,13 +248,13 @@ impl Event {
     }
 }
 
-pub struct Terminal {
+pub struct Terminal<T = ()> {
     pub id: u64,
     widget_id: iced::widget::Id,
     pub(crate) font: TermFont,
     pub(crate) theme: Theme,
     pub(crate) cache: Cache,
-    pub(crate) bindings: BindingsLayout,
+    pub(crate) bindings: BindingsLayout<T>,
     pub(crate) engine: engine::Engine,
     block_selection_mode: BlockSelectionMode,
     block_ui_mode: BlockUiMode,
@@ -256,7 +273,7 @@ impl Hash for TerminalSubscriptionData {
     }
 }
 
-impl Terminal {
+impl<T> Terminal<T> {
     pub fn new(id: u64, settings: Settings) -> error::Result<Self> {
         let (backend_event_tx, backend_event_rx) = mpsc::channel(100);
         let Settings {
@@ -323,7 +340,10 @@ impl Terminal {
         snapshot.block_prompt_text(block_id)
     }
 
-    pub fn subscription(&self) -> Subscription<Event> {
+    pub fn subscription(&self) -> Subscription<Event<T>>
+    where
+        T: Send + 'static,
+    {
         let data = TerminalSubscriptionData {
             id: self.id,
             event_receiver: self.backend_event_rx.clone(),
@@ -332,7 +352,7 @@ impl Terminal {
         Subscription::run_with(data, terminal_subscription_stream)
     }
 
-    pub fn handle(&mut self, event: Event) {
+    pub fn handle(&mut self, event: Event<T>) {
         use Event::*;
 
         match event {
@@ -394,7 +414,7 @@ impl Terminal {
 
     pub fn add_bindings(
         &mut self,
-        bindings: Vec<(Binding<InputKind>, BindingAction)>,
+        bindings: Vec<(Binding<InputKind>, BindingAction<T>)>,
     ) {
         self.bindings.add_bindings(bindings);
         self.cache.clear();
@@ -431,9 +451,9 @@ impl Terminal {
     }
 }
 
-fn terminal_subscription_stream(
+fn terminal_subscription_stream<T: Send + 'static>(
     data: &TerminalSubscriptionData,
-) -> BoxStream<'static, Event> {
+) -> BoxStream<'static, Event<T>> {
     let id = data.id;
     let event_receiver = data.event_receiver.clone();
     iced::stream::channel(1000, async move |mut output| {

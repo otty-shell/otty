@@ -6,6 +6,7 @@ use crate::layout::pane_grid_size;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::sidebar::constants::SIDEBAR_MENU_WIDTH;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
+use crate::widgets::terminal_workspace::shortcuts::TerminalWorkspaceAction;
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceCtx, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
     TerminalWorkspaceIntent,
@@ -123,22 +124,28 @@ fn build_ctx_from_parts(
 }
 
 fn should_sync_explorer(event: &TerminalWorkspaceIntent) -> bool {
-    matches!(
-        event,
-        TerminalWorkspaceIntent::PaneClicked { .. }
-            | TerminalWorkspaceIntent::SplitPane { .. }
-            | TerminalWorkspaceIntent::ClosePane { .. }
-            | TerminalWorkspaceIntent::Widget(
-                otty_ui_term::Event::ContentSync { .. }
-            )
-    )
+    use TerminalWorkspaceIntent::*;
+
+    match event {
+        PaneClicked { .. } | SplitPane { .. } | ClosePane { .. } => true,
+        Widget(otty_ui_term::Event::ContentSync { .. }) => true,
+        // A shortcut-driven split focuses the new pane just as the
+        // context menu one does, so the explorer must follow its cwd
+        // either way.
+        Widget(otty_ui_term::Event::Action { action, .. }) => {
+            matches!(action, TerminalWorkspaceAction::SplitPane { .. })
+        },
+        _ => false,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use super::{handle_effect_event, should_sync_explorer};
+    use super::{
+        TerminalWorkspaceAction, handle_effect_event, should_sync_explorer,
+    };
     use crate::app::App;
     use crate::widgets::terminal_workspace::{
         TerminalWorkspaceEffect, TerminalWorkspaceIntent,
@@ -163,6 +170,21 @@ mod tests {
             otty_ui_term::Event::ContentSync {
                 id: 42,
                 frame: Arc::new(otty_libterm::surface::SnapshotOwned::default()),
+            }
+        )));
+    }
+
+    #[test]
+    fn given_split_pane_action_when_checked_then_returns_true() {
+        // A shortcut-driven split reaches the workspace as a widget
+        // action, not as a SplitPane intent, but it focuses a new pane
+        // all the same.
+        assert!(should_sync_explorer(&TerminalWorkspaceIntent::Widget(
+            otty_ui_term::Event::Action {
+                id: 42,
+                action: TerminalWorkspaceAction::SplitPane {
+                    axis: iced::widget::pane_grid::Axis::Vertical,
+                },
             }
         )));
     }

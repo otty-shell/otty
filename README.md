@@ -31,9 +31,6 @@ Developers already spend much of their time in the terminal, yet modern terminal
 - **Block-based terminal UI**  
   OTTY structures terminal output activity around atomic command blocks, making it easier to control each command and its output.
 
-- **Evenly sized split panes**  
-  Press `Cmd+D` on macOS to add a terminal pane side by side. Every pane in the same split group is redistributed to an equal width, so repeated splits stay predictable. Panes can also be split from the pane context menu on every platform.
-
 
 ### Install
 
