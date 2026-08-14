@@ -147,6 +147,59 @@ owner judged it did not belong in the README. The README is back to its
 `main` state and documents no shortcuts. Where a user-facing shortcut list
 should live is the owner's call, not this plan's.
 
+## Open Decisions
+
+One item is unresolved and belongs to the repository owner, not to this
+plan. It is recorded here rather than settled, because either answer is
+defensible and the wrong unilateral choice is expensive to undo.
+
+### Commit 69ba412: three pre-existing macOS fixes still in this PR
+
+**What they are.** `69ba412` fixed failures that exist on `main` and have
+nothing to do with pane splitting:
+
+| File | Problem on `main` |
+| --- | --- |
+| `otty/src/view.rs` | `resize_grips` is only used in the non-macOS branch, so the import is unused under macOS and `cargo lint` reports it as an error there |
+| `otty/src/widgets/settings/state.rs` | The test asserted `set_shell("/bin/zsh")` marks the draft dirty, but `default_shell()` reads `$SHELL`; on any machine where `$SHELL` is `/bin/zsh` the draft equals the baseline and the assertion fails |
+| `otty/src/widgets/settings/reducer.rs` | Same assumption, same failure |
+
+The same commit also touched `otty-libterm/examples/unix_shell.rs` and
+`otty-ui/terminal/examples/blocks_overlay.rs`. The owner reviewed those
+two and asked for them to be reverted as unrelated to the issue; that was
+done in Round 4. The three files above were not commented on.
+
+**Why it is a real question.** By the standard the owner applied to the
+two examples, these three are the same kind of change and should leave
+this PR. The lineage rule says every changed line traces to the request,
+and none of these do.
+
+**Why it cannot simply be reverted.** Reverting reintroduces the
+failures, which are real and hit anyone developing on macOS:
+
+- `cargo lint` fails on macOS (the CI Lint job runs on `ubuntu-latest`,
+  so CI would stay green while every macOS contributor is blocked)
+- the settings tests fail on any machine where `$SHELL=/bin/zsh`, which
+  is the macOS default; the CI test matrix does include `macos-latest`,
+  so this can surface in CI depending on the runner's `$SHELL`
+
+**The two available answers.**
+
+1. **Leave them here.** The PR carries three unrelated but clearly
+   labelled fixes. Cost: the owner's stated standard is applied
+   inconsistently within one PR.
+2. **Split them into their own PR.** Cost: a git history operation on a
+   branch that already has review history, and this PR temporarily
+   depends on that one landing first for macOS contributors to run the
+   local checks.
+
+Option 2 is the one that matches the owner's stated preference. It was
+not taken unilaterally because rewriting the history of a branch under
+active review is the owner's call.
+
+**Raised with the owner** on PR #85 in the review response for Round 4,
+under "One thing left for you to decide". No answer yet.
+
 ## Round Log
 
 - Blocker (Round 0, not counted as a round): no Rust toolchain on this machine
