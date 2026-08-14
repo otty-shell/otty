@@ -65,9 +65,9 @@ apply each with `resize` (`layout()` borrows `&self` while `resize()` needs
 
 - [x] Task 1: Equalization ratio function with unit tests (TDD, red first)
 - [x] Task 2: Wire equalization into `split_pane`, covering both the keyboard and the context-menu path
-- [x] Task 3: Recognize Cmd+D in the `AppEvent::Keyboard` branch and dispatch `SplitPane`
+- [x] Task 3: Bind Cmd+D to a split action inside the terminal widget (reworked in Round 4; originally a global `AppEvent::Keyboard` branch)
 - [x] Task 4: Verify Cmd+D is not swallowed by the terminal widget, fixing event priority if needed
-- [x] Task 5: Documentation sync — record the Cmd+D shortcut in the README
+- [x] Task 5: Documentation sync (the README entry was written, then removed in Round 4 at the owner's request)
 
 ## Implementation Tasks
 
@@ -89,11 +89,19 @@ behave identically — rather than patching each caller separately.
 
 ### Task 3: Cmd+D keyboard binding
 
-**Objective:** Change the branch at `otty/src/events/mod.rs:61` that currently
-discards keyboard events to recognize Cmd+D (`Key::Character("d")` +
-`Modifiers::COMMAND`), resolve the focused pane of the active tab, and dispatch
-`TerminalWorkspaceIntent::SplitPane { axis: Axis::Vertical }`. All other
-keyboard events keep being discarded.
+**Objective (as delivered, after the Round 4 rework):** Register a
+`BindingAction::Action(TerminalWorkspaceAction::SplitPane { .. })` binding on
+every terminal widget, macOS only, in
+`otty/src/widgets/terminal_workspace/shortcuts.rs`. The widget matches the key
+and reports `otty_ui_term::Event::Action`; `reduce_terminal_action` in
+`reducer.rs` turns it into a split of the *reporting* pane. `events/mod.rs`
+keeps discarding keyboard events as it did before this plan.
+
+**Originally planned, and rejected on review:** changing the branch at
+`otty/src/events/mod.rs:61` to recognize Cmd+D globally, resolve the focused
+pane of the active tab, and dispatch `TerminalWorkspaceIntent::SplitPane`. The
+repository owner rejected the layering, and the approach also acted on the
+active tab regardless of which widget held keyboard focus. See Round 4.
 
 ### Task 4: Verify the keyboard event does not conflict with terminal input
 
@@ -130,9 +138,14 @@ cannot make the Cmd state read wrong.
 
 ### Task 5: Documentation sync
 
-**Objective:** The README currently documents no shortcuts at all. A new
+**Objective as planned:** The README documents no shortcuts at all. A new
 user-visible shortcut is a documentation-sync trigger; add one Cmd+D entry
 (creates a pane and equalizes the widths of its group).
+
+**Outcome:** the entry was added, then removed in Round 4 — the repository
+owner judged it did not belong in the README. The README is back to its
+`main` state and documents no shortcuts. Where a user-facing shortcut list
+should live is the owner's call, not this plan's.
 
 ## Round Log
 
