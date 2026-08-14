@@ -149,9 +149,13 @@ should live is the owner's call, not this plan's.
 
 ## Open Decisions
 
-One item is unresolved and belongs to the repository owner, not to this
-plan. It is recorded here rather than settled, because either answer is
-defensible and the wrong unilateral choice is expensive to undo.
+Three items are unresolved and belong to the repository owner, not to
+this plan. They are recorded here rather than settled, because either
+answer is defensible and the wrong unilateral choice is expensive to
+undo. All three are the same question in different places: this branch
+carries changes that do not trace to the split-pane request, and the
+owner has already applied the lineage standard once, to two example
+files in Round 4.
 
 ### Commit 69ba412: three pre-existing macOS fixes still in this PR
 
@@ -199,6 +203,62 @@ active review is the owner's call.
 
 **Raised with the owner** on PR #85 in the review response for Round 4,
 under "One thing left for you to decide". No answer yet.
+
+### The repository-wide language rule added to `AGENTS.md`
+
+**What it is.** This branch adds one line to `AGENTS.md` forbidding
+Chinese text anywhere in the repository, and changes two tests to match
+it: the wide-character payload in `otty-surface/src/block_text.rs` and
+in `otty-ui/terminal/src/render_runs.rs` moved from Chinese characters
+to Japanese kana. Both tests assert the same thing before and after —
+they only need a double-width character, and kana is one.
+
+**Why it is a real question.** A repository-wide contributor rule is a
+policy decision, not a code change, and it has nothing to do with
+splitting panes. It also reaches two crates this feature never touches.
+The rule was added to keep this branch's own output consistent; whether
+it should bind every future contributor is the owner's call, and a
+one-line rule buried in a pane-splitting PR is not where such a call
+gets seen.
+
+**The two available answers.**
+
+1. **Leave it here.** Cost: a repository policy lands inside an
+   unrelated feature PR, and the two test edits ride along with it.
+2. **Drop the `AGENTS.md` line and both test edits from this branch**,
+   and propose the rule separately. Cost: nothing technical — the tests
+   pass either way, since both payloads are double-width.
+
+Option 2 is the one that matches the standard the owner applied to the
+two example files. It was not taken unilaterally because the rule is
+also what keeps this branch's own prose in English, and removing it
+without a replacement leaves that undocumented.
+
+### Commit 24b6e64: two control-character bindings corrected
+
+**What it is.** `24b6e64` fixes two entries in the terminal's default
+keyboard bindings, both wrong on `main`:
+
+| Binding | On `main` | Corrected to |
+| --- | --- | --- |
+| `Ctrl+U` | `\x51`, which is the letter `Q` | `\x15`, NAK, the kill-line control code |
+| `Ctrl+'` / `Ctrl+\` | `'` mapped to `\x1c` | `\` mapped to `\x1c`, FS, which is the key that produces it |
+
+**Why it is a real question.** These are genuine bugs — `Ctrl+U` in any
+shell should erase the line, and on `main` it types a `Q` instead — but
+they are bugs in terminal input handling, not in pane splitting. They
+were found while working on the binding layout for the shortcut, which
+is why they are here.
+
+**The two available answers.**
+
+1. **Leave them here.** Cost: same inconsistency as the two items above.
+2. **Split them into their own PR.** They are self-contained and touch
+   one file, so this is the cheapest of the three to separate. Cost: a
+   history operation on a branch already under review.
+
+**None of these three has been acted on.** They are listed together so
+the answer can be given once.
 
 ## Round Log
 
