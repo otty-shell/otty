@@ -122,9 +122,7 @@ mod tests {
     #[test]
     fn given_save_completed_when_reduced_then_marks_state_saved() {
         let mut state = default_state();
-        // The baseline shell comes from $SHELL, so derive a value that
-        // always differs from it.
-        state.set_shell(format!("{}-changed", state.draft().terminal_shell()));
+        state.set_shell(String::from("/bin/zsh"));
         assert!(state.is_dirty());
         let normalized = state.normalized_draft();
 

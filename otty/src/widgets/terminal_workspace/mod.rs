@@ -4,7 +4,7 @@ pub(crate) mod model;
 mod pane_balance;
 pub(crate) mod reducer;
 pub(crate) mod services;
-pub(crate) mod shortcuts;
+mod shortcuts;
 pub(crate) mod state;
 pub(crate) mod types;
 pub(crate) mod view;
@@ -17,6 +17,7 @@ pub(crate) use event::{
 };
 use iced::Task;
 pub(crate) use reducer::TerminalWorkspaceCtx;
+pub(crate) use shortcuts::TerminalWorkspaceAction;
 use state::{TerminalTabState, TerminalWorkspaceState};
 
 use self::model::{TerminalTabViewModel, TerminalWorkspaceViewModel};

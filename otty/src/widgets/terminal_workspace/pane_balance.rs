@@ -14,6 +14,9 @@ pub(super) fn equalized_ratios(
     layout: &Node,
     target: Pane,
 ) -> Vec<(Split, f32)> {
+    // SHORTCUT: ratios equalize logical slots without spacing correction;
+    // pass the rendered grid size and spacing if sub-pixel equality becomes
+    // a product requirement for large same-axis groups.
     let mut path = Vec::new();
     if !path_to_pane(layout, target, &mut path) {
         return Vec::new();
@@ -110,6 +113,8 @@ mod tests {
 
     use super::*;
 
+    const PANE_SPACING: f32 = 1.0;
+
     /// Apply every computed ratio and read the resulting pane widths.
     fn equalize_and_measure(
         state: &mut pane_grid::State<u64>,
@@ -122,14 +127,56 @@ mod tests {
 
         state
             .layout()
-            .pane_regions(0.0, 0.0, bounds)
+            .pane_regions(PANE_SPACING, 0.0, bounds)
             .values()
             .map(|region| region.width)
             .collect()
     }
 
+    fn assert_width_spread(widths: &[f32], maximum: f32) {
+        let minimum = widths.iter().copied().fold(f32::INFINITY, f32::min);
+        let maximum_width =
+            widths.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(
+            maximum_width - minimum <= maximum,
+            "expected a width spread no greater than {maximum}, got {widths:?}"
+        );
+    }
+
     #[test]
-    fn given_two_side_by_side_panes_when_equalized_then_three_widths_match() {
+    fn given_two_panes_when_equalized_then_widths_match() {
+        let (mut state, first) = pane_grid::State::new(1_u64);
+        let (second, _) = state
+            .split(Axis::Vertical, first, 2)
+            .expect("first split succeeds");
+
+        let widths =
+            equalize_and_measure(&mut state, second, Size::new(900.0, 600.0));
+
+        assert_eq!(widths.len(), 2);
+        assert_width_spread(&widths, 1.0);
+    }
+
+    #[test]
+    fn given_left_deep_three_pane_group_when_equalized_then_widths_match() {
+        let (mut state, first) = pane_grid::State::new(1_u64);
+        let _ = state
+            .split(Axis::Vertical, first, 2)
+            .expect("first split succeeds");
+        let (third, _) = state
+            .split(Axis::Vertical, first, 3)
+            .expect("second split succeeds");
+
+        let widths =
+            equalize_and_measure(&mut state, third, Size::new(900.0, 600.0));
+
+        assert_eq!(widths.len(), 3);
+        assert_width_spread(&widths, 1.0);
+    }
+
+    #[test]
+    fn given_right_deep_three_pane_group_when_equalized_then_widths_match() {
         let (mut state, first) = pane_grid::State::new(1_u64);
         let (second, _) = state
             .split(Axis::Vertical, first, 2)
@@ -142,12 +189,7 @@ mod tests {
             equalize_and_measure(&mut state, third, Size::new(900.0, 600.0));
 
         assert_eq!(widths.len(), 3);
-        for width in &widths {
-            assert!(
-                (width - 300.0).abs() <= 0.5,
-                "expected each pane near 300.0, got {width}"
-            );
-        }
+        assert_width_spread(&widths, 1.0);
     }
 
     #[test]
@@ -168,12 +210,7 @@ mod tests {
             equalize_and_measure(&mut state, fourth, Size::new(1200.0, 600.0));
 
         assert_eq!(widths.len(), 4);
-        for width in &widths {
-            assert!(
-                (width - 300.0).abs() <= 0.5,
-                "expected each pane near 300.0, got {width}"
-            );
-        }
+        assert_width_spread(&widths, 1.0);
     }
 
     #[test]
@@ -225,5 +262,13 @@ mod tests {
         let (state, only) = pane_grid::State::new(1_u64);
 
         assert!(equalized_ratios(state.layout(), only).is_empty());
+    }
+
+    #[test]
+    fn given_foreign_pane_when_equalized_then_no_ratios_are_produced() {
+        let (state, _) = pane_grid::State::new(1_u64);
+        let (_, foreign) = pane_grid::State::new(2_u64);
+
+        assert!(equalized_ratios(state.layout(), foreign).is_empty());
     }
 }

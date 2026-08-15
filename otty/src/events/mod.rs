@@ -1,7 +1,5 @@
-use iced::Task;
-#[cfg(not(target_os = "macos"))]
-use iced::window;
 use iced::window::Direction;
+use iced::{Task, window};
 
 use crate::app::App;
 use crate::layout::screen_size_from_window;
@@ -76,7 +74,6 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::ResizeWindow(dir) => {
             #[cfg(target_os = "macos")]
             {
-                let _ = dir;
                 Task::none()
             }
 

@@ -132,7 +132,7 @@ pub enum Event<T = ()> {
     /// Emitted when a key press matches a [`BindingAction::Action`]
     /// binding the host registered. The value is opaque here; the host
     /// decides what it means.
-    Action {
+    BindingActionDispatched {
         id: u64,
         action: T,
     },
@@ -199,8 +199,10 @@ impl<T: Debug> Debug for Event<T> {
             BlockSelectionCleared { id } => {
                 f.write_fmt(format_args!("Event::BlockSelectionCleared id: {id}"))
             }
-            Action { id, action } => {
-                f.write_fmt(format_args!("Event::Action id: {id}, action: {action:?}"))
+            BindingActionDispatched { id, action } => {
+                f.write_fmt(format_args!(
+                    "Event::BindingActionDispatched id: {id}, action: {action:?}"
+                ))
             }
             Ignore { id } => f.write_fmt(format_args!("Event::Ignore id: {id}")),
         }
@@ -227,7 +229,7 @@ impl<T> Event<T> {
             BlockSelected { id, .. } => id,
             BlockCopied { id, .. } => id,
             BlockSelectionCleared { id } => id,
-            Action { id, .. } => id,
+            BindingActionDispatched { id, .. } => id,
             Ignore { id } => id,
         }
     }

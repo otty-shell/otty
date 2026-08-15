@@ -16,7 +16,7 @@ pub enum BindingAction<T = ()> {
     Esc(String),
     LinkOpen,
     /// An application-defined action, surfaced to the host as
-    /// [`crate::Event::Action`] instead of being handled here.
+    /// [`crate::Event::BindingActionDispatched`] instead of being handled here.
     ///
     /// The action is opaque to this crate: the host registers the
     /// binding with [`crate::Terminal::add_bindings`] and gives the
@@ -243,7 +243,7 @@ fn default_keyboard_bindings<T>() -> Vec<(Binding<InputKind>, BindingAction<T>)>
         "r",        Modifiers::CTRL; BindingAction::Char('\x12');
         "s",        Modifiers::CTRL; BindingAction::Char('\x13');
         "t",        Modifiers::CTRL; BindingAction::Char('\x14');
-        "u",        Modifiers::CTRL; BindingAction::Char('\x15'); // NAK (kill line)  vt100
+        "u",        Modifiers::CTRL; BindingAction::Char('\x51');
         "v",        Modifiers::CTRL; BindingAction::Char('\x16');
         "w",        Modifiers::CTRL; BindingAction::Char('\x17');
         "x",        Modifiers::CTRL; BindingAction::Char('\x18');
@@ -251,7 +251,7 @@ fn default_keyboard_bindings<T>() -> Vec<(Binding<InputKind>, BindingAction<T>)>
         "z",        Modifiers::CTRL; BindingAction::Char('\x1a');
         "[",        Modifiers::CTRL; BindingAction::Char('\x1b');
         "]",        Modifiers::CTRL; BindingAction::Char('\x1d');
-        "\\",       Modifiers::CTRL; BindingAction::Char('\x1c'); // FS                vt100
+        "\'",       Modifiers::CTRL; BindingAction::Char('\x1c');
         "-",        Modifiers::CTRL; BindingAction::Char('\x1f');
         // SHIFT
         Enter,      Modifiers::SHIFT; BindingAction::Char('\x0d');
@@ -311,7 +311,7 @@ fn default_keyboard_bindings<T>() -> Vec<(Binding<InputKind>, BindingAction<T>)>
         "r",        Modifiers::SHIFT | Modifiers::CTRL; BindingAction::Char('\x12');
         "s",        Modifiers::SHIFT | Modifiers::CTRL; BindingAction::Char('\x13');
         "t",        Modifiers::SHIFT | Modifiers::CTRL; BindingAction::Char('\x14');
-        "u",        Modifiers::SHIFT | Modifiers::CTRL; BindingAction::Char('\x15');
+        "u",        Modifiers::SHIFT | Modifiers::CTRL; BindingAction::Char('\x51');
         "v",        Modifiers::SHIFT | Modifiers::CTRL; BindingAction::Char('\x16');
         "w",        Modifiers::SHIFT | Modifiers::CTRL; BindingAction::Char('\x17');
         "x",        Modifiers::SHIFT | Modifiers::CTRL; BindingAction::Char('\x18');

@@ -6,10 +6,9 @@ use crate::layout::pane_grid_size;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::sidebar::constants::SIDEBAR_MENU_WIDTH;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
-use crate::widgets::terminal_workspace::shortcuts::TerminalWorkspaceAction;
 use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceCtx, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
-    TerminalWorkspaceIntent,
+    TerminalWorkspaceAction, TerminalWorkspaceCtx, TerminalWorkspaceEffect,
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
 pub(crate) fn handle(
@@ -132,7 +131,9 @@ fn should_sync_explorer(event: &TerminalWorkspaceIntent) -> bool {
         // A shortcut-driven split focuses the new pane just as the
         // context menu one does, so the explorer must follow its cwd
         // either way.
-        Widget(otty_ui_term::Event::Action { action, .. }) => {
+        Widget(otty_ui_term::Event::BindingActionDispatched {
+            action, ..
+        }) => {
             matches!(action, TerminalWorkspaceAction::SplitPane { .. })
         },
         _ => false,
@@ -180,7 +181,7 @@ mod tests {
         // action, not as a SplitPane intent, but it focuses a new pane
         // all the same.
         assert!(should_sync_explorer(&TerminalWorkspaceIntent::Widget(
-            otty_ui_term::Event::Action {
+            otty_ui_term::Event::BindingActionDispatched {
                 id: 42,
                 action: TerminalWorkspaceAction::SplitPane {
                     axis: iced::widget::pane_grid::Axis::Vertical,

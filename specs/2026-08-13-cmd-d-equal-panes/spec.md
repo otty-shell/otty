@@ -3,17 +3,17 @@
 Created: 2026-08-13
 Author: williammiller20250731@gmail.com
 Agent: Claude Code
-Status: VERIFIED
+Status: COMPLETE
 Approved: Yes
-Rounds: 4
+Rounds: 5
 Worktree: No
 Type: Build
 
 ## Summary
 
-**Goal:** Pressing Cmd+D creates a new pane inside the current terminal tab and
-redistributes the widths of every sibling pane in the new pane's same-axis
-split group evenly.
+**Goal:** Pressing Cmd+D on macOS, or Logo+Shift+D on Linux and Windows,
+creates a new pane inside the current terminal tab and redistributes the widths
+of every sibling pane in the new pane's same-axis split group evenly.
 
 Tracks GitHub issue [#80](https://github.com/otty-shell/otty/issues/80).
 Branch `fix-80`.
@@ -37,7 +37,7 @@ side by side; the criteria themselves carry the judgement.
 - `pane_grid::State::<T>::layout(&self) -> &Node`
 - `pane_grid::State::<T>::resize(&mut self, split: Split, ratio: f32)`
 - `pane_grid::Node::Split { id: Split, axis: Axis, ratio: f32, a: Box<Node>, b: Box<Node> }` — the variant and its fields are all `pub`
-- `pane_grid::Node::pane_regions(spacing, size) -> BTreeMap<Pane, Rectangle>` — unit tests assert widths through this
+- `pane_grid::Node::pane_regions(spacing, min_size, bounds) -> BTreeMap<Pane, Rectangle>` — unit tests assert widths through this
 
 Equalization algorithm: after `split()`, locate the same-axis contiguous group
 containing the new pane from `layout()`, compute
@@ -48,12 +48,12 @@ apply each with `resize` (`layout()` borrows `&self` while `resize()` needs
 
 ## Acceptance Criteria
 
-- [x] Criterion 1: After one split on two side-by-side panes, the three pane widths computed by `Node::pane_regions()` differ pairwise by <= 0.5px (unit test assertion).
+- [x] Criterion 1: After one split on two side-by-side panes, the three pane widths computed by `Node::pane_regions()` with the application's 1px spacing differ pairwise by <= 1px (unit test assertion).
 - [x] Criterion 2: Equalization only touches the same-axis group containing the new pane — in a mixed-axis layout (top/bottom split whose bottom half is split left/right), the `Split` ratio of the other group is unchanged before and after the split (unit test assertion).
 - [x] Criterion 3: Launch otty on real hardware, press Cmd+D in a two-pane tab; the screenshot shows three equally wide terminals and the third pane presents a usable shell prompt.
 - [x] Criterion 4: Pressing Cmd+D inside a terminal pane writes no bytes to the pty — confirmed on real hardware: no shell echo, no inserted characters, no newline.
-- [x] Criterion 5: `cargo +nightly fmt --check` and `cargo clippy --workspace --all-targets --all-features -- -D warnings` both exit 0.
-- [x] Criterion 6 (rewritten after Round 1 with the user's consent, original wording in the Round Log): `cargo test --workspace --all-features` with zero failures, `cargo deny check` exit 0, and line coverage of the business-logic modules added or changed in this work >= 80%.
+- [ ] Criterion 5: `cargo +nightly fmt --check` and `cargo clippy --workspace --all-targets --all-features -- -D warnings` both exit 0.
+- [ ] Criterion 6 (rewritten after Round 1 with the user's consent, original wording in the Round Log): `cargo test --workspace --all-features` with zero failures, `cargo deny check` exit 0, and line coverage of the business-logic modules added or changed in this work >= 80%.
 
 ## Out of Scope
 
@@ -89,11 +89,12 @@ behave identically — rather than patching each caller separately.
 
 ### Task 3: Cmd+D keyboard binding
 
-**Objective (as delivered, after the Round 4 rework):** Register a
+**Objective (as delivered, after the Round 4 and Round 5 reworks):** Register a
 `BindingAction::Action(TerminalWorkspaceAction::SplitPane { .. })` binding on
-every terminal widget, macOS only, in
-`otty/src/widgets/terminal_workspace/shortcuts.rs`. The widget matches the key
-and reports `otty_ui_term::Event::Action`; `reduce_terminal_action` in
+every terminal widget in `otty/src/widgets/terminal_workspace/shortcuts.rs`.
+macOS uses Cmd+D; Linux and Windows use Logo+Shift+D so Ctrl+D remains the
+terminal EOF binding. The widget matches the key and reports
+`otty_ui_term::Event::BindingActionDispatched`; `reduce_terminal_action` in
 `reducer.rs` turns it into a split of the *reporting* pane. `events/mod.rs`
 keeps discarding keyboard events as it did before this plan.
 
@@ -105,36 +106,21 @@ active tab regardless of which widget held keyboard focus. See Round 4.
 
 ### Task 4: Verify the keyboard event does not conflict with terminal input
 
-**Objective:** Confirm Cmd+D is neither consumed first by the terminal widget
-nor written to the pty, fixing `otty-ui/terminal/src/input.rs` if necessary.
-This is the only place this work might touch `otty-ui`.
+**Objective:** Confirm the application binding is captured by the terminal
+widget and never written to the pty, while an unbound Logo-modified key keeps
+the text reported by the platform. This avoids changing the terminal library's
+fallback behavior for host applications that did not register a shortcut.
 
-Static analysis located the fork (measurement decides which path holds):
-
-- `iced::keyboard::listen()` only yields events with `Status::Ignored`
-  (docs.rs: "listens to ignored keyboard events"). If the terminal marks Cmd+D
-  as `Captured`, `events/mod.rs` never receives it.
-- `get_action` in `bindings.rs:128` matches modifiers by exact equality; Cmd+D
-  has no binding -> returns `BindingAction::Ignore`.
-- `input.rs:429-437`: with `binding_action == Ignore` and `text` being `Some`,
-  the text is written straight to the pty and `Captured` is returned.
-
-**Path A** — on macOS Cmd+D carries `text == None`: the branch above is never
-entered, control falls through to the trailing `_ => Status::Ignored`, the
-subscription receives the event, and this task only needs to record the
-verification result without touching `otty-ui`.
-
-**Path B** — `text` is `Some("d")`: Cmd+D would write "d" into the pty and be
-captured. In that case add one condition to the character branch in `input.rs`
-— when the event carries `Modifiers::COMMAND` and no binding matched, do not
-write to the pty and return `Ignored`. Fixing it at this single point covers
-every unbound `Cmd+<letter>`; it is a single-point fix of one logic defect,
-not scope expansion.
-
-Side check: the `Key::Character` branch reads the cached
-`view_state.keyboard_modifiers` while the `Key::Named` branch reads the
-event's own `modifiers` (`input.rs:421` vs `440`). Confirm this inconsistency
-cannot make the Cmd state read wrong.
+**Outcome after the final rework:** `InputManager` matches the host-provided
+`BindingAction<T>` before the text fallback, using the modifiers carried by
+the current `KeyPressed` event. A matched action emits
+`Event::BindingActionDispatched`, returns `Captured`, and emits no `Write`;
+unmatched character input continues through the existing text fallback.
+Repeated key events are rejected before an application action can create a
+terminal and shell process. Tests cover a matched action with stale cached
+modifiers, no PTY write, repeat rejection, and unbound text fallback. The
+macOS desktop run additionally confirmed two Cmd+D presses create panes
+without inserting `d` into any shell prompt.
 
 ### Task 5: Documentation sync
 
@@ -147,118 +133,15 @@ owner judged it did not belong in the README. The README is back to its
 `main` state and documents no shortcuts. Where a user-facing shortcut list
 should live is the owner's call, not this plan's.
 
-## Open Decisions
+## Scope Decisions
 
-Three items are unresolved and belong to the repository owner, not to
-this plan. They are recorded here rather than settled, because either
-answer is defensible and the wrong unilateral choice is expensive to
-undo. All three are the same question in different places: this branch
-carries changes that do not trace to the split-pane request, and the
-owner has already applied the lineage standard once, to two example
-files in Round 4.
-
-### Commit 69ba412: three pre-existing macOS fixes still in this PR
-
-**What they are.** `69ba412` fixed failures that exist on `main` and have
-nothing to do with pane splitting:
-
-| File | Problem on `main` |
-| --- | --- |
-| `otty/src/view.rs` | `resize_grips` is only used in the non-macOS branch, so the import is unused under macOS and `cargo lint` reports it as an error there |
-| `otty/src/widgets/settings/state.rs` | The test asserted `set_shell("/bin/zsh")` marks the draft dirty, but `default_shell()` reads `$SHELL`; on any machine where `$SHELL` is `/bin/zsh` the draft equals the baseline and the assertion fails |
-| `otty/src/widgets/settings/reducer.rs` | Same assumption, same failure |
-
-The same commit also touched `otty-libterm/examples/unix_shell.rs` and
-`otty-ui/terminal/examples/blocks_overlay.rs`. The owner reviewed those
-two and asked for them to be reverted as unrelated to the issue; that was
-done in Round 4. The three files above were not commented on.
-
-**Why it is a real question.** By the standard the owner applied to the
-two examples, these three are the same kind of change and should leave
-this PR. The lineage rule says every changed line traces to the request,
-and none of these do.
-
-**Why it cannot simply be reverted.** Reverting reintroduces the
-failures, which are real and hit anyone developing on macOS:
-
-- `cargo lint` fails on macOS (the CI Lint job runs on `ubuntu-latest`,
-  so CI would stay green while every macOS contributor is blocked)
-- the settings tests fail on any machine where `$SHELL=/bin/zsh`, which
-  is the macOS default; the CI test matrix does include `macos-latest`,
-  so this can surface in CI depending on the runner's `$SHELL`
-
-**The two available answers.**
-
-1. **Leave them here.** The PR carries three unrelated but clearly
-   labelled fixes. Cost: the owner's stated standard is applied
-   inconsistently within one PR.
-2. **Split them into their own PR.** Cost: a git history operation on a
-   branch that already has review history, and this PR temporarily
-   depends on that one landing first for macOS contributors to run the
-   local checks.
-
-Option 2 is the one that matches the owner's stated preference. It was
-not taken unilaterally because rewriting the history of a branch under
-active review is the owner's call.
-
-**Raised with the owner** on PR #85 in the review response for Round 4,
-under "One thing left for you to decide". No answer yet.
-
-### The repository-wide language rule added to `AGENTS.md`
-
-**What it is.** This branch adds one line to `AGENTS.md` forbidding
-Chinese text anywhere in the repository, and changes two tests to match
-it: the wide-character payload in `otty-surface/src/block_text.rs` and
-in `otty-ui/terminal/src/render_runs.rs` moved from Chinese characters
-to Japanese kana. Both tests assert the same thing before and after —
-they only need a double-width character, and kana is one.
-
-**Why it is a real question.** A repository-wide contributor rule is a
-policy decision, not a code change, and it has nothing to do with
-splitting panes. It also reaches two crates this feature never touches.
-The rule was added to keep this branch's own output consistent; whether
-it should bind every future contributor is the owner's call, and a
-one-line rule buried in a pane-splitting PR is not where such a call
-gets seen.
-
-**The two available answers.**
-
-1. **Leave it here.** Cost: a repository policy lands inside an
-   unrelated feature PR, and the two test edits ride along with it.
-2. **Drop the `AGENTS.md` line and both test edits from this branch**,
-   and propose the rule separately. Cost: nothing technical — the tests
-   pass either way, since both payloads are double-width.
-
-Option 2 is the one that matches the standard the owner applied to the
-two example files. It was not taken unilaterally because the rule is
-also what keeps this branch's own prose in English, and removing it
-without a replacement leaves that undocumented.
-
-### Commit 24b6e64: two control-character bindings corrected
-
-**What it is.** `24b6e64` fixes two entries in the terminal's default
-keyboard bindings, both wrong on `main`:
-
-| Binding | On `main` | Corrected to |
-| --- | --- | --- |
-| `Ctrl+U` | `\x51`, which is the letter `Q` | `\x15`, NAK, the kill-line control code |
-| `Ctrl+'` / `Ctrl+\` | `'` mapped to `\x1c` | `\` mapped to `\x1c`, FS, which is the key that produces it |
-
-**Why it is a real question.** These are genuine bugs — `Ctrl+U` in any
-shell should erase the line, and on `main` it types a `Q` instead — but
-they are bugs in terminal input handling, not in pane splitting. They
-were found while working on the binding layout for the shortcut, which
-is why they are here.
-
-**The two available answers.**
-
-1. **Leave them here.** Cost: same inconsistency as the two items above.
-2. **Split them into their own PR.** They are self-contained and touch
-   one file, so this is the cheapest of the three to separate. Cost: a
-   history operation on a branch already under review.
-
-**None of these three has been acted on.** They are listed together so
-the answer can be given once.
+- The pre-existing macOS lint and environment-dependent settings-test fixes
+  from `69ba412` were removed from the final feature diff.
+- The pre-existing Ctrl+U and Ctrl+backslash corrections from `24b6e64`, and
+  their regression tests, were removed from the final feature diff.
+- The maintainer-requested repository language rule remains. Its
+  wide-character fixtures use Japanese kana because Chinese text is forbidden
+  and the tests require a double-width payload.
 
 ## Round Log
 
@@ -308,8 +191,8 @@ the answer can be given once.
   scope and in conflict with the AGENTS.md rule against testing
   infrastructure/bootstrap packages.
 
-  **Pre-existing defects fixed along the way** (all outside this change's
-  lineage, itemized under the zero-tolerance-for-existing-failures exception):
+  **Pre-existing defects discovered along the way** (all outside this change's
+  lineage; temporary fixes were removed from the final feature diff):
   1. Three unused-symbol warnings from macOS conditional compilation at
      `otty/src/view.rs:7` and `otty/src/events/mod.rs:2,74` — the project's own
      `cargo lint` reports these as errors on macOS, and they were present in
@@ -441,7 +324,9 @@ the answer can be given once.
   Ctrl+' while a text-less Ctrl+\ was silently dropped. Both were fixed
   with red-green regression tests (`ctrl_u_sends_nak`,
   `ctrl_backslash_sends_fs`); the adversarial review round that found the
-  second typo approved the final diff with no remaining findings.
+  second typo approved that round with no remaining findings. Those fixes and
+  tests were later removed from the final PR diff because the owner classified
+  them as unrelated to issue #80.
 
 - Round 4 (after the GitHub review on PR #85): the repository owner rejected
   the whole delivery mechanism, not a detail of it. Task 3 above had put the
@@ -504,3 +389,78 @@ the answer can be given once.
   feature entry and the `collapsible_if` cleanups in
   `otty-libterm/examples/unix_shell.rs` and
   `otty-ui/terminal/examples/blocks_overlay.rs`.
+
+- Round 5 (after review 4941822656 on PR #85): the follow-up review exposed
+  four design and scope gaps in the Round 4 rework.
+
+  1. `Event::Action` was too easy to confuse with `BindingAction::Action`; the
+     public event is now named `Event::BindingActionDispatched`.
+  2. The terminal library globally suppressed every unbound Logo-modified key.
+     That policy belongs to the host binding table, not the reusable widget.
+     A red-green regression test now proves that a matched application binding
+     emits the action without a PTY write, while an unbound combination keeps
+     the platform-provided text.
+  3. The shortcut module used conditional imports and returned an empty binding
+     list outside macOS. It now has one platform rule: Cmd+D on macOS and
+     Logo+Shift+D elsewhere. A pure modifier-selection test exercises both
+     branches on one host, and the application binding preserves Ctrl+D EOF.
+  4. `shortcuts` no longer exposes its module outside the terminal workspace;
+     the parent exports only `TerminalWorkspaceAction`, which is the type the
+     outer event adapter needs.
+
+  The buildout moved to the maintainer-requested
+  `specs/2026-08-13-cmd-d-equal-panes/spec.md`; `.gitignore`
+  has a narrow exception for that tracked path. The repository language rule
+  uses the maintainer's wording. No horizontal shortcut was invented: issue
+  #80 specifies the side-by-side action, and the existing context menu already
+  exposes horizontal splitting without assigning an undocumented key.
+  The pane-width tests now use the application's 1px grid spacing. That exposed
+  a 1px spread (`[300, 299, 299]`) hidden by the earlier zero-spacing test, so
+  Criterion 1 now states the measured `<= 1px` approximation instead of an
+  unsupported sub-pixel guarantee.
+
+  Current Round 5 verification on 2026-08-15:
+
+  - `cargo +nightly fmt -- --check` exited 0.
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+    exited 101 on six pre-existing findings: three `collapsible_if` lints in
+    `otty-libterm/examples/unix_shell.rs` and
+    `otty-ui/terminal/examples/blocks_overlay.rs`, plus the macOS-only unused
+    `resize_grips`, `window`, and `dir` findings in `otty/src/view.rs` and
+    `otty/src/events/mod.rs`. Those cleanups were explicitly removed from this
+    PR at the owner's request. Re-running Clippy while allowing only those
+    three lint categories exited 0, with no additional findings.
+  - `cargo deny check` exited 0 with yanked-crate warnings for `core2 0.4.0`
+    and `spin 0.9.8`.
+  - In the default macOS environment, `cargo test --workspace --all-features`
+    exited 101 after 208 passed and 2 failed settings tests. Both tests set the
+    draft shell to `/bin/zsh`, which equals this machine's `$SHELL`, so their
+    dirty-state precondition is false. With `SHELL=/bin/bash` as a diagnostic
+    control, the full workspace exited 0 with 516 passed and 2 ignored tests.
+  - In the default environment,
+    `cargo llvm-cov --workspace --all-features --fail-under-lines 80` stopped
+    on those same two settings failures. With the same diagnostic shell
+    control, all tests passed but the command exited 1 at 67.58% line coverage
+    (68.46% region coverage). The pane-balance module reached 95.40% line
+    coverage.
+  - The pane-balance suite now covers two panes, left-deep and right-deep
+    three-pane trees, four panes, mixed axes, a single pane, and a foreign
+    target. A mutation that skipped the left subtree made the left-deep test
+    fail with widths `[225, 449, 224]`; restoring the traversal made all seven
+    tests pass.
+  - `cargo run -p otty` built and launched the macOS Metal application. Desktop
+    automation pressed Cmd+D twice: the window changed from one pane to two,
+    then to three equal panes. A raw-pixel scan of the 2x screenshot measured
+    the pane backgrounds at 518, 516, and 517 physical pixels, a maximum
+    logical-width difference of 1px. The third pane displayed a shell prompt
+    and executed `printf OTTY_FINAL_OK`; no shortcut character appeared in any
+    prompt. Linux and Windows were not available locally.
+
+## Not Verified
+
+- Linux and Windows runtime behavior for Logo+Shift+D.
+- The repository-wide 80% line-coverage gate.
+- A clean default-environment workspace test run without reintroducing the
+  out-of-scope settings-test cleanup.
+- A clean strict-Clippy run without reintroducing the out-of-scope example and
+  macOS conditional-compilation cleanups.

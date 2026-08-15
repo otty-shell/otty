@@ -257,7 +257,8 @@ fn reduce_widget_event(
         return Task::none();
     };
 
-    if let otty_ui_term::Event::Action { action, .. } = &event {
+    if let otty_ui_term::Event::BindingActionDispatched { action, .. } = &event
+    {
         return reduce_terminal_action(
             state,
             terminal_to_tab,
@@ -876,10 +877,12 @@ mod tests {
             state,
             terminal_to_tab,
             next_id,
-            TerminalWorkspaceIntent::Widget(otty_ui_term::Event::Action {
-                id: 100,
-                action,
-            }),
+            TerminalWorkspaceIntent::Widget(
+                otty_ui_term::Event::BindingActionDispatched {
+                    id: 100,
+                    action,
+                },
+            ),
             &default_ctx(),
         );
     }

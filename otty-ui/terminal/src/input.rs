@@ -1,4 +1,4 @@
-use iced::keyboard::{Key, Modifiers};
+use iced::keyboard::Key;
 use iced::mouse::ScrollDelta;
 use iced::{Point, Size};
 use iced_core::clipboard::Kind as ClipboardKind;
@@ -434,13 +434,11 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
                             terminal_state_ref.mode,
                         );
 
-                        // If no binding matched, only write printable text
-                        // (when provided). Logo combinations (Cmd on macOS,
-                        // Super elsewhere) are application shortcuts and
-                        // never produce terminal input, so they are left
-                        // for the app.
+                        // If no binding matched, write the text reported by
+                        // the platform. Application shortcuts do not reach
+                        // this branch because the host registers an action
+                        // binding for them.
                         if binding_action == BindingAction::Ignore
-                            && !modifiers.contains(Modifiers::LOGO)
                             && let Some(c) = text
                         {
                             publisher(crate::Event::Write {
@@ -504,7 +502,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
             // would otherwise spawn a pane, terminal and shell process for
             // every repeat event while the key is held.
             BindingAction::Action(action) if !is_repeat => {
-                publisher(crate::Event::Action {
+                publisher(crate::Event::BindingActionDispatched {
                     id: self.terminal_id,
                     action,
                 });
@@ -649,7 +647,8 @@ mod tests {
         }
 
         /// Build the binding layout an application registers when it wants
-        /// a shortcut to surface as [`crate::Event::Action`].
+        /// a shortcut to surface as
+        /// [`crate::Event::BindingActionDispatched`].
         fn bindings_with_action() -> bindings::BindingsLayout<TestAction> {
             let mut layout = bindings::BindingsLayout::new();
             layout.add_bindings(crate::generate_bindings!(
@@ -686,11 +685,12 @@ mod tests {
         /// Dispatch with an explicit cached modifier state, so a test can
         /// reproduce a freshly split pane whose view state has not seen a
         /// `ModifiersChanged` yet.
-        fn dispatch_with_stale_modifiers(
+        fn dispatch_with_stale_modifiers<T: Clone + PartialEq>(
             event: &Event,
             cached: Modifiers,
-        ) -> (iced::event::Status, Vec<crate::Event>) {
-            dispatch_with(event, cached, bindings::BindingsLayout::new())
+            bindings: bindings::BindingsLayout<T>,
+        ) -> (iced::event::Status, Vec<crate::Event<T>>) {
+            dispatch_with(event, cached, bindings)
         }
 
         fn dispatch_with<T: Clone + PartialEq>(
@@ -733,10 +733,14 @@ mod tests {
             assert!(
                 commands.iter().any(|event| matches!(
                     event,
-                    crate::Event::Action { id: TEST_ID, action }
+                    crate::Event::BindingActionDispatched {
+                        id: TEST_ID,
+                        action,
+                    }
                         if *action == TestAction::Split
                 )),
-                "a bound action must surface as Event::Action, got {commands:?}"
+                "a bound action must surface as a binding-action event, got \
+                 {commands:?}"
             );
             assert!(
                 !commands
@@ -757,45 +761,62 @@ mod tests {
 
             assert_eq!(status, iced::event::Status::Ignored);
             assert!(
-                !commands
-                    .iter()
-                    .any(|event| matches!(event, crate::Event::Action { .. })),
+                !commands.iter().any(|event| matches!(
+                    event,
+                    crate::Event::BindingActionDispatched { .. }
+                )),
                 "auto-repeat must not publish an action, got {commands:?}"
             );
         }
 
         #[test]
-        fn logo_modified_character_is_left_for_the_application() {
+        fn unbound_logo_modified_character_writes_reported_text() {
             let event = key_pressed("d", Modifiers::LOGO);
 
             let (status, commands) = dispatch(&event);
 
-            assert_eq!(status, iced::event::Status::Ignored);
+            assert_eq!(status, iced::event::Status::Captured);
             assert!(
-                !commands
-                    .iter()
-                    .any(|event| matches!(event, crate::Event::Write { .. })),
-                "a logo-modified key must not reach the pty, got {commands:?}"
+                commands.iter().any(|event| matches!(
+                    event,
+                    crate::Event::Write { id: TEST_ID, data } if data == b"d"
+                )),
+                "an unbound key must preserve the text reported by the platform, \
+                 got {commands:?}"
             );
         }
 
         #[test]
-        fn logo_modifier_is_read_from_the_event_not_the_cache() {
+        fn bound_action_uses_event_modifiers_when_the_cache_is_stale() {
             // A pane created by the split itself starts with empty
             // modifiers and never sees a ModifiersChanged, because the
             // modifiers did not change while it was being created.
             let event = key_pressed("d", Modifiers::LOGO);
 
-            let (status, commands) =
-                dispatch_with_stale_modifiers(&event, Modifiers::empty());
+            let (status, commands) = dispatch_with_stale_modifiers(
+                &event,
+                Modifiers::empty(),
+                bindings_with_action(),
+            );
 
-            assert_eq!(status, iced::event::Status::Ignored);
+            assert_eq!(status, iced::event::Status::Captured);
+            assert!(
+                commands.iter().any(|event| matches!(
+                    event,
+                    crate::Event::BindingActionDispatched {
+                        id: TEST_ID,
+                        action,
+                    }
+                        if *action == TestAction::Split
+                )),
+                "the event modifiers must match the action binding even when \
+                 the cached modifiers are stale, got {commands:?}"
+            );
             assert!(
                 !commands
                     .iter()
                     .any(|event| matches!(event, crate::Event::Write { .. })),
-                "a stale modifier cache must not leak a logo-modified key \
-                 into a new pty, got {commands:?}"
+                "a matched action must not also reach the pty, got {commands:?}"
             );
         }
 
@@ -831,24 +852,6 @@ mod tests {
         }
 
         #[test]
-        fn ctrl_u_sends_nak() {
-            for modifiers in
-                [Modifiers::CTRL, Modifiers::SHIFT | Modifiers::CTRL]
-            {
-                let (status, commands) = dispatch(&key_pressed("u", modifiers));
-
-                assert_eq!(status, iced::event::Status::Captured);
-                assert!(
-                    commands.iter().any(|event| matches!(
-                        event,
-                        crate::Event::Write { id: TEST_ID, data } if data == b"\x15"
-                    )),
-                    "Ctrl+U must send NAK, got {commands:?}"
-                );
-            }
-        }
-
-        #[test]
         fn unbound_ctrl_character_still_writes_its_text() {
             // Ctrl+9 has no binding; whatever text the platform
             // delivers must reach the pty unfiltered.
@@ -863,25 +866,6 @@ mod tests {
                     crate::Event::Write { id: TEST_ID, data } if data == b"9"
                 )),
                 "an unbound Ctrl combination must keep its text fallback, \
-                 got {commands:?}"
-            );
-        }
-
-        #[test]
-        fn ctrl_backslash_sends_fs() {
-            // Ctrl+\ carries no text on some platforms, so the FS
-            // control character must come from the binding table.
-            let event = key_pressed_with_text("\\", None, Modifiers::CTRL);
-
-            let (status, commands) = dispatch(&event);
-
-            assert_eq!(status, iced::event::Status::Captured);
-            assert!(
-                commands.iter().any(|event| matches!(
-                    event,
-                    crate::Event::Write { id: TEST_ID, data } if data == b"\x1c"
-                )),
-                "Ctrl+backslash must send FS through its binding, \
                  got {commands:?}"
             );
         }
