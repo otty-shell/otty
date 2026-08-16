@@ -9,6 +9,7 @@ mod events;
 mod fonts;
 mod geometry;
 mod guards;
+mod i18n;
 mod icons;
 mod layout;
 mod services;

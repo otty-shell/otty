@@ -5,6 +5,7 @@ use super::event::{TabsEffect, TabsEvent, TabsIntent};
 use super::state::TabsState;
 use super::types::{TabContent, TabItem};
 use crate::domain::quick_launch::WizardTabInit;
+use crate::i18n::{self, Key};
 
 /// Reduce a tabs intent event into state mutation and effect tasks.
 pub(crate) fn reduce(
@@ -165,7 +166,11 @@ fn open_settings_tab(state: &mut TabsState) -> Task<TabsEvent> {
 
     state.insert(
         tab_id,
-        TabItem::new(tab_id, String::from("Settings"), TabContent::Settings),
+        TabItem::new(
+            tab_id,
+            i18n::t(Key::SettingsTabTitle).to_string(),
+            TabContent::Settings,
+        ),
     );
     state.activate(Some(tab_id));
 

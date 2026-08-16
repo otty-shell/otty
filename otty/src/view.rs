@@ -7,6 +7,7 @@ use crate::components::primitive::{
     menu_item, resize_grips, sidebar_workspace_panel,
 };
 use crate::geometry::{anchor_position, menu_height_for_items};
+use crate::i18n::{self, Key};
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
@@ -324,7 +325,9 @@ fn view_tab_content<'a>(
                         event,
                     ))
                 }),
-                None => missing_tab_state("Terminal tab is not initialized."),
+                None => {
+                    missing_tab_state(i18n::t(Key::TerminalTabNotInitialized))
+                },
             }
         },
         (Some(_tab_id), Some(TabContent::Settings)) => {
@@ -346,9 +349,9 @@ fn view_tab_content<'a>(
                         AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
                     })
                 },
-                None => {
-                    missing_tab_state("Quick launch editor is not initialized.")
-                },
+                None => missing_tab_state(i18n::t(
+                    Key::QuickLaunchEditorNotInitialized,
+                )),
             }
         },
         (Some(tab_id), Some(TabContent::QuickLaunchError)) => {
@@ -360,9 +363,9 @@ fn view_tab_content<'a>(
                 .map(|event| {
                     AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
                 }),
-                None => {
-                    missing_tab_state("Quick launch error payload is missing.")
-                },
+                None => missing_tab_state(i18n::t(
+                    Key::QuickLaunchErrorPayloadMissing,
+                )),
             }
         },
         _ => container(Space::new())
@@ -426,17 +429,17 @@ fn view_add_menu_overlay<'a>(
 ) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
     let menu_items = [
         add_menu_item(
-            "Create tab",
+            i18n::t(Key::MenuCreateTab),
             theme_props,
             SidebarIntent::AddMenuCreateTab,
         ),
         add_menu_item(
-            "Create folder",
+            i18n::t(Key::MenuCreateFolder),
             theme_props,
             SidebarIntent::AddMenuCreateFolder,
         ),
         add_menu_item(
-            "Create quick launch",
+            i18n::t(Key::MenuCreateQuickLaunch),
             theme_props,
             SidebarIntent::AddMenuCreateCommand,
         ),

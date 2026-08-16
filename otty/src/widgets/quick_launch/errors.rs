@@ -1,15 +1,17 @@
 use thiserror::Error;
 
+use crate::i18n::{self, Key};
+
 /// Errors emitted during quick launch operations.
 #[derive(Debug, Error)]
 pub(crate) enum QuickLaunchError {
-    #[error("I/O error: {0}")]
+    #[error("{}{}", i18n::t(Key::ErrIoPrefix), .0)]
     Io(#[from] std::io::Error),
-    #[error("JSON error: {0}")]
+    #[error("{}{}", i18n::t(Key::ErrJsonPrefix), .0)]
     Json(#[from] serde_json::Error),
-    #[error("Title must not be empty.")]
+    #[error("{}", i18n::t(Key::ErrTitleEmpty))]
     TitleEmpty,
-    #[error("A sibling with this title already exists.")]
+    #[error("{}", i18n::t(Key::ErrTitleDuplicate))]
     TitleDuplicate,
     #[error("{message}")]
     Validation { message: String },
@@ -18,17 +20,17 @@ pub(crate) enum QuickLaunchError {
 /// Errors emitted by quick launch wizard validation.
 #[derive(Debug, Error)]
 pub(crate) enum QuickLaunchWizardError {
-    #[error("Title is required.")]
+    #[error("{}", i18n::t(Key::ErrTitleRequired))]
     TitleRequired,
-    #[error("Program is required.")]
+    #[error("{}", i18n::t(Key::ErrProgramRequired))]
     ProgramRequired,
-    #[error("Host is required.")]
+    #[error("{}", i18n::t(Key::ErrHostRequired))]
     HostRequired,
-    #[error("Port must be a number.")]
+    #[error("{}", i18n::t(Key::ErrInvalidPort))]
     InvalidPort,
-    #[error("Custom command draft is missing.")]
+    #[error("{}", i18n::t(Key::ErrMissingCustomDraft))]
     MissingCustomDraft,
-    #[error("SSH command draft is missing.")]
+    #[error("{}", i18n::t(Key::ErrMissingSshDraft))]
     MissingSshDraft,
 }
 
@@ -37,5 +39,5 @@ pub(crate) fn quick_launch_error_message(
     command: &super::types::QuickLaunch,
     error: &dyn std::fmt::Display,
 ) -> String {
-    format!("Command: {}\nError: {error}", command.title(),)
+    i18n::launch_failed_body(command.title(), &error.to_string())
 }
