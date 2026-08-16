@@ -3,6 +3,7 @@ use iced::Task;
 use super::AppEvent;
 use crate::app::App;
 use crate::domain::quick_launch::WizardTabInit;
+use crate::i18n::{self, Key};
 use crate::widgets::quick_launch::{
     QuickLaunchCtx, QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
 };
@@ -41,13 +42,13 @@ fn handle_effect(effect: QuickLaunchEffect) -> Task<AppEvent> {
     match effect {
         QuickLaunchEffect::OpenWizardCreateTab { parent_path } => Task::done(
             AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenWizardTab {
-                title: String::from("Create Quick Launch"),
+                title: i18n::t(Key::QuickLaunchCreateTabTitle).to_string(),
                 init: WizardTabInit::Create { parent_path },
             })),
         ),
         QuickLaunchEffect::OpenWizardEditTab { path, command } => Task::done(
             AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenWizardTab {
-                title: format!("Edit: {}", command.title()),
+                title: i18n::edit_tab_title(command.title()),
                 init: WizardTabInit::Edit { path, command },
             })),
         ),

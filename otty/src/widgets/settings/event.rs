@@ -1,4 +1,6 @@
-use super::types::{SettingsData, SettingsLoad, SettingsPreset};
+use super::types::{
+    LanguageSetting, SettingsData, SettingsLoad, SettingsPreset,
+};
 
 /// Intent events handled by the settings presentation layer.
 #[derive(Debug, Clone)]
@@ -21,6 +23,8 @@ pub(crate) enum SettingsIntent {
     NodePressed { path: Vec<String> },
     /// A tree node was hovered (or unhovered when `path` is `None`).
     NodeHovered { path: Option<Vec<String>> },
+    /// The interface language selection changed.
+    LanguageChanged(LanguageSetting),
     /// The shell text input changed.
     ShellChanged(String),
     /// The editor text input changed.

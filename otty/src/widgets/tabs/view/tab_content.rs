@@ -2,6 +2,7 @@ use iced::widget::{container, text};
 use iced::{Element, Length, Theme, alignment};
 
 use super::super::model::TabsViewModel;
+use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
 /// Props for rendering tab content area.
@@ -21,19 +22,23 @@ pub(crate) fn view<'a, Message: 'a>(
     let palette = props.theme.theme.iced_palette();
 
     if !props.vm.has_tabs {
-        return container(text("No tabs").color(palette.dim_foreground))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(alignment::Horizontal::Center)
-            .align_y(alignment::Vertical::Center)
-            .into();
-    }
-
-    // TODO: render active tab content based on tab content type (Phase 4)
-    container(text("Tab content placeholder").color(palette.dim_foreground))
+        return container(
+            text(i18n::t(Key::NoTabs)).color(palette.dim_foreground),
+        )
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(alignment::Horizontal::Center)
         .align_y(alignment::Vertical::Center)
-        .into()
+        .into();
+    }
+
+    // TODO: render active tab content based on tab content type (Phase 4)
+    container(
+        text(i18n::t(Key::TabContentPlaceholder)).color(palette.dim_foreground),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_x(alignment::Horizontal::Center)
+    .align_y(alignment::Vertical::Center)
+    .into()
 }

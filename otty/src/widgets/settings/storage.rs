@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use super::errors::SettingsError;
 use super::state::SettingsState;
 use super::types::{SettingsData, SettingsLoad, SettingsLoadStatus};
+use crate::i18n;
 
 /// Load settings from disk.
 pub(super) fn load_settings() -> Result<SettingsLoad, SettingsError> {
@@ -32,6 +33,11 @@ pub(super) fn load_initial_settings_state() -> SettingsState {
             SettingsData::default()
         },
     };
+
+    // The locale must be active before the state builds its tree, whose paths
+    // are made of localized section titles.
+    i18n::set_locale(data.language().resolve());
+
     SettingsState::from_settings(data)
 }
 
@@ -104,6 +110,8 @@ mod tests {
         SettingsData, SettingsLoadStatus, load_settings_from_path,
         save_settings_to_path,
     };
+    use crate::i18n::Locale;
+    use crate::widgets::settings::types::LanguageSetting;
 
     #[test]
     fn given_valid_settings_when_save_and_load_then_round_trip_matches() {
@@ -113,6 +121,7 @@ mod tests {
         settings.set_terminal_shell(String::from("/bin/zsh"));
         settings.set_terminal_editor(String::from("vim"));
         settings.set_theme_palette_entry(0, String::from("#112233"));
+        settings.set_language(LanguageSetting::Fixed(Locale::ZhCn));
 
         save_settings_to_path(&path, &settings)
             .expect("settings should save successfully");

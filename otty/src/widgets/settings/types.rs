@@ -3,11 +3,90 @@ use std::fmt;
 use otty_ui_tree::TreeNode;
 use serde::Serialize;
 
+use crate::i18n::{self, Key, Locale};
 use crate::theme::ColorPalette;
 use crate::widgets::settings::services::is_valid_hex_color;
 
 const DEFAULT_EDITOR: &str = "nano";
 const FALLBACK_SHELL: &str = "/bin/bash";
+
+/// Interface language choice stored in the settings file.
+///
+/// Adding a language requires no change here: the selector is derived from
+/// [`Locale::ALL`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum LanguageSetting {
+    /// Follow the operating system locale.
+    #[default]
+    System,
+    /// Always use one specific locale.
+    Fixed(Locale),
+}
+
+impl LanguageSetting {
+    /// All choices offered by the language selector, system first.
+    pub(crate) fn all() -> Vec<Self> {
+        let mut options = Vec::with_capacity(Locale::ALL.len() + 1);
+        options.push(Self::System);
+        options.extend(Locale::ALL.map(Self::Fixed));
+
+        options
+    }
+
+    /// Resolve the setting to the locale that should be rendered.
+    pub(crate) fn resolve(self) -> Locale {
+        match self {
+            Self::Fixed(locale) => locale,
+            _ => i18n::detect_system_locale(),
+        }
+    }
+
+    /// Value persisted in the settings file.
+    fn tag(self) -> &'static str {
+        match self {
+            Self::Fixed(locale) => locale.tag(),
+            _ => "system",
+        }
+    }
+
+    /// Parse a persisted value, falling back to [`LanguageSetting::System`].
+    ///
+    /// Only exact tag matches select a language, so an unrecognized value
+    /// keeps following the system rather than silently picking a language.
+    fn from_tag(tag: &str) -> Self {
+        let normalized = tag.to_ascii_lowercase().replace('_', "-");
+        Locale::ALL
+            .into_iter()
+            .find(|locale| locale.tag().to_ascii_lowercase() == normalized)
+            .map_or(Self::System, Self::Fixed)
+    }
+}
+
+impl fmt::Display for LanguageSetting {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Language names stay in their own language; only the
+        // follow-the-system option is translated.
+        match self {
+            Self::Fixed(locale) => f.write_str(locale.native_name()),
+            _ => f.write_str(i18n::t(Key::LanguageSystem)),
+        }
+    }
+}
+
+impl Serialize for LanguageSetting {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.tag())
+    }
+}
+
+/// General settings that are not specific to the terminal or the theme.
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+pub(crate) struct GeneralSettingsData {
+    language: LanguageSetting,
+}
 
 /// Terminal-related settings.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -50,11 +129,22 @@ impl ThemeSettingsData {
 /// Typed settings payload used for persistence and UI state.
 #[derive(Debug, Clone, PartialEq, Serialize, Default)]
 pub(crate) struct SettingsData {
+    general: GeneralSettingsData,
     terminal: TerminalSettingsData,
     theme: ThemeSettingsData,
 }
 
 impl SettingsData {
+    /// Return the configured interface language.
+    pub(crate) fn language(&self) -> LanguageSetting {
+        self.general.language
+    }
+
+    /// Update the interface language.
+    pub(crate) fn set_language(&mut self, value: LanguageSetting) {
+        self.general.language = value;
+    }
+
     /// Return shell command for terminal sessions.
     pub(crate) fn terminal_shell(&self) -> &str {
         &self.terminal.shell
@@ -107,6 +197,12 @@ impl SettingsData {
     pub(crate) fn from_json(value: &serde_json::Value) -> Self {
         let mut settings = SettingsData::default();
 
+        if let Some(general) = value.get("general")
+            && let Some(language) = read_string_field(general, "language")
+        {
+            settings.general.language = LanguageSetting::from_tag(&language);
+        }
+
         if let Some(terminal) = value.get("terminal") {
             if let Some(shell) = read_string_field(terminal, "shell")
                 .filter(|value| is_non_empty(value))
@@ -153,6 +249,7 @@ impl SettingsData {
         };
 
         Self {
+            general: self.general.clone(),
             terminal: TerminalSettingsData { shell, editor },
             theme: ThemeSettingsData { palette },
         }
@@ -162,16 +259,25 @@ impl SettingsData {
 /// Top-level settings pages shown in the settings tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsSection {
+    General,
     Terminal,
     Appearance,
 }
 
 impl SettingsSection {
-    /// Human-readable section title.
+    /// All sections, in the order they appear in the navigation tree.
+    pub(crate) const ALL: [Self; 3] =
+        [Self::General, Self::Terminal, Self::Appearance];
+
+    /// Human-readable section title in the active locale.
+    ///
+    /// The title doubles as the tree path segment, so callers must rebuild
+    /// paths whenever the locale changes.
     pub(crate) fn title(&self) -> &'static str {
         match self {
-            Self::Terminal => "Terminal",
-            Self::Appearance => "Appearance",
+            Self::General => i18n::t(Key::SectionGeneral),
+            Self::Appearance => i18n::t(Key::SectionAppearance),
+            _ => i18n::t(Key::SectionTerminal),
         }
     }
 }
@@ -340,38 +446,6 @@ fn is_palette_valid(values: &[String]) -> bool {
 fn default_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.to_string())
 }
-
-pub(super) const PALETTE_LABELS: [&str; 29] = [
-    "Foreground",
-    "Background",
-    "Black",
-    "Red",
-    "Green",
-    "Yellow",
-    "Blue",
-    "Magenta",
-    "Cyan",
-    "White",
-    "Bright Black",
-    "Bright Red",
-    "Bright Green",
-    "Bright Yellow",
-    "Bright Blue",
-    "Bright Magenta",
-    "Bright Cyan",
-    "Bright White",
-    "Bright Foreground",
-    "Dim Black",
-    "Dim Red",
-    "Dim Green",
-    "Dim Yellow",
-    "Dim Blue",
-    "Dim Magenta",
-    "Dim Cyan",
-    "Dim White",
-    "Dim Foreground",
-    "Overlay",
-];
 
 #[derive(Debug, Clone, Copy)]
 enum PaletteField {
@@ -628,7 +702,10 @@ impl SettingsLoad {
 mod tests {
     use serde_json::json;
 
-    use super::{SettingsData, SettingsPreset, is_valid_hex_color};
+    use super::{
+        LanguageSetting, Locale, SettingsData, SettingsPreset,
+        is_valid_hex_color,
+    };
 
     #[test]
     fn given_valid_palette_when_from_json_then_palette_is_loaded() {
@@ -687,5 +764,116 @@ mod tests {
         let preset = SettingsPreset::from_palette(&palette);
 
         assert_eq!(preset, Some(SettingsPreset::Dracula));
+    }
+
+    #[test]
+    fn given_language_tags_when_parsed_then_known_values_are_recognized() {
+        assert_eq!(
+            LanguageSetting::from_tag("en"),
+            LanguageSetting::Fixed(Locale::En)
+        );
+        assert_eq!(
+            LanguageSetting::from_tag("zh-CN"),
+            LanguageSetting::Fixed(Locale::ZhCn)
+        );
+        assert_eq!(
+            LanguageSetting::from_tag("zh_tw"),
+            LanguageSetting::Fixed(Locale::ZhTw)
+        );
+        assert_eq!(
+            LanguageSetting::from_tag("pt-br"),
+            LanguageSetting::Fixed(Locale::PtBr)
+        );
+        assert_eq!(
+            LanguageSetting::from_tag("system"),
+            LanguageSetting::System
+        );
+        assert_eq!(
+            LanguageSetting::from_tag("klingon"),
+            LanguageSetting::System
+        );
+    }
+
+    #[test]
+    fn given_partial_language_tag_when_parsed_then_system_is_kept() {
+        // Unlike locale detection, a stored setting must match exactly:
+        // a bare "zh" is not a choice the selector can produce.
+        assert_eq!(LanguageSetting::from_tag("zh"), LanguageSetting::System);
+        assert_eq!(LanguageSetting::from_tag("en-GB"), LanguageSetting::System);
+    }
+
+    #[test]
+    fn given_language_setting_when_round_tripped_then_value_is_preserved() {
+        for language in LanguageSetting::all() {
+            assert_eq!(LanguageSetting::from_tag(language.tag()), language);
+        }
+    }
+
+    #[test]
+    fn given_selector_options_when_listed_then_system_leads_every_locale() {
+        let options = LanguageSetting::all();
+
+        assert_eq!(options.len(), Locale::ALL.len() + 1);
+        assert_eq!(options.first(), Some(&LanguageSetting::System));
+        for locale in Locale::ALL {
+            assert!(options.contains(&LanguageSetting::Fixed(locale)));
+        }
+    }
+
+    #[test]
+    fn given_explicit_language_when_resolved_then_locale_matches() {
+        for locale in Locale::ALL {
+            assert_eq!(LanguageSetting::Fixed(locale).resolve(), locale);
+        }
+    }
+
+    #[test]
+    fn given_language_in_json_when_parsed_then_settings_carry_it() {
+        let value = serde_json::json!({ "general": { "language": "zh-CN" } });
+
+        let settings = SettingsData::from_json(&value);
+
+        assert_eq!(settings.language(), LanguageSetting::Fixed(Locale::ZhCn));
+    }
+
+    #[test]
+    fn given_json_without_general_when_parsed_then_language_defaults_to_system()
+    {
+        let value = serde_json::json!({ "terminal": { "shell": "/bin/sh" } });
+
+        let settings = SettingsData::from_json(&value);
+
+        assert_eq!(settings.language(), LanguageSetting::System);
+    }
+
+    #[test]
+    fn given_language_when_normalized_then_selection_is_preserved() {
+        let mut settings = SettingsData::default();
+        settings.set_language(LanguageSetting::Fixed(Locale::ZhTw));
+
+        let normalized = settings.normalized();
+
+        assert_eq!(normalized.language(), LanguageSetting::Fixed(Locale::ZhTw));
+    }
+
+    #[test]
+    fn given_language_when_serialized_then_tag_is_written() {
+        let mut settings = SettingsData::default();
+        settings.set_language(LanguageSetting::Fixed(Locale::PtBr));
+
+        let value =
+            serde_json::to_value(&settings).expect("settings should serialize");
+
+        assert_eq!(value["general"]["language"], "pt-BR");
+    }
+
+    #[test]
+    fn given_system_language_when_serialized_then_system_tag_is_written() {
+        let settings = SettingsData::default();
+
+        let value =
+            serde_json::to_value(&settings).expect("settings should serialize");
+
+        assert_eq!(value["general"]["language"], "system");
     }
 }

@@ -12,11 +12,13 @@ use otty_ui_tree::{TreeRowContext, TreeView};
 use super::super::event::SettingsIntent;
 use super::super::model::SettingsViewModel;
 use super::super::services::is_valid_hex_color;
-use super::super::types::{SettingsNode, SettingsPreset, SettingsSection};
+use super::super::types::{
+    LanguageSetting, SettingsNode, SettingsPreset, SettingsSection,
+};
+use crate::i18n::{self, Key};
 use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_COMPACT};
 use crate::style::{thin_scroll_style, tree_row_style};
 use crate::theme::{IcedColorPalette, ThemeProps};
-use crate::widgets::settings::types::PALETTE_LABELS;
 
 const HEADER_HEIGHT: f32 = 32.0;
 const HEADER_PADDING_X: f32 = 12.0;
@@ -71,13 +73,13 @@ fn settings_header<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
     let save_button = action_button(
-        "Save",
+        i18n::t(Key::ButtonSave),
         props.vm.is_dirty,
         SettingsIntent::Save,
         props.theme,
     );
     let reset_button = action_button(
-        "Reset",
+        i18n::t(Key::ButtonReset),
         props.vm.is_dirty,
         SettingsIntent::Reset,
         props.theme,
@@ -186,8 +188,9 @@ fn settings_form<'a>(
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
     let content: Element<'a, SettingsIntent, Theme, iced::Renderer> =
         match props.vm.selected_section {
-            SettingsSection::Terminal => terminal_form(props),
+            SettingsSection::General => general_form(props),
             SettingsSection::Appearance => theme_form(props),
+            _ => terminal_form(props),
         };
 
     let palette = props.theme.theme.iced_palette().clone();
@@ -209,6 +212,31 @@ fn settings_form<'a>(
         .into()
 }
 
+fn general_form<'a>(
+    props: &SettingsFormProps<'a>,
+) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+    let language_selector = pick_list(
+        LanguageSetting::all(),
+        Some(props.vm.draft.language()),
+        SettingsIntent::LanguageChanged,
+    )
+    .width(Length::Fill)
+    .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
+    .text_size(FORM_INPUT_FONT_SIZE)
+    .menu_height(Length::Fixed(PRESET_MENU_MAX_HEIGHT))
+    .style(pick_list_style(props.theme))
+    .menu_style(pick_list_menu_style(props.theme));
+
+    let content = column![
+        section_title(i18n::t(Key::SectionGeneral), props.theme),
+        form_row_content_height(i18n::t(Key::FieldLanguage), language_selector),
+    ]
+    .spacing(FORM_SECTION_SPACING)
+    .padding(FORM_PADDING);
+
+    content.into()
+}
+
 fn terminal_form<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
@@ -227,9 +255,9 @@ fn terminal_form<'a>(
         .style(text_input_style(props.theme));
 
     let content = column![
-        section_title("Terminal", props.theme),
-        form_row("Shell", shell_input),
-        form_row("Default editor", editor_input),
+        section_title(i18n::t(Key::SectionTerminal), props.theme),
+        form_row(i18n::t(Key::FieldShell), shell_input),
+        form_row(i18n::t(Key::FieldDefaultEditor), editor_input),
     ]
     .spacing(FORM_SECTION_SPACING)
     .padding(FORM_PADDING);
@@ -245,7 +273,7 @@ fn theme_form<'a>(
         props.vm.selected_preset,
         SettingsIntent::ApplyPreset,
     )
-    .placeholder("Custom")
+    .placeholder(i18n::t(Key::PresetPlaceholderCustom))
     .width(Length::Fill)
     .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
     .text_size(FORM_INPUT_FONT_SIZE)
@@ -255,14 +283,7 @@ fn theme_form<'a>(
 
     let mut palette_column = Column::new().spacing(PALETTE_ROW_SPACING);
     for (index, value) in props.vm.palette_inputs.iter().enumerate() {
-        let label_text = PALETTE_LABELS.get(index).copied().map_or_else(
-            || {
-                let index_display = index + 1;
-                format!("Color {index_display}")
-            },
-            |label| label.to_string(),
-        );
-        let label = text(label_text)
+        let label = text(i18n::palette_label(index))
             .size(FORM_INPUT_FONT_SIZE)
             .width(Length::Fixed(FORM_LABEL_WIDTH))
             .align_x(alignment::Horizontal::Left)
@@ -305,8 +326,8 @@ fn theme_form<'a>(
     }
 
     let content = column![
-        section_title("Appearance", props.theme),
-        form_row_content_height("Preset", preset_selector),
+        section_title(i18n::t(Key::SectionAppearance), props.theme),
+        form_row_content_height(i18n::t(Key::FieldPreset), preset_selector),
         palette_column
     ]
     .spacing(FORM_SECTION_SPACING)

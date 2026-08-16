@@ -19,6 +19,7 @@ use super::types::{
     QuickLaunchFolder, QuickLaunchNode, QuickLaunchSetupOutcome,
     QuickLaunchWizardSaveRequest, QuickLaunchWizardSaveTarget, WizardMode,
 };
+use crate::i18n;
 
 /// Runtime context for the quick launch reducer.
 pub(crate) struct QuickLaunchCtx<'a> {
@@ -385,7 +386,7 @@ fn reduce_setup_completed(
             }
             let command_title = command.title().to_string();
             emit_effect(QuickLaunchEffect::OpenErrorTab {
-                title: format!("Failed to launch \"{command_title}\""),
+                title: i18n::launch_failed_title(&command_title),
                 message: quick_launch_error_message(&command, error.as_ref()),
             })
         },

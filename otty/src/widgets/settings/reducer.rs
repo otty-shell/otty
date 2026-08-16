@@ -4,6 +4,7 @@ use super::event::{SettingsEffect, SettingsEvent, SettingsIntent};
 use super::state::SettingsState;
 use super::storage::{load_settings, save_settings};
 use super::types::{SettingsData, SettingsLoad, SettingsLoadStatus};
+use crate::i18n;
 
 /// Reduce a settings intent event into state updates and effect tasks.
 pub(crate) fn reduce(
@@ -24,6 +25,9 @@ pub(crate) fn reduce(
         },
         SettingsIntent::Save => request_save_settings(state),
         SettingsIntent::SaveCompleted(settings) => {
+            // The locale must be active before the state rebuilds its tree,
+            // whose paths are made of localized section titles.
+            i18n::set_locale(settings.language().resolve());
             state.mark_saved(settings.clone());
             Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
                 settings,
@@ -43,6 +47,10 @@ pub(crate) fn reduce(
         },
         SettingsIntent::NodeHovered { path } => {
             state.set_hovered_path(path);
+            Task::none()
+        },
+        SettingsIntent::LanguageChanged(value) => {
+            state.set_language(value);
             Task::none()
         },
         SettingsIntent::ShellChanged(value) => {
@@ -102,6 +110,9 @@ fn apply_loaded_settings(
         log::warn!("settings file invalid: {message}");
     }
 
+    // The locale must be active before the state rebuilds its tree, whose
+    // paths are made of localized section titles.
+    i18n::set_locale(settings.language().resolve());
     state.replace_with_settings(settings.clone());
     settings
 }
@@ -109,10 +120,11 @@ fn apply_loaded_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::Locale;
     use crate::widgets::settings::state::SettingsState;
     use crate::widgets::settings::types::{
-        SettingsData, SettingsLoad, SettingsLoadStatus, SettingsPreset,
-        SettingsSection,
+        LanguageSetting, SettingsData, SettingsLoad, SettingsLoadStatus,
+        SettingsPreset, SettingsSection,
     };
 
     fn default_state() -> SettingsState {
@@ -242,14 +254,37 @@ mod tests {
     #[test]
     fn given_node_pressed_with_section_then_selection_updated() {
         let mut state = default_state();
+        // Read the path from the tree so the test does not depend on which
+        // locale rendered the section titles.
+        let path = state
+            .tree()
+            .iter()
+            .find(|node| {
+                node.section_kind() == Some(SettingsSection::Appearance)
+            })
+            .map(|node| vec![node.title().to_string()])
+            .expect("appearance section should be present in the tree");
+
+        let _task = reduce(&mut state, SettingsIntent::NodePressed { path });
+
+        assert_eq!(state.selected_section(), SettingsSection::Appearance);
+    }
+
+    #[test]
+    fn given_language_changed_when_reduced_then_draft_language_updated() {
+        let mut state = default_state();
 
         let _task = reduce(
             &mut state,
-            SettingsIntent::NodePressed {
-                path: vec![String::from("Appearance")],
-            },
+            SettingsIntent::LanguageChanged(LanguageSetting::Fixed(
+                Locale::ZhCn,
+            )),
         );
 
-        assert_eq!(state.selected_section(), SettingsSection::Appearance);
+        assert_eq!(
+            state.draft().language(),
+            LanguageSetting::Fixed(Locale::ZhCn)
+        );
+        assert!(state.is_dirty());
     }
 }

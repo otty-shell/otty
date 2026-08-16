@@ -5,6 +5,7 @@ use iced::{Element, Length, Theme, alignment};
 use super::super::event::QuickLaunchIntent;
 use super::super::state::WizardEditorState;
 use super::super::types::QuickLaunchType;
+use crate::i18n::{self, Key};
 use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_REGULAR};
 use crate::theme::{IcedColorPalette, ThemeProps};
 
@@ -37,9 +38,9 @@ pub(crate) fn view(
 
     let mut content = column![].spacing(SECTION_SPACING).width(Length::Fill);
 
-    content = content.push(section_header("Quick launch", theme));
+    content = content.push(section_header(i18n::t(Key::WizardHeader), theme));
     content = content.push(text_input_row(
-        "Title",
+        i18n::t(Key::FieldTitle),
         "codex: review",
         editor.title(),
         move |value| QuickLaunchIntent::WizardUpdateTitle { tab_id, value },
@@ -54,7 +55,7 @@ pub(crate) fn view(
         ));
     } else {
         content = content.push(row![
-            field_label("Type"),
+            field_label(i18n::t(Key::FieldType)),
             text(quick_launch_type_label(editor.command_type()))
                 .size(LABEL_SIZE),
         ]);
@@ -63,15 +64,18 @@ pub(crate) fn view(
     match editor.command_type() {
         QuickLaunchType::Custom => {
             let Some(custom) = editor.custom() else {
-                return container(text("Invalid custom editor state"))
+                return container(text(i18n::t(Key::InvalidCustomEditorState)))
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into();
             };
 
-            content = content.push(section_header("Custom command", theme));
+            content = content.push(section_header(
+                i18n::t(Key::SectionCustomCommand),
+                theme,
+            ));
             content = content.push(text_input_row(
-                "Program",
+                i18n::t(Key::FieldProgram),
                 "/usr/bin/bash",
                 custom.program(),
                 move |value| QuickLaunchIntent::WizardUpdateProgram {
@@ -81,7 +85,7 @@ pub(crate) fn view(
                 theme,
             ));
             content = content.push(list_editor(
-                "Arguments",
+                i18n::t(Key::FieldArguments),
                 "--flag",
                 custom.args(),
                 tab_id,
@@ -92,13 +96,13 @@ pub(crate) fn view(
             ));
             content = content.push(env_editor(
                 custom.env(),
-                "KEY",
-                "value",
+                i18n::t(Key::EnvKeyPlaceholder),
+                i18n::t(Key::EnvValuePlaceholder),
                 tab_id,
                 theme,
             ));
             content = content.push(text_input_row(
-                "Workdir (cwd)",
+                i18n::t(Key::FieldWorkdir),
                 "/path/to/project",
                 custom.working_directory(),
                 move |value| QuickLaunchIntent::WizardUpdateWorkingDirectory {
@@ -110,15 +114,18 @@ pub(crate) fn view(
         },
         QuickLaunchType::Ssh => {
             let Some(ssh) = editor.ssh() else {
-                return container(text("Invalid SSH editor state"))
+                return container(text(i18n::t(Key::InvalidSshEditorState)))
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into();
             };
 
-            content = content.push(section_header("SSH connection", theme));
+            content = content.push(section_header(
+                i18n::t(Key::SectionSshConnection),
+                theme,
+            ));
             content = content.push(text_input_row(
-                "Host",
+                i18n::t(Key::FieldHost),
                 "example.com",
                 ssh.host(),
                 move |value| QuickLaunchIntent::WizardUpdateHost {
@@ -128,7 +135,7 @@ pub(crate) fn view(
                 theme,
             ));
             content = content.push(text_input_row(
-                "Port",
+                i18n::t(Key::FieldPort),
                 "22",
                 ssh.port(),
                 move |value| QuickLaunchIntent::WizardUpdatePort {
@@ -138,7 +145,7 @@ pub(crate) fn view(
                 theme,
             ));
             content = content.push(text_input_row(
-                "User",
+                i18n::t(Key::FieldUser),
                 "ubuntu",
                 ssh.user(),
                 move |value| QuickLaunchIntent::WizardUpdateUser {
@@ -148,7 +155,7 @@ pub(crate) fn view(
                 theme,
             ));
             content = content.push(text_input_row(
-                "Identity file",
+                i18n::t(Key::FieldIdentityFile),
                 "~/.ssh/id_ed25519",
                 ssh.identity_file(),
                 move |value| QuickLaunchIntent::WizardUpdateIdentityFile {
@@ -158,7 +165,7 @@ pub(crate) fn view(
                 theme,
             ));
             content = content.push(list_editor(
-                "Extra args",
+                i18n::t(Key::FieldExtraArgs),
                 "-A",
                 ssh.extra_args(),
                 tab_id,
@@ -180,9 +187,13 @@ pub(crate) fn view(
     }
 
     let action_row = row![
-        editor_button("Save", QuickLaunchIntent::WizardSave { tab_id }, theme,),
         editor_button(
-            "Cancel",
+            i18n::t(Key::ButtonSave),
+            QuickLaunchIntent::WizardSave { tab_id },
+            theme,
+        ),
+        editor_button(
+            i18n::t(Key::ButtonCancel),
             QuickLaunchIntent::WizardCancel { tab_id },
             theme,
         ),
@@ -210,8 +221,8 @@ pub(crate) fn view(
 
 fn quick_launch_type_label(command_type: QuickLaunchType) -> &'static str {
     match command_type {
-        QuickLaunchType::Custom => "Custom",
-        QuickLaunchType::Ssh => "SSH",
+        QuickLaunchType::Ssh => i18n::t(Key::TypeSsh),
+        _ => i18n::t(Key::TypeCustom),
     }
 }
 
@@ -258,7 +269,7 @@ fn command_type_selector<'a>(
     theme: ThemeProps<'a>,
 ) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
     let custom = toggle_button(
-        "Custom",
+        i18n::t(Key::TypeCustom),
         selected == QuickLaunchType::Custom,
         QuickLaunchIntent::WizardSelectCommandType {
             tab_id,
@@ -267,7 +278,7 @@ fn command_type_selector<'a>(
         theme,
     );
     let ssh = toggle_button(
-        "SSH",
+        i18n::t(Key::TypeSsh),
         selected == QuickLaunchType::Ssh,
         QuickLaunchIntent::WizardSelectCommandType {
             tab_id,
@@ -277,7 +288,7 @@ fn command_type_selector<'a>(
     );
 
     row![
-        field_label("Type"),
+        field_label(i18n::t(Key::FieldType)),
         row![custom, ssh]
             .spacing(FIELD_SPACING)
             .align_y(alignment::Vertical::Center),
@@ -309,12 +320,21 @@ fn list_editor<'a>(
             .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
             .size(INPUT_SIZE)
             .width(Length::Fill);
-        let remove = editor_button("Remove", on_remove(tab_id, index), theme);
+        let remove = editor_button(
+            i18n::t(Key::ButtonRemove),
+            on_remove(tab_id, index),
+            theme,
+        );
 
         col = col.push(row![input, remove].spacing(FIELD_SPACING));
     }
 
-    col.push(editor_button("Add", on_add(tab_id), theme)).into()
+    col.push(editor_button(
+        i18n::t(Key::ButtonAdd),
+        on_add(tab_id),
+        theme,
+    ))
+    .into()
 }
 
 fn env_editor<'a>(
@@ -324,9 +344,10 @@ fn env_editor<'a>(
     tab_id: u64,
     theme: ThemeProps<'a>,
 ) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let mut col = column![text("Environment").size(LABEL_SIZE)]
-        .spacing(FIELD_SPACING)
-        .width(Length::Fill);
+    let mut col =
+        column![text(i18n::t(Key::FieldEnvironment)).size(LABEL_SIZE)]
+            .spacing(FIELD_SPACING)
+            .width(Length::Fill);
 
     for (index, (key, value)) in env.iter().enumerate() {
         let key_input = text_input(key_placeholder, key)
@@ -348,7 +369,7 @@ fn env_editor<'a>(
             .size(INPUT_SIZE)
             .width(Length::Fill);
         let remove = editor_button(
-            "Remove",
+            i18n::t(Key::ButtonRemove),
             QuickLaunchIntent::WizardRemoveEnv { tab_id, index },
             theme,
         );
@@ -358,7 +379,7 @@ fn env_editor<'a>(
     }
 
     col.push(editor_button(
-        "Add env",
+        i18n::t(Key::ButtonAddEnv),
         QuickLaunchIntent::WizardAddEnv { tab_id },
         theme,
     ))

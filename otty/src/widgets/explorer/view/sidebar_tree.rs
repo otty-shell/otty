@@ -6,6 +6,7 @@ use otty_ui_tree::{TreeRowContext, TreeView};
 use super::super::event::ExplorerIntent;
 use super::super::model::ExplorerTreeViewModel;
 use super::super::types::FileNode;
+use crate::i18n::{self, Key};
 use crate::icons::{FILE, FOLDER, FOLDER_OPENED};
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::{thin_scroll_style, tree_row_style};
@@ -58,7 +59,7 @@ fn current_directory_bar<'a>(
     root_label: Option<&'a str>,
     palette: &'a IcedColorPalette,
 ) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
-    let label = root_label.unwrap_or("No active folder");
+    let label = root_label.unwrap_or(i18n::t(Key::NoActiveFolder));
     let overlay = palette.overlay;
     let foreground = palette.foreground;
 

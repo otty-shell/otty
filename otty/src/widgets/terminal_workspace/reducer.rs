@@ -9,6 +9,7 @@ use super::event::{
 };
 use super::state::{StateCommand, TerminalTabState, TerminalWorkspaceState};
 use super::types::TerminalKind;
+use crate::i18n;
 
 /// Runtime context injected into each reduce call.
 pub(crate) struct TerminalWorkspaceCtx {
@@ -204,10 +205,9 @@ fn reduce_open_tab(
             ));
 
             if kind == TerminalKind::Command {
-                let failed_title =
-                    format!("Failed to launch \"{failed_tab_title}\"");
+                let failed_title = i18n::launch_failed_title(&failed_tab_title);
                 let failed_message =
-                    format!("Terminal tab initialization failed: {err}");
+                    i18n::terminal_init_failed(&err.to_string());
                 let error_task = Task::done(TerminalWorkspaceEvent::Effect(
                     TerminalWorkspaceEffect::CommandTabOpenFailed {
                         tab_id,
