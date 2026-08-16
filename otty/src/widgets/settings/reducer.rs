@@ -120,6 +120,7 @@ fn apply_loaded_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::Locale;
     use crate::widgets::settings::state::SettingsState;
     use crate::widgets::settings::types::{
         LanguageSetting, SettingsData, SettingsLoad, SettingsLoadStatus,
@@ -275,12 +276,14 @@ mod tests {
 
         let _task = reduce(
             &mut state,
-            SettingsIntent::LanguageChanged(LanguageSetting::SimplifiedChinese),
+            SettingsIntent::LanguageChanged(LanguageSetting::Fixed(
+                Locale::ZhCn,
+            )),
         );
 
         assert_eq!(
             state.draft().language(),
-            LanguageSetting::SimplifiedChinese
+            LanguageSetting::Fixed(Locale::ZhCn)
         );
         assert!(state.is_dirty());
     }

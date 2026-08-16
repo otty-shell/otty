@@ -232,6 +232,7 @@ fn find_node_mut<'a>(
 #[cfg(test)]
 mod tests {
     use super::SettingsState;
+    use crate::i18n::Locale;
     use crate::widgets::settings::types::{
         LanguageSetting, SettingsData, SettingsPreset, SettingsSection,
     };
@@ -333,9 +334,12 @@ mod tests {
     fn given_language_change_when_applied_then_draft_updates_and_marks_dirty() {
         let mut state = SettingsState::default();
 
-        state.set_language(LanguageSetting::SimplifiedChinese);
+        state.set_language(LanguageSetting::Fixed(Locale::ZhCn));
 
-        assert_eq!(state.draft.language(), LanguageSetting::SimplifiedChinese);
+        assert_eq!(
+            state.draft.language(),
+            LanguageSetting::Fixed(Locale::ZhCn)
+        );
         assert!(state.dirty);
     }
 

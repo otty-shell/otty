@@ -110,6 +110,7 @@ mod tests {
         SettingsData, SettingsLoadStatus, load_settings_from_path,
         save_settings_to_path,
     };
+    use crate::i18n::Locale;
     use crate::widgets::settings::types::LanguageSetting;
 
     #[test]
@@ -120,7 +121,7 @@ mod tests {
         settings.set_terminal_shell(String::from("/bin/zsh"));
         settings.set_terminal_editor(String::from("vim"));
         settings.set_theme_palette_entry(0, String::from("#112233"));
-        settings.set_language(LanguageSetting::SimplifiedChinese);
+        settings.set_language(LanguageSetting::Fixed(Locale::ZhCn));
 
         save_settings_to_path(&path, &settings)
             .expect("settings should save successfully");

@@ -11,30 +11,32 @@ const DEFAULT_EDITOR: &str = "nano";
 const FALLBACK_SHELL: &str = "/bin/bash";
 
 /// Interface language choice stored in the settings file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+///
+/// Adding a language requires no change here: the selector is derived from
+/// [`Locale::ALL`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum LanguageSetting {
     /// Follow the operating system locale.
     #[default]
-    #[serde(rename = "system")]
     System,
-    /// Always use English.
-    #[serde(rename = "en")]
-    English,
-    /// Always use Simplified Chinese.
-    #[serde(rename = "zh-CN")]
-    SimplifiedChinese,
+    /// Always use one specific locale.
+    Fixed(Locale),
 }
 
 impl LanguageSetting {
-    /// All choices offered by the language selector.
-    pub(crate) const ALL: [Self; 3] =
-        [Self::System, Self::English, Self::SimplifiedChinese];
+    /// All choices offered by the language selector, system first.
+    pub(crate) fn all() -> Vec<Self> {
+        let mut options = Vec::with_capacity(Locale::ALL.len() + 1);
+        options.push(Self::System);
+        options.extend(Locale::ALL.map(Self::Fixed));
+
+        options
+    }
 
     /// Resolve the setting to the locale that should be rendered.
     pub(crate) fn resolve(self) -> Locale {
         match self {
-            Self::English => Locale::En,
-            Self::SimplifiedChinese => Locale::ZhCn,
+            Self::Fixed(locale) => locale,
             _ => i18n::detect_system_locale(),
         }
     }
@@ -42,19 +44,21 @@ impl LanguageSetting {
     /// Value persisted in the settings file.
     fn tag(self) -> &'static str {
         match self {
-            Self::English => "en",
-            Self::SimplifiedChinese => "zh-CN",
+            Self::Fixed(locale) => locale.tag(),
             _ => "system",
         }
     }
 
     /// Parse a persisted value, falling back to [`LanguageSetting::System`].
+    ///
+    /// Only exact tag matches select a language, so an unrecognized value
+    /// keeps following the system rather than silently picking a language.
     fn from_tag(tag: &str) -> Self {
-        match tag.to_ascii_lowercase().replace('_', "-").as_str() {
-            "en" => Self::English,
-            "zh-cn" => Self::SimplifiedChinese,
-            _ => Self::System,
-        }
+        let normalized = tag.to_ascii_lowercase().replace('_', "-");
+        Locale::ALL
+            .into_iter()
+            .find(|locale| locale.tag().to_ascii_lowercase() == normalized)
+            .map_or(Self::System, Self::Fixed)
     }
 }
 
@@ -63,10 +67,18 @@ impl fmt::Display for LanguageSetting {
         // Language names stay in their own language; only the
         // follow-the-system option is translated.
         match self {
-            Self::English => f.write_str("English"),
-            Self::SimplifiedChinese => f.write_str("简体中文"),
+            Self::Fixed(locale) => f.write_str(locale.native_name()),
             _ => f.write_str(i18n::t(Key::LanguageSystem)),
         }
+    }
+}
+
+impl Serialize for LanguageSetting {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.tag())
     }
 }
 
@@ -756,14 +768,21 @@ mod tests {
 
     #[test]
     fn given_language_tags_when_parsed_then_known_values_are_recognized() {
-        assert_eq!(LanguageSetting::from_tag("en"), LanguageSetting::English);
         assert_eq!(
-            LanguageSetting::from_tag("zh-CN"),
-            LanguageSetting::SimplifiedChinese
+            LanguageSetting::from_tag("en"),
+            LanguageSetting::Fixed(Locale::En)
         );
         assert_eq!(
-            LanguageSetting::from_tag("zh_cn"),
-            LanguageSetting::SimplifiedChinese
+            LanguageSetting::from_tag("zh-CN"),
+            LanguageSetting::Fixed(Locale::ZhCn)
+        );
+        assert_eq!(
+            LanguageSetting::from_tag("zh_tw"),
+            LanguageSetting::Fixed(Locale::ZhTw)
+        );
+        assert_eq!(
+            LanguageSetting::from_tag("pt-br"),
+            LanguageSetting::Fixed(Locale::PtBr)
         );
         assert_eq!(
             LanguageSetting::from_tag("system"),
@@ -776,16 +795,36 @@ mod tests {
     }
 
     #[test]
+    fn given_partial_language_tag_when_parsed_then_system_is_kept() {
+        // Unlike locale detection, a stored setting must match exactly:
+        // a bare "zh" is not a choice the selector can produce.
+        assert_eq!(LanguageSetting::from_tag("zh"), LanguageSetting::System);
+        assert_eq!(LanguageSetting::from_tag("en-GB"), LanguageSetting::System);
+    }
+
+    #[test]
     fn given_language_setting_when_round_tripped_then_value_is_preserved() {
-        for language in LanguageSetting::ALL {
+        for language in LanguageSetting::all() {
             assert_eq!(LanguageSetting::from_tag(language.tag()), language);
         }
     }
 
     #[test]
+    fn given_selector_options_when_listed_then_system_leads_every_locale() {
+        let options = LanguageSetting::all();
+
+        assert_eq!(options.len(), Locale::ALL.len() + 1);
+        assert_eq!(options.first(), Some(&LanguageSetting::System));
+        for locale in Locale::ALL {
+            assert!(options.contains(&LanguageSetting::Fixed(locale)));
+        }
+    }
+
+    #[test]
     fn given_explicit_language_when_resolved_then_locale_matches() {
-        assert_eq!(LanguageSetting::English.resolve(), Locale::En);
-        assert_eq!(LanguageSetting::SimplifiedChinese.resolve(), Locale::ZhCn);
+        for locale in Locale::ALL {
+            assert_eq!(LanguageSetting::Fixed(locale).resolve(), locale);
+        }
     }
 
     #[test]
@@ -794,7 +833,7 @@ mod tests {
 
         let settings = SettingsData::from_json(&value);
 
-        assert_eq!(settings.language(), LanguageSetting::SimplifiedChinese);
+        assert_eq!(settings.language(), LanguageSetting::Fixed(Locale::ZhCn));
     }
 
     #[test]
@@ -810,21 +849,31 @@ mod tests {
     #[test]
     fn given_language_when_normalized_then_selection_is_preserved() {
         let mut settings = SettingsData::default();
-        settings.set_language(LanguageSetting::SimplifiedChinese);
+        settings.set_language(LanguageSetting::Fixed(Locale::ZhTw));
 
         let normalized = settings.normalized();
 
-        assert_eq!(normalized.language(), LanguageSetting::SimplifiedChinese);
+        assert_eq!(normalized.language(), LanguageSetting::Fixed(Locale::ZhTw));
     }
 
     #[test]
     fn given_language_when_serialized_then_tag_is_written() {
         let mut settings = SettingsData::default();
-        settings.set_language(LanguageSetting::SimplifiedChinese);
+        settings.set_language(LanguageSetting::Fixed(Locale::PtBr));
 
         let value =
             serde_json::to_value(&settings).expect("settings should serialize");
 
-        assert_eq!(value["general"]["language"], "zh-CN");
+        assert_eq!(value["general"]["language"], "pt-BR");
+    }
+
+    #[test]
+    fn given_system_language_when_serialized_then_system_tag_is_written() {
+        let settings = SettingsData::default();
+
+        let value =
+            serde_json::to_value(&settings).expect("settings should serialize");
+
+        assert_eq!(value["general"]["language"], "system");
     }
 }

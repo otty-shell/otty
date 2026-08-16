@@ -216,7 +216,7 @@ fn general_form<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
     let language_selector = pick_list(
-        LanguageSetting::ALL,
+        LanguageSetting::all(),
         Some(props.vm.draft.language()),
         SettingsIntent::LanguageChanged,
     )
