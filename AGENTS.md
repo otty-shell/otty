@@ -4,7 +4,7 @@ General context lives in [README.md](./README.md) at the repository root.
 
 ## Rules
 
-- The repository MUST NOT contain Chinese text anywhere — not in code, comments, documentation, commit messages, or test data. Write all prose in English. Non-Chinese wide characters (e.g. Japanese kana) MAY be used where a test needs a double-width payload.
+- Use English for all repository content, including comments, documentation, commit messages, and test data. Non-English text is allowed only when it is necessary for testing.
 - You MUST write the tests before writting the implementation.
 - You MUST write tests only for business-significant packages such as usecases, repositories, helpers, and domain logic. Do not add tests for infrastructure/bootstrap packages such as lifecycle, config, metrics, logging, or server wiring unless they contain business-significant behavior.
 - You MUST use `mockall` for mocks in RUST code
