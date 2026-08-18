@@ -25,6 +25,8 @@ pub(crate) enum SettingsIntent {
     ShellChanged(String),
     /// The editor text input changed.
     EditorChanged(String),
+    /// The equalize-panes checkbox was toggled.
+    EqualizePanesToggled(bool),
     /// A palette color text input changed.
     PaletteChanged { index: usize, value: String },
     /// A theme preset was selected.

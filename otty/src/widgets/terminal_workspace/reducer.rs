@@ -21,6 +21,8 @@ pub(crate) struct TerminalWorkspaceCtx {
     pub(crate) screen_size: Size,
     /// Current cursor position in sidebar-relative coordinates.
     pub(crate) sidebar_cursor: Point,
+    /// Whether sibling panes are evened out on split and close.
+    pub(crate) equalize_panes: bool,
 }
 
 /// Reduce a terminal workspace intent event into state updates and effects.
@@ -56,9 +58,13 @@ pub(crate) fn reduce(
             terminal_to_tab.retain(|_, mapped_tab| *mapped_tab != tab_id);
             Task::none()
         },
-        Widget(event) => {
-            reduce_widget_event(state, terminal_to_tab, next_terminal_id, event)
-        },
+        Widget(event) => reduce_widget_event(
+            state,
+            terminal_to_tab,
+            next_terminal_id,
+            event,
+            ctx.equalize_panes,
+        ),
         PaneClicked { tab_id, pane } => {
             with_terminal_tab(state, tab_id, |tab| tab.focus_pane(pane))
         },
@@ -95,10 +101,13 @@ pub(crate) fn reduce(
             tab_id,
             pane,
             axis,
+            ctx.equalize_panes,
         ),
         ClosePane { tab_id, pane } => {
-            let task =
-                with_terminal_tab(state, tab_id, |tab| tab.close_pane(pane));
+            let equalize_panes = ctx.equalize_panes;
+            let task = with_terminal_tab(state, tab_id, |tab| {
+                tab.close_pane(pane, equalize_panes)
+            });
             reindex_terminal_tabs(state, terminal_to_tab);
             task
         },
@@ -251,6 +260,7 @@ fn reduce_widget_event(
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,
     event: TerminalEvent,
+    equalize_panes: bool,
 ) -> Task<TerminalWorkspaceEvent> {
     let terminal_id = *event.terminal_id();
     let Some(tab_id) = terminal_to_tab.get(&terminal_id).copied() else {
@@ -266,6 +276,7 @@ fn reduce_widget_event(
             tab_id,
             terminal_id,
             action,
+            equalize_panes,
         );
     }
 
@@ -278,7 +289,7 @@ fn reduce_widget_event(
     let is_shutdown = matches!(&event, otty_ui_term::Event::Shutdown { .. });
     let selection_task = update_block_selection(state, tab_id, &event);
     let event_task = with_terminal_tab(state, tab_id, |tab| {
-        tab.handle_terminal_event(event)
+        tab.handle_terminal_event(event, equalize_panes)
     });
     let update = Task::batch(vec![selection_task, event_task]);
 
@@ -332,6 +343,7 @@ fn reduce_terminal_action(
     tab_id: u64,
     terminal_id: u64,
     action: &TerminalWorkspaceAction,
+    equalize_panes: bool,
 ) -> Task<TerminalWorkspaceEvent> {
     let TerminalWorkspaceAction::SplitPane { axis } = action;
 
@@ -349,6 +361,7 @@ fn reduce_terminal_action(
         tab_id,
         pane,
         *axis,
+        equalize_panes,
     )
 }
 
@@ -359,12 +372,13 @@ fn reduce_split_pane(
     tab_id: u64,
     pane: pane_grid::Pane,
     axis: pane_grid::Axis,
+    equalize_panes: bool,
 ) -> Task<TerminalWorkspaceEvent> {
     let terminal_id = *next_terminal_id;
     *next_terminal_id += 1;
 
     let task = with_terminal_tab(state, tab_id, move |tab| {
-        tab.split_pane(pane, axis, terminal_id)
+        tab.split_pane(pane, axis, terminal_id, equalize_panes)
     });
 
     if state
@@ -636,6 +650,7 @@ mod tests {
             pane_grid_size: Size::ZERO,
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
+            equalize_panes: true,
         }
     }
 
@@ -702,6 +717,7 @@ mod tests {
             pane_grid_size: Size::new(120.0, 80.0),
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
+            equalize_panes: true,
         };
 
         let _ = reduce(
@@ -723,6 +739,7 @@ mod tests {
             pane_grid_size: Size::new(480.0, 320.0),
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
+            equalize_panes: true,
         };
 
         let _ = reduce(
@@ -831,6 +848,7 @@ mod tests {
             pane_grid_size: Size::ZERO,
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
+            equalize_panes: true,
         };
 
         let _task = reduce(

@@ -43,6 +43,7 @@ fn handle_intent_event(
         pane_grid_size,
         app.state.screen_size,
         app.widgets.sidebar.cursor(),
+        app.widgets.settings.settings_data().equalize_panes(),
     );
 
     let should_sync = should_sync_explorer(&event);
@@ -113,12 +114,14 @@ fn build_ctx_from_parts(
     pane_grid_size: iced::Size,
     screen_size: iced::Size,
     sidebar_cursor: iced::Point,
+    equalize_panes: bool,
 ) -> TerminalWorkspaceCtx {
     TerminalWorkspaceCtx {
         active_tab_id,
         pane_grid_size,
         screen_size,
         sidebar_cursor,
+        equalize_panes,
     }
 }
 

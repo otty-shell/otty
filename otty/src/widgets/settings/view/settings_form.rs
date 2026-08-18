@@ -2,8 +2,8 @@ use iced::widget::button::Status as ButtonStatus;
 use iced::widget::pick_list::Status as PickListStatus;
 use iced::widget::text::Wrapping;
 use iced::widget::{
-    Column, Space, button, column, container, pick_list, row, scrollable, text,
-    text_input,
+    Column, Space, button, checkbox, column, container, pick_list, row,
+    scrollable, text, text_input,
 };
 use iced::{Color, Element, Length, Theme, alignment};
 use otty_ui_term::parse_hex_color;
@@ -226,10 +226,18 @@ fn terminal_form<'a>(
         .width(Length::Fill)
         .style(text_input_style(props.theme));
 
+    let equalize_panes_toggle = checkbox(props.vm.draft.equalize_panes())
+        .label("Even out sibling pane widths on split and close")
+        .on_toggle(SettingsIntent::EqualizePanesToggled)
+        .size(FORM_INPUT_FONT_SIZE)
+        .text_size(FORM_INPUT_FONT_SIZE)
+        .style(checkbox_style(props.theme));
+
     let content = column![
         section_title("Terminal", props.theme),
         form_row("Shell", shell_input),
         form_row("Default editor", editor_input),
+        form_row("Pane layout", equalize_panes_toggle),
     ]
     .spacing(FORM_SECTION_SPACING)
     .padding(FORM_PADDING);
@@ -435,6 +443,34 @@ fn text_input_style(
         let mut style = iced::widget::text_input::default(base, status);
         style.selection = palette.blue;
         style
+    }
+}
+
+fn checkbox_style(
+    theme: ThemeProps<'_>,
+) -> impl Fn(&Theme, checkbox::Status) -> checkbox::Style + 'static {
+    let palette = theme.theme.iced_palette().clone();
+    move |_, status| {
+        let border_color = match status {
+            checkbox::Status::Hovered { .. } => palette.blue,
+            _ => palette.overlay,
+        };
+        let background = match status {
+            checkbox::Status::Active { is_checked: true }
+            | checkbox::Status::Hovered { is_checked: true } => palette.blue,
+            _ => palette.overlay,
+        };
+
+        checkbox::Style {
+            background: background.into(),
+            icon_color: palette.dim_black,
+            border: iced::Border {
+                width: 1.0,
+                color: border_color,
+                radius: iced::border::Radius::from(2.0),
+            },
+            text_color: Some(palette.foreground),
+        }
     }
 }
 

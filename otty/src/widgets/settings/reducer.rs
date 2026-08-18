@@ -53,6 +53,10 @@ pub(crate) fn reduce(
             state.set_editor(value);
             Task::none()
         },
+        SettingsIntent::EqualizePanesToggled(value) => {
+            state.set_equalize_panes(value);
+            Task::none()
+        },
         SettingsIntent::PaletteChanged { index, value } => {
             state.set_palette_input(index, value);
             Task::none()
@@ -122,7 +126,7 @@ mod tests {
     #[test]
     fn given_save_completed_when_reduced_then_marks_state_saved() {
         let mut state = default_state();
-        state.set_shell(String::from("/bin/zsh"));
+        state.set_shell(format!("{}-changed", state.draft().terminal_shell()));
         assert!(state.is_dirty());
         let normalized = state.normalized_draft();
 

@@ -29,9 +29,6 @@ target
 
 .codex
 .claude
-specs/*
-!specs/2026-08-13-cmd-d-equal-panes/
-!specs/2026-08-13-cmd-d-equal-panes/spec.md
 
 # Misc
 
