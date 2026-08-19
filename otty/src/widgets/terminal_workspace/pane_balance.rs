@@ -18,38 +18,23 @@ pub(super) fn equalized_ratios(
     // pass the rendered grid size and spacing if sub-pixel equality becomes
     // a product requirement for large same-axis groups.
     let mut path = Vec::new();
-    if !path_to_pane(layout, target, &mut path) {
+    if !find_path(layout, target, &mut path) {
         return Vec::new();
     }
 
-    let Some(&parent) = path.last() else {
+    let Some((root, group_axis)) = group_root(&path) else {
         return Vec::new();
     };
-    let Node::Split { axis, .. } = parent else {
-        return Vec::new();
-    };
-    let group_axis = *axis;
-
-    let mut root_index = path.len() - 1;
-    while root_index > 0 {
-        let Node::Split { axis, .. } = path[root_index - 1] else {
-            break;
-        };
-        if *axis != group_axis {
-            break;
-        }
-        root_index -= 1;
-    }
 
     let mut ratios = Vec::new();
-    collect_group_ratios(path[root_index], group_axis, &mut ratios);
+    collect_ratios(root, group_axis, &mut ratios);
 
     ratios
 }
 
 /// Record the chain of split nodes that leads down to `target`,
 /// outermost first. Returns whether `target` was found at all.
-fn path_to_pane<'a>(
+fn find_path<'a>(
     node: &'a Node,
     target: Pane,
     path: &mut Vec<&'a Node>,
@@ -57,7 +42,7 @@ fn path_to_pane<'a>(
     match node {
         Node::Split { a, b, .. } => {
             path.push(node);
-            if path_to_pane(a, target, path) || path_to_pane(b, target, path) {
+            if find_path(a, target, path) || find_path(b, target, path) {
                 return true;
             }
             path.pop();
@@ -68,42 +53,50 @@ fn path_to_pane<'a>(
     }
 }
 
+/// Find the largest same-axis split group containing the target.
+fn group_root<'a>(path: &[&'a Node]) -> Option<(&'a Node, Axis)> {
+    let mut root = *path.last()?;
+
+    let Node::Split { axis, .. } = root else {
+        return None;
+    };
+
+    let group_axis = *axis;
+    for &node in path.iter().rev().skip(1) {
+        match node {
+            Node::Split { axis, .. } if *axis == group_axis => {
+                root = node;
+            },
+            _ => break,
+        }
+    }
+
+    Some((root, group_axis))
+}
+
 /// Give every split on `group_axis` a ratio proportional to how many
 /// slots sit on each of its sides, so the group ends up even.
 ///
 /// Recursion stops at the first split on the other axis: that subtree
 /// belongs to a different group and keeps whatever ratio it has.
-fn collect_group_ratios(
+fn collect_ratios(
     node: &Node,
     group_axis: Axis,
     ratios: &mut Vec<(Split, f32)>,
-) {
+) -> usize {
     let Node::Split { id, axis, a, b, .. } = node else {
-        return;
+        return 1;
     };
     if *axis != group_axis {
-        return;
+        return 1;
     }
 
-    let a_slots = group_slot_count(a, group_axis);
-    let b_slots = group_slot_count(b, group_axis);
-    ratios.push((*id, a_slots as f32 / (a_slots + b_slots) as f32));
+    let a_slots = collect_ratios(a, group_axis, ratios);
+    let b_slots = collect_ratios(b, group_axis, ratios);
+    let total_slots = a_slots + b_slots;
+    ratios.push((*id, a_slots as f32 / total_slots as f32));
 
-    collect_group_ratios(a, group_axis, ratios);
-    collect_group_ratios(b, group_axis, ratios);
-}
-
-/// Count the slots `node` occupies within a group on `group_axis`.
-///
-/// A pane is one slot, and so is a subtree split on the other axis:
-/// the group sees it as a single indivisible block.
-fn group_slot_count(node: &Node, group_axis: Axis) -> usize {
-    match node {
-        Node::Split { axis, a, b, .. } if *axis == group_axis => {
-            group_slot_count(a, group_axis) + group_slot_count(b, group_axis)
-        },
-        _ => 1,
-    }
+    total_slots
 }
 
 #[cfg(test)]
@@ -254,6 +247,46 @@ mod tests {
             (horizontal_ratio - 0.5).abs() <= f32::EPSILON,
             "expected the horizontal split to stay at 0.5, got \
              {horizontal_ratio}"
+        );
+    }
+
+    #[test]
+    fn given_nested_same_axis_group_when_equalized_then_all_group_panes_match()
+    {
+        let (mut state, top) = pane_grid::State::new(1_u64);
+        let (bottom, horizontal) = state
+            .split(Axis::Horizontal, top, 2)
+            .expect("horizontal split succeeds");
+        let (right, _) = state
+            .split(Axis::Vertical, bottom, 3)
+            .expect("first vertical split succeeds");
+        let (fourth, _) = state
+            .split(Axis::Vertical, right, 4)
+            .expect("second vertical split succeeds");
+
+        let ratios = equalized_ratios(state.layout(), fourth);
+
+        assert_eq!(ratios.len(), 2);
+        assert!(!ratios.iter().any(|(split, _)| *split == horizontal));
+
+        for (split, ratio) in ratios {
+            state.resize(split, ratio);
+        }
+
+        let regions = state.layout().pane_regions(
+            PANE_SPACING,
+            0.0,
+            Size::new(900.0, 600.0),
+        );
+
+        assert_eq!(regions.len(), 4);
+        assert_width_spread(
+            &[
+                regions[&bottom].width,
+                regions[&right].width,
+                regions[&fourth].width,
+            ],
+            1.0,
         );
     }
 
