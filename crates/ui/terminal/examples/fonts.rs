@@ -6,11 +6,11 @@ use otty_ui_term::TerminalView;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
 const TERM_FONT_JET_BRAINS_BYTES: &[u8] = include_bytes!(
-    "../../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"
+    "../../../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"
 );
 
 const TERM_FONT_3270_BYTES: &[u8] =
-    include_bytes!("../../../assets/fonts/3270/3270NerdFont-Regular.ttf");
+    include_bytes!("../../../../assets/fonts/3270/3270NerdFont-Regular.ttf");
 
 fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)
