@@ -1,8 +1,8 @@
 [package]
-name = "otty-escape"
+name = "otty-surface"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
-description = "Library for parsing raw bytes to UI frendly actions"
+description = "Terminal surface (content) manager"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"
@@ -13,9 +13,7 @@ rust-version = { workspace = true }
 [dependencies]
 bitflags = { workspace = true }
 log = { workspace = true }
-otty-vte = { path = "../otty-vte", version = "0.1.0" }
+otty-escape = { path = "../escape", version = "0.1.0" }
 cursor-icon = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-memchr = "2.7.6"
+unicode-width = "0.2.2"
+regex-automata = { version = "0.4", features = ["hybrid"] }
