@@ -127,6 +127,12 @@ impl SettingsState {
         self.update_dirty();
     }
 
+    /// Update whether sibling panes are evened out on split and close.
+    pub(super) fn set_equalize_panes(&mut self, value: bool) {
+        self.draft.set_equalize_panes(value);
+        self.update_dirty();
+    }
+
     /// Update a palette input, propagating valid values to the draft.
     pub(super) fn set_palette_input(&mut self, index: usize, value: String) {
         if index >= self.palette_inputs.len() {
@@ -222,10 +228,11 @@ mod tests {
     #[test]
     fn given_default_state_when_set_shell_then_marks_dirty() {
         let mut state = SettingsState::default();
+        let shell = format!("{}-changed", state.draft.terminal_shell());
 
-        state.set_shell(String::from("/bin/zsh"));
+        state.set_shell(shell.clone());
 
-        assert_eq!(state.draft.terminal_shell(), "/bin/zsh");
+        assert_eq!(state.draft.terminal_shell(), shell);
         assert!(state.dirty);
     }
 

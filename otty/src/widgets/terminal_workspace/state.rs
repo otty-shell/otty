@@ -6,7 +6,10 @@ use otty_ui_term::SurfaceMode;
 use otty_ui_term::settings::{Settings, ThemeSettings};
 
 use super::errors::TerminalWorkspaceError;
-use super::types::{BlockSelection, TerminalEntry, TerminalKind};
+use super::types::{
+    BlockSelection, Terminal, TerminalEntry, TerminalEvent, TerminalKind,
+};
+use super::{pane_balance, shortcuts};
 
 /// Commands returned by state mutation helpers to be executed by the reducer.
 pub(crate) enum StateCommand {
@@ -156,11 +159,7 @@ impl TerminalTabState {
         settings: Settings,
         kind: TerminalKind,
     ) -> Result<(Self, Id), TerminalWorkspaceError> {
-        let terminal =
-            otty_ui_term::Terminal::new(terminal_id, settings.clone())
-                .map_err(|err| TerminalWorkspaceError::Init {
-                    message: format!("{err}"),
-                })?;
+        let terminal = new_terminal(terminal_id, settings.clone())?;
         let widget_id = terminal.widget_id().clone();
 
         let (panes, initial_pane) = pane_grid::State::new(terminal_id);
@@ -240,6 +239,17 @@ impl TerminalTabState {
         self.panes.get(pane).copied()
     }
 
+    /// Return the pane hosting the given terminal.
+    pub(crate) fn pane_for_terminal(
+        &self,
+        terminal_id: u64,
+    ) -> Option<pane_grid::Pane> {
+        self.panes
+            .iter()
+            .find(|(_, id)| **id == terminal_id)
+            .map(|(pane, _)| *pane)
+    }
+
     /// Return the terminal id of the focused pane.
     pub(crate) fn focused_terminal_id(&self) -> Option<u64> {
         let pane = self.focus?;
@@ -297,11 +307,15 @@ impl TerminalTabState {
     }
 
     /// Split the given pane along an axis with a new terminal.
+    ///
+    /// With `equalize_panes` set, the sibling panes sharing the new
+    /// pane's split axis are spread evenly across the group.
     pub(super) fn split_pane(
         &mut self,
         pane: pane_grid::Pane,
         axis: pane_grid::Axis,
         terminal_id: u64,
+        equalize_panes: bool,
     ) -> StateCommand {
         let source_terminal = self.pane_terminal_id(pane).and_then(|id| {
             self.terminals
@@ -311,17 +325,16 @@ impl TerminalTabState {
         let split = self.panes.split(axis, pane, terminal_id);
 
         if let Some((new_pane, _)) = split {
-            let terminal = match otty_ui_term::Terminal::new(
-                terminal_id,
-                self.terminal_settings.clone(),
-            ) {
-                Ok(terminal) => terminal,
-                Err(err) => {
-                    log::warn!("split pane terminal init failed: {err}");
-                    let _ = self.panes.close(new_pane);
-                    return StateCommand::None;
-                },
-            };
+            let terminal =
+                match new_terminal(terminal_id, self.terminal_settings.clone())
+                {
+                    Ok(terminal) => terminal,
+                    Err(err) => {
+                        log::warn!("split pane terminal init failed: {err}");
+                        let _ = self.panes.close(new_pane);
+                        return StateCommand::None;
+                    },
+                };
             let widget_id = terminal.widget_id().clone();
 
             self.terminals.insert(
@@ -331,6 +344,15 @@ impl TerminalTabState {
                     title: self.default_title.clone(),
                 },
             );
+            if equalize_panes {
+                for (split, ratio) in pane_balance::equalized_ratios(
+                    self.panes.layout(),
+                    new_pane,
+                ) {
+                    self.panes.resize(split, ratio);
+                }
+            }
+
             self.focus = Some(new_pane);
             self.context_menu = None;
             if let Some((source_terminal_id, _)) = source_terminal.as_ref() {
@@ -351,7 +373,14 @@ impl TerminalTabState {
 
     /// Close the given pane, returning a close-tab command when the
     /// last pane is removed.
-    pub(super) fn close_pane(&mut self, pane: pane_grid::Pane) -> StateCommand {
+    ///
+    /// With `equalize_panes` set, the panes left in the closed pane's
+    /// split group are spread evenly across the space it freed.
+    pub(super) fn close_pane(
+        &mut self,
+        pane: pane_grid::Pane,
+        equalize_panes: bool,
+    ) -> StateCommand {
         if self.panes.len() == 1 {
             return StateCommand::CloseTab {
                 tab_id: self.tab_id,
@@ -363,6 +392,14 @@ impl TerminalTabState {
             self.clear_selected_block_for_terminal(terminal_id);
             self.context_menu = None;
             self.terminals.remove(&terminal_id);
+
+            if equalize_panes {
+                for (split, ratio) in
+                    pane_balance::equalized_ratios(self.panes.layout(), sibling)
+                {
+                    self.panes.resize(split, ratio);
+                }
+            }
 
             let needs_focus = self.focus == Some(pane) || self.focus.is_none();
             if needs_focus {
@@ -458,9 +495,13 @@ impl TerminalTabState {
     }
 
     /// Handle a terminal widget event (title changes, shutdown, etc.).
+    ///
+    /// A shutdown closes the terminal's pane, so `equalize_panes` is
+    /// forwarded to the same balancing `close_pane` applies.
     pub(super) fn handle_terminal_event(
         &mut self,
-        event: otty_ui_term::Event,
+        event: TerminalEvent,
+        equalize_panes: bool,
     ) -> StateCommand {
         use otty_ui_term::Event::*;
 
@@ -469,7 +510,7 @@ impl TerminalTabState {
         match event {
             Shutdown { .. } => {
                 if let Some(pane) = self.pane_for_terminal(terminal_id) {
-                    return self.close_pane(pane);
+                    return self.close_pane(pane, equalize_panes);
                 }
             },
             TitleChanged { title, .. } => {
@@ -524,14 +565,6 @@ impl TerminalTabState {
 
     // --- Private helpers ---
 
-    fn pane_for_terminal(&self, terminal_id: u64) -> Option<pane_grid::Pane> {
-        self.panes
-            .iter()
-            .find(|&(_, &id)| id == terminal_id)
-            .map(|(pane, _)| pane)
-            .copied()
-    }
-
     fn set_focus_on_pane(
         &mut self,
         pane: pane_grid::Pane,
@@ -576,6 +609,24 @@ impl TerminalTabState {
             point.y.clamp(0.0, bounds.height.max(0.0)),
         )
     }
+}
+
+/// Build a terminal that already carries the application shortcuts.
+///
+/// Every terminal is created through here so a pane born from a split
+/// answers the same shortcuts as the pane it was split from.
+fn new_terminal(
+    terminal_id: u64,
+    settings: Settings,
+) -> Result<Terminal, TerminalWorkspaceError> {
+    let mut terminal = Terminal::new(terminal_id, settings).map_err(|err| {
+        TerminalWorkspaceError::Init {
+            message: format!("{err}"),
+        }
+    })?;
+    terminal.add_bindings(shortcuts::app_bindings());
+
+    Ok(terminal)
 }
 
 #[cfg(test)]
@@ -683,7 +734,7 @@ mod tests {
         let mut state = build_terminal_state("Shell");
         let pane = state.focus().expect("focused pane");
 
-        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11);
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
 
         assert_eq!(state.panes().len(), 2);
         assert_eq!(state.terminals().len(), 2);
@@ -692,12 +743,97 @@ mod tests {
     }
 
     #[test]
+    fn given_two_panes_when_split_again_then_widths_are_equalized() {
+        let mut state = build_terminal_state("Shell");
+        let first = state.focus().expect("focused pane");
+        let _task =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, true);
+        let second = state.focus().expect("split pane should be focused");
+
+        let _task =
+            state.split_pane(second, pane_grid::Axis::Vertical, 12, true);
+
+        let regions = state.panes().layout().pane_regions(
+            0.0,
+            0.0,
+            Size::new(900.0, 600.0),
+        );
+        assert_eq!(regions.len(), 3);
+        for region in regions.values() {
+            assert!(
+                (region.width - 300.0).abs() <= 0.5,
+                "expected each pane near 300.0, got {}",
+                region.width
+            );
+        }
+    }
+
+    #[test]
+    fn given_three_panes_when_last_is_closed_then_widths_are_equalized() {
+        let mut state = build_terminal_state("Shell");
+        let first = state.focus().expect("focused pane");
+        let _task =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, true);
+        let second = state.focus().expect("split pane should be focused");
+        let _task =
+            state.split_pane(second, pane_grid::Axis::Vertical, 12, true);
+        let third = state.focus().expect("split pane should be focused");
+
+        let _task = state.close_pane(third, true);
+
+        let regions = state.panes().layout().pane_regions(
+            0.0,
+            0.0,
+            Size::new(900.0, 600.0),
+        );
+        assert_eq!(regions.len(), 2);
+        for region in regions.values() {
+            assert!(
+                (region.width - 450.0).abs() <= 0.5,
+                "expected each pane near 450.0, got {}",
+                region.width
+            );
+        }
+    }
+
+    #[test]
+    fn given_equalizing_disabled_when_pane_closed_then_widths_are_untouched() {
+        let mut state = build_terminal_state("Shell");
+        let first = state.focus().expect("focused pane");
+        let _task =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, true);
+        let second = state.focus().expect("split pane should be focused");
+        let _task =
+            state.split_pane(second, pane_grid::Axis::Vertical, 12, true);
+        let third = state.focus().expect("split pane should be focused");
+
+        let _task = state.close_pane(third, false);
+
+        let mut widths: Vec<f32> = state
+            .panes()
+            .layout()
+            .pane_regions(0.0, 0.0, Size::new(900.0, 600.0))
+            .values()
+            .map(|region| region.width)
+            .collect();
+        widths.sort_by(f32::total_cmp);
+
+        assert_eq!(widths.len(), 2);
+        assert!(
+            (widths[0] - 300.0).abs() <= 0.5
+                && (widths[1] - 600.0).abs() <= 0.5,
+            "the surviving split keeps its pre-close 1:2 ratio, got {widths:?}"
+        );
+    }
+
+    #[test]
     fn given_selected_block_on_source_when_split_then_selection_is_cleared() {
         let mut state = build_terminal_state("Shell");
         let pane = state.focus().expect("focused pane");
         state.set_selected_block(10, String::from("block-1"));
 
-        let command = state.split_pane(pane, pane_grid::Axis::Vertical, 11);
+        let command =
+            state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
 
         assert!(state.selected_block().is_none());
         assert!(matches!(command, StateCommand::Batch(_)));
@@ -708,7 +844,7 @@ mod tests {
         let mut state = build_terminal_state("Shell");
         let pane = state.focus().expect("focused pane");
 
-        let _task = state.close_pane(pane);
+        let _task = state.close_pane(pane, true);
 
         assert_eq!(state.panes().len(), 1);
         assert_eq!(state.terminals().len(), 1);
@@ -719,12 +855,16 @@ mod tests {
     fn given_two_panes_when_focused_pane_closed_then_focus_moves_to_sibling() {
         let mut state = build_terminal_state("Shell");
         let initial_pane = state.focus().expect("focused pane");
-        let _task =
-            state.split_pane(initial_pane, pane_grid::Axis::Horizontal, 11);
+        let _task = state.split_pane(
+            initial_pane,
+            pane_grid::Axis::Horizontal,
+            11,
+            true,
+        );
         let closing_pane = state.focus().expect("split pane should be focused");
         state.set_selected_block(11, String::from("block-2"));
 
-        let _task = state.close_pane(closing_pane);
+        let _task = state.close_pane(closing_pane, true);
 
         assert_eq!(state.panes().len(), 1);
         assert_eq!(state.terminals().len(), 1);
@@ -779,15 +919,19 @@ mod tests {
     fn given_title_events_when_handled_then_tab_title_updates_and_resets() {
         let mut state = build_terminal_state("Shell");
 
-        let _task =
-            state.handle_terminal_event(otty_ui_term::Event::TitleChanged {
+        let _task = state.handle_terminal_event(
+            otty_ui_term::Event::TitleChanged {
                 id: 10,
                 title: String::from("Renamed"),
-            });
+            },
+            true,
+        );
         assert_eq!(state.title(), "Renamed");
 
-        let _task = state
-            .handle_terminal_event(otty_ui_term::Event::ResetTitle { id: 10 });
+        let _task = state.handle_terminal_event(
+            otty_ui_term::Event::ResetTitle { id: 10 },
+            true,
+        );
         assert_eq!(state.title(), "Shell");
     }
 
@@ -796,14 +940,16 @@ mod tests {
     {
         let mut state = build_terminal_state("Shell");
         let pane = state.focus().expect("focused pane");
-        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11);
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
         assert!(state.contains_terminal(11));
 
-        let _task =
-            state.handle_terminal_event(otty_ui_term::Event::Shutdown {
+        let _task = state.handle_terminal_event(
+            otty_ui_term::Event::Shutdown {
                 id: 11,
                 exit_status: success_exit_status(),
-            });
+            },
+            true,
+        );
 
         assert!(!state.contains_terminal(11));
         assert_eq!(state.panes().len(), 1);

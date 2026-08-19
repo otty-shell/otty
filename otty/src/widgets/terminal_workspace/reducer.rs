@@ -7,8 +7,9 @@ use otty_ui_term::{BlockCommand, TerminalView};
 use super::event::{
     TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
+use super::shortcuts::TerminalWorkspaceAction;
 use super::state::{StateCommand, TerminalTabState, TerminalWorkspaceState};
-use super::types::TerminalKind;
+use super::types::{TerminalEvent, TerminalKind};
 
 /// Runtime context injected into each reduce call.
 pub(crate) struct TerminalWorkspaceCtx {
@@ -20,6 +21,8 @@ pub(crate) struct TerminalWorkspaceCtx {
     pub(crate) screen_size: Size,
     /// Current cursor position in sidebar-relative coordinates.
     pub(crate) sidebar_cursor: Point,
+    /// Whether sibling panes are evened out on split and close.
+    pub(crate) equalize_panes: bool,
 }
 
 /// Reduce a terminal workspace intent event into state updates and effects.
@@ -55,9 +58,13 @@ pub(crate) fn reduce(
             terminal_to_tab.retain(|_, mapped_tab| *mapped_tab != tab_id);
             Task::none()
         },
-        Widget(event) => {
-            reduce_widget_event(state, terminal_to_tab, next_terminal_id, event)
-        },
+        Widget(event) => reduce_widget_event(
+            state,
+            terminal_to_tab,
+            next_terminal_id,
+            event,
+            ctx.equalize_panes,
+        ),
         PaneClicked { tab_id, pane } => {
             with_terminal_tab(state, tab_id, |tab| tab.focus_pane(pane))
         },
@@ -94,10 +101,13 @@ pub(crate) fn reduce(
             tab_id,
             pane,
             axis,
+            ctx.equalize_panes,
         ),
         ClosePane { tab_id, pane } => {
-            let task =
-                with_terminal_tab(state, tab_id, |tab| tab.close_pane(pane));
+            let equalize_panes = ctx.equalize_panes;
+            let task = with_terminal_tab(state, tab_id, |tab| {
+                tab.close_pane(pane, equalize_panes)
+            });
             reindex_terminal_tabs(state, terminal_to_tab);
             task
         },
@@ -249,12 +259,26 @@ fn reduce_widget_event(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,
-    event: otty_ui_term::Event,
+    event: TerminalEvent,
+    equalize_panes: bool,
 ) -> Task<TerminalWorkspaceEvent> {
     let terminal_id = *event.terminal_id();
     let Some(tab_id) = terminal_to_tab.get(&terminal_id).copied() else {
         return Task::none();
     };
+
+    if let otty_ui_term::Event::BindingActionDispatched { action, .. } = &event
+    {
+        return reduce_terminal_action(
+            state,
+            terminal_to_tab,
+            next_terminal_id,
+            tab_id,
+            terminal_id,
+            action,
+            equalize_panes,
+        );
+    }
 
     let refresh_titles = matches!(
         &event,
@@ -265,9 +289,8 @@ fn reduce_widget_event(
     let is_shutdown = matches!(&event, otty_ui_term::Event::Shutdown { .. });
     let selection_task = update_block_selection(state, tab_id, &event);
     let event_task = with_terminal_tab(state, tab_id, |tab| {
-        tab.handle_terminal_event(event)
+        tab.handle_terminal_event(event, equalize_panes)
     });
-    let _ = next_terminal_id;
     let update = Task::batch(vec![selection_task, event_task]);
 
     if is_shutdown {
@@ -309,6 +332,39 @@ fn reduce_focus_active(
     }
 }
 
+/// Act on an application shortcut a terminal widget reported.
+///
+/// The reporting terminal identifies the pane to act on, so a shortcut
+/// only ever affects the pane that had keyboard focus when it fired.
+fn reduce_terminal_action(
+    state: &mut TerminalWorkspaceState,
+    terminal_to_tab: &mut HashMap<u64, u64>,
+    next_terminal_id: &mut u64,
+    tab_id: u64,
+    terminal_id: u64,
+    action: &TerminalWorkspaceAction,
+    equalize_panes: bool,
+) -> Task<TerminalWorkspaceEvent> {
+    let TerminalWorkspaceAction::SplitPane { axis } = action;
+
+    let Some(pane) = state
+        .tab(tab_id)
+        .and_then(|tab| tab.pane_for_terminal(terminal_id))
+    else {
+        return Task::none();
+    };
+
+    reduce_split_pane(
+        state,
+        terminal_to_tab,
+        next_terminal_id,
+        tab_id,
+        pane,
+        *axis,
+        equalize_panes,
+    )
+}
+
 fn reduce_split_pane(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
@@ -316,12 +372,13 @@ fn reduce_split_pane(
     tab_id: u64,
     pane: pane_grid::Pane,
     axis: pane_grid::Axis,
+    equalize_panes: bool,
 ) -> Task<TerminalWorkspaceEvent> {
     let terminal_id = *next_terminal_id;
     *next_terminal_id += 1;
 
     let task = with_terminal_tab(state, tab_id, move |tab| {
-        tab.split_pane(pane, axis, terminal_id)
+        tab.split_pane(pane, axis, terminal_id, equalize_panes)
     });
 
     if state
@@ -444,7 +501,7 @@ fn reduce_sync_selection(
 fn update_block_selection(
     state: &mut TerminalWorkspaceState,
     tab_id: u64,
-    event: &otty_ui_term::Event,
+    event: &TerminalEvent,
 ) -> Task<TerminalWorkspaceEvent> {
     use otty_ui_term::Event::*;
 
@@ -562,7 +619,7 @@ mod tests {
     use iced::{Point, Size};
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-    use super::{TerminalWorkspaceCtx, reduce};
+    use super::{TerminalWorkspaceAction, TerminalWorkspaceCtx, reduce};
     use crate::widgets::terminal_workspace::TerminalWorkspaceIntent;
     use crate::widgets::terminal_workspace::state::TerminalWorkspaceState;
     use crate::widgets::terminal_workspace::types::TerminalKind;
@@ -593,6 +650,7 @@ mod tests {
             pane_grid_size: Size::ZERO,
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
+            equalize_panes: true,
         }
     }
 
@@ -659,6 +717,7 @@ mod tests {
             pane_grid_size: Size::new(120.0, 80.0),
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
+            equalize_panes: true,
         };
 
         let _ = reduce(
@@ -680,6 +739,7 @@ mod tests {
             pane_grid_size: Size::new(480.0, 320.0),
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
+            equalize_panes: true,
         };
 
         let _ = reduce(
@@ -788,6 +848,7 @@ mod tests {
             pane_grid_size: Size::ZERO,
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
+            equalize_panes: true,
         };
 
         let _task = reduce(
@@ -796,6 +857,150 @@ mod tests {
             &mut next_id,
             TerminalWorkspaceIntent::FocusActive,
             &ctx,
+        );
+    }
+
+    /// Open a single shell tab whose only terminal has id 100.
+    fn state_with_one_shell_tab()
+    -> (TerminalWorkspaceState, HashMap<u64, u64>, u64) {
+        let mut state = TerminalWorkspaceState::default();
+        let mut terminal_to_tab = HashMap::new();
+        let mut next_id = 100_u64;
+
+        let _ = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::OpenTab {
+                tab_id: 1,
+                default_title: String::from("Shell"),
+                settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
+                kind: TerminalKind::Shell,
+                sync_explorer: false,
+            },
+            &default_ctx(),
+        );
+
+        (state, terminal_to_tab, next_id)
+    }
+
+    /// Reduce a terminal action reported by terminal 100.
+    fn reduce_action(
+        state: &mut TerminalWorkspaceState,
+        terminal_to_tab: &mut HashMap<u64, u64>,
+        next_id: &mut u64,
+        action: TerminalWorkspaceAction,
+    ) {
+        let _ = reduce(
+            state,
+            terminal_to_tab,
+            next_id,
+            TerminalWorkspaceIntent::Widget(
+                otty_ui_term::Event::BindingActionDispatched {
+                    id: 100,
+                    action,
+                },
+            ),
+            &default_ctx(),
+        );
+    }
+
+    fn split_pane_action() -> TerminalWorkspaceAction {
+        TerminalWorkspaceAction::SplitPane {
+            axis: pane_grid::Axis::Vertical,
+        }
+    }
+
+    fn terminal_count(state: &TerminalWorkspaceState) -> usize {
+        state
+            .tab(1)
+            .expect("tab must exist after opening")
+            .terminals()
+            .len()
+    }
+
+    /// Return the axis of the split whose two halves are exactly these
+    /// panes, which is what "b was split off a" looks like in the layout
+    /// tree. `None` when they are not each other's split sibling.
+    fn sibling_split_axis(
+        layout: &pane_grid::Node,
+        left: pane_grid::Pane,
+        right: pane_grid::Pane,
+    ) -> Option<pane_grid::Axis> {
+        let pane_grid::Node::Split { axis, a, b, .. } = layout else {
+            return None;
+        };
+
+        let siblings = matches!(
+            (a.as_ref(), b.as_ref()),
+            (pane_grid::Node::Pane(x), pane_grid::Node::Pane(y))
+                if (*x == left && *y == right) || (*x == right && *y == left)
+        );
+
+        if siblings {
+            return Some(*axis);
+        }
+
+        sibling_split_axis(a, left, right)
+            .or_else(|| sibling_split_axis(b, left, right))
+    }
+
+    #[test]
+    fn given_a_split_action_when_reduced_then_the_reporting_tab_gains_a_pane() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_one_shell_tab();
+
+        assert_eq!(terminal_count(&state), 1);
+
+        reduce_action(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            split_pane_action(),
+        );
+
+        assert_eq!(
+            terminal_count(&state),
+            2,
+            "the split-pane action must add a terminal to the reporting tab"
+        );
+    }
+
+    #[test]
+    fn given_a_split_action_from_an_unfocused_pane_when_reduced_then_that_pane_is_split()
+     {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_one_shell_tab();
+
+        // Terminal 100 splits first, so the new terminal 101 takes focus.
+        reduce_action(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            split_pane_action(),
+        );
+
+        // Terminal 100 reports again while terminal 101 holds focus.
+        reduce_action(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            split_pane_action(),
+        );
+
+        let tab = state.tab(1).expect("tab must exist after opening");
+        let reporting = tab
+            .pane_for_terminal(100)
+            .expect("the reporting terminal must still own a pane");
+        let created = tab
+            .pane_for_terminal(102)
+            .expect("the split must have created a third terminal");
+
+        assert_eq!(
+            sibling_split_axis(tab.panes().layout(), reporting, created),
+            Some(pane_grid::Axis::Vertical),
+            "the new pane must be split off the reporting pane, not the \
+             focused one, and along the axis the action carried"
         );
     }
 }

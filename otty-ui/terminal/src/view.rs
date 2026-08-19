@@ -80,13 +80,13 @@ impl BlockUiVisuals {
     }
 }
 
-pub struct TerminalView<'a> {
-    term: &'a Terminal,
-    input_manager: InputManager<'a>,
+pub struct TerminalView<'a, T = ()> {
+    term: &'a Terminal<T>,
+    input_manager: InputManager<'a, T>,
 }
 
-impl<'a> TerminalView<'a> {
-    pub fn show(term: &'a Terminal) -> Element<'a, Event> {
+impl<'a, T: Clone + PartialEq + 'a> TerminalView<'a, T> {
+    pub fn show(term: &'a Terminal<T>) -> Element<'a, Event<T>> {
         container(Self {
             term,
             input_manager: InputManager::new(
@@ -101,7 +101,16 @@ impl<'a> TerminalView<'a> {
         .style(|_| term.theme.container_style())
         .into()
     }
+}
 
+/// Operations that address a terminal view by its widget id.
+///
+/// These take no `self` and never touch the action type, so they live on
+/// the default instantiation rather than on `TerminalView<'_, T>`. A
+/// generic impl would force every call site to name a type parameter the
+/// body ignores, since nothing in the signatures could infer it. Callers
+/// embedding any `T` still write `TerminalView::command(id, cmd)`.
+impl TerminalView<'_> {
     pub fn focus<Message: 'static>(
         id: iced::widget::Id,
     ) -> iced::Task<Message> {
@@ -142,7 +151,9 @@ impl<'a> TerminalView<'a> {
 
         iced::advanced::widget::operate(CommandOperation { id, command: cmd })
     }
+}
 
+impl<T: Clone + PartialEq> TerminalView<'_, T> {
     fn is_cursor_in_layout(
         &self,
         cursor: Cursor,
@@ -167,7 +178,7 @@ impl<'a> TerminalView<'a> {
         view_state: &mut TerminalViewState,
         layout: iced_graphics::core::Layout<'_>,
         clipboard: &mut dyn iced_graphics::core::Clipboard,
-        shell: &mut iced_graphics::core::Shell<'_, Event>,
+        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
     ) {
         while let Some(command) = view_state.next_block_command() {
             self.apply_block_command(
@@ -182,7 +193,7 @@ impl<'a> TerminalView<'a> {
         view_state: &mut TerminalViewState,
         layout: iced_graphics::core::Layout<'_>,
         clipboard: &mut dyn iced_graphics::core::Clipboard,
-        shell: &mut iced_graphics::core::Shell<'_, Event>,
+        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
     ) {
         let snapshot = self.term.engine.snapshot();
         let view = snapshot.view();
@@ -332,7 +343,7 @@ impl<'a> TerminalView<'a> {
     fn notify_block_selected(
         &self,
         block_id: &str,
-        shell: &mut iced_graphics::core::Shell<'_, Event>,
+        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
     ) {
         shell.publish(Event::BlockSelected {
             id: self.term.id,
@@ -415,7 +426,7 @@ impl<'a> TerminalView<'a> {
         &self,
         block_id: &str,
         layout: iced_graphics::core::Layout<'_>,
-        shell: &mut iced_graphics::core::Shell<'_, Event>,
+        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
     ) {
         let snapshot = self.term.engine.snapshot();
         let view = snapshot.view();
@@ -463,7 +474,9 @@ impl<'a> TerminalView<'a> {
     }
 }
 
-impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
+impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
+    for TerminalView<'_, T>
+{
     fn size(&self) -> Size<Length> {
         Size {
             width: Length::Fill,
@@ -772,7 +785,7 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
         cursor: Cursor,
         _renderer: &iced::Renderer,
         clipboard: &mut dyn iced_graphics::core::Clipboard,
-        shell: &mut iced_graphics::core::Shell<'_, Event>,
+        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
         _viewport: &Rectangle,
     ) {
         let view_state = tree.state.downcast_mut::<TerminalViewState>();
@@ -833,7 +846,7 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
             });
         }
 
-        let mut publish = |event: Event| {
+        let mut publish = |event: Event<T>| {
             shell.publish(event);
         };
 
@@ -922,8 +935,10 @@ impl Widget<Event, Theme, iced::Renderer> for TerminalView<'_> {
     }
 }
 
-impl<'a> From<TerminalView<'a>> for Element<'a, Event, Theme, iced::Renderer> {
-    fn from(widget: TerminalView<'a>) -> Self {
+impl<'a, T: Clone + PartialEq + 'a> From<TerminalView<'a, T>>
+    for Element<'a, Event<T>, Theme, iced::Renderer>
+{
+    fn from(widget: TerminalView<'a, T>) -> Self {
         Self::new(widget)
     }
 }
@@ -980,12 +995,12 @@ impl TerminalViewState {
         }
     }
 
-    fn queue_resize(
+    fn queue_resize<T>(
         &mut self,
         terminal_id: u64,
         layout_size: Size<f32>,
         cell_size: Size<f32>,
-        shell: &mut iced_graphics::core::Shell<'_, Event>,
+        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
     ) {
         const THROTTLE: Duration = Duration::from_millis(33);
         let now = Instant::now();
@@ -1013,12 +1028,12 @@ impl TerminalViewState {
         }
     }
 
-    fn publish_resize(
+    fn publish_resize<T>(
         &mut self,
         terminal_id: u64,
         layout_size: Size<f32>,
         cell_size: Size<f32>,
-        shell: &mut iced_graphics::core::Shell<'_, Event>,
+        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
         now: Instant,
     ) {
         self.last_resize_sent_at = Some(now);
@@ -1032,10 +1047,10 @@ impl TerminalViewState {
         });
     }
 
-    fn flush_pending_resize(
+    fn flush_pending_resize<T>(
         &mut self,
         terminal_id: u64,
-        shell: &mut iced_graphics::core::Shell<'_, Event>,
+        shell: &mut iced_graphics::core::Shell<'_, Event<T>>,
     ) {
         if let (Some(layout_size), Some(cell_size), Some(deadline)) = (
             self.pending_resize,
@@ -1216,7 +1231,7 @@ mod tests {
     #[test]
     fn pending_resize_schedules_redraw_at_throttle_deadline() {
         let mut state = TerminalViewState::new();
-        let mut events = Vec::new();
+        let mut events: Vec<Event> = Vec::new();
         let mut shell = iced_graphics::core::Shell::new(&mut events);
         let cell_size = Size::new(8.0, 16.0);
 

@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn skips_wide_char_spacers() {
         let mut wide_cell = Cell {
-            c: '漢',
+            c: 'あ',
             ..Cell::default()
         };
         wide_cell.flags.insert(Flags::WIDE_CHAR);
@@ -308,7 +308,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(collect_block_text(&block, &cells), Some("漢".to_string()));
+        assert_eq!(collect_block_text(&block, &cells), Some("あ".to_string()));
     }
 
     #[test]

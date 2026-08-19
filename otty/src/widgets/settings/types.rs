@@ -14,6 +14,7 @@ const FALLBACK_SHELL: &str = "/bin/bash";
 pub(crate) struct TerminalSettingsData {
     shell: String,
     editor: String,
+    equalize_panes: bool,
 }
 
 impl Default for TerminalSettingsData {
@@ -21,6 +22,7 @@ impl Default for TerminalSettingsData {
         Self {
             shell: default_shell(),
             editor: String::from(DEFAULT_EDITOR),
+            equalize_panes: true,
         }
     }
 }
@@ -75,6 +77,16 @@ impl SettingsData {
         self.terminal.editor = value;
     }
 
+    /// Return whether sibling panes are evened out on split and close.
+    pub(crate) fn equalize_panes(&self) -> bool {
+        self.terminal.equalize_panes
+    }
+
+    /// Update whether sibling panes are evened out on split and close.
+    pub(crate) fn set_equalize_panes(&mut self, value: bool) {
+        self.terminal.equalize_panes = value;
+    }
+
     /// Return palette values used by the theme form.
     pub(crate) fn theme_palette(&self) -> &[String] {
         &self.theme.palette
@@ -119,6 +131,13 @@ impl SettingsData {
             {
                 settings.terminal.editor = editor;
             }
+
+            if let Some(equalize_panes) = terminal
+                .get("equalize_panes")
+                .and_then(serde_json::Value::as_bool)
+            {
+                settings.terminal.equalize_panes = equalize_panes;
+            }
         }
 
         if let Some(theme) = value.get("theme")
@@ -153,7 +172,11 @@ impl SettingsData {
         };
 
         Self {
-            terminal: TerminalSettingsData { shell, editor },
+            terminal: TerminalSettingsData {
+                shell,
+                editor,
+                equalize_panes: self.terminal.equalize_panes,
+            },
             theme: ThemeSettingsData { palette },
         }
     }
@@ -655,6 +678,25 @@ mod tests {
         let settings = SettingsData::from_json(&value);
 
         assert_eq!(settings.theme.palette, defaults.theme.palette);
+    }
+
+    #[test]
+    fn given_equalize_panes_flag_when_from_json_then_value_is_loaded() {
+        assert!(SettingsData::default().equalize_panes());
+
+        let value = json!({ "terminal": { "equalize_panes": false } });
+
+        let settings = SettingsData::from_json(&value);
+
+        assert!(!settings.equalize_panes());
+    }
+
+    #[test]
+    fn given_equalize_panes_disabled_when_normalized_then_value_is_kept() {
+        let mut settings = SettingsData::default();
+        settings.set_equalize_panes(false);
+
+        assert!(!settings.normalized().equalize_panes());
     }
 
     #[test]

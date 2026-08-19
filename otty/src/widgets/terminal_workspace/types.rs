@@ -1,5 +1,14 @@
 use otty_ui_term::settings::SessionKind;
 
+use super::shortcuts::TerminalWorkspaceAction;
+
+/// The terminal widget this application embeds, bound to its own
+/// action type.
+pub(crate) type Terminal = otty_ui_term::Terminal<TerminalWorkspaceAction>;
+
+/// An event reported by one of this application's terminal widgets.
+pub(crate) type TerminalEvent = otty_ui_term::Event<TerminalWorkspaceAction>;
+
 /// Terminal context determining whether shell metadata is available.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TerminalKind {
@@ -35,13 +44,13 @@ impl ShellSession {
 
 /// A terminal entry stored per pane.
 pub(crate) struct TerminalEntry {
-    pub(super) terminal: otty_ui_term::Terminal,
+    pub(super) terminal: Terminal,
     pub(super) title: String,
 }
 
 impl TerminalEntry {
     /// Return read-only reference to the underlying terminal.
-    pub(crate) fn terminal(&self) -> &otty_ui_term::Terminal {
+    pub(crate) fn terminal(&self) -> &Terminal {
         &self.terminal
     }
 
