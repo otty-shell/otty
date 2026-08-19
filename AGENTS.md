@@ -2,9 +2,24 @@
 
 General context lives in [README.md](./README.md) at the repository root.
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked as local Markdown under `specs/<feature>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage uses the default canonical label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Domain documentation uses the single-context layout. See `docs/agents/domain.md`.
+
 ## Rules
 
 - Use English for all repository content, including comments, documentation, commit messages, and test data. Non-English text is allowed only when it is necessary for testing.
+- Use plain, direct language in chats and repository content, including specifications. Prefer everyday explanations to technical jargon. Use technical terms only when they are necessary or widely understood, and explain less common terms in plain language when first used.
 - You MUST write the tests before writting the implementation.
 - You MUST write tests only for business-significant packages such as usecases, repositories, helpers, and domain logic. Do not add tests for infrastructure/bootstrap packages such as lifecycle, config, metrics, logging, or server wiring unless they contain business-significant behavior.
 - You MUST use `mockall` for mocks in RUST code
