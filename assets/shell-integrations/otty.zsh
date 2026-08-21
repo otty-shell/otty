@@ -10,6 +10,11 @@
 
 [[ $- != *i* ]] && return 0
 [[ -n ${OTTY_ZSH_HOOK_INITIALIZED:-} ]] && return 0
+
+if ! command -v od >/dev/null 2>&1 || ! command -v tr >/dev/null 2>&1; then
+  return 0
+fi
+
 OTTY_ZSH_HOOK_INITIALIZED=1
 
 autoload -Uz add-zsh-hook
@@ -76,7 +81,10 @@ _otty_json_escape() {
 }
 
 _otty_emit() {
-  printf '\033P'; printf 'otty-dcs;block;%s' "$1"; printf '\033\\'
+  local payload
+  payload=$(printf '%s' "$1" | command od -A n -v -t x1 | command tr -d ' \n') || return 0
+
+  printf '\033Potty-dcs;block;%s\033\\' "$payload"
 }
 
 _otty_preexec() {
