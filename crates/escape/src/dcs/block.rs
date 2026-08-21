@@ -99,7 +99,8 @@ fn truncate_opt(value: Option<String>, max_chars: usize) -> Option<String> {
 
 /// Try to parse a block event from a completed DCS payload.
 ///
-/// The payload is expected to be a UTF-8 JSON string for the `otty-block` DCS.
+/// The transport layer must decode the hex-encoded DCS content before passing
+/// the UTF-8 JSON payload to this function.
 pub(crate) fn parse_block_payload(
     payload: &[u8],
 ) -> Result<BlockEvent, BlockPayloadParsingError> {

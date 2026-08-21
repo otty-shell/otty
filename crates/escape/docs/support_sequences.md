@@ -1,9 +1,9 @@
 # Supported Terminal Sequences
 
 `otty-escape` implements a ANSI parser that expands incoming byte streams
-into high-level actions. This document enumerates the control, escape, CSI, and
-OSC sequences that currently produce side effects. Sequence names follow the
-DEC/xterm conventions.
+into high-level actions. This document enumerates the control, escape, CSI,
+DCS, and OSC sequences that currently produce side effects. Sequence names
+follow the DEC/xterm conventions.
 
 ## Notation
 
@@ -12,6 +12,7 @@ DEC/xterm conventions.
 - `OSC` (`ESC ]`) introduces operating system control strings. Each OSC listed
   here may be terminated by either `BEL` or the `ST` (`ESC \`) string
   terminator.
+- `DCS` (`ESC P`) introduces device control strings.
 - `ST` denotes the string terminator (`ESC \`).
 - `Ps`, `Pm`, `Pn` follow the standard parameter placeholders. When omitted,
   the implementation uses the usual VT defaults (commonly `Ps = 1`).
@@ -178,6 +179,12 @@ used in OSC 10/11/12 (see below).
 The parser saves/restores hyperlink state through `OSC 8`, and the `Save Cursor`
 and `Restore Cursor` sequences capture charset and mode state alongside the
 position.
+
+## OTTY DCS Sequences
+
+| Sequence | Effect | Notes |
+| -------- | ------ | ----- |
+| `DCS otty-dcs;block;hex-json ST` | Report a shell block lifecycle event. | `hex-json` is the hexadecimal encoding of a UTF-8 JSON payload. Raw JSON is not accepted. Decoded content is limited to 4096 bytes. |
 
 ## OSC Sequences
 
