@@ -45,7 +45,7 @@ clipboard path reads only its text representation.
   passed after stacking this branch on the macOS lint fixes in PR #87.
 - `cargo llvm-cov --workspace --all-features --fail-under-lines 80`: exited 1
   at the repository's 67.81% line coverage. The changed terminal modules are
-  above the requested level: `clipboard.rs` is 94.83% and `input.rs` is
+  above the requested level: `clipboard.rs` is 98.18% and `input.rs` is
   81.83%.
 - Real macOS Finder verification: copying `otty Finder paste テスト file.txt`
   and pressing `Cmd+V` in the latest-`main` build inserted

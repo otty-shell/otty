@@ -1369,11 +1369,24 @@ mod tests {
                 mouse::Button::Left,
                 None,
             );
-            state.last_click = Some(mouse::Click::new(
-                Point { x: 0.0, y: 0.0 },
-                mouse::Button::Left,
-                Some(first_click),
-            ));
+            let deadline = std::time::Instant::now()
+                + std::time::Duration::from_millis(300);
+            state.last_click = Some(loop {
+                let click = mouse::Click::new(
+                    Point { x: 0.0, y: 0.0 },
+                    mouse::Button::Left,
+                    Some(first_click),
+                );
+                if click.kind() == mouse::click::Kind::Double {
+                    break click;
+                }
+
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "test clock did not advance within the double-click window"
+                );
+                std::thread::yield_now();
+            });
             let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);

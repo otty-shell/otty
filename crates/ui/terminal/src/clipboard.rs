@@ -7,14 +7,17 @@ pub(crate) fn read_paste_text(clipboard: &dyn Clipboard) -> Option<String> {
         return Some(path);
     }
 
-    clipboard.read(ClipboardKind::Standard).map(|text| {
-        #[cfg(target_os = "macos")]
-        if let Some(path) = file_url_to_posix_path(&text) {
-            return path;
-        }
+    #[cfg(target_os = "macos")]
+    {
+        clipboard
+            .read(ClipboardKind::Standard)
+            .map(|text| file_url_to_posix_path(&text).unwrap_or(text))
+    }
 
-        text
-    })
+    #[cfg(not(target_os = "macos"))]
+    {
+        clipboard.read(ClipboardKind::Standard)
+    }
 }
 
 #[cfg(target_os = "macos")]
