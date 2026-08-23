@@ -37,13 +37,12 @@ clipboard path reads only its text representation.
   `file://` URL instead of `/Users/example/My File テスト.txt`.
 - GREEN: the focused input test passed, and all three clipboard adapter tests
   passed.
-- `cargo +nightly fmt -- --check`: passed.
+- `cargo +nightly fmt`: passed.
 - `cargo test --workspace --all-features`: 530 passed, 2 ignored.
 - `cargo deny check`: exited 0 with the existing yanked `core2 0.4.0` and
   `spin 0.9.8` warnings.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
-  blocked by the three pre-existing macOS unused-symbol errors tracked in PR
-  #87; the same failures reproduce on the unmodified base.
+  passed after stacking this branch on the macOS lint fixes in PR #87.
 - `cargo llvm-cov --workspace --all-features --fail-under-lines 80`: exited 1
   at the repository's 67.81% line coverage. The changed terminal modules are
   above the requested level: `clipboard.rs` is 94.83% and `input.rs` is
