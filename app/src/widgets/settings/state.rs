@@ -15,6 +15,8 @@ pub(crate) struct SettingsState {
     selected_path: Vec<String>,
     hovered_path: Option<Vec<String>>,
     dirty: bool,
+    edit_revision: u64,
+    saving_revision: Option<u64>,
 }
 
 impl SettingsState {
@@ -85,6 +87,8 @@ impl SettingsState {
             selected_path,
             hovered_path: None,
             dirty: false,
+            edit_revision: 0,
+            saving_revision: None,
         }
     }
 
@@ -97,6 +101,7 @@ impl SettingsState {
             SettingsPreset::from_palette(&self.palette_inputs);
         self.hovered_path = None;
         self.dirty = false;
+        self.edit_revision = self.edit_revision.wrapping_add(1);
     }
 
     /// Return normalized draft settings ready for persistence.
@@ -104,9 +109,36 @@ impl SettingsState {
         self.draft.normalized()
     }
 
-    /// Mark the draft as saved by replacing baseline with the given data.
-    pub(super) fn mark_saved(&mut self, settings: SettingsData) {
-        self.replace_with_settings(settings);
+    /// Capture the current draft for one serialized save operation.
+    pub(super) fn begin_save(&mut self) -> Option<(u64, SettingsData)> {
+        if self.saving_revision.is_some() || !self.dirty {
+            return None;
+        }
+
+        let revision = self.edit_revision;
+        self.saving_revision = Some(revision);
+        Some((revision, self.normalized_draft()))
+    }
+
+    /// Apply a completed save without discarding edits made after it started.
+    pub(super) fn mark_saved(&mut self, revision: u64, settings: SettingsData) {
+        if self.saving_revision != Some(revision) {
+            return;
+        }
+        self.saving_revision = None;
+
+        if self.edit_revision == revision {
+            self.replace_with_settings(settings);
+            return;
+        }
+
+        self.baseline = settings;
+        self.update_dirty();
+    }
+
+    /// Allow a failed save to be retried.
+    pub(super) fn mark_save_failed(&mut self) {
+        self.saving_revision = None;
     }
 
     /// Reset draft to baseline.
@@ -118,19 +150,19 @@ impl SettingsState {
     /// Update the shell field in the draft.
     pub(super) fn set_shell(&mut self, value: String) {
         self.draft.set_terminal_shell(value);
-        self.update_dirty();
+        self.mark_edited();
     }
 
     /// Update the editor field in the draft.
     pub(super) fn set_editor(&mut self, value: String) {
         self.draft.set_terminal_editor(value);
-        self.update_dirty();
+        self.mark_edited();
     }
 
     /// Update whether sibling panes are evened out on split and close.
     pub(super) fn set_equalize_panes(&mut self, value: bool) {
         self.draft.set_equalize_panes(value);
-        self.update_dirty();
+        self.mark_edited();
     }
 
     /// Update a palette input, propagating valid values to the draft.
@@ -148,8 +180,8 @@ impl SettingsState {
             && self.draft.set_theme_palette_entry(index, value)
         {
             self.sync_selected_preset();
-            self.update_dirty();
         }
+        self.mark_edited();
     }
 
     /// Apply a theme preset palette to the draft.
@@ -158,7 +190,7 @@ impl SettingsState {
         self.draft.set_theme_palette(palette.clone());
         self.palette_inputs = palette;
         self.selected_preset = Some(preset);
-        self.update_dirty();
+        self.mark_edited();
     }
 
     /// Select a tree path (toggles folders, selects sections).
@@ -183,6 +215,11 @@ impl SettingsState {
 
     fn update_dirty(&mut self) {
         self.dirty = self.draft != self.baseline;
+    }
+
+    fn mark_edited(&mut self) {
+        self.edit_revision = self.edit_revision.wrapping_add(1);
+        self.update_dirty();
     }
 
     fn sync_selected_preset(&mut self) {
@@ -246,6 +283,17 @@ mod tests {
 
         assert_eq!(state.draft, baseline);
         assert!(!state.dirty);
+    }
+
+    #[test]
+    fn given_save_in_flight_when_begin_save_called_again_then_second_is_ignored()
+     {
+        let mut state = SettingsState::default();
+        state.set_editor(String::from("vim"));
+
+        assert!(state.begin_save().is_some());
+
+        assert!(state.begin_save().is_none());
     }
 
     #[test]

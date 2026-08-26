@@ -23,13 +23,14 @@ pub(crate) fn reduce(
             Task::none()
         },
         SettingsIntent::Save => request_save_settings(state),
-        SettingsIntent::SaveCompleted(settings) => {
-            state.mark_saved(settings.clone());
+        SettingsIntent::SaveCompleted { revision, settings } => {
+            state.mark_saved(revision, settings.clone());
             Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
                 settings,
             )))
         },
         SettingsIntent::SaveFailed(message) => {
+            state.mark_save_failed();
             log::warn!("settings save failed: {message}");
             Task::none()
         },
@@ -77,18 +78,24 @@ fn request_reload_settings() -> Task<SettingsEvent> {
     })
 }
 
-fn request_save_settings(state: &SettingsState) -> Task<SettingsEvent> {
-    let normalized = state.normalized_draft();
+fn request_save_settings(state: &mut SettingsState) -> Task<SettingsEvent> {
+    let Some((revision, normalized)) = state.begin_save() else {
+        return Task::none();
+    };
+
     Task::perform(
         async move {
             match save_settings(&normalized) {
-                Ok(()) => Ok(normalized),
+                Ok(()) => Ok((revision, normalized)),
                 Err(err) => Err(format!("{err}")),
             }
         },
         |result| match result {
-            Ok(settings) => {
-                SettingsEvent::Effect(SettingsEffect::SaveCompleted(settings))
+            Ok((revision, settings)) => {
+                SettingsEvent::Effect(SettingsEffect::SaveCompleted {
+                    revision,
+                    settings,
+                })
             },
             Err(message) => {
                 SettingsEvent::Effect(SettingsEffect::SaveFailed(message))
@@ -128,19 +135,47 @@ mod tests {
         let mut state = default_state();
         state.set_shell(format!("{}-changed", state.draft().terminal_shell()));
         assert!(state.is_dirty());
-        let normalized = state.normalized_draft();
+        let (revision, normalized) =
+            state.begin_save().expect("save should start");
 
-        let _task =
-            reduce(&mut state, SettingsIntent::SaveCompleted(normalized));
+        let _task = reduce(
+            &mut state,
+            SettingsIntent::SaveCompleted {
+                revision,
+                settings: normalized,
+            },
+        );
 
         assert!(!state.is_dirty());
         assert_eq!(state.baseline(), state.draft());
     }
 
     #[test]
+    fn given_new_edit_after_save_started_when_save_completes_then_edit_is_preserved()
+     {
+        let mut state = default_state();
+        state.set_shell(format!("{}-saved", state.draft().terminal_shell()));
+        let (revision, saved) = state.begin_save().expect("save should start");
+        state.set_editor(String::from("nvim"));
+
+        let _task = reduce(
+            &mut state,
+            SettingsIntent::SaveCompleted {
+                revision,
+                settings: saved.clone(),
+            },
+        );
+
+        assert_eq!(state.draft().terminal_editor(), "nvim");
+        assert_eq!(state.baseline(), &saved);
+        assert!(state.is_dirty());
+    }
+
+    #[test]
     fn given_save_failed_when_reduced_then_keeps_state_dirty() {
         let mut state = default_state();
         state.set_editor(String::from("vim"));
+        let _save = state.begin_save().expect("save should start");
         assert!(state.is_dirty());
 
         let _task = reduce(
@@ -150,6 +185,7 @@ mod tests {
 
         assert!(state.is_dirty());
         assert_ne!(state.baseline(), state.draft());
+        assert!(state.begin_save().is_some());
     }
 
     #[test]

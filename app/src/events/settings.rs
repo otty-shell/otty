@@ -37,9 +37,11 @@ fn handle_effect(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
         SaveFailed(message) => Task::done(AppEvent::Settings(
             SettingsEvent::Intent(SettingsIntent::SaveFailed(message)),
         )),
-        SaveCompleted(data) => Task::done(AppEvent::Settings(
-            SettingsEvent::Intent(SettingsIntent::SaveCompleted(data)),
-        )),
+        SaveCompleted { revision, settings } => {
+            Task::done(AppEvent::Settings(SettingsEvent::Intent(
+                SettingsIntent::SaveCompleted { revision, settings },
+            )))
+        },
         ApplyTheme(data) => apply_theme(app, &data),
     }
 }
