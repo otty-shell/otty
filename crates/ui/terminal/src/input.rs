@@ -517,6 +517,7 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     use otty_libterm::TerminalSize;
     use otty_libterm::escape::{Hyperlink, NamedPrivateMode};
@@ -1364,28 +1365,27 @@ mod tests {
             state.hovered_block_kind = Some(BlockKind::Command);
             state.selected_block_id = Some(String::from("block-1"));
             state.selected_block_kind = Some(BlockKind::Command);
-            let first_click = mouse::Click::new(
-                Point { x: 0.0, y: 0.0 },
-                mouse::Button::Left,
-                None,
-            );
-            let deadline = std::time::Instant::now()
-                + std::time::Duration::from_millis(300);
+            let started = Instant::now();
             state.last_click = Some(loop {
-                let click = mouse::Click::new(
+                let first_click = mouse::Click::new(
+                    Point { x: 0.0, y: 0.0 },
+                    mouse::Button::Left,
+                    None,
+                );
+                let second_click = mouse::Click::new(
                     Point { x: 0.0, y: 0.0 },
                     mouse::Button::Left,
                     Some(first_click),
                 );
-                if click.kind() == mouse::click::Kind::Double {
-                    break click;
+
+                if second_click.kind() == mouse::click::Kind::Double {
+                    break second_click;
                 }
 
                 assert!(
-                    std::time::Instant::now() < deadline,
-                    "test clock did not advance within the double-click window"
+                    started.elapsed() < Duration::from_secs(1),
+                    "failed to construct a double click within one second"
                 );
-                std::thread::yield_now();
             });
             let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
