@@ -1,23 +1,21 @@
 use iced_core::clipboard::{Clipboard, Kind as ClipboardKind};
 
 /// Read text for a terminal paste operation.
+#[cfg(target_os = "macos")]
 pub(crate) fn read_paste_text(clipboard: &dyn Clipboard) -> Option<String> {
-    #[cfg(target_os = "macos")]
     if let Some(path) = macos_file_url_path() {
         return Some(path);
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        clipboard
-            .read(ClipboardKind::Standard)
-            .map(|text| file_url_to_posix_path(&text).unwrap_or(text))
-    }
+    clipboard
+        .read(ClipboardKind::Standard)
+        .map(|text| file_url_to_posix_path(&text).unwrap_or(text))
+}
 
-    #[cfg(not(target_os = "macos"))]
-    {
-        clipboard.read(ClipboardKind::Standard)
-    }
+/// Read text for a terminal paste operation.
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn read_paste_text(clipboard: &dyn Clipboard) -> Option<String> {
+    clipboard.read(ClipboardKind::Standard)
 }
 
 #[cfg(target_os = "macos")]
