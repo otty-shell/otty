@@ -3,6 +3,7 @@ pub mod settings;
 
 mod block_controls;
 mod block_layout;
+mod clipboard;
 mod engine;
 mod error;
 mod font;

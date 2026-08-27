@@ -19,3 +19,12 @@ otty-libterm = { path = "../../libterm", version = "0.1.0" }
 tokio = { version = "1.47.1", features = ["full"] }
 open = "5.3.2"
 log = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.2.2", default-features = false, features = [
+    "NSPasteboard",
+] }
+objc2-foundation = { version = "0.2.2", default-features = false, features = [
+    "NSString",
+    "NSURL",
+] }

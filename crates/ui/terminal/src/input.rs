@@ -479,7 +479,8 @@ impl<'a, T: Clone + PartialEq> InputManager<'a, T> {
                 iced::event::Status::Captured
             },
             BindingAction::Paste => {
-                if let Some(data) = clipboard.read(ClipboardKind::Standard) {
+                if let Some(data) = crate::clipboard::read_paste_text(clipboard)
+                {
                     let input: Vec<u8> = data.bytes().collect();
                     publisher(crate::Event::Write {
                         id: self.terminal_id,
@@ -720,6 +721,55 @@ mod tests {
             };
 
             (status, commands)
+        }
+
+        #[cfg(target_os = "macos")]
+        struct FileUrlClipboard {
+            value: String,
+        }
+
+        #[cfg(target_os = "macos")]
+        impl iced_core::clipboard::Clipboard for FileUrlClipboard {
+            fn read(&self, kind: ClipboardKind) -> Option<String> {
+                (kind == ClipboardKind::Standard).then(|| self.value.clone())
+            }
+
+            fn write(&mut self, _kind: ClipboardKind, _contents: String) {}
+        }
+
+        #[cfg(target_os = "macos")]
+        #[test]
+        fn macos_file_url_paste_prefers_posix_path() {
+            let event = key_pressed("v", Modifiers::COMMAND);
+            let mut state = TerminalViewState::new();
+            let mut clipboard = FileUrlClipboard {
+                value: String::from(
+                    "file:///Users/example/My%20File%20%E3%83%86%E3%82%B9%E3%83%88.txt",
+                ),
+            };
+            let mut commands = Vec::new();
+            let bindings: BindingsLayout = BindingsLayout::default();
+            let input_manager = InputManager::new(
+                TEST_ID,
+                &bindings,
+                BlockSelectionMode::PrimaryClick,
+            );
+            let mut publish = |event| commands.push(event);
+
+            let status = input_manager.handle_keyboard_event(
+                &mut state,
+                default_snapshot(),
+                &mut clipboard,
+                &event,
+                &mut publish,
+            );
+
+            assert_eq!(status, iced::event::Status::Captured);
+            assert!(commands.iter().any(|event| matches!(
+                event,
+                crate::Event::Write { id: TEST_ID, data }
+                    if data == "/Users/example/My File テスト.txt".as_bytes()
+            )));
         }
 
         #[test]
@@ -1319,11 +1369,24 @@ mod tests {
                 mouse::Button::Left,
                 None,
             );
-            state.last_click = Some(mouse::Click::new(
-                Point { x: 0.0, y: 0.0 },
-                mouse::Button::Left,
-                Some(first_click),
-            ));
+            let deadline = std::time::Instant::now()
+                + std::time::Duration::from_millis(300);
+            state.last_click = Some(loop {
+                let click = mouse::Click::new(
+                    Point { x: 0.0, y: 0.0 },
+                    mouse::Button::Left,
+                    Some(first_click),
+                );
+                if click.kind() == mouse::click::Kind::Double {
+                    break click;
+                }
+
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "test clock did not advance within the double-click window"
+                );
+                std::thread::yield_now();
+            });
             let bindings = BindingsLayout::<()>::new();
             let mut commands = Vec::new();
             let mut publish = |event| commands.push(event);
