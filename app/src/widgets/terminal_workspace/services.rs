@@ -66,7 +66,7 @@ fn shell_name(shell_path: &str) -> String {
 fn shell_session_options(shell_path: &str) -> LocalSessionOptions {
     let options = LocalSessionOptions::default().with_program(shell_path);
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     if let Some(home) = env::var_os("HOME") {
         return options.with_working_directory(PathBuf::from(home));
     }
