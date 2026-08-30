@@ -66,7 +66,6 @@ fn shell_name(shell_path: &str) -> String {
 fn shell_session_options(shell_path: &str) -> LocalSessionOptions {
     let options = LocalSessionOptions::default().with_program(shell_path);
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     if let Some(home) = env::var_os("HOME") {
         return options.with_working_directory(PathBuf::from(home));
     }
@@ -207,19 +206,15 @@ mod tests {
         }
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
-    fn given_supported_platform_home_when_fallback_session_created_then_starts_in_home()
-     {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .expect("HOME should be set on supported Unix platforms");
+    fn given_home_when_fallback_session_created_then_starts_in_home() {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
 
         let session = fallback_shell_session_with_shell("/bin/zsh");
 
         match session.session() {
             SessionKind::Local(options) => {
-                assert_eq!(options.working_directory(), &Some(home));
+                assert_eq!(options.working_directory(), &home);
             },
             SessionKind::Ssh(_) => {
                 panic!("expected local session kind");
@@ -245,7 +240,6 @@ mod tests {
                 assert_eq!(options.args().len(), 2);
                 assert_eq!(options.args()[0], "--rcfile");
                 assert_eq!(options.args()[1], wrapper_path.to_string_lossy());
-                #[cfg(any(target_os = "macos", target_os = "linux"))]
                 assert_eq!(
                     options.working_directory(),
                     &std::env::var_os("HOME").map(PathBuf::from),
@@ -277,7 +271,6 @@ mod tests {
                     zdotdir,
                     Some(&temp_dir.path.to_string_lossy().to_string()),
                 );
-                #[cfg(any(target_os = "macos", target_os = "linux"))]
                 assert_eq!(
                     options.working_directory(),
                     &std::env::var_os("HOME").map(PathBuf::from),
