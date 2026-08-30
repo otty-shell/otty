@@ -65,3 +65,32 @@ Primary references:
 - https://github.com/TragicWarrior/libvterm
 - https://docs.google.com/spreadsheets/d/19W-lXWS9jYwqCK-LwgYo31GucPPxYVld_hVEcfpNpXg/edit?gid=1724051764#gid=1724051764
 - https://wezterm.org/escape-sequences.html#operating-system-command-sequences
+
+## Review-derived PR gates
+
+Every future PR MUST read `docs/review-lessons.md` and complete these checks
+before requesting review:
+
+- Write the issue contract as observable behavior, including supported
+  platforms, default values, user operation order, and a reproducible case.
+- Inspect the current `main` base, rebase before review when the branch is
+  stale, and classify every changed path as issue work, a regression fix, or
+  unrelated work. Remove unrelated lint, docs, test-data, policy, and cleanup
+  changes from the PR.
+- Read every GraphQL review thread, including resolved and outdated threads,
+  and classify each as `ACCEPT`, `REJECT`, or `CLARIFY`. Do not guess when a
+  comment changes scope or leaves the required behavior unspecified.
+- Trace the complete behavior path, including focus or ownership, event
+  routing, reporting identifiers, side effects, shutdown paths, and the
+  equivalent user operation. Test both the normal and alternate paths.
+- Treat platform conditionals as separate behavior. Add target-specific CI or
+  a portable selector test, and list real-device or real-OS behavior as
+  unverified when it was not executed.
+- For asynchronous state, test stale completion, newer edits, reset or reload,
+  failure, and retry behavior. Do not rely on a green happy-path test.
+- Write a failing behavioral test before each behavior change. Avoid wall-clock
+  timing assumptions, ambient host state such as `$SHELL`, synthetic geometry,
+  and source-text assertions.
+- Run the full repository gates and perform the real user operation after the
+  tests pass. CI success does not prove GUI, hardware, or non-current-platform
+  behavior.

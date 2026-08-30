@@ -26,8 +26,7 @@ pub(crate) fn setup_shell_session_with_shell(
         "zsh" => setup_zsh_session(shell_path, &dir)?,
         "bash" => setup_bash_session(shell_path, &dir)?,
         _ => {
-            let options =
-                LocalSessionOptions::default().with_program(shell_path);
+            let options = shell_session_options(shell_path);
             SessionKind::from_local_options(options)
         },
     };
@@ -40,7 +39,7 @@ pub(crate) fn fallback_shell_session_with_shell(
     shell_path: &str,
 ) -> ShellSession {
     let shell_name = shell_name(shell_path);
-    let options = LocalSessionOptions::default().with_program(shell_path);
+    let options = shell_session_options(shell_path);
 
     ShellSession::new(shell_name, SessionKind::from_local_options(options))
 }
@@ -62,6 +61,16 @@ fn shell_name(shell_path: &str) -> String {
         .and_then(|name| name.to_str())
         .map(ToString::to_string)
         .unwrap_or_else(|| shell_path.to_string())
+}
+
+fn shell_session_options(shell_path: &str) -> LocalSessionOptions {
+    let options = LocalSessionOptions::default().with_program(shell_path);
+
+    if let Some(home) = env::var_os("HOME") {
+        return options.with_working_directory(PathBuf::from(home));
+    }
+
+    options
 }
 
 fn config_dir() -> PathBuf {
@@ -100,9 +109,8 @@ fi
     fs::write(&zshrc_path, zshrc_contents.trim_start())?;
 
     let dir_str = dir.to_string_lossy();
-    let mut options = LocalSessionOptions::default()
-        .with_program(shell_path)
-        .with_env("ZDOTDIR", dir_str.as_ref());
+    let mut options =
+        shell_session_options(shell_path).with_env("ZDOTDIR", dir_str.as_ref());
 
     if let Some(value) = original_zdotdir
         && Path::new(&value) != dir
@@ -137,8 +145,7 @@ fi
     fs::write(&wrapper_path, wrapper_contents.trim_start())?;
 
     let wrapper_path = wrapper_path.to_string_lossy().into_owned();
-    let options = LocalSessionOptions::default()
-        .with_program(shell_path)
+    let options = shell_session_options(shell_path)
         .with_args(vec!["--rcfile".to_string(), wrapper_path]);
 
     Ok(SessionKind::from_local_options(options))
@@ -199,6 +206,22 @@ mod tests {
         }
     }
 
+    #[test]
+    fn given_home_when_fallback_session_created_then_starts_in_home() {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+
+        let session = fallback_shell_session_with_shell("/bin/zsh");
+
+        match session.session() {
+            SessionKind::Local(options) => {
+                assert_eq!(options.working_directory(), &home);
+            },
+            SessionKind::Ssh(_) => {
+                panic!("expected local session kind");
+            },
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn given_temp_dir_when_setup_bash_session_then_wrapper_files_are_written() {
@@ -217,6 +240,10 @@ mod tests {
                 assert_eq!(options.args().len(), 2);
                 assert_eq!(options.args()[0], "--rcfile");
                 assert_eq!(options.args()[1], wrapper_path.to_string_lossy());
+                assert_eq!(
+                    options.working_directory(),
+                    &std::env::var_os("HOME").map(PathBuf::from),
+                );
             },
             SessionKind::Ssh(_) => {
                 panic!("expected local session kind");
@@ -243,6 +270,10 @@ mod tests {
                 assert_eq!(
                     zdotdir,
                     Some(&temp_dir.path.to_string_lossy().to_string()),
+                );
+                assert_eq!(
+                    options.working_directory(),
+                    &std::env::var_os("HOME").map(PathBuf::from),
                 );
             },
             SessionKind::Ssh(_) => {
