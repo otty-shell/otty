@@ -172,6 +172,28 @@ mod tests {
     }
 
     #[test]
+    fn given_reset_during_save_when_save_completes_then_reset_remains_authoritative()
+     {
+        let mut state = default_state();
+        let baseline = state.baseline().clone();
+        state.set_shell(format!("{}-saved", state.draft().terminal_shell()));
+        let (revision, saved) = state.begin_save().expect("save should start");
+
+        let _ = reduce(&mut state, SettingsIntent::Reset);
+        let _ = reduce(
+            &mut state,
+            SettingsIntent::SaveCompleted {
+                revision,
+                settings: saved,
+            },
+        );
+
+        assert_eq!(state.draft(), &baseline);
+        assert_eq!(state.baseline(), &baseline);
+        assert!(!state.is_dirty());
+    }
+
+    #[test]
     fn given_save_failed_when_reduced_then_keeps_state_dirty() {
         let mut state = default_state();
         state.set_editor(String::from("vim"));

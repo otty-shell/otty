@@ -102,6 +102,7 @@ impl SettingsState {
         self.hovered_path = None;
         self.dirty = false;
         self.edit_revision = self.edit_revision.wrapping_add(1);
+        self.saving_revision = None;
     }
 
     /// Return normalized draft settings ready for persistence.
