@@ -104,19 +104,22 @@ impl SSHSession {
             Err(err) => Err(SessionError::SSH2(err)),
         }
     }
+
+    /// Handle channel EOF: cache the exit status and notify the poller.
+    fn finish_eof(&mut self) -> Result<usize, SessionError> {
+        let _ = self.try_get_exit_status();
+        self.notify_exit()?;
+        Ok(0)
+    }
 }
 
 impl Session for SSHSession {
     /// Read from the SSH channel in non-blocking mode, emitting the bytes that
     /// arrive from the remote PTY.
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, SessionError> {
-        match self.channel.read(buf) {
+        match self.io.try_io(|| self.channel.read(buf)) {
             // Channel receive the EOF so we need to notify of exit
-            Ok(0) => {
-                let _ = self.try_get_exit_status();
-                self.notify_exit()?;
-                Ok(0)
-            },
+            Ok(0) => self.finish_eof(),
             Ok(n) => Ok(n),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
             Err(e) => Err(SessionError::IO(e)),
@@ -126,12 +129,12 @@ impl Session for SSHSession {
     /// Forward bytes to the remote PTY, respecting libssh2's non-blocking
     /// semantics.
     fn write(&mut self, input: &[u8]) -> Result<usize, SessionError> {
-        match self.channel.write(input) {
+        match self.io.try_io(|| self.channel.write(input)) {
             Ok(n) => {
                 let _ = self.channel.flush();
                 Ok(n)
             },
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(0),
             Err(e) => Err(SessionError::IO(e)),
         }
     }
@@ -547,4 +550,67 @@ fn exit_status_from_code(code: i32) -> ExitStatus {
 #[cfg(windows)]
 fn exit_status_from_code(code: i32) -> ExitStatus {
     std::os::windows::process::ExitStatusExt::from_raw(code as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    fn loopback_pair() -> (mio::net::TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        let client = TcpStream::connect(addr).expect("connect");
+        let (server, _) = listener.accept().expect("accept");
+        client.set_nonblocking(true).expect("set nonblocking");
+
+        (mio::net::TcpStream::from_std(client), server)
+    }
+
+    fn wait_until_readable(client: &mut mio::net::TcpStream) {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            match client.peek(&mut [0u8; 1]) {
+                Ok(_) => return,
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        Instant::now() < deadline,
+                        "socket did not become readable before timeout"
+                    );
+                    thread::sleep(Duration::from_millis(10));
+                },
+                Err(err) => panic!("peek failed while waiting: {err}"),
+            }
+        }
+    }
+
+    #[test]
+    fn try_io_on_empty_socket_is_nonblocking() {
+        let (client, _server) = loopback_pair();
+
+        let result = client.try_io(|| client.peek(&mut [0u8; 1]));
+
+        assert_eq!(
+            result
+                .expect_err("empty socket should not be readable")
+                .kind(),
+            std::io::ErrorKind::WouldBlock,
+        );
+    }
+
+    #[test]
+    fn try_io_does_not_consume_pending_data() {
+        let (mut client, mut server) = loopback_pair();
+        server.write_all(b"x").expect("write payload");
+        wait_until_readable(&mut client);
+
+        let result = client.try_io(|| client.peek(&mut [0u8; 1]));
+
+        assert_eq!(result.expect("readable socket should be peekable"), 1);
+        let mut buf = [0u8; 1];
+        let read = client.read(&mut buf).expect("read after rearm");
+        assert_eq!(&buf[..read], b"x", "rearm must not consume data");
+    }
 }
