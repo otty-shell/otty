@@ -122,19 +122,24 @@ impl SettingsState {
     }
 
     /// Apply a completed save without discarding edits made after it started.
-    pub(super) fn mark_saved(&mut self, revision: u64, settings: SettingsData) {
+    pub(super) fn mark_saved(
+        &mut self,
+        revision: u64,
+        settings: SettingsData,
+    ) -> bool {
         if self.saving_revision != Some(revision) {
-            return;
+            return false;
         }
         self.saving_revision = None;
 
         if self.edit_revision == revision {
             self.replace_with_settings(settings);
-            return;
+            return true;
         }
 
         self.baseline = settings;
         self.update_dirty();
+        true
     }
 
     /// Allow a failed save to be retried.

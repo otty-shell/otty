@@ -24,10 +24,13 @@ pub(crate) fn reduce(
         },
         SettingsIntent::Save => request_save_settings(state),
         SettingsIntent::SaveCompleted { revision, settings } => {
-            state.mark_saved(revision, settings.clone());
-            Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
-                settings,
-            )))
+            if state.mark_saved(revision, settings.clone()) {
+                Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
+                    settings,
+                )))
+            } else {
+                Task::none()
+            }
         },
         SettingsIntent::SaveFailed(message) => {
             state.mark_save_failed();
@@ -180,7 +183,7 @@ mod tests {
         let (revision, saved) = state.begin_save().expect("save should start");
 
         let _ = reduce(&mut state, SettingsIntent::Reset);
-        let _ = reduce(
+        let task = reduce(
             &mut state,
             SettingsIntent::SaveCompleted {
                 revision,
@@ -191,6 +194,7 @@ mod tests {
         assert_eq!(state.draft(), &baseline);
         assert_eq!(state.baseline(), &baseline);
         assert!(!state.is_dirty());
+        assert!(format!("{task:?}").contains("units: 0"));
     }
 
     #[test]
