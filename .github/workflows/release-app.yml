@@ -125,6 +125,17 @@ jobs:
     container: ubuntu:20.04
 
     steps:
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            git \
+            build-essential \
+            pkg-config
+
       - name: Checkout sources
         uses: actions/checkout@v4
 
