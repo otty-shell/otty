@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 # Build the .deb package inside an old (Ubuntu 20.04) environment so that the
-# resulting binary links against glibc 2.31 and libssl3, making it installable
-# on Ubuntu 20.04, 22.04 and 24.04.
+# resulting binary requires only glibc 2.31. OpenSSL is statically linked, so
+# the package is installable on Ubuntu 20.04, 22.04 and 24.04.
 #
 # See: https://github.com/otty-shell/otty/issues/53
 set -euo pipefail
+
+if (( $# != 1 )); then
+    echo "Usage: build-deb.sh <output-path>" >&2
+    exit 1
+fi
+
+output_path="$1"
 
 # Dependencies required by the iced GUI toolkit (gtk/webkit/dbus) and by the
 # ssh2 crate (OpenSSL) on Ubuntu 20.04.
@@ -36,5 +43,8 @@ if ! command -v cargo-deb >/dev/null 2>&1; then
     cargo install cargo-deb
 fi
 
+cargo_output_dir="$(dirname "${output_path}")"
+mkdir -p "${cargo_output_dir}"
+
 cargo build --release -p otty
-cargo deb -p otty
+cargo deb -p otty --output "${output_path}"

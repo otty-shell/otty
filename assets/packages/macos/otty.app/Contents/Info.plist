@@ -9,9 +9,9 @@
     <key>CFBundleIdentifier</key>
     <string>sh.otty.app</string>
     <key>CFBundleVersion</key>
-    <string>0.1.0</string>
+    <string>1</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.0.0</string>
     <key>CFBundleExecutable</key>
     <string>otty</string>
     <key>CFBundlePackageType</key>
