@@ -8,29 +8,40 @@ ASSETS_DIR="assets"
 RELEASE_DIR="target/release"
 APP_NAME="otty.app"
 APP_TEMPLATE="$ASSETS_DIR/packages/macos/$APP_NAME"
-APP_TEMPLATE_PLIST="$APP_TEMPLATE/Contents/Info.plist"
 APP_DIR="$RELEASE_DIR/macos"
+APP_BUNDLE="$APP_DIR/$APP_NAME"
+APP_PLIST="$APP_BUNDLE/Contents/Info.plist"
 APP_BINARY="$RELEASE_DIR/$TARGET_BIN"
-APP_BINARY_DIR="$APP_DIR/$APP_NAME/Contents/MacOS"
-APP_EXTRAS_DIR="$APP_DIR/$APP_NAME/Contents/Resources"
+APP_BINARY_DIR="$APP_BUNDLE/Contents/MacOS"
+APP_EXTRAS_DIR="$APP_BUNDLE/Contents/Resources"
 
-DMG_NAME="otty.dmg"
-DMG_DIR="$RELEASE_DIR/macos"
+PACKAGE_ID="$(cargo pkgid --package "$TARGET_BIN")"
+APP_VERSION="${PACKAGE_ID##*@}"
+MARKETING_VERSION="${APP_VERSION%%[-+]*}"
+BUILD_NUMBER="${OTTY_BUILD_NUMBER:-1}"
 
-VERSION=$(cat VERSION)
-BUILD=$(git describe --always --dirty --exclude='*')
+if [[ ! "$MARKETING_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Application version '$APP_VERSION' does not have a valid SemVer core" >&2
+  exit 1
+fi
 
-# update version and build
-sed -i '' -e "s/{{ VERSION }}/$VERSION/g" "$APP_TEMPLATE_PLIST"
-sed -i '' -e "s/{{ BUILD }}/$BUILD/g" "$APP_TEMPLATE_PLIST"
+if [[ ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+  echo "OTTY_BUILD_NUMBER must contain only digits" >&2
+  exit 1
+fi
 
 # build binary
 lipo "target/$ARCH/release/$TARGET_BIN" -create -output "$APP_BINARY"
 
 # build app
+mkdir -p "$APP_DIR"
+cp -fRp "$APP_TEMPLATE" "$APP_DIR"
+
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" "$APP_PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP_PLIST"
+
 mkdir -p "$APP_BINARY_DIR"
 mkdir -p "$APP_EXTRAS_DIR"
-cp -fRp "$APP_TEMPLATE" "$APP_DIR"
 cp -fp "$APP_BINARY" "$APP_BINARY_DIR"
-touch -r "$APP_BINARY" "$APP_DIR/$APP_NAME"
+touch -r "$APP_BINARY" "$APP_BUNDLE"
 echo "Created '$APP_NAME' in '$APP_DIR'"

@@ -1,0 +1,248 @@
+name: Release app
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+
+env:
+  rust_stable: "1.96"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-version:
+    name: Validate application version
+    runs-on: ubuntu-latest
+    outputs:
+      app-version: ${{ steps.application-version.outputs.app-version }}
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust ${{ env.rust_stable }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.rust_stable }}
+
+      - name: Match application version to tag
+        id: application-version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          app_version="$(
+            cargo metadata --locked --no-deps --format-version 1 |
+              jq -r '[.packages[] | select(.name == "otty")] | if length == 1 then .[0].version else empty end'
+          )"
+
+          if [[ -z "${app_version}" ]]; then
+            echo "Could not find exactly one otty application package in Cargo metadata." >&2
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+
+            if [[ "${GITHUB_REF_NAME}" != v* || "${tag_version}" != "${app_version}" ]]; then
+              echo "Tag ${GITHUB_REF_NAME} does not match application version ${app_version}." >&2
+              exit 1
+            fi
+          fi
+
+          echo "app-version=${app_version}" >> "${GITHUB_OUTPUT}"
+
+  linux-rpm:
+    name: Build RPM (Linux)
+    needs: validate-version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust ${{ env.rust_stable }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.rust_stable }}
+
+      - name: Install packaging tools
+        run: cargo install cargo-generate-rpm
+
+      - name: Build release binary
+        run: cargo build --release -p otty
+
+      - name: Build RPM package
+        env:
+          APP_VERSION: ${{ needs.validate-version.outputs.app-version }}
+        run: |
+          cargo generate-rpm -p otty -o \
+            "target/generate-rpm/otty-${APP_VERSION}-linux-x86_64.rpm"
+
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-${{ needs.validate-version.outputs.app-version }}-rpm
+          path: target/generate-rpm/otty-${{ needs.validate-version.outputs.app-version }}-linux-x86_64.rpm
+          if-no-files-found: error
+          retention-days: 3
+
+  linux-deb:
+    name: Build DEB (Ubuntu 20.04 compatible)
+    needs: validate-version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      # Build inside an Ubuntu 20.04 container so the produced binary requires
+      # only glibc 2.31. OpenSSL is statically linked. See issue #53.
+      - name: Build DEB in Ubuntu 20.04 container
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ubuntu:20.04
+          options: -v ${{ github.workspace }}:/workspace -e HOME=/root
+          run: |
+            cd /workspace
+            bash scripts/linux/build-deb.sh \
+              "target/debian/otty-${{ needs.validate-version.outputs.app-version }}-linux-x86_64.deb"
+
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-${{ needs.validate-version.outputs.app-version }}-deb
+          path: target/debian/otty-${{ needs.validate-version.outputs.app-version }}-linux-x86_64.deb
+          if-no-files-found: error
+          retention-days: 3
+
+  linux-appimage:
+    name: Build AppImage (Linux)
+    needs: validate-version
+    runs-on: ubuntu-latest
+    container: ubuntu:20.04
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust ${{ env.rust_stable }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.rust_stable }}
+
+      - name: Build AppImage package
+        run: |
+          bash scripts/linux/build-appimage.sh \
+            "target/appimage/otty-${{ needs.validate-version.outputs.app-version }}-linux-x86_64.AppImage"
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-${{ needs.validate-version.outputs.app-version }}-appimage
+          path: target/appimage/otty-${{ needs.validate-version.outputs.app-version }}-linux-x86_64.AppImage*
+          if-no-files-found: error
+          retention-days: 3
+
+  macos-dmg:
+    name: Build DMG (macOS)
+    needs: validate-version
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      matrix:
+        arch: [x86_64-apple-darwin, aarch64-apple-darwin]
+        include:
+          - arch: x86_64-apple-darwin
+            runner: macos-15-intel
+          - arch: aarch64-apple-darwin
+            runner: macos-15
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust ${{ env.rust_stable }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.rust_stable }}
+          targets: ${{ matrix.arch }}
+
+      - name: Build release binary
+        run: cargo build --release -p otty --target ${{ matrix.arch }}
+
+      - name: Make app bundle
+        env:
+          OTTY_BUILD_NUMBER: ${{ github.run_number }}
+        run: bash scripts/macos/bundle.sh ${{ matrix.arch }}
+
+      - name: Sign app
+        run: bash scripts/macos/sign.sh
+
+      - name: Make DMG
+        run: bash scripts/macos/package.sh ${{ matrix.arch }}
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otty-${{ needs.validate-version.outputs.app-version }}-${{ matrix.arch }}
+          path: target/release/macos/*.dmg
+          if-no-files-found: error
+          retention-days: 3
+
+  release:
+    name: Create GitHub Release draft
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs:
+      - validate-version
+      - linux-rpm
+      - linux-deb
+      - linux-appimage
+      - macos-dmg
+    runs-on: ubuntu-latest
+
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: otty-${{ needs.validate-version.outputs.app-version }}-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          assets=(release-assets/*)
+
+          if (( ${#assets[@]} == 0 )); then
+            echo "No release assets were downloaded." >&2
+            exit 1
+          fi
+
+          options=(
+            --draft
+            --verify-tag
+            --generate-notes
+          )
+
+          if [[ "${RELEASE_TAG}" == *-* ]]; then
+            options+=(--prerelease)
+          fi
+
+          gh release create \
+            "${RELEASE_TAG}" \
+            "${options[@]}" \
+            "${assets[@]}"

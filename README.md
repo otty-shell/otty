@@ -40,7 +40,7 @@ Prebuilt artifacts are published on the GitHub Releases page: https://github.com
 
 ### Supported Platforms
 
-- Linux: DEB- and RPM-based distributions (`.deb` / `.rpm`).
+- Linux: AppImage and DEB- or RPM-based distributions (`.AppImage` / `.deb` / `.rpm`).
 - macOS: Intel (`x86_64`) and Apple Silicon (`aarch64`) builds (`.dmg`).
 
 ### Roadmap

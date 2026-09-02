@@ -7,7 +7,10 @@ APP_NAME="otty"
 RELEASE_DIR="target/release/macos"
 APP_BUNDLE_DIR="$RELEASE_DIR/${APP_NAME}.app"
 
-DMG_NAME="${APP_NAME}-${ARCH}.dmg"
+PACKAGE_ID="$(cargo pkgid --package "$APP_NAME")"
+APP_VERSION="${PACKAGE_ID##*@}"
+
+DMG_NAME="${APP_NAME}-${APP_VERSION}-${ARCH}.dmg"
 DMG_PATH="${RELEASE_DIR}/${DMG_NAME}"
 
 echo "Creating DMG: ${DMG_PATH}"
