@@ -11,8 +11,11 @@ pub(crate) enum SettingsIntent {
     ReloadFailed(String),
     /// Request saving the current draft to disk.
     Save,
-    /// Save completed; carries the normalized settings that were written.
-    SaveCompleted(SettingsData),
+    /// Save completed for a specific draft revision.
+    SaveCompleted {
+        revision: u64,
+        settings: SettingsData,
+    },
     /// Save failed.
     SaveFailed(String),
     /// Discard draft edits and restore the baseline.
@@ -44,8 +47,11 @@ pub(crate) enum SettingsEffect {
     SaveFailed(String),
     /// Request the parent to apply the given theme palette.
     ApplyTheme(SettingsData),
-    /// Notify the parent that a save completed.
-    SaveCompleted(SettingsData),
+    /// Notify the parent that a draft revision was saved.
+    SaveCompleted {
+        revision: u64,
+        settings: SettingsData,
+    },
 }
 
 /// Settings event stream routed through the app update loop.

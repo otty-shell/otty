@@ -92,7 +92,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             crate::widgets::settings::SettingsEvent::Intent(
                 crate::widgets::settings::SettingsIntent::ReloadLoaded(_)
                 | crate::widgets::settings::SettingsIntent::ReloadFailed(_)
-                | crate::widgets::settings::SettingsIntent::SaveCompleted(_)
+                | crate::widgets::settings::SettingsIntent::SaveCompleted {
+                    ..
+                }
                 | crate::widgets::settings::SettingsIntent::SaveFailed(_),
             ),
         ) => Allow,
@@ -191,7 +193,9 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
                 crate::widgets::settings::SettingsIntent::Reload
                 | crate::widgets::settings::SettingsIntent::ReloadLoaded(_)
                 | crate::widgets::settings::SettingsIntent::ReloadFailed(_)
-                | crate::widgets::settings::SettingsIntent::SaveCompleted(_)
+                | crate::widgets::settings::SettingsIntent::SaveCompleted {
+                    ..
+                }
                 | crate::widgets::settings::SettingsIntent::SaveFailed(_),
             ),
         ) => false,
