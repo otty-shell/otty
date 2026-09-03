@@ -78,7 +78,7 @@ jobs:
         env:
           APP_VERSION: ${{ needs.validate-version.outputs.app-version }}
         run: |
-          cargo generate-rpm -p otty -o \
+          cargo generate-rpm -p app -o \
             "target/generate-rpm/otty-${APP_VERSION}-linux-x86_64.rpm"
 
       - name: Upload RPM artifact
@@ -125,6 +125,18 @@ jobs:
     container: ubuntu:20.04
 
     steps:
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            file \
+            git \
+            build-essential \
+            pkg-config
+
       - name: Checkout sources
         uses: actions/checkout@v4
 
