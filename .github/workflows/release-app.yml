@@ -78,7 +78,7 @@ jobs:
         env:
           APP_VERSION: ${{ needs.validate-version.outputs.app-version }}
         run: |
-          cargo generate-rpm -p otty -o \
+          cargo generate-rpm -p app -o \
             "target/generate-rpm/otty-${APP_VERSION}-linux-x86_64.rpm"
 
       - name: Upload RPM artifact
@@ -132,6 +132,7 @@ jobs:
           apt-get install -y --no-install-recommends \
             ca-certificates \
             curl \
+            file \
             git \
             build-essential \
             pkg-config
