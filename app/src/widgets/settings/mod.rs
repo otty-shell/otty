@@ -54,6 +54,7 @@ impl SettingsWidget {
             selected_path: self.state.selected_path(),
             hovered_path: self.state.hovered_path(),
             is_dirty: self.state.is_dirty(),
+            is_saving: self.state.is_saving(),
         }
     }
 

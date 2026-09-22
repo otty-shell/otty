@@ -15,6 +15,7 @@ pub(crate) struct SettingsState {
     selected_path: Vec<String>,
     hovered_path: Option<Vec<String>>,
     dirty: bool,
+    saving: bool,
 }
 
 impl SettingsState {
@@ -64,6 +65,11 @@ impl SettingsState {
         self.dirty
     }
 
+    /// Return whether a save is currently being written to disk.
+    pub(crate) fn is_saving(&self) -> bool {
+        self.saving
+    }
+
     /// Create state from a persisted settings payload.
     pub(crate) fn from_settings(settings: SettingsData) -> Self {
         let tree = vec![
@@ -85,6 +91,7 @@ impl SettingsState {
             selected_path,
             hovered_path: None,
             dirty: false,
+            saving: false,
         }
     }
 
@@ -104,9 +111,25 @@ impl SettingsState {
         self.draft.normalized()
     }
 
+    /// Capture the current draft for one save, locking out further edits.
+    pub(super) fn begin_save(&mut self) -> Option<SettingsData> {
+        if self.saving || !self.dirty {
+            return None;
+        }
+
+        self.saving = true;
+        Some(self.normalized_draft())
+    }
+
     /// Mark the draft as saved by replacing baseline with the given data.
     pub(super) fn mark_saved(&mut self, settings: SettingsData) {
+        self.saving = false;
         self.replace_with_settings(settings);
+    }
+
+    /// Unlock editing so a failed save can be retried.
+    pub(super) fn mark_save_failed(&mut self) {
+        self.saving = false;
     }
 
     /// Reset draft to baseline.
@@ -246,6 +269,17 @@ mod tests {
 
         assert_eq!(state.draft, baseline);
         assert!(!state.dirty);
+    }
+
+    #[test]
+    fn given_save_in_flight_when_begin_save_called_again_then_second_is_ignored()
+     {
+        let mut state = SettingsState::default();
+        state.set_editor(String::from("vim"));
+
+        assert!(state.begin_save().is_some());
+
+        assert!(state.begin_save().is_none());
     }
 
     #[test]

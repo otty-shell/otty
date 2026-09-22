@@ -10,6 +10,10 @@ pub(crate) fn reduce(
     state: &mut SettingsState,
     event: SettingsIntent,
 ) -> Task<SettingsEvent> {
+    if state.is_saving() && changes_draft(&event) {
+        return Task::none();
+    }
+
     match event {
         SettingsIntent::Reload => request_reload_settings(),
         SettingsIntent::ReloadLoaded(load) => {
@@ -30,6 +34,7 @@ pub(crate) fn reduce(
             )))
         },
         SettingsIntent::SaveFailed(message) => {
+            state.mark_save_failed();
             log::warn!("settings save failed: {message}");
             Task::none()
         },
@@ -68,6 +73,19 @@ pub(crate) fn reduce(
     }
 }
 
+/// Return whether the intent edits the draft the user is about to save.
+fn changes_draft(event: &SettingsIntent) -> bool {
+    matches!(
+        event,
+        SettingsIntent::Reset
+            | SettingsIntent::ShellChanged(_)
+            | SettingsIntent::EditorChanged(_)
+            | SettingsIntent::EqualizePanesToggled(_)
+            | SettingsIntent::PaletteChanged { .. }
+            | SettingsIntent::ApplyPreset(_)
+    )
+}
+
 fn request_reload_settings() -> Task<SettingsEvent> {
     Task::perform(async { load_settings() }, |result| match result {
         Ok(load) => SettingsEvent::Effect(SettingsEffect::ReloadLoaded(load)),
@@ -77,8 +95,11 @@ fn request_reload_settings() -> Task<SettingsEvent> {
     })
 }
 
-fn request_save_settings(state: &SettingsState) -> Task<SettingsEvent> {
-    let normalized = state.normalized_draft();
+fn request_save_settings(state: &mut SettingsState) -> Task<SettingsEvent> {
+    let Some(normalized) = state.begin_save() else {
+        return Task::none();
+    };
+
     Task::perform(
         async move {
             match save_settings(&normalized) {
@@ -128,19 +149,64 @@ mod tests {
         let mut state = default_state();
         state.set_shell(format!("{}-changed", state.draft().terminal_shell()));
         assert!(state.is_dirty());
-        let normalized = state.normalized_draft();
+        let normalized = state.begin_save().expect("save should start");
 
         let _task =
             reduce(&mut state, SettingsIntent::SaveCompleted(normalized));
 
         assert!(!state.is_dirty());
+        assert!(!state.is_saving());
         assert_eq!(state.baseline(), state.draft());
+    }
+
+    #[test]
+    fn given_save_in_flight_when_edit_intent_reduced_then_draft_unchanged() {
+        let mut state = default_state();
+        state.set_shell(format!("{}-changed", state.draft().terminal_shell()));
+        let saved = state.begin_save().expect("save should start");
+
+        let _task = reduce(
+            &mut state,
+            SettingsIntent::EditorChanged(String::from("nvim")),
+        );
+
+        assert_ne!(state.draft().terminal_editor(), "nvim");
+
+        let _task =
+            reduce(&mut state, SettingsIntent::SaveCompleted(saved.clone()));
+
+        assert_eq!(state.baseline(), &saved);
+        assert_eq!(state.draft(), &saved);
+        assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn given_save_in_flight_when_reset_intent_reduced_then_draft_unchanged() {
+        let mut state = default_state();
+        state.set_shell(format!("{}-changed", state.draft().terminal_shell()));
+        let saved = state.begin_save().expect("save should start");
+
+        let _task = reduce(&mut state, SettingsIntent::Reset);
+
+        assert_eq!(state.draft(), &saved);
+    }
+
+    #[test]
+    fn given_save_in_flight_when_save_intent_reduced_then_no_second_save() {
+        let mut state = default_state();
+        state.set_shell(format!("{}-changed", state.draft().terminal_shell()));
+        let _saved = state.begin_save().expect("save should start");
+
+        let _task = reduce(&mut state, SettingsIntent::Save);
+
+        assert!(state.begin_save().is_none());
     }
 
     #[test]
     fn given_save_failed_when_reduced_then_keeps_state_dirty() {
         let mut state = default_state();
         state.set_editor(String::from("vim"));
+        let _settings = state.begin_save().expect("save should start");
         assert!(state.is_dirty());
 
         let _task = reduce(
@@ -149,7 +215,9 @@ mod tests {
         );
 
         assert!(state.is_dirty());
+        assert!(!state.is_saving());
         assert_ne!(state.baseline(), state.draft());
+        assert!(state.begin_save().is_some());
     }
 
     #[test]

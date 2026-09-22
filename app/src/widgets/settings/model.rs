@@ -13,4 +13,5 @@ pub(crate) struct SettingsViewModel<'a> {
     pub(super) selected_path: &'a Vec<String>,
     pub(super) hovered_path: Option<&'a Vec<String>>,
     pub(super) is_dirty: bool,
+    pub(super) is_saving: bool,
 }
