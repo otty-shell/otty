@@ -72,15 +72,17 @@ pub(crate) fn view(
 fn settings_header<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+    let is_enabled = props.vm.is_dirty && !props.vm.is_saving;
+
     let save_button = action_button(
         i18n::t(Key::ButtonSave),
-        props.vm.is_dirty,
+        is_enabled,
         SettingsIntent::Save,
         props.theme,
     );
     let reset_button = action_button(
         i18n::t(Key::ButtonReset),
-        props.vm.is_dirty,
+        is_enabled,
         SettingsIntent::Reset,
         props.theme,
     );
@@ -240,26 +242,35 @@ fn general_form<'a>(
 fn terminal_form<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let shell_input = text_input("", props.vm.draft.terminal_shell())
-        .on_input(SettingsIntent::ShellChanged)
+    let is_editable = !props.vm.is_saving;
+
+    let mut shell_input = text_input("", props.vm.draft.terminal_shell())
         .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
         .size(FORM_INPUT_FONT_SIZE)
         .width(Length::Fill)
         .style(text_input_style(props.theme));
+    if is_editable {
+        shell_input = shell_input.on_input(SettingsIntent::ShellChanged);
+    }
 
-    let editor_input = text_input("", props.vm.draft.terminal_editor())
-        .on_input(SettingsIntent::EditorChanged)
+    let mut editor_input = text_input("", props.vm.draft.terminal_editor())
         .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
         .size(FORM_INPUT_FONT_SIZE)
         .width(Length::Fill)
         .style(text_input_style(props.theme));
+    if is_editable {
+        editor_input = editor_input.on_input(SettingsIntent::EditorChanged);
+    }
 
-    let equalize_panes_toggle = checkbox(props.vm.draft.equalize_panes())
+    let mut equalize_panes_toggle = checkbox(props.vm.draft.equalize_panes())
         .label(i18n::t(Key::OptionEqualizePanes))
-        .on_toggle(SettingsIntent::EqualizePanesToggled)
         .size(FORM_INPUT_FONT_SIZE)
         .text_size(FORM_INPUT_FONT_SIZE)
         .style(checkbox_style(props.theme));
+    if is_editable {
+        equalize_panes_toggle = equalize_panes_toggle
+            .on_toggle(SettingsIntent::EqualizePanesToggled);
+    }
 
     let content = column![
         section_title(i18n::t(Key::SectionTerminal), props.theme),
@@ -276,6 +287,8 @@ fn terminal_form<'a>(
 fn theme_form<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+    let is_editable = !props.vm.is_saving;
+
     let preset_selector = pick_list(
         SettingsPreset::ALL,
         props.vm.selected_preset,
@@ -297,15 +310,16 @@ fn theme_form<'a>(
             .align_x(alignment::Horizontal::Left)
             .wrapping(Wrapping::None);
 
-        let input = text_input("", value)
-            .on_input(move |value| SettingsIntent::PaletteChanged {
-                index,
-                value,
-            })
+        let mut input = text_input("", value)
             .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
             .size(FORM_INPUT_FONT_SIZE)
             .width(Length::Fill)
             .style(text_input_style(props.theme));
+        if is_editable {
+            input = input.on_input(move |value| {
+                SettingsIntent::PaletteChanged { index, value }
+            });
+        }
 
         let swatch_color = if is_valid_hex_color(value) {
             parse_hex_color(value)
