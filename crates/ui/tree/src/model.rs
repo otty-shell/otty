@@ -42,10 +42,24 @@ pub struct FlattenedNode<'a, T: TreeNode> {
 pub fn flatten_tree<'a, T: TreeNode>(
     nodes: &'a [T],
 ) -> Vec<FlattenedNode<'a, T>> {
+    flatten_nodes(nodes, true)
+}
+
+/// Flatten a tree like [`flatten_tree`], but keep siblings in input order.
+pub(crate) fn flatten_tree_in_source_order<'a, T: TreeNode>(
+    nodes: &'a [T],
+) -> Vec<FlattenedNode<'a, T>> {
+    flatten_nodes(nodes, false)
+}
+
+fn flatten_nodes<'a, T: TreeNode>(
+    nodes: &'a [T],
+    sort_by_title: bool,
+) -> Vec<FlattenedNode<'a, T>> {
     let mut entries = Vec::new();
     let mut path = Vec::new();
-    for index in sorted_indices(nodes) {
-        push_node(&nodes[index], 0, &mut path, &mut entries);
+    for index in sibling_order(nodes, sort_by_title) {
+        push_node(&nodes[index], 0, sort_by_title, &mut path, &mut entries);
     }
     entries
 }
@@ -53,6 +67,7 @@ pub fn flatten_tree<'a, T: TreeNode>(
 fn push_node<'a, T: TreeNode>(
     node: &'a T,
     depth: usize,
+    sort_by_title: bool,
     path: &mut Vec<String>,
     entries: &mut Vec<FlattenedNode<'a, T>>,
 ) {
@@ -67,12 +82,26 @@ fn push_node<'a, T: TreeNode>(
         && node.expanded()
         && let Some(children) = node.children()
     {
-        for index in sorted_indices(children) {
-            push_node(&children[index], depth + 1, path, entries);
+        for index in sibling_order(children, sort_by_title) {
+            push_node(
+                &children[index],
+                depth + 1,
+                sort_by_title,
+                path,
+                entries,
+            );
         }
     }
 
     path.pop();
+}
+
+fn sibling_order<T: TreeNode>(nodes: &[T], sort_by_title: bool) -> Vec<usize> {
+    if sort_by_title {
+        sorted_indices(nodes)
+    } else {
+        (0..nodes.len()).collect()
+    }
 }
 
 fn sorted_indices<T: TreeNode>(nodes: &[T]) -> Vec<usize> {

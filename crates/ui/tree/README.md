@@ -125,6 +125,10 @@ Full runnable example: `examples/tree_view.rs`.
 - folders first, then files
 - natural title ordering (numeric-aware and case-insensitive first)
 
+`TreeView` uses this order by default. Call `keep_source_order()` to render rows
+in the order the nodes are given instead, for example a fixed list of pages
+whose localized titles would otherwise reorder them.
+
 ## Path Model
 
 `TreePath` is built from `title()` values from root to row.

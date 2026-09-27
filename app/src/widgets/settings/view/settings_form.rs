@@ -140,7 +140,8 @@ fn settings_nav_tree<'a>(
         .on_hover(|path| SettingsIntent::NodeHovered { path })
         .row_style(move |context| nav_row_style(&row_palette, context))
         .indent_size(NAV_INDENT)
-        .spacing(0.0);
+        .spacing(0.0)
+        .keep_source_order();
 
     let scroll_palette = palette.clone();
     let scrollable = scrollable::Scrollable::new(tree_view.view())

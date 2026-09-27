@@ -283,14 +283,14 @@ impl SettingsData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsSection {
     General,
-    Terminal,
     Appearance,
+    Terminal,
 }
 
 impl SettingsSection {
     /// All sections, in the order they appear in the navigation tree.
     pub(crate) const ALL: [Self; 3] =
-        [Self::General, Self::Terminal, Self::Appearance];
+        [Self::General, Self::Appearance, Self::Terminal];
 
     /// Human-readable section title in the active locale.
     ///

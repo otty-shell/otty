@@ -1,7 +1,10 @@
 use iced::widget::{Column, Row, Space, container, mouse_area};
 use iced::{Element, Length, alignment, mouse};
 
-use crate::model::{FlattenedNode, TreeNode, TreePath, flatten_tree};
+use crate::model::{
+    FlattenedNode, TreeNode, TreePath, flatten_tree,
+    flatten_tree_in_source_order,
+};
 
 /// Flattened tree row used by [`TreeView`] render callbacks.
 pub type TreeRow<'a, T> = FlattenedNode<'a, T>;
@@ -49,6 +52,7 @@ pub struct TreeView<'a, T: TreeNode, Message: Clone + 'a> {
     after_row: Option<Box<RowExtra<'a, T, Message>>>,
     spacing: f32,
     indent_size: f32,
+    keep_source_order: bool,
 }
 
 impl<'a, T, Message> TreeView<'a, T, Message>
@@ -78,6 +82,7 @@ where
             after_row: None,
             spacing: 0.0,
             indent_size: 0.0,
+            keep_source_order: false,
         }
     }
 
@@ -226,6 +231,16 @@ where
         self
     }
 
+    /// Render sibling rows in the order the caller provides them.
+    ///
+    /// By default rows are sorted by title (folders first), which suits file
+    /// trees. Use this when the order is meaningful, such as a fixed list of
+    /// pages whose localized titles would otherwise reorder them.
+    pub fn keep_source_order(mut self) -> Self {
+        self.keep_source_order = true;
+        self
+    }
+
     /// Build the tree widget as an `iced::Element`.
     ///
     /// If [`TreeView::on_hover`] is configured, the resulting tree also emits
@@ -234,7 +249,13 @@ where
         let mut column =
             Column::new().spacing(self.spacing).width(Length::Fill);
 
-        for entry in flatten_tree(self.nodes) {
+        let entries = if self.keep_source_order {
+            flatten_tree_in_source_order(self.nodes)
+        } else {
+            flatten_tree(self.nodes)
+        };
+
+        for entry in entries {
             let is_selected = self
                 .selected
                 .map(|path| path == &entry.path)
@@ -580,6 +601,67 @@ mod tests {
         .view();
 
         assert_eq!(*pressed.borrow(), vec![path(&["leaf"])]);
+    }
+
+    #[test]
+    fn rows_are_sorted_by_title_by_default() {
+        let nodes =
+            vec![TestNode::file("general"), TestNode::file("appearance")];
+
+        let rendered = rendered_paths(TreeView::<TestNode, TestMessage>::new(
+            &nodes,
+            |_| Space::new().into(),
+        ));
+
+        assert_eq!(rendered, vec![path(&["appearance"]), path(&["general"])]);
+    }
+
+    #[test]
+    fn keep_source_order_renders_rows_in_input_order() {
+        let nodes = vec![
+            TestNode::file("general"),
+            TestNode::folder(
+                "terminal",
+                true,
+                vec![TestNode::file("shell"), TestNode::file("editor")],
+            ),
+            TestNode::file("appearance"),
+        ];
+
+        let rendered = rendered_paths(
+            TreeView::<TestNode, TestMessage>::new(&nodes, |_| {
+                Space::new().into()
+            })
+            .keep_source_order(),
+        );
+
+        assert_eq!(
+            rendered,
+            vec![
+                path(&["general"]),
+                path(&["terminal"]),
+                path(&["terminal", "shell"]),
+                path(&["terminal", "editor"]),
+                path(&["appearance"]),
+            ]
+        );
+    }
+
+    /// Render `view` and return the row paths in on-screen order.
+    fn rendered_paths(
+        view: TreeView<'_, TestNode, TestMessage>,
+    ) -> Vec<TreePath> {
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let seen_for_row = Rc::clone(&seen);
+
+        let _ = view
+            .before_row(move |context| {
+                seen_for_row.borrow_mut().push(context.entry.path.clone());
+                None
+            })
+            .view();
+
+        seen.take()
     }
 
     #[test]

@@ -384,6 +384,26 @@ mod tests {
         assert!(state.dirty);
     }
 
+    #[test]
+    fn given_default_state_when_tree_built_then_general_section_comes_first() {
+        let state = SettingsState::default();
+
+        let sections: Vec<Option<SettingsSection>> = state
+            .tree()
+            .iter()
+            .map(|node| node.section_kind())
+            .collect();
+
+        assert_eq!(
+            sections,
+            vec![
+                Some(SettingsSection::General),
+                Some(SettingsSection::Appearance),
+                Some(SettingsSection::Terminal),
+            ]
+        );
+    }
+
     /// Read a section's tree path from the state so the assertion does not
     /// depend on which locale rendered the titles.
     fn section_path(
