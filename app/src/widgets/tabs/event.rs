@@ -15,6 +15,10 @@ pub(crate) enum TabsIntent {
         tab_id: u64,
         title: String,
     },
+    /// Refresh the title of an already-open settings tab.
+    RefreshSettingsTitle {
+        title: String,
+    },
     OpenTerminalTab {
         title: String,
     },

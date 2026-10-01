@@ -8,6 +8,7 @@ use super::super::types::{
 };
 use crate::components::primitive::menu_item;
 use crate::geometry::anchor_position;
+use crate::i18n::{self, Key};
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
@@ -38,62 +39,62 @@ pub(crate) fn view(
             let is_launching = props.launching.contains_key(path);
             if is_launching {
                 items.push(menu_item_element(
-                    "Kill",
+                    i18n::t(Key::Kill),
                     ContextMenuAction::Kill,
                     props.theme,
                 ));
             }
             items.push(menu_item_element(
-                "Edit",
+                i18n::t(Key::Edit),
                 ContextMenuAction::Edit,
                 props.theme,
             ));
             items.push(menu_item_element(
-                "Rename",
+                i18n::t(Key::Rename),
                 ContextMenuAction::Rename,
                 props.theme,
             ));
             items.push(menu_item_element(
-                "Duplicate",
+                i18n::t(Key::Duplicate),
                 ContextMenuAction::Duplicate,
                 props.theme,
             ));
             items.push(menu_item_element(
-                "Remove",
+                i18n::t(Key::Remove),
                 ContextMenuAction::Remove,
                 props.theme,
             ));
         },
         ContextMenuTarget::Folder(_) => {
             items.push(menu_item_element(
-                "Create Folder",
+                i18n::t(Key::CreateFolder),
                 ContextMenuAction::CreateFolder,
                 props.theme,
             ));
             items.push(menu_item_element(
-                "Create quick launch",
+                i18n::t(Key::CreateQuickLaunch),
                 ContextMenuAction::CreateCommand,
                 props.theme,
             ));
             items.push(menu_item_element(
-                "Rename",
+                i18n::t(Key::Rename),
                 ContextMenuAction::Rename,
                 props.theme,
             ));
             items.push(menu_item_element(
-                "Delete",
+                i18n::t(Key::Delete),
                 ContextMenuAction::Delete,
                 props.theme,
             ));
         },
         ContextMenuTarget::Background => {
             items.push(menu_item_element(
-                "Create Folder",
+                i18n::t(Key::CreateFolder),
                 ContextMenuAction::CreateFolder,
                 props.theme,
             ));
             items.push(menu_item_element(
-                "Create Launch",
+                i18n::t(Key::CreateLaunch),
                 ContextMenuAction::CreateCommand,
                 props.theme,
             ));

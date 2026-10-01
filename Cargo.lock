@@ -3037,6 +3037,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-words",
+ "sys-locale",
  "thiserror 2.0.18",
 ]
 

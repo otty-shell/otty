@@ -27,6 +27,8 @@ Developers already spend much of their time in the terminal, yet modern terminal
 - **Quick Launch for saved commands and SSH targets**  
   Save frequently used commands or SSH connections and launch them without retyping the same input every time.
 
+- **Interface localization in ten languages**
+  Follow the system locale or choose a language from **Settings > General > Language**.
 
 - **Block-based terminal UI**  
   OTTY structures terminal output activity around atomic command blocks, making it easier to control each command and its output.

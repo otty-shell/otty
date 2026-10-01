@@ -78,23 +78,17 @@ fn validate_command(command: &QuickLaunch) -> Result<(), QuickLaunchError> {
     match command.spec() {
         CommandSpec::Custom { custom } => {
             if custom.program().trim().is_empty() {
-                return Err(QuickLaunchError::Validation {
-                    message: String::from("Program path is empty."),
-                });
+                return Err(QuickLaunchError::ProgramRequired);
             }
 
             validate_custom_runtime(custom)?;
         },
         CommandSpec::Ssh { ssh } => {
             if ssh.host().trim().is_empty() {
-                return Err(QuickLaunchError::Validation {
-                    message: String::from("SSH host is empty."),
-                });
+                return Err(QuickLaunchError::HostRequired);
             }
             if ssh.port() == 0 {
-                return Err(QuickLaunchError::Validation {
-                    message: String::from("SSH port must be greater than 0."),
-                });
+                return Err(QuickLaunchError::SshPortNotPositive);
             }
 
             validate_ssh_runtime(ssh)?;
@@ -131,12 +125,9 @@ fn probe_ssh_session(
         builder = builder.with_cancel_token(cancel_token.clone());
     }
 
-    let mut session =
-        builder
-            .spawn()
-            .map_err(|err| QuickLaunchError::Validation {
-                message: format!("SSH connection failed: {err}"),
-            })?;
+    let mut session = builder.spawn().map_err(|err| {
+        QuickLaunchError::SshConnectionFailed(format!("{err}"))
+    })?;
     let _ = session.close();
     Ok(())
 }
@@ -212,17 +203,13 @@ fn validate_custom_runtime(
         let path = Path::new(&expanded);
 
         if !path.exists() {
-            return Err(QuickLaunchError::Validation {
-                message: format!("Working directory not found: {expanded}"),
-            });
+            return Err(QuickLaunchError::WorkingDirectoryNotFound(expanded));
         }
 
         if !path.is_dir() {
-            return Err(QuickLaunchError::Validation {
-                message: format!(
-                    "Working directory is not a directory: {expanded}"
-                ),
-            });
+            return Err(QuickLaunchError::WorkingDirectoryNotDirectory(
+                expanded,
+            ));
         }
     }
 
@@ -239,15 +226,11 @@ fn validate_ssh_runtime(
             let path = Path::new(&expanded);
 
             if !path.exists() {
-                return Err(QuickLaunchError::Validation {
-                    message: format!("Identity file not found: {expanded}"),
-                });
+                return Err(QuickLaunchError::IdentityFileNotFound(expanded));
             }
 
             if !path.is_file() {
-                return Err(QuickLaunchError::Validation {
-                    message: format!("Identity file is not a file: {expanded}"),
-                });
+                return Err(QuickLaunchError::IdentityFileNotFile(expanded));
             }
         }
     }
@@ -277,9 +260,7 @@ fn find_program_path(program: &str) -> Result<PathBuf, QuickLaunchError> {
         }
     }
 
-    Err(QuickLaunchError::Validation {
-        message: format!("Program not found in PATH: {program}"),
-    })
+    Err(QuickLaunchError::ProgramNotFoundInPath(program.to_string()))
 }
 
 fn validate_program_path(
@@ -287,21 +268,15 @@ fn validate_program_path(
     label: &str,
 ) -> Result<PathBuf, QuickLaunchError> {
     if !path.exists() {
-        return Err(QuickLaunchError::Validation {
-            message: format!("Program not found: {label}"),
-        });
+        return Err(QuickLaunchError::ProgramNotFound(label.to_string()));
     }
 
     if path.is_dir() {
-        return Err(QuickLaunchError::Validation {
-            message: format!("Program is a directory: {label}"),
-        });
+        return Err(QuickLaunchError::ProgramIsDirectory(label.to_string()));
     }
 
     if !is_executable_path(path) {
-        return Err(QuickLaunchError::Validation {
-            message: format!("Program is not executable: {label}"),
-        });
+        return Err(QuickLaunchError::ProgramNotExecutable(label.to_string()));
     }
 
     Ok(path.to_path_buf())
@@ -454,7 +429,10 @@ mod tests {
                 },
             },
         };
-        assert!(validate_command(&cmd).is_err());
+        assert!(matches!(
+            validate_command(&cmd),
+            Err(QuickLaunchError::ProgramRequired)
+        ));
     }
 
     #[test]
@@ -487,7 +465,31 @@ mod tests {
                 },
             },
         };
-        assert!(validate_command(&cmd).is_err());
+        assert!(matches!(
+            validate_command(&cmd),
+            Err(QuickLaunchError::HostRequired)
+        ));
+    }
+
+    #[test]
+    fn given_zero_ssh_port_when_validating_then_positive_port_error_returned() {
+        let cmd = QuickLaunch {
+            title: String::from("SSH"),
+            spec: CommandSpec::Ssh {
+                ssh: SshCommand {
+                    host: String::from("example.com"),
+                    port: 0,
+                    user: None,
+                    identity_file: None,
+                    extra_args: Vec::new(),
+                },
+            },
+        };
+
+        assert!(matches!(
+            validate_command(&cmd),
+            Err(QuickLaunchError::SshPortNotPositive)
+        ));
     }
 
     #[test]
@@ -504,7 +506,10 @@ mod tests {
             },
         };
 
-        assert!(validate_command(&cmd).is_err());
+        assert!(matches!(
+            validate_command(&cmd),
+            Err(QuickLaunchError::ProgramNotFoundInPath(_))
+        ));
     }
 
     #[test]

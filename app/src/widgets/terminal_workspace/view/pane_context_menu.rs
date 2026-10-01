@@ -5,6 +5,7 @@ use crate::components::primitive::menu_item::{
     MenuItemEvent, MenuItemProps, view as menu_item_view,
 };
 use crate::geometry::{anchor_position, menu_height_for_items};
+use crate::i18n::{self, Key};
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
@@ -36,7 +37,7 @@ pub(crate) fn view<'a>(
     let mut buttons: Vec<Element<'a, TerminalWorkspaceIntent>> = Vec::new();
 
     buttons.push(menu_item(
-        "Copy selection",
+        i18n::t(Key::CopySelection),
         props.theme,
         TerminalWorkspaceIntent::CopySelection {
             tab_id: props.tab_id,
@@ -44,7 +45,7 @@ pub(crate) fn view<'a>(
         },
     ));
     buttons.push(menu_item(
-        "Paste",
+        i18n::t(Key::Paste),
         props.theme,
         TerminalWorkspaceIntent::PasteIntoPrompt {
             tab_id: props.tab_id,
@@ -54,7 +55,7 @@ pub(crate) fn view<'a>(
 
     if props.has_block_selection {
         buttons.push(menu_item(
-            "Copy content",
+            i18n::t(Key::CopyContent),
             props.theme,
             TerminalWorkspaceIntent::CopySelectedBlockContent {
                 tab_id: props.tab_id,
@@ -62,7 +63,7 @@ pub(crate) fn view<'a>(
             },
         ));
         buttons.push(menu_item(
-            "Copy prompt",
+            i18n::t(Key::CopyPrompt),
             props.theme,
             TerminalWorkspaceIntent::CopySelectedBlockPrompt {
                 tab_id: props.tab_id,
@@ -70,7 +71,7 @@ pub(crate) fn view<'a>(
             },
         ));
         buttons.push(menu_item(
-            "Copy command",
+            i18n::t(Key::CopyCommand),
             props.theme,
             TerminalWorkspaceIntent::CopySelectedBlockCommand {
                 tab_id: props.tab_id,
@@ -80,7 +81,7 @@ pub(crate) fn view<'a>(
     }
 
     buttons.push(menu_item(
-        "Split horizontally",
+        i18n::t(Key::SplitHorizontally),
         props.theme,
         TerminalWorkspaceIntent::SplitPane {
             tab_id: props.tab_id,
@@ -89,7 +90,7 @@ pub(crate) fn view<'a>(
         },
     ));
     buttons.push(menu_item(
-        "Split vertically",
+        i18n::t(Key::SplitVertically),
         props.theme,
         TerminalWorkspaceIntent::SplitPane {
             tab_id: props.tab_id,
@@ -98,7 +99,7 @@ pub(crate) fn view<'a>(
         },
     ));
     buttons.push(menu_item(
-        "Close",
+        i18n::t(Key::ClosePane),
         props.theme,
         TerminalWorkspaceIntent::ClosePane {
             tab_id: props.tab_id,

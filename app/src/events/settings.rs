@@ -6,8 +6,10 @@ use otty_ui_term::settings::{
 
 use super::AppEvent;
 use crate::app::App;
+use crate::i18n::{self, Key};
 use crate::widgets::settings::types::SettingsData;
 use crate::widgets::settings::{SettingsEffect, SettingsEvent, SettingsIntent};
+use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
@@ -74,9 +76,18 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
     let palette = data.to_color_palette();
     let terminal_palette: otty_ui_term::ColorPalette = palette.into();
 
-    Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-        TerminalWorkspaceIntent::ApplyTheme {
-            palette: Box::new(terminal_palette),
-        },
-    )))
+    Task::batch(vec![
+        Task::done(AppEvent::Tabs(TabsEvent::Intent(
+            TabsIntent::RefreshSettingsTitle {
+                title: i18n::t(Key::SettingsTabTitle).to_string(),
+            },
+        ))),
+        Task::done(AppEvent::TerminalWorkspace(
+            TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::ApplyTheme {
+                    palette: Box::new(terminal_palette),
+                },
+            ),
+        )),
+    ])
 }

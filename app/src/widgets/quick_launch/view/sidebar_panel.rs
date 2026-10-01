@@ -7,6 +7,7 @@ use super::sidebar_tree;
 use crate::components::primitive::icon_button::{
     self, IconButtonHorizontalAlignment, IconButtonProps, IconButtonVariant,
 };
+use crate::i18n::{self, Key};
 use crate::icons;
 use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::theme::ThemeProps;
@@ -41,7 +42,7 @@ pub(crate) fn view(
 
     let header = container(
         row![
-            text("SHELL").size(TITLE_SIZE),
+            text(i18n::t(Key::QuickLaunchPanelTitle)).size(TITLE_SIZE),
             Space::new().width(Length::Fill),
             add_button,
         ]

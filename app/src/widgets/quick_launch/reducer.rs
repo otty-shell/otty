@@ -19,6 +19,7 @@ use super::types::{
     QuickLaunchFolder, QuickLaunchNode, QuickLaunchSetupOutcome,
     QuickLaunchWizardSaveRequest, QuickLaunchWizardSaveTarget, WizardMode,
 };
+use crate::i18n::{self, Key};
 
 /// Runtime context for the quick launch reducer.
 pub(crate) struct QuickLaunchCtx<'a> {
@@ -385,7 +386,7 @@ fn reduce_setup_completed(
             }
             let command_title = command.title().to_string();
             emit_effect(QuickLaunchEffect::OpenErrorTab {
-                title: format!("Failed to launch \"{command_title}\""),
+                title: i18n::launch_failed_title(&command_title),
                 message: quick_launch_error_message(&command, error.as_ref()),
             })
         },
@@ -675,7 +676,11 @@ fn apply_editor_save_request(
     match request.target {
         QuickLaunchWizardSaveTarget::Create { parent_path } => {
             let Some(parent) = state.data_mut().folder_mut(&parent_path) else {
-                set_wizard_error(state, tab_id, "Missing target folder.");
+                set_wizard_error(
+                    state,
+                    tab_id,
+                    i18n::t(Key::ErrMissingTargetFolder),
+                );
                 return Task::none();
             };
             let title =
@@ -694,7 +699,11 @@ fn apply_editor_save_request(
             {
                 let Some(parent) = state.data_mut().parent_folder_mut(&path)
                 else {
-                    set_wizard_error(state, tab_id, "Missing parent folder.");
+                    set_wizard_error(
+                        state,
+                        tab_id,
+                        i18n::t(Key::ErrMissingParentFolder),
+                    );
                     return Task::none();
                 };
                 let current = path.last().map(String::as_str);
@@ -706,7 +715,11 @@ fn apply_editor_save_request(
                 }
             }
             let Some(node) = state.data_mut().node_mut(&path) else {
-                set_wizard_error(state, tab_id, "Command no longer exists.");
+                set_wizard_error(
+                    state,
+                    tab_id,
+                    i18n::t(Key::ErrCommandNoLongerExists),
+                );
                 return Task::none();
             };
             *node = QuickLaunchNode::Command(request.command);

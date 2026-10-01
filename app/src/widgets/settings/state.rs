@@ -1,6 +1,7 @@
 use super::services::{is_hex_color_prefix, is_valid_hex_color};
 use super::types::{
-    SettingsData, SettingsNode, SettingsPreset, SettingsSection,
+    LanguageSetting, SettingsData, SettingsNode, SettingsPreset,
+    SettingsSection,
 };
 
 /// Stored and draft settings state for the settings widget.
@@ -72,12 +73,7 @@ impl SettingsState {
 
     /// Create state from a persisted settings payload.
     pub(crate) fn from_settings(settings: SettingsData) -> Self {
-        let tree = vec![
-            SettingsNode::section(SettingsSection::Terminal),
-            SettingsNode::section(SettingsSection::Appearance),
-        ];
-        let selected_section = SettingsSection::Terminal;
-        let selected_path = vec![selected_section.title().to_string()];
+        let selected_section = SettingsSection::General;
         let palette_inputs = settings.theme_palette().to_vec();
         let selected_preset = SettingsPreset::from_palette(&palette_inputs);
 
@@ -86,9 +82,9 @@ impl SettingsState {
             draft: settings,
             palette_inputs,
             selected_preset,
-            tree,
+            tree: build_tree(),
             selected_section,
-            selected_path,
+            selected_path: vec![selected_section.title().to_string()],
             hovered_path: None,
             dirty: false,
             saving: false,
@@ -96,12 +92,19 @@ impl SettingsState {
     }
 
     /// Replace persisted and draft values using freshly loaded settings.
+    ///
+    /// Rebuilds the navigation tree because section titles are localized and
+    /// double as tree path segments: a language change invalidates every
+    /// previously stored path.
     pub(super) fn replace_with_settings(&mut self, settings: SettingsData) {
         self.baseline = settings.clone();
         self.draft = settings;
         self.palette_inputs = self.draft.theme_palette().to_vec();
         self.selected_preset =
             SettingsPreset::from_palette(&self.palette_inputs);
+
+        self.tree = build_tree();
+        self.selected_path = vec![self.selected_section.title().to_string()];
         self.hovered_path = None;
         self.dirty = false;
     }
@@ -136,6 +139,12 @@ impl SettingsState {
     pub(super) fn reset(&mut self) {
         let baseline = self.baseline.clone();
         self.replace_with_settings(baseline);
+    }
+
+    /// Update the interface language in the draft.
+    pub(super) fn set_language(&mut self, value: LanguageSetting) {
+        self.draft.set_language(value);
+        self.update_dirty();
     }
 
     /// Update the shell field in the draft.
@@ -220,6 +229,14 @@ impl Default for SettingsState {
     }
 }
 
+/// Build the navigation tree using the active locale's section titles.
+fn build_tree() -> Vec<SettingsNode> {
+    SettingsSection::ALL
+        .into_iter()
+        .map(SettingsNode::section)
+        .collect()
+}
+
 fn find_node_mut<'a>(
     nodes: &'a mut [SettingsNode],
     path: &[String],
@@ -244,8 +261,9 @@ fn find_node_mut<'a>(
 #[cfg(test)]
 mod tests {
     use super::SettingsState;
+    use crate::i18n::Locale;
     use crate::widgets::settings::types::{
-        SettingsData, SettingsPreset, SettingsSection,
+        LanguageSetting, SettingsData, SettingsPreset, SettingsSection,
     };
 
     #[test]
@@ -345,11 +363,58 @@ mod tests {
     #[test]
     fn given_section_path_when_select_path_then_updates_selected_section() {
         let mut state = SettingsState::default();
-        let path = vec![String::from("Appearance")];
+        let path = section_path(&state, SettingsSection::Appearance);
 
         state.select_path(&path);
 
         assert_eq!(state.selected_section, SettingsSection::Appearance);
         assert_eq!(state.selected_path, path);
+    }
+
+    #[test]
+    fn given_language_change_when_applied_then_draft_updates_and_marks_dirty() {
+        let mut state = SettingsState::default();
+
+        state.set_language(LanguageSetting::Fixed(Locale::ZhCn));
+
+        assert_eq!(
+            state.draft.language(),
+            LanguageSetting::Fixed(Locale::ZhCn)
+        );
+        assert!(state.dirty);
+    }
+
+    #[test]
+    fn given_default_state_when_tree_built_then_general_section_comes_first() {
+        let state = SettingsState::default();
+
+        let sections: Vec<Option<SettingsSection>> = state
+            .tree()
+            .iter()
+            .map(|node| node.section_kind())
+            .collect();
+
+        assert_eq!(
+            sections,
+            vec![
+                Some(SettingsSection::General),
+                Some(SettingsSection::Appearance),
+                Some(SettingsSection::Terminal),
+            ]
+        );
+    }
+
+    /// Read a section's tree path from the state so the assertion does not
+    /// depend on which locale rendered the titles.
+    fn section_path(
+        state: &SettingsState,
+        section: SettingsSection,
+    ) -> Vec<String> {
+        state
+            .tree()
+            .iter()
+            .find(|node| node.section_kind() == Some(section))
+            .map(|node| vec![node.title().to_string()])
+            .expect("section should be present in the settings tree")
     }
 }

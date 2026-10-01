@@ -8,6 +8,7 @@ use otty_ui_term::TerminalView;
 use super::super::event::TerminalWorkspaceIntent;
 use super::super::model::TerminalTabViewModel;
 use super::super::types::TerminalEntry;
+use crate::i18n::{self, Key};
 
 const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_RESIZE_GRAB: f32 = 12.0;
@@ -93,7 +94,7 @@ fn view_single_pane<'a>(
     is_focused: bool,
 ) -> Element<'a, TerminalWorkspaceIntent> {
     let Some(terminal_entry) = terminals.get(&terminal_id) else {
-        return container(text("Terminal unavailable"))
+        return container(text(i18n::t(Key::TerminalUnavailable)))
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
