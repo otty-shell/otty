@@ -26,6 +26,8 @@ pub(crate) enum Key {
     QuickLaunchErrorPayloadMissing,
     /// Shown when the terminal widget cannot be rendered.
     TerminalUnavailable,
+    /// Banner on a kept-open pane whose process ended without an exit code.
+    ProcessTerminated,
 
     // Tab bar and tab content.
     /// Shown when no tab is open.
@@ -116,6 +118,14 @@ pub(crate) enum Key {
     FieldExtraArgs,
     /// Environment variable list label.
     FieldEnvironment,
+    /// Label of the choice for what a tab does once its command exits.
+    FieldAfterExit,
+    /// Exit choice: close the tab.
+    ExitBehaviorClose,
+    /// Exit choice: close the tab only when the command succeeds.
+    ExitBehaviorCloseOnSuccess,
+    /// Exit choice: keep the tab open.
+    ExitBehaviorKeepOpen,
     /// Environment variable name placeholder.
     EnvKeyPlaceholder,
     /// Environment variable value placeholder.
@@ -222,12 +232,14 @@ pub(crate) enum Key {
     TplProgramIsDirectory,
     /// Program path is not executable. Placeholder: `{program}`.
     TplProgramNotExecutable,
+    /// Banner on a kept-open pane whose process exited. Placeholder: `{code}`.
+    TplProcessExited,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 95] = [
+    pub(super) const ALL: [Self; 101] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -235,6 +247,7 @@ impl Key {
         Self::QuickLaunchEditorNotInitialized,
         Self::QuickLaunchErrorPayloadMissing,
         Self::TerminalUnavailable,
+        Self::ProcessTerminated,
         Self::NoTabs,
         Self::TabContentPlaceholder,
         Self::SettingsTabTitle,
@@ -274,6 +287,10 @@ impl Key {
         Self::FieldIdentityFile,
         Self::FieldExtraArgs,
         Self::FieldEnvironment,
+        Self::FieldAfterExit,
+        Self::ExitBehaviorClose,
+        Self::ExitBehaviorCloseOnSuccess,
+        Self::ExitBehaviorKeepOpen,
         Self::EnvKeyPlaceholder,
         Self::EnvValuePlaceholder,
         Self::InvalidCustomEditorState,
@@ -323,5 +340,6 @@ impl Key {
         Self::TplProgramNotFound,
         Self::TplProgramIsDirectory,
         Self::TplProgramNotExecutable,
+        Self::TplProcessExited,
     ];
 }

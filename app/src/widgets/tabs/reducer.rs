@@ -4,6 +4,7 @@ use otty_ui_term::settings::Settings;
 use super::event::{TabsEffect, TabsEvent, TabsIntent};
 use super::state::TabsState;
 use super::types::{TabContent, TabItem};
+use crate::domain::exit_behavior::ExitBehavior;
 use crate::domain::quick_launch::WizardTabInit;
 use crate::i18n::{self, Key};
 
@@ -26,9 +27,11 @@ pub(crate) fn reduce(
         TabsIntent::OpenTerminalTab { title } => {
             open_terminal_tab(state, title)
         },
-        TabsIntent::OpenCommandTab { title, settings } => {
-            open_command_tab(state, title, *settings)
-        },
+        TabsIntent::OpenCommandTab {
+            title,
+            settings,
+            exit_behavior,
+        } => open_command_tab(state, title, *settings, exit_behavior),
         TabsIntent::OpenSettingsTab => open_settings_tab(state),
         TabsIntent::OpenWizardTab { title, init } => {
             open_wizard_tab(state, title, init)
@@ -98,6 +101,7 @@ fn open_command_tab(
     state: &mut TabsState,
     title: String,
     settings: Settings,
+    exit_behavior: ExitBehavior,
 ) -> Task<TabsEvent> {
     let tab_id = state.allocate_tab_id();
 
@@ -112,6 +116,7 @@ fn open_command_tab(
             tab_id,
             title,
             settings: Box::new(settings),
+            exit_behavior,
         })),
         Task::done(TabsEvent::Effect(TabsEffect::ScrollBarToEnd)),
     ])
@@ -231,6 +236,7 @@ mod tests {
             TabsIntent::OpenCommandTab {
                 title: String::from("nvim main.rs"),
                 settings: Box::new(settings),
+                exit_behavior: ExitBehavior::Close,
             },
         );
 

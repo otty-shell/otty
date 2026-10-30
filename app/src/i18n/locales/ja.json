@@ -39,6 +39,7 @@
     "quick_launch_editor_not_initialized": "クイック起動エディターが初期化されていません。",
     "quick_launch_error_payload_missing": "クイック起動のエラー情報が見つかりません。",
     "terminal_unavailable": "ターミナルを利用できません",
+    "process_terminated": "プロセスは強制終了されました。任意のキーを押すと閉じます。",
 
     "no_tabs": "タブがありません",
     "tab_content_placeholder": "タブコンテンツのプレースホルダー",
@@ -83,6 +84,10 @@
     "field_identity_file": "秘密鍵ファイル",
     "field_extra_args": "追加の引数",
     "field_environment": "環境変数",
+    "field_after_exit": "終了後",
+    "exit_behavior_close": "閉じる",
+    "exit_behavior_close_on_success": "成功時に閉じる",
+    "exit_behavior_keep_open": "開いたままにする",
     "env_key_placeholder": "変数名",
     "env_value_placeholder": "値",
     "invalid_custom_editor_state": "カスタムエディターの状態が不正です",
@@ -135,6 +140,7 @@
     "tpl_program_not_found_in_path": "PATH 内にプログラムが見つかりません：{program}",
     "tpl_program_not_found": "プログラムが見つかりません：{program}",
     "tpl_program_is_directory": "プログラムはディレクトリです：{program}",
-    "tpl_program_not_executable": "プログラムを実行できません：{program}"
+    "tpl_program_not_executable": "プログラムを実行できません：{program}",
+    "tpl_process_exited": "プロセスはコード {code} で終了しました。任意のキーを押すと閉じます。"
   }
 }

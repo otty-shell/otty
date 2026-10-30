@@ -39,6 +39,7 @@
     "quick_launch_editor_not_initialized": "Der Schnellstart-Editor ist nicht initialisiert.",
     "quick_launch_error_payload_missing": "Die Fehlerdaten des Schnellstarts fehlen.",
     "terminal_unavailable": "Terminal nicht verfügbar",
+    "process_terminated": "Der Prozess wurde abgebrochen. Zum Schließen eine beliebige Taste drücken.",
 
     "no_tabs": "Keine Tabs",
     "tab_content_placeholder": "Platzhalter für Tab-Inhalt",
@@ -83,6 +84,10 @@
     "field_identity_file": "Private-Key-Datei",
     "field_extra_args": "Zusätzliche Argumente",
     "field_environment": "Umgebungsvariablen",
+    "field_after_exit": "Nach dem Beenden",
+    "exit_behavior_close": "Schließen",
+    "exit_behavior_close_on_success": "Bei Erfolg schließen",
+    "exit_behavior_keep_open": "Geöffnet lassen",
     "env_key_placeholder": "NAME",
     "env_value_placeholder": "Wert",
     "invalid_custom_editor_state": "Ungültiger Zustand des benutzerdefinierten Editors",
@@ -135,6 +140,7 @@
     "tpl_program_not_found_in_path": "Programm nicht in PATH gefunden: {program}",
     "tpl_program_not_found": "Programm nicht gefunden: {program}",
     "tpl_program_is_directory": "Das Programm ist ein Verzeichnis: {program}",
-    "tpl_program_not_executable": "Das Programm ist nicht ausführbar: {program}"
+    "tpl_program_not_executable": "Das Programm ist nicht ausführbar: {program}",
+    "tpl_process_exited": "Prozess mit Code {code} beendet. Zum Schließen eine beliebige Taste drücken."
   }
 }

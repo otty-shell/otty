@@ -1,8 +1,9 @@
 use std::collections::HashMap;
+use std::process::ExitStatus;
 
 use iced::widget::pane_grid::{self, Highlight, Line, PaneGrid};
 use iced::widget::{Stack, container, mouse_area, text};
-use iced::{Border, Element, Length, Theme};
+use iced::{Border, Element, Length, Theme, alignment};
 use otty_ui_term::TerminalView;
 
 use super::super::event::TerminalWorkspaceIntent;
@@ -14,6 +15,8 @@ const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_RESIZE_GRAB: f32 = 12.0;
 const PANE_SEPARATOR_ALPHA: f32 = 0.25;
 const PANE_BORDER_WIDTH: f32 = 1.0;
+const EXIT_BANNER_TEXT_SIZE: f32 = 13.0;
+const EXIT_BANNER_PADDING: f32 = 8.0;
 
 /// Render the pane grid for a terminal tab.
 pub(crate) fn view<'a>(
@@ -113,7 +116,12 @@ fn view_single_pane<'a>(
         })
         .into();
 
-    let stack_widget = Stack::with_children(vec![terminal_area])
+    let mut layers = vec![terminal_area];
+    if let Some(exit_status) = terminal_entry.exit_status() {
+        layers.push(exit_banner(exit_status));
+    }
+
+    let stack_widget = Stack::with_children(layers)
         .width(Length::Fill)
         .height(Length::Fill);
 
@@ -137,5 +145,30 @@ fn view_single_pane<'a>(
                 ..Default::default()
             }
         })
+        .into()
+}
+
+/// Bottom strip telling the user the process ended and how to close the pane.
+fn exit_banner<'a>(
+    exit_status: ExitStatus,
+) -> Element<'a, TerminalWorkspaceIntent> {
+    let message = i18n::process_exited(exit_status.code());
+    let banner = container(text(message).size(EXIT_BANNER_TEXT_SIZE))
+        .width(Length::Fill)
+        .padding(EXIT_BANNER_PADDING)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+
+            iced::widget::container::Style {
+                background: Some(palette.background.strong.color.into()),
+                text_color: Some(palette.background.strong.text),
+                ..Default::default()
+            }
+        });
+
+    container(banner)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_y(alignment::Vertical::Bottom)
         .into()
 }

@@ -129,12 +129,13 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
             tab_id,
             title,
             settings,
+            exit_behavior,
         } => Task::done(AppEvent::TerminalWorkspace(
             TerminalWorkspaceEvent::Intent(TerminalWorkspaceIntent::OpenTab {
                 tab_id,
                 default_title: title,
                 settings,
-                kind: TerminalKind::Command,
+                kind: TerminalKind::Command { exit_behavior },
                 sync_explorer: false,
             }),
         )),

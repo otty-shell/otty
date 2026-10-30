@@ -61,6 +61,7 @@ pub(super) fn load_initial_quick_launch_state() -> QuickLaunchState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::exit_behavior::ExitBehavior;
     use crate::widgets::quick_launch::types::{
         CommandSpec, CustomCommand, QuickLaunch, QuickLaunchFolder,
         QuickLaunchNode,
@@ -114,6 +115,7 @@ mod tests {
                             working_directory: None,
                         },
                     },
+                    exit_behavior: ExitBehavior::Close,
                 })],
             },
         };
