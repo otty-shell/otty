@@ -347,6 +347,25 @@ pub(crate) fn program_not_executable(program: &str) -> String {
     )
 }
 
+/// Build the banner shown on a kept-open pane once its process exited.
+///
+/// `exit_code` is `None` when the process was stopped by a signal.
+pub(crate) fn process_exited(exit_code: Option<i32>) -> String {
+    process_exited_in(current_locale(), exit_code)
+}
+
+fn process_exited_in(locale: Locale, exit_code: Option<i32>) -> String {
+    let Some(code) = exit_code else {
+        return text_in(locale, Key::ProcessTerminated).to_string();
+    };
+
+    fill_in(
+        locale,
+        Key::TplProcessExited,
+        &[("code", &format!("{code}"))],
+    )
+}
+
 /// Return the translation of `key` in `locale`.
 ///
 /// Falls back to English when a key is absent, so a partial catalog degrades
@@ -431,7 +450,8 @@ fn catalog(locale: Locale) -> &'static Catalog {
 mod tests {
     use super::{
         Catalog, Key, Locale, PALETTE_LABEL_COUNT, catalog, fill_in,
-        locale_from_system_preference, palette_label_in, text_in,
+        locale_from_system_preference, palette_label_in, process_exited_in,
+        text_in,
     };
 
     #[test]
@@ -613,6 +633,26 @@ mod tests {
                 &[("command", "deploy"), ("error", "boom")]
             ),
             "命令：deploy\n错误：boom"
+        );
+    }
+
+    #[test]
+    fn given_exit_code_when_describing_exit_then_code_is_shown() {
+        assert_eq!(
+            process_exited_in(Locale::En, Some(2)),
+            "Process exited with code 2. Press any key to close."
+        );
+        assert_eq!(
+            process_exited_in(Locale::Ru, Some(0)),
+            "Процесс завершился с кодом 0. Нажмите любую клавишу, чтобы закрыть."
+        );
+    }
+
+    #[test]
+    fn given_no_exit_code_when_describing_exit_then_termination_is_shown() {
+        assert_eq!(
+            process_exited_in(Locale::En, None),
+            "Process was terminated. Press any key to close."
         );
     }
 

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::process::ExitStatus;
 
 use iced::widget::{Id, pane_grid};
 use iced::{Point, Size};
@@ -170,6 +171,7 @@ impl TerminalTabState {
             TerminalEntry {
                 terminal,
                 title: default_title.clone(),
+                exit_status: None,
             },
         );
 
@@ -229,6 +231,14 @@ impl TerminalTabState {
     /// Check whether a terminal with the given id exists.
     pub(crate) fn contains_terminal(&self, id: u64) -> bool {
         self.terminals.contains_key(&id)
+    }
+
+    /// Report whether the terminal's process exited while its pane
+    /// stayed open.
+    pub(crate) fn has_exited(&self, terminal_id: u64) -> bool {
+        self.terminals
+            .get(&terminal_id)
+            .is_some_and(|entry| entry.exit_status.is_some())
     }
 
     /// Resolve the terminal id for a pane.
@@ -342,6 +352,7 @@ impl TerminalTabState {
                 TerminalEntry {
                     terminal,
                     title: self.default_title.clone(),
+                    exit_status: None,
                 },
             );
             if equalize_panes {
@@ -508,7 +519,15 @@ impl TerminalTabState {
         let terminal_id = *event.terminal_id();
 
         match event {
-            Shutdown { .. } => {
+            Shutdown { exit_status, .. } => {
+                return self.handle_process_exit(
+                    terminal_id,
+                    exit_status,
+                    equalize_panes,
+                );
+            },
+            Write { .. } if self.has_exited(terminal_id) => {
+                // The process is gone, so a key press means "close".
                 if let Some(pane) = self.pane_for_terminal(terminal_id) {
                     return self.close_pane(pane, equalize_panes);
                 }
@@ -592,6 +611,33 @@ impl TerminalTabState {
         StateCommand::None
     }
 
+    fn handle_process_exit(
+        &mut self,
+        terminal_id: u64,
+        exit_status: ExitStatus,
+        equalize_panes: bool,
+    ) -> StateCommand {
+        let Some(pane) = self.pane_for_terminal(terminal_id) else {
+            return StateCommand::None;
+        };
+
+        let closes_pane = match self.kind {
+            TerminalKind::Command { exit_behavior } => {
+                exit_behavior.closes_pane(&exit_status)
+            },
+            _ => true,
+        };
+        if closes_pane {
+            return self.close_pane(pane, equalize_panes);
+        }
+
+        if let Some(entry) = self.terminals.get_mut(&terminal_id) {
+            entry.exit_status = Some(exit_status);
+        }
+
+        StateCommand::None
+    }
+
     fn update_title_from_terminal(&mut self, terminal_id: Option<u64>) {
         if let Some(id) = terminal_id
             && let Some(entry) = self.terminals.get(&id)
@@ -638,7 +684,10 @@ mod tests {
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{PaneContextMenuState, StateCommand, TerminalTabState};
-    use crate::widgets::terminal_workspace::types::TerminalKind;
+    use crate::domain::exit_behavior::ExitBehavior;
+    use crate::widgets::terminal_workspace::types::{
+        TerminalEvent, TerminalKind,
+    };
 
     #[cfg(unix)]
     const TEST_SHELL_PATH: &str = "/bin/sh";
@@ -667,19 +716,54 @@ mod tests {
         state
     }
 
-    #[allow(dead_code)]
-    fn success_exit_status() -> ExitStatus {
+    fn build_command_state(exit_behavior: ExitBehavior) -> TerminalTabState {
+        let (state, _task) = TerminalTabState::new(
+            1,
+            String::from("List"),
+            10,
+            test_settings(),
+            TerminalKind::Command { exit_behavior },
+        )
+        .expect("terminal state should initialize");
+        state
+    }
+
+    fn exit_status(code: i32) -> ExitStatus {
         #[cfg(unix)]
         {
             use std::os::unix::process::ExitStatusExt;
-            ExitStatus::from_raw(0)
+            ExitStatus::from_raw(code << 8)
         }
 
         #[cfg(target_os = "windows")]
         {
             use std::os::windows::process::ExitStatusExt;
-            ExitStatus::from_raw(0)
+            ExitStatus::from_raw(code as u32)
         }
+    }
+
+    fn shutdown(id: u64, code: i32) -> TerminalEvent {
+        otty_ui_term::Event::Shutdown {
+            id,
+            exit_status: exit_status(code),
+        }
+    }
+
+    fn key_press(id: u64) -> TerminalEvent {
+        otty_ui_term::Event::Write {
+            id,
+            data: b"q".to_vec(),
+        }
+    }
+
+    fn terminal_exit_status(
+        state: &TerminalTabState,
+        terminal_id: u64,
+    ) -> Option<ExitStatus> {
+        state
+            .terminals()
+            .get(&terminal_id)
+            .and_then(|entry| entry.exit_status())
     }
 
     #[test]
@@ -943,15 +1027,95 @@ mod tests {
         let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
         assert!(state.contains_terminal(11));
 
-        let _task = state.handle_terminal_event(
-            otty_ui_term::Event::Shutdown {
-                id: 11,
-                exit_status: success_exit_status(),
-            },
-            true,
-        );
+        let _task = state.handle_terminal_event(shutdown(11, 0), true);
 
         assert!(!state.contains_terminal(11));
+        assert_eq!(state.panes().len(), 1);
+    }
+
+    #[test]
+    fn given_shell_tab_when_shell_exits_then_tab_closes() {
+        let mut state = build_terminal_state("Shell");
+
+        let command = state.handle_terminal_event(shutdown(10, 1), true);
+
+        assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
+    }
+
+    #[test]
+    fn given_close_command_when_process_exits_then_tab_closes() {
+        let mut state = build_command_state(ExitBehavior::Close);
+
+        let command = state.handle_terminal_event(shutdown(10, 0), true);
+
+        assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
+    }
+
+    #[test]
+    fn given_keep_open_command_when_process_exits_then_pane_shows_exit_status()
+    {
+        let mut state = build_command_state(ExitBehavior::KeepOpen);
+
+        let command = state.handle_terminal_event(shutdown(10, 0), true);
+
+        assert!(matches!(command, StateCommand::None));
+        assert_eq!(state.panes().len(), 1);
+        assert_eq!(terminal_exit_status(&state, 10), Some(exit_status(0)));
+    }
+
+    #[test]
+    fn given_close_on_success_command_when_process_succeeds_then_tab_closes() {
+        let mut state = build_command_state(ExitBehavior::CloseOnSuccess);
+
+        let command = state.handle_terminal_event(shutdown(10, 0), true);
+
+        assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
+    }
+
+    #[test]
+    fn given_close_on_success_command_when_process_fails_then_pane_stays_open()
+    {
+        let mut state = build_command_state(ExitBehavior::CloseOnSuccess);
+
+        let command = state.handle_terminal_event(shutdown(10, 3), true);
+
+        assert!(matches!(command, StateCommand::None));
+        assert_eq!(terminal_exit_status(&state, 10), Some(exit_status(3)));
+    }
+
+    #[test]
+    fn given_exited_pane_when_key_pressed_then_tab_closes() {
+        let mut state = build_command_state(ExitBehavior::KeepOpen);
+        let _command = state.handle_terminal_event(shutdown(10, 0), true);
+
+        let command = state.handle_terminal_event(key_press(10), true);
+
+        assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
+    }
+
+    #[test]
+    fn given_running_pane_when_key_pressed_then_pane_stays_open() {
+        let mut state = build_command_state(ExitBehavior::KeepOpen);
+
+        let command = state.handle_terminal_event(key_press(10), true);
+
+        assert!(matches!(command, StateCommand::None));
+        assert!(state.contains_terminal(10));
+        assert_eq!(terminal_exit_status(&state, 10), None);
+    }
+
+    #[test]
+    fn given_exited_split_pane_when_key_pressed_then_only_that_pane_closes() {
+        let mut state = build_command_state(ExitBehavior::KeepOpen);
+        let pane = state.focus().expect("focused pane");
+        let _command =
+            state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
+        let _command = state.handle_terminal_event(shutdown(11, 0), true);
+
+        let _command = state.handle_terminal_event(key_press(11), true);
+
+        assert!(!state.contains_terminal(11));
+        assert!(state.contains_terminal(10));
         assert_eq!(state.panes().len(), 1);
     }
 

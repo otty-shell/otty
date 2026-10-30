@@ -53,11 +53,14 @@ fn handle_effect(effect: QuickLaunchEffect) -> Task<AppEvent> {
             })),
         ),
         QuickLaunchEffect::OpenCommandTerminalTab {
-            title, settings, ..
+            title,
+            settings,
+            command,
         } => Task::done(AppEvent::Tabs(TabsEvent::Intent(
             TabsIntent::OpenCommandTab {
                 title,
                 settings: Box::new(settings),
+                exit_behavior: command.exit_behavior(),
             },
         ))),
         QuickLaunchEffect::OpenErrorTab { title, message } => {

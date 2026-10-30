@@ -4,6 +4,7 @@ use super::types::{
     ContextMenuAction, NodePath, QuickLaunch, QuickLaunchSetupOutcome,
     QuickLaunchType, QuickLaunchWizardSaveRequest,
 };
+use crate::domain::exit_behavior::ExitBehavior;
 
 /// Intent events handled by the quick launch presentation layer.
 #[derive(Debug, Clone)]
@@ -146,6 +147,10 @@ pub(crate) enum QuickLaunchIntent {
     WizardSelectCommandType {
         tab_id: u64,
         command_type: QuickLaunchType,
+    },
+    WizardSelectExitBehavior {
+        tab_id: u64,
+        exit_behavior: ExitBehavior,
     },
 
     // Async completions

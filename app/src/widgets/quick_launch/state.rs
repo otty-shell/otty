@@ -9,6 +9,7 @@ use super::types::{
     InlineEditKind, LaunchInfo, NodePath, QuickLaunch, QuickLaunchFile,
     QuickLaunchType, SshLaunchOptions, WizardMode, WizardOptions,
 };
+use crate::domain::exit_behavior::ExitBehavior;
 
 /// Core state for the quick launch tree and interactions.
 #[derive(Debug, Clone)]
@@ -439,6 +440,7 @@ pub(crate) struct WizardEditorState {
     mode: WizardMode,
     title: String,
     options: WizardOptions,
+    exit_behavior: ExitBehavior,
     error: Option<String>,
 }
 
@@ -449,6 +451,7 @@ impl WizardEditorState {
             mode: WizardMode::Create { parent_path },
             title: String::new(),
             options: WizardOptions::Custom(CommandLaunchOptions::default()),
+            exit_behavior: ExitBehavior::default(),
             error: None,
         }
     }
@@ -477,6 +480,7 @@ impl WizardEditorState {
                     mode: WizardMode::Edit { path },
                     title: command.title.clone(),
                     options: WizardOptions::Custom(options),
+                    exit_behavior: command.exit_behavior,
                     error: None,
                 }
             },
@@ -494,6 +498,7 @@ impl WizardEditorState {
                     mode: WizardMode::Edit { path },
                     title: command.title.clone(),
                     options: WizardOptions::Ssh(options),
+                    exit_behavior: command.exit_behavior,
                     error: None,
                 }
             },
@@ -516,6 +521,11 @@ impl WizardEditorState {
         self.options.command_type()
     }
 
+    /// What the launched tab does once its process exits.
+    pub(crate) fn exit_behavior(&self) -> ExitBehavior {
+        self.exit_behavior
+    }
+
     pub(crate) fn is_create_mode(&self) -> bool {
         matches!(self.mode, WizardMode::Create { .. })
     }
@@ -530,6 +540,10 @@ impl WizardEditorState {
 
     pub(super) fn clear_error(&mut self) {
         self.error = None;
+    }
+
+    pub(super) fn set_exit_behavior(&mut self, value: ExitBehavior) {
+        self.exit_behavior = value;
     }
 
     pub(super) fn set_command_type(&mut self, command_type: QuickLaunchType) {
@@ -681,6 +695,48 @@ mod tests {
         let state = QuickLaunchState::default();
         assert!(!state.is_dirty());
         assert!(!state.is_persist_in_flight());
+    }
+
+    #[test]
+    fn given_new_editor_when_created_then_tab_closes_on_exit_by_default() {
+        let editor = WizardEditorState::new(vec![]);
+
+        assert_eq!(editor.exit_behavior(), ExitBehavior::Close);
+    }
+
+    #[test]
+    fn given_saved_command_when_editing_then_exit_behavior_is_loaded() {
+        let command = QuickLaunch {
+            title: String::from("Deploy"),
+            spec: CommandSpec::Ssh {
+                ssh: crate::widgets::quick_launch::types::SshCommand {
+                    host: String::from("example.com"),
+                    port: 22,
+                    user: None,
+                    identity_file: None,
+                    extra_args: Vec::new(),
+                },
+            },
+            exit_behavior: ExitBehavior::CloseOnSuccess,
+        };
+
+        let editor = WizardEditorState::from_command(
+            vec![String::from("Deploy")],
+            &command,
+        );
+
+        assert_eq!(editor.exit_behavior(), ExitBehavior::CloseOnSuccess);
+    }
+
+    #[test]
+    fn given_chosen_exit_behavior_when_switching_command_type_then_choice_is_kept()
+     {
+        let mut editor = WizardEditorState::new(vec![]);
+        editor.set_exit_behavior(ExitBehavior::KeepOpen);
+
+        editor.set_command_type(QuickLaunchType::Ssh);
+
+        assert_eq!(editor.exit_behavior(), ExitBehavior::KeepOpen);
     }
 
     #[test]

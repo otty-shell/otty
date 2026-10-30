@@ -406,6 +406,7 @@ pub(crate) fn build_command(
     Ok(QuickLaunch {
         title: title.to_string(),
         spec,
+        exit_behavior: editor.exit_behavior(),
     })
 }
 
@@ -424,6 +425,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use super::*;
+    use crate::domain::exit_behavior::ExitBehavior;
     use crate::widgets::quick_launch::types::{CustomCommand, SshCommand};
 
     #[test]
@@ -438,6 +440,7 @@ mod tests {
                     working_directory: None,
                 },
             },
+            exit_behavior: ExitBehavior::Close,
         };
         assert!(matches!(
             validate_command(&cmd),
@@ -457,6 +460,7 @@ mod tests {
                     working_directory: None,
                 },
             },
+            exit_behavior: ExitBehavior::Close,
         };
         assert!(validate_command(&cmd).is_ok());
     }
@@ -474,6 +478,7 @@ mod tests {
                     extra_args: Vec::new(),
                 },
             },
+            exit_behavior: ExitBehavior::Close,
         };
         assert!(matches!(
             validate_command(&cmd),
@@ -494,6 +499,7 @@ mod tests {
                     extra_args: Vec::new(),
                 },
             },
+            exit_behavior: ExitBehavior::Close,
         };
 
         assert!(matches!(
@@ -514,6 +520,7 @@ mod tests {
                     working_directory: None,
                 },
             },
+            exit_behavior: ExitBehavior::Close,
         };
 
         assert!(matches!(
@@ -537,6 +544,7 @@ mod tests {
                     working_directory: None,
                 },
             },
+            exit_behavior: ExitBehavior::Close,
         };
 
         let cancel = Arc::new(AtomicBool::new(false));
@@ -591,6 +599,7 @@ mod tests {
                     working_directory: Some(String::from("$HOME")),
                 },
             },
+            exit_behavior: ExitBehavior::Close,
         };
 
         assert!(validate_command(&cmd).is_ok());
@@ -671,6 +680,19 @@ mod tests {
         assert_eq!(custom.env()[0].key(), "RUST_LOG");
         assert_eq!(custom.env()[0].value(), "debug");
         assert_eq!(custom.working_directory(), Some("/tmp/project"));
+    }
+
+    #[test]
+    fn given_chosen_exit_behavior_when_building_command_then_launch_keeps_it() {
+        let mut editor = WizardEditorState::new(vec![]);
+        editor.set_title(String::from("List"));
+        editor.set_program(String::from("ls"));
+        editor.set_exit_behavior(ExitBehavior::KeepOpen);
+
+        let quick_launch =
+            build_command(&editor).expect("build should succeed");
+
+        assert_eq!(quick_launch.exit_behavior(), ExitBehavior::KeepOpen);
     }
 
     #[test]

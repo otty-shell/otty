@@ -39,6 +39,7 @@
     "quick_launch_editor_not_initialized": "Редактор быстрого запуска не инициализирован.",
     "quick_launch_error_payload_missing": "Данные об ошибке быстрого запуска отсутствуют.",
     "terminal_unavailable": "Терминал недоступен",
+    "process_terminated": "Процесс был прерван. Нажмите любую клавишу, чтобы закрыть.",
 
     "no_tabs": "Нет вкладок",
     "tab_content_placeholder": "Заполнитель содержимого вкладки",
@@ -83,6 +84,10 @@
     "field_identity_file": "Файл закрытого ключа",
     "field_extra_args": "Дополнительные аргументы",
     "field_environment": "Переменные окружения",
+    "field_after_exit": "После завершения",
+    "exit_behavior_close": "Закрыть",
+    "exit_behavior_close_on_success": "Закрыть при успехе",
+    "exit_behavior_keep_open": "Оставить открытым",
     "env_key_placeholder": "ИМЯ",
     "env_value_placeholder": "значение",
     "invalid_custom_editor_state": "Некорректное состояние редактора команды",
@@ -135,6 +140,7 @@
     "tpl_program_not_found_in_path": "Программа не найдена в PATH: {program}",
     "tpl_program_not_found": "Программа не найдена: {program}",
     "tpl_program_is_directory": "Программа является каталогом: {program}",
-    "tpl_program_not_executable": "Программа не является исполняемой: {program}"
+    "tpl_program_not_executable": "Программа не является исполняемой: {program}",
+    "tpl_process_exited": "Процесс завершился с кодом {code}. Нажмите любую клавишу, чтобы закрыть."
   }
 }

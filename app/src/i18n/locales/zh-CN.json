@@ -39,6 +39,7 @@
     "quick_launch_editor_not_initialized": "快捷启动编辑器尚未初始化。",
     "quick_launch_error_payload_missing": "快捷启动的错误信息缺失。",
     "terminal_unavailable": "终端不可用",
+    "process_terminated": "进程已被终止。按任意键关闭。",
 
     "no_tabs": "没有标签页",
     "tab_content_placeholder": "标签页内容占位",
@@ -83,6 +84,10 @@
     "field_identity_file": "私钥文件",
     "field_extra_args": "额外参数",
     "field_environment": "环境变量",
+    "field_after_exit": "退出后",
+    "exit_behavior_close": "关闭",
+    "exit_behavior_close_on_success": "成功时关闭",
+    "exit_behavior_keep_open": "保持打开",
     "env_key_placeholder": "变量名",
     "env_value_placeholder": "变量值",
     "invalid_custom_editor_state": "自定义命令编辑器状态无效",
@@ -135,6 +140,7 @@
     "tpl_program_not_found_in_path": "在 PATH 中找不到程序：{program}",
     "tpl_program_not_found": "找不到程序：{program}",
     "tpl_program_is_directory": "程序路径是目录：{program}",
-    "tpl_program_not_executable": "程序不可执行：{program}"
+    "tpl_program_not_executable": "程序不可执行：{program}",
+    "tpl_process_exited": "进程已退出，退出码 {code}。按任意键关闭。"
   }
 }

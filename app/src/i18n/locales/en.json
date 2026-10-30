@@ -39,6 +39,7 @@
     "quick_launch_editor_not_initialized": "Quick launch editor is not initialized.",
     "quick_launch_error_payload_missing": "Quick launch error payload is missing.",
     "terminal_unavailable": "Terminal unavailable",
+    "process_terminated": "Process was terminated. Press any key to close.",
 
     "no_tabs": "No tabs",
     "tab_content_placeholder": "Tab content placeholder",
@@ -83,6 +84,10 @@
     "field_identity_file": "Identity file",
     "field_extra_args": "Extra args",
     "field_environment": "Environment",
+    "field_after_exit": "After exit",
+    "exit_behavior_close": "Close",
+    "exit_behavior_close_on_success": "Close on success",
+    "exit_behavior_keep_open": "Keep open",
     "env_key_placeholder": "KEY",
     "env_value_placeholder": "value",
     "invalid_custom_editor_state": "Invalid custom editor state",
@@ -135,6 +140,7 @@
     "tpl_program_not_found_in_path": "Program not found in PATH: {program}",
     "tpl_program_not_found": "Program not found: {program}",
     "tpl_program_is_directory": "Program is a directory: {program}",
-    "tpl_program_not_executable": "Program is not executable: {program}"
+    "tpl_program_not_executable": "Program is not executable: {program}",
+    "tpl_process_exited": "Process exited with code {code}. Press any key to close."
   }
 }

@@ -214,7 +214,7 @@ fn reduce_open_tab(
                 TerminalWorkspaceEffect::TabClosed { tab_id },
             ));
 
-            if kind == TerminalKind::Command {
+            if matches!(kind, TerminalKind::Command { .. }) {
                 let failed_title = i18n::launch_failed_title(&failed_tab_title);
                 let failed_message =
                     i18n::terminal_init_failed(&err.to_string());
@@ -286,14 +286,22 @@ fn reduce_widget_event(
             | otty_ui_term::Event::ResetTitle { .. }
     );
 
-    let is_shutdown = matches!(&event, otty_ui_term::Event::Shutdown { .. });
+    // A pane closes when its process exits, or on a key press once it
+    // has exited and was kept open.
+    let may_close_pane = match &event {
+        otty_ui_term::Event::Shutdown { .. } => true,
+        otty_ui_term::Event::Write { .. } => state
+            .tab(tab_id)
+            .is_some_and(|tab| tab.has_exited(terminal_id)),
+        _ => false,
+    };
     let selection_task = update_block_selection(state, tab_id, &event);
     let event_task = with_terminal_tab(state, tab_id, |tab| {
         tab.handle_terminal_event(event, equalize_panes)
     });
     let update = Task::batch(vec![selection_task, event_task]);
 
-    if is_shutdown {
+    if may_close_pane {
         reindex_terminal_tabs(state, terminal_to_tab);
     }
 
@@ -620,6 +628,7 @@ mod tests {
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::{TerminalWorkspaceAction, TerminalWorkspaceCtx, reduce};
+    use crate::domain::exit_behavior::ExitBehavior;
     use crate::widgets::terminal_workspace::TerminalWorkspaceIntent;
     use crate::widgets::terminal_workspace::state::TerminalWorkspaceState;
     use crate::widgets::terminal_workspace::types::TerminalKind;
@@ -695,7 +704,9 @@ mod tests {
                 tab_id: 99,
                 default_title: String::from("Broken command"),
                 settings: Box::new(settings_with_program(INVALID_COMMAND_PATH)),
-                kind: TerminalKind::Command,
+                kind: TerminalKind::Command {
+                    exit_behavior: ExitBehavior::Close,
+                },
                 sync_explorer: false,
             },
             &ctx,
@@ -858,6 +869,59 @@ mod tests {
             TerminalWorkspaceIntent::FocusActive,
             &ctx,
         );
+    }
+
+    #[test]
+    fn given_exited_split_pane_when_key_pressed_then_its_terminal_is_unmapped()
+    {
+        let mut state = TerminalWorkspaceState::default();
+        let mut terminal_to_tab = HashMap::new();
+        let mut next_id = 100_u64;
+        let ctx = default_ctx();
+        let _ = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::OpenTab {
+                tab_id: 1,
+                default_title: String::from("List"),
+                settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
+                kind: TerminalKind::Command {
+                    exit_behavior: ExitBehavior::KeepOpen,
+                },
+                sync_explorer: false,
+            },
+            &ctx,
+        );
+        reduce_action(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            split_pane_action(),
+        );
+
+        for event in [
+            otty_ui_term::Event::Shutdown {
+                id: 101,
+                exit_status: std::process::ExitStatus::default(),
+            },
+            otty_ui_term::Event::Write {
+                id: 101,
+                data: b"q".to_vec(),
+            },
+        ] {
+            let _ = reduce(
+                &mut state,
+                &mut terminal_to_tab,
+                &mut next_id,
+                TerminalWorkspaceIntent::Widget(event),
+                &ctx,
+            );
+        }
+
+        assert_eq!(terminal_count(&state), 1);
+        assert_eq!(terminal_to_tab.get(&101), None);
+        assert_eq!(terminal_to_tab.get(&100), Some(&1));
     }
 
     /// Open a single shell tab whose only terminal has id 100.

@@ -1,5 +1,6 @@
 use otty_ui_term::settings::Settings;
 
+use crate::domain::exit_behavior::ExitBehavior;
 use crate::domain::quick_launch::WizardTabInit;
 
 /// Intent events handled by tab bar views and cross-widget tab workflows.
@@ -25,6 +26,7 @@ pub(crate) enum TabsIntent {
     OpenCommandTab {
         title: String,
         settings: Box<Settings>,
+        exit_behavior: ExitBehavior,
     },
     OpenSettingsTab,
     OpenWizardTab {
@@ -55,6 +57,7 @@ pub(crate) enum TabsEffect {
         tab_id: u64,
         title: String,
         settings: Box<otty_ui_term::settings::Settings>,
+        exit_behavior: ExitBehavior,
     },
     /// Settings tab opened; router triggers settings reload.
     SettingsTabOpened,

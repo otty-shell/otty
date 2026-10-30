@@ -4,6 +4,7 @@ use iced::Task;
 
 use super::AppEvent;
 use crate::app::App;
+use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::editor_terminal_settings;
 use crate::widgets::explorer::services::read_dir_nodes;
 use crate::widgets::explorer::types::FileNode;
@@ -105,6 +106,7 @@ fn open_file_terminal_tab(app: &mut App, file_path: PathBuf) -> Task<AppEvent> {
         TabsIntent::OpenCommandTab {
             title,
             settings: Box::new(settings),
+            exit_behavior: ExitBehavior::Close,
         },
     )))
 }

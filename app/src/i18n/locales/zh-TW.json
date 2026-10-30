@@ -39,6 +39,7 @@
     "quick_launch_editor_not_initialized": "快速啟動編輯器尚未初始化。",
     "quick_launch_error_payload_missing": "快速啟動的錯誤資訊遺失。",
     "terminal_unavailable": "終端機無法使用",
+    "process_terminated": "程序已被終止。按任意鍵關閉。",
 
     "no_tabs": "沒有分頁",
     "tab_content_placeholder": "分頁內容佔位",
@@ -83,6 +84,10 @@
     "field_identity_file": "私密金鑰檔案",
     "field_extra_args": "額外參數",
     "field_environment": "環境變數",
+    "field_after_exit": "結束後",
+    "exit_behavior_close": "關閉",
+    "exit_behavior_close_on_success": "成功時關閉",
+    "exit_behavior_keep_open": "保持開啟",
     "env_key_placeholder": "變數名稱",
     "env_value_placeholder": "變數值",
     "invalid_custom_editor_state": "自訂指令編輯器狀態無效",
@@ -135,6 +140,7 @@
     "tpl_program_not_found_in_path": "在 PATH 中找不到程式：{program}",
     "tpl_program_not_found": "找不到程式：{program}",
     "tpl_program_is_directory": "程式路徑是目錄：{program}",
-    "tpl_program_not_executable": "程式無法執行：{program}"
+    "tpl_program_not_executable": "程式無法執行：{program}",
+    "tpl_process_exited": "程序已結束，結束代碼 {code}。按任意鍵關閉。"
   }
 }

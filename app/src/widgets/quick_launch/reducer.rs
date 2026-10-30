@@ -296,6 +296,12 @@ pub(crate) fn reduce(
         } => reduce_wizard_field(state, tab_id, |e| {
             e.update_extra_arg(index, value)
         }),
+        WizardSelectExitBehavior {
+            tab_id,
+            exit_behavior,
+        } => reduce_wizard_field(state, tab_id, |e| {
+            e.set_exit_behavior(exit_behavior)
+        }),
         WizardSelectCommandType {
             tab_id,
             command_type,
@@ -1125,6 +1131,7 @@ mod tests {
 
     use super::super::types::{CommandSpec, CustomCommand};
     use super::*;
+    use crate::domain::exit_behavior::ExitBehavior;
 
     fn ctx(settings: &Settings) -> QuickLaunchCtx<'_> {
         QuickLaunchCtx {
@@ -1145,6 +1152,7 @@ mod tests {
                     working_directory: None,
                 },
             },
+            exit_behavior: ExitBehavior::Close,
         }
     }
 
@@ -1928,6 +1936,29 @@ mod tests {
         );
     }
 
+    #[test]
+    fn given_wizard_select_exit_behavior_when_reduced_then_choice_is_stored() {
+        let mut state = QuickLaunchState::default();
+        state.wizard_mut().initialize_create(1, vec![]);
+        if let Some(editor) = state.wizard_mut().editor_mut(1) {
+            editor.set_error(String::from("stale"));
+        }
+
+        let settings = Settings::default();
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardSelectExitBehavior {
+                tab_id: 1,
+                exit_behavior: ExitBehavior::CloseOnSuccess,
+            },
+            &ctx(&settings),
+        );
+
+        let editor = state.wizard().editor(1).expect("editor should exist");
+        assert_eq!(editor.exit_behavior(), ExitBehavior::CloseOnSuccess);
+        assert_eq!(editor.error(), None);
+    }
+
     // -----------------------------------------------------------------------
     // Wizard field update tests
     // -----------------------------------------------------------------------
@@ -2030,6 +2061,7 @@ mod tests {
                         working_directory: None,
                     },
                 },
+                exit_behavior: ExitBehavior::Close,
             },
         };
 

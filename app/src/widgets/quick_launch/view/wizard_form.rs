@@ -5,6 +5,7 @@ use iced::{Element, Length, Theme, alignment};
 use super::super::event::QuickLaunchIntent;
 use super::super::state::WizardEditorState;
 use super::super::types::QuickLaunchType;
+use crate::domain::exit_behavior::ExitBehavior;
 use crate::i18n::{self, Key};
 use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_REGULAR};
 use crate::theme::{IcedColorPalette, ThemeProps};
@@ -177,6 +178,12 @@ pub(crate) fn view(
         },
     }
 
+    content = content.push(exit_behavior_selector(
+        tab_id,
+        editor.exit_behavior(),
+        theme,
+    ));
+
     if let Some(error) = editor.error() {
         let error_color = theme.theme.iced_palette().red;
         content = content.push(text(error).size(LABEL_SIZE).style(move |_| {
@@ -297,6 +304,42 @@ fn command_type_selector<'a>(
     .align_y(alignment::Vertical::Center)
     .width(Length::Fill)
     .into()
+}
+
+fn exit_behavior_selector<'a>(
+    tab_id: u64,
+    selected: ExitBehavior,
+    theme: ThemeProps<'a>,
+) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
+    let choices = [
+        (ExitBehavior::Close, Key::ExitBehaviorClose),
+        (
+            ExitBehavior::CloseOnSuccess,
+            Key::ExitBehaviorCloseOnSuccess,
+        ),
+        (ExitBehavior::KeepOpen, Key::ExitBehaviorKeepOpen),
+    ];
+
+    let mut buttons = row![]
+        .spacing(FIELD_SPACING)
+        .align_y(alignment::Vertical::Center);
+    for (exit_behavior, label) in choices {
+        buttons = buttons.push(toggle_button(
+            i18n::t(label),
+            selected == exit_behavior,
+            QuickLaunchIntent::WizardSelectExitBehavior {
+                tab_id,
+                exit_behavior,
+            },
+            theme,
+        ));
+    }
+
+    row![field_label(i18n::t(Key::FieldAfterExit)), buttons]
+        .spacing(FIELD_SPACING)
+        .align_y(alignment::Vertical::Center)
+        .width(Length::Fill)
+        .into()
 }
 
 #[allow(clippy::too_many_arguments)]

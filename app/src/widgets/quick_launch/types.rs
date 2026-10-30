@@ -5,6 +5,7 @@ use otty_ui_tree::TreeNode;
 use serde::{Deserialize, Serialize};
 
 use super::constants::SSH_DEFAULT_PORT;
+use crate::domain::exit_behavior::ExitBehavior;
 
 /// Path to a node in the quick launch tree.
 pub(crate) type NodePath = Vec<String>;
@@ -21,6 +22,9 @@ pub(crate) enum QuickLaunchType {
 pub(crate) struct QuickLaunch {
     pub(super) title: String,
     pub(super) spec: CommandSpec,
+    /// Files saved before this setting existed load as `Close`.
+    #[serde(default)]
+    pub(super) exit_behavior: ExitBehavior,
 }
 
 impl QuickLaunch {
@@ -32,6 +36,11 @@ impl QuickLaunch {
     /// Command specification.
     pub(crate) fn spec(&self) -> &CommandSpec {
         &self.spec
+    }
+
+    /// What the command tab does once the process exits.
+    pub(crate) fn exit_behavior(&self) -> ExitBehavior {
+        self.exit_behavior
     }
 }
 
@@ -605,6 +614,52 @@ mod tests {
     use super::*;
 
     #[test]
+    fn given_saved_command_without_exit_behavior_when_loaded_then_tab_closes_on_exit()
+     {
+        let json = serde_json::json!({
+            "title": "List",
+            "spec": {
+                "type": "Custom",
+                "custom": {
+                    "program": "ls",
+                    "args": ["-la"],
+                    "env": [],
+                    "working_directory": null
+                }
+            }
+        });
+
+        let command: QuickLaunch =
+            serde_json::from_value(json).expect("should deserialize");
+
+        assert_eq!(command.exit_behavior(), ExitBehavior::Close);
+    }
+
+    #[test]
+    fn given_command_with_exit_behavior_when_round_tripped_then_choice_is_kept()
+    {
+        let command = QuickLaunch {
+            title: String::from("List"),
+            spec: CommandSpec::Custom {
+                custom: CustomCommand {
+                    program: String::from("ls"),
+                    args: vec![String::from("-la")],
+                    env: Vec::new(),
+                    working_directory: None,
+                },
+            },
+            exit_behavior: ExitBehavior::KeepOpen,
+        };
+
+        let json = serde_json::to_value(&command).expect("should serialize");
+        let parsed: QuickLaunch =
+            serde_json::from_value(json.clone()).expect("should deserialize");
+
+        assert_eq!(json["exit_behavior"], "keep_open");
+        assert_eq!(parsed.exit_behavior(), ExitBehavior::KeepOpen);
+    }
+
+    #[test]
     fn given_empty_title_when_normalizing_then_error_is_returned() {
         let folder = QuickLaunchFolder {
             title: String::from("Root"),
@@ -629,6 +684,7 @@ mod tests {
                         working_directory: None,
                     },
                 },
+                exit_behavior: ExitBehavior::Close,
             })],
         };
         assert!(folder.normalize_title("Run", None).is_err());
@@ -649,6 +705,7 @@ mod tests {
                         working_directory: None,
                     },
                 },
+                exit_behavior: ExitBehavior::Close,
             })],
         };
         assert!(folder.normalize_title("Run", Some("Run")).is_ok());

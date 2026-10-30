@@ -1,6 +1,9 @@
+use std::process::ExitStatus;
+
 use otty_ui_term::settings::SessionKind;
 
 use super::shortcuts::TerminalWorkspaceAction;
+use crate::domain::exit_behavior::ExitBehavior;
 
 /// The terminal widget this application embeds, bound to its own
 /// action type.
@@ -15,7 +18,10 @@ pub(crate) enum TerminalKind {
     /// Interactive shell session.
     Shell,
     /// One-shot command execution.
-    Command,
+    Command {
+        /// What the pane does once the command exits.
+        exit_behavior: ExitBehavior,
+    },
 }
 
 /// Shell session information needed to start a terminal backend.
@@ -46,6 +52,8 @@ impl ShellSession {
 pub(crate) struct TerminalEntry {
     pub(super) terminal: Terminal,
     pub(super) title: String,
+    /// Set once the process exited and the pane was kept open.
+    pub(super) exit_status: Option<ExitStatus>,
 }
 
 impl TerminalEntry {
@@ -57,6 +65,12 @@ impl TerminalEntry {
     /// Return the current title of this terminal.
     pub(crate) fn title(&self) -> &str {
         &self.title
+    }
+
+    /// Return how the process ended, if it exited and the pane stayed
+    /// open.
+    pub(crate) fn exit_status(&self) -> Option<ExitStatus> {
+        self.exit_status
     }
 }
 
@@ -92,6 +106,7 @@ mod tests {
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
     use super::{BlockSelection, ShellSession, TerminalKind};
+    use crate::domain::exit_behavior::ExitBehavior;
 
     #[test]
     fn given_shell_session_when_constructed_then_getters_return_values() {
@@ -122,6 +137,11 @@ mod tests {
     #[test]
     fn given_terminal_kind_values_when_compared_then_equality_matches() {
         assert_eq!(TerminalKind::Shell, TerminalKind::Shell);
-        assert_ne!(TerminalKind::Shell, TerminalKind::Command);
+        assert_ne!(
+            TerminalKind::Shell,
+            TerminalKind::Command {
+                exit_behavior: ExitBehavior::Close,
+            }
+        );
     }
 }

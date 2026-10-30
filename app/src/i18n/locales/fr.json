@@ -39,6 +39,7 @@
     "quick_launch_editor_not_initialized": "L'éditeur de lancement rapide n'est pas initialisé.",
     "quick_launch_error_payload_missing": "Les informations d'erreur du lancement rapide sont absentes.",
     "terminal_unavailable": "Terminal indisponible",
+    "process_terminated": "Le processus a été interrompu. Appuyez sur une touche pour fermer.",
 
     "no_tabs": "Aucun onglet",
     "tab_content_placeholder": "Contenu d'onglet réservé",
@@ -83,6 +84,10 @@
     "field_identity_file": "Fichier de clé privée",
     "field_extra_args": "Arguments supplémentaires",
     "field_environment": "Variables d'environnement",
+    "field_after_exit": "À la fin",
+    "exit_behavior_close": "Fermer",
+    "exit_behavior_close_on_success": "Fermer en cas de succès",
+    "exit_behavior_keep_open": "Laisser ouvert",
     "env_key_placeholder": "NOM",
     "env_value_placeholder": "valeur",
     "invalid_custom_editor_state": "État de l'éditeur personnalisé invalide",
@@ -135,6 +140,7 @@
     "tpl_program_not_found_in_path": "Programme introuvable dans PATH : {program}",
     "tpl_program_not_found": "Programme introuvable : {program}",
     "tpl_program_is_directory": "Le programme est un répertoire : {program}",
-    "tpl_program_not_executable": "Le programme n’est pas exécutable : {program}"
+    "tpl_program_not_executable": "Le programme n’est pas exécutable : {program}",
+    "tpl_process_exited": "Le processus s’est terminé avec le code {code}. Appuyez sur une touche pour fermer."
   }
 }
