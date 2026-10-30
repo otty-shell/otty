@@ -148,7 +148,7 @@ fn command_session(
 
 fn custom_session(custom: &super::types::CustomCommand) -> LocalSessionOptions {
     let mut options = LocalSessionOptions::default()
-        .with_program(custom.program())
+        .with_program(&expand_home_dir(custom.program()))
         .with_args(custom.args().to_vec());
 
     for env in custom.env() {
@@ -156,7 +156,8 @@ fn custom_session(custom: &super::types::CustomCommand) -> LocalSessionOptions {
     }
 
     if let Some(dir) = custom.working_directory() {
-        options = options.with_working_directory(PathBuf::from(dir));
+        options =
+            options.with_working_directory(PathBuf::from(expand_home_dir(dir)));
     }
 
     options
@@ -179,7 +180,7 @@ fn ssh_session(
         .identity_file()
         .filter(|path| !path.trim().is_empty())
         .map(|path| SSHAuth::KeyFile {
-            private_key_path: path.to_string(),
+            private_key_path: expand_home_dir(path),
             passphrase: None,
         })
         .unwrap_or_else(|| SSHAuth::Password(String::new()));
@@ -199,7 +200,7 @@ fn validate_custom_runtime(
     let _ = find_program_path(program)?;
 
     if let Some(dir) = custom.working_directory() {
-        let expanded = expand_tilde(dir);
+        let expanded = expand_home_dir(dir);
         let path = Path::new(&expanded);
 
         if !path.exists() {
@@ -222,7 +223,7 @@ fn validate_ssh_runtime(
     if let Some(identity) = ssh.identity_file() {
         let identity = identity.trim();
         if !identity.is_empty() {
-            let expanded = expand_tilde(identity);
+            let expanded = expand_home_dir(identity);
             let path = Path::new(&expanded);
 
             if !path.exists() {
@@ -239,14 +240,12 @@ fn validate_ssh_runtime(
 }
 
 fn find_program_path(program: &str) -> Result<PathBuf, QuickLaunchError> {
-    let program = program.trim();
-    let has_separator = program.contains('/') || program.contains('\\');
-    let is_explicit = has_separator || program.starts_with('~');
+    let program = expand_home_dir(program.trim());
+    let is_explicit = program.contains('/') || program.contains('\\');
 
     if is_explicit {
-        let expanded = expand_tilde(program);
-        let path = PathBuf::from(&expanded);
-        return validate_program_path(&path, &expanded);
+        let path = PathBuf::from(&program);
+        return validate_program_path(&path, &program);
     }
 
     let paths: Vec<PathBuf> = std::env::var_os("PATH")
@@ -254,13 +253,13 @@ fn find_program_path(program: &str) -> Result<PathBuf, QuickLaunchError> {
         .unwrap_or_default();
 
     for dir in paths {
-        let candidate = dir.join(program);
+        let candidate = dir.join(&program);
         if is_executable_path(&candidate) {
             return Ok(candidate);
         }
     }
 
-    Err(QuickLaunchError::ProgramNotFoundInPath(program.to_string()))
+    Err(QuickLaunchError::ProgramNotFoundInPath(program))
 }
 
 fn validate_program_path(
@@ -301,15 +300,26 @@ fn is_executable_path(path: &Path) -> bool {
     }
 }
 
-fn expand_tilde(path: &str) -> String {
-    if path == "~" {
-        return std::env::var("HOME").unwrap_or_else(|_| String::from("~"));
-    }
+/// Replace a leading `~`, `$HOME` or `${HOME}` with the user's home
+/// directory, the way a shell would before running the command.
+fn expand_home_dir(path: &str) -> String {
+    let home = std::env::var("HOME").ok();
+    expand_home_prefix(path, home.as_deref())
+}
 
-    if let Some(rest) = path.strip_prefix("~/")
-        && let Ok(home) = std::env::var("HOME")
-    {
-        return format!("{home}/{rest}");
+fn expand_home_prefix(path: &str, home: Option<&str>) -> String {
+    let Some(home) = home else {
+        return path.to_string();
+    };
+
+    for prefix in ["~", "$HOME", "${HOME}"] {
+        let Some(rest) = path.strip_prefix(prefix) else {
+            continue;
+        };
+
+        if rest.is_empty() || rest.starts_with('/') {
+            return format!("{home}{rest}");
+        }
     }
 
     path.to_string()
@@ -539,6 +549,95 @@ mod tests {
             options.args(),
             &[String::from("--sort-key"), String::from("PERCENT_CPU")]
         );
+    }
+
+    #[test]
+    fn given_home_prefix_when_expanding_then_home_directory_is_substituted() {
+        let home = Some("/home/user");
+
+        assert_eq!(expand_home_prefix("~", home), "/home/user");
+        assert_eq!(expand_home_prefix("~/src", home), "/home/user/src");
+        assert_eq!(expand_home_prefix("$HOME", home), "/home/user");
+        assert_eq!(expand_home_prefix("$HOME/src", home), "/home/user/src");
+        assert_eq!(expand_home_prefix("${HOME}", home), "/home/user");
+        assert_eq!(expand_home_prefix("${HOME}/src", home), "/home/user/src");
+    }
+
+    #[test]
+    fn given_path_without_home_prefix_when_expanding_then_path_is_unchanged() {
+        let home = Some("/home/user");
+
+        assert_eq!(expand_home_prefix("/opt/~/bin", home), "/opt/~/bin");
+        assert_eq!(expand_home_prefix("~other/src", home), "~other/src");
+        assert_eq!(expand_home_prefix("$HOMEDIR/src", home), "$HOMEDIR/src");
+        assert_eq!(expand_home_prefix("src/$HOME", home), "src/$HOME");
+    }
+
+    #[test]
+    fn given_unknown_home_when_expanding_then_path_is_unchanged() {
+        assert_eq!(expand_home_prefix("~/src", None), "~/src");
+        assert_eq!(expand_home_prefix("$HOME/src", None), "$HOME/src");
+    }
+
+    #[test]
+    fn given_home_variable_working_directory_when_validating_then_ok() {
+        let cmd = QuickLaunch {
+            title: String::from("Home"),
+            spec: CommandSpec::Custom {
+                custom: CustomCommand {
+                    program: String::from("bash"),
+                    args: Vec::new(),
+                    env: Vec::new(),
+                    working_directory: Some(String::from("$HOME")),
+                },
+            },
+        };
+
+        assert!(validate_command(&cmd).is_ok());
+    }
+
+    #[test]
+    fn given_home_relative_paths_when_building_local_session_then_paths_are_expanded()
+     {
+        let home = std::env::var("HOME").expect("HOME should be set in tests");
+        let custom = CustomCommand {
+            program: String::from("~/bin/tool"),
+            args: Vec::new(),
+            env: Vec::new(),
+            working_directory: Some(String::from("$HOME/project")),
+        };
+
+        let options = custom_session(&custom);
+
+        assert_eq!(options.program(), &format!("{home}/bin/tool"));
+        assert_eq!(
+            options.working_directory(),
+            &Some(PathBuf::from(format!("{home}/project")))
+        );
+    }
+
+    #[test]
+    fn given_home_relative_identity_file_when_building_ssh_session_then_key_path_is_expanded()
+     {
+        let home = std::env::var("HOME").expect("HOME should be set in tests");
+        let ssh = SshCommand {
+            host: String::from("example.com"),
+            port: 22,
+            user: Some(String::from("user")),
+            identity_file: Some(String::from("${HOME}/.ssh/id_ed25519")),
+            extra_args: Vec::new(),
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        let options = ssh_session(&ssh, &cancel);
+
+        let SSHAuth::KeyFile {
+            private_key_path, ..
+        } = options.auth()
+        else {
+            panic!("expected key file auth");
+        };
+        assert_eq!(private_key_path, format!("{home}/.ssh/id_ed25519"));
     }
 
     #[test]
