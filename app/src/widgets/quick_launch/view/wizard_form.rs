@@ -439,7 +439,8 @@ fn field_label<'a>(
         .into()
 }
 
-fn editor_button<'a>(
+/// Regular action button shared by the quick launch forms and dialogs.
+pub(super) fn editor_button<'a>(
     label: &'a str,
     on_press: QuickLaunchIntent,
     theme: ThemeProps<'a>,

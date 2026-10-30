@@ -358,6 +358,52 @@ pub(crate) struct PreparedQuickLaunch {
     pub(crate) command: Box<QuickLaunch>,
 }
 
+/// Secret an SSH launch needs from the user before it can log in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SshSecretKind {
+    /// Passphrase that unlocks the private key file.
+    KeyPassphrase,
+    /// Password of the remote account.
+    Password,
+}
+
+/// Request to ask the user for an SSH secret.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SshSecretRequest {
+    kind: SshSecretKind,
+    target: String,
+    is_retry: bool,
+}
+
+impl SshSecretRequest {
+    /// Kind of secret to ask for.
+    pub(crate) fn kind(&self) -> SshSecretKind {
+        self.kind
+    }
+
+    /// What the secret unlocks: the key path or `user@host:port`.
+    pub(crate) fn target(&self) -> &str {
+        &self.target
+    }
+
+    /// Whether the previous secret was wrong.
+    pub(crate) fn is_retry(&self) -> bool {
+        self.is_retry
+    }
+
+    pub(crate) fn new(
+        kind: SshSecretKind,
+        target: String,
+        is_retry: bool,
+    ) -> Self {
+        Self {
+            kind,
+            target,
+            is_retry,
+        }
+    }
+}
+
 /// Outcome of a quick launch setup attempt.
 #[derive(Debug, Clone)]
 pub(crate) enum QuickLaunchSetupOutcome {
@@ -367,6 +413,13 @@ pub(crate) enum QuickLaunchSetupOutcome {
         launch_id: u64,
         command: Box<QuickLaunch>,
         error: Arc<super::errors::QuickLaunchError>,
+    },
+    /// The SSH launch must be retried with a secret typed by the user.
+    SecretRequired {
+        path: NodePath,
+        launch_id: u64,
+        command: Box<QuickLaunch>,
+        request: SshSecretRequest,
     },
     Canceled {
         path: NodePath,

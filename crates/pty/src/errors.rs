@@ -26,6 +26,22 @@ pub enum SessionError {
     #[error("session launch cancelled")]
     Cancelled,
 
+    /// The SSH private key is encrypted and no passphrase was given.
+    #[error("ssh private key requires a passphrase")]
+    PassphraseRequired,
+
+    /// The given passphrase could not decrypt the SSH private key.
+    #[error("wrong passphrase for ssh private key")]
+    WrongPassphrase,
+
+    /// SSH password authentication was chosen but no password was given.
+    #[error("ssh password is required")]
+    PasswordRequired,
+
+    /// The SSH server rejected the given password.
+    #[error("ssh server rejected the password")]
+    PasswordRejected,
+
     #[error("session timed out while {step} after {duration:?}")]
     Timeout {
         step: &'static str,

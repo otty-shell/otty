@@ -10,6 +10,7 @@
 mod errors;
 mod size;
 mod ssh;
+mod ssh_key;
 #[cfg(unix)]
 mod unix;
 

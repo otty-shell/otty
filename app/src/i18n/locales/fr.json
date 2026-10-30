@@ -99,6 +99,12 @@
     "button_add": "Ajouter",
     "button_add_env": "Ajouter une variable",
     "button_reset": "Réinitialiser",
+    "button_connect": "Se connecter",
+
+    "secret_prompt_passphrase_title": "Phrase secrète de la clé requise",
+    "secret_prompt_password_title": "Mot de passe SSH requis",
+    "secret_prompt_wrong_passphrase": "Phrase secrète incorrecte. Réessayez.",
+    "secret_prompt_password_rejected": "Le serveur a refusé le mot de passe. Réessayez.",
 
     "section_general": "Général",
     "section_terminal": "Terminal",
@@ -137,6 +143,8 @@
     "tpl_working_directory_not_directory": "Le répertoire de travail n’est pas un répertoire : {path}",
     "tpl_identity_file_not_found": "Fichier d’identité introuvable : {path}",
     "tpl_identity_file_not_file": "Le fichier d’identité n’est pas un fichier : {path}",
+    "tpl_secret_prompt_passphrase_body": "Saisissez la phrase secrète de la clé privée {path}",
+    "tpl_secret_prompt_password_body": "Saisissez le mot de passe pour {target}",
     "tpl_program_not_found_in_path": "Programme introuvable dans PATH : {program}",
     "tpl_program_not_found": "Programme introuvable : {program}",
     "tpl_program_is_directory": "Le programme est un répertoire : {program}",

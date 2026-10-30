@@ -10,7 +10,7 @@ use super::event::{QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent};
 use super::services::{build_command, prepare_quick_launch_setup};
 use super::state::{
     ContextMenuState, DragState, InlineEditState, QuickLaunchErrorState,
-    QuickLaunchState,
+    QuickLaunchState, SecretPromptState,
 };
 use super::storage::save_quick_launches;
 use super::types::{
@@ -193,6 +193,19 @@ pub(crate) fn reduce(
             handle_context_menu_action(state, ctx.terminal_settings, action)
         },
         SetupCompleted(outcome) => reduce_setup_completed(state, outcome),
+        SecretPromptChanged(value) => {
+            if let Some(prompt) = state.secret_prompt_mut() {
+                prompt.set_value(value);
+            }
+            Task::none()
+        },
+        SecretPromptSubmit => {
+            reduce_secret_prompt_submit(state, ctx.terminal_settings)
+        },
+        SecretPromptCancel => {
+            state.close_secret_prompt();
+            Task::none()
+        },
         PersistCompleted => {
             state.complete_persist();
             Task::none()
@@ -396,11 +409,46 @@ fn reduce_setup_completed(
                 message: quick_launch_error_message(&command, error.as_ref()),
             })
         },
+        QuickLaunchSetupOutcome::SecretRequired {
+            path,
+            launch_id,
+            command,
+            request,
+        } => {
+            if should_skip_launch_result(state, &path, launch_id) {
+                return Task::none();
+            }
+
+            let prompt = SecretPromptState::new(path, command, request);
+            let focus = operation::focus(prompt.input_id().clone());
+            state.open_secret_prompt(prompt);
+            focus
+        },
         QuickLaunchSetupOutcome::Canceled { path, launch_id } => {
             let _ = should_skip_launch_result(state, &path, launch_id);
             Task::none()
         },
     }
+}
+
+/// Relaunch the prompted command with the typed secret.
+fn reduce_secret_prompt_submit(
+    state: &mut QuickLaunchState,
+    terminal_settings: &otty_ui_term::settings::Settings,
+) -> Task<QuickLaunchEvent> {
+    if state
+        .secret_prompt()
+        .is_none_or(|prompt| prompt.value().is_empty())
+    {
+        return Task::none();
+    }
+
+    let Some(prompt) = state.take_secret_prompt() else {
+        return Task::none();
+    };
+    let (path, command, secret) = prompt.into_launch();
+
+    launch_quick_launch(state, terminal_settings, path, command, Some(secret))
 }
 
 fn handle_prepared_quick_launch(
@@ -451,7 +499,7 @@ fn handle_node_left_click(
             Task::none()
         },
         QuickLaunchNode::Command(command) => {
-            launch_quick_launch(state, terminal_settings, path, command)
+            launch_quick_launch(state, terminal_settings, path, command, None)
         },
     }
 }
@@ -1042,6 +1090,7 @@ fn launch_quick_launch(
     terminal_settings: &otty_ui_term::settings::Settings,
     path: NodePath,
     command: QuickLaunch,
+    secret: Option<String>,
 ) -> Task<QuickLaunchEvent> {
     if state.is_launching(&path) {
         return Task::none();
@@ -1054,6 +1103,7 @@ fn launch_quick_launch(
             path,
             launch_id,
             terminal_settings.clone(),
+            secret,
             cancel,
         ),
         |outcome| {
@@ -1129,7 +1179,9 @@ mod tests {
     use iced::Point;
     use otty_ui_term::settings::Settings;
 
-    use super::super::types::{CommandSpec, CustomCommand};
+    use super::super::types::{
+        CommandSpec, CustomCommand, SshSecretKind, SshSecretRequest,
+    };
     use super::*;
     use crate::domain::exit_behavior::ExitBehavior;
 
@@ -2401,5 +2453,154 @@ mod tests {
         let editor = state.wizard().editor(1).expect("editor should exist");
         let ssh = editor.ssh().expect("ssh options should exist");
         assert!(ssh.extra_args().is_empty());
+    }
+
+    fn password_request(is_retry: bool) -> SshSecretRequest {
+        SshSecretRequest::new(
+            SshSecretKind::Password,
+            String::from("alice@example.com:22"),
+            is_retry,
+        )
+    }
+
+    fn state_with_secret_prompt() -> QuickLaunchState {
+        let mut state = QuickLaunchState::default();
+        let path = vec![String::from("Demo")];
+        let launch_id =
+            state.begin_launch(path.clone(), Arc::new(AtomicBool::new(false)));
+        let settings = Settings::default();
+
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::SetupCompleted(
+                QuickLaunchSetupOutcome::SecretRequired {
+                    path,
+                    launch_id,
+                    command: Box::new(sample_command()),
+                    request: password_request(false),
+                },
+            ),
+            &ctx(&settings),
+        );
+
+        state
+    }
+
+    #[test]
+    fn given_secret_required_outcome_when_reduced_then_prompt_opens_and_launch_ends()
+     {
+        let state = state_with_secret_prompt();
+
+        let prompt = state.secret_prompt().expect("prompt should be open");
+        assert_eq!(prompt.request(), &password_request(false));
+        assert!(prompt.value().is_empty());
+        assert!(state.launching().is_empty());
+    }
+
+    #[test]
+    fn given_canceled_launch_when_secret_required_then_prompt_stays_closed() {
+        let mut state = QuickLaunchState::default();
+        let path = vec![String::from("Demo")];
+        let launch_id =
+            state.begin_launch(path.clone(), Arc::new(AtomicBool::new(false)));
+        state.cancel_launch(&path);
+        let settings = Settings::default();
+
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::SetupCompleted(
+                QuickLaunchSetupOutcome::SecretRequired {
+                    path,
+                    launch_id,
+                    command: Box::new(sample_command()),
+                    request: password_request(false),
+                },
+            ),
+            &ctx(&settings),
+        );
+
+        assert!(state.secret_prompt().is_none());
+        assert!(state.launching().is_empty());
+    }
+
+    #[test]
+    fn given_open_prompt_when_secret_typed_then_value_is_updated() {
+        let mut state = state_with_secret_prompt();
+        let settings = Settings::default();
+
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::SecretPromptChanged(String::from("hunter2")),
+            &ctx(&settings),
+        );
+
+        let prompt = state.secret_prompt().expect("prompt should be open");
+        assert_eq!(prompt.value(), "hunter2");
+    }
+
+    #[test]
+    fn given_typed_secret_when_submitted_then_prompt_closes_and_launch_restarts()
+     {
+        let mut state = state_with_secret_prompt();
+        let settings = Settings::default();
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::SecretPromptChanged(String::from("hunter2")),
+            &ctx(&settings),
+        );
+
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::SecretPromptSubmit,
+            &ctx(&settings),
+        );
+
+        assert!(state.secret_prompt().is_none());
+        assert!(state.is_launching(&vec![String::from("Demo")]));
+    }
+
+    #[test]
+    fn given_empty_secret_when_submitted_then_prompt_stays_open() {
+        let mut state = state_with_secret_prompt();
+        let settings = Settings::default();
+
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::SecretPromptSubmit,
+            &ctx(&settings),
+        );
+
+        assert!(state.secret_prompt().is_some());
+        assert!(state.launching().is_empty());
+    }
+
+    #[test]
+    fn given_open_prompt_when_canceled_then_prompt_closes_without_launch() {
+        let mut state = state_with_secret_prompt();
+        let settings = Settings::default();
+
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::SecretPromptCancel,
+            &ctx(&settings),
+        );
+
+        assert!(state.secret_prompt().is_none());
+        assert!(state.launching().is_empty());
+    }
+
+    #[test]
+    fn given_secret_prompt_when_debug_printed_then_secret_is_hidden() {
+        let mut state = state_with_secret_prompt();
+        let settings = Settings::default();
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::SecretPromptChanged(String::from("hunter2")),
+            &ctx(&settings),
+        );
+
+        let debug = format!("{:?}", state.secret_prompt());
+
+        assert!(!debug.contains("hunter2"));
     }
 }

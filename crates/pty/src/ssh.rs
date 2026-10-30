@@ -15,9 +15,13 @@ use ssh2::{
     Channel, Error as SshError, ErrorCode, ExtendedData, Session as Ssh2Session,
 };
 
+use crate::ssh_key::is_key_file_encrypted;
 use crate::{Pollable, PtySize, Session, SessionError};
 
 const LIBSSH2_ERROR_EAGAIN: i32 = -37;
+const LIBSSH2_ERROR_FILE: i32 = -16;
+const LIBSSH2_ERROR_AUTHENTICATION_FAILED: i32 = -18;
+const LIBSSH2_ERROR_KEYFILE_AUTH_FAILED: i32 = -48;
 const REQUEST_PTY_TAG: &str = "xterm-256color";
 // Upper bound for a single poll tick while connecting; keeps cancel/timeout
 // checks responsive without busy-looping.
@@ -25,7 +29,11 @@ const CONNECT_POLL_MS: u64 = 200;
 const SSH_RETRY_DELAY_MS: u64 = 10;
 
 /// Authentication strategy used when establishing an SSH session.
-#[derive(Debug, Clone)]
+///
+/// An empty password or a missing passphrase for an encrypted key makes
+/// [`SSHSessionBuilder::spawn`] fail with [`SessionError::PasswordRequired`]
+/// or [`SessionError::PassphraseRequired`], so the caller can ask the user.
+#[derive(Clone)]
 pub enum SSHAuth {
     /// Authenticate with a plain-text password.
     Password(String),
@@ -35,6 +43,29 @@ pub enum SSHAuth {
         private_key_path: String,
         passphrase: Option<String>,
     },
+}
+
+impl Default for SSHAuth {
+    fn default() -> Self {
+        Self::Password(String::new())
+    }
+}
+
+/// Hide secrets so they never reach logs.
+impl std::fmt::Debug for SSHAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Password(_) => f.write_str("Password(<redacted>)"),
+            Self::KeyFile {
+                private_key_path,
+                passphrase,
+            } => f
+                .debug_struct("KeyFile")
+                .field("private_key_path", private_key_path)
+                .field("passphrase", &passphrase.as_ref().map(|_| "<redacted>"))
+                .finish(),
+        }
+    }
 }
 
 /// Interactive SSH session backed by `ssh2` crate
@@ -233,12 +264,6 @@ impl Drop for SSHSession {
     }
 }
 
-impl Default for SSHAuth {
-    fn default() -> Self {
-        Self::Password(String::new())
-    }
-}
-
 /// Builder that describes how to establish a new SSH-backed session.
 #[derive(Debug, Default)]
 pub struct SSHSessionBuilder {
@@ -340,27 +365,7 @@ impl SSHSessionBuilder {
         }
 
         if !session.authenticated() {
-            match auth {
-                SSHAuth::Password(pw) => {
-                    executor.exec("ssh password auth", || {
-                        session.userauth_password(&user, &pw)
-                    })?;
-                },
-                SSHAuth::KeyFile {
-                    private_key_path,
-                    passphrase,
-                } => {
-                    let path = Path::new(&private_key_path);
-                    executor.exec("ssh key auth", || {
-                        session.userauth_pubkey_file(
-                            &user,
-                            None,
-                            path,
-                            passphrase.as_deref(),
-                        )
-                    })?;
-                },
-            }
+            authenticate(&session, &executor, &user, &auth)?;
         }
 
         let mut channel =
@@ -391,6 +396,90 @@ impl SSHSessionBuilder {
 
         Ok(SSHSession::new(session, channel, mio_stream))
     }
+}
+
+/// Log in with the configured password or key file after the agent failed.
+///
+/// Missing secrets are reported before any network call, so libssh2 never
+/// tries to read a passphrase from the controlling terminal on its own.
+fn authenticate(
+    session: &Ssh2Session,
+    executor: &RetryableExecutor<'_>,
+    user: &str,
+    auth: &SSHAuth,
+) -> Result<(), SessionError> {
+    match auth {
+        SSHAuth::Password(password) => {
+            if password.is_empty() {
+                return Err(SessionError::PasswordRequired);
+            }
+
+            executor
+                .exec("ssh password auth", || {
+                    session.userauth_password(user, password)
+                })
+                .map_err(password_auth_error)
+        },
+        SSHAuth::KeyFile {
+            private_key_path,
+            passphrase,
+        } => {
+            let path = Path::new(private_key_path);
+            let passphrase =
+                passphrase.as_deref().filter(|value| !value.is_empty());
+            let is_encrypted = is_key_file_encrypted(path)?;
+
+            if is_encrypted && passphrase.is_none() {
+                return Err(SessionError::PassphraseRequired);
+            }
+
+            executor
+                .exec("ssh key auth", || {
+                    session.userauth_pubkey_file(user, None, path, passphrase)
+                })
+                .map_err(|err| key_auth_error(err, is_encrypted))
+        },
+    }
+}
+
+/// Turn a server-side password rejection into a dedicated error.
+fn password_auth_error(err: SessionError) -> SessionError {
+    match err {
+        SessionError::SSH2(ref ssh_err)
+            if has_session_code(
+                ssh_err,
+                LIBSSH2_ERROR_AUTHENTICATION_FAILED,
+            ) =>
+        {
+            SessionError::PasswordRejected
+        },
+        _ => err,
+    }
+}
+
+/// Turn a failure to open an encrypted key into a wrong-passphrase error.
+///
+/// libssh2 reports a bad passphrase either as a key file error or as a key
+/// decryption error, depending on the key format. A server that rejects the
+/// decrypted key fails with other codes, which are kept as they are.
+fn key_auth_error(err: SessionError, is_encrypted: bool) -> SessionError {
+    match err {
+        SessionError::SSH2(ref ssh_err)
+            if is_encrypted
+                && (has_session_code(ssh_err, LIBSSH2_ERROR_FILE)
+                    || has_session_code(
+                        ssh_err,
+                        LIBSSH2_ERROR_KEYFILE_AUTH_FAILED,
+                    )) =>
+        {
+            SessionError::WrongPassphrase
+        },
+        _ => err,
+    }
+}
+
+fn has_session_code(err: &SshError, code: i32) -> bool {
+    matches!(err.code(), ErrorCode::Session(value) if value == code)
 }
 
 /// Check whether a libssh2 error represents a non-blocking retry condition.
@@ -556,8 +645,171 @@ fn exit_status_from_code(code: i32) -> ExitStatus {
 mod tests {
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
+    use std::path::PathBuf;
     use std::thread;
     use std::time::{Duration, Instant};
+
+    use ssh2::{Error as SshError, ErrorCode, Session as Ssh2Session};
+
+    use super::{
+        LIBSSH2_ERROR_AUTHENTICATION_FAILED, LIBSSH2_ERROR_FILE,
+        LIBSSH2_ERROR_KEYFILE_AUTH_FAILED, RetryableExecutor, SSHAuth,
+        authenticate, key_auth_error, password_auth_error,
+    };
+    use crate::SessionError;
+
+    const LIBSSH2_ERROR_PUBLICKEY_UNVERIFIED: i32 = -19;
+    const ENCRYPTED_KEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----\n\
+        b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAA\n\
+        -----END OPENSSH PRIVATE KEY-----\n";
+
+    struct TempKeyFile {
+        path: PathBuf,
+    }
+
+    impl TempKeyFile {
+        fn new(name: &str, contents: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("otty-pty-ssh-{name}-{}", std::process::id()));
+            std::fs::write(&path, contents).expect("write temp key file");
+            Self { path }
+        }
+
+        fn path(&self) -> String {
+            self.path.to_string_lossy().to_string()
+        }
+    }
+
+    impl Drop for TempKeyFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    fn executor() -> RetryableExecutor<'static> {
+        RetryableExecutor {
+            start: Instant::now(),
+            timeout: None,
+            cancel: None,
+        }
+    }
+
+    fn ssh_error(code: i32) -> SessionError {
+        SessionError::SSH2(SshError::new(ErrorCode::Session(code), "test"))
+    }
+
+    #[test]
+    fn given_empty_password_when_authenticating_then_password_is_required() {
+        let session = Ssh2Session::new().expect("ssh session");
+        let auth = SSHAuth::Password(String::new());
+
+        let result = authenticate(&session, &executor(), "user", &auth);
+
+        assert!(matches!(result, Err(SessionError::PasswordRequired)));
+    }
+
+    #[test]
+    fn given_encrypted_key_without_passphrase_when_authenticating_then_passphrase_is_required()
+     {
+        let key = TempKeyFile::new("no-passphrase", ENCRYPTED_KEY);
+        let session = Ssh2Session::new().expect("ssh session");
+        let auth = SSHAuth::KeyFile {
+            private_key_path: key.path(),
+            passphrase: None,
+        };
+
+        let result = authenticate(&session, &executor(), "user", &auth);
+
+        assert!(matches!(result, Err(SessionError::PassphraseRequired)));
+    }
+
+    #[test]
+    fn given_encrypted_key_with_empty_passphrase_when_authenticating_then_passphrase_is_required()
+     {
+        let key = TempKeyFile::new("empty-passphrase", ENCRYPTED_KEY);
+        let session = Ssh2Session::new().expect("ssh session");
+        let auth = SSHAuth::KeyFile {
+            private_key_path: key.path(),
+            passphrase: Some(String::new()),
+        };
+
+        let result = authenticate(&session, &executor(), "user", &auth);
+
+        assert!(matches!(result, Err(SessionError::PassphraseRequired)));
+    }
+
+    #[test]
+    fn given_missing_key_file_when_authenticating_then_io_error_returned() {
+        let session = Ssh2Session::new().expect("ssh session");
+        let auth = SSHAuth::KeyFile {
+            private_key_path: String::from("/nonexistent/otty/id_ed25519"),
+            passphrase: None,
+        };
+
+        let result = authenticate(&session, &executor(), "user", &auth);
+
+        assert!(matches!(result, Err(SessionError::IO(_))));
+    }
+
+    #[test]
+    fn given_server_rejects_password_when_mapping_error_then_password_rejected()
+    {
+        let error =
+            password_auth_error(ssh_error(LIBSSH2_ERROR_AUTHENTICATION_FAILED));
+
+        assert!(matches!(error, SessionError::PasswordRejected));
+    }
+
+    #[test]
+    fn given_other_password_failure_when_mapping_error_then_error_is_kept() {
+        let error = password_auth_error(ssh_error(LIBSSH2_ERROR_FILE));
+
+        assert!(matches!(error, SessionError::SSH2(_)));
+    }
+
+    #[test]
+    fn given_encrypted_key_that_fails_to_open_when_mapping_error_then_wrong_passphrase()
+     {
+        let file_error = key_auth_error(ssh_error(LIBSSH2_ERROR_FILE), true);
+        let decrypt_error =
+            key_auth_error(ssh_error(LIBSSH2_ERROR_KEYFILE_AUTH_FAILED), true);
+
+        assert!(matches!(file_error, SessionError::WrongPassphrase));
+        assert!(matches!(decrypt_error, SessionError::WrongPassphrase));
+    }
+
+    #[test]
+    fn given_plain_key_that_fails_to_open_when_mapping_error_then_error_is_kept()
+     {
+        let error = key_auth_error(ssh_error(LIBSSH2_ERROR_FILE), false);
+
+        assert!(matches!(error, SessionError::SSH2(_)));
+    }
+
+    #[test]
+    fn given_server_rejects_decrypted_key_when_mapping_error_then_error_is_kept()
+     {
+        let error =
+            key_auth_error(ssh_error(LIBSSH2_ERROR_PUBLICKEY_UNVERIFIED), true);
+
+        assert!(matches!(error, SessionError::SSH2(_)));
+    }
+
+    #[test]
+    fn given_secrets_when_auth_is_debug_printed_then_secrets_are_hidden() {
+        let password = SSHAuth::Password(String::from("hunter2"));
+        let key = SSHAuth::KeyFile {
+            private_key_path: String::from("/home/me/.ssh/id_ed25519"),
+            passphrase: Some(String::from("open sesame")),
+        };
+
+        let password_debug = format!("{password:?}");
+        let key_debug = format!("{key:?}");
+
+        assert!(!password_debug.contains("hunter2"));
+        assert!(!key_debug.contains("open sesame"));
+        assert!(key_debug.contains("/home/me/.ssh/id_ed25519"));
+    }
 
     fn loopback_pair() -> (mio::net::TcpStream, TcpStream) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");

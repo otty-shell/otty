@@ -87,6 +87,11 @@ impl QuickLaunchWidget {
         self.state.context_menu()
     }
 
+    /// Return the open SSH secret dialog, if any.
+    pub(crate) fn secret_prompt(&self) -> Option<&state::SecretPromptState> {
+        self.state.secret_prompt()
+    }
+
     /// Return the launching map.
     pub(crate) fn launching(
         &self,

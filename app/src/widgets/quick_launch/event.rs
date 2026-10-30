@@ -153,6 +153,11 @@ pub(crate) enum QuickLaunchIntent {
         exit_behavior: ExitBehavior,
     },
 
+    // SSH secret dialog events
+    SecretPromptChanged(String),
+    SecretPromptSubmit,
+    SecretPromptCancel,
+
     // Async completions
     SetupCompleted(QuickLaunchSetupOutcome),
     WizardSaveRequested(QuickLaunchWizardSaveRequest),

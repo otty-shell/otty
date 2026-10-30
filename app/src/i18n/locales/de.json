@@ -99,6 +99,12 @@
     "button_add": "Hinzufügen",
     "button_add_env": "Variable hinzufügen",
     "button_reset": "Zurücksetzen",
+    "button_connect": "Verbinden",
+
+    "secret_prompt_passphrase_title": "Passphrase für den Schlüssel erforderlich",
+    "secret_prompt_password_title": "SSH-Passwort erforderlich",
+    "secret_prompt_wrong_passphrase": "Falsche Passphrase. Bitte erneut versuchen.",
+    "secret_prompt_password_rejected": "Der Server hat das Passwort abgelehnt. Bitte erneut versuchen.",
 
     "section_general": "Allgemein",
     "section_terminal": "Terminal",
@@ -137,6 +143,8 @@
     "tpl_working_directory_not_directory": "Das Arbeitsverzeichnis ist kein Verzeichnis: {path}",
     "tpl_identity_file_not_found": "Identitätsdatei nicht gefunden: {path}",
     "tpl_identity_file_not_file": "Die Identitätsdatei ist keine Datei: {path}",
+    "tpl_secret_prompt_passphrase_body": "Passphrase für den privaten Schlüssel {path} eingeben",
+    "tpl_secret_prompt_password_body": "Passwort für {target} eingeben",
     "tpl_program_not_found_in_path": "Programm nicht in PATH gefunden: {program}",
     "tpl_program_not_found": "Programm nicht gefunden: {program}",
     "tpl_program_is_directory": "Das Programm ist ein Verzeichnis: {program}",
