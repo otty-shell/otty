@@ -298,6 +298,7 @@ fn view_tab_area<'a>(
     let tab_bar_props = tab_bar::TabBarProps {
         tabs: tabs_vm.tabs,
         active_tab_id: tabs_vm.active_tab_id,
+        new_tab_title: app.shell_session.name().to_string(),
         theme: theme_props,
     };
 

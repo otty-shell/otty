@@ -137,7 +137,7 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 - [x] 06 — Kit components: rows, tabs and form fields · Sonnet
 - [x] 07 — Restyle title bar and pane dividers · Sonnet
 - [x] 08 — Restyle widget rail · Sonnet
-- [ ] 09 — Restyle tab strip · Sonnet
+- [x] 09 — Restyle tab strip · Sonnet
 - [ ] 10 — Restyle sidebar trees · Sonnet
 - [ ] 11 — Restyle menus and dropdowns · Sonnet
 - [ ] 12 — Restyle settings screen · Sonnet

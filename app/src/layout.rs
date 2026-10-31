@@ -2,7 +2,6 @@ use iced::Size;
 use otty_ui_kit::{radius, size};
 
 use crate::app::view::HEADER_SEPARATOR_HEIGHT;
-use crate::widgets::tabs::view::tab_bar::TAB_BAR_HEIGHT;
 
 /// Shared compact control size used by dense toolbars and menus.
 pub(crate) const BUTTON_SIZE_COMPACT: f32 = size::CONTROL_SM;
@@ -25,7 +24,7 @@ pub(crate) fn pane_grid_size(
     sidebar_menu_width: f32,
     sidebar_workspace_ratio: f32,
 ) -> Size {
-    let height = (screen_size.height - TAB_BAR_HEIGHT).max(0.0);
+    let height = (screen_size.height - size::TAB).max(0.0);
 
     let menu_width = if sidebar_is_hidden {
         0.0
@@ -79,5 +78,24 @@ mod tests {
         let grid = pane_grid_size(screen, true, size::RAIL, 0.0);
 
         assert_eq!(grid.width, 1000.0);
+    }
+
+    #[test]
+    fn given_screen_when_pane_grid_computed_then_tab_strip_height_is_removed() {
+        let screen = Size::new(1000.0, 700.0);
+
+        let grid = pane_grid_size(screen, false, size::RAIL, 0.0);
+
+        assert_eq!(size::TAB, 34.0);
+        assert_eq!(grid.height, 700.0 - 34.0);
+    }
+
+    #[test]
+    fn given_screen_shorter_than_tab_strip_when_pane_grid_computed_then_height_is_zero()
+     {
+        let grid =
+            pane_grid_size(Size::new(1000.0, 20.0), false, size::RAIL, 0.0);
+
+        assert_eq!(grid.height, 0.0);
     }
 }

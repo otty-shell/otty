@@ -1,11 +1,11 @@
 //! `TabStrip` and `Tab`: the top strip of open sessions.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{button, container, row, stack, text};
+use iced::widget::{button, container, row, scrollable, stack, text};
 use iced::{Alignment, Element, Length, Padding};
 
 use super::glyph;
-use super::icon_button::{IconButton, IconButtonSize};
+use super::icon_button::{IconButton, IconButtonSize, IconTone};
 use crate::palette::UiPalette;
 use crate::{fonts, size, spacing};
 
@@ -92,6 +92,7 @@ pub struct TabStrip<Message> {
     palette: UiPalette,
     tabs: Vec<Tab<Message>>,
     on_new: Option<Message>,
+    scroll_id: Option<iced::widget::Id>,
 }
 
 impl<Message> TabStrip<Message> {
@@ -101,6 +102,7 @@ impl<Message> TabStrip<Message> {
             palette: palette.clone(),
             tabs: Vec::new(),
             on_new: None,
+            scroll_id: None,
         }
     }
 
@@ -115,6 +117,13 @@ impl<Message> TabStrip<Message> {
         self.on_new = Some(message);
         self
     }
+
+    /// Makes the strip scroll sideways and names the scrollable, so the app
+    /// can scroll it with `iced::widget::operation`.
+    pub fn scroll_id(mut self, id: impl Into<iced::widget::Id>) -> Self {
+        self.scroll_id = Some(id.into());
+        self
+    }
 }
 
 impl<'a, Message: Clone + 'a> From<TabStrip<Message>> for Element<'a, Message> {
@@ -125,7 +134,8 @@ impl<'a, Message: Clone + 'a> From<TabStrip<Message>> for Element<'a, Message> {
         for tab in value.tabs {
             strip = strip.push(tab_view(tab, &palette));
         }
-        let mut plus = IconButton::new(glyph::plus(), "New session", &palette);
+        let mut plus = IconButton::new(glyph::plus(), "New session", &palette)
+            .tone(IconTone::Accent);
         if let Some(message) = value.on_new {
             plus = plus.on_press(message);
         }
@@ -136,8 +146,25 @@ impl<'a, Message: Clone + 'a> From<TabStrip<Message>> for Element<'a, Message> {
                 .height(Length::Fill),
         );
 
+        let content: Element<'a, Message> = match value.scroll_id {
+            Some(id) => scrollable::Scrollable::with_direction(
+                strip,
+                scrollable::Direction::Horizontal(
+                    scrollable::Scrollbar::new()
+                        .width(0)
+                        .scroller_width(0)
+                        .margin(0),
+                ),
+            )
+            .id(id)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into(),
+            None => strip.into(),
+        };
+
         let background = palette.surface_panel();
-        container(strip)
+        container(content)
             .width(Length::Fill)
             .height(size::TAB)
             .clip(true)
