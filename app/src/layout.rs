@@ -1,12 +1,8 @@
 use iced::Size;
 use otty_ui_kit::size;
 
-use crate::app::view::HEADER_SEPARATOR_HEIGHT;
-
 pub(crate) fn screen_size_from_window(window_size: Size) -> Size {
-    let height =
-        (window_size.height - size::TITLEBAR - HEADER_SEPARATOR_HEIGHT)
-            .max(0.0);
+    let height = (window_size.height - size::TITLEBAR - size::LINE).max(0.0);
 
     Size::new(window_size.width, height)
 }

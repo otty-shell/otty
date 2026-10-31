@@ -1,6 +1,7 @@
 use iced::widget::pane_grid::PaneGrid;
 use iced::widget::{Space, column, container, mouse_area, row, text};
 use iced::{Element, Length, Size, Theme, alignment};
+use otty_ui_kit::components::divider;
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
 
 use super::{App, AppEvent};
@@ -32,11 +33,6 @@ use crate::widgets::terminal_workspace::view::{
     pane_grid as terminal_pane_grid,
 };
 
-/// Height of the 1px `line` under the title bar. The design system has no
-/// size token for dividers.
-pub(crate) const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
-/// Width of the 1px `line` between the rail and the side panel.
-const SIDEBAR_SEPARATOR_WIDTH: f32 = 1.0;
 /// Width of the 1px `line` between the side panel and the main area.
 const PANE_GRID_SPACING: f32 = 1.0;
 /// Width of the invisible strip around the side panel edge that starts a
@@ -158,7 +154,7 @@ fn view_header<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let line = theme_props.theme.ui().line();
+    let palette = theme_props.theme.ui();
 
     let action_bar = action_bar::view(action_bar::ActionBarProps {
         title: app.widgets.tabs.active_tab_title().unwrap_or("OTTY"),
@@ -166,13 +162,7 @@ fn view_header<'a>(
     })
     .map(|event| AppEvent::Chrome(ChromeEvent::Intent(event)));
 
-    let separator = container(Space::new())
-        .width(Length::Fill)
-        .height(Length::Fixed(HEADER_SEPARATOR_HEIGHT))
-        .style(move |_| iced::widget::container::Style {
-            background: Some(line.into()),
-            ..Default::default()
-        });
+    let separator = divider::horizontal(palette);
 
     column![action_bar, separator]
         .width(Length::Fill)
@@ -203,13 +193,7 @@ fn view_sidebar_layout<'a>(
 
     let line = theme_props.theme.ui().line();
 
-    let sidebar_separator = container(Space::new())
-        .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
-        .height(Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(line.into()),
-            ..Default::default()
-        });
+    let sidebar_separator = divider::vertical(theme_props.theme.ui());
 
     let sidebar_pane_grid =
         PaneGrid::new(app.widgets.sidebar.panes(), move |_pane, pane_kind, _| {

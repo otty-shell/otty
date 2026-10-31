@@ -7,6 +7,7 @@
 use iced::widget::{Space, column, container, row, scrollable, svg, text};
 use iced::{Element, Length, Padding, Theme};
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
+use otty_ui_kit::components::divider;
 use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::icon_button::{
     IconButton, IconButtonSize, IconTone,
@@ -251,6 +252,12 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     ]
     .spacing(spacing::SPACE_3);
 
+    let dividers = column![
+        divider::horizontal(p),
+        container(divider::vertical(p)).height(24),
+    ]
+    .spacing(spacing::SPACE_3);
+
     let menu = Menu::new(p)
         .heading("From launches")
         .item(
@@ -437,6 +444,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section("Kbd", keys.into(), p),
+        section("Divider", dividers.into(), p),
         section("Menu", menu.into(), p),
         section("Switch", switches.into(), p),
         section("Segmented", segments.into(), p),

@@ -146,7 +146,7 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 - [x] 14 — Remove old styling code · Opus
 - [x] 16 — Fix the known contrast issues · Sonnet
 - [x] 17 — Status colors pass 4.5:1 on every surface they can sit on · Sonnet
-- [ ] 18 — Divider component and the 1px line token · Sonnet
+- [x] 18 — Divider component and the 1px line token · Sonnet
 - [ ] 19 — One split style for the sidebar and terminal panes · Sonnet
 - [ ] 20 — Surface container · Sonnet
 - [ ] 21 — Bold mono font in the kit and small token fixes · Sonnet

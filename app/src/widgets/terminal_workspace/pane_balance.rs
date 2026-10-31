@@ -103,11 +103,9 @@ fn collect_ratios(
 mod tests {
     use iced::Size;
     use iced::widget::pane_grid;
+    use otty_ui_kit::size;
 
     use super::*;
-
-    /// Divider width the pane grid uses between panes.
-    const PANE_SPACING: f32 = 1.0;
 
     /// Apply every computed ratio and read the resulting pane widths.
     fn equalize_and_measure(
@@ -121,7 +119,7 @@ mod tests {
 
         state
             .layout()
-            .pane_regions(PANE_SPACING, 0.0, bounds)
+            .pane_regions(size::LINE, 0.0, bounds)
             .values()
             .map(|region| region.width)
             .collect()
@@ -275,7 +273,7 @@ mod tests {
         }
 
         let regions = state.layout().pane_regions(
-            PANE_SPACING,
+            size::LINE,
             0.0,
             Size::new(900.0, 600.0),
         );

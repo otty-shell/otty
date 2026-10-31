@@ -2,13 +2,13 @@ use iced::widget::{Space, column, container, row, scrollable, text};
 use iced::{Element, Length, Padding, Theme, alignment};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::form_section::FormSection;
-use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::select::select;
 use otty_ui_kit::components::setting_row::SettingRow;
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::components::tree_row::TreeRow;
+use otty_ui_kit::components::{divider, scrollbar};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 use otty_ui_tree::{TreeRowContext, TreeView};
@@ -22,9 +22,6 @@ use crate::theme::{BuiltinTheme, ThemeProps};
 /// Width of the settings navigation tree. No size token: the design system
 /// panel (`panel`, 260px) is wider than this short list needs.
 const NAV_WIDTH: f32 = 220.0;
-/// Width of the 1px `line` between the navigation and the form. The design
-/// system has no size token for dividers.
-const NAV_SEPARATOR_WIDTH: f32 = 1.0;
 /// Widest the form grows on large windows, so rows stay readable. No size
 /// token.
 const FORM_MAX_WIDTH: f32 = 720.0;
@@ -41,14 +38,7 @@ pub(crate) fn view(
 ) -> Element<'_, SettingsIntent, Theme, iced::Renderer> {
     let palette = props.theme.theme.ui();
     let nav = settings_nav_tree(&props, palette);
-    let separator_color = palette.line();
-    let separator = container(Space::new())
-        .width(Length::Fixed(NAV_SEPARATOR_WIDTH))
-        .height(Length::Fill)
-        .style(move |_| container::Style {
-            background: Some(separator_color.into()),
-            ..Default::default()
-        });
+    let separator = divider::vertical(palette);
     let form = settings_form(&props, palette);
 
     row![nav, separator, form]

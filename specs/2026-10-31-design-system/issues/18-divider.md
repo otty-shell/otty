@@ -1,6 +1,6 @@
 # 18 — Divider component and the 1px line token
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 17
@@ -25,3 +25,10 @@ constant. Move it into the kit.
 ## Tests
 
 None for the component (plain styling, AGENTS.md). Existing `layout.rs` tests must still pass.
+
+## Answer
+
+- Added `size::LINE` and `components/divider.rs` with `horizontal` and `vertical`, both shown in the gallery.
+- `view.rs` header and sidebar separators and the settings navigation separator now use the divider; their local constants are gone.
+- `layout.rs` and the `pane_balance.rs` tests use `size::LINE`.
+- Pane grid spacing and split lines were left for ticket 19.
