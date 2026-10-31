@@ -1,6 +1,6 @@
 # 08 — Restyle widget rail
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 06

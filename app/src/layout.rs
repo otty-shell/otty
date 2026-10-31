@@ -8,8 +8,6 @@ use crate::widgets::tabs::view::tab_bar::TAB_BAR_HEIGHT;
 pub(crate) const BUTTON_SIZE_COMPACT: f32 = size::CONTROL_SM;
 /// Shared regular control size used by form actions.
 pub(crate) const BUTTON_SIZE_REGULAR: f32 = size::CONTROL_MD;
-/// Shared large control size used by sidebar rail actions.
-pub(crate) const BUTTON_SIZE_RAIL: f32 = size::RAIL_BUTTON;
 /// Shared rounded corner radius for standard buttons.
 pub(crate) const BUTTON_RADIUS_ROUNDED: f32 = radius::RADIUS_SM;
 
@@ -62,5 +60,24 @@ mod tests {
         let screen = screen_size_from_window(Size::new(800.0, 20.0));
 
         assert_eq!(screen.height, 0.0);
+    }
+
+    #[test]
+    fn given_visible_rail_when_pane_grid_computed_then_rail_width_is_48() {
+        let screen = Size::new(1000.0, 700.0);
+
+        let grid = pane_grid_size(screen, false, size::RAIL, 0.0);
+
+        assert_eq!(size::RAIL, 48.0);
+        assert_eq!(grid.width, 1000.0 - 48.0);
+    }
+
+    #[test]
+    fn given_hidden_sidebar_when_pane_grid_computed_then_rail_is_not_counted() {
+        let screen = Size::new(1000.0, 700.0);
+
+        let grid = pane_grid_size(screen, true, size::RAIL, 0.0);
+
+        assert_eq!(grid.width, 1000.0);
     }
 }

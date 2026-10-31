@@ -1,18 +1,13 @@
-use iced::widget::{Space, button, column, container, row, scrollable, svg};
-use iced::{Border, Element, Length, Theme, alignment};
+use iced::widget::{Space, column, container, scrollable, svg};
+use iced::{Element, Length, Theme};
+use otty_ui_kit::components::rail_button::{RailButton, rail_separator};
+use otty_ui_kit::size;
 
-use super::constants::SIDEBAR_MENU_WIDTH;
 use super::event::SidebarIntent;
 use super::model::SidebarViewModel;
 use super::types::SidebarItem;
 use crate::icons;
-use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_RAIL};
 use crate::theme::ThemeProps;
-
-const MENU_BUTTON_SIZE: f32 = BUTTON_SIZE_RAIL;
-const MENU_ICON_SIZE: f32 = 20.0;
-const MENU_BUTTON_PADDING: f32 = 8.0;
-const ACTIVE_BORDER_WIDTH: f32 = 2.0;
 
 /// Props for the sidebar view aggregator.
 #[derive(Debug, Clone, Copy)]
@@ -32,19 +27,21 @@ pub(crate) fn view(
             .into();
     }
 
-    let palette = props.theme.theme.iced_palette();
+    let palette = props.theme.theme.ui();
 
-    let terminal_button = sidebar_button(
+    let terminal_button = rail_button(
         icons::SIDEBAR_TERMINAL,
+        "Terminal",
         props.vm.active_item == SidebarItem::Terminal,
-        props.theme,
+        palette,
         SidebarIntent::SelectTerminal,
     );
 
-    let explorer_button = sidebar_button(
+    let explorer_button = rail_button(
         icons::SIDEBAR_EXPLORER,
+        "Explorer",
         props.vm.active_item == SidebarItem::Explorer,
-        props.theme,
+        palette,
         SidebarIntent::SelectExplorer,
     );
 
@@ -64,107 +61,56 @@ pub(crate) fn view(
     .width(Length::Fill)
     .height(Length::Fill);
 
-    let settings_button = sidebar_button(
+    let settings_button = rail_button(
         icons::SIDEBAR_SETTINGS,
+        "Settings",
         false,
-        props.theme,
+        palette,
         SidebarIntent::OpenSettings,
     );
 
-    let toggle_icon = if props.vm.is_workspace_open {
-        icons::SIDEBAR_COLLAPSE
+    let (toggle_icon, toggle_label) = if props.vm.is_workspace_open {
+        (icons::SIDEBAR_COLLAPSE, "Collapse workspace")
     } else {
-        icons::SIDEBAR_EXPAND
+        (icons::SIDEBAR_EXPAND, "Expand workspace")
     };
 
-    let toggle_button = sidebar_button(
+    let toggle_button = rail_button(
         toggle_icon,
+        toggle_label,
         false,
-        props.theme,
+        palette,
         SidebarIntent::ToggleWorkspace,
     );
 
-    let meta_menu = column![settings_button, toggle_button].spacing(0);
+    let meta_menu =
+        column![rail_separator(palette), toggle_button, settings_button];
 
     let content = column![main_scroll, meta_menu]
         .width(Length::Fill)
         .height(Length::Fill);
 
+    let background = palette.surface_chrome();
+
     container(content)
-        .width(Length::Fixed(SIDEBAR_MENU_WIDTH))
+        .width(Length::Fixed(size::RAIL))
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
-            background: Some(palette.dim_black.into()),
+            background: Some(background.into()),
             ..Default::default()
         })
         .into()
 }
 
-fn sidebar_button<'a>(
+fn rail_button<'a>(
     icon: &'static [u8],
+    label: &'static str,
     is_active: bool,
-    theme: ThemeProps<'a>,
+    palette: &otty_ui_kit::palette::UiPalette,
     on_press: SidebarIntent,
 ) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
-    let palette = theme.theme.iced_palette();
-    let base_color = palette.dim_foreground;
-    let hover_color = palette.blue;
-    let active_color = palette.blue;
-
-    let icon_svg = svg::Svg::new(svg::Handle::from_memory(icon))
-        .width(Length::Fixed(MENU_ICON_SIZE))
-        .height(Length::Fixed(MENU_ICON_SIZE))
-        .style(move |_, status| {
-            let color = if is_active {
-                active_color
-            } else if status == svg::Status::Hovered {
-                hover_color
-            } else {
-                base_color
-            };
-
-            svg::Style { color: Some(color) }
-        });
-
-    let icon_container = container(icon_svg)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(alignment::Horizontal::Center)
-        .align_y(alignment::Vertical::Center)
-        .padding(MENU_BUTTON_PADDING);
-
-    let border_color = if is_active {
-        palette.blue
-    } else {
-        iced::Color::TRANSPARENT
-    };
-
-    let border_strip = container(Space::new())
-        .width(Length::Fixed(ACTIVE_BORDER_WIDTH))
-        .height(Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(border_color.into()),
-            ..Default::default()
-        });
-
-    let content = row![border_strip, icon_container]
-        .spacing(0)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_y(alignment::Vertical::Center);
-
-    button(content)
+    RailButton::new(svg::Handle::from_memory(icon), label, palette)
+        .active(is_active)
         .on_press(on_press)
-        .padding(0)
-        .width(Length::Fill)
-        .height(Length::Fixed(MENU_BUTTON_SIZE))
-        .style(|_, _| iced::widget::button::Style {
-            background: None,
-            border: Border {
-                radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
         .into()
 }
