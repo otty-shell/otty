@@ -10,9 +10,9 @@
 //! [`UiPalette`]: crate::palette::UiPalette
 
 pub mod action_tile;
-mod backspace_guard;
 pub mod button;
 pub mod chip;
+pub mod command_palette;
 pub mod dialog;
 pub mod divider;
 pub mod empty_card;
@@ -22,9 +22,11 @@ pub mod form_page;
 pub mod form_section;
 mod glyph;
 pub mod icon_button;
+mod input_keys;
 pub mod kbd;
 pub mod key_value_field;
 pub mod menu;
+pub mod palette_list;
 pub mod pane_header;
 pub mod panel_section;
 pub mod rail_button;

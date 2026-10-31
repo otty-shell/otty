@@ -63,3 +63,9 @@ pub const EMPTY_CARD: f32 = 460.0;
 pub const EMPTY_LOGO_WIDTH: f32 = 72.0;
 /// Height of the logo slot on the empty card (`height: 52px`).
 pub const EMPTY_LOGO_HEIGHT: f32 = 52.0;
+/// Width of the command palette (`.ot-palette { width: 560px }`).
+pub const PALETTE: f32 = 560.0;
+/// Height of the command palette input row (`.ot-palette-input`).
+pub const PALETTE_INPUT: f32 = 40.0;
+/// Height of a command palette entry (`.ot-palette-item`).
+pub const PALETTE_ITEM: f32 = 32.0;

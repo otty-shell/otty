@@ -11,6 +11,7 @@ use iced::{Element, Length, Padding, Theme};
 use otty_ui_kit::components::action_tile::ActionTile;
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::chip::Chip;
+use otty_ui_kit::components::command_palette::{CommandPalette, PaletteAction};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::empty_card::EmptyCard;
@@ -23,6 +24,7 @@ use otty_ui_kit::components::icon_button::{
 use otty_ui_kit::components::kbd::{kbd, shortcut_text};
 use otty_ui_kit::components::key_value_field::KeyValueField;
 use otty_ui_kit::components::menu::{Menu, MenuItem};
+use otty_ui_kit::components::palette_list::{PaletteItem, PaletteList};
 use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::rail_button::{RailButton, rail_separator};
@@ -109,6 +111,8 @@ struct Gallery {
     dialog_open: bool,
     sessions_open: bool,
     menu_open: bool,
+    commands: PaletteList<u32>,
+    no_commands: PaletteList<u32>,
 }
 
 impl Gallery {
@@ -151,6 +155,8 @@ impl Gallery {
             dialog_open: false,
             sessions_open: true,
             menu_open: false,
+            commands: palette_list("la"),
+            no_commands: palette_list("docker"),
         }
     }
 }
@@ -179,6 +185,7 @@ enum Message {
     CloseDialog,
     ToggleSessions,
     ToggleMenu,
+    Palette(PaletteAction),
 }
 
 fn update(state: &mut Gallery, message: Message) {
@@ -212,7 +219,38 @@ fn update(state: &mut Gallery, message: Message) {
         Message::CloseDialog => state.dialog_open = false,
         Message::ToggleSessions => state.sessions_open = !state.sessions_open,
         Message::ToggleMenu => state.menu_open = !state.menu_open,
+        Message::Palette(action) => match action {
+            PaletteAction::QueryChanged(query) => {
+                state.commands.set_query(query);
+            },
+            PaletteAction::MoveUp => state.commands.move_up(),
+            PaletteAction::MoveDown => state.commands.move_down(),
+            PaletteAction::RunActive | PaletteAction::RunItem(_) => {
+                state.clicks += 1;
+            },
+            PaletteAction::Close => state.commands.set_query(String::new()),
+        },
     }
+}
+
+/// Palette entries as in the V4Palette screen, with `query` typed.
+fn palette_list(query: &str) -> PaletteList<u32> {
+    let mut list = PaletteList::new(vec![
+        PaletteItem::new(1, "Launches", "laptop")
+            .with_target(TargetKind::Ssh)
+            .with_detail("ubuntu@192.168.1.20")
+            .with_shortcut("Alt 1"),
+        PaletteItem::new(2, "Sessions", "zsh  ~/projects/otty")
+            .with_target(TargetKind::Local),
+        PaletteItem::new(3, "Sessions", "htop on laptop")
+            .with_target(TargetKind::Ssh),
+        PaletteItem::new(4, "Actions", "Settings: Language"),
+        PaletteItem::new(5, "Actions", "New launch…")
+            .with_shortcut("Ctrl Shift T"),
+    ]);
+    list.set_query(query.to_owned());
+
+    list
 }
 
 fn view(state: &Gallery) -> Element<'_, Message> {
@@ -534,6 +572,19 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     let logo = svg(svg::Handle::from_memory(LOGO))
         .width(Length::Fill)
         .height(Length::Fill);
+    let command_palette = |list| {
+        CommandPalette::new(list, svg::Handle::from_memory(SEARCH_ICON), p)
+            .placeholder("Search sessions, launches and actions")
+            .no_matches("No matches")
+            .hint("↑↓", "move")
+            .hint("Enter", "open")
+    };
+    let palettes = column![
+        command_palette(&state.commands).on_action(Message::Palette),
+        command_palette(&state.no_commands),
+    ]
+    .spacing(spacing::SPACE_6);
+
     let empty_card = EmptyCard::new(
         "Start a session",
         "Open a terminal on this computer or run one of your launches.",
@@ -689,6 +740,11 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section(
             "EmptyCard (ActionTile: accent icon, shortcut)",
             empty_card.into(),
+            p,
+        ),
+        section(
+            "CommandPalette (query \"la\": active item, match in bold; no matches)",
+            palettes.into(),
             p,
         ),
     ];

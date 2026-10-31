@@ -1,7 +1,7 @@
 //! `Menu` and `MenuItem`: context menus and dropdown lists.
 
 use iced::widget::{Space, button, column, container, row, text};
-use iced::{Alignment, Border, Element, Length, Padding};
+use iced::{Alignment, Border, Element, Length, Padding, Theme};
 
 use super::{faded, kbd};
 use crate::palette::UiPalette;
@@ -180,40 +180,49 @@ fn item_view<'a, Message: Clone + 'a>(
         content = content.push(kbd::kbd(shortcut, palette));
     }
 
-    let palette = palette.clone();
-    let active = item.active;
     button(content)
         .width(Length::Fill)
         .height(size::ROW)
         .padding(Padding::from([0.0, ITEM_PADDING_X]))
         .on_press_maybe(item.on_press)
-        .style(move |_, status| {
-            let lit = active
-                || matches!(
-                    status,
-                    button::Status::Hovered | button::Status::Pressed
-                );
-            let color = if lit {
-                palette.text_strong()
-            } else {
-                palette.text_body()
-            };
-
-            button::Style {
-                background: lit.then(|| palette.surface_hover().into()),
-                text_color: if status == button::Status::Disabled {
-                    faded(color)
-                } else {
-                    color
-                },
-                border: Border {
-                    radius: radius::RADIUS_XS.into(),
-                    ..Border::default()
-                },
-                ..button::Style::default()
-            }
-        })
+        .style(item_style(palette, item.active))
         .into()
+}
+
+/// Style of a menu item: `surface-hover` and `text-strong` while hovered,
+/// pressed or `active` (keyboard-selected), `text-body` otherwise.
+pub(super) fn item_style(
+    palette: &UiPalette,
+    active: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
+    let palette = palette.clone();
+
+    move |_, status| {
+        let lit = active
+            || matches!(
+                status,
+                button::Status::Hovered | button::Status::Pressed
+            );
+        let color = if lit {
+            palette.text_strong()
+        } else {
+            palette.text_body()
+        };
+
+        button::Style {
+            background: lit.then(|| palette.surface_hover().into()),
+            text_color: if status == button::Status::Disabled {
+                faded(color)
+            } else {
+                color
+            },
+            border: Border {
+                radius: radius::RADIUS_XS.into(),
+                ..Border::default()
+            },
+            ..button::Style::default()
+        }
+    }
 }
 
 /// Builds a 1px separator line.
@@ -232,8 +241,8 @@ fn separator_view<'a, Message: 'a>(
     .into()
 }
 
-/// Builds a heading row.
-fn heading_view<'a, Message: 'a>(
+/// Builds a heading row (`.ot-menu-label`).
+pub(super) fn heading_view<'a, Message: 'a>(
     label: String,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
