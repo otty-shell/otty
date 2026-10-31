@@ -1,6 +1,6 @@
 # 02 — Shells report exit code and millisecond times
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Model: Opus 5.5 (claude-opus-5-5)
 Blocked by: 01

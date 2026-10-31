@@ -1,6 +1,6 @@
 # 04 — Failed block look
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 03

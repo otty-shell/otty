@@ -3,8 +3,8 @@
 Created: 2026-10-31
 Author: holland.deception@gmail.com
 Agent: Claude Code
-Status: DRAFT
-Approved: No
+Status: IN PROGRESS
+Approved: Yes
 Worktree: No
 Type: Build
 
@@ -69,11 +69,19 @@ tokens `surface-selected`, `surface-header`, `surface-error`, `line`,
 
 ## Decisions
 
-Filled in after the owner answers the questions above.
+Owner answers, 2026-10-31: the recommended option for every question.
+
+1. **Badge, no header row.** A meta badge on the block's first line; terminal geometry does not change.
+2. **Colors through the terminal theme settings.** The app passes block colors from `UiPalette`; `crates/ui/terminal` does not depend on `otty-ui-kit`.
+3. **Actions:** Copy command and Copy output on hover now; Rerun as ticket 06, enabled only at an idle prompt; Ask agent waits for the agent sessions spec.
+4. **No sticky header** in this spec.
+5. **Milliseconds.** Shells send times in milliseconds; protocol `v` becomes 2.
+
+Coverage baseline for AC8: 69.80% line coverage at `96e99cc`.
 
 ## Acceptance Criteria
 
-Written for the recommended answers; adjusted after review.
+Written for the answers in Decisions.
 
 - [ ] AC1: The line between blocks is `line`, `line-width` thick; the selected block fill is `surface-selected`; the hovered block fill is `surface-header`. Colors switch with the theme without a restart. No color in `crates/ui/terminal` is computed by changing alpha of a palette color for block chrome.
 - [ ] AC2: In zsh and bash sessions, after a command finishes, its block has `exit_code`, `started_at` and `finished_at` (milliseconds), and keeps its `cmd` and `cwd` (unit tests on the surface merge; manual check with `true`, `false`, `exit 3` in a subshell, an empty Enter and Ctrl C).
@@ -105,4 +113,5 @@ Order: 01 → 02 → 03 → 04 → 05 → 06 → 07, one at a time (01, 04 and 0
 
 ## Round Log
 
-- Draft (2026-10-31): written after the design system spec; waiting for answers to the questions above.
+- Draft (2026-10-31): written after the design system spec.
+- Round 1 (2026-10-31, owner): all five questions answered with the recommended option; spec approved.

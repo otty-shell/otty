@@ -1,6 +1,6 @@
 # 05 — Meta badge and hover actions
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Model: Opus 5.5 (claude-opus-5-5)
 Blocked by: 04

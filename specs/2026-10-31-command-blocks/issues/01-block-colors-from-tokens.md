@@ -1,6 +1,6 @@
 # 01 — Block colors from tokens
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: —

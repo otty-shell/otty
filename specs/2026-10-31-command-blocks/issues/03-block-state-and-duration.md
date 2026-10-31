@@ -1,6 +1,6 @@
 # 03 — Block state and duration format
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 02
