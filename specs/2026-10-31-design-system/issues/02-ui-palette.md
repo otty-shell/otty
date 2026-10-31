@@ -1,6 +1,6 @@
 # 02 — UiPalette for OTTY Dark and OTTY Light, contrast tests
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Opus 5.5 (claude-opus-5-5)
 Blocked by: 01

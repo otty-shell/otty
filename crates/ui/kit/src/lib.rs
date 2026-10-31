@@ -1,7 +1,8 @@
 //! Design tokens of the OTTY design system for [`iced`] widgets.
 //!
-//! Every size, gap, corner radius and text style used by the app comes from
-//! one of these modules:
+//! Every color, size, gap, corner radius and text style used by the app comes
+//! from one of these modules:
+//! - [`palette`] for colors and shadows of each theme;
 //! - [`spacing`] for paddings and gaps;
 //! - [`radius`] for corner radii;
 //! - [`size`] for fixed heights and widths;
@@ -20,6 +21,9 @@
 //!         .padding(spacing::SPACE_3);
 //! ```
 
+#[cfg(test)]
+mod contrast;
+pub mod palette;
 pub mod radius;
 pub mod size;
 pub mod spacing;

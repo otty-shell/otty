@@ -1,5 +1,6 @@
 use iced::theme::Palette;
 use iced::{Color, Theme};
+use otty_ui_kit::palette::UiPalette;
 use otty_ui_term::{ColorPalette as TerminalColorPalette, parse_hex_color};
 
 /// Raw string-based color palette used for serialization and settings.
@@ -192,6 +193,7 @@ pub struct AppTheme {
     id: String,
     raw_palette: ColorPalette,
     iced_palette: IcedColorPalette,
+    ui: UiPalette,
 }
 
 impl Default for AppTheme {
@@ -203,6 +205,7 @@ impl Default for AppTheme {
             id: String::from("default"),
             raw_palette,
             iced_palette,
+            ui: UiPalette::otty_dark(),
         }
     }
 }
@@ -231,6 +234,7 @@ impl AppTheme {
             id,
             raw_palette,
             iced_palette,
+            ui: UiPalette::otty_dark(),
         }
     }
 
@@ -247,6 +251,12 @@ impl AppTheme {
     /// Return the parsed iced color palette.
     pub fn iced_palette(&self) -> &IcedColorPalette {
         &self.iced_palette
+    }
+
+    /// Return the UI color tokens of the theme. OTTY Dark until theme
+    /// selection exists.
+    pub fn ui(&self) -> &UiPalette {
+        &self.ui
     }
 }
 
@@ -300,8 +310,16 @@ impl ThemeManager {
 #[cfg(test)]
 mod tests {
     use iced::Theme;
+    use otty_ui_kit::palette::UiPalette;
 
     use super::{AppTheme, ColorPalette};
+
+    #[test]
+    fn given_default_app_theme_when_ui_palette_read_then_it_is_otty_dark() {
+        let app_theme = AppTheme::default();
+
+        assert_eq!(app_theme.ui(), &UiPalette::otty_dark());
+    }
 
     #[test]
     fn given_app_theme_when_converted_to_iced_then_primary_uses_accent_blue() {

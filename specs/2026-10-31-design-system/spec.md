@@ -121,7 +121,6 @@ and ticket 15 raises them in the design system.
 | Pair | Dark | Light |
 |---|---|---|
 | `text-muted` on `surface-hover` (shortcut in a hovered menu item) | 4.16 | 4.47 |
-| `text-muted` on `surface-selected` | 4.68 | 4.54 |
 | `status-ok` / `status-error` on `surface-chrome` | passes | 4.39 / 4.39 |
 | `status-ok` / `status-error` on `surface-raised` | passes | 4.23 / 4.23 |
 
@@ -131,7 +130,7 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 ## Progress Tracking
 
 - [x] 01 — Create `otty-ui-kit` crate with size, spacing, radius and type tokens · Opus
-- [ ] 02 — `UiPalette` for OTTY Dark and OTTY Light, contrast tests · Opus
+- [x] 02 — `UiPalette` for OTTY Dark and OTTY Light, contrast tests · Opus
 - [ ] 03 — Two themes: add OTTY Light, remove other presets and the palette editor, store the theme name · Opus
 - [ ] 04 — Bundle fonts and switch UI and terminal text styles · Sonnet
 - [ ] 05 — Kit components: controls and overlays · Sonnet
@@ -152,3 +151,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 
 - Round 1 (2026-10-31, owner review): no dark/light detection, only two fixed themes; One Dark, Solarized Dark, Dracula and the palette editor removed; fonts approved; OTTY Light terminal colors completed in ticket 03 because the updated design system still fixes only 9 of 29.
 - Round 2 (2026-10-31, owner review): spec approved; OTTY Light terminal colors in ticket 03 approved; implementation runs ticket by ticket, one subagent per ticket with the model from its `Model:` line, one commit per ticket.
+- Ticket 02 (2026-10-31): `text-muted` on `surface-selected` (4.68 / 4.54) passes 4.5:1 and was wrongly listed as a known issue; removed from the table and tested as a passing pair.
