@@ -9,12 +9,12 @@ use crate::{fonts, radius, size, spacing, typography};
 
 /// Horizontal padding of the bar (`padding: 0 12px`).
 const PADDING_X: f32 = spacing::SPACE_4;
-/// Gap between items.
-const ITEM_GAP: f32 = spacing::SPACE_4;
-/// Gap between a dot and its name.
+/// Gap between items (`gap: 18px`).
+const ITEM_GAP: f32 = size::STATUS_GAP;
+/// Gap between a dot and its name (`.ot-status-target { gap: 6px }`).
 const DOT_GAP: f32 = spacing::SPACE_2;
-/// Horizontal padding of a button item.
-const BUTTON_PADDING_X: f32 = spacing::SPACE_2;
+/// Horizontal padding of a button item (`padding: 0 8px`).
+const BUTTON_PADDING_X: f32 = spacing::SPACE_3;
 
 /// One entry of a [`StatusBar`].
 pub enum StatusItem<Message> {
@@ -22,8 +22,9 @@ pub enum StatusItem<Message> {
     Text(String),
     /// Muted text in the mono font, for paths and values.
     Mono(String),
-    /// Target dot followed by the target name.
-    Target(TargetKind, String),
+    /// Target dot followed by the target name; `bool` is true for the plain
+    /// variant that uses the body text color.
+    Target(TargetKind, String, bool),
     /// Text button that sends `Message` on press.
     Button(String, Message),
 }
@@ -39,9 +40,14 @@ impl<Message> StatusItem<Message> {
         Self::Mono(label.into())
     }
 
-    /// Creates a target item: dot and name.
+    /// Creates a target item: dot and muted name.
     pub fn target(kind: TargetKind, name: impl Into<String>) -> Self {
-        Self::Target(kind, name.into())
+        Self::Target(kind, name.into(), false)
+    }
+
+    /// Creates a target item whose name uses the body text color.
+    pub fn plain_target(kind: TargetKind, name: impl Into<String>) -> Self {
+        Self::Target(kind, name.into(), true)
     }
 
     /// Creates a button item.
@@ -148,34 +154,44 @@ fn item_view<'a, Message: Clone + 'a>(
     match item {
         StatusItem::Text(label) => caption(label, false, muted),
         StatusItem::Mono(label) => caption(label, true, muted),
-        StatusItem::Target(kind, name) => row![
+        StatusItem::Target(kind, name, is_plain) => row![
             target_dot(kind, palette),
-            caption(name, false, palette.text_body()),
+            caption(
+                name,
+                false,
+                if is_plain { palette.text_body() } else { muted }
+            ),
         ]
         .spacing(DOT_GAP)
         .align_y(Alignment::Center)
         .into(),
         StatusItem::Button(label, on_press) => {
+            let overlay = palette.surface_overlay();
             let hover = palette.surface_hover();
             let strong = palette.text_strong();
 
-            button(caption(label, false, muted))
-                .padding(Padding::from([0.0, BUTTON_PADDING_X]))
-                .on_press(on_press)
-                .style(move |_, status| {
-                    let is_hovered = status == button::Status::Hovered;
+            button(
+                container(caption(label, false, strong)).center_y(Length::Fill),
+            )
+            .height(size::STATUS_BUTTON)
+            .padding(Padding::from([0.0, BUTTON_PADDING_X]))
+            .on_press(on_press)
+            .style(move |_, status| {
+                let is_hovered = status == button::Status::Hovered;
 
-                    button::Style {
-                        background: is_hovered.then(|| hover.into()),
-                        text_color: if is_hovered { strong } else { muted },
-                        border: Border {
-                            radius: radius::RADIUS_XS.into(),
-                            ..Border::default()
-                        },
-                        ..button::Style::default()
-                    }
-                })
-                .into()
+                button::Style {
+                    background: Some(
+                        if is_hovered { hover } else { overlay }.into(),
+                    ),
+                    text_color: strong,
+                    border: Border {
+                        radius: radius::RADIUS_XS.into(),
+                        ..Border::default()
+                    },
+                    ..button::Style::default()
+                }
+            })
+            .into()
         },
     }
 }

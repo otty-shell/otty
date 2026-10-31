@@ -36,8 +36,14 @@ Added three kit components, one file each in `crates/ui/kit/src/components/`, pl
 - `target_dot.rs`: `TargetKind { Local, Ssh, Prod, Staging }` with `color(&palette)`, and `target_dot(kind, &palette) -> Element`. Round dot in the `target-*` token.
 - `chip.rs`: `Chip::new(label, &palette).target(TargetKind).note(&str).mono(bool)`, converts into `Element`. `surface-raised`, `radius-sm`, `small` text.
 - `status_bar.rs`: `StatusBar::new(&palette).left(StatusItem).right(StatusItem)`, converts into `Element`; `StatusItem::{text, mono, target(kind, name), button(label, message)}`. 24px tall, `surface-chrome`, `caption` text.
-- New token: `size::DOT` (8px dot diameter) in `size.rs`.
+- New token: `size::DOT` (dot diameter) in `size.rs`.
 
 Tests: target dots reach 3:1 on `surface-chrome`, `surface-panel` and `surface-raised` in both themes (reusing `contrast_ratio`); each kind maps to its token; an `iced_test` check that a status bar button item sends its message.
 
-Not verified: the visual look. The design CSS (`ot-dot`, `ot-chip`, `ot-statusbar`) was not available locally, so paddings and gaps (chip 2/8, bar 0/12, item gap 12) are best estimates from kit tokens, and the gallery was only compiled, not viewed.
+Corrected after design CSS: the design CSS is now available and the components match it.
+
+- `size::DOT` is 7px (`.ot-dot`). New tokens `size::STATUS_GAP` (18, gap between status bar items) and `size::STATUS_BUTTON` (20, status button height).
+- `Chip`: 24px tall (`size::CONTROL_SM`), padding 0 8, gap `space-2`, `small` text (12), `surface-raised`, `radius-sm`, `text-body`, muted note.
+- `StatusBar`: 24px tall, padding 0 12, gap 18, `caption` text (11.5), `text-muted`. Target name is muted; new `StatusItem::plain_target` uses `text-body`; the dot gap is 6. Button items: 20px tall, padding 0 8, `radius-xs`, `surface-overlay` (hover `surface-hover`), `text-strong`.
+
+Not verified: the visual look. The gallery was only compiled, not viewed.

@@ -5,12 +5,12 @@ use iced::{Alignment, Border, Element, Padding};
 
 use super::target_dot::{TargetKind, target_dot};
 use crate::palette::UiPalette;
-use crate::{fonts, radius, spacing, typography};
+use crate::{fonts, radius, size, spacing, typography};
 
 /// Horizontal padding of a chip (`padding: 0 8px`).
 const PADDING_X: f32 = spacing::SPACE_3;
-/// Vertical padding of a chip.
-const PADDING_Y: f32 = 2.0;
+/// Height of a chip (`height: 24px`, the same as `control-sm`).
+const HEIGHT: f32 = size::CONTROL_SM;
 
 /// Chip with a label, an optional target dot and an optional muted note.
 ///
@@ -102,7 +102,9 @@ impl<'a, Message: 'a> From<Chip> for Element<'a, Message> {
         }
 
         container(content)
-            .padding(Padding::from([PADDING_Y, PADDING_X]))
+            .height(HEIGHT)
+            .align_y(Alignment::Center)
+            .padding(Padding::from([0.0, PADDING_X]))
             .style(move |_| container::Style {
                 background: Some(background.into()),
                 border: Border {

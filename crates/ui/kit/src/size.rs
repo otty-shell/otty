@@ -15,7 +15,11 @@ pub const TITLEBAR: f32 = 38.0;
 /// `statusbar`: status bar.
 pub const STATUSBAR: f32 = 24.0;
 /// Diameter of a target dot (`.ot-dot`).
-pub const DOT: f32 = 8.0;
+pub const DOT: f32 = 7.0;
+/// Gap between items of the status bar (`.ot-statusbar { gap: 18px }`).
+pub const STATUS_GAP: f32 = 18.0;
+/// Height of a button inside the status bar (`.ot-status-btn`).
+pub const STATUS_BUTTON: f32 = 20.0;
 /// `rail`: widget rail width.
 pub const RAIL: f32 = 48.0;
 /// `rail-button`: rail button height.
