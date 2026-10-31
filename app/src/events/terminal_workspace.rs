@@ -1,10 +1,10 @@
 use iced::Task;
+use otty_ui_kit::size;
 
 use super::AppEvent;
 use crate::app::App;
 use crate::layout::pane_grid_size;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
-use crate::widgets::sidebar::constants::SIDEBAR_MENU_WIDTH;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceAction, TerminalWorkspaceCtx, TerminalWorkspaceEffect,
@@ -34,7 +34,7 @@ fn handle_intent_event(
     let pane_grid_size = pane_grid_size(
         app.state.screen_size,
         sidebar.is_hidden(),
-        SIDEBAR_MENU_WIDTH,
+        size::RAIL,
         sidebar.effective_workspace_ratio(),
     );
 

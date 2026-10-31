@@ -1,23 +1,16 @@
-use iced::widget::{Space, column, container};
+use iced::widget::{Space, container};
 use iced::{Element, Length, Size, Theme};
+use otty_ui_kit::components::menu::{self, Menu, MenuItem};
+use otty_ui_kit::spacing;
 
 use super::super::event::QuickLaunchIntent;
 use super::super::state::ContextMenuState;
 use super::super::types::{
     ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,
 };
-use crate::components::primitive::menu_item;
-use crate::geometry::anchor_position;
+use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
-use crate::layout::BUTTON_SIZE_COMPACT;
-use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
-
-const MENU_WIDTH: f32 = 220.0;
-const MENU_ITEM_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
-const MENU_VERTICAL_PADDING: f32 = 16.0;
-const MENU_MARGIN: f32 = 6.0;
-const MENU_CONTAINER_PADDING_Y: f32 = 8.0;
 
 /// Props for the quick launch context menu.
 pub(crate) struct ContextMenuProps<'a> {
@@ -31,102 +24,61 @@ pub(crate) struct ContextMenuProps<'a> {
 pub(crate) fn view(
     props: ContextMenuProps<'_>,
 ) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
-    let mut items: Vec<Element<'_, QuickLaunchIntent, Theme, iced::Renderer>> =
-        Vec::new();
+    let theme = props.theme.theme.ui();
+    let mut menu = Menu::new(theme);
+    let mut item_count = 0;
+    let mut push = |menu: Menu<QuickLaunchIntent>, key: Key, action| {
+        item_count += 1;
+        menu.item(
+            MenuItem::new(i18n::t(key))
+                .on_press(QuickLaunchIntent::ContextMenuAction(action)),
+        )
+    };
 
     match &props.menu.target() {
         ContextMenuTarget::Command(path) => {
-            let is_launching = props.launching.contains_key(path);
-            if is_launching {
-                items.push(menu_item_element(
-                    i18n::t(Key::Kill),
-                    ContextMenuAction::Kill,
-                    props.theme,
-                ));
+            if props.launching.contains_key(path) {
+                menu = push(menu, Key::Kill, ContextMenuAction::Kill);
             }
-            items.push(menu_item_element(
-                i18n::t(Key::Edit),
-                ContextMenuAction::Edit,
-                props.theme,
-            ));
-            items.push(menu_item_element(
-                i18n::t(Key::Rename),
-                ContextMenuAction::Rename,
-                props.theme,
-            ));
-            items.push(menu_item_element(
-                i18n::t(Key::Duplicate),
-                ContextMenuAction::Duplicate,
-                props.theme,
-            ));
-            items.push(menu_item_element(
-                i18n::t(Key::Remove),
-                ContextMenuAction::Remove,
-                props.theme,
-            ));
+            menu = push(menu, Key::Edit, ContextMenuAction::Edit);
+            menu = push(menu, Key::Rename, ContextMenuAction::Rename);
+            menu = push(menu, Key::Duplicate, ContextMenuAction::Duplicate);
+            menu = push(menu, Key::Remove, ContextMenuAction::Remove);
         },
         ContextMenuTarget::Folder(_) => {
-            items.push(menu_item_element(
-                i18n::t(Key::CreateFolder),
-                ContextMenuAction::CreateFolder,
-                props.theme,
-            ));
-            items.push(menu_item_element(
-                i18n::t(Key::CreateQuickLaunch),
+            menu =
+                push(menu, Key::CreateFolder, ContextMenuAction::CreateFolder);
+            menu = push(
+                menu,
+                Key::CreateQuickLaunch,
                 ContextMenuAction::CreateCommand,
-                props.theme,
-            ));
-            items.push(menu_item_element(
-                i18n::t(Key::Rename),
-                ContextMenuAction::Rename,
-                props.theme,
-            ));
-            items.push(menu_item_element(
-                i18n::t(Key::Delete),
-                ContextMenuAction::Delete,
-                props.theme,
-            ));
+            );
+            menu = push(menu, Key::Rename, ContextMenuAction::Rename);
+            menu = push(menu, Key::Delete, ContextMenuAction::Delete);
         },
         ContextMenuTarget::Background => {
-            items.push(menu_item_element(
-                i18n::t(Key::CreateFolder),
-                ContextMenuAction::CreateFolder,
-                props.theme,
-            ));
-            items.push(menu_item_element(
-                i18n::t(Key::CreateLaunch),
-                ContextMenuAction::CreateCommand,
-                props.theme,
-            ));
+            menu =
+                push(menu, Key::CreateFolder, ContextMenuAction::CreateFolder);
+            menu =
+                push(menu, Key::CreateLaunch, ContextMenuAction::CreateCommand);
         },
     }
-
-    let item_count = items.len();
-    let menu_height =
-        item_count as f32 * MENU_ITEM_HEIGHT + MENU_VERTICAL_PADDING;
 
     let anchor = anchor_position(
         props.menu.cursor(),
         props.area_size,
-        MENU_WIDTH,
-        menu_height,
-        MENU_MARGIN,
+        menu::MENU_WIDTH,
+        menu_height_for_items(item_count),
+        spacing::SPACE_2,
     );
 
-    let menu_content = column(items).spacing(0).width(Length::Fill);
-
-    let style_fn = menu_panel_style(props.theme);
-    let menu_panel = container(menu_content)
-        .width(Length::Fixed(MENU_WIDTH))
-        .padding([MENU_CONTAINER_PADDING_Y, 0.0])
-        .style(style_fn);
-
-    let positioned_menu = container(menu_panel).padding(iced::Padding {
-        top: anchor.y,
-        right: 0.0,
-        bottom: 0.0,
-        left: anchor.x,
-    });
+    let positioned_menu =
+        container(Element::from(menu)).padding(iced::Padding {
+            top: anchor.y,
+            right: 0.0,
+            bottom: 0.0,
+            left: anchor.x,
+        });
 
     // Dismiss layer
     let dismiss_layer = iced::widget::mouse_area(
@@ -143,13 +95,4 @@ pub(crate) fn view(
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
-}
-
-fn menu_item_element<'a>(
-    label: &'a str,
-    action: ContextMenuAction,
-    theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    menu_item::view(menu_item::MenuItemProps { label, theme })
-        .map(move |_| QuickLaunchIntent::ContextMenuAction(action.clone()))
 }

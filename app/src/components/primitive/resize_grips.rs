@@ -2,7 +2,9 @@ use iced::widget::{container, mouse_area, stack, text};
 use iced::window::Direction;
 use iced::{Element, Length, Theme, mouse};
 
+/// Thickness of the invisible grip along each window edge. No size token.
 const RESIZE_EDGE_THICKNESS: f32 = 6.0;
+/// Edge length of the invisible grip in each window corner. No size token.
 const RESIZE_CORNER_THICKNESS: f32 = 12.0;
 
 /// Events emitted by the window resize grips.

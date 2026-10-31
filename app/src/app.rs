@@ -49,7 +49,7 @@ impl App {
         let settings = SettingsWidget::load();
         let mut theme_manager = ThemeManager::new();
         let initial_settings = settings.settings_data().clone();
-        theme_manager.set_custom_palette(initial_settings.to_color_palette());
+        theme_manager.set_theme(initial_settings.theme());
         let current_theme = theme_manager.current();
         let fonts = FontsConfig::default();
         let terminal_settings = terminal_settings(current_theme, &fonts);

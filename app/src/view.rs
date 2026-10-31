@@ -1,15 +1,16 @@
 use iced::widget::pane_grid::PaneGrid;
 use iced::widget::{Space, column, container, mouse_area, row, text};
 use iced::{Element, Length, Size, Theme, alignment};
+use otty_ui_kit::components::menu::{self, Menu, MenuItem};
+use otty_ui_kit::components::surface::{Surface, surface};
+use otty_ui_kit::components::{divider, split};
+use otty_ui_kit::{size, spacing};
 
 use super::{App, AppEvent};
 #[cfg(not(target_os = "macos"))]
 use crate::components::primitive::resize_grips;
-use crate::components::primitive::{menu_item, sidebar_workspace_panel};
 use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
-use crate::layout::BUTTON_SIZE_COMPACT;
-use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::view::action_bar;
@@ -32,19 +33,6 @@ use crate::widgets::terminal_workspace::view::{
     pane_context_menu as terminal_pane_context_menu,
     pane_grid as terminal_pane_grid,
 };
-
-pub(crate) const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
-const SIDEBAR_SEPARATOR_WIDTH: f32 = 0.5;
-const SEPARATOR_ALPHA: f32 = 0.3;
-const PANE_GRID_SPACING: f32 = 1.0;
-const PANE_GRID_RESIZE_GRAB: f32 = 8.0;
-
-// Add menu overlay constants
-const ADD_MENU_WIDTH: f32 = 220.0;
-const ADD_MENU_ITEM_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
-const ADD_MENU_VERTICAL_PADDING: f32 = 16.0;
-const ADD_MENU_MARGIN: f32 = 6.0;
-const ADD_MENU_CONTAINER_PADDING_X: f32 = 8.0;
 
 /// Render the root application view.
 pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
@@ -161,26 +149,15 @@ fn view_header<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let palette = theme_props.theme.iced_palette();
+    let palette = theme_props.theme.ui();
 
     let action_bar = action_bar::view(action_bar::ActionBarProps {
         title: app.widgets.tabs.active_tab_title().unwrap_or("OTTY"),
         theme: theme_props,
-        fonts: &app.fonts,
     })
     .map(|event| AppEvent::Chrome(ChromeEvent::Intent(event)));
 
-    let separator = container(Space::new())
-        .width(Length::Fill)
-        .height(Length::Fixed(HEADER_SEPARATOR_HEIGHT))
-        .style(move |_| {
-            let mut background = palette.dim_white;
-            background.a = SEPARATOR_ALPHA;
-            iced::widget::container::Style {
-                background: Some(background.into()),
-                ..Default::default()
-            }
-        });
+    let separator = divider::horizontal(palette);
 
     column![action_bar, separator]
         .width(Length::Fill)
@@ -209,65 +186,46 @@ fn view_sidebar_layout<'a>(
     })
     .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event)));
 
-    let palette = theme_props.theme.iced_palette();
-    let mut sidebar_separator_color = palette.dim_white;
-    sidebar_separator_color.a = SEPARATOR_ALPHA;
+    let sidebar_separator = divider::vertical(theme_props.theme.ui());
 
-    let sidebar_separator = container(Space::new())
-        .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
-        .height(Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(sidebar_separator_color.into()),
-            ..Default::default()
-        });
-
-    let sidebar_pane_grid =
-        PaneGrid::new(app.widgets.sidebar.panes(), move |_pane, pane_kind, _| {
+    let sidebar_pane_grid = PaneGrid::new(
+        app.widgets.sidebar.panes(),
+        move |_pane, pane_kind, _| {
             let content: Element<'_, AppEvent, Theme, iced::Renderer> =
                 match *pane_kind {
                     SidebarPane::Workspace => {
-                        let workspace_content =
-                            view_workspace_content(app, sidebar_vm, theme_props);
-                        sidebar_workspace_panel::view(
-                            sidebar_workspace_panel::SidebarWorkspacePanelProps {
-                                content: workspace_content,
-                                visible: sidebar_vm.is_workspace_open,
-                                theme: theme_props,
-                            },
-                        )
+                        let workspace_content = view_workspace_content(
+                            app,
+                            sidebar_vm,
+                            theme_props,
+                        );
+                        if sidebar_vm.is_workspace_open {
+                            surface(
+                                workspace_content,
+                                Surface::Panel,
+                                theme_props.theme.ui(),
+                            )
+                            .into()
+                        } else {
+                            Space::new()
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .into()
+                        }
                     },
                     SidebarPane::Content => view_tab_area(app, theme_props),
                 };
             iced::widget::pane_grid::Content::new(content)
-        })
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .spacing(PANE_GRID_SPACING)
-        .min_size(0)
-        .on_resize(PANE_GRID_RESIZE_GRAB, |event| {
-            AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(
-                event,
-            )))
-        })
-        .style(move |_: &Theme| {
-            let mut separator = palette.dim_white;
-            separator.a = SEPARATOR_ALPHA;
-
-            iced::widget::pane_grid::Style {
-                hovered_region: iced::widget::pane_grid::Highlight {
-                    background: separator.into(),
-                    border: iced::Border::default(),
-                },
-                picked_split: iced::widget::pane_grid::Line {
-                    color: separator,
-                    width: 1.0,
-                },
-                hovered_split: iced::widget::pane_grid::Line {
-                    color: separator,
-                    width: 1.0,
-                },
-            }
-        });
+        },
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .spacing(size::LINE)
+    .min_size(0)
+    .on_resize(size::SPLIT_GRAB, |event| {
+        AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(event)))
+    })
+    .style(split::style(theme_props.theme.ui()));
 
     row![menu_rail, sidebar_separator, sidebar_pane_grid]
         .width(Length::Fill)
@@ -309,6 +267,7 @@ fn view_tab_area<'a>(
     let tab_bar_props = tab_bar::TabBarProps {
         tabs: tabs_vm.tabs,
         active_tab_id: tabs_vm.active_tab_id,
+        new_tab_title: app.shell_session.name().to_string(),
         theme: theme_props,
     };
 
@@ -335,11 +294,14 @@ fn view_tab_content<'a>(
         (Some(tab_id), Some(TabContent::Terminal)) => {
             let vm = app.widgets.terminal_workspace.vm(Some(tab_id));
             match vm.tab {
-                Some(tab_vm) => terminal_pane_grid::view(tab_vm).map(|event| {
-                    AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-                        event,
-                    ))
-                }),
+                Some(tab_vm) => {
+                    terminal_pane_grid::view(tab_vm, theme_props.theme.ui())
+                        .map(|event| {
+                            AppEvent::TerminalWorkspace(
+                                TerminalWorkspaceEvent::Intent(event),
+                            )
+                        })
+                },
                 None => {
                     missing_tab_state(i18n::t(Key::TerminalTabNotInitialized))
                 },
@@ -442,43 +404,26 @@ fn view_add_menu_overlay<'a>(
     area_size: Size,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
-    let menu_items = [
-        add_menu_item(
-            i18n::t(Key::MenuCreateTab),
-            theme_props,
-            SidebarIntent::AddMenuCreateTab,
-        ),
-        add_menu_item(
-            i18n::t(Key::MenuCreateFolder),
-            theme_props,
-            SidebarIntent::AddMenuCreateFolder,
-        ),
-        add_menu_item(
-            i18n::t(Key::MenuCreateQuickLaunch),
-            theme_props,
-            SidebarIntent::AddMenuCreateCommand,
-        ),
-    ];
-
-    let menu_height = menu_height_for_items(
-        menu_items.len(),
-        ADD_MENU_ITEM_HEIGHT,
-        ADD_MENU_VERTICAL_PADDING,
-    );
-
-    let menu_column = menu_items
-        .into_iter()
-        .fold(iced::widget::Column::new(), |col, item| col.push(item))
-        .spacing(0)
-        .width(Length::Fill)
-        .align_x(alignment::Horizontal::Left);
+    let menu = Menu::new(theme_props.theme.ui())
+        .item(
+            MenuItem::new(i18n::t(Key::MenuCreateTab))
+                .on_press(SidebarIntent::AddMenuCreateTab),
+        )
+        .item(
+            MenuItem::new(i18n::t(Key::MenuCreateFolder))
+                .on_press(SidebarIntent::AddMenuCreateFolder),
+        )
+        .item(
+            MenuItem::new(i18n::t(Key::MenuCreateQuickLaunch))
+                .on_press(SidebarIntent::AddMenuCreateCommand),
+        );
 
     let anchor = anchor_position(
         cursor,
         area_size,
-        ADD_MENU_WIDTH,
-        menu_height,
-        ADD_MENU_MARGIN,
+        menu::MENU_WIDTH,
+        menu_height_for_items(3),
+        spacing::SPACE_2,
     );
 
     let padding = iced::Padding {
@@ -487,12 +432,7 @@ fn view_add_menu_overlay<'a>(
         ..iced::Padding::ZERO
     };
 
-    let menu_container = container(menu_column)
-        .padding([ADD_MENU_CONTAINER_PADDING_X, 0.0])
-        .width(ADD_MENU_WIDTH)
-        .style(menu_panel_style(theme_props));
-
-    let positioned_menu = container(menu_container)
+    let positioned_menu = container(Element::from(menu))
         .padding(padding)
         .width(Length::Fill)
         .height(Length::Fill)
@@ -510,18 +450,4 @@ fn view_add_menu_overlay<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
-}
-
-fn add_menu_item<'a>(
-    label: &'a str,
-    theme_props: ThemeProps<'a>,
-    on_press: SidebarIntent,
-) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
-    menu_item::view(menu_item::MenuItemProps {
-        label,
-        theme: theme_props,
-    })
-    .map(move |event| match event {
-        menu_item::MenuItemEvent::Pressed => on_press.clone(),
-    })
 }

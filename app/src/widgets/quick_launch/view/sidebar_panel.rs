@@ -1,21 +1,15 @@
-use iced::widget::{Space, column, container, row, text};
-use iced::{Element, Length, Theme};
+use iced::widget::{Space, column, row, svg, text};
+use iced::{Element, Length, Padding, Theme};
+use otty_ui_kit::components::icon_button::{IconButton, IconButtonSize};
+use otty_ui_kit::components::surface::{Surface, surface};
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::QuickLaunchIntent;
 use super::super::model::QuickLaunchTreeViewModel;
 use super::sidebar_tree;
-use crate::components::primitive::icon_button::{
-    self, IconButtonHorizontalAlignment, IconButtonProps, IconButtonVariant,
-};
 use crate::i18n::{self, Key};
 use crate::icons;
-use crate::layout::BUTTON_SIZE_COMPACT;
 use crate::theme::ThemeProps;
-
-const HEADER_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
-const TITLE_SIZE: f32 = 13.0;
-const HEADER_PADDING_H: f32 = 10.0;
-const ADD_BUTTON_ICON_SIZE: f32 = 18.0;
 
 /// Props for the quick launch sidebar panel.
 pub(crate) struct SidebarPanelProps<'a> {
@@ -27,36 +21,35 @@ pub(crate) struct SidebarPanelProps<'a> {
 pub(crate) fn view(
     props: SidebarPanelProps<'_>,
 ) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = props.theme.theme.iced_palette();
-    let overlay_bg = palette.overlay;
+    let palette = props.theme.theme.ui();
+    let title_style = typography::HEADING;
 
-    let add_button = icon_button::view(IconButtonProps {
-        icon: icons::ADD_TAB_HEADER,
-        theme: props.theme,
-        size: HEADER_HEIGHT,
-        icon_size: ADD_BUTTON_ICON_SIZE,
-        variant: IconButtonVariant::Standard,
-        horizontal_alignment: IconButtonHorizontalAlignment::Right,
-    })
-    .map(|_| QuickLaunchIntent::HeaderAddButtonPressed);
+    let add_button = IconButton::new(
+        svg::Handle::from_memory(icons::ADD_TAB_HEADER),
+        i18n::t(Key::CreateQuickLaunch),
+        palette,
+    )
+    .size(IconButtonSize::Medium)
+    .on_press(QuickLaunchIntent::HeaderAddButtonPressed);
 
-    let header = container(
+    // The header is as tall as the tab strip so both bottom edges line up.
+    let header = surface(
         row![
-            text(i18n::t(Key::QuickLaunchPanelTitle)).size(TITLE_SIZE),
+            text(i18n::t(Key::QuickLaunchPanelTitle))
+                .size(title_style.size())
+                .font(fonts::UI_SEMIBOLD)
+                .color(palette.text_strong()),
             Space::new().width(Length::Fill),
             add_button,
         ]
         .align_y(iced::alignment::Vertical::Center)
-        .width(Length::Fill)
-        .height(Length::Fixed(HEADER_HEIGHT)),
+        .width(Length::Fill),
+        Surface::Panel,
+        palette,
     )
-    .width(Length::Fill)
-    .height(Length::Fixed(HEADER_HEIGHT))
-    .padding([0, HEADER_PADDING_H as u16])
-    .style(move |_| iced::widget::container::Style {
-        background: Some(overlay_bg.into()),
-        ..Default::default()
-    });
+    .height(size::TAB)
+    .padding(Padding::from([0.0, spacing::SPACE_4]))
+    .align_y(iced::alignment::Vertical::Center);
 
     let tree = sidebar_tree::view(sidebar_tree::SidebarTreeProps {
         data: props.vm.data,

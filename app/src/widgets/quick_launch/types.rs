@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use otty_ui_kit::components::token_field::TokenList;
 use otty_ui_tree::TreeNode;
 use serde::{Deserialize, Serialize};
 
@@ -489,7 +490,7 @@ pub(crate) enum WizardMode {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CommandLaunchOptions {
     program: String,
-    args: Vec<String>,
+    args: TokenList,
     env: Vec<(String, String)>,
     working_directory: String,
 }
@@ -500,6 +501,11 @@ impl CommandLaunchOptions {
     }
 
     pub(crate) fn args(&self) -> &[String] {
+        self.args.tokens()
+    }
+
+    /// Arguments together with the text typed for the next one.
+    pub(crate) fn args_list(&self) -> &TokenList {
         &self.args
     }
 
@@ -520,27 +526,27 @@ impl CommandLaunchOptions {
     }
 
     pub(super) fn set_args(&mut self, value: Vec<String>) {
-        self.args = value;
+        self.args = TokenList::new(value);
     }
 
     pub(super) fn set_envs(&mut self, value: Vec<(String, String)>) {
         self.env = value;
     }
 
-    pub(super) fn add_arg(&mut self) {
-        self.args.push(String::new());
+    pub(super) fn set_arg_input(&mut self, value: String) {
+        self.args.set_input(value);
+    }
+
+    pub(super) fn submit_arg(&mut self) {
+        self.args.submit();
+    }
+
+    pub(super) fn backspace_arg(&mut self) {
+        self.args.backspace();
     }
 
     pub(super) fn remove_arg(&mut self, index: usize) {
-        if index < self.args.len() {
-            self.args.remove(index);
-        }
-    }
-
-    pub(super) fn update_arg(&mut self, index: usize, value: String) {
-        if let Some(arg) = self.args.get_mut(index) {
-            *arg = value;
-        }
+        self.args.remove(index);
     }
 
     pub(super) fn add_env(&mut self) {
@@ -573,7 +579,7 @@ pub(crate) struct SshLaunchOptions {
     port: String,
     user: String,
     identity_file: String,
-    extra_args: Vec<String>,
+    extra_args: TokenList,
 }
 
 impl Default for SshLaunchOptions {
@@ -583,7 +589,7 @@ impl Default for SshLaunchOptions {
             port: SSH_DEFAULT_PORT.to_string(),
             user: String::new(),
             identity_file: String::new(),
-            extra_args: Vec::new(),
+            extra_args: TokenList::default(),
         }
     }
 }
@@ -606,6 +612,11 @@ impl SshLaunchOptions {
     }
 
     pub(crate) fn extra_args(&self) -> &[String] {
+        self.extra_args.tokens()
+    }
+
+    /// Extra arguments together with the text typed for the next one.
+    pub(crate) fn extra_args_list(&self) -> &TokenList {
         &self.extra_args
     }
 
@@ -626,23 +637,23 @@ impl SshLaunchOptions {
     }
 
     pub(super) fn set_extra_args(&mut self, value: Vec<String>) {
-        self.extra_args = value;
+        self.extra_args = TokenList::new(value);
     }
 
-    pub(super) fn add_extra_arg(&mut self) {
-        self.extra_args.push(String::new());
+    pub(super) fn set_extra_arg_input(&mut self, value: String) {
+        self.extra_args.set_input(value);
+    }
+
+    pub(super) fn submit_extra_arg(&mut self) {
+        self.extra_args.submit();
+    }
+
+    pub(super) fn backspace_extra_arg(&mut self) {
+        self.extra_args.backspace();
     }
 
     pub(super) fn remove_extra_arg(&mut self, index: usize) {
-        if index < self.extra_args.len() {
-            self.extra_args.remove(index);
-        }
-    }
-
-    pub(super) fn update_extra_arg(&mut self, index: usize, value: String) {
-        if let Some(arg) = self.extra_args.get_mut(index) {
-            *arg = value;
-        }
+        self.extra_args.remove(index);
     }
 }
 

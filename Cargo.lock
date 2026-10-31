@@ -3032,6 +3032,7 @@ dependencies = [
  "log",
  "notify",
  "otty-libterm",
+ "otty-ui-kit",
  "otty-ui-term",
  "otty-ui-tree",
  "serde",
@@ -3098,6 +3099,13 @@ dependencies = [
  "otty-escape",
  "regex-automata",
  "unicode-width",
+]
+
+[[package]]
+name = "otty-ui-kit"
+version = "0.1.0"
+dependencies = [
+ "iced",
 ]
 
 [[package]]

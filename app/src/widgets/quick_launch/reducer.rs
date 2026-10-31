@@ -265,17 +265,18 @@ pub(crate) fn reduce(
                 e.set_working_directory(value)
             })
         },
-        WizardAddArg { tab_id } => {
-            reduce_wizard_field(state, tab_id, |e| e.add_arg())
+        WizardArgInput { tab_id, value } => {
+            reduce_wizard_field(state, tab_id, |e| e.set_arg_input(value))
+        },
+        WizardArgSubmit { tab_id } => {
+            reduce_wizard_field(state, tab_id, |e| e.submit_arg())
+        },
+        WizardArgBackspace { tab_id } => {
+            reduce_wizard_field(state, tab_id, |e| e.backspace_arg())
         },
         WizardRemoveArg { tab_id, index } => {
             reduce_wizard_field(state, tab_id, |e| e.remove_arg(index))
         },
-        WizardUpdateArg {
-            tab_id,
-            index,
-            value,
-        } => reduce_wizard_field(state, tab_id, |e| e.update_arg(index, value)),
         WizardAddEnv { tab_id } => {
             reduce_wizard_field(state, tab_id, |e| e.add_env())
         },
@@ -296,19 +297,18 @@ pub(crate) fn reduce(
         } => reduce_wizard_field(state, tab_id, |e| {
             e.update_env_value(index, value)
         }),
-        WizardAddExtraArg { tab_id } => {
-            reduce_wizard_field(state, tab_id, |e| e.add_extra_arg())
+        WizardExtraArgInput { tab_id, value } => {
+            reduce_wizard_field(state, tab_id, |e| e.set_extra_arg_input(value))
+        },
+        WizardExtraArgSubmit { tab_id } => {
+            reduce_wizard_field(state, tab_id, |e| e.submit_extra_arg())
+        },
+        WizardExtraArgBackspace { tab_id } => {
+            reduce_wizard_field(state, tab_id, |e| e.backspace_extra_arg())
         },
         WizardRemoveExtraArg { tab_id, index } => {
             reduce_wizard_field(state, tab_id, |e| e.remove_extra_arg(index))
         },
-        WizardUpdateExtraArg {
-            tab_id,
-            index,
-            value,
-        } => reduce_wizard_field(state, tab_id, |e| {
-            e.update_extra_arg(index, value)
-        }),
         WizardSelectExitBehavior {
             tab_id,
             exit_behavior,
@@ -350,9 +350,12 @@ fn reduce_wizard_save(
     state: &mut QuickLaunchState,
     tab_id: u64,
 ) -> Task<QuickLaunchEvent> {
-    let Some(editor) = state.wizard().editor(tab_id) else {
+    let Some(editor) = state.wizard_mut().editor_mut(tab_id) else {
         return Task::none();
     };
+    editor.commit_pending_args();
+
+    let editor = &*editor;
     match build_command(editor) {
         Ok(command) => {
             let target = match editor.mode() {
@@ -2036,20 +2039,121 @@ mod tests {
     }
 
     #[test]
-    fn given_wizard_add_arg_when_reduced_then_arg_count_increases() {
+    fn given_typed_arg_when_submitted_then_arg_is_added_and_input_cleared() {
         let mut state = QuickLaunchState::default();
         state.wizard_mut().initialize_create(1, vec![]);
 
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchIntent::WizardAddArg { tab_id: 1 },
+            QuickLaunchIntent::WizardArgInput {
+                tab_id: 1,
+                value: String::from("  -v "),
+            },
+            &ctx(&settings),
+        );
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardArgSubmit { tab_id: 1 },
+            &ctx(&settings),
+        );
+
+        let editor = state.wizard().editor(1).expect("editor should exist");
+        let custom = editor.custom().expect("custom options should exist");
+        assert_eq!(custom.args(), &[String::from("-v")]);
+        assert_eq!(custom.args_list().input(), "");
+    }
+
+    #[test]
+    fn given_blank_arg_when_submitted_then_nothing_is_added() {
+        let mut state = QuickLaunchState::default();
+        state.wizard_mut().initialize_create(1, vec![]);
+
+        let settings = Settings::default();
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardArgInput {
+                tab_id: 1,
+                value: String::from("   "),
+            },
+            &ctx(&settings),
+        );
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardArgSubmit { tab_id: 1 },
+            &ctx(&settings),
+        );
+
+        let editor = state.wizard().editor(1).expect("editor should exist");
+        let custom = editor.custom().expect("custom options should exist");
+        assert!(custom.args().is_empty());
+    }
+
+    #[test]
+    fn given_empty_input_when_arg_backspace_then_last_arg_is_removed() {
+        let mut state = QuickLaunchState::default();
+        state.wizard_mut().initialize_create(1, vec![]);
+        if let Some(editor) = state.wizard_mut().editor_mut(1) {
+            editor.set_arg_input(String::from("-a"));
+            editor.submit_arg();
+            editor.set_arg_input(String::from("-b"));
+            editor.submit_arg();
+        }
+
+        let settings = Settings::default();
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardArgBackspace { tab_id: 1 },
+            &ctx(&settings),
+        );
+
+        let editor = state.wizard().editor(1).expect("editor should exist");
+        let custom = editor.custom().expect("custom options should exist");
+        assert_eq!(custom.args(), &[String::from("-a")]);
+    }
+
+    #[test]
+    fn given_text_in_input_when_arg_backspace_then_args_are_kept() {
+        let mut state = QuickLaunchState::default();
+        state.wizard_mut().initialize_create(1, vec![]);
+        if let Some(editor) = state.wizard_mut().editor_mut(1) {
+            editor.set_arg_input(String::from("-a"));
+            editor.submit_arg();
+            editor.set_arg_input(String::from("-"));
+        }
+
+        let settings = Settings::default();
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardArgBackspace { tab_id: 1 },
             &ctx(&settings),
         );
 
         let editor = state.wizard().editor(1).expect("editor should exist");
         let custom = editor.custom().expect("custom options should exist");
         assert_eq!(custom.args().len(), 1);
+    }
+
+    #[test]
+    fn given_typed_arg_when_saved_then_pending_text_becomes_arg() {
+        let mut state = QuickLaunchState::default();
+        state.wizard_mut().initialize_create(1, vec![]);
+        if let Some(editor) = state.wizard_mut().editor_mut(1) {
+            editor.set_program(String::from("ls"));
+            editor.set_title(String::from("list"));
+            editor.set_arg_input(String::from("-la"));
+        }
+
+        let settings = Settings::default();
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardSave { tab_id: 1 },
+            &ctx(&settings),
+        );
+
+        let editor = state.wizard().editor(1).expect("editor should exist");
+        let custom = editor.custom().expect("custom options should exist");
+        assert_eq!(custom.args(), &[String::from("-la")]);
     }
 
     #[test]
@@ -2312,8 +2416,10 @@ mod tests {
         let mut state = QuickLaunchState::default();
         state.wizard_mut().initialize_create(1, vec![]);
         if let Some(editor) = state.wizard_mut().editor_mut(1) {
-            editor.add_arg();
-            editor.add_arg();
+            editor.set_arg_input(String::from("-a"));
+            editor.submit_arg();
+            editor.set_arg_input(String::from("-b"));
+            editor.submit_arg();
         }
 
         let settings = Settings::default();
@@ -2329,30 +2435,6 @@ mod tests {
         let editor = state.wizard().editor(1).expect("editor should exist");
         let custom = editor.custom().expect("custom options should exist");
         assert_eq!(custom.args().len(), 1);
-    }
-
-    #[test]
-    fn given_wizard_update_arg_when_reduced_then_arg_value_changes() {
-        let mut state = QuickLaunchState::default();
-        state.wizard_mut().initialize_create(1, vec![]);
-        if let Some(editor) = state.wizard_mut().editor_mut(1) {
-            editor.add_arg();
-        }
-
-        let settings = Settings::default();
-        let _task = reduce(
-            &mut state,
-            QuickLaunchIntent::WizardUpdateArg {
-                tab_id: 1,
-                index: 0,
-                value: String::from("-v"),
-            },
-            &ctx(&settings),
-        );
-
-        let editor = state.wizard().editor(1).expect("editor should exist");
-        let custom = editor.custom().expect("custom options should exist");
-        assert_eq!(custom.args()[0], "-v");
     }
 
     #[test]
@@ -2413,7 +2495,8 @@ mod tests {
     }
 
     #[test]
-    fn given_wizard_ssh_extra_args_when_added_and_removed_then_list_updates() {
+    fn given_wizard_ssh_extra_args_when_submitted_and_removed_then_list_updates()
+     {
         let mut state = QuickLaunchState::default();
         state.wizard_mut().initialize_create(1, vec![]);
         if let Some(editor) = state.wizard_mut().editor_mut(1) {
@@ -2423,16 +2506,15 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchIntent::WizardAddExtraArg { tab_id: 1 },
+            QuickLaunchIntent::WizardExtraArgInput {
+                tab_id: 1,
+                value: String::from("-o StrictHostKeyChecking=no"),
+            },
             &ctx(&settings),
         );
         let _task = reduce(
             &mut state,
-            QuickLaunchIntent::WizardUpdateExtraArg {
-                tab_id: 1,
-                index: 0,
-                value: String::from("-o StrictHostKeyChecking=no"),
-            },
+            QuickLaunchIntent::WizardExtraArgSubmit { tab_id: 1 },
             &ctx(&settings),
         );
 
@@ -2602,5 +2684,384 @@ mod tests {
         let debug = format!("{:?}", state.secret_prompt());
 
         assert!(!debug.contains("hunter2"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Drag and drop tests
+    // -----------------------------------------------------------------------
+
+    fn path(parts: &[&str]) -> NodePath {
+        parts.iter().map(|part| part.to_string()).collect()
+    }
+
+    fn folder_node(
+        title: &str,
+        children: Vec<QuickLaunchNode>,
+    ) -> QuickLaunchNode {
+        QuickLaunchNode::Folder(QuickLaunchFolder {
+            title: String::from(title),
+            expanded: false,
+            children,
+        })
+    }
+
+    fn command_node(title: &str) -> QuickLaunchNode {
+        QuickLaunchNode::Command(QuickLaunch {
+            title: String::from(title),
+            ..sample_command()
+        })
+    }
+
+    fn state_with_root(children: Vec<QuickLaunchNode>) -> QuickLaunchState {
+        let mut state = QuickLaunchState::default();
+        state.data_mut().root.children = children;
+        state
+    }
+
+    fn run(state: &mut QuickLaunchState, intent: QuickLaunchIntent) {
+        let settings = Settings::default();
+        let _task = reduce(state, intent, &ctx(&settings));
+    }
+
+    /// Press `source`, move the pointer `distance` pixels and hover `over`.
+    fn drag_over(
+        state: &mut QuickLaunchState,
+        source: &NodePath,
+        distance: f32,
+        over: &NodePath,
+    ) {
+        run(
+            state,
+            QuickLaunchIntent::NodePressed {
+                path: source.clone(),
+            },
+        );
+        run(
+            state,
+            QuickLaunchIntent::CursorMoved {
+                position: Point::new(0.0, distance),
+            },
+        );
+        run(state, QuickLaunchIntent::NodeHovered { path: over.clone() });
+    }
+
+    fn child_titles(
+        state: &QuickLaunchState,
+        folder: &[String],
+    ) -> Vec<String> {
+        state
+            .data()
+            .folder(folder)
+            .expect("folder should exist")
+            .children()
+            .iter()
+            .map(|node| node.title().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn given_command_dragged_onto_folder_when_released_then_command_moves_into_it()
+     {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", Vec::new()),
+            command_node("Demo"),
+        ]);
+        let source = path(&["Demo"]);
+        let target = path(&["Servers"]);
+
+        drag_over(&mut state, &source, 10.0, &target);
+
+        assert!(matches!(
+            state.drop_target(),
+            Some(DropTarget::Folder(folder)) if folder == &target
+        ));
+
+        run(
+            &mut state,
+            QuickLaunchIntent::NodeReleased {
+                path: target.clone(),
+            },
+        );
+
+        assert_eq!(child_titles(&state, &[]), vec![String::from("Servers")]);
+        assert_eq!(child_titles(&state, &target), vec![String::from("Demo")]);
+        assert_eq!(state.selected_path(), Some(&path(&["Servers", "Demo"])));
+        assert!(state.is_dirty());
+        assert!(state.drag().is_none());
+    }
+
+    #[test]
+    fn given_pointer_moved_less_than_threshold_when_released_then_it_is_a_click()
+     {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", Vec::new()),
+            folder_node("Local", Vec::new()),
+        ]);
+        let source = path(&["Servers"]);
+
+        drag_over(&mut state, &source, 2.0, &path(&["Local"]));
+        run(
+            &mut state,
+            QuickLaunchIntent::NodeReleased {
+                path: source.clone(),
+            },
+        );
+
+        assert!(state.drop_target().is_none());
+        assert_eq!(
+            child_titles(&state, &[]),
+            vec![String::from("Servers"), String::from("Local")]
+        );
+        let folder = state.data().folder(&source).expect("folder should exist");
+        assert!(folder.is_expanded());
+    }
+
+    #[test]
+    fn given_folder_dragged_into_its_own_child_when_hovered_then_drop_is_refused()
+     {
+        let mut state = state_with_root(vec![folder_node(
+            "Servers",
+            vec![folder_node("Prod", Vec::new())],
+        )]);
+        let source = path(&["Servers"]);
+        let child = path(&["Servers", "Prod"]);
+
+        drag_over(&mut state, &source, 10.0, &child);
+        run(&mut state, QuickLaunchIntent::NodeReleased { path: child });
+
+        assert!(state.drop_target().is_none());
+        assert_eq!(child_titles(&state, &source), vec![String::from("Prod")]);
+    }
+
+    #[test]
+    fn given_hovered_command_in_folder_when_dragging_then_its_folder_is_the_target()
+     {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", vec![command_node("Prod")]),
+            command_node("Demo"),
+        ]);
+
+        drag_over(
+            &mut state,
+            &path(&["Demo"]),
+            10.0,
+            &path(&["Servers", "Prod"]),
+        );
+
+        assert!(matches!(
+            state.drop_target(),
+            Some(DropTarget::Folder(folder)) if folder == &path(&["Servers"])
+        ));
+    }
+
+    #[test]
+    fn given_command_dragged_to_background_when_released_then_it_moves_to_root()
+    {
+        let mut state = state_with_root(vec![folder_node(
+            "Servers",
+            vec![command_node("Prod")],
+        )]);
+        let source = path(&["Servers", "Prod"]);
+
+        drag_over(&mut state, &source, 10.0, &source);
+        run(&mut state, QuickLaunchIntent::BackgroundReleased);
+
+        assert_eq!(
+            child_titles(&state, &[]),
+            vec![String::from("Servers"), String::from("Prod")]
+        );
+        assert!(child_titles(&state, &path(&["Servers"])).is_empty());
+    }
+
+    #[test]
+    fn given_target_with_same_title_when_dropped_then_move_is_refused() {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", vec![command_node("Demo")]),
+            command_node("Demo"),
+        ]);
+        let target = path(&["Servers"]);
+
+        drag_over(&mut state, &path(&["Demo"]), 10.0, &target);
+        run(
+            &mut state,
+            QuickLaunchIntent::NodeReleased {
+                path: target.clone(),
+            },
+        );
+
+        assert_eq!(
+            child_titles(&state, &[]),
+            vec![String::from("Servers"), String::from("Demo")]
+        );
+        assert_eq!(child_titles(&state, &target), vec![String::from("Demo")]);
+    }
+
+    #[test]
+    fn given_running_command_when_moved_then_its_launch_follows_the_new_path() {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", Vec::new()),
+            command_node("Demo"),
+        ]);
+        let source = path(&["Demo"]);
+        let target = path(&["Servers"]);
+        let _launch_id = state
+            .begin_launch(source.clone(), Arc::new(AtomicBool::new(false)));
+
+        drag_over(&mut state, &source, 10.0, &target);
+        run(&mut state, QuickLaunchIntent::NodeReleased { path: target });
+
+        assert!(!state.is_launching(&source));
+        assert!(state.is_launching(&path(&["Servers", "Demo"])));
+    }
+
+    // -----------------------------------------------------------------------
+    // Context menu action tests
+    // -----------------------------------------------------------------------
+
+    fn run_menu_action(
+        state: &mut QuickLaunchState,
+        target: ContextMenuTarget,
+        action: ContextMenuAction,
+    ) {
+        state.set_context_menu(Some(
+            ContextMenuState::default()
+                .with_target(target)
+                .with_cursor(Point::ORIGIN),
+        ));
+        run(state, QuickLaunchIntent::ContextMenuAction(action));
+    }
+
+    #[test]
+    fn given_command_when_duplicated_twice_then_copies_get_unique_titles() {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let target = ContextMenuTarget::Command(path(&["Demo"]));
+
+        run_menu_action(
+            &mut state,
+            target.clone(),
+            ContextMenuAction::Duplicate,
+        );
+        run_menu_action(&mut state, target, ContextMenuAction::Duplicate);
+
+        assert_eq!(
+            child_titles(&state, &[]),
+            vec![
+                String::from("Demo"),
+                String::from("Demo copy"),
+                String::from("Demo copy (0)"),
+            ]
+        );
+        assert!(state.context_menu().is_none());
+        assert!(state.is_dirty());
+    }
+
+    #[test]
+    fn given_command_and_folder_menus_when_removed_then_matching_nodes_go_away()
+    {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", Vec::new()),
+            command_node("Demo"),
+        ]);
+
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Folder(path(&["Servers"])),
+            ContextMenuAction::Remove,
+        );
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Command(path(&["Demo"])),
+            ContextMenuAction::Delete,
+        );
+
+        assert_eq!(
+            child_titles(&state, &[]),
+            vec![String::from("Servers"), String::from("Demo")]
+        );
+
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Command(path(&["Demo"])),
+            ContextMenuAction::Remove,
+        );
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Folder(path(&["Servers"])),
+            ContextMenuAction::Delete,
+        );
+
+        assert!(state.data().root.children.is_empty());
+    }
+
+    #[test]
+    fn given_command_menu_when_rename_chosen_then_inline_edit_holds_its_title()
+    {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Command(path(&["Demo"])),
+            ContextMenuAction::Rename,
+        );
+
+        let edit = state.inline_edit().expect("rename should start");
+        assert_eq!(edit.value, "Demo");
+        assert!(matches!(
+            &edit.kind,
+            InlineEditKind::Rename { path: edit_path } if edit_path == &path(&["Demo"])
+        ));
+    }
+
+    #[test]
+    fn given_command_in_closed_folder_when_create_folder_chosen_then_folder_opens()
+     {
+        let mut state = state_with_root(vec![folder_node(
+            "Servers",
+            vec![command_node("Prod")],
+        )]);
+
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Command(path(&["Servers", "Prod"])),
+            ContextMenuAction::CreateFolder,
+        );
+
+        let edit = state.inline_edit().expect("create folder should start");
+        assert!(matches!(
+            &edit.kind,
+            InlineEditKind::CreateFolder { parent_path } if parent_path == &path(&["Servers"])
+        ));
+        let folder = state
+            .data()
+            .folder(&path(&["Servers"]))
+            .expect("folder should exist");
+        assert!(folder.is_expanded());
+    }
+
+    #[test]
+    fn given_running_command_when_kill_chosen_then_its_launch_is_canceled() {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let _launch_id = state.begin_launch(path(&["Demo"]), cancel.clone());
+
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Command(path(&["Demo"])),
+            ContextMenuAction::Kill,
+        );
+
+        assert!(cancel.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn given_no_open_menu_when_action_arrives_then_tree_is_unchanged() {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+
+        run(
+            &mut state,
+            QuickLaunchIntent::ContextMenuAction(ContextMenuAction::Duplicate),
+        );
+
+        assert_eq!(child_titles(&state, &[]), vec![String::from("Demo")]);
     }
 }

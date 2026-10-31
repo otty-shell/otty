@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::process::ExitStatus;
 
-use iced::widget::pane_grid::{self, Highlight, Line, PaneGrid};
+use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{Stack, container, mouse_area, text};
-use iced::{Border, Element, Length, Theme, alignment};
+use iced::{Element, Length, Theme, alignment};
+use otty_ui_kit::components::split;
+use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::{fonts, size, spacing, typography};
 use otty_ui_term::TerminalView;
 
 use super::super::event::TerminalWorkspaceIntent;
@@ -11,67 +14,44 @@ use super::super::model::TerminalTabViewModel;
 use super::super::types::TerminalEntry;
 use crate::i18n::{self, Key};
 
-const PANE_GRID_SPACING: f32 = 1.0;
-const PANE_RESIZE_GRAB: f32 = 12.0;
-const PANE_SEPARATOR_ALPHA: f32 = 0.25;
-const PANE_BORDER_WIDTH: f32 = 1.0;
-const EXIT_BANNER_TEXT_SIZE: f32 = 13.0;
-const EXIT_BANNER_PADDING: f32 = 8.0;
-
 /// Render the pane grid for a terminal tab.
 pub(crate) fn view<'a>(
     vm: TerminalTabViewModel<'a>,
+    palette: &UiPalette,
 ) -> Element<'a, TerminalWorkspaceIntent> {
     let tab_id = vm.tab_id;
     let focus = vm.focus;
     let terminals = vm.terminals;
+    let line = palette.line();
 
     let grid = PaneGrid::new(vm.panes, move |pane, terminal_id, _| {
         let is_focused = focus == Some(pane);
-        let content =
-            view_single_pane(tab_id, pane, *terminal_id, terminals, is_focused);
+        let content = view_single_pane(
+            tab_id,
+            pane,
+            *terminal_id,
+            terminals,
+            is_focused,
+            palette,
+        );
 
         pane_grid::Content::new(content)
     })
     .width(Length::Fill)
     .height(Length::Fill)
-    .spacing(PANE_GRID_SPACING)
-    .style(|theme: &Theme| {
-        let palette = theme.extended_palette();
-        let mut separator = palette.background.weak.text;
-        separator.a = PANE_SEPARATOR_ALPHA;
-
-        pane_grid::Style {
-            hovered_region: Highlight {
-                background: separator.into(),
-                border: Border::default(),
-            },
-            picked_split: Line {
-                color: separator,
-                width: 1.0,
-            },
-            hovered_split: Line {
-                color: separator,
-                width: 1.0,
-            },
-        }
-    })
-    .on_resize(PANE_RESIZE_GRAB, move |event| {
+    .spacing(size::LINE)
+    .style(split::style(palette))
+    .on_resize(size::SPLIT_GRAB, move |event| {
         TerminalWorkspaceIntent::PaneResized { tab_id, event }
     });
 
+    // The container is painted `line` so the 1px gaps between panes show as rules.
     let grid_container = container(grid)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            let mut separator = palette.background.weak.text;
-            separator.a = PANE_SEPARATOR_ALPHA;
-
-            iced::widget::container::Style {
-                background: Some(separator.into()),
-                ..Default::default()
-            }
+        .style(move |_: &Theme| iced::widget::container::Style {
+            background: Some(line.into()),
+            ..Default::default()
         })
         .into();
 
@@ -95,6 +75,7 @@ fn view_single_pane<'a>(
     terminal_id: u64,
     terminals: &'a HashMap<u64, TerminalEntry>,
     is_focused: bool,
+    palette: &UiPalette,
 ) -> Element<'a, TerminalWorkspaceIntent> {
     let Some(terminal_entry) = terminals.get(&terminal_id) else {
         return container(text(i18n::t(Key::TerminalUnavailable)))
@@ -118,32 +99,31 @@ fn view_single_pane<'a>(
 
     let mut layers = vec![terminal_area];
     if let Some(exit_status) = terminal_entry.exit_status() {
-        layers.push(exit_banner(exit_status));
+        layers.push(exit_banner(exit_status, palette));
     }
 
     let stack_widget = Stack::with_children(layers)
         .width(Length::Fill)
         .height(Length::Fill);
 
+    let canvas = palette.surface_canvas();
+    let border_color = if is_focused {
+        palette.focus()
+    } else {
+        palette.line()
+    };
+
     container(stack_widget)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |theme: &Theme| {
-            let palette = theme.extended_palette();
-            let border_color = if is_focused {
-                palette.primary.strong.color
-            } else {
-                palette.background.strong.color
-            };
-
-            iced::widget::container::Style {
-                border: iced::Border {
-                    width: PANE_BORDER_WIDTH,
-                    color: border_color,
-                    ..Default::default()
-                },
+        .style(move |_: &Theme| iced::widget::container::Style {
+            background: Some(canvas.into()),
+            border: iced::Border {
+                width: size::LINE,
+                color: border_color,
                 ..Default::default()
-            }
+            },
+            ..Default::default()
         })
         .into()
 }
@@ -151,20 +131,21 @@ fn view_single_pane<'a>(
 /// Bottom strip telling the user the process ended and how to close the pane.
 fn exit_banner<'a>(
     exit_status: ExitStatus,
+    palette: &UiPalette,
 ) -> Element<'a, TerminalWorkspaceIntent> {
     let message = i18n::process_exited(exit_status.code());
-    let banner = container(text(message).size(EXIT_BANNER_TEXT_SIZE))
-        .width(Length::Fill)
-        .padding(EXIT_BANNER_PADDING)
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
+    let background = palette.surface_overlay();
+    let text_color = palette.text_body();
 
-            iced::widget::container::Style {
-                background: Some(palette.background.strong.color.into()),
-                text_color: Some(palette.background.strong.text),
+    let banner =
+        container(text(message).size(typography::BODY.size()).font(fonts::UI))
+            .width(Length::Fill)
+            .padding(spacing::SPACE_3)
+            .style(move |_: &Theme| iced::widget::container::Style {
+                background: Some(background.into()),
+                text_color: Some(text_color),
                 ..Default::default()
-            }
-        });
+            });
 
     container(banner)
         .width(Length::Fill)

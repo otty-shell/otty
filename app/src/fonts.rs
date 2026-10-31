@@ -1,10 +1,5 @@
 use iced::Font;
-use iced::font::{Family, Weight};
-
-/// Embedded JetBrains Mono Nerd Font for terminal rendering.
-pub(crate) const TERM_FONT_JET_BRAINS_BYTES: &[u8] = include_bytes!(
-    "../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"
-);
+use otty_ui_kit::{fonts, typography};
 
 /// UI font configuration.
 #[derive(Debug, Clone)]
@@ -16,8 +11,8 @@ pub(crate) struct UiFonts {
 impl Default for UiFonts {
     fn default() -> Self {
         Self {
-            font_type: Font::default(),
-            size: 14.0,
+            font_type: fonts::UI,
+            size: typography::BODY.size(),
         }
     }
 }
@@ -32,12 +27,8 @@ pub(crate) struct TerminalFonts {
 impl Default for TerminalFonts {
     fn default() -> Self {
         Self {
-            font_type: Font {
-                weight: Weight::Bold,
-                family: Family::Name("JetBrainsMono Nerd Font Mono"),
-                ..Font::default()
-            },
-            size: 14.0,
+            font_type: fonts::MONO,
+            size: typography::TERM.size(),
         }
     }
 }

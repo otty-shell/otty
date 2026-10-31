@@ -1,4 +1,3 @@
-pub(crate) mod constants;
 mod event;
 mod model;
 mod reducer;

@@ -1,11 +1,11 @@
 use std::fmt;
+use std::sync::OnceLock;
 
 use otty_ui_tree::TreeNode;
 use serde::Serialize;
 
 use crate::i18n::{self, Key, Locale};
-use crate::theme::ColorPalette;
-use crate::widgets::settings::services::is_valid_hex_color;
+use crate::theme::BuiltinTheme;
 
 const DEFAULT_EDITOR: &str = "nano";
 const FALLBACK_SHELL: &str = "/bin/bash";
@@ -25,12 +25,16 @@ pub(crate) enum LanguageSetting {
 
 impl LanguageSetting {
     /// All choices offered by the language selector, system first.
-    pub(crate) fn all() -> Vec<Self> {
-        let mut options = Vec::with_capacity(Locale::ALL.len() + 1);
-        options.push(Self::System);
-        options.extend(Locale::ALL.map(Self::Fixed));
+    pub(crate) fn all() -> &'static [Self] {
+        static OPTIONS: OnceLock<Vec<LanguageSetting>> = OnceLock::new();
 
-        options
+        OPTIONS.get_or_init(|| {
+            let mut options = Vec::with_capacity(Locale::ALL.len() + 1);
+            options.push(Self::System);
+            options.extend(Locale::ALL.map(Self::Fixed));
+
+            options
+        })
     }
 
     /// Resolve the setting to the locale that should be rendered.
@@ -106,26 +110,12 @@ impl Default for TerminalSettingsData {
     }
 }
 
-/// Theme-related settings.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// Theme-related settings. Only the theme name is stored; the colors come
+/// from the theme itself.
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
 pub(crate) struct ThemeSettingsData {
-    palette: Vec<String>,
-}
-
-impl Default for ThemeSettingsData {
-    fn default() -> Self {
-        Self {
-            palette: default_palette(),
-        }
-    }
-}
-
-impl ThemeSettingsData {
-    /// Convert theme settings to a runtime color palette.
-    fn to_color_palette(&self) -> ColorPalette {
-        let base = ColorPalette::default();
-        apply_palette_overrides(&base, &self.palette)
-    }
+    #[serde(serialize_with = "serialize_theme_name")]
+    name: BuiltinTheme,
 }
 
 /// Typed settings payload used for persistence and UI state.
@@ -177,32 +167,14 @@ impl SettingsData {
         self.terminal.equalize_panes = value;
     }
 
-    /// Return palette values used by the theme form.
-    pub(crate) fn theme_palette(&self) -> &[String] {
-        &self.theme.palette
+    /// Return the selected theme.
+    pub(crate) fn theme(&self) -> BuiltinTheme {
+        self.theme.name
     }
 
-    /// Replace the full theme palette.
-    pub(crate) fn set_theme_palette(&mut self, value: Vec<String>) {
-        self.theme.palette = value;
-    }
-
-    /// Update one palette color by index; returns `true` on success.
-    pub(crate) fn set_theme_palette_entry(
-        &mut self,
-        index: usize,
-        value: String,
-    ) -> bool {
-        let Some(entry) = self.theme.palette.get_mut(index) else {
-            return false;
-        };
-        *entry = value;
-        true
-    }
-
-    /// Convert current theme settings to a runtime terminal palette.
-    pub(crate) fn to_color_palette(&self) -> ColorPalette {
-        self.theme.to_color_palette()
+    /// Select the theme.
+    pub(crate) fn set_theme(&mut self, value: BuiltinTheme) {
+        self.theme.name = value;
     }
 
     /// Parse settings from a raw JSON value, falling back to defaults.
@@ -236,10 +208,13 @@ impl SettingsData {
             }
         }
 
+        // Old files keep the whole palette under `theme.palette`; it is
+        // ignored, so they load as the default theme.
         if let Some(theme) = value.get("theme")
-            && let Some(palette) = read_palette(theme.get("palette"))
+            && let Some(name) = read_string_field(theme, "name")
+            && let Some(selected) = BuiltinTheme::from_name(&name)
         {
-            settings.theme.palette = palette;
+            settings.theme.name = selected;
         }
 
         settings
@@ -261,12 +236,6 @@ impl SettingsData {
             defaults.terminal.editor
         };
 
-        let palette = if is_palette_valid(&self.theme.palette) {
-            self.theme.palette.clone()
-        } else {
-            defaults.theme.palette
-        };
-
         Self {
             general: self.general.clone(),
             terminal: TerminalSettingsData {
@@ -274,7 +243,7 @@ impl SettingsData {
                 editor,
                 equalize_panes: self.terminal.equalize_panes,
             },
-            theme: ThemeSettingsData { palette },
+            theme: self.theme.clone(),
         }
     }
 }
@@ -406,288 +375,6 @@ impl SettingsNode {
     }
 }
 
-/// Return the default palette as hex strings.
-fn default_palette() -> Vec<String> {
-    palette_from_colors(&ColorPalette::default())
-}
-
-/// Convert a `ColorPalette` to its list of hex-string values.
-fn palette_from_colors(palette: &ColorPalette) -> Vec<String> {
-    PALETTE_FIELDS
-        .iter()
-        .map(|field| palette_value(palette, *field).to_string())
-        .collect()
-}
-
-fn apply_palette_overrides(
-    base: &ColorPalette,
-    values: &[String],
-) -> ColorPalette {
-    let mut palette = base.clone();
-    for (index, value) in values.iter().enumerate() {
-        if let Some(field) = PALETTE_FIELDS.get(index) {
-            set_palette_value(&mut palette, *field, value.clone());
-        }
-    }
-    palette
-}
-
-fn read_string_field(value: &serde_json::Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(serde_json::Value::as_str)
-        .map(ToString::to_string)
-}
-
-fn read_palette(value: Option<&serde_json::Value>) -> Option<Vec<String>> {
-    let palette_value = value?;
-    let entries = palette_value.as_array()?;
-    if entries.is_empty() {
-        return None;
-    }
-
-    let mut palette = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let value = entry.as_str()?.to_string();
-        if !is_valid_hex_color(&value) {
-            return None;
-        }
-        palette.push(value);
-    }
-
-    Some(palette)
-}
-
-fn is_non_empty(value: &str) -> bool {
-    !value.trim().is_empty()
-}
-
-fn is_palette_valid(values: &[String]) -> bool {
-    !values.is_empty() && values.iter().all(|value| is_valid_hex_color(value))
-}
-
-fn default_shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.to_string())
-}
-
-#[derive(Debug, Clone, Copy)]
-enum PaletteField {
-    Foreground,
-    Background,
-    Black,
-    Red,
-    Green,
-    Yellow,
-    Blue,
-    Magenta,
-    Cyan,
-    White,
-    BrightBlack,
-    BrightRed,
-    BrightGreen,
-    BrightYellow,
-    BrightBlue,
-    BrightMagenta,
-    BrightCyan,
-    BrightWhite,
-    BrightForeground,
-    DimBlack,
-    DimRed,
-    DimGreen,
-    DimYellow,
-    DimBlue,
-    DimMagenta,
-    DimCyan,
-    DimWhite,
-    DimForeground,
-    Overlay,
-}
-
-const PALETTE_FIELDS: [PaletteField; 29] = [
-    PaletteField::Foreground,
-    PaletteField::Background,
-    PaletteField::Black,
-    PaletteField::Red,
-    PaletteField::Green,
-    PaletteField::Yellow,
-    PaletteField::Blue,
-    PaletteField::Magenta,
-    PaletteField::Cyan,
-    PaletteField::White,
-    PaletteField::BrightBlack,
-    PaletteField::BrightRed,
-    PaletteField::BrightGreen,
-    PaletteField::BrightYellow,
-    PaletteField::BrightBlue,
-    PaletteField::BrightMagenta,
-    PaletteField::BrightCyan,
-    PaletteField::BrightWhite,
-    PaletteField::BrightForeground,
-    PaletteField::DimBlack,
-    PaletteField::DimRed,
-    PaletteField::DimGreen,
-    PaletteField::DimYellow,
-    PaletteField::DimBlue,
-    PaletteField::DimMagenta,
-    PaletteField::DimCyan,
-    PaletteField::DimWhite,
-    PaletteField::DimForeground,
-    PaletteField::Overlay,
-];
-
-fn palette_value(palette: &ColorPalette, field: PaletteField) -> &str {
-    match field {
-        PaletteField::Foreground => &palette.foreground,
-        PaletteField::Background => &palette.background,
-        PaletteField::Black => &palette.black,
-        PaletteField::Red => &palette.red,
-        PaletteField::Green => &palette.green,
-        PaletteField::Yellow => &palette.yellow,
-        PaletteField::Blue => &palette.blue,
-        PaletteField::Magenta => &palette.magenta,
-        PaletteField::Cyan => &palette.cyan,
-        PaletteField::White => &palette.white,
-        PaletteField::BrightBlack => &palette.bright_black,
-        PaletteField::BrightRed => &palette.bright_red,
-        PaletteField::BrightGreen => &palette.bright_green,
-        PaletteField::BrightYellow => &palette.bright_yellow,
-        PaletteField::BrightBlue => &palette.bright_blue,
-        PaletteField::BrightMagenta => &palette.bright_magenta,
-        PaletteField::BrightCyan => &palette.bright_cyan,
-        PaletteField::BrightWhite => &palette.bright_white,
-        PaletteField::BrightForeground => &palette.bright_foreground,
-        PaletteField::DimBlack => &palette.dim_black,
-        PaletteField::DimRed => &palette.dim_red,
-        PaletteField::DimGreen => &palette.dim_green,
-        PaletteField::DimYellow => &palette.dim_yellow,
-        PaletteField::DimBlue => &palette.dim_blue,
-        PaletteField::DimMagenta => &palette.dim_magenta,
-        PaletteField::DimCyan => &palette.dim_cyan,
-        PaletteField::DimWhite => &palette.dim_white,
-        PaletteField::DimForeground => &palette.dim_foreground,
-        PaletteField::Overlay => &palette.overlay,
-    }
-}
-
-fn set_palette_value(
-    palette: &mut ColorPalette,
-    field: PaletteField,
-    value: String,
-) {
-    match field {
-        PaletteField::Foreground => palette.foreground = value,
-        PaletteField::Background => palette.background = value,
-        PaletteField::Black => palette.black = value,
-        PaletteField::Red => palette.red = value,
-        PaletteField::Green => palette.green = value,
-        PaletteField::Yellow => palette.yellow = value,
-        PaletteField::Blue => palette.blue = value,
-        PaletteField::Magenta => palette.magenta = value,
-        PaletteField::Cyan => palette.cyan = value,
-        PaletteField::White => palette.white = value,
-        PaletteField::BrightBlack => palette.bright_black = value,
-        PaletteField::BrightRed => palette.bright_red = value,
-        PaletteField::BrightGreen => palette.bright_green = value,
-        PaletteField::BrightYellow => palette.bright_yellow = value,
-        PaletteField::BrightBlue => palette.bright_blue = value,
-        PaletteField::BrightMagenta => palette.bright_magenta = value,
-        PaletteField::BrightCyan => palette.bright_cyan = value,
-        PaletteField::BrightWhite => palette.bright_white = value,
-        PaletteField::BrightForeground => palette.bright_foreground = value,
-        PaletteField::DimBlack => palette.dim_black = value,
-        PaletteField::DimRed => palette.dim_red = value,
-        PaletteField::DimGreen => palette.dim_green = value,
-        PaletteField::DimYellow => palette.dim_yellow = value,
-        PaletteField::DimBlue => palette.dim_blue = value,
-        PaletteField::DimMagenta => palette.dim_magenta = value,
-        PaletteField::DimCyan => palette.dim_cyan = value,
-        PaletteField::DimWhite => palette.dim_white = value,
-        PaletteField::DimForeground => palette.dim_foreground = value,
-        PaletteField::Overlay => palette.overlay = value,
-    }
-}
-
-/// Palette presets available in the theme editor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SettingsPreset {
-    /// Default OTTY dark theme.
-    OttyDark,
-    /// One Dark-inspired palette.
-    OneDark,
-    /// Solarized Dark-inspired palette.
-    SolarizedDark,
-    /// Dracula-inspired palette.
-    Dracula,
-}
-
-impl SettingsPreset {
-    /// All built-in theme presets shown in the selector.
-    pub(crate) const ALL: [Self; 4] = [
-        Self::OttyDark,
-        Self::OneDark,
-        Self::SolarizedDark,
-        Self::Dracula,
-    ];
-
-    /// Return the selector label for this preset.
-    pub(crate) fn title(&self) -> &'static str {
-        match self {
-            Self::OttyDark => "OTTY Dark",
-            Self::OneDark => "One Dark",
-            Self::SolarizedDark => "Solarized Dark",
-            Self::Dracula => "Dracula",
-        }
-    }
-
-    /// Return the palette hex values for this preset.
-    pub(crate) fn palette(&self) -> Vec<String> {
-        match self {
-            Self::OttyDark => default_palette(),
-            Self::OneDark => palette_from_hexes([
-                "#ABB2BF", "#282C34", "#282C34", "#E06C75", "#98C379",
-                "#E5C07B", "#61AFEF", "#C678DD", "#56B6C2", "#ABB2BF",
-                "#5C6370", "#FF7A90", "#B5E890", "#FFD98E", "#7DCFFF",
-                "#DFA6FF", "#7FE4EA", "#FFFFFF", "#E6EDF7", "#1C2027",
-                "#8B434A", "#5E7748", "#8A744A", "#3A6A8F", "#784885",
-                "#326B73", "#7B8496", "#7B8496", "#323842",
-            ]),
-            Self::SolarizedDark => palette_from_hexes([
-                "#839496", "#002B36", "#073642", "#DC322F", "#859900",
-                "#B58900", "#268BD2", "#D33682", "#2AA198", "#EEE8D5",
-                "#002B36", "#CB4B16", "#586E75", "#657B83", "#839496",
-                "#6C71C4", "#93A1A1", "#FDF6E3", "#FDF6E3", "#001F27",
-                "#8A231F", "#536100", "#715900", "#175785", "#7E1F4D",
-                "#1A625D", "#A6A093", "#657B83", "#073642",
-            ]),
-            Self::Dracula => palette_from_hexes([
-                "#F8F8F2", "#282A36", "#21222C", "#FF5555", "#50FA7B",
-                "#F1FA8C", "#BD93F9", "#FF79C6", "#8BE9FD", "#F8F8F2",
-                "#6272A4", "#FF6E6E", "#69FF94", "#FFFFA5", "#D6ACFF",
-                "#FF92DF", "#A4FFFF", "#FFFFFF", "#FFFFFF", "#191A21",
-                "#9B3333", "#318F49", "#8F9554", "#715892", "#99508A",
-                "#5395A1", "#B7B7B2", "#B7B7B2", "#303341",
-            ]),
-        }
-    }
-
-    /// Detect a built-in preset that matches the given palette values.
-    pub(crate) fn from_palette(values: &[String]) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|preset| preset.palette().as_slice() == values)
-    }
-}
-
-impl fmt::Display for SettingsPreset {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.title())
-    }
-}
-
-fn palette_from_hexes(values: [&str; 29]) -> Vec<String> {
-    values.into_iter().map(String::from).collect()
-}
-
 /// Status describing how settings were loaded from disk.
 #[derive(Debug, Clone)]
 pub(crate) enum SettingsLoadStatus {
@@ -721,40 +408,91 @@ impl SettingsLoad {
     }
 }
 
+fn read_string_field(value: &serde_json::Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(ToString::to_string)
+}
+
+fn is_non_empty(value: &str) -> bool {
+    !value.trim().is_empty()
+}
+
+fn default_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.to_string())
+}
+
+/// Write the theme as its stored name, for example `"otty-dark"`.
+fn serialize_theme_name<S: serde::Serializer>(
+    theme: &BuiltinTheme,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(theme.name())
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
-    use super::{
-        LanguageSetting, Locale, SettingsData, SettingsPreset,
-        is_valid_hex_color,
-    };
+    use super::{BuiltinTheme, LanguageSetting, Locale, SettingsData};
 
     #[test]
-    fn given_valid_palette_when_from_json_then_palette_is_loaded() {
-        let value = json!({
-            "theme": {
-                "palette": ["#112233", "#223344"]
-            }
-        });
+    fn given_light_theme_name_when_from_json_then_otty_light_is_loaded() {
+        let value = json!({ "theme": { "name": "otty-light" } });
 
         let settings = SettingsData::from_json(&value);
 
-        assert_eq!(settings.theme.palette, vec!["#112233", "#223344"]);
+        assert_eq!(settings.theme(), BuiltinTheme::OttyLight);
     }
 
     #[test]
-    fn given_invalid_palette_when_from_json_then_defaults_are_used() {
-        let defaults = SettingsData::default();
+    fn given_missing_theme_name_when_from_json_then_otty_dark_is_loaded() {
+        let without_theme = json!({ "terminal": { "shell": "/bin/sh" } });
+        let without_name = json!({ "theme": {} });
+
+        assert_eq!(
+            SettingsData::from_json(&without_theme).theme(),
+            BuiltinTheme::OttyDark
+        );
+        assert_eq!(
+            SettingsData::from_json(&without_name).theme(),
+            BuiltinTheme::OttyDark
+        );
+    }
+
+    #[test]
+    fn given_unknown_theme_name_when_from_json_then_otty_dark_is_loaded() {
+        let value = json!({ "theme": { "name": "dracula" } });
+
+        let settings = SettingsData::from_json(&value);
+
+        assert_eq!(settings.theme(), BuiltinTheme::OttyDark);
+    }
+
+    #[test]
+    fn given_old_file_with_only_palette_when_from_json_then_otty_dark_is_loaded()
+     {
         let value = json!({
             "theme": {
-                "palette": ["#112233", "not-a-color"]
+                "palette": ["#F8F8F2", "#282A36", "#21222C", "#FF5555"]
             }
         });
 
         let settings = SettingsData::from_json(&value);
 
-        assert_eq!(settings.theme.palette, defaults.theme.palette);
+        assert_eq!(settings.theme(), BuiltinTheme::OttyDark);
+    }
+
+    #[test]
+    fn given_theme_when_serialized_then_only_theme_name_is_written() {
+        let mut settings = SettingsData::default();
+        settings.set_theme(BuiltinTheme::OttyLight);
+
+        let value =
+            serde_json::to_value(&settings).expect("settings should serialize");
+
+        assert_eq!(value["theme"], json!({ "name": "otty-light" }));
     }
 
     #[test]
@@ -782,30 +520,19 @@ mod tests {
         let mut settings = SettingsData::default();
         settings.terminal.shell = String::from("   ");
         settings.terminal.editor = String::new();
-        settings.theme.palette = vec![String::from("bad-value")];
 
         let normalized = settings.normalized();
 
         assert_eq!(normalized.terminal.shell, defaults.terminal.shell);
         assert_eq!(normalized.terminal.editor, defaults.terminal.editor);
-        assert_eq!(normalized.theme.palette, defaults.theme.palette);
     }
 
     #[test]
-    fn given_hex_color_value_when_validated_then_result_matches_format() {
-        assert!(is_valid_hex_color("#aBc123"));
-        assert!(!is_valid_hex_color("#12345"));
-        assert!(!is_valid_hex_color("123456"));
-    }
+    fn given_light_theme_when_normalized_then_theme_is_kept() {
+        let mut settings = SettingsData::default();
+        settings.set_theme(BuiltinTheme::OttyLight);
 
-    #[test]
-    fn given_known_preset_palette_when_detected_then_matching_preset_is_found()
-    {
-        let palette = SettingsPreset::Dracula.palette();
-
-        let preset = SettingsPreset::from_palette(&palette);
-
-        assert_eq!(preset, Some(SettingsPreset::Dracula));
+        assert_eq!(settings.normalized().theme(), BuiltinTheme::OttyLight);
     }
 
     #[test]
@@ -847,7 +574,7 @@ mod tests {
     #[test]
     fn given_language_setting_when_round_tripped_then_value_is_preserved() {
         for language in LanguageSetting::all() {
-            assert_eq!(LanguageSetting::from_tag(language.tag()), language);
+            assert_eq!(LanguageSetting::from_tag(language.tag()), *language);
         }
     }
 

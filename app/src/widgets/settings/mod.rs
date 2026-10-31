@@ -2,7 +2,6 @@ mod errors;
 pub(crate) mod event;
 pub(crate) mod model;
 pub(crate) mod reducer;
-pub(crate) mod services;
 pub(crate) mod state;
 pub(crate) mod storage;
 pub(crate) mod types;
@@ -14,8 +13,8 @@ use model::SettingsViewModel;
 use state::SettingsState;
 use types::SettingsData;
 
-/// Settings widget: manages application settings (terminal shell/editor,
-/// theme palette colors) with a draft/baseline editing pattern.
+/// Settings widget: manages application settings (language, terminal
+/// shell/editor, theme) with a draft/baseline editing pattern.
 pub(crate) struct SettingsWidget {
     state: SettingsState,
 }
@@ -47,8 +46,6 @@ impl SettingsWidget {
     pub(crate) fn vm(&self) -> SettingsViewModel<'_> {
         SettingsViewModel {
             draft: self.state.draft(),
-            palette_inputs: self.state.palette_inputs(),
-            selected_preset: self.state.selected_preset(),
             tree: self.state.tree(),
             selected_section: self.state.selected_section(),
             selected_path: self.state.selected_path(),

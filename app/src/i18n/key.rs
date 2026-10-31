@@ -29,11 +29,7 @@ pub(crate) enum Key {
     /// Banner on a kept-open pane whose process ended without an exit code.
     ProcessTerminated,
 
-    // Tab bar and tab content.
-    /// Shown when no tab is open.
-    NoTabs,
-    /// Placeholder body for tabs without dedicated content.
-    TabContentPlaceholder,
+    // Tab titles.
     /// Title of the settings tab.
     SettingsTabTitle,
     /// Title of the quick launch creation wizard tab.
@@ -56,6 +52,10 @@ pub(crate) enum Key {
     SplitVertically,
     /// Close the pane.
     ClosePane,
+    /// Tooltip of the title bar full screen button.
+    WindowToggleFullscreen,
+    /// Tooltip of the title bar minimize button.
+    WindowMinimize,
 
     // Quick launch context menu.
     /// Terminate a running quick launch.
@@ -178,10 +178,8 @@ pub(crate) enum Key {
     FieldPaneLayout,
     /// Option that keeps sibling pane widths even after layout changes.
     OptionEqualizePanes,
-    /// Theme preset field label.
-    FieldPreset,
-    /// Placeholder shown when no theme preset matches the palette.
-    PresetPlaceholderCustom,
+    /// Theme selector field label.
+    FieldTheme,
     /// Language option that follows the operating system locale.
     LanguageSystem,
 
@@ -224,8 +222,6 @@ pub(crate) enum Key {
     TplLaunchFailedBody,
     /// Message for a terminal that failed to start. Placeholder: `{error}`.
     TplTerminalInitFailed,
-    /// Label for a palette color with no name. Placeholder: `{index}`.
-    TplPaletteFallbackLabel,
     /// SSH connection failure. Placeholder: `{error}`.
     TplSshConnectionFailed,
     /// Missing working directory. Placeholder: `{path}`.
@@ -255,7 +251,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 108] = [
+    pub(super) const ALL: [Self; 106] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -264,8 +260,6 @@ impl Key {
         Self::QuickLaunchErrorPayloadMissing,
         Self::TerminalUnavailable,
         Self::ProcessTerminated,
-        Self::NoTabs,
-        Self::TabContentPlaceholder,
         Self::SettingsTabTitle,
         Self::QuickLaunchCreateTabTitle,
         Self::CopySelection,
@@ -276,6 +270,8 @@ impl Key {
         Self::SplitHorizontally,
         Self::SplitVertically,
         Self::ClosePane,
+        Self::WindowToggleFullscreen,
+        Self::WindowMinimize,
         Self::Kill,
         Self::Edit,
         Self::Rename,
@@ -330,8 +326,7 @@ impl Key {
         Self::FieldDefaultEditor,
         Self::FieldPaneLayout,
         Self::OptionEqualizePanes,
-        Self::FieldPreset,
-        Self::PresetPlaceholderCustom,
+        Self::FieldTheme,
         Self::LanguageSystem,
         Self::ErrIoPrefix,
         Self::ErrJsonPrefix,
@@ -351,7 +346,6 @@ impl Key {
         Self::TplLaunchFailedTitle,
         Self::TplLaunchFailedBody,
         Self::TplTerminalInitFailed,
-        Self::TplPaletteFallbackLabel,
         Self::TplSshConnectionFailed,
         Self::TplWorkingDirectoryNotFound,
         Self::TplWorkingDirectoryNotDirectory,

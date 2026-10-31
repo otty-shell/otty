@@ -4,6 +4,8 @@ use super::event::{SidebarEffect, SidebarEvent, SidebarIntent};
 use super::state::SidebarState;
 use super::types::SidebarItem;
 
+/// Smallest share of the window width the main area keeps when the side
+/// panel is dragged wider.
 const SIDEBAR_MIN_TAB_CONTENT_RATIO: f32 = 0.2;
 
 /// Reduce a sidebar intent event into state updates and effect events.

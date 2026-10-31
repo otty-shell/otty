@@ -70,12 +70,8 @@ pub(crate) fn reduce(
             state.set_equalize_panes(value);
             Task::none()
         },
-        SettingsIntent::PaletteChanged { index, value } => {
-            state.set_palette_input(index, value);
-            Task::none()
-        },
-        SettingsIntent::ApplyPreset(preset) => {
-            state.apply_preset(preset);
+        SettingsIntent::ThemeSelected(theme) => {
+            state.set_theme(theme);
             Task::none()
         },
     }
@@ -90,8 +86,7 @@ fn changes_draft(event: &SettingsIntent) -> bool {
             | SettingsIntent::ShellChanged(_)
             | SettingsIntent::EditorChanged(_)
             | SettingsIntent::EqualizePanesToggled(_)
-            | SettingsIntent::PaletteChanged { .. }
-            | SettingsIntent::ApplyPreset(_)
+            | SettingsIntent::ThemeSelected(_)
     )
 }
 
@@ -147,10 +142,11 @@ fn apply_loaded_settings(
 mod tests {
     use super::*;
     use crate::i18n::Locale;
+    use crate::theme::BuiltinTheme;
     use crate::widgets::settings::state::SettingsState;
     use crate::widgets::settings::types::{
         LanguageSetting, SettingsData, SettingsLoad, SettingsLoadStatus,
-        SettingsPreset, SettingsSection,
+        SettingsSection,
     };
 
     fn default_state() -> SettingsState {
@@ -308,36 +304,45 @@ mod tests {
     }
 
     #[test]
-    fn given_palette_changed_when_reduced_then_palette_input_updated() {
+    fn given_theme_selected_when_reduced_then_draft_theme_updated() {
         let mut state = default_state();
 
         let _task = reduce(
             &mut state,
-            SettingsIntent::PaletteChanged {
-                index: 0,
-                value: String::from("#AABB"),
-            },
+            SettingsIntent::ThemeSelected(BuiltinTheme::OttyLight),
         );
 
-        assert_eq!(state.palette_inputs()[0], "#AABB");
-        // Incomplete hex should not update the draft palette
-        assert_ne!(state.draft().theme_palette()[0], "#AABB");
+        assert_eq!(state.draft().theme(), BuiltinTheme::OttyLight);
+        assert!(state.is_dirty());
     }
 
     #[test]
-    fn given_apply_preset_when_reduced_then_palette_matches_preset() {
-        let mut baseline = SettingsData::default();
-        baseline.set_theme_palette_entry(0, String::from("#999999"));
-        let mut state = SettingsState::from_settings(baseline);
+    fn given_save_in_flight_when_theme_selected_then_draft_unchanged() {
+        let mut state = default_state();
+        state.set_shell(format!("{}-changed", state.draft().terminal_shell()));
+        let saved = state.begin_save().expect("save should start");
 
         let _task = reduce(
             &mut state,
-            SettingsIntent::ApplyPreset(SettingsPreset::OttyDark),
+            SettingsIntent::ThemeSelected(BuiltinTheme::OttyLight),
         );
 
-        let expected = SettingsPreset::OttyDark.palette();
-        assert_eq!(state.draft().theme_palette(), &expected[..]);
-        assert!(state.is_dirty());
+        assert_eq!(state.draft(), &saved);
+    }
+
+    #[test]
+    fn given_loaded_light_theme_when_reload_applied_then_draft_uses_it() {
+        let mut state = default_state();
+        let mut loaded = SettingsData::default();
+        loaded.set_theme(BuiltinTheme::OttyLight);
+
+        let applied = apply_loaded_settings(
+            &mut state,
+            SettingsLoad::new(loaded, SettingsLoadStatus::Loaded),
+        );
+
+        assert_eq!(applied.theme(), BuiltinTheme::OttyLight);
+        assert_eq!(state.draft().theme(), BuiltinTheme::OttyLight);
     }
 
     #[test]

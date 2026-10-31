@@ -673,21 +673,27 @@ impl WizardEditorState {
         }
     }
 
-    pub(super) fn add_arg(&mut self) {
+    pub(super) fn set_arg_input(&mut self, value: String) {
         if let Some(custom) = self.custom_mut() {
-            custom.add_arg();
+            custom.set_arg_input(value);
+        }
+    }
+
+    pub(super) fn submit_arg(&mut self) {
+        if let Some(custom) = self.custom_mut() {
+            custom.submit_arg();
+        }
+    }
+
+    pub(super) fn backspace_arg(&mut self) {
+        if let Some(custom) = self.custom_mut() {
+            custom.backspace_arg();
         }
     }
 
     pub(super) fn remove_arg(&mut self, index: usize) {
         if let Some(custom) = self.custom_mut() {
             custom.remove_arg(index);
-        }
-    }
-
-    pub(super) fn update_arg(&mut self, index: usize, value: String) {
-        if let Some(custom) = self.custom_mut() {
-            custom.update_arg(index, value);
         }
     }
 
@@ -739,9 +745,21 @@ impl WizardEditorState {
         }
     }
 
-    pub(super) fn add_extra_arg(&mut self) {
+    pub(super) fn set_extra_arg_input(&mut self, value: String) {
         if let Some(ssh) = self.ssh_mut() {
-            ssh.add_extra_arg();
+            ssh.set_extra_arg_input(value);
+        }
+    }
+
+    pub(super) fn submit_extra_arg(&mut self) {
+        if let Some(ssh) = self.ssh_mut() {
+            ssh.submit_extra_arg();
+        }
+    }
+
+    pub(super) fn backspace_extra_arg(&mut self) {
+        if let Some(ssh) = self.ssh_mut() {
+            ssh.backspace_extra_arg();
         }
     }
 
@@ -751,10 +769,11 @@ impl WizardEditorState {
         }
     }
 
-    pub(super) fn update_extra_arg(&mut self, index: usize, value: String) {
-        if let Some(ssh) = self.ssh_mut() {
-            ssh.update_extra_arg(index, value);
-        }
+    /// Turn text typed in the argument fields but not yet confirmed with
+    /// Enter into arguments, so Save does not drop it.
+    pub(super) fn commit_pending_args(&mut self) {
+        self.submit_arg();
+        self.submit_extra_arg();
     }
 
     fn custom_mut(&mut self) -> Option<&mut CommandLaunchOptions> {

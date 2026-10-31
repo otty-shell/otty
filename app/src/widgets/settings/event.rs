@@ -1,6 +1,5 @@
-use super::types::{
-    LanguageSetting, SettingsData, SettingsLoad, SettingsPreset,
-};
+use super::types::{LanguageSetting, SettingsData, SettingsLoad};
+use crate::theme::BuiltinTheme;
 
 /// Intent events handled by the settings presentation layer.
 #[derive(Debug, Clone)]
@@ -31,10 +30,8 @@ pub(crate) enum SettingsIntent {
     EditorChanged(String),
     /// The equalize-panes checkbox was toggled.
     EqualizePanesToggled(bool),
-    /// A palette color text input changed.
-    PaletteChanged { index: usize, value: String },
-    /// A theme preset was selected.
-    ApplyPreset(SettingsPreset),
+    /// A theme was picked in the theme selector.
+    ThemeSelected(BuiltinTheme),
 }
 
 /// Effect events produced by the settings reducer, routed outward.
@@ -46,7 +43,7 @@ pub(crate) enum SettingsEffect {
     ReloadFailed(String),
     /// Save failed.
     SaveFailed(String),
-    /// Request the parent to apply the given theme palette.
+    /// Request the parent to apply the given settings, including the theme.
     ApplyTheme(SettingsData),
     /// Notify the parent that a save completed.
     SaveCompleted(SettingsData),
