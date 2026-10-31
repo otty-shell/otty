@@ -9,6 +9,7 @@ use iced::widget::{
 };
 use iced::{Element, Length, Padding, Theme};
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
+use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::form_page::FormPage;
@@ -23,8 +24,10 @@ use otty_ui_kit::components::rail_button::{RailButton, rail_separator};
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::select::select;
 use otty_ui_kit::components::setting_row::SettingRow;
+use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::components::tab_strip::{Tab, TabStrip};
+use otty_ui_kit::components::target_dot::{TargetKind, target_dot};
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::components::token_field::{TokenField, TokenList};
 use otty_ui_kit::components::tree_row::TreeRow;
@@ -465,6 +468,28 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         .kind(ButtonKind::Secondary)
         .on_press(Message::OpenDialog);
 
+    let dots = row![
+        target_dot(TargetKind::Local, p),
+        target_dot(TargetKind::Ssh, p),
+        target_dot(TargetKind::Prod, p),
+        target_dot(TargetKind::Staging, p),
+    ]
+    .spacing(spacing::SPACE_3);
+    let chips = row![
+        Chip::new("fedora", p)
+            .target(TargetKind::Local)
+            .note("this computer"),
+        Chip::new("prod-1", p).target(TargetKind::Prod),
+        Chip::new("~/projects/otty", p).mono(true),
+    ]
+    .spacing(spacing::SPACE_3)
+    .align_y(iced::Alignment::Center);
+    let status_bar = StatusBar::new(p)
+        .left(StatusItem::target(TargetKind::Ssh, "laptop"))
+        .left(StatusItem::mono("~/projects/otty"))
+        .right(StatusItem::text("3 sessions"))
+        .right(StatusItem::button("Settings", Message::Clicked));
+
     let first: Vec<Element<'_, Message>> = vec![
         section(
             "Button (form 34, small 28; second row disabled)",
@@ -478,6 +503,9 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         ),
         section("Dialog", open_dialog.into(), p),
         section("Kbd", keys.into(), p),
+        section("TargetDot (local, ssh, prod, staging)", dots.into(), p),
+        section("Chip (target + note, target, mono path)", chips.into(), p),
+        section("StatusBar (items left and right)", status_bar.into(), p),
         section("Divider", dividers.into(), p),
         section("Menu", menu.into(), p),
         section("Switch", switches.into(), p),

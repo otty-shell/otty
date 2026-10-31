@@ -14,6 +14,8 @@ pub const TAB: f32 = 34.0;
 pub const TITLEBAR: f32 = 38.0;
 /// `statusbar`: status bar.
 pub const STATUSBAR: f32 = 24.0;
+/// Diameter of a target dot (`.ot-dot`).
+pub const DOT: f32 = 8.0;
 /// `rail`: widget rail width.
 pub const RAIL: f32 = 48.0;
 /// `rail-button`: rail button height.
