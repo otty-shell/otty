@@ -47,7 +47,10 @@
     "files_title": "檔案",
     "tpl_files_follows": "跟隨 {shell}",
 
-    "wizard_header": "快速啟動",
+    "wizard_title_new": "新增啟動項目",
+    "wizard_title_edit": "編輯啟動項目",
+    "wizard_subtitle": "已儲存的啟動項目一鍵即可開啟新工作階段。",
+    "exit_behavior_hint": "如果失敗，工作階段會保持開啟，方便你查看錯誤。",
     "field_title": "名稱",
     "field_type": "類型",
     "type_custom": "自訂",

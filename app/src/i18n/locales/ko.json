@@ -47,7 +47,10 @@
     "files_title": "파일",
     "tpl_files_follows": "{shell} 따라가기",
 
-    "wizard_header": "빠른 실행",
+    "wizard_title_new": "새 실행 항목",
+    "wizard_title_edit": "실행 항목 편집",
+    "wizard_subtitle": "저장한 실행 항목은 한 번의 클릭으로 새 세션을 엽니다.",
+    "exit_behavior_hint": "실패하면 오류를 읽을 수 있도록 세션이 열린 채로 남습니다.",
     "field_title": "이름",
     "field_type": "유형",
     "type_custom": "사용자 지정",

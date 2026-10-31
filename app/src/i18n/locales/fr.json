@@ -47,7 +47,10 @@
     "files_title": "Fichiers",
     "tpl_files_follows": "suit {shell}",
 
-    "wizard_header": "Lancement rapide",
+    "wizard_title_new": "Nouveau lancement",
+    "wizard_title_edit": "Modifier le lancement",
+    "wizard_subtitle": "Les lancements enregistrés ouvrent une nouvelle session en un clic.",
+    "exit_behavior_hint": "En cas d'échec, la session reste ouverte pour que vous puissiez lire l'erreur.",
     "field_title": "Nom",
     "field_type": "Type",
     "type_custom": "Personnalisé",

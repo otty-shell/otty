@@ -47,7 +47,10 @@
     "files_title": "Dateien",
     "tpl_files_follows": "folgt {shell}",
 
-    "wizard_header": "Schnellstart",
+    "wizard_title_new": "Neuer Start",
+    "wizard_title_edit": "Start bearbeiten",
+    "wizard_subtitle": "Gespeicherte Starts öffnen mit einem Klick eine neue Sitzung.",
+    "exit_behavior_hint": "Bei einem Fehler bleibt die Sitzung offen, damit du die Meldung lesen kannst.",
     "field_title": "Name",
     "field_type": "Typ",
     "type_custom": "Benutzerdefiniert",

@@ -47,7 +47,10 @@
     "files_title": "ファイル",
     "tpl_files_follows": "{shell} に追従",
 
-    "wizard_header": "クイック起動",
+    "wizard_title_new": "新しい起動項目",
+    "wizard_title_edit": "起動項目を編集",
+    "wizard_subtitle": "保存した起動項目は、ワンクリックで新しいセッションを開きます。",
+    "exit_behavior_hint": "失敗した場合は、エラーを読めるようにセッションを開いたままにします。",
     "field_title": "名前",
     "field_type": "種類",
     "type_custom": "カスタム",

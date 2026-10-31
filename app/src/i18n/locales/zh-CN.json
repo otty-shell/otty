@@ -47,7 +47,10 @@
     "files_title": "文件",
     "tpl_files_follows": "跟随 {shell}",
 
-    "wizard_header": "快捷启动",
+    "wizard_title_new": "新建启动项",
+    "wizard_title_edit": "编辑启动项",
+    "wizard_subtitle": "已保存的启动项一键即可打开新会话。",
+    "exit_behavior_hint": "如果失败，会话将保持打开，方便你查看错误。",
     "field_title": "名称",
     "field_type": "类型",
     "type_custom": "自定义",

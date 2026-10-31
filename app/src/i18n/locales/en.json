@@ -47,7 +47,10 @@
     "files_title": "Files",
     "tpl_files_follows": "follows {shell}",
 
-    "wizard_header": "Quick launch",
+    "wizard_title_new": "New launch",
+    "wizard_title_edit": "Edit launch",
+    "wizard_subtitle": "Saved launches open a new session with one click.",
+    "exit_behavior_hint": "If it fails, the session stays open so you can read the error.",
     "field_title": "Title",
     "field_type": "Type",
     "type_custom": "Custom",

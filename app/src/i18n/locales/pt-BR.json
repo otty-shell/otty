@@ -47,7 +47,10 @@
     "files_title": "Arquivos",
     "tpl_files_follows": "segue {shell}",
 
-    "wizard_header": "Início rápido",
+    "wizard_title_new": "Novo lançamento",
+    "wizard_title_edit": "Editar lançamento",
+    "wizard_subtitle": "Os lançamentos salvos abrem uma nova sessão com um clique.",
+    "exit_behavior_hint": "Se falhar, a sessão continua aberta para você ler o erro.",
     "field_title": "Nome",
     "field_type": "Tipo",
     "type_custom": "Personalizado",

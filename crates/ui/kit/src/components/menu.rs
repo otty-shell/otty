@@ -32,6 +32,7 @@ pub struct MenuItem<Message> {
     label: String,
     shortcut: Option<String>,
     active: bool,
+    danger: bool,
     on_press: Option<Message>,
 }
 
@@ -42,6 +43,7 @@ impl<Message> MenuItem<Message> {
             label: label.into(),
             shortcut: None,
             active: false,
+            danger: false,
             on_press: None,
         }
     }
@@ -55,6 +57,12 @@ impl<Message> MenuItem<Message> {
     /// Draws the item as hovered (for example the keyboard-selected item).
     pub fn active(mut self, active: bool) -> Self {
         self.active = active;
+        self
+    }
+
+    /// Draws the label in the error color, for destructive actions.
+    pub fn danger(mut self, danger: bool) -> Self {
+        self.danger = danger;
         self
     }
 
@@ -185,7 +193,7 @@ fn item_view<'a, Message: Clone + 'a>(
         .height(size::ROW)
         .padding(Padding::from([0.0, ITEM_PADDING_X]))
         .on_press_maybe(item.on_press)
-        .style(item_style(palette, item.active))
+        .style(item_style_with(palette, item.active, item.danger))
         .into()
 }
 
@@ -195,6 +203,15 @@ pub(super) fn item_style(
     palette: &UiPalette,
     active: bool,
 ) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
+    item_style_with(palette, active, false)
+}
+
+/// Like [`item_style`]; a `danger` item uses `status-error` for its text.
+fn item_style_with(
+    palette: &UiPalette,
+    active: bool,
+    danger: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
     let palette = palette.clone();
 
     move |_, status| {
@@ -203,7 +220,9 @@ pub(super) fn item_style(
                 status,
                 button::Status::Hovered | button::Status::Pressed
             );
-        let color = if lit {
+        let color = if danger {
+            palette.status_error()
+        } else if lit {
             palette.text_strong()
         } else {
             palette.text_body()

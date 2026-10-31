@@ -106,8 +106,12 @@ pub(crate) enum Key {
     TplFilesFollows,
 
     // Quick launch wizard.
-    /// Wizard section header.
-    WizardHeader,
+    /// Title of the form that creates a launch.
+    WizardTitleNew,
+    /// Title of the form that edits a launch.
+    WizardTitleEdit,
+    /// Muted line under the launch form title.
+    WizardSubtitle,
     /// Entry title field label.
     FieldTitle,
     /// Command type field label.
@@ -140,6 +144,8 @@ pub(crate) enum Key {
     FieldEnvironment,
     /// Label of the choice for what a tab does once its command exits.
     FieldAfterExit,
+    /// Muted hint under the exit choice.
+    ExitBehaviorHint,
     /// Exit choice: close the tab.
     ExitBehaviorClose,
     /// Exit choice: close the tab only when the command succeeds.
@@ -279,7 +285,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 120] = [
+    pub(super) const ALL: [Self; 123] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -321,7 +327,10 @@ impl Key {
         Self::NoActiveFolder,
         Self::FilesTitle,
         Self::TplFilesFollows,
-        Self::WizardHeader,
+        Self::WizardTitleNew,
+        Self::WizardTitleEdit,
+        Self::WizardSubtitle,
+        Self::ExitBehaviorHint,
         Self::FieldTitle,
         Self::FieldType,
         Self::TypeCustom,
