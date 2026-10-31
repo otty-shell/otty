@@ -152,7 +152,7 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 - [x] 21 — Bold mono font in the kit and small token fixes · Sonnet
 - [x] 22 — FormPage component · Sonnet
 - [x] 23 — Dialog component and scrim token · Sonnet
-- [ ] 24 — Update the design system with the new kit parts · Opus, owner review
+- [x] 24 — Update the design system with the new kit parts · Opus, owner review
 - [x] 15 — Update the design system to match the code · owner
 
 Tickets live in `issues/`. Each ticket names the model that runs it on its `Model:` line; a subagent started for a ticket is launched with that model. Order: 01 → (02, 04) → (03, 05, 06) → 07–13 in parallel → 14 → 16 → 15 → 17 → 18 → … → 24 (one at a time; 18–23 touch the same view files).
