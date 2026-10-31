@@ -301,11 +301,11 @@ impl UiPalette {
             on_accent: color!(0xffffff),
             focus: color!(0x1a64b0),
             status_ok: color!(0x377028),
-            status_warn: color!(0x8a6200),
+            status_warn: color!(0x835d00),
             status_error: color!(0xb23641),
             target_local: color!(0x0b6e79),
             target_ssh: color!(0x8e3fae),
-            target_staging: color!(0x8a6200),
+            target_staging: color!(0x835d00),
             target_prod: color!(0xb23641),
             diff_add: color!(0xe3f1dd),
             diff_del: color!(0xf8e1e3),
@@ -393,11 +393,11 @@ mod tests {
         ("on-accent", "#ffffff"),
         ("focus", "#1a64b0"),
         ("status-ok", "#377028"),
-        ("status-warn", "#8a6200"),
+        ("status-warn", "#835d00"),
         ("status-error", "#b23641"),
         ("target-local", "#0b6e79"),
         ("target-ssh", "#8e3fae"),
-        ("target-staging", "#8a6200"),
+        ("target-staging", "#835d00"),
         ("target-prod", "#b23641"),
         ("diff-add", "#e3f1dd"),
         ("diff-del", "#f8e1e3"),
@@ -617,18 +617,55 @@ mod tests {
         }
     }
 
+    /// Status colors are text-sized marks. They must reach 4.5:1 on chrome,
+    /// raised and selected surfaces. They are never placed on
+    /// `surface-hover` (only the hovered menu item and the selected segment
+    /// use it), so that surface is not checked.
     #[test]
-    fn given_each_theme_when_status_on_chrome_and_raised_then_reaches_4_5() {
+    fn given_each_theme_when_status_on_chrome_raised_and_selected_then_reaches_4_5()
+     {
         for (theme, palette) in themes() {
             for status in [
                 ("status-ok", palette.status_ok()),
+                ("status-warn", palette.status_warn()),
                 ("status-error", palette.status_error()),
             ] {
                 for surface in [
                     ("surface-chrome", palette.surface_chrome()),
                     ("surface-raised", palette.surface_raised()),
+                    ("surface-selected", palette.surface_selected()),
                 ] {
                     assert_contrast_at_least(theme, status, surface, TEXT_MIN);
+                }
+            }
+        }
+    }
+
+    /// Target dots are non-text graphics (WCAG 1.4.11), so 3:1 is enough.
+    #[test]
+    fn given_each_theme_when_target_dot_on_every_surface_then_reaches_3() {
+        for (theme, palette) in themes() {
+            for target in [
+                ("target-local", palette.target_local()),
+                ("target-ssh", palette.target_ssh()),
+                ("target-staging", palette.target_staging()),
+                ("target-prod", palette.target_prod()),
+            ] {
+                for surface in [
+                    ("surface-chrome", palette.surface_chrome()),
+                    ("surface-panel", palette.surface_panel()),
+                    ("surface-canvas", palette.surface_canvas()),
+                    ("surface-raised", palette.surface_raised()),
+                    ("surface-overlay", palette.surface_overlay()),
+                    ("surface-hover", palette.surface_hover()),
+                    ("surface-selected", palette.surface_selected()),
+                ] {
+                    assert_contrast_at_least(
+                        theme,
+                        target,
+                        surface,
+                        NON_TEXT_MIN,
+                    );
                 }
             }
         }

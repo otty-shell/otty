@@ -1,6 +1,6 @@
 # 17 — Status colors pass 4.5:1 on every surface they can sit on
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 16
@@ -45,3 +45,9 @@ yellow, as before.
 ## Done when
 
 - `cargo +nightly fmt --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features` and `cargo deny check` pass.
+
+## Answer
+
+- OTTY Light yellow (`ansi-yellow`, `status-warn`, `target-staging`) is now `#835d00`; `dim_yellow` is `#b39c65`. Changed in `palette.rs`, `app/src/theme.rs` and ticket 03.
+- Renamed the status test to `given_each_theme_when_status_on_chrome_raised_and_selected_then_reaches_4_5`. It now covers ok, warn and error on chrome, raised and selected. Its doc comment says status colors never sit on `surface-hover`.
+- Added `given_each_theme_when_target_dot_on_every_surface_then_reaches_3` (all `target-*` colors, 3:1, seven surfaces, both themes).
