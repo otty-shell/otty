@@ -8,6 +8,7 @@
 //! - [`size`] for fixed heights and widths;
 //! - [`typography`] for text sizes, line heights and weights;
 //! - [`fonts`] for the bundled font files and `Font` values;
+//! - [`components`] for ready-made controls and overlays;
 //! - [`contrast`] for checking WCAG contrast between two colors.
 //!
 //! # Example
@@ -23,6 +24,7 @@
 //!         .padding(spacing::SPACE_3);
 //! ```
 
+pub mod components;
 pub mod contrast;
 pub mod fonts;
 pub mod palette;

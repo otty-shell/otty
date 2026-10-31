@@ -1,6 +1,6 @@
 # 05 — Kit components: controls and overlays
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 02
@@ -33,3 +33,25 @@ as far as iced 0.14 allows; note any gap in the ticket's Comments.
 ## Done when
 
 - The gallery shows all components of this ticket in both themes; they match the design system previews.
+
+## Comments
+
+Focus ring gap (iced 0.14): `button`, `pick_list` and `container` have no
+focus state and no way to draw an outline (`button::Status` is only Active,
+Hovered, Pressed, Disabled; buttons are not reachable with Tab). The 2px
+`focus` outline with 1px offset is therefore not drawn on any component of
+this ticket. Closing it needs a custom widget (or a wrapper that tracks focus
+through `iced::advanced`), which is out of scope here.
+
+Other gaps:
+- IconButton: the icon tint changes to `text-strong` only while the pointer is
+  over the 15px icon itself, not the whole 28px button (the `svg` widget
+  reports hover for its own bounds). The `surface-raised` background follows
+  the whole button.
+- Kbd uses the regular mono font; the bundled mono has no 500 weight.
+- Select: item height follows the 34px field (iced's pick list menu reuses the
+  field padding), not the 30px `row` height. Dot and note per option, and
+  group headings, are not supported by `pick_list`.
+- Switch is built from a button and containers (34x20 track, 14px knob) since
+  iced's `toggler` is always twice as wide as it is high. The knob moves
+  without animation.

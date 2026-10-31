@@ -11,4 +11,4 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-iced = { workspace = true }
+iced = { workspace = true, features = ["svg"] }
