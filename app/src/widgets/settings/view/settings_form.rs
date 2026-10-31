@@ -1,6 +1,7 @@
-use iced::widget::{Space, column, container, row, scrollable, text};
-use iced::{Element, Length, Padding, Theme, alignment};
+use iced::widget::{Space, container, row, scrollable, text};
+use iced::{Element, Length, Theme, alignment};
 use otty_ui_kit::components::button::{Button, ButtonKind};
+use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::select::select;
@@ -22,9 +23,6 @@ use crate::theme::{BuiltinTheme, ThemeProps};
 /// Width of the settings navigation tree. No size token: the design system
 /// panel (`panel`, 260px) is wider than this short list needs.
 const NAV_WIDTH: f32 = 220.0;
-/// Widest the form grows on large windows, so rows stay readable. No size
-/// token.
-const FORM_MAX_WIDTH: f32 = 720.0;
 
 /// Props for the settings form view.
 pub(crate) struct SettingsFormProps<'a> {
@@ -102,25 +100,9 @@ fn settings_form<'a>(
             _ => terminal_section(props, palette),
         };
 
-    let content = column![page_title(props, palette), section]
-        .spacing(spacing::SPACE_6)
-        .max_width(FORM_MAX_WIDTH)
-        .padding(Padding {
-            top: spacing::SPACE_7,
-            right: spacing::SPACE_7,
-            bottom: spacing::SPACE_7,
-            left: spacing::SPACE_7,
-        });
-
-    let scrollable = scrollable::Scrollable::new(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .direction(scrollbar::vertical())
-        .style(scrollbar::style(palette));
-
-    container(scrollable)
-        .width(Length::Fill)
-        .height(Length::Fill)
+    FormPage::new(palette)
+        .section(page_title(props, palette))
+        .section(section)
         .into()
 }
 

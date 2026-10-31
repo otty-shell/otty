@@ -24,6 +24,8 @@ pub const PANEL: f32 = 260.0;
 pub const TREE_INDENT: f32 = 18.0;
 /// Logo height in the title bar.
 pub const LOGO: f32 = 20.0;
+/// Maximum width of a form page.
+pub const FORM: f32 = 720.0;
 /// Width of the 1px `line` rule between panes, panels and under the title bar.
 pub const LINE: f32 = 1.0;
 /// Width of the invisible zone around a split line that the pointer can drag.

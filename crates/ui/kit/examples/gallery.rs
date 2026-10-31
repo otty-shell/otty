@@ -8,6 +8,7 @@ use iced::widget::{Space, column, container, row, scrollable, svg, text};
 use iced::{Element, Length, Padding, Theme};
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::divider;
+use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::icon_button::{
     IconButton, IconButtonSize, IconTone,
@@ -432,6 +433,25 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 .on_input(Message::Path),
         );
 
+    let page = FormPage::new(p)
+        .section(text("Settings"))
+        .section(FormSection::new("General", p).field(
+            SettingRow::new("Language", p).control(segmented(
+                &TYPES,
+                &state.kind,
+                Message::Kind,
+                p,
+            )),
+        ))
+        .section(FormSection::new("Terminal", p).field(
+            TextField::new("Shell", "/usr/bin/zsh", p).on_input(Message::Path),
+        ))
+        .footer(
+            Button::new("Save", p)
+                .kind(ButtonKind::Primary)
+                .on_press(Message::Switched(true)),
+        );
+
     let first: Vec<Element<'_, Message>> = vec![
         section(
             "Button (form 34, small 28; second row disabled)",
@@ -472,6 +492,11 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section("KeyValueField", key_values.into(), p),
         section("SettingRow", settings.into(), p),
         section("FormSection", form.into(), p),
+        section(
+            "FormPage (scrolls; sections, footer)",
+            container(page).height(280).into(),
+            p,
+        ),
     ];
     let mut body = column![header];
     if state.part == Part::All {

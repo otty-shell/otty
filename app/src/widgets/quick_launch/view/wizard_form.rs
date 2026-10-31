@@ -1,11 +1,11 @@
 use std::fmt;
 
-use iced::widget::{Space, column, container, row, scrollable, text};
+use iced::widget::{Space, container, row, text};
 use iced::{Element, Length, Theme};
 use otty_ui_kit::components::button::{Button, ButtonKind};
+use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::key_value_field::KeyValueField;
-use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::setting_row::SettingRow;
 use otty_ui_kit::components::text_field::TextField;
@@ -20,9 +20,6 @@ use crate::domain::exit_behavior::ExitBehavior;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
-/// Widest the form grows on large windows, so fields stay readable. No size
-/// token.
-const FORM_MAX_WIDTH: f32 = 720.0;
 /// Width of the SSH port field: room for five digits. No size token.
 const PORT_WIDTH: f32 = 96.0;
 
@@ -65,37 +62,20 @@ pub(crate) fn view(props: WizardFormProps<'_>) -> WizardElement<'_> {
             .into();
     };
 
-    let mut content =
-        column![general_section(tab_id, editor, palette), command_section,]
-            .spacing(spacing::SPACE_6)
-            .width(Length::Fill);
+    let mut page = FormPage::new(palette)
+        .section(general_section(tab_id, editor, palette))
+        .section(command_section);
 
     if let Some(error) = unassigned_error(editor) {
-        content = content.push(
+        page = page.section(
             text(error)
                 .size(typography::SMALL.size())
                 .font(fonts::UI)
                 .color(palette.status_error()),
         );
     }
-    content = content.push(footer(tab_id, palette));
 
-    let scrollable =
-        scrollable(container(content).max_width(FORM_MAX_WIDTH).padding(
-            iced::Padding {
-                right: spacing::SPACE_4,
-                ..iced::Padding::ZERO
-            },
-        ))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(scrollbar::style(palette));
-
-    container(scrollable)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(spacing::SPACE_6)
-        .into()
+    page.footer(footer(tab_id, palette)).into()
 }
 
 fn general_section<'a>(

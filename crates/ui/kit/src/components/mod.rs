@@ -13,6 +13,7 @@ mod backspace_guard;
 pub mod button;
 pub mod divider;
 mod field_chrome;
+pub mod form_page;
 pub mod form_section;
 mod glyph;
 pub mod icon_button;
