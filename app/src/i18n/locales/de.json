@@ -25,6 +25,9 @@
     "window_toggle_fullscreen": "Vollbild umschalten",
     "window_minimize": "Minimieren",
     "window_files_panel": "Dateien",
+    "window_left_panel": "Linkes Feld",
+    "window_focus_mode": "Fokusmodus",
+    "window_close": "Fenster schließen",
 
     "kill": "Beenden",
     "edit": "Bearbeiten",

@@ -25,6 +25,9 @@
     "window_toggle_fullscreen": "Toggle full screen",
     "window_minimize": "Minimize",
     "window_files_panel": "Files",
+    "window_left_panel": "Left panel",
+    "window_focus_mode": "Focus mode",
+    "window_close": "Close window",
 
     "kill": "Kill",
     "edit": "Edit",

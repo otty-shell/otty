@@ -25,6 +25,9 @@
     "window_toggle_fullscreen": "전체 화면 전환",
     "window_minimize": "최소화",
     "window_files_panel": "파일",
+    "window_left_panel": "왼쪽 패널",
+    "window_focus_mode": "집중 모드",
+    "window_close": "창 닫기",
 
     "kill": "강제 종료",
     "edit": "편집",

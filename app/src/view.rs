@@ -123,7 +123,7 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         })
     };
 
-    let header = view_header(app, theme_props);
+    let header = view_header(app, sidebar_vm, theme_props);
 
     let root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
         column![header, content_stack]
@@ -142,6 +142,7 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 /// Render the header: action bar + separator.
 fn view_header<'a>(
     app: &'a App,
+    sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     let palette = theme_props.theme.ui();
@@ -149,6 +150,9 @@ fn view_header<'a>(
     let action_bar = action_bar::view(action_bar::ActionBarProps {
         title: app.widgets.tabs.active_tab_title().unwrap_or("OTTY"),
         theme: theme_props,
+        left_open: sidebar_vm.is_left_open,
+        right_open: sidebar_vm.is_right_open,
+        focus_mode: sidebar_vm.is_focus_mode,
     })
     .map(|event| AppEvent::Chrome(ChromeEvent::Intent(event)));
 

@@ -6,10 +6,12 @@ pub(crate) enum ChromeIntent {
     ToggleFullScreen,
     MinimizeWindow,
     CloseWindow,
-    /// Logo click: show or hide the left panel.
-    ToggleSidebarVisibility,
+    /// Show or hide the left panel.
+    ToggleLeftPanel,
     /// Show or hide the files (right) panel.
     ToggleFilesPanel,
+    /// Enter or leave focus mode.
+    ToggleFocusMode,
     /// Open the Settings tab.
     OpenSettings,
     StartWindowDrag,
@@ -21,8 +23,9 @@ pub(crate) enum ChromeEffect {
     FullScreenToggled { mode: window::Mode },
     MinimizeWindow,
     CloseWindow,
-    ToggleSidebarVisibility,
+    ToggleLeftPanel,
     ToggleFilesPanel,
+    ToggleFocusMode,
     OpenSettings,
     StartWindowDrag,
 }

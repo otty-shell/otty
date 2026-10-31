@@ -25,6 +25,9 @@
     "window_toggle_fullscreen": "Во весь экран",
     "window_minimize": "Свернуть",
     "window_files_panel": "Файлы",
+    "window_left_panel": "Левая панель",
+    "window_focus_mode": "Режим фокуса",
+    "window_close": "Закрыть окно",
 
     "kill": "Завершить",
     "edit": "Изменить",

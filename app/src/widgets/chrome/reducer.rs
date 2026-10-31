@@ -26,11 +26,14 @@ pub(crate) fn reduce(
         ChromeIntent::CloseWindow => {
             Task::done(ChromeEvent::Effect(ChromeEffect::CloseWindow))
         },
-        ChromeIntent::ToggleSidebarVisibility => Task::done(
-            ChromeEvent::Effect(ChromeEffect::ToggleSidebarVisibility),
-        ),
+        ChromeIntent::ToggleLeftPanel => {
+            Task::done(ChromeEvent::Effect(ChromeEffect::ToggleLeftPanel))
+        },
         ChromeIntent::ToggleFilesPanel => {
             Task::done(ChromeEvent::Effect(ChromeEffect::ToggleFilesPanel))
+        },
+        ChromeIntent::ToggleFocusMode => {
+            Task::done(ChromeEvent::Effect(ChromeEffect::ToggleFocusMode))
         },
         ChromeIntent::OpenSettings => {
             Task::done(ChromeEvent::Effect(ChromeEffect::OpenSettings))
@@ -95,6 +98,32 @@ mod tests {
         assert!(matches!(
             events.as_slice(),
             [ChromeEvent::Effect(ChromeEffect::OpenSettings)]
+        ));
+    }
+
+    #[test]
+    fn left_panel_button_asks_to_toggle_the_left_panel() {
+        let mut state = ChromeState::default();
+
+        let events =
+            collect_outputs(reduce(&mut state, ChromeIntent::ToggleLeftPanel));
+
+        assert!(matches!(
+            events.as_slice(),
+            [ChromeEvent::Effect(ChromeEffect::ToggleLeftPanel)]
+        ));
+    }
+
+    #[test]
+    fn focus_button_asks_to_toggle_focus_mode() {
+        let mut state = ChromeState::default();
+
+        let events =
+            collect_outputs(reduce(&mut state, ChromeIntent::ToggleFocusMode));
+
+        assert!(matches!(
+            events.as_slice(),
+            [ChromeEvent::Effect(ChromeEffect::ToggleFocusMode)]
         ));
     }
 }

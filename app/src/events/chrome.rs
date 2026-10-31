@@ -26,7 +26,8 @@ fn handle_effect(effect: ChromeEffect) -> Task<AppEvent> {
             window::latest().and_then(|id| window::minimize(id, true))
         },
         CloseWindow => window::latest().and_then(window::close),
-        ToggleSidebarVisibility => sidebar_intent(SidebarIntent::ToggleLeft),
+        ToggleLeftPanel => sidebar_intent(SidebarIntent::ToggleLeft),
+        ToggleFocusMode => sidebar_intent(SidebarIntent::ToggleFocusMode),
         ToggleFilesPanel => sidebar_intent(SidebarIntent::ToggleRight),
         OpenSettings => Task::done(AppEvent::Tabs(TabsEvent::Intent(
             TabsIntent::OpenSettingsTab,
@@ -45,10 +46,9 @@ mod tests {
     use crate::task_outputs::collect_outputs;
 
     #[test]
-    fn logo_toggle_maps_to_the_left_panel_toggle() {
-        let events = collect_outputs(handle_effect(
-            ChromeEffect::ToggleSidebarVisibility,
-        ));
+    fn left_panel_button_maps_to_the_left_panel_toggle() {
+        let events =
+            collect_outputs(handle_effect(ChromeEffect::ToggleLeftPanel));
 
         assert!(matches!(
             events.as_slice(),
@@ -67,6 +67,19 @@ mod tests {
             events.as_slice(),
             [AppEvent::Sidebar(SidebarEvent::Intent(
                 SidebarIntent::ToggleRight
+            ))]
+        ));
+    }
+
+    #[test]
+    fn focus_button_maps_to_the_focus_mode_toggle() {
+        let events =
+            collect_outputs(handle_effect(ChromeEffect::ToggleFocusMode));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::ToggleFocusMode
             ))]
         ));
     }

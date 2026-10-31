@@ -60,6 +60,12 @@ pub(crate) enum Key {
     WindowMinimize,
     /// Tooltip of the title bar button that shows or hides the files panel.
     WindowFilesPanel,
+    /// Tooltip of the title bar button that shows or hides the left panel.
+    WindowLeftPanel,
+    /// Tooltip of the title bar focus mode button.
+    WindowFocusMode,
+    /// Tooltip of the title bar button that closes the window.
+    WindowClose,
 
     // Quick launch context menu.
     /// Terminate a running quick launch.
@@ -267,7 +273,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 114] = [
+    pub(super) const ALL: [Self; 117] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -290,6 +296,9 @@ impl Key {
         Self::WindowToggleFullscreen,
         Self::WindowMinimize,
         Self::WindowFilesPanel,
+        Self::WindowLeftPanel,
+        Self::WindowFocusMode,
+        Self::WindowClose,
         Self::Kill,
         Self::Edit,
         Self::Rename,

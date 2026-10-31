@@ -25,6 +25,9 @@
     "window_toggle_fullscreen": "Alternar pantalla completa",
     "window_minimize": "Minimizar",
     "window_files_panel": "Archivos",
+    "window_left_panel": "Panel izquierdo",
+    "window_focus_mode": "Modo de enfoque",
+    "window_close": "Cerrar ventana",
 
     "kill": "Terminar",
     "edit": "Editar",

@@ -25,6 +25,9 @@
     "window_toggle_fullscreen": "全画面表示の切り替え",
     "window_minimize": "最小化",
     "window_files_panel": "ファイル",
+    "window_left_panel": "左パネル",
+    "window_focus_mode": "集中モード",
+    "window_close": "ウィンドウを閉じる",
 
     "kill": "強制終了",
     "edit": "編集",

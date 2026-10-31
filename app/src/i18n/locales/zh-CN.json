@@ -25,6 +25,9 @@
     "window_toggle_fullscreen": "切换全屏",
     "window_minimize": "最小化",
     "window_files_panel": "文件",
+    "window_left_panel": "左侧面板",
+    "window_focus_mode": "专注模式",
+    "window_close": "关闭窗口",
 
     "kill": "终止",
     "edit": "编辑",
