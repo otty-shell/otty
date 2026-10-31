@@ -1,6 +1,6 @@
 # 19 — One split style for the sidebar and terminal panes
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 18
@@ -23,3 +23,10 @@ different grab zones (8 and 12 px). Move it into the kit with one grab zone.
 ## Tests
 
 None (styling). Behavior change: terminal split grab zone 12 → 8 px.
+
+## Answer
+
+- Added `size::SPLIT_GRAB` (8 px) and `components::split::style(palette)`, which returns the `PaneGrid` style (all `line`, `size::LINE` wide).
+- The sidebar split and the terminal splits both use `split::style`, `.spacing(size::LINE)` and `.on_resize(size::SPLIT_GRAB, …)`. The terminal grab zone went from 12 to 8 px.
+- Removed `PANE_GRID_SPACING`, `PANE_GRID_RESIZE_GRAB`, `DIVIDER_WIDTH` and `PANE_RESIZE_GRAB`. The focused pane frame now uses `size::LINE`.
+- The terminal grid container is still painted `line`, with a comment saying why.

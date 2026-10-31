@@ -24,3 +24,5 @@ pub const PANEL: f32 = 260.0;
 pub const TREE_INDENT: f32 = 18.0;
 /// Width of the 1px `line` rule between panes, panels and under the title bar.
 pub const LINE: f32 = 1.0;
+/// Width of the invisible zone around a split line that the pointer can drag.
+pub const SPLIT_GRAB: f32 = 8.0;

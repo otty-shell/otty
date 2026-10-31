@@ -1,8 +1,9 @@
 use iced::widget::pane_grid::PaneGrid;
 use iced::widget::{Space, column, container, mouse_area, row, text};
 use iced::{Element, Length, Size, Theme, alignment};
-use otty_ui_kit::components::divider;
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
+use otty_ui_kit::components::{divider, split};
+use otty_ui_kit::size;
 
 use super::{App, AppEvent};
 #[cfg(not(target_os = "macos"))]
@@ -32,12 +33,6 @@ use crate::widgets::terminal_workspace::view::{
     pane_context_menu as terminal_pane_context_menu,
     pane_grid as terminal_pane_grid,
 };
-
-/// Width of the 1px `line` between the side panel and the main area.
-const PANE_GRID_SPACING: f32 = 1.0;
-/// Width of the invisible strip around the side panel edge that starts a
-/// resize.
-const PANE_GRID_RESIZE_GRAB: f32 = 8.0;
 
 /// Render the root application view.
 pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
@@ -191,8 +186,6 @@ fn view_sidebar_layout<'a>(
     })
     .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event)));
 
-    let line = theme_props.theme.ui().line();
-
     let sidebar_separator = divider::vertical(theme_props.theme.ui());
 
     let sidebar_pane_grid =
@@ -216,29 +209,14 @@ fn view_sidebar_layout<'a>(
         })
         .width(Length::Fill)
         .height(Length::Fill)
-        .spacing(PANE_GRID_SPACING)
+        .spacing(size::LINE)
         .min_size(0)
-        .on_resize(PANE_GRID_RESIZE_GRAB, |event| {
+        .on_resize(size::SPLIT_GRAB, |event| {
             AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(
                 event,
             )))
         })
-        .style(move |_: &Theme| {
-            iced::widget::pane_grid::Style {
-                hovered_region: iced::widget::pane_grid::Highlight {
-                    background: line.into(),
-                    border: iced::Border::default(),
-                },
-                picked_split: iced::widget::pane_grid::Line {
-                    color: line,
-                    width: PANE_GRID_SPACING,
-                },
-                hovered_split: iced::widget::pane_grid::Line {
-                    color: line,
-                    width: PANE_GRID_SPACING,
-                },
-            }
-        });
+        .style(split::style(theme_props.theme.ui()));
 
     row![menu_rail, sidebar_separator, sidebar_pane_grid]
         .width(Length::Fill)

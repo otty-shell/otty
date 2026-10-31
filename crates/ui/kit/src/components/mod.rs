@@ -24,6 +24,7 @@ pub mod scrollbar;
 pub mod segmented;
 pub mod select;
 pub mod setting_row;
+pub mod split;
 pub mod switch;
 pub mod tab_strip;
 pub mod text_field;

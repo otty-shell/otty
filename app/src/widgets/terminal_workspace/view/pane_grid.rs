@@ -1,25 +1,18 @@
 use std::collections::HashMap;
 use std::process::ExitStatus;
 
-use iced::widget::pane_grid::{self, Highlight, Line, PaneGrid};
+use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{Stack, container, mouse_area, text};
-use iced::{Border, Element, Length, Theme, alignment};
+use iced::{Element, Length, Theme, alignment};
+use otty_ui_kit::components::split;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::{fonts, size, spacing, typography};
 use otty_ui_term::TerminalView;
 
 use super::super::event::TerminalWorkspaceIntent;
 use super::super::model::TerminalTabViewModel;
 use super::super::types::TerminalEntry;
 use crate::i18n::{self, Key};
-
-/// Width of the 1px `line` between panes. The design system has no size
-/// token for dividers.
-const DIVIDER_WIDTH: f32 = 1.0;
-/// Width of the invisible strip around a divider that starts a resize.
-const PANE_RESIZE_GRAB: f32 = 12.0;
-/// Width of the pane border that marks the focused pane. No size token.
-const PANE_BORDER_WIDTH: f32 = 1.0;
 
 /// Render the pane grid for a terminal tab.
 pub(crate) fn view<'a>(
@@ -46,25 +39,13 @@ pub(crate) fn view<'a>(
     })
     .width(Length::Fill)
     .height(Length::Fill)
-    .spacing(DIVIDER_WIDTH)
-    .style(move |_: &Theme| pane_grid::Style {
-        hovered_region: Highlight {
-            background: line.into(),
-            border: Border::default(),
-        },
-        picked_split: Line {
-            color: line,
-            width: DIVIDER_WIDTH,
-        },
-        hovered_split: Line {
-            color: line,
-            width: DIVIDER_WIDTH,
-        },
-    })
-    .on_resize(PANE_RESIZE_GRAB, move |event| {
+    .spacing(size::LINE)
+    .style(split::style(palette))
+    .on_resize(size::SPLIT_GRAB, move |event| {
         TerminalWorkspaceIntent::PaneResized { tab_id, event }
     });
 
+    // The container is painted `line` so the 1px gaps between panes show as rules.
     let grid_container = container(grid)
         .width(Length::Fill)
         .height(Length::Fill)
@@ -138,7 +119,7 @@ fn view_single_pane<'a>(
         .style(move |_: &Theme| iced::widget::container::Style {
             background: Some(canvas.into()),
             border: iced::Border {
-                width: PANE_BORDER_WIDTH,
+                width: size::LINE,
                 color: border_color,
                 ..Default::default()
             },
