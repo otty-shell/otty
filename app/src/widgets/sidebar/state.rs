@@ -21,6 +21,8 @@ pub(super) struct SidebarState {
     left: SidePanel,
     right: SidePanel,
     focus_mode: bool,
+    /// Launches section of the left panel is open. View state, not saved.
+    launches_open: bool,
     left_split: pane_grid::Split,
     right_split: pane_grid::Split,
     panes: pane_grid::State<SidebarPane>,
@@ -42,6 +44,10 @@ impl SidebarState {
 
     pub(super) fn is_focus_mode(&self) -> bool {
         self.focus_mode
+    }
+
+    pub(super) fn is_launches_open(&self) -> bool {
+        self.launches_open
     }
 
     /// Share of the window width the left panel takes now.
@@ -125,6 +131,11 @@ impl SidebarState {
         self.sync_panes();
     }
 
+    /// Open the Launches section if it is closed, close it if it is open.
+    pub(super) fn toggle_launches(&mut self) {
+        self.launches_open = !self.launches_open;
+    }
+
     pub(super) fn update_cursor(&mut self, position: Point) {
         self.cursor = position;
     }
@@ -201,6 +212,7 @@ impl Default for SidebarState {
             left: SidePanel::new(true),
             right: SidePanel::new(false),
             focus_mode: false,
+            launches_open: true,
             left_split,
             right_split,
             panes,

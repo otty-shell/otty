@@ -39,7 +39,8 @@
     "delete": "Supprimer",
     "create_launch": "Nouvel élément de lancement",
 
-    "quick_launch_panel_title": "Lancement rapide",
+    "launches_panel_title": "Lancements",
+    "launch_running": "actif",
     "no_active_folder": "Aucun dossier actif",
     "files_title": "Fichiers",
     "tpl_files_follows": "suit {shell}",

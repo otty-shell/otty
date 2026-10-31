@@ -39,7 +39,8 @@
     "delete": "Delete",
     "create_launch": "Create launch",
 
-    "quick_launch_panel_title": "Quick launch",
+    "launches_panel_title": "Launches",
+    "launch_running": "running",
     "no_active_folder": "No active folder",
     "files_title": "Files",
     "tpl_files_follows": "follows {shell}",

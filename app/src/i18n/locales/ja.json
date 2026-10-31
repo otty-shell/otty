@@ -39,7 +39,8 @@
     "delete": "削除",
     "create_launch": "起動項目を作成",
 
-    "quick_launch_panel_title": "クイック起動",
+    "launches_panel_title": "起動",
+    "launch_running": "実行中",
     "no_active_folder": "アクティブなフォルダーがありません",
     "files_title": "ファイル",
     "tpl_files_follows": "{shell} に追従",

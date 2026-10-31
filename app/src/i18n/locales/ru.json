@@ -39,7 +39,8 @@
     "delete": "Удалить",
     "create_launch": "Создать элемент запуска",
 
-    "quick_launch_panel_title": "Быстрый запуск",
+    "launches_panel_title": "Запуски",
+    "launch_running": "работает",
     "no_active_folder": "Нет активной папки",
     "files_title": "Файлы",
     "tpl_files_follows": "следует за {shell}",

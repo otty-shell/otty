@@ -24,6 +24,10 @@ pub(crate) fn reduce(
             state.toggle_focus_mode();
             sync_terminal_grid_sizes()
         },
+        SidebarIntent::ToggleLaunches => {
+            state.toggle_launches();
+            Task::none()
+        },
         SidebarIntent::OpenSettings => {
             Task::done(SidebarEvent::Effect(SidebarEffect::OpenSettingsTab))
         },
@@ -483,6 +487,22 @@ mod tests {
             [SidebarEvent::Effect(SidebarEffect::OpenSettingsTab)]
         ));
         assert_eq!(widget.side_panels_ratio(), 0.2);
+    }
+
+    #[test]
+    fn launches_section_starts_open_and_toggles_without_effects() {
+        let mut widget = SidebarWidget::new();
+        assert!(widget.vm().is_launches_open);
+
+        let close = reduce(&mut widget, SidebarIntent::ToggleLaunches);
+
+        assert!(!widget.vm().is_launches_open);
+        assert!(close.is_empty());
+
+        let open = reduce(&mut widget, SidebarIntent::ToggleLaunches);
+
+        assert!(widget.vm().is_launches_open);
+        assert!(open.is_empty());
     }
 
     #[test]

@@ -4,6 +4,7 @@ use iced::widget::{
 };
 use iced::{Color, Element, Length, Theme, alignment};
 use otty_ui_kit::components::scrollbar;
+use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing, typography};
@@ -15,7 +16,8 @@ use super::super::types::{
     DropTarget, InlineEditKind, LaunchInfo, NodePath, QuickLaunchFile,
     QuickLaunchNode,
 };
-use crate::icons::PLAY;
+use crate::i18n::{self, Key};
+use crate::icons::FOLDER_CLOSED;
 use crate::theme::ThemeProps;
 
 /// Props for the quick launch tree view.
@@ -102,11 +104,6 @@ fn render_entry<'a>(
     drop_target: Option<&DropTarget>,
     palette: &UiPalette,
 ) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let is_indicator_highlighted = launching
-        .get(&context.entry.path)
-        .map(|launch| launch.is_indicator_highlighted)
-        .unwrap_or(false);
-
     let mut row = TreeRow::new(context.entry.node.title(), palette)
         .depth(context.entry.depth as u16)
         .selected(context.is_selected)
@@ -114,11 +111,22 @@ fn render_entry<'a>(
         .drop_target(is_drop_target(drop_target, &context.entry.path));
 
     row = match context.entry.node {
-        QuickLaunchNode::Folder(folder) => row.caret(folder.is_expanded()),
-        QuickLaunchNode::Command(_) => {
-            let color = is_indicator_highlighted.then(|| palette.accent());
+        QuickLaunchNode::Folder(folder) => row
+            .caret(folder.is_expanded())
+            .icon(svg::Handle::from_memory(FOLDER_CLOSED), None),
+        QuickLaunchNode::Command(command) => {
+            let kind = if command.is_ssh() {
+                TargetKind::Ssh
+            } else {
+                TargetKind::Local
+            };
+            let row = row.dot(kind);
 
-            row.icon(svg::Handle::from_memory(PLAY), color)
+            if launching.contains_key(&context.entry.path) {
+                row.state(i18n::t(Key::LaunchRunning))
+            } else {
+                row
+            }
         },
     };
 

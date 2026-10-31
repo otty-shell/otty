@@ -39,6 +39,7 @@ impl SidebarWidget {
             is_left_open: self.state.is_left_open(),
             is_right_open: self.state.is_right_open(),
             is_focus_mode: self.state.is_focus_mode(),
+            is_launches_open: self.state.is_launches_open(),
             has_add_menu_open: self.state.has_add_menu_open(),
             add_menu_cursor: self.state.add_menu_cursor(),
         }

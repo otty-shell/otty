@@ -5,6 +5,7 @@ use iced::widget::{Space, button, container, row, svg, text};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
 use super::glyph;
+use super::target_dot::{TargetKind, target_dot};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
@@ -14,6 +15,9 @@ const CARET_WIDTH: f32 = 12.0;
 const GAP: f32 = 7.0;
 /// Edge of the optional leading icon.
 const ICON_SIZE: f32 = 14.0;
+/// Space on each side of the target dot, so it takes the width of an icon
+/// (`margin: 0 3px`).
+const DOT_MARGIN: f32 = 3.0;
 /// Horizontal padding of the row (`padding: 0 8px`).
 const PADDING_X: f32 = spacing::SPACE_3;
 
@@ -51,6 +55,8 @@ pub struct TreeRow<Message> {
     is_hovered: bool,
     is_drop_target: bool,
     icon: Option<(svg::Handle, Option<Color>)>,
+    dot: Option<TargetKind>,
+    state: Option<String>,
     on_press: Option<Message>,
 }
 
@@ -67,6 +73,8 @@ impl<Message> TreeRow<Message> {
             is_hovered: false,
             is_drop_target: false,
             icon: None,
+            dot: None,
+            state: None,
             on_press: None,
         }
     }
@@ -115,6 +123,19 @@ impl<Message> TreeRow<Message> {
         self
     }
 
+    /// Shows a target dot before the label, for a row that starts a session
+    /// on that target. The label next to it tells the target apart.
+    pub fn dot(mut self, kind: TargetKind) -> Self {
+        self.dot = Some(kind);
+        self
+    }
+
+    /// Shows a short muted word on the right, such as `running`.
+    pub fn state(mut self, word: impl Into<String>) -> Self {
+        self.state = Some(word.into());
+        self
+    }
+
     /// Sets the message sent on press.
     pub fn on_press(mut self, message: Message) -> Self {
         self.on_press = Some(message);
@@ -156,6 +177,12 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
                     .style(move |_, _| svg::Style { color: Some(color) }),
             );
         }
+        if let Some(kind) = value.dot {
+            content = content.push(
+                container(target_dot(kind, &palette))
+                    .padding(Padding::from([0.0, DOT_MARGIN])),
+            );
+        }
         content = content.push(
             container(
                 text(value.label)
@@ -166,6 +193,14 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
             .width(Length::Fill)
             .clip(true),
         );
+        if let Some(word) = value.state {
+            content = content.push(
+                text(word)
+                    .size(typography::CAPTION.size())
+                    .font(fonts::UI)
+                    .color(muted),
+            );
+        }
         if let Some(count) = value.count {
             let caption = typography::CAPTION;
             content = content.push(

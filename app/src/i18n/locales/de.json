@@ -39,7 +39,8 @@
     "delete": "Löschen",
     "create_launch": "Starteintrag erstellen",
 
-    "quick_launch_panel_title": "Schnellstart",
+    "launches_panel_title": "Starts",
+    "launch_running": "läuft",
     "no_active_folder": "Kein aktiver Ordner",
     "files_title": "Dateien",
     "tpl_files_follows": "folgt {shell}",

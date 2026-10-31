@@ -43,6 +43,11 @@ impl QuickLaunch {
     pub(crate) fn exit_behavior(&self) -> ExitBehavior {
         self.exit_behavior
     }
+
+    /// Whether the command connects to a remote host over SSH.
+    pub(crate) fn is_ssh(&self) -> bool {
+        matches!(self.spec, CommandSpec::Ssh { .. })
+    }
 }
 
 /// Command specification variant.
@@ -155,6 +160,11 @@ impl QuickLaunchFile {
         &self.root
     }
 
+    /// Number of launches in the whole tree; folders are not counted.
+    pub(crate) fn launch_count(&self) -> usize {
+        self.root.launch_count()
+    }
+
     /// Return a node by path.
     pub(crate) fn node(&self, path: &[String]) -> Option<&QuickLaunchNode> {
         let mut current = &self.root.children;
@@ -250,6 +260,17 @@ impl QuickLaunchFolder {
 
     pub(crate) fn children(&self) -> &[QuickLaunchNode] {
         &self.children
+    }
+
+    /// Number of launches in this folder and all folders below it.
+    pub(crate) fn launch_count(&self) -> usize {
+        self.children
+            .iter()
+            .map(|node| match node {
+                QuickLaunchNode::Folder(folder) => folder.launch_count(),
+                QuickLaunchNode::Command(_) => 1,
+            })
+            .sum()
     }
 
     /// Return whether a child with the given title exists.
@@ -721,6 +742,79 @@ mod tests {
 
         assert_eq!(json["exit_behavior"], "keep_open");
         assert_eq!(parsed.exit_behavior(), ExitBehavior::KeepOpen);
+    }
+
+    fn local_command(title: &str) -> QuickLaunchNode {
+        QuickLaunchNode::Command(QuickLaunch {
+            title: String::from(title),
+            spec: CommandSpec::Custom {
+                custom: CustomCommand {
+                    program: String::from("bash"),
+                    args: Vec::new(),
+                    env: Vec::new(),
+                    working_directory: None,
+                },
+            },
+            exit_behavior: ExitBehavior::Close,
+        })
+    }
+
+    fn ssh_command(title: &str) -> QuickLaunchNode {
+        QuickLaunchNode::Command(QuickLaunch {
+            title: String::from(title),
+            spec: CommandSpec::Ssh {
+                ssh: SshCommand {
+                    host: String::from("example.com"),
+                    port: 22,
+                    user: None,
+                    identity_file: None,
+                    extra_args: Vec::new(),
+                },
+            },
+            exit_behavior: ExitBehavior::Close,
+        })
+    }
+
+    #[test]
+    fn given_ssh_and_custom_commands_when_checked_then_only_ssh_is_ssh() {
+        let QuickLaunchNode::Command(ssh) = ssh_command("prod") else {
+            panic!("ssh_command should build a command");
+        };
+        let QuickLaunchNode::Command(local) = local_command("shell") else {
+            panic!("local_command should build a command");
+        };
+
+        assert!(ssh.is_ssh());
+        assert!(!local.is_ssh());
+    }
+
+    #[test]
+    fn given_nested_folders_when_counting_launches_then_folders_are_not_counted()
+     {
+        let mut file = QuickLaunchFile::default();
+        file.root.children = vec![
+            local_command("shell"),
+            QuickLaunchNode::Folder(QuickLaunchFolder {
+                title: String::from("Servers"),
+                expanded: false,
+                children: vec![
+                    ssh_command("prod"),
+                    QuickLaunchNode::Folder(QuickLaunchFolder {
+                        title: String::from("Empty"),
+                        expanded: true,
+                        children: Vec::new(),
+                    }),
+                    local_command("logs"),
+                ],
+            }),
+        ];
+
+        assert_eq!(file.launch_count(), 3);
+    }
+
+    #[test]
+    fn given_empty_file_when_counting_launches_then_count_is_zero() {
+        assert_eq!(QuickLaunchFile::default().launch_count(), 0);
     }
 
     #[test]

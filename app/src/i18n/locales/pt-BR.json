@@ -39,7 +39,8 @@
     "delete": "Excluir",
     "create_launch": "Criar item de início",
 
-    "quick_launch_panel_title": "Início rápido",
+    "launches_panel_title": "Lançamentos",
+    "launch_running": "ativo",
     "no_active_folder": "Nenhuma pasta ativa",
     "files_title": "Arquivos",
     "tpl_files_follows": "segue {shell}",

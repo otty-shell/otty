@@ -7,6 +7,8 @@ pub(crate) enum SidebarIntent {
     ToggleRight,
     /// Enter or leave focus mode.
     ToggleFocusMode,
+    /// Open or close the Launches section of the left panel.
+    ToggleLaunches,
     OpenSettings,
     AddMenuOpen,
     AddMenuDismiss,

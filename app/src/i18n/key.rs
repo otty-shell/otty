@@ -88,8 +88,10 @@ pub(crate) enum Key {
     CreateLaunch,
 
     // Quick launch sidebar panel.
-    /// Header of the quick launch sidebar panel.
-    QuickLaunchPanelTitle,
+    /// Title of the Launches section of the left panel.
+    LaunchesPanelTitle,
+    /// Muted word on a launch row while the launch is running.
+    LaunchRunning,
 
     // Explorer sidebar.
     /// Shown when the explorer has no active folder.
@@ -273,7 +275,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 117] = [
+    pub(super) const ALL: [Self; 118] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -308,7 +310,8 @@ impl Key {
         Self::CreateQuickLaunch,
         Self::Delete,
         Self::CreateLaunch,
-        Self::QuickLaunchPanelTitle,
+        Self::LaunchesPanelTitle,
+        Self::LaunchRunning,
         Self::NoActiveFolder,
         Self::FilesTitle,
         Self::TplFilesFollows,

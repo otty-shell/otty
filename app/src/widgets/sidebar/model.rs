@@ -9,6 +9,8 @@ pub(crate) struct SidebarViewModel {
     pub(crate) is_right_open: bool,
     /// Focus mode hides both panels.
     pub(crate) is_focus_mode: bool,
+    /// The Launches section of the left panel is open.
+    pub(crate) is_launches_open: bool,
     pub(crate) has_add_menu_open: bool,
     pub(crate) add_menu_cursor: Option<Point>,
 }

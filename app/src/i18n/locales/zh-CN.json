@@ -39,7 +39,8 @@
     "delete": "删除",
     "create_launch": "新建启动项",
 
-    "quick_launch_panel_title": "快捷启动",
+    "launches_panel_title": "启动项",
+    "launch_running": "运行中",
     "no_active_folder": "无活动文件夹",
     "files_title": "文件",
     "tpl_files_follows": "跟随 {shell}",

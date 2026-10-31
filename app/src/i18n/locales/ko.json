@@ -39,7 +39,8 @@
     "delete": "삭제",
     "create_launch": "실행 항목 만들기",
 
-    "quick_launch_panel_title": "빠른 실행",
+    "launches_panel_title": "실행",
+    "launch_running": "실행 중",
     "no_active_folder": "활성 폴더 없음",
     "files_title": "파일",
     "tpl_files_follows": "{shell} 따라가기",

@@ -226,17 +226,28 @@ fn side_panel<'a>(
     surface(content, Surface::Panel, theme_props.theme.ui()).into()
 }
 
-/// Left panel content: today's quick launch panel (restyled by tickets
-/// 09 and 10).
+/// Left panel content: a column of sections. Today it holds the Launches
+/// section; the Sessions section goes above it in the same column.
 fn view_left_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    sidebar_panel::view(sidebar_panel::SidebarPanelProps {
+    let launches = sidebar_panel::view(sidebar_panel::SidebarPanelProps {
         vm: app.widgets.quick_launch.vm(),
         theme: theme_props,
-    })
-    .map(|event| AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event)))
+        is_open: app.widgets.sidebar.vm().is_launches_open,
+        on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::ToggleLaunches,
+        )),
+        on_intent: |intent| {
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
+        },
+    });
+
+    column![launches]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 /// Right panel content: the Files section.
