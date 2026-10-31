@@ -141,7 +141,7 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 - [x] 10 — Restyle sidebar trees · Sonnet
 - [x] 11 — Restyle menus and dropdowns · Sonnet
 - [x] 12 — Restyle settings screen · Sonnet
-- [ ] 13 — Restyle quick launch editor, secret prompt and error tab · Sonnet
+- [x] 13 — Restyle quick launch editor, secret prompt and error tab · Sonnet
 - [ ] 14 — Remove old styling code · Opus
 - [ ] 15 — Update the design system to match the code · owner
 

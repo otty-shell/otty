@@ -917,8 +917,8 @@ mod tests {
         let mut editor = WizardEditorState::new(vec![]);
         editor.set_title(String::from("Build"));
         editor.set_program(String::from("cargo"));
-        editor.add_arg();
-        editor.update_arg(0, String::from("check"));
+        editor.set_arg_input(String::from("check"));
+        editor.submit_arg();
         editor.add_env();
         editor.update_env_key(0, String::from("RUST_LOG"));
         editor.update_env_value(0, String::from("debug"));

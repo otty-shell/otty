@@ -265,17 +265,18 @@ pub(crate) fn reduce(
                 e.set_working_directory(value)
             })
         },
-        WizardAddArg { tab_id } => {
-            reduce_wizard_field(state, tab_id, |e| e.add_arg())
+        WizardArgInput { tab_id, value } => {
+            reduce_wizard_field(state, tab_id, |e| e.set_arg_input(value))
+        },
+        WizardArgSubmit { tab_id } => {
+            reduce_wizard_field(state, tab_id, |e| e.submit_arg())
+        },
+        WizardArgBackspace { tab_id } => {
+            reduce_wizard_field(state, tab_id, |e| e.backspace_arg())
         },
         WizardRemoveArg { tab_id, index } => {
             reduce_wizard_field(state, tab_id, |e| e.remove_arg(index))
         },
-        WizardUpdateArg {
-            tab_id,
-            index,
-            value,
-        } => reduce_wizard_field(state, tab_id, |e| e.update_arg(index, value)),
         WizardAddEnv { tab_id } => {
             reduce_wizard_field(state, tab_id, |e| e.add_env())
         },
@@ -296,19 +297,18 @@ pub(crate) fn reduce(
         } => reduce_wizard_field(state, tab_id, |e| {
             e.update_env_value(index, value)
         }),
-        WizardAddExtraArg { tab_id } => {
-            reduce_wizard_field(state, tab_id, |e| e.add_extra_arg())
+        WizardExtraArgInput { tab_id, value } => {
+            reduce_wizard_field(state, tab_id, |e| e.set_extra_arg_input(value))
+        },
+        WizardExtraArgSubmit { tab_id } => {
+            reduce_wizard_field(state, tab_id, |e| e.submit_extra_arg())
+        },
+        WizardExtraArgBackspace { tab_id } => {
+            reduce_wizard_field(state, tab_id, |e| e.backspace_extra_arg())
         },
         WizardRemoveExtraArg { tab_id, index } => {
             reduce_wizard_field(state, tab_id, |e| e.remove_extra_arg(index))
         },
-        WizardUpdateExtraArg {
-            tab_id,
-            index,
-            value,
-        } => reduce_wizard_field(state, tab_id, |e| {
-            e.update_extra_arg(index, value)
-        }),
         WizardSelectExitBehavior {
             tab_id,
             exit_behavior,
@@ -350,9 +350,12 @@ fn reduce_wizard_save(
     state: &mut QuickLaunchState,
     tab_id: u64,
 ) -> Task<QuickLaunchEvent> {
-    let Some(editor) = state.wizard().editor(tab_id) else {
+    let Some(editor) = state.wizard_mut().editor_mut(tab_id) else {
         return Task::none();
     };
+    editor.commit_pending_args();
+
+    let editor = &*editor;
     match build_command(editor) {
         Ok(command) => {
             let target = match editor.mode() {
@@ -2036,20 +2039,121 @@ mod tests {
     }
 
     #[test]
-    fn given_wizard_add_arg_when_reduced_then_arg_count_increases() {
+    fn given_typed_arg_when_submitted_then_arg_is_added_and_input_cleared() {
         let mut state = QuickLaunchState::default();
         state.wizard_mut().initialize_create(1, vec![]);
 
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchIntent::WizardAddArg { tab_id: 1 },
+            QuickLaunchIntent::WizardArgInput {
+                tab_id: 1,
+                value: String::from("  -v "),
+            },
+            &ctx(&settings),
+        );
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardArgSubmit { tab_id: 1 },
+            &ctx(&settings),
+        );
+
+        let editor = state.wizard().editor(1).expect("editor should exist");
+        let custom = editor.custom().expect("custom options should exist");
+        assert_eq!(custom.args(), &[String::from("-v")]);
+        assert_eq!(custom.args_list().input(), "");
+    }
+
+    #[test]
+    fn given_blank_arg_when_submitted_then_nothing_is_added() {
+        let mut state = QuickLaunchState::default();
+        state.wizard_mut().initialize_create(1, vec![]);
+
+        let settings = Settings::default();
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardArgInput {
+                tab_id: 1,
+                value: String::from("   "),
+            },
+            &ctx(&settings),
+        );
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardArgSubmit { tab_id: 1 },
+            &ctx(&settings),
+        );
+
+        let editor = state.wizard().editor(1).expect("editor should exist");
+        let custom = editor.custom().expect("custom options should exist");
+        assert!(custom.args().is_empty());
+    }
+
+    #[test]
+    fn given_empty_input_when_arg_backspace_then_last_arg_is_removed() {
+        let mut state = QuickLaunchState::default();
+        state.wizard_mut().initialize_create(1, vec![]);
+        if let Some(editor) = state.wizard_mut().editor_mut(1) {
+            editor.set_arg_input(String::from("-a"));
+            editor.submit_arg();
+            editor.set_arg_input(String::from("-b"));
+            editor.submit_arg();
+        }
+
+        let settings = Settings::default();
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardArgBackspace { tab_id: 1 },
+            &ctx(&settings),
+        );
+
+        let editor = state.wizard().editor(1).expect("editor should exist");
+        let custom = editor.custom().expect("custom options should exist");
+        assert_eq!(custom.args(), &[String::from("-a")]);
+    }
+
+    #[test]
+    fn given_text_in_input_when_arg_backspace_then_args_are_kept() {
+        let mut state = QuickLaunchState::default();
+        state.wizard_mut().initialize_create(1, vec![]);
+        if let Some(editor) = state.wizard_mut().editor_mut(1) {
+            editor.set_arg_input(String::from("-a"));
+            editor.submit_arg();
+            editor.set_arg_input(String::from("-"));
+        }
+
+        let settings = Settings::default();
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardArgBackspace { tab_id: 1 },
             &ctx(&settings),
         );
 
         let editor = state.wizard().editor(1).expect("editor should exist");
         let custom = editor.custom().expect("custom options should exist");
         assert_eq!(custom.args().len(), 1);
+    }
+
+    #[test]
+    fn given_typed_arg_when_saved_then_pending_text_becomes_arg() {
+        let mut state = QuickLaunchState::default();
+        state.wizard_mut().initialize_create(1, vec![]);
+        if let Some(editor) = state.wizard_mut().editor_mut(1) {
+            editor.set_program(String::from("ls"));
+            editor.set_title(String::from("list"));
+            editor.set_arg_input(String::from("-la"));
+        }
+
+        let settings = Settings::default();
+        let _task = reduce(
+            &mut state,
+            QuickLaunchIntent::WizardSave { tab_id: 1 },
+            &ctx(&settings),
+        );
+
+        let editor = state.wizard().editor(1).expect("editor should exist");
+        let custom = editor.custom().expect("custom options should exist");
+        assert_eq!(custom.args(), &[String::from("-la")]);
     }
 
     #[test]
@@ -2312,8 +2416,10 @@ mod tests {
         let mut state = QuickLaunchState::default();
         state.wizard_mut().initialize_create(1, vec![]);
         if let Some(editor) = state.wizard_mut().editor_mut(1) {
-            editor.add_arg();
-            editor.add_arg();
+            editor.set_arg_input(String::from("-a"));
+            editor.submit_arg();
+            editor.set_arg_input(String::from("-b"));
+            editor.submit_arg();
         }
 
         let settings = Settings::default();
@@ -2329,30 +2435,6 @@ mod tests {
         let editor = state.wizard().editor(1).expect("editor should exist");
         let custom = editor.custom().expect("custom options should exist");
         assert_eq!(custom.args().len(), 1);
-    }
-
-    #[test]
-    fn given_wizard_update_arg_when_reduced_then_arg_value_changes() {
-        let mut state = QuickLaunchState::default();
-        state.wizard_mut().initialize_create(1, vec![]);
-        if let Some(editor) = state.wizard_mut().editor_mut(1) {
-            editor.add_arg();
-        }
-
-        let settings = Settings::default();
-        let _task = reduce(
-            &mut state,
-            QuickLaunchIntent::WizardUpdateArg {
-                tab_id: 1,
-                index: 0,
-                value: String::from("-v"),
-            },
-            &ctx(&settings),
-        );
-
-        let editor = state.wizard().editor(1).expect("editor should exist");
-        let custom = editor.custom().expect("custom options should exist");
-        assert_eq!(custom.args()[0], "-v");
     }
 
     #[test]
@@ -2413,7 +2495,8 @@ mod tests {
     }
 
     #[test]
-    fn given_wizard_ssh_extra_args_when_added_and_removed_then_list_updates() {
+    fn given_wizard_ssh_extra_args_when_submitted_and_removed_then_list_updates()
+     {
         let mut state = QuickLaunchState::default();
         state.wizard_mut().initialize_create(1, vec![]);
         if let Some(editor) = state.wizard_mut().editor_mut(1) {
@@ -2423,16 +2506,15 @@ mod tests {
         let settings = Settings::default();
         let _task = reduce(
             &mut state,
-            QuickLaunchIntent::WizardAddExtraArg { tab_id: 1 },
+            QuickLaunchIntent::WizardExtraArgInput {
+                tab_id: 1,
+                value: String::from("-o StrictHostKeyChecking=no"),
+            },
             &ctx(&settings),
         );
         let _task = reduce(
             &mut state,
-            QuickLaunchIntent::WizardUpdateExtraArg {
-                tab_id: 1,
-                index: 0,
-                value: String::from("-o StrictHostKeyChecking=no"),
-            },
+            QuickLaunchIntent::WizardExtraArgSubmit { tab_id: 1 },
             &ctx(&settings),
         );
 

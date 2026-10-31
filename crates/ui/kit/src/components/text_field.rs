@@ -49,6 +49,8 @@ pub struct TextField<'a, Message> {
     is_optional: bool,
     width: Length,
     action: Option<(String, Message)>,
+    is_secure: bool,
+    id: Option<iced::widget::Id>,
     on_input: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_submit: Option<Message>,
 }
@@ -70,6 +72,8 @@ impl<'a, Message> TextField<'a, Message> {
             is_optional: false,
             width: Length::Fill,
             action: None,
+            is_secure: false,
+            id: None,
             on_input: None,
             on_submit: None,
         }
@@ -118,6 +122,18 @@ impl<'a, Message> TextField<'a, Message> {
         self
     }
 
+    /// Hides the typed characters (passwords and passphrases).
+    pub fn secure(mut self, is_secure: bool) -> Self {
+        self.is_secure = is_secure;
+        self
+    }
+
+    /// Sets the widget id, so the app can focus the input.
+    pub fn id(mut self, id: iced::widget::Id) -> Self {
+        self.id = Some(id);
+        self
+    }
+
     /// Sets the function that maps the new value to a message and enables
     /// the field.
     pub fn on_input(
@@ -142,8 +158,9 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
         let style = typography::TERM;
         let invalid = value.error.is_some();
 
-        let control: TextInput<'a, Message> =
+        let mut control: TextInput<'a, Message> =
             text_input(&value.placeholder, value.value)
+                .secure(value.is_secure)
                 .font(fonts::MONO)
                 .size(style.size())
                 .line_height(Pixels(style.line_height()))
@@ -151,6 +168,10 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
                 .on_input_maybe(value.on_input)
                 .on_submit_maybe(value.on_submit)
                 .style(input_style(&value.palette, invalid));
+
+        if let Some(id) = value.id {
+            control = control.id(id);
+        }
 
         let mut line = row![control].spacing(spacing::SPACE_2);
         if let Some((label, message)) = value.action {

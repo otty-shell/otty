@@ -1,7 +1,7 @@
 use iced::Background;
-use iced::widget::{container, scrollable};
+use iced::widget::scrollable;
 
-use super::theme::{IcedColorPalette, ThemeProps};
+use super::theme::IcedColorPalette;
 
 pub(crate) fn thin_scroll_style(
     palette: IcedColorPalette,
@@ -26,21 +26,5 @@ pub(crate) fn thin_scroll_style(
             Background::Color(scroller_color);
 
         style
-    }
-}
-
-pub(crate) fn menu_panel_style(
-    theme: ThemeProps<'_>,
-) -> impl Fn(&iced::Theme) -> container::Style + 'static {
-    let palette = theme.theme.iced_palette().clone();
-    move |_theme: &iced::Theme| container::Style {
-        background: Some(palette.overlay.into()),
-        text_color: Some(palette.foreground),
-        border: iced::Border {
-            width: 0.25,
-            color: palette.overlay,
-            radius: iced::border::Radius::new(4.0),
-        },
-        ..Default::default()
     }
 }

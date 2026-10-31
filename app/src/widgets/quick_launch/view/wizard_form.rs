@@ -1,26 +1,43 @@
-use iced::widget::button::Status as ButtonStatus;
-use iced::widget::{button, column, container, row, text, text_input};
-use iced::{Element, Length, Theme, alignment};
+use std::fmt;
+
+use iced::widget::{Space, column, container, row, scrollable, text};
+use iced::{Element, Length, Theme};
+use otty_ui_kit::components::button::{Button, ButtonKind};
+use otty_ui_kit::components::form_section::FormSection;
+use otty_ui_kit::components::key_value_field::KeyValueField;
+use otty_ui_kit::components::segmented::segmented;
+use otty_ui_kit::components::setting_row::SettingRow;
+use otty_ui_kit::components::text_field::TextField;
+use otty_ui_kit::components::token_field::TokenField;
+use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::QuickLaunchIntent;
 use super::super::state::WizardEditorState;
 use super::super::types::QuickLaunchType;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::i18n::{self, Key};
-use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_REGULAR};
-use crate::theme::{IcedColorPalette, ThemeProps};
+use crate::style::thin_scroll_style;
+use crate::theme::ThemeProps;
 
-const SECTION_SPACING: f32 = 16.0;
-const FIELD_SPACING: f32 = 8.0;
-const LABEL_SIZE: f32 = 13.0;
-const LABEL_WIDTH: f32 = 160.0;
-const INPUT_SIZE: f32 = 13.0;
-const INPUT_PADDING_X: f32 = 8.0;
-const INPUT_PADDING_Y: f32 = 6.0;
-const BUTTON_HEIGHT: f32 = BUTTON_SIZE_REGULAR;
-const BUTTON_PADDING_X: f32 = 12.0;
-const FORM_PADDING: f32 = 16.0;
-const FORM_RIGHT_PADDING: f32 = 8.0;
+const FORM_PADDING: f32 = spacing::SPACE_6;
+const FORM_MAX_WIDTH: f32 = 720.0;
+const PORT_WIDTH: f32 = 96.0;
+
+type WizardElement<'a> = Element<'a, QuickLaunchIntent, Theme, iced::Renderer>;
+
+/// One option of a segmented control: the value and its translated label.
+#[derive(Clone, PartialEq)]
+struct Choice<T> {
+    value: T,
+    label: &'static str,
+}
+
+impl<T> fmt::Display for Choice<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.label)
+    }
+}
 
 /// Props for the quick launch wizard form.
 pub(crate) struct WizardFormProps<'a> {
@@ -30,194 +47,47 @@ pub(crate) struct WizardFormProps<'a> {
 }
 
 /// Render the quick launch wizard form.
-pub(crate) fn view(
-    props: WizardFormProps<'_>,
-) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
+pub(crate) fn view(props: WizardFormProps<'_>) -> WizardElement<'_> {
     let tab_id = props.tab_id;
     let editor = props.editor;
-    let theme = props.theme;
+    let palette = props.theme.theme.ui();
 
-    let mut content = column![].spacing(SECTION_SPACING).width(Length::Fill);
+    let command_section = match editor.command_type() {
+        QuickLaunchType::Custom => custom_section(tab_id, editor, palette),
+        QuickLaunchType::Ssh => ssh_section(tab_id, editor, palette),
+    };
+    let Some(command_section) = command_section else {
+        return container(text(i18n::t(Key::InvalidCustomEditorState)))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+    };
 
-    content = content.push(section_header(i18n::t(Key::WizardHeader), theme));
-    content = content.push(text_input_row(
-        i18n::t(Key::FieldTitle),
-        "codex: review",
-        editor.title(),
-        move |value| QuickLaunchIntent::WizardUpdateTitle { tab_id, value },
-        theme,
-    ));
+    let mut content =
+        column![general_section(tab_id, editor, palette), command_section,]
+            .spacing(spacing::SPACE_6)
+            .width(Length::Fill);
 
-    if editor.is_create_mode() {
-        content = content.push(command_type_selector(
-            tab_id,
-            editor.command_type(),
-            theme,
-        ));
-    } else {
-        content = content.push(row![
-            field_label(i18n::t(Key::FieldType)),
-            text(quick_launch_type_label(editor.command_type()))
-                .size(LABEL_SIZE),
-        ]);
+    if let Some(error) = unassigned_error(editor) {
+        content = content.push(
+            text(error)
+                .size(typography::SMALL.size())
+                .font(fonts::UI)
+                .color(palette.status_error()),
+        );
     }
+    content = content.push(footer(tab_id, palette));
 
-    match editor.command_type() {
-        QuickLaunchType::Custom => {
-            let Some(custom) = editor.custom() else {
-                return container(text(i18n::t(Key::InvalidCustomEditorState)))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-            };
-
-            content = content.push(section_header(
-                i18n::t(Key::SectionCustomCommand),
-                theme,
-            ));
-            content = content.push(text_input_row(
-                i18n::t(Key::FieldProgram),
-                "/usr/bin/bash",
-                custom.program(),
-                move |value| QuickLaunchIntent::WizardUpdateProgram {
-                    tab_id,
-                    value,
-                },
-                theme,
-            ));
-            content = content.push(list_editor(
-                i18n::t(Key::FieldArguments),
-                "--flag",
-                custom.args(),
-                tab_id,
-                wizard_add_arg,
-                wizard_remove_arg,
-                wizard_update_arg,
-                theme,
-            ));
-            content = content.push(env_editor(
-                custom.env(),
-                i18n::t(Key::EnvKeyPlaceholder),
-                i18n::t(Key::EnvValuePlaceholder),
-                tab_id,
-                theme,
-            ));
-            content = content.push(text_input_row(
-                i18n::t(Key::FieldWorkdir),
-                "/path/to/project",
-                custom.working_directory(),
-                move |value| QuickLaunchIntent::WizardUpdateWorkingDirectory {
-                    tab_id,
-                    value,
-                },
-                theme,
-            ));
-        },
-        QuickLaunchType::Ssh => {
-            let Some(ssh) = editor.ssh() else {
-                return container(text(i18n::t(Key::InvalidSshEditorState)))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-            };
-
-            content = content.push(section_header(
-                i18n::t(Key::SectionSshConnection),
-                theme,
-            ));
-            content = content.push(text_input_row(
-                i18n::t(Key::FieldHost),
-                "example.com",
-                ssh.host(),
-                move |value| QuickLaunchIntent::WizardUpdateHost {
-                    tab_id,
-                    value,
-                },
-                theme,
-            ));
-            content = content.push(text_input_row(
-                i18n::t(Key::FieldPort),
-                "22",
-                ssh.port(),
-                move |value| QuickLaunchIntent::WizardUpdatePort {
-                    tab_id,
-                    value,
-                },
-                theme,
-            ));
-            content = content.push(text_input_row(
-                i18n::t(Key::FieldUser),
-                "ubuntu",
-                ssh.user(),
-                move |value| QuickLaunchIntent::WizardUpdateUser {
-                    tab_id,
-                    value,
-                },
-                theme,
-            ));
-            content = content.push(text_input_row(
-                i18n::t(Key::FieldIdentityFile),
-                "~/.ssh/id_ed25519",
-                ssh.identity_file(),
-                move |value| QuickLaunchIntent::WizardUpdateIdentityFile {
-                    tab_id,
-                    value,
-                },
-                theme,
-            ));
-            content = content.push(list_editor(
-                i18n::t(Key::FieldExtraArgs),
-                "-A",
-                ssh.extra_args(),
-                tab_id,
-                wizard_add_extra_arg,
-                wizard_remove_extra_arg,
-                wizard_update_extra_arg,
-                theme,
-            ));
-        },
-    }
-
-    content = content.push(exit_behavior_selector(
-        tab_id,
-        editor.exit_behavior(),
-        theme,
-    ));
-
-    if let Some(error) = editor.error() {
-        let error_color = theme.theme.iced_palette().red;
-        content = content.push(text(error).size(LABEL_SIZE).style(move |_| {
-            iced::widget::text::Style {
-                color: Some(error_color),
-            }
-        }));
-    }
-
-    let action_row = row![
-        editor_button(
-            i18n::t(Key::ButtonSave),
-            QuickLaunchIntent::WizardSave { tab_id },
-            theme,
-        ),
-        editor_button(
-            i18n::t(Key::ButtonCancel),
-            QuickLaunchIntent::WizardCancel { tab_id },
-            theme,
-        ),
-    ]
-    .spacing(FIELD_SPACING);
-    content = content.push(action_row);
-
-    let content = container(content).padding(iced::Padding {
-        top: 0.0,
-        right: FORM_RIGHT_PADDING,
-        bottom: 0.0,
-        left: 0.0,
-    });
-
-    let scrollable = iced::widget::scrollable(content)
+    let scrollable =
+        scrollable(container(content).max_width(FORM_MAX_WIDTH).padding(
+            iced::Padding {
+                right: spacing::SPACE_4,
+                ..iced::Padding::ZERO
+            },
+        ))
         .width(Length::Fill)
-        .height(Length::Fill);
+        .height(Length::Fill)
+        .style(thin_scroll_style(props.theme.theme.iced_palette().clone()));
 
     container(scrollable)
         .width(Length::Fill)
@@ -226,329 +96,307 @@ pub(crate) fn view(
         .into()
 }
 
-fn quick_launch_type_label(command_type: QuickLaunchType) -> &'static str {
+fn general_section<'a>(
+    tab_id: u64,
+    editor: &'a WizardEditorState,
+    palette: &UiPalette,
+) -> WizardElement<'a> {
+    let title =
+        TextField::new(i18n::t(Key::FieldTitle), editor.title(), palette)
+            .placeholder("codex: review")
+            .on_input(move |value| QuickLaunchIntent::WizardUpdateTitle {
+                tab_id,
+                value,
+            });
+
+    let command_type: WizardElement<'a> = if editor.is_create_mode() {
+        let options = [
+            Choice {
+                value: QuickLaunchType::Custom,
+                label: i18n::t(Key::TypeCustom),
+            },
+            Choice {
+                value: QuickLaunchType::Ssh,
+                label: i18n::t(Key::TypeSsh),
+            },
+        ];
+        let selected = Choice {
+            value: editor.command_type(),
+            label: type_label(editor.command_type()),
+        };
+
+        segmented(
+            &options,
+            &selected,
+            move |choice| QuickLaunchIntent::WizardSelectCommandType {
+                tab_id,
+                command_type: choice.value,
+            },
+            palette,
+        )
+    } else {
+        text(type_label(editor.command_type()))
+            .size(typography::BODY.size())
+            .font(fonts::UI)
+            .color(palette.text_body())
+            .into()
+    };
+
+    let title = match field_error(editor, Key::ErrTitleRequired) {
+        Some(error) => title.error(error),
+        None => title,
+    };
+
+    FormSection::new(i18n::t(Key::WizardHeader), palette)
+        .field(title)
+        .field(
+            SettingRow::new(i18n::t(Key::FieldType), palette)
+                .control(command_type),
+        )
+        .into()
+}
+
+fn custom_section<'a>(
+    tab_id: u64,
+    editor: &'a WizardEditorState,
+    palette: &UiPalette,
+) -> Option<WizardElement<'a>> {
+    let custom = editor.custom()?;
+
+    let program =
+        TextField::new(i18n::t(Key::FieldProgram), custom.program(), palette)
+            .placeholder("/usr/bin/bash")
+            .on_input(move |value| QuickLaunchIntent::WizardUpdateProgram {
+                tab_id,
+                value,
+            });
+    let program = match field_error(editor, Key::ErrProgramRequired) {
+        Some(error) => program.error(error),
+        None => program,
+    };
+
+    let args = TokenField::new(
+        i18n::t(Key::FieldArguments),
+        custom.args_list(),
+        palette,
+    )
+    .placeholder("--flag")
+    .optional(true)
+    .on_input(move |value| QuickLaunchIntent::WizardArgInput { tab_id, value })
+    .on_submit(QuickLaunchIntent::WizardArgSubmit { tab_id })
+    .on_backspace_empty(QuickLaunchIntent::WizardArgBackspace { tab_id })
+    .on_remove(move |index| QuickLaunchIntent::WizardRemoveArg {
+        tab_id,
+        index,
+    });
+
+    let env = KeyValueField::new(
+        i18n::t(Key::FieldEnvironment),
+        custom.env(),
+        palette,
+    )
+    .optional(true)
+    .add_label(i18n::t(Key::ButtonAddEnv))
+    .on_name(move |index, value| QuickLaunchIntent::WizardUpdateEnvKey {
+        tab_id,
+        index,
+        value,
+    })
+    .on_value(
+        move |index, value| QuickLaunchIntent::WizardUpdateEnvValue {
+            tab_id,
+            index,
+            value,
+        },
+    )
+    .on_remove(move |index| QuickLaunchIntent::WizardRemoveEnv {
+        tab_id,
+        index,
+    })
+    .on_add(QuickLaunchIntent::WizardAddEnv { tab_id });
+
+    let workdir = TextField::new(
+        i18n::t(Key::FieldWorkdir),
+        custom.working_directory(),
+        palette,
+    )
+    .placeholder("/path/to/project")
+    .optional(true)
+    .on_input(move |value| {
+        QuickLaunchIntent::WizardUpdateWorkingDirectory { tab_id, value }
+    });
+
+    Some(
+        FormSection::new(i18n::t(Key::SectionCustomCommand), palette)
+            .field(program)
+            .field(args)
+            .field(env)
+            .field(workdir)
+            .field(exit_behavior_row(tab_id, editor, palette))
+            .into(),
+    )
+}
+
+fn ssh_section<'a>(
+    tab_id: u64,
+    editor: &'a WizardEditorState,
+    palette: &UiPalette,
+) -> Option<WizardElement<'a>> {
+    let ssh = editor.ssh()?;
+
+    let host = TextField::new(i18n::t(Key::FieldHost), ssh.host(), palette)
+        .placeholder("example.com")
+        .on_input(move |value| QuickLaunchIntent::WizardUpdateHost {
+            tab_id,
+            value,
+        });
+    let host = match field_error(editor, Key::ErrHostRequired) {
+        Some(error) => host.error(error),
+        None => host,
+    };
+
+    let port = TextField::new(i18n::t(Key::FieldPort), ssh.port(), palette)
+        .placeholder("22")
+        .width(Length::Fixed(PORT_WIDTH))
+        .on_input(move |value| QuickLaunchIntent::WizardUpdatePort {
+            tab_id,
+            value,
+        });
+    let port = match field_error(editor, Key::ErrInvalidPort) {
+        Some(error) => port.error(error),
+        None => port,
+    };
+
+    let host_and_port = row![host, port]
+        .spacing(spacing::SPACE_4)
+        .width(Length::Fill);
+
+    let user = TextField::new(i18n::t(Key::FieldUser), ssh.user(), palette)
+        .placeholder("ubuntu")
+        .optional(true)
+        .on_input(move |value| QuickLaunchIntent::WizardUpdateUser {
+            tab_id,
+            value,
+        });
+
+    // No file picker exists in the app yet, so there is no Browse action.
+    let identity_file = TextField::new(
+        i18n::t(Key::FieldIdentityFile),
+        ssh.identity_file(),
+        palette,
+    )
+    .placeholder("~/.ssh/id_ed25519")
+    .optional(true)
+    .on_input(move |value| QuickLaunchIntent::WizardUpdateIdentityFile {
+        tab_id,
+        value,
+    });
+
+    let extra_args = TokenField::new(
+        i18n::t(Key::FieldExtraArgs),
+        ssh.extra_args_list(),
+        palette,
+    )
+    .placeholder("-A")
+    .optional(true)
+    .on_input(move |value| QuickLaunchIntent::WizardExtraArgInput {
+        tab_id,
+        value,
+    })
+    .on_submit(QuickLaunchIntent::WizardExtraArgSubmit { tab_id })
+    .on_backspace_empty(QuickLaunchIntent::WizardExtraArgBackspace { tab_id })
+    .on_remove(move |index| QuickLaunchIntent::WizardRemoveExtraArg {
+        tab_id,
+        index,
+    });
+
+    Some(
+        FormSection::new(i18n::t(Key::SectionSshConnection), palette)
+            .field(host_and_port)
+            .field(user)
+            .field(identity_file)
+            .field(extra_args)
+            .field(exit_behavior_row(tab_id, editor, palette))
+            .into(),
+    )
+}
+
+fn exit_behavior_row<'a>(
+    tab_id: u64,
+    editor: &WizardEditorState,
+    palette: &UiPalette,
+) -> WizardElement<'a> {
+    let options = [
+        exit_choice(ExitBehavior::Close),
+        exit_choice(ExitBehavior::CloseOnSuccess),
+        exit_choice(ExitBehavior::KeepOpen),
+    ];
+    let selected = exit_choice(editor.exit_behavior());
+
+    let control = segmented(
+        &options,
+        &selected,
+        move |choice| QuickLaunchIntent::WizardSelectExitBehavior {
+            tab_id,
+            exit_behavior: choice.value,
+        },
+        palette,
+    );
+
+    SettingRow::new(i18n::t(Key::FieldAfterExit), palette)
+        .control(control)
+        .into()
+}
+
+fn footer<'a>(tab_id: u64, palette: &UiPalette) -> WizardElement<'a> {
+    let cancel = Button::new(i18n::t(Key::ButtonCancel), palette)
+        .kind(ButtonKind::Ghost)
+        .on_press(QuickLaunchIntent::WizardCancel { tab_id });
+    let save = Button::new(i18n::t(Key::ButtonSave), palette)
+        .kind(ButtonKind::Primary)
+        .on_press(QuickLaunchIntent::WizardSave { tab_id });
+
+    row![Space::new().width(Length::Fill), cancel, save]
+        .spacing(spacing::SPACE_3)
+        .width(Length::Fill)
+        .into()
+}
+
+fn exit_choice(value: ExitBehavior) -> Choice<ExitBehavior> {
+    let label = match value {
+        ExitBehavior::Close => i18n::t(Key::ExitBehaviorClose),
+        ExitBehavior::CloseOnSuccess => {
+            i18n::t(Key::ExitBehaviorCloseOnSuccess)
+        },
+        ExitBehavior::KeepOpen => i18n::t(Key::ExitBehaviorKeepOpen),
+    };
+
+    Choice { value, label }
+}
+
+fn type_label(command_type: QuickLaunchType) -> &'static str {
     match command_type {
         QuickLaunchType::Ssh => i18n::t(Key::TypeSsh),
         _ => i18n::t(Key::TypeCustom),
     }
 }
 
-fn section_header<'a>(
-    label: &'a str,
-    theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = theme.theme.iced_palette();
-    container(text(label).size(LABEL_SIZE).style(move |_| {
-        iced::widget::text::Style {
-            color: Some(palette.bright_foreground),
-        }
-    }))
-    .width(Length::Fill)
-    .into()
+/// Validation errors that belong to a field and are drawn under it.
+const FIELD_ERRORS: [Key; 4] = [
+    Key::ErrTitleRequired,
+    Key::ErrProgramRequired,
+    Key::ErrHostRequired,
+    Key::ErrInvalidPort,
+];
+
+/// Returns the editor error when it is the validation message `key`.
+fn field_error(editor: &WizardEditorState, key: Key) -> Option<&str> {
+    editor.error().filter(|error| *error == i18n::t(key))
 }
 
-fn text_input_row<'a, F>(
-    label: &'a str,
-    placeholder: &'a str,
-    value: &'a str,
-    on_input: F,
-    _theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer>
-where
-    F: 'a + Fn(String) -> QuickLaunchIntent,
-{
-    let input = text_input(placeholder, value)
-        .on_input(on_input)
-        .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
-        .size(INPUT_SIZE)
-        .width(Length::Fill);
-
-    row![field_label(label), input]
-        .spacing(FIELD_SPACING)
-        .align_y(alignment::Vertical::Center)
-        .width(Length::Fill)
-        .into()
-}
-
-fn command_type_selector<'a>(
-    tab_id: u64,
-    selected: QuickLaunchType,
-    theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let custom = toggle_button(
-        i18n::t(Key::TypeCustom),
-        selected == QuickLaunchType::Custom,
-        QuickLaunchIntent::WizardSelectCommandType {
-            tab_id,
-            command_type: QuickLaunchType::Custom,
-        },
-        theme,
-    );
-    let ssh = toggle_button(
-        i18n::t(Key::TypeSsh),
-        selected == QuickLaunchType::Ssh,
-        QuickLaunchIntent::WizardSelectCommandType {
-            tab_id,
-            command_type: QuickLaunchType::Ssh,
-        },
-        theme,
-    );
-
-    row![
-        field_label(i18n::t(Key::FieldType)),
-        row![custom, ssh]
-            .spacing(FIELD_SPACING)
-            .align_y(alignment::Vertical::Center),
-    ]
-    .spacing(FIELD_SPACING)
-    .align_y(alignment::Vertical::Center)
-    .width(Length::Fill)
-    .into()
-}
-
-fn exit_behavior_selector<'a>(
-    tab_id: u64,
-    selected: ExitBehavior,
-    theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let choices = [
-        (ExitBehavior::Close, Key::ExitBehaviorClose),
-        (
-            ExitBehavior::CloseOnSuccess,
-            Key::ExitBehaviorCloseOnSuccess,
-        ),
-        (ExitBehavior::KeepOpen, Key::ExitBehaviorKeepOpen),
-    ];
-
-    let mut buttons = row![]
-        .spacing(FIELD_SPACING)
-        .align_y(alignment::Vertical::Center);
-    for (exit_behavior, label) in choices {
-        buttons = buttons.push(toggle_button(
-            i18n::t(label),
-            selected == exit_behavior,
-            QuickLaunchIntent::WizardSelectExitBehavior {
-                tab_id,
-                exit_behavior,
-            },
-            theme,
-        ));
-    }
-
-    row![field_label(i18n::t(Key::FieldAfterExit)), buttons]
-        .spacing(FIELD_SPACING)
-        .align_y(alignment::Vertical::Center)
-        .width(Length::Fill)
-        .into()
-}
-
-#[allow(clippy::too_many_arguments)]
-fn list_editor<'a>(
-    label: &'a str,
-    placeholder: &'a str,
-    values: &'a [String],
-    tab_id: u64,
-    on_add: fn(u64) -> QuickLaunchIntent,
-    on_remove: fn(u64, usize) -> QuickLaunchIntent,
-    on_update: fn(u64, usize, String) -> QuickLaunchIntent,
-    theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let mut col = column![text(label).size(LABEL_SIZE)]
-        .spacing(FIELD_SPACING)
-        .width(Length::Fill);
-
-    for (index, value) in values.iter().enumerate() {
-        let input = text_input(placeholder, value)
-            .on_input(move |next| on_update(tab_id, index, next))
-            .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
-            .size(INPUT_SIZE)
-            .width(Length::Fill);
-        let remove = editor_button(
-            i18n::t(Key::ButtonRemove),
-            on_remove(tab_id, index),
-            theme,
-        );
-
-        col = col.push(row![input, remove].spacing(FIELD_SPACING));
-    }
-
-    col.push(editor_button(
-        i18n::t(Key::ButtonAdd),
-        on_add(tab_id),
-        theme,
-    ))
-    .into()
-}
-
-fn env_editor<'a>(
-    env: &'a [(String, String)],
-    key_placeholder: &'a str,
-    value_placeholder: &'a str,
-    tab_id: u64,
-    theme: ThemeProps<'a>,
-) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let mut col =
-        column![text(i18n::t(Key::FieldEnvironment)).size(LABEL_SIZE)]
-            .spacing(FIELD_SPACING)
-            .width(Length::Fill);
-
-    for (index, (key, value)) in env.iter().enumerate() {
-        let key_input = text_input(key_placeholder, key)
-            .on_input(move |next| QuickLaunchIntent::WizardUpdateEnvKey {
-                tab_id,
-                index,
-                value: next,
-            })
-            .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
-            .size(INPUT_SIZE)
-            .width(Length::Fill);
-        let value_input = text_input(value_placeholder, value)
-            .on_input(move |next| QuickLaunchIntent::WizardUpdateEnvValue {
-                tab_id,
-                index,
-                value: next,
-            })
-            .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
-            .size(INPUT_SIZE)
-            .width(Length::Fill);
-        let remove = editor_button(
-            i18n::t(Key::ButtonRemove),
-            QuickLaunchIntent::WizardRemoveEnv { tab_id, index },
-            theme,
-        );
-
-        col = col
-            .push(row![key_input, value_input, remove].spacing(FIELD_SPACING));
-    }
-
-    col.push(editor_button(
-        i18n::t(Key::ButtonAddEnv),
-        QuickLaunchIntent::WizardAddEnv { tab_id },
-        theme,
-    ))
-    .into()
-}
-
-fn field_label<'a>(
-    label: &'a str,
-) -> Element<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    text(label)
-        .size(LABEL_SIZE)
-        .width(Length::Fixed(LABEL_WIDTH))
-        .align_x(alignment::Horizontal::Left)
-        .into()
-}
-
-/// Regular action button shared by the quick launch forms and dialogs.
-pub(super) fn editor_button<'a>(
-    label: &'a str,
-    on_press: QuickLaunchIntent,
-    theme: ThemeProps<'a>,
-) -> iced::widget::Button<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = theme.theme.iced_palette().clone();
-    let content = container(
-        text(label)
-            .size(LABEL_SIZE)
-            .align_x(alignment::Horizontal::Center),
-    )
-    .align_x(alignment::Horizontal::Center)
-    .align_y(alignment::Vertical::Center);
-
-    button(content)
-        .on_press(on_press)
-        .padding([0.0, BUTTON_PADDING_X])
-        .height(Length::Fixed(BUTTON_HEIGHT))
-        .style(move |_, status| button_style(&palette, status))
-}
-
-fn toggle_button<'a>(
-    label: &'a str,
-    selected: bool,
-    on_press: QuickLaunchIntent,
-    theme: ThemeProps<'a>,
-) -> iced::widget::Button<'a, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = theme.theme.iced_palette().clone();
-    let content = container(text(label).size(LABEL_SIZE))
-        .align_x(alignment::Horizontal::Center)
-        .align_y(alignment::Vertical::Center);
-
-    button(content)
-        .on_press(on_press)
-        .padding([0.0, BUTTON_PADDING_X])
-        .height(Length::Fixed(BUTTON_HEIGHT))
-        .style(move |_, status| {
-            let mut style = button_style(&palette, status);
-            if selected {
-                style.background = Some(palette.dim_blue.into());
-                style.text_color = palette.dim_black;
-            }
-            style
-        })
-}
-
-fn button_style(
-    palette: &IcedColorPalette,
-    status: ButtonStatus,
-) -> button::Style {
-    let background = match status {
-        ButtonStatus::Hovered | ButtonStatus::Pressed => {
-            Some(palette.dim_blue.into())
-        },
-        _ => Some(palette.overlay.into()),
-    };
-
-    let text_color = match status {
-        ButtonStatus::Hovered | ButtonStatus::Pressed => palette.dim_black,
-        _ => palette.foreground,
-    };
-
-    button::Style {
-        background,
-        text_color,
-        border: iced::Border {
-            radius: iced::border::Radius::from(BUTTON_RADIUS_ROUNDED),
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-}
-
-fn wizard_add_arg(tab_id: u64) -> QuickLaunchIntent {
-    QuickLaunchIntent::WizardAddArg { tab_id }
-}
-
-fn wizard_remove_arg(tab_id: u64, index: usize) -> QuickLaunchIntent {
-    QuickLaunchIntent::WizardRemoveArg { tab_id, index }
-}
-
-fn wizard_update_arg(
-    tab_id: u64,
-    index: usize,
-    value: String,
-) -> QuickLaunchIntent {
-    QuickLaunchIntent::WizardUpdateArg {
-        tab_id,
-        index,
-        value,
-    }
-}
-
-fn wizard_add_extra_arg(tab_id: u64) -> QuickLaunchIntent {
-    QuickLaunchIntent::WizardAddExtraArg { tab_id }
-}
-
-fn wizard_remove_extra_arg(tab_id: u64, index: usize) -> QuickLaunchIntent {
-    QuickLaunchIntent::WizardRemoveExtraArg { tab_id, index }
-}
-
-fn wizard_update_extra_arg(
-    tab_id: u64,
-    index: usize,
-    value: String,
-) -> QuickLaunchIntent {
-    QuickLaunchIntent::WizardUpdateExtraArg {
-        tab_id,
-        index,
-        value,
-    }
+/// Returns the editor error when no field shows it.
+fn unassigned_error(editor: &WizardEditorState) -> Option<&str> {
+    editor
+        .error()
+        .filter(|error| !FIELD_ERRORS.iter().any(|key| *error == i18n::t(*key)))
 }

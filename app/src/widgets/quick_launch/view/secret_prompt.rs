@@ -1,23 +1,17 @@
-use iced::widget::{Space, column, container, opaque, row, text, text_input};
+use iced::widget::{Space, column, container, opaque, row, text};
 use iced::{Element, Length, Theme, alignment};
+use otty_ui_kit::components::button::{Button, ButtonKind};
+use otty_ui_kit::components::text_field::TextField;
+use otty_ui_kit::{fonts, radius, spacing, typography};
 
 use super::super::errors::secret_prompt_title;
 use super::super::event::QuickLaunchIntent;
 use super::super::state::SecretPromptState;
 use super::super::types::SshSecretKind;
-use super::wizard_form::editor_button;
 use crate::i18n::{self, Key};
-use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
 
 const DIALOG_WIDTH: f32 = 420.0;
-const DIALOG_PADDING: f32 = 16.0;
-const DIALOG_SPACING: f32 = 12.0;
-const BUTTON_SPACING: f32 = 8.0;
-const TITLE_SIZE: f32 = 15.0;
-const TEXT_SIZE: f32 = 13.0;
-const INPUT_PADDING_X: f32 = 8.0;
-const INPUT_PADDING_Y: f32 = 6.0;
 const BACKDROP_ALPHA: f32 = 0.5;
 
 /// Props for the SSH secret dialog.
@@ -30,7 +24,7 @@ pub(crate) struct SecretPromptProps<'a> {
 pub(crate) fn view(
     props: SecretPromptProps<'_>,
 ) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = props.theme.theme.iced_palette().clone();
+    let palette = props.theme.theme.ui();
     let request = props.prompt.request();
 
     let body = match request.kind() {
@@ -42,25 +36,16 @@ pub(crate) fn view(
         },
     };
 
-    let title_color = palette.bright_foreground;
     let title = text(secret_prompt_title(request.kind()))
-        .size(TITLE_SIZE)
-        .style(move |_| text::Style {
-            color: Some(title_color),
-        });
+        .size(typography::HEADING.size())
+        .font(fonts::UI)
+        .color(palette.text_strong());
 
-    let input = text_input("", props.prompt.value())
+    let mut input = TextField::new(body, props.prompt.value(), palette)
         .id(props.prompt.input_id().clone())
         .secure(true)
         .on_input(QuickLaunchIntent::SecretPromptChanged)
-        .on_submit(QuickLaunchIntent::SecretPromptSubmit)
-        .padding([INPUT_PADDING_Y, INPUT_PADDING_X])
-        .size(TEXT_SIZE)
-        .width(Length::Fill);
-
-    let mut content = column![title, text(body).size(TEXT_SIZE), input]
-        .spacing(DIALOG_SPACING)
-        .width(Length::Fill);
+        .on_submit(QuickLaunchIntent::SecretPromptSubmit);
 
     if request.is_retry() {
         let error = match request.kind() {
@@ -71,37 +56,39 @@ pub(crate) fn view(
                 i18n::t(Key::SecretPromptPasswordRejected)
             },
         };
-        let error_color = palette.red;
-        content = content.push(text(error).size(TEXT_SIZE).style(move |_| {
-            text::Style {
-                color: Some(error_color),
-            }
-        }));
+        input = input.error(error);
     }
 
-    let buttons = row![
-        Space::new().width(Length::Fill),
-        editor_button(
-            i18n::t(Key::ButtonCancel),
-            QuickLaunchIntent::SecretPromptCancel,
-            props.theme,
-        ),
-        editor_button(
-            i18n::t(Key::ButtonConnect),
-            QuickLaunchIntent::SecretPromptSubmit,
-            props.theme,
-        ),
-    ]
-    .spacing(BUTTON_SPACING)
-    .width(Length::Fill);
-    content = content.push(buttons);
+    let cancel = Button::new(i18n::t(Key::ButtonCancel), palette)
+        .kind(ButtonKind::Ghost)
+        .on_press(QuickLaunchIntent::SecretPromptCancel);
+    let connect = Button::new(i18n::t(Key::ButtonConnect), palette)
+        .kind(ButtonKind::Primary)
+        .on_press(QuickLaunchIntent::SecretPromptSubmit);
+    let buttons = row![Space::new().width(Length::Fill), cancel, connect]
+        .spacing(spacing::SPACE_3)
+        .width(Length::Fill);
 
+    let content = column![title, Element::from(input), buttons]
+        .spacing(spacing::SPACE_5)
+        .width(Length::Fill);
+
+    let dialog_background = palette.surface_overlay();
+    let dialog_shadow = palette.shadow_popover();
     let dialog = container(content)
         .width(DIALOG_WIDTH)
-        .padding(DIALOG_PADDING)
-        .style(menu_panel_style(props.theme));
+        .padding(spacing::SPACE_5)
+        .style(move |_| container::Style {
+            background: Some(dialog_background.into()),
+            border: iced::Border {
+                radius: radius::RADIUS_LG.into(),
+                ..Default::default()
+            },
+            shadow: dialog_shadow,
+            ..Default::default()
+        });
 
-    let mut backdrop_color = palette.black;
+    let mut backdrop_color = props.theme.theme.iced_palette().black;
     backdrop_color.a = BACKDROP_ALPHA;
 
     // `opaque` keeps clicks from reaching the UI behind the dialog.

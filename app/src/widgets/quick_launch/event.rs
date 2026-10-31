@@ -103,17 +103,19 @@ pub(crate) enum QuickLaunchIntent {
         tab_id: u64,
         value: String,
     },
-    WizardAddArg {
+    WizardArgInput {
+        tab_id: u64,
+        value: String,
+    },
+    WizardArgSubmit {
+        tab_id: u64,
+    },
+    WizardArgBackspace {
         tab_id: u64,
     },
     WizardRemoveArg {
         tab_id: u64,
         index: usize,
-    },
-    WizardUpdateArg {
-        tab_id: u64,
-        index: usize,
-        value: String,
     },
     WizardAddEnv {
         tab_id: u64,
@@ -132,17 +134,19 @@ pub(crate) enum QuickLaunchIntent {
         index: usize,
         value: String,
     },
-    WizardAddExtraArg {
+    WizardExtraArgInput {
+        tab_id: u64,
+        value: String,
+    },
+    WizardExtraArgSubmit {
+        tab_id: u64,
+    },
+    WizardExtraArgBackspace {
         tab_id: u64,
     },
     WizardRemoveExtraArg {
         tab_id: u64,
         index: usize,
-    },
-    WizardUpdateExtraArg {
-        tab_id: u64,
-        index: usize,
-        value: String,
     },
     WizardSelectCommandType {
         tab_id: u64,

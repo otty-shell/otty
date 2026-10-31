@@ -40,7 +40,7 @@ const SEGMENT_TEXT_SIZE: f32 = 12.5;
 ///     segmented(&options, &"Command", Message::Picked, &palette);
 /// ```
 pub fn segmented<'a, T, Message>(
-    options: &'a [T],
+    options: &[T],
     selected: &T,
     on_select: impl Fn(T) -> Message,
     palette: &UiPalette,
