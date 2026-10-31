@@ -2,6 +2,7 @@ use iced::widget::text::Wrapping;
 use iced::widget::{column, container, scrollable, svg, text};
 use iced::{Element, Length, Padding, alignment};
 use otty_ui_kit::components::scrollbar;
+use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
@@ -50,7 +51,6 @@ fn current_directory_bar<'a>(
     palette: &UiPalette,
 ) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
     let label = root_label.unwrap_or(i18n::t(Key::NoActiveFolder));
-    let background = palette.surface_panel();
     let style = typography::HEADING;
 
     let label_text = text(label)
@@ -62,16 +62,11 @@ fn current_directory_bar<'a>(
         .align_x(alignment::Horizontal::Left);
 
     // As tall as the tab strip so both bottom edges line up.
-    container(label_text)
-        .width(Length::Fill)
+    surface(label_text, Surface::Panel, palette)
         .height(Length::Fixed(size::TAB))
         .padding(Padding::from([0.0, spacing::SPACE_4]))
         .align_x(alignment::Horizontal::Left)
         .align_y(alignment::Vertical::Center)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(background.into()),
-            ..Default::default()
-        })
         .into()
 }
 

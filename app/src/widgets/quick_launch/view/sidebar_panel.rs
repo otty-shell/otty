@@ -1,6 +1,7 @@
-use iced::widget::{Space, column, container, row, svg, text};
+use iced::widget::{Space, column, row, svg, text};
 use iced::{Element, Length, Padding, Theme};
 use otty_ui_kit::components::icon_button::{IconButton, IconButtonSize};
+use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::QuickLaunchIntent;
@@ -21,7 +22,6 @@ pub(crate) fn view(
     props: SidebarPanelProps<'_>,
 ) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
     let palette = props.theme.theme.ui();
-    let background = palette.surface_panel();
     let title_style = typography::HEADING;
 
     let add_button = IconButton::new(
@@ -33,7 +33,7 @@ pub(crate) fn view(
     .on_press(QuickLaunchIntent::HeaderAddButtonPressed);
 
     // The header is as tall as the tab strip so both bottom edges line up.
-    let header = container(
+    let header = surface(
         row![
             text(i18n::t(Key::QuickLaunchPanelTitle))
                 .size(title_style.size())
@@ -44,15 +44,12 @@ pub(crate) fn view(
         ]
         .align_y(iced::alignment::Vertical::Center)
         .width(Length::Fill),
+        Surface::Panel,
+        palette,
     )
-    .width(Length::Fill)
     .height(size::TAB)
     .padding(Padding::from([0.0, spacing::SPACE_4]))
-    .align_y(iced::alignment::Vertical::Center)
-    .style(move |_| iced::widget::container::Style {
-        background: Some(background.into()),
-        ..Default::default()
-    });
+    .align_y(iced::alignment::Vertical::Center);
 
     let tree = sidebar_tree::view(sidebar_tree::SidebarTreeProps {
         data: props.vm.data,

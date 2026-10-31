@@ -1,6 +1,7 @@
 use iced::widget::{Space, column, container, scrollable, svg};
 use iced::{Element, Length, Theme};
 use otty_ui_kit::components::rail_button::{RailButton, rail_separator};
+use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::size;
 
 use super::event::SidebarIntent;
@@ -90,15 +91,8 @@ pub(crate) fn view(
         .width(Length::Fill)
         .height(Length::Fill);
 
-    let background = palette.surface_chrome();
-
-    container(content)
+    surface(content, Surface::Chrome, palette)
         .width(Length::Fixed(size::RAIL))
-        .height(Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(background.into()),
-            ..Default::default()
-        })
         .into()
 }
 

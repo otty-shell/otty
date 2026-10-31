@@ -2,13 +2,13 @@ use iced::widget::pane_grid::PaneGrid;
 use iced::widget::{Space, column, container, mouse_area, row, text};
 use iced::{Element, Length, Size, Theme, alignment};
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
+use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::components::{divider, split};
 use otty_ui_kit::size;
 
 use super::{App, AppEvent};
 #[cfg(not(target_os = "macos"))]
 use crate::components::primitive::resize_grips;
-use crate::components::primitive::sidebar_workspace_panel;
 use crate::geometry::{MENU_MARGIN, anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
@@ -188,35 +188,44 @@ fn view_sidebar_layout<'a>(
 
     let sidebar_separator = divider::vertical(theme_props.theme.ui());
 
-    let sidebar_pane_grid =
-        PaneGrid::new(app.widgets.sidebar.panes(), move |_pane, pane_kind, _| {
+    let sidebar_pane_grid = PaneGrid::new(
+        app.widgets.sidebar.panes(),
+        move |_pane, pane_kind, _| {
             let content: Element<'_, AppEvent, Theme, iced::Renderer> =
                 match *pane_kind {
                     SidebarPane::Workspace => {
-                        let workspace_content =
-                            view_workspace_content(app, sidebar_vm, theme_props);
-                        sidebar_workspace_panel::view(
-                            sidebar_workspace_panel::SidebarWorkspacePanelProps {
-                                content: workspace_content,
-                                visible: sidebar_vm.is_workspace_open,
-                                theme: theme_props,
-                            },
-                        )
+                        let workspace_content = view_workspace_content(
+                            app,
+                            sidebar_vm,
+                            theme_props,
+                        );
+                        if sidebar_vm.is_workspace_open {
+                            surface(
+                                workspace_content,
+                                Surface::Panel,
+                                theme_props.theme.ui(),
+                            )
+                            .into()
+                        } else {
+                            Space::new()
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .into()
+                        }
                     },
                     SidebarPane::Content => view_tab_area(app, theme_props),
                 };
             iced::widget::pane_grid::Content::new(content)
-        })
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .spacing(size::LINE)
-        .min_size(0)
-        .on_resize(size::SPLIT_GRAB, |event| {
-            AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(
-                event,
-            )))
-        })
-        .style(split::style(theme_props.theme.ui()));
+        },
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .spacing(size::LINE)
+    .min_size(0)
+    .on_resize(size::SPLIT_GRAB, |event| {
+        AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(event)))
+    })
+    .style(split::style(theme_props.theme.ui()));
 
     row![menu_rail, sidebar_separator, sidebar_pane_grid]
         .width(Length::Fill)

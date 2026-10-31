@@ -1,6 +1,7 @@
 use iced::widget::{MouseArea, Space, Stack, container, row, svg, text};
 use iced::{Element, Length, alignment, mouse};
 use otty_ui_kit::components::icon_button::IconButton;
+use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::ChromeIntent;
@@ -25,7 +26,6 @@ pub(crate) struct ActionBarProps<'a> {
 pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
     let palette = props.theme.theme.ui();
     let text_muted = palette.text_muted();
-    let surface_chrome = palette.surface_chrome();
 
     let detail_label = text(props.title)
         .size(typography::BODY.size())
@@ -108,12 +108,7 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
         .push(base_row)
         .push(center_zone);
 
-    container(content)
-        .width(Length::Fill)
+    surface(content, Surface::Chrome, palette)
         .height(Length::Fixed(size::TITLEBAR))
-        .style(move |_| iced::widget::container::Style {
-            background: Some(surface_chrome.into()),
-            ..Default::default()
-        })
         .into()
 }
