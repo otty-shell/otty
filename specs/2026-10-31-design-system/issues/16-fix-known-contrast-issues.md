@@ -1,6 +1,6 @@
 # 16 — Fix the known contrast issues
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 14
@@ -46,3 +46,9 @@ OTTY Dark `text-muted` is not part of the terminal palette. OTTY Light
 
 - `cargo +nightly fmt --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features` and `cargo deny check` pass.
 - No test or doc in the repo refers to a known contrast exception any more.
+
+## Answer
+
+- Changed `text_muted` (Dark), `surface_hover`, `status_ok`, `status_error`, `target_prod` (Light) in `crates/ui/kit/src/palette.rs`, and `red`, `green`, `dim_red`, `dim_green` in `ColorPalette::otty_light()` in `app/src/theme.rs`, to the values in the table above. Four rows in ticket 03 updated.
+- Removed test `given_known_token_issues_when_contrast_checked_then_ratio_is_as_recorded` and the unused `RECORDED_RATIO_TOLERANCE` constant.
+- Replaced `given_otty_dark_when_status_on_chrome_and_raised_then_reaches_4_5` with `given_each_theme_when_status_on_chrome_and_raised_then_reaches_4_5` (both themes); added `given_each_theme_when_muted_text_on_hover_row_then_reaches_4_5`.

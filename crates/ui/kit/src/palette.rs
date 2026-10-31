@@ -246,7 +246,7 @@ impl UiPalette {
             line: color!(0x232530),
             text_strong: color!(0xeceff4),
             text_body: color!(0xc0c5ce),
-            text_muted: color!(0x8b93a1),
+            text_muted: color!(0x939ba8),
             text_faint: color!(0x6b7280),
             text_danger: color!(0xf1c3c7),
             accent: color!(0x4fa6ed),
@@ -286,7 +286,7 @@ impl UiPalette {
             surface_header: color!(0xf1f3f7),
             surface_raised: color!(0xe4e7ee),
             surface_overlay: color!(0xffffff),
-            surface_hover: color!(0xdde1e9),
+            surface_hover: color!(0xe0e4eb),
             surface_selected: color!(0xd6e4f5),
             surface_error: color!(0xfbedee),
             surface_danger: color!(0xfbe7e9),
@@ -300,13 +300,13 @@ impl UiPalette {
             accent_hover: color!(0x154f8c),
             on_accent: color!(0xffffff),
             focus: color!(0x1a64b0),
-            status_ok: color!(0x3c7a2b),
+            status_ok: color!(0x377028),
             status_warn: color!(0x8a6200),
-            status_error: color!(0xc23b47),
+            status_error: color!(0xb23641),
             target_local: color!(0x0b6e79),
             target_ssh: color!(0x8e3fae),
             target_staging: color!(0x8a6200),
-            target_prod: color!(0xc23b47),
+            target_prod: color!(0xb23641),
             diff_add: color!(0xe3f1dd),
             diff_del: color!(0xf8e1e3),
             // 0 12px 30px rgba(17,20,28,0.16)
@@ -336,8 +336,6 @@ mod tests {
     const TEXT_MIN: f32 = 4.5;
     /// WCAG 2.1 AA minimum for focus rings and other non-text marks.
     const NON_TEXT_MIN: f32 = 3.0;
-    /// Ratios in the spec are rounded to two decimals.
-    const RECORDED_RATIO_TOLERANCE: f32 = 0.006;
 
     /// Hex values of `tokens.json` for OTTY Dark, aliases resolved.
     const OTTY_DARK_HEX: [(&str, &str); 29] = [
@@ -354,7 +352,7 @@ mod tests {
         ("line", "#232530"),
         ("text-strong", "#eceff4"),
         ("text-body", "#c0c5ce"),
-        ("text-muted", "#8b93a1"),
+        ("text-muted", "#939ba8"),
         ("text-faint", "#6b7280"),
         ("text-danger", "#f1c3c7"),
         ("accent", "#4fa6ed"),
@@ -380,7 +378,7 @@ mod tests {
         ("surface-header", "#f1f3f7"),
         ("surface-raised", "#e4e7ee"),
         ("surface-overlay", "#ffffff"),
-        ("surface-hover", "#dde1e9"),
+        ("surface-hover", "#e0e4eb"),
         ("surface-selected", "#d6e4f5"),
         ("surface-error", "#fbedee"),
         ("surface-danger", "#fbe7e9"),
@@ -394,13 +392,13 @@ mod tests {
         ("accent-hover", "#154f8c"),
         ("on-accent", "#ffffff"),
         ("focus", "#1a64b0"),
-        ("status-ok", "#3c7a2b"),
+        ("status-ok", "#377028"),
         ("status-warn", "#8a6200"),
-        ("status-error", "#c23b47"),
+        ("status-error", "#b23641"),
         ("target-local", "#0b6e79"),
         ("target-ssh", "#8e3fae"),
         ("target-staging", "#8a6200"),
-        ("target-prod", "#c23b47"),
+        ("target-prod", "#b23641"),
         ("diff-add", "#e3f1dd"),
         ("diff-del", "#f8e1e3"),
     ];
@@ -620,83 +618,30 @@ mod tests {
     }
 
     #[test]
-    fn given_otty_dark_when_status_on_chrome_and_raised_then_reaches_4_5() {
-        let palette = UiPalette::otty_dark();
-
-        for status in [
-            ("status-ok", palette.status_ok()),
-            ("status-error", palette.status_error()),
-        ] {
-            for surface in [
-                ("surface-chrome", palette.surface_chrome()),
-                ("surface-raised", palette.surface_raised()),
+    fn given_each_theme_when_status_on_chrome_and_raised_then_reaches_4_5() {
+        for (theme, palette) in themes() {
+            for status in [
+                ("status-ok", palette.status_ok()),
+                ("status-error", palette.status_error()),
             ] {
-                assert_contrast_at_least(
-                    "OTTY Dark",
-                    status,
-                    surface,
-                    TEXT_MIN,
-                );
+                for surface in [
+                    ("surface-chrome", palette.surface_chrome()),
+                    ("surface-raised", palette.surface_raised()),
+                ] {
+                    assert_contrast_at_least(theme, status, surface, TEXT_MIN);
+                }
             }
         }
     }
 
-    /// Pairs listed under "Known Token Issues" in the design system spec,
-    /// with the contrast ratio recorded there. The tokens stay as in the
-    /// design system until it fixes them. Changing any of these tokens makes
-    /// this test fail on purpose: update the pair here and the spec table.
     #[test]
-    fn given_known_token_issues_when_contrast_checked_then_ratio_is_as_recorded()
-     {
-        let dark = UiPalette::otty_dark();
-        let light = UiPalette::otty_light();
-        let known_issues = [
-            (
-                "OTTY Dark",
-                ("text-muted", dark.text_muted()),
-                ("surface-hover", dark.surface_hover()),
-                4.16,
-            ),
-            (
-                "OTTY Light",
-                ("text-muted", light.text_muted()),
-                ("surface-hover", light.surface_hover()),
-                4.47,
-            ),
-            (
-                "OTTY Light",
-                ("status-ok", light.status_ok()),
-                ("surface-chrome", light.surface_chrome()),
-                4.39,
-            ),
-            (
-                "OTTY Light",
-                ("status-error", light.status_error()),
-                ("surface-chrome", light.surface_chrome()),
-                4.39,
-            ),
-            (
-                "OTTY Light",
-                ("status-ok", light.status_ok()),
-                ("surface-raised", light.surface_raised()),
-                4.23,
-            ),
-            (
-                "OTTY Light",
-                ("status-error", light.status_error()),
-                ("surface-raised", light.surface_raised()),
-                4.23,
-            ),
-        ];
-
-        for (theme, (fg_name, fg), (bg_name, bg), recorded) in known_issues {
-            let ratio = contrast_ratio(fg, bg);
-
-            assert!(
-                (ratio - recorded).abs() < RECORDED_RATIO_TOLERANCE,
-                "{theme}: {fg_name} on {bg_name} is now {ratio:.2}:1, the \
-                 spec records {recorded}:1; a token changed, update this \
-                 list and the spec's Known Token Issues table"
+    fn given_each_theme_when_muted_text_on_hover_row_then_reaches_4_5() {
+        for (theme, palette) in themes() {
+            assert_contrast_at_least(
+                theme,
+                ("text-muted", palette.text_muted()),
+                ("surface-hover", palette.surface_hover()),
+                TEXT_MIN,
             );
         }
     }

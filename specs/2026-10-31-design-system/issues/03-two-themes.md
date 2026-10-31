@@ -38,8 +38,8 @@ fields mirror their OTTY Dark roles.
 | foreground | `#2a2f3a` | 12.94 | design system |
 | background | `#fafbfc` | — | design system |
 | black | `#2a2f3a` | 12.94 | chosen |
-| red | `#c23b47` | 5.05 | design system |
-| green | `#3c7a2b` | 5.05 | design system |
+| red | `#b23641` | 5.80 | design system |
+| green | `#377028` | 5.77 | design system |
 | yellow | `#8a6200` | 5.30 | design system |
 | blue | `#1a64b0` | 5.80 | design system |
 | magenta | `#8e3fae` | 5.84 | design system |
@@ -56,14 +56,16 @@ fields mirror their OTTY Dark roles.
 | bright_foreground | `#11141c` | 17.77 | mirrors OTTY Dark: `text-strong` |
 | dim_foreground | `#7a8292` | 3.73 | mirrors OTTY Dark: `text-faint` |
 | dim_black | `#e9ebf0` | — | mirrors OTTY Dark: `surface-chrome` |
-| dim_red | `#d8888f` | 2.59 | 60/40 mix |
-| dim_green | `#88ae7f` | 2.41 | 60/40 mix |
+| dim_red | `#cf858c` | 2.74 | 60/40 mix |
+| dim_green | `#85a87d` | 2.57 | 60/40 mix |
 | dim_yellow | `#b79f65` | 2.48 | 60/40 mix |
 | dim_blue | `#74a0ce` | 2.65 | 60/40 mix |
 | dim_magenta | `#b98acd` | 2.67 | 60/40 mix |
 | dim_cyan | `#6ba6ad` | 2.64 | 60/40 mix |
 | dim_white | `#9ca1ab` | 2.50 | 60/40 mix |
 | overlay | `#ffffff` | — | mirrors OTTY Dark: `surface-overlay` |
+
+Changed by ticket 16.
 
 ## Tests first
 
