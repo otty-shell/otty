@@ -1,6 +1,6 @@
 # 06 — Kit components: rows, tabs and form fields
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 02
@@ -29,3 +29,13 @@ The second set of shared components. Same rules as ticket 05.
 ## Done when
 
 - The gallery shows all components of this ticket in both themes.
+
+## Comments
+
+- TokenField: `iced` 0.14 text inputs send nothing on Backspace in an empty input. The kit wraps the input in a small private widget (`backspace_guard.rs`, uses the `iced` `advanced` feature, enabled in the kit `Cargo.toml`) that publishes `on_backspace_empty` when the input is focused and empty. Enter uses `on_submit`. The add and remove rules live in the pure `TokenList` type (tested). The input has a fixed 140px width; `iced` cannot grow it to the free space of a wrapped line.
+- Text cut: `iced` has no text ellipsis. TreeRow and Tab titles use no-wrap text clipped at the edge, so a long title is cut without `...`.
+- TabStrip: tabs that do not fit are clipped at the right edge of the strip together with the plus; there is no scrolling.
+- Rows, tabs and fields draw their own caret, cross and plus shapes (`components/glyph.rs`); other icons are still passed in by the caller.
+- Token cross uses `IconButton` small (24px), so a token is slightly wider than the 18px cross of the CSS.
+- RailButton hover color changes only while the cursor is over the icon itself.
+- Gallery arguments `rows`, `fields`, `settings` show one group of the new sections (used for screenshots).

@@ -134,7 +134,7 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 - [x] 03 — Two themes: add OTTY Light, remove other presets and the palette editor, store the theme name · Opus
 - [x] 04 — Bundle fonts and switch UI and terminal text styles · Sonnet
 - [x] 05 — Kit components: controls and overlays · Sonnet
-- [ ] 06 — Kit components: rows, tabs and form fields · Sonnet
+- [x] 06 — Kit components: rows, tabs and form fields · Sonnet
 - [ ] 07 — Restyle title bar and pane dividers · Sonnet
 - [ ] 08 — Restyle widget rail · Sonnet
 - [ ] 09 — Restyle tab strip · Sonnet
