@@ -18,9 +18,10 @@
     "copy_content": "复制输出",
     "copy_prompt": "复制提示符",
     "copy_command": "复制命令",
-    "split_horizontally": "水平拆分",
-    "split_vertically": "垂直拆分",
-    "close_pane": "关闭",
+    "split_down": "向下拆分",
+    "split_right": "向右拆分",
+    "close_pane": "关闭窗格",
+    "pane_machine_local": "本地",
     "window_toggle_fullscreen": "切换全屏",
     "window_minimize": "最小化",
 

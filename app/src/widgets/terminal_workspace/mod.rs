@@ -19,6 +19,7 @@ pub(crate) use reducer::TerminalWorkspaceCtx;
 use state::{TerminalTabState, TerminalWorkspaceState};
 
 use self::model::{TerminalTabViewModel, TerminalWorkspaceViewModel};
+use crate::i18n::{self, Key};
 
 /// Terminal workspace widget: manages terminal sessions across tabs.
 ///
@@ -69,6 +70,7 @@ impl TerminalWorkspaceWidget {
                 focus: tab.focus(),
                 context_menu: tab.context_menu(),
                 has_block_selection: tab.selected_block().is_some(),
+                machine: i18n::t(Key::PaneMachineLocal),
             },
         );
 

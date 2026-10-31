@@ -4,13 +4,16 @@ use std::process::ExitStatus;
 use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{Stack, container, mouse_area, text};
 use iced::{Element, Length, Theme, alignment};
+use otty_ui_kit::components::chip::Chip;
+use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::split;
+use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
 use otty_ui_term::TerminalView;
 
 use super::super::event::TerminalWorkspaceIntent;
-use super::super::model::TerminalTabViewModel;
+use super::super::model::{PaneHeaderViewModel, TerminalTabViewModel};
 use super::super::types::TerminalEntry;
 use crate::i18n::{self, Key};
 
@@ -22,6 +25,7 @@ pub(crate) fn view<'a>(
     let tab_id = vm.tab_id;
     let focus = vm.focus;
     let terminals = vm.terminals;
+    let machine = vm.machine;
     let line = palette.line();
 
     let grid = PaneGrid::new(vm.panes, move |pane, terminal_id, _| {
@@ -35,7 +39,16 @@ pub(crate) fn view<'a>(
             palette,
         );
 
-        pane_grid::Content::new(content)
+        let pane_content = pane_grid::Content::new(content);
+        match terminals.get(terminal_id) {
+            Some(entry) => {
+                let header = view_pane_header(
+                    tab_id, pane, entry, machine, is_focused, palette,
+                );
+                pane_content.title_bar(pane_grid::TitleBar::new(header))
+            },
+            None => pane_content,
+        }
     })
     .width(Length::Fill)
     .height(Length::Fill)
@@ -66,6 +79,34 @@ pub(crate) fn view<'a>(
                 position,
             },
         )
+        .into()
+}
+
+/// Bar above a pane with its program, folder and machine. Pressing it
+/// focuses the pane, like pressing the terminal.
+fn view_pane_header<'a>(
+    tab_id: u64,
+    pane: pane_grid::Pane,
+    entry: &TerminalEntry,
+    machine: &str,
+    is_focused: bool,
+    palette: &UiPalette,
+) -> Element<'a, TerminalWorkspaceIntent> {
+    let header_text = PaneHeaderViewModel::for_entry(entry, machine);
+    // The pane does not know yet whether it is an SSH session, so the chip
+    // is always a local one.
+    let chip =
+        Chip::new(header_text.machine(), palette).target(TargetKind::Local);
+
+    let mut header = PaneHeader::new(header_text.program(), palette)
+        .focused(is_focused)
+        .trailing(chip);
+    if let Some(folder) = header_text.folder() {
+        header = header.folder(folder);
+    }
+
+    mouse_area(Element::from(header))
+        .on_press(TerminalWorkspaceIntent::PaneClicked { tab_id, pane })
         .into()
 }
 

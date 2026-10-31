@@ -18,9 +18,10 @@
     "copy_content": "Копировать вывод",
     "copy_prompt": "Копировать приглашение",
     "copy_command": "Копировать команду",
-    "split_horizontally": "Разделить по горизонтали",
-    "split_vertically": "Разделить по вертикали",
-    "close_pane": "Закрыть",
+    "split_down": "Разделить вниз",
+    "split_right": "Разделить вправо",
+    "close_pane": "Закрыть панель",
+    "pane_machine_local": "Локально",
     "window_toggle_fullscreen": "Во весь экран",
     "window_minimize": "Свернуть",
 

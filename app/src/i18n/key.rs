@@ -46,12 +46,14 @@ pub(crate) enum Key {
     CopyPrompt,
     /// Copy the selected block's command line.
     CopyCommand,
-    /// Split the pane along the horizontal axis.
-    SplitHorizontally,
-    /// Split the pane along the vertical axis.
-    SplitVertically,
+    /// Split the pane into a top and a bottom pane.
+    SplitDown,
+    /// Split the pane into a left and a right pane.
+    SplitRight,
     /// Close the pane.
     ClosePane,
+    /// Machine name in a pane header while panes only run locally.
+    PaneMachineLocal,
     /// Tooltip of the title bar full screen button.
     WindowToggleFullscreen,
     /// Tooltip of the title bar minimize button.
@@ -251,7 +253,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 106] = [
+    pub(super) const ALL: [Self; 107] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -267,9 +269,10 @@ impl Key {
         Self::CopyContent,
         Self::CopyPrompt,
         Self::CopyCommand,
-        Self::SplitHorizontally,
-        Self::SplitVertically,
+        Self::SplitDown,
+        Self::SplitRight,
         Self::ClosePane,
+        Self::PaneMachineLocal,
         Self::WindowToggleFullscreen,
         Self::WindowMinimize,
         Self::Kill,

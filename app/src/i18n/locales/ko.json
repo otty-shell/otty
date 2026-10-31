@@ -18,9 +18,10 @@
     "copy_content": "출력 복사",
     "copy_prompt": "프롬프트 복사",
     "copy_command": "명령 복사",
-    "split_horizontally": "가로로 분할",
-    "split_vertically": "세로로 분할",
-    "close_pane": "닫기",
+    "split_down": "아래로 분할",
+    "split_right": "오른쪽으로 분할",
+    "close_pane": "창 닫기",
+    "pane_machine_local": "로컬",
     "window_toggle_fullscreen": "전체 화면 전환",
     "window_minimize": "최소화",
 

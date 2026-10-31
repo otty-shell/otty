@@ -18,9 +18,10 @@
     "copy_content": "出力をコピー",
     "copy_prompt": "プロンプトをコピー",
     "copy_command": "コマンドをコピー",
-    "split_horizontally": "水平に分割",
-    "split_vertically": "垂直に分割",
-    "close_pane": "閉じる",
+    "split_down": "下に分割",
+    "split_right": "右に分割",
+    "close_pane": "ペインを閉じる",
+    "pane_machine_local": "ローカル",
     "window_toggle_fullscreen": "全画面表示の切り替え",
     "window_minimize": "最小化",
 

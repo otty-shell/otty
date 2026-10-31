@@ -18,9 +18,10 @@
     "copy_content": "複製輸出",
     "copy_prompt": "複製提示字元",
     "copy_command": "複製指令",
-    "split_horizontally": "水平分割",
-    "split_vertically": "垂直分割",
-    "close_pane": "關閉",
+    "split_down": "向下分割",
+    "split_right": "向右分割",
+    "close_pane": "關閉窗格",
+    "pane_machine_local": "本機",
     "window_toggle_fullscreen": "切換全螢幕",
     "window_minimize": "最小化",
 

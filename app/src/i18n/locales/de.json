@@ -18,9 +18,10 @@
     "copy_content": "Ausgabe kopieren",
     "copy_prompt": "Prompt kopieren",
     "copy_command": "Befehl kopieren",
-    "split_horizontally": "Horizontal teilen",
-    "split_vertically": "Vertikal teilen",
-    "close_pane": "Schließen",
+    "split_down": "Nach unten teilen",
+    "split_right": "Nach rechts teilen",
+    "close_pane": "Bereich schließen",
+    "pane_machine_local": "Lokal",
     "window_toggle_fullscreen": "Vollbild umschalten",
     "window_minimize": "Minimieren",
 

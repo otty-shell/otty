@@ -18,9 +18,10 @@
     "copy_content": "Copy content",
     "copy_prompt": "Copy prompt",
     "copy_command": "Copy command",
-    "split_horizontally": "Split horizontally",
-    "split_vertically": "Split vertically",
-    "close_pane": "Close",
+    "split_down": "Split down",
+    "split_right": "Split right",
+    "close_pane": "Close pane",
+    "pane_machine_local": "Local",
     "window_toggle_fullscreen": "Toggle full screen",
     "window_minimize": "Minimize",
 

@@ -18,9 +18,10 @@
     "copy_content": "Copier la sortie",
     "copy_prompt": "Copier l'invite",
     "copy_command": "Copier la commande",
-    "split_horizontally": "Diviser horizontalement",
-    "split_vertically": "Diviser verticalement",
-    "close_pane": "Fermer",
+    "split_down": "Diviser vers le bas",
+    "split_right": "Diviser à droite",
+    "close_pane": "Fermer le volet",
+    "pane_machine_local": "Local",
     "window_toggle_fullscreen": "Basculer en plein écran",
     "window_minimize": "Réduire",
 
