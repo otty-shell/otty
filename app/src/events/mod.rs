@@ -19,6 +19,7 @@ pub(crate) mod chrome;
 pub(crate) mod explorer;
 pub(crate) mod quick_launch;
 pub(crate) mod settings;
+pub(crate) mod shortcuts;
 pub(crate) mod sidebar;
 pub(crate) mod tabs;
 pub(crate) mod terminal_workspace;
@@ -60,7 +61,9 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
                 TerminalWorkspaceIntent::SyncPaneGridSize,
             )),
         ),
-        AppEvent::Keyboard(_event) => Task::none(),
+        // Only keys no widget captured arrive here, so a shortcut a focused
+        // terminal already reported does not run twice.
+        AppEvent::Keyboard(event) => shortcuts::handle_key_event(app, &event),
         AppEvent::Window(iced::window::Event::Resized(size)) => {
             app.window_size = size;
             app.state.window_size = size;
@@ -80,5 +83,40 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             window::latest().and_then(move |id| window::drag_resize(id, dir))
         },
         AppEvent::Window(_) => Task::none(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::keyboard::key::{NativeCode, Physical};
+    use iced::keyboard::{Event, Key, Location};
+
+    use super::*;
+    use crate::shortcuts::{AppShortcut, Platform};
+    use crate::task_outputs::collect_outputs;
+
+    #[test]
+    fn keyboard_event_runs_the_app_shortcut_it_stands_for() {
+        let (mut app, _) = App::new();
+        let keys = AppShortcut::Settings.keys(Platform::current());
+        let event = Event::KeyPressed {
+            key: Key::Character(keys.key().into()),
+            modified_key: Key::Character(keys.key().into()),
+            physical_key: Physical::Unidentified(NativeCode::Unidentified),
+            location: Location::Standard,
+            modifiers: keys.modifiers(),
+            text: None,
+            repeat: false,
+        };
+
+        let events =
+            collect_outputs(handle(&mut app, AppEvent::Keyboard(event)));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::OpenSettingsTab
+            ))]
+        ));
     }
 }

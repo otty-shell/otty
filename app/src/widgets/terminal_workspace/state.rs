@@ -7,10 +7,11 @@ use otty_ui_term::SurfaceMode;
 use otty_ui_term::settings::{Settings, ThemeSettings};
 
 use super::errors::TerminalWorkspaceError;
+use super::pane_balance;
 use super::types::{
     BlockSelection, Terminal, TerminalEntry, TerminalEvent, TerminalKind,
 };
-use super::{pane_balance, shortcuts};
+use crate::shortcuts;
 
 /// Commands returned by state mutation helpers to be executed by the reducer.
 pub(crate) enum StateCommand {
@@ -670,7 +671,7 @@ fn new_terminal(
             message: format!("{err}"),
         }
     })?;
-    terminal.add_bindings(shortcuts::app_bindings());
+    terminal.add_bindings(shortcuts::terminal_bindings());
 
     Ok(terminal)
 }

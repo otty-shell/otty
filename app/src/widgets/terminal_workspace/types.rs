@@ -2,15 +2,15 @@ use std::process::ExitStatus;
 
 use otty_ui_term::settings::SessionKind;
 
-use super::shortcuts::TerminalWorkspaceAction;
 use crate::domain::exit_behavior::ExitBehavior;
+use crate::shortcuts::AppShortcut;
 
 /// The terminal widget this application embeds, bound to its own
 /// action type.
-pub(crate) type Terminal = otty_ui_term::Terminal<TerminalWorkspaceAction>;
+pub(crate) type Terminal = otty_ui_term::Terminal<AppShortcut>;
 
 /// An event reported by one of this application's terminal widgets.
-pub(crate) type TerminalEvent = otty_ui_term::Event<TerminalWorkspaceAction>;
+pub(crate) type TerminalEvent = otty_ui_term::Event<AppShortcut>;
 
 /// Terminal context determining whether shell metadata is available.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

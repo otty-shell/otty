@@ -174,7 +174,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 03 — Kit: PanelSection, SessionRow, SessionGroup, SplitButton · Sonnet
 - [x] 04 — Kit: PaneHeader, TitleSearch, ActionTile, FloatingNote, EmptyCard · Sonnet
 - [ ] 05 — Kit: CommandPalette · Opus
-- [ ] 06 — App shortcuts · Opus
+- [x] 06 — App shortcuts · Opus
 - [ ] 07 — Side panel state · Opus
 - [ ] 08 — Right panel: Files · Sonnet
 - [ ] 09 — Left panel: Launches · Sonnet

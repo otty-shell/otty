@@ -6,9 +6,9 @@ use otty_ui_kit::spacing;
 
 use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
+use crate::shortcuts::AppShortcut;
 use crate::theme::ThemeProps;
 use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
-use crate::widgets::terminal_workspace::shortcuts::split_vertically_shortcut_label;
 
 /// Size of the invisible text field that keeps keyboard focus while the menu
 /// is open. It is not a design value, so it has no token.
@@ -82,7 +82,7 @@ pub(crate) fn view<'a>(
         ))
         .item(
             MenuItem::new(i18n::t(Key::SplitVertically))
-                .shortcut(split_vertically_shortcut_label())
+                .shortcut(AppShortcut::SplitPane.label())
                 .on_press(TerminalWorkspaceIntent::SplitPane {
                     tab_id,
                     pane,

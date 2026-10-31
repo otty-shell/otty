@@ -13,6 +13,7 @@ mod i18n;
 mod icons;
 mod layout;
 mod services;
+mod shortcuts;
 mod state;
 #[cfg(test)]
 mod task_outputs;
