@@ -51,6 +51,7 @@ pub struct UiPalette {
     target_prod: Color,
     diff_add: Color,
     diff_del: Color,
+    scrim: Color,
     shadow_popover: Shadow,
     shadow_sticky: Shadow,
 }
@@ -219,6 +220,11 @@ impl UiPalette {
         self.diff_del
     }
 
+    /// `scrim`: dims the window behind a modal dialog.
+    pub const fn scrim(&self) -> Color {
+        self.scrim
+    }
+
     /// `shadow-popover`: menus, pickers, palette. The only drop shadow for
     /// overlays.
     pub const fn shadow_popover(&self) -> Shadow {
@@ -262,6 +268,7 @@ impl UiPalette {
             target_prod: color!(0xe06c75),
             diff_add: color!(0x1f2c26),
             diff_del: color!(0x2e1f27),
+            scrim: color!(0x000000, 0.5),
             // 0 14px 34px rgba(0,0,0,0.5)
             shadow_popover: Shadow {
                 color: color!(0x000000, 0.5),
@@ -309,6 +316,7 @@ impl UiPalette {
             target_prod: color!(0xb23641),
             diff_add: color!(0xe3f1dd),
             diff_del: color!(0xf8e1e3),
+            scrim: color!(0x11141c, 0.16),
             // 0 12px 30px rgba(17,20,28,0.16)
             shadow_popover: Shadow {
                 color: color!(0x11141c, 0.16),
@@ -556,6 +564,18 @@ mod tests {
                 offset: Vector::new(0.0, 4.0),
                 blur_radius: 10.0,
             }
+        );
+    }
+
+    #[test]
+    fn given_each_theme_when_scrim_read_then_it_matches_tokens_json() {
+        assert_eq!(
+            UiPalette::otty_dark().scrim(),
+            Color::from_rgba8(0, 0, 0, 0.5)
+        );
+        assert_eq!(
+            UiPalette::otty_light().scrim(),
+            Color::from_rgba8(17, 20, 28, 0.16)
         );
     }
 

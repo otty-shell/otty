@@ -4,9 +4,12 @@
 //! OTTY Light, and `rows`, `fields` or `settings` to show one group of
 //! the second set.
 
-use iced::widget::{Space, column, container, row, scrollable, svg, text};
+use iced::widget::{
+    Space, column, container, row, scrollable, stack, svg, text,
+};
 use iced::{Element, Length, Padding, Theme};
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
+use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
@@ -82,6 +85,7 @@ struct Gallery {
     tab: usize,
     tree_selected: usize,
     rail: usize,
+    dialog_open: bool,
 }
 
 impl Gallery {
@@ -121,6 +125,7 @@ impl Gallery {
             tab: 0,
             tree_selected: 2,
             rail: 0,
+            dialog_open: false,
         }
     }
 }
@@ -145,6 +150,8 @@ enum Message {
 
     Tree(usize),
     Rail(usize),
+    OpenDialog,
+    CloseDialog,
 }
 
 fn update(state: &mut Gallery, message: Message) {
@@ -174,6 +181,8 @@ fn update(state: &mut Gallery, message: Message) {
         Message::Tab(index) => state.tab = index,
         Message::Tree(index) => state.tree_selected = index,
         Message::Rail(index) => state.rail = index,
+        Message::OpenDialog => state.dialog_open = true,
+        Message::CloseDialog => state.dialog_open = false,
     }
 }
 
@@ -452,6 +461,10 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 .on_press(Message::Switched(true)),
         );
 
+    let open_dialog = Button::new("Open dialog", p)
+        .kind(ButtonKind::Secondary)
+        .on_press(Message::OpenDialog);
+
     let first: Vec<Element<'_, Message>> = vec![
         section(
             "Button (form 34, small 28; second row disabled)",
@@ -463,6 +476,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             icon_buttons.into(),
             p,
         ),
+        section("Dialog", open_dialog.into(), p),
         section("Kbd", keys.into(), p),
         section("Divider", dividers.into(), p),
         section("Menu", menu.into(), p),
@@ -517,14 +531,35 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         .padding(Padding::from(spacing::SPACE_6));
 
     let canvas = palette.surface_canvas();
-    container(scrollable(body))
+    let page = container(scrollable(body))
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| container::Style {
             background: Some(canvas.into()),
             ..container::Style::default()
-        })
-        .into()
+        });
+
+    if !state.dialog_open {
+        return page.into();
+    }
+
+    let dialog = Dialog::new("Delete session", p)
+        .body(
+            text("The session and its history are removed.")
+                .color(palette.text_body()),
+        )
+        .action(
+            Button::new("Cancel", p)
+                .kind(ButtonKind::Ghost)
+                .on_press(Message::CloseDialog),
+        )
+        .action(
+            Button::new("Delete", p)
+                .kind(ButtonKind::Primary)
+                .on_press(Message::CloseDialog),
+        );
+
+    stack![page, Element::from(dialog)].into()
 }
 
 fn label<'a>(content: String, palette: &UiPalette) -> Element<'a, Message> {

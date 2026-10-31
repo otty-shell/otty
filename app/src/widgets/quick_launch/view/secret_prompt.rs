@@ -1,8 +1,7 @@
-use iced::widget::{Space, column, container, opaque, row, text};
-use iced::{Element, Length, Theme, alignment};
+use iced::{Element, Theme};
 use otty_ui_kit::components::button::{Button, ButtonKind};
+use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::text_field::TextField;
-use otty_ui_kit::{fonts, radius, spacing, typography};
 
 use super::super::errors::secret_prompt_title;
 use super::super::event::QuickLaunchIntent;
@@ -10,9 +9,6 @@ use super::super::state::SecretPromptState;
 use super::super::types::SshSecretKind;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
-
-/// Width of the dialog. The design system has no size token for dialogs.
-const DIALOG_WIDTH: f32 = 420.0;
 
 /// Props for the SSH secret dialog.
 pub(crate) struct SecretPromptProps<'a> {
@@ -35,11 +31,6 @@ pub(crate) fn view(
             i18n::secret_prompt_password_body(request.target())
         },
     };
-
-    let title = text(secret_prompt_title(request.kind()))
-        .size(typography::HEADING.size())
-        .font(fonts::UI)
-        .color(palette.text_strong());
 
     let mut input = TextField::new(body, props.prompt.value(), palette)
         .id(props.prompt.input_id().clone())
@@ -65,42 +56,10 @@ pub(crate) fn view(
     let connect = Button::new(i18n::t(Key::ButtonConnect), palette)
         .kind(ButtonKind::Primary)
         .on_press(QuickLaunchIntent::SecretPromptSubmit);
-    let buttons = row![Space::new().width(Length::Fill), cancel, connect]
-        .spacing(spacing::SPACE_3)
-        .width(Length::Fill);
 
-    let content = column![title, Element::from(input), buttons]
-        .spacing(spacing::SPACE_5)
-        .width(Length::Fill);
-
-    let dialog_background = palette.surface_overlay();
-    let dialog_shadow = palette.shadow_popover();
-    let dialog = container(content)
-        .width(DIALOG_WIDTH)
-        .padding(spacing::SPACE_5)
-        .style(move |_| container::Style {
-            background: Some(dialog_background.into()),
-            border: iced::Border {
-                radius: radius::RADIUS_LG.into(),
-                ..Default::default()
-            },
-            shadow: dialog_shadow,
-            ..Default::default()
-        });
-
-    // The window behind the dialog is dimmed with the overlay shadow color.
-    let backdrop_color = dialog_shadow.color;
-
-    // `opaque` keeps clicks from reaching the UI behind the dialog.
-    opaque(
-        container(dialog)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(alignment::Horizontal::Center)
-            .align_y(alignment::Vertical::Center)
-            .style(move |_| container::Style {
-                background: Some(backdrop_color.into()),
-                ..Default::default()
-            }),
-    )
+    Dialog::new(secret_prompt_title(request.kind()), palette)
+        .body(input)
+        .action(cancel)
+        .action(connect)
+        .into()
 }

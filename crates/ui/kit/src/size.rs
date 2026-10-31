@@ -30,3 +30,5 @@ pub const FORM: f32 = 720.0;
 pub const LINE: f32 = 1.0;
 /// Width of the invisible zone around a split line that the pointer can drag.
 pub const SPLIT_GRAB: f32 = 8.0;
+/// Width of a modal dialog.
+pub const DIALOG: f32 = 420.0;

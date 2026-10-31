@@ -1,6 +1,6 @@
 # 23 — Dialog component and scrim token
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 22
@@ -23,3 +23,10 @@ color gets its own token instead of reusing the shadow color.
 
 - In the palette tests: the `scrim` value of each theme is in the expected token table.
 - No other tests (styling).
+
+## Answer
+
+- Added the `scrim` palette token (dark `rgba(0,0,0,0.5)`, light `rgba(17,20,28,0.16)`) with a `scrim()` getter and `size::DIALOG` (420).
+- Added `components::dialog::Dialog` (`new`, `body`, `action`) that renders the same card and backdrop the SSH secret prompt drew by hand.
+- `secret_prompt.rs` now uses `Dialog`; `DIALOG_WIDTH` and the hand-made backdrop are gone. Content, ids, messages and order are unchanged.
+- The gallery has an "Open dialog" button; Cancel and the primary action both close it.

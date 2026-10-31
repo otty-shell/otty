@@ -151,7 +151,7 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 - [x] 20 — Surface container · Sonnet
 - [x] 21 — Bold mono font in the kit and small token fixes · Sonnet
 - [x] 22 — FormPage component · Sonnet
-- [ ] 23 — Dialog component and scrim token · Sonnet
+- [x] 23 — Dialog component and scrim token · Sonnet
 - [ ] 24 — Update the design system with the new kit parts · Opus, owner review
 - [x] 15 — Update the design system to match the code · owner
 
