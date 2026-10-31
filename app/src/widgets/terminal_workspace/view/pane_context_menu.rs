@@ -1,12 +1,17 @@
 use iced::widget::{Id, container, mouse_area, pane_grid, text_input};
 use iced::{Background, Element, Length, Point, Size, alignment};
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
+use otty_ui_kit::palette::UiPalette;
 
 use crate::geometry::{MENU_MARGIN, anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
 use crate::widgets::terminal_workspace::shortcuts::split_vertically_shortcut_label;
+
+/// Size of the invisible text field that keeps keyboard focus while the menu
+/// is open. It is not a design value, so it has no token.
+const FOCUS_TRAP_SIZE: f32 = 1.0;
 
 /// Props for rendering a pane context menu.
 #[derive(Debug, Clone)]
@@ -131,7 +136,11 @@ pub(crate) fn view<'a>(
     iced::widget::stack!(
         dismiss_layer,
         positioned_menu,
-        focus_trap(props.tab_id, props.focus_target.clone())
+        focus_trap(
+            props.tab_id,
+            props.focus_target.clone(),
+            props.theme.theme.ui()
+        )
     )
     .width(Length::Fill)
     .height(Length::Fill)
@@ -141,15 +150,18 @@ pub(crate) fn view<'a>(
 fn focus_trap(
     tab_id: u64,
     id: Id,
+    palette: &UiPalette,
 ) -> Element<'static, TerminalWorkspaceIntent> {
+    // Every part of the field has the canvas color, so it stays invisible.
+    let color = palette.surface_canvas();
+
     text_input("", "")
         .on_input(move |_| TerminalWorkspaceIntent::ContextMenuInput { tab_id })
         .padding(0)
-        .size(1)
-        .width(Length::Fixed(1.0))
+        .size(FOCUS_TRAP_SIZE)
+        .width(Length::Fixed(FOCUS_TRAP_SIZE))
         .id(id)
-        .style(|theme: &iced::Theme, _status| {
-            let color = theme.extended_palette().background.base.color;
+        .style(move |_: &iced::Theme, _status| {
             iced::widget::text_input::Style {
                 background: Background::Color(color),
                 border: iced::Border {

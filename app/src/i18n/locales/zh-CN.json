@@ -10,8 +10,6 @@
     "terminal_unavailable": "终端不可用",
     "process_terminated": "进程已被终止。按任意键关闭。",
 
-    "no_tabs": "没有标签页",
-    "tab_content_placeholder": "标签页内容占位",
     "settings_tab_title": "设置",
     "quick_launch_create_tab_title": "新建快捷启动",
 

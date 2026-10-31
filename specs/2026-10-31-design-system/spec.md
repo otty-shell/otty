@@ -142,7 +142,7 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 - [x] 11 — Restyle menus and dropdowns · Sonnet
 - [x] 12 — Restyle settings screen · Sonnet
 - [x] 13 — Restyle quick launch editor, secret prompt and error tab · Sonnet
-- [ ] 14 — Remove old styling code · Opus
+- [x] 14 — Remove old styling code · Opus
 - [ ] 15 — Update the design system to match the code · owner
 
 Tickets live in `issues/`. Each ticket names the model that runs it on its `Model:` line; a subagent started for a ticket is launched with that model. Order: 01 → (02, 04) → (03, 05, 06) → 07–13 in parallel → 14 → 15.

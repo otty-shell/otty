@@ -3,9 +3,10 @@ use iced::widget::{
     text_input,
 };
 use iced::{Color, Element, Length, Theme, alignment};
+use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{size, typography};
+use otty_ui_kit::{size, spacing, typography};
 use otty_ui_tree::{TreeRowContext, TreeView};
 
 use super::super::event::QuickLaunchIntent;
@@ -15,11 +16,7 @@ use super::super::types::{
     QuickLaunchNode,
 };
 use crate::icons::PLAY;
-use crate::style::thin_scroll_style;
 use crate::theme::ThemeProps;
-
-/// Gap between the indent and the inline edit field.
-const INLINE_EDIT_SPACING: f32 = 6.0;
 
 /// Props for the quick launch tree view.
 #[derive(Debug, Clone)]
@@ -37,10 +34,10 @@ pub(crate) struct SidebarTreeProps<'a> {
 pub(crate) fn view(
     props: SidebarTreeProps<'_>,
 ) -> Element<'_, QuickLaunchIntent, Theme, iced::Renderer> {
-    let palette = props.theme.theme.iced_palette().clone();
     let ui = props.theme.theme.ui().clone();
     let error_color = ui.text_danger();
-    let accent = ui.accent();
+    let drop_background = ui.surface_selected();
+    let scroll_style = scrollbar::style(&ui);
 
     let launching = props.launching;
     let drop_target = props.drop_target;
@@ -73,13 +70,8 @@ pub(crate) fn view(
     let scrollable = scrollable::Scrollable::new(tree_content)
         .width(Length::Fill)
         .height(Length::Fill)
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new()
-                .width(4)
-                .margin(0)
-                .scroller_width(4),
-        ))
-        .style(thin_scroll_style(palette.clone()));
+        .direction(scrollbar::vertical())
+        .style(scroll_style);
 
     let tree_area = mouse_area(scrollable)
         .on_move(|position| QuickLaunchIntent::CursorMoved { position })
@@ -89,7 +81,7 @@ pub(crate) fn view(
 
     let root_drop_background = if matches!(drop_target, Some(DropTarget::Root))
     {
-        Some(Color { a: 0.2, ..accent })
+        Some(drop_background)
     } else {
         None
     };
@@ -214,7 +206,7 @@ fn render_inline_edit<'a>(
 
     let mut col = column![
         row![Space::new().width(Length::Fixed(indent)), input]
-            .spacing(INLINE_EDIT_SPACING)
+            .spacing(spacing::SPACE_2)
             .width(Length::Fill)
             .height(Length::Fixed(size::ROW))
             .align_y(alignment::Vertical::Center),
@@ -229,7 +221,7 @@ fn render_inline_edit<'a>(
                     top: 0.0,
                     right: 0.0,
                     bottom: 0.0,
-                    left: INLINE_EDIT_SPACING + indent + 4.0,
+                    left: spacing::SPACE_2 + indent + spacing::SPACE_1,
                 })
                 .style(move |_| iced::widget::container::Style {
                     text_color: Some(error_color),

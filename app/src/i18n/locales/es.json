@@ -10,8 +10,6 @@
     "terminal_unavailable": "Terminal no disponible",
     "process_terminated": "El proceso fue interrumpido. Pulse cualquier tecla para cerrar.",
 
-    "no_tabs": "Sin pestañas",
-    "tab_content_placeholder": "Marcador de contenido de pestaña",
     "settings_tab_title": "Ajustes",
     "quick_launch_create_tab_title": "Crear inicio rápido",
 

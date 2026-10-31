@@ -10,8 +10,6 @@
     "terminal_unavailable": "Terminal nicht verfügbar",
     "process_terminated": "Der Prozess wurde abgebrochen. Zum Schließen eine beliebige Taste drücken.",
 
-    "no_tabs": "Keine Tabs",
-    "tab_content_placeholder": "Platzhalter für Tab-Inhalt",
     "settings_tab_title": "Einstellungen",
     "quick_launch_create_tab_title": "Schnellstart erstellen",
 

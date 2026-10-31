@@ -106,6 +106,7 @@ mod tests {
 
     use super::*;
 
+    /// Divider width the pane grid uses between panes.
     const PANE_SPACING: f32 = 1.0;
 
     /// Apply every computed ratio and read the resulting pane widths.

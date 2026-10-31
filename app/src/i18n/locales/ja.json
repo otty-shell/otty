@@ -10,8 +10,6 @@
     "terminal_unavailable": "ターミナルを利用できません",
     "process_terminated": "プロセスは強制終了されました。任意のキーを押すと閉じます。",
 
-    "no_tabs": "タブがありません",
-    "tab_content_placeholder": "タブコンテンツのプレースホルダー",
     "settings_tab_title": "設定",
     "quick_launch_create_tab_title": "クイック起動を作成",
 

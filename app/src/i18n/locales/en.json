@@ -10,8 +10,6 @@
     "terminal_unavailable": "Terminal unavailable",
     "process_terminated": "Process was terminated. Press any key to close.",
 
-    "no_tabs": "No tabs",
-    "tab_content_placeholder": "Tab content placeholder",
     "settings_tab_title": "Settings",
     "quick_launch_create_tab_title": "Create Quick Launch",
 

@@ -10,8 +10,6 @@
     "terminal_unavailable": "終端機無法使用",
     "process_terminated": "程序已被終止。按任意鍵關閉。",
 
-    "no_tabs": "沒有分頁",
-    "tab_content_placeholder": "分頁內容佔位",
     "settings_tab_title": "設定",
     "quick_launch_create_tab_title": "新增快速啟動",
 

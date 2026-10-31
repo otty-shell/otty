@@ -10,8 +10,6 @@
     "terminal_unavailable": "Terminal indisponible",
     "process_terminated": "Le processus a été interrompu. Appuyez sur une touche pour fermer.",
 
-    "no_tabs": "Aucun onglet",
-    "tab_content_placeholder": "Contenu d'onglet réservé",
     "settings_tab_title": "Paramètres",
     "quick_launch_create_tab_title": "Nouveau lancement rapide",
 

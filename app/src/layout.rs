@@ -1,14 +1,7 @@
 use iced::Size;
-use otty_ui_kit::{radius, size};
+use otty_ui_kit::size;
 
 use crate::app::view::HEADER_SEPARATOR_HEIGHT;
-
-/// Shared compact control size used by dense toolbars and menus.
-pub(crate) const BUTTON_SIZE_COMPACT: f32 = size::CONTROL_SM;
-/// Shared regular control size used by form actions.
-pub(crate) const BUTTON_SIZE_REGULAR: f32 = size::CONTROL_MD;
-/// Shared rounded corner radius for standard buttons.
-pub(crate) const BUTTON_RADIUS_ROUNDED: f32 = radius::RADIUS_SM;
 
 pub(crate) fn screen_size_from_window(window_size: Size) -> Size {
     let height =

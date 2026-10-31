@@ -29,11 +29,7 @@ pub(crate) enum Key {
     /// Banner on a kept-open pane whose process ended without an exit code.
     ProcessTerminated,
 
-    // Tab bar and tab content.
-    /// Shown when no tab is open.
-    NoTabs,
-    /// Placeholder body for tabs without dedicated content.
-    TabContentPlaceholder,
+    // Tab titles.
     /// Title of the settings tab.
     SettingsTabTitle,
     /// Title of the quick launch creation wizard tab.
@@ -255,7 +251,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 108] = [
+    pub(super) const ALL: [Self; 106] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -264,8 +260,6 @@ impl Key {
         Self::QuickLaunchErrorPayloadMissing,
         Self::TerminalUnavailable,
         Self::ProcessTerminated,
-        Self::NoTabs,
-        Self::TabContentPlaceholder,
         Self::SettingsTabTitle,
         Self::QuickLaunchCreateTabTitle,
         Self::CopySelection,

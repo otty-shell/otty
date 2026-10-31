@@ -2685,4 +2685,383 @@ mod tests {
 
         assert!(!debug.contains("hunter2"));
     }
+
+    // -----------------------------------------------------------------------
+    // Drag and drop tests
+    // -----------------------------------------------------------------------
+
+    fn path(parts: &[&str]) -> NodePath {
+        parts.iter().map(|part| part.to_string()).collect()
+    }
+
+    fn folder_node(
+        title: &str,
+        children: Vec<QuickLaunchNode>,
+    ) -> QuickLaunchNode {
+        QuickLaunchNode::Folder(QuickLaunchFolder {
+            title: String::from(title),
+            expanded: false,
+            children,
+        })
+    }
+
+    fn command_node(title: &str) -> QuickLaunchNode {
+        QuickLaunchNode::Command(QuickLaunch {
+            title: String::from(title),
+            ..sample_command()
+        })
+    }
+
+    fn state_with_root(children: Vec<QuickLaunchNode>) -> QuickLaunchState {
+        let mut state = QuickLaunchState::default();
+        state.data_mut().root.children = children;
+        state
+    }
+
+    fn run(state: &mut QuickLaunchState, intent: QuickLaunchIntent) {
+        let settings = Settings::default();
+        let _task = reduce(state, intent, &ctx(&settings));
+    }
+
+    /// Press `source`, move the pointer `distance` pixels and hover `over`.
+    fn drag_over(
+        state: &mut QuickLaunchState,
+        source: &NodePath,
+        distance: f32,
+        over: &NodePath,
+    ) {
+        run(
+            state,
+            QuickLaunchIntent::NodePressed {
+                path: source.clone(),
+            },
+        );
+        run(
+            state,
+            QuickLaunchIntent::CursorMoved {
+                position: Point::new(0.0, distance),
+            },
+        );
+        run(state, QuickLaunchIntent::NodeHovered { path: over.clone() });
+    }
+
+    fn child_titles(
+        state: &QuickLaunchState,
+        folder: &[String],
+    ) -> Vec<String> {
+        state
+            .data()
+            .folder(folder)
+            .expect("folder should exist")
+            .children()
+            .iter()
+            .map(|node| node.title().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn given_command_dragged_onto_folder_when_released_then_command_moves_into_it()
+     {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", Vec::new()),
+            command_node("Demo"),
+        ]);
+        let source = path(&["Demo"]);
+        let target = path(&["Servers"]);
+
+        drag_over(&mut state, &source, 10.0, &target);
+
+        assert!(matches!(
+            state.drop_target(),
+            Some(DropTarget::Folder(folder)) if folder == &target
+        ));
+
+        run(
+            &mut state,
+            QuickLaunchIntent::NodeReleased {
+                path: target.clone(),
+            },
+        );
+
+        assert_eq!(child_titles(&state, &[]), vec![String::from("Servers")]);
+        assert_eq!(child_titles(&state, &target), vec![String::from("Demo")]);
+        assert_eq!(state.selected_path(), Some(&path(&["Servers", "Demo"])));
+        assert!(state.is_dirty());
+        assert!(state.drag().is_none());
+    }
+
+    #[test]
+    fn given_pointer_moved_less_than_threshold_when_released_then_it_is_a_click()
+     {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", Vec::new()),
+            folder_node("Local", Vec::new()),
+        ]);
+        let source = path(&["Servers"]);
+
+        drag_over(&mut state, &source, 2.0, &path(&["Local"]));
+        run(
+            &mut state,
+            QuickLaunchIntent::NodeReleased {
+                path: source.clone(),
+            },
+        );
+
+        assert!(state.drop_target().is_none());
+        assert_eq!(
+            child_titles(&state, &[]),
+            vec![String::from("Servers"), String::from("Local")]
+        );
+        let folder = state.data().folder(&source).expect("folder should exist");
+        assert!(folder.is_expanded());
+    }
+
+    #[test]
+    fn given_folder_dragged_into_its_own_child_when_hovered_then_drop_is_refused()
+     {
+        let mut state = state_with_root(vec![folder_node(
+            "Servers",
+            vec![folder_node("Prod", Vec::new())],
+        )]);
+        let source = path(&["Servers"]);
+        let child = path(&["Servers", "Prod"]);
+
+        drag_over(&mut state, &source, 10.0, &child);
+        run(&mut state, QuickLaunchIntent::NodeReleased { path: child });
+
+        assert!(state.drop_target().is_none());
+        assert_eq!(child_titles(&state, &source), vec![String::from("Prod")]);
+    }
+
+    #[test]
+    fn given_hovered_command_in_folder_when_dragging_then_its_folder_is_the_target()
+     {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", vec![command_node("Prod")]),
+            command_node("Demo"),
+        ]);
+
+        drag_over(
+            &mut state,
+            &path(&["Demo"]),
+            10.0,
+            &path(&["Servers", "Prod"]),
+        );
+
+        assert!(matches!(
+            state.drop_target(),
+            Some(DropTarget::Folder(folder)) if folder == &path(&["Servers"])
+        ));
+    }
+
+    #[test]
+    fn given_command_dragged_to_background_when_released_then_it_moves_to_root()
+    {
+        let mut state = state_with_root(vec![folder_node(
+            "Servers",
+            vec![command_node("Prod")],
+        )]);
+        let source = path(&["Servers", "Prod"]);
+
+        drag_over(&mut state, &source, 10.0, &source);
+        run(&mut state, QuickLaunchIntent::BackgroundReleased);
+
+        assert_eq!(
+            child_titles(&state, &[]),
+            vec![String::from("Servers"), String::from("Prod")]
+        );
+        assert!(child_titles(&state, &path(&["Servers"])).is_empty());
+    }
+
+    #[test]
+    fn given_target_with_same_title_when_dropped_then_move_is_refused() {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", vec![command_node("Demo")]),
+            command_node("Demo"),
+        ]);
+        let target = path(&["Servers"]);
+
+        drag_over(&mut state, &path(&["Demo"]), 10.0, &target);
+        run(
+            &mut state,
+            QuickLaunchIntent::NodeReleased {
+                path: target.clone(),
+            },
+        );
+
+        assert_eq!(
+            child_titles(&state, &[]),
+            vec![String::from("Servers"), String::from("Demo")]
+        );
+        assert_eq!(child_titles(&state, &target), vec![String::from("Demo")]);
+    }
+
+    #[test]
+    fn given_running_command_when_moved_then_its_launch_follows_the_new_path() {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", Vec::new()),
+            command_node("Demo"),
+        ]);
+        let source = path(&["Demo"]);
+        let target = path(&["Servers"]);
+        let _launch_id = state
+            .begin_launch(source.clone(), Arc::new(AtomicBool::new(false)));
+
+        drag_over(&mut state, &source, 10.0, &target);
+        run(&mut state, QuickLaunchIntent::NodeReleased { path: target });
+
+        assert!(!state.is_launching(&source));
+        assert!(state.is_launching(&path(&["Servers", "Demo"])));
+    }
+
+    // -----------------------------------------------------------------------
+    // Context menu action tests
+    // -----------------------------------------------------------------------
+
+    fn run_menu_action(
+        state: &mut QuickLaunchState,
+        target: ContextMenuTarget,
+        action: ContextMenuAction,
+    ) {
+        state.set_context_menu(Some(
+            ContextMenuState::default()
+                .with_target(target)
+                .with_cursor(Point::ORIGIN),
+        ));
+        run(state, QuickLaunchIntent::ContextMenuAction(action));
+    }
+
+    #[test]
+    fn given_command_when_duplicated_twice_then_copies_get_unique_titles() {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let target = ContextMenuTarget::Command(path(&["Demo"]));
+
+        run_menu_action(
+            &mut state,
+            target.clone(),
+            ContextMenuAction::Duplicate,
+        );
+        run_menu_action(&mut state, target, ContextMenuAction::Duplicate);
+
+        assert_eq!(
+            child_titles(&state, &[]),
+            vec![
+                String::from("Demo"),
+                String::from("Demo copy"),
+                String::from("Demo copy (0)"),
+            ]
+        );
+        assert!(state.context_menu().is_none());
+        assert!(state.is_dirty());
+    }
+
+    #[test]
+    fn given_command_and_folder_menus_when_removed_then_matching_nodes_go_away()
+    {
+        let mut state = state_with_root(vec![
+            folder_node("Servers", Vec::new()),
+            command_node("Demo"),
+        ]);
+
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Folder(path(&["Servers"])),
+            ContextMenuAction::Remove,
+        );
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Command(path(&["Demo"])),
+            ContextMenuAction::Delete,
+        );
+
+        assert_eq!(
+            child_titles(&state, &[]),
+            vec![String::from("Servers"), String::from("Demo")]
+        );
+
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Command(path(&["Demo"])),
+            ContextMenuAction::Remove,
+        );
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Folder(path(&["Servers"])),
+            ContextMenuAction::Delete,
+        );
+
+        assert!(state.data().root.children.is_empty());
+    }
+
+    #[test]
+    fn given_command_menu_when_rename_chosen_then_inline_edit_holds_its_title()
+    {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Command(path(&["Demo"])),
+            ContextMenuAction::Rename,
+        );
+
+        let edit = state.inline_edit().expect("rename should start");
+        assert_eq!(edit.value, "Demo");
+        assert!(matches!(
+            &edit.kind,
+            InlineEditKind::Rename { path: edit_path } if edit_path == &path(&["Demo"])
+        ));
+    }
+
+    #[test]
+    fn given_command_in_closed_folder_when_create_folder_chosen_then_folder_opens()
+     {
+        let mut state = state_with_root(vec![folder_node(
+            "Servers",
+            vec![command_node("Prod")],
+        )]);
+
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Command(path(&["Servers", "Prod"])),
+            ContextMenuAction::CreateFolder,
+        );
+
+        let edit = state.inline_edit().expect("create folder should start");
+        assert!(matches!(
+            &edit.kind,
+            InlineEditKind::CreateFolder { parent_path } if parent_path == &path(&["Servers"])
+        ));
+        let folder = state
+            .data()
+            .folder(&path(&["Servers"]))
+            .expect("folder should exist");
+        assert!(folder.is_expanded());
+    }
+
+    #[test]
+    fn given_running_command_when_kill_chosen_then_its_launch_is_canceled() {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let _launch_id = state.begin_launch(path(&["Demo"]), cancel.clone());
+
+        run_menu_action(
+            &mut state,
+            ContextMenuTarget::Command(path(&["Demo"])),
+            ContextMenuAction::Kill,
+        );
+
+        assert!(cancel.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn given_no_open_menu_when_action_arrives_then_tree_is_unchanged() {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+
+        run(
+            &mut state,
+            QuickLaunchIntent::ContextMenuAction(ContextMenuAction::Duplicate),
+        );
+
+        assert_eq!(child_titles(&state, &[]), vec![String::from("Demo")]);
+    }
 }

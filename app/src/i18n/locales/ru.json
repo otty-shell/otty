@@ -10,8 +10,6 @@
     "terminal_unavailable": "Терминал недоступен",
     "process_terminated": "Процесс был прерван. Нажмите любую клавишу, чтобы закрыть.",
 
-    "no_tabs": "Нет вкладок",
-    "tab_content_placeholder": "Заполнитель содержимого вкладки",
     "settings_tab_title": "Настройки",
     "quick_launch_create_tab_title": "Создать быстрый запуск",
 

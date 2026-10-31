@@ -32,9 +32,15 @@ use crate::widgets::terminal_workspace::view::{
     pane_grid as terminal_pane_grid,
 };
 
+/// Height of the 1px `line` under the title bar. The design system has no
+/// size token for dividers.
 pub(crate) const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
+/// Width of the 1px `line` between the rail and the side panel.
 const SIDEBAR_SEPARATOR_WIDTH: f32 = 1.0;
+/// Width of the 1px `line` between the side panel and the main area.
 const PANE_GRID_SPACING: f32 = 1.0;
+/// Width of the invisible strip around the side panel edge that starts a
+/// resize.
 const PANE_GRID_RESIZE_GRAB: f32 = 8.0;
 
 /// Render the root application view.
@@ -241,11 +247,11 @@ fn view_sidebar_layout<'a>(
                 },
                 picked_split: iced::widget::pane_grid::Line {
                     color: line,
-                    width: 1.0,
+                    width: PANE_GRID_SPACING,
                 },
                 hovered_split: iced::widget::pane_grid::Line {
                     color: line,
-                    width: 1.0,
+                    width: PANE_GRID_SPACING,
                 },
             }
         });

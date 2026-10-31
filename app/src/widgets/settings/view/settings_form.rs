@@ -2,6 +2,7 @@ use iced::widget::{Space, column, container, row, scrollable, text};
 use iced::{Element, Length, Padding, Theme, alignment};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::form_section::FormSection;
+use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::select::select;
 use otty_ui_kit::components::setting_row::SettingRow;
@@ -16,11 +17,16 @@ use super::super::event::SettingsIntent;
 use super::super::model::SettingsViewModel;
 use super::super::types::{LanguageSetting, SettingsNode, SettingsSection};
 use crate::i18n::{self, Key};
-use crate::style::thin_scroll_style;
 use crate::theme::{BuiltinTheme, ThemeProps};
 
+/// Width of the settings navigation tree. No size token: the design system
+/// panel (`panel`, 260px) is wider than this short list needs.
 const NAV_WIDTH: f32 = 220.0;
+/// Width of the 1px `line` between the navigation and the form. The design
+/// system has no size token for dividers.
 const NAV_SEPARATOR_WIDTH: f32 = 1.0;
+/// Widest the form grows on large windows, so rows stay readable. No size
+/// token.
 const FORM_MAX_WIDTH: f32 = 720.0;
 
 /// Props for the settings form view.
@@ -70,13 +76,8 @@ fn settings_nav_tree<'a>(
     let scrollable = scrollable::Scrollable::new(tree_view.view())
         .width(Length::Fill)
         .height(Length::Fill)
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new()
-                .width(4)
-                .margin(0)
-                .scroller_width(4),
-        ))
-        .style(thin_scroll_style(props.theme.theme.iced_palette().clone()));
+        .direction(scrollbar::vertical())
+        .style(scrollbar::style(palette));
 
     container(scrollable)
         .width(Length::Fixed(NAV_WIDTH))
@@ -124,13 +125,8 @@ fn settings_form<'a>(
     let scrollable = scrollable::Scrollable::new(content)
         .width(Length::Fill)
         .height(Length::Fill)
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new()
-                .width(4)
-                .margin(0)
-                .scroller_width(4),
-        ))
-        .style(thin_scroll_style(props.theme.theme.iced_palette().clone()));
+        .direction(scrollbar::vertical())
+        .style(scrollbar::style(palette));
 
     container(scrollable)
         .width(Length::Fill)

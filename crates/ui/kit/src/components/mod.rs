@@ -19,6 +19,7 @@ pub mod kbd;
 pub mod key_value_field;
 pub mod menu;
 pub mod rail_button;
+pub mod scrollbar;
 pub mod segmented;
 pub mod select;
 pub mod setting_row;

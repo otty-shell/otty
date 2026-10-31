@@ -5,7 +5,9 @@ use iced::widget::pane_grid;
 
 use super::types::{SidebarItem, SidebarPane};
 
+/// Share of the window width the side panel takes when it opens.
 const SIDEBAR_DEFAULT_WORKSPACE_RATIO: f32 = 0.2;
+/// Share below which a dragged side panel collapses.
 const SIDEBAR_COLLAPSE_WORKSPACE_RATIO: f32 =
     SIDEBAR_DEFAULT_WORKSPACE_RATIO * 0.2;
 const SIDEBAR_RESIZE_HOVER_SUPPRESS_MS: u64 = 200;
@@ -193,4 +195,157 @@ impl Default for SidebarState {
 #[derive(Debug, Clone, Copy)]
 struct SidebarAddMenuState {
     cursor: Point,
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::Point;
+    use iced::widget::pane_grid;
+
+    use super::{
+        SIDEBAR_COLLAPSE_WORKSPACE_RATIO, SIDEBAR_DEFAULT_WORKSPACE_RATIO,
+        SidebarState,
+    };
+
+    /// Widest share the reducer lets the panel take (main area keeps 20%).
+    const MAX_RATIO: f32 = 0.8;
+
+    fn resize_to(state: &mut SidebarState, ratio: f32) -> bool {
+        let event = pane_grid::ResizeEvent {
+            split: state.split,
+            ratio,
+        };
+
+        state.apply_resize(event, MAX_RATIO)
+    }
+
+    #[test]
+    fn given_new_sidebar_when_created_then_panel_is_open_at_default_width() {
+        let state = SidebarState::default();
+
+        assert!(state.is_workspace_open());
+        assert!(!state.is_hidden());
+        assert!(!state.is_resizing());
+        assert_eq!(
+            state.effective_workspace_ratio(),
+            SIDEBAR_DEFAULT_WORKSPACE_RATIO
+        );
+    }
+
+    #[test]
+    fn given_hidden_sidebar_when_ratio_read_then_panel_takes_no_width() {
+        let mut state = SidebarState::default();
+
+        state.toggle_visibility();
+
+        assert!(state.is_hidden());
+        assert_eq!(state.effective_workspace_ratio(), 0.0);
+    }
+
+    #[test]
+    fn given_open_panel_when_toggled_twice_then_it_closes_and_reopens() {
+        let mut state = SidebarState::default();
+
+        assert!(state.toggle_workspace(MAX_RATIO));
+
+        assert!(!state.is_workspace_open());
+        assert_eq!(state.effective_workspace_ratio(), 0.0);
+
+        assert!(state.toggle_workspace(MAX_RATIO));
+
+        assert!(state.is_workspace_open());
+        assert_eq!(
+            state.effective_workspace_ratio(),
+            SIDEBAR_DEFAULT_WORKSPACE_RATIO
+        );
+    }
+
+    #[test]
+    fn given_wide_panel_when_reopened_then_previous_width_is_kept() {
+        let mut state = SidebarState::default();
+        assert!(resize_to(&mut state, 0.5));
+
+        state.toggle_workspace(MAX_RATIO);
+        state.toggle_workspace(MAX_RATIO);
+
+        assert_eq!(state.effective_workspace_ratio(), 0.5);
+    }
+
+    #[test]
+    fn given_closed_panel_when_ensured_open_then_it_opens_once() {
+        let mut state = SidebarState::default();
+        state.toggle_workspace(MAX_RATIO);
+
+        assert!(state.ensure_workspace_open(MAX_RATIO));
+        assert!(state.is_workspace_open());
+        assert!(!state.ensure_workspace_open(MAX_RATIO));
+    }
+
+    #[test]
+    fn given_open_panel_when_dragged_wider_than_max_then_width_is_capped() {
+        let mut state = SidebarState::default();
+
+        assert!(resize_to(&mut state, 0.95));
+
+        assert_eq!(state.effective_workspace_ratio(), MAX_RATIO);
+    }
+
+    #[test]
+    fn given_open_panel_when_dragged_below_collapse_width_then_it_closes() {
+        let mut state = SidebarState::default();
+
+        assert!(resize_to(
+            &mut state,
+            SIDEBAR_COLLAPSE_WORKSPACE_RATIO / 2.0
+        ));
+
+        assert!(!state.is_workspace_open());
+    }
+
+    #[test]
+    fn given_closed_panel_when_dragged_a_little_then_it_stays_closed() {
+        let mut state = SidebarState::default();
+        state.toggle_workspace(MAX_RATIO);
+
+        assert!(!resize_to(
+            &mut state,
+            SIDEBAR_COLLAPSE_WORKSPACE_RATIO / 2.0
+        ));
+
+        assert!(!state.is_workspace_open());
+    }
+
+    #[test]
+    fn given_closed_panel_when_dragged_past_collapse_width_then_it_opens() {
+        let mut state = SidebarState::default();
+        state.toggle_workspace(MAX_RATIO);
+
+        assert!(resize_to(&mut state, 0.5));
+
+        assert!(state.is_workspace_open());
+        assert_eq!(
+            state.effective_workspace_ratio(),
+            SIDEBAR_COLLAPSE_WORKSPACE_RATIO
+        );
+    }
+
+    #[test]
+    fn given_resize_just_marked_when_checked_then_sidebar_is_resizing() {
+        let mut state = SidebarState::default();
+
+        state.mark_resizing();
+
+        assert!(state.is_resizing());
+    }
+
+    #[test]
+    fn given_cursor_position_when_add_menu_opened_then_menu_opens_at_cursor() {
+        let mut state = SidebarState::default();
+        let cursor = Point::new(12.0, 34.0);
+
+        state.update_cursor(cursor);
+        state.open_add_menu();
+
+        assert_eq!(state.add_menu_cursor(), Some(cursor));
+    }
 }

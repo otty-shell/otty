@@ -14,7 +14,6 @@ mod icons;
 mod layout;
 mod services;
 mod state;
-mod style;
 mod theme;
 mod widgets;
 

@@ -11,8 +11,8 @@ use super::super::types::SshSecretKind;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
+/// Width of the dialog. The design system has no size token for dialogs.
 const DIALOG_WIDTH: f32 = 420.0;
-const BACKDROP_ALPHA: f32 = 0.5;
 
 /// Props for the SSH secret dialog.
 pub(crate) struct SecretPromptProps<'a> {
@@ -88,8 +88,8 @@ pub(crate) fn view(
             ..Default::default()
         });
 
-    let mut backdrop_color = props.theme.theme.iced_palette().black;
-    backdrop_color.a = BACKDROP_ALPHA;
+    // The window behind the dialog is dimmed with the overlay shadow color.
+    let backdrop_color = dialog_shadow.color;
 
     // `opaque` keeps clicks from reaching the UI behind the dialog.
     opaque(

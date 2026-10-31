@@ -1,9 +1,9 @@
 use std::fmt;
 
+use iced::Theme;
 use iced::theme::Palette;
-use iced::{Color, Theme};
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_term::{ColorPalette as TerminalColorPalette, parse_hex_color};
+use otty_ui_term::ColorPalette as TerminalColorPalette;
 
 /// Raw string-based color palette used for serialization and settings.
 #[derive(Debug, Clone)]
@@ -150,76 +150,6 @@ impl From<ColorPalette> for TerminalColorPalette {
     }
 }
 
-/// Parsed color palette ready for iced rendering.
-#[derive(Debug, Clone)]
-pub struct IcedColorPalette {
-    pub foreground: Color,
-    pub background: Color,
-    pub black: Color,
-    pub red: Color,
-    pub green: Color,
-    pub yellow: Color,
-    pub blue: Color,
-    pub magenta: Color,
-    pub cyan: Color,
-    pub white: Color,
-    pub bright_black: Color,
-    pub bright_red: Color,
-    pub bright_green: Color,
-    pub bright_yellow: Color,
-    pub bright_blue: Color,
-    pub bright_magenta: Color,
-    pub bright_cyan: Color,
-    pub bright_white: Color,
-    pub bright_foreground: Color,
-    pub dim_black: Color,
-    pub dim_red: Color,
-    pub dim_green: Color,
-    pub dim_yellow: Color,
-    pub dim_blue: Color,
-    pub dim_magenta: Color,
-    pub dim_cyan: Color,
-    pub dim_white: Color,
-    pub dim_foreground: Color,
-    pub overlay: Color,
-}
-
-impl From<&ColorPalette> for IcedColorPalette {
-    fn from(p: &ColorPalette) -> Self {
-        Self {
-            foreground: parse_hex_color(&p.foreground),
-            background: parse_hex_color(&p.background),
-            black: parse_hex_color(&p.black),
-            red: parse_hex_color(&p.red),
-            green: parse_hex_color(&p.green),
-            yellow: parse_hex_color(&p.yellow),
-            blue: parse_hex_color(&p.blue),
-            magenta: parse_hex_color(&p.magenta),
-            cyan: parse_hex_color(&p.cyan),
-            white: parse_hex_color(&p.white),
-            bright_black: parse_hex_color(&p.bright_black),
-            bright_red: parse_hex_color(&p.bright_red),
-            bright_green: parse_hex_color(&p.bright_green),
-            bright_yellow: parse_hex_color(&p.bright_yellow),
-            bright_blue: parse_hex_color(&p.bright_blue),
-            bright_magenta: parse_hex_color(&p.bright_magenta),
-            bright_cyan: parse_hex_color(&p.bright_cyan),
-            bright_white: parse_hex_color(&p.bright_white),
-            bright_foreground: parse_hex_color(&p.bright_foreground),
-            dim_black: parse_hex_color(&p.dim_black),
-            dim_red: parse_hex_color(&p.dim_red),
-            dim_green: parse_hex_color(&p.dim_green),
-            dim_yellow: parse_hex_color(&p.dim_yellow),
-            dim_blue: parse_hex_color(&p.dim_blue),
-            dim_magenta: parse_hex_color(&p.dim_magenta),
-            dim_cyan: parse_hex_color(&p.dim_cyan),
-            dim_white: parse_hex_color(&p.dim_white),
-            dim_foreground: parse_hex_color(&p.dim_foreground),
-            overlay: parse_hex_color(&p.overlay),
-        }
-    }
-}
-
 /// One of the two fixed themes of the app. Each theme is a complete set of
 /// terminal colors and UI color tokens; nothing is computed at run time.
 ///
@@ -288,20 +218,11 @@ impl fmt::Display for BuiltinTheme {
     }
 }
 
-/// Optional overrides for widget/component styling.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct StyleOverrides {
-    pub background: Option<Color>,
-    pub foreground: Option<Color>,
-    pub border_radius: Option<f32>,
-}
-
 /// Global application theme shared between UI and terminal.
 #[derive(Debug, Clone)]
 pub struct AppTheme {
     theme: BuiltinTheme,
     raw_palette: ColorPalette,
-    iced_palette: IcedColorPalette,
     ui: UiPalette,
 }
 
@@ -311,11 +232,6 @@ impl AppTheme {
         TerminalColorPalette::from(self.raw_palette.clone())
     }
 
-    /// Return the parsed iced color palette.
-    pub fn iced_palette(&self) -> &IcedColorPalette {
-        &self.iced_palette
-    }
-
     /// Return the UI color tokens of the theme.
     pub fn ui(&self) -> &UiPalette {
         &self.ui
@@ -323,13 +239,9 @@ impl AppTheme {
 
     /// Build the application theme for one of the built-in themes.
     pub fn new(theme: BuiltinTheme) -> Self {
-        let raw_palette = theme.terminal_palette();
-        let iced_palette = IcedColorPalette::from(&raw_palette);
-
         Self {
             theme,
-            raw_palette,
-            iced_palette,
+            raw_palette: theme.terminal_palette(),
             ui: theme.ui_palette(),
         }
     }
@@ -343,14 +255,14 @@ impl Default for AppTheme {
 
 impl From<&AppTheme> for Theme {
     fn from(value: &AppTheme) -> Self {
-        let palette = &value.iced_palette;
+        let ui = &value.ui;
         let palette = Palette {
-            background: palette.background,
-            text: palette.foreground,
-            primary: palette.blue,
-            success: palette.green,
-            danger: palette.red,
-            warning: palette.yellow,
+            background: ui.surface_canvas(),
+            text: ui.text_body(),
+            primary: ui.accent(),
+            success: ui.status_ok(),
+            danger: ui.status_error(),
+            warning: ui.status_warn(),
         };
 
         Theme::custom(value.theme.title().to_string(), palette)
@@ -361,16 +273,12 @@ impl From<&AppTheme> for Theme {
 #[derive(Debug, Clone, Copy)]
 pub struct ThemeProps<'a> {
     pub theme: &'a AppTheme,
-    pub overrides: Option<StyleOverrides>,
 }
 
 impl<'a> ThemeProps<'a> {
-    /// Create theme props with no overrides.
+    /// Create theme props for `theme`.
     pub fn new(theme: &'a AppTheme) -> Self {
-        Self {
-            theme,
-            overrides: None,
-        }
+        Self { theme }
     }
 }
 
@@ -576,7 +484,7 @@ mod tests {
         assert_eq!(app_theme.ui(), &UiPalette::otty_light());
         assert_eq!(app_theme.terminal_palette().background, "#fafbfc");
         assert_eq!(
-            app_theme.iced_palette().background,
+            app_theme.ui().surface_canvas(),
             Color::from_rgb8(0xfa, 0xfb, 0xfc)
         );
     }
@@ -595,12 +503,30 @@ mod tests {
     }
 
     #[test]
-    fn given_app_theme_when_converted_to_iced_then_primary_uses_accent_blue() {
-        let app_theme = AppTheme::new(BuiltinTheme::OttyLight);
+    fn given_each_theme_when_converted_to_iced_then_palette_uses_ui_tokens() {
+        for builtin in BuiltinTheme::ALL {
+            let app_theme = AppTheme::new(builtin);
+            let terminal = builtin.terminal_palette();
+            let ui = app_theme.ui();
 
-        let theme = Theme::from(&app_theme);
+            let palette = Theme::from(&app_theme).palette();
 
-        assert_eq!(theme.palette().primary, app_theme.iced_palette().blue);
+            assert_eq!(palette.background, ui.surface_canvas());
+            assert_eq!(palette.text, ui.text_body());
+            assert_eq!(palette.primary, ui.accent());
+            assert_eq!(palette.success, ui.status_ok());
+            assert_eq!(palette.danger, ui.status_error());
+            assert_eq!(palette.warning, ui.status_warn());
+            assert_eq!(
+                palette.background,
+                parse_hex_color(&terminal.background)
+            );
+            assert_eq!(palette.text, parse_hex_color(&terminal.foreground));
+            assert_eq!(palette.primary, parse_hex_color(&terminal.blue));
+            assert_eq!(palette.success, parse_hex_color(&terminal.green));
+            assert_eq!(palette.danger, parse_hex_color(&terminal.red));
+            assert_eq!(palette.warning, parse_hex_color(&terminal.yellow));
+        }
     }
 
     /// Read `#rrggbb` into its three channels.

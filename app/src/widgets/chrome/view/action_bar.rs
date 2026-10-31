@@ -8,8 +8,10 @@ use crate::i18n::{self, Key};
 use crate::icons::{LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY};
 use crate::theme::ThemeProps;
 
-/// Logo height; the width follows the logo proportions (145.36 x 103.12).
+/// Logo height in the title bar, set by the design system's iconography
+/// rules (logo-small, 20px high). No size token.
 const LOGO_HEIGHT: f32 = 20.0;
+/// Logo width; it follows the logo proportions (145.36 x 103.12).
 const LOGO_WIDTH: f32 = LOGO_HEIGHT * 145.36 / 103.12;
 
 /// Props for rendering the action bar.

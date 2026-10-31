@@ -1,6 +1,7 @@
 use iced::widget::text::Wrapping;
 use iced::widget::{column, container, scrollable, svg, text};
 use iced::{Element, Length, Padding, alignment};
+use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
@@ -11,9 +12,10 @@ use super::super::model::ExplorerTreeViewModel;
 use super::super::types::FileNode;
 use crate::i18n::{self, Key};
 use crate::icons::FILE;
-use crate::style::thin_scroll_style;
-use crate::theme::{IcedColorPalette, ThemeProps};
+use crate::theme::ThemeProps;
 
+/// Empty space under the last tree row, so it does not touch the window
+/// edge. The design system has no spacing step of 20px.
 const TREE_PADDING_BOTTOM: f32 = 20.0;
 
 /// Props for the explorer sidebar tree view.
@@ -27,11 +29,9 @@ pub(crate) struct SidebarTreeProps<'a> {
 pub(crate) fn view(
     props: SidebarTreeProps<'_>,
 ) -> Element<'_, ExplorerIntent, iced::Theme, iced::Renderer> {
-    let palette = props.theme.theme.iced_palette();
-
     let ui = props.theme.theme.ui();
     let current_dir = current_directory_bar(props.vm.root_label, ui);
-    let tree_list = explorer_tree(&props.vm, palette, ui);
+    let tree_list = explorer_tree(&props.vm, ui);
 
     let content = column![current_dir, tree_list]
         .width(Length::Fill)
@@ -78,7 +78,6 @@ fn current_directory_bar<'a>(
 /// Render the scrollable explorer tree.
 fn explorer_tree<'a>(
     vm: &ExplorerTreeViewModel<'a>,
-    palette: &'a IcedColorPalette,
     ui: &UiPalette,
 ) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
     let row_palette = ui.clone();
@@ -94,13 +93,8 @@ fn explorer_tree<'a>(
     let scrollable = scrollable::Scrollable::new(tree_view.view())
         .width(Length::Fill)
         .height(Length::Fill)
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new()
-                .width(4)
-                .margin(0)
-                .scroller_width(4),
-        ))
-        .style(thin_scroll_style(palette.clone()));
+        .direction(scrollbar::vertical())
+        .style(scrollbar::style(ui));
 
     container(scrollable)
         .width(Length::Fill)

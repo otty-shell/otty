@@ -5,6 +5,7 @@ use iced::{Element, Length, Theme};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::key_value_field::KeyValueField;
+use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::setting_row::SettingRow;
 use otty_ui_kit::components::text_field::TextField;
@@ -17,11 +18,12 @@ use super::super::state::WizardEditorState;
 use super::super::types::QuickLaunchType;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::i18n::{self, Key};
-use crate::style::thin_scroll_style;
 use crate::theme::ThemeProps;
 
-const FORM_PADDING: f32 = spacing::SPACE_6;
+/// Widest the form grows on large windows, so fields stay readable. No size
+/// token.
 const FORM_MAX_WIDTH: f32 = 720.0;
+/// Width of the SSH port field: room for five digits. No size token.
 const PORT_WIDTH: f32 = 96.0;
 
 type WizardElement<'a> = Element<'a, QuickLaunchIntent, Theme, iced::Renderer>;
@@ -87,12 +89,12 @@ pub(crate) fn view(props: WizardFormProps<'_>) -> WizardElement<'_> {
         ))
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(thin_scroll_style(props.theme.theme.iced_palette().clone()));
+        .style(scrollbar::style(palette));
 
     container(scrollable)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(FORM_PADDING)
+        .padding(spacing::SPACE_6)
         .into()
 }
 

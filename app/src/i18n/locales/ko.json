@@ -10,8 +10,6 @@
     "terminal_unavailable": "터미널을 사용할 수 없음",
     "process_terminated": "프로세스가 중단되었습니다. 아무 키나 눌러 닫으세요.",
 
-    "no_tabs": "탭 없음",
-    "tab_content_placeholder": "탭 콘텐츠 자리 표시자",
     "settings_tab_title": "설정",
     "quick_launch_create_tab_title": "빠른 실행 만들기",
 
