@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use super::types::{SshSecretKind, SshSecretRequest};
 use crate::i18n::{self, Key};
 
 /// Errors emitted during quick launch operations.
@@ -25,6 +26,9 @@ pub(crate) enum QuickLaunchError {
     /// An SSH connection attempt failed.
     #[error("{}", i18n::ssh_connection_failed(.0))]
     SshConnectionFailed(String),
+    /// An SSH connection needs a passphrase or password from the user.
+    #[error("{}", secret_prompt_title(.0.kind()))]
+    SshSecretRequired(SshSecretRequest),
     /// A configured working directory does not exist.
     #[error("{}", i18n::working_directory_not_found(.0))]
     WorkingDirectoryNotFound(String),
@@ -74,4 +78,14 @@ pub(crate) fn quick_launch_error_message(
     error: &dyn std::fmt::Display,
 ) -> String {
     i18n::launch_failed_body(command.title(), &error.to_string())
+}
+
+/// Title of the dialog that asks for an SSH secret of the given kind.
+pub(crate) fn secret_prompt_title(kind: SshSecretKind) -> &'static str {
+    match kind {
+        SshSecretKind::KeyPassphrase => {
+            i18n::t(Key::SecretPromptPassphraseTitle)
+        },
+        SshSecretKind::Password => i18n::t(Key::SecretPromptPasswordTitle),
+    }
 }

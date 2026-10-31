@@ -99,6 +99,12 @@
     "button_add": "Add",
     "button_add_env": "Add env",
     "button_reset": "Reset",
+    "button_connect": "Connect",
+
+    "secret_prompt_passphrase_title": "Key passphrase required",
+    "secret_prompt_password_title": "SSH password required",
+    "secret_prompt_wrong_passphrase": "Wrong passphrase. Try again.",
+    "secret_prompt_password_rejected": "The server rejected the password. Try again.",
 
     "section_general": "General",
     "section_terminal": "Terminal",
@@ -137,6 +143,8 @@
     "tpl_working_directory_not_directory": "Working directory is not a directory: {path}",
     "tpl_identity_file_not_found": "Identity file not found: {path}",
     "tpl_identity_file_not_file": "Identity file is not a file: {path}",
+    "tpl_secret_prompt_passphrase_body": "Enter the passphrase for the private key {path}",
+    "tpl_secret_prompt_password_body": "Enter the password for {target}",
     "tpl_program_not_found_in_path": "Program not found in PATH: {program}",
     "tpl_program_not_found": "Program not found: {program}",
     "tpl_program_is_directory": "Program is a directory: {program}",

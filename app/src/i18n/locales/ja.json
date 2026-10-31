@@ -99,6 +99,12 @@
     "button_add": "追加",
     "button_add_env": "環境変数を追加",
     "button_reset": "リセット",
+    "button_connect": "接続",
+
+    "secret_prompt_passphrase_title": "鍵のパスフレーズが必要です",
+    "secret_prompt_password_title": "SSH パスワードが必要です",
+    "secret_prompt_wrong_passphrase": "パスフレーズが正しくありません。もう一度お試しください。",
+    "secret_prompt_password_rejected": "サーバーがパスワードを拒否しました。もう一度お試しください。",
 
     "section_general": "全般",
     "section_terminal": "ターミナル",
@@ -137,6 +143,8 @@
     "tpl_working_directory_not_directory": "作業ディレクトリはディレクトリではありません：{path}",
     "tpl_identity_file_not_found": "ID ファイルが見つかりません：{path}",
     "tpl_identity_file_not_file": "ID ファイルはファイルではありません：{path}",
+    "tpl_secret_prompt_passphrase_body": "秘密鍵 {path} のパスフレーズを入力してください",
+    "tpl_secret_prompt_password_body": "{target} のパスワードを入力してください",
     "tpl_program_not_found_in_path": "PATH 内にプログラムが見つかりません：{program}",
     "tpl_program_not_found": "プログラムが見つかりません：{program}",
     "tpl_program_is_directory": "プログラムはディレクトリです：{program}",

@@ -311,6 +311,24 @@ pub(crate) fn identity_file_not_file(path: &str) -> String {
     )
 }
 
+/// Build the SSH secret dialog text asking for a key passphrase.
+pub(crate) fn secret_prompt_passphrase_body(path: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplSecretPromptPassphraseBody,
+        &[("path", path)],
+    )
+}
+
+/// Build the SSH secret dialog text asking for a password.
+pub(crate) fn secret_prompt_password_body(target: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplSecretPromptPasswordBody,
+        &[("target", target)],
+    )
+}
+
 /// Build the message shown when a program cannot be found in `PATH`.
 pub(crate) fn program_not_found_in_path(program: &str) -> String {
     fill_in(

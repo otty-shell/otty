@@ -7,7 +7,8 @@ use iced::Point;
 use super::types::{
     CommandLaunchOptions, CommandSpec, ContextMenuTarget, DropTarget, EnvVar,
     InlineEditKind, LaunchInfo, NodePath, QuickLaunch, QuickLaunchFile,
-    QuickLaunchType, SshLaunchOptions, WizardMode, WizardOptions,
+    QuickLaunchType, SshLaunchOptions, SshSecretRequest, WizardMode,
+    WizardOptions,
 };
 use crate::domain::exit_behavior::ExitBehavior;
 
@@ -31,6 +32,7 @@ pub(crate) struct QuickLaunchState {
     drop_target: Option<DropTarget>,
     cursor: Point,
     wizard: WizardState,
+    secret_prompt: Option<SecretPromptState>,
 }
 
 impl Default for QuickLaunchState {
@@ -53,6 +55,7 @@ impl Default for QuickLaunchState {
             drop_target: None,
             cursor: Point::ORIGIN,
             wizard: WizardState::default(),
+            secret_prompt: None,
         }
     }
 }
@@ -320,6 +323,90 @@ impl QuickLaunchState {
 
     pub(super) fn wizard_mut(&mut self) -> &mut WizardState {
         &mut self.wizard
+    }
+
+    pub(crate) fn secret_prompt(&self) -> Option<&SecretPromptState> {
+        self.secret_prompt.as_ref()
+    }
+
+    pub(super) fn secret_prompt_mut(
+        &mut self,
+    ) -> Option<&mut SecretPromptState> {
+        self.secret_prompt.as_mut()
+    }
+
+    pub(super) fn open_secret_prompt(&mut self, prompt: SecretPromptState) {
+        self.secret_prompt = Some(prompt);
+    }
+
+    pub(super) fn close_secret_prompt(&mut self) {
+        self.secret_prompt = None;
+    }
+
+    pub(super) fn take_secret_prompt(&mut self) -> Option<SecretPromptState> {
+        self.secret_prompt.take()
+    }
+}
+
+/// Dialog that asks for an SSH passphrase or password and then relaunches
+/// the quick launch with it.
+#[derive(Clone)]
+pub(crate) struct SecretPromptState {
+    path: NodePath,
+    command: Box<QuickLaunch>,
+    request: SshSecretRequest,
+    value: String,
+    input_id: iced::widget::Id,
+}
+
+impl SecretPromptState {
+    /// What secret to ask for and why.
+    pub(crate) fn request(&self) -> &SshSecretRequest {
+        &self.request
+    }
+
+    /// Secret typed so far.
+    pub(crate) fn value(&self) -> &str {
+        &self.value
+    }
+
+    /// Widget id of the secret input, used to focus it.
+    pub(crate) fn input_id(&self) -> &iced::widget::Id {
+        &self.input_id
+    }
+
+    pub(super) fn new(
+        path: NodePath,
+        command: Box<QuickLaunch>,
+        request: SshSecretRequest,
+    ) -> Self {
+        Self {
+            path,
+            command,
+            request,
+            value: String::new(),
+            input_id: iced::widget::Id::unique(),
+        }
+    }
+
+    pub(super) fn set_value(&mut self, value: String) {
+        self.value = value;
+    }
+
+    /// Consume the prompt into the launch it belongs to and the typed secret.
+    pub(super) fn into_launch(self) -> (NodePath, QuickLaunch, String) {
+        (self.path, *self.command, self.value)
+    }
+}
+
+/// Hide the typed secret so it never reaches logs.
+impl std::fmt::Debug for SecretPromptState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretPromptState")
+            .field("path", &self.path)
+            .field("request", &self.request)
+            .field("value", &"<redacted>")
+            .finish()
     }
 }
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use otty_libterm::pty::{self, SSHAuth, Session};
+use otty_libterm::pty::{self, SSHAuth, Session, SessionError};
 use otty_ui_term::settings::{
     LocalSessionOptions, SSHSessionOptions, SessionKind,
 };
@@ -14,6 +14,7 @@ use super::state::WizardEditorState;
 use super::types::{
     CommandSpec, CustomCommand, EnvVar, NodePath, PreparedQuickLaunch,
     QuickLaunch, QuickLaunchSetupOutcome, QuickLaunchType, SshCommand,
+    SshSecretKind, SshSecretRequest,
 };
 use crate::services::terminal_settings_for_session;
 
@@ -22,12 +23,14 @@ const QUICK_LAUNCH_SSH_TIMEOUT: Duration = Duration::from_secs(15);
 /// Prepare a quick launch command asynchronously.
 ///
 /// Validates the command, resolves paths, and returns a prepared launch
-/// or an error/canceled outcome.
+/// or an error/canceled outcome. `secret` is the SSH key passphrase or
+/// password typed by the user; it lives only in memory for this launch.
 pub(crate) async fn prepare_quick_launch_setup(
     command: QuickLaunch,
     path: NodePath,
     launch_id: u64,
     terminal_settings: otty_ui_term::settings::Settings,
+    secret: Option<String>,
     cancel: Arc<AtomicBool>,
 ) -> QuickLaunchSetupOutcome {
     if cancel.load(Ordering::Relaxed) {
@@ -47,16 +50,12 @@ pub(crate) async fn prepare_quick_launch_setup(
         return QuickLaunchSetupOutcome::Canceled { path, launch_id };
     }
 
-    if let Err(error) = probe_launch_runtime(&command, &cancel) {
-        return QuickLaunchSetupOutcome::Failed {
-            path,
-            launch_id,
-            command: Box::new(command),
-            error: Arc::new(error),
-        };
+    let secret = secret.as_deref();
+    if let Err(error) = probe_launch_runtime(&command, secret, &cancel) {
+        return probe_failure_outcome(path, launch_id, command, error);
     }
 
-    let session = command_session(&command, &cancel);
+    let session = command_session(&command, secret, &cancel);
     let settings = terminal_settings_for_session(&terminal_settings, session);
     let title = command.title().to_string();
 
@@ -99,19 +98,47 @@ fn validate_command(command: &QuickLaunch) -> Result<(), QuickLaunchError> {
 
 fn probe_launch_runtime(
     command: &QuickLaunch,
+    secret: Option<&str>,
     cancel: &Arc<AtomicBool>,
 ) -> Result<(), QuickLaunchError> {
     match command.spec() {
         CommandSpec::Custom { .. } => Ok(()),
-        CommandSpec::Ssh { ssh } => probe_ssh_session(ssh, cancel),
+        CommandSpec::Ssh { ssh } => probe_ssh_session(ssh, secret, cancel),
+    }
+}
+
+/// Build the outcome for a failed probe: ask the user for a secret when the
+/// SSH session needs one, otherwise report the failure.
+fn probe_failure_outcome(
+    path: NodePath,
+    launch_id: u64,
+    command: QuickLaunch,
+    error: QuickLaunchError,
+) -> QuickLaunchSetupOutcome {
+    match error {
+        QuickLaunchError::SshSecretRequired(request) => {
+            QuickLaunchSetupOutcome::SecretRequired {
+                path,
+                launch_id,
+                command: Box::new(command),
+                request,
+            }
+        },
+        _ => QuickLaunchSetupOutcome::Failed {
+            path,
+            launch_id,
+            command: Box::new(command),
+            error: Arc::new(error),
+        },
     }
 }
 
 fn probe_ssh_session(
     ssh: &super::types::SshCommand,
+    secret: Option<&str>,
     cancel: &Arc<AtomicBool>,
 ) -> Result<(), QuickLaunchError> {
-    let options = ssh_session(ssh, cancel);
+    let options = ssh_session(ssh, secret, cancel);
     let mut builder = pty::ssh()
         .with_host(options.host())
         .with_user(options.user())
@@ -125,15 +152,57 @@ fn probe_ssh_session(
         builder = builder.with_cancel_token(cancel_token.clone());
     }
 
-    let mut session = builder.spawn().map_err(|err| {
-        QuickLaunchError::SshConnectionFailed(format!("{err}"))
-    })?;
+    let mut session = builder
+        .spawn()
+        .map_err(|err| ssh_connection_error(err, &options))?;
     let _ = session.close();
     Ok(())
 }
 
+/// Map an SSH session error to a launch error. Missing or wrong secrets
+/// become a request to ask the user again.
+fn ssh_connection_error(
+    err: SessionError,
+    options: &SSHSessionOptions,
+) -> QuickLaunchError {
+    let key_target = || match options.auth() {
+        SSHAuth::KeyFile {
+            private_key_path, ..
+        } => private_key_path,
+        _ => String::new(),
+    };
+    let password_target = || format!("{}@{}", options.user(), options.host());
+
+    let request = match err {
+        SessionError::PassphraseRequired => SshSecretRequest::new(
+            SshSecretKind::KeyPassphrase,
+            key_target(),
+            false,
+        ),
+        SessionError::WrongPassphrase => SshSecretRequest::new(
+            SshSecretKind::KeyPassphrase,
+            key_target(),
+            true,
+        ),
+        SessionError::PasswordRequired => SshSecretRequest::new(
+            SshSecretKind::Password,
+            password_target(),
+            false,
+        ),
+        SessionError::PasswordRejected => SshSecretRequest::new(
+            SshSecretKind::Password,
+            password_target(),
+            true,
+        ),
+        _ => return QuickLaunchError::SshConnectionFailed(format!("{err}")),
+    };
+
+    QuickLaunchError::SshSecretRequired(request)
+}
+
 fn command_session(
     command: &QuickLaunch,
+    secret: Option<&str>,
     cancel: &Arc<AtomicBool>,
 ) -> SessionKind {
     match command.spec() {
@@ -141,7 +210,7 @@ fn command_session(
             SessionKind::from_local_options(custom_session(custom))
         },
         CommandSpec::Ssh { ssh } => {
-            SessionKind::from_ssh_options(ssh_session(ssh, cancel))
+            SessionKind::from_ssh_options(ssh_session(ssh, secret, cancel))
         },
     }
 }
@@ -165,6 +234,7 @@ fn custom_session(custom: &super::types::CustomCommand) -> LocalSessionOptions {
 
 fn ssh_session(
     ssh: &super::types::SshCommand,
+    secret: Option<&str>,
     cancel: &Arc<AtomicBool>,
 ) -> SSHSessionOptions {
     let host = format!("{}:{}", ssh.host(), ssh.port());
@@ -181,9 +251,11 @@ fn ssh_session(
         .filter(|path| !path.trim().is_empty())
         .map(|path| SSHAuth::KeyFile {
             private_key_path: expand_home_dir(path),
-            passphrase: None,
+            passphrase: secret.map(String::from),
         })
-        .unwrap_or_else(|| SSHAuth::Password(String::new()));
+        .unwrap_or_else(|| {
+            SSHAuth::Password(secret.unwrap_or_default().to_string())
+        });
 
     SSHSessionOptions::default()
         .with_host(&host)
@@ -548,7 +620,7 @@ mod tests {
         };
 
         let cancel = Arc::new(AtomicBool::new(false));
-        let session = command_session(&command, &cancel);
+        let session = command_session(&command, None, &cancel);
         let SessionKind::Local(options) = session else {
             panic!("expected local session");
         };
@@ -638,7 +710,7 @@ mod tests {
         };
         let cancel = Arc::new(AtomicBool::new(false));
 
-        let options = ssh_session(&ssh, &cancel);
+        let options = ssh_session(&ssh, None, &cancel);
 
         let SSHAuth::KeyFile {
             private_key_path, ..
@@ -647,6 +719,190 @@ mod tests {
             panic!("expected key file auth");
         };
         assert_eq!(private_key_path, format!("{home}/.ssh/id_ed25519"));
+    }
+
+    fn ssh_command(identity_file: Option<&str>) -> SshCommand {
+        SshCommand {
+            host: String::from("example.com"),
+            port: 2222,
+            user: Some(String::from("alice")),
+            identity_file: identity_file.map(String::from),
+            extra_args: Vec::new(),
+        }
+    }
+
+    fn ssh_command_launch(identity_file: Option<&str>) -> QuickLaunch {
+        QuickLaunch {
+            title: String::from("Server"),
+            spec: CommandSpec::Ssh {
+                ssh: ssh_command(identity_file),
+            },
+            exit_behavior: ExitBehavior::Close,
+        }
+    }
+
+    #[test]
+    fn given_secret_and_identity_file_when_building_ssh_session_then_secret_is_passphrase()
+     {
+        let ssh = ssh_command(Some("/keys/id_ed25519"));
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        let options = ssh_session(&ssh, Some("open sesame"), &cancel);
+
+        let SSHAuth::KeyFile { passphrase, .. } = options.auth() else {
+            panic!("expected key file auth");
+        };
+        assert_eq!(passphrase.as_deref(), Some("open sesame"));
+    }
+
+    #[test]
+    fn given_secret_without_identity_file_when_building_ssh_session_then_secret_is_password()
+     {
+        let ssh = ssh_command(None);
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        let options = ssh_session(&ssh, Some("hunter2"), &cancel);
+
+        let SSHAuth::Password(password) = options.auth() else {
+            panic!("expected password auth");
+        };
+        assert_eq!(password, "hunter2");
+    }
+
+    #[test]
+    fn given_no_secret_without_identity_file_when_building_ssh_session_then_password_is_empty()
+     {
+        let ssh = ssh_command(None);
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        let options = ssh_session(&ssh, None, &cancel);
+
+        let SSHAuth::Password(password) = options.auth() else {
+            panic!("expected password auth");
+        };
+        assert!(password.is_empty());
+    }
+
+    #[test]
+    fn given_passphrase_required_when_mapping_ssh_error_then_passphrase_is_requested()
+     {
+        let ssh = ssh_command(Some("/keys/id_ed25519"));
+        let options =
+            ssh_session(&ssh, None, &Arc::new(AtomicBool::new(false)));
+
+        let error =
+            ssh_connection_error(SessionError::PassphraseRequired, &options);
+
+        let QuickLaunchError::SshSecretRequired(request) = error else {
+            panic!("expected secret request");
+        };
+        assert_eq!(request.kind(), SshSecretKind::KeyPassphrase);
+        assert_eq!(request.target(), "/keys/id_ed25519");
+        assert!(!request.is_retry());
+    }
+
+    #[test]
+    fn given_wrong_passphrase_when_mapping_ssh_error_then_passphrase_is_requested_again()
+     {
+        let ssh = ssh_command(Some("/keys/id_ed25519"));
+        let options =
+            ssh_session(&ssh, Some("bad"), &Arc::new(AtomicBool::new(false)));
+
+        let error =
+            ssh_connection_error(SessionError::WrongPassphrase, &options);
+
+        let QuickLaunchError::SshSecretRequired(request) = error else {
+            panic!("expected secret request");
+        };
+        assert_eq!(request.kind(), SshSecretKind::KeyPassphrase);
+        assert!(request.is_retry());
+    }
+
+    #[test]
+    fn given_password_required_when_mapping_ssh_error_then_password_is_requested()
+     {
+        let ssh = ssh_command(None);
+        let options =
+            ssh_session(&ssh, None, &Arc::new(AtomicBool::new(false)));
+
+        let error =
+            ssh_connection_error(SessionError::PasswordRequired, &options);
+
+        let QuickLaunchError::SshSecretRequired(request) = error else {
+            panic!("expected secret request");
+        };
+        assert_eq!(request.kind(), SshSecretKind::Password);
+        assert_eq!(request.target(), "alice@example.com:2222");
+        assert!(!request.is_retry());
+    }
+
+    #[test]
+    fn given_rejected_password_when_mapping_ssh_error_then_password_is_requested_again()
+     {
+        let ssh = ssh_command(None);
+        let options =
+            ssh_session(&ssh, Some("bad"), &Arc::new(AtomicBool::new(false)));
+
+        let error =
+            ssh_connection_error(SessionError::PasswordRejected, &options);
+
+        let QuickLaunchError::SshSecretRequired(request) = error else {
+            panic!("expected secret request");
+        };
+        assert_eq!(request.kind(), SshSecretKind::Password);
+        assert!(request.is_retry());
+    }
+
+    #[test]
+    fn given_other_ssh_error_when_mapping_then_connection_failed() {
+        let ssh = ssh_command(None);
+        let options =
+            ssh_session(&ssh, None, &Arc::new(AtomicBool::new(false)));
+
+        let error = ssh_connection_error(SessionError::NoAddresses, &options);
+
+        assert!(matches!(error, QuickLaunchError::SshConnectionFailed(_)));
+    }
+
+    #[test]
+    fn given_secret_request_when_probe_fails_then_outcome_asks_for_secret() {
+        let request = SshSecretRequest::new(
+            SshSecretKind::Password,
+            String::from("alice@example.com:2222"),
+            false,
+        );
+
+        let outcome = probe_failure_outcome(
+            vec![String::from("Server")],
+            7,
+            ssh_command_launch(None),
+            QuickLaunchError::SshSecretRequired(request.clone()),
+        );
+
+        let QuickLaunchSetupOutcome::SecretRequired {
+            path,
+            launch_id,
+            request: outcome_request,
+            ..
+        } = outcome
+        else {
+            panic!("expected secret required outcome");
+        };
+        assert_eq!(path, vec![String::from("Server")]);
+        assert_eq!(launch_id, 7);
+        assert_eq!(outcome_request, request);
+    }
+
+    #[test]
+    fn given_other_error_when_probe_fails_then_outcome_is_failed() {
+        let outcome = probe_failure_outcome(
+            vec![String::from("Server")],
+            7,
+            ssh_command_launch(None),
+            QuickLaunchError::HostRequired,
+        );
+
+        assert!(matches!(outcome, QuickLaunchSetupOutcome::Failed { .. }));
     }
 
     #[test]

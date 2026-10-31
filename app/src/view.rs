@@ -17,7 +17,8 @@ use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::quick_launch::QuickLaunchEvent;
 use crate::widgets::quick_launch::view::{
-    context_menu as ql_context_menu, error_tab, sidebar_panel, wizard_form,
+    context_menu as ql_context_menu, error_tab, secret_prompt, sidebar_panel,
+    wizard_form,
 };
 use crate::widgets::settings::SettingsEvent;
 use crate::widgets::settings::view::settings_form;
@@ -98,6 +99,19 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         layers.push(overlay);
     }
 
+    // SSH secret dialog stays on top of every other overlay.
+    if let Some(prompt) = app.widgets.quick_launch.secret_prompt() {
+        layers.push(
+            secret_prompt::view(secret_prompt::SecretPromptProps {
+                prompt,
+                theme: theme_props,
+            })
+            .map(|event| {
+                AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
+            }),
+        );
+    }
+
     let content_stack = iced::widget::Stack::with_children(layers)
         .width(Length::Fill)
         .height(Length::Fill);
@@ -111,6 +125,7 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     #[cfg(not(target_os = "macos"))]
     let resize_grips_layer = if app.widgets.sidebar.has_add_menu_open()
         || app.widgets.quick_launch.context_menu().is_some()
+        || app.widgets.quick_launch.secret_prompt().is_some()
         || app.widgets.terminal_workspace.has_any_context_menu()
     {
         container(Space::new())

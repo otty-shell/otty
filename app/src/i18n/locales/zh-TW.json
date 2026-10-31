@@ -99,6 +99,12 @@
     "button_add": "新增",
     "button_add_env": "新增環境變數",
     "button_reset": "重設",
+    "button_connect": "連線",
+
+    "secret_prompt_passphrase_title": "需要金鑰密語",
+    "secret_prompt_password_title": "需要 SSH 密碼",
+    "secret_prompt_wrong_passphrase": "密語錯誤，請再試一次。",
+    "secret_prompt_password_rejected": "伺服器拒絕了密碼，請再試一次。",
 
     "section_general": "一般",
     "section_terminal": "終端機",
@@ -137,6 +143,8 @@
     "tpl_working_directory_not_directory": "工作目錄路徑不是目錄：{path}",
     "tpl_identity_file_not_found": "找不到身分檔案：{path}",
     "tpl_identity_file_not_file": "身分檔案路徑不是檔案：{path}",
+    "tpl_secret_prompt_passphrase_body": "請輸入私密金鑰 {path} 的密語",
+    "tpl_secret_prompt_password_body": "請輸入 {target} 的密碼",
     "tpl_program_not_found_in_path": "在 PATH 中找不到程式：{program}",
     "tpl_program_not_found": "找不到程式：{program}",
     "tpl_program_is_directory": "程式路徑是目錄：{program}",

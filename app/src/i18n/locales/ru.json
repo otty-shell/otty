@@ -99,6 +99,12 @@
     "button_add": "Добавить",
     "button_add_env": "Добавить переменную",
     "button_reset": "Сбросить",
+    "button_connect": "Подключиться",
+
+    "secret_prompt_passphrase_title": "Нужна парольная фраза ключа",
+    "secret_prompt_password_title": "Нужен пароль SSH",
+    "secret_prompt_wrong_passphrase": "Неверная парольная фраза. Попробуйте ещё раз.",
+    "secret_prompt_password_rejected": "Сервер отклонил пароль. Попробуйте ещё раз.",
 
     "section_general": "Общие",
     "section_terminal": "Терминал",
@@ -137,6 +143,8 @@
     "tpl_working_directory_not_directory": "Рабочий путь не является каталогом: {path}",
     "tpl_identity_file_not_found": "Файл идентификации не найден: {path}",
     "tpl_identity_file_not_file": "Путь к файлу идентификации не является файлом: {path}",
+    "tpl_secret_prompt_passphrase_body": "Введите парольную фразу для приватного ключа {path}",
+    "tpl_secret_prompt_password_body": "Введите пароль для {target}",
     "tpl_program_not_found_in_path": "Программа не найдена в PATH: {program}",
     "tpl_program_not_found": "Программа не найдена: {program}",
     "tpl_program_is_directory": "Программа является каталогом: {program}",

@@ -148,6 +148,18 @@ pub(crate) enum Key {
     ButtonAddEnv,
     /// Restore settings to the persisted baseline.
     ButtonReset,
+    /// Connect with the secret typed in the SSH secret dialog.
+    ButtonConnect,
+
+    // SSH secret dialog.
+    /// Dialog title when a private key needs its passphrase.
+    SecretPromptPassphraseTitle,
+    /// Dialog title when the server needs a password.
+    SecretPromptPasswordTitle,
+    /// Shown when the typed passphrase did not unlock the key.
+    SecretPromptWrongPassphrase,
+    /// Shown when the server rejected the typed password.
+    SecretPromptPasswordRejected,
 
     // Settings sections and fields.
     /// General settings section.
@@ -224,6 +236,10 @@ pub(crate) enum Key {
     TplIdentityFileNotFound,
     /// SSH identity path is not a file. Placeholder: `{path}`.
     TplIdentityFileNotFile,
+    /// SSH secret dialog text for a key passphrase. Placeholder: `{path}`.
+    TplSecretPromptPassphraseBody,
+    /// SSH secret dialog text for a password. Placeholder: `{target}`.
+    TplSecretPromptPasswordBody,
     /// Program is absent from `PATH`. Placeholder: `{program}`.
     TplProgramNotFoundInPath,
     /// Explicit program path is missing. Placeholder: `{program}`.
@@ -239,7 +255,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 101] = [
+    pub(super) const ALL: [Self; 108] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -301,6 +317,11 @@ impl Key {
         Self::ButtonAdd,
         Self::ButtonAddEnv,
         Self::ButtonReset,
+        Self::ButtonConnect,
+        Self::SecretPromptPassphraseTitle,
+        Self::SecretPromptPasswordTitle,
+        Self::SecretPromptWrongPassphrase,
+        Self::SecretPromptPasswordRejected,
         Self::SectionGeneral,
         Self::SectionTerminal,
         Self::SectionAppearance,
@@ -336,6 +357,8 @@ impl Key {
         Self::TplWorkingDirectoryNotDirectory,
         Self::TplIdentityFileNotFound,
         Self::TplIdentityFileNotFile,
+        Self::TplSecretPromptPassphraseBody,
+        Self::TplSecretPromptPasswordBody,
         Self::TplProgramNotFoundInPath,
         Self::TplProgramNotFound,
         Self::TplProgramIsDirectory,
