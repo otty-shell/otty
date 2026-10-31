@@ -47,18 +47,17 @@ fn handle_effect(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
 }
 
 fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
-    app.theme_manager
-        .set_custom_palette(data.to_color_palette());
+    app.theme_manager.set_theme(data.theme());
     let current_theme = app.theme_manager.current();
+    let terminal_palette = current_theme.terminal_palette();
+
     app.terminal_settings = Settings {
         font: FontSettings {
             size: app.fonts.terminal.size,
             font_type: app.fonts.terminal.font_type,
             ..FontSettings::default()
         },
-        theme: ThemeSettings::new(Box::new(
-            current_theme.terminal_palette().clone(),
-        )),
+        theme: ThemeSettings::new(Box::new(terminal_palette.clone())),
         backend: BackendSettings::default(),
         interaction: InteractionSettings::default()
             .with_block_selection_mode(BlockSelectionMode::CommandOnly),
@@ -72,9 +71,6 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
             fallback_shell_session_with_shell(&shell_path)
         },
     };
-
-    let palette = data.to_color_palette();
-    let terminal_palette: otty_ui_term::ColorPalette = palette.into();
 
     Task::batch(vec![
         Task::done(AppEvent::Tabs(TabsEvent::Intent(

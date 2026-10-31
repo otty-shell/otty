@@ -1,13 +1,23 @@
 //! WCAG 2.1 contrast ratio between two colors.
 //!
-//! Only the palette tests use it today, so the module is compiled for tests
-//! only.
+//! Palette tests use it to check that text and marks stay readable on each
+//! theme's surfaces, here and in the app's terminal palettes.
 
 use iced::Color;
 
 /// Returns the WCAG 2.1 contrast ratio of two opaque colors, from 1 (same
 /// color) to 21 (black on white). The order of the colors does not matter.
-pub(crate) fn contrast_ratio(a: Color, b: Color) -> f32 {
+///
+/// # Example
+///
+/// ```
+/// use iced::Color;
+/// use otty_ui_kit::contrast::contrast_ratio;
+///
+/// let ratio = contrast_ratio(Color::BLACK, Color::WHITE);
+/// assert!((ratio - 21.0).abs() < 0.001);
+/// ```
+pub fn contrast_ratio(a: Color, b: Color) -> f32 {
     let a = relative_luminance(a);
     let b = relative_luminance(b);
 

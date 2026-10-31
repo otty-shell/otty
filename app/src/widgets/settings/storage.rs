@@ -111,6 +111,7 @@ mod tests {
         save_settings_to_path,
     };
     use crate::i18n::Locale;
+    use crate::theme::BuiltinTheme;
     use crate::widgets::settings::types::LanguageSetting;
 
     #[test]
@@ -120,7 +121,7 @@ mod tests {
         let mut settings = SettingsData::default();
         settings.set_terminal_shell(String::from("/bin/zsh"));
         settings.set_terminal_editor(String::from("vim"));
-        settings.set_theme_palette_entry(0, String::from("#112233"));
+        settings.set_theme(BuiltinTheme::OttyLight);
         settings.set_language(LanguageSetting::Fixed(Locale::ZhCn));
 
         save_settings_to_path(&path, &settings)
@@ -170,6 +171,36 @@ mod tests {
 
         assert_eq!(loaded_settings, SettingsData::default());
         assert!(matches!(loaded_status, SettingsLoadStatus::Missing));
+
+        fs::remove_dir_all(&root)
+            .expect("temporary directory should be removed");
+    }
+
+    #[test]
+    fn given_old_palette_file_when_loaded_and_saved_then_theme_name_replaces_palette()
+     {
+        let root = test_temp_dir("old_palette");
+        let path = root.join("settings.json");
+        let old_payload = serde_json::json!({
+            "terminal": { "shell": "/bin/zsh" },
+            "theme": { "palette": ["#282A36", "#F8F8F2"] }
+        });
+        fs::write(&path, old_payload.to_string())
+            .expect("old settings payload should be written");
+
+        let (loaded_settings, _) = load_settings_from_path(&path)
+            .expect("old settings should load")
+            .into_parts();
+        save_settings_to_path(&path, &loaded_settings)
+            .expect("settings should save successfully");
+        let saved: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(&path).expect("saved settings should be read"),
+        )
+        .expect("saved settings should be valid JSON");
+
+        assert_eq!(loaded_settings.theme(), BuiltinTheme::OttyDark);
+        assert_eq!(loaded_settings.terminal_shell(), "/bin/zsh");
+        assert_eq!(saved["theme"], serde_json::json!({ "name": "otty-dark" }));
 
         fs::remove_dir_all(&root)
             .expect("temporary directory should be removed");

@@ -178,10 +178,8 @@ pub(crate) enum Key {
     FieldPaneLayout,
     /// Option that keeps sibling pane widths even after layout changes.
     OptionEqualizePanes,
-    /// Theme preset field label.
+    /// Theme selector field label.
     FieldPreset,
-    /// Placeholder shown when no theme preset matches the palette.
-    PresetPlaceholderCustom,
     /// Language option that follows the operating system locale.
     LanguageSystem,
 
@@ -224,8 +222,6 @@ pub(crate) enum Key {
     TplLaunchFailedBody,
     /// Message for a terminal that failed to start. Placeholder: `{error}`.
     TplTerminalInitFailed,
-    /// Label for a palette color with no name. Placeholder: `{index}`.
-    TplPaletteFallbackLabel,
     /// SSH connection failure. Placeholder: `{error}`.
     TplSshConnectionFailed,
     /// Missing working directory. Placeholder: `{path}`.
@@ -255,7 +251,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 108] = [
+    pub(super) const ALL: [Self; 106] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -331,7 +327,6 @@ impl Key {
         Self::FieldPaneLayout,
         Self::OptionEqualizePanes,
         Self::FieldPreset,
-        Self::PresetPlaceholderCustom,
         Self::LanguageSystem,
         Self::ErrIoPrefix,
         Self::ErrJsonPrefix,
@@ -351,7 +346,6 @@ impl Key {
         Self::TplLaunchFailedTitle,
         Self::TplLaunchFailedBody,
         Self::TplTerminalInitFailed,
-        Self::TplPaletteFallbackLabel,
         Self::TplSshConnectionFailed,
         Self::TplWorkingDirectoryNotFound,
         Self::TplWorkingDirectoryNotDirectory,

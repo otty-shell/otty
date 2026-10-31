@@ -1,6 +1,6 @@
 # 03 — Two themes: add OTTY Light, remove other presets and the palette editor, store the theme name
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Opus 5.5 (claude-opus-5-5)
 Blocked by: 02
@@ -27,7 +27,7 @@ Settings; the settings file stores its name.
 
 Fixed by the design system (`tokens.json`): background, foreground, red, green,
 yellow, blue, magenta, cyan, bright_black. The rest was chosen on 2026-10-31
-with these rules: every normal and bright color except `bright_black` reaches
+with these rules: every normal and bright color except `bright_black` and `bright_white` reaches
 4.5:1 on the background; `white` and `bright_white` are greys readable on a
 light background; `dim_*` = 60% of the normal color + 40% background, which
 gives about 2.5:1, the same as the dim colors of OTTY Dark; the four UI-facing
@@ -76,3 +76,11 @@ fields mirror their OTTY Dark roles.
 ## Done when
 
 - Settings › Appearance offers only OTTY Dark and OTTY Light; selecting OTTY Light redraws the terminal in light colors (the UI chrome follows after tickets 07–13).
+
+## Answer
+
+- `BuiltinTheme { OttyDark, OttyLight }` lives in `app/src/theme.rs` (not in settings, so the theme module does not depend on a widget); `ColorPalette::otty_dark()` / `otty_light()`; `AppTheme::new(BuiltinTheme)`; `ThemeManager::set_theme`.
+- Settings file: `{"theme": {"name": "otty-dark" | "otty-light"}}`; old palette-only files load as OTTY Dark and are rewritten on the next save.
+- Removed: other presets, palette editor, `settings/services.rs`, `palette_labels` in all locales and their keys.
+- `otty_ui_kit::contrast::contrast_ratio` is now public: the app tests the OTTY Light terminal palette with it.
+- The theme field label still uses the `FieldPreset` key ("Preset"); renamed in ticket 12.

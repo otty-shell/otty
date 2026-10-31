@@ -2,23 +2,19 @@ use iced::widget::button::Status as ButtonStatus;
 use iced::widget::pick_list::Status as PickListStatus;
 use iced::widget::text::Wrapping;
 use iced::widget::{
-    Column, Space, button, checkbox, column, container, pick_list, row,
-    scrollable, text, text_input,
+    Space, button, checkbox, column, container, pick_list, row, scrollable,
+    text, text_input,
 };
-use iced::{Color, Element, Length, Theme, alignment};
-use otty_ui_term::parse_hex_color;
+use iced::{Element, Length, Theme, alignment};
 use otty_ui_tree::{TreeRowContext, TreeView};
 
 use super::super::event::SettingsIntent;
 use super::super::model::SettingsViewModel;
-use super::super::services::is_valid_hex_color;
-use super::super::types::{
-    LanguageSetting, SettingsNode, SettingsPreset, SettingsSection,
-};
+use super::super::types::{LanguageSetting, SettingsNode, SettingsSection};
 use crate::i18n::{self, Key};
 use crate::layout::{BUTTON_RADIUS_ROUNDED, BUTTON_SIZE_COMPACT};
 use crate::style::{thin_scroll_style, tree_row_style};
-use crate::theme::{IcedColorPalette, ThemeProps};
+use crate::theme::{BuiltinTheme, IcedColorPalette, ThemeProps};
 
 const HEADER_HEIGHT: f32 = 32.0;
 const HEADER_PADDING_X: f32 = 12.0;
@@ -44,11 +40,7 @@ const FORM_INPUT_HEIGHT: f32 = 28.0;
 const FORM_INPUT_PADDING_X: f32 = 8.0;
 const FORM_INPUT_PADDING_Y: f32 = 4.0;
 const FORM_INPUT_FONT_SIZE: f32 = 12.0;
-const PRESET_MENU_MAX_HEIGHT: f32 = 240.0;
-
-const PALETTE_ROW_SPACING: f32 = 8.0;
-const PALETTE_SWATCH_SIZE: f32 = 16.0;
-const PALETTE_SWATCH_BORDER: f32 = 1.0;
+const PICK_LIST_MENU_MAX_HEIGHT: f32 = 240.0;
 
 /// Props for the settings form view.
 pub(crate) struct SettingsFormProps<'a> {
@@ -226,7 +218,7 @@ fn general_form<'a>(
     .width(Length::Fill)
     .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
     .text_size(FORM_INPUT_FONT_SIZE)
-    .menu_height(Length::Fixed(PRESET_MENU_MAX_HEIGHT))
+    .menu_height(Length::Fixed(PICK_LIST_MENU_MAX_HEIGHT))
     .style(pick_list_style(props.theme))
     .menu_style(pick_list_menu_style(props.theme));
 
@@ -288,70 +280,21 @@ fn terminal_form<'a>(
 fn theme_form<'a>(
     props: &SettingsFormProps<'a>,
 ) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let is_editable = !props.vm.is_saving;
-
-    let preset_selector = pick_list(
-        SettingsPreset::ALL,
-        props.vm.selected_preset,
-        SettingsIntent::ApplyPreset,
+    let theme_selector = pick_list(
+        BuiltinTheme::ALL,
+        Some(props.vm.draft.theme()),
+        SettingsIntent::ThemeSelected,
     )
-    .placeholder(i18n::t(Key::PresetPlaceholderCustom))
     .width(Length::Fill)
     .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
     .text_size(FORM_INPUT_FONT_SIZE)
-    .menu_height(Length::Fixed(PRESET_MENU_MAX_HEIGHT))
+    .menu_height(Length::Fixed(PICK_LIST_MENU_MAX_HEIGHT))
     .style(pick_list_style(props.theme))
     .menu_style(pick_list_menu_style(props.theme));
 
-    let mut palette_column = Column::new().spacing(PALETTE_ROW_SPACING);
-    for (index, value) in props.vm.palette_inputs.iter().enumerate() {
-        let label = text(i18n::palette_label(index))
-            .size(FORM_INPUT_FONT_SIZE)
-            .width(Length::Fixed(FORM_LABEL_WIDTH))
-            .align_x(alignment::Horizontal::Left)
-            .wrapping(Wrapping::None);
-
-        let mut input = text_input("", value)
-            .padding([FORM_INPUT_PADDING_Y, FORM_INPUT_PADDING_X])
-            .size(FORM_INPUT_FONT_SIZE)
-            .width(Length::Fill)
-            .style(text_input_style(props.theme));
-        if is_editable {
-            input = input.on_input(move |value| {
-                SettingsIntent::PaletteChanged { index, value }
-            });
-        }
-
-        let swatch_color = if is_valid_hex_color(value) {
-            parse_hex_color(value)
-        } else {
-            props.theme.theme.iced_palette().dim_black
-        };
-
-        let swatch = container(Space::new())
-            .width(Length::Fixed(PALETTE_SWATCH_SIZE))
-            .height(Length::Fixed(PALETTE_SWATCH_SIZE))
-            .style(move |_| iced::widget::container::Style {
-                background: Some(swatch_color.into()),
-                border: iced::Border {
-                    width: PALETTE_SWATCH_BORDER,
-                    color: Color::from_rgba(1.0, 1.0, 1.0, 0.2),
-                    radius: iced::border::Radius::from(2.0),
-                },
-                ..Default::default()
-            });
-
-        let row = row![label, input, swatch]
-            .spacing(NAV_ROW_SPACING)
-            .align_y(alignment::Vertical::Center);
-
-        palette_column = palette_column.push(row);
-    }
-
     let content = column![
         section_title(i18n::t(Key::SectionAppearance), props.theme),
-        form_row_content_height(i18n::t(Key::FieldPreset), preset_selector),
-        palette_column
+        form_row_content_height(i18n::t(Key::FieldPreset), theme_selector),
     ]
     .spacing(FORM_SECTION_SPACING)
     .padding(FORM_PADDING);

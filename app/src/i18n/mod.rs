@@ -14,17 +14,12 @@ use std::sync::atomic::{AtomicU8, Ordering};
 pub(crate) use key::Key;
 use serde::Deserialize;
 
-/// Number of configurable palette colors, mirroring `PALETTE_FIELDS`.
-const PALETTE_LABEL_COUNT: usize = 29;
-
 /// Active locale, encoded as [`Locale::index`].
 static CURRENT_LOCALE: AtomicU8 = AtomicU8::new(Locale::En.index() as u8);
 
 /// Parsed contents of one locale JSON file.
 #[derive(Debug, Deserialize)]
 struct Catalog {
-    /// Palette color labels in palette field order.
-    palette_labels: Vec<String>,
     /// All translatable strings, addressed by [`Key`].
     strings: HashMap<Key, String>,
 }
@@ -225,11 +220,6 @@ pub(crate) fn t(key: Key) -> &'static str {
     text_in(current_locale(), key)
 }
 
-/// Return the label for the palette color at `index`.
-pub(crate) fn palette_label(index: usize) -> String {
-    palette_label_in(current_locale(), index)
-}
-
 /// Build the tab title shown when editing an existing quick launch.
 pub(crate) fn edit_tab_title(command_title: &str) -> String {
     fill_in(
@@ -403,20 +393,6 @@ fn locale_from_system_preference(preference: Option<&str>) -> Locale {
     preference.map_or(Locale::En, Locale::from_tag)
 }
 
-/// Return the label for the palette color at `index` in `locale`.
-fn palette_label_in(locale: Locale, index: usize) -> String {
-    if let Some(label) = catalog(locale).palette_labels.get(index) {
-        return label.clone();
-    }
-
-    let display_index = (index + 1).to_string();
-    fill_in(
-        locale,
-        Key::TplPaletteFallbackLabel,
-        &[("index", &display_index)],
-    )
-}
-
 /// Substitute `{name}` placeholders in the `locale` template behind `key`.
 fn fill_in(locale: Locale, key: Key, arguments: &[(&str, &str)]) -> String {
     let template = text_in(locale, key);
@@ -467,9 +443,8 @@ fn catalog(locale: Locale) -> &'static Catalog {
 #[cfg(test)]
 mod tests {
     use super::{
-        Catalog, Key, Locale, PALETTE_LABEL_COUNT, catalog, fill_in,
-        locale_from_system_preference, palette_label_in, process_exited_in,
-        text_in,
+        Catalog, Key, Locale, catalog, fill_in, locale_from_system_preference,
+        process_exited_in, text_in,
     };
 
     #[test]
@@ -493,18 +468,6 @@ mod tests {
                 catalog(locale).strings.len(),
                 Key::ALL.len(),
                 "{} has entries not listed in Key::ALL",
-                locale.tag()
-            );
-        }
-    }
-
-    #[test]
-    fn given_catalogs_when_palette_labels_read_then_counts_match_palette() {
-        for locale in Locale::ALL {
-            assert_eq!(
-                catalog(locale).palette_labels.len(),
-                PALETTE_LABEL_COUNT,
-                "{} has the wrong palette label count",
                 locale.tag()
             );
         }
@@ -717,29 +680,12 @@ mod tests {
     }
 
     #[test]
-    fn given_palette_index_when_labelled_then_named_and_fallback_labels_apply()
-    {
-        assert_eq!(palette_label_in(Locale::ZhCn, 0), "前景色");
-        assert_eq!(
-            palette_label_in(Locale::ZhCn, PALETTE_LABEL_COUNT),
-            "颜色 30"
-        );
-
-        assert_eq!(palette_label_in(Locale::En, 0), "Foreground");
-        assert_eq!(
-            palette_label_in(Locale::En, PALETTE_LABEL_COUNT),
-            "Color 30"
-        );
-    }
-
-    #[test]
     fn given_every_locale_when_templates_read_then_placeholders_survive() {
-        let required: [(Key, &[&str]); 14] = [
+        let required: [(Key, &[&str]); 13] = [
             (Key::TplEditTabTitle, &["{title}"]),
             (Key::TplLaunchFailedTitle, &["{title}"]),
             (Key::TplLaunchFailedBody, &["{command}", "{error}"]),
             (Key::TplTerminalInitFailed, &["{error}"]),
-            (Key::TplPaletteFallbackLabel, &["{index}"]),
             (Key::TplSshConnectionFailed, &["{error}"]),
             (Key::TplWorkingDirectoryNotFound, &["{path}"]),
             (Key::TplWorkingDirectoryNotDirectory, &["{path}"]),
@@ -774,14 +720,6 @@ mod tests {
                 assert!(
                     !value.trim().is_empty(),
                     "{} has a blank translation for {key:?}",
-                    locale.tag()
-                );
-            }
-
-            for (index, label) in catalog.palette_labels.iter().enumerate() {
-                assert!(
-                    !label.trim().is_empty(),
-                    "{} has a blank palette label at {index}",
                     locale.tag()
                 );
             }

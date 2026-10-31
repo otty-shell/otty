@@ -9,6 +9,7 @@ Spec: [../spec.md](../spec.md)
 ## Details
 
 - `app/src/widgets/settings/view/settings_form.rs`: rows become `SettingRow`; language `Select`; theme `Segmented` with OTTY Dark and OTTY Light (two options, so Segmented per the design system); equalize panes `Switch`; shell and editor `TextField`. The palette color fields are already gone (ticket 03).
+- Rename the theme field label from "Preset" to "Theme": replace the `FieldPreset` key with `FieldTheme` in `app/src/i18n/key.rs` and all 10 locale files (left over from ticket 03).
 - Section navigation rows use `TreeRow`.
 - Buttons use kit `Button`. Save stays (instant apply is out of scope).
 - Remove the six local `*_style` functions and the hard-coded `Color::from_rgba(1.0, 1.0, 1.0, 0.2)` (`settings_form.rs:338`).

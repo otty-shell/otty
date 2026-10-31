@@ -7,7 +7,8 @@
 //! - [`radius`] for corner radii;
 //! - [`size`] for fixed heights and widths;
 //! - [`typography`] for text sizes, line heights and weights;
-//! - [`fonts`] for the bundled font files and `Font` values.
+//! - [`fonts`] for the bundled font files and `Font` values;
+//! - [`contrast`] for checking WCAG contrast between two colors.
 //!
 //! # Example
 //!
@@ -22,8 +23,7 @@
 //!         .padding(spacing::SPACE_3);
 //! ```
 
-#[cfg(test)]
-mod contrast;
+pub mod contrast;
 pub mod fonts;
 pub mod palette;
 pub mod radius;
