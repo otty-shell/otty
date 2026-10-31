@@ -192,6 +192,30 @@ fn open_settings_tab(state: &mut TabsState) -> Task<TabsEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::task_outputs::collect_outputs;
+
+    fn open_terminal(state: &mut TabsState, title: &str) -> u64 {
+        let _ = reduce(
+            state,
+            TabsIntent::OpenTerminalTab {
+                title: String::from(title),
+            },
+        );
+        state.active_tab_id().expect("terminal tab should open")
+    }
+
+    fn closed_effect(
+        events: &[TabsEvent],
+    ) -> Option<(u64, Option<u64>, usize)> {
+        events.iter().find_map(|event| match event {
+            TabsEvent::Effect(TabsEffect::Closed {
+                tab_id,
+                new_active_id,
+                remaining,
+            }) => Some((*tab_id, *new_active_id, *remaining)),
+            _ => None,
+        })
+    }
 
     #[test]
     fn activate_nonexistent_tab_is_noop() {
@@ -378,5 +402,216 @@ mod tests {
 
         let tab = state.active_tab().unwrap();
         assert_eq!(tab.title(), "new");
+    }
+
+    #[test]
+    fn open_terminal_tab_emits_opened_and_scroll_effects() {
+        let mut state = TabsState::default();
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            TabsIntent::OpenTerminalTab {
+                title: String::from("bash"),
+            },
+        ));
+
+        let tab_id = state.active_tab_id().expect("terminal tab should open");
+        assert!(events.iter().any(|event| matches!(
+            event,
+            TabsEvent::Effect(TabsEffect::TerminalTabOpened { tab_id: id, title })
+                if *id == tab_id && title == "bash"
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            TabsEvent::Effect(TabsEffect::ScrollBarToEnd)
+        )));
+    }
+
+    #[test]
+    fn open_wizard_tab_activates_launch_editor_tab() {
+        let mut state = TabsState::default();
+        let _ = open_terminal(&mut state, "shell");
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            TabsIntent::OpenWizardTab {
+                title: String::from("New launch"),
+                init: WizardTabInit::Create {
+                    parent_path: vec![String::from("Servers")],
+                },
+            },
+        ));
+
+        assert_eq!(state.len(), 2);
+        let active = state.active_tab().expect("should have active tab");
+        assert_eq!(active.title(), "New launch");
+        assert_eq!(active.content(), TabContent::QuickLaunchWizard);
+        let tab_id = active.id();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            TabsEvent::Effect(TabsEffect::WizardTabOpened {
+                tab_id: id,
+                init: WizardTabInit::Create { parent_path },
+            }) if *id == tab_id && parent_path == &vec![String::from("Servers")]
+        )));
+    }
+
+    #[test]
+    fn open_error_tab_activates_error_tab() {
+        let mut state = TabsState::default();
+        let _ = open_terminal(&mut state, "shell");
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            TabsIntent::OpenErrorTab {
+                title: String::from("Launch failed"),
+                message: String::from("boom"),
+            },
+        ));
+
+        assert_eq!(state.len(), 2);
+        let active = state.active_tab().expect("should have active tab");
+        assert_eq!(active.title(), "Launch failed");
+        assert_eq!(active.content(), TabContent::QuickLaunchError);
+        let tab_id = active.id();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            TabsEvent::Effect(TabsEffect::ErrorTabOpened {
+                tab_id: id,
+                title,
+                message,
+            }) if *id == tab_id && title == "Launch failed" && message == "boom"
+        )));
+    }
+
+    #[test]
+    fn open_settings_tab_emits_settings_opened_effect() {
+        let mut state = TabsState::default();
+
+        let events =
+            collect_outputs(reduce(&mut state, TabsIntent::OpenSettingsTab));
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            TabsEvent::Effect(TabsEffect::SettingsTabOpened)
+        )));
+    }
+
+    #[test]
+    fn activate_background_tab_makes_it_active_and_emits_activated() {
+        let mut state = TabsState::default();
+        let first_id = open_terminal(&mut state, "First");
+        let _second_id = open_terminal(&mut state, "Second");
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            TabsIntent::ActivateTab { tab_id: first_id },
+        ));
+
+        assert_eq!(state.active_tab_id(), Some(first_id));
+        assert!(matches!(
+            events.as_slice(),
+            [TabsEvent::Effect(TabsEffect::Activated { tab_id })]
+                if *tab_id == first_id
+        ));
+    }
+
+    #[test]
+    fn close_background_tab_keeps_active_tab() {
+        let mut state = TabsState::default();
+        let first_id = open_terminal(&mut state, "First");
+        let second_id = open_terminal(&mut state, "Second");
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            TabsIntent::CloseTab { tab_id: first_id },
+        ));
+
+        assert_eq!(state.active_tab_id(), Some(second_id));
+        assert_eq!(state.len(), 1);
+        assert_eq!(
+            closed_effect(&events),
+            Some((first_id, Some(second_id), 1))
+        );
+    }
+
+    #[test]
+    fn close_active_middle_tab_activates_the_tab_before_it() {
+        let mut state = TabsState::default();
+        let first_id = open_terminal(&mut state, "First");
+        let second_id = open_terminal(&mut state, "Second");
+        let _third_id = open_terminal(&mut state, "Third");
+        let _ =
+            reduce(&mut state, TabsIntent::ActivateTab { tab_id: second_id });
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            TabsIntent::CloseTab { tab_id: second_id },
+        ));
+
+        assert_eq!(state.active_tab_id(), Some(first_id));
+        assert_eq!(
+            closed_effect(&events),
+            Some((second_id, Some(first_id), 2))
+        );
+    }
+
+    #[test]
+    fn close_active_first_tab_activates_the_last_tab() {
+        // The first tab has no tab before it, so the last one becomes
+        // active, not its right-hand neighbour.
+        let mut state = TabsState::default();
+        let first_id = open_terminal(&mut state, "First");
+        let _second_id = open_terminal(&mut state, "Second");
+        let third_id = open_terminal(&mut state, "Third");
+        let _ =
+            reduce(&mut state, TabsIntent::ActivateTab { tab_id: first_id });
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            TabsIntent::CloseTab { tab_id: first_id },
+        ));
+
+        assert_eq!(state.active_tab_id(), Some(third_id));
+        assert_eq!(closed_effect(&events), Some((first_id, Some(third_id), 2)));
+    }
+
+    #[test]
+    fn close_only_tab_reports_no_active_tab_and_nothing_left() {
+        let mut state = TabsState::default();
+        let tab_id = open_terminal(&mut state, "Only");
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            TabsIntent::CloseTab { tab_id },
+        ));
+
+        assert_eq!(closed_effect(&events), Some((tab_id, None, 0)));
+    }
+
+    #[test]
+    fn close_unknown_tab_is_noop() {
+        let mut state = TabsState::default();
+        let tab_id = open_terminal(&mut state, "Only");
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            TabsIntent::CloseTab { tab_id: tab_id + 1 },
+        ));
+
+        assert!(events.is_empty());
+        assert_eq!(state.active_tab_id(), Some(tab_id));
+        assert_eq!(state.len(), 1);
+    }
+
+    #[test]
+    fn new_tab_ids_are_not_reused_after_a_close() {
+        let mut state = TabsState::default();
+        let first_id = open_terminal(&mut state, "First");
+        let _ = reduce(&mut state, TabsIntent::CloseTab { tab_id: first_id });
+
+        let second_id = open_terminal(&mut state, "Second");
+
+        assert_ne!(first_id, second_id);
     }
 }

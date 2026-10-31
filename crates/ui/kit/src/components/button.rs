@@ -195,3 +195,40 @@ fn style(
         ..button::Style::default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use iced_test::simulator;
+
+    use super::*;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum Message {
+        Save,
+    }
+
+    #[test]
+    fn given_enabled_button_when_clicked_then_its_message_is_sent() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(
+            Button::new("Save", &palette)
+                .kind(ButtonKind::Primary)
+                .on_press(Message::Save),
+        );
+
+        ui.click("Save").expect("button label should be visible");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Save]);
+    }
+
+    #[test]
+    fn given_button_without_message_when_clicked_then_nothing_is_sent() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(Button::<Message>::new("Save", &palette));
+
+        ui.click("Save").expect("button label should be visible");
+
+        assert_eq!(ui.into_messages().count(), 0);
+    }
+}

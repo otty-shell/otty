@@ -12,3 +12,6 @@ rust-version = { workspace = true }
 
 [dependencies]
 iced = { workspace = true, features = ["svg", "advanced"] }
+
+[dev-dependencies]
+iced_test = "0.14"

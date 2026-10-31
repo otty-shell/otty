@@ -110,9 +110,45 @@ fn max_sidebar_workspace_ratio() -> f32 {
 #[cfg(test)]
 mod tests {
     use iced::Point;
+    use iced::widget::pane_grid;
 
+    use crate::task_outputs::collect_outputs;
     use crate::widgets::sidebar::types::SidebarItem;
-    use crate::widgets::sidebar::{SidebarIntent, SidebarWidget};
+    use crate::widgets::sidebar::{
+        SidebarEffect, SidebarEvent, SidebarIntent, SidebarWidget,
+    };
+
+    /// Drag the split between the side panel and the main area to `ratio`.
+    fn resize_to(widget: &mut SidebarWidget, ratio: f32) -> Vec<SidebarEvent> {
+        let pane_grid::Node::Split { id: split, .. } = widget.panes().layout()
+        else {
+            panic!("sidebar should be split into panel and main area");
+        };
+        let event = pane_grid::ResizeEvent {
+            split: *split,
+            ratio,
+        };
+
+        collect_outputs(widget.reduce(SidebarIntent::Resized(event)))
+    }
+
+    fn has_effect(
+        events: &[SidebarEvent],
+        expected: fn(&SidebarEffect) -> bool,
+    ) -> bool {
+        events.iter().any(|event| match event {
+            SidebarEvent::Effect(effect) => expected(effect),
+            _ => false,
+        })
+    }
+
+    fn is_sync_grid(effect: &SidebarEffect) -> bool {
+        matches!(effect, SidebarEffect::SyncTerminalGridSizes)
+    }
+
+    fn is_reset_quick_launch(effect: &SidebarEffect) -> bool {
+        matches!(effect, SidebarEffect::QuickLaunchResetInteractionState)
+    }
 
     #[test]
     fn given_toggle_visibility_command_when_reduced_then_sidebar_hidden_state_toggles()
@@ -150,5 +186,132 @@ mod tests {
         let _task = widget
             .reduce(SidebarIntent::PaneGridCursorMoved { position: expected });
         assert_eq!(widget.cursor(), expected);
+    }
+
+    #[test]
+    fn given_hidden_sidebar_when_visibility_toggled_again_then_it_shows_at_same_width()
+     {
+        let mut widget = SidebarWidget::new();
+
+        let hide =
+            collect_outputs(widget.reduce(SidebarIntent::ToggleVisibility));
+
+        assert!(widget.is_hidden());
+        assert_eq!(widget.effective_workspace_ratio(), 0.0);
+        assert!(has_effect(&hide, is_sync_grid));
+
+        let show =
+            collect_outputs(widget.reduce(SidebarIntent::ToggleVisibility));
+
+        assert!(!widget.is_hidden());
+        assert_eq!(widget.effective_workspace_ratio(), 0.2);
+        assert!(has_effect(&show, is_sync_grid));
+    }
+
+    #[test]
+    fn given_open_panel_when_workspace_toggled_then_it_closes_and_grid_resyncs()
+    {
+        let mut widget = SidebarWidget::new();
+
+        let events =
+            collect_outputs(widget.reduce(SidebarIntent::ToggleWorkspace));
+
+        assert!(!widget.vm().is_workspace_open);
+        assert_eq!(widget.effective_workspace_ratio(), 0.0);
+        assert!(has_effect(&events, is_sync_grid));
+    }
+
+    #[test]
+    fn given_open_panel_when_dragged_then_width_follows_and_grid_resyncs() {
+        let mut widget = SidebarWidget::new();
+
+        let events = resize_to(&mut widget, 0.35);
+
+        assert_eq!(widget.effective_workspace_ratio(), 0.35);
+        assert!(widget.is_resizing());
+        assert!(has_effect(&events, is_reset_quick_launch));
+        assert!(has_effect(&events, is_sync_grid));
+    }
+
+    #[test]
+    fn given_open_panel_when_dragged_too_wide_then_main_area_keeps_a_fifth() {
+        let mut widget = SidebarWidget::new();
+
+        let _events = resize_to(&mut widget, 0.95);
+
+        assert_eq!(widget.effective_workspace_ratio(), 0.8);
+    }
+
+    #[test]
+    fn given_open_panel_when_dragged_below_collapse_threshold_then_it_closes() {
+        // The collapse threshold is 0.04 of the window width.
+        let mut widget = SidebarWidget::new();
+
+        let events = resize_to(&mut widget, 0.03);
+
+        assert!(!widget.vm().is_workspace_open);
+        assert_eq!(widget.effective_workspace_ratio(), 0.0);
+        assert!(has_effect(&events, is_sync_grid));
+    }
+
+    #[test]
+    fn given_open_panel_when_dragged_just_above_collapse_threshold_then_it_stays_open()
+     {
+        let mut widget = SidebarWidget::new();
+
+        let _events = resize_to(&mut widget, 0.05);
+
+        assert!(widget.vm().is_workspace_open);
+        assert_eq!(widget.effective_workspace_ratio(), 0.05);
+    }
+
+    #[test]
+    fn given_closed_panel_when_dragged_open_then_it_opens_at_collapse_width() {
+        let mut widget = SidebarWidget::new();
+        let _close = widget.reduce(SidebarIntent::ToggleWorkspace);
+
+        let events = resize_to(&mut widget, 0.5);
+
+        // 0.2 * 0.2 in `f32` is not exactly 0.04.
+        assert!(widget.vm().is_workspace_open);
+        assert!((widget.effective_workspace_ratio() - 0.04).abs() < 1e-6);
+        assert!(has_effect(&events, is_sync_grid));
+    }
+
+    #[test]
+    fn given_closed_panel_when_dragged_a_little_then_grid_is_not_resynced() {
+        let mut widget = SidebarWidget::new();
+        let _close = widget.reduce(SidebarIntent::ToggleWorkspace);
+
+        let events = resize_to(&mut widget, 0.02);
+
+        assert!(!widget.vm().is_workspace_open);
+        assert!(has_effect(&events, is_reset_quick_launch));
+        assert!(!has_effect(&events, is_sync_grid));
+    }
+
+    #[test]
+    fn given_closed_panel_when_explorer_selected_then_it_reopens_at_default_width()
+     {
+        let mut widget = SidebarWidget::new();
+        let _close = widget.reduce(SidebarIntent::ToggleWorkspace);
+
+        let events =
+            collect_outputs(widget.reduce(SidebarIntent::SelectExplorer));
+
+        assert!(widget.vm().is_workspace_open);
+        assert_eq!(widget.effective_workspace_ratio(), 0.2);
+        assert!(has_effect(&events, is_sync_grid));
+    }
+
+    #[test]
+    fn given_open_panel_when_terminal_selected_then_grid_is_not_resynced() {
+        let mut widget = SidebarWidget::new();
+
+        let events =
+            collect_outputs(widget.reduce(SidebarIntent::SelectTerminal));
+
+        assert_eq!(widget.vm().active_item, SidebarItem::Terminal);
+        assert!(events.is_empty());
     }
 }

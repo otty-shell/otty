@@ -1183,10 +1183,11 @@ mod tests {
     use otty_ui_term::settings::Settings;
 
     use super::super::types::{
-        CommandSpec, CustomCommand, SshSecretKind, SshSecretRequest,
+        CommandSpec, CustomCommand, SshCommand, SshSecretKind, SshSecretRequest,
     };
     use super::*;
     use crate::domain::exit_behavior::ExitBehavior;
+    use crate::task_outputs::collect_outputs;
 
     fn ctx(settings: &Settings) -> QuickLaunchCtx<'_> {
         QuickLaunchCtx {
@@ -3063,5 +3064,168 @@ mod tests {
         );
 
         assert_eq!(child_titles(&state, &[]), vec![String::from("Demo")]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Launch flow tests
+    // -----------------------------------------------------------------------
+
+    fn ssh_command_node(title: &str) -> QuickLaunchNode {
+        QuickLaunchNode::Command(QuickLaunch {
+            title: String::from(title),
+            spec: CommandSpec::Ssh {
+                ssh: SshCommand {
+                    host: String::from("example.com"),
+                    port: 22,
+                    user: Some(String::from("alice")),
+                    identity_file: Some(String::from("~/.ssh/id_ed25519")),
+                    extra_args: Vec::new(),
+                },
+            },
+            exit_behavior: ExitBehavior::Close,
+        })
+    }
+
+    /// Click a node the way the tree does: press, then release on it.
+    ///
+    /// The release starts the launch setup task; it is dropped here so no
+    /// process or SSH connection is started.
+    fn click(state: &mut QuickLaunchState, node: &NodePath) {
+        run(state, QuickLaunchIntent::NodePressed { path: node.clone() });
+        run(
+            state,
+            QuickLaunchIntent::NodeReleased { path: node.clone() },
+        );
+    }
+
+    fn launch_id(state: &QuickLaunchState, node: &NodePath) -> u64 {
+        state
+            .launch_info(node)
+            .expect("clicked command should be launching")
+            .id
+    }
+
+    #[test]
+    fn given_command_clicked_when_setup_is_prepared_then_terminal_tab_is_requested()
+     {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let node = path(&["Demo"]);
+
+        click(&mut state, &node);
+
+        assert!(state.is_launching(&node));
+        assert_eq!(state.selected_path(), Some(&node));
+
+        let settings = Settings::default();
+        let prepared = PreparedQuickLaunch {
+            path: node.clone(),
+            launch_id: launch_id(&state, &node),
+            title: String::from("Demo"),
+            settings: settings.clone(),
+            command: Box::new(sample_command()),
+        };
+        let events = collect_outputs(reduce(
+            &mut state,
+            QuickLaunchIntent::SetupCompleted(
+                QuickLaunchSetupOutcome::Prepared(Box::new(prepared)),
+            ),
+            &ctx(&settings),
+        ));
+
+        assert!(state.launching().is_empty());
+        assert!(matches!(
+            events.as_slice(),
+            [QuickLaunchEvent::Effect(
+                QuickLaunchEffect::OpenCommandTerminalTab { title, .. }
+            )] if title == "Demo"
+        ));
+    }
+
+    #[test]
+    fn given_launching_command_when_clicked_again_then_no_second_launch_starts()
+    {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let node = path(&["Demo"]);
+        click(&mut state, &node);
+        let first_launch = launch_id(&state, &node);
+
+        click(&mut state, &node);
+
+        assert_eq!(launch_id(&state, &node), first_launch);
+        assert_eq!(state.launching().len(), 1);
+    }
+
+    #[test]
+    fn given_command_clicked_when_setup_fails_then_error_tab_is_requested() {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let node = path(&["Demo"]);
+        click(&mut state, &node);
+        let settings = Settings::default();
+        let current_launch = launch_id(&state, &node);
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            QuickLaunchIntent::SetupCompleted(
+                QuickLaunchSetupOutcome::Failed {
+                    path: node.clone(),
+                    launch_id: current_launch,
+                    command: Box::new(sample_command()),
+                    error: Arc::new(
+                        super::super::errors::QuickLaunchError::ProgramRequired,
+                    ),
+                },
+            ),
+            &ctx(&settings),
+        ));
+
+        assert!(state.launching().is_empty());
+        assert!(matches!(
+            events.as_slice(),
+            [QuickLaunchEvent::Effect(
+                QuickLaunchEffect::OpenErrorTab { .. }
+            )]
+        ));
+    }
+
+    #[test]
+    fn given_ssh_command_clicked_when_passphrase_is_needed_then_prompt_opens_and_cancel_closes_it()
+     {
+        let mut state = state_with_root(vec![ssh_command_node("Prod")]);
+        let node = path(&["Prod"]);
+        let request = SshSecretRequest::new(
+            SshSecretKind::KeyPassphrase,
+            String::from("~/.ssh/id_ed25519"),
+            false,
+        );
+
+        click(&mut state, &node);
+
+        assert!(state.is_launching(&node));
+
+        let current_launch = launch_id(&state, &node);
+        run(
+            &mut state,
+            QuickLaunchIntent::SetupCompleted(
+                QuickLaunchSetupOutcome::SecretRequired {
+                    path: node.clone(),
+                    launch_id: current_launch,
+                    command: Box::new(QuickLaunch {
+                        title: String::from("Prod"),
+                        ..sample_command()
+                    }),
+                    request: request.clone(),
+                },
+            ),
+        );
+
+        let prompt = state.secret_prompt().expect("prompt should be open");
+        assert_eq!(prompt.request(), &request);
+        assert!(state.launching().is_empty());
+
+        run(&mut state, QuickLaunchIntent::SecretPromptCancel);
+
+        assert!(state.secret_prompt().is_none());
+        assert!(state.launching().is_empty());
+        assert!(!state.is_launching(&node));
     }
 }

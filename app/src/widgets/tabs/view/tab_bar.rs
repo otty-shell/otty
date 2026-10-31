@@ -35,3 +35,32 @@ pub(crate) fn view<'a>(props: TabBarProps<'a>) -> Element<'a, TabsIntent> {
 
     strip.into()
 }
+
+#[cfg(test)]
+mod tests {
+    use iced_test::simulator;
+
+    use super::{TabBarProps, view};
+    use crate::theme::{ThemeManager, ThemeProps};
+    use crate::widgets::tabs::TabsIntent;
+
+    #[test]
+    fn given_two_tabs_when_background_title_clicked_then_it_is_activated() {
+        let themes = ThemeManager::new();
+        let props = TabBarProps {
+            tabs: vec![(0, String::from("zsh")), (1, String::from("htop"))],
+            active_tab_id: Some(1),
+            new_tab_title: String::from("zsh"),
+            theme: ThemeProps::new(themes.current()),
+        };
+        let mut ui = simulator(view(props));
+
+        ui.click("zsh").expect("tab title should be visible");
+
+        let intents: Vec<TabsIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            intents.as_slice(),
+            [TabsIntent::ActivateTab { tab_id: 0 }]
+        ));
+    }
+}

@@ -178,10 +178,223 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    use iced::{Point, Size};
+    use otty_libterm::surface::{BlockMeta, BlockSnapshot, SnapshotOwned};
+    use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
+
     use super::handle;
     use crate::app::App;
     use crate::domain::quick_launch::WizardTabInit;
-    use crate::widgets::tabs::{TabsEffect, TabsEvent};
+    use crate::events::AppEvent;
+    use crate::task_outputs::collect_outputs;
+    use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
+    use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+    use crate::widgets::tabs::{TabsEffect, TabsEvent, TabsIntent};
+    use crate::widgets::terminal_workspace::types::TerminalKind;
+    use crate::widgets::terminal_workspace::{
+        TerminalWorkspaceCtx, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+    };
+
+    #[cfg(unix)]
+    const TEST_SHELL_PATH: &str = "/bin/sh";
+    #[cfg(target_os = "windows")]
+    const TEST_SHELL_PATH: &str = "cmd.exe";
+
+    fn shell_settings() -> Settings {
+        let mut settings = Settings::default();
+        settings.backend = settings.backend.clone().with_session(
+            SessionKind::from_local_options(
+                LocalSessionOptions::default().with_program(TEST_SHELL_PATH),
+            ),
+        );
+        settings
+    }
+
+    fn workspace_ctx(active_tab_id: u64) -> TerminalWorkspaceCtx {
+        TerminalWorkspaceCtx {
+            active_tab_id: Some(active_tab_id),
+            pane_grid_size: Size::new(800.0, 600.0),
+            screen_size: Size::new(800.0, 600.0),
+            sidebar_cursor: Point::ORIGIN,
+            equalize_panes: true,
+        }
+    }
+
+    /// Open a shell tab and make its terminal report `cwd`, the way shell
+    /// integration does after a prompt.
+    fn open_shell_tab_in(app: &mut App, cwd: &str) -> u64 {
+        let _ = app.widgets.tabs.reduce(TabsIntent::OpenTerminalTab {
+            title: String::from("sh"),
+        });
+        let tab_id = app
+            .widgets
+            .tabs
+            .active_tab_id()
+            .expect("shell tab should open");
+        let ctx = workspace_ctx(tab_id);
+
+        let _ = app.widgets.terminal_workspace.reduce(
+            TerminalWorkspaceIntent::OpenTab {
+                tab_id,
+                default_title: String::from("sh"),
+                settings: Box::new(shell_settings()),
+                kind: TerminalKind::Shell,
+                sync_explorer: false,
+            },
+            &ctx,
+        );
+
+        let terminal_id = app
+            .widgets
+            .terminal_workspace
+            .tab(tab_id)
+            .and_then(|tab| tab.focused_terminal_id())
+            .expect("shell tab should have a terminal");
+        let mut frame = SnapshotOwned::default();
+        frame.blocks.push(BlockSnapshot {
+            meta: BlockMeta {
+                cwd: Some(String::from(cwd)),
+                ..BlockMeta::default()
+            },
+            ..BlockSnapshot::default()
+        });
+
+        let _ = app.widgets.terminal_workspace.reduce(
+            TerminalWorkspaceIntent::Widget(otty_ui_term::Event::ContentSync {
+                id: terminal_id,
+                frame: Arc::new(frame),
+            }),
+            &ctx,
+        );
+
+        tab_id
+    }
+
+    /// Reduce a tabs intent, then route the tabs effects it produced.
+    fn route_intent(app: &mut App, intent: TabsIntent) -> Vec<AppEvent> {
+        let effects = collect_outputs(handle(app, TabsEvent::Intent(intent)));
+
+        effects
+            .into_iter()
+            .flat_map(|event| match event {
+                AppEvent::Tabs(TabsEvent::Effect(effect)) => {
+                    collect_outputs(handle(app, TabsEvent::Effect(effect)))
+                },
+                _ => Vec::new(),
+            })
+            .collect()
+    }
+
+    fn explorer_roots(events: &[AppEvent]) -> Vec<PathBuf> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                AppEvent::Explorer(ExplorerEvent::Intent(
+                    ExplorerIntent::SyncRoot { cwd },
+                )) => Some(cwd.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn given_two_shell_tabs_when_background_tab_activated_then_explorer_follows_its_folder()
+     {
+        let (mut app, _) = App::new();
+        let first_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
+        let _second_id = open_shell_tab_in(&mut app, "/tmp/otty-second");
+
+        let events = route_intent(
+            &mut app,
+            TabsIntent::ActivateTab { tab_id: first_id },
+        );
+
+        assert_eq!(
+            explorer_roots(&events),
+            vec![Path::new("/tmp/otty-first").to_path_buf()]
+        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::FocusActive
+            ))
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SyncSelection { tab_id }
+            )) if *tab_id == first_id
+        )));
+    }
+
+    #[test]
+    fn given_active_shell_tab_when_closed_then_explorer_follows_the_new_active_tab()
+     {
+        let (mut app, _) = App::new();
+        let first_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
+        let second_id = open_shell_tab_in(&mut app, "/tmp/otty-second");
+
+        let events =
+            route_intent(&mut app, TabsIntent::CloseTab { tab_id: second_id });
+
+        assert_eq!(app.widgets.tabs.active_tab_id(), Some(first_id));
+        assert_eq!(
+            explorer_roots(&events),
+            vec![Path::new("/tmp/otty-first").to_path_buf()]
+        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::TabClosed { tab_id }
+            )) if *tab_id == second_id
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::TabClosed { tab_id }
+            )) if *tab_id == second_id
+        )));
+    }
+
+    #[test]
+    fn given_settings_tab_when_activated_then_explorer_keeps_its_folder() {
+        let (mut app, _) = App::new();
+        let _shell_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
+        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab);
+        let settings_id = app
+            .widgets
+            .tabs
+            .active_tab_id()
+            .expect("settings tab should open");
+
+        let events = route_intent(
+            &mut app,
+            TabsIntent::ActivateTab {
+                tab_id: settings_id,
+            },
+        );
+
+        assert!(explorer_roots(&events).is_empty());
+    }
+
+    #[test]
+    fn given_last_tab_when_closed_then_focus_is_not_requested() {
+        let (mut app, _) = App::new();
+        let tab_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
+
+        let events = route_intent(&mut app, TabsIntent::CloseTab { tab_id });
+
+        assert!(explorer_roots(&events).is_empty());
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::FocusActive
+            ))
+        )));
+    }
 
     #[test]
     fn given_wizard_opened_effect_when_create_init_exists_then_task_is_emitted()

@@ -14,6 +14,8 @@ mod icons;
 mod layout;
 mod services;
 mod state;
+#[cfg(test)]
+mod task_outputs;
 mod theme;
 mod widgets;
 
