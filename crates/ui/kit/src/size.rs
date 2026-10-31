@@ -20,8 +20,9 @@ pub const RAIL: f32 = 48.0;
 pub const RAIL_BUTTON: f32 = 44.0;
 /// `panel`: default left panel width; resizable.
 pub const PANEL: f32 = 260.0;
-/// Tree indent: extra left offset for each nesting level in a tree.
-pub const TREE_INDENT: f32 = 18.0;
+/// Tree indent: extra left offset for each nesting level in a tree, as in
+/// VS Code (`workbench.tree.indent`).
+pub const TREE_INDENT: f32 = 8.0;
 /// Logo height in the title bar.
 pub const LOGO: f32 = 20.0;
 /// Maximum width of a form page.

@@ -194,41 +194,16 @@ fn tab_view<'a, Message: Clone + 'a>(
         TAB_MAX_WIDTH - TITLE_PADDING_LEFT - TITLE_PADDING_RIGHT
     };
 
-    let title = button(
-        container(
-            text(tab.title)
-                .size(TITLE_SIZE)
-                .font(fonts::UI)
-                .wrapping(Wrapping::None),
-        )
-        .height(Length::Fill)
-        .max_width(title_max)
-        .align_y(Alignment::Center)
-        .clip(true),
+    let title = container(
+        text(tab.title)
+            .size(TITLE_SIZE)
+            .font(fonts::UI)
+            .wrapping(Wrapping::None),
     )
     .height(Length::Fill)
-    .padding(Padding {
-        top: 0.0,
-        right: if has_close { 0.0 } else { TITLE_PADDING_RIGHT },
-        bottom: 0.0,
-        left: TITLE_PADDING_LEFT,
-    })
-    .on_press_maybe(tab.on_press)
-    .style(move |_, status| {
-        let hovered = status == button::Status::Hovered;
-
-        button::Style {
-            background: (hovered && !is_active).then(|| canvas.into()),
-            text_color: if is_active {
-                strong
-            } else if hovered {
-                body
-            } else {
-                muted
-            },
-            ..button::Style::default()
-        }
-    });
+    .max_width(title_max)
+    .align_y(Alignment::Center)
+    .clip(true);
 
     let mut content = row![title].align_y(Alignment::Center);
     if let Some(message) = tab.on_close {
@@ -242,18 +217,39 @@ fn tab_view<'a, Message: Clone + 'a>(
         );
     }
 
+    // The whole tab is one button, so hovering the close cross lights the
+    // tab too. The cross catches its own press before the tab sees it.
+    let body_view = button(content)
+        .height(Length::Fill)
+        .padding(Padding {
+            top: 0.0,
+            right: if has_close { 0.0 } else { TITLE_PADDING_RIGHT },
+            bottom: 0.0,
+            left: TITLE_PADDING_LEFT,
+        })
+        .on_press_maybe(tab.on_press)
+        .style(move |_, status| {
+            let hovered = status == button::Status::Hovered;
+
+            button::Style {
+                background: (is_active || hovered).then(|| canvas.into()),
+                text_color: if is_active {
+                    strong
+                } else if hovered {
+                    body
+                } else {
+                    muted
+                },
+                ..button::Style::default()
+            }
+        });
+
     let line = container("").width(Length::Fill).height(ACTIVE_LINE).style(
         move |_| container::Style {
             background: is_active.then(|| accent.into()),
             ..container::Style::default()
         },
     );
-    let body_view = container(content).height(Length::Fill).style(move |_| {
-        container::Style {
-            background: is_active.then(|| canvas.into()),
-            ..container::Style::default()
-        }
-    });
 
     container(stack![body_view, line])
         .max_width(TAB_MAX_WIDTH)

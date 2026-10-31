@@ -71,7 +71,7 @@ impl<Message> TreeRow<Message> {
         }
     }
 
-    /// Sets the nesting level; each level indents the row by 18px.
+    /// Sets the nesting level; each level indents the row by 8px.
     pub fn depth(mut self, depth: u16) -> Self {
         self.depth = depth;
         self

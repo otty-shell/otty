@@ -86,7 +86,7 @@ command palette, Kubernetes) are listed under Follow-up specs.
 - [ ] AC6: `cargo run -p otty-ui-kit --example gallery` opens a window with every kit component from tickets 05 and 06 in all its states, with a switch between OTTY Dark and OTTY Light.
 - [ ] AC7: No file under `app/src/widgets` or `app/src/components` calls `iced_palette()` or reads `IcedColorPalette` fields; colors come only from `UiPalette` (checked with `grep`).
 - [ ] AC8: Heights, paddings, gaps, radii and font sizes in `app/src/widgets` and `app/src/components` come from `otty-ui-kit` tokens. Local `const …: f32` remain only for values with no token (dialog and menu widths, resize grip thickness), and each such constant has a doc comment.
-- [ ] AC9: The title bar is 38px, the tab strip 34px, the rail 48px, tree rows 30px with 18px indent (measured in the running app or asserted on layout constants).
+- [ ] AC9: The title bar is 38px, the tab strip 34px, the rail 48px, tree rows 30px with 8px indent (measured in the running app or asserted on layout constants).
 - [ ] AC10: UI text renders in Noto Sans, terminal text in JetBrains Mono Nerd Font Mono Regular 400 at 13px.
 - [ ] AC11: Settings › Appearance shows exactly two themes, OTTY Dark and OTTY Light, and no palette color fields; switching restyles the whole window and the terminal without a restart.
 - [ ] AC12: Screenshots of the main window, the quick launch editor, the settings screen and an open context menu, each in OTTY Dark and OTTY Light, are attached to the PR next to the design system's Themes card and component previews.
