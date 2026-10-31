@@ -23,6 +23,8 @@
     "split_horizontally": "Horizontal teilen",
     "split_vertically": "Vertikal teilen",
     "close_pane": "Schließen",
+    "window_toggle_fullscreen": "Vollbild umschalten",
+    "window_minimize": "Minimieren",
 
     "kill": "Beenden",
     "edit": "Bearbeiten",

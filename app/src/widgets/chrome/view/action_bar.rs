@@ -1,55 +1,44 @@
 use iced::widget::{MouseArea, Space, Stack, container, row, svg, text};
 use iced::{Element, Length, alignment, mouse};
+use otty_ui_kit::components::icon_button::IconButton;
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::ChromeIntent;
-use crate::components::primitive::icon_button::{
-    IconButtonEvent, IconButtonHorizontalAlignment, IconButtonProps,
-    IconButtonVariant, view as icon_button_view,
-};
-use crate::fonts::FontsConfig;
+use crate::i18n::{self, Key};
 use crate::icons::{LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY};
-use crate::layout::BUTTON_SIZE_COMPACT;
-use crate::theme::{StyleOverrides, ThemeProps};
+use crate::theme::ThemeProps;
 
-pub(crate) const ACTION_BAR_HEIGHT: f32 = 30.0;
-const ACTION_BAR_TITLE_SCALE: f32 = 0.9;
-const ACTION_BAR_CONTROL_ICON_SIZE: f32 = 18.0;
-const ACTION_BAR_LOGO_ICON_SIZE: f32 = 18.0;
-const ACTION_BAR_HORIZONTAL_PADDING: f32 = 12.0;
-const ACTION_BAR_RIGHT_PADDING: f32 = 8.0;
-const ACTION_BAR_LEFT_SPACING: f32 = 8.0;
-const ACTION_BAR_CONTROLS_SPACING: f32 = 6.0;
+/// Logo height; the width follows the logo proportions (145.36 x 103.12).
+const LOGO_HEIGHT: f32 = 20.0;
+const LOGO_WIDTH: f32 = LOGO_HEIGHT * 145.36 / 103.12;
 
 /// Props for rendering the action bar.
 #[derive(Debug, Clone)]
 pub(crate) struct ActionBarProps<'a> {
     pub(crate) title: &'a str,
     pub(crate) theme: ThemeProps<'a>,
-    pub(crate) fonts: &'a FontsConfig,
 }
 
 /// Render the draggable window header with controls.
 pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
-    let title_font_size = props.fonts.ui.size * ACTION_BAR_TITLE_SCALE;
-    let palette = props.theme.theme.iced_palette();
-    let overrides = props.theme.overrides;
-    let dim_foreground = palette.dim_foreground;
-    let dim_black = palette.dim_black;
+    let palette = props.theme.theme.ui();
+    let text_muted = palette.text_muted();
+    let surface_chrome = palette.surface_chrome();
 
     let detail_label = text(props.title)
-        .size(title_font_size)
-        .font(props.fonts.ui.font_type);
+        .size(typography::BODY.size())
+        .font(fonts::UI);
 
     let logo = svg::Svg::new(svg::Handle::from_memory(LOGO_SMALL))
-        .width(Length::Fixed(ACTION_BAR_LOGO_ICON_SIZE))
-        .height(Length::Fixed(ACTION_BAR_LOGO_ICON_SIZE));
+        .width(Length::Fixed(LOGO_WIDTH))
+        .height(Length::Fixed(LOGO_HEIGHT));
 
     let logo_container = container(logo)
         .width(Length::Shrink)
         .height(Length::Fill)
         .align_x(alignment::Horizontal::Left)
         .align_y(alignment::Vertical::Center)
-        .padding([0.0, ACTION_BAR_HORIZONTAL_PADDING]);
+        .padding([0.0, spacing::SPACE_4]);
     let logo_container = MouseArea::new(logo_container)
         .on_press(ChromeIntent::ToggleSidebarVisibility)
         .interaction(mouse::Interaction::Pointer);
@@ -59,29 +48,33 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
         .height(Length::Fill)
         .align_x(alignment::Horizontal::Center)
         .align_y(alignment::Vertical::Center)
-        .padding([0.0, ACTION_BAR_HORIZONTAL_PADDING])
+        .padding([0.0, spacing::SPACE_4])
         .style(move |_| iced::widget::container::Style {
-            text_color: Some(resolve_text_color(dim_foreground, overrides)),
+            text_color: Some(text_muted),
             ..Default::default()
         });
 
-    let left_controls = row![logo_container]
-        .spacing(ACTION_BAR_LEFT_SPACING)
-        .align_y(alignment::Vertical::Center);
-
     let controls_row = row![
-        icon_button(
-            WINDOW_FULLSCREEN,
-            IconButtonVariant::Standard,
-            props.theme,
+        IconButton::new(
+            svg::Handle::from_memory(WINDOW_FULLSCREEN),
+            i18n::t(Key::WindowToggleFullscreen),
+            palette,
         )
-        .map(|_| ChromeIntent::ToggleFullScreen),
-        icon_button(WINDOW_TRAY, IconButtonVariant::Standard, props.theme)
-            .map(|_| ChromeIntent::MinimizeWindow),
-        icon_button(WINDOW_CLOSE, IconButtonVariant::Danger, props.theme)
-            .map(|_| ChromeIntent::CloseWindow),
+        .on_press(ChromeIntent::ToggleFullScreen),
+        IconButton::new(
+            svg::Handle::from_memory(WINDOW_TRAY),
+            i18n::t(Key::WindowMinimize),
+            palette,
+        )
+        .on_press(ChromeIntent::MinimizeWindow),
+        IconButton::new(
+            svg::Handle::from_memory(WINDOW_CLOSE),
+            i18n::t(Key::ClosePane),
+            palette,
+        )
+        .on_press(ChromeIntent::CloseWindow),
     ]
-    .spacing(ACTION_BAR_CONTROLS_SPACING)
+    .spacing(spacing::SPACE_1)
     .align_y(alignment::Vertical::Center);
 
     let controls_container = container(controls_row)
@@ -89,7 +82,7 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
         .height(Length::Fill)
         .align_x(alignment::Horizontal::Right)
         .align_y(alignment::Vertical::Center)
-        .padding([0.0, ACTION_BAR_RIGHT_PADDING]);
+        .padding([0.0, spacing::SPACE_2]);
 
     let drag_surface = MouseArea::new(
         container(Space::new().width(Length::Fill).height(Length::Fill))
@@ -100,11 +93,10 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
     .on_double_click(ChromeIntent::ToggleFullScreen);
 
     let base_row = row![
-        left_controls,
+        logo_container,
         Space::new().width(Length::Fill),
         controls_container
     ]
-    .spacing(ACTION_BAR_LEFT_SPACING)
     .align_y(alignment::Vertical::Center)
     .width(Length::Fill)
     .height(Length::Fill);
@@ -116,44 +108,10 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
 
     container(content)
         .width(Length::Fill)
-        .height(Length::Fixed(ACTION_BAR_HEIGHT))
+        .height(Length::Fixed(size::TITLEBAR))
         .style(move |_| iced::widget::container::Style {
-            background: Some(resolve_background(dim_black, overrides).into()),
+            background: Some(surface_chrome.into()),
             ..Default::default()
         })
         .into()
-}
-
-fn icon_button<'a>(
-    icon: &'static [u8],
-    variant: IconButtonVariant,
-    theme: ThemeProps<'a>,
-) -> Element<'a, IconButtonEvent> {
-    let props = IconButtonProps {
-        icon,
-        theme,
-        size: BUTTON_SIZE_COMPACT,
-        icon_size: ACTION_BAR_CONTROL_ICON_SIZE,
-        variant,
-        horizontal_alignment: IconButtonHorizontalAlignment::Center,
-    };
-    icon_button_view(props)
-}
-
-fn resolve_background(
-    default_color: iced::Color,
-    overrides: Option<StyleOverrides>,
-) -> iced::Color {
-    overrides
-        .and_then(|o| o.background)
-        .unwrap_or(default_color)
-}
-
-fn resolve_text_color(
-    default_color: iced::Color,
-    overrides: Option<StyleOverrides>,
-) -> iced::Color {
-    overrides
-        .and_then(|o| o.foreground)
-        .unwrap_or(default_color)
 }

@@ -23,6 +23,8 @@
     "split_horizontally": "Dividir horizontalmente",
     "split_vertically": "Dividir verticalmente",
     "close_pane": "Cerrar",
+    "window_toggle_fullscreen": "Alternar pantalla completa",
+    "window_minimize": "Minimizar",
 
     "kill": "Terminar",
     "edit": "Editar",

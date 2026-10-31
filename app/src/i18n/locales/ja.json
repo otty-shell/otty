@@ -23,6 +23,8 @@
     "split_horizontally": "水平に分割",
     "split_vertically": "垂直に分割",
     "close_pane": "閉じる",
+    "window_toggle_fullscreen": "全画面表示の切り替え",
+    "window_minimize": "最小化",
 
     "kill": "強制終了",
     "edit": "編集",

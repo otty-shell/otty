@@ -34,8 +34,7 @@ use crate::widgets::terminal_workspace::view::{
 };
 
 pub(crate) const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
-const SIDEBAR_SEPARATOR_WIDTH: f32 = 0.5;
-const SEPARATOR_ALPHA: f32 = 0.3;
+const SIDEBAR_SEPARATOR_WIDTH: f32 = 1.0;
 const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_GRID_RESIZE_GRAB: f32 = 8.0;
 
@@ -161,25 +160,20 @@ fn view_header<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let palette = theme_props.theme.iced_palette();
+    let line = theme_props.theme.ui().line();
 
     let action_bar = action_bar::view(action_bar::ActionBarProps {
         title: app.widgets.tabs.active_tab_title().unwrap_or("OTTY"),
         theme: theme_props,
-        fonts: &app.fonts,
     })
     .map(|event| AppEvent::Chrome(ChromeEvent::Intent(event)));
 
     let separator = container(Space::new())
         .width(Length::Fill)
         .height(Length::Fixed(HEADER_SEPARATOR_HEIGHT))
-        .style(move |_| {
-            let mut background = palette.dim_white;
-            background.a = SEPARATOR_ALPHA;
-            iced::widget::container::Style {
-                background: Some(background.into()),
-                ..Default::default()
-            }
+        .style(move |_| iced::widget::container::Style {
+            background: Some(line.into()),
+            ..Default::default()
         });
 
     column![action_bar, separator]
@@ -209,15 +203,13 @@ fn view_sidebar_layout<'a>(
     })
     .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event)));
 
-    let palette = theme_props.theme.iced_palette();
-    let mut sidebar_separator_color = palette.dim_white;
-    sidebar_separator_color.a = SEPARATOR_ALPHA;
+    let line = theme_props.theme.ui().line();
 
     let sidebar_separator = container(Space::new())
         .width(Length::Fixed(SIDEBAR_SEPARATOR_WIDTH))
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
-            background: Some(sidebar_separator_color.into()),
+            background: Some(line.into()),
             ..Default::default()
         });
 
@@ -250,20 +242,17 @@ fn view_sidebar_layout<'a>(
             )))
         })
         .style(move |_: &Theme| {
-            let mut separator = palette.dim_white;
-            separator.a = SEPARATOR_ALPHA;
-
             iced::widget::pane_grid::Style {
                 hovered_region: iced::widget::pane_grid::Highlight {
-                    background: separator.into(),
+                    background: line.into(),
                     border: iced::Border::default(),
                 },
                 picked_split: iced::widget::pane_grid::Line {
-                    color: separator,
+                    color: line,
                     width: 1.0,
                 },
                 hovered_split: iced::widget::pane_grid::Line {
-                    color: separator,
+                    color: line,
                     width: 1.0,
                 },
             }
@@ -335,11 +324,14 @@ fn view_tab_content<'a>(
         (Some(tab_id), Some(TabContent::Terminal)) => {
             let vm = app.widgets.terminal_workspace.vm(Some(tab_id));
             match vm.tab {
-                Some(tab_vm) => terminal_pane_grid::view(tab_vm).map(|event| {
-                    AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-                        event,
-                    ))
-                }),
+                Some(tab_vm) => {
+                    terminal_pane_grid::view(tab_vm, theme_props.theme.ui())
+                        .map(|event| {
+                            AppEvent::TerminalWorkspace(
+                                TerminalWorkspaceEvent::Intent(event),
+                            )
+                        })
+                },
                 None => {
                     missing_tab_state(i18n::t(Key::TerminalTabNotInitialized))
                 },

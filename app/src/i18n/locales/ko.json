@@ -23,6 +23,8 @@
     "split_horizontally": "가로로 분할",
     "split_vertically": "세로로 분할",
     "close_pane": "닫기",
+    "window_toggle_fullscreen": "전체 화면 전환",
+    "window_minimize": "최소화",
 
     "kill": "강제 종료",
     "edit": "편집",

@@ -1,6 +1,6 @@
 # 07 — Restyle title bar and pane dividers
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 04, 05

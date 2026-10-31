@@ -23,6 +23,8 @@
     "split_horizontally": "水平分割",
     "split_vertically": "垂直分割",
     "close_pane": "關閉",
+    "window_toggle_fullscreen": "切換全螢幕",
+    "window_minimize": "最小化",
 
     "kill": "終止",
     "edit": "編輯",

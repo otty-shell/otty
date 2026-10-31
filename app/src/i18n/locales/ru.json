@@ -23,6 +23,8 @@
     "split_horizontally": "Разделить по горизонтали",
     "split_vertically": "Разделить по вертикали",
     "close_pane": "Закрыть",
+    "window_toggle_fullscreen": "Во весь экран",
+    "window_minimize": "Свернуть",
 
     "kill": "Завершить",
     "edit": "Изменить",
