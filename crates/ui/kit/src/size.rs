@@ -47,3 +47,19 @@ pub const LINE: f32 = 1.0;
 pub const SPLIT_GRAB: f32 = 8.0;
 /// Width of a modal dialog.
 pub const DIALOG: f32 = 420.0;
+/// Height of a pane header (`.pane-head { height: 30px }`).
+pub const PANE_HEADER: f32 = 30.0;
+/// Width of the title bar search button (`.tb-search { width: 480px }`).
+pub const TITLE_SEARCH_WIDTH: f32 = 480.0;
+/// Height of the title bar search button (`.tb-search { height: 26px }`).
+pub const TITLE_SEARCH_HEIGHT: f32 = 26.0;
+/// Height of an action tile on the empty card (`.big-action`).
+pub const ACTION_TILE: f32 = 44.0;
+/// Height of the floating note pill (`height: 30px` in the focus screen).
+pub const FLOATING_NOTE: f32 = 30.0;
+/// Width of the empty card (`.empty-card { width: 460px }`).
+pub const EMPTY_CARD: f32 = 460.0;
+/// Width of the logo slot on the empty card (`width: 72px`).
+pub const EMPTY_LOGO_WIDTH: f32 = 72.0;
+/// Height of the logo slot on the empty card (`height: 52px`).
+pub const EMPTY_LOGO_HEIGHT: f32 = 52.0;

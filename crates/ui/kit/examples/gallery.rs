@@ -8,10 +8,13 @@ use iced::widget::{
     Space, column, container, row, scrollable, stack, svg, text,
 };
 use iced::{Element, Length, Padding, Theme};
+use otty_ui_kit::components::action_tile::ActionTile;
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::divider;
+use otty_ui_kit::components::empty_card::EmptyCard;
+use otty_ui_kit::components::floating_note::FloatingNote;
 use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::icon_button::{
@@ -20,6 +23,7 @@ use otty_ui_kit::components::icon_button::{
 use otty_ui_kit::components::kbd::{kbd, shortcut_text};
 use otty_ui_kit::components::key_value_field::KeyValueField;
 use otty_ui_kit::components::menu::{Menu, MenuItem};
+use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::rail_button::{RailButton, rail_separator};
 use otty_ui_kit::components::segmented::segmented;
@@ -33,6 +37,7 @@ use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::components::tab_strip::{Tab, TabStrip};
 use otty_ui_kit::components::target_dot::{TargetKind, target_dot};
 use otty_ui_kit::components::text_field::TextField;
+use otty_ui_kit::components::title_search::TitleSearch;
 use otty_ui_kit::components::token_field::{TokenField, TokenList};
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::palette::UiPalette;
@@ -40,6 +45,15 @@ use otty_ui_kit::{fonts, spacing, typography};
 
 /// Plus icon used by the icon buttons.
 const PLUS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>"#;
+
+/// Search icon of the title search.
+const SEARCH_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>"#;
+/// Folder icon of the empty card.
+const FOLDER_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>"#;
+/// Launch icon of the empty card.
+const LAUNCH_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/></svg>"#;
+/// Product logo, passed to the empty card as an element.
+const LOGO: &[u8] = include_bytes!("../../../../assets/logo/logo-small.svg");
 
 const KINDS: [(&str, ButtonKind); 4] = [
     ("Primary", ButtonKind::Primary),
@@ -496,6 +510,60 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         .spacing(spacing::SPACE_4)
         .align_y(iced::Alignment::Center);
 
+    let pane_headers = column![
+        PaneHeader::new("zsh", p)
+            .folder("~/projects/otty")
+            .focused(true)
+            .trailing(Chip::new("fedora", p).target(TargetKind::Local)),
+        PaneHeader::new("claude", p)
+            .folder("~/projects/otty")
+            .trailing(Chip::new("needs you", p)),
+    ];
+    let title_search = TitleSearch::new(
+        "zsh  ~/projects/otty",
+        "Ctrl K",
+        svg::Handle::from_memory(SEARCH_ICON),
+        p,
+    )
+    .on_press(Message::Clicked);
+    let floating_note = FloatingNote::new(p)
+        .text("Focus mode")
+        .muted("Panels are hidden")
+        .kbd("Ctrl Shift F")
+        .muted("to show them");
+    let logo = svg(svg::Handle::from_memory(LOGO))
+        .width(Length::Fill)
+        .height(Length::Fill);
+    let empty_card = EmptyCard::new(
+        "Start a session",
+        "Open a terminal on this computer or run one of your launches.",
+        logo,
+        p,
+    )
+    .action(
+        ActionTile::new(svg::Handle::from_memory(PLUS_ICON), "New terminal", p)
+            .shortcut("Ctrl T")
+            .accent(true)
+            .on_press(Message::Clicked),
+    )
+    .action(
+        ActionTile::new(
+            svg::Handle::from_memory(FOLDER_ICON),
+            "Terminal in a folder…",
+            p,
+        )
+        .shortcut("Ctrl Shift T")
+        .on_press(Message::Clicked),
+    )
+    .action(
+        ActionTile::new(
+            svg::Handle::from_memory(LAUNCH_ICON),
+            "New launch…",
+            p,
+        )
+        .on_press(Message::Clicked),
+    );
+
     let sessions_body = column![
         SessionGroup::new("fedora", TargetKind::Local, p).note("this computer"),
         SessionRow::new("zsh  ~/projects/otty", p)
@@ -609,6 +677,18 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section(
             "SplitButton (idle; menu open shows the frame)",
             split_buttons.into(),
+            p,
+        ),
+        section(
+            "PaneHeader (focused with chip; other pane)",
+            pane_headers.into(),
+            p,
+        ),
+        section("TitleSearch", title_search.into(), p),
+        section("FloatingNote", floating_note.into(), p),
+        section(
+            "EmptyCard (ActionTile: accent icon, shortcut)",
+            empty_card.into(),
             p,
         ),
     ];
