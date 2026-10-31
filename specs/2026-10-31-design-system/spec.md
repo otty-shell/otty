@@ -114,9 +114,10 @@ command palette, Kubernetes) are listed under Follow-up specs.
 
 ## Known Token Issues
 
-Found while checking contrast (WCAG 2.1 relative luminance). The values stay
-as in the design system; ticket 02 records them in tests as known exceptions
-and ticket 15 raises them in the design system.
+Found while checking contrast (WCAG 2.1 relative luminance). Ticket 02
+recorded them in tests as known exceptions; on 2026-10-31 the owner decided to
+fix them, and ticket 16 changes the tokens so every pair below reaches 4.5:1.
+Ticket 15 then publishes the new values to the design system.
 
 | Pair | Dark | Light |
 |---|---|---|
@@ -143,12 +144,14 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 - [x] 12 — Restyle settings screen · Sonnet
 - [x] 13 — Restyle quick launch editor, secret prompt and error tab · Sonnet
 - [x] 14 — Remove old styling code · Opus
+- [ ] 16 — Fix the known contrast issues · Sonnet
 - [ ] 15 — Update the design system to match the code · owner
 
-Tickets live in `issues/`. Each ticket names the model that runs it on its `Model:` line; a subagent started for a ticket is launched with that model. Order: 01 → (02, 04) → (03, 05, 06) → 07–13 in parallel → 14 → 15.
+Tickets live in `issues/`. Each ticket names the model that runs it on its `Model:` line; a subagent started for a ticket is launched with that model. Order: 01 → (02, 04) → (03, 05, 06) → 07–13 in parallel → 14 → 16 → 15.
 
 ## Round Log
 
 - Round 1 (2026-10-31, owner review): no dark/light detection, only two fixed themes; One Dark, Solarized Dark, Dracula and the palette editor removed; fonts approved; OTTY Light terminal colors completed in ticket 03 because the updated design system still fixes only 9 of 29.
 - Round 2 (2026-10-31, owner review): spec approved; OTTY Light terminal colors in ticket 03 approved; implementation runs ticket by ticket, one subagent per ticket with the model from its `Model:` line, one commit per ticket.
 - Ticket 02 (2026-10-31): `text-muted` on `surface-selected` (4.68 / 4.54) passes 4.5:1 and was wrongly listed as a known issue; removed from the table and tested as a passing pair.
+- Round 3 (2026-10-31, owner review of the ticket 15 draft): fix the known contrast issues before publishing (ticket 16); publish the design system after that.
