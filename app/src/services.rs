@@ -2,6 +2,26 @@ use std::path::Path;
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
+/// Read this computer's host name, such as "fedora". Returns `None` when it
+/// cannot be read; callers then call the machine "This computer".
+pub(crate) fn read_host_name() -> Option<String> {
+    #[cfg(unix)]
+    {
+        match nix::unistd::gethostname() {
+            Ok(name) => name.into_string().ok().filter(|name| !name.is_empty()),
+            Err(err) => {
+                log::warn!("host name read failed: {err}");
+                None
+            },
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        None
+    }
+}
+
 /// Clone terminal settings with a session descriptor.
 pub(crate) fn terminal_settings_for_session(
     base_settings: &Settings,

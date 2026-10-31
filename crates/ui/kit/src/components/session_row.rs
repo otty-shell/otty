@@ -72,6 +72,7 @@ pub struct SessionRow<Message> {
     state: Option<(String, SessionTone)>,
     on_press: Option<Message>,
     on_right_press: Option<Message>,
+    on_middle_press: Option<Message>,
     on_close: Option<Message>,
 }
 
@@ -85,6 +86,7 @@ impl<Message> SessionRow<Message> {
             state: None,
             on_press: None,
             on_right_press: None,
+            on_middle_press: None,
             on_close: None,
         }
     }
@@ -110,6 +112,13 @@ impl<Message> SessionRow<Message> {
     /// Sets the message sent on right press.
     pub fn on_right_press(mut self, message: Message) -> Self {
         self.on_right_press = Some(message);
+        self
+    }
+
+    /// Sets the message sent on a middle click, for example to close the
+    /// session the way a middle click closes a browser tab.
+    pub fn on_middle_press(mut self, message: Message) -> Self {
+        self.on_middle_press = Some(message);
         self
     }
 
@@ -194,6 +203,9 @@ impl<'a, Message: Clone + 'a> From<SessionRow<Message>>
         if let Some(message) = value.on_right_press {
             area = area.on_right_press(message);
         }
+        if let Some(message) = value.on_middle_press {
+            area = area.on_middle_press(message);
+        }
 
         area.into()
     }
@@ -265,6 +277,32 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::Menu]);
+    }
+
+    #[test]
+    fn given_row_when_middle_pressed_then_middle_press_is_sent() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(
+            container(
+                SessionRow::new("htop", &palette)
+                    .on_press(Message::Open)
+                    .on_middle_press(Message::Close),
+            )
+            .width(260),
+        );
+
+        ui.point_at(Point::new(40.0, size::ROW / 2.0));
+        let _ = ui.simulate([
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(
+                iced::mouse::Button::Middle,
+            )),
+            iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
+                iced::mouse::Button::Middle,
+            )),
+        ]);
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Close]);
     }
 
     #[test]

@@ -3,9 +3,9 @@
 //!
 //! Each component takes the palette of the active theme and returns an
 //! [`iced::Element`]. Components never bundle icons: callers pass an
-//! [`iced::widget::svg::Handle`]. The only exception is the small caret,
-//! cross and plus shapes that rows, tabs and fields draw as part of their
-//! own structure.
+//! [`iced::widget::svg::Handle`]. The only exception is the small caret
+//! and cross shapes that rows and fields draw as part of their own
+//! structure.
 //!
 //! [`UiPalette`]: crate::palette::UiPalette
 
@@ -40,7 +40,6 @@ pub mod split_button;
 pub mod status_bar;
 pub mod surface;
 pub mod switch;
-pub mod tab_strip;
 pub mod target_dot;
 pub mod text_field;
 pub mod title_search;

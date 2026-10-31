@@ -21,7 +21,7 @@
     "split_down": "Nach unten teilen",
     "split_right": "Nach rechts teilen",
     "close_pane": "Bereich schließen",
-    "pane_machine_local": "Lokal",
+    "this_computer": "Dieser Computer",
     "window_toggle_fullscreen": "Vollbild umschalten",
     "window_minimize": "Minimieren",
     "window_files_panel": "Dateien",
@@ -40,6 +40,14 @@
     "create_quick_launch": "Schnellstart erstellen",
     "delete": "Löschen",
     "create_launch": "Starteintrag erstellen",
+
+    "sessions_panel_title": "Sitzungen",
+    "new_session": "Neue Sitzung",
+    "this_computer_note": "dieser Computer",
+    "ssh_machine_note": "ssh",
+    "session_state_settings": "Einstellungen",
+    "session_state_editor": "Editor",
+    "session_state_failed": "fehlgeschlagen",
 
     "launches_panel_title": "Starts",
     "launch_running": "läuft",

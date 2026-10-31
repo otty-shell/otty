@@ -11,6 +11,7 @@ use crate::widgets::explorer::types::FileNode;
 use crate::widgets::explorer::{
     ExplorerCtx, ExplorerEffect, ExplorerEvent, ExplorerIntent,
 };
+use crate::widgets::tabs::types::TabMachine;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 pub(crate) fn handle(app: &mut App, event: ExplorerEvent) -> Task<AppEvent> {
@@ -107,6 +108,7 @@ fn open_file_terminal_tab(app: &mut App, file_path: PathBuf) -> Task<AppEvent> {
             title,
             settings: Box::new(settings),
             exit_behavior: ExitBehavior::Close,
+            machine: TabMachine::ThisComputer,
         },
     )))
 }

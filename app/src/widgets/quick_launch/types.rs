@@ -48,6 +48,14 @@ impl QuickLaunch {
     pub(crate) fn is_ssh(&self) -> bool {
         matches!(self.spec, CommandSpec::Ssh { .. })
     }
+
+    /// Host the command connects to, or `None` for a local command.
+    pub(crate) fn ssh_host(&self) -> Option<&str> {
+        match &self.spec {
+            CommandSpec::Ssh { ssh } => Some(ssh.host()),
+            _ => None,
+        }
+    }
 }
 
 /// Command specification variant.
@@ -786,6 +794,19 @@ mod tests {
 
         assert!(ssh.is_ssh());
         assert!(!local.is_ssh());
+    }
+
+    #[test]
+    fn given_ssh_and_custom_commands_when_host_read_then_only_ssh_has_one() {
+        let QuickLaunchNode::Command(ssh) = ssh_command("prod") else {
+            panic!("ssh_command should build a command");
+        };
+        let QuickLaunchNode::Command(local) = local_command("shell") else {
+            panic!("local_command should build a command");
+        };
+
+        assert_eq!(ssh.ssh_host(), Some("example.com"));
+        assert_eq!(local.ssh_host(), None);
     }
 
     #[test]

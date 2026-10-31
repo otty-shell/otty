@@ -21,7 +21,7 @@
     "split_down": "Разделить вниз",
     "split_right": "Разделить вправо",
     "close_pane": "Закрыть панель",
-    "pane_machine_local": "Локально",
+    "this_computer": "Этот компьютер",
     "window_toggle_fullscreen": "Во весь экран",
     "window_minimize": "Свернуть",
     "window_files_panel": "Файлы",
@@ -40,6 +40,14 @@
     "create_quick_launch": "Создать быстрый запуск",
     "delete": "Удалить",
     "create_launch": "Создать элемент запуска",
+
+    "sessions_panel_title": "Сеансы",
+    "new_session": "Новый сеанс",
+    "this_computer_note": "этот компьютер",
+    "ssh_machine_note": "ssh",
+    "session_state_settings": "настройки",
+    "session_state_editor": "редактор",
+    "session_state_failed": "ошибка",
 
     "launches_panel_title": "Запуски",
     "launch_running": "работает",

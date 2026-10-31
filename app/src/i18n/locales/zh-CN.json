@@ -21,7 +21,7 @@
     "split_down": "向下拆分",
     "split_right": "向右拆分",
     "close_pane": "关闭窗格",
-    "pane_machine_local": "本地",
+    "this_computer": "此电脑",
     "window_toggle_fullscreen": "切换全屏",
     "window_minimize": "最小化",
     "window_files_panel": "文件",
@@ -40,6 +40,14 @@
     "create_quick_launch": "新建快捷启动",
     "delete": "删除",
     "create_launch": "新建启动项",
+
+    "sessions_panel_title": "会话",
+    "new_session": "新建会话",
+    "this_computer_note": "此电脑",
+    "ssh_machine_note": "ssh",
+    "session_state_settings": "设置",
+    "session_state_editor": "编辑器",
+    "session_state_failed": "失败",
 
     "launches_panel_title": "启动项",
     "launch_running": "运行中",

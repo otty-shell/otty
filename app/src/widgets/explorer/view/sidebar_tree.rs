@@ -53,7 +53,8 @@ fn folder_line<'a>(
     let style = typography::SMALL;
     let folder = root_label.unwrap_or(i18n::t(Key::NoActiveFolder));
 
-    // Machine names arrive with ticket 10; every folder is local for now.
+    // The panel follows shell tabs only, and shell tabs always run on this
+    // computer (SSH launches open command tabs), so the folder is local.
     let dot = target_dot(TargetKind::Local, palette);
     let folder = text(folder)
         .size(style.size())

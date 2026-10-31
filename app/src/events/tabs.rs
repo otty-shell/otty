@@ -8,7 +8,7 @@ use crate::services::terminal_settings_for_session;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::settings::{SettingsEvent, SettingsIntent};
-use crate::widgets::tabs::view::tab_bar::TAB_BAR_SCROLL_ID;
+use crate::widgets::tabs::view::session_list::SESSION_LIST_SCROLL_ID;
 use crate::widgets::tabs::{TabsEffect, TabsEvent};
 use crate::widgets::terminal_workspace::types::TerminalKind;
 use crate::widgets::terminal_workspace::{
@@ -172,7 +172,7 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                 message,
             },
         ))),
-        TabsEffect::ScrollBarToEnd => snap_to_end(TAB_BAR_SCROLL_ID),
+        TabsEffect::ScrollBarToEnd => snap_to_end(SESSION_LIST_SCROLL_ID),
     }
 }
 

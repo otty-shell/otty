@@ -21,7 +21,7 @@
     "split_down": "向下分割",
     "split_right": "向右分割",
     "close_pane": "關閉窗格",
-    "pane_machine_local": "本機",
+    "this_computer": "這台電腦",
     "window_toggle_fullscreen": "切換全螢幕",
     "window_minimize": "最小化",
     "window_files_panel": "檔案",
@@ -40,6 +40,14 @@
     "create_quick_launch": "新增快速啟動",
     "delete": "刪除",
     "create_launch": "新增啟動項目",
+
+    "sessions_panel_title": "工作階段",
+    "new_session": "新增工作階段",
+    "this_computer_note": "這台電腦",
+    "ssh_machine_note": "ssh",
+    "session_state_settings": "設定",
+    "session_state_editor": "編輯器",
+    "session_state_failed": "失敗",
 
     "launches_panel_title": "啟動項",
     "launch_running": "執行中",

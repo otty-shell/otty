@@ -7,16 +7,15 @@ pub(crate) fn screen_size_from_window(window_size: Size) -> Size {
     Size::new(window_size.width, height)
 }
 
-/// Size of the terminal pane grid: the screen minus the tab strip and the
-/// share of the width the shown side panels take.
+/// Size of the terminal pane grid: the full screen height and the width
+/// left after the shown side panels.
 pub(crate) fn pane_grid_size(
     screen_size: Size,
     side_panels_ratio: f32,
 ) -> Size {
-    let height = (screen_size.height - size::TAB).max(0.0);
     let width = (screen_size.width * (1.0 - side_panels_ratio)).max(0.0);
 
-    Size::new(width, height)
+    Size::new(width, screen_size.height)
 }
 
 #[cfg(test)]
@@ -62,20 +61,11 @@ mod tests {
     }
 
     #[test]
-    fn given_screen_when_pane_grid_computed_then_tab_strip_height_is_removed() {
+    fn given_screen_when_pane_grid_computed_then_it_takes_the_full_height() {
         let screen = Size::new(1000.0, 700.0);
 
         let grid = pane_grid_size(screen, 0.0);
 
-        assert_eq!(size::TAB, 34.0);
-        assert_eq!(grid.height, 700.0 - 34.0);
-    }
-
-    #[test]
-    fn given_screen_shorter_than_tab_strip_when_pane_grid_computed_then_height_is_zero()
-     {
-        let grid = pane_grid_size(Size::new(1000.0, 20.0), 0.0);
-
-        assert_eq!(grid.height, 0.0);
+        assert_eq!(grid.height, 700.0);
     }
 }

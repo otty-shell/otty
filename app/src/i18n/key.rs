@@ -52,8 +52,8 @@ pub(crate) enum Key {
     SplitRight,
     /// Close the pane.
     ClosePane,
-    /// Machine name in a pane header while panes only run locally.
-    PaneMachineLocal,
+    /// Name of this computer when its host name cannot be read.
+    ThisComputer,
     /// Tooltip of the title bar full screen button.
     WindowToggleFullscreen,
     /// Tooltip of the title bar minimize button.
@@ -90,6 +90,22 @@ pub(crate) enum Key {
     Delete,
     /// Create a launch entry inside a folder.
     CreateLaunch,
+
+    // Sessions section of the left panel.
+    /// Title of the Sessions section of the left panel.
+    SessionsPanelTitle,
+    /// Tooltip of the Sessions header button that opens a terminal.
+    NewSession,
+    /// Muted note after this computer's group name.
+    ThisComputerNote,
+    /// Muted note after an SSH host's group name.
+    SshMachineNote,
+    /// State word on the Settings row.
+    SessionStateSettings,
+    /// State word on a launch editor row.
+    SessionStateEditor,
+    /// State word on a launch error row.
+    SessionStateFailed,
 
     // Quick launch sidebar panel.
     /// Title of the Launches section of the left panel.
@@ -285,7 +301,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 123] = [
+    pub(super) const ALL: [Self; 130] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -304,7 +320,7 @@ impl Key {
         Self::SplitDown,
         Self::SplitRight,
         Self::ClosePane,
-        Self::PaneMachineLocal,
+        Self::ThisComputer,
         Self::WindowToggleFullscreen,
         Self::WindowMinimize,
         Self::WindowFilesPanel,
@@ -322,6 +338,13 @@ impl Key {
         Self::CreateQuickLaunch,
         Self::Delete,
         Self::CreateLaunch,
+        Self::SessionsPanelTitle,
+        Self::NewSession,
+        Self::ThisComputerNote,
+        Self::SshMachineNote,
+        Self::SessionStateSettings,
+        Self::SessionStateEditor,
+        Self::SessionStateFailed,
         Self::LaunchesPanelTitle,
         Self::LaunchRunning,
         Self::NoActiveFolder,

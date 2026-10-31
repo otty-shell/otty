@@ -27,7 +27,7 @@ use crate::widgets::sidebar::types::SidebarPane;
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent, SidebarViewModel};
 use crate::widgets::tabs::TabsEvent;
 use crate::widgets::tabs::types::TabContent;
-use crate::widgets::tabs::view::tab_bar;
+use crate::widgets::tabs::view::session_list;
 use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
 use crate::widgets::terminal_workspace::view::{
     pane_context_menu as terminal_pane_context_menu,
@@ -196,7 +196,7 @@ fn view_panels_layout<'a>(
                             theme_props,
                         )
                     },
-                    SidebarPane::Main => view_tab_area(app, theme_props),
+                    SidebarPane::Main => view_tab_content(app, theme_props),
                     _ => Space::new()
                         .width(Length::Fill)
                         .height(Length::Fill)
@@ -232,16 +232,30 @@ fn side_panel<'a>(
     surface(content, Surface::Panel, theme_props.theme.ui()).into()
 }
 
-/// Left panel content: a column of sections. Today it holds the Launches
-/// section; the Sessions section goes above it in the same column.
+/// Left panel content: the Sessions section over the Launches section.
+/// Launches is the only growing section, so it takes the height left under
+/// Sessions.
 fn view_left_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let sidebar_vm = app.widgets.sidebar.vm();
+
+    let sessions = session_list::view(session_list::SessionListProps {
+        vm: app.widgets.tabs.vm(app.host_name.as_deref()),
+        theme: theme_props,
+        is_open: sidebar_vm.is_sessions_open,
+        new_session_title: app.shell_session.name(),
+        on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::ToggleSessions,
+        )),
+        on_intent: |intent| AppEvent::Tabs(TabsEvent::Intent(intent)),
+    });
+
     let launches = sidebar_panel::view(sidebar_panel::SidebarPanelProps {
         vm: app.widgets.quick_launch.vm(),
         theme: theme_props,
-        is_open: app.widgets.sidebar.vm().is_launches_open,
+        is_open: sidebar_vm.is_launches_open,
         on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
             SidebarIntent::ToggleLaunches,
         )),
@@ -250,10 +264,14 @@ fn view_left_panel<'a>(
         },
     });
 
-    column![launches]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    column![
+        sessions,
+        divider::horizontal(theme_props.theme.ui()),
+        launches
+    ]
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
 }
 
 /// Right panel content: the Files section.
@@ -269,31 +287,6 @@ fn view_right_panel<'a>(
     .map(|event| AppEvent::Explorer(ExplorerEvent::Intent(event)))
 }
 
-/// Render the tab bar + tab content area.
-fn view_tab_area<'a>(
-    app: &'a App,
-    theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let tabs_vm = app.widgets.tabs.vm();
-
-    let tab_bar_props = tab_bar::TabBarProps {
-        tabs: tabs_vm.tabs,
-        active_tab_id: tabs_vm.active_tab_id,
-        new_tab_title: app.shell_session.name().to_string(),
-        theme: theme_props,
-    };
-
-    let tab_bar = tab_bar::view(tab_bar_props)
-        .map(|event| AppEvent::Tabs(TabsEvent::Intent(event)));
-
-    let content = view_tab_content(app, theme_props);
-
-    column![tab_bar, content]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-}
-
 /// Render the active tab content based on its type.
 fn view_tab_content<'a>(
     app: &'a App,
@@ -304,20 +297,7 @@ fn view_tab_content<'a>(
 
     match (active_tab_id, active_tab_content) {
         (Some(tab_id), Some(TabContent::Terminal)) => {
-            let vm = app.widgets.terminal_workspace.vm(Some(tab_id));
-            match vm.tab {
-                Some(tab_vm) => {
-                    terminal_pane_grid::view(tab_vm, theme_props.theme.ui())
-                        .map(|event| {
-                            AppEvent::TerminalWorkspace(
-                                TerminalWorkspaceEvent::Intent(event),
-                            )
-                        })
-                },
-                None => {
-                    missing_tab_state(i18n::t(Key::TerminalTabNotInitialized))
-                },
-            }
+            view_terminal_tab(app, tab_id, theme_props)
         },
         (Some(_tab_id), Some(TabContent::Settings)) => {
             settings_form::view(settings_form::SettingsFormProps {
@@ -361,6 +341,35 @@ fn view_tab_content<'a>(
             .width(Length::Fill)
             .height(Length::Fill)
             .into(),
+    }
+}
+
+/// Render the pane grid of a terminal tab. Every pane header names the
+/// machine the tab runs on.
+fn view_terminal_tab<'a>(
+    app: &'a App,
+    tab_id: u64,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let Some(machine) = app.widgets.tabs.active_tab_machine() else {
+        return missing_tab_state(i18n::t(Key::TerminalTabNotInitialized));
+    };
+
+    let vm = app.widgets.terminal_workspace.vm(
+        Some(tab_id),
+        machine.name(app.host_name.as_deref()),
+        machine.target_kind(),
+    );
+
+    match vm.tab {
+        Some(tab_vm) => terminal_pane_grid::view(
+            tab_vm,
+            theme_props.theme.ui(),
+        )
+        .map(|event| {
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(event))
+        }),
+        None => missing_tab_state(i18n::t(Key::TerminalTabNotInitialized)),
     }
 }
 

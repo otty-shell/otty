@@ -35,7 +35,6 @@ use otty_ui_kit::components::setting_row::SettingRow;
 use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::components::switch::Switch;
-use otty_ui_kit::components::tab_strip::{Tab, TabStrip};
 use otty_ui_kit::components::target_dot::{TargetKind, target_dot};
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::components::title_search::TitleSearch;
@@ -104,7 +103,6 @@ struct Gallery {
     tokens: TokenList,
     empty_tokens: TokenList,
     variables: Vec<(String, String)>,
-    tab: usize,
     tree_selected: usize,
     dialog_open: bool,
     sessions_open: bool,
@@ -147,7 +145,6 @@ impl Gallery {
                 ("RUST_LOG".to_owned(), "debug".to_owned()),
                 ("PATH".to_owned(), "/usr/local/bin:/usr/bin".to_owned()),
             ],
-            tab: 0,
             tree_selected: 2,
             dialog_open: false,
             sessions_open: true,
@@ -174,7 +171,6 @@ enum Message {
     VarValue(usize, String),
     VarRemove(usize),
     VarAdd,
-    Tab(usize),
 
     Tree(usize),
     OpenDialog,
@@ -208,7 +204,6 @@ fn update(state: &mut Gallery, message: Message) {
             state.variables.remove(index);
         },
         Message::VarAdd => state.variables.push(Default::default()),
-        Message::Tab(index) => state.tab = index,
         Message::Tree(index) => state.tree_selected = index,
         Message::OpenDialog => state.dialog_open = true,
         Message::CloseDialog => state.dialog_open = false,
@@ -393,31 +388,6 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         TreeRow::new("Static row (no message)", p).depth(3),
     ]
     .width(PANEL_WIDTH);
-
-    let mut tabs = TabStrip::new(p).on_new(Message::Clicked);
-    for (index, title) in [
-        "main",
-        "build logs",
-        "ssh prod-1 (a very long tab title for cutting)",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        tabs = tabs.tab(
-            Tab::new(title)
-                .active(state.tab == index)
-                .on_press(Message::Tab(index))
-                .on_close(Message::Clicked),
-        );
-    }
-    let mut many = TabStrip::new(p).on_new(Message::Clicked);
-    for index in 0..14 {
-        many = many.tab(
-            Tab::new(format!("session {index}"))
-                .active(index == 3)
-                .on_press(Message::Clicked),
-        );
-    }
 
     let fields = column![
         TextField::new("Working directory", &state.path, p)
@@ -698,8 +668,6 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             tree.into(),
             p,
         ),
-        section("TabStrip (active tab, hover, close, plus)", tabs.into(), p),
-        section("TabStrip (many tabs: clipped at the edge)", many.into(), p),
         section(
             "PanelSection (open with SessionGroup + SessionRow: selected, state words, long title; collapsed)",
             panel.into(),

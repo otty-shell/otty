@@ -1,1 +1,1 @@
-pub(crate) mod tab_bar;
+pub(crate) mod session_list;

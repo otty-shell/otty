@@ -26,6 +26,7 @@ pub(crate) fn view<'a>(
     let focus = vm.focus;
     let terminals = vm.terminals;
     let machine = vm.machine;
+    let machine_target = vm.machine_target;
     let line = palette.line();
 
     let grid = PaneGrid::new(vm.panes, move |pane, terminal_id, _| {
@@ -43,7 +44,13 @@ pub(crate) fn view<'a>(
         match terminals.get(terminal_id) {
             Some(entry) => {
                 let header = view_pane_header(
-                    tab_id, pane, entry, machine, is_focused, palette,
+                    tab_id,
+                    pane,
+                    entry,
+                    machine,
+                    machine_target,
+                    is_focused,
+                    palette,
                 );
                 pane_content.title_bar(pane_grid::TitleBar::new(header))
             },
@@ -89,14 +96,12 @@ fn view_pane_header<'a>(
     pane: pane_grid::Pane,
     entry: &TerminalEntry,
     machine: &str,
+    machine_target: TargetKind,
     is_focused: bool,
     palette: &UiPalette,
 ) -> Element<'a, TerminalWorkspaceIntent> {
     let header_text = PaneHeaderViewModel::for_entry(entry, machine);
-    // The pane does not know yet whether it is an SSH session, so the chip
-    // is always a local one.
-    let chip =
-        Chip::new(header_text.machine(), palette).target(TargetKind::Local);
+    let chip = Chip::new(header_text.machine(), palette).target(machine_target);
 
     let mut header = PaneHeader::new(header_text.program(), palette)
         .focused(is_focused)

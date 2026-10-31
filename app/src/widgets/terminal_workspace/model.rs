@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use iced::widget::pane_grid;
+use otty_ui_kit::components::target_dot::TargetKind;
 
 use super::services;
 use super::state::PaneContextMenuState;
@@ -16,9 +17,11 @@ pub(crate) struct TerminalTabViewModel<'a> {
     pub(crate) focus: Option<pane_grid::Pane>,
     pub(crate) context_menu: Option<&'a PaneContextMenuState>,
     pub(crate) has_block_selection: bool,
-    /// Name shown in the machine chip of every pane header. It is "Local"
-    /// until panes know their SSH host name.
+    /// Name shown in the machine chip of every pane header: this
+    /// computer's host name or the SSH host.
     pub(crate) machine: &'a str,
+    /// Dot drawn in the machine chip.
+    pub(crate) machine_target: TargetKind,
 }
 
 /// View model for the entire terminal workspace, keyed by active tab id.

@@ -15,11 +15,11 @@ pub(crate) use event::{
     TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 use iced::Task;
+use otty_ui_kit::components::target_dot::TargetKind;
 pub(crate) use reducer::TerminalWorkspaceCtx;
 use state::{TerminalTabState, TerminalWorkspaceState};
 
 use self::model::{TerminalTabViewModel, TerminalWorkspaceViewModel};
-use crate::i18n::{self, Key};
 
 /// Terminal workspace widget: manages terminal sessions across tabs.
 ///
@@ -57,11 +57,15 @@ impl TerminalWorkspaceWidget {
         )
     }
 
-    /// Return a view model for the given active tab.
-    pub(crate) fn vm(
-        &self,
+    /// Return a view model for the given active tab. `machine` and
+    /// `machine_target` name the machine the tab runs on, for the chip in
+    /// every pane header.
+    pub(crate) fn vm<'a>(
+        &'a self,
         active_tab_id: Option<u64>,
-    ) -> TerminalWorkspaceViewModel<'_> {
+        machine: &'a str,
+        machine_target: TargetKind,
+    ) -> TerminalWorkspaceViewModel<'a> {
         let tab = active_tab_id.and_then(|tab_id| self.state.tab(tab_id)).map(
             |tab| TerminalTabViewModel {
                 tab_id: active_tab_id.unwrap_or(0),
@@ -70,7 +74,8 @@ impl TerminalWorkspaceWidget {
                 focus: tab.focus(),
                 context_menu: tab.context_menu(),
                 has_block_selection: tab.selected_block().is_some(),
-                machine: i18n::t(Key::PaneMachineLocal),
+                machine,
+                machine_target,
             },
         );
 

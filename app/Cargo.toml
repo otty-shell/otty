@@ -26,6 +26,9 @@ shell-words = "1.1.0"
 sys-locale = "0.3.2"
 notify = "8.2.0"
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true }
+
 [dev-dependencies]
 iced_test = "0.14"
 

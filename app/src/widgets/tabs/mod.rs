@@ -29,18 +29,17 @@ impl TabsWidget {
         reducer::reduce(&mut self.state, event)
     }
 
-    /// Produce the tabs view model for rendering.
-    pub(crate) fn vm(&self) -> TabsViewModel {
-        TabsViewModel {
-            tabs: self
-                .state
-                .tab_items()
-                .iter()
-                .map(|(id, item)| (*id, item.title().to_owned()))
-                .collect(),
-            active_tab_id: self.state.active_tab_id(),
-            has_tabs: !self.state.is_empty(),
-        }
+    /// Produce the Sessions view model: open tabs grouped by machine.
+    /// `host_name` names this computer (`None` when it could not be read).
+    pub(crate) fn vm<'a>(
+        &'a self,
+        host_name: Option<&'a str>,
+    ) -> TabsViewModel<'a> {
+        TabsViewModel::new(
+            self.state.tab_items(),
+            self.state.active_tab_id(),
+            host_name,
+        )
     }
 
     /// Return the active tab identifier.
@@ -56,6 +55,11 @@ impl TabsWidget {
     /// Return number of open tabs.
     pub(crate) fn len(&self) -> usize {
         self.state.len()
+    }
+
+    /// Return the machine the active tab runs on, if a tab is open.
+    pub(crate) fn active_tab_machine(&self) -> Option<&types::TabMachine> {
+        self.state.active_tab().map(|tab| tab.machine())
     }
 
     /// Return active tab title if present.

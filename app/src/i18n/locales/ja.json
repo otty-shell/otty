@@ -21,7 +21,7 @@
     "split_down": "下に分割",
     "split_right": "右に分割",
     "close_pane": "ペインを閉じる",
-    "pane_machine_local": "ローカル",
+    "this_computer": "このコンピューター",
     "window_toggle_fullscreen": "全画面表示の切り替え",
     "window_minimize": "最小化",
     "window_files_panel": "ファイル",
@@ -40,6 +40,14 @@
     "create_quick_launch": "クイック起動を作成",
     "delete": "削除",
     "create_launch": "起動項目を作成",
+
+    "sessions_panel_title": "セッション",
+    "new_session": "新しいセッション",
+    "this_computer_note": "このコンピューター",
+    "ssh_machine_note": "ssh",
+    "session_state_settings": "設定",
+    "session_state_editor": "エディター",
+    "session_state_failed": "失敗",
 
     "launches_panel_title": "起動",
     "launch_running": "実行中",

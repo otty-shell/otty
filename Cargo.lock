@@ -3105,6 +3105,7 @@ dependencies = [
  "iced_test",
  "image",
  "log",
+ "nix 0.31.2",
  "notify",
  "otty-libterm",
  "otty-ui-kit",

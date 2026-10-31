@@ -3,7 +3,7 @@ use otty_ui_term::settings::Settings;
 
 use super::event::{TabsEffect, TabsEvent, TabsIntent};
 use super::state::TabsState;
-use super::types::{TabContent, TabItem};
+use super::types::{TabContent, TabItem, TabMachine};
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::domain::quick_launch::WizardTabInit;
 use crate::i18n::{self, Key};
@@ -31,7 +31,8 @@ pub(crate) fn reduce(
             title,
             settings,
             exit_behavior,
-        } => open_command_tab(state, title, *settings, exit_behavior),
+            machine,
+        } => open_command_tab(state, title, *settings, exit_behavior, machine),
         TabsIntent::OpenSettingsTab => open_settings_tab(state),
         TabsIntent::OpenWizardTab { title, init } => {
             open_wizard_tab(state, title, init)
@@ -84,7 +85,12 @@ fn open_terminal_tab(state: &mut TabsState, title: String) -> Task<TabsEvent> {
 
     state.insert(
         tab_id,
-        TabItem::new(tab_id, title.clone(), TabContent::Terminal),
+        TabItem::new(
+            tab_id,
+            title.clone(),
+            TabContent::Terminal,
+            TabMachine::ThisComputer,
+        ),
     );
     state.activate(Some(tab_id));
 
@@ -102,12 +108,13 @@ fn open_command_tab(
     title: String,
     settings: Settings,
     exit_behavior: ExitBehavior,
+    machine: TabMachine,
 ) -> Task<TabsEvent> {
     let tab_id = state.allocate_tab_id();
 
     state.insert(
         tab_id,
-        TabItem::new(tab_id, title.clone(), TabContent::Terminal),
+        TabItem::new(tab_id, title.clone(), TabContent::Terminal, machine),
     );
     state.activate(Some(tab_id));
 
@@ -130,7 +137,12 @@ fn open_wizard_tab(
     let tab_id = state.allocate_tab_id();
     state.insert(
         tab_id,
-        TabItem::new(tab_id, title, TabContent::QuickLaunchWizard),
+        TabItem::new(
+            tab_id,
+            title,
+            TabContent::QuickLaunchWizard,
+            TabMachine::ThisComputer,
+        ),
     );
     state.activate(Some(tab_id));
     Task::batch(vec![
@@ -150,7 +162,12 @@ fn open_error_tab(
     let tab_id = state.allocate_tab_id();
     state.insert(
         tab_id,
-        TabItem::new(tab_id, title.clone(), TabContent::QuickLaunchError),
+        TabItem::new(
+            tab_id,
+            title.clone(),
+            TabContent::QuickLaunchError,
+            TabMachine::ThisComputer,
+        ),
     );
     state.activate(Some(tab_id));
     Task::batch(vec![
@@ -179,6 +196,7 @@ fn open_settings_tab(state: &mut TabsState) -> Task<TabsEvent> {
             tab_id,
             i18n::t(Key::SettingsTabTitle).to_string(),
             TabContent::Settings,
+            TabMachine::ThisComputer,
         ),
     );
     state.activate(Some(tab_id));
@@ -261,6 +279,7 @@ mod tests {
                 title: String::from("nvim main.rs"),
                 settings: Box::new(settings),
                 exit_behavior: ExitBehavior::Close,
+                machine: TabMachine::ThisComputer,
             },
         );
 
@@ -268,6 +287,55 @@ mod tests {
         let active = state.active_tab().expect("should have active tab");
         assert_eq!(active.title(), "nvim main.rs");
         assert_eq!(active.content(), TabContent::Terminal);
+    }
+
+    #[test]
+    fn open_command_tab_keeps_the_machine_it_was_opened_for() {
+        let mut state = TabsState::default();
+
+        let _ = reduce(
+            &mut state,
+            TabsIntent::OpenCommandTab {
+                title: String::from("htop"),
+                settings: Box::new(Settings::default()),
+                exit_behavior: ExitBehavior::Close,
+                machine: TabMachine::Ssh(String::from("laptop")),
+            },
+        );
+
+        let active = state.active_tab().expect("should have active tab");
+        assert_eq!(active.machine(), &TabMachine::Ssh(String::from("laptop")));
+    }
+
+    #[test]
+    fn tabs_opened_without_a_launch_run_on_this_computer() {
+        let mut state = TabsState::default();
+        let _ = open_terminal(&mut state, "zsh");
+        let _ = reduce(&mut state, TabsIntent::OpenSettingsTab);
+        let _ = reduce(
+            &mut state,
+            TabsIntent::OpenWizardTab {
+                title: String::from("New launch"),
+                init: WizardTabInit::Create {
+                    parent_path: Vec::new(),
+                },
+            },
+        );
+        let _ = reduce(
+            &mut state,
+            TabsIntent::OpenErrorTab {
+                title: String::from("Launch failed"),
+                message: String::from("boom"),
+            },
+        );
+
+        assert_eq!(state.len(), 4);
+        assert!(
+            state
+                .tab_items()
+                .values()
+                .all(|tab| tab.machine() == &TabMachine::ThisComputer)
+        );
     }
 
     #[test]
