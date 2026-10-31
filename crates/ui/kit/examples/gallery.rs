@@ -27,7 +27,6 @@ use otty_ui_kit::components::menu::{Menu, MenuItem};
 use otty_ui_kit::components::palette_list::{PaletteItem, PaletteList};
 use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::panel_section::PanelSection;
-use otty_ui_kit::components::rail_button::{RailButton, rail_separator};
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::select::select;
 use otty_ui_kit::components::session_group::SessionGroup;
@@ -107,7 +106,6 @@ struct Gallery {
     variables: Vec<(String, String)>,
     tab: usize,
     tree_selected: usize,
-    rail: usize,
     dialog_open: bool,
     sessions_open: bool,
     menu_open: bool,
@@ -151,7 +149,6 @@ impl Gallery {
             ],
             tab: 0,
             tree_selected: 2,
-            rail: 0,
             dialog_open: false,
             sessions_open: true,
             menu_open: false,
@@ -180,7 +177,6 @@ enum Message {
     Tab(usize),
 
     Tree(usize),
-    Rail(usize),
     OpenDialog,
     CloseDialog,
     ToggleSessions,
@@ -214,7 +210,6 @@ fn update(state: &mut Gallery, message: Message) {
         Message::VarAdd => state.variables.push(Default::default()),
         Message::Tab(index) => state.tab = index,
         Message::Tree(index) => state.tree_selected = index,
-        Message::Rail(index) => state.rail = index,
         Message::OpenDialog => state.dialog_open = true,
         Message::CloseDialog => state.dialog_open = false,
         Message::ToggleSessions => state.sessions_open = !state.sessions_open,
@@ -398,20 +393,6 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         TreeRow::new("Static row (no message)", p).depth(3),
     ]
     .width(PANEL_WIDTH);
-
-    let rail = column![
-        RailButton::new(icon(), "Sessions", p)
-            .active(state.rail == 0)
-            .on_press(Message::Rail(0)),
-        RailButton::new(icon(), "Files", p)
-            .active(state.rail == 1)
-            .on_press(Message::Rail(1)),
-        rail_separator(p),
-        RailButton::new(icon(), "Settings", p)
-            .active(state.rail == 2)
-            .on_press(Message::Rail(2)),
-    ]
-    .width(48);
 
     let mut tabs = TabStrip::new(p).on_new(Message::Clicked);
     for (index, title) in [
@@ -717,7 +698,6 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             tree.into(),
             p,
         ),
-        section("RailButton (active, idle, separator)", rail.into(), p),
         section("TabStrip (active tab, hover, close, plus)", tabs.into(), p),
         section("TabStrip (many tabs: clipped at the edge)", many.into(), p),
         section(

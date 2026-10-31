@@ -29,7 +29,6 @@ pub mod menu;
 pub mod palette_list;
 pub mod pane_header;
 pub mod panel_section;
-pub mod rail_button;
 pub mod scrollbar;
 pub mod segmented;
 pub mod select;

@@ -81,8 +81,9 @@ impl AppShortcut {
             (AppShortcut::LeftPanel, Platform::MacOs) => {
                 ShortcutKeys::new("b", cmd)
             },
+            // Not Ctrl Shift E: GNOME's IBus takes it for emoji input.
             (AppShortcut::FilesPanel, Platform::Linux) => {
-                ShortcutKeys::new("e", ctrl_shift)
+                ShortcutKeys::new("o", ctrl_shift)
             },
             (AppShortcut::FilesPanel, Platform::MacOs) => {
                 ShortcutKeys::new("e", cmd_shift)
@@ -320,7 +321,7 @@ mod tests {
             vec![
                 (AppShortcut::CommandPalette, String::from("Ctrl Shift K")),
                 (AppShortcut::LeftPanel, String::from("Ctrl Shift B")),
-                (AppShortcut::FilesPanel, String::from("Ctrl Shift E")),
+                (AppShortcut::FilesPanel, String::from("Ctrl Shift O")),
                 (AppShortcut::FocusMode, String::from("Ctrl Shift F")),
                 (AppShortcut::Settings, String::from("Ctrl ,")),
                 (AppShortcut::NewTerminal, String::from("Ctrl Shift T")),

@@ -63,7 +63,7 @@ show some features OTTY does not have yet (see Out of Scope).
    |---|---|---|
    | Command palette | Ctrl Shift K | Cmd K |
    | Left panel | Ctrl Shift B | Cmd B |
-   | Files panel | Ctrl Shift E | Cmd Shift E |
+   | Files panel | Ctrl Shift O | Cmd Shift E |
    | Focus mode | Ctrl Shift F | Cmd Shift F |
    | Settings | Ctrl , | Cmd , |
    | New terminal | Ctrl Shift T | Cmd T |
@@ -175,7 +175,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 04 — Kit: PaneHeader, TitleSearch, ActionTile, FloatingNote, EmptyCard · Sonnet
 - [x] 05 — Kit: CommandPalette · Opus
 - [x] 06 — App shortcuts · Opus
-- [ ] 07 — Side panel state · Opus
+- [x] 07 — Side panel state · Opus
 - [ ] 08 — Right panel: Files · Sonnet
 - [ ] 09 — Left panel: Launches · Sonnet
 - [ ] 10 — Left panel: Sessions · Opus
@@ -196,3 +196,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 
 - Draft (2026-10-31): owner answers before the draft: side session list only; Ctrl Shift shortcuts; command blocks and the terminal widget out of scope; command palette in scope; `iced_test` approved; new elements go into the kit first; features and architecture stay as they are.
 - Round 1 (2026-10-31, owner): show the host name (Decision 10, `nix` feature `hostname`); spec approved; tickets written.
+- Round 2 (2026-11-01, owner): Files panel shortcut on Linux is Ctrl Shift O (Ctrl Shift E is IBus emoji on GNOME).

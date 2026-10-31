@@ -1,5 +1,4 @@
 use iced::Task;
-use otty_ui_kit::size;
 
 use super::{AppEvent, shortcuts};
 use crate::app::App;
@@ -30,13 +29,9 @@ fn handle_intent_event(
     app: &mut App,
     event: TerminalWorkspaceIntent,
 ) -> Task<AppEvent> {
-    let sidebar = &app.widgets.sidebar;
-
     let pane_grid_size = pane_grid_size(
         app.state.screen_size,
-        sidebar.is_hidden(),
-        size::RAIL,
-        sidebar.effective_workspace_ratio(),
+        app.widgets.sidebar.side_panels_ratio(),
     );
 
     let ctx = build_ctx_from_parts(

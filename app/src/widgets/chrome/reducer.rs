@@ -29,6 +29,12 @@ pub(crate) fn reduce(
         ChromeIntent::ToggleSidebarVisibility => Task::done(
             ChromeEvent::Effect(ChromeEffect::ToggleSidebarVisibility),
         ),
+        ChromeIntent::ToggleFilesPanel => {
+            Task::done(ChromeEvent::Effect(ChromeEffect::ToggleFilesPanel))
+        },
+        ChromeIntent::OpenSettings => {
+            Task::done(ChromeEvent::Effect(ChromeEffect::OpenSettings))
+        },
         ChromeIntent::StartWindowDrag => {
             Task::done(ChromeEvent::Effect(ChromeEffect::StartWindowDrag))
         },
@@ -38,6 +44,7 @@ pub(crate) fn reduce(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::task_outputs::collect_outputs;
 
     #[test]
     fn toggle_fullscreen_flips_state() {
@@ -63,5 +70,31 @@ mod tests {
 
         let _ = reduce(&mut state, ChromeIntent::StartWindowDrag);
         assert!(!state.is_fullscreen());
+    }
+
+    #[test]
+    fn files_panel_button_asks_to_toggle_the_files_panel() {
+        let mut state = ChromeState::default();
+
+        let events =
+            collect_outputs(reduce(&mut state, ChromeIntent::ToggleFilesPanel));
+
+        assert!(matches!(
+            events.as_slice(),
+            [ChromeEvent::Effect(ChromeEffect::ToggleFilesPanel)]
+        ));
+    }
+
+    #[test]
+    fn settings_button_asks_to_open_settings() {
+        let mut state = ChromeState::default();
+
+        let events =
+            collect_outputs(reduce(&mut state, ChromeIntent::OpenSettings));
+
+        assert!(matches!(
+            events.as_slice(),
+            [ChromeEvent::Effect(ChromeEffect::OpenSettings)]
+        ));
     }
 }

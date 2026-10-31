@@ -10,6 +10,7 @@ use iced::{Task, keyboard};
 use super::AppEvent;
 use crate::app::App;
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
+use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 /// Run the app shortcut a key press from the keyboard subscription stands
@@ -39,17 +40,22 @@ pub(crate) fn handle(app: &App, shortcut: AppShortcut) -> Task<AppEvent> {
         // terminal binding runs it (in the terminal workspace reducer). With
         // no terminal focused there is no pane to split.
         AppShortcut::SplitPane => Task::none(),
-        // Panels and focus mode are wired by ticket 07, the command palette
-        // by ticket 17.
-        AppShortcut::CommandPalette
-        | AppShortcut::LeftPanel
-        | AppShortcut::FilesPanel
-        | AppShortcut::FocusMode => Task::none(),
+        AppShortcut::LeftPanel => sidebar_intent(SidebarIntent::ToggleLeft),
+        AppShortcut::FilesPanel => sidebar_intent(SidebarIntent::ToggleRight),
+        AppShortcut::FocusMode => {
+            sidebar_intent(SidebarIntent::ToggleFocusMode)
+        },
+        // The command palette is wired by ticket 17.
+        AppShortcut::CommandPalette => Task::none(),
     }
 }
 
 fn tabs_intent(intent: TabsIntent) -> Task<AppEvent> {
     Task::done(AppEvent::Tabs(TabsEvent::Intent(intent)))
+}
+
+fn sidebar_intent(intent: SidebarIntent) -> Task<AppEvent> {
+    Task::done(AppEvent::Sidebar(SidebarEvent::Intent(intent)))
 }
 
 #[cfg(test)]
@@ -131,16 +137,52 @@ mod tests {
     }
 
     #[test]
+    fn left_panel_shortcut_toggles_the_left_panel() {
+        let (app, _) = App::new();
+
+        let events = collect_outputs(handle(&app, AppShortcut::LeftPanel));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::ToggleLeft
+            ))]
+        ));
+    }
+
+    #[test]
+    fn files_panel_shortcut_toggles_the_right_panel() {
+        let (app, _) = App::new();
+
+        let events = collect_outputs(handle(&app, AppShortcut::FilesPanel));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::ToggleRight
+            ))]
+        ));
+    }
+
+    #[test]
+    fn focus_mode_shortcut_toggles_focus_mode() {
+        let (app, _) = App::new();
+
+        let events = collect_outputs(handle(&app, AppShortcut::FocusMode));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::ToggleFocusMode
+            ))]
+        ));
+    }
+
+    #[test]
     fn shortcuts_without_an_action_yet_do_nothing() {
         let (app, _) = App::new();
 
-        for shortcut in [
-            AppShortcut::CommandPalette,
-            AppShortcut::LeftPanel,
-            AppShortcut::FilesPanel,
-            AppShortcut::FocusMode,
-            AppShortcut::SplitPane,
-        ] {
+        for shortcut in [AppShortcut::CommandPalette, AppShortcut::SplitPane] {
             let events = collect_outputs(handle(&app, shortcut));
 
             assert!(events.is_empty(), "{shortcut:?} must do nothing yet");

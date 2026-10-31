@@ -1,9 +1,9 @@
 mod event;
 mod model;
 mod reducer;
+mod side_panel;
 mod state;
 pub(crate) mod types;
-pub(crate) mod view;
 
 pub(crate) use event::{SidebarEffect, SidebarEvent, SidebarIntent};
 use iced::widget::pane_grid;
@@ -11,7 +11,8 @@ use iced::{Point, Task};
 pub(crate) use model::SidebarViewModel;
 use state::SidebarState;
 
-/// Sidebar widget owning its private state.
+/// Sidebar widget owning the left and right panels around the main area,
+/// focus mode and the add menu.
 pub(crate) struct SidebarWidget {
     state: SidebarState,
 }
@@ -35,17 +36,12 @@ impl SidebarWidget {
     /// Build a read-only view model for the presentation layer.
     pub(crate) fn vm(&self) -> SidebarViewModel {
         SidebarViewModel {
-            active_item: self.state.active_item(),
-            is_hidden: self.state.is_hidden(),
-            is_workspace_open: self.state.is_workspace_open(),
+            is_left_open: self.state.is_left_open(),
+            is_right_open: self.state.is_right_open(),
+            is_focus_mode: self.state.is_focus_mode(),
             has_add_menu_open: self.state.has_add_menu_open(),
             add_menu_cursor: self.state.add_menu_cursor(),
         }
-    }
-
-    /// Return whether the sidebar rail and workspace are hidden.
-    pub(crate) fn is_hidden(&self) -> bool {
-        self.state.is_hidden()
     }
 
     /// Return read-only access to pane-grid slots for rendering.
@@ -68,13 +64,27 @@ impl SidebarWidget {
         self.state.has_add_menu_open()
     }
 
-    /// Return whether the user is actively resizing the sidebar split.
+    /// Return whether the user is actively resizing a side panel.
     pub(crate) fn is_resizing(&self) -> bool {
         self.state.is_resizing()
     }
 
-    /// Return effective workspace ratio used for content sizing.
-    pub(crate) fn effective_workspace_ratio(&self) -> f32 {
-        self.state.effective_workspace_ratio()
+    /// Share of the window width both shown side panels take together; the
+    /// main area gets the rest.
+    pub(crate) fn side_panels_ratio(&self) -> f32 {
+        self.state.left_ratio() + self.state.right_ratio()
+    }
+}
+
+#[cfg(test)]
+impl SidebarWidget {
+    /// Share of the window width the left panel takes now.
+    pub(crate) fn left_ratio(&self) -> f32 {
+        self.state.left_ratio()
+    }
+
+    /// Share of the window width the right panel takes now.
+    pub(crate) fn right_ratio(&self) -> f32 {
+        self.state.right_ratio()
     }
 }

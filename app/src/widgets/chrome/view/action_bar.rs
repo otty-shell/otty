@@ -6,7 +6,10 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::ChromeIntent;
 use crate::i18n::{self, Key};
-use crate::icons::{LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY};
+use crate::icons::{
+    FILES_PANEL, LOGO_SMALL, SETTINGS, WINDOW_CLOSE, WINDOW_FULLSCREEN,
+    WINDOW_TRAY,
+};
 use crate::theme::ThemeProps;
 
 /// Logo width; it follows the logo proportions (145.36 x 103.12).
@@ -53,7 +56,20 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
             ..Default::default()
         });
 
+    // Interim panel and Settings buttons; ticket 11 redraws the title bar.
     let controls_row = row![
+        IconButton::new(
+            svg::Handle::from_memory(FILES_PANEL),
+            i18n::t(Key::WindowFilesPanel),
+            palette,
+        )
+        .on_press(ChromeIntent::ToggleFilesPanel),
+        IconButton::new(
+            svg::Handle::from_memory(SETTINGS),
+            i18n::t(Key::SettingsTabTitle),
+            palette,
+        )
+        .on_press(ChromeIntent::OpenSettings),
         IconButton::new(
             svg::Handle::from_memory(WINDOW_FULLSCREEN),
             i18n::t(Key::WindowToggleFullscreen),

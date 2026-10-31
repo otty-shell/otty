@@ -1,13 +1,7 @@
-/// Sidebar menu destinations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SidebarItem {
-    Terminal,
-    Explorer,
-}
-
-/// Pane slots in the sidebar split view.
+/// Pane slots of the root split view: `left | main | right`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SidebarPane {
-    Workspace,
-    Content,
+    Left,
+    Main,
+    Right,
 }

@@ -1,13 +1,14 @@
 use iced::Point;
 
-use super::types::SidebarItem;
-
-/// Read-only view model for the sidebar presentation layer.
+/// Read-only view model for the side panels around the main area.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SidebarViewModel {
-    pub(crate) active_item: SidebarItem,
-    pub(crate) is_hidden: bool,
-    pub(crate) is_workspace_open: bool,
+    /// The left panel is shown (open and not hidden by focus mode).
+    pub(crate) is_left_open: bool,
+    /// The right panel is shown (open and not hidden by focus mode).
+    pub(crate) is_right_open: bool,
+    /// Focus mode hides both panels.
+    pub(crate) is_focus_mode: bool,
     pub(crate) has_add_menu_open: bool,
     pub(crate) add_menu_cursor: Option<Point>,
 }

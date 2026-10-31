@@ -6,7 +6,12 @@ pub(crate) enum ChromeIntent {
     ToggleFullScreen,
     MinimizeWindow,
     CloseWindow,
+    /// Logo click: show or hide the left panel.
     ToggleSidebarVisibility,
+    /// Show or hide the files (right) panel.
+    ToggleFilesPanel,
+    /// Open the Settings tab.
+    OpenSettings,
     StartWindowDrag,
 }
 
@@ -17,6 +22,8 @@ pub(crate) enum ChromeEffect {
     MinimizeWindow,
     CloseWindow,
     ToggleSidebarVisibility,
+    ToggleFilesPanel,
+    OpenSettings,
     StartWindowDrag,
 }
 

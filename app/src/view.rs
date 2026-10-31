@@ -1,5 +1,5 @@
 use iced::widget::pane_grid::PaneGrid;
-use iced::widget::{Space, column, container, mouse_area, row, text};
+use iced::widget::{Space, column, container, mouse_area, text};
 use iced::{Element, Length, Size, Theme, alignment};
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
 use otty_ui_kit::components::surface::{Surface, surface};
@@ -23,8 +23,8 @@ use crate::widgets::quick_launch::view::{
 };
 use crate::widgets::settings::SettingsEvent;
 use crate::widgets::settings::view::settings_form;
-use crate::widgets::sidebar::types::{SidebarItem, SidebarPane};
-use crate::widgets::sidebar::{self, SidebarEvent, SidebarIntent};
+use crate::widgets::sidebar::types::SidebarPane;
+use crate::widgets::sidebar::{SidebarEvent, SidebarIntent, SidebarViewModel};
 use crate::widgets::tabs::TabsEvent;
 use crate::widgets::tabs::types::TabContent;
 use crate::widgets::tabs::view::tab_bar;
@@ -41,12 +41,7 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 
     let sidebar_vm = app.widgets.sidebar.vm();
 
-    let content_row: Element<'_, AppEvent, Theme, iced::Renderer> =
-        if sidebar_vm.is_hidden {
-            view_content_only(app, theme_props)
-        } else {
-            view_sidebar_layout(app, theme_props)
-        };
+    let content_row = view_panels_layout(app, sidebar_vm, theme_props);
 
     let content_row = mouse_area(content_row).on_move(|position| {
         AppEvent::Sidebar(SidebarEvent::Intent(
@@ -165,55 +160,37 @@ fn view_header<'a>(
         .into()
 }
 
-/// Render content without sidebar.
-fn view_content_only<'a>(
+/// Render `left panel | main | right panel` with a pane grid. A closed panel
+/// is a zero-width pane, so its edge can still be dragged open.
+///
+/// Focus mode keeps the same pane grid with both panels at zero width, so
+/// the main area keeps its widget state (terminal focus, scroll); only the
+/// drag handles are removed.
+fn view_panels_layout<'a>(
     app: &'a App,
+    sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    view_tab_area(app, theme_props)
-}
-
-/// Render sidebar + content split layout with PaneGrid.
-fn view_sidebar_layout<'a>(
-    app: &'a App,
-    theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let sidebar_vm = app.widgets.sidebar.vm();
-
-    let menu_rail = sidebar::view::view(sidebar::view::SidebarViewProps {
-        vm: sidebar_vm,
-        theme: theme_props,
-    })
-    .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event)));
-
-    let sidebar_separator = divider::vertical(theme_props.theme.ui());
-
-    let sidebar_pane_grid = PaneGrid::new(
+    let panels = PaneGrid::new(
         app.widgets.sidebar.panes(),
         move |_pane, pane_kind, _| {
             let content: Element<'_, AppEvent, Theme, iced::Renderer> =
                 match *pane_kind {
-                    SidebarPane::Workspace => {
-                        let workspace_content = view_workspace_content(
-                            app,
-                            sidebar_vm,
+                    SidebarPane::Left if sidebar_vm.is_left_open => side_panel(
+                        view_left_panel(app, theme_props),
+                        theme_props,
+                    ),
+                    SidebarPane::Right if sidebar_vm.is_right_open => {
+                        side_panel(
+                            view_right_panel(app, theme_props),
                             theme_props,
-                        );
-                        if sidebar_vm.is_workspace_open {
-                            surface(
-                                workspace_content,
-                                Surface::Panel,
-                                theme_props.theme.ui(),
-                            )
-                            .into()
-                        } else {
-                            Space::new()
-                                .width(Length::Fill)
-                                .height(Length::Fill)
-                                .into()
-                        }
+                        )
                     },
-                    SidebarPane::Content => view_tab_area(app, theme_props),
+                    SidebarPane::Main => view_tab_area(app, theme_props),
+                    _ => Space::new()
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into(),
                 };
             iced::widget::pane_grid::Content::new(content)
         },
@@ -222,39 +199,52 @@ fn view_sidebar_layout<'a>(
     .height(Length::Fill)
     .spacing(size::LINE)
     .min_size(0)
-    .on_resize(size::SPLIT_GRAB, |event| {
-        AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(event)))
-    })
     .style(split::style(theme_props.theme.ui()));
 
-    row![menu_rail, sidebar_separator, sidebar_pane_grid]
-        .width(Length::Fill)
-        .height(Length::Fill)
+    if sidebar_vm.is_focus_mode {
+        return panels.into();
+    }
+
+    panels
+        .on_resize(size::SPLIT_GRAB, |event| {
+            AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(
+                event,
+            )))
+        })
         .into()
 }
 
-/// Render workspace content based on the active sidebar item.
-fn view_workspace_content<'a>(
-    app: &'a App,
-    sidebar_vm: sidebar::SidebarViewModel,
+/// Put panel content on the panel surface.
+fn side_panel<'a>(
+    content: Element<'a, AppEvent, Theme, iced::Renderer>,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    match sidebar_vm.active_item {
-        SidebarItem::Terminal => {
-            sidebar_panel::view(sidebar_panel::SidebarPanelProps {
-                vm: app.widgets.quick_launch.vm(),
-                theme: theme_props,
-            })
-            .map(|event| AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event)))
-        },
-        SidebarItem::Explorer => {
-            sidebar_tree::view(sidebar_tree::SidebarTreeProps {
-                vm: app.widgets.explorer.vm(),
-                theme: theme_props,
-            })
-            .map(|event| AppEvent::Explorer(ExplorerEvent::Intent(event)))
-        },
-    }
+    surface(content, Surface::Panel, theme_props.theme.ui()).into()
+}
+
+/// Left panel content: today's quick launch panel (restyled by tickets
+/// 09 and 10).
+fn view_left_panel<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    sidebar_panel::view(sidebar_panel::SidebarPanelProps {
+        vm: app.widgets.quick_launch.vm(),
+        theme: theme_props,
+    })
+    .map(|event| AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event)))
+}
+
+/// Right panel content: today's explorer tree (restyled by ticket 08).
+fn view_right_panel<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    sidebar_tree::view(sidebar_tree::SidebarTreeProps {
+        vm: app.widgets.explorer.vm(),
+        theme: theme_props,
+    })
+    .map(|event| AppEvent::Explorer(ExplorerEvent::Intent(event)))
 }
 
 /// Render the tab bar + tab content area.

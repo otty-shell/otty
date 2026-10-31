@@ -24,6 +24,7 @@
     "pane_machine_local": "ローカル",
     "window_toggle_fullscreen": "全画面表示の切り替え",
     "window_minimize": "最小化",
+    "window_files_panel": "ファイル",
 
     "kill": "強制終了",
     "edit": "編集",

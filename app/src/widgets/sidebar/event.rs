@@ -1,18 +1,25 @@
 /// Intent events handled by the sidebar presentation layer.
 #[derive(Debug, Clone)]
 pub(crate) enum SidebarIntent {
-    SelectTerminal,
-    SelectExplorer,
-    ToggleWorkspace,
+    /// Show or hide the left panel (leaves focus mode first).
+    ToggleLeft,
+    /// Show or hide the right panel (leaves focus mode first).
+    ToggleRight,
+    /// Enter or leave focus mode.
+    ToggleFocusMode,
     OpenSettings,
     AddMenuOpen,
     AddMenuDismiss,
     AddMenuCreateTab,
     AddMenuCreateCommand,
     AddMenuCreateFolder,
-    WorkspaceCursorMoved { position: iced::Point },
-    ToggleVisibility,
-    PaneGridCursorMoved { position: iced::Point },
+    WorkspaceCursorMoved {
+        position: iced::Point,
+    },
+    PaneGridCursorMoved {
+        position: iced::Point,
+    },
+    /// A panel edge was dragged; the split tells which side.
     Resized(iced::widget::pane_grid::ResizeEvent),
     DismissAddMenu,
 }
