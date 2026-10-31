@@ -2,7 +2,7 @@
 
 use iced::widget::text::Wrapping;
 use iced::widget::{Space, button, container, row, svg, text};
-use iced::{Alignment, Border, Element, Length, Padding};
+use iced::{Alignment, Border, Color, Element, Length, Padding};
 
 use super::glyph;
 use crate::palette::UiPalette;
@@ -12,6 +12,8 @@ use crate::{fonts, radius, size, spacing, typography};
 const CARET_WIDTH: f32 = 12.0;
 /// Gap between caret, label and count (`.ot-tree { gap: 7px }`).
 const GAP: f32 = 7.0;
+/// Edge of the optional leading icon.
+const ICON_SIZE: f32 = 14.0;
 /// Horizontal padding of the row (`padding: 0 8px`).
 const PADDING_X: f32 = spacing::SPACE_3;
 
@@ -46,6 +48,9 @@ pub struct TreeRow<Message> {
     caret: Option<bool>,
     count: Option<usize>,
     is_selected: bool,
+    is_hovered: bool,
+    is_drop_target: bool,
+    icon: Option<(svg::Handle, Option<Color>)>,
     on_press: Option<Message>,
 }
 
@@ -59,6 +64,9 @@ impl<Message> TreeRow<Message> {
             caret: None,
             count: None,
             is_selected: false,
+            is_hovered: false,
+            is_drop_target: false,
+            icon: None,
             on_press: None,
         }
     }
@@ -88,6 +96,25 @@ impl<Message> TreeRow<Message> {
         self
     }
 
+    /// Shows the hover background. Use it for a row without a message whose
+    /// hover is tracked by the caller.
+    pub fn hovered(mut self, is_hovered: bool) -> Self {
+        self.is_hovered = is_hovered;
+        self
+    }
+
+    /// Marks the row as the target of a drag and drop (`accent` background).
+    pub fn drop_target(mut self, is_drop_target: bool) -> Self {
+        self.is_drop_target = is_drop_target;
+        self
+    }
+
+    /// Shows an icon before the label; `color` defaults to `text-muted`.
+    pub fn icon(mut self, icon: svg::Handle, color: Option<Color>) -> Self {
+        self.icon = Some((icon, color));
+        self
+    }
+
     /// Sets the message sent on press.
     pub fn on_press(mut self, message: Message) -> Self {
         self.on_press = Some(message);
@@ -99,6 +126,8 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
     fn from(value: TreeRow<Message>) -> Self {
         let palette = value.palette;
         let is_selected = value.is_selected;
+        let is_hovered = value.is_hovered;
+        let is_drop_target = value.is_drop_target;
         let body = typography::BODY;
 
         let muted = palette.text_muted();
@@ -114,18 +143,29 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
         let mut content = row![
             Space::new().width(f32::from(value.depth) * size::TREE_INDENT),
             caret,
-            container(
-                text(value.label)
-                    .size(body.size())
-                    .font(fonts::UI)
-                    .wrapping(Wrapping::None)
-            )
-            .width(Length::Fill)
-            .clip(true),
         ]
         .spacing(GAP)
         .height(Length::Fill)
         .align_y(Alignment::Center);
+        if let Some((handle, color)) = value.icon {
+            let color = color.unwrap_or(muted);
+            content = content.push(
+                svg(handle)
+                    .width(ICON_SIZE)
+                    .height(ICON_SIZE)
+                    .style(move |_, _| svg::Style { color: Some(color) }),
+            );
+        }
+        content = content.push(
+            container(
+                text(value.label)
+                    .size(body.size())
+                    .font(fonts::UI)
+                    .wrapping(Wrapping::None),
+            )
+            .width(Length::Fill)
+            .clip(true),
+        );
         if let Some(count) = value.count {
             let caption = typography::CAPTION;
             content = content.push(
@@ -142,15 +182,19 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
             .padding(Padding::from([0.0, PADDING_X]))
             .on_press_maybe(value.on_press)
             .style(move |_, status| {
-                let hovered = status == button::Status::Hovered;
+                let hovered = is_hovered || status == button::Status::Hovered;
 
                 button::Style {
-                    background: if is_selected {
+                    background: if is_drop_target {
+                        Some(palette.accent().into())
+                    } else if is_selected {
                         Some(palette.surface_selected().into())
                     } else {
                         hovered.then(|| palette.surface_raised().into())
                     },
-                    text_color: if is_selected {
+                    text_color: if is_drop_target {
+                        palette.on_accent()
+                    } else if is_selected {
                         palette.text_strong()
                     } else {
                         palette.text_body()

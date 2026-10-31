@@ -1,6 +1,6 @@
 # 10 — Restyle sidebar trees
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 06
@@ -17,3 +17,9 @@ Spec: [../spec.md](../spec.md)
 ## Done when
 
 - Spec AC8 for rows; screenshots of both trees in both themes.
+
+## Answer
+
+- Both trees use kit TreeRow (gained `hovered`, `drop_target`, `icon`); panel headers are 34px (`size::TAB`) so they line up with the tab strip; English panel title "SHELL" became "Quick launch", matching the other 9 locales.
+- `crates/ui/tree` unchanged. `tree_row_style` in `app/src/style.rs` stays until ticket 12 (settings navigation still uses it).
+- Not checked visually: the Explorer tree (no input tool to open it during the run). Check it in the final review.

@@ -21,14 +21,16 @@ pub(crate) fn view<'a, Message: 'a>(
             .into();
     }
 
-    let palette = props.theme.theme.iced_palette();
+    let palette = props.theme.theme.ui();
+    let background = palette.surface_panel();
+    let text_color = palette.text_body();
     container(props.content)
         .width(Length::Fill)
         .height(Length::Fill)
         .clip(true)
         .style(move |_| iced::widget::container::Style {
-            background: Some(palette.dim_black.into()),
-            text_color: Some(palette.foreground),
+            background: Some(background.into()),
+            text_color: Some(text_color),
             ..Default::default()
         })
         .into()
