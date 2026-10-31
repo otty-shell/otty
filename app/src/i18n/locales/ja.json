@@ -38,6 +38,8 @@
 
     "quick_launch_panel_title": "クイック起動",
     "no_active_folder": "アクティブなフォルダーがありません",
+    "files_title": "ファイル",
+    "tpl_files_follows": "{shell} に追従",
 
     "wizard_header": "クイック起動",
     "field_title": "名前",

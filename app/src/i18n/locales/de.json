@@ -38,6 +38,8 @@
 
     "quick_launch_panel_title": "Schnellstart",
     "no_active_folder": "Kein aktiver Ordner",
+    "files_title": "Dateien",
+    "tpl_files_follows": "folgt {shell}",
 
     "wizard_header": "Schnellstart",
     "field_title": "Name",

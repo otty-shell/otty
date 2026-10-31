@@ -38,6 +38,8 @@
 
     "quick_launch_panel_title": "빠른 실행",
     "no_active_folder": "활성 폴더 없음",
+    "files_title": "파일",
+    "tpl_files_follows": "{shell} 따라가기",
 
     "wizard_header": "빠른 실행",
     "field_title": "이름",

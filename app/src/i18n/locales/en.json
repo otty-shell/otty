@@ -38,6 +38,8 @@
 
     "quick_launch_panel_title": "Quick launch",
     "no_active_folder": "No active folder",
+    "files_title": "Files",
+    "tpl_files_follows": "follows {shell}",
 
     "wizard_header": "Quick launch",
     "field_title": "Title",

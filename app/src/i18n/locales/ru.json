@@ -38,6 +38,8 @@
 
     "quick_launch_panel_title": "Быстрый запуск",
     "no_active_folder": "Нет активной папки",
+    "files_title": "Файлы",
+    "tpl_files_follows": "следует за {shell}",
 
     "wizard_header": "Быстрый запуск",
     "field_title": "Название",

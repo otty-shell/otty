@@ -88,6 +88,10 @@ pub(crate) enum Key {
     // Explorer sidebar.
     /// Shown when the explorer has no active folder.
     NoActiveFolder,
+    /// Title of the right panel files section.
+    FilesTitle,
+    /// Explorer line naming the followed shell. Placeholder: `{shell}`.
+    TplFilesFollows,
 
     // Quick launch wizard.
     /// Wizard section header.
@@ -263,7 +267,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 112] = [
+    pub(super) const ALL: [Self; 114] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -297,6 +301,8 @@ impl Key {
         Self::CreateLaunch,
         Self::QuickLaunchPanelTitle,
         Self::NoActiveFolder,
+        Self::FilesTitle,
+        Self::TplFilesFollows,
         Self::WizardHeader,
         Self::FieldTitle,
         Self::FieldType,

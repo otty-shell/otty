@@ -235,13 +235,14 @@ fn view_left_panel<'a>(
     .map(|event| AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event)))
 }
 
-/// Right panel content: today's explorer tree (restyled by ticket 08).
+/// Right panel content: the Files section.
 fn view_right_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     sidebar_tree::view(sidebar_tree::SidebarTreeProps {
         vm: app.widgets.explorer.vm(),
+        shell_name: app.shell_session.name(),
         theme: theme_props,
     })
     .map(|event| AppEvent::Explorer(ExplorerEvent::Intent(event)))

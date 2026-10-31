@@ -38,6 +38,8 @@
 
     "quick_launch_panel_title": "Lancement rapide",
     "no_active_folder": "Aucun dossier actif",
+    "files_title": "Fichiers",
+    "tpl_files_follows": "suit {shell}",
 
     "wizard_header": "Lancement rapide",
     "field_title": "Nom",

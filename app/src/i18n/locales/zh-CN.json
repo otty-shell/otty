@@ -38,6 +38,8 @@
 
     "quick_launch_panel_title": "快捷启动",
     "no_active_folder": "无活动文件夹",
+    "files_title": "文件",
+    "tpl_files_follows": "跟随 {shell}",
 
     "wizard_header": "快捷启动",
     "field_title": "名称",

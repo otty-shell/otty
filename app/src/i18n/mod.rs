@@ -220,6 +220,11 @@ pub(crate) fn t(key: Key) -> &'static str {
     text_in(current_locale(), key)
 }
 
+/// Build the explorer line saying which shell the folder follows.
+pub(crate) fn files_follows(shell: &str) -> String {
+    fill_in(current_locale(), Key::TplFilesFollows, &[("shell", shell)])
+}
+
 /// Build the tab title shown when editing an existing quick launch.
 pub(crate) fn edit_tab_title(command_title: &str) -> String {
     fill_in(
@@ -681,7 +686,7 @@ mod tests {
 
     #[test]
     fn given_every_locale_when_templates_read_then_placeholders_survive() {
-        let required: [(Key, &[&str]); 13] = [
+        let required: [(Key, &[&str]); 14] = [
             (Key::TplEditTabTitle, &["{title}"]),
             (Key::TplLaunchFailedTitle, &["{title}"]),
             (Key::TplLaunchFailedBody, &["{command}", "{error}"]),
@@ -695,6 +700,7 @@ mod tests {
             (Key::TplProgramNotFound, &["{program}"]),
             (Key::TplProgramIsDirectory, &["{program}"]),
             (Key::TplProgramNotExecutable, &["{program}"]),
+            (Key::TplFilesFollows, &["{shell}"]),
         ];
 
         for locale in Locale::ALL {

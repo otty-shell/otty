@@ -38,6 +38,8 @@
 
     "quick_launch_panel_title": "快速啟動",
     "no_active_folder": "無使用中的資料夾",
+    "files_title": "檔案",
+    "tpl_files_follows": "跟隨 {shell}",
 
     "wizard_header": "快速啟動",
     "field_title": "名稱",
