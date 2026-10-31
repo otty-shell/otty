@@ -146,9 +146,16 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 - [x] 14 — Remove old styling code · Opus
 - [x] 16 — Fix the known contrast issues · Sonnet
 - [x] 17 — Status colors pass 4.5:1 on every surface they can sit on · Sonnet
+- [ ] 18 — Divider component and the 1px line token · Sonnet
+- [ ] 19 — One split style for the sidebar and terminal panes · Sonnet
+- [ ] 20 — Surface container · Sonnet
+- [ ] 21 — Bold mono font in the kit and small token fixes · Sonnet
+- [ ] 22 — FormPage component · Sonnet
+- [ ] 23 — Dialog component and scrim token · Sonnet
+- [ ] 24 — Update the design system with the new kit parts · Opus, owner review
 - [x] 15 — Update the design system to match the code · owner
 
-Tickets live in `issues/`. Each ticket names the model that runs it on its `Model:` line; a subagent started for a ticket is launched with that model. Order: 01 → (02, 04) → (03, 05, 06) → 07–13 in parallel → 14 → 16 → 15 → 17.
+Tickets live in `issues/`. Each ticket names the model that runs it on its `Model:` line; a subagent started for a ticket is launched with that model. Order: 01 → (02, 04) → (03, 05, 06) → 07–13 in parallel → 14 → 16 → 15 → 17 → 18 → … → 24 (one at a time; 18–23 touch the same view files).
 
 ## Round Log
 
@@ -157,3 +164,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - Ticket 02 (2026-10-31): `text-muted` on `surface-selected` (4.68 / 4.54) passes 4.5:1 and was wrongly listed as a known issue; removed from the table and tested as a passing pair.
 - Round 3 (2026-10-31, owner review of the ticket 15 draft): fix the known contrast issues before publishing (ticket 16); publish the design system after that.
 - Round 4 (2026-10-31, owner): fix OTTY Light `status-warn` contrast (ticket 17); status colors never sit on `surface-hover`, so OTTY Dark `status-error` on it stays; `target-*` dots need 3:1.
+- Round 5 (2026-10-31, owner): after a review of what is left in the app, move dividers, split style, surface containers, the bold mono font, small tokens, the form page and the modal dialog into the kit (tickets 18–23); split grab zone 8 px for all splits; the dialog backdrop gets a `scrim` token with today's values.
