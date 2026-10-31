@@ -85,7 +85,7 @@
     "field_default_editor": "既定のエディター",
     "field_pane_layout": "ペインのレイアウト",
     "option_equalize_panes": "分割・終了時に同じ階層のペイン幅を均等化",
-    "field_preset": "プリセット",
+    "field_theme": "テーマ",
     "language_system": "システムに従う",
 
     "err_io_prefix": "I/O エラー: ",

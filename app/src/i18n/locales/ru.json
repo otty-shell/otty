@@ -85,7 +85,7 @@
     "field_default_editor": "Редактор по умолчанию",
     "field_pane_layout": "Расположение панелей",
     "option_equalize_panes": "Выравнивать ширину соседних панелей при разделении и закрытии",
-    "field_preset": "Предустановка",
+    "field_theme": "Тема",
     "language_system": "Как в системе",
 
     "err_io_prefix": "Ошибка ввода-вывода: ",

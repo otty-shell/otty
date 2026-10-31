@@ -85,7 +85,7 @@
     "field_default_editor": "기본 편집기",
     "field_pane_layout": "창 분할 레이아웃",
     "option_equalize_panes": "분할하거나 닫을 때 같은 계층의 창 너비 균등화",
-    "field_preset": "사전 설정",
+    "field_theme": "테마",
     "language_system": "시스템 설정 따르기",
 
     "err_io_prefix": "I/O 오류: ",

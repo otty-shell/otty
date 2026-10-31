@@ -29,30 +29,6 @@ pub(crate) fn thin_scroll_style(
     }
 }
 
-pub(crate) fn tree_row_style(
-    palette: &IcedColorPalette,
-    is_selected: bool,
-    is_hovered: bool,
-) -> container::Style {
-    let background = if is_selected {
-        let mut color = palette.dim_blue;
-        color.a = 0.7;
-        Some(color.into())
-    } else if is_hovered {
-        let mut color = palette.overlay;
-        color.a = 0.6;
-        Some(color.into())
-    } else {
-        None
-    };
-
-    container::Style {
-        background,
-        text_color: Some(palette.foreground),
-        ..Default::default()
-    }
-}
-
 pub(crate) fn menu_panel_style(
     theme: ThemeProps<'_>,
 ) -> impl Fn(&iced::Theme) -> container::Style + 'static {

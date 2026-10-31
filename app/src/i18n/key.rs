@@ -183,7 +183,7 @@ pub(crate) enum Key {
     /// Option that keeps sibling pane widths even after layout changes.
     OptionEqualizePanes,
     /// Theme selector field label.
-    FieldPreset,
+    FieldTheme,
     /// Language option that follows the operating system locale.
     LanguageSystem,
 
@@ -332,7 +332,7 @@ impl Key {
         Self::FieldDefaultEditor,
         Self::FieldPaneLayout,
         Self::OptionEqualizePanes,
-        Self::FieldPreset,
+        Self::FieldTheme,
         Self::LanguageSystem,
         Self::ErrIoPrefix,
         Self::ErrJsonPrefix,

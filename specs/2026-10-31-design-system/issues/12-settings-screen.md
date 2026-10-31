@@ -1,6 +1,6 @@
 # 12 — Restyle settings screen
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 03, 05, 06
@@ -18,3 +18,9 @@ Spec: [../spec.md](../spec.md)
 ## Done when
 
 - Screenshots of each settings section in both themes.
+
+## Answer
+
+- Settings form built from kit SettingRow, Segmented (theme), Select (language), Switch (equalize panes), TextField (shell, editor), Button (Save, Reset) and TreeRow navigation; six local style functions and `tree_row_style` removed.
+- `FieldPreset` renamed to `FieldTheme` in all 10 locales.
+- Not checked visually: Settings opens from the rail and no input tool is installed. Check it in the final review.

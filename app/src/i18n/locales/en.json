@@ -85,7 +85,7 @@
     "field_default_editor": "Default editor",
     "field_pane_layout": "Pane layout",
     "option_equalize_panes": "Even out sibling pane widths on split and close",
-    "field_preset": "Preset",
+    "field_theme": "Theme",
     "language_system": "System",
 
     "err_io_prefix": "I/O error: ",

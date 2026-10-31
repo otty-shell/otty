@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::OnceLock;
 
 use otty_ui_tree::TreeNode;
 use serde::Serialize;
@@ -24,12 +25,16 @@ pub(crate) enum LanguageSetting {
 
 impl LanguageSetting {
     /// All choices offered by the language selector, system first.
-    pub(crate) fn all() -> Vec<Self> {
-        let mut options = Vec::with_capacity(Locale::ALL.len() + 1);
-        options.push(Self::System);
-        options.extend(Locale::ALL.map(Self::Fixed));
+    pub(crate) fn all() -> &'static [Self] {
+        static OPTIONS: OnceLock<Vec<LanguageSetting>> = OnceLock::new();
 
-        options
+        OPTIONS.get_or_init(|| {
+            let mut options = Vec::with_capacity(Locale::ALL.len() + 1);
+            options.push(Self::System);
+            options.extend(Locale::ALL.map(Self::Fixed));
+
+            options
+        })
     }
 
     /// Resolve the setting to the locale that should be rendered.
@@ -569,7 +574,7 @@ mod tests {
     #[test]
     fn given_language_setting_when_round_tripped_then_value_is_preserved() {
         for language in LanguageSetting::all() {
-            assert_eq!(LanguageSetting::from_tag(language.tag()), language);
+            assert_eq!(LanguageSetting::from_tag(language.tag()), *language);
         }
     }
 

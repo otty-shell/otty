@@ -85,7 +85,7 @@
     "field_default_editor": "Editor padrão",
     "field_pane_layout": "Layout dos painéis",
     "option_equalize_panes": "Igualar a largura dos painéis adjacentes ao dividir e fechar",
-    "field_preset": "Predefinição",
+    "field_theme": "Tema",
     "language_system": "Seguir o sistema",
 
     "err_io_prefix": "Erro de E/S: ",

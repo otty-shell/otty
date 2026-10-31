@@ -85,7 +85,7 @@
     "field_default_editor": "Standard-Editor",
     "field_pane_layout": "Fensteraufteilung",
     "option_equalize_panes": "Breiten benachbarter Fenster beim Teilen und Schließen ausgleichen",
-    "field_preset": "Voreinstellung",
+    "field_theme": "Design",
     "language_system": "System folgen",
 
     "err_io_prefix": "E/A-Fehler: ",

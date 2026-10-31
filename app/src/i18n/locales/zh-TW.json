@@ -85,7 +85,7 @@
     "field_default_editor": "預設編輯器",
     "field_pane_layout": "窗格配置",
     "option_equalize_panes": "分割和關閉時平均同層窗格寬度",
-    "field_preset": "配色預設",
+    "field_theme": "主題",
     "language_system": "跟隨系統",
 
     "err_io_prefix": "I/O 錯誤：",

@@ -85,7 +85,7 @@
     "field_default_editor": "Éditeur par défaut",
     "field_pane_layout": "Disposition des volets",
     "option_equalize_panes": "Uniformiser la largeur des volets adjacents lors de la division et de la fermeture",
-    "field_preset": "Préréglage",
+    "field_theme": "Thème",
     "language_system": "Suivre le système",
 
     "err_io_prefix": "Erreur d'E/S : ",
