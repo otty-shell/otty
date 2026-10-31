@@ -1,4 +1,4 @@
-use iced::widget::{Space, container, row, scrollable, text};
+use iced::widget::{Space, row, text};
 use iced::{Element, Length, Theme, alignment};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::form_page::FormPage;
@@ -8,21 +8,14 @@ use otty_ui_kit::components::select::select;
 use otty_ui_kit::components::setting_row::SettingRow;
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::components::text_field::TextField;
-use otty_ui_kit::components::tree_row::TreeRow;
-use otty_ui_kit::components::{divider, scrollbar};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
-use otty_ui_tree::{TreeRowContext, TreeView};
 
 use super::super::event::SettingsIntent;
 use super::super::model::SettingsViewModel;
-use super::super::types::{LanguageSetting, SettingsNode, SettingsSection};
+use super::super::types::LanguageSetting;
 use crate::i18n::{self, Key};
 use crate::theme::{BuiltinTheme, ThemeProps};
-
-/// Width of the settings navigation tree. No size token: the design system
-/// panel (`panel`, 260px) is wider than this short list needs.
-const NAV_WIDTH: f32 = 220.0;
 
 /// Props for the settings form view.
 pub(crate) struct SettingsFormProps<'a> {
@@ -30,79 +23,18 @@ pub(crate) struct SettingsFormProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the full settings view (navigation + form).
+/// Render the settings page: Appearance, General and Terminal sections on
+/// one page, with Reset and Save beside the title.
 pub(crate) fn view(
     props: SettingsFormProps<'_>,
 ) -> Element<'_, SettingsIntent, Theme, iced::Renderer> {
     let palette = props.theme.theme.ui();
-    let nav = settings_nav_tree(&props, palette);
-    let separator = divider::vertical(palette);
-    let form = settings_form(&props, palette);
-
-    row![nav, separator, form]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-}
-
-fn settings_nav_tree<'a>(
-    props: &SettingsFormProps<'a>,
-    palette: &UiPalette,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let row_palette = palette.clone();
-
-    let tree_view = TreeView::new(props.vm.tree, move |context| {
-        render_nav_row(context, &row_palette)
-    })
-    .selected_row(Some(props.vm.selected_path))
-    .hovered_row(props.vm.hovered_path)
-    .on_press(|path| SettingsIntent::NodePressed { path })
-    .on_hover(|path| SettingsIntent::NodeHovered { path })
-    .spacing(0.0)
-    .keep_source_order();
-
-    let scrollable = scrollable::Scrollable::new(tree_view.view())
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .direction(scrollbar::vertical())
-        .style(scrollbar::style(palette));
-
-    container(scrollable)
-        .width(Length::Fixed(NAV_WIDTH))
-        .height(Length::Fill)
-        .into()
-}
-
-fn render_nav_row<'a>(
-    context: &TreeRowContext<'a, SettingsNode>,
-    palette: &UiPalette,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let mut row = TreeRow::new(context.entry.node.title(), palette)
-        .depth(context.entry.depth as u16)
-        .selected(context.is_selected)
-        .hovered(context.is_hovered);
-
-    if context.entry.node.is_folder() {
-        row = row.caret(context.entry.node.is_expanded());
-    }
-
-    row.into()
-}
-
-fn settings_form<'a>(
-    props: &SettingsFormProps<'a>,
-    palette: &UiPalette,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let section: Element<'a, SettingsIntent, Theme, iced::Renderer> =
-        match props.vm.selected_section {
-            SettingsSection::General => general_section(props, palette),
-            SettingsSection::Appearance => appearance_section(props, palette),
-            _ => terminal_section(props, palette),
-        };
 
     FormPage::new(palette)
-        .section(page_title(props, palette))
-        .section(section)
+        .section(page_title(&props, palette))
+        .section(appearance_section(&props, palette))
+        .section(general_section(&props, palette))
+        .section(terminal_section(&props, palette))
         .into()
 }
 
@@ -136,61 +68,6 @@ fn page_title<'a>(
     .into()
 }
 
-fn general_section<'a>(
-    props: &SettingsFormProps<'a>,
-    palette: &UiPalette,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let language_selector = select(
-        LanguageSetting::all(),
-        Some(props.vm.draft.language()),
-        SettingsIntent::LanguageChanged,
-        palette,
-    );
-
-    FormSection::new(i18n::t(Key::SectionGeneral), palette)
-        .field(
-            SettingRow::new(i18n::t(Key::FieldLanguage), palette)
-                .control(language_selector),
-        )
-        .into()
-}
-
-fn terminal_section<'a>(
-    props: &SettingsFormProps<'a>,
-    palette: &UiPalette,
-) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
-    let is_editable = !props.vm.is_saving;
-
-    let mut shell = TextField::new(
-        i18n::t(Key::FieldShell),
-        props.vm.draft.terminal_shell(),
-        palette,
-    );
-    let mut editor = TextField::new(
-        i18n::t(Key::FieldDefaultEditor),
-        props.vm.draft.terminal_editor(),
-        palette,
-    );
-    let mut equalize_panes =
-        Switch::new(props.vm.draft.equalize_panes(), palette);
-    if is_editable {
-        shell = shell.on_input(SettingsIntent::ShellChanged);
-        editor = editor.on_input(SettingsIntent::EditorChanged);
-        equalize_panes =
-            equalize_panes.on_toggle(SettingsIntent::EqualizePanesToggled);
-    }
-
-    FormSection::new(i18n::t(Key::SectionTerminal), palette)
-        .field(shell)
-        .field(editor)
-        .field(
-            SettingRow::new(i18n::t(Key::FieldPaneLayout), palette)
-                .description(i18n::t(Key::OptionEqualizePanes))
-                .control(equalize_panes),
-        )
-        .into()
-}
-
 fn appearance_section<'a>(
     props: &SettingsFormProps<'a>,
     palette: &UiPalette,
@@ -205,7 +82,164 @@ fn appearance_section<'a>(
     FormSection::new(i18n::t(Key::SectionAppearance), palette)
         .field(
             SettingRow::new(i18n::t(Key::FieldTheme), palette)
+                .description(i18n::t(Key::DescTheme))
                 .control(theme_selector),
         )
         .into()
+}
+
+fn general_section<'a>(
+    props: &SettingsFormProps<'a>,
+    palette: &UiPalette,
+) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+    let language_selector = select(
+        LanguageSetting::all(),
+        Some(props.vm.draft.language()),
+        SettingsIntent::LanguageChanged,
+        palette,
+    );
+
+    FormSection::new(i18n::t(Key::SectionGeneral), palette)
+        .field(
+            SettingRow::new(i18n::t(Key::FieldLanguage), palette)
+                .description(i18n::t(Key::DescLanguage))
+                .control(language_selector),
+        )
+        .into()
+}
+
+fn terminal_section<'a>(
+    props: &SettingsFormProps<'a>,
+    palette: &UiPalette,
+) -> Element<'a, SettingsIntent, Theme, iced::Renderer> {
+    let is_editable = !props.vm.is_saving;
+
+    // The label stays empty: the row around the field already names it.
+    let mut shell =
+        TextField::new("", props.vm.draft.terminal_shell(), palette);
+    let mut editor =
+        TextField::new("", props.vm.draft.terminal_editor(), palette);
+    let mut equalize_panes =
+        Switch::new(props.vm.draft.equalize_panes(), palette);
+    if is_editable {
+        shell = shell.on_input(SettingsIntent::ShellChanged);
+        editor = editor.on_input(SettingsIntent::EditorChanged);
+        equalize_panes =
+            equalize_panes.on_toggle(SettingsIntent::EqualizePanesToggled);
+    }
+
+    FormSection::new(i18n::t(Key::SectionTerminal), palette)
+        .field(
+            SettingRow::new(i18n::t(Key::FieldShell), palette)
+                .description(i18n::t(Key::DescShell))
+                .control(shell),
+        )
+        .field(
+            SettingRow::new(i18n::t(Key::FieldDefaultEditor), palette)
+                .description(i18n::t(Key::DescDefaultEditor))
+                .control(editor),
+        )
+        .field(
+            SettingRow::new(i18n::t(Key::OptionEqualizePanes), palette)
+                .description(i18n::t(Key::DescEqualizePanes))
+                .control(equalize_panes),
+        )
+        .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use iced_test::simulator;
+
+    use super::*;
+    use crate::theme::{AppTheme, BuiltinTheme};
+    use crate::widgets::settings::types::SettingsData;
+
+    fn click_in_form(
+        draft: &SettingsData,
+        is_dirty: bool,
+        label: &str,
+    ) -> Vec<SettingsIntent> {
+        let app_theme = AppTheme::default();
+        let props = SettingsFormProps {
+            vm: SettingsViewModel {
+                draft,
+                is_dirty,
+                is_saving: false,
+            },
+            theme: ThemeProps::new(&app_theme),
+        };
+        let mut ui = simulator(view(props));
+
+        ui.click(label).expect("label should be visible");
+
+        ui.into_messages().collect()
+    }
+
+    #[test]
+    fn given_dirty_draft_when_save_clicked_then_save_intent_is_sent() {
+        let draft = SettingsData::default();
+
+        let messages = click_in_form(&draft, true, "Save");
+
+        assert!(matches!(messages.as_slice(), [SettingsIntent::Save]));
+    }
+
+    #[test]
+    fn given_clean_draft_when_save_clicked_then_nothing_is_sent() {
+        let draft = SettingsData::default();
+
+        let messages = click_in_form(&draft, false, "Save");
+
+        assert!(messages.is_empty());
+    }
+
+    #[test]
+    fn given_dirty_draft_when_reset_clicked_then_reset_intent_is_sent() {
+        let draft = SettingsData::default();
+
+        let messages = click_in_form(&draft, true, "Reset");
+
+        assert!(matches!(messages.as_slice(), [SettingsIntent::Reset]));
+    }
+
+    #[test]
+    fn given_light_theme_clicked_then_theme_selected_intent_is_sent() {
+        let draft = SettingsData::default();
+
+        let messages = click_in_form(&draft, false, "OTTY Light");
+
+        assert!(matches!(
+            messages.as_slice(),
+            [SettingsIntent::ThemeSelected(BuiltinTheme::OttyLight)]
+        ));
+    }
+
+    #[test]
+    fn given_settings_page_then_all_sections_and_descriptions_are_visible() {
+        let draft = SettingsData::default();
+        let app_theme = AppTheme::default();
+        let props = SettingsFormProps {
+            vm: SettingsViewModel {
+                draft: &draft,
+                is_dirty: false,
+                is_saving: false,
+            },
+            theme: ThemeProps::new(&app_theme),
+        };
+        let mut ui = simulator(view(props));
+
+        for text in [
+            "Appearance",
+            "General",
+            "Terminal",
+            "The window and the terminal switch together",
+            "Menus, forms and messages",
+            "Program started in every new terminal",
+            "Opens files from the Files panel",
+            "Give every pane the same size after a split",
+        ] {
+            assert!(ui.find(text).is_ok(), "{text} should be visible");
+        }
+    }
 }

@@ -176,12 +176,20 @@ pub(crate) enum Key {
     FieldShell,
     /// Default editor field label.
     FieldDefaultEditor,
-    /// Pane layout field label.
-    FieldPaneLayout,
-    /// Option that keeps sibling pane widths even after layout changes.
+    /// Equalize panes setting label.
     OptionEqualizePanes,
+    /// Line under the equalize panes setting.
+    DescEqualizePanes,
     /// Theme selector field label.
     FieldTheme,
+    /// Line under the theme setting.
+    DescTheme,
+    /// Line under the language setting.
+    DescLanguage,
+    /// Line under the shell setting.
+    DescShell,
+    /// Line under the default editor setting.
+    DescDefaultEditor,
     /// Language option that follows the operating system locale.
     LanguageSystem,
 
@@ -253,7 +261,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 107] = [
+    pub(super) const ALL: [Self; 111] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -327,9 +335,13 @@ impl Key {
         Self::FieldLanguage,
         Self::FieldShell,
         Self::FieldDefaultEditor,
-        Self::FieldPaneLayout,
         Self::OptionEqualizePanes,
+        Self::DescEqualizePanes,
         Self::FieldTheme,
+        Self::DescTheme,
+        Self::DescLanguage,
+        Self::DescShell,
+        Self::DescDefaultEditor,
         Self::LanguageSystem,
         Self::ErrIoPrefix,
         Self::ErrJsonPrefix,

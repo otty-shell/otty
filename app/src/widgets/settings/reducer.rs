@@ -29,8 +29,6 @@ pub(crate) fn reduce(
         },
         SettingsIntent::Save => request_save_settings(state),
         SettingsIntent::SaveCompleted(settings) => {
-            // The locale must be active before the state rebuilds its tree,
-            // whose paths are made of localized section titles.
             i18n::set_locale(settings.language().resolve());
             state.mark_saved(settings.clone());
             Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
@@ -44,14 +42,6 @@ pub(crate) fn reduce(
         },
         SettingsIntent::Reset => {
             state.reset();
-            Task::none()
-        },
-        SettingsIntent::NodePressed { path } => {
-            state.select_path(&path);
-            Task::none()
-        },
-        SettingsIntent::NodeHovered { path } => {
-            state.set_hovered_path(path);
             Task::none()
         },
         SettingsIntent::LanguageChanged(value) => {
@@ -131,8 +121,6 @@ fn apply_loaded_settings(
         log::warn!("settings file invalid: {message}");
     }
 
-    // The locale must be active before the state rebuilds its tree, whose
-    // paths are made of localized section titles.
     i18n::set_locale(settings.language().resolve());
     state.replace_with_settings(settings.clone());
     settings
@@ -146,7 +134,6 @@ mod tests {
     use crate::widgets::settings::state::SettingsState;
     use crate::widgets::settings::types::{
         LanguageSetting, SettingsData, SettingsLoad, SettingsLoadStatus,
-        SettingsSection,
     };
 
     fn default_state() -> SettingsState {
@@ -246,23 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn given_unknown_node_path_when_pressed_then_reducer_ignores_event() {
-        let mut state = default_state();
-        let selected_before = state.selected_path().to_vec();
-        let dirty_before = state.is_dirty();
-
-        let _task = reduce(
-            &mut state,
-            SettingsIntent::NodePressed {
-                path: vec![String::from("Unknown")],
-            },
-        );
-
-        assert_eq!(state.selected_path(), &selected_before);
-        assert_eq!(state.is_dirty(), dirty_before);
-    }
-
-    #[test]
     fn given_reload_event_when_load_succeeds_then_state_replaced() {
         let mut state = default_state();
         state.set_shell(String::from("/bin/zsh"));
@@ -343,25 +313,6 @@ mod tests {
 
         assert_eq!(applied.theme(), BuiltinTheme::OttyLight);
         assert_eq!(state.draft().theme(), BuiltinTheme::OttyLight);
-    }
-
-    #[test]
-    fn given_node_pressed_with_section_then_selection_updated() {
-        let mut state = default_state();
-        // Read the path from the tree so the test does not depend on which
-        // locale rendered the section titles.
-        let path = state
-            .tree()
-            .iter()
-            .find(|node| {
-                node.section_kind() == Some(SettingsSection::Appearance)
-            })
-            .map(|node| vec![node.title().to_string()])
-            .expect("appearance section should be present in the tree");
-
-        let _task = reduce(&mut state, SettingsIntent::NodePressed { path });
-
-        assert_eq!(state.selected_section(), SettingsSection::Appearance);
     }
 
     #[test]
