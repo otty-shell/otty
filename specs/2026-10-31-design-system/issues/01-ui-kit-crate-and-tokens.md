@@ -1,6 +1,6 @@
 # 01 — Create otty-ui-kit crate with size, spacing, radius and type tokens
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Opus 5.5 (claude-opus-5-5)
 Blocked by: —

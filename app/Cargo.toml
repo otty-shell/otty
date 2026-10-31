@@ -14,6 +14,7 @@ license = "Apache-2.0"
 iced = { workspace = true, features = ["canvas", "lazy", "advanced", "svg", "image", "tokio"] }
 otty-ui-term = { path = "../crates/ui/terminal", version = "0.1.0" }
 otty-ui-tree = { path = "../crates/ui/tree", version = "0.1.0" }
+otty-ui-kit = { path = "../crates/ui/kit", version = "0.1.0" }
 otty-libterm = { path = "../crates/libterm", version = "0.1.0" }
 log = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
