@@ -132,7 +132,7 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 - [x] 01 — Create `otty-ui-kit` crate with size, spacing, radius and type tokens · Opus
 - [x] 02 — `UiPalette` for OTTY Dark and OTTY Light, contrast tests · Opus
 - [ ] 03 — Two themes: add OTTY Light, remove other presets and the palette editor, store the theme name · Opus
-- [ ] 04 — Bundle fonts and switch UI and terminal text styles · Sonnet
+- [x] 04 — Bundle fonts and switch UI and terminal text styles · Sonnet
 - [ ] 05 — Kit components: controls and overlays · Sonnet
 - [ ] 06 — Kit components: rows, tabs and form fields · Sonnet
 - [ ] 07 — Restyle title bar and pane dividers · Sonnet

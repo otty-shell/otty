@@ -6,7 +6,8 @@
 //! - [`spacing`] for paddings and gaps;
 //! - [`radius`] for corner radii;
 //! - [`size`] for fixed heights and widths;
-//! - [`typography`] for text sizes, line heights and weights.
+//! - [`typography`] for text sizes, line heights and weights;
+//! - [`fonts`] for the bundled font files and `Font` values.
 //!
 //! # Example
 //!
@@ -23,6 +24,7 @@
 
 #[cfg(test)]
 mod contrast;
+pub mod fonts;
 pub mod palette;
 pub mod radius;
 pub mod size;

@@ -31,7 +31,7 @@ fn main() -> iced::Result {
         .format_timestamp_millis()
         .init();
 
-    iced::application(App::new, App::update, App::view)
+    let app = iced::application(App::new, App::update, App::view)
         .title(App::title)
         .theme(App::theme)
         .antialiasing(true)
@@ -50,6 +50,10 @@ fn main() -> iced::Result {
         })
         .resizable(true)
         .font(TERM_FONT_JET_BRAINS_BYTES)
-        .subscription(App::subscription)
+        .subscription(App::subscription);
+
+    otty_ui_kit::fonts::all_bytes()
+        .into_iter()
+        .fold(app, |app, bytes| app.font(bytes))
         .run()
 }
