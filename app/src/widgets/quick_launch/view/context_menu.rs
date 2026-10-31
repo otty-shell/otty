@@ -1,13 +1,14 @@
 use iced::widget::{Space, container};
 use iced::{Element, Length, Size, Theme};
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
+use otty_ui_kit::spacing;
 
 use super::super::event::QuickLaunchIntent;
 use super::super::state::ContextMenuState;
 use super::super::types::{
     ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,
 };
-use crate::geometry::{MENU_MARGIN, anchor_position, menu_height_for_items};
+use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
@@ -68,7 +69,7 @@ pub(crate) fn view(
         props.area_size,
         menu::MENU_WIDTH,
         menu_height_for_items(item_count),
-        MENU_MARGIN,
+        spacing::SPACE_2,
     );
 
     let positioned_menu =

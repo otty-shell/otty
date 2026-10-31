@@ -22,7 +22,6 @@ use iced::{Size, window};
 use image::ImageFormat;
 
 use crate::app::{App, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
-use crate::fonts::TERM_FONT_JET_BRAINS_BYTES;
 use crate::icons::APP_ICON_DATA;
 
 fn main() -> iced::Result {
@@ -48,7 +47,6 @@ fn main() -> iced::Result {
             ..window::Settings::default()
         })
         .resizable(true)
-        .font(TERM_FONT_JET_BRAINS_BYTES)
         .subscription(App::subscription);
 
     otty_ui_kit::fonts::all_bytes()

@@ -9,11 +9,8 @@ use crate::i18n::{self, Key};
 use crate::icons::{LOGO_SMALL, WINDOW_CLOSE, WINDOW_FULLSCREEN, WINDOW_TRAY};
 use crate::theme::ThemeProps;
 
-/// Logo height in the title bar, set by the design system's iconography
-/// rules (logo-small, 20px high). No size token.
-const LOGO_HEIGHT: f32 = 20.0;
 /// Logo width; it follows the logo proportions (145.36 x 103.12).
-const LOGO_WIDTH: f32 = LOGO_HEIGHT * 145.36 / 103.12;
+const LOGO_WIDTH: f32 = size::LOGO * 145.36 / 103.12;
 
 /// Props for rendering the action bar.
 #[derive(Debug, Clone)]
@@ -33,7 +30,7 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
 
     let logo = svg::Svg::new(svg::Handle::from_memory(LOGO_SMALL))
         .width(Length::Fixed(LOGO_WIDTH))
-        .height(Length::Fixed(LOGO_HEIGHT));
+        .height(Length::Fixed(size::LOGO));
 
     let logo_container = container(logo)
         .width(Length::Shrink)

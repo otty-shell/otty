@@ -2,8 +2,9 @@ use iced::widget::{Id, container, mouse_area, pane_grid, text_input};
 use iced::{Background, Element, Length, Point, Size, alignment};
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
 use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::spacing;
 
-use crate::geometry::{MENU_MARGIN, anchor_position, menu_height_for_items};
+use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
@@ -99,7 +100,7 @@ pub(crate) fn view<'a>(
         props.grid_size,
         menu::MENU_WIDTH,
         menu_height_for_items(item_count),
-        MENU_MARGIN,
+        spacing::SPACE_2,
     );
 
     let padding = iced::Padding {

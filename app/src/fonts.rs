@@ -1,11 +1,6 @@
 use iced::Font;
 use otty_ui_kit::{fonts, typography};
 
-/// Embedded JetBrains Mono Nerd Font Bold, used for bold terminal text.
-pub(crate) const TERM_FONT_JET_BRAINS_BYTES: &[u8] = include_bytes!(
-    "../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"
-);
-
 /// UI font configuration.
 #[derive(Debug, Clone)]
 pub(crate) struct UiFonts {
@@ -33,7 +28,7 @@ impl Default for TerminalFonts {
     fn default() -> Self {
         Self {
             font_type: fonts::MONO,
-            size: typography::BODY.size(),
+            size: typography::TERM.size(),
         }
     }
 }

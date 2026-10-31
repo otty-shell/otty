@@ -31,6 +31,11 @@ pub const JETBRAINS_MONO_REGULAR_BYTES: &[u8] = include_bytes!(
     "../../../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Regular.ttf"
 );
 
+/// JetBrainsMono Nerd Font Mono Bold (700) font file.
+pub const JETBRAINS_MONO_BOLD_BYTES: &[u8] = include_bytes!(
+    "../../../../assets/fonts/JetBrains/JetBrainsMonoNerdFontMono-Bold.ttf"
+);
+
 /// Interface font, Noto Sans Regular: default text of rows, buttons and menus.
 pub const UI: Font = Font {
     family: Family::Name(UI_FAMILY),
@@ -59,12 +64,21 @@ pub const MONO: Font = Font {
     ..Font::DEFAULT
 };
 
+/// Terminal and code font, JetBrainsMono Nerd Font Mono Bold: bold terminal
+/// text.
+pub const MONO_BOLD: Font = Font {
+    family: Family::Name(MONO_FAMILY),
+    weight: Weight::Bold,
+    ..Font::DEFAULT
+};
+
 /// Returns the bytes of every bundled font file the app must load at startup.
-pub fn all_bytes() -> [&'static [u8]; 4] {
+pub fn all_bytes() -> [&'static [u8]; 5] {
     [
         NOTO_SANS_REGULAR_BYTES,
         NOTO_SANS_MEDIUM_BYTES,
         NOTO_SANS_SEMIBOLD_BYTES,
         JETBRAINS_MONO_REGULAR_BYTES,
+        JETBRAINS_MONO_BOLD_BYTES,
     ]
 }

@@ -15,10 +15,6 @@ use crate::i18n::{self, Key};
 use crate::icons::FILE;
 use crate::theme::ThemeProps;
 
-/// Empty space under the last tree row, so it does not touch the window
-/// edge. The design system has no spacing step of 20px.
-const TREE_PADDING_BOTTOM: f32 = 20.0;
-
 /// Props for the explorer sidebar tree view.
 #[derive(Debug, Clone)]
 pub(crate) struct SidebarTreeProps<'a> {
@@ -94,7 +90,7 @@ fn explorer_tree<'a>(
     container(scrollable)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(Padding::default().bottom(TREE_PADDING_BOTTOM))
+        .padding(Padding::default().bottom(spacing::SPACE_6))
         .into()
 }
 

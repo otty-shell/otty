@@ -2,9 +2,6 @@ use iced::{Point, Size};
 use otty_ui_kit::components::menu;
 use otty_ui_kit::size;
 
-/// Gap between the cursor and an open menu.
-pub(crate) const MENU_MARGIN: f32 = 6.0;
-
 /// Compute a context menu anchor position near the cursor, clamped to bounds.
 pub(crate) fn anchor_position(
     cursor: Point,
@@ -46,6 +43,7 @@ pub(crate) fn menu_height_for_items(item_count: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use otty_ui_kit::components::menu;
+    use otty_ui_kit::spacing;
 
     use super::*;
 
@@ -72,7 +70,7 @@ mod tests {
             grid,
             MENU_WIDTH,
             height,
-            MENU_MARGIN,
+            spacing::SPACE_2,
         );
         assert!(anchor.x >= 0.0 && anchor.y >= 0.0);
         assert!(anchor.x + MENU_WIDTH <= grid.width);
@@ -85,12 +83,17 @@ mod tests {
         let grid = Size::new(400.0, 300.0);
         let cursor = Point::new(390.0, 290.0);
         let menu_height = 140.0;
-        let anchor =
-            anchor_position(cursor, grid, MENU_WIDTH, menu_height, MENU_MARGIN);
-        assert!(anchor.x >= MENU_MARGIN);
-        assert!(anchor.y >= MENU_MARGIN);
-        assert!(anchor.x + MENU_WIDTH <= grid.width - MENU_MARGIN + 0.1);
-        assert!(anchor.y + menu_height <= grid.height - MENU_MARGIN + 0.1);
+        let anchor = anchor_position(
+            cursor,
+            grid,
+            MENU_WIDTH,
+            menu_height,
+            spacing::SPACE_2,
+        );
+        assert!(anchor.x >= spacing::SPACE_2);
+        assert!(anchor.y >= spacing::SPACE_2);
+        assert!(anchor.x + MENU_WIDTH <= grid.width - spacing::SPACE_2 + 0.1);
+        assert!(anchor.y + menu_height <= grid.height - spacing::SPACE_2 + 0.1);
     }
 
     #[test]
@@ -98,10 +101,15 @@ mod tests {
         let grid = Size::new(800.0, 600.0);
         let cursor = Point::new(100.0, 120.0);
         let menu_height = 140.0;
-        let anchor =
-            anchor_position(cursor, grid, MENU_WIDTH, menu_height, MENU_MARGIN);
-        assert!((anchor.x - (cursor.x + MENU_MARGIN)).abs() < 0.1);
-        assert!((anchor.y - (cursor.y + MENU_MARGIN)).abs() < 0.1);
+        let anchor = anchor_position(
+            cursor,
+            grid,
+            MENU_WIDTH,
+            menu_height,
+            spacing::SPACE_2,
+        );
+        assert!((anchor.x - (cursor.x + spacing::SPACE_2)).abs() < 0.1);
+        assert!((anchor.y - (cursor.y + spacing::SPACE_2)).abs() < 0.1);
     }
 
     #[test]
@@ -109,9 +117,14 @@ mod tests {
         let grid = Size::new(500.0, 400.0);
         let cursor = Point::new(490.0, 200.0);
         let menu_height = 140.0;
-        let anchor =
-            anchor_position(cursor, grid, MENU_WIDTH, menu_height, MENU_MARGIN);
+        let anchor = anchor_position(
+            cursor,
+            grid,
+            MENU_WIDTH,
+            menu_height,
+            spacing::SPACE_2,
+        );
         assert!(anchor.x < cursor.x);
-        assert!(cursor.x - anchor.x >= MENU_WIDTH - MENU_MARGIN);
+        assert!(cursor.x - anchor.x >= MENU_WIDTH - spacing::SPACE_2);
     }
 }

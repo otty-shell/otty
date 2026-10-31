@@ -4,12 +4,12 @@ use iced::{Element, Length, Size, Theme, alignment};
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
 use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::components::{divider, split};
-use otty_ui_kit::size;
+use otty_ui_kit::{size, spacing};
 
 use super::{App, AppEvent};
 #[cfg(not(target_os = "macos"))]
 use crate::components::primitive::resize_grips;
-use crate::geometry::{MENU_MARGIN, anchor_position, menu_height_for_items};
+use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
@@ -423,7 +423,7 @@ fn view_add_menu_overlay<'a>(
         area_size,
         menu::MENU_WIDTH,
         menu_height_for_items(3),
-        MENU_MARGIN,
+        spacing::SPACE_2,
     );
 
     let padding = iced::Padding {

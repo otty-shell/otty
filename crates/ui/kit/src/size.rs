@@ -22,6 +22,8 @@ pub const RAIL_BUTTON: f32 = 44.0;
 pub const PANEL: f32 = 260.0;
 /// Tree indent: extra left offset for each nesting level in a tree.
 pub const TREE_INDENT: f32 = 18.0;
+/// Logo height in the title bar.
+pub const LOGO: f32 = 20.0;
 /// Width of the 1px `line` rule between panes, panels and under the title bar.
 pub const LINE: f32 = 1.0;
 /// Width of the invisible zone around a split line that the pointer can drag.
