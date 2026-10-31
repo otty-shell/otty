@@ -149,7 +149,7 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
 }
 
 /// Builds the tooltip bubble shown over icon buttons.
-fn tooltip_hint<'a, Message: 'a>(
+pub(super) fn tooltip_hint<'a, Message: 'a>(
     label: String,
     palette: &UiPalette,
 ) -> Element<'a, Message> {

@@ -171,7 +171,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 
 - [x] 01 — `iced_test`, characterization tests, regression checklist · Opus
 - [x] 02 — Kit: TargetDot, Chip, StatusBar · Sonnet
-- [ ] 03 — Kit: PanelSection, SessionRow, SessionGroup, SplitButton · Sonnet
+- [x] 03 — Kit: PanelSection, SessionRow, SessionGroup, SplitButton · Sonnet
 - [ ] 04 — Kit: PaneHeader, TitleSearch, ActionTile, FloatingNote, EmptyCard · Sonnet
 - [ ] 05 — Kit: CommandPalette · Opus
 - [ ] 06 — App shortcuts · Opus

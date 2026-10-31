@@ -20,10 +20,14 @@ use otty_ui_kit::components::icon_button::{
 use otty_ui_kit::components::kbd::{kbd, shortcut_text};
 use otty_ui_kit::components::key_value_field::KeyValueField;
 use otty_ui_kit::components::menu::{Menu, MenuItem};
+use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::rail_button::{RailButton, rail_separator};
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::select::select;
+use otty_ui_kit::components::session_group::SessionGroup;
+use otty_ui_kit::components::session_row::{SessionRow, SessionTone};
 use otty_ui_kit::components::setting_row::SettingRow;
+use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::components::tab_strip::{Tab, TabStrip};
@@ -89,6 +93,8 @@ struct Gallery {
     tree_selected: usize,
     rail: usize,
     dialog_open: bool,
+    sessions_open: bool,
+    menu_open: bool,
 }
 
 impl Gallery {
@@ -129,6 +135,8 @@ impl Gallery {
             tree_selected: 2,
             rail: 0,
             dialog_open: false,
+            sessions_open: true,
+            menu_open: false,
         }
     }
 }
@@ -155,6 +163,8 @@ enum Message {
     Rail(usize),
     OpenDialog,
     CloseDialog,
+    ToggleSessions,
+    ToggleMenu,
 }
 
 fn update(state: &mut Gallery, message: Message) {
@@ -186,6 +196,8 @@ fn update(state: &mut Gallery, message: Message) {
         Message::Rail(index) => state.rail = index,
         Message::OpenDialog => state.dialog_open = true,
         Message::CloseDialog => state.dialog_open = false,
+        Message::ToggleSessions => state.sessions_open = !state.sessions_open,
+        Message::ToggleMenu => state.menu_open = !state.menu_open,
     }
 }
 
@@ -468,6 +480,74 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         .kind(ButtonKind::Secondary)
         .on_press(Message::OpenDialog);
 
+    let plus = || svg::Handle::from_memory(PLUS_ICON);
+    let split = |is_open: bool| {
+        SplitButton::new(
+            plus(),
+            "New terminal (Ctrl T)",
+            "More ways to start a session",
+            p,
+        )
+        .menu_open(is_open)
+        .on_press(Message::Clicked)
+        .on_menu(Message::ToggleMenu)
+    };
+    let split_buttons = row![split(state.menu_open), split(true)]
+        .spacing(spacing::SPACE_4)
+        .align_y(iced::Alignment::Center);
+
+    let sessions_body = column![
+        SessionGroup::new("fedora", TargetKind::Local, p).note("this computer"),
+        SessionRow::new("zsh  ~/projects/otty", p)
+            .selected(true)
+            .on_press(Message::Clicked)
+            .on_close(Message::Clicked),
+        SessionRow::new("claude  Review tree indent", p)
+            .state("needs you", SessionTone::Waiting)
+            .on_press(Message::Clicked),
+        SessionRow::new("cargo test", p)
+            .state("done", SessionTone::Done)
+            .on_press(Message::Clicked),
+        SessionRow::new("make deploy", p)
+            .state("failed", SessionTone::Failed)
+            .on_press(Message::Clicked),
+        SessionGroup::new("laptop", TargetKind::Ssh, p).note("ssh"),
+        SessionRow::new("htop", p)
+            .state("connecting", SessionTone::Muted)
+            .on_press(Message::Clicked),
+        SessionRow::new(
+            "A very long session title that has to be cut at the row edge",
+            p
+        )
+        .on_press(Message::Clicked),
+    ]
+    .spacing(1);
+    let sessions = PanelSection::new("Sessions", p)
+        .open(state.sessions_open)
+        .count(5)
+        .action(split(state.menu_open))
+        .body(sessions_body)
+        .on_toggle(Message::ToggleSessions);
+    let collapsed = PanelSection::new("Launches", p)
+        .open(false)
+        .count(12)
+        .action(
+            IconButton::new(plus(), "Add", p)
+                .size(IconButtonSize::Small)
+                .on_press(Message::Clicked),
+        )
+        .on_toggle(Message::Clicked);
+    let panel =
+        container(column![sessions, collapsed].spacing(spacing::SPACE_3))
+            .width(PANEL_WIDTH)
+            .style({
+                let background = p.surface_panel();
+                move |_| container::Style {
+                    background: Some(background.into()),
+                    ..container::Style::default()
+                }
+            });
+
     let dots = row![
         target_dot(TargetKind::Local, p),
         target_dot(TargetKind::Ssh, p),
@@ -521,6 +601,16 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section("RailButton (active, idle, separator)", rail.into(), p),
         section("TabStrip (active tab, hover, close, plus)", tabs.into(), p),
         section("TabStrip (many tabs: clipped at the edge)", many.into(), p),
+        section(
+            "PanelSection (open with SessionGroup + SessionRow: selected, state words, long title; collapsed)",
+            panel.into(),
+            p,
+        ),
+        section(
+            "SplitButton (idle; menu open shows the frame)",
+            split_buttons.into(),
+            p,
+        ),
     ];
     let form_fields: Vec<Element<'_, Message>> = vec![
         section(

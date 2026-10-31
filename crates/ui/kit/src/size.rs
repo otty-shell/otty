@@ -16,6 +16,14 @@ pub const TITLEBAR: f32 = 38.0;
 pub const STATUSBAR: f32 = 24.0;
 /// Diameter of a target dot (`.ot-dot`).
 pub const DOT: f32 = 7.0;
+/// Height of a session group label (`.ot-group { height: 28px }`).
+pub const GROUP: f32 = 28.0;
+/// Left padding of a session row under its group label, so its title lines
+/// up with the group name: padding, dot and gap (`padding-left: 23px`).
+pub const SESSION_INDENT: f32 =
+    crate::spacing::SPACE_3 + DOT + crate::spacing::SPACE_3;
+/// Width of the chevron half of a split button (`width: 18px`).
+pub const SPLIT_CHEVRON: f32 = 18.0;
 /// Gap between items of the status bar (`.ot-statusbar { gap: 18px }`).
 pub const STATUS_GAP: f32 = 18.0;
 /// Height of a button inside the status bar (`.ot-status-btn`).
