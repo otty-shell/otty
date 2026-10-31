@@ -27,6 +27,8 @@
     "window_files_panel": "Files",
     "window_left_panel": "Left panel",
     "window_focus_mode": "Focus mode",
+    "focus_note_hidden": "Panels are hidden",
+    "focus_note_show": "to show them",
     "window_close": "Close window",
 
     "kill": "Kill",

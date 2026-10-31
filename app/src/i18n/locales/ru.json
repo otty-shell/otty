@@ -27,6 +27,8 @@
     "window_files_panel": "Файлы",
     "window_left_panel": "Левая панель",
     "window_focus_mode": "Режим фокуса",
+    "focus_note_hidden": "Панели скрыты",
+    "focus_note_show": "чтобы показать их",
     "window_close": "Закрыть окно",
 
     "kill": "Завершить",

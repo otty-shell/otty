@@ -64,6 +64,10 @@ pub(crate) enum Key {
     WindowLeftPanel,
     /// Tooltip of the title bar focus mode button.
     WindowFocusMode,
+    /// Focus mode note: says the panels are hidden.
+    FocusNoteHidden,
+    /// Focus mode note: text after the shortcut.
+    FocusNoteShow,
     /// Tooltip of the title bar button that closes the window.
     WindowClose,
 
@@ -275,7 +279,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 118] = [
+    pub(super) const ALL: [Self; 120] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -300,6 +304,8 @@ impl Key {
         Self::WindowFilesPanel,
         Self::WindowLeftPanel,
         Self::WindowFocusMode,
+        Self::FocusNoteHidden,
+        Self::FocusNoteShow,
         Self::WindowClose,
         Self::Kill,
         Self::Edit,

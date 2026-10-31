@@ -27,6 +27,8 @@
     "window_files_panel": "Arquivos",
     "window_left_panel": "Painel esquerdo",
     "window_focus_mode": "Modo foco",
+    "focus_note_hidden": "Os painéis estão ocultos",
+    "focus_note_show": "para mostrá-los",
     "window_close": "Fechar janela",
 
     "kill": "Encerrar",

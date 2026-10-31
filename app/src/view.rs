@@ -13,7 +13,7 @@ use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
-use crate::widgets::chrome::view::action_bar;
+use crate::widgets::chrome::view::{action_bar, focus_note};
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::quick_launch::QuickLaunchEvent;
@@ -51,6 +51,12 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 
     let mut layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> =
         vec![content_row.into()];
+
+    // Focus mode note
+    if let Some(note) = focus_note::view(sidebar_vm.is_focus_mode, theme_props)
+    {
+        layers.push(note);
+    }
 
     // Add menu overlay
     if sidebar_vm.has_add_menu_open

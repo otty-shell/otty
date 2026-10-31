@@ -27,6 +27,8 @@
     "window_files_panel": "Fichiers",
     "window_left_panel": "Panneau de gauche",
     "window_focus_mode": "Mode focus",
+    "focus_note_hidden": "Les panneaux sont masqués",
+    "focus_note_show": "pour les afficher",
     "window_close": "Fermer la fenêtre",
 
     "kill": "Arrêter",

@@ -27,6 +27,8 @@
     "window_files_panel": "Dateien",
     "window_left_panel": "Linkes Feld",
     "window_focus_mode": "Fokusmodus",
+    "focus_note_hidden": "Die Bereiche sind ausgeblendet",
+    "focus_note_show": "zum Einblenden",
     "window_close": "Fenster schließen",
 
     "kill": "Beenden",

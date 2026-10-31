@@ -27,6 +27,8 @@
     "window_files_panel": "파일",
     "window_left_panel": "왼쪽 패널",
     "window_focus_mode": "집중 모드",
+    "focus_note_hidden": "패널이 숨겨져 있습니다",
+    "focus_note_show": "으로 표시",
     "window_close": "창 닫기",
 
     "kill": "강제 종료",

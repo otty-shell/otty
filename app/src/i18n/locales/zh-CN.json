@@ -27,6 +27,8 @@
     "window_files_panel": "文件",
     "window_left_panel": "左侧面板",
     "window_focus_mode": "专注模式",
+    "focus_note_hidden": "面板已隐藏",
+    "focus_note_show": "显示面板",
     "window_close": "关闭窗口",
 
     "kill": "终止",

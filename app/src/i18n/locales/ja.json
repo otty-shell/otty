@@ -27,6 +27,8 @@
     "window_files_panel": "ファイル",
     "window_left_panel": "左パネル",
     "window_focus_mode": "集中モード",
+    "focus_note_hidden": "パネルは非表示です",
+    "focus_note_show": "で表示",
     "window_close": "ウィンドウを閉じる",
 
     "kill": "強制終了",
