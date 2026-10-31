@@ -1,6 +1,6 @@
 # 11 — Restyle menus and dropdowns
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Model: Sonnet 5.5 (claude-sonnet-5-5)
 Blocked by: 05
@@ -19,3 +19,10 @@ Move every overlay menu to kit `Menu`:
 ## Done when
 
 - All menus share one look; screenshots of an open context menu in both themes.
+
+## Answer
+
+- Add menu, quick launch context menu and pane context menu use kit Menu; `menu_item.rs` deleted; `menu_height_for_items` follows `ROW` items and kit padding (tests updated first).
+- Only Split vertically shows a shortcut (the only real binding), built from the binding's modifiers.
+- `menu_panel_style` stays until ticket 13/14 (secret prompt uses it). No destructive tone for Remove/Delete yet.
+- Not checked visually: menus open only on click and no input tool is installed. Check them in the final review.

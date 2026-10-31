@@ -1,15 +1,14 @@
 use iced::widget::pane_grid::PaneGrid;
 use iced::widget::{Space, column, container, mouse_area, row, text};
 use iced::{Element, Length, Size, Theme, alignment};
+use otty_ui_kit::components::menu::{self, Menu, MenuItem};
 
 use super::{App, AppEvent};
 #[cfg(not(target_os = "macos"))]
 use crate::components::primitive::resize_grips;
-use crate::components::primitive::{menu_item, sidebar_workspace_panel};
-use crate::geometry::{anchor_position, menu_height_for_items};
+use crate::components::primitive::sidebar_workspace_panel;
+use crate::geometry::{MENU_MARGIN, anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
-use crate::layout::BUTTON_SIZE_COMPACT;
-use crate::style::menu_panel_style;
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::view::action_bar;
@@ -37,13 +36,6 @@ pub(crate) const HEADER_SEPARATOR_HEIGHT: f32 = 1.0;
 const SIDEBAR_SEPARATOR_WIDTH: f32 = 1.0;
 const PANE_GRID_SPACING: f32 = 1.0;
 const PANE_GRID_RESIZE_GRAB: f32 = 8.0;
-
-// Add menu overlay constants
-const ADD_MENU_WIDTH: f32 = 220.0;
-const ADD_MENU_ITEM_HEIGHT: f32 = BUTTON_SIZE_COMPACT;
-const ADD_MENU_VERTICAL_PADDING: f32 = 16.0;
-const ADD_MENU_MARGIN: f32 = 6.0;
-const ADD_MENU_CONTAINER_PADDING_X: f32 = 8.0;
 
 /// Render the root application view.
 pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
@@ -435,43 +427,26 @@ fn view_add_menu_overlay<'a>(
     area_size: Size,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
-    let menu_items = [
-        add_menu_item(
-            i18n::t(Key::MenuCreateTab),
-            theme_props,
-            SidebarIntent::AddMenuCreateTab,
-        ),
-        add_menu_item(
-            i18n::t(Key::MenuCreateFolder),
-            theme_props,
-            SidebarIntent::AddMenuCreateFolder,
-        ),
-        add_menu_item(
-            i18n::t(Key::MenuCreateQuickLaunch),
-            theme_props,
-            SidebarIntent::AddMenuCreateCommand,
-        ),
-    ];
-
-    let menu_height = menu_height_for_items(
-        menu_items.len(),
-        ADD_MENU_ITEM_HEIGHT,
-        ADD_MENU_VERTICAL_PADDING,
-    );
-
-    let menu_column = menu_items
-        .into_iter()
-        .fold(iced::widget::Column::new(), |col, item| col.push(item))
-        .spacing(0)
-        .width(Length::Fill)
-        .align_x(alignment::Horizontal::Left);
+    let menu = Menu::new(theme_props.theme.ui())
+        .item(
+            MenuItem::new(i18n::t(Key::MenuCreateTab))
+                .on_press(SidebarIntent::AddMenuCreateTab),
+        )
+        .item(
+            MenuItem::new(i18n::t(Key::MenuCreateFolder))
+                .on_press(SidebarIntent::AddMenuCreateFolder),
+        )
+        .item(
+            MenuItem::new(i18n::t(Key::MenuCreateQuickLaunch))
+                .on_press(SidebarIntent::AddMenuCreateCommand),
+        );
 
     let anchor = anchor_position(
         cursor,
         area_size,
-        ADD_MENU_WIDTH,
-        menu_height,
-        ADD_MENU_MARGIN,
+        menu::MENU_WIDTH,
+        menu_height_for_items(3),
+        MENU_MARGIN,
     );
 
     let padding = iced::Padding {
@@ -480,12 +455,7 @@ fn view_add_menu_overlay<'a>(
         ..iced::Padding::ZERO
     };
 
-    let menu_container = container(menu_column)
-        .padding([ADD_MENU_CONTAINER_PADDING_X, 0.0])
-        .width(ADD_MENU_WIDTH)
-        .style(menu_panel_style(theme_props));
-
-    let positioned_menu = container(menu_container)
+    let positioned_menu = container(Element::from(menu))
         .padding(padding)
         .width(Length::Fill)
         .height(Length::Fill)
@@ -503,18 +473,4 @@ fn view_add_menu_overlay<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
-}
-
-fn add_menu_item<'a>(
-    label: &'a str,
-    theme_props: ThemeProps<'a>,
-    on_press: SidebarIntent,
-) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
-    menu_item::view(menu_item::MenuItemProps {
-        label,
-        theme: theme_props,
-    })
-    .map(move |event| match event {
-        menu_item::MenuItemEvent::Pressed => on_press.clone(),
-    })
 }

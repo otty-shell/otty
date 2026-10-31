@@ -6,6 +6,7 @@
 
 use iced::keyboard::Modifiers;
 use iced::widget::pane_grid;
+use otty_ui_kit::components::kbd::shortcut_text;
 use otty_ui_term::bindings::{
     Binding, BindingAction, InputKind, KeyboardBinding,
 };
@@ -40,6 +41,13 @@ pub(crate) fn app_bindings()
     )
 }
 
+/// Text of the split-vertically shortcut, built from the real binding, for
+/// the pane context menu.
+pub(crate) fn split_vertically_shortcut_label() -> String {
+    let modifiers = split_pane_modifiers(cfg!(target_os = "macos"));
+    shortcut_text(modifiers, "d")
+}
+
 fn split_pane_modifiers(is_macos: bool) -> Modifiers {
     if is_macos {
         Modifiers::LOGO
@@ -71,6 +79,16 @@ mod tests {
             }),
             "the platform shortcut must split the reporting pane vertically"
         );
+    }
+
+    #[test]
+    fn given_platform_when_label_built_then_it_matches_the_binding() {
+        let expected = if cfg!(target_os = "macos") {
+            "Super D"
+        } else {
+            "Shift Super D"
+        };
+        assert_eq!(split_vertically_shortcut_label(), expected);
     }
 
     #[test]

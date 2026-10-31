@@ -7,10 +7,10 @@ use super::{faded, kbd};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing};
 
-/// Width of a menu (`width: 240px`).
-const MENU_WIDTH: f32 = 240.0;
+/// Width of a menu in logical pixels.
+pub const MENU_WIDTH: f32 = 240.0;
 /// Padding around the items (`padding: 5px`).
-const MENU_PADDING: f32 = 5.0;
+pub const MENU_PADDING: f32 = 5.0;
 /// Text size of items (`font-size: 12.5px`).
 const ITEM_TEXT_SIZE: f32 = 12.5;
 /// Horizontal padding of an item (`padding: 0 10px`).

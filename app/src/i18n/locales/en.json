@@ -31,10 +31,10 @@
     "rename": "Rename",
     "duplicate": "Duplicate",
     "remove": "Remove",
-    "create_folder": "Create Folder",
+    "create_folder": "Create folder",
     "create_quick_launch": "Create quick launch",
     "delete": "Delete",
-    "create_launch": "Create Launch",
+    "create_launch": "Create launch",
 
     "quick_launch_panel_title": "Quick launch",
     "no_active_folder": "No active folder",

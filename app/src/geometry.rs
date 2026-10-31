@@ -1,4 +1,9 @@
 use iced::{Point, Size};
+use otty_ui_kit::components::menu;
+use otty_ui_kit::size;
+
+/// Gap between the cursor and an open menu.
+pub(crate) const MENU_MARGIN: f32 = 6.0;
 
 /// Compute a context menu anchor position near the cursor, clamped to bounds.
 pub(crate) fn anchor_position(
@@ -33,21 +38,46 @@ pub(crate) fn anchor_position(
     Point::new(x.clamp(margin, max_x), y.clamp(margin, max_y))
 }
 
-/// Total menu height for a given number of items.
-pub(crate) fn menu_height_for_items(
-    item_count: usize,
-    item_height: f32,
-    vertical_padding: f32,
-) -> f32 {
-    vertical_padding + item_height * item_count as f32
+/// Total height of a kit `Menu` with `item_count` items (no separators).
+pub(crate) fn menu_height_for_items(item_count: usize) -> f32 {
+    2.0 * menu::MENU_PADDING + size::ROW * item_count as f32
 }
 
 #[cfg(test)]
 mod tests {
+    use otty_ui_kit::components::menu;
+
     use super::*;
 
-    const MENU_WIDTH: f32 = 250.0;
-    const MENU_MARGIN: f32 = 6.0;
+    const MENU_WIDTH: f32 = menu::MENU_WIDTH;
+
+    #[test]
+    fn given_three_items_when_menu_height_then_rows_plus_kit_padding() {
+        let height = menu_height_for_items(3);
+        assert_eq!(height, 3.0 * size::ROW + 2.0 * menu::MENU_PADDING);
+        assert_eq!(height, 100.0);
+    }
+
+    #[test]
+    fn given_no_items_when_menu_height_then_only_padding() {
+        assert_eq!(menu_height_for_items(0), 2.0 * menu::MENU_PADDING);
+    }
+
+    #[test]
+    fn given_menu_at_bottom_right_when_placed_then_kit_menu_fits_window() {
+        let grid = Size::new(600.0, 400.0);
+        let height = menu_height_for_items(6);
+        let anchor = anchor_position(
+            Point::new(599.0, 399.0),
+            grid,
+            MENU_WIDTH,
+            height,
+            MENU_MARGIN,
+        );
+        assert!(anchor.x >= 0.0 && anchor.y >= 0.0);
+        assert!(anchor.x + MENU_WIDTH <= grid.width);
+        assert!(anchor.y + height <= grid.height);
+    }
 
     #[test]
     fn given_cursor_outside_bounds_when_anchor_position_then_clamps_inside_bounds()
