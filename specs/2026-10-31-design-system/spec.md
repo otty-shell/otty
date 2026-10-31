@@ -145,9 +145,10 @@ The design system's Themes section says the light status colors pass 4.5:1 on
 - [x] 13 — Restyle quick launch editor, secret prompt and error tab · Sonnet
 - [x] 14 — Remove old styling code · Opus
 - [x] 16 — Fix the known contrast issues · Sonnet
+- [ ] 17 — Status colors pass 4.5:1 on every surface they can sit on · Sonnet
 - [x] 15 — Update the design system to match the code · owner
 
-Tickets live in `issues/`. Each ticket names the model that runs it on its `Model:` line; a subagent started for a ticket is launched with that model. Order: 01 → (02, 04) → (03, 05, 06) → 07–13 in parallel → 14 → 16 → 15.
+Tickets live in `issues/`. Each ticket names the model that runs it on its `Model:` line; a subagent started for a ticket is launched with that model. Order: 01 → (02, 04) → (03, 05, 06) → 07–13 in parallel → 14 → 16 → 15 → 17.
 
 ## Round Log
 
@@ -155,3 +156,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - Round 2 (2026-10-31, owner review): spec approved; OTTY Light terminal colors in ticket 03 approved; implementation runs ticket by ticket, one subagent per ticket with the model from its `Model:` line, one commit per ticket.
 - Ticket 02 (2026-10-31): `text-muted` on `surface-selected` (4.68 / 4.54) passes 4.5:1 and was wrongly listed as a known issue; removed from the table and tested as a passing pair.
 - Round 3 (2026-10-31, owner review of the ticket 15 draft): fix the known contrast issues before publishing (ticket 16); publish the design system after that.
+- Round 4 (2026-10-31, owner): fix OTTY Light `status-warn` contrast (ticket 17); status colors never sit on `surface-hover`, so OTTY Dark `status-error` on it stays; `target-*` dots need 3:1.
