@@ -46,7 +46,7 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
     .on_press(on_intent(QuickLaunchIntent::HeaderCreateFolder));
 
     let new_launch = IconButton::new(
-        svg::Handle::from_memory(icons::ADD_TAB_HEADER),
+        svg::Handle::from_memory(icons::FILE_PLUS),
         i18n::t(Key::CreateQuickLaunch),
         palette,
     )

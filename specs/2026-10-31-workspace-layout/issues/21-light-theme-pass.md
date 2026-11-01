@@ -57,3 +57,10 @@ passphrase, launch-editor, settings.
 Not rendered: the real terminal text (the panes show drawn sample text, the
 terminal widget is not used), the launch error tab, drag and drop states,
 running-launch blink, tooltips.
+
+## Owner bug fixes (2026-11-01)
+
+- Sessions and Launches share the left panel height (`panel_height::share_panel_height` in the kit, `stack_left_panel` in `app/src/view.rs`): a closed section takes its header, open sections their content while it fits, else equal shares where a smaller section keeps its content height; Sessions scrolls inside its share. Content heights are counted from rows. Screenshot `many-sessions`.
+- Title bar search: the icon, title and shortcut are centered in the 26px pill (the row now fills the button height).
+- Session close cross: no background on hover, only the glyph turns brighter (`IconButton::hover_background(false)`); the old surface-raised square showed as a dark shape on the selected row. Screenshots `session-hover`, `session-close-hover`, `session-close-hover-selected`.
+- Launches header: the New launch button uses `file-plus.svg` (page with a plus, same grid and stroke as `folder-plus.svg`) instead of the off-center filled plus.
