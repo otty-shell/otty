@@ -237,7 +237,7 @@ pub(crate) fn engine_label(info: &EngineInfo) -> String {
 /// The note on the right of a list row: the count (running containers for
 /// Containers), nothing while it loads, or that it failed.
 /// The no-engine card of a finished search; `None` while it runs.
-fn no_engine_view(state: &DockerState) -> Option<NoEngineViewModel> {
+pub(super) fn no_engine_view(state: &DockerState) -> Option<NoEngineViewModel> {
     match state.search() {
         Search::Done(discovery) => no_engine(discovery),
         _ => None,

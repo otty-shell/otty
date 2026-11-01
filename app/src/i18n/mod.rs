@@ -293,6 +293,34 @@ pub(crate) fn docker_looked_for(places: &str) -> String {
     )
 }
 
+/// Build the status bar text for a denied `socket`.
+pub(crate) fn docker_status_no_access(socket: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerStatusNoAccess,
+        &[("socket", socket)],
+    )
+}
+
+/// Build the status bar note that another engine answered too.
+pub(crate) fn docker_status_also_found(engine: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerStatusAlsoFound,
+        &[("engine", engine)],
+    )
+}
+
+/// Build a status bar count: `one` for a single item, else `many` with the
+/// count, e.g. "1 image" or "7 images".
+pub(crate) fn docker_status_count(one: Key, many: Key, count: usize) -> String {
+    if count == 1 {
+        return t(one).to_string();
+    }
+
+    with_count(many, count as u64)
+}
+
 /// Build the notice shown above a table whose list failed with `error`.
 pub(crate) fn docker_list_failed(error: &str) -> String {
     fill_in(
@@ -778,6 +806,12 @@ mod tests {
             (Key::TplDockerNothingMatches, ("filter", "web")),
             (Key::TplDockerListFailed, ("error", "boom")),
             (Key::TplDockerUsedBy, ("names", "db-1")),
+            (Key::TplDockerStatusNoAccess, ("socket", "/run/docker.sock")),
+            (Key::TplDockerStatusContainers, ("count", "7")),
+            (Key::TplDockerStatusImages, ("count", "7")),
+            (Key::TplDockerStatusVolumes, ("count", "7")),
+            (Key::TplDockerStatusNetworks, ("count", "7")),
+            (Key::TplDockerStatusAlsoFound, ("engine", "Podman 5.2")),
         ];
 
         for locale in Locale::ALL {

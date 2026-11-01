@@ -336,6 +336,36 @@ pub(crate) enum Key {
     TplDockerAgeMonths,
     /// Age in years. Placeholder: `{count}`.
     TplDockerAgeYears,
+    /// Name of Docker mode in the status bar while no engine is shown.
+    DockerStatusMode,
+    /// Status bar text while OTTY looks for engines.
+    DockerStatusSearching,
+    /// Status bar text when no engine was found.
+    DockerStatusNoEngine,
+    /// Status bar text when Docker is not running.
+    DockerStatusStopped,
+    /// Status bar text when the Podman socket is off.
+    DockerStatusPodmanOff,
+    /// Status bar text when the socket is denied. Placeholder: `{socket}`.
+    TplDockerStatusNoAccess,
+    /// Status bar count of one container.
+    DockerStatusOneContainer,
+    /// Status bar count of containers. Placeholder: `{count}`.
+    TplDockerStatusContainers,
+    /// Status bar count of one image.
+    DockerStatusOneImage,
+    /// Status bar count of images. Placeholder: `{count}`.
+    TplDockerStatusImages,
+    /// Status bar count of one volume.
+    DockerStatusOneVolume,
+    /// Status bar count of volumes. Placeholder: `{count}`.
+    TplDockerStatusVolumes,
+    /// Status bar count of one network.
+    DockerStatusOneNetwork,
+    /// Status bar count of networks. Placeholder: `{count}`.
+    TplDockerStatusNetworks,
+    /// Status bar note that another engine answered too. Placeholder: `{engine}`.
+    TplDockerStatusAlsoFound,
     // Command palette and its title bar trigger.
     /// Title bar search text while no tab is open.
     TitleSearchNoSessions,
@@ -559,7 +589,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 251] = [
+    pub(super) const ALL: [Self; 266] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -710,6 +740,21 @@ impl Key {
         Self::TplDockerAgeWeeks,
         Self::TplDockerAgeMonths,
         Self::TplDockerAgeYears,
+        Self::DockerStatusMode,
+        Self::DockerStatusSearching,
+        Self::DockerStatusNoEngine,
+        Self::DockerStatusStopped,
+        Self::DockerStatusPodmanOff,
+        Self::TplDockerStatusNoAccess,
+        Self::DockerStatusOneContainer,
+        Self::TplDockerStatusContainers,
+        Self::DockerStatusOneImage,
+        Self::TplDockerStatusImages,
+        Self::DockerStatusOneVolume,
+        Self::TplDockerStatusVolumes,
+        Self::DockerStatusOneNetwork,
+        Self::TplDockerStatusNetworks,
+        Self::TplDockerStatusAlsoFound,
         Self::TitleSearchNoSessions,
         Self::PalettePlaceholder,
         Self::PaletteNoMatches,

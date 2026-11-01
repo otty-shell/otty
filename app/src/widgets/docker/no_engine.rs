@@ -57,6 +57,8 @@ pub(crate) struct NoEngineViewModel {
     pub(crate) description: String,
     /// The short text of the left panel.
     pub(crate) panel_text: &'static str,
+    /// The short text of the status bar.
+    pub(crate) status_text: String,
     /// The command that fixes the case; none when nothing is installed.
     pub(crate) command: Option<CommandViewModel>,
     /// Install pages; only when nothing is installed.
@@ -113,6 +115,7 @@ pub(crate) fn view_model(
             title: i18n::t(Key::DockerNotInstalledTitle),
             description: i18n::t(Key::DockerNotInstalledText).to_string(),
             panel_text: i18n::t(Key::DockerPanelNotInstalled),
+            status_text: i18n::t(Key::DockerStatusNoEngine).to_string(),
             command: None,
             installs: vec![
                 LinkViewModel {
@@ -134,6 +137,7 @@ pub(crate) fn view_model(
             title: i18n::t(Key::DockerStoppedTitle),
             description: i18n::t(Key::DockerStoppedText).to_string(),
             panel_text: i18n::t(Key::DockerPanelStopped),
+            status_text: i18n::t(Key::DockerStatusStopped).to_string(),
             command: Some(CommandViewModel {
                 label: i18n::t(Key::DockerRunInTerminal),
                 text: "sudo systemctl start docker",
@@ -148,6 +152,7 @@ pub(crate) fn view_model(
             title: i18n::t(Key::DockerPodmanOffTitle),
             description: i18n::t(Key::DockerPodmanOffText).to_string(),
             panel_text: i18n::t(Key::DockerPanelPodmanOff),
+            status_text: i18n::t(Key::DockerStatusPodmanOff).to_string(),
             command: Some(CommandViewModel {
                 label: i18n::t(Key::DockerRunInTerminal),
                 text: "systemctl --user enable --now podman.socket",
@@ -162,6 +167,7 @@ pub(crate) fn view_model(
             title: i18n::t(Key::DockerNoAccessTitle),
             description: i18n::docker_no_access_text(socket),
             panel_text: i18n::t(Key::DockerPanelNoAccess),
+            status_text: i18n::docker_status_no_access(socket),
             command: Some(CommandViewModel {
                 label: i18n::t(Key::DockerNoAccessLabel),
                 text: "sudo usermod -aG docker $USER",
@@ -298,6 +304,27 @@ mod tests {
             )
         );
         assert!(vm.looked_for.contains("/run/podman/podman.sock"));
+    }
+
+    #[test]
+    fn each_case_has_a_short_status_bar_text() {
+        let socket = "/var/run/docker.sock";
+
+        let texts = [
+            (NoEngineCase::NotInstalled, "no engine found"),
+            (NoEngineCase::DockerNotRunning, "docker is not running"),
+            (NoEngineCase::PodmanApiOff, "podman socket is off"),
+            (
+                NoEngineCase::NoPermission,
+                "permission denied on /var/run/docker.sock",
+            ),
+        ];
+
+        for (case, text) in texts {
+            let vm = view_model(case, socket, &places());
+
+            assert_eq!(vm.status_text, text);
+        }
     }
 
     #[test]

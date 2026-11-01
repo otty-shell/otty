@@ -19,9 +19,9 @@ use crate::widgets::docker::view::{
 };
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
-use crate::widgets::modes::ModesEvent;
 use crate::widgets::modes::types::Mode;
 use crate::widgets::modes::view::{mode_menu, mode_switcher};
+use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::palette::{PaletteEvent, view as palette_view};
 use crate::widgets::quick_launch::view::{
     context_menu as ql_context_menu, error_tab, new_launch_menu, secret_prompt,
@@ -188,9 +188,15 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 
     let status_bar = match mode {
         Mode::Terminal => view_status_bar(app, theme_props),
-        Mode::Docker => {
-            docker_status_bar::view(env!("CARGO_PKG_VERSION"), theme_props)
-        },
+        Mode::Docker => docker_status_bar::view(
+            &app.widgets.docker.status_vm(),
+            app.widgets.tabs.len(),
+            env!("CARGO_PKG_VERSION"),
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
+                Mode::Terminal,
+            ))),
+            theme_props,
+        ),
     };
 
     let root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
@@ -682,7 +688,7 @@ mod tests {
     use otty_ui_kit::size;
 
     use super::*;
-    use crate::widgets::modes::{ModesIntent, ModesWidget};
+    use crate::widgets::modes::ModesWidget;
 
     fn app_in(mode: Mode) -> App {
         let (mut app, _) = App::new();
@@ -832,5 +838,22 @@ mod tests {
                 Mode::Docker
             )))]
         ));
+    }
+
+    #[test]
+    fn the_docker_sessions_button_switches_to_terminal_mode() {
+        let app = app_in(Mode::Docker);
+        let mut ui = simulator(view(&app));
+
+        ui.click(i18n::status_sessions(0).as_str())
+            .expect("sessions button should be visible");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
+                Mode::Terminal
+            )))
+        )));
     }
 }

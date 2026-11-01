@@ -5,6 +5,7 @@ pub(crate) mod no_engine;
 mod reducer;
 pub(crate) mod resource_rows;
 mod state;
+pub(crate) mod status;
 pub(crate) mod types;
 pub(crate) mod view;
 
@@ -12,6 +13,7 @@ pub(crate) use event::{DockerEffect, DockerEvent, DockerIntent};
 use iced::Task;
 use model::{InspectorViewModel, MainViewModel, TreeRowViewModel};
 use state::DockerState;
+use status::StatusViewModel;
 
 /// Docker widget: the engines found on this computer, their containers,
 /// images, volumes and networks, the open list, the selected rows and the
@@ -47,6 +49,11 @@ impl DockerWidget {
     /// The short text under the engine tree while no engine is usable.
     pub(crate) fn tree_note(&self) -> Option<&'static str> {
         model::panel_note(&self.state)
+    }
+
+    /// Build the texts of the status bar.
+    pub(crate) fn status_vm(&self) -> StatusViewModel {
+        status::status_bar(&self.state)
     }
 
     /// Build the inspector header of the selected row.
