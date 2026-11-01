@@ -16,7 +16,6 @@ pub(crate) enum SidebarIntent {
     /// Make the Launches section visible: leave focus mode, show the left
     /// panel and open the section. Parts already shown stay as they are.
     RevealLaunches,
-    OpenSettings,
     /// Open a header menu at the cursor, closing the other one.
     HeaderMenuOpen(HeaderMenu),
     /// Close the open header menu.
@@ -37,7 +36,6 @@ pub(crate) enum SidebarIntent {
 #[derive(Debug, Clone)]
 pub(crate) enum SidebarEffect {
     SyncTerminalGridSizes,
-    OpenSettingsTab,
     QuickLaunchResetInteractionState,
 }
 

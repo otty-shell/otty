@@ -39,9 +39,6 @@ pub(crate) fn reduce(
                 Task::none()
             }
         },
-        SidebarIntent::OpenSettings => {
-            Task::done(SidebarEvent::Effect(SidebarEffect::OpenSettingsTab))
-        },
         SidebarIntent::HeaderMenuOpen(menu) => {
             state.open_header_menu(menu);
             Task::none()
@@ -495,19 +492,6 @@ mod tests {
     }
 
     #[test]
-    fn open_settings_opens_the_settings_tab_without_resizing() {
-        let mut widget = SidebarWidget::new();
-
-        let events = reduce(&mut widget, SidebarIntent::OpenSettings);
-
-        assert!(matches!(
-            events.as_slice(),
-            [SidebarEvent::Effect(SidebarEffect::OpenSettingsTab)]
-        ));
-        assert_near(widget.side_panels_ratio(), 2.0 * SIDE_PANEL_MIN_RATIO);
-    }
-
-    #[test]
     fn launches_section_starts_open_and_toggles_without_effects() {
         let mut widget = SidebarWidget::new();
         assert!(widget.vm().is_launches_open);
@@ -632,13 +616,13 @@ mod tests {
             SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions),
         );
         assert_eq!(
-            widget.open_header_menu(),
+            widget.vm().open_header_menu,
             Some(OpenHeaderMenu::new(HeaderMenu::Sessions, cursor))
         );
         assert!(open.is_empty());
 
         let dismiss = reduce(&mut widget, SidebarIntent::HeaderMenuDismiss);
-        assert_eq!(widget.open_header_menu(), None);
+        assert_eq!(widget.vm().open_header_menu, None);
         assert!(dismiss.is_empty());
     }
 
@@ -676,7 +660,7 @@ mod tests {
             SidebarIntent::HeaderMenuOpen(HeaderMenu::Launches),
         );
 
-        let open = widget.open_header_menu().expect("a menu should be open");
+        let open = widget.vm().open_header_menu.expect("a menu should be open");
         assert_eq!(open.menu(), HeaderMenu::Launches);
     }
 
@@ -686,7 +670,7 @@ mod tests {
 
         let dismiss = reduce(&mut widget, SidebarIntent::HeaderMenuDismiss);
 
-        assert_eq!(widget.open_header_menu(), None);
+        assert_eq!(widget.vm().open_header_menu, None);
         assert!(dismiss.is_empty());
     }
 

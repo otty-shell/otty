@@ -4,7 +4,6 @@ use super::AppEvent;
 use crate::app::App;
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::sidebar::{SidebarEffect, SidebarEvent};
-use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 /// Route a sidebar event: reduce its intents and run its effects.
 pub(crate) fn handle(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
@@ -21,9 +20,6 @@ fn handle_effect(event: SidebarEffect) -> Task<AppEvent> {
 
     match event {
         SyncTerminalGridSizes => Task::done(AppEvent::SyncTerminalGridSizes),
-        OpenSettingsTab => Task::done(AppEvent::Tabs(TabsEvent::Intent(
-            TabsIntent::OpenSettingsTab,
-        ))),
         QuickLaunchResetInteractionState => Task::done(AppEvent::QuickLaunch(
             QuickLaunchEvent::Intent(QuickLaunchIntent::ResetInteractionState),
         )),

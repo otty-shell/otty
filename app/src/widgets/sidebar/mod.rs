@@ -58,11 +58,6 @@ impl SidebarWidget {
         self.state.cursor()
     }
 
-    /// Return the open header menu with its anchor, if any.
-    pub(crate) fn open_header_menu(&self) -> Option<types::OpenHeaderMenu> {
-        self.state.header_menu()
-    }
-
     /// Return whether a header menu is currently open.
     pub(crate) fn has_header_menu_open(&self) -> bool {
         self.state.header_menu().is_some()
