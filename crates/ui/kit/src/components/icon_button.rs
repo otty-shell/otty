@@ -1,8 +1,9 @@
 //! `IconButton`: square icon-only button with a tooltip.
 
 use iced::widget::{button, container, svg, text, tooltip};
-use iced::{Border, Element, Length, Padding};
+use iced::{Border, Color, Element, Length, Padding};
 
+use super::faded;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
@@ -30,28 +31,40 @@ pub enum IconTone {
     Default,
     /// `accent`; only for the New session plus.
     Accent,
+    /// `status-error`, on `surface-danger` while hovered; for destructive
+    /// actions such as Remove.
+    Danger,
 }
 
-/// Square icon-only button. The label is shown as a tooltip.
+/// Square icon-only button. The label is shown as a tooltip. A button
+/// without a message is disabled and draws its icon faded.
 ///
 /// # Example
 ///
 /// ```
 /// use iced::Element;
 /// use iced::widget::svg;
-/// use otty_ui_kit::components::icon_button::IconButton;
+/// use otty_ui_kit::components::icon_button::{IconButton, IconTone};
 /// use otty_ui_kit::palette::UiPalette;
 ///
 /// #[derive(Clone)]
 /// enum Message {
 ///     Close,
+///     Remove,
 /// }
 ///
 /// let palette = UiPalette::otty_dark();
 /// let icon = svg::Handle::from_memory(&b"<svg/>"[..]);
-/// let close: Element<'_, Message> = IconButton::new(icon, "Close", &palette)
-///     .on_press(Message::Close)
-///     .into();
+/// let close: Element<'_, Message> =
+///     IconButton::new(icon.clone(), "Close", &palette)
+///         .on_press(Message::Close)
+///         .into();
+/// let can_remove = true;
+/// let remove: Element<'_, Message> =
+///     IconButton::new(icon, "Remove", &palette)
+///         .tone(IconTone::Danger)
+///         .on_press_maybe(can_remove.then_some(Message::Remove))
+///         .into();
 /// ```
 pub struct IconButton<Message> {
     icon: svg::Handle,
@@ -107,6 +120,13 @@ impl<Message> IconButton<Message> {
         self.on_press = Some(message);
         self
     }
+
+    /// Sets the message sent on press, or none: a button without a message
+    /// is disabled and draws its icon faded.
+    pub fn on_press_maybe(mut self, message: Option<Message>) -> Self {
+        self.on_press = message;
+        self
+    }
 }
 
 impl<'a, Message: Clone + 'a> From<IconButton<Message>>
@@ -117,11 +137,10 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
             IconButtonSize::Medium => size::CONTROL_MD,
             IconButtonSize::Small => size::CONTROL_SM,
         };
-        let idle = match value.tone {
-            IconTone::Default => value.palette.text_muted(),
-            IconTone::Accent => value.palette.accent(),
-        };
-        let hover = value.palette.text_strong();
+        let tone = value.tone;
+        let is_enabled = value.on_press.is_some();
+        let idle = icon_color(&value.palette, tone, is_enabled, false);
+        let hover = icon_color(&value.palette, tone, is_enabled, true);
         let has_hover_background = value.has_hover_background;
         let palette = value.palette.clone();
 
@@ -145,7 +164,7 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
         .padding(0)
         .on_press_maybe(value.on_press)
         .style(move |_, status| {
-            button_style(&palette, has_hover_background, status)
+            button_style(&palette, tone, has_hover_background, status)
         });
 
         let hint = tooltip_hint(value.label, &value.palette);
@@ -179,17 +198,47 @@ pub(super) fn tooltip_hint<'a, Message: 'a>(
         .into()
 }
 
-/// Style of the button: a raised background while hovered or pressed,
-/// unless `has_hover_background` is off.
+/// Returns the icon color of a button in `tone`, enabled or not, with the
+/// pointer over the icon or not. A disabled icon keeps its idle color,
+/// faded, and does not brighten.
+fn icon_color(
+    palette: &UiPalette,
+    tone: IconTone,
+    is_enabled: bool,
+    is_hovered: bool,
+) -> Color {
+    let idle = match tone {
+        IconTone::Default => palette.text_muted(),
+        IconTone::Accent => palette.accent(),
+        IconTone::Danger => palette.status_error(),
+    };
+
+    if !is_enabled {
+        return faded(idle);
+    }
+
+    match (tone, is_hovered) {
+        (_, false) => idle,
+        (IconTone::Danger, true) => palette.text_danger(),
+        _ => palette.text_strong(),
+    }
+}
+
+/// Style of the button: a background while hovered or pressed, unless
+/// `has_hover_background` is off: `surface-danger` for the danger tone,
+/// `surface-raised` otherwise.
 fn button_style(
     palette: &UiPalette,
+    tone: IconTone,
     has_hover_background: bool,
     status: button::Status,
 ) -> button::Style {
     let is_active =
         matches!(status, button::Status::Hovered | button::Status::Pressed);
-    let background = (has_hover_background && is_active)
-        .then(|| palette.surface_raised().into());
+    let background = (has_hover_background && is_active).then(|| match tone {
+        IconTone::Danger => palette.surface_danger().into(),
+        _ => palette.surface_raised().into(),
+    });
 
     button::Style {
         background,
@@ -212,9 +261,12 @@ mod tests {
         let palette = UiPalette::otty_dark();
         let raised = Some(palette.surface_raised().into());
 
-        let hovered = button_style(&palette, true, button::Status::Hovered);
-        let pressed = button_style(&palette, true, button::Status::Pressed);
-        let idle = button_style(&palette, true, button::Status::Active);
+        let style =
+            |status| button_style(&palette, IconTone::Default, true, status);
+
+        let hovered = style(button::Status::Hovered);
+        let pressed = style(button::Status::Pressed);
+        let idle = style(button::Status::Active);
 
         assert_eq!(hovered.background, raised);
         assert_eq!(pressed.background, raised);
@@ -232,9 +284,137 @@ mod tests {
             button::Status::Pressed,
             button::Status::Disabled,
         ] {
-            let style = button_style(&palette, false, status);
+            for tone in [IconTone::Default, IconTone::Accent, IconTone::Danger]
+            {
+                let style = button_style(&palette, tone, false, status);
 
-            assert_eq!(style.background, None, "{status:?}");
+                assert_eq!(style.background, None, "{tone:?} {status:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn given_danger_button_when_hovered_or_pressed_then_background_is_danger() {
+        let palette = UiPalette::otty_light();
+        let danger = Some(palette.surface_danger().into());
+        let style =
+            |status| button_style(&palette, IconTone::Danger, true, status);
+
+        assert_eq!(style(button::Status::Hovered).background, danger);
+        assert_eq!(style(button::Status::Pressed).background, danger);
+        assert_eq!(style(button::Status::Active).background, None);
+    }
+
+    #[test]
+    fn given_each_tone_then_icon_is_its_idle_color_and_brightens_on_hover() {
+        let palette = UiPalette::otty_dark();
+
+        let color =
+            |tone, is_hovered| icon_color(&palette, tone, true, is_hovered);
+
+        assert_eq!(color(IconTone::Default, false), palette.text_muted());
+        assert_eq!(color(IconTone::Default, true), palette.text_strong());
+        assert_eq!(color(IconTone::Accent, false), palette.accent());
+        assert_eq!(color(IconTone::Accent, true), palette.text_strong());
+        assert_eq!(color(IconTone::Danger, false), palette.status_error());
+        assert_eq!(color(IconTone::Danger, true), palette.text_danger());
+    }
+
+    #[test]
+    fn given_disabled_button_then_icon_is_faded_and_does_not_brighten() {
+        let palette = UiPalette::otty_dark();
+
+        for tone in [IconTone::Default, IconTone::Accent, IconTone::Danger] {
+            let idle = icon_color(&palette, tone, true, false);
+
+            for is_hovered in [false, true] {
+                let disabled = icon_color(&palette, tone, false, is_hovered);
+
+                assert_eq!(disabled, super::super::faded(idle), "{tone:?}");
+            }
+        }
+    }
+
+    /// The danger icon is a mark (3:1) on the surfaces an inspector and a
+    /// table sit on, and on its own hover background; the hovered icon
+    /// (`text-danger`) is checked with the notice text on `surface-danger`.
+    #[test]
+    fn given_each_theme_when_danger_icon_drawn_then_it_reaches_3() {
+        for palette in [UiPalette::otty_dark(), UiPalette::otty_light()] {
+            let idle = icon_color(&palette, IconTone::Danger, true, false);
+
+            for surface in [
+                palette.surface_canvas(),
+                palette.surface_panel(),
+                palette.surface_danger(),
+            ] {
+                let ratio = crate::contrast::contrast_ratio(idle, surface);
+
+                assert!(ratio >= 3.0, "danger icon on {surface:?}: {ratio:.2}");
+            }
+        }
+    }
+
+    /// Draws a button whose tooltip is `label`, with the pointer over it
+    /// when `is_hovered`, and checks it against the picture saved in
+    /// `reference`; the first call saves the picture. iced draws tooltips
+    /// as overlays that widget queries do not reach, so the label is
+    /// checked on the drawing.
+    fn drawn_button_matches(
+        label: &str,
+        is_hovered: bool,
+        reference: &std::path::Path,
+    ) -> bool {
+        let palette = UiPalette::otty_dark();
+        let button =
+            IconButton::new(glyph::plus(), label, &palette).on_press(());
+        let mut ui = iced_test::simulator(
+            container(button).padding(40).width(200).height(120),
+        );
+        let center = iced::Point::new(40.0 + size::CONTROL_MD / 2.0, 54.0);
+        if is_hovered {
+            ui.point_at(center);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::CursorMoved { position: center },
+            )]);
+        }
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("button should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    #[test]
+    fn given_button_when_hovered_then_its_tooltip_text_shows() {
+        let reference = std::env::temp_dir()
+            .join(format!("otty-icon-button-{}", std::process::id()))
+            .join("tooltip");
+
+        assert!(drawn_button_matches("Prune unused", true, &reference));
+        assert!(!drawn_button_matches("Remove", true, &reference));
+        assert!(!drawn_button_matches("Prune unused", false, &reference));
+        assert!(drawn_button_matches("Prune unused", true, &reference));
+    }
+
+    #[test]
+    fn given_button_with_message_when_pressed_then_it_is_sent_and_without_none()
+    {
+        let palette = UiPalette::otty_dark();
+        let center =
+            iced::Point::new(size::CONTROL_MD / 2.0, size::CONTROL_MD / 2.0);
+
+        for (message, expected) in [(Some(7), vec![7]), (None, vec![])] {
+            let button = IconButton::new(glyph::plus(), "Remove", &palette)
+                .tone(IconTone::Danger)
+                .on_press_maybe(message);
+            let mut ui = iced_test::simulator(button);
+
+            ui.point_at(center);
+            let _ = ui.simulate(iced_test::simulator::click());
+
+            let messages: Vec<i32> = ui.into_messages().collect();
+            assert_eq!(messages, expected);
         }
     }
 

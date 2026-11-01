@@ -14,7 +14,7 @@ use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::command_box::CommandBox;
 use otty_ui_kit::components::command_palette::{CommandPalette, PaletteAction};
 use otty_ui_kit::components::data_table::{
-    ColumnAlign, DataTable, TableCell, TableColumn,
+    ColumnAlign, DataTable, SortDirection, TableCell, TableColumn,
 };
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::divider;
@@ -55,6 +55,7 @@ use otty_ui_kit::components::target_dot::{TargetKind, target_dot};
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::components::title_search::TitleSearch;
 use otty_ui_kit::components::token_field::{TokenField, TokenList};
+use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
@@ -85,6 +86,38 @@ const ERROR_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0
 
 /// Product logo, passed to the empty card as an element.
 const LOGO: &[u8] = include_bytes!("../../../../assets/logo/logo-small.svg");
+
+/// Stroke icons of the resource actions, from `assets/svg`.
+const START_ICON: &[u8] = include_bytes!("../../../../assets/svg/start.svg");
+const STOP_ICON: &[u8] = include_bytes!("../../../../assets/svg/stop.svg");
+const RESTART_ICON: &[u8] =
+    include_bytes!("../../../../assets/svg/restart.svg");
+const PAUSE_ICON: &[u8] = include_bytes!("../../../../assets/svg/pause.svg");
+const RESUME_ICON: &[u8] = include_bytes!("../../../../assets/svg/resume.svg");
+const TRASH_ICON: &[u8] = include_bytes!("../../../../assets/svg/trash.svg");
+const SHELL_ICON: &[u8] = include_bytes!("../../../../assets/svg/shell.svg");
+const PULL_ICON: &[u8] = include_bytes!("../../../../assets/svg/pull.svg");
+const PRUNE_ICON: &[u8] = include_bytes!("../../../../assets/svg/prune.svg");
+const CREATE_ICON: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");
+const MORE_ICON: &[u8] = include_bytes!("../../../../assets/svg/more.svg");
+const REFRESH_ICON: &[u8] =
+    include_bytes!("../../../../assets/svg/refresh.svg");
+
+/// The action icons with their names, in the order the gallery shows them.
+const ACTION_ICONS: [(&str, &[u8]); 12] = [
+    ("Start", START_ICON),
+    ("Stop", STOP_ICON),
+    ("Restart", RESTART_ICON),
+    ("Pause", PAUSE_ICON),
+    ("Resume", RESUME_ICON),
+    ("Remove", TRASH_ICON),
+    ("Shell", SHELL_ICON),
+    ("Pull", PULL_ICON),
+    ("Prune", PRUNE_ICON),
+    ("Create", CREATE_ICON),
+    ("More", MORE_ICON),
+    ("Refresh", REFRESH_ICON),
+];
 
 const KINDS: [(&str, ButtonKind); 4] = [
     ("Primary", ButtonKind::Primary),
@@ -138,6 +171,9 @@ struct Gallery {
     table_selected: Option<usize>,
     table_menu_at: Option<iced::Point>,
     notice_open: bool,
+    table_sort: (usize, SortDirection),
+    table_event: String,
+    toolbar_filter: String,
 }
 
 impl Gallery {
@@ -200,6 +236,9 @@ impl Gallery {
             table_selected: Some(1),
             table_menu_at: None,
             notice_open: true,
+            table_sort: (0, SortDirection::Ascending),
+            table_event: "press a title, a Compose link or a row ⋯".to_owned(),
+            toolbar_filter: String::new(),
         }
     }
 }
@@ -236,6 +275,11 @@ enum Message {
     TableMenu(usize, iced::Point),
     DismissNotice,
     ShowNotice,
+    TableSort(usize),
+    TableLink(usize, usize),
+    TableRowMenu(usize, iced::Point),
+    ToolbarFilter(String),
+    ToolbarAction(&'static str),
 }
 
 fn main() -> iced::Result {
@@ -313,6 +357,28 @@ fn update(state: &mut Gallery, message: Message) {
         },
         Message::DismissNotice => state.notice_open = false,
         Message::ShowNotice => state.notice_open = true,
+        Message::TableSort(column) => {
+            let (sorted, direction) = state.table_sort;
+            let direction = match (sorted == column, direction) {
+                (true, SortDirection::Ascending) => SortDirection::Descending,
+                _ => SortDirection::Ascending,
+            };
+            state.table_sort = (column, direction);
+            state.table_event = format!("sort column {column}, {direction:?}");
+        },
+        Message::TableLink(row, column) => {
+            state.table_event = format!("link in row {row}, column {column}");
+        },
+        Message::TableRowMenu(row, point) => {
+            state.table_event = format!(
+                "⋯ of row {row}, menu at {:.0}, {:.0}",
+                point.x, point.y
+            );
+        },
+        Message::ToolbarFilter(filter) => state.toolbar_filter = filter,
+        Message::ToolbarAction(action) => {
+            state.table_event = format!("toolbar: {action}");
+        },
     }
 }
 
@@ -395,6 +461,14 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .size(IconButtonSize::Small)
             .tone(IconTone::Accent)
             .on_press(Message::Clicked),
+        IconButton::new(svg::Handle::from_memory(TRASH_ICON), "Remove", p)
+            .tone(IconTone::Danger)
+            .on_press(Message::Clicked),
+        IconButton::new(svg::Handle::from_memory(TRASH_ICON), "Remove", p)
+            .tone(IconTone::Danger)
+            .on_press_maybe(None),
+        IconButton::new(svg::Handle::from_memory(STOP_ICON), "Stop", p)
+            .on_press_maybe(None),
     ]
     .spacing(spacing::SPACE_3);
 
@@ -982,7 +1056,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section(
-            "IconButton (hover for tooltip; md, accent, sm)",
+            "IconButton (hover for tooltip; md, accent, sm, danger, disabled danger, disabled)",
             icon_buttons.into(),
             p,
         ),
@@ -1163,7 +1237,10 @@ fn section<'a>(
 
 /// Sections of the data components: tables, status badges, the notice and
 /// the tree row count tones.
-fn data_parts<'a>(state: &Gallery, p: &UiPalette) -> Vec<Element<'a, Message>> {
+fn data_parts<'a>(
+    state: &'a Gallery,
+    p: &UiPalette,
+) -> Vec<Element<'a, Message>> {
     let columns = || {
         vec![
             TableColumn::new("Name", 3),
@@ -1307,7 +1384,120 @@ fn data_parts<'a>(state: &Gallery, p: &UiPalette) -> Vec<Element<'a, Message>> {
         None => "right click a row to see where the menu would open".to_owned(),
     };
 
+    let (sorted, direction) = state.table_sort;
+    let mut sortable = DataTable::new(
+        vec![
+            TableColumn::new("Name", 3).sortable(true),
+            TableColumn::new("Status", 2).sortable(true),
+            TableColumn::new("Compose", 2),
+            TableColumn::new("Size", 1)
+                .align(ColumnAlign::End)
+                .sortable(true),
+        ],
+        p,
+    )
+    .selected(Some(1))
+    .sorted_by(sorted, direction)
+    .on_sort(Message::TableSort)
+    .on_link_press(Message::TableLink)
+    .on_row_menu("More actions", Message::TableRowMenu);
+    for (name, status, tone, compose, size) in [
+        (
+            "otty-site-web-1",
+            "Running",
+            StatusTone::Ok,
+            "otty-site",
+            "192 MB",
+        ),
+        (
+            "otty-site-db-1",
+            "Running",
+            StatusTone::Ok,
+            "otty-site",
+            "438 MB",
+        ),
+        ("mailpit", "Restarting", StatusTone::Warn, "", "34 MB"),
+    ] {
+        let compose = if compose.is_empty() {
+            TableCell::muted("")
+        } else {
+            TableCell::link(compose)
+        };
+        sortable = sortable.row(vec![
+            TableCell::mono(name),
+            TableCell::badge(status, tone),
+            compose,
+            TableCell::number(size),
+        ]);
+    }
+    sortable = sortable.row_without_menu(vec![
+        TableCell::mono("hello"),
+        TableCell::badge("Exited (0)", StatusTone::Neutral),
+        TableCell::muted(""),
+        TableCell::number("13 kB"),
+    ]);
+
+    let toolbar = |width: f32| -> Element<'a, Message> {
+        let palette = p.clone();
+        let filter = state.toolbar_filter.as_str();
+        let item = |icon: &'static [u8], name: &'static str| {
+            ToolbarItem::new(svg::Handle::from_memory(icon), name)
+                .on_press(Message::ToolbarAction(name))
+        };
+        let bar = Toolbar::new("More actions", p)
+            .field(120.0, 220.0, move || {
+                TextField::new("", filter, &palette)
+                    .placeholder("Filter by name")
+                    .on_input(Message::ToolbarFilter)
+                    .into()
+            })
+            .item(item(CREATE_ICON, "Run container"))
+            .item(item(PULL_ICON, "Pull image"))
+            .item(
+                ToolbarItem::new(svg::Handle::from_memory(PRUNE_ICON), "Prune")
+                    .on_press_maybe(None),
+            )
+            .item(item(REFRESH_ICON, "Refresh"));
+
+        container(bar).width(width).into()
+    };
+    let toolbars = column![
+        toolbar(640.0),
+        toolbar(330.0),
+        toolbar(230.0),
+        label(state.table_event.clone(), p),
+    ]
+    .spacing(spacing::SPACE_4);
+
+    let mut icons = row![].spacing(spacing::SPACE_3);
+    for (name, bytes) in ACTION_ICONS {
+        icons = icons.push(
+            IconButton::new(svg::Handle::from_memory(bytes), name, p)
+                .on_press(Message::ToolbarAction(name)),
+        );
+    }
+
     vec![
+        section(
+            "DataTable (sortable Name, Status and Size; Compose links; row ⋯, none on the last row)",
+            column![
+                container(sortable).height(200),
+                label(state.table_event.clone(), p)
+            ]
+            .spacing(spacing::SPACE_2)
+            .into(),
+            p,
+        ),
+        section(
+            "Toolbar (640, 330 and 230 wide: the filter shrinks, then buttons move into ⋯; Prune disabled)",
+            toolbars.into(),
+            p,
+        ),
+        section(
+            "Action icons (assets/svg; hover for the name)",
+            icons.into(),
+            p,
+        ),
         section(
             "DataTable (selected row, every cell kind, long text cut with …; click and right click)",
             column![container(table).height(240), label(right_click, p)]

@@ -3,12 +3,13 @@
 //! `iced` 0.14 text has no ellipsis: a long value is just cut at the edge.
 //! [`DataTable`] cells must show that a value goes on, so they draw their
 //! text with [`EllipsisText`], which measures the text and drops characters
-//! from the end until the rest and "…" fit.
+//! from the end until the rest and "…" fit. Link cells use it too, shrunk
+//! to the shown text and underlined under the pointer.
 //!
 //! [`DataTable`]: super::data_table::DataTable
 
 use iced::advanced::layout::{self, Layout};
-use iced::advanced::renderer;
+use iced::advanced::renderer::{self, Renderer as _};
 use iced::advanced::text::{self as core_text, Paragraph as _, paragraph};
 use iced::advanced::widget::{
     Operation, Tree, Widget, text as text_widget, tree,
@@ -22,6 +23,11 @@ use iced::{
 
 /// Mark added at the end of a shortened text.
 const ELLIPSIS: &str = "…";
+/// Distance from the bottom of a link's line box up to its underline,
+/// which puts the line just under the letters without descenders.
+const UNDERLINE_RISE: f32 = 2.0;
+/// Thickness of a link's underline.
+const UNDERLINE_WIDTH: f32 = 1.0;
 
 /// Paragraph type of the renderer, used to measure and draw the text.
 type Paragraph = <Renderer as core_text::Renderer>::Paragraph;
@@ -34,6 +40,7 @@ pub(super) struct EllipsisText {
     font: Font,
     color: Color,
     align_x: core_text::Alignment,
+    is_link: bool,
 }
 
 impl EllipsisText {
@@ -50,6 +57,7 @@ impl EllipsisText {
             font,
             color,
             align_x: core_text::Alignment::Left,
+            is_link: false,
         }
     }
 
@@ -57,6 +65,23 @@ impl EllipsisText {
     pub(super) fn align_x(mut self, align_x: core_text::Alignment) -> Self {
         self.align_x = align_x;
         self
+    }
+
+    /// Draws the text as a link: as wide as the shown text, so only the
+    /// text can be pressed, and underlined while the pointer is over it.
+    pub(super) fn link(mut self) -> Self {
+        self.is_link = true;
+        self
+    }
+
+    /// Returns the width the text takes: all of it, or only the shown text
+    /// for a link.
+    fn width(&self) -> Length {
+        if self.is_link {
+            Length::Shrink
+        } else {
+            Length::Fill
+        }
     }
 
     /// Returns the width of `candidate` on one line in this text's font.
@@ -79,7 +104,7 @@ impl EllipsisText {
     /// Returns the layout format of the shown text.
     fn format(&self) -> text_widget::Format<Font> {
         text_widget::Format {
-            width: Length::Fill,
+            width: self.width(),
             height: Length::Shrink,
             size: Some(Pixels(self.size)),
             font: Some(self.font),
@@ -95,7 +120,7 @@ impl EllipsisText {
 impl<Message> Widget<Message, Theme, Renderer> for EllipsisText {
     fn size(&self) -> Size<Length> {
         Size {
-            width: Length::Fill,
+            width: self.width(),
             height: Length::Shrink,
         }
     }
@@ -141,21 +166,38 @@ impl<Message> Widget<Message, Theme, Renderer> for EllipsisText {
         _theme: &Theme,
         style: &renderer::Style,
         layout: Layout<'_>,
-        _cursor: mouse::Cursor,
+        cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
         let state = tree.state.downcast_ref::<State>();
+        let bounds = layout.bounds();
 
         text_widget::draw(
             renderer,
             style,
-            layout.bounds(),
+            bounds,
             state.paragraph.raw(),
             text_widget::Style {
                 color: Some(self.color),
             },
             viewport,
         );
+
+        if self.is_link && cursor.is_over(bounds) {
+            let underline = Rectangle {
+                y: bounds.y + bounds.height - UNDERLINE_RISE,
+                height: UNDERLINE_WIDTH,
+                ..bounds
+            };
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: underline,
+                    snap: true,
+                    ..renderer::Quad::default()
+                },
+                self.color,
+            );
+        }
     }
 
     fn operate(
