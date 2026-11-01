@@ -414,7 +414,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 21 — Discovery additions: sockets, CLI folders, `podman-docker` · Opus
 - [x] 22 — Logs Follow toggle · Opus
 - [x] 23 — Volume prune keeps named volumes by default · Sonnet
-- [ ] 24 — Kit: sortable table, link cell, row ⋯, Toolbar, icon tooltips · Opus
-- [ ] 25 — Compose column, no "this computer", `host:container` ports · Sonnet
-- [ ] 26 — Table sorting · Sonnet
-- [ ] 27 — Header layout, row ⋯ menus, icon actions · Opus
+- [x] 24 — Kit: sortable table, link cell, row ⋯, Toolbar, icon tooltips · Opus
+- [x] 25 — Compose column, no "this computer", `host:container` ports · Sonnet
+- [x] 26 — Table sorting · Sonnet
+- [x] 27 — Header layout, row ⋯ menus, icon actions · Opus
