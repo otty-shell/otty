@@ -183,7 +183,8 @@ impl SidebarState {
     }
 
     /// Make the Launches section visible: leave focus mode, show the left
-    /// panel at the minimum width if it is closed, and open the section.
+    /// panel at the minimum width if it is closed (a right panel too wide
+    /// for it shrinks, like with the panel button), and open the section.
     /// Parts already shown stay as they are. Returns whether the main area
     /// changed size.
     pub(super) fn reveal_launches(&mut self) -> bool {
@@ -196,7 +197,8 @@ impl SidebarState {
         self.focus_mode = false;
         self.focus_note = None;
         if !self.left.is_open() {
-            self.left.open(max_ratio_beside(self.right_ratio()));
+            self.left.open();
+            self.right.shrink_to(max_ratio_beside(self.left_ratio()));
         }
 
         self.sync_panes();
@@ -416,6 +418,21 @@ mod tests {
         assert_eq!(state.left_ratio(), SIDE_PANEL_MIN_RATIO);
         let shrunk_right = 1.0 - MIN_MAIN_RATIO - SIDE_PANEL_MIN_RATIO;
         assert!((state.right_ratio() - shrunk_right).abs() < 1e-6);
+        assert!((main_ratio(&state) - MIN_MAIN_RATIO).abs() < 1e-6);
+    }
+
+    #[test]
+    fn launches_revealed_beside_a_widest_right_panel_open_the_left_at_the_minimum_width()
+     {
+        let mut state = SidebarState::default();
+        state.toggle_left();
+        drag_right_edge(&mut state, 0.0);
+
+        let resized = state.reveal_launches();
+
+        assert!(resized);
+        assert!(state.is_left_open());
+        assert_eq!(state.left_ratio(), SIDE_PANEL_MIN_RATIO);
         assert!((main_ratio(&state) - MIN_MAIN_RATIO).abs() < 1e-6);
     }
 
