@@ -31,6 +31,7 @@ use otty_ui_kit::components::kbd::{kbd, shortcut_text};
 use otty_ui_kit::components::key_value_field::KeyValueField;
 use otty_ui_kit::components::key_value_list::KeyValueList;
 use otty_ui_kit::components::log_view::{LogView, LogViewState};
+use otty_ui_kit::components::mapping_field::{MappingField, MappingRow};
 use otty_ui_kit::components::menu::{Menu, MenuItem};
 use otty_ui_kit::components::mode_menu::{
     ModeMenu, ModeMenuSection, ModePin, ModeRow,
@@ -41,7 +42,7 @@ use otty_ui_kit::components::palette_list::{PaletteItem, PaletteList};
 use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::progress_bar::ProgressBar;
-use otty_ui_kit::components::segmented::segmented;
+use otty_ui_kit::components::segmented::{segmented, segmented_with_disabled};
 use otty_ui_kit::components::select::select;
 use otty_ui_kit::components::session_group::SessionGroup;
 use otty_ui_kit::components::session_row::{SessionRow, SessionTone};
@@ -100,6 +101,8 @@ const TYPES: [&str; 3] = ["Command", "Script", "SSH"];
 const TARGETS: [&str; 4] = ["This computer", "prod-1", "staging-2", "dev-box"];
 
 const INSPECTOR_TABS: [&str; 3] = ["Overview", "Logs", "Inspect"];
+
+const PROTOCOLS: [&str; 2] = ["tcp", "udp"];
 
 /// Which sections the gallery shows.
 #[derive(PartialEq)]
@@ -455,6 +458,13 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     let segments = column![
         segmented(&TYPES, &state.kind, Message::Kind, p),
         segmented(&TYPES, &TYPES[2], Message::Kind, p),
+        segmented_with_disabled(
+            &TYPES,
+            &TYPES[1..],
+            &TYPES[0],
+            Message::Kind,
+            p
+        ),
     ]
     .spacing(spacing::SPACE_3);
 
@@ -521,7 +531,69 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .on_name(Message::VarName)
             .on_value(Message::VarValue)
             .on_remove(Message::VarRemove)
-            .on_add(Message::VarAdd);
+            .on_add(Message::VarAdd)
+            .placeholders("Name", "Value");
+
+    let protocol =
+        |picked: &'static str| segmented(&PROTOCOLS, &picked, Message::Kind, p);
+    let ports = MappingField::new("Host port", "Container port", p)
+        .row(
+            MappingRow::new("8081", "80")
+                .placeholders("8080", "80")
+                .control(protocol(PROTOCOLS[0]))
+                .on_source(Message::Path)
+                .on_target(Message::Path)
+                .on_remove(Message::Clicked, "Remove port 8081"),
+        )
+        .row(
+            MappingRow::new("80800", "443")
+                .invalid(true, false)
+                .error("A port is a number from 1 to 65535.")
+                .control(protocol(PROTOCOLS[1]))
+                .on_source(Message::Path)
+                .on_target(Message::Path)
+                .on_remove(Message::Clicked, "Remove port 80800"),
+        )
+        .add_label("Add port")
+        .on_add(Message::Clicked)
+        .hint("The image listens on 80/tcp.");
+    let volumes = MappingField::new(
+        "Volume or folder on this computer",
+        "Path in the container",
+        p,
+    )
+    .row(
+        MappingRow::new("~/projects/otty-site/dist", "/usr/share/nginx/html")
+            .control(Switch::new(true, p).label("Read only"))
+            .on_remove(Message::Clicked, "Remove this volume"),
+    )
+    .add_label("Add volume");
+    let mappings = column![ports, volumes].spacing(spacing::SPACE_6);
+    let footer_page = FormPage::new(p)
+        .section(FormSection::new("Image", p).field(
+            TextField::new("Image", "nginx:1.27", p).on_input(Message::Path),
+        ))
+        .section(
+            FormSection::new("Command", p).field(
+                TextField::new("Command", "", p).on_input(Message::Path),
+            ),
+        )
+        .footer_bar(
+            row![
+                text("Starts in the background on Docker 27.3.")
+                    .size(typography::SMALL.size())
+                    .color(palette.text_muted())
+                    .width(Length::Fill),
+                Button::new("Cancel", p)
+                    .kind(ButtonKind::Ghost)
+                    .on_press(Message::Clicked),
+                Button::new("Run", p)
+                    .kind(ButtonKind::Primary)
+                    .on_press(Message::Clicked),
+            ]
+            .spacing(spacing::SPACE_3)
+            .align_y(iced::Alignment::Center),
+        );
 
     let settings = column![
         SettingRow::new("Command blocks", p)
@@ -1001,6 +1073,16 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section(
             "FormPage (scrolls; sections, footer)",
             container(page).height(280).into(),
+            p,
+        ),
+        section(
+            "MappingField (ports: protocol, error row; volumes: read-only, disabled)",
+            container(mappings).width(720).into(),
+            p,
+        ),
+        section(
+            "FormPage with a footer bar (stays under the scrolling sections)",
+            container(footer_page).height(260).into(),
             p,
         ),
     ];

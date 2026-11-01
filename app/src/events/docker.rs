@@ -5,7 +5,9 @@
 use iced::Task;
 use iced::futures::future::join3;
 use iced::futures::{SinkExt, Stream, StreamExt};
-use otty_docker::{Container, Engine, EngineInfo, discover};
+use otty_docker::{
+    Container, Engine, EngineInfo, ImageDefaults, RunRequest, discover,
+};
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
 use super::AppEvent;
@@ -127,10 +129,62 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
                 intent(DockerIntent::ActionFinished { request, result })
             })
         },
+        DockerEffect::LoadImageDefaults { engine, reference } => {
+            let address = engine.address().clone();
+            let asked = reference.clone();
+
+            Task::perform(
+                load_image_defaults(engine, reference),
+                move |result| {
+                    intent(DockerIntent::ImageDefaultsLoaded {
+                        engine: address.clone(),
+                        reference: asked.clone(),
+                        result,
+                    })
+                },
+            )
+        },
+        DockerEffect::RunContainer { engine, request } => {
+            let address = engine.address().clone();
+
+            Task::perform(run_container(engine, request), move |result| {
+                intent(DockerIntent::RunFinished {
+                    engine: address.clone(),
+                    result,
+                })
+            })
+        },
         DockerEffect::StartPull { .. }
         | DockerEffect::CancelPull
         | DockerEffect::OpenShell { .. } => Task::none(),
     }
+}
+
+/// Ask the engine what an image sets on its own; `None` when the image is
+/// not on this computer. The error is the engine's message.
+async fn load_image_defaults(
+    info: EngineInfo,
+    reference: String,
+) -> Result<Option<ImageDefaults>, String> {
+    let engine = Engine::connect(&info).map_err(|err| err.message())?;
+
+    engine
+        .image_defaults(&reference)
+        .await
+        .map_err(|err| err.message())
+}
+
+/// Create and start a container; its id, or the engine's message.
+async fn run_container(
+    info: EngineInfo,
+    request: RunRequest,
+) -> Result<String, String> {
+    let engine = Engine::connect(&info).map_err(|err| err.message())?;
+
+    engine
+        .run_container(&request)
+        .await
+        .map_err(|err| err.message())
 }
 
 /// The intents of one pull: a `PullProgressed` per line of the engine,
@@ -382,6 +436,21 @@ mod tests {
         )));
 
         assert_eq!(stop.units(), 1);
+    }
+
+    #[test]
+    fn the_run_form_effects_run_one_engine_task_each() {
+        let lookup = handle_effect(DockerEffect::LoadImageDefaults {
+            engine: fixtures::engine(EngineKind::Docker),
+            reference: String::from("nginx:1.27"),
+        });
+        let run = handle_effect(DockerEffect::RunContainer {
+            engine: fixtures::engine(EngineKind::Docker),
+            request: otty_docker::RunRequest::new("nginx:1.27"),
+        });
+
+        assert_eq!(lookup.units(), 1);
+        assert_eq!(run.units(), 1);
     }
 
     #[test]

@@ -1,11 +1,14 @@
 //! `FormPage`: a scrolling page that holds a form.
 
 use iced::widget::{column, container, scrollable};
-use iced::{Element, Length};
+use iced::{Alignment, Element, Length, Padding};
 
-use super::scrollbar;
+use super::{divider, scrollbar};
 use crate::palette::UiPalette;
 use crate::{size, spacing};
+
+/// Height of the footer bar (`.form-foot`: `height: 60px`).
+const FOOTER_BAR_HEIGHT: f32 = 60.0;
 
 /// Scrolling form page: sections `space-6` apart and an optional footer.
 /// The page title is the caller's first section, since it often carries
@@ -31,6 +34,7 @@ pub struct FormPage<'a, Message> {
     palette: UiPalette,
     sections: Vec<Element<'a, Message>>,
     footer: Option<Element<'a, Message>>,
+    footer_bar: Option<Element<'a, Message>>,
 }
 
 impl<'a, Message> FormPage<'a, Message> {
@@ -40,6 +44,7 @@ impl<'a, Message> FormPage<'a, Message> {
             palette: palette.clone(),
             sections: Vec::new(),
             footer: None,
+            footer_bar: None,
         }
     }
 
@@ -52,6 +57,14 @@ impl<'a, Message> FormPage<'a, Message> {
     /// Sets the footer, shown after the last section.
     pub fn footer(mut self, footer: impl Into<Element<'a, Message>>) -> Self {
         self.footer = Some(footer.into());
+        self
+    }
+
+    /// Sets a bar fixed under the scrolling sections (`.form-foot`): 60
+    /// high, a line on top, `space-7` side padding. Use it for a form whose
+    /// action must stay in reach, such as Run container.
+    pub fn footer_bar(mut self, bar: impl Into<Element<'a, Message>>) -> Self {
+        self.footer_bar = Some(bar.into());
         self
     }
 }
@@ -80,7 +93,25 @@ impl<'a, Message: 'a> From<FormPage<'a, Message>> for Element<'a, Message> {
         .direction(scrollbar::vertical())
         .style(scrollbar::style(&value.palette));
 
-        container(scrollable)
+        let Some(bar) = value.footer_bar else {
+            return container(scrollable)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
+        };
+
+        let canvas = value.palette.surface_canvas();
+        let bar = container(bar)
+            .width(Length::Fill)
+            .height(FOOTER_BAR_HEIGHT - size::LINE)
+            .padding(Padding::from([0.0, spacing::SPACE_7]))
+            .align_y(Alignment::Center)
+            .style(move |_| container::Style {
+                background: Some(canvas.into()),
+                ..container::Style::default()
+            });
+
+        column![scrollable, divider::horizontal(&value.palette), bar]
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
@@ -93,6 +124,27 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
+
+    #[test]
+    fn given_a_footer_bar_when_laid_out_then_it_stays_at_the_bottom() {
+        let palette = UiPalette::otty_dark();
+        let mut page = FormPage::new(&palette);
+        for index in 0..40 {
+            page = page.section(text(format!("section {index}")));
+        }
+        let page: Element<'_, ()> = page.footer_bar(text("Run")).into();
+        let mut ui = simulator(page);
+
+        let run = ui.find("Run").expect("footer should be visible").bounds();
+
+        let window_height = 768.0;
+        let bar_top = window_height - FOOTER_BAR_HEIGHT;
+        assert!(
+            run.y > bar_top && run.y + run.height < window_height,
+            "footer text at {run:?} should be inside the bar from {bar_top}"
+        );
+        assert!(ui.find("section 39").is_ok());
+    }
 
     #[test]
     fn given_wide_window_when_laid_out_then_form_is_centered() {

@@ -24,6 +24,8 @@ pub(crate) enum RowAction {
     Restart,
     Pause,
     Unpause,
+    /// Opens the Run container form with the image filled in.
+    Run,
     /// Opens the pull dialog with the image's name and tag.
     PullAgain,
     /// Asks first.
@@ -40,6 +42,7 @@ impl RowAction {
             Self::Restart => Key::DockerActionRestart,
             Self::Pause => Key::DockerActionPause,
             Self::Unpause => Key::DockerActionUnpause,
+            Self::Run => Key::DockerActionRun,
             Self::PullAgain => Key::DockerActionPullAgain,
             Self::Remove => Key::DockerActionRemove,
         }
@@ -329,7 +332,7 @@ pub(crate) fn image_actions(image: &Image) -> &'static [RowAction] {
     if image.is_dangling() {
         &[RowAction::Remove]
     } else {
-        &[RowAction::PullAgain, RowAction::Remove]
+        &[RowAction::Run, RowAction::PullAgain, RowAction::Remove]
     }
 }
 
@@ -659,7 +662,8 @@ mod tests {
     }
 
     #[test]
-    fn a_tagged_image_can_be_pulled_again_and_a_dangling_one_only_removed() {
+    fn a_tagged_image_can_be_run_and_pulled_again_and_a_dangling_one_only_removed()
+     {
         let resources = fixtures::resources(EngineKind::Docker);
         let dangling = resources
             .images()
@@ -674,10 +678,11 @@ mod tests {
 
         assert_eq!(
             image_actions(tagged),
-            &[RowAction::PullAgain, RowAction::Remove]
+            &[RowAction::Run, RowAction::PullAgain, RowAction::Remove]
         );
         assert_eq!(image_actions(dangling), &[RowAction::Remove]);
         assert!(!RowAction::PullAgain.is_danger());
+        assert!(!RowAction::Run.is_danger());
     }
 
     #[test]

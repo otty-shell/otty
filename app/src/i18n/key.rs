@@ -520,6 +520,114 @@ pub(crate) enum Key {
     TplDockerLogsFailed,
     /// Notice when the inspect JSON could not be loaded. Placeholder: `{error}`.
     TplDockerInspectFailed,
+
+    // Run container form (spec Decision 18).
+    /// "Run" action on an image and the action button of the Run form.
+    DockerActionRun,
+    /// Line under the Run form title.
+    DockerRunSubtitle,
+    /// Section title: network, restart and auto remove.
+    DockerRunSectionOptions,
+    /// Label of the engine select.
+    DockerFieldEngine,
+    /// Placeholder of the optional container name.
+    DockerRunNamePlaceholder,
+    /// Switch: pull a missing image first.
+    DockerRunPullMissing,
+    /// Placeholder of the command word input.
+    DockerRunCommandPlaceholder,
+    /// Hint under the command while the image's command is not known.
+    DockerRunCommandHint,
+    /// Hint under the command. Placeholder: `{command}`.
+    TplDockerRunCommandHint,
+    /// Column heading of the host ports.
+    DockerRunHostPort,
+    /// Column heading of the container ports.
+    DockerRunContainerPort,
+    /// Button that adds a port row.
+    DockerRunAddPort,
+    /// Tooltip of the cross of a port row.
+    DockerRunRemovePort,
+    /// Hint under the ports. Placeholder: `{ports}`.
+    TplDockerRunImageListens,
+    /// Placeholder of an environment value.
+    DockerRunEnvValue,
+    /// Button that adds an environment variable.
+    DockerRunAddVariable,
+    /// Column heading of the volume sources.
+    DockerRunVolumeSource,
+    /// Column heading of the paths in the container.
+    DockerRunVolumeTarget,
+    /// Switch of a volume row.
+    DockerRunReadOnly,
+    /// Button that adds a volume row.
+    DockerRunAddVolume,
+    /// Tooltip of the cross of a volume row.
+    DockerRunRemoveVolume,
+    /// Label of the network select.
+    DockerFieldNetwork,
+    /// Label of the restart policy.
+    DockerFieldRestart,
+    /// Restart policy `no`.
+    DockerRestartNo,
+    /// Restart policy `on-failure`.
+    DockerRestartOnFailure,
+    /// Restart policy `unless-stopped`.
+    DockerRestartUnlessStopped,
+    /// Restart policy `always`.
+    DockerRestartAlways,
+    /// What the `no` policy does.
+    DockerRestartHintNo,
+    /// What the `on-failure` policy does.
+    DockerRestartHintOnFailure,
+    /// What the `unless-stopped` policy does.
+    DockerRestartHintUnlessStopped,
+    /// What the `always` policy does.
+    DockerRestartHintAlways,
+    /// Why the restart choices are disabled while auto remove is on.
+    DockerRestartHintAutoRemove,
+    /// Switch: remove the container when it stops.
+    DockerRunAutoRemove,
+    /// Error: the image is empty.
+    DockerRunErrImage,
+    /// Error: a port is not 1 to 65535.
+    DockerRunErrPort,
+    /// Error: a path in the container is not absolute.
+    DockerRunErrContainerPath,
+    /// Error: a volume row has no source.
+    DockerRunErrSourceRequired,
+    /// Error: a host folder does not exist.
+    DockerRunErrSourceMissing,
+    /// Footer hint of a ready form. Placeholder: `{engine}`.
+    TplDockerRunReady,
+    /// Footer hint while some fields have errors.
+    DockerRunFixFields,
+    /// Footer hint and image status while the image is looked up.
+    DockerRunCheckingImage,
+    /// Label of the action button while the run goes on.
+    DockerRunStarting,
+    /// Notice of a failed run. Placeholders: `{name}`, `{error}`.
+    TplDockerRunFailed,
+    /// Hint at the top of the image panel.
+    DockerRunPanelHint,
+    /// Image status: on this computer. Placeholder: `{size}`.
+    TplDockerImageHere,
+    /// Image status: not on this computer.
+    DockerImageMissing,
+    /// Image hint: missing, the pull switch is on.
+    DockerRunImagePulledFirst,
+    /// Image hint: missing, the pull switch is off.
+    DockerRunImageNotPulled,
+    /// Image panel field: exposed ports.
+    DockerFieldListensOn,
+    /// Image panel field: the entrypoint.
+    DockerFieldEntrypoint,
+    /// Image panel field: the working directory.
+    DockerFieldWorkdir,
+    /// Image panel text while no image is typed.
+    DockerRunNoImage,
+    /// Image panel notice of a failed lookup. Placeholder: `{error}`.
+    TplDockerImageLookupFailed,
     /// Overview field: the mounts of a container.
     DockerFieldMounts,
     /// Overview field: the Compose project.
@@ -755,7 +863,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 348] = [
+    pub(super) const ALL: [Self; 401] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -997,6 +1105,59 @@ impl Key {
         Self::TplDockerLogsNewLines,
         Self::TplDockerLogsFailed,
         Self::TplDockerInspectFailed,
+        Self::DockerActionRun,
+        Self::DockerRunSubtitle,
+        Self::DockerRunSectionOptions,
+        Self::DockerFieldEngine,
+        Self::DockerRunNamePlaceholder,
+        Self::DockerRunPullMissing,
+        Self::DockerRunCommandPlaceholder,
+        Self::DockerRunCommandHint,
+        Self::TplDockerRunCommandHint,
+        Self::DockerRunHostPort,
+        Self::DockerRunContainerPort,
+        Self::DockerRunAddPort,
+        Self::DockerRunRemovePort,
+        Self::TplDockerRunImageListens,
+        Self::DockerRunEnvValue,
+        Self::DockerRunAddVariable,
+        Self::DockerRunVolumeSource,
+        Self::DockerRunVolumeTarget,
+        Self::DockerRunReadOnly,
+        Self::DockerRunAddVolume,
+        Self::DockerRunRemoveVolume,
+        Self::DockerFieldNetwork,
+        Self::DockerFieldRestart,
+        Self::DockerRestartNo,
+        Self::DockerRestartOnFailure,
+        Self::DockerRestartUnlessStopped,
+        Self::DockerRestartAlways,
+        Self::DockerRestartHintNo,
+        Self::DockerRestartHintOnFailure,
+        Self::DockerRestartHintUnlessStopped,
+        Self::DockerRestartHintAlways,
+        Self::DockerRestartHintAutoRemove,
+        Self::DockerRunAutoRemove,
+        Self::DockerRunErrImage,
+        Self::DockerRunErrPort,
+        Self::DockerRunErrContainerPath,
+        Self::DockerRunErrSourceRequired,
+        Self::DockerRunErrSourceMissing,
+        Self::TplDockerRunReady,
+        Self::DockerRunFixFields,
+        Self::DockerRunCheckingImage,
+        Self::DockerRunStarting,
+        Self::TplDockerRunFailed,
+        Self::DockerRunPanelHint,
+        Self::TplDockerImageHere,
+        Self::DockerImageMissing,
+        Self::DockerRunImagePulledFirst,
+        Self::DockerRunImageNotPulled,
+        Self::DockerFieldListensOn,
+        Self::DockerFieldEntrypoint,
+        Self::DockerFieldWorkdir,
+        Self::DockerRunNoImage,
+        Self::TplDockerImageLookupFailed,
         Self::DockerFieldMounts,
         Self::DockerFieldCompose,
         Self::DockerFieldCommand,

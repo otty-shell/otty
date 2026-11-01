@@ -15,6 +15,7 @@ use super::actions::{
 };
 use super::event::{DockerEffect, DockerEvent};
 use super::forms::{Form, split_reference};
+use super::run_flow;
 use super::state::DockerState;
 use super::types::{ResourceKind, image_name};
 use crate::i18n::{self, Key};
@@ -73,6 +74,9 @@ pub(super) fn act(
             return Task::none();
         },
         RowAction::Shell => return open_shell(state, &item),
+        RowAction::Run => {
+            return run_flow::open(state, item.engine, &item.name);
+        },
         RowAction::Start => EngineAction::StartContainer(item.id),
         RowAction::Stop => EngineAction::StopContainer(item.id),
         RowAction::Restart => EngineAction::RestartContainer(item.id),

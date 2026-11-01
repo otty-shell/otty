@@ -235,14 +235,10 @@ pub(crate) fn prune_button(state: &DockerState) -> Option<PruneViewModel> {
     })
 }
 
-/// Whether the create button above the table opens a dialog: Pull image,
-/// Create volume and Create network do; Run container waits for its form
-/// (ticket 14).
+/// Whether the create button above the table works: Run container, Pull
+/// image, Create volume and Create network need an open engine.
 pub(crate) fn can_create(state: &DockerState) -> bool {
-    state.open_engine().is_some()
-        && state
-            .place()
-            .is_some_and(|place| place.resource() != ResourceKind::Containers)
+    state.open_engine().is_some() && state.place().is_some()
 }
 
 /// The title, text, switch and action of a prune dialog that deletes
@@ -566,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tagged_image_offers_pull_again_and_remove() {
+    fn a_tagged_image_offers_run_pull_again_and_remove() {
         let mut state = loaded_state();
         select_in(&mut state, ResourceKind::Images, "busybox:1.37");
 
@@ -574,6 +570,7 @@ mod tests {
             buttons_of(&state),
             (
                 vec![
+                    button(RowAction::Run, true),
                     button(RowAction::PullAgain, true),
                     button(RowAction::Remove, true)
                 ],
@@ -718,7 +715,7 @@ mod tests {
     }
 
     #[test]
-    fn every_list_but_containers_has_a_create_button_for_now() {
+    fn every_list_has_a_create_button() {
         let mut state = loaded_state();
         let mut enabled = Vec::new();
 
@@ -727,7 +724,7 @@ mod tests {
             enabled.push(can_create(&state));
         }
 
-        assert_eq!(enabled, vec![false, true, true, true]);
+        assert_eq!(enabled, vec![true, true, true, true]);
         assert!(!can_create(&DockerState::default()));
     }
 

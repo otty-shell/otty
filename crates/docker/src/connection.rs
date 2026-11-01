@@ -13,6 +13,7 @@ use bollard::{API_DEFAULT_VERSION, ClientVersion, Docker};
 use futures_util::future::try_join4;
 
 mod container_actions;
+mod container_run;
 mod image_pull;
 mod resource_actions;
 

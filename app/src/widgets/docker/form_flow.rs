@@ -9,12 +9,13 @@ use super::action_flow::{reload, run};
 use super::actions::ActionRequest;
 use super::event::{DockerEffect, DockerEvent};
 use super::forms::{Form, FormField, FormKind};
+use super::run_flow;
 use super::state::DockerState;
 use super::types::ResourceKind;
 use crate::i18n::{self, Key};
 
 /// Open the create dialog of the open list: Pull image, Create volume or
-/// Create network. The containers list gets its Run form with ticket 14.
+/// Create network; the containers list opens the Run container form.
 pub(super) fn open(state: &mut DockerState) -> Task<DockerEvent> {
     let (Some(place), Some(engine)) = (state.place(), state.open_engine())
     else {
@@ -26,7 +27,7 @@ pub(super) fn open(state: &mut DockerState) -> Task<DockerEvent> {
         ResourceKind::Images => Form::pull(info, "", ""),
         ResourceKind::Volumes => Form::create_volume(info),
         ResourceKind::Networks => Form::create_network(info),
-        ResourceKind::Containers => return Task::none(),
+        ResourceKind::Containers => return run_flow::open(state, info, ""),
     };
 
     state.open_form(form);
@@ -202,12 +203,13 @@ mod tests {
     }
 
     #[test]
-    fn the_containers_create_button_waits_for_the_run_form() {
+    fn the_containers_create_button_opens_the_run_form() {
         let mut state = state_on(ResourceKind::Containers);
 
         let _ = reduce(&mut state, DockerIntent::OpenCreate);
 
         assert!(state.form().is_none());
+        assert!(state.run_form().is_some());
     }
 
     #[test]

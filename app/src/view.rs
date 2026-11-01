@@ -16,7 +16,8 @@ use crate::widgets::docker::DockerEvent;
 use crate::widgets::docker::view::{
     confirm_dialog as docker_confirm, engine_tree, form_dialog as docker_form,
     inspector as docker_inspector, main_area as docker_main,
-    row_menu as docker_row_menu, status_bar as docker_status_bar,
+    row_menu as docker_row_menu, run_form as docker_run_form,
+    run_panel as docker_run_panel, status_bar as docker_status_bar,
 };
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
@@ -382,23 +383,40 @@ fn view_docker_tree<'a>(
     .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
 }
 
-/// Docker mode main area: the open list of an engine.
+/// Docker mode main area: the Run container form while it is open, else
+/// the open list of an engine.
 fn view_docker_main<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    docker_main::view(docker_main::MainAreaProps {
-        vm: app.widgets.docker.main_vm(unix_now()),
-        theme: theme_props,
-    })
-    .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
+    let main = match app.widgets.docker.run_form_vm() {
+        Some(vm) => docker_run_form::view(docker_run_form::RunFormProps {
+            vm,
+            theme: theme_props,
+        }),
+        None => docker_main::view(docker_main::MainAreaProps {
+            vm: app.widgets.docker.main_vm(unix_now()),
+            theme: theme_props,
+        }),
+    };
+
+    main.map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
 }
 
-/// Docker mode right panel content: the inspector of the selected row.
+/// Docker mode right panel content: what the image sets while the Run
+/// form is open, else the inspector of the selected row.
 fn view_docker_inspector<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    if let Some(vm) = app.widgets.docker.image_panel_vm() {
+        return docker_run_panel::view(docker_run_panel::RunPanelProps {
+            vm,
+            theme: theme_props,
+        })
+        .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)));
+    }
+
     docker_inspector::view(docker_inspector::InspectorProps {
         vm: app.widgets.docker.inspector_vm(),
         tabs: app.widgets.docker.inspector_tabs_vm(),
@@ -805,6 +823,39 @@ mod tests {
             event,
             AppEvent::Docker(DockerEvent::Intent(DockerIntent::SelectRow(2)))
         )));
+    }
+
+    #[test]
+    fn the_run_form_replaces_the_table_and_the_inspector() {
+        use otty_docker::{EngineKind, fixtures};
+
+        use crate::widgets::docker::DockerIntent;
+        use crate::widgets::docker::types::LoadedLists;
+
+        let mut app = app_in(Mode::Docker);
+        let docker = fixtures::engine(EngineKind::Docker);
+        let resources = fixtures::resources(EngineKind::Docker);
+        let _ = app.widgets.docker.reduce(DockerIntent::Enter);
+        let _ = app.widgets.docker.reduce(DockerIntent::DiscoveryFinished(
+            fixtures::discovery(&[EngineKind::Docker]),
+        ));
+        let _ = app.widgets.docker.reduce(DockerIntent::ListsLoaded {
+            engine: docker.address().clone(),
+            lists: LoadedLists {
+                containers: Ok(resources.containers().to_vec()),
+                images: Ok(resources.images().to_vec()),
+                volumes: Ok(resources.volumes().to_vec()),
+                networks: Ok(resources.networks().to_vec()),
+            },
+        });
+        let _ = app.widgets.docker.reduce(DockerIntent::OpenCreate);
+        let mut ui = simulator(view(&app));
+
+        ui.find(i18n::t(Key::DockerRunSubtitle))
+            .expect("main area should show the run form");
+        ui.find(i18n::t(Key::DockerRunNoImage))
+            .expect("right panel should show the image panel");
+        assert!(ui.find("otty-fx-exit3").is_err());
     }
 
     #[test]

@@ -75,8 +75,9 @@ pub(crate) fn field_id(field: FormField) -> Id {
     }
 }
 
-/// "Pulling nginx:latest", the bar, and the bytes so far.
-fn pull_line<'a>(
+/// "Pulling nginx:latest", the bar, and the bytes so far. The Run form
+/// shows the same line in its footer.
+pub(crate) fn pull_line<'a>(
     progress: PullLineViewModel,
     palette: &UiPalette,
 ) -> Element<'a, DockerIntent> {

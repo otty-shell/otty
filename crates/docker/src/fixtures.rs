@@ -18,8 +18,8 @@
 use std::path::PathBuf;
 
 use bollard::models::{
-    ContainerSummary, CreateImageInfo, ImageSummary, Network, SystemVersion,
-    VolumeListResponse,
+    ContainerSummary, CreateImageInfo, ImageInspect, ImageSummary, Network,
+    SystemVersion, VolumeListResponse,
 };
 
 use crate::address::EngineAddress;
@@ -28,6 +28,7 @@ use crate::cli::CliPresence;
 use crate::connection::Resources;
 use crate::discovery::Discovery;
 use crate::engine::{EngineInfo, EngineKind};
+use crate::image_defaults::ImageDefaults;
 use crate::probe::{Probe, ProbeOutcome};
 use crate::pull::PullProgress;
 
@@ -110,6 +111,18 @@ pub fn resources(kind: EngineKind) -> Resources {
 /// existed: nothing uses them, so every one can be removed.
 pub fn idle_resources(kind: EngineKind) -> Resources {
     load_resources(kind, false)
+}
+
+/// What `nginx:1.27` sets on its own: ports 80 and 443, the nginx command,
+/// the entrypoint script, 192 MB. Read from `tests/fixtures/
+/// docker-image-inspect.json`, written by hand in the shape Docker 29 sends.
+pub fn image_defaults() -> ImageDefaults {
+    let answer: ImageInspect = serde_json::from_str(include_str!(
+        "../tests/fixtures/docker-image-inspect.json"
+    ))
+    .expect(BROKEN_FIXTURE);
+
+    ImageDefaults::from_inspect(&answer)
 }
 
 /// The progress of a pull half way: three layers, one already on this

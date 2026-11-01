@@ -1,12 +1,14 @@
 use iced::Point;
 use iced::widget::text_editor::Action;
 use otty_docker::{
-    Container, Discovery, EngineAddress, EngineInfo, PullProgress,
+    Container, Discovery, EngineAddress, EngineInfo, ImageDefaults,
+    PullProgress, RunRequest,
 };
 
 use super::actions::{ActionRequest, RowAction};
 use super::forms::FormField;
 use super::inspector::{InspectTarget, InspectorTab, LogTarget};
+use super::run_form::RunEdit;
 use super::types::{LoadedList, LoadedLists, Place, ResourceKind};
 
 /// Intent events handled by the Docker widget.
@@ -115,6 +117,30 @@ pub(crate) enum DockerIntent {
     PullProgressed(PullProgress),
     /// The pull ended; the error is the engine's message.
     PullFinished(Result<(), String>),
+    // Run container form.
+    /// A field of the Run form changed.
+    RunEdited(RunEdit),
+    /// Another engine was chosen in the Run form.
+    RunEngineChosen(EngineAddress),
+    /// Run of the Run form was pressed.
+    RunSubmitted,
+    /// Cancel of the Run form was pressed; it stops a running pull.
+    RunCancelled,
+    /// The cross of the Run form's notice was pressed.
+    RunNoticeDismissed,
+    /// The container was created and started (its id), or the engine's
+    /// message.
+    RunFinished {
+        engine: EngineAddress,
+        result: Result<String, String>,
+    },
+    /// What the image `reference` sets on its own (`None`: not on this
+    /// computer), or the engine's message.
+    ImageDefaultsLoaded {
+        engine: EngineAddress,
+        reference: String,
+        result: Result<Option<ImageDefaults>, String>,
+    },
 }
 
 /// Effect events produced by the Docker reducer. The app runs them off the
@@ -159,6 +185,16 @@ pub(crate) enum DockerEffect {
     },
     /// Stop the running pull.
     CancelPull,
+    /// Ask `engine` what the image `reference` sets on its own.
+    LoadImageDefaults {
+        engine: EngineInfo,
+        reference: String,
+    },
+    /// Create and start a container on `engine`.
+    RunContainer {
+        engine: EngineInfo,
+        request: RunRequest,
+    },
 }
 
 /// Docker event stream routed through the app update loop.

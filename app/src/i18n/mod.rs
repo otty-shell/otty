@@ -393,6 +393,16 @@ pub(crate) fn docker_volume_in_use(names: &str) -> String {
     )
 }
 
+/// Fill the one `{placeholder}` of a Docker template with `value`, e.g.
+/// "Starts in the background on Docker 29.9.1." from `TplDockerRunReady`.
+pub(crate) fn docker_filled(
+    key: Key,
+    placeholder: &str,
+    value: &str,
+) -> String {
+    fill_in(current_locale(), key, &[(placeholder, value)])
+}
+
 /// Build the progress text of a running pull of `image`.
 pub(crate) fn docker_pulling(image: &str) -> String {
     fill_in(current_locale(), Key::TplDockerPulling, &[("image", image)])
@@ -967,6 +977,11 @@ mod tests {
             (Key::TplDockerVolumeInUseHint, ("names", "db-1")),
             (Key::TplDockerPulling, ("image", "nginx:latest")),
             (Key::TplDockerLogsNewLines, ("count", "12")),
+            (Key::TplDockerRunCommandHint, ("command", "nginx -g")),
+            (Key::TplDockerRunImageListens, ("ports", "80/tcp")),
+            (Key::TplDockerRunReady, ("engine", "Docker 29.9.1")),
+            (Key::TplDockerImageHere, ("size", "192.0 MB")),
+            (Key::TplDockerImageLookupFailed, ("error", "boom")),
         ];
 
         for locale in Locale::ALL {
@@ -1004,6 +1019,7 @@ mod tests {
             Key::TplDockerRemoveVolumeFailed,
             Key::TplDockerCreateNetworkFailed,
             Key::TplDockerRemoveNetworkFailed,
+            Key::TplDockerRunFailed,
         ];
         let without_name = [
             Key::TplDockerPruneContainersFailed,

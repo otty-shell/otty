@@ -32,6 +32,7 @@ pub mod kbd;
 pub mod key_value_field;
 pub mod key_value_list;
 pub mod log_view;
+pub mod mapping_field;
 pub mod menu;
 pub mod mode_menu;
 pub mod mode_switcher;

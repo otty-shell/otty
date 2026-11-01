@@ -306,6 +306,8 @@ fn is_docker_background(event: &DockerEvent) -> bool {
                 | DockerIntent::ActionFinished { .. }
                 | DockerIntent::PullProgressed(_)
                 | DockerIntent::PullFinished(_)
+                | DockerIntent::RunFinished { .. }
+                | DockerIntent::ImageDefaultsLoaded { .. }
         ),
         DockerEvent::Effect(_) => true,
     }
@@ -478,6 +480,15 @@ mod tests {
                 otty_docker::fixtures::pull_progress(),
             )),
             docker(DockerIntent::PullFinished(Ok(()))),
+            docker(DockerIntent::RunFinished {
+                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
+                result: Ok(String::from("4f1c")),
+            }),
+            docker(DockerIntent::ImageDefaultsLoaded {
+                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
+                reference: String::from("nginx"),
+                result: Ok(None),
+            }),
         ];
         let address = otty_docker::EngineAddress::Tcp(String::from("h:1"));
         let log_target = LogTarget::new(

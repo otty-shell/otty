@@ -56,6 +56,8 @@ pub struct KeyValueField<'a, Message> {
     hint: Option<String>,
     is_optional: bool,
     add_label: String,
+    name_placeholder: String,
+    value_placeholder: String,
     on_name: Option<Rc<dyn Fn(usize, String) -> Message + 'a>>,
     on_value: Option<Rc<dyn Fn(usize, String) -> Message + 'a>>,
     on_remove: Option<Box<dyn Fn(usize) -> Message + 'a>>,
@@ -77,6 +79,8 @@ impl<'a, Message> KeyValueField<'a, Message> {
             hint: None,
             is_optional: false,
             add_label: "Add variable".to_owned(),
+            name_placeholder: "NAME".to_owned(),
+            value_placeholder: "value".to_owned(),
             on_name: None,
             on_value: None,
             on_remove: None,
@@ -99,6 +103,18 @@ impl<'a, Message> KeyValueField<'a, Message> {
     /// Sets the text of the add button.
     pub fn add_label(mut self, label: impl Into<String>) -> Self {
         self.add_label = label.into();
+        self
+    }
+
+    /// Sets the texts shown while the name and the value inputs are empty;
+    /// `NAME` and `value` unless set.
+    pub fn placeholders(
+        mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        self.name_placeholder = name.into();
+        self.value_placeholder = value.into();
         self
     }
 
@@ -144,19 +160,22 @@ impl<'a, Message: Clone + 'a> From<KeyValueField<'a, Message>>
 
         let mut rows = column![].spacing(spacing::SPACE_2);
         for (index, (name, content)) in value.rows.iter().enumerate() {
-            let name_input = mono_input("NAME", name, &palette).on_input_maybe(
-                value
-                    .on_name
-                    .clone()
-                    .map(|on_name| move |text| on_name(index, text)),
-            );
-            let value_input = mono_input("value", content, &palette)
-                .on_input_maybe(
-                    value
-                        .on_value
-                        .clone()
-                        .map(|on_value| move |text| on_value(index, text)),
-                );
+            let name_input =
+                mono_input(&value.name_placeholder, name, &palette)
+                    .on_input_maybe(
+                        value
+                            .on_name
+                            .clone()
+                            .map(|on_name| move |text| on_name(index, text)),
+                    );
+            let value_input =
+                mono_input(&value.value_placeholder, content, &palette)
+                    .on_input_maybe(
+                        value
+                            .on_value
+                            .clone()
+                            .map(|on_value| move |text| on_value(index, text)),
+                    );
             let mut cross =
                 IconButton::new(glyph::cross(), "Remove variable", &palette);
             if let Some(on_remove) = &value.on_remove {
@@ -207,4 +226,32 @@ fn mono_input<'a, Message: Clone + 'a>(
         .line_height(Pixels(style.line_height()))
         .padding(Padding::from([PADDING_Y, PADDING_X]))
         .style(input_style(palette, false))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placeholders_default_to_name_and_value() {
+        let palette = UiPalette::otty_dark();
+
+        let field: KeyValueField<'_, ()> =
+            KeyValueField::new("Environment", &[], &palette);
+
+        assert_eq!(field.name_placeholder, "NAME");
+        assert_eq!(field.value_placeholder, "value");
+    }
+
+    #[test]
+    fn each_column_takes_its_own_placeholder() {
+        let palette = UiPalette::otty_dark();
+
+        let field: KeyValueField<'_, ()> =
+            KeyValueField::new("Environment", &[], &palette)
+                .placeholders("Name", "Value");
+
+        assert_eq!(field.name_placeholder, "Name");
+        assert_eq!(field.value_placeholder, "Value");
+    }
 }

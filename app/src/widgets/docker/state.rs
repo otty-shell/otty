@@ -11,6 +11,7 @@ use super::forms::Form;
 use super::inspector::{
     InspectTarget, InspectorState, InspectorTab, LogTarget,
 };
+use super::run_form::RunForm;
 use super::types::{
     LoadedList, LoadedLists, Place, ResourceKind, filtered, image_name,
     network_name, shown_containers, volume_name,
@@ -35,9 +36,16 @@ pub(crate) struct DockerState {
     notice: Option<String>,
     /// The open create dialog.
     form: Option<Form>,
+    /// The open Run container form; it replaces the table.
+    run_form: Option<RunForm>,
 }
 
 impl DockerState {
+    /// Return the open Run container form.
+    pub(crate) fn run_form(&self) -> Option<&RunForm> {
+        self.run_form.as_ref()
+    }
+
     /// Return whether Docker mode is the active mode.
     pub(crate) fn is_active(&self) -> bool {
         self.is_active
@@ -381,6 +389,40 @@ impl DockerState {
     /// Close the create dialog and return it.
     pub(super) fn take_form(&mut self) -> Option<Form> {
         self.form.take()
+    }
+
+    /// Show the Run container form in place of the table.
+    pub(super) fn open_run_form(&mut self, form: RunForm) {
+        self.run_form = Some(form);
+    }
+
+    /// Return the open Run container form to change it.
+    pub(super) fn run_form_mut(&mut self) -> Option<&mut RunForm> {
+        self.run_form.as_mut()
+    }
+
+    /// Close the Run container form and return it.
+    pub(super) fn take_run_form(&mut self) -> Option<RunForm> {
+        self.run_form.take()
+    }
+
+    /// Show the containers of `engine` without a filter and select the
+    /// container with `id`, which a reload brings into the list.
+    pub(super) fn show_new_container(
+        &mut self,
+        engine: &EngineAddress,
+        id: String,
+    ) {
+        self.open(Place::new(engine.clone(), ResourceKind::Containers));
+        self.filter.clear();
+
+        if let Some(engine) = self
+            .engines
+            .iter_mut()
+            .find(|state| state.info.address() == engine)
+        {
+            engine.containers.select(id);
+        }
     }
 
     /// Show all containers of the open engine again, leaving a Compose

@@ -5,4 +5,6 @@ pub(crate) mod inspector;
 pub(crate) mod main_area;
 pub(crate) mod no_engine;
 pub(crate) mod row_menu;
+pub(crate) mod run_form;
+pub(crate) mod run_panel;
 pub(crate) mod status_bar;

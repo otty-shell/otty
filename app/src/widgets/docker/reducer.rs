@@ -4,7 +4,7 @@ use otty_docker::{EngineAddress, EngineInfo};
 use super::event::{DockerEffect, DockerEvent, DockerIntent};
 use super::state::{DockerState, Search};
 use super::types::{LoadedList, ResourceKind};
-use super::{action_flow, form_flow};
+use super::{action_flow, form_flow, run_flow};
 
 /// Reduce a Docker intent into state changes and effects. Engine work
 /// (search, list loads, inspect) is only asked for while Docker mode is
@@ -45,8 +45,9 @@ fn reduce_intent(
             Task::none()
         },
         DockerIntent::Open(place) => {
+            let closed = run_flow::close(state);
             state.open(place);
-            Task::none()
+            closed
         },
         DockerIntent::ClearComposeProject => {
             state.clear_compose_project();
@@ -153,14 +154,40 @@ fn reduce_intent(
         DockerIntent::FormSubmitted => form_flow::submit(state),
         DockerIntent::FormCancelled => form_flow::cancel(state),
         DockerIntent::PullProgressed(progress) => {
-            if let Some(form) = state.form_mut() {
+            if run_flow::is_pulling(state) {
+                run_flow::pull_progressed(state, progress);
+            } else if let Some(form) = state.form_mut() {
                 form.set_progress(progress);
             }
             Task::none()
         },
         DockerIntent::PullFinished(result) => {
-            form_flow::finish_pull(state, result)
+            if run_flow::is_pulling(state) {
+                run_flow::finish_pull(state, result)
+            } else {
+                form_flow::finish_pull(state, result)
+            }
         },
+        DockerIntent::RunEdited(edit) => run_flow::edit(state, edit),
+        DockerIntent::RunEngineChosen(engine) => {
+            run_flow::choose_engine(state, &engine)
+        },
+        DockerIntent::RunSubmitted => run_flow::submit(state),
+        DockerIntent::RunCancelled => run_flow::close(state),
+        DockerIntent::RunNoticeDismissed => {
+            if let Some(form) = state.run_form_mut() {
+                form.dismiss_notice();
+            }
+            Task::none()
+        },
+        DockerIntent::RunFinished { engine, result } => {
+            run_flow::finish(state, &engine, result)
+        },
+        DockerIntent::ImageDefaultsLoaded {
+            engine,
+            reference,
+            result,
+        } => run_flow::defaults_loaded(state, &engine, &reference, result),
     }
 }
 

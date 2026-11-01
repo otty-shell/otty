@@ -23,11 +23,13 @@ mod events;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
 mod image;
+mod image_defaults;
 mod inspect;
 mod logs;
 mod network;
 mod probe;
 mod pull;
+mod run;
 #[cfg(test)]
 mod test_support;
 mod timestamp;
@@ -46,8 +48,13 @@ pub use crate::discovery::{Discovery, discover};
 pub use crate::engine::{EngineInfo, EngineKind};
 pub use crate::events::ListKind;
 pub use crate::image::Image;
+pub use crate::image_defaults::ImageDefaults;
 pub use crate::network::Network;
 pub use crate::probe::{Probe, ProbeOutcome};
 pub use crate::pull::PullProgress;
+pub use crate::run::{
+    MountSource, PortProtocol, PublishedPort, RestartPolicy, RunRequest,
+    VolumeMount,
+};
 pub use crate::volume::Volume;
 pub use crate::watch::WatchEvent;

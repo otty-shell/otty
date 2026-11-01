@@ -14,6 +14,10 @@ pub(crate) mod no_engine;
 pub(crate) mod overview;
 mod reducer;
 pub(crate) mod resource_rows;
+pub(crate) mod run_checks;
+mod run_flow;
+pub(crate) mod run_form;
+pub(crate) mod run_model;
 mod state;
 pub(crate) mod status;
 mod subscription;
@@ -26,6 +30,7 @@ use form_model::FormViewModel;
 use iced::{Subscription, Task, task};
 use inspector_tabs::InspectorTabsViewModel;
 use model::{InspectorViewModel, MainViewModel, TreeRowViewModel};
+use run_model::{ImagePanelViewModel, RunFormViewModel};
 use state::DockerState;
 use status::StatusViewModel;
 
@@ -147,6 +152,17 @@ impl DockerWidget {
     /// Build the open create dialog.
     pub(crate) fn form_vm(&self) -> Option<FormViewModel<'_>> {
         form_model::form_dialog(&self.state)
+    }
+
+    /// Build the Run container form, shown in place of the table.
+    pub(crate) fn run_form_vm(&self) -> Option<RunFormViewModel<'_>> {
+        run_model::run_form(&self.state)
+    }
+
+    /// Build the image panel beside the Run container form, shown in place
+    /// of the inspector.
+    pub(crate) fn image_panel_vm(&self) -> Option<ImagePanelViewModel> {
+        run_model::image_panel(&self.state)
     }
 
     /// Return whether a row menu or a dialog covers the window.
