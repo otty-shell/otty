@@ -202,6 +202,7 @@
     "tpl_docker_remove_image_title": "イメージ {name} を削除しますか？",
     "docker_remove_image_text": "イメージはこのコンピューターから削除されます。後で再取得できます。",
     "docker_force_remove_image": "強制: 停止中のコンテナーがまだ使用しています",
+    "docker_also_remove_named_volumes": "名前付きボリュームも削除する",
     "docker_prune_images_title": "タグなしイメージを整理しますか？",
     "tpl_docker_prune_images_text": "削除するタグなしイメージ: {count}。タグがなく、どのコンテナーも使用していません。",
     "tpl_docker_remove_volume_title": "ボリューム {name} を削除しますか？",

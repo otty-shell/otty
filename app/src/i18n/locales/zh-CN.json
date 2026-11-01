@@ -202,6 +202,7 @@
     "tpl_docker_remove_image_title": "删除镜像 {name}？",
     "docker_remove_image_text": "镜像将从这台电脑上删除。之后可以重新拉取。",
     "docker_force_remove_image": "强制：仍有已停止的容器在使用它",
+    "docker_also_remove_named_volumes": "同时删除命名卷",
     "docker_prune_images_title": "清理悬空镜像？",
     "tpl_docker_prune_images_text": "要删除的悬空镜像：{count}。它们没有标签，也没有容器在使用。",
     "tpl_docker_remove_volume_title": "删除卷 {name}？",

@@ -136,4 +136,21 @@ mod tests {
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![DockerIntent::ConfirmSwitchToggled(false)]);
     }
+
+    #[test]
+    fn the_named_volumes_switch_sends_its_new_state() {
+        let themes = ThemeManager::new();
+        let mut vm = remove_dialog(None);
+        vm.switch = Some((i18n::t(Key::DockerAlsoRemoveNamedVolumes), false));
+        let mut ui = simulator(view(ConfirmDialogProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(i18n::t(Key::DockerAlsoRemoveNamedVolumes))
+            .expect("switch should show");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::ConfirmSwitchToggled(true)]);
+    }
 }

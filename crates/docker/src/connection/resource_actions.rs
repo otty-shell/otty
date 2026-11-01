@@ -73,12 +73,43 @@ impl Engine {
         Ok(())
     }
 
-    /// Remove every volume no container uses, named ones included, on
-    /// Docker and on Podman alike.
-    pub async fn prune_volumes(&self) -> Result<(), EngineError> {
-        let options = volume_prune_options(self.info());
+    /// Remove the volumes no container uses. Only the anonymous ones go,
+    /// unless `include_named` is set; then every unused volume goes, like
+    /// `docker volume prune -a`.
+    ///
+    /// Docker 23 and later (API 1.42) can prune only anonymous volumes.
+    /// Podman and older Docker prune every unused volume with no way to
+    /// narrow it, so for those the anonymous unused volumes are removed
+    /// one by one.
+    pub async fn prune_volumes(
+        &self,
+        include_named: bool,
+    ) -> Result<(), EngineError> {
+        let can_narrow = prune_can_skip_named_volumes(self.info());
 
+        if !include_named && !can_narrow {
+            return self.remove_unused_anonymous_volumes().await;
+        }
+
+        let options =
+            (include_named && can_narrow).then(|| PruneVolumesOptions {
+                filters: Some(filter("all", "true")),
+            });
         self.client.prune_volumes(options).await?;
+
+        Ok(())
+    }
+
+    /// Remove every anonymous volume no container mounts, one by one.
+    async fn remove_unused_anonymous_volumes(&self) -> Result<(), EngineError> {
+        let containers = self.containers().await?;
+        let volumes = self.volumes(&containers).await?;
+
+        for volume in &volumes {
+            if volume.is_anonymous() && volume.containers().is_empty() {
+                self.remove_volume(volume.name()).await?;
+            }
+        }
 
         Ok(())
     }
@@ -118,23 +149,19 @@ impl Engine {
     }
 }
 
-/// The volume prune options that remove every unused volume. Docker 23
-/// and later (API 1.42) remove only anonymous volumes unless `all=true` is
-/// set; older Docker and Podman remove every unused volume without it (and
-/// may not know the filter).
-fn volume_prune_options(info: &EngineInfo) -> Option<PruneVolumesOptions> {
+/// Whether the engine's volume prune keeps named volumes unless `all=true`
+/// is set: Docker 23 and later (API 1.42). Podman and older Docker remove
+/// every unused volume, and older Docker rejects the `all` filter. An
+/// unknown API version counts as old, which is the safe side.
+fn prune_can_skip_named_volumes(info: &EngineInfo) -> bool {
     if info.kind() != EngineKind::Docker {
-        return None;
+        return false;
     }
-    let version = info.api_version().and_then(parse_api_version)?;
-    let since = PRUNE_ALL_VOLUMES_SINCE;
-    if (version.major_version, version.minor_version) < since {
-        return None;
-    }
+    let Some(version) = info.api_version().and_then(parse_api_version) else {
+        return false;
+    };
 
-    Some(PruneVolumesOptions {
-        filters: Some(filter("all", "true")),
-    })
+    (version.major_version, version.minor_version) >= PRUNE_ALL_VOLUMES_SINCE
 }
 
 /// One engine filter: `name` with one `value`.
@@ -147,7 +174,6 @@ mod tests {
     use bollard::models::SystemVersion;
 
     use super::*;
-    use crate::address::EngineAddress;
     use crate::engine::EngineInfo;
     use crate::test_support::FakeEngine;
 
@@ -171,14 +197,13 @@ mod tests {
         (method, path)
     }
 
-    fn info(version: &str) -> EngineInfo {
+    /// The info of an engine that answers `version`, reached at the same
+    /// address as `fake`.
+    fn info_at(fake: &EngineInfo, version: &str) -> EngineInfo {
         let answer: SystemVersion =
             serde_json::from_str(version).expect("version answer");
 
-        EngineInfo::from_version(
-            &answer,
-            EngineAddress::Tcp(String::from("127.0.0.1:1")),
-        )
+        EngineInfo::from_version(&answer, fake.address().clone())
     }
 
     #[tokio::test]
@@ -278,36 +303,173 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prune_volumes_on_new_docker_asks_for_every_unused_volume() {
+    async fn prune_volumes_on_new_docker_sends_no_all_filter_by_default() {
         let fake = FakeEngine::start(answer(
             "200 OK",
             r#"{"VolumesDeleted":[],"SpaceReclaimed":0}"#,
         ));
 
-        engine(&fake).prune_volumes().await.expect("pruned");
+        engine(&fake).prune_volumes(false).await.expect("pruned");
+
+        let requests = fake.requests();
+        let (method, path) = method_and_path(&requests[0].line);
+        assert_eq!(method, "POST");
+        assert!(path.ends_with("/volumes/prune"), "{path}");
+        assert!(!requests[0].line.contains("all"), "{}", requests[0].line);
+    }
+
+    #[tokio::test]
+    async fn prune_volumes_with_named_ones_sends_all_true_on_new_docker() {
+        let fake = FakeEngine::start(answer(
+            "200 OK",
+            r#"{"VolumesDeleted":[],"SpaceReclaimed":0}"#,
+        ));
+
+        engine(&fake).prune_volumes(true).await.expect("pruned");
 
         let requests = fake.requests();
         let (method, path) = method_and_path(&requests[0].line);
         assert_eq!(method, "POST");
         assert!(path.ends_with("/volumes/prune"), "{path}");
         assert!(requests[0].line.contains("all"), "{}", requests[0].line);
+        assert!(requests[0].line.contains("true"), "{}", requests[0].line);
     }
 
-    #[test]
-    fn only_docker_23_and_later_need_the_all_filter() {
-        let new_docker = info(r#"{"Version":"29.9.1","ApiVersion":"1.44"}"#);
-        let docker_23 = info(r#"{"Version":"23.0.0","ApiVersion":"1.42"}"#);
-        let old_docker = info(r#"{"Version":"20.10.0","ApiVersion":"1.41"}"#);
-        let unknown = info(r#"{"Version":"29.0.0"}"#);
-        let podman = info(
+    /// The fake engine's answers for a prune that works by hand: the
+    /// containers, the volumes, then one removal per volume in `removals`.
+    fn by_hand_answers(removals: usize) -> Vec<(&'static str, String)> {
+        let used = "a".repeat(64);
+        let free = "b".repeat(64);
+        let containers = format!(
+            r#"[{{"Id":"c1","Names":["/web"],"State":"running","Mounts":[{{"Type":"volume","Name":"{used}"}}]}}]"#
+        );
+        let volumes = format!(
+            r#"{{"Volumes":[
+                {{"Name":"otty-fx-data","Driver":"local","Mountpoint":"/v/data","Labels":{{}},"Scope":"local","Options":{{}}}},
+                {{"Name":"{used}","Driver":"local","Mountpoint":"/v/used","Labels":{{}},"Scope":"local","Options":{{}}}},
+                {{"Name":"{free}","Driver":"local","Mountpoint":"/v/free","Labels":{{}},"Scope":"local","Options":{{}}}}
+            ],"Warnings":[]}}"#
+        );
+        let mut answers = vec![("200 OK", containers), ("200 OK", volumes)];
+        answers.extend((0..removals).map(|_| (NO_CONTENT, String::new())));
+
+        answers
+    }
+
+    #[tokio::test]
+    async fn podman_prune_without_named_ones_removes_only_unused_anonymous() {
+        let fake = FakeEngine::start(by_hand_answers(1));
+        let podman = info_at(
+            fake.info(),
             r#"{"ApiVersion":"1.44","Components":[{"Name":"Podman Engine","Version":"5.8.8"}]}"#,
         );
 
-        assert!(volume_prune_options(&new_docker).is_some());
-        assert!(volume_prune_options(&docker_23).is_some());
-        assert!(volume_prune_options(&old_docker).is_none());
-        assert!(volume_prune_options(&unknown).is_none());
-        assert!(volume_prune_options(&podman).is_none());
+        Engine::connect(&podman)
+            .expect("engine")
+            .prune_volumes(false)
+            .await
+            .expect("pruned");
+
+        let requests = fake.requests();
+        let lines: Vec<&str> = requests
+            .iter()
+            .map(|request| request.line.as_str())
+            .collect();
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(lines.iter().all(|line| !line.contains("/volumes/prune")));
+        let (method, path) = method_and_path(lines[2]);
+        assert_eq!(method, "DELETE");
+        assert!(path.ends_with(&format!("/volumes/{}", "b".repeat(64))));
+    }
+
+    #[tokio::test]
+    async fn docker_before_api_1_42_prunes_by_hand_without_named_ones() {
+        let fake = FakeEngine::start(by_hand_answers(1));
+        let old = info_at(
+            fake.info(),
+            r#"{"Version":"20.10.0","ApiVersion":"1.41"}"#,
+        );
+
+        Engine::connect(&old)
+            .expect("engine")
+            .prune_volumes(false)
+            .await
+            .expect("pruned");
+
+        let requests = fake.requests();
+        let lines: Vec<&str> = requests
+            .iter()
+            .map(|request| request.line.as_str())
+            .collect();
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(lines.iter().all(|line| !line.contains("/volumes/prune")));
+    }
+
+    #[tokio::test]
+    async fn docker_with_unknown_api_version_also_prunes_by_hand() {
+        let fake = FakeEngine::start(by_hand_answers(1));
+        let unknown = info_at(fake.info(), r#"{"Version":"29.0.0"}"#);
+
+        Engine::connect(&unknown)
+            .expect("engine")
+            .prune_volumes(false)
+            .await
+            .expect("pruned");
+
+        let requests = fake.requests();
+        assert_eq!(requests.len(), 3);
+        assert!(
+            requests
+                .iter()
+                .all(|request| !request.line.contains("/volumes/prune"))
+        );
+    }
+
+    #[tokio::test]
+    async fn podman_prune_with_named_ones_calls_prune_without_filters() {
+        let fake = FakeEngine::start(answer(
+            "200 OK",
+            r#"{"VolumesDeleted":[],"SpaceReclaimed":0}"#,
+        ));
+        let podman = info_at(
+            fake.info(),
+            r#"{"ApiVersion":"1.44","Components":[{"Name":"Podman Engine","Version":"5.8.8"}]}"#,
+        );
+
+        Engine::connect(&podman)
+            .expect("engine")
+            .prune_volumes(true)
+            .await
+            .expect("pruned");
+
+        let requests = fake.requests();
+        assert_eq!(requests.len(), 1);
+        let (method, path) = method_and_path(&requests[0].line);
+        assert_eq!(method, "POST");
+        assert!(path.ends_with("/volumes/prune"), "{path}");
+        assert!(!requests[0].line.contains("all"), "{}", requests[0].line);
+    }
+
+    #[tokio::test]
+    async fn old_docker_prune_with_named_ones_calls_prune_without_filters() {
+        let fake = FakeEngine::start(answer(
+            "200 OK",
+            r#"{"VolumesDeleted":[],"SpaceReclaimed":0}"#,
+        ));
+        let old = info_at(
+            fake.info(),
+            r#"{"Version":"20.10.0","ApiVersion":"1.41"}"#,
+        );
+
+        Engine::connect(&old)
+            .expect("engine")
+            .prune_volumes(true)
+            .await
+            .expect("pruned");
+
+        let requests = fake.requests();
+        assert_eq!(requests.len(), 1);
+        assert!(!requests[0].line.contains("all"), "{}", requests[0].line);
     }
 
     #[tokio::test]

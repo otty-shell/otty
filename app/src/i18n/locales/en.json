@@ -202,6 +202,7 @@
     "tpl_docker_remove_image_title": "Remove image {name}?",
     "docker_remove_image_text": "The image is deleted from this computer. You can pull it again later.",
     "docker_force_remove_image": "Force: a stopped container still uses it",
+    "docker_also_remove_named_volumes": "Also remove named volumes",
     "docker_prune_images_title": "Prune dangling images?",
     "tpl_docker_prune_images_text": "Dangling images to delete: {count}. They have no tag and no container uses them.",
     "tpl_docker_remove_volume_title": "Remove volume {name}?",

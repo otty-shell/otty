@@ -202,6 +202,7 @@
     "tpl_docker_remove_image_title": "이미지 {name}을(를) 제거할까요?",
     "docker_remove_image_text": "이미지가 이 컴퓨터에서 삭제됩니다. 나중에 다시 가져올 수 있습니다.",
     "docker_force_remove_image": "강제: 중지된 컨테이너가 아직 사용 중",
+    "docker_also_remove_named_volumes": "이름이 있는 볼륨도 삭제",
     "docker_prune_images_title": "태그 없는 이미지를 정리할까요?",
     "tpl_docker_prune_images_text": "삭제할 태그 없는 이미지: {count}개. 태그가 없고 사용하는 컨테이너도 없습니다.",
     "tpl_docker_remove_volume_title": "볼륨 {name}을(를) 제거할까요?",

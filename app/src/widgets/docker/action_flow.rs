@@ -97,7 +97,8 @@ pub(super) fn open_row_menu(
 
 /// Ask to prune the open list, with the count of what goes: the stopped
 /// containers (created, exited or dead), the dangling images no container
-/// uses, the volumes no container uses, or the user networks no container
+/// uses, the anonymous volumes no container uses (the dialog switch adds the
+/// named ones), or the user networks no container
 /// is connected to. Nothing opens while a prune of that list runs.
 pub(super) fn prune(state: &mut DockerState) -> Task<DockerEvent> {
     let (Some(place), Some(engine)) = (state.place(), state.open_engine())
@@ -109,6 +110,8 @@ pub(super) fn prune(state: &mut DockerState) -> Task<DockerEvent> {
         return Task::none();
     }
 
+    let mut switch = None;
+    let mut count_if_on = None;
     let (action, count) = match resource {
         ResourceKind::Containers => (
             EngineAction::PruneContainers,
@@ -118,10 +121,18 @@ pub(super) fn prune(state: &mut DockerState) -> Task<DockerEvent> {
             EngineAction::PruneImages,
             count(engine.images().items(), is_prunable_image),
         ),
-        ResourceKind::Volumes => (
-            EngineAction::PruneVolumes,
-            count(engine.volumes().items(), is_unused_volume),
-        ),
+        ResourceKind::Volumes => {
+            // Named volumes stay unless the dialog switch is turned on.
+            switch = Some(false);
+            count_if_on =
+                Some(count(engine.volumes().items(), is_unused_volume));
+            (
+                EngineAction::PruneVolumes {
+                    include_named: false,
+                },
+                count(engine.volumes().items(), is_unused_anonymous_volume),
+            )
+        },
         ResourceKind::Networks => (
             EngineAction::PruneNetworks,
             count(engine.networks().items(), is_unused_network),
@@ -130,7 +141,10 @@ pub(super) fn prune(state: &mut DockerState) -> Task<DockerEvent> {
     let request =
         ActionRequest::new(engine.info().clone(), action, String::new());
 
-    state.open_confirm(Confirm::new(request, None, count));
+    let confirm = Confirm::new(request, switch, count)
+        .with_count_if_on(count_if_on.unwrap_or(count));
+
+    state.open_confirm(confirm);
     Task::none()
 }
 
@@ -279,9 +293,15 @@ fn is_prunable_image(image: &Image) -> bool {
     image.is_dangling() && image.containers() == 0
 }
 
-/// Whether a volume prune removes `volume`.
+/// Whether a volume prune that includes named volumes removes `volume`.
 fn is_unused_volume(volume: &Volume) -> bool {
     volume.containers().is_empty()
+}
+
+/// Whether the default volume prune removes `volume`: unused and
+/// anonymous.
+fn is_unused_anonymous_volume(volume: &Volume) -> bool {
+    volume.is_anonymous() && is_unused_volume(volume)
 }
 
 /// Whether a network prune removes `network`.
@@ -973,7 +993,6 @@ mod tests {
     fn each_list_prunes_after_confirming_with_its_count() {
         let cases = [
             (ResourceKind::Images, EngineAction::PruneImages, 1),
-            (ResourceKind::Volumes, EngineAction::PruneVolumes, 2),
             (ResourceKind::Networks, EngineAction::PruneNetworks, 1),
         ];
 
@@ -999,5 +1018,70 @@ mod tests {
 
             assert_eq!(effects, vec![run(action, "")], "{resource:?}");
         }
+    }
+
+    fn open_volume_prune(state: &mut DockerState) {
+        load_idle(state);
+        let _ = reduce(
+            state,
+            DockerIntent::Open(Place::new(
+                docker().address().clone(),
+                ResourceKind::Volumes,
+            )),
+        );
+        let _ = reduce(state, DockerIntent::Prune);
+    }
+
+    #[test]
+    fn volume_prune_keeps_named_volumes_by_default() {
+        let mut state = loaded_state();
+        open_volume_prune(&mut state);
+
+        assert_eq!(state.confirm().and_then(Confirm::switch), Some(false));
+        assert_eq!(state.confirm().map(Confirm::count), Some(1));
+        let effects =
+            effects(reduce(&mut state, DockerIntent::ConfirmAccepted));
+
+        assert_eq!(
+            effects,
+            vec![run(
+                EngineAction::PruneVolumes {
+                    include_named: false
+                },
+                ""
+            )]
+        );
+    }
+
+    #[test]
+    fn volume_prune_switch_adds_named_volumes_and_their_count() {
+        let mut state = loaded_state();
+        open_volume_prune(&mut state);
+
+        let _ = reduce(&mut state, DockerIntent::ConfirmSwitchToggled(true));
+        assert_eq!(state.confirm().map(Confirm::count), Some(2));
+        let effects =
+            effects(reduce(&mut state, DockerIntent::ConfirmAccepted));
+
+        assert_eq!(
+            effects,
+            vec![run(
+                EngineAction::PruneVolumes {
+                    include_named: true
+                },
+                ""
+            )]
+        );
+    }
+
+    #[test]
+    fn volume_prune_count_goes_back_when_the_switch_is_turned_off() {
+        let mut state = loaded_state();
+        open_volume_prune(&mut state);
+
+        let _ = reduce(&mut state, DockerIntent::ConfirmSwitchToggled(true));
+        let _ = reduce(&mut state, DockerIntent::ConfirmSwitchToggled(false));
+
+        assert_eq!(state.confirm().map(Confirm::count), Some(1));
     }
 }

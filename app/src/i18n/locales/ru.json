@@ -202,6 +202,7 @@
     "tpl_docker_remove_image_title": "Удалить образ {name}?",
     "docker_remove_image_text": "Образ будет удалён с этого компьютера. Позже его можно загрузить заново.",
     "docker_force_remove_image": "Принудительно: его ещё использует остановленный контейнер",
+    "docker_also_remove_named_volumes": "Также удалить именованные тома",
     "docker_prune_images_title": "Очистить образы без тега?",
     "tpl_docker_prune_images_text": "Образов без тега к удалению: {count}. У них нет тега, и их не использует ни один контейнер.",
     "tpl_docker_remove_volume_title": "Удалить том {name}?",

@@ -80,8 +80,11 @@ pub(crate) enum EngineAction {
     },
     /// Remove the volume with this name.
     RemoveVolume(String),
-    /// Remove every volume no container uses.
-    PruneVolumes,
+    /// Remove the anonymous volumes no container uses; `include_named` adds
+    /// the named ones.
+    PruneVolumes {
+        include_named: bool,
+    },
     CreateNetwork {
         name: String,
         driver: String,
@@ -101,7 +104,7 @@ impl EngineAction {
             },
             Self::CreateVolume { .. }
             | Self::RemoveVolume(_)
-            | Self::PruneVolumes => ResourceKind::Volumes,
+            | Self::PruneVolumes { .. } => ResourceKind::Volumes,
             Self::CreateNetwork { .. }
             | Self::RemoveNetwork(_)
             | Self::PruneNetworks => ResourceKind::Networks,
@@ -140,7 +143,7 @@ impl EngineAction {
             Self::PruneImages => Key::TplDockerPruneImagesFailed,
             Self::CreateVolume { .. } => Key::TplDockerCreateVolumeFailed,
             Self::RemoveVolume(_) => Key::TplDockerRemoveVolumeFailed,
-            Self::PruneVolumes => Key::TplDockerPruneVolumesFailed,
+            Self::PruneVolumes { .. } => Key::TplDockerPruneVolumesFailed,
             Self::CreateNetwork { .. } => Key::TplDockerCreateNetworkFailed,
             Self::RemoveNetwork(_) => Key::TplDockerRemoveNetworkFailed,
             Self::PruneNetworks => Key::TplDockerPruneNetworksFailed,
@@ -148,7 +151,8 @@ impl EngineAction {
     }
 
     /// The same action with the confirmation switch applied: it forces a
-    /// container or image removal. Other actions have no switch.
+    /// container or image removal and adds named volumes to a volume prune.
+    /// Other actions have no switch.
     fn with_switch(self, is_on: bool) -> Self {
         match self {
             Self::RemoveContainer { id, .. } => {
@@ -156,6 +160,9 @@ impl EngineAction {
             },
             Self::RemoveImage { id, .. } => {
                 Self::RemoveImage { id, force: is_on }
+            },
+            Self::PruneVolumes { .. } => Self::PruneVolumes {
+                include_named: is_on,
             },
             other => other,
         }
@@ -222,6 +229,8 @@ pub(crate) struct Confirm {
     switch: Option<bool>,
     /// How many rows a prune deletes.
     count: usize,
+    /// How many rows it deletes with the switch on, when that differs.
+    count_if_on: usize,
 }
 
 impl Confirm {
@@ -235,9 +244,13 @@ impl Confirm {
         self.switch
     }
 
-    /// How many rows a prune deletes.
+    /// How many rows a prune deletes, with the switch as it is now.
     pub(crate) fn count(&self) -> usize {
-        self.count
+        if self.switch == Some(true) {
+            self.count_if_on
+        } else {
+            self.count
+        }
     }
 
     /// Ask to confirm `request`, with a switch in its first state, or
@@ -251,7 +264,14 @@ impl Confirm {
             request,
             switch,
             count,
+            count_if_on: count,
         }
+    }
+
+    /// Set how many rows the prune deletes with the switch on.
+    pub(crate) fn with_count_if_on(mut self, count_if_on: usize) -> Self {
+        self.count_if_on = count_if_on;
+        self
     }
 
     /// Turn the switch on or off; a dialog without a switch keeps none.
@@ -543,7 +563,9 @@ mod tests {
                 driver: id(),
             },
             EngineAction::RemoveVolume(id()),
-            EngineAction::PruneVolumes,
+            EngineAction::PruneVolumes {
+                include_named: false,
+            },
             EngineAction::CreateNetwork {
                 name: id(),
                 driver: id(),
@@ -586,7 +608,13 @@ mod tests {
                 ResourceKind::Volumes,
                 Some("x1"),
             ),
-            (EngineAction::PruneVolumes, ResourceKind::Volumes, None),
+            (
+                EngineAction::PruneVolumes {
+                    include_named: false,
+                },
+                ResourceKind::Volumes,
+                None,
+            ),
             (
                 EngineAction::CreateNetwork {
                     name: id(),

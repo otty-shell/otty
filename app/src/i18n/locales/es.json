@@ -202,6 +202,7 @@
     "tpl_docker_remove_image_title": "¿Eliminar la imagen {name}?",
     "docker_remove_image_text": "La imagen se elimina de este equipo. Puede volver a descargarla más tarde.",
     "docker_force_remove_image": "Forzar: un contenedor detenido aún la usa",
+    "docker_also_remove_named_volumes": "Eliminar también los volúmenes con nombre",
     "docker_prune_images_title": "¿Limpiar las imágenes huérfanas?",
     "tpl_docker_prune_images_text": "Imágenes huérfanas que se eliminarán: {count}. No tienen etiqueta y ningún contenedor las usa.",
     "tpl_docker_remove_volume_title": "¿Eliminar el volumen {name}?",

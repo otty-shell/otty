@@ -202,6 +202,7 @@
     "tpl_docker_remove_image_title": "Supprimer l’image {name} ?",
     "docker_remove_image_text": "L’image est supprimée de cet ordinateur. Vous pourrez la retélécharger plus tard.",
     "docker_force_remove_image": "Forcer : un conteneur arrêté l’utilise encore",
+    "docker_also_remove_named_volumes": "Supprimer aussi les volumes nommés",
     "docker_prune_images_title": "Nettoyer les images orphelines ?",
     "tpl_docker_prune_images_text": "Images orphelines à supprimer : {count}. Elles n’ont pas de tag et aucun conteneur ne les utilise.",
     "tpl_docker_remove_volume_title": "Supprimer le volume {name} ?",

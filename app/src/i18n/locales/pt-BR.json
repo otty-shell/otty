@@ -202,6 +202,7 @@
     "tpl_docker_remove_image_title": "Remover a imagem {name}?",
     "docker_remove_image_text": "A imagem é apagada deste computador. Você pode baixá-la de novo depois.",
     "docker_force_remove_image": "Forçar: um contêiner parado ainda a usa",
+    "docker_also_remove_named_volumes": "Remover também os volumes nomeados",
     "docker_prune_images_title": "Limpar as imagens órfãs?",
     "tpl_docker_prune_images_text": "Imagens órfãs a apagar: {count}. Não têm tag e nenhum contêiner as usa.",
     "tpl_docker_remove_volume_title": "Remover o volume {name}?",

@@ -202,6 +202,7 @@
     "tpl_docker_remove_image_title": "Image {name} entfernen?",
     "docker_remove_image_text": "Das Image wird von diesem Computer gelöscht. Sie können es später erneut laden.",
     "docker_force_remove_image": "Erzwingen: Ein gestoppter Container nutzt es noch",
+    "docker_also_remove_named_volumes": "Auch benannte Volumes entfernen",
     "docker_prune_images_title": "Verwaiste Images bereinigen?",
     "tpl_docker_prune_images_text": "Zu löschende verwaiste Images: {count}. Sie haben kein Tag und kein Container nutzt sie.",
     "tpl_docker_remove_volume_title": "Volume {name} entfernen?",

@@ -202,6 +202,7 @@
     "tpl_docker_remove_image_title": "移除映像檔 {name}？",
     "docker_remove_image_text": "映像檔將從這台電腦刪除。之後可以重新拉取。",
     "docker_force_remove_image": "強制：仍有已停止的容器在使用它",
+    "docker_also_remove_named_volumes": "同時刪除命名磁碟區",
     "docker_prune_images_title": "清理懸空映像檔？",
     "tpl_docker_prune_images_text": "要刪除的懸空映像檔：{count}。它們沒有標籤，也沒有容器在使用。",
     "tpl_docker_remove_volume_title": "移除磁碟區 {name}？",

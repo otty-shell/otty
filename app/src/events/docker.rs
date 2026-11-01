@@ -157,7 +157,9 @@ async fn run_action(request: ActionRequest) -> Result<(), String> {
             engine.create_volume(name, driver).await
         },
         EngineAction::RemoveVolume(name) => engine.remove_volume(name).await,
-        EngineAction::PruneVolumes => engine.prune_volumes().await,
+        EngineAction::PruneVolumes { include_named } => {
+            engine.prune_volumes(*include_named).await
+        },
         EngineAction::CreateNetwork { name, driver } => {
             engine.create_network(name, driver).await
         },

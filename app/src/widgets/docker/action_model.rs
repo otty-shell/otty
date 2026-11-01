@@ -164,11 +164,19 @@ pub(crate) fn confirm_dialog(state: &DockerState) -> Option<ConfirmViewModel> {
             Key::TplDockerPruneImagesText,
             confirm.count(),
         ),
-        EngineAction::PruneVolumes => prune_texts(
-            Key::DockerPruneVolumesTitle,
-            Key::TplDockerPruneVolumesText,
-            confirm.count(),
-        ),
+        EngineAction::PruneVolumes { .. } => {
+            let (title, text, _, confirm_key) = prune_texts(
+                Key::DockerPruneVolumesTitle,
+                Key::TplDockerPruneVolumesText,
+                confirm.count(),
+            );
+            (
+                title,
+                text,
+                Some(Key::DockerAlsoRemoveNamedVolumes),
+                confirm_key,
+            )
+        },
         EngineAction::PruneNetworks => prune_texts(
             Key::DockerPruneNetworksTitle,
             Key::TplDockerPruneNetworksText,
@@ -643,12 +651,6 @@ mod tests {
                 1,
             ),
             (
-                ResourceKind::Volumes,
-                Key::DockerPruneVolumesTitle,
-                Key::TplDockerPruneVolumesText,
-                2,
-            ),
-            (
                 ResourceKind::Networks,
                 Key::DockerPruneNetworksTitle,
                 Key::TplDockerPruneNetworksText,
@@ -703,5 +705,36 @@ mod tests {
 
         assert_eq!(enabled, vec![false, true, true, true]);
         assert!(!can_create(&DockerState::default()));
+    }
+
+    #[test]
+    fn volume_prune_dialog_has_the_named_volumes_switch_off_and_counts_with_it()
+    {
+        let mut state = loaded_state();
+        load_idle(&mut state);
+        open(&mut state, ResourceKind::Volumes);
+        let _ = reduce(&mut state, DockerIntent::Prune);
+
+        let off = confirm_dialog(&state).expect("an open dialog");
+        let _ = reduce(&mut state, DockerIntent::ConfirmSwitchToggled(true));
+        let on = confirm_dialog(&state).expect("an open dialog");
+
+        assert_eq!(off.title, i18n::t(Key::DockerPruneVolumesTitle));
+        assert_eq!(
+            off.switch,
+            Some((i18n::t(Key::DockerAlsoRemoveNamedVolumes), false))
+        );
+        assert_eq!(
+            off.text,
+            i18n::with_count(Key::TplDockerPruneVolumesText, 1)
+        );
+        assert_eq!(
+            on.switch,
+            Some((i18n::t(Key::DockerAlsoRemoveNamedVolumes), true))
+        );
+        assert_eq!(
+            on.text,
+            i18n::with_count(Key::TplDockerPruneVolumesText, 2)
+        );
     }
 }

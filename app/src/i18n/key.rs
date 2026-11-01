@@ -427,6 +427,8 @@ pub(crate) enum Key {
     DockerRemoveImageText,
     /// Switch in the remove image dialog when a container uses the image.
     DockerForceRemoveImage,
+    /// Switch in the prune volumes dialog: remove named unused volumes too.
+    DockerAlsoRemoveNamedVolumes,
     /// Title of the prune dangling images dialog.
     DockerPruneImagesTitle,
     /// Text of the prune dangling images dialog. Placeholder: `{count}`.
@@ -739,7 +741,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 340] = [
+    pub(super) const ALL: [Self; 341] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -935,6 +937,7 @@ impl Key {
         Self::TplDockerRemoveImageTitle,
         Self::DockerRemoveImageText,
         Self::DockerForceRemoveImage,
+        Self::DockerAlsoRemoveNamedVolumes,
         Self::DockerPruneImagesTitle,
         Self::TplDockerPruneImagesText,
         Self::TplDockerRemoveVolumeTitle,
