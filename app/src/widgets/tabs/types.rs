@@ -45,7 +45,6 @@ impl TabMachine {
 
 /// Metadata for a single tab entry.
 pub(crate) struct TabItem {
-    id: u64,
     title: String,
     /// Folder name of the focused pane; `None` for other tabs or before the
     /// shell reports one.
@@ -55,11 +54,6 @@ pub(crate) struct TabItem {
 }
 
 impl TabItem {
-    /// Return tab identifier.
-    pub(crate) fn id(&self) -> u64 {
-        self.id
-    }
-
     /// Return tab title shown in the session list and the title bar.
     pub(crate) fn title(&self) -> &str {
         &self.title
@@ -80,16 +74,13 @@ impl TabItem {
         &self.machine
     }
 
-    /// Create tab metadata with immutable identity, content kind and
-    /// machine.
+    /// Create tab metadata with its content kind and machine.
     pub(crate) fn new(
-        id: u64,
         title: String,
         content: TabContent,
         machine: TabMachine,
     ) -> Self {
         Self {
-            id,
             title,
             folder: None,
             content,

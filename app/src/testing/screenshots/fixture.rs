@@ -74,10 +74,7 @@ impl Fixture {
                 TabMachine::ThisComputer,
             ),
         ] {
-            tabs.insert(
-                id,
-                TabItem::new(id, title.to_string(), content, machine),
-            );
+            tabs.insert(id, TabItem::new(title.to_string(), content, machine));
         }
 
         let launches = launch_file();
@@ -176,7 +173,6 @@ fn many_tabs() -> BTreeMap<u64, TabItem> {
                 _ => TabMachine::Ssh(String::from("build-box")),
             };
             let tab = TabItem::new(
-                id,
                 format!("shell {id}"),
                 TabContent::Terminal,
                 machine,
@@ -190,7 +186,6 @@ fn many_tabs() -> BTreeMap<u64, TabItem> {
 /// The "zsh" terminal tab alone: the Sessions section with one row.
 fn one_tab() -> BTreeMap<u64, TabItem> {
     let tab = TabItem::new(
-        TAB_ZSH,
         String::from("zsh"),
         TabContent::Terminal,
         TabMachine::ThisComputer,

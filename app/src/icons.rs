@@ -10,11 +10,6 @@ pub(crate) const WINDOW_CLOSE: &[u8] =
 /// Plus on the New session and New launch buttons.
 pub(crate) const ADD_TAB_HEADER: &[u8] =
     include_bytes!("../../assets/svg/add-tab.svg");
-/// A folder in a tree.
-pub(crate) const FOLDER: &[u8] = include_bytes!("../../assets/svg/folder.svg");
-/// An expanded folder in a tree.
-pub(crate) const FOLDER_OPENED: &[u8] =
-    include_bytes!("../../assets/svg/folder-opened.svg");
 /// A folder in the Launches tree.
 pub(crate) const FOLDER_CLOSED: &[u8] =
     include_bytes!("../../assets/svg/folder-closed.svg");

@@ -1,7 +1,3 @@
-// Allow dead_code during incremental build: views, models, and accessors are
-// defined ahead of full view composition (wired in Phase 4/5).
-#![allow(dead_code)]
-
 mod app;
 mod components;
 mod domain;

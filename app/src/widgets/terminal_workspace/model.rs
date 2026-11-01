@@ -6,7 +6,6 @@ use iced::widget::pane_grid;
 use otty_ui_kit::components::target_dot::TargetKind;
 
 use super::services;
-use super::state::PaneContextMenuState;
 use super::types::TerminalEntry;
 
 /// Longest folder path, counted after `~` or `/`, shown in full.
@@ -21,8 +20,6 @@ pub(crate) struct TerminalTabViewModel<'a> {
     pub(crate) panes: &'a pane_grid::State<u64>,
     pub(crate) terminals: &'a HashMap<u64, TerminalEntry>,
     pub(crate) focus: Option<pane_grid::Pane>,
-    pub(crate) context_menu: Option<&'a PaneContextMenuState>,
-    pub(crate) has_block_selection: bool,
     /// Name shown in the machine chip of every pane header: this
     /// computer's host name or the SSH host.
     pub(crate) machine: &'a str,

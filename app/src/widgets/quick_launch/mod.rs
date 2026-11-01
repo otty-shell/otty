@@ -27,13 +27,6 @@ pub(crate) struct QuickLaunchWidget {
 }
 
 impl QuickLaunchWidget {
-    /// Create a new widget with default state.
-    pub(crate) fn new() -> Self {
-        Self {
-            state: QuickLaunchState::default(),
-        }
-    }
-
     /// Create a widget by loading persisted state from disk.
     pub(crate) fn load() -> Self {
         Self {
@@ -119,11 +112,5 @@ impl QuickLaunchWidget {
     /// Return whether inline edit is active.
     pub(crate) fn has_inline_edit(&self) -> bool {
         self.state.inline_edit().is_some()
-    }
-
-    /// Return read-only access to state for tests.
-    #[cfg(test)]
-    pub(crate) fn state(&self) -> &QuickLaunchState {
-        &self.state
     }
 }

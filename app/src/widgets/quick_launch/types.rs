@@ -148,10 +148,6 @@ impl SshCommand {
     pub(crate) fn identity_file(&self) -> Option<&str> {
         self.identity_file.as_deref()
     }
-
-    pub(crate) fn extra_args(&self) -> &[String] {
-        &self.extra_args
-    }
 }
 
 /// Top-level persistence structure for quick launches.
@@ -270,10 +266,6 @@ pub(crate) struct QuickLaunchFolder {
 }
 
 impl QuickLaunchFolder {
-    pub(crate) fn title(&self) -> &str {
-        &self.title
-    }
-
     pub(crate) fn is_expanded(&self) -> bool {
         self.expanded
     }

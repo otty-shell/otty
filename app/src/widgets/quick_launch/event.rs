@@ -2,7 +2,7 @@ use iced::Point;
 
 use super::types::{
     ContextMenuAction, NodePath, QuickLaunch, QuickLaunchSetupOutcome,
-    QuickLaunchType, QuickLaunchWizardSaveRequest,
+    QuickLaunchType,
 };
 use crate::domain::exit_behavior::ExitBehavior;
 
@@ -47,7 +47,6 @@ pub(crate) enum QuickLaunchIntent {
     // Header actions
     HeaderCreateFolder,
     HeaderCreateCommand,
-    DeleteSelected,
 
     // Tab lifecycle
     OpenErrorTab {
@@ -74,10 +73,6 @@ pub(crate) enum QuickLaunchIntent {
     },
     WizardSave {
         tab_id: u64,
-    },
-    WizardSetError {
-        tab_id: u64,
-        message: String,
     },
     WizardUpdateTitle {
         tab_id: u64,
@@ -168,7 +163,6 @@ pub(crate) enum QuickLaunchIntent {
 
     // Async completions
     SetupCompleted(QuickLaunchSetupOutcome),
-    WizardSaveRequested(QuickLaunchWizardSaveRequest),
     PersistCompleted,
     PersistFailed(String),
     Tick,

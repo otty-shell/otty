@@ -24,8 +24,7 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             match event {
                 E::HeaderMenuDismiss => Allow,
                 E::HeaderMenuOpen(_) => Ignore,
-                E::WorkspaceCursorMoved { .. }
-                | E::PaneGridCursorMoved { .. } => Allow,
+                E::WorkspaceCursorMoved { .. } => Allow,
                 // Frames come on their own while the focus mode note fades.
                 E::FocusNoteFrame(_) => Allow,
                 _ => Dismiss,
@@ -45,8 +44,7 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 E::Tick
                 | E::PersistCompleted
                 | E::PersistFailed(_)
-                | E::SetupCompleted(_)
-                | E::WizardSaveRequested(_) => Allow,
+                | E::SetupCompleted(_) => Allow,
                 _ => Ignore,
             }
         },
@@ -172,7 +170,6 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
                     | E::PersistCompleted
                     | E::PersistFailed(_)
                     | E::Tick
-                    | E::WizardSaveRequested(_)
             )
         },
         AppEvent::QuickLaunch(
@@ -184,9 +181,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             use crate::widgets::sidebar::SidebarIntent as E;
             !matches!(
                 event,
-                E::WorkspaceCursorMoved { .. }
-                    | E::PaneGridCursorMoved { .. }
-                    | E::FocusNoteFrame(_)
+                E::WorkspaceCursorMoved { .. } | E::FocusNoteFrame(_)
             )
         },
         AppEvent::TerminalWorkspace(

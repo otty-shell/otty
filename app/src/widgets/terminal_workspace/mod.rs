@@ -75,19 +75,12 @@ impl TerminalWorkspaceWidget {
                 panes: tab.panes(),
                 terminals: tab.terminals(),
                 focus: tab.focus(),
-                context_menu: tab.context_menu(),
-                has_block_selection: tab.selected_block().is_some(),
                 machine,
                 machine_target,
             },
         );
 
         TerminalWorkspaceViewModel { tab }
-    }
-
-    /// Return read-only access to a tab state.
-    pub(crate) fn tab(&self, tab_id: u64) -> Option<&TerminalTabState> {
-        self.state.tab(tab_id)
     }
 
     /// Iterate all terminal tabs.
@@ -153,17 +146,13 @@ impl TerminalWorkspaceWidget {
     pub(crate) fn pane_count(&self, tab_id: Option<u64>) -> Option<usize> {
         self.state.tab(tab_id?).map(|tab| tab.panes().len())
     }
+}
 
-    /// Return read-only access to state for tests.
-    #[cfg(test)]
-    pub(crate) fn state(&self) -> &TerminalWorkspaceState {
-        &self.state
-    }
-
-    /// Return the terminal-to-tab index for tests.
-    #[cfg(test)]
-    pub(crate) fn terminal_tab_id(&self, terminal_id: u64) -> Option<u64> {
-        self.terminal_to_tab.get(&terminal_id).copied()
+#[cfg(test)]
+impl TerminalWorkspaceWidget {
+    /// Return read-only access to a tab state.
+    pub(crate) fn tab(&self, tab_id: u64) -> Option<&TerminalTabState> {
+        self.state.tab(tab_id)
     }
 }
 

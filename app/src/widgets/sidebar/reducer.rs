@@ -51,10 +51,6 @@ pub(crate) fn reduce(
             state.update_cursor(position);
             Task::none()
         },
-        SidebarIntent::PaneGridCursorMoved { position } => {
-            state.update_cursor(position);
-            Task::none()
-        },
         SidebarIntent::Resized(event) => {
             state.mark_resizing();
             let mut tasks = vec![Task::done(SidebarEvent::Effect(
@@ -681,7 +677,7 @@ mod tests {
 
         let _events = reduce(
             &mut widget,
-            SidebarIntent::PaneGridCursorMoved { position: expected },
+            SidebarIntent::WorkspaceCursorMoved { position: expected },
         );
 
         assert_eq!(widget.cursor(), expected);

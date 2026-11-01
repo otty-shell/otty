@@ -225,7 +225,6 @@ mod tests {
             (
                 0,
                 TabItem::new(
-                    0,
                     String::from("zsh"),
                     TabContent::Terminal,
                     TabMachine::ThisComputer,
@@ -234,7 +233,6 @@ mod tests {
             (
                 1,
                 TabItem::new(
-                    1,
                     String::from("htop"),
                     TabContent::Terminal,
                     TabMachine::Ssh(String::from("laptop")),
@@ -243,7 +241,6 @@ mod tests {
             (
                 2,
                 TabItem::new(
-                    2,
                     String::from("Settings"),
                     TabContent::Settings,
                     TabMachine::ThisComputer,

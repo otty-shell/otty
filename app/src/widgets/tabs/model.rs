@@ -110,7 +110,7 @@ mod tests {
         content: TabContent,
         machine: TabMachine,
     ) -> (u64, TabItem) {
-        (id, TabItem::new(id, String::from(title), content, machine))
+        (id, TabItem::new(String::from(title), content, machine))
     }
 
     fn local_shell(id: u64, title: &str) -> (u64, TabItem) {

@@ -124,10 +124,6 @@ impl QuickLaunchState {
         self.selected_path.as_ref()
     }
 
-    pub(crate) fn selected_path_cloned(&self) -> Option<NodePath> {
-        self.selected_path.clone()
-    }
-
     pub(super) fn set_selected_path(&mut self, path: Option<NodePath>) {
         self.selected_path = path;
     }
@@ -541,15 +537,6 @@ impl WizardState {
 
     pub(super) fn remove_tab(&mut self, tab_id: u64) {
         self.editors.remove(&tab_id);
-    }
-
-    #[cfg(test)]
-    pub(super) fn set_editor(
-        &mut self,
-        tab_id: u64,
-        editor: WizardEditorState,
-    ) {
-        self.editors.insert(tab_id, editor);
     }
 }
 

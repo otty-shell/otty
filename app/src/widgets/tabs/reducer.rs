@@ -97,7 +97,6 @@ fn open_terminal_tab(state: &mut TabsState, title: String) -> Task<TabsEvent> {
     state.insert(
         tab_id,
         TabItem::new(
-            tab_id,
             title.clone(),
             TabContent::Terminal,
             TabMachine::ThisComputer,
@@ -125,7 +124,7 @@ fn open_command_tab(
 
     state.insert(
         tab_id,
-        TabItem::new(tab_id, title.clone(), TabContent::Terminal, machine),
+        TabItem::new(title.clone(), TabContent::Terminal, machine),
     );
     state.activate(Some(tab_id));
 
@@ -149,7 +148,6 @@ fn open_wizard_tab(
     state.insert(
         tab_id,
         TabItem::new(
-            tab_id,
             title,
             TabContent::QuickLaunchWizard,
             TabMachine::ThisComputer,
@@ -174,7 +172,6 @@ fn open_error_tab(
     state.insert(
         tab_id,
         TabItem::new(
-            tab_id,
             title.clone(),
             TabContent::QuickLaunchError,
             TabMachine::ThisComputer,
@@ -204,7 +201,6 @@ fn open_settings_tab(state: &mut TabsState) -> Task<TabsEvent> {
     state.insert(
         tab_id,
         TabItem::new(
-            tab_id,
             i18n::t(Key::SettingsTabTitle).to_string(),
             TabContent::Settings,
             TabMachine::ThisComputer,
@@ -494,7 +490,7 @@ mod tests {
         let active = state.active_tab().expect("should have active tab");
         assert_eq!(active.title(), "New launch");
         assert_eq!(active.content(), TabContent::QuickLaunchWizard);
-        let tab_id = active.id();
+        let tab_id = state.active_tab_id().expect("should have active tab");
         assert!(events.iter().any(|event| matches!(
             event,
             TabsEvent::Effect(TabsEffect::WizardTabOpened {
@@ -521,7 +517,7 @@ mod tests {
         let active = state.active_tab().expect("should have active tab");
         assert_eq!(active.title(), "Launch failed");
         assert_eq!(active.content(), TabContent::QuickLaunchError);
-        let tab_id = active.id();
+        let tab_id = state.active_tab_id().expect("should have active tab");
         assert!(events.iter().any(|event| matches!(
             event,
             TabsEvent::Effect(TabsEffect::ErrorTabOpened {
