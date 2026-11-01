@@ -226,7 +226,7 @@ enum Message {
     Palette(PaletteAction),
     InspectorTab(&'static str),
     Log(text_editor::Action),
-    ToggleFollow,
+    Follow(bool),
     AppendLog,
 
     TableRow(usize),
@@ -283,8 +283,7 @@ fn update(state: &mut Gallery, message: Message) {
         Message::ToggleMenu => state.menu_open = !state.menu_open,
         Message::InspectorTab(tab) => state.inspector_tab = tab,
         Message::Log(action) => state.log.perform(action),
-        Message::ToggleFollow => {
-            let is_following = !state.log.is_following();
+        Message::Follow(is_following) => {
             state.log.set_following(is_following);
         },
         Message::AppendLog => {
@@ -733,21 +732,24 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .spacing(spacing::SPACE_4),
     )
     .width(320);
-    let follow_label = if state.log.is_following() {
-        "Following: on".to_owned()
-    } else {
-        format!("Following: off ({} held back)", state.log.pending_count())
+    let waiting = match state.log.pending_count() {
+        0 => String::new(),
+        1 => "1 new line".to_owned(),
+        count => format!("{count} new lines"),
     };
     let log_view = column![
         row![
-            Button::new(follow_label, p)
-                .size(ButtonSize::Small)
-                .on_press(Message::ToggleFollow),
             Button::new("Add line", p)
                 .size(ButtonSize::Small)
                 .on_press(Message::AppendLog),
+            Space::new().width(Length::Fill),
+            text(waiting).size(12).color(p.text_muted()),
+            Switch::new(state.log.is_following(), p)
+                .label("Follow")
+                .on_toggle(Message::Follow),
         ]
-        .spacing(spacing::SPACE_3),
+        .spacing(spacing::SPACE_3)
+        .align_y(iced::Alignment::Center),
         LogView::new(&state.log, p)
             .height(200)
             .on_action(Message::Log),
@@ -979,7 +981,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section(
-            "LogView (follow toggle and Add line are gallery only)",
+            "LogView with the Follow switch (Add line is gallery only)",
             container(log_view).width(480).into(),
             p,
         ),

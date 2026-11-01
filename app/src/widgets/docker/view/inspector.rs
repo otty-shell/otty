@@ -2,15 +2,17 @@
 //! with its action buttons, its tabs (Overview, Logs, Inspect) and the open
 //! tab.
 
-use iced::widget::{column, container, scrollable, svg, text};
-use iced::{Element, Length, Padding};
+use iced::widget::text::IntoFragment;
+use iced::widget::{Row, column, container, row, scrollable, svg, text};
+use iced::{Alignment, Element, Length, Padding};
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::inspector_header::InspectorHeader;
 use otty_ui_kit::components::inspector_tabs::inspector_tabs;
 use otty_ui_kit::components::key_value_list::KeyValueList;
-use otty_ui_kit::components::log_view::LogView;
+use otty_ui_kit::components::log_view::{LogView, LogViewState};
 use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::status_badge::StatusBadge;
+use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
@@ -116,7 +118,17 @@ fn tab_body<'a>(
             scrollable(list).height(Length::Fill).into()
         },
         TabContent::Logs { lines, error } => {
-            let mut body = column![hint(i18n::t(Key::DockerLogsHint), palette)]
+            let mut header = row![
+                container(hint(i18n::t(Key::DockerLogsHint), palette))
+                    .width(Length::Fill)
+            ]
+            .spacing(spacing::SPACE_3)
+            .align_y(Alignment::Center);
+            if let Some(lines) = lines {
+                header = log_follow(header, lines, palette);
+            }
+
+            let mut body = column![header]
                 .spacing(spacing::SPACE_3)
                 .height(Length::Fill);
             if let Some(error) = error {
@@ -147,9 +159,29 @@ fn tab_body<'a>(
     }
 }
 
+/// Add to the logs header how many lines wait (while Follow is off and some
+/// do) and the Follow switch.
+fn log_follow<'a>(
+    mut header: Row<'a, DockerIntent>,
+    lines: &LogViewState,
+    palette: &UiPalette,
+) -> Row<'a, DockerIntent> {
+    let waiting = lines.pending_count();
+    if !lines.is_following() && waiting > 0 {
+        header =
+            header.push(hint(i18n::docker_logs_new_lines(waiting), palette));
+    }
+
+    header.push(
+        Switch::new(lines.is_following(), palette)
+            .label(i18n::t(Key::DockerLogsFollow))
+            .on_toggle(DockerIntent::LogFollowToggled),
+    )
+}
+
 /// A muted small line of text.
 fn hint<'a>(
-    message: &'a str,
+    message: impl IntoFragment<'a>,
     palette: &UiPalette,
 ) -> Element<'a, DockerIntent> {
     let style = typography::SMALL;
@@ -318,6 +350,91 @@ mod tests {
         ui.find(i18n::t(Key::DockerLogsHint)).expect("hint");
         ui.find(i18n::docker_logs_failed("stream closed"))
             .expect("error notice");
+    }
+
+    #[test]
+    fn pressing_follow_in_the_logs_tab_asks_to_turn_it_off() {
+        let themes = ThemeManager::new();
+        let mut lines = LogViewState::new();
+        lines.push_lines(["ready"]);
+        let mut ui = simulator(view(InspectorProps {
+            vm: header(),
+            actions: None,
+            tabs: container_tabs(
+                InspectorTab::Logs,
+                TabContent::Logs {
+                    lines: Some(&lines),
+                    error: None,
+                },
+            ),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(i18n::t(Key::DockerLogsFollow))
+            .expect("follow should show");
+
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            vec![DockerIntent::LogFollowToggled(false)]
+        );
+    }
+
+    #[test]
+    fn with_follow_off_the_logs_tab_counts_the_waiting_lines() {
+        let mut themes = ThemeManager::new();
+        let mut lines = LogViewState::new();
+        lines.push_lines(["ready"]);
+        lines.set_following(false);
+        let waiting: Vec<String> =
+            (0..12).map(|n| format!("line {n}")).collect();
+        lines.push_lines(waiting);
+
+        for theme in BuiltinTheme::ALL {
+            themes.set_theme(theme);
+            let mut ui = simulator(view(InspectorProps {
+                vm: header(),
+                actions: None,
+                tabs: container_tabs(
+                    InspectorTab::Logs,
+                    TabContent::Logs {
+                        lines: Some(&lines),
+                        error: None,
+                    },
+                ),
+                theme: ThemeProps::new(themes.current()),
+            }));
+
+            ui.find(i18n::docker_logs_new_lines(12))
+                .expect("the waiting counter should show");
+            ui.click(i18n::t(Key::DockerLogsFollow))
+                .expect("follow should show");
+            assert_eq!(
+                ui.into_messages().collect::<Vec<_>>(),
+                vec![DockerIntent::LogFollowToggled(true)]
+            );
+        }
+    }
+
+    #[test]
+    fn while_following_the_logs_tab_shows_no_waiting_counter() {
+        let themes = ThemeManager::new();
+        let mut lines = LogViewState::new();
+        lines.push_lines(["ready"]);
+        let mut ui = simulator(view(InspectorProps {
+            vm: header(),
+            actions: None,
+            tabs: container_tabs(
+                InspectorTab::Logs,
+                TabContent::Logs {
+                    lines: Some(&lines),
+                    error: None,
+                },
+            ),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        assert!(ui.find(i18n::docker_logs_new_lines(0)).is_err());
+        assert!(ui.find(i18n::docker_logs_new_lines(1)).is_err());
     }
 
     #[test]

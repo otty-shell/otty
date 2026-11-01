@@ -53,6 +53,8 @@ pub(crate) enum DockerIntent {
     LogsFailed { target: LogTarget, message: String },
     /// Selection or scroll in the log view.
     LogAction(Action),
+    /// The Follow switch of the logs was turned on or off.
+    LogFollowToggled(bool),
     /// The inspect JSON of a row arrived, or the engine's message.
     InspectLoaded {
         target: InspectTarget,

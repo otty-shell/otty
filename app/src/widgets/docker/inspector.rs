@@ -283,10 +283,20 @@ impl InspectorState {
         true
     }
 
-    /// Apply a selection or scroll action of the log view.
+    /// Apply a selection or scroll action of the log view. Scrolling up
+    /// turns Follow off.
     pub(super) fn perform_log_action(&mut self, action: Action) {
         if let Some(logs) = self.logs.as_mut() {
             logs.lines.perform(action);
+        }
+    }
+
+    /// Turn Follow of the followed logs on or off. Off, new lines wait; on,
+    /// they are added and the view goes to the bottom. New logs start with
+    /// Follow on, so a tab, selection or mode change resets it.
+    pub(super) fn set_log_following(&mut self, is_following: bool) {
+        if let Some(logs) = self.logs.as_mut() {
+            logs.lines.set_following(is_following);
         }
     }
 

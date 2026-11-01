@@ -89,6 +89,10 @@ fn reduce_intent(
             state.inspector_mut().perform_log_action(action);
             Task::none()
         },
+        DockerIntent::LogFollowToggled(is_following) => {
+            state.inspector_mut().set_log_following(is_following);
+            Task::none()
+        },
         DockerIntent::InspectLoaded { target, result } => {
             if !state.inspector_mut().finish_inspect(&target, result) {
                 log::debug!("docker inspect of a row no longer shown");
@@ -294,9 +298,11 @@ fn effect(effect: DockerEffect) -> Task<DockerEvent> {
 
 #[cfg(test)]
 mod tests {
+    use iced::widget::text_editor::Action;
     use otty_docker::{
         Container, EngineInfo, EngineKind, Image, Network, Volume, fixtures,
     };
+    use otty_ui_kit::components::log_view::LogViewState;
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
@@ -1024,6 +1030,137 @@ mod tests {
         let text = logs.lines().text();
         assert!(text.starts_with("line 100\n"), "{}", &text[..20]);
         assert!(text.ends_with("line 5099"));
+    }
+
+    fn log_view(state: &DockerState) -> &LogViewState {
+        state.inspector().logs().expect("followed logs").lines()
+    }
+
+    fn set_follow(state: &mut DockerState, is_on: bool) {
+        let _ = reduce(state, DockerIntent::LogFollowToggled(is_on));
+    }
+
+    /// The Logs tab of the first container with two lines, Follow off.
+    fn logs_without_follow() -> DockerState {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["one", "two"]);
+        set_follow(&mut state, false);
+        state
+    }
+
+    #[test]
+    fn follow_is_on_when_the_logs_open() {
+        let mut state = loaded_state();
+
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+
+        assert!(log_view(&state).is_following());
+    }
+
+    #[test]
+    fn with_follow_off_new_lines_wait_and_the_view_keeps_its_lines() {
+        let mut state = logs_without_follow();
+
+        push_lines(&mut state, 0, &["three", "four", "five"]);
+
+        let lines = log_view(&state);
+        assert!(!lines.is_following());
+        assert_eq!(lines.text(), "one\ntwo");
+        assert_eq!(lines.pending_count(), 3);
+    }
+
+    #[test]
+    fn turning_follow_on_adds_the_waiting_lines() {
+        let mut state = logs_without_follow();
+        push_lines(&mut state, 0, &["three"]);
+
+        set_follow(&mut state, true);
+
+        let lines = log_view(&state);
+        assert!(lines.is_following());
+        assert_eq!(lines.text(), "one\ntwo\nthree");
+        assert_eq!(lines.pending_count(), 0);
+    }
+
+    #[test]
+    fn scrolling_up_in_the_logs_turns_follow_off() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["one", "two"]);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::LogAction(Action::Scroll { lines: -2 }),
+        );
+        push_lines(&mut state, 0, &["three"]);
+
+        assert!(!log_view(&state).is_following());
+        assert_eq!(log_view(&state).pending_count(), 1);
+    }
+
+    #[test]
+    fn the_5000_line_cap_holds_while_follow_is_off() {
+        let mut state = logs_without_follow();
+        let lines: Vec<String> = (0..MAX_LOG_LINES + 100)
+            .map(|n| format!("line {n}"))
+            .collect();
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::LogLines {
+                target: log_target(0),
+                lines,
+            },
+        );
+        let waiting = log_view(&state).pending_count();
+        set_follow(&mut state, true);
+
+        assert_eq!(waiting, MAX_LOG_LINES);
+        let lines = log_view(&state);
+        assert_eq!(lines.line_count(), MAX_LOG_LINES);
+        let text = lines.text();
+        assert!(text.starts_with("line 100\n"), "{}", &text[..20]);
+        assert!(text.ends_with("line 5099"));
+    }
+
+    #[test]
+    fn follow_is_on_again_after_a_tab_change() {
+        let mut state = logs_without_follow();
+
+        let _ = select_tab(&mut state, InspectorTab::Overview);
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+
+        assert!(log_view(&state).is_following());
+    }
+
+    #[test]
+    fn follow_is_on_again_after_another_container_is_selected() {
+        let mut state = logs_without_follow();
+
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        assert_eq!(followed(&state), Some(container_id(1)));
+        assert!(log_view(&state).is_following());
+    }
+
+    #[test]
+    fn follow_is_on_again_after_a_mode_change() {
+        let mut state = logs_without_follow();
+
+        let _ = reduce(&mut state, DockerIntent::Leave);
+        let _ = reduce(&mut state, DockerIntent::Enter);
+
+        assert!(log_view(&state).is_following());
+    }
+
+    #[test]
+    fn a_follow_toggle_without_followed_logs_changes_nothing() {
+        let mut state = loaded_state();
+
+        set_follow(&mut state, false);
+
+        assert_eq!(followed(&state), None);
     }
 
     #[test]

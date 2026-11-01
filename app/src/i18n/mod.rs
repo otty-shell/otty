@@ -348,6 +348,12 @@ pub(crate) fn docker_logs_failed(error: &str) -> String {
     )
 }
 
+/// Build the count of log lines that wait while Follow is off, e.g.
+/// "1 new line" or "12 new lines".
+pub(crate) fn docker_logs_new_lines(count: usize) -> String {
+    docker_logs_new_lines_in(current_locale(), count)
+}
+
 /// Build the notice shown in the Inspect tab when the JSON did not load.
 pub(crate) fn docker_inspect_failed(error: &str) -> String {
     fill_in(
@@ -579,6 +585,18 @@ fn process_exited_in(locale: Locale, exit_code: Option<i32>) -> String {
     )
 }
 
+fn docker_logs_new_lines_in(locale: Locale, count: usize) -> String {
+    if count == 1 {
+        return text_in(locale, Key::DockerLogsOneNewLine).to_string();
+    }
+
+    fill_in(
+        locale,
+        Key::TplDockerLogsNewLines,
+        &[("count", &format!("{count}"))],
+    )
+}
+
 fn modes_pinned_note_in(locale: Locale, count: usize, limit: usize) -> String {
     fill_in(
         locale,
@@ -659,8 +677,9 @@ fn catalog(locale: Locale) -> &'static Catalog {
 #[cfg(test)]
 mod tests {
     use super::{
-        Catalog, Key, Locale, catalog, fill_in, locale_from_system_preference,
-        modes_pinned_note_in, process_exited_in, text_in,
+        Catalog, Key, Locale, catalog, docker_logs_new_lines_in, fill_in,
+        locale_from_system_preference, modes_pinned_note_in, process_exited_in,
+        text_in,
     };
 
     #[test]
@@ -947,6 +966,7 @@ mod tests {
             (Key::TplDockerPruneNetworksText, ("count", "3")),
             (Key::TplDockerVolumeInUseHint, ("names", "db-1")),
             (Key::TplDockerPulling, ("image", "nginx:latest")),
+            (Key::TplDockerLogsNewLines, ("count", "12")),
         ];
 
         for locale in Locale::ALL {
@@ -1039,6 +1059,14 @@ mod tests {
             ),
             "Could not stop web-1: busy"
         );
+    }
+
+    #[test]
+    fn waiting_log_lines_are_counted_with_one_and_many_forms() {
+        assert_eq!(docker_logs_new_lines_in(Locale::En, 1), "1 new line");
+        assert_eq!(docker_logs_new_lines_in(Locale::En, 12), "12 new lines");
+        assert_eq!(docker_logs_new_lines_in(Locale::Ru, 1), "1 новая строка");
+        assert_eq!(docker_logs_new_lines_in(Locale::Ru, 12), "Новых строк: 12");
     }
 
     #[test]

@@ -139,3 +139,51 @@ impl<'a, Message: Clone + 'a> From<Switch<'a, Message>>
             .into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use iced_test::simulator;
+
+    use super::*;
+
+    #[test]
+    fn given_switch_on_when_label_pressed_then_it_asks_to_turn_off() {
+        for palette in [UiPalette::otty_dark(), UiPalette::otty_light()] {
+            let view: Element<'_, bool> = Switch::new(true, &palette)
+                .label("Follow")
+                .on_toggle(|is_on| is_on)
+                .into();
+            let mut ui = simulator(view);
+
+            ui.click("Follow").expect("label should show");
+
+            assert_eq!(ui.into_messages().collect::<Vec<_>>(), vec![false]);
+        }
+    }
+
+    #[test]
+    fn given_switch_off_when_label_pressed_then_it_asks_to_turn_on() {
+        let palette = UiPalette::otty_dark();
+        let view: Element<'_, bool> = Switch::new(false, &palette)
+            .label("Follow")
+            .on_toggle(|is_on| is_on)
+            .into();
+        let mut ui = simulator(view);
+
+        ui.click("Follow").expect("label should show");
+
+        assert_eq!(ui.into_messages().collect::<Vec<_>>(), vec![true]);
+    }
+
+    #[test]
+    fn given_switch_without_message_when_pressed_then_nothing_is_sent() {
+        let palette = UiPalette::otty_dark();
+        let view: Element<'_, bool> =
+            Switch::new(true, &palette).label("Follow").into();
+        let mut ui = simulator(view);
+
+        ui.click("Follow").expect("label should show");
+
+        assert!(ui.into_messages().next().is_none());
+    }
+}

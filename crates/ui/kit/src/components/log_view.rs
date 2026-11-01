@@ -25,6 +25,7 @@ const SELECTION_OPACITY: f32 = 0.35;
 /// While following, appended lines are added at once and the view stays at
 /// the bottom. While not following, appended lines are held back and the view
 /// does not move; they are added when following is switched on again.
+/// Scrolling up stops following, so the user can read while lines arrive.
 ///
 /// With [`LogViewState::max_lines`] the oldest lines are dropped once there
 /// are more, so a long-running log does not grow without end.
@@ -115,15 +116,23 @@ impl LogViewState {
 
         if is_following {
             self.show_pending();
+            self.move_to_end();
         }
     }
 
     /// Applies a selection, cursor or scroll action from the view. Edits are
-    /// ignored because the log is read-only.
+    /// ignored because the log is read-only. Scrolling up stops following.
     pub fn perform(&mut self, action: Action) {
-        if !action.is_edit() {
-            self.content.perform(action);
+        if action.is_edit() {
+            return;
         }
+
+        if let Action::Scroll { lines } = action
+            && lines < 0
+        {
+            self.is_following = false;
+        }
+        self.content.perform(action);
     }
 
     /// The most lines kept, at least one; `None` keeps every line.
@@ -156,6 +165,15 @@ impl LogViewState {
         self.content.perform(Action::Move(Motion::DocumentEnd));
         self.content
             .perform(Action::Edit(Edit::Paste(Arc::new(text))));
+    }
+
+    /// Moves the cursor to the end, which brings the bottom into view. The
+    /// editor scrolls to the cursor only when the cursor moves, and after the
+    /// user scrolled it may already be at the end, so it goes to the start
+    /// first.
+    fn move_to_end(&mut self) {
+        self.content.perform(Action::Move(Motion::DocumentStart));
+        self.content.perform(Action::Move(Motion::DocumentEnd));
     }
 
     /// Replaces the text with the last `max` of the shown and held-back
@@ -337,6 +355,44 @@ mod tests {
 
         assert_eq!(state.text(), "three\nfour\nfive");
         assert_eq!(state.line_count(), 3);
+        assert_eq!(state.content.cursor().position.line, 2);
+    }
+
+    #[test]
+    fn given_following_log_when_scrolled_up_then_following_stops() {
+        let mut state = LogViewState::new();
+        state.push_lines(["one", "two"]);
+
+        state.perform(Action::Scroll { lines: -3 });
+        state.push_lines(["three"]);
+
+        assert!(!state.is_following());
+        assert_eq!(state.text(), "one\ntwo");
+        assert_eq!(state.pending_count(), 1);
+    }
+
+    #[test]
+    fn given_following_log_when_scrolled_down_then_it_keeps_following() {
+        let mut state = LogViewState::new();
+        state.push_lines(["one", "two"]);
+
+        state.perform(Action::Scroll { lines: 3 });
+        state.push_lines(["three"]);
+
+        assert!(state.is_following());
+        assert_eq!(state.text(), "one\ntwo\nthree");
+    }
+
+    #[test]
+    fn given_no_held_back_lines_when_following_resumes_then_view_goes_to_end() {
+        let mut state = LogViewState::new();
+        state.push_lines(["one", "two", "three"]);
+        state.set_following(false);
+        state.content.perform(Action::Move(Motion::DocumentStart));
+
+        state.set_following(true);
+
+        assert_eq!(state.text(), "one\ntwo\nthree");
         assert_eq!(state.content.cursor().position.line, 2);
     }
 

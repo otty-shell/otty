@@ -510,6 +510,12 @@ pub(crate) enum Key {
     DockerTabInspect,
     /// Hint above the logs of a container.
     DockerLogsHint,
+    /// Label of the switch that keeps the logs at the newest line.
+    DockerLogsFollow,
+    /// Count of one log line waiting while Follow is off.
+    DockerLogsOneNewLine,
+    /// Count of log lines waiting while Follow is off. Placeholder: `{count}`.
+    TplDockerLogsNewLines,
     /// Notice when the logs could not be read. Placeholder: `{error}`.
     TplDockerLogsFailed,
     /// Notice when the inspect JSON could not be loaded. Placeholder: `{error}`.
@@ -749,7 +755,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 345] = [
+    pub(super) const ALL: [Self; 348] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -986,6 +992,9 @@ impl Key {
         Self::DockerTabLogs,
         Self::DockerTabInspect,
         Self::DockerLogsHint,
+        Self::DockerLogsFollow,
+        Self::DockerLogsOneNewLine,
+        Self::TplDockerLogsNewLines,
         Self::TplDockerLogsFailed,
         Self::TplDockerInspectFailed,
         Self::DockerFieldMounts,
