@@ -512,13 +512,14 @@ fn view_new_session_menu<'a>(
     let launches: Vec<_> = app
         .widgets
         .quick_launch
-        .top_level_launch_titles()
+        .top_level_launches()
         .into_iter()
-        .map(|title| {
-            let run = QuickLaunchIntent::LaunchNode {
-                path: vec![title.to_string()],
-            };
-            (title, AppEvent::QuickLaunch(QuickLaunchEvent::Intent(run)))
+        .map(|launch| {
+            let run = QuickLaunchIntent::LaunchNode { path: launch.path };
+            (
+                launch.title,
+                AppEvent::QuickLaunch(QuickLaunchEvent::Intent(run)),
+            )
         })
         .collect();
     let menu_height = new_session_menu::menu_height(launches.len());

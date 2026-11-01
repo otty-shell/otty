@@ -15,6 +15,7 @@ pub(crate) use event::{
     QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
 };
 use iced::Task;
+use model::LaunchViewModel;
 pub(crate) use reducer::QuickLaunchCtx;
 use state::QuickLaunchState;
 
@@ -61,9 +62,10 @@ impl QuickLaunchWidget {
         }
     }
 
-    /// Titles of the launches at the top level of the tree, in tree order.
-    pub(crate) fn top_level_launch_titles(&self) -> Vec<&str> {
-        self.state.data().root().launch_titles()
+    /// The launches at the top level of the tree, in tree order, each with
+    /// the path that runs it.
+    pub(crate) fn top_level_launches(&self) -> Vec<LaunchViewModel<'_>> {
+        self.vm().top_level_launches()
     }
 
     /// Return error tab state for a given tab id.

@@ -293,17 +293,6 @@ impl QuickLaunchFolder {
             .sum()
     }
 
-    /// Titles of the launches directly in this folder, without folders.
-    pub(crate) fn launch_titles(&self) -> Vec<&str> {
-        self.children
-            .iter()
-            .filter_map(|node| match node {
-                QuickLaunchNode::Command(command) => Some(command.title()),
-                QuickLaunchNode::Folder(_) => None,
-            })
-            .collect()
-    }
-
     /// Return whether a child with the given title exists.
     pub(crate) fn contains_title(&self, title: &str) -> bool {
         self.children.iter().any(|n| n.title() == title)
@@ -854,23 +843,6 @@ mod tests {
         ];
 
         assert_eq!(file.launch_count(), 3);
-    }
-
-    #[test]
-    fn given_folders_and_launches_at_top_level_when_listed_then_only_launches_show()
-     {
-        let mut file = QuickLaunchFile::default();
-        file.root.children = vec![
-            local_command("shell"),
-            QuickLaunchNode::Folder(QuickLaunchFolder {
-                title: String::from("Servers"),
-                expanded: false,
-                children: vec![ssh_command("prod")],
-            }),
-            ssh_command("laptop"),
-        ];
-
-        assert_eq!(file.root().launch_titles(), vec!["shell", "laptop"]);
     }
 
     #[test]

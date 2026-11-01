@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use super::state::InlineEditState;
 use super::types::{
-    DropTarget, LaunchInfo, NodePath, QuickLaunchFile, QuickLaunchFolder,
-    QuickLaunchNode,
+    DropTarget, LaunchInfo, NodePath, QuickLaunch, QuickLaunchFile,
+    QuickLaunchFolder, QuickLaunchNode,
 };
 
 /// Read-only view model for the quick launch tree.
@@ -26,6 +26,22 @@ impl<'a> QuickLaunchTreeViewModel<'a> {
         collect_launches(self.data.root(), &[], &mut launches);
 
         launches
+    }
+
+    /// The launches directly at the top of the tree, folders and what is
+    /// inside them left out, in tree order.
+    pub(crate) fn top_level_launches(&self) -> Vec<LaunchViewModel<'a>> {
+        self.data
+            .root()
+            .children()
+            .iter()
+            .filter_map(|node| match node {
+                QuickLaunchNode::Command(command) => {
+                    Some(launch(command, vec![command.title().to_string()]))
+                },
+                QuickLaunchNode::Folder(_) => None,
+            })
+            .collect()
     }
 }
 
@@ -76,13 +92,18 @@ fn collect_launches<'a>(
                 collect_launches(child, &path, launches);
             },
             QuickLaunchNode::Command(command) => {
-                launches.push(LaunchViewModel {
-                    path,
-                    title: command.title(),
-                    is_ssh: command.is_ssh(),
-                });
+                launches.push(launch(command, path));
             },
         }
+    }
+}
+
+/// The launch of `command`, which sits at `path` in the tree.
+fn launch(command: &QuickLaunch, path: NodePath) -> LaunchViewModel<'_> {
+    LaunchViewModel {
+        path,
+        title: command.title(),
+        is_ssh: command.is_ssh(),
     }
 }
 
@@ -186,6 +207,36 @@ mod tests {
                     path: path(&["logs"]),
                     title: "logs",
                     is_ssh: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn top_level_launches_leave_out_folders_and_what_is_inside_them() {
+        let mut data = QuickLaunchFile::default();
+        data.root.children = vec![
+            command("htop"),
+            folder("servers", vec![ssh("laptop")]),
+            ssh("router"),
+        ];
+        let launching = HashMap::new();
+        let vm = QuickLaunchTreeViewModel::idle(&data, &launching);
+
+        let launches = vm.top_level_launches();
+
+        assert_eq!(
+            launches,
+            vec![
+                LaunchViewModel {
+                    path: path(&["htop"]),
+                    title: "htop",
+                    is_ssh: false,
+                },
+                LaunchViewModel {
+                    path: path(&["router"]),
+                    title: "router",
+                    is_ssh: true,
                 },
             ]
         );
