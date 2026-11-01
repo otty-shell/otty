@@ -207,6 +207,13 @@ none of those are in scope (see Out of Scope).
     then follows new lines while the tab is open; mono, scrolls, stops when
     the tab or the selection changes) and Inspect (the engine's inspect JSON,
     read-only, mono).
+
+    The Logs tab has a **Follow** toggle (owner approved, 2026-11-01). On:
+    new lines are added and the view stays at the bottom. Off: the view stays
+    where it is, new lines wait and a counter says how many; turning Follow
+    on adds them and jumps to the bottom. Scrolling up turns Follow off, and
+    scrolling back to the bottom turns it on, where iced makes the scroll
+    position visible to the app.
 13. **Shell opens a terminal session.** "Shell" opens a new terminal tab that
     runs `docker exec -it <id> sh` (or `podman exec …` for a Podman engine)
     and switches to Terminal mode. The tab is grouped under "this computer".
@@ -335,6 +342,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 19 | OTTY Light pass and screenshots | A | Sonnet | 10–18 |
 | 20 | Update the design system and the canvas boards to what was built (new kit parts, shortcut table on the old mode boards) | — | Opus, owner review | 19 |
 | 21 | Discovery: more sockets, CLI install folders, `podman-docker` wrapper (Decision 8 additions) | C | Opus | 07 |
+| 22 | Logs Follow toggle (Decision 12) | C | Opus | 11, 13 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -363,3 +371,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [ ] 19 — OTTY Light pass and screenshots · Sonnet
 - [ ] 20 — Design system and canvas sync · Opus, owner review
 - [x] 21 — Discovery additions: sockets, CLI folders, `podman-docker` · Opus
+- [ ] 22 — Logs Follow toggle · Opus
