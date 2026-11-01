@@ -12,20 +12,6 @@ const TERM_FONT_JET_BRAINS_BYTES: &[u8] = include_bytes!(
 const TERM_FONT_3270_BYTES: &[u8] =
     include_bytes!("../../../../assets/fonts/3270/3270NerdFont-Regular.ttf");
 
-fn main() -> iced::Result {
-    iced::application(App::new, App::update, App::view)
-        .antialiasing(true)
-        .window_size(Size {
-            width: 1280.0,
-            height: 720.0,
-        })
-        .title(App::title)
-        .subscription(App::subscription)
-        .font(TERM_FONT_JET_BRAINS_BYTES)
-        .font(TERM_FONT_3270_BYTES)
-        .run()
-}
-
 #[derive(Debug, Clone)]
 pub enum Event {
     Terminal(otty_ui_term::Event),
@@ -150,4 +136,18 @@ impl App {
             .height(Length::Fill)
             .into()
     }
+}
+
+fn main() -> iced::Result {
+    iced::application(App::new, App::update, App::view)
+        .antialiasing(true)
+        .window_size(Size {
+            width: 1280.0,
+            height: 720.0,
+        })
+        .title(App::title)
+        .subscription(App::subscription)
+        .font(TERM_FONT_JET_BRAINS_BYTES)
+        .font(TERM_FONT_3270_BYTES)
+        .run()
 }
