@@ -42,6 +42,28 @@ pub(crate) const MODE_DOCKER: &[u8] =
 /// Docker mode button that loads every list again: two turning arrows.
 pub(crate) const REFRESH: &[u8] =
     include_bytes!("../../assets/svg/refresh.svg");
+/// Docker create buttons (Run container, Create volume, Create network): a
+/// plus.
+pub(crate) const PLUS: &[u8] = include_bytes!("../../assets/svg/plus.svg");
+/// Docker Pull image and Pull again: an arrow down into a tray.
+pub(crate) const PULL: &[u8] = include_bytes!("../../assets/svg/pull.svg");
+/// Docker Prune button: a broom.
+pub(crate) const PRUNE: &[u8] = include_bytes!("../../assets/svg/prune.svg");
+/// Docker Start and Run actions: a play triangle.
+pub(crate) const START: &[u8] = include_bytes!("../../assets/svg/start.svg");
+/// Docker Stop action: a square.
+pub(crate) const STOP: &[u8] = include_bytes!("../../assets/svg/stop.svg");
+/// Docker Restart action: one round arrow.
+pub(crate) const RESTART: &[u8] =
+    include_bytes!("../../assets/svg/restart.svg");
+/// Docker Pause action: two bars.
+pub(crate) const PAUSE: &[u8] = include_bytes!("../../assets/svg/pause.svg");
+/// Docker Unpause action: a bar and a play triangle.
+pub(crate) const RESUME: &[u8] = include_bytes!("../../assets/svg/resume.svg");
+/// Docker Remove action: a trash can.
+pub(crate) const TRASH: &[u8] = include_bytes!("../../assets/svg/trash.svg");
+/// Docker Shell action: a prompt.
+pub(crate) const SHELL: &[u8] = include_bytes!("../../assets/svg/shell.svg");
 /// Link that opens outside the app: an arrow leaving a square.
 pub(crate) const EXTERNAL_LINK: &[u8] =
     include_bytes!("../../assets/svg/external-link.svg");

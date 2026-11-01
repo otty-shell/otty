@@ -85,6 +85,7 @@
     "docker_create_volume": "Criar volume",
     "docker_create_network": "Criar rede",
     "docker_refresh": "Atualizar",
+    "docker_more_actions": "Mais ações",
     "docker_filter_placeholder": "Filtrar por nome",
     "tpl_docker_running": "{count} em execução",
     "tpl_docker_compose_chip": "compose: {name}",

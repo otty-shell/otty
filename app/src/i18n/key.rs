@@ -188,6 +188,9 @@ pub(crate) enum Key {
     DockerCreateNetwork,
     /// Tooltip of the button that loads every list again.
     DockerRefresh,
+    /// Tooltip of the "⋯" button that holds the header actions that do not
+    /// fit, and of the "⋯" button at the end of a table row.
+    DockerMoreActions,
     /// Placeholder of the name filter above the table.
     DockerFilterPlaceholder,
     /// Running containers next to Containers in the tree. Placeholder:
@@ -861,7 +864,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 400] = [
+    pub(super) const ALL: [Self; 401] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -940,6 +943,7 @@ impl Key {
         Self::DockerCreateVolume,
         Self::DockerCreateNetwork,
         Self::DockerRefresh,
+        Self::DockerMoreActions,
         Self::DockerFilterPlaceholder,
         Self::TplDockerRunning,
         Self::TplDockerComposeChip,

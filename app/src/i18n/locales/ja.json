@@ -85,6 +85,7 @@
     "docker_create_volume": "ボリュームを作成",
     "docker_create_network": "ネットワークを作成",
     "docker_refresh": "再読み込み",
+    "docker_more_actions": "その他の操作",
     "docker_filter_placeholder": "名前で絞り込み",
     "tpl_docker_running": "{count} 件実行中",
     "tpl_docker_compose_chip": "compose: {name}",

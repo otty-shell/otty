@@ -5,6 +5,7 @@ use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::status_badge::StatusTone;
 
 use super::action_model::{PruneViewModel, can_create, prune_button};
+use super::actions::container_actions;
 use super::no_engine::{NoEngineViewModel, no_engine};
 use super::resource_rows::{
     columns, container_cells, container_status, image_cells, image_status,
@@ -79,6 +80,9 @@ pub(crate) struct TableViewModel<'a> {
     pub(crate) columns: Vec<TableColumn>,
     /// Rows that match the filter, in the order of `sort`.
     pub(crate) rows: Vec<Vec<TableCell>>,
+    /// Positions among `rows` of the items without actions (a container
+    /// being removed); these rows have no "⋯" button.
+    pub(crate) rows_without_actions: Vec<usize>,
     /// Position of the selected row among `rows`.
     pub(crate) selected: Option<usize>,
     /// Shown instead of rows: loading, empty list or no match.
@@ -178,6 +182,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
                 engine.containers(),
                 shown_containers(items, filter, place.compose_project(), sort),
                 Container::id,
+                |container| !container_actions(container.state()).is_empty(),
                 |container| container_cells(container, now),
             )
         },
@@ -188,6 +193,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
                 engine.images(),
                 shown_images(items, filter, sort),
                 Image::id,
+                |_| true,
                 |image| image_cells(image, now),
             )
         },
@@ -198,6 +204,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
                 engine.volumes(),
                 shown_volumes(items, filter, sort),
                 Volume::name,
+                |_| true,
                 |volume| volume_cells(volume, now),
             )
         },
@@ -208,6 +215,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
                 engine.networks(),
                 shown_networks(items, filter, sort),
                 Network::id,
+                |_| true,
                 |network| network_cells(network, now),
             )
         },
@@ -320,18 +328,27 @@ fn note<T>(load: &ListLoad<T>, loaded: fn(&[T]) -> TreeNote) -> TreeNote {
 }
 
 /// The table of one list: the rows of `items` (the items that match the
-/// filter), the position of the selected row among them, and the message or
-/// error shown instead of rows. `id_of` gives the selection id.
+/// filter), the position of the selected row among them, the rows whose
+/// item has no actions, and the message or error shown instead of rows.
+/// `id_of` gives the selection id; `has_actions` tells whether an item has
+/// a row menu.
 fn table<'a, T>(
     shown: Shown<'a>,
     list: &'a ResourceList<T>,
     items: Vec<&'a T>,
     id_of: fn(&T) -> &str,
+    has_actions: fn(&T) -> bool,
     cells: impl Fn(&T) -> Vec<TableCell>,
 ) -> TableViewModel<'a> {
     let selected = list
         .selected_id()
         .and_then(|id| items.iter().position(|item| id_of(item) == id));
+    let rows_without_actions = items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| !has_actions(item))
+        .map(|(position, _)| position)
+        .collect();
     let rows: Vec<Vec<TableCell>> = items.into_iter().map(cells).collect();
 
     let (error, empty_message) = match list.load() {
@@ -355,6 +372,7 @@ fn table<'a, T>(
         sort: shown.sort,
         columns: columns(shown.resource),
         rows,
+        rows_without_actions,
         selected,
         empty_message,
         error,

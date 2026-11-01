@@ -64,25 +64,32 @@ pub(crate) struct PruneViewModel {
 /// the row; Remove is disabled, with the hint saying why, when the engine
 /// would refuse it (a volume or network in use, a built-in network).
 pub(crate) fn action_buttons(state: &DockerState) -> Option<ActionsViewModel> {
+    row_actions(state, state.selected_id()?)
+}
+
+/// The action buttons of the row with `id` in the open list and the hint
+/// under them, by the rules of [`action_buttons`]; `None` when the row is
+/// not in the loaded list.
+fn row_actions(state: &DockerState, id: &str) -> Option<ActionsViewModel> {
     let place = state.place()?;
     let engine = state.open_engine()?;
 
-    let (id, offered, remove_hint) = match place.resource() {
+    let (offered, remove_hint) = match place.resource() {
         ResourceKind::Containers => {
-            let container = engine.containers().selected(Container::id)?;
-            (container.id(), container_actions(container.state()), None)
+            let container = engine.containers().find(id, Container::id)?;
+            (container_actions(container.state()), None)
         },
         ResourceKind::Images => {
-            let image = engine.images().selected(Image::id)?;
-            (image.id(), image_actions(image), None)
+            let image = engine.images().find(id, Image::id)?;
+            (image_actions(image), None)
         },
         ResourceKind::Volumes => {
-            let volume = engine.volumes().selected(Volume::name)?;
-            (volume.name(), REMOVE_ONLY, volume_remove_hint(volume))
+            let volume = engine.volumes().find(id, Volume::name)?;
+            (REMOVE_ONLY, volume_remove_hint(volume))
         },
         ResourceKind::Networks => {
-            let network = engine.networks().selected(Network::id)?;
-            (network.id(), REMOVE_ONLY, network_remove_hint(network))
+            let network = engine.networks().find(id, Network::id)?;
+            (REMOVE_ONLY, network_remove_hint(network))
         },
     };
     let is_busy = state.is_busy(place.engine(), place.resource(), Some(id));
@@ -128,10 +135,11 @@ fn shell_hint(
     Some(i18n::t(key).to_string())
 }
 
-/// The open row menu with the actions of the selected row.
+/// The open row menu with the actions of its row (the selected row after a
+/// right press, any row after a press on its "⋯" button).
 pub(crate) fn row_menu(state: &DockerState) -> Option<RowMenuViewModel> {
     let position = state.row_menu()?;
-    let actions = action_buttons(state)?;
+    let actions = row_actions(state, state.row_menu_target()?)?;
 
     Some(RowMenuViewModel {
         position,
@@ -377,6 +385,36 @@ mod tests {
         assert_eq!(action_buttons(&state), None);
         assert_eq!(row_menu(&state), None);
         assert_eq!(confirm_dialog(&state), None);
+    }
+
+    #[test]
+    fn the_row_button_menu_lists_the_actions_of_its_row_not_the_selected_one() {
+        let mut state = loaded_state();
+        select(&mut state, "otty-fx-running");
+        let exited = fixtures::resources(EngineKind::Docker)
+            .containers()
+            .iter()
+            .position(|container| container.name() == "otty-fx-exit0")
+            .expect("fixture container");
+        let position = Point::new(900.0, 120.0);
+        let index = state.shown_position(exited);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::RowMenuPressed { index, position },
+        );
+
+        let menu = row_menu(&state).expect("an open menu");
+        let inspector = action_buttons(&state).expect("a selected container");
+
+        assert_eq!(menu.position, position);
+        assert_eq!(
+            menu.items,
+            vec![
+                button(RowAction::Start, true),
+                button(RowAction::Remove, true)
+            ]
+        );
+        assert_eq!(inspector.buttons[0], button(RowAction::Shell, true));
     }
 
     #[test]

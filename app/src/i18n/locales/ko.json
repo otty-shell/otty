@@ -85,6 +85,7 @@
     "docker_create_volume": "볼륨 만들기",
     "docker_create_network": "네트워크 만들기",
     "docker_refresh": "새로 고침",
+    "docker_more_actions": "추가 작업",
     "docker_filter_placeholder": "이름으로 필터",
     "tpl_docker_running": "{count}개 실행 중",
     "tpl_docker_compose_chip": "compose: {name}",

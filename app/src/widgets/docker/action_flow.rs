@@ -20,9 +20,9 @@ use super::state::DockerState;
 use super::types::{ResourceKind, image_name};
 use crate::i18n::{self, Key};
 
-/// The selected row of the open list and what it allows, copied out of the
-/// state so the state can change.
-struct SelectedItem {
+/// The row of the open list an action runs on and what it allows, copied
+/// out of the state so the state can change.
+struct TargetItem {
     engine: EngineInfo,
     resource: ResourceKind,
     id: String,
@@ -36,17 +36,22 @@ struct SelectedItem {
     remove_switch: Option<bool>,
 }
 
-/// Run `action` on the selected row: a direct action asks the engine, a
-/// Remove asks the user first, Pull again opens the pull dialog. An action
-/// the row does not offer, a Remove the engine would refuse, or any action
-/// on a row that already runs one does nothing. Closes the row menu.
+/// Run `action` on the row of the open row menu, or else on the selected
+/// row: a direct action asks the engine, a Remove asks the user first, Pull
+/// again opens the pull dialog. An action the row does not offer, a Remove
+/// the engine would refuse, or any action on a row that already runs one
+/// does nothing. Closes the row menu.
 pub(super) fn act(
     state: &mut DockerState,
     action: RowAction,
 ) -> Task<DockerEvent> {
+    let target = state
+        .row_menu_target()
+        .or_else(|| state.selected_id())
+        .map(str::to_string);
     state.close_row_menu();
 
-    let Some(item) = selected_item(state) else {
+    let Some(item) = target.and_then(|id| target_item(state, &id)) else {
         return Task::none();
     };
     let is_busy =
@@ -90,7 +95,7 @@ pub(super) fn act(
 /// Open a terminal tab with a shell in the selected container, run by the
 /// engine's own command line tool. Does nothing when the search did not find
 /// that tool.
-fn open_shell(state: &DockerState, item: &SelectedItem) -> Task<DockerEvent> {
+fn open_shell(state: &DockerState, item: &TargetItem) -> Task<DockerEvent> {
     let Some(program) = state.cli_path(item.engine.kind()) else {
         return Task::none();
     };
@@ -105,14 +110,27 @@ fn open_shell(state: &DockerState, item: &SelectedItem) -> Task<DockerEvent> {
 }
 
 /// Select the row at `index` of the shown table and open its menu at
-/// `position`. Nothing opens past the last row.
+/// `position` (a right press). Nothing opens past the last row.
+pub(super) fn select_and_open_row_menu(
+    state: &mut DockerState,
+    index: usize,
+    position: Point,
+) -> Task<DockerEvent> {
+    let _ = state.select_shown_row(index);
+
+    open_row_menu(state, index, position)
+}
+
+/// Open the menu of the row at `index` of the shown table at `position`
+/// and keep the selection (the row "⋯" button). Nothing opens past the last
+/// row.
 pub(super) fn open_row_menu(
     state: &mut DockerState,
     index: usize,
     position: Point,
 ) -> Task<DockerEvent> {
-    if state.select_shown_row(index) {
-        state.open_row_menu(position);
+    if let Some(target) = state.shown_row_id(index) {
+        state.open_row_menu(position, target);
     }
 
     Task::none()
@@ -224,8 +242,8 @@ pub(super) fn run(
     effect(DockerEffect::RunAction(request))
 }
 
-/// The selected row of the open list.
-fn selected_item(state: &DockerState) -> Option<SelectedItem> {
+/// The row with `id` in the open list.
+fn target_item(state: &DockerState, id: &str) -> Option<TargetItem> {
     let place = state.place()?;
     let engine = state.open_engine()?;
     let info = engine.info().clone();
@@ -233,8 +251,8 @@ fn selected_item(state: &DockerState) -> Option<SelectedItem> {
 
     let item = match resource {
         ResourceKind::Containers => {
-            let container = engine.containers().selected(Container::id)?;
-            SelectedItem {
+            let container = engine.containers().find(id, Container::id)?;
+            TargetItem {
                 engine: info,
                 resource,
                 id: container.id().to_string(),
@@ -245,8 +263,8 @@ fn selected_item(state: &DockerState) -> Option<SelectedItem> {
             }
         },
         ResourceKind::Images => {
-            let image = engine.images().selected(Image::id)?;
-            SelectedItem {
+            let image = engine.images().find(id, Image::id)?;
+            TargetItem {
                 engine: info,
                 resource,
                 id: image.id().to_string(),
@@ -257,8 +275,8 @@ fn selected_item(state: &DockerState) -> Option<SelectedItem> {
             }
         },
         ResourceKind::Volumes => {
-            let volume = engine.volumes().selected(Volume::name)?;
-            SelectedItem {
+            let volume = engine.volumes().find(id, Volume::name)?;
+            TargetItem {
                 engine: info,
                 resource,
                 id: volume.name().to_string(),
@@ -269,8 +287,8 @@ fn selected_item(state: &DockerState) -> Option<SelectedItem> {
             }
         },
         ResourceKind::Networks => {
-            let network = engine.networks().selected(Network::id)?;
-            SelectedItem {
+            let network = engine.networks().find(id, Network::id)?;
+            TargetItem {
                 engine: info,
                 resource,
                 id: network.id().to_string(),
@@ -804,6 +822,133 @@ mod tests {
         let _ = reduce(
             &mut state,
             DockerIntent::OpenRowMenu {
+                index: 99,
+                position: Point::ORIGIN,
+            },
+        );
+
+        assert_eq!(state.row_menu(), None);
+    }
+
+    /// Return the position of the container `name` in the shown table.
+    fn shown_index(state: &DockerState, name: &str) -> usize {
+        let index = fixtures::resources(EngineKind::Docker)
+            .containers()
+            .iter()
+            .position(|container| container.name() == name)
+            .expect("fixture container");
+
+        state.shown_position(index)
+    }
+
+    /// Return the id of the selected row, the one the inspector shows.
+    fn selected_id(state: &DockerState) -> Option<String> {
+        state.selected_row().map(|(_, row)| row.id().to_string())
+    }
+
+    #[test]
+    fn the_row_menu_button_opens_that_rows_menu_and_keeps_the_selection() {
+        let mut state = loaded_state();
+        let running = select(&mut state, "otty-fx-running");
+        let position = Point::new(900.0, 120.0);
+        let index = shown_index(&state, "otty-fx-exit3");
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::RowMenuPressed { index, position },
+        ));
+
+        assert!(effects.is_empty());
+        assert_eq!(state.row_menu(), Some(position));
+        assert_eq!(selected_id(&state), Some(running));
+    }
+
+    #[test]
+    fn an_item_of_the_row_button_menu_runs_on_that_row_not_the_selected_one() {
+        let mut state = loaded_state();
+        let running = select(&mut state, "otty-fx-running");
+        let index = shown_index(&state, "otty-fx-exit3");
+        let _ = reduce(
+            &mut state,
+            DockerIntent::RowMenuPressed {
+                index,
+                position: Point::ORIGIN,
+            },
+        );
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::Act(RowAction::Start)));
+
+        assert_eq!(
+            effects,
+            vec![run(
+                EngineAction::StartContainer(
+                    container("otty-fx-exit3").id().to_string()
+                ),
+                "otty-fx-exit3"
+            )]
+        );
+        assert_eq!(state.row_menu(), None);
+        assert_eq!(selected_id(&state), Some(running));
+    }
+
+    #[test]
+    fn remove_from_the_row_button_menu_asks_about_that_row() {
+        let mut state = loaded_state();
+        let _ = select(&mut state, "otty-fx-running");
+        let index = shown_index(&state, "otty-fx-exit3");
+        let _ = reduce(
+            &mut state,
+            DockerIntent::RowMenuPressed {
+                index,
+                position: Point::ORIGIN,
+            },
+        );
+
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+
+        let confirm = state.confirm().expect("the remove dialog");
+        assert_eq!(confirm.request().name(), "otty-fx-exit3");
+        assert_eq!(
+            confirm.request().action(),
+            &EngineAction::RemoveContainer {
+                id: container("otty-fx-exit3").id().to_string(),
+                force: false
+            }
+        );
+    }
+
+    #[test]
+    fn after_the_row_button_menu_closes_the_inspector_buttons_act_on_the_selection()
+     {
+        let mut state = loaded_state();
+        let running = select(&mut state, "otty-fx-running");
+        let index = shown_index(&state, "otty-fx-exit3");
+        let _ = reduce(
+            &mut state,
+            DockerIntent::RowMenuPressed {
+                index,
+                position: Point::ORIGIN,
+            },
+        );
+        let _ = reduce(&mut state, DockerIntent::CloseRowMenu);
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::Act(RowAction::Stop)));
+
+        assert_eq!(
+            effects,
+            vec![run(EngineAction::StopContainer(running), "otty-fx-running")]
+        );
+    }
+
+    #[test]
+    fn the_row_menu_button_past_the_last_row_opens_no_menu() {
+        let mut state = loaded_state();
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::RowMenuPressed {
                 index: 99,
                 position: Point::ORIGIN,
             },

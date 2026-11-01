@@ -88,11 +88,16 @@ pub(crate) enum DockerIntent {
         list: LoadedList,
     },
     /// An action button of the inspector or an item of the row menu was
-    /// pressed: run it on the selected row.
+    /// pressed: run it on the row of the open row menu, or else on the
+    /// selected row.
     Act(RowAction),
     /// A row was right-pressed: select it and open its menu at `position`
     /// (window coordinates).
     OpenRowMenu { index: usize, position: Point },
+    /// The "⋯" button of the row at this position of the shown table was
+    /// pressed: open that row's menu at `position` (window coordinates)
+    /// without selecting it, so the inspector keeps its row.
+    RowMenuPressed { index: usize, position: Point },
     /// A press outside the row menu closed it.
     CloseRowMenu,
     /// The Prune button above the table was pressed.

@@ -85,6 +85,7 @@
     "docker_create_volume": "建立磁碟區",
     "docker_create_network": "建立網路",
     "docker_refresh": "重新整理",
+    "docker_more_actions": "更多操作",
     "docker_filter_placeholder": "依名稱篩選",
     "tpl_docker_running": "{count} 個執行中",
     "tpl_docker_compose_chip": "compose: {name}",

@@ -5,7 +5,7 @@
 use iced::widget::text::IntoFragment;
 use iced::widget::{Row, column, container, row, scrollable, svg, text};
 use iced::{Alignment, Element, Length, Padding};
-use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
+use otty_ui_kit::components::icon_button::{IconButton, IconTone};
 use otty_ui_kit::components::inspector_header::InspectorHeader;
 use otty_ui_kit::components::inspector_tabs::inspector_tabs;
 use otty_ui_kit::components::key_value_list::KeyValueList;
@@ -17,6 +17,7 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::action_model::ActionsViewModel;
+use super::super::actions::RowAction;
 use super::super::event::DockerIntent;
 use super::super::inspector_tabs::{
     InspectContent, InspectorTabsViewModel, TabContent,
@@ -64,17 +65,22 @@ pub(crate) fn view(props: InspectorProps<'_>) -> Element<'_, DockerIntent> {
     let mut header = InspectorHeader::new(vm.title, palette).status(status);
     if let Some(actions) = props.actions {
         for button in actions.buttons {
-            let kind = if button.is_danger {
-                ButtonKind::Danger
+            let tone = if button.is_danger {
+                IconTone::Danger
             } else {
-                ButtonKind::Secondary
+                IconTone::Default
             };
-            let mut action = Button::new(button.label, palette)
-                .kind(kind)
-                .size(ButtonSize::Small);
-            if button.is_enabled {
-                action = action.on_press(DockerIntent::Act(button.action));
-            }
+            let action = IconButton::new(
+                svg::Handle::from_memory(action_icon(button.action)),
+                button.label,
+                palette,
+            )
+            .tone(tone)
+            .on_press_maybe(
+                button
+                    .is_enabled
+                    .then_some(DockerIntent::Act(button.action)),
+            );
             header = header.action(action);
         }
         if let Some(hint) = actions.hint {
@@ -102,6 +108,20 @@ pub(crate) fn view(props: InspectorProps<'_>) -> Element<'_, DockerIntent> {
         .height(Length::Fill)
         .padding(PADDING)
         .into()
+}
+
+/// The icon of an action button.
+fn action_icon(action: RowAction) -> &'static [u8] {
+    match action {
+        RowAction::Shell => icons::SHELL,
+        RowAction::Start | RowAction::Run => icons::START,
+        RowAction::Stop => icons::STOP,
+        RowAction::Restart => icons::RESTART,
+        RowAction::Pause => icons::PAUSE,
+        RowAction::Unpause => icons::RESUME,
+        RowAction::Remove => icons::TRASH,
+        RowAction::PullAgain => icons::PULL,
+    }
 }
 
 /// The body of the open tab.
@@ -497,26 +517,66 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_press_on_an_action_button_sends_its_action() {
-        let themes = ThemeManager::new();
-        let mut ui = simulator(view(InspectorProps {
+    /// Edge of an action icon button.
+    const BUTTON: f32 = otty_ui_kit::size::CONTROL_MD;
+    /// Hint under the action buttons in the tests.
+    const HINT: &str = "Used by otty-fx-web-1";
+
+    /// Inspector with the header, `buttons` and the hint under them.
+    fn with_buttons(
+        buttons: Vec<ActionButton>,
+        theme: ThemeProps<'_>,
+    ) -> Element<'_, DockerIntent> {
+        view(InspectorProps {
             vm: header(),
             actions: Some(ActionsViewModel {
-                buttons: vec![
-                    button(RowAction::Stop, true),
-                    button(RowAction::Remove, true),
-                ],
-                hint: None,
+                buttons,
+                hint: Some(String::from(HINT)),
             }),
             tabs: None,
-            theme: ThemeProps::new(themes.current()),
-        }));
+            theme,
+        })
+    }
 
-        ui.click(i18n::t(Key::DockerActionStop))
-            .expect("stop should show");
-        ui.click(i18n::t(Key::DockerActionRemove))
-            .expect("remove should show");
+    /// Center of the action button at `index`: the buttons sit in one row
+    /// from the left padding, right above the hint.
+    fn button_center(
+        ui: &mut iced_test::Simulator<'_, DockerIntent>,
+        index: usize,
+    ) -> iced::Point {
+        let hint = ui.find(HINT).expect("hint should show").bounds();
+
+        iced::Point::new(
+            PADDING.left
+                + BUTTON / 2.0
+                + index as f32 * (BUTTON + spacing::SPACE_2),
+            hint.y - spacing::SPACE_1 - BUTTON / 2.0,
+        )
+    }
+
+    fn click_at(
+        ui: &mut iced_test::Simulator<'_, DockerIntent>,
+        point: iced::Point,
+    ) {
+        ui.point_at(point);
+        let _ = ui.simulate(iced_test::simulator::click());
+    }
+
+    #[test]
+    fn a_press_on_an_action_icon_button_sends_its_action() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(with_buttons(
+            vec![
+                button(RowAction::Stop, true),
+                button(RowAction::Remove, true),
+            ],
+            ThemeProps::new(themes.current()),
+        ));
+
+        let stop = button_center(&mut ui, 0);
+        let remove = button_center(&mut ui, 1);
+        click_at(&mut ui, stop);
+        click_at(&mut ui, remove);
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert_eq!(
@@ -529,23 +589,73 @@ mod tests {
     }
 
     #[test]
+    fn the_action_buttons_are_icons_whose_labels_are_not_shown_as_text() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(with_buttons(
+            vec![
+                button(RowAction::Stop, true),
+                button(RowAction::Remove, true),
+            ],
+            ThemeProps::new(themes.current()),
+        ));
+
+        assert!(ui.find(i18n::t(Key::DockerActionStop)).is_err());
+        assert!(ui.find(i18n::t(Key::DockerActionRemove)).is_err());
+    }
+
+    #[test]
     fn a_disabled_button_and_its_hint_show_but_send_nothing() {
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(InspectorProps {
-            vm: header(),
-            actions: Some(ActionsViewModel {
-                buttons: vec![button(RowAction::Remove, false)],
-                hint: Some(String::from("Used by otty-fx-web-1")),
-            }),
-            tabs: None,
-            theme: ThemeProps::new(themes.current()),
-        }));
+        let mut ui = simulator(with_buttons(
+            vec![button(RowAction::Remove, false)],
+            ThemeProps::new(themes.current()),
+        ));
 
-        ui.click(i18n::t(Key::DockerActionRemove))
-            .expect("remove should show");
-        ui.find("Used by otty-fx-web-1").expect("hint should show");
+        let remove = button_center(&mut ui, 0);
+        click_at(&mut ui, remove);
+        ui.find(HINT).expect("hint should show");
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert!(intents.is_empty());
+    }
+
+    /// Draws the inspector whose first action is Stop labeled `label`, with
+    /// the pointer over that button, and checks it against the picture saved
+    /// in `reference`; the first call saves the picture. Tooltips are
+    /// overlays that widget queries do not reach.
+    fn hovered_button_matches(
+        label: &'static str,
+        reference: &std::path::Path,
+    ) -> bool {
+        let themes = ThemeManager::new();
+        let stop = ActionButton {
+            label,
+            ..button(RowAction::Stop, true)
+        };
+        let mut ui = simulator(with_buttons(
+            vec![stop, button(RowAction::Remove, true)],
+            ThemeProps::new(themes.current()),
+        ));
+        let center = button_center(&mut ui, 0);
+        ui.point_at(center);
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::CursorMoved { position: center },
+        )]);
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("inspector should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    #[test]
+    fn a_hovered_action_button_shows_its_label_as_a_tooltip() {
+        let reference = std::env::temp_dir()
+            .join(format!("otty-docker-inspector-{}", std::process::id()))
+            .join("tooltip");
+
+        assert!(hovered_button_matches("Stop", &reference));
+        assert!(!hovered_button_matches("Stop now", &reference));
+        assert!(hovered_button_matches("Stop", &reference));
     }
 }

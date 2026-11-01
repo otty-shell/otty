@@ -129,6 +129,9 @@ fn reduce_intent(
         },
         DockerIntent::Act(action) => action_flow::act(state, action),
         DockerIntent::OpenRowMenu { index, position } => {
+            action_flow::select_and_open_row_menu(state, index, position)
+        },
+        DockerIntent::RowMenuPressed { index, position } => {
             action_flow::open_row_menu(state, index, position)
         },
         DockerIntent::CloseRowMenu => {

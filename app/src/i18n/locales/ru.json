@@ -85,6 +85,7 @@
     "docker_create_volume": "Создать том",
     "docker_create_network": "Создать сеть",
     "docker_refresh": "Обновить",
+    "docker_more_actions": "Другие действия",
     "docker_filter_placeholder": "Фильтр по имени",
     "tpl_docker_running": "запущено: {count}",
     "tpl_docker_compose_chip": "compose: {name}",

@@ -34,8 +34,8 @@ pub(crate) struct DockerState {
     inspector: InspectorState,
     running: Vec<ActionRequest>,
     confirm: Option<Confirm>,
-    /// Where the row menu opened, in window coordinates.
-    row_menu: Option<Point>,
+    /// The open row menu.
+    row_menu: Option<RowMenu>,
     notice: Option<String>,
     /// The open create dialog.
     form: Option<Form>,
@@ -165,7 +165,25 @@ impl DockerState {
 
     /// Return where the row menu is open, in window coordinates.
     pub(crate) fn row_menu(&self) -> Option<Point> {
-        self.row_menu
+        self.row_menu.as_ref().map(|menu| menu.position)
+    }
+
+    /// Return the id of the row the open row menu is for.
+    pub(crate) fn row_menu_target(&self) -> Option<&str> {
+        self.row_menu.as_ref().map(|menu| menu.target.as_str())
+    }
+
+    /// Return the id of the selected row of the open list.
+    pub(crate) fn selected_id(&self) -> Option<&str> {
+        let place = self.place.as_ref()?;
+        let engine = self.open_engine()?;
+
+        match place.resource() {
+            ResourceKind::Containers => engine.containers.selected_id(),
+            ResourceKind::Images => engine.images.selected_id(),
+            ResourceKind::Volumes => engine.volumes.selected_id(),
+            ResourceKind::Networks => engine.networks.selected_id(),
+        }
     }
 
     /// Return the notice of the last failed action.
@@ -364,9 +382,9 @@ impl DockerState {
         }
     }
 
-    /// Open the row menu at `position`.
-    pub(super) fn open_row_menu(&mut self, position: Point) {
-        self.row_menu = Some(position);
+    /// Open the menu of the row with the id `target` at `position`.
+    pub(super) fn open_row_menu(&mut self, position: Point, target: String) {
+        self.row_menu = Some(RowMenu { position, target });
     }
 
     /// Close the row menu.
@@ -494,22 +512,14 @@ impl DockerState {
         self.filter = filter;
     }
 
-    /// Select the row at `index` of the shown, filtered table. Returns
-    /// `false` when there is no such row.
-    pub(super) fn select_shown_row(&mut self, index: usize) -> bool {
-        let Some(place) = self.place.clone() else {
-            return false;
-        };
-        let Some(engine) = self
-            .engines
-            .iter_mut()
-            .find(|engine| engine.info.address() == place.engine())
-        else {
-            return false;
-        };
-
+    /// Return the id of the row at `index` of the shown, filtered table;
+    /// `None` when there is no such row.
+    pub(super) fn shown_row_id(&self, index: usize) -> Option<String> {
+        let place = self.place.as_ref()?;
+        let engine = self.open_engine()?;
         let filter = self.filter.as_str();
         let sort = self.sorts.get(place.resource());
+
         let id = match place.resource() {
             ResourceKind::Containers => shown_containers(
                 engine.containers.items(),
@@ -518,24 +528,41 @@ impl DockerState {
                 sort,
             )
             .get(index)
-            .map(|container| container.id().to_string()),
+            .map(|container| container.id()),
             ResourceKind::Images => {
                 shown_images(engine.images.items(), filter, sort)
                     .get(index)
-                    .map(|image| image.id().to_string())
+                    .map(|image| image.id())
             },
             ResourceKind::Volumes => {
                 shown_volumes(engine.volumes.items(), filter, sort)
                     .get(index)
-                    .map(|volume| volume.name().to_string())
+                    .map(|volume| volume.name())
             },
             ResourceKind::Networks => {
                 shown_networks(engine.networks.items(), filter, sort)
                     .get(index)
-                    .map(|network| network.id().to_string())
+                    .map(|network| network.id())
             },
+        }?;
+
+        Some(id.to_string())
+    }
+
+    /// Select the row at `index` of the shown, filtered table. Returns
+    /// `false` when there is no such row.
+    pub(super) fn select_shown_row(&mut self, index: usize) -> bool {
+        let Some(id) = self.shown_row_id(index) else {
+            return false;
         };
-        let Some(id) = id else {
+        let Some(place) = self.place.as_ref() else {
+            return false;
+        };
+        let Some(engine) = self
+            .engines
+            .iter_mut()
+            .find(|engine| engine.info.address() == place.engine())
+        else {
             return false;
         };
 
@@ -601,6 +628,17 @@ impl DockerState {
     pub(crate) fn running(&self) -> &[ActionRequest] {
         &self.running
     }
+}
+
+/// The open row menu: where it opened and the row it is for. A right press
+/// also selects that row; the row "⋯" button does not.
+#[derive(Debug)]
+struct RowMenu {
+    /// Window coordinates.
+    position: Point,
+    /// The row's id in the open list: container, image or network id, or
+    /// volume name.
+    target: String,
 }
 
 /// How far the engine search is.
@@ -716,7 +754,12 @@ impl<T> ResourceList<T> {
     pub(crate) fn selected(&self, id_of: fn(&T) -> &str) -> Option<&T> {
         let selected = self.selected.as_deref()?;
 
-        self.items().iter().find(|item| id_of(item) == selected)
+        self.find(selected, id_of)
+    }
+
+    /// Return the loaded item with `id`.
+    pub(crate) fn find(&self, id: &str, id_of: fn(&T) -> &str) -> Option<&T> {
+        self.items().iter().find(|item| id_of(item) == id)
     }
 
     /// A list that is not loaded yet.

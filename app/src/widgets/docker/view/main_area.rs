@@ -1,32 +1,35 @@
-//! The Docker mode main area: the header row (title, filter,
-//! create button, Refresh) over the table of the open list, or a card while
-//! no engine is known.
+//! The Docker mode main area: the header (the title row, then the toolbar
+//! with the name filter and the create, Prune and Refresh buttons) over the
+//! table of the open list, or a card while no engine is known.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{Id, Space, column, container, row, svg, text};
+use iced::widget::{Id, column, container, row, svg, text};
 use iced::{Alignment, Element, Length, Padding};
-use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::data_table::{DataTable, SortDirection};
 use otty_ui_kit::components::empty_card::EmptyCard;
-use otty_ui_kit::components::icon_button::IconButton;
 use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::text_field::TextField;
+use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::DockerIntent;
 use super::super::model::{MainViewModel, TableViewModel};
 use super::super::sort::SortOrder;
+use super::super::types::ResourceKind;
 use super::no_engine;
 use crate::i18n::{self, Key};
 use crate::icons;
 use crate::theme::ThemeProps;
 
-/// Height of the header row above the table.
-const HEADER_HEIGHT: f32 = 48.0;
-/// Width of the name filter.
-const FILTER_WIDTH: f32 = 190.0;
+/// Height of the title row: as tall as the compose chip and a button.
+const TITLE_ROW_HEIGHT: f32 = size::CONTROL_MD;
+/// Smallest width of the name filter; it shrinks to it before any button
+/// moves into the toolbar's "⋯" menu.
+const FILTER_MIN_WIDTH: f32 = 140.0;
+/// Width of the name filter when there is room.
+const FILTER_MAX_WIDTH: f32 = 240.0;
 /// Widget id of the name filter.
 const FILTER_ID: &str = "docker_filter";
 
@@ -49,12 +52,12 @@ pub(crate) fn view(props: MainAreaProps<'_>) -> Element<'_, DockerIntent> {
     }
 }
 
-/// The header row, the error notice of a failed list and the table.
+/// The header, the error notice of a failed list and the table.
 fn table_view<'a>(
     vm: TableViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, DockerIntent> {
-    let header = header_row(&vm, palette);
+    let header = header(&vm, palette);
 
     let mut content = column![header].width(Length::Fill).height(Length::Fill);
     if let Some(error) = vm.error {
@@ -84,9 +87,16 @@ fn table_view<'a>(
         .on_row_right_press(|index, position| DockerIntent::OpenRowMenu {
             index,
             position,
+        })
+        .on_row_menu(i18n::t(Key::DockerMoreActions), |index, position| {
+            DockerIntent::RowMenuPressed { index, position }
         });
-    for cells in vm.rows {
-        table = table.row(cells);
+    for (position, cells) in vm.rows.into_iter().enumerate() {
+        table = if vm.rows_without_actions.contains(&position) {
+            table.row_without_menu(cells)
+        } else {
+            table.row(cells)
+        };
     }
     if let Some(message) = vm.empty_message {
         table = table.empty_message(message);
@@ -115,9 +125,20 @@ fn notice_row<'a>(notice: Notice<DockerIntent>) -> Element<'a, DockerIntent> {
         .into()
 }
 
-/// Title, the Compose project chip, filter, the Prune button,
-/// the create button (Run container waits for ticket 14) and Refresh.
-fn header_row<'a>(
+/// The header above the table: the title row, then the toolbar.
+fn header<'a>(
+    vm: &TableViewModel<'a>,
+    palette: &UiPalette,
+) -> Element<'a, DockerIntent> {
+    column![title_row(vm, palette), toolbar(vm, palette)]
+        .spacing(spacing::SPACE_3)
+        .padding(Padding::from([spacing::SPACE_4, spacing::SPACE_5]))
+        .into()
+}
+
+/// The title and, while the containers are limited to a Compose project,
+/// the project chip with its clear button.
+fn title_row<'a>(
     vm: &TableViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, DockerIntent> {
@@ -128,57 +149,73 @@ fn header_row<'a>(
         .font(fonts::UI_SEMIBOLD)
         .color(palette.text_strong())
         .wrapping(Wrapping::None);
-    let compose = vm.compose_chip.as_deref().map(|label| {
-        Chip::new(label, palette).on_clear(
-            i18n::t(Key::DockerShowAllContainers),
-            DockerIntent::ClearComposeProject,
-        )
-    });
-    let filter = TextField::new("", vm.filter, palette)
-        .placeholder(i18n::t(Key::DockerFilterPlaceholder))
-        .width(FILTER_WIDTH)
-        .id(Id::new(FILTER_ID))
-        .on_input(DockerIntent::FilterChanged);
-    let mut create = Button::new(i18n::t(vm.resource.create_key()), palette)
-        .size(ButtonSize::Small);
-    if vm.can_create {
-        create = create.on_press(DockerIntent::OpenCreate);
-    }
-    let refresh = IconButton::new(
-        svg::Handle::from_memory(icons::REFRESH),
-        i18n::t(Key::DockerRefresh),
-        palette,
-    )
-    .on_press(DockerIntent::Refresh);
 
-    let prune = vm.prune.as_ref().map(|prune| {
-        let button = Button::new(prune.label, palette)
-            .kind(ButtonKind::Ghost)
-            .size(ButtonSize::Small);
-        if prune.is_enabled {
-            button.on_press(DockerIntent::Prune)
-        } else {
-            button
-        }
-    });
-
-    let mut header = row![title];
-    if let Some(compose) = compose {
-        header = header.push(compose);
-    }
-    header = header.push(Space::new().width(Length::Fill)).push(filter);
-    if let Some(prune) = prune {
-        header = header.push(prune);
-    }
-
-    header
-        .push(create)
-        .push(refresh)
+    let mut title_row = row![title]
         .spacing(spacing::SPACE_4)
         .align_y(Alignment::Center)
-        .height(HEADER_HEIGHT)
-        .padding(Padding::from([0.0, spacing::SPACE_5]))
+        .height(TITLE_ROW_HEIGHT);
+    if let Some(label) = vm.compose_chip.as_deref() {
+        title_row = title_row.push(Chip::new(label, palette).on_clear(
+            i18n::t(Key::DockerShowAllContainers),
+            DockerIntent::ClearComposeProject,
+        ));
+    }
+
+    title_row.into()
+}
+
+/// The name filter, then the create, Prune and Refresh icon buttons; their
+/// labels are the tooltips. When the row is too narrow the filter shrinks
+/// first, then the last buttons move into the "⋯" menu.
+fn toolbar<'a>(
+    vm: &TableViewModel<'a>,
+    palette: &UiPalette,
+) -> Element<'a, DockerIntent> {
+    let filter = vm.filter;
+    let field_palette = palette.clone();
+
+    let create = ToolbarItem::new(
+        svg::Handle::from_memory(create_icon(vm.resource)),
+        i18n::t(vm.resource.create_key()),
+    )
+    .on_press_maybe(vm.can_create.then_some(DockerIntent::OpenCreate));
+    let mut toolbar = Toolbar::new(i18n::t(Key::DockerMoreActions), palette)
+        .field(FILTER_MIN_WIDTH, FILTER_MAX_WIDTH, move || {
+            TextField::new("", filter, &field_palette)
+                .placeholder(i18n::t(Key::DockerFilterPlaceholder))
+                .id(Id::new(FILTER_ID))
+                .on_input(DockerIntent::FilterChanged)
+                .into()
+        })
+        .item(create);
+    if let Some(prune) = &vm.prune {
+        toolbar = toolbar.item(
+            ToolbarItem::new(
+                svg::Handle::from_memory(icons::PRUNE),
+                prune.label,
+            )
+            .on_press_maybe(prune.is_enabled.then_some(DockerIntent::Prune)),
+        );
+    }
+
+    toolbar
+        .item(
+            ToolbarItem::new(
+                svg::Handle::from_memory(icons::REFRESH),
+                i18n::t(Key::DockerRefresh),
+            )
+            .on_press(DockerIntent::Refresh),
+        )
         .into()
+}
+
+/// The icon of the create button of a list: a download arrow for Pull
+/// image, a plus for the others.
+fn create_icon(resource: ResourceKind) -> &'static [u8] {
+    match resource {
+        ResourceKind::Images => icons::PULL,
+        _ => icons::PLUS,
+    }
 }
 
 /// A centered card with the Docker icon and `description`, while the search
@@ -233,6 +270,7 @@ mod tests {
                 TableColumn::new("Status", 2).sortable(true),
             ],
             rows,
+            rows_without_actions: Vec::new(),
             selected: Some(0),
             empty_message: None,
             error: None,
@@ -320,28 +358,228 @@ mod tests {
         assert_eq!(intents, vec![DockerIntent::OpenComposeProject(0)]);
     }
 
-    #[test]
-    fn the_header_shows_title_engine_filter_and_create_button() {
-        let themes = ThemeManager::new();
-        let mut ui = simulator(view(MainAreaProps {
-            vm: table(rows()),
-            theme: ThemeProps::new(themes.current()),
-        }));
+    /// Width of a wide main area in the tests.
+    const WIDE: f32 = 800.0;
+    /// Width of a main area whose toolbar holds the filter, the create
+    /// button and the "⋯" button with Prune and Refresh.
+    const NARROW: f32 = 250.0;
+    /// Width of a toolbar button and the gap between buttons.
+    const BUTTON: f32 = otty_ui_kit::size::CONTROL_MD;
+    /// Width of the table's last column with the row "⋯" buttons.
+    const ROW_MENU_COLUMN: f32 = 36.0;
 
-        ui.find(i18n::t(Key::DockerContainers))
-            .expect("title should show");
+    /// The main area of `vm`, `width` wide.
+    fn area<'a>(
+        vm: MainViewModel<'a>,
+        width: f32,
+        theme: ThemeProps<'a>,
+    ) -> Element<'a, DockerIntent> {
+        container(view(MainAreaProps { vm, theme }))
+            .width(width)
+            .into()
+    }
+
+    /// Center of the toolbar button `from_end` places before the last one
+    /// (0: Refresh, 1: Prune, 2: the create button), in a main area `width`
+    /// wide. The buttons are centered on the filter's line.
+    fn toolbar_button(
+        ui: &mut iced_test::Simulator<'_, DockerIntent>,
+        width: f32,
+        from_end: usize,
+    ) -> iced::Point {
+        let filter = ui
+            .find(Id::new(FILTER_ID))
+            .expect("filter should be visible")
+            .bounds();
+
+        iced::Point::new(
+            width
+                - spacing::SPACE_5
+                - BUTTON / 2.0
+                - from_end as f32 * (BUTTON + spacing::SPACE_2),
+            filter.center_y(),
+        )
+    }
+
+    fn click_at(
+        ui: &mut iced_test::Simulator<'_, DockerIntent>,
+        point: iced::Point,
+    ) {
+        ui.point_at(point);
+        let _ = ui.simulate(iced_test::simulator::click());
+    }
+
+    #[test]
+    fn the_title_and_the_compose_chip_sit_above_the_filter_row() {
+        let themes = ThemeManager::new();
+        let vm = with(|table| TableViewModel {
+            compose_chip: Some(i18n::docker_compose_chip("otty-site")),
+            ..table
+        });
+        let mut ui =
+            simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
+
+        let title = ui
+            .find(i18n::t(Key::DockerContainers))
+            .expect("title should show")
+            .bounds();
+        let chip = ui
+            .find("compose: otty-site")
+            .expect("chip should show")
+            .bounds();
+        let filter = ui
+            .find(Id::new(FILTER_ID))
+            .expect("filter should show")
+            .bounds();
+
+        assert!(title.y + title.height <= filter.y, "title above the filter");
+        assert!(chip.y + chip.height <= filter.y, "chip above the filter");
         assert!(ui.find("Docker 29.9.1").is_err(), "the engine chip is gone");
         assert!(
             ui.find(i18n::t(Key::ThisComputerNote)).is_err(),
             "no this computer note"
         );
-        ui.find(i18n::t(Key::DockerRunContainer))
-            .expect("create button should show");
-        ui.click(i18n::t(Key::DockerRunContainer))
-            .expect("create button should be there");
+    }
+
+    #[test]
+    fn the_toolbar_buttons_are_icons_whose_labels_are_not_shown_as_text() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(area(
+            table(rows()),
+            WIDE,
+            ThemeProps::new(themes.current()),
+        ));
+
+        assert!(ui.find(i18n::t(Key::DockerRunContainer)).is_err());
+        assert!(ui.find(i18n::t(Key::DockerPruneStopped)).is_err());
+    }
+
+    #[test]
+    fn a_disabled_create_button_sends_nothing() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(area(
+            table(rows()),
+            WIDE,
+            ThemeProps::new(themes.current()),
+        ));
+
+        let create = toolbar_button(&mut ui, WIDE, 2);
+        click_at(&mut ui, create);
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert!(intents.is_empty(), "the create button is disabled");
+    }
+
+    #[test]
+    fn the_refresh_button_loads_the_lists_again() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(area(
+            table(rows()),
+            WIDE,
+            ThemeProps::new(themes.current()),
+        ));
+
+        let refresh = toolbar_button(&mut ui, WIDE, 0);
+        click_at(&mut ui, refresh);
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::Refresh]);
+    }
+
+    #[test]
+    fn at_a_narrow_width_prune_and_refresh_are_in_the_more_menu() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(area(
+            table(rows()),
+            NARROW,
+            ThemeProps::new(themes.current()),
+        ));
+        assert!(ui.find(i18n::t(Key::DockerPruneStopped)).is_err());
+
+        let more = toolbar_button(&mut ui, NARROW, 0);
+        click_at(&mut ui, more);
+        ui.click(i18n::t(Key::DockerPruneStopped))
+            .expect("prune should be in the menu");
+        click_at(&mut ui, more);
+        ui.click(i18n::t(Key::DockerRefresh))
+            .expect("refresh should be in the menu");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::Prune, DockerIntent::Refresh]);
+    }
+
+    #[test]
+    fn at_a_narrow_width_the_create_button_and_the_filter_still_work() {
+        let themes = ThemeManager::new();
+        let vm = with(|table| TableViewModel {
+            resource: ResourceKind::Volumes,
+            can_create: true,
+            ..table
+        });
+        let mut ui =
+            simulator(area(vm, NARROW, ThemeProps::new(themes.current())));
+
+        let create = toolbar_button(&mut ui, NARROW, 1);
+        click_at(&mut ui, create);
+        ui.click(Id::new(FILTER_ID))
+            .expect("filter should be visible");
+        let _ = ui.typewrite("w");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(
+            intents,
+            vec![
+                DockerIntent::OpenCreate,
+                DockerIntent::FilterChanged(String::from("w"))
+            ]
+        );
+    }
+
+    #[test]
+    fn the_row_menu_button_opens_that_rows_menu() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(area(
+            table(rows()),
+            WIDE,
+            ThemeProps::new(themes.current()),
+        ));
+        let cell = ui.find("db-1").expect("second row should be visible");
+        let row_center = cell.bounds().center_y();
+
+        click_at(
+            &mut ui,
+            iced::Point::new(WIDE - ROW_MENU_COLUMN / 2.0, row_center),
+        );
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert!(
+            matches!(
+                intents.as_slice(),
+                [DockerIntent::RowMenuPressed { index: 1, .. }]
+            ),
+            "got {intents:?}"
+        );
+    }
+
+    #[test]
+    fn a_row_without_actions_has_no_menu_button() {
+        let themes = ThemeManager::new();
+        let vm = with(|table| TableViewModel {
+            rows_without_actions: vec![1],
+            ..table
+        });
+        let mut ui =
+            simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
+        let cell = ui.find("db-1").expect("second row should be visible");
+        let row_center = cell.bounds().center_y();
+
+        click_at(
+            &mut ui,
+            iced::Point::new(WIDE - ROW_MENU_COLUMN / 2.0, row_center),
+        );
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::SelectRow(1)]);
     }
 
     #[test]
@@ -469,13 +707,11 @@ mod tests {
             can_create: true,
             ..table
         });
-        let mut ui = simulator(view(MainAreaProps {
-            vm,
-            theme: ThemeProps::new(themes.current()),
-        }));
+        let mut ui =
+            simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
 
-        ui.click(i18n::t(Key::DockerCreateVolume))
-            .expect("create volume should show");
+        let create = toolbar_button(&mut ui, WIDE, 2);
+        click_at(&mut ui, create);
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![DockerIntent::OpenCreate]);
@@ -484,13 +720,14 @@ mod tests {
     #[test]
     fn the_prune_button_asks_to_prune() {
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(MainAreaProps {
-            vm: table(rows()),
-            theme: ThemeProps::new(themes.current()),
-        }));
+        let mut ui = simulator(area(
+            table(rows()),
+            WIDE,
+            ThemeProps::new(themes.current()),
+        ));
 
-        ui.click(i18n::t(Key::DockerPruneStopped))
-            .expect("prune should show");
+        let prune = toolbar_button(&mut ui, WIDE, 1);
+        click_at(&mut ui, prune);
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![DockerIntent::Prune]);
@@ -506,13 +743,11 @@ mod tests {
             }),
             ..table
         });
-        let mut ui = simulator(view(MainAreaProps {
-            vm,
-            theme: ThemeProps::new(themes.current()),
-        }));
+        let mut ui =
+            simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
 
-        ui.click(i18n::t(Key::DockerPruneStopped))
-            .expect("prune should show");
+        let prune = toolbar_button(&mut ui, WIDE, 1);
+        click_at(&mut ui, prune);
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert!(intents.is_empty());

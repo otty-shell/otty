@@ -85,6 +85,7 @@
     "docker_create_volume": "创建卷",
     "docker_create_network": "创建网络",
     "docker_refresh": "刷新",
+    "docker_more_actions": "更多操作",
     "docker_filter_placeholder": "按名称筛选",
     "tpl_docker_running": "{count} 个运行中",
     "tpl_docker_compose_chip": "compose: {name}",
