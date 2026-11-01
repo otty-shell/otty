@@ -311,7 +311,8 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             shortcut_text(
                 iced::keyboard::Modifiers::CTRL
                     | iced::keyboard::Modifiers::SHIFT,
-                "c"
+                "c",
+                "Super"
             ),
             p
         ),

@@ -127,10 +127,11 @@ impl AppShortcut {
         self.label_on(Platform::current())
     }
 
-    /// Return the shortcut text for `platform`, in Linux notation.
+    /// Return the shortcut text for `platform`: the Logo key reads "Super" on
+    /// Linux and "Cmd" on macOS.
     pub(crate) fn label_on(self, platform: Platform) -> String {
         let keys = self.keys(platform);
-        shortcut_text(keys.modifiers(), keys.key())
+        shortcut_text(keys.modifiers(), keys.key(), platform.logo_name())
     }
 }
 
@@ -145,6 +146,14 @@ pub(crate) enum Platform {
 }
 
 impl Platform {
+    /// Return how this platform's labels write the Logo key.
+    fn logo_name(self) -> &'static str {
+        match self {
+            Platform::MacOs => "Cmd",
+            _ => "Super",
+        }
+    }
+
     /// Return the platform this build runs on.
     pub(crate) fn current() -> Self {
         if cfg!(target_os = "macos") {
@@ -326,14 +335,13 @@ mod tests {
                 (AppShortcut::Settings, String::from("Ctrl ,")),
                 (AppShortcut::NewTerminal, String::from("Ctrl Shift T")),
                 (AppShortcut::CloseSession, String::from("Ctrl Shift W")),
-                (AppShortcut::SplitPane, String::from("Shift Super D")),
+                (AppShortcut::SplitPane, String::from("Super Shift D")),
             ]
         );
     }
 
     #[test]
     fn macos_labels_follow_the_spec_table() {
-        // `shortcut_text` writes Cmd in Linux notation, as Super.
         let labels: Vec<(AppShortcut, String)> = AppShortcut::ALL
             .into_iter()
             .map(|shortcut| (shortcut, shortcut.label_on(Platform::MacOs)))
@@ -342,14 +350,14 @@ mod tests {
         assert_eq!(
             labels,
             vec![
-                (AppShortcut::CommandPalette, String::from("Super K")),
-                (AppShortcut::LeftPanel, String::from("Super B")),
-                (AppShortcut::FilesPanel, String::from("Shift Super E")),
-                (AppShortcut::FocusMode, String::from("Shift Super F")),
-                (AppShortcut::Settings, String::from("Super ,")),
-                (AppShortcut::NewTerminal, String::from("Super T")),
-                (AppShortcut::CloseSession, String::from("Super W")),
-                (AppShortcut::SplitPane, String::from("Super D")),
+                (AppShortcut::CommandPalette, String::from("Cmd K")),
+                (AppShortcut::LeftPanel, String::from("Cmd B")),
+                (AppShortcut::FilesPanel, String::from("Cmd Shift E")),
+                (AppShortcut::FocusMode, String::from("Cmd Shift F")),
+                (AppShortcut::Settings, String::from("Cmd ,")),
+                (AppShortcut::NewTerminal, String::from("Cmd T")),
+                (AppShortcut::CloseSession, String::from("Cmd W")),
+                (AppShortcut::SplitPane, String::from("Cmd D")),
             ]
         );
     }
@@ -362,7 +370,11 @@ mod tests {
 
                 assert_eq!(
                     shortcut.label_on(platform),
-                    shortcut_text(keys.modifiers(), keys.key())
+                    shortcut_text(
+                        keys.modifiers(),
+                        keys.key(),
+                        platform.logo_name()
+                    )
                 );
             }
         }

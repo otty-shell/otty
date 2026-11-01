@@ -203,3 +203,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - Round 2 (2026-11-01, owner): Files panel shortcut on Linux is Ctrl Shift O (Ctrl Shift E is IBus emoji on GNOME).
 - Round 3 (2026-11-01, owner): the Files panel dot stays "this computer" (Decision 11), as ticket 10 left it.
 - Round 4 (2026-11-01, owner): the session row close cross shows only while the row is hovered.
+- Round 5 (2026-11-01, owner): shortcut labels order modifiers Ctrl, Alt, Super/Cmd, Shift; macOS labels say Cmd; new size tokens go into the design system's tokens.json.
