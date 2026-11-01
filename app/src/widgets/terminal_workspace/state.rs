@@ -589,7 +589,6 @@ impl TerminalTabState {
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn grid_size(&self) -> Size {
         self.grid_size
     }
