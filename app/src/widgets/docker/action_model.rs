@@ -2,9 +2,12 @@
 //! confirmation dialog and the Prune button.
 
 use iced::Point;
-use otty_docker::Container;
+use otty_docker::{Container, Image, Network, Volume};
 
-use super::actions::{EngineAction, RowAction, container_actions};
+use super::actions::{
+    EngineAction, REMOVE_ONLY, RowAction, container_actions, image_actions,
+    network_remove_hint, volume_remove_hint,
+};
 use super::state::DockerState;
 use super::types::ResourceKind;
 use crate::i18n::{self, Key};
@@ -57,30 +60,51 @@ pub(crate) struct PruneViewModel {
 }
 
 /// The action buttons of the selected row of the open list; `None` when
-/// nothing is selected.
+/// nothing is selected. Every button is disabled while an action runs on
+/// the row; Remove is disabled, with the hint saying why, when the engine
+/// would refuse it (a volume or network in use, a built-in network).
 pub(crate) fn action_buttons(state: &DockerState) -> Option<ActionsViewModel> {
     let place = state.place()?;
     let engine = state.open_engine()?;
 
-    match place.resource() {
+    let (id, offered, remove_hint) = match place.resource() {
         ResourceKind::Containers => {
             let container = engine.containers().selected(Container::id)?;
-            let is_enabled = !state.is_busy(
-                place.engine(),
-                ResourceKind::Containers,
-                Some(container.id()),
-            );
-
-            Some(ActionsViewModel {
-                buttons: buttons(
-                    container_actions(container.state()),
-                    is_enabled,
-                ),
-                hint: None,
-            })
+            (container.id(), container_actions(container.state()), None)
         },
-        _ => None,
-    }
+        ResourceKind::Images => {
+            let image = engine.images().selected(Image::id)?;
+            (image.id(), image_actions(image), None)
+        },
+        ResourceKind::Volumes => {
+            let volume = engine.volumes().selected(Volume::name)?;
+            (volume.name(), REMOVE_ONLY, volume_remove_hint(volume))
+        },
+        ResourceKind::Networks => {
+            let network = engine.networks().selected(Network::id)?;
+            (network.id(), REMOVE_ONLY, network_remove_hint(network))
+        },
+    };
+    let is_busy = state.is_busy(place.engine(), place.resource(), Some(id));
+
+    let buttons = offered
+        .iter()
+        .map(|&action| {
+            let is_blocked =
+                action == RowAction::Remove && remove_hint.is_some();
+            ActionButton {
+                action,
+                label: i18n::t(action.label_key()),
+                is_danger: action.is_danger(),
+                is_enabled: !is_busy && !is_blocked,
+            }
+        })
+        .collect();
+
+    Some(ActionsViewModel {
+        buttons,
+        hint: remove_hint,
+    })
 }
 
 /// The open row menu with the actions of the selected row.
@@ -109,14 +133,46 @@ pub(crate) fn confirm_dialog(state: &DockerState) -> Option<ConfirmViewModel> {
             Some(Key::DockerStopItFirst),
             Key::DockerActionRemove,
         ),
-        EngineAction::PruneContainers => (
-            i18n::t(Key::DockerPruneContainersTitle).to_string(),
-            i18n::with_count(
-                Key::TplDockerPruneContainersText,
-                confirm.count() as u64,
-            ),
+        EngineAction::RemoveImage { .. } => (
+            i18n::docker_named(Key::TplDockerRemoveImageTitle, request.name()),
+            i18n::t(Key::DockerRemoveImageText).to_string(),
+            Some(Key::DockerForceRemoveImage),
+            Key::DockerActionRemove,
+        ),
+        EngineAction::RemoveVolume(_) => (
+            i18n::docker_named(Key::TplDockerRemoveVolumeTitle, request.name()),
+            i18n::t(Key::DockerRemoveVolumeText).to_string(),
             None,
-            Key::DockerPrune,
+            Key::DockerActionRemove,
+        ),
+        EngineAction::RemoveNetwork(_) => (
+            i18n::docker_named(
+                Key::TplDockerRemoveNetworkTitle,
+                request.name(),
+            ),
+            i18n::t(Key::DockerRemoveNetworkText).to_string(),
+            None,
+            Key::DockerActionRemove,
+        ),
+        EngineAction::PruneContainers => prune_texts(
+            Key::DockerPruneContainersTitle,
+            Key::TplDockerPruneContainersText,
+            confirm.count(),
+        ),
+        EngineAction::PruneImages => prune_texts(
+            Key::DockerPruneImagesTitle,
+            Key::TplDockerPruneImagesText,
+            confirm.count(),
+        ),
+        EngineAction::PruneVolumes => prune_texts(
+            Key::DockerPruneVolumesTitle,
+            Key::TplDockerPruneVolumesText,
+            confirm.count(),
+        ),
+        EngineAction::PruneNetworks => prune_texts(
+            Key::DockerPruneNetworksTitle,
+            Key::TplDockerPruneNetworksText,
+            confirm.count(),
         ),
         _ => return None,
     };
@@ -138,7 +194,10 @@ pub(crate) fn prune_button(state: &DockerState) -> Option<PruneViewModel> {
 
     let label = match place.resource() {
         ResourceKind::Containers => Key::DockerPruneStopped,
-        _ => return None,
+        ResourceKind::Images => Key::DockerPruneDangling,
+        ResourceKind::Volumes | ResourceKind::Networks => {
+            Key::DockerPruneUnused
+        },
     };
 
     Some(PruneViewModel {
@@ -147,17 +206,29 @@ pub(crate) fn prune_button(state: &DockerState) -> Option<PruneViewModel> {
     })
 }
 
-/// The buttons of `actions`, all enabled or all disabled.
-fn buttons(actions: &[RowAction], is_enabled: bool) -> Vec<ActionButton> {
-    actions
-        .iter()
-        .map(|&action| ActionButton {
-            action,
-            label: i18n::t(action.label_key()),
-            is_danger: action.is_danger(),
-            is_enabled,
-        })
-        .collect()
+/// Whether the create button above the table opens a dialog: Pull image,
+/// Create volume and Create network do; Run container waits for its form
+/// (ticket 14).
+pub(crate) fn can_create(state: &DockerState) -> bool {
+    state.open_engine().is_some()
+        && state
+            .place()
+            .is_some_and(|place| place.resource() != ResourceKind::Containers)
+}
+
+/// The title, text, switch and action of a prune dialog that deletes
+/// `count` rows.
+fn prune_texts(
+    title: Key,
+    text: Key,
+    count: usize,
+) -> (String, String, Option<Key>, Key) {
+    (
+        i18n::t(title).to_string(),
+        i18n::with_count(text, count as u64),
+        None,
+        Key::DockerPrune,
+    )
 }
 
 #[cfg(test)]
@@ -170,7 +241,9 @@ mod tests {
     use crate::widgets::docker::event::DockerIntent;
     use crate::widgets::docker::reducer::reduce;
     use crate::widgets::docker::state::DockerState;
-    use crate::widgets::docker::types::{LoadedLists, Place, ResourceKind};
+    use crate::widgets::docker::types::{
+        LoadedLists, Place, ResourceKind, image_name,
+    };
 
     fn docker() -> EngineInfo {
         fixtures::engine(EngineKind::Docker)
@@ -399,5 +472,236 @@ mod tests {
             prune_button(&state).map(|vm| vm.label),
             Some(i18n::t(Key::DockerPruneStopped))
         );
+    }
+
+    /// Replace the Docker lists with the idle fixture lists (no container).
+    fn load_idle(state: &mut DockerState) {
+        let idle = fixtures::idle_resources(EngineKind::Docker);
+        let _ = reduce(
+            state,
+            DockerIntent::ListsLoaded {
+                engine: docker().address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(Vec::new()),
+                    images: Ok(idle.images().to_vec()),
+                    volumes: Ok(idle.volumes().to_vec()),
+                    networks: Ok(idle.networks().to_vec()),
+                },
+            },
+        );
+    }
+
+    fn open(state: &mut DockerState, resource: ResourceKind) {
+        let _ = reduce(
+            state,
+            DockerIntent::Open(Place::new(
+                docker().address().clone(),
+                resource,
+            )),
+        );
+    }
+
+    /// Open `resource` and select the row called `name`.
+    fn select_in(state: &mut DockerState, resource: ResourceKind, name: &str) {
+        open(state, resource);
+        let engine = state.open_engine().expect("docker engine");
+        let index = match resource {
+            ResourceKind::Images => engine
+                .images()
+                .items()
+                .iter()
+                .position(|image| image_name(image) == name),
+            ResourceKind::Volumes => engine
+                .volumes()
+                .items()
+                .iter()
+                .position(|volume| volume.name() == name),
+            _ => engine
+                .networks()
+                .items()
+                .iter()
+                .position(|network| network.name() == name),
+        }
+        .expect("fixture row");
+
+        let _ = reduce(state, DockerIntent::SelectRow(index));
+    }
+
+    fn buttons_of(state: &DockerState) -> (Vec<ActionButton>, Option<String>) {
+        let vm = action_buttons(state).expect("a selected row");
+
+        (vm.buttons, vm.hint)
+    }
+
+    #[test]
+    fn a_tagged_image_offers_pull_again_and_remove() {
+        let mut state = loaded_state();
+        select_in(&mut state, ResourceKind::Images, "busybox:1.37");
+
+        assert_eq!(
+            buttons_of(&state),
+            (
+                vec![
+                    button(RowAction::PullAgain, true),
+                    button(RowAction::Remove, true)
+                ],
+                None
+            )
+        );
+    }
+
+    #[test]
+    fn a_used_volume_has_a_disabled_remove_and_says_why() {
+        let mut state = loaded_state();
+        select_in(&mut state, ResourceKind::Volumes, "otty-fx-data");
+
+        assert_eq!(
+            buttons_of(&state),
+            (
+                vec![button(RowAction::Remove, false)],
+                Some(i18n::docker_volume_in_use("otty-fx-running"))
+            )
+        );
+    }
+
+    #[test]
+    fn a_built_in_network_has_a_disabled_remove_and_says_why() {
+        let mut state = loaded_state();
+        select_in(&mut state, ResourceKind::Networks, "bridge");
+
+        assert_eq!(
+            buttons_of(&state),
+            (
+                vec![button(RowAction::Remove, false)],
+                Some(i18n::t(Key::DockerBuiltInNetworkHint).to_string())
+            )
+        );
+    }
+
+    #[test]
+    fn an_unused_volume_and_network_can_be_removed() {
+        let mut state = loaded_state();
+        load_idle(&mut state);
+
+        select_in(&mut state, ResourceKind::Volumes, "otty-fx-data");
+        let volume = buttons_of(&state);
+        select_in(&mut state, ResourceKind::Networks, "otty-fx-net");
+        let network = buttons_of(&state);
+
+        assert_eq!(volume, (vec![button(RowAction::Remove, true)], None));
+        assert_eq!(network, (vec![button(RowAction::Remove, true)], None));
+    }
+
+    #[test]
+    fn each_remove_dialog_names_its_row() {
+        let mut state = loaded_state();
+        select_in(&mut state, ResourceKind::Images, "busybox:1.37");
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+        let image = confirm_dialog(&state).expect("image dialog");
+        let _ = reduce(&mut state, DockerIntent::ConfirmCancelled);
+        load_idle(&mut state);
+        select_in(&mut state, ResourceKind::Volumes, "otty-fx-data");
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+        let volume = confirm_dialog(&state).expect("volume dialog");
+        let _ = reduce(&mut state, DockerIntent::ConfirmCancelled);
+        select_in(&mut state, ResourceKind::Networks, "otty-fx-net");
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+        let network = confirm_dialog(&state).expect("network dialog");
+
+        assert_eq!(
+            image,
+            ConfirmViewModel {
+                title: i18n::docker_named(
+                    Key::TplDockerRemoveImageTitle,
+                    "busybox:1.37"
+                ),
+                text: i18n::t(Key::DockerRemoveImageText).to_string(),
+                switch: Some((i18n::t(Key::DockerForceRemoveImage), true)),
+                confirm_label: i18n::t(Key::DockerActionRemove),
+            }
+        );
+        assert_eq!(
+            volume.title,
+            i18n::docker_named(Key::TplDockerRemoveVolumeTitle, "otty-fx-data")
+        );
+        assert_eq!(volume.text, i18n::t(Key::DockerRemoveVolumeText));
+        assert_eq!(volume.switch, None);
+        assert_eq!(
+            network.title,
+            i18n::docker_named(Key::TplDockerRemoveNetworkTitle, "otty-fx-net")
+        );
+        assert_eq!(network.text, i18n::t(Key::DockerRemoveNetworkText));
+    }
+
+    #[test]
+    fn each_prune_dialog_counts_what_goes() {
+        let cases = [
+            (
+                ResourceKind::Images,
+                Key::DockerPruneImagesTitle,
+                Key::TplDockerPruneImagesText,
+                1,
+            ),
+            (
+                ResourceKind::Volumes,
+                Key::DockerPruneVolumesTitle,
+                Key::TplDockerPruneVolumesText,
+                2,
+            ),
+            (
+                ResourceKind::Networks,
+                Key::DockerPruneNetworksTitle,
+                Key::TplDockerPruneNetworksText,
+                1,
+            ),
+        ];
+
+        for (resource, title, text, count) in cases {
+            let mut state = loaded_state();
+            load_idle(&mut state);
+            open(&mut state, resource);
+            let _ = reduce(&mut state, DockerIntent::Prune);
+
+            let dialog = confirm_dialog(&state).expect("an open dialog");
+
+            assert_eq!(dialog.title, i18n::t(title), "{resource:?}");
+            assert_eq!(dialog.text, i18n::with_count(text, count));
+            assert_eq!(dialog.confirm_label, i18n::t(Key::DockerPrune));
+        }
+    }
+
+    #[test]
+    fn every_list_has_its_prune_button() {
+        let mut state = loaded_state();
+        let mut labels = Vec::new();
+
+        for resource in ResourceKind::ALL {
+            open(&mut state, resource);
+            labels.push(prune_button(&state).map(|vm| vm.label));
+        }
+
+        assert_eq!(
+            labels,
+            vec![
+                Some(i18n::t(Key::DockerPruneStopped)),
+                Some(i18n::t(Key::DockerPruneDangling)),
+                Some(i18n::t(Key::DockerPruneUnused)),
+                Some(i18n::t(Key::DockerPruneUnused)),
+            ]
+        );
+    }
+
+    #[test]
+    fn every_list_but_containers_has_a_create_button_for_now() {
+        let mut state = loaded_state();
+        let mut enabled = Vec::new();
+
+        for resource in ResourceKind::ALL {
+            open(&mut state, resource);
+            enabled.push(can_create(&state));
+        }
+
+        assert_eq!(enabled, vec![false, true, true, true]);
+        assert!(!can_create(&DockerState::default()));
     }
 }

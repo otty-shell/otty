@@ -415,6 +415,82 @@ pub(crate) enum Key {
     TplDockerRemoveContainerFailed,
     /// Notice when the stopped containers were not pruned. Placeholder: `{error}`.
     TplDockerPruneContainersFailed,
+    /// Button and menu item that pulls the selected image again.
+    DockerActionPullAgain,
+    /// Button above the images table that removes dangling images.
+    DockerPruneDangling,
+    /// Button above the volumes and networks tables that removes unused ones.
+    DockerPruneUnused,
+    /// Title of the remove image dialog. Placeholder: `{name}`.
+    TplDockerRemoveImageTitle,
+    /// Text of the remove image dialog.
+    DockerRemoveImageText,
+    /// Switch in the remove image dialog when a container uses the image.
+    DockerForceRemoveImage,
+    /// Title of the prune dangling images dialog.
+    DockerPruneImagesTitle,
+    /// Text of the prune dangling images dialog. Placeholder: `{count}`.
+    TplDockerPruneImagesText,
+    /// Title of the remove volume dialog. Placeholder: `{name}`.
+    TplDockerRemoveVolumeTitle,
+    /// Text of the remove volume dialog.
+    DockerRemoveVolumeText,
+    /// Title of the prune unused volumes dialog.
+    DockerPruneVolumesTitle,
+    /// Text of the prune unused volumes dialog. Placeholder: `{count}`.
+    TplDockerPruneVolumesText,
+    /// Title of the remove network dialog. Placeholder: `{name}`.
+    TplDockerRemoveNetworkTitle,
+    /// Text of the remove network dialog.
+    DockerRemoveNetworkText,
+    /// Title of the prune unused networks dialog.
+    DockerPruneNetworksTitle,
+    /// Text of the prune unused networks dialog. Placeholder: `{count}`.
+    TplDockerPruneNetworksText,
+    /// Hint under a disabled Remove of a volume a container uses. Placeholder: `{names}`.
+    TplDockerVolumeInUseHint,
+    /// Hint under a disabled Remove of a built-in network.
+    DockerBuiltInNetworkHint,
+    /// Hint under a disabled Remove of a network containers are connected to.
+    DockerNetworkInUseHint,
+    /// Label of the image field of the pull dialog.
+    DockerFieldImage,
+    /// Label of the tag field of the pull dialog.
+    DockerFieldTag,
+    /// Label of the name field of the create volume and create network dialogs.
+    DockerFieldName,
+    /// Label of the driver field of the create volume and create network dialogs.
+    DockerFieldDriver,
+    /// Placeholder of the image field of the pull dialog.
+    DockerImagePlaceholder,
+    /// Placeholder of the name field of the create volume dialog.
+    DockerVolumeNamePlaceholder,
+    /// Action button of the pull dialog.
+    DockerActionPull,
+    /// Action button of the create volume and create network dialogs.
+    DockerActionCreate,
+    /// Progress text of a running pull. Placeholder: `{image}`.
+    TplDockerPulling,
+    /// Bytes of a running pull. Placeholders: `{done}`, `{total}`.
+    TplDockerPullAmount,
+    /// Notice when a pull failed. Placeholders: `{name}`, `{error}`.
+    TplDockerPullFailed,
+    /// Notice when an image was not removed. Placeholders: `{name}`, `{error}`.
+    TplDockerRemoveImageFailed,
+    /// Notice when the dangling images were not pruned. Placeholder: `{error}`.
+    TplDockerPruneImagesFailed,
+    /// Notice when a volume was not created. Placeholder: `{error}`.
+    TplDockerCreateVolumeFailed,
+    /// Notice when a volume was not removed. Placeholders: `{name}`, `{error}`.
+    TplDockerRemoveVolumeFailed,
+    /// Notice when the unused volumes were not pruned. Placeholder: `{error}`.
+    TplDockerPruneVolumesFailed,
+    /// Notice when a network was not created. Placeholders: `{name}`, `{error}`.
+    TplDockerCreateNetworkFailed,
+    /// Notice when a network was not removed. Placeholders: `{name}`, `{error}`.
+    TplDockerRemoveNetworkFailed,
+    /// Notice when the unused networks were not pruned. Placeholder: `{error}`.
+    TplDockerPruneNetworksFailed,
     // Docker mode inspector tabs.
     /// Inspector tab with the key facts of the selected row.
     DockerTabOverview,
@@ -663,7 +739,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 302] = [
+    pub(super) const ALL: [Self; 340] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -853,6 +929,44 @@ impl Key {
         Self::TplDockerUnpauseFailed,
         Self::TplDockerRemoveContainerFailed,
         Self::TplDockerPruneContainersFailed,
+        Self::DockerActionPullAgain,
+        Self::DockerPruneDangling,
+        Self::DockerPruneUnused,
+        Self::TplDockerRemoveImageTitle,
+        Self::DockerRemoveImageText,
+        Self::DockerForceRemoveImage,
+        Self::DockerPruneImagesTitle,
+        Self::TplDockerPruneImagesText,
+        Self::TplDockerRemoveVolumeTitle,
+        Self::DockerRemoveVolumeText,
+        Self::DockerPruneVolumesTitle,
+        Self::TplDockerPruneVolumesText,
+        Self::TplDockerRemoveNetworkTitle,
+        Self::DockerRemoveNetworkText,
+        Self::DockerPruneNetworksTitle,
+        Self::TplDockerPruneNetworksText,
+        Self::TplDockerVolumeInUseHint,
+        Self::DockerBuiltInNetworkHint,
+        Self::DockerNetworkInUseHint,
+        Self::DockerFieldImage,
+        Self::DockerFieldTag,
+        Self::DockerFieldName,
+        Self::DockerFieldDriver,
+        Self::DockerImagePlaceholder,
+        Self::DockerVolumeNamePlaceholder,
+        Self::DockerActionPull,
+        Self::DockerActionCreate,
+        Self::TplDockerPulling,
+        Self::TplDockerPullAmount,
+        Self::TplDockerPullFailed,
+        Self::TplDockerRemoveImageFailed,
+        Self::TplDockerPruneImagesFailed,
+        Self::TplDockerCreateVolumeFailed,
+        Self::TplDockerRemoveVolumeFailed,
+        Self::TplDockerPruneVolumesFailed,
+        Self::TplDockerCreateNetworkFailed,
+        Self::TplDockerRemoveNetworkFailed,
+        Self::TplDockerPruneNetworksFailed,
         Self::DockerTabOverview,
         Self::DockerTabLogs,
         Self::DockerTabInspect,

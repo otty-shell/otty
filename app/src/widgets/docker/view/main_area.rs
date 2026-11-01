@@ -105,7 +105,7 @@ fn notice_row<'a>(notice: Notice<DockerIntent>) -> Element<'a, DockerIntent> {
 }
 
 /// Title, engine chip, the Compose project chip, filter, the Prune button,
-/// the create button (disabled until its ticket) and Refresh.
+/// the create button (Run container waits for ticket 14) and Refresh.
 fn header_row<'a>(
     vm: &TableViewModel<'a>,
     palette: &UiPalette,
@@ -131,8 +131,11 @@ fn header_row<'a>(
         .width(FILTER_WIDTH)
         .id(Id::new(FILTER_ID))
         .on_input(DockerIntent::FilterChanged);
-    let create = Button::new(i18n::t(vm.resource.create_key()), palette)
+    let mut create = Button::new(i18n::t(vm.resource.create_key()), palette)
         .size(ButtonSize::Small);
+    if vm.can_create {
+        create = create.on_press(DockerIntent::OpenCreate);
+    }
     let refresh = IconButton::new(
         svg::Handle::from_memory(icons::REFRESH),
         i18n::t(Key::DockerRefresh),
@@ -229,6 +232,7 @@ mod tests {
                 is_enabled: true,
             }),
             notice: None,
+            can_create: false,
         })
     }
 
@@ -403,6 +407,26 @@ mod tests {
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![DockerIntent::CheckAgain]);
+    }
+
+    #[test]
+    fn an_enabled_create_button_opens_the_create_dialog() {
+        let themes = ThemeManager::new();
+        let vm = with(|table| TableViewModel {
+            resource: ResourceKind::Volumes,
+            can_create: true,
+            ..table
+        });
+        let mut ui = simulator(view(MainAreaProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(i18n::t(Key::DockerCreateVolume))
+            .expect("create volume should show");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::OpenCreate]);
     }
 
     #[test]

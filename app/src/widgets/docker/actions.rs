@@ -1,11 +1,17 @@
 //! What the user can do with a row or a list (spec Decision 11): the
-//! actions each container state offers, the engine call each one makes and
-//! the confirmation a destructive one asks for.
+//! actions each container state and image offers, when Remove is disabled,
+//! the engine call each action makes and the confirmation a destructive one
+//! asks for.
 
-use otty_docker::{ContainerState, EngineAddress, EngineInfo};
+use otty_docker::{
+    ContainerState, EngineAddress, EngineInfo, Image, Network, Volume,
+};
 
 use super::types::ResourceKind;
 use crate::i18n::{self, Key};
+
+/// The only action of a volume or a network row.
+pub(crate) const REMOVE_ONLY: &[RowAction] = &[RowAction::Remove];
 
 /// What a button in the inspector or an item of the row menu does with the
 /// selected row.
@@ -16,6 +22,8 @@ pub(crate) enum RowAction {
     Restart,
     Pause,
     Unpause,
+    /// Opens the pull dialog with the image's name and tag.
+    PullAgain,
     /// Asks first.
     Remove,
 }
@@ -29,6 +37,7 @@ impl RowAction {
             Self::Restart => Key::DockerActionRestart,
             Self::Pause => Key::DockerActionPause,
             Self::Unpause => Key::DockerActionUnpause,
+            Self::PullAgain => Key::DockerActionPullAgain,
             Self::Remove => Key::DockerActionRemove,
         }
     }
@@ -56,24 +65,52 @@ pub(crate) enum EngineAction {
     },
     /// Remove every stopped container.
     PruneContainers,
+    /// Remove the image with this id; `force` removes one a stopped
+    /// container uses.
+    RemoveImage {
+        id: String,
+        force: bool,
+    },
+    /// Remove every dangling image no container uses.
+    PruneImages,
+    /// Create a volume; a blank name lets the engine pick one.
+    CreateVolume {
+        name: String,
+        driver: String,
+    },
+    /// Remove the volume with this name.
+    RemoveVolume(String),
+    /// Remove every volume no container uses.
+    PruneVolumes,
+    CreateNetwork {
+        name: String,
+        driver: String,
+    },
+    /// Remove the network with this id.
+    RemoveNetwork(String),
+    /// Remove every user network no container uses.
+    PruneNetworks,
 }
 
 impl EngineAction {
     /// The list the action changes.
     pub(crate) fn resource(&self) -> ResourceKind {
         match self {
-            Self::StartContainer(_)
-            | Self::StopContainer(_)
-            | Self::RestartContainer(_)
-            | Self::PauseContainer(_)
-            | Self::UnpauseContainer(_)
-            | Self::RemoveContainer { .. }
-            | Self::PruneContainers => ResourceKind::Containers,
+            Self::RemoveImage { .. } | Self::PruneImages => {
+                ResourceKind::Images
+            },
+            Self::CreateVolume { .. }
+            | Self::RemoveVolume(_)
+            | Self::PruneVolumes => ResourceKind::Volumes,
+            Self::CreateNetwork { .. }
+            | Self::RemoveNetwork(_)
+            | Self::PruneNetworks => ResourceKind::Networks,
+            _ => ResourceKind::Containers,
         }
     }
 
     /// The id of the row the action works on; `None` for a prune, which
-    /// works on the whole list.
+    /// works on the whole list, and for a create.
     pub(crate) fn target(&self) -> Option<&str> {
         match self {
             Self::StartContainer(id)
@@ -81,8 +118,11 @@ impl EngineAction {
             | Self::RestartContainer(id)
             | Self::PauseContainer(id)
             | Self::UnpauseContainer(id)
-            | Self::RemoveContainer { id, .. } => Some(id),
-            Self::PruneContainers => None,
+            | Self::RemoveContainer { id, .. }
+            | Self::RemoveImage { id, .. }
+            | Self::RemoveVolume(id)
+            | Self::RemoveNetwork(id) => Some(id),
+            _ => None,
         }
     }
 
@@ -96,15 +136,26 @@ impl EngineAction {
             Self::UnpauseContainer(_) => Key::TplDockerUnpauseFailed,
             Self::RemoveContainer { .. } => Key::TplDockerRemoveContainerFailed,
             Self::PruneContainers => Key::TplDockerPruneContainersFailed,
+            Self::RemoveImage { .. } => Key::TplDockerRemoveImageFailed,
+            Self::PruneImages => Key::TplDockerPruneImagesFailed,
+            Self::CreateVolume { .. } => Key::TplDockerCreateVolumeFailed,
+            Self::RemoveVolume(_) => Key::TplDockerRemoveVolumeFailed,
+            Self::PruneVolumes => Key::TplDockerPruneVolumesFailed,
+            Self::CreateNetwork { .. } => Key::TplDockerCreateNetworkFailed,
+            Self::RemoveNetwork(_) => Key::TplDockerRemoveNetworkFailed,
+            Self::PruneNetworks => Key::TplDockerPruneNetworksFailed,
         }
     }
 
     /// The same action with the confirmation switch applied: it forces a
-    /// removal. Other actions have no switch.
+    /// container or image removal. Other actions have no switch.
     fn with_switch(self, is_on: bool) -> Self {
         match self {
             Self::RemoveContainer { id, .. } => {
                 Self::RemoveContainer { id, force: is_on }
+            },
+            Self::RemoveImage { id, .. } => {
+                Self::RemoveImage { id, force: is_on }
             },
             other => other,
         }
@@ -247,6 +298,40 @@ pub(crate) fn needs_stop(state: ContainerState) -> bool {
             | ContainerState::Paused
             | ContainerState::Restarting
     )
+}
+
+/// The actions an image offers: Pull again needs a tag, so a dangling
+/// image can only be removed. Run joins them with ticket 14.
+pub(crate) fn image_actions(image: &Image) -> &'static [RowAction] {
+    if image.is_dangling() {
+        &[RowAction::Remove]
+    } else {
+        &[RowAction::PullAgain, RowAction::Remove]
+    }
+}
+
+/// Why Remove of `volume` is disabled: the engine keeps a volume a
+/// container uses. `None` when it can be removed.
+pub(crate) fn volume_remove_hint(volume: &Volume) -> Option<String> {
+    if volume.containers().is_empty() {
+        return None;
+    }
+
+    Some(i18n::docker_volume_in_use(&volume.containers().join(", ")))
+}
+
+/// Why Remove of `network` is disabled: the engine refuses the built-in
+/// networks (`bridge`, `host`, `none`) and one a container is connected
+/// to. `None` when it can be removed.
+pub(crate) fn network_remove_hint(network: &Network) -> Option<String> {
+    if network.is_built_in() {
+        return Some(i18n::t(Key::DockerBuiltInNetworkHint).to_string());
+    }
+    if !network.containers().is_empty() {
+        return Some(i18n::t(Key::DockerNetworkInUseHint).to_string());
+    }
+
+    None
 }
 
 /// The notice text of a failed `request`: the action, the row and the
@@ -448,6 +533,23 @@ mod tests {
                 force: false,
             },
             EngineAction::PruneContainers,
+            EngineAction::RemoveImage {
+                id: id(),
+                force: false,
+            },
+            EngineAction::PruneImages,
+            EngineAction::CreateVolume {
+                name: id(),
+                driver: id(),
+            },
+            EngineAction::RemoveVolume(id()),
+            EngineAction::PruneVolumes,
+            EngineAction::CreateNetwork {
+                name: id(),
+                driver: id(),
+            },
+            EngineAction::RemoveNetwork(id()),
+            EngineAction::PruneNetworks,
         ]
         .iter()
         .map(EngineAction::failure_key)
@@ -456,5 +558,154 @@ mod tests {
         for (position, key) in keys.iter().enumerate() {
             assert!(!keys[position + 1..].contains(key), "{key:?} repeats");
         }
+    }
+
+    #[test]
+    fn image_volume_and_network_actions_name_their_list_and_row() {
+        let id = || String::from("x1");
+        let cases = [
+            (
+                EngineAction::RemoveImage {
+                    id: id(),
+                    force: true,
+                },
+                ResourceKind::Images,
+                Some("x1"),
+            ),
+            (EngineAction::PruneImages, ResourceKind::Images, None),
+            (
+                EngineAction::CreateVolume {
+                    name: id(),
+                    driver: String::from("local"),
+                },
+                ResourceKind::Volumes,
+                None,
+            ),
+            (
+                EngineAction::RemoveVolume(id()),
+                ResourceKind::Volumes,
+                Some("x1"),
+            ),
+            (EngineAction::PruneVolumes, ResourceKind::Volumes, None),
+            (
+                EngineAction::CreateNetwork {
+                    name: id(),
+                    driver: String::from("bridge"),
+                },
+                ResourceKind::Networks,
+                None,
+            ),
+            (
+                EngineAction::RemoveNetwork(id()),
+                ResourceKind::Networks,
+                Some("x1"),
+            ),
+            (EngineAction::PruneNetworks, ResourceKind::Networks, None),
+        ];
+
+        for (action, resource, target) in cases {
+            assert_eq!(action.resource(), resource, "{action:?}");
+            assert_eq!(action.target(), target, "{action:?}");
+        }
+    }
+
+    #[test]
+    fn the_force_switch_forces_an_image_removal() {
+        let remove = request(EngineAction::RemoveImage {
+            id: String::from("sha256:a"),
+            force: false,
+        });
+
+        let forced = Confirm::new(remove, Some(true), 0).into_request();
+
+        assert_eq!(
+            forced.action(),
+            &EngineAction::RemoveImage {
+                id: String::from("sha256:a"),
+                force: true,
+            }
+        );
+    }
+
+    #[test]
+    fn a_tagged_image_can_be_pulled_again_and_a_dangling_one_only_removed() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let dangling = resources
+            .images()
+            .iter()
+            .find(|image| image.is_dangling())
+            .expect("fixture has a dangling image");
+        let tagged = resources
+            .images()
+            .iter()
+            .find(|image| !image.is_dangling())
+            .expect("fixture has a tagged image");
+
+        assert_eq!(
+            image_actions(tagged),
+            &[RowAction::PullAgain, RowAction::Remove]
+        );
+        assert_eq!(image_actions(dangling), &[RowAction::Remove]);
+        assert!(!RowAction::PullAgain.is_danger());
+    }
+
+    #[test]
+    fn a_volume_a_container_uses_cannot_be_removed() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let used = resources
+            .volumes()
+            .iter()
+            .find(|volume| !volume.containers().is_empty())
+            .expect("fixture has a used volume");
+        let names = used.containers().join(", ");
+
+        let hint = volume_remove_hint(used);
+
+        assert_eq!(hint, Some(i18n::docker_volume_in_use(&names)));
+        assert!(hint.is_some_and(|hint| hint.contains(&names)));
+    }
+
+    #[test]
+    fn an_unused_volume_or_network_can_be_removed() {
+        let idle = fixtures::idle_resources(EngineKind::Docker);
+        let user_network = idle
+            .networks()
+            .iter()
+            .find(|network| network.name() == "otty-fx-net")
+            .expect("fixture network");
+
+        for volume in idle.volumes() {
+            assert_eq!(volume_remove_hint(volume), None);
+        }
+        assert_eq!(network_remove_hint(user_network), None);
+    }
+
+    #[test]
+    fn built_in_and_connected_networks_cannot_be_removed() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let network = |name: &str| {
+            resources
+                .networks()
+                .iter()
+                .find(|network| network.name() == name)
+                .expect("fixture network")
+        };
+
+        assert_eq!(
+            network_remove_hint(network("bridge")),
+            Some(i18n::t(Key::DockerBuiltInNetworkHint).to_string())
+        );
+        assert_eq!(
+            network_remove_hint(network("host")),
+            Some(i18n::t(Key::DockerBuiltInNetworkHint).to_string())
+        );
+        assert_eq!(
+            network_remove_hint(network("none")),
+            Some(i18n::t(Key::DockerBuiltInNetworkHint).to_string())
+        );
+        assert_eq!(
+            network_remove_hint(network("otty-fx-net")),
+            Some(i18n::t(Key::DockerNetworkInUseHint).to_string())
+        );
     }
 }

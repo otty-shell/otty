@@ -1,8 +1,11 @@
 use iced::Point;
 use iced::widget::text_editor::Action;
-use otty_docker::{Container, Discovery, EngineAddress, EngineInfo};
+use otty_docker::{
+    Container, Discovery, EngineAddress, EngineInfo, PullProgress,
+};
 
 use super::actions::{ActionRequest, RowAction};
+use super::forms::FormField;
 use super::inspector::{InspectTarget, InspectorTab, LogTarget};
 use super::types::{LoadedList, LoadedLists, Place, ResourceKind};
 
@@ -97,6 +100,19 @@ pub(crate) enum DockerIntent {
     },
     /// The cross of the action notice was pressed.
     DismissNotice,
+    /// The create button above the table was pressed (Pull image, Create
+    /// volume, Create network).
+    OpenCreate,
+    /// A field of the create dialog changed.
+    FormChanged(FormField, String),
+    /// The action button of the create dialog was pressed.
+    FormSubmitted,
+    /// Cancel of the create dialog was pressed; it stops a running pull.
+    FormCancelled,
+    /// The running pull got further.
+    PullProgressed(PullProgress),
+    /// The pull ended; the error is the engine's message.
+    PullFinished(Result<(), String>),
 }
 
 /// Effect events produced by the Docker reducer. The app runs them off the
@@ -126,6 +142,14 @@ pub(crate) enum DockerEffect {
     },
     /// Run this action on its engine.
     RunAction(ActionRequest),
+    /// Pull `image` at `tag` on `engine`, reporting progress.
+    StartPull {
+        engine: EngineInfo,
+        image: String,
+        tag: String,
+    },
+    /// Stop the running pull.
+    CancelPull,
 }
 
 /// Docker event stream routed through the app update loop.

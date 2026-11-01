@@ -1,5 +1,6 @@
 pub(crate) mod confirm_dialog;
 pub(crate) mod engine_tree;
+pub(crate) mod form_dialog;
 pub(crate) mod inspector;
 pub(crate) mod main_area;
 pub(crate) mod no_engine;

@@ -2,7 +2,10 @@ pub(crate) mod action_flow;
 pub(crate) mod action_model;
 pub(crate) mod actions;
 pub(crate) mod event;
+pub(crate) mod form_flow;
+pub(crate) mod form_model;
 pub(crate) mod format;
+pub(crate) mod forms;
 pub(crate) mod inspector;
 pub(crate) mod inspector_tabs;
 mod logs;
@@ -19,7 +22,8 @@ pub(crate) mod view;
 
 use action_model::{ActionsViewModel, ConfirmViewModel, RowMenuViewModel};
 pub(crate) use event::{DockerEffect, DockerEvent, DockerIntent};
-use iced::{Subscription, Task};
+use form_model::FormViewModel;
+use iced::{Subscription, Task, task};
 use inspector_tabs::InspectorTabsViewModel;
 use model::{InspectorViewModel, MainViewModel, TreeRowViewModel};
 use state::DockerState;
@@ -31,6 +35,9 @@ use status::StatusViewModel;
 /// while Docker mode is active.
 pub(crate) struct DockerWidget {
     state: DockerState,
+    /// Aborts the running image pull when dropped or cancelled. It lives
+    /// beside the state because the reducer never holds running tasks.
+    pull_task: Option<task::Handle>,
 }
 
 impl DockerWidget {
@@ -43,6 +50,20 @@ impl DockerWidget {
     pub(crate) fn new() -> Self {
         Self {
             state: DockerState::default(),
+            pull_task: None,
+        }
+    }
+
+    /// Keep the handle of the pull that just started; an earlier one is
+    /// aborted.
+    pub(crate) fn set_pull_task(&mut self, handle: task::Handle) {
+        self.pull_task = Some(handle.abort_on_drop());
+    }
+
+    /// Stop the running pull, if any.
+    pub(crate) fn cancel_pull(&mut self) {
+        if let Some(handle) = self.pull_task.take() {
+            handle.abort();
         }
     }
 
@@ -123,9 +144,24 @@ impl DockerWidget {
         action_model::confirm_dialog(&self.state)
     }
 
+    /// Build the open create dialog.
+    pub(crate) fn form_vm(&self) -> Option<FormViewModel<'_>> {
+        form_model::form_dialog(&self.state)
+    }
+
     /// Return whether a row menu or a dialog covers the window.
     pub(crate) fn has_overlay(&self) -> bool {
-        self.state.row_menu().is_some() || self.state.confirm().is_some()
+        self.state.row_menu().is_some()
+            || self.state.confirm().is_some()
+            || self.state.form().is_some()
+    }
+}
+
+#[cfg(test)]
+impl DockerWidget {
+    /// Return whether a pull task is kept.
+    pub(crate) fn has_pull_task(&self) -> bool {
+        self.pull_task.is_some()
     }
 }
 

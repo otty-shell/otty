@@ -304,6 +304,8 @@ fn is_docker_background(event: &DockerEvent) -> bool {
                 | DockerIntent::EngineUnreachable(_)
                 | DockerIntent::ListLoaded { .. }
                 | DockerIntent::ActionFinished { .. }
+                | DockerIntent::PullProgressed(_)
+                | DockerIntent::PullFinished(_)
         ),
         DockerEvent::Effect(_) => true,
     }
@@ -472,6 +474,10 @@ mod tests {
                 ),
                 result: Ok(()),
             }),
+            docker(DockerIntent::PullProgressed(
+                otty_docker::fixtures::pull_progress(),
+            )),
+            docker(DockerIntent::PullFinished(Ok(()))),
         ];
         let address = otty_docker::EngineAddress::Tcp(String::from("h:1"));
         let log_target = LogTarget::new(

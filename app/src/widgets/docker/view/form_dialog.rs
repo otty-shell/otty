@@ -1,0 +1,226 @@
+//! The create dialog of the open list: Pull image (image and tag, then the
+//! progress line of the pull), Create volume and Create network (name and
+//! driver).
+
+use iced::widget::{Id, column, row, text};
+use iced::{Alignment, Element};
+use otty_ui_kit::components::button::{Button, ButtonKind};
+use otty_ui_kit::components::dialog::Dialog;
+use otty_ui_kit::components::progress_bar::ProgressBar;
+use otty_ui_kit::components::text_field::TextField;
+use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::{fonts, spacing, typography};
+
+use super::super::event::DockerIntent;
+use super::super::form_model::{FormViewModel, PullLineViewModel};
+use super::super::forms::FormField;
+use crate::i18n::{self, Key};
+use crate::theme::ThemeProps;
+
+/// Props for the create dialog.
+pub(crate) struct FormDialogProps<'a> {
+    pub(crate) vm: FormViewModel<'a>,
+    pub(crate) theme: ThemeProps<'a>,
+}
+
+/// Render the modal create dialog: its fields, the progress line of a
+/// running pull, Cancel and the action button.
+pub(crate) fn view(props: FormDialogProps<'_>) -> Element<'_, DockerIntent> {
+    let palette = props.theme.theme.ui();
+    let vm = props.vm;
+
+    let mut body = column![].spacing(spacing::SPACE_4);
+    for field in vm.fields {
+        let mut input = TextField::new(field.label, field.value, palette)
+            .id(field_id(field.field));
+        if !field.placeholder.is_empty() {
+            input = input.placeholder(field.placeholder);
+        }
+        if vm.is_editable {
+            let changed = field.field;
+            input = input
+                .on_input(move |value| {
+                    DockerIntent::FormChanged(changed, value)
+                })
+                .on_submit(DockerIntent::FormSubmitted);
+        }
+        body = body.push(input);
+    }
+    if let Some(progress) = vm.progress {
+        body = body.push(pull_line(progress, palette));
+    }
+
+    let cancel = Button::new(i18n::t(Key::ButtonCancel), palette)
+        .kind(ButtonKind::Ghost)
+        .on_press(DockerIntent::FormCancelled);
+    let mut submit =
+        Button::new(vm.submit_label, palette).kind(ButtonKind::Primary);
+    if vm.can_submit {
+        submit = submit.on_press(DockerIntent::FormSubmitted);
+    }
+
+    Dialog::new(vm.title, palette)
+        .body(body)
+        .action(cancel)
+        .action(submit)
+        .into()
+}
+
+/// Widget id of the text field of `field`.
+pub(crate) fn field_id(field: FormField) -> Id {
+    match field {
+        FormField::Name => Id::new("docker_form_name"),
+        FormField::Tag => Id::new("docker_form_tag"),
+        FormField::Driver => Id::new("docker_form_driver"),
+    }
+}
+
+/// "Pulling nginx:latest", the bar, and the bytes so far.
+fn pull_line<'a>(
+    progress: PullLineViewModel,
+    palette: &UiPalette,
+) -> Element<'a, DockerIntent> {
+    let hint = typography::SMALL;
+    let muted = |content: String| {
+        text(content)
+            .size(hint.size())
+            .line_height(iced::Pixels(hint.line_height()))
+            .font(fonts::UI)
+            .color(palette.text_muted())
+    };
+
+    let mut line = row![
+        muted(progress.text),
+        ProgressBar::new(progress.fraction, palette),
+    ]
+    .spacing(spacing::SPACE_3)
+    .align_y(Alignment::Center);
+    if let Some(amount) = progress.amount {
+        line = line.push(muted(amount).font(fonts::MONO));
+    }
+
+    line.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use iced_test::simulator;
+
+    use super::*;
+    use crate::i18n::{self, Key};
+    use crate::theme::ThemeManager;
+    use crate::widgets::docker::form_model::{
+        FieldViewModel, PullLineViewModel,
+    };
+
+    fn pull_dialog(can_submit: bool) -> FormViewModel<'static> {
+        FormViewModel {
+            title: i18n::t(Key::DockerPullImage),
+            fields: vec![
+                FieldViewModel {
+                    field: FormField::Name,
+                    label: i18n::t(Key::DockerFieldImage),
+                    value: "",
+                    placeholder: "nginx",
+                },
+                FieldViewModel {
+                    field: FormField::Tag,
+                    label: i18n::t(Key::DockerFieldTag),
+                    value: "latest",
+                    placeholder: "",
+                },
+            ],
+            progress: None,
+            submit_label: i18n::t(Key::DockerActionPull),
+            can_submit,
+            is_editable: true,
+        }
+    }
+
+    #[test]
+    fn typing_in_a_field_sends_its_new_value() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(FormDialogProps {
+            vm: pull_dialog(false),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(field_id(FormField::Name))
+            .expect("image field should show");
+        let _ = ui.typewrite("n");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(
+            intents,
+            vec![DockerIntent::FormChanged(
+                FormField::Name,
+                String::from("n")
+            )]
+        );
+    }
+
+    #[test]
+    fn cancel_and_the_action_send_their_intents() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(FormDialogProps {
+            vm: pull_dialog(true),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(i18n::t(Key::ButtonCancel))
+            .expect("cancel should show");
+        ui.click(i18n::t(Key::DockerActionPull))
+            .expect("pull should show");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(
+            intents,
+            vec![DockerIntent::FormCancelled, DockerIntent::FormSubmitted]
+        );
+    }
+
+    #[test]
+    fn a_form_that_cannot_be_sent_has_a_disabled_action() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(FormDialogProps {
+            vm: pull_dialog(false),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(i18n::t(Key::DockerActionPull))
+            .expect("pull should show");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert!(intents.is_empty());
+    }
+
+    #[test]
+    fn a_running_pull_shows_its_progress_line_and_can_be_cancelled() {
+        let themes = ThemeManager::new();
+        let vm = FormViewModel {
+            is_editable: false,
+            progress: Some(PullLineViewModel {
+                text: String::from("Pulling nginx:latest"),
+                fraction: 0.3,
+                amount: Some(String::from("15 MB of 47 MB")),
+            }),
+            ..pull_dialog(false)
+        };
+        let mut ui = simulator(view(FormDialogProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.find("Pulling nginx:latest")
+            .expect("progress text should show");
+        ui.find("15 MB of 47 MB").expect("amount should show");
+        ui.click(field_id(FormField::Name))
+            .expect("image field should show");
+        let _ = ui.typewrite("x");
+        ui.click(i18n::t(Key::ButtonCancel))
+            .expect("cancel should show");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::FormCancelled]);
+    }
+}

@@ -13,6 +13,8 @@ use bollard::{API_DEFAULT_VERSION, ClientVersion, Docker};
 use futures_util::future::try_join4;
 
 mod container_actions;
+mod image_pull;
+mod resource_actions;
 
 use crate::address::EngineAddress;
 use crate::container::Container;

@@ -14,7 +14,7 @@ use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, status_bar};
 use crate::widgets::docker::DockerEvent;
 use crate::widgets::docker::view::{
-    confirm_dialog as docker_confirm, engine_tree,
+    confirm_dialog as docker_confirm, engine_tree, form_dialog as docker_form,
     inspector as docker_inspector, main_area as docker_main,
     row_menu as docker_row_menu, status_bar as docker_status_bar,
 };
@@ -424,6 +424,12 @@ fn view_docker_overlays<'a>(
     }
     if let Some(vm) = app.widgets.docker.confirm_vm() {
         layers.push(docker_confirm::view(docker_confirm::ConfirmDialogProps {
+            vm,
+            theme: theme_props,
+        }));
+    }
+    if let Some(vm) = app.widgets.docker.form_vm() {
+        layers.push(docker_form::view(docker_form::FormDialogProps {
             vm,
             theme: theme_props,
         }));
@@ -861,6 +867,21 @@ mod tests {
         dialog_ui
             .find(i18n::t(Key::DockerRemoveContainerText))
             .expect("the remove dialog should show");
+        drop(dialog_ui);
+        assert!(app.widgets.docker.has_overlay());
+
+        let _ = app.widgets.docker.reduce(DockerIntent::ConfirmCancelled);
+        let _ = app.widgets.docker.reduce(DockerIntent::Open(
+            crate::widgets::docker::types::Place::new(
+                docker.address().clone(),
+                crate::widgets::docker::types::ResourceKind::Images,
+            ),
+        ));
+        let _ = app.widgets.docker.reduce(DockerIntent::OpenCreate);
+        let mut pull_ui = simulator(view(&app));
+        pull_ui
+            .find(i18n::t(Key::DockerFieldImage))
+            .expect("the pull dialog should show");
         assert!(app.widgets.docker.has_overlay());
     }
 

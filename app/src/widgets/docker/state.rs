@@ -5,6 +5,7 @@ use otty_docker::{
 };
 
 use super::actions::{ActionRequest, Confirm};
+use super::forms::Form;
 use super::inspector::{
     InspectTarget, InspectorState, InspectorTab, LogTarget,
 };
@@ -30,6 +31,8 @@ pub(crate) struct DockerState {
     /// Where the row menu opened, in window coordinates.
     row_menu: Option<Point>,
     notice: Option<String>,
+    /// The open create dialog.
+    form: Option<Form>,
 }
 
 impl DockerState {
@@ -137,6 +140,11 @@ impl DockerState {
     /// Return the notice of the last failed action.
     pub(crate) fn notice(&self) -> Option<&str> {
         self.notice.as_deref()
+    }
+
+    /// Return the open create dialog.
+    pub(crate) fn form(&self) -> Option<&Form> {
+        self.form.as_ref()
     }
 
     /// Return whether an action runs on the row `target` (or, with `None`,
@@ -343,6 +351,21 @@ impl DockerState {
     /// Hide the notice.
     pub(super) fn dismiss_notice(&mut self) {
         self.notice = None;
+    }
+
+    /// Open a create dialog.
+    pub(super) fn open_form(&mut self, form: Form) {
+        self.form = Some(form);
+    }
+
+    /// Return the open create dialog to change it.
+    pub(super) fn form_mut(&mut self) -> Option<&mut Form> {
+        self.form.as_mut()
+    }
+
+    /// Close the create dialog and return it.
+    pub(super) fn take_form(&mut self) -> Option<Form> {
+        self.form.take()
     }
 
     /// Show all containers of the open engine again, leaving a Compose

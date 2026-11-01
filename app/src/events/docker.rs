@@ -4,6 +4,7 @@
 
 use iced::Task;
 use iced::futures::future::join3;
+use iced::futures::{SinkExt, Stream, StreamExt};
 use otty_docker::{Container, Engine, EngineInfo, discover};
 
 use super::AppEvent;
@@ -20,10 +21,22 @@ pub(crate) fn handle(app: &mut App, event: DockerEvent) -> Task<AppEvent> {
         DockerEvent::Intent(intent) => {
             app.widgets.docker.reduce(intent).map(AppEvent::Docker)
         },
+        DockerEvent::Effect(DockerEffect::StartPull { engine, image, tag }) => {
+            let (task, handle) =
+                Task::run(pull_updates(engine, image, tag), intent).abortable();
+            app.widgets.docker.set_pull_task(handle);
+            task
+        },
+        DockerEvent::Effect(DockerEffect::CancelPull) => {
+            app.widgets.docker.cancel_pull();
+            Task::none()
+        },
         DockerEvent::Effect(effect) => handle_effect(effect),
     }
 }
 
+/// Run the effects that need no app state; the pull effects are run by
+/// [`handle`], which keeps the pull's abort handle.
 fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
     match effect {
         DockerEffect::Discover => Task::perform(discover(), |discovery| {
@@ -73,7 +86,47 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
                 intent(DockerIntent::ActionFinished { request, result })
             })
         },
+        DockerEffect::StartPull { .. } | DockerEffect::CancelPull => {
+            Task::none()
+        },
     }
+}
+
+/// The intents of one pull: a `PullProgressed` per line of the engine,
+/// then one `PullFinished` (with the engine's message on failure).
+/// Dropping the stream (Cancel) closes the request, which stops the pull.
+fn pull_updates(
+    info: EngineInfo,
+    image: String,
+    tag: String,
+) -> impl Stream<Item = DockerIntent> {
+    iced::stream::channel(16, async move |mut output| {
+        let engine = match Engine::connect(&info) {
+            Ok(engine) => engine,
+            Err(err) => {
+                let _ = output
+                    .send(DockerIntent::PullFinished(Err(err.message())))
+                    .await;
+                return;
+            },
+        };
+
+        let mut updates = engine.pull(&image, &tag);
+        while let Some(update) = updates.next().await {
+            let next = match update {
+                Ok(progress) => DockerIntent::PullProgressed(progress),
+                Err(err) => {
+                    let _ = output
+                        .send(DockerIntent::PullFinished(Err(err.message())))
+                        .await;
+                    return;
+                },
+            };
+            let _ = output.send(next).await;
+        }
+
+        let _ = output.send(DockerIntent::PullFinished(Ok(()))).await;
+    })
 }
 
 /// Make the engine call of one action. The error is the engine's own
@@ -96,6 +149,20 @@ async fn run_action(request: ActionRequest) -> Result<(), String> {
             engine.remove_container(id, *force).await
         },
         EngineAction::PruneContainers => engine.prune_containers().await,
+        EngineAction::RemoveImage { id, force } => {
+            engine.remove_image(id, *force).await
+        },
+        EngineAction::PruneImages => engine.prune_images().await,
+        EngineAction::CreateVolume { name, driver } => {
+            engine.create_volume(name, driver).await
+        },
+        EngineAction::RemoveVolume(name) => engine.remove_volume(name).await,
+        EngineAction::PruneVolumes => engine.prune_volumes().await,
+        EngineAction::CreateNetwork { name, driver } => {
+            engine.create_network(name, driver).await
+        },
+        EngineAction::RemoveNetwork(id) => engine.remove_network(id).await,
+        EngineAction::PruneNetworks => engine.prune_networks().await,
     };
 
     result.map_err(|err| err.message())
@@ -272,6 +339,28 @@ mod tests {
         )));
 
         assert_eq!(stop.units(), 1);
+    }
+
+    #[test]
+    fn a_pull_runs_one_task_that_cancel_aborts() {
+        let (mut app, _) = App::new();
+
+        let pull = handle(
+            &mut app,
+            DockerEvent::Effect(DockerEffect::StartPull {
+                engine: fixtures::engine(EngineKind::Docker),
+                image: String::from("nginx"),
+                tag: String::from("latest"),
+            }),
+        );
+        assert_eq!(pull.units(), 1);
+        assert!(app.widgets.docker.has_pull_task());
+
+        let cancel =
+            handle(&mut app, DockerEvent::Effect(DockerEffect::CancelPull));
+
+        assert_eq!(cancel.units(), 0);
+        assert!(!app.widgets.docker.has_pull_task());
     }
 
     #[test]

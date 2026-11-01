@@ -3,70 +3,82 @@
 //! its result (spec Decision 11).
 
 use iced::{Point, Task};
-use otty_docker::{Container, ContainerState, EngineInfo};
+use otty_docker::{
+    Container, ContainerState, EngineAddress, EngineInfo, Image, Network,
+    Volume,
+};
 
 use super::actions::{
-    ActionRequest, Confirm, EngineAction, RowAction, container_actions,
-    failure_text, needs_stop,
+    ActionRequest, Confirm, EngineAction, REMOVE_ONLY, RowAction,
+    container_actions, failure_text, image_actions, needs_stop,
+    network_remove_hint, volume_remove_hint,
 };
 use super::event::{DockerEffect, DockerEvent};
+use super::forms::{Form, split_reference};
 use super::state::DockerState;
-use super::types::ResourceKind;
+use super::types::{ResourceKind, image_name};
 
-/// The selected container of the open list, copied out of the state so the
-/// state can change.
-struct SelectedContainer {
+/// The selected row of the open list and what it allows, copied out of the
+/// state so the state can change.
+struct SelectedItem {
     engine: EngineInfo,
+    resource: ResourceKind,
     id: String,
+    /// The name the table shows (the first tag of an image).
     name: String,
-    state: ContainerState,
+    offered: &'static [RowAction],
+    /// Remove is offered but the engine would refuse it.
+    is_remove_blocked: bool,
+    /// The first state of the remove dialog's switch ("Stop it first",
+    /// "Force"); `None` without a switch.
+    remove_switch: Option<bool>,
 }
 
 /// Run `action` on the selected row: a direct action asks the engine, a
-/// Remove asks the user first. An action the row does not offer, or one on
-/// a row that already runs an action, does nothing. Closes the row menu.
+/// Remove asks the user first, Pull again opens the pull dialog. An action
+/// the row does not offer, a Remove the engine would refuse, or any action
+/// on a row that already runs one does nothing. Closes the row menu.
 pub(super) fn act(
     state: &mut DockerState,
     action: RowAction,
 ) -> Task<DockerEvent> {
     state.close_row_menu();
 
-    let Some(container) = selected_container(state) else {
+    let Some(item) = selected_item(state) else {
         return Task::none();
     };
-    let is_offered = container_actions(container.state).contains(&action);
-    let is_busy = state.is_busy(
-        container.engine.address(),
-        ResourceKind::Containers,
-        Some(&container.id),
-    );
-    if !is_offered || is_busy {
+    let is_busy =
+        state.is_busy(item.engine.address(), item.resource, Some(&item.id));
+    if !item.offered.contains(&action) || is_busy {
         return Task::none();
     }
 
     let call = match action {
-        RowAction::Start => EngineAction::StartContainer(container.id),
-        RowAction::Stop => EngineAction::StopContainer(container.id),
-        RowAction::Restart => EngineAction::RestartContainer(container.id),
-        RowAction::Pause => EngineAction::PauseContainer(container.id),
-        RowAction::Unpause => EngineAction::UnpauseContainer(container.id),
         RowAction::Remove => {
-            let remove = EngineAction::RemoveContainer {
-                id: container.id,
-                force: false,
-            };
-            let request =
-                ActionRequest::new(container.engine, remove, container.name);
-            let switch = needs_stop(container.state).then_some(true);
-            state.open_confirm(Confirm::new(request, switch, 0));
+            if item.is_remove_blocked {
+                return Task::none();
+            }
+            let request = ActionRequest::new(
+                item.engine,
+                remove_call(item.resource, item.id),
+                item.name,
+            );
+            state.open_confirm(Confirm::new(request, item.remove_switch, 0));
             return Task::none();
         },
+        RowAction::PullAgain => {
+            let (image, tag) = split_reference(&item.name);
+            state.open_form(Form::pull(item.engine, image, tag));
+            return Task::none();
+        },
+        RowAction::Start => EngineAction::StartContainer(item.id),
+        RowAction::Stop => EngineAction::StopContainer(item.id),
+        RowAction::Restart => EngineAction::RestartContainer(item.id),
+        RowAction::Pause => EngineAction::PauseContainer(item.id),
+        RowAction::Unpause => EngineAction::UnpauseContainer(item.id),
     };
 
-    run(
-        state,
-        ActionRequest::new(container.engine, call, container.name),
-    )
+    run(state, ActionRequest::new(item.engine, call, item.name))
 }
 
 /// Select the row at `index` of the shown table and open its menu at
@@ -83,32 +95,42 @@ pub(super) fn open_row_menu(
     Task::none()
 }
 
-/// Ask to prune the open list. Containers: every stopped one (created,
-/// exited or dead). Nothing opens while a prune of that list runs.
+/// Ask to prune the open list, with the count of what goes: the stopped
+/// containers (created, exited or dead), the dangling images no container
+/// uses, the volumes no container uses, or the user networks no container
+/// is connected to. Nothing opens while a prune of that list runs.
 pub(super) fn prune(state: &mut DockerState) -> Task<DockerEvent> {
     let (Some(place), Some(engine)) = (state.place(), state.open_engine())
     else {
         return Task::none();
     };
-    if place.resource() != ResourceKind::Containers
-        || state.is_busy(place.engine(), ResourceKind::Containers, None)
-    {
+    let resource = place.resource();
+    if state.is_busy(place.engine(), resource, None) {
         return Task::none();
     }
 
-    let stopped = engine
-        .containers()
-        .items()
-        .iter()
-        .filter(|container| is_stopped(container))
-        .count();
-    let request = ActionRequest::new(
-        engine.info().clone(),
-        EngineAction::PruneContainers,
-        String::new(),
-    );
+    let (action, count) = match resource {
+        ResourceKind::Containers => (
+            EngineAction::PruneContainers,
+            count(engine.containers().items(), is_stopped),
+        ),
+        ResourceKind::Images => (
+            EngineAction::PruneImages,
+            count(engine.images().items(), is_prunable_image),
+        ),
+        ResourceKind::Volumes => (
+            EngineAction::PruneVolumes,
+            count(engine.volumes().items(), is_unused_volume),
+        ),
+        ResourceKind::Networks => (
+            EngineAction::PruneNetworks,
+            count(engine.networks().items(), is_unused_network),
+        ),
+    };
+    let request =
+        ActionRequest::new(engine.info().clone(), action, String::new());
 
-    state.open_confirm(Confirm::new(request, None, stopped));
+    state.open_confirm(Confirm::new(request, None, count));
     Task::none()
 }
 
@@ -136,7 +158,15 @@ pub(super) fn finish(
         return Task::none();
     }
 
-    let address = request.engine().address();
+    reload(state, request.engine().address())
+}
+
+/// Reload every list of the engine at `address`, only while Docker mode
+/// is active and the engine is still known.
+pub(super) fn reload(
+    state: &DockerState,
+    address: &EngineAddress,
+) -> Task<DockerEvent> {
     let Some(engine) = state.engine(address) else {
         return Task::none();
     };
@@ -148,27 +178,92 @@ pub(super) fn finish(
 }
 
 /// Remember the running request and ask the app to run it.
-fn run(state: &mut DockerState, request: ActionRequest) -> Task<DockerEvent> {
+pub(super) fn run(
+    state: &mut DockerState,
+    request: ActionRequest,
+) -> Task<DockerEvent> {
     state.start_action(request.clone());
 
     effect(DockerEffect::RunAction(request))
 }
 
-/// The selected container of the open containers list.
-fn selected_container(state: &DockerState) -> Option<SelectedContainer> {
+/// The selected row of the open list.
+fn selected_item(state: &DockerState) -> Option<SelectedItem> {
     let place = state.place()?;
-    if place.resource() != ResourceKind::Containers {
-        return None;
-    }
     let engine = state.open_engine()?;
-    let container = engine.containers().selected(Container::id)?;
+    let info = engine.info().clone();
+    let resource = place.resource();
 
-    Some(SelectedContainer {
-        engine: engine.info().clone(),
-        id: container.id().to_string(),
-        name: container.name().to_string(),
-        state: container.state(),
-    })
+    let item = match resource {
+        ResourceKind::Containers => {
+            let container = engine.containers().selected(Container::id)?;
+            SelectedItem {
+                engine: info,
+                resource,
+                id: container.id().to_string(),
+                name: container.name().to_string(),
+                offered: container_actions(container.state()),
+                is_remove_blocked: false,
+                remove_switch: needs_stop(container.state()).then_some(true),
+            }
+        },
+        ResourceKind::Images => {
+            let image = engine.images().selected(Image::id)?;
+            SelectedItem {
+                engine: info,
+                resource,
+                id: image.id().to_string(),
+                name: image_name(image).to_string(),
+                offered: image_actions(image),
+                is_remove_blocked: false,
+                remove_switch: (image.containers() > 0).then_some(true),
+            }
+        },
+        ResourceKind::Volumes => {
+            let volume = engine.volumes().selected(Volume::name)?;
+            SelectedItem {
+                engine: info,
+                resource,
+                id: volume.name().to_string(),
+                name: volume.name().to_string(),
+                offered: REMOVE_ONLY,
+                is_remove_blocked: volume_remove_hint(volume).is_some(),
+                remove_switch: None,
+            }
+        },
+        ResourceKind::Networks => {
+            let network = engine.networks().selected(Network::id)?;
+            SelectedItem {
+                engine: info,
+                resource,
+                id: network.id().to_string(),
+                name: network.name().to_string(),
+                offered: REMOVE_ONLY,
+                is_remove_blocked: network_remove_hint(network).is_some(),
+                remove_switch: None,
+            }
+        },
+    };
+
+    Some(item)
+}
+
+/// The remove call of a row of `resource` with this id (not forced; the
+/// dialog switch can force it).
+fn remove_call(resource: ResourceKind, id: String) -> EngineAction {
+    match resource {
+        ResourceKind::Containers => {
+            EngineAction::RemoveContainer { id, force: false }
+        },
+        ResourceKind::Images => EngineAction::RemoveImage { id, force: false },
+        ResourceKind::Volumes => EngineAction::RemoveVolume(id),
+        ResourceKind::Networks => EngineAction::RemoveNetwork(id),
+    }
+}
+
+/// How many of `items` a prune removes.
+fn count<T>(items: &[T], is_removed: fn(&T) -> bool) -> usize {
+    items.iter().filter(|item| is_removed(item)).count()
 }
 
 /// Whether a container prune removes `container`.
@@ -177,6 +272,21 @@ fn is_stopped(container: &Container) -> bool {
         container.state(),
         ContainerState::Created | ContainerState::Exited | ContainerState::Dead
     )
+}
+
+/// Whether a dangling image prune removes `image`.
+fn is_prunable_image(image: &Image) -> bool {
+    image.is_dangling() && image.containers() == 0
+}
+
+/// Whether a volume prune removes `volume`.
+fn is_unused_volume(volume: &Volume) -> bool {
+    volume.containers().is_empty()
+}
+
+/// Whether a network prune removes `network`.
+fn is_unused_network(network: &Network) -> bool {
+    !network.is_built_in() && network.containers().is_empty()
 }
 
 fn effect(effect: DockerEffect) -> Task<DockerEvent> {
@@ -193,9 +303,12 @@ mod tests {
     use crate::widgets::docker::event::{
         DockerEffect, DockerEvent, DockerIntent,
     };
+    use crate::widgets::docker::forms::{FormField, FormKind};
     use crate::widgets::docker::reducer::reduce;
     use crate::widgets::docker::state::DockerState;
-    use crate::widgets::docker::types::{LoadedLists, Place, ResourceKind};
+    use crate::widgets::docker::types::{
+        LoadedLists, Place, ResourceKind, image_name,
+    };
 
     fn docker() -> EngineInfo {
         fixtures::engine(EngineKind::Docker)
@@ -647,5 +760,244 @@ mod tests {
         );
 
         assert_eq!(state.row_menu(), None);
+    }
+
+    /// Replace the Docker engine's lists with the idle fixture lists: no
+    /// container, so nothing uses an image, a volume or a network.
+    fn load_idle(state: &mut DockerState) {
+        let idle = fixtures::idle_resources(EngineKind::Docker);
+        let _ = reduce(
+            state,
+            DockerIntent::ListsLoaded {
+                engine: docker().address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(Vec::new()),
+                    images: Ok(idle.images().to_vec()),
+                    volumes: Ok(idle.volumes().to_vec()),
+                    networks: Ok(idle.networks().to_vec()),
+                },
+            },
+        );
+    }
+
+    /// Open `resource` and select the row named `name` (the first tag of
+    /// an image).
+    fn select_in(state: &mut DockerState, resource: ResourceKind, name: &str) {
+        let _ = reduce(
+            state,
+            DockerIntent::Open(Place::new(
+                docker().address().clone(),
+                resource,
+            )),
+        );
+        let engine = state.open_engine().expect("docker engine");
+        let index = match resource {
+            ResourceKind::Images => engine
+                .images()
+                .items()
+                .iter()
+                .position(|image| image_name(image) == name),
+            ResourceKind::Volumes => engine
+                .volumes()
+                .items()
+                .iter()
+                .position(|volume| volume.name() == name),
+            _ => engine
+                .networks()
+                .items()
+                .iter()
+                .position(|network| network.name() == name),
+        }
+        .expect("fixture row");
+
+        let _ = reduce(state, DockerIntent::SelectRow(index));
+    }
+
+    fn image_id(name: &str) -> String {
+        fixtures::resources(EngineKind::Docker)
+            .images()
+            .iter()
+            .find(|image| image_name(image) == name)
+            .map(|image| image.id().to_string())
+            .expect("fixture image")
+    }
+
+    #[test]
+    fn removing_an_image_a_container_uses_offers_force_on() {
+        let mut state = loaded_state();
+        select_in(&mut state, ResourceKind::Images, "busybox:1.37");
+
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+        assert_eq!(state.confirm().and_then(Confirm::switch), Some(true));
+        let effects =
+            effects(reduce(&mut state, DockerIntent::ConfirmAccepted));
+
+        assert_eq!(
+            effects,
+            vec![run(
+                EngineAction::RemoveImage {
+                    id: image_id("busybox:1.37"),
+                    force: true,
+                },
+                "busybox:1.37"
+            )]
+        );
+    }
+
+    #[test]
+    fn removing_an_unused_image_has_no_switch() {
+        let mut state = loaded_state();
+        select_in(&mut state, ResourceKind::Images, "otty-fx-img:1");
+
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+        assert_eq!(state.confirm().and_then(Confirm::switch), None);
+        let effects =
+            effects(reduce(&mut state, DockerIntent::ConfirmAccepted));
+
+        assert_eq!(
+            effects,
+            vec![run(
+                EngineAction::RemoveImage {
+                    id: image_id("otty-fx-img:1"),
+                    force: false,
+                },
+                "otty-fx-img:1"
+            )]
+        );
+    }
+
+    #[test]
+    fn pull_again_opens_the_pull_dialog_with_the_image_name_and_tag() {
+        let mut state = loaded_state();
+        select_in(&mut state, ResourceKind::Images, "busybox:1.37");
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::Act(RowAction::PullAgain),
+        ));
+
+        assert!(effects.is_empty());
+        let form = state.form().expect("the pull dialog");
+        assert_eq!(form.kind(), FormKind::Pull);
+        assert_eq!(form.value(FormField::Name), "busybox");
+        assert_eq!(form.value(FormField::Tag), "1.37");
+    }
+
+    #[test]
+    fn a_dangling_image_cannot_be_pulled_again() {
+        let mut state = loaded_state();
+        select_in(&mut state, ResourceKind::Images, "<none>:<none>");
+
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::PullAgain));
+
+        assert!(state.form().is_none());
+    }
+
+    #[test]
+    fn a_volume_a_container_uses_is_not_removed() {
+        let mut state = loaded_state();
+        select_in(&mut state, ResourceKind::Volumes, "otty-fx-data");
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::Act(RowAction::Remove)));
+
+        assert!(effects.is_empty());
+        assert!(state.confirm().is_none());
+    }
+
+    #[test]
+    fn an_unused_volume_is_removed_after_confirming() {
+        let mut state = loaded_state();
+        load_idle(&mut state);
+        select_in(&mut state, ResourceKind::Volumes, "otty-fx-data");
+
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+        let effects =
+            effects(reduce(&mut state, DockerIntent::ConfirmAccepted));
+
+        assert_eq!(
+            effects,
+            vec![run(
+                EngineAction::RemoveVolume(String::from("otty-fx-data")),
+                "otty-fx-data"
+            )]
+        );
+    }
+
+    #[test]
+    fn a_built_in_or_connected_network_is_not_removed() {
+        for name in ["bridge", "host", "none", "otty-fx-net"] {
+            let mut state = loaded_state();
+            select_in(&mut state, ResourceKind::Networks, name);
+
+            let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+
+            assert!(state.confirm().is_none(), "{name}");
+        }
+    }
+
+    #[test]
+    fn an_unused_network_is_removed_by_id_after_confirming() {
+        let mut state = loaded_state();
+        load_idle(&mut state);
+        select_in(&mut state, ResourceKind::Networks, "otty-fx-net");
+        let id = state
+            .open_engine()
+            .and_then(|engine| engine.networks().selected_id())
+            .expect("selected network")
+            .to_string();
+
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+        let effects =
+            effects(reduce(&mut state, DockerIntent::ConfirmAccepted));
+
+        assert_eq!(
+            effects,
+            vec![run(EngineAction::RemoveNetwork(id), "otty-fx-net")]
+        );
+    }
+
+    #[test]
+    fn container_actions_do_nothing_on_other_lists() {
+        let mut state = loaded_state();
+        select_in(&mut state, ResourceKind::Images, "busybox:1.37");
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::Act(RowAction::Stop)));
+
+        assert!(effects.is_empty());
+        assert!(state.confirm().is_none());
+    }
+
+    #[test]
+    fn each_list_prunes_after_confirming_with_its_count() {
+        let cases = [
+            (ResourceKind::Images, EngineAction::PruneImages, 1),
+            (ResourceKind::Volumes, EngineAction::PruneVolumes, 2),
+            (ResourceKind::Networks, EngineAction::PruneNetworks, 1),
+        ];
+
+        for (resource, action, count) in cases {
+            let mut state = loaded_state();
+            load_idle(&mut state);
+            let _ = reduce(
+                &mut state,
+                DockerIntent::Open(Place::new(
+                    docker().address().clone(),
+                    resource,
+                )),
+            );
+
+            let _ = reduce(&mut state, DockerIntent::Prune);
+            assert_eq!(
+                state.confirm().map(Confirm::count),
+                Some(count),
+                "{resource:?}"
+            );
+            let effects =
+                effects(reduce(&mut state, DockerIntent::ConfirmAccepted));
+
+            assert_eq!(effects, vec![run(action, "")], "{resource:?}");
+        }
     }
 }

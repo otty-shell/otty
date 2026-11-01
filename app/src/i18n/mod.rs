@@ -378,6 +378,29 @@ pub(crate) fn docker_action_failed(
     fill_in(current_locale(), key, &[("name", name), ("error", error)])
 }
 
+/// Build the hint under the disabled Remove of a volume used by `names`.
+pub(crate) fn docker_volume_in_use(names: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerVolumeInUseHint,
+        &[("names", names)],
+    )
+}
+
+/// Build the progress text of a running pull of `image`.
+pub(crate) fn docker_pulling(image: &str) -> String {
+    fill_in(current_locale(), Key::TplDockerPulling, &[("image", image)])
+}
+
+/// Build the bytes of a running pull, e.g. "15.0 MB of 47.0 MB".
+pub(crate) fn docker_pull_amount(done: &str, total: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerPullAmount,
+        &[("done", done), ("total", total)],
+    )
+}
+
 /// Build the tab title shown when editing an existing quick launch.
 pub(crate) fn edit_tab_title(command_title: &str) -> String {
     fill_in(
@@ -916,6 +939,14 @@ mod tests {
             (Key::TplDockerStatusAlsoFound, ("engine", "Podman 5.2")),
             (Key::TplDockerRemoveContainerTitle, ("name", "web-1")),
             (Key::TplDockerPruneContainersText, ("count", "3")),
+            (Key::TplDockerRemoveImageTitle, ("name", "nginx:1.27")),
+            (Key::TplDockerRemoveVolumeTitle, ("name", "pgdata")),
+            (Key::TplDockerRemoveNetworkTitle, ("name", "web_default")),
+            (Key::TplDockerPruneImagesText, ("count", "3")),
+            (Key::TplDockerPruneVolumesText, ("count", "3")),
+            (Key::TplDockerPruneNetworksText, ("count", "3")),
+            (Key::TplDockerVolumeInUseHint, ("names", "db-1")),
+            (Key::TplDockerPulling, ("image", "nginx:latest")),
         ];
 
         for locale in Locale::ALL {
@@ -948,6 +979,18 @@ mod tests {
             Key::TplDockerPauseFailed,
             Key::TplDockerUnpauseFailed,
             Key::TplDockerRemoveContainerFailed,
+            Key::TplDockerPullFailed,
+            Key::TplDockerRemoveImageFailed,
+            Key::TplDockerRemoveVolumeFailed,
+            Key::TplDockerCreateNetworkFailed,
+            Key::TplDockerRemoveNetworkFailed,
+        ];
+        let without_name = [
+            Key::TplDockerPruneContainersFailed,
+            Key::TplDockerPruneImagesFailed,
+            Key::TplDockerCreateVolumeFailed,
+            Key::TplDockerPruneVolumesFailed,
+            Key::TplDockerPruneNetworksFailed,
         ];
 
         for locale in Locale::ALL {
@@ -966,14 +1009,25 @@ mod tests {
                     locale.tag()
                 );
             }
-            let prune = fill_in(
+            for key in without_name {
+                let text = fill_in(locale, key, &[("error", "engine said no")]);
+
+                assert!(
+                    text.contains("engine said no") && !text.contains('{'),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+            let amount = fill_in(
                 locale,
-                Key::TplDockerPruneContainersFailed,
-                &[("error", "engine said no")],
+                Key::TplDockerPullAmount,
+                &[("done", "15.0 MB"), ("total", "47.0 MB")],
             );
             assert!(
-                prune.contains("engine said no") && !prune.contains('{'),
-                "{} prune: {prune}",
+                amount.contains("15.0 MB")
+                    && amount.contains("47.0 MB")
+                    && !amount.contains('{'),
+                "{} amount: {amount}",
                 locale.tag()
             );
         }

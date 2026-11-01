@@ -1,10 +1,10 @@
 use iced::Task;
 use otty_docker::{EngineAddress, EngineInfo};
 
-use super::action_flow;
 use super::event::{DockerEffect, DockerEvent, DockerIntent};
 use super::state::{DockerState, Search};
 use super::types::{LoadedList, ResourceKind};
+use super::{action_flow, form_flow};
 
 /// Reduce a Docker intent into state changes and effects. Engine work
 /// (search, list loads, inspect) is only asked for while Docker mode is
@@ -138,6 +138,24 @@ fn reduce_intent(
         DockerIntent::DismissNotice => {
             state.dismiss_notice();
             Task::none()
+        },
+        DockerIntent::OpenCreate => form_flow::open(state),
+        DockerIntent::FormChanged(field, value) => {
+            if let Some(form) = state.form_mut() {
+                form.set_value(field, value);
+            }
+            Task::none()
+        },
+        DockerIntent::FormSubmitted => form_flow::submit(state),
+        DockerIntent::FormCancelled => form_flow::cancel(state),
+        DockerIntent::PullProgressed(progress) => {
+            if let Some(form) = state.form_mut() {
+                form.set_progress(progress);
+            }
+            Task::none()
+        },
+        DockerIntent::PullFinished(result) => {
+            form_flow::finish_pull(state, result)
         },
     }
 }

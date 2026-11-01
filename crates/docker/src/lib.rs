@@ -27,6 +27,7 @@ mod inspect;
 mod logs;
 mod network;
 mod probe;
+mod pull;
 #[cfg(test)]
 mod test_support;
 mod timestamp;
@@ -47,5 +48,6 @@ pub use crate::events::ListKind;
 pub use crate::image::Image;
 pub use crate::network::Network;
 pub use crate::probe::{Probe, ProbeOutcome};
+pub use crate::pull::PullProgress;
 pub use crate::volume::Volume;
 pub use crate::watch::WatchEvent;

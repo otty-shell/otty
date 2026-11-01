@@ -40,6 +40,7 @@ use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::palette_list::{PaletteItem, PaletteList};
 use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::panel_section::PanelSection;
+use otty_ui_kit::components::progress_bar::ProgressBar;
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::select::select;
 use otty_ui_kit::components::session_group::SessionGroup;
@@ -1200,6 +1201,20 @@ fn data_parts<'a>(state: &Gallery, p: &UiPalette) -> Vec<Element<'a, Message>> {
     ]
     .width(PANEL_WIDTH);
 
+    let progress = column![
+        ProgressBar::new(0.0, p),
+        row![
+            label(String::from("Pulling nginx:1.27-alpine"), p),
+            ProgressBar::new(0.32, p),
+            label(String::from("15 MB of 47 MB"), p),
+        ]
+        .spacing(spacing::SPACE_3)
+        .align_y(iced::Alignment::Center),
+        ProgressBar::new(1.0, p),
+        ProgressBar::new(0.6, p).width(240.0),
+    ]
+    .spacing(spacing::SPACE_4);
+
     let right_click = match state.table_menu_at {
         Some(point) => format!(
             "last right click at {:.0}, {:.0} (gallery scroll coordinates)",
@@ -1235,6 +1250,11 @@ fn data_parts<'a>(state: &Gallery, p: &UiPalette) -> Vec<Element<'a, Message>> {
         section(
             "TreeRow count tone (default, failed, waiting, done)",
             tones.into(),
+            p,
+        ),
+        section(
+            "ProgressBar (empty, a third, full; 240 wide)",
+            progress.into(),
             p,
         ),
     ]

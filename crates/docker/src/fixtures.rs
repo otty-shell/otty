@@ -18,7 +18,8 @@
 use std::path::PathBuf;
 
 use bollard::models::{
-    ContainerSummary, ImageSummary, Network, SystemVersion, VolumeListResponse,
+    ContainerSummary, CreateImageInfo, ImageSummary, Network, SystemVersion,
+    VolumeListResponse,
 };
 
 use crate::address::EngineAddress;
@@ -28,6 +29,7 @@ use crate::connection::Resources;
 use crate::discovery::Discovery;
 use crate::engine::{EngineInfo, EngineKind};
 use crate::probe::{Probe, ProbeOutcome};
+use crate::pull::PullProgress;
 
 /// The fixtures are part of the crate, so one that does not parse is a
 /// build defect.
@@ -85,6 +87,33 @@ pub fn discovery(kinds: &[EngineKind]) -> Discovery {
 /// The four captured lists of `kind`, mapped as [`crate::Engine::resources`]
 /// maps them.
 pub fn resources(kind: EngineKind) -> Resources {
+    load_resources(kind, true)
+}
+
+/// The captured images, volumes and networks of `kind` as if no container
+/// existed: nothing uses them, so every one can be removed.
+pub fn idle_resources(kind: EngineKind) -> Resources {
+    load_resources(kind, false)
+}
+
+/// The progress of a pull half way: three layers, one already on this
+/// computer, 15 of 47 MB downloaded. Read from `tests/fixtures/
+/// docker-pull.jsonl`, which is written by hand in the shape Docker 29
+/// sends (no image was pulled to make it).
+pub fn pull_progress() -> PullProgress {
+    let mut progress = PullProgress::default();
+    for line in include_str!("../tests/fixtures/docker-pull.jsonl").lines() {
+        let info: CreateImageInfo =
+            serde_json::from_str(line).expect(BROKEN_FIXTURE);
+        progress.apply(&info);
+    }
+
+    progress
+}
+
+/// Map the captured lists of `kind`; without `with_containers` the
+/// container list is left out.
+fn load_resources(kind: EngineKind, with_containers: bool) -> Resources {
     let (containers, images, volumes, networks) = match kind {
         EngineKind::Docker => (
             include_str!("../tests/fixtures/docker-containers.json"),
@@ -100,8 +129,11 @@ pub fn resources(kind: EngineKind) -> Resources {
         ),
     };
 
-    let containers: Vec<ContainerSummary> =
+    let mut containers: Vec<ContainerSummary> =
         serde_json::from_str(containers).expect(BROKEN_FIXTURE);
+    if !with_containers {
+        containers.clear();
+    }
     let images: Vec<ImageSummary> =
         serde_json::from_str(images).expect(BROKEN_FIXTURE);
     let volumes: VolumeListResponse =
@@ -134,6 +166,35 @@ mod tests {
             assert!(!resources.volumes().is_empty());
             assert!(!resources.networks().is_empty());
         }
+    }
+
+    #[test]
+    fn idle_lists_have_no_containers_and_no_users() {
+        for kind in [EngineKind::Docker, EngineKind::Podman] {
+            let idle = idle_resources(kind);
+
+            assert!(idle.containers().is_empty());
+            assert_eq!(idle.images().len(), resources(kind).images().len());
+            assert!(idle.images().iter().all(|image| image.containers() == 0));
+            assert!(
+                idle.volumes()
+                    .iter()
+                    .all(|volume| volume.containers().is_empty())
+            );
+            assert!(
+                idle.networks()
+                    .iter()
+                    .all(|network| network.containers().is_empty())
+            );
+        }
+    }
+
+    #[test]
+    fn the_pull_fixture_stops_half_way() {
+        let progress = pull_progress();
+
+        assert_eq!(progress.layer_count(), 3);
+        assert!(progress.downloaded() < progress.total());
     }
 
     #[test]
