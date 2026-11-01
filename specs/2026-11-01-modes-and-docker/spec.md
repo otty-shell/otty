@@ -116,6 +116,11 @@ none of those are in scope (see Out of Scope).
    1–5; the Docker mode boards (see References) already use this table. The
    command palette gets "Switch to Terminal mode" and "Switch to Docker
    mode".
+
+   One known exception to "no keys taken from the shell": on US layouts
+   Ctrl Shift 2 is Ctrl @, which sends NUL (`^@`, used for example by Emacs
+   `set-mark`). It now switches to pinned mode 1. NUL stays available with
+   Ctrl Space (owner approved, 2026-11-01).
 7. **Docker logic lives in a new crate `otty-docker`** (`crates/docker`). It is
    the only place that uses bollard. Reason: it crosses a real infrastructure
    boundary (the engine socket), and bollard's generated types (every field
@@ -129,7 +134,20 @@ none of those are in scope (see Out of Scope).
    - Docker: `/var/run/docker.sock`; on macOS also `~/.docker/run/docker.sock`.
    - Podman: the rootless socket, then `/run/podman/podman.sock` (bollard's
      order); on macOS the socket of the default Podman machine.
+   - Other Docker-compatible engines (owner approved, 2026-11-01): Docker
+     Desktop on Linux `~/.docker/desktop/docker.sock`, Colima
+     `~/.colima/default/docker.sock` (Linux and macOS), OrbStack
+     `~/.orbstack/run/docker.sock` (macOS). They show as Docker.
    - The same socket found twice counts once.
+
+   Finding the `docker` and `podman` commands (for Decision 9 and for Shell)
+   also looks in the usual install folders, because an app started from the
+   macOS Finder gets a short `PATH`: `/usr/local/bin`, `/opt/homebrew/bin`,
+   `~/.docker/bin`, `/Applications/Docker.app/Contents/Resources/bin` and
+   `/opt/podman/bin`. A `docker` command that is really Podman (the Fedora
+   `podman-docker` package; `docker --version` names Podman) counts as
+   Podman, so a Podman-only user sees the Podman card, not the Docker one
+   (owner approved, 2026-11-01).
 
    Whether an engine is Docker or Podman is read from its `/version` answer
    (Podman reports a "Podman Engine" component). The root row shows "Docker"
@@ -316,6 +334,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 18 | Status bar per mode | B | Sonnet | 09 |
 | 19 | OTTY Light pass and screenshots | A | Sonnet | 10–18 |
 | 20 | Update the design system and the canvas boards to what was built (new kit parts, shortcut table on the old mode boards) | — | Opus, owner review | 19 |
+| 21 | Discovery: more sockets, CLI install folders, `podman-docker` wrapper (Decision 8 additions) | C | Opus | 07 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -343,3 +362,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [ ] 18 — Status bar per mode · Sonnet
 - [ ] 19 — OTTY Light pass and screenshots · Sonnet
 - [ ] 20 — Design system and canvas sync · Opus, owner review
+- [ ] 21 — Discovery additions: sockets, CLI folders, `podman-docker` · Opus
