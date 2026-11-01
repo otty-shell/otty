@@ -5,7 +5,9 @@ use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
 use super::errors::TerminalWorkspaceError;
 use super::types::ShellSession;
-use crate::shell_integration::{shell_integration_dir, with_shell_integration};
+use crate::shell_integration::{
+    shell_integration_dir, shell_name, with_shell_integration,
+};
 
 /// Build a shell session configured with OTTY integrations for a given shell.
 pub(crate) fn setup_shell_session_with_shell(
@@ -62,14 +64,6 @@ pub(crate) fn running_program_from_blocks(
         .find(|word| !word.contains('='))?;
 
     Path::new(program).file_name()?.to_str()
-}
-
-fn shell_name(shell_path: &str) -> String {
-    Path::new(shell_path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| shell_path.to_string())
 }
 
 fn shell_session_options(shell_path: &str) -> LocalSessionOptions {

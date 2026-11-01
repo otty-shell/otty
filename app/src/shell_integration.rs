@@ -45,7 +45,8 @@ pub(crate) fn shell_integration_dir() -> PathBuf {
     env::temp_dir().join(SHELL_INTEGRATIONS_DIR)
 }
 
-fn shell_name(shell_path: &str) -> String {
+/// Return the shell's name from its path, such as `zsh` for `/bin/zsh`.
+pub(crate) fn shell_name(shell_path: &str) -> String {
     Path::new(shell_path)
         .file_name()
         .and_then(|name| name.to_str())
