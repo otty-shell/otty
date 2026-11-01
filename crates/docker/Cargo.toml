@@ -1,0 +1,24 @@
+[package]
+name = "otty-docker"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Finds and talks to the local Docker or Podman engine"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+# Docker Engine API client; Podman serves the same API. Default features only
+# (`http`, `pipe`): unix socket and plain tcp, no ssl, no ssh.
+bollard = "0.21.1"
+# Waits on all engine probes at once and, later, reads bollard's streams.
+futures-util = "0.3.31"
+log = { workspace = true }
+thiserror = { workspace = true }
+tokio = { version = "1.47", features = ["net", "time"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tokio = { version = "1.47", features = ["macros", "rt"] }

@@ -7,6 +7,7 @@ members = [
     "crates/pty",
     "crates/surface",
     "crates/libterm",
+    "crates/docker",
     "crates/ui/*"
 ]
 
