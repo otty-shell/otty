@@ -6,8 +6,13 @@ use iced::{Border, Element, Length, Padding};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
-/// Icon edge length inside the button (`svg { width: 15px }`).
-const ICON_SIZE: f32 = 15.0;
+/// Icon edge length inside the button. The design says 15px, but 16 is a
+/// whole, even number of screen pixels at 100%, 125%, 150%, 175% and 200%
+/// scale and sits on a whole pixel inside both button sizes. iced draws an
+/// svg with nearest sampling and rounds the top and bottom of the drawn area
+/// separately, so at 15px the icon lost or doubled a row at some heights
+/// (for example the Launches plus under exactly one session at 125%).
+const ICON_SIZE: f32 = 16.0;
 
 /// Size of an [`IconButton`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -243,5 +248,42 @@ mod tests {
 
         assert!(button.has_hover_background);
         assert!(!plain.has_hover_background);
+    }
+
+    #[test]
+    fn given_common_display_scales_when_icon_drawn_anywhere_then_no_row_is_lost()
+     {
+        // iced rasterizes an svg to `ceil(edge * scale)` pixels and draws it
+        // with nearest sampling in a quad whose top and bottom edges are
+        // each rounded to the pixel grid. When the rounded quad is a row
+        // shorter or taller than the texture, a row of the icon is dropped
+        // or doubled. A header moves down by whole pixels as rows are added
+        // above it, so every whole-pixel position of the button must keep
+        // all rows.
+        for scale in [1.0, 1.25, 1.5, 1.75, 2.0] {
+            let texture_rows = (ICON_SIZE * scale).ceil();
+
+            for button_top in 0..240 {
+                for edge in [size::CONTROL_SM, size::CONTROL_MD] {
+                    let top = button_top as f32 + (edge - ICON_SIZE) / 2.0;
+
+                    let rows = drawn_rows(top, scale);
+
+                    assert_eq!(
+                        rows, texture_rows,
+                        "scale {scale}, button top {button_top}, edge {edge}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Physical rows the wgpu image shader covers for an icon whose top is
+    /// at `top` logical pixels: it rounds each edge on its own, ties to
+    /// even (WGSL `round`).
+    fn drawn_rows(top: f32, scale: f32) -> f32 {
+        let bottom = top + ICON_SIZE;
+
+        (bottom * scale).round_ties_even() - (top * scale).round_ties_even()
     }
 }

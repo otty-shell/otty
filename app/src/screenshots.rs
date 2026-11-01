@@ -72,6 +72,7 @@ struct Frame {
     active_tab: Option<u64>,
     show_tabs: bool,
     many_sessions: bool,
+    one_session: bool,
     left_open: bool,
     right_open: bool,
     focus_mode: bool,
@@ -83,6 +84,7 @@ struct Frame {
 struct Fixture {
     tabs: BTreeMap<u64, TabItem>,
     many_tabs: BTreeMap<u64, TabItem>,
+    one_tab: BTreeMap<u64, TabItem>,
     no_tabs: BTreeMap<u64, TabItem>,
     launches: QuickLaunchFile,
     files: Vec<FileNode>,
@@ -120,6 +122,19 @@ fn screenshots_many_sessions() {
     shoot("many-sessions", |fx, theme| {
         let frame = Frame {
             many_sessions: true,
+            ..Frame::terminal()
+        };
+
+        window(fx, theme, frame, terminal_main(fx, theme), Vec::new())
+    });
+}
+
+#[test]
+#[ignore = "writes PNG files; run with --ignored screenshots"]
+fn screenshots_one_session() {
+    shoot("one-session", |fx, theme| {
+        let frame = Frame {
+            one_session: true,
             ..Frame::terminal()
         };
 
@@ -384,6 +399,7 @@ impl Frame {
             active_tab: Some(TAB_ZSH),
             show_tabs: true,
             many_sessions: false,
+            one_session: false,
             left_open: true,
             right_open: true,
             focus_mode: false,
@@ -456,6 +472,7 @@ impl Fixture {
         Self {
             tabs,
             many_tabs: many_tabs(),
+            one_tab: one_tab(),
             no_tabs: BTreeMap::new(),
             launches,
             files: files(),
@@ -564,6 +581,8 @@ fn window<'a>(
         &fx.no_tabs
     } else if frame.many_sessions {
         &fx.many_tabs
+    } else if frame.one_session {
+        &fx.one_tab
     } else {
         &fx.tabs
     };
@@ -835,6 +854,18 @@ fn many_tabs() -> BTreeMap<u64, TabItem> {
             (id, tab)
         })
         .collect()
+}
+
+/// The "zsh" terminal tab alone: the Sessions section with one row.
+fn one_tab() -> BTreeMap<u64, TabItem> {
+    let tab = TabItem::new(
+        TAB_ZSH,
+        String::from("zsh"),
+        TabContent::Terminal,
+        TabMachine::ThisComputer,
+    );
+
+    BTreeMap::from([(TAB_ZSH, tab)])
 }
 
 /// Rows of the Files section.
