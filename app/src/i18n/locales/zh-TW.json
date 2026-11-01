@@ -66,6 +66,16 @@
     "status_session_one": "1 個工作階段",
     "tpl_status_sessions": "{count} 個工作階段",
 
+    "mode_terminal": "終端機",
+    "mode_docker": "Docker",
+    "modes_all_modes": "所有模式",
+    "modes_pinned_section": "已釘選",
+    "tpl_modes_pinned_note": "{count}/{limit}",
+    "modes_other_section": "其他模式",
+    "modes_pin": "釘選",
+    "modes_unpin": "取消釘選",
+    "modes_unpin_another_first": "請先取消釘選其他模式",
+
     "title_search_no_sessions": "搜尋啟動項和動作",
     "palette_placeholder": "搜尋工作階段、啟動項和動作",
     "palette_no_matches": "沒有符合項目",

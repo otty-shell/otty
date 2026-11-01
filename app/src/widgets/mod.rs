@@ -1,5 +1,12 @@
 pub(crate) mod chrome;
 pub(crate) mod explorer;
+// The root view and the shortcuts start using the widget in tickets 05 and
+// 06 of `specs/2026-11-01-modes-and-docker`; remove this then.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the root view does not show modes yet")
+)]
+pub(crate) mod modes;
 pub(crate) mod palette;
 pub(crate) mod quick_launch;
 pub(crate) mod settings;
@@ -16,4 +23,5 @@ pub(crate) struct Widgets {
     pub(crate) explorer: explorer::ExplorerWidget,
     pub(crate) settings: settings::SettingsWidget,
     pub(crate) palette: palette::PaletteWidget,
+    pub(crate) modes: modes::ModesWidget,
 }

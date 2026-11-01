@@ -66,6 +66,16 @@
     "status_session_one": "1 session",
     "tpl_status_sessions": "{count} sessions",
 
+    "mode_terminal": "Terminal",
+    "mode_docker": "Docker",
+    "modes_all_modes": "Tous les modes",
+    "modes_pinned_section": "Épinglés",
+    "tpl_modes_pinned_note": "{count} sur {limit}",
+    "modes_other_section": "Autres modes",
+    "modes_pin": "Épingler",
+    "modes_unpin": "Désépingler",
+    "modes_unpin_another_first": "Désépinglez d’abord un autre mode",
+
     "title_search_no_sessions": "Rechercher des lancements et des actions",
     "palette_placeholder": "Rechercher des sessions, des lancements et des actions",
     "palette_no_matches": "Aucun résultat",

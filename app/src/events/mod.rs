@@ -7,6 +7,7 @@ use crate::app::App;
 use crate::layout::screen_size_from_window;
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::explorer::ExplorerEvent;
+use crate::widgets::modes::ModesEvent;
 use crate::widgets::palette::PaletteEvent;
 use crate::widgets::quick_launch::QuickLaunchEvent;
 use crate::widgets::settings::SettingsEvent;
@@ -18,6 +19,7 @@ use crate::widgets::terminal_workspace::{
 
 pub(crate) mod chrome;
 pub(crate) mod explorer;
+pub(crate) mod modes;
 pub(crate) mod palette;
 pub(crate) mod quick_launch;
 pub(crate) mod settings;
@@ -36,6 +38,7 @@ pub(crate) enum AppEvent {
     Explorer(ExplorerEvent),
     Settings(SettingsEvent),
     Palette(PaletteEvent),
+    Modes(ModesEvent),
     IcedReady,
     SyncTerminalGridSizes,
     Keyboard(iced::keyboard::Event),
@@ -59,6 +62,7 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Explorer(event) => explorer::handle(app, event),
         AppEvent::Settings(event) => settings::handle(app, event),
         AppEvent::Palette(event) => palette::handle(app, event),
+        AppEvent::Modes(event) => modes::handle(app, event),
         AppEvent::SyncTerminalGridSizes => Task::done(
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::SyncPaneGridSize,

@@ -66,6 +66,16 @@
     "status_session_one": "1 セッション",
     "tpl_status_sessions": "{count} セッション",
 
+    "mode_terminal": "ターミナル",
+    "mode_docker": "Docker",
+    "modes_all_modes": "すべてのモード",
+    "modes_pinned_section": "ピン留め",
+    "tpl_modes_pinned_note": "{count} / {limit}",
+    "modes_other_section": "その他のモード",
+    "modes_pin": "ピン留め",
+    "modes_unpin": "ピン留めを外す",
+    "modes_unpin_another_first": "先に別のモードのピン留めを外してください",
+
     "title_search_no_sessions": "起動項目とアクションを検索",
     "palette_placeholder": "セッション、起動項目、アクションを検索",
     "palette_no_matches": "一致なし",

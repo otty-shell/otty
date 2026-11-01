@@ -66,6 +66,16 @@
     "status_session_one": "세션 1개",
     "tpl_status_sessions": "세션 {count}개",
 
+    "mode_terminal": "터미널",
+    "mode_docker": "Docker",
+    "modes_all_modes": "모든 모드",
+    "modes_pinned_section": "고정됨",
+    "tpl_modes_pinned_note": "{count}/{limit}",
+    "modes_other_section": "기타 모드",
+    "modes_pin": "고정",
+    "modes_unpin": "고정 해제",
+    "modes_unpin_another_first": "먼저 다른 모드의 고정을 해제하세요",
+
     "title_search_no_sessions": "실행 항목과 작업 검색",
     "palette_placeholder": "세션, 실행 항목, 작업 검색",
     "palette_no_matches": "일치 항목 없음",

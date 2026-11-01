@@ -66,6 +66,16 @@
     "status_session_one": "1 сеанс",
     "tpl_status_sessions": "Сеансов: {count}",
 
+    "mode_terminal": "Терминал",
+    "mode_docker": "Docker",
+    "modes_all_modes": "Все режимы",
+    "modes_pinned_section": "Закреплённые",
+    "tpl_modes_pinned_note": "{count} из {limit}",
+    "modes_other_section": "Другие режимы",
+    "modes_pin": "Закрепить",
+    "modes_unpin": "Открепить",
+    "modes_unpin_another_first": "Сначала открепите другой режим",
+
     "title_search_no_sessions": "Поиск запусков и действий",
     "palette_placeholder": "Поиск сеансов, запусков и действий",
     "palette_no_matches": "Ничего не найдено",

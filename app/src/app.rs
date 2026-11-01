@@ -18,6 +18,7 @@ use crate::theme::{AppTheme, ThemeManager};
 use crate::widgets::Widgets;
 use crate::widgets::chrome::ChromeWidget;
 use crate::widgets::explorer::ExplorerWidget;
+use crate::widgets::modes::ModesWidget;
 use crate::widgets::palette::PaletteWidget;
 use crate::widgets::quick_launch::QuickLaunchWidget;
 use crate::widgets::settings::SettingsWidget;
@@ -83,6 +84,7 @@ impl App {
             explorer: ExplorerWidget::new(),
             settings,
             palette: PaletteWidget::new(),
+            modes: ModesWidget::load(),
         };
 
         let app = App {

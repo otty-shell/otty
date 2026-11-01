@@ -146,6 +146,26 @@ pub(crate) enum Key {
     StatusSessionOne,
     /// Status bar session count. Placeholder: `{count}`.
     TplStatusSessions,
+    // Modes: the switcher and the All modes menu.
+    /// Name of the Terminal mode.
+    ModeTerminal,
+    /// Name of the Docker mode.
+    ModeDocker,
+    /// Tooltip of the "⋯" button that opens the All modes menu.
+    ModesAllModes,
+    /// Label of the menu section with Terminal and the pinned modes.
+    ModesPinnedSection,
+    /// Note after the Pinned label, e.g. "1 of 4". Placeholders: `{count}`,
+    /// `{limit}`.
+    TplModesPinnedNote,
+    /// Label of the menu section with the modes that are not pinned.
+    ModesOtherSection,
+    /// Tooltip of the pin toggle of a mode that is not pinned.
+    ModesPin,
+    /// Tooltip of the pin toggle of a pinned mode.
+    ModesUnpin,
+    /// Hint on the disabled pin toggle while every pin slot is taken.
+    ModesUnpinAnotherFirst,
     // Command palette and its title bar trigger.
     /// Title bar search text while no tab is open.
     TitleSearchNoSessions,
@@ -365,7 +385,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 158] = [
+    pub(super) const ALL: [Self; 167] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -425,6 +445,15 @@ impl Key {
         Self::TplStatusPanes,
         Self::StatusSessionOne,
         Self::TplStatusSessions,
+        Self::ModeTerminal,
+        Self::ModeDocker,
+        Self::ModesAllModes,
+        Self::ModesPinnedSection,
+        Self::TplModesPinnedNote,
+        Self::ModesOtherSection,
+        Self::ModesPin,
+        Self::ModesUnpin,
+        Self::ModesUnpinAnotherFirst,
         Self::TitleSearchNoSessions,
         Self::PalettePlaceholder,
         Self::PaletteNoMatches,

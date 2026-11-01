@@ -678,6 +678,24 @@ mod tests {
     }
 
     #[test]
+    fn given_modes_pinned_note_when_filled_then_every_locale_shows_both_numbers()
+     {
+        for locale in Locale::ALL {
+            let note = fill_in(
+                locale,
+                Key::TplModesPinnedNote,
+                &[("count", "1"), ("limit", "4")],
+            );
+
+            assert!(
+                note.contains('1') && note.contains('4') && !note.contains('{'),
+                "{} pinned note is {note:?}",
+                locale.tag()
+            );
+        }
+    }
+
+    #[test]
     fn given_no_exit_code_when_describing_exit_then_termination_is_shown() {
         assert_eq!(
             process_exited_in(Locale::En, None),
