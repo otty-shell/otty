@@ -213,7 +213,7 @@ fn view_status_bar<'a>(
     let vm = StatusBarViewModel::new(StatusBarInput {
         machine_name,
         machine_target,
-        focused_pane: focused_pane.as_ref(),
+        focused_pane,
         pane_count: app.widgets.terminal_workspace.pane_count(tab_id),
         session_count: app.widgets.tabs.len(),
     });

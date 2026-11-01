@@ -2,6 +2,7 @@ use std::process::ExitStatus;
 
 use otty_ui_term::settings::SessionKind;
 
+use super::model::PaneLabel;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::shortcuts::AppShortcut;
 
@@ -55,6 +56,9 @@ pub(crate) struct TerminalEntry {
     pub(super) title: String,
     /// Set once the process exited and the pane was kept open.
     pub(super) exit_status: Option<ExitStatus>,
+    /// What the pane runs and where, kept up to date on terminal events so
+    /// views read it instead of rebuilding it every frame.
+    label: PaneLabel,
 }
 
 impl TerminalEntry {
@@ -72,6 +76,36 @@ impl TerminalEntry {
     /// open.
     pub(crate) fn exit_status(&self) -> Option<ExitStatus> {
         self.exit_status
+    }
+
+    /// Return what the pane runs and where.
+    pub(crate) fn label(&self) -> &PaneLabel {
+        &self.label
+    }
+
+    /// Create the entry of a new pane opened as `title`.
+    pub(super) fn new(terminal: Terminal, title: String) -> Self {
+        let mut entry = Self {
+            terminal,
+            label: PaneLabel::new(&title, None, None),
+            title,
+            exit_status: None,
+        };
+        entry.refresh_label();
+
+        entry
+    }
+
+    /// Read the program and folder again from the terminal. Returns whether
+    /// they changed.
+    pub(super) fn refresh_label(&mut self) -> bool {
+        let label = PaneLabel::for_entry(self);
+        if label == self.label {
+            return false;
+        }
+
+        self.label = label;
+        true
     }
 }
 

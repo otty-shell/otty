@@ -7,7 +7,6 @@ use otty_ui_term::SurfaceMode;
 use otty_ui_term::settings::{SessionKind, Settings, ThemeSettings};
 
 use super::errors::TerminalWorkspaceError;
-use super::model::PaneLabel;
 use super::pane_balance;
 use super::types::{
     BlockSelection, Terminal, TerminalEntry, TerminalEvent, TerminalKind,
@@ -140,10 +139,9 @@ impl PaneContextMenuState {
 /// Runtime state for a single terminal tab with pane management and selection.
 pub(crate) struct TerminalTabState {
     pub(super) tab_id: u64,
-    /// Program of the focused pane.
-    pub(super) title: String,
-    /// Folder name of the focused pane.
-    pub(super) folder: Option<String>,
+    /// The title or folder may have changed since the tabs widget was last
+    /// told; see [`TerminalTabState::take_label_change`].
+    label_changed: bool,
     pub(super) kind: TerminalKind,
     pub(super) terminal_settings: Settings,
     pub(super) panes: pane_grid::State<u64>,
@@ -173,17 +171,13 @@ impl TerminalTabState {
         let mut terminals = HashMap::new();
         terminals.insert(
             terminal_id,
-            TerminalEntry {
-                terminal,
-                title: default_title.clone(),
-                exit_status: None,
-            },
+            TerminalEntry::new(terminal, default_title.clone()),
         );
 
         let tab = Self {
             tab_id,
-            title: default_title.clone(),
-            folder: None,
+            // Opening a tab reports its title, so nothing is pending yet.
+            label_changed: false,
             kind,
             terminal_settings: settings,
             panes,
@@ -201,13 +195,17 @@ impl TerminalTabState {
 
     /// Return the current tab title: the program of the focused pane.
     pub(crate) fn title(&self) -> &str {
-        &self.title
+        match self.focused_terminal_entry() {
+            Some(entry) => entry.label().program(),
+            None => &self.default_title,
+        }
     }
 
     /// Return the folder name of the focused pane, if the shell reported
     /// one.
     pub(crate) fn folder(&self) -> Option<&str> {
-        self.folder.as_deref()
+        self.focused_terminal_entry()
+            .and_then(|entry| entry.label().folder_name())
     }
 
     /// Report whether the tab runs on this computer, so its folders exist
@@ -332,6 +330,14 @@ impl TerminalTabState {
         }
     }
 
+    /// Return whether the title or folder may have changed since the last
+    /// call, and reset the mark. The reducer tells the tabs widget only
+    /// then, so terminal output that keeps the label does not cost an
+    /// extra update.
+    pub(super) fn take_label_change(&mut self) -> bool {
+        std::mem::take(&mut self.label_changed)
+    }
+
     /// Split the given pane along an axis with a new terminal.
     ///
     /// With `equalize_panes` set, the sibling panes sharing the new
@@ -365,11 +371,7 @@ impl TerminalTabState {
 
             self.terminals.insert(
                 terminal_id,
-                TerminalEntry {
-                    terminal,
-                    title: self.default_title.clone(),
-                    exit_status: None,
-                },
+                TerminalEntry::new(terminal, self.default_title.clone()),
             );
             if equalize_panes {
                 for (split, ratio) in pane_balance::equalized_ratios(
@@ -385,7 +387,7 @@ impl TerminalTabState {
             if let Some((source_terminal_id, _)) = source_terminal.as_ref() {
                 self.clear_selected_block_for_terminal(*source_terminal_id);
             }
-            self.refresh_label();
+            self.label_changed = true;
 
             let mut commands = Vec::new();
             if let Some((_, source_widget_id)) = source_terminal {
@@ -435,7 +437,7 @@ impl TerminalTabState {
                     && let Some(entry) = self.terminals.get(&next_id)
                 {
                     let widget_id = entry.terminal.widget_id().clone();
-                    self.refresh_label();
+                    self.label_changed = true;
                     return StateCommand::FocusTerminal(widget_id);
                 }
             }
@@ -552,13 +554,19 @@ impl TerminalTabState {
             // already shown next to the program, so these are ignored.
             TitleChanged { .. } | ResetTitle { .. } => {},
             other => {
-                if let Some(entry) = self.terminal_entry_mut(terminal_id) {
-                    entry.terminal.handle(other);
+                let Some(entry) = self.terminal_entry_mut(terminal_id) else {
+                    return StateCommand::None;
+                };
+                entry.terminal.handle(other);
+                let entry_label_changed = entry.refresh_label();
+
+                if entry_label_changed
+                    && self.focused_terminal_id() == Some(terminal_id)
+                {
+                    self.label_changed = true;
                 }
             },
         }
-
-        self.refresh_label();
 
         StateCommand::None
     }
@@ -602,7 +610,7 @@ impl TerminalTabState {
         if close_menu {
             self.context_menu = None;
         }
-        self.refresh_label();
+        self.label_changed = true;
 
         if focus_terminal_widget
             && let Some(entry) = self.terminals.get(&terminal_id)
@@ -640,19 +648,6 @@ impl TerminalTabState {
         }
 
         StateCommand::None
-    }
-
-    /// Name the tab after its focused pane: the program and folder name.
-    fn refresh_label(&mut self) {
-        let Some(entry) = self.focused_terminal_entry() else {
-            self.title = self.default_title.clone();
-            self.folder = None;
-            return;
-        };
-
-        let label = PaneLabel::for_entry(entry);
-        self.title = label.program().to_string();
-        self.folder = label.folder_name().map(str::to_string);
     }
 
     fn clamp_point(point: Point, bounds: Size) -> Point {
@@ -1024,6 +1019,71 @@ mod tests {
             true,
         );
         assert_eq!(state.title(), "Shell");
+    }
+
+    #[test]
+    fn given_new_tab_then_no_label_change_is_pending() {
+        let mut state = build_terminal_state("Shell");
+
+        assert!(!state.take_label_change());
+    }
+
+    #[test]
+    fn given_label_change_when_taken_then_it_is_reported_once() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
+
+        assert!(state.take_label_change());
+        assert!(!state.take_label_change());
+    }
+
+    #[test]
+    fn given_event_that_keeps_the_label_when_handled_then_no_change_is_reported()
+     {
+        let mut state = build_terminal_state("Shell");
+
+        let _task = state.handle_terminal_event(key_press(10), true);
+
+        assert!(!state.take_label_change());
+    }
+
+    #[test]
+    fn given_split_when_new_pane_is_focused_then_label_change_is_reported() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
+
+        assert!(state.take_label_change());
+    }
+
+    #[test]
+    fn given_two_panes_when_focus_moves_then_label_change_is_reported() {
+        let mut state = build_terminal_state("Shell");
+        let first = state.focus().expect("focused pane");
+        let _task =
+            state.split_pane(first, pane_grid::Axis::Vertical, 11, true);
+        let _ = state.take_label_change();
+
+        let _task = state.focus_pane(first);
+
+        assert!(state.take_label_change());
+    }
+
+    #[test]
+    fn given_new_panes_then_each_label_names_the_program_it_opened_with() {
+        let mut state = build_terminal_state("Shell");
+        let pane = state.focus().expect("focused pane");
+        let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
+
+        for terminal_id in [10, 11] {
+            let label = state.terminals()[&terminal_id].label();
+            assert_eq!(label.program(), "Shell");
+            assert_eq!(label.folder_name(), None);
+        }
+        assert_eq!(state.title(), "Shell");
+        assert_eq!(state.folder(), None);
     }
 
     #[test]

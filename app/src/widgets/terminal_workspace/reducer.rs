@@ -555,10 +555,16 @@ where
             return Task::none();
         };
         let cmd = f(tab);
-        (cmd, title_changed(tab_id, tab))
+        let title_effect =
+            tab.take_label_change().then(|| title_changed(tab_id, tab));
+        (cmd, title_effect)
     };
 
     let command_task = execute_command(cmd);
+    let Some(title_effect) = title_effect else {
+        return command_task;
+    };
+
     let title_task = Task::done(TerminalWorkspaceEvent::Effect(title_effect));
     Task::batch(vec![command_task, title_task])
 }

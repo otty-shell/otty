@@ -120,19 +120,20 @@ impl TerminalWorkspaceWidget {
         active_tab_id: Option<u64>,
     ) -> Option<PathBuf> {
         let tab = self.active_local_tab(active_tab_id)?;
-        tab.focused_terminal_entry().and_then(|entry| {
-            services::terminal_cwd_from_blocks(&entry.terminal().blocks())
-        })
+        let entry = tab.focused_terminal_entry()?;
+        let snapshot = entry.terminal().snapshot_arc();
+
+        services::terminal_cwd_from_blocks(snapshot.view().blocks())
     }
 
     /// Return the program and folder of the focused pane of a terminal tab.
     pub(crate) fn focused_pane_label(
         &self,
         tab_id: Option<u64>,
-    ) -> Option<PaneLabel> {
+    ) -> Option<&PaneLabel> {
         let entry = self.state.tab(tab_id?)?.focused_terminal_entry()?;
 
-        Some(PaneLabel::for_entry(entry))
+        Some(entry.label())
     }
 
     /// Return the number of panes in a terminal tab.
