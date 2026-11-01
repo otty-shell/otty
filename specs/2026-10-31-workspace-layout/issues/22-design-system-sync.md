@@ -1,6 +1,6 @@
 # 22 — Update the design system and the V4 screens
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Class: —
 Model: Opus 5.5 (claude-opus-5-5), owner review
@@ -17,3 +17,7 @@ Spec: [../spec.md](../spec.md)
 ## Done when
 
 - Owner approved and both artifacts published.
+
+## Comments
+
+- Draft ready at `/tmp/claude-1000/-home-kemokempo-projects-main-ottyrun-otty/901c711b-99ab-4ffe-9031-c7cc34df6eeb/scratchpad/ticket22/` (`ds/project/…` for the design system, `canvas/project/V4*.dc.html` for the canvas); waiting for owner review before publishing.
