@@ -26,6 +26,8 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 E::HeaderMenuOpen(_) => Ignore,
                 E::WorkspaceCursorMoved { .. }
                 | E::PaneGridCursorMoved { .. } => Allow,
+                // Frames come on their own while the focus mode note fades.
+                E::FocusNoteFrame(_) => Allow,
                 _ => Dismiss,
             }
         },
@@ -182,7 +184,9 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             use crate::widgets::sidebar::SidebarIntent as E;
             !matches!(
                 event,
-                E::WorkspaceCursorMoved { .. } | E::PaneGridCursorMoved { .. }
+                E::WorkspaceCursorMoved { .. }
+                    | E::PaneGridCursorMoved { .. }
+                    | E::FocusNoteFrame(_)
             )
         },
         AppEvent::TerminalWorkspace(
@@ -267,6 +271,8 @@ pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    use iced::time::Instant;
 
     use super::{
         MenuGuard, context_menu_guard, inline_edit_guard,
@@ -387,6 +393,26 @@ mod tests {
         assert!(!is_header_menu_choice(&close_tab));
         assert!(!is_header_menu_choice(&pressed));
         assert!(!is_header_menu_choice(&AppEvent::IcedReady));
+    }
+
+    #[test]
+    fn given_focus_note_frame_when_context_menu_guard_runs_then_it_is_allowed()
+    {
+        let guard = context_menu_guard(&AppEvent::Sidebar(
+            SidebarEvent::Intent(SidebarIntent::FocusNoteFrame(Instant::now())),
+        ));
+
+        assert!(matches!(guard, MenuGuard::Allow));
+    }
+
+    #[test]
+    fn given_focus_note_frame_when_inline_edit_guard_runs_then_edit_is_not_cancelled()
+     {
+        let event = AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::FocusNoteFrame(Instant::now()),
+        ));
+
+        assert!(!inline_edit_guard(&event));
     }
 
     #[test]
