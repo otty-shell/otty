@@ -192,7 +192,7 @@ none of those are in scope (see Out of Scope).
     |---|---|
     | Container | Run (form, Decision 18), Start, Stop, Restart, Pause / Unpause, Remove (confirm; "Also stop it" when running), Logs, Shell; Prune stopped containers (confirm) |
     | Image | Run (opens the Run form with this image), Pull (dialog: name and tag, progress line), Remove (confirm; "Force" when containers use it); Prune dangling images (confirm) |
-    | Volume | Create (dialog: name, driver `local`), Remove (confirm); Prune unused volumes (confirm) |
+    | Volume | Create (dialog: name, driver `local`), Remove (confirm); Prune unused volumes (confirm; anonymous volumes only, with an "Also remove named volumes" switch, off by default, like `docker volume prune` and `-a`; owner approved 2026-11-01) |
     | Network | Create (dialog: name, driver `bridge`), Remove (confirm); Prune unused networks (confirm) |
 
     Actions on the selected row are buttons in the inspector header and items
@@ -343,6 +343,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 20 | Update the design system and the canvas boards to what was built (new kit parts, shortcut table on the old mode boards) | — | Opus, owner review | 19 |
 | 21 | Discovery: more sockets, CLI install folders, `podman-docker` wrapper (Decision 8 additions) | C | Opus | 07 |
 | 22 | Logs Follow toggle (Decision 12) | C | Opus | 11, 13 |
+| 23 | Volume prune: anonymous only by default, switch for named volumes (Decision 11) | C | Sonnet | 12 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -372,3 +373,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [ ] 20 — Design system and canvas sync · Opus, owner review
 - [x] 21 — Discovery additions: sockets, CLI folders, `podman-docker` · Opus
 - [ ] 22 — Logs Follow toggle · Opus
+- [ ] 23 — Volume prune keeps named volumes by default · Sonnet
