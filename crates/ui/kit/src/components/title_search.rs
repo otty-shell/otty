@@ -98,8 +98,11 @@ impl<'a, Message: Clone + 'a> From<TitleSearch<Message>>
             kbd(value.shortcut, &palette),
         ]
         .spacing(GAP)
+        .height(Length::Fill)
         .align_y(Alignment::Center);
 
+        // `button` does not center its child, so the row fills the button
+        // height and centers its items itself.
         button(content)
             .width(size::TITLE_SEARCH_WIDTH)
             .height(size::TITLE_SEARCH_HEIGHT)
@@ -148,6 +151,29 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::OpenPalette]);
+    }
+
+    #[test]
+    fn given_title_search_when_laid_out_then_title_and_shortcut_are_centered() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(
+            TitleSearch::new("zsh", "Ctrl K", glyph::plus(), &palette)
+                .on_press(Message::OpenPalette),
+        );
+        let middle = size::TITLE_SEARCH_HEIGHT / 2.0;
+
+        for label in ["zsh", "Ctrl K"] {
+            let center = ui
+                .find(label)
+                .expect("label should be visible")
+                .bounds()
+                .center_y();
+
+            assert!(
+                (center - middle).abs() < 1.0,
+                "{label} center {center} should be at {middle}"
+            );
+        }
     }
 
     #[test]
