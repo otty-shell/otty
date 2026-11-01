@@ -135,12 +135,7 @@ pub(super) fn window<'a>(
             SidebarPane::Main => main(),
             SidebarPane::Right => {
                 sidebar_tree::view(sidebar_tree::SidebarTreeProps {
-                    vm: ExplorerTreeViewModel {
-                        root_label: Some("otty"),
-                        tree: &fx.files,
-                        selected_path: None,
-                        hovered_path: None,
-                    },
+                    vm: ExplorerTreeViewModel::idle(Some("otty"), &fx.files),
                     theme,
                 })
                 .map(|_| ())
