@@ -327,10 +327,10 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 02 — Kit: DataTable, StatusBadge, Notice · Opus
 - [x] 03 — Kit: KeyValueList, InspectorHeader, InspectorTabs, LogView · Sonnet
 - [x] 04 — `modes` widget · Opus
-- [ ] 05 — Mode shortcuts and palette · Opus
-- [ ] 06 — Root view by mode · Opus
+- [x] 05 — Mode shortcuts and palette · Opus
+- [x] 06 — Root view by mode · Opus
 - [x] 07 — `otty-docker`: engine discovery · Opus
-- [ ] 08 — `otty-docker`: lists · Opus
+- [x] 08 — `otty-docker`: lists · Opus
 - [ ] 09 — `docker` widget · Opus
 - [ ] 10 — No engine states · Sonnet
 - [ ] 11 — Container actions · Opus
