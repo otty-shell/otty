@@ -363,6 +363,7 @@ fn view_docker_tree<'a>(
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     engine_tree::view(engine_tree::EngineTreeProps {
         rows: app.widgets.docker.tree_vm(),
+        note: app.widgets.docker.tree_note(),
         theme: theme_props,
     })
     .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))

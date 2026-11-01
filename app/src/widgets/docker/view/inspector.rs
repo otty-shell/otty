@@ -1,13 +1,15 @@
 //! The Docker mode right panel: the inspector header of the selected row.
 //! Its buttons and tabs come with tickets 11 to 13.
 
-use iced::widget::{Space, container};
+use iced::widget::{container, text};
 use iced::{Element, Length, Padding};
 use otty_ui_kit::components::inspector_header::InspectorHeader;
 use otty_ui_kit::components::status_badge::StatusBadge;
+use otty_ui_kit::{fonts, typography};
 
 use super::super::event::DockerIntent;
 use super::super::model::InspectorViewModel;
+use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
 /// Padding of the inspector (`padding: 14px 16px`).
@@ -25,13 +27,26 @@ pub(crate) struct InspectorProps<'a> {
 }
 
 /// Render the header of the selected row: its name and status line. With
-/// nothing selected the panel stays empty.
+/// nothing selected the panel says there is nothing to inspect.
 pub(crate) fn view(props: InspectorProps<'_>) -> Element<'_, DockerIntent> {
+    let palette = props.theme.theme.ui();
+
     let Some(vm) = props.vm else {
-        return Space::new().width(Length::Fill).height(Length::Fill).into();
+        let hint = typography::SMALL;
+
+        return container(
+            text(i18n::t(Key::DockerNothingToInspect))
+                .size(hint.size())
+                .line_height(iced::Pixels(hint.line_height()))
+                .font(fonts::UI)
+                .color(palette.text_muted()),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(PADDING)
+        .into();
     };
 
-    let palette = props.theme.theme.ui();
     let status = StatusBadge::new(vm.status, vm.tone, palette);
     let header = InspectorHeader::new(vm.title, palette).status(status);
 
@@ -67,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn nothing_selected_shows_nothing() {
+    fn nothing_selected_says_there_is_nothing_to_inspect() {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(InspectorProps {
             vm: None,
@@ -75,5 +90,7 @@ mod tests {
         }));
 
         assert!(ui.find("otty-fx-web-1").is_err());
+        ui.find(i18n::t(Key::DockerNothingToInspect))
+            .expect("the hint should show");
     }
 }

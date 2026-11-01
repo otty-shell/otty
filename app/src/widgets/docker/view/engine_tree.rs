@@ -1,14 +1,14 @@
 //! The Docker mode left panel under the switcher: one root per engine and
 //! its four lists with their counts.
 
-use iced::widget::{Column, container, scrollable};
+use iced::widget::{Column, container, scrollable, text};
 use iced::{Element, Length, Padding};
 use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::session_row::SessionTone;
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::spacing;
+use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::DockerIntent;
 use super::super::model::{TreeNote, TreeRowViewModel};
@@ -18,6 +18,8 @@ use crate::theme::ThemeProps;
 /// Props for the engine tree.
 pub(crate) struct EngineTreeProps<'a> {
     pub(crate) rows: Vec<TreeRowViewModel>,
+    /// A short text under the rows, such as why no engine is shown.
+    pub(crate) note: Option<&'static str>,
     pub(crate) theme: ThemeProps<'a>,
 }
 
@@ -28,7 +30,20 @@ pub(crate) fn view(props: EngineTreeProps<'_>) -> Element<'_, DockerIntent> {
 
     let rows = props.rows.into_iter().map(|row| tree_row(row, palette));
 
-    let list = Column::with_children(rows).width(Length::Fill);
+    let mut list = Column::with_children(rows).width(Length::Fill);
+    if let Some(note) = props.note {
+        let hint = typography::SMALL;
+        list = list.push(
+            container(
+                text(note)
+                    .size(hint.size())
+                    .line_height(iced::Pixels(hint.line_height()))
+                    .font(fonts::UI)
+                    .color(palette.text_muted()),
+            )
+            .padding(Padding::from([spacing::SPACE_1, spacing::SPACE_3])),
+        );
+    }
 
     let body = scrollable(list)
         .width(Length::Fill)
@@ -124,6 +139,7 @@ mod tests {
         ];
         let mut ui = simulator(view(EngineTreeProps {
             rows,
+            note: None,
             theme: ThemeProps::new(themes.current()),
         }));
 
@@ -138,5 +154,18 @@ mod tests {
             intents,
             vec![DockerIntent::Open(place(ResourceKind::Images))]
         );
+    }
+
+    #[test]
+    fn a_note_shows_under_the_rows() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(EngineTreeProps {
+            rows: Vec::new(),
+            note: Some("Docker is not running."),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.find("Docker is not running.")
+            .expect("the note should show");
     }
 }

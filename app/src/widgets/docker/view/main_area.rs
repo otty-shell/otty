@@ -18,6 +18,7 @@ use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::DockerIntent;
 use super::super::model::{MainViewModel, TableViewModel};
+use super::no_engine;
 use crate::i18n::{self, Key};
 use crate::icons;
 use crate::theme::ThemeProps;
@@ -44,7 +45,7 @@ pub(crate) fn view(props: MainAreaProps<'_>) -> Element<'_, DockerIntent> {
         MainViewModel::Searching => {
             card(i18n::t(Key::DockerSearching), palette)
         },
-        MainViewModel::NoEngine => card(i18n::t(Key::DockerNoEngine), palette),
+        MainViewModel::NoEngine(vm) => no_engine::view(vm, palette),
     }
 }
 
@@ -128,8 +129,8 @@ fn header_row<'a>(
     .into()
 }
 
-/// A centered card with the Docker icon and `description`, while no
-/// engine is known.
+/// A centered card with the Docker icon and `description`, while the search
+/// runs.
 fn card<'a>(
     description: &'static str,
     palette: &UiPalette,
@@ -162,6 +163,9 @@ mod tests {
 
     use super::*;
     use crate::theme::ThemeManager;
+    use crate::widgets::docker::no_engine::{
+        self as no_engine_vm, NoEngineCase,
+    };
     use crate::widgets::docker::types::ResourceKind;
 
     fn table<'a>(rows: Vec<Vec<TableCell>>) -> MainViewModel<'a> {
@@ -268,18 +272,36 @@ mod tests {
     }
 
     #[test]
-    fn without_an_engine_the_main_area_shows_a_card() {
+    fn while_searching_the_main_area_shows_a_card() {
         let themes = ThemeManager::new();
-        for (vm, message) in [
-            (MainViewModel::Searching, Key::DockerSearching),
-            (MainViewModel::NoEngine, Key::DockerNoEngine),
-        ] {
-            let mut ui = simulator(view(MainAreaProps {
-                vm,
-                theme: ThemeProps::new(themes.current()),
-            }));
+        let mut ui = simulator(view(MainAreaProps {
+            vm: MainViewModel::Searching,
+            theme: ThemeProps::new(themes.current()),
+        }));
 
-            ui.find(i18n::t(message)).expect("card text should show");
-        }
+        ui.find(i18n::t(Key::DockerSearching))
+            .expect("card text should show");
+    }
+
+    #[test]
+    fn without_an_engine_the_main_area_shows_the_case_and_check_again() {
+        let themes = ThemeManager::new();
+        let vm = no_engine_vm::view_model(
+            NoEngineCase::PodmanApiOff,
+            "",
+            &[String::from("/run/podman/podman.sock")],
+        );
+        let mut ui = simulator(view(MainAreaProps {
+            vm: MainViewModel::NoEngine(vm),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.find(i18n::t(Key::DockerPodmanOffTitle))
+            .expect("case title should show");
+        ui.click(i18n::t(Key::DockerCheckAgain))
+            .expect("check again should be visible");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::CheckAgain]);
     }
 }

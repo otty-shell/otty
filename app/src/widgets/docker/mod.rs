@@ -1,6 +1,7 @@
 pub(crate) mod event;
 pub(crate) mod format;
 pub(crate) mod model;
+pub(crate) mod no_engine;
 mod reducer;
 pub(crate) mod resource_rows;
 mod state;
@@ -41,6 +42,11 @@ impl DockerWidget {
     /// Build the main area; ages are counted up to `now` (Unix seconds).
     pub(crate) fn main_vm(&self, now: i64) -> MainViewModel<'_> {
         model::main_area(&self.state, now)
+    }
+
+    /// The short text under the engine tree while no engine is usable.
+    pub(crate) fn tree_note(&self) -> Option<&'static str> {
+        model::panel_note(&self.state)
     }
 
     /// Build the inspector header of the selected row.

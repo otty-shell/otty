@@ -12,6 +12,7 @@
 pub mod action_tile;
 pub mod button;
 pub mod chip;
+pub mod command_box;
 pub mod command_palette;
 pub mod data_table;
 pub mod dialog;

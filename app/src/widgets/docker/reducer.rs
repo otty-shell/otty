@@ -43,6 +43,14 @@ pub(crate) fn reduce(
             Task::none()
         },
         DockerIntent::Refresh => load_every_engine(state),
+        DockerIntent::CheckAgain => {
+            state.start_search();
+            effect(DockerEffect::Discover)
+        },
+        DockerIntent::CopyCommand(command) => {
+            effect(DockerEffect::CopyToClipboard(command))
+        },
+        DockerIntent::OpenLink(url) => effect(DockerEffect::OpenUrl(url)),
     }
 }
 
@@ -133,6 +141,77 @@ mod tests {
 
     fn selected_container(state: &DockerState) -> Option<&str> {
         state.open_engine()?.containers().selected_id()
+    }
+
+    #[test]
+    fn checking_again_starts_a_new_search() {
+        let mut state = DockerState::default();
+        let _ = reduce(&mut state, DockerIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[])),
+        );
+        assert!(matches!(state.search(), Search::Done(_)));
+
+        let effects = effects(reduce(&mut state, DockerIntent::CheckAgain));
+
+        assert_eq!(state.search(), &Search::Searching);
+        assert_eq!(effects, vec![DockerEffect::Discover]);
+    }
+
+    #[test]
+    fn an_engine_started_meanwhile_is_found_by_checking_again() {
+        let mut state = DockerState::default();
+        let _ = reduce(&mut state, DockerIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[])),
+        );
+        let _ = reduce(&mut state, DockerIntent::CheckAgain);
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ])),
+        ));
+
+        assert_eq!(state.engines().len(), 1);
+        assert_eq!(effects, vec![DockerEffect::LoadLists(docker())]);
+    }
+
+    #[test]
+    fn copying_a_command_asks_for_the_clipboard() {
+        let mut state = DockerState::default();
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::CopyCommand(String::from(
+                "sudo systemctl start docker",
+            )),
+        ));
+
+        assert_eq!(
+            effects,
+            vec![DockerEffect::CopyToClipboard(String::from(
+                "sudo systemctl start docker"
+            ))]
+        );
+    }
+
+    #[test]
+    fn opening_a_link_asks_for_the_browser() {
+        let mut state = DockerState::default();
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::OpenLink(String::from("https://podman.io")),
+        ));
+
+        assert_eq!(
+            effects,
+            vec![DockerEffect::OpenUrl(String::from("https://podman.io"))]
+        );
     }
 
     #[test]

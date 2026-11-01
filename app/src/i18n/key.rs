@@ -211,8 +211,54 @@ pub(crate) enum Key {
     TplDockerListFailed,
     /// Main area text while OTTY looks for engines.
     DockerSearching,
-    /// Main area text when no engine answered.
-    DockerNoEngine,
+    /// Title of the card when neither Docker nor Podman is installed.
+    DockerNotInstalledTitle,
+    /// Text of the card when neither Docker nor Podman is installed.
+    DockerNotInstalledText,
+    /// Button that opens the Docker install page.
+    DockerInstallDocker,
+    /// Button that opens the Podman install page.
+    DockerInstallPodman,
+    /// Button that searches for engines again.
+    DockerCheckAgain,
+    /// Button that copies a command to the clipboard.
+    DockerCopy,
+    /// Button that opens the documentation of the fix.
+    DockerHowToFix,
+    /// Label above a command to run in a terminal.
+    DockerRunInTerminal,
+    /// Title of the card when Docker is installed but not running.
+    DockerStoppedTitle,
+    /// Text of the card when Docker is installed but not running.
+    DockerStoppedText,
+    /// Hint under the command that starts Docker, for macOS.
+    DockerStoppedHint,
+    /// Title of the card when the Podman API service is off.
+    DockerPodmanOffTitle,
+    /// Text of the card when the Podman API service is off.
+    DockerPodmanOffText,
+    /// Hint under the command that turns on Podman, for macOS.
+    DockerPodmanOffHint,
+    /// Title of the card when OTTY may not use the Docker socket.
+    DockerNoAccessTitle,
+    /// Text of the no access card. Placeholder: `{socket}`.
+    TplDockerNoAccessText,
+    /// Label above the command that adds the user to the docker group.
+    DockerNoAccessLabel,
+    /// Hint under the command: log out again; the group has root rights.
+    DockerNoAccessHint,
+    /// Left panel text when no engine is installed.
+    DockerPanelNotInstalled,
+    /// Left panel text when Docker is not running.
+    DockerPanelStopped,
+    /// Left panel text when the Podman API service is off.
+    DockerPanelPodmanOff,
+    /// Left panel text when OTTY may not use the Docker socket.
+    DockerPanelNoAccess,
+    /// Right panel text when no row is selected.
+    DockerNothingToInspect,
+    /// Line under the no engine cards. Placeholder: `{places}`.
+    TplDockerLookedFor,
     /// Table column: the name of a container, volume or network.
     DockerColumnName,
     /// Table column: the state of a container.
@@ -513,7 +559,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 228] = [
+    pub(super) const ALL: [Self; 251] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -603,7 +649,30 @@ impl Key {
         Self::TplDockerNothingMatches,
         Self::TplDockerListFailed,
         Self::DockerSearching,
-        Self::DockerNoEngine,
+        Self::DockerNotInstalledTitle,
+        Self::DockerNotInstalledText,
+        Self::DockerInstallDocker,
+        Self::DockerInstallPodman,
+        Self::DockerCheckAgain,
+        Self::DockerCopy,
+        Self::DockerHowToFix,
+        Self::DockerRunInTerminal,
+        Self::DockerStoppedTitle,
+        Self::DockerStoppedText,
+        Self::DockerStoppedHint,
+        Self::DockerPodmanOffTitle,
+        Self::DockerPodmanOffText,
+        Self::DockerPodmanOffHint,
+        Self::DockerNoAccessTitle,
+        Self::TplDockerNoAccessText,
+        Self::DockerNoAccessLabel,
+        Self::DockerNoAccessHint,
+        Self::DockerPanelNotInstalled,
+        Self::DockerPanelStopped,
+        Self::DockerPanelPodmanOff,
+        Self::DockerPanelNoAccess,
+        Self::DockerNothingToInspect,
+        Self::TplDockerLookedFor,
         Self::DockerColumnName,
         Self::DockerColumnStatus,
         Self::DockerColumnImage,

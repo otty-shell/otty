@@ -11,6 +11,7 @@ use iced::{Element, Length, Padding, Theme};
 use otty_ui_kit::components::action_tile::ActionTile;
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::chip::Chip;
+use otty_ui_kit::components::command_box::CommandBox;
 use otty_ui_kit::components::command_palette::{CommandPalette, PaletteAction};
 use otty_ui_kit::components::data_table::{
     ColumnAlign, DataTable, TableCell, TableColumn,
@@ -779,6 +780,20 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     ]
     .spacing(spacing::SPACE_6);
 
+    let command_box = column![
+        CommandBox::new("sudo systemctl start docker", "Copy", p)
+            .on_copy(Message::Clicked),
+        ActionTile::new(
+            svg::Handle::from_memory(PLUS_ICON),
+            "Install Docker",
+            p,
+        )
+        .note("docs.docker.com")
+        .on_press(Message::Clicked),
+    ]
+    .spacing(spacing::SPACE_2)
+    .width(460);
+
     let empty_card = EmptyCard::new(
         "Start a session",
         "Open a terminal on this computer or run one of your launches.",
@@ -943,6 +958,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             empty_card.into(),
             p,
         ),
+        section("CommandBox", command_box.into(), p),
         section(
             "CommandPalette (query \"la\": active item, match in bold; no matches)",
             palettes.into(),

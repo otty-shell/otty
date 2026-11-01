@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
@@ -19,6 +20,37 @@ pub(crate) fn read_host_name() -> Option<String> {
     #[cfg(not(unix))]
     {
         None
+    }
+}
+
+/// Open `url` in the default browser with `xdg-open` (Linux) or `open`
+/// (macOS). A failure is logged; nothing else happens.
+pub(crate) fn open_url(url: &str) {
+    let program = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+
+    let spawned = Command::new(program)
+        .arg(url)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+
+    match spawned {
+        Ok(mut child) => {
+            // Wait on a thread so the finished opener does not stay a zombie.
+            std::thread::spawn(move || match child.wait() {
+                Ok(status) if !status.success() => {
+                    log::warn!("{program} failed to open a link: {status}");
+                },
+                Ok(_) => {},
+                Err(err) => log::warn!("{program} wait failed: {err}"),
+            });
+        },
+        Err(err) => log::warn!("cannot run {program} to open a link: {err}"),
     }
 }
 

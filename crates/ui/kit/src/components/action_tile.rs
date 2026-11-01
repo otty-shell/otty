@@ -43,6 +43,7 @@ pub struct ActionTile<Message> {
     label: String,
     palette: UiPalette,
     shortcut: Option<String>,
+    note: Option<String>,
     is_accent: bool,
     on_press: Option<Message>,
 }
@@ -59,6 +60,7 @@ impl<Message> ActionTile<Message> {
             label: label.into(),
             palette: palette.clone(),
             shortcut: None,
+            note: None,
             is_accent: false,
             on_press: None,
         }
@@ -67,6 +69,12 @@ impl<Message> ActionTile<Message> {
     /// Shows a shortcut hint at the right edge.
     pub fn shortcut(mut self, shortcut: impl Into<String>) -> Self {
         self.shortcut = Some(shortcut.into());
+        self
+    }
+
+    /// Shows a muted mono note at the right edge, such as a site name.
+    pub fn note(mut self, note: impl Into<String>) -> Self {
+        self.note = Some(note.into());
         self
     }
 
@@ -113,6 +121,14 @@ impl<'a, Message: Clone + 'a> From<ActionTile<Message>>
         .spacing(GAP)
         .height(Length::Fill)
         .align_y(Alignment::Center);
+        if let Some(note) = value.note {
+            content = content.push(
+                text(note)
+                    .size(typography::SMALL.size())
+                    .font(fonts::MONO)
+                    .color(palette.text_muted()),
+            );
+        }
         if let Some(shortcut) = value.shortcut {
             content = content.push(kbd(shortcut, &palette));
         }
@@ -171,6 +187,22 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::NewTerminal]);
+    }
+
+    #[test]
+    fn given_action_tile_with_note_then_the_note_is_shown() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(
+            ActionTile::<Message>::new(
+                glyph::plus(),
+                "Install Docker",
+                &palette,
+            )
+            .note("docs.docker.com"),
+        );
+
+        assert!(ui.find("Install Docker").is_ok());
+        assert!(ui.find("docs.docker.com").is_ok());
     }
 
     #[test]

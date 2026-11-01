@@ -8,6 +8,7 @@ use otty_docker::{Engine, EngineInfo, discover};
 
 use super::AppEvent;
 use crate::app::App;
+use crate::services;
 use crate::widgets::docker::types::LoadedLists;
 use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
 
@@ -26,6 +27,11 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
         DockerEffect::Discover => Task::perform(discover(), |discovery| {
             intent(DockerIntent::DiscoveryFinished(discovery))
         }),
+        DockerEffect::CopyToClipboard(text) => iced::clipboard::write(text),
+        DockerEffect::OpenUrl(url) => {
+            services::open_url(&url);
+            Task::none()
+        },
         DockerEffect::LoadLists(info) => {
             let engine = info.address().clone();
 
@@ -105,5 +111,14 @@ mod tests {
 
         assert_eq!(search.units(), 1);
         assert_eq!(load.units(), 1);
+    }
+
+    #[test]
+    fn copying_runs_one_clipboard_task() {
+        let copy = handle_effect(DockerEffect::CopyToClipboard(String::from(
+            "sudo systemctl start docker",
+        )));
+
+        assert_eq!(copy.units(), 1);
     }
 }

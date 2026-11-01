@@ -4,6 +4,7 @@ use otty_docker::{
 use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::status_badge::StatusTone;
 
+use super::no_engine::{NoEngineViewModel, no_engine};
 use super::resource_rows::{
     columns, container_cells, container_status, image_cells, image_status,
     network_cells, network_status, volume_cells, volume_status,
@@ -56,8 +57,8 @@ pub(crate) enum TreeNote {
 pub(crate) enum MainViewModel<'a> {
     /// The engine search runs and no engine is known yet.
     Searching,
-    /// The search found no engine (ticket 10 says why).
-    NoEngine,
+    /// The search found no engine; the card says why and what to do.
+    NoEngine(NoEngineViewModel),
     /// The open list of an engine.
     Table(TableViewModel<'a>),
 }
@@ -140,10 +141,8 @@ pub(crate) fn tree_rows(state: &DockerState) -> Vec<TreeRowViewModel> {
 pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
     let (Some(place), Some(engine)) = (state.place(), state.open_engine())
     else {
-        return match state.search() {
-            Search::Searching => MainViewModel::Searching,
-            _ => MainViewModel::NoEngine,
-        };
+        return no_engine_view(state)
+            .map_or(MainViewModel::Searching, MainViewModel::NoEngine);
     };
 
     let shown = Shown {
@@ -181,6 +180,12 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
         ),
     };
     MainViewModel::Table(table)
+}
+
+/// The short text of the left panel while no engine is usable; `None` when
+/// the search runs or an engine answered.
+pub(crate) fn panel_note(state: &DockerState) -> Option<&'static str> {
+    no_engine_view(state).map(|vm| vm.panel_text)
 }
 
 /// The inspector header of the selected row of the open list; `None` when
@@ -231,6 +236,14 @@ pub(crate) fn engine_label(info: &EngineInfo) -> String {
 
 /// The note on the right of a list row: the count (running containers for
 /// Containers), nothing while it loads, or that it failed.
+/// The no-engine card of a finished search; `None` while it runs.
+fn no_engine_view(state: &DockerState) -> Option<NoEngineViewModel> {
+    match state.search() {
+        Search::Done(discovery) => no_engine(discovery),
+        _ => None,
+    }
+}
+
 fn list_note(engine: &EngineState, resource: ResourceKind) -> TreeNote {
     match resource {
         ResourceKind::Containers => {
@@ -410,6 +423,31 @@ mod tests {
     }
 
     #[test]
+    fn a_search_that_found_nothing_shows_the_no_engine_card_and_panel_text() {
+        let state = found(&[]);
+
+        let vm = build(&state);
+
+        let MainViewModel::NoEngine(card) = vm.main else {
+            panic!("expected the no engine card");
+        };
+        assert_eq!(card.title, i18n::t(Key::DockerNotInstalledTitle));
+        assert_eq!(
+            panel_note(&state),
+            Some(i18n::t(Key::DockerPanelNotInstalled))
+        );
+        assert!(vm.tree.is_empty());
+        assert_eq!(vm.inspector, None);
+    }
+
+    #[test]
+    fn a_running_search_has_no_panel_text() {
+        let state = DockerState::default();
+
+        assert_eq!(panel_note(&state), None);
+    }
+
+    #[test]
     fn engines_are_named_by_kind_and_version() {
         assert_eq!(engine_label(&docker()), "Docker 29.9.1");
         assert_eq!(engine_label(&podman()), "Podman 5.8.8");
@@ -424,16 +462,6 @@ mod tests {
         assert_eq!(vm.main, MainViewModel::Searching);
         assert!(vm.tree.is_empty());
         assert_eq!(vm.inspector, None);
-    }
-
-    #[test]
-    fn without_an_engine_the_main_area_says_none_was_found() {
-        let state = found(&[]);
-
-        let vm = build(&state);
-
-        assert_eq!(vm.main, MainViewModel::NoEngine);
-        assert!(vm.tree.is_empty());
     }
 
     #[test]

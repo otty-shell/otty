@@ -42,6 +42,9 @@ pub(crate) const MODE_DOCKER: &[u8] =
 /// Docker mode button that loads every list again: two turning arrows.
 pub(crate) const REFRESH: &[u8] =
     include_bytes!("../../assets/svg/refresh.svg");
+/// Link that opens outside the app: an arrow leaving a square.
+pub(crate) const EXTERNAL_LINK: &[u8] =
+    include_bytes!("../../assets/svg/external-link.svg");
 /// Error mark of a notice: an exclamation mark in a circle.
 pub(crate) const NOTICE_ERROR: &[u8] =
     include_bytes!("../../assets/svg/notice-error.svg");

@@ -275,6 +275,24 @@ pub(crate) fn docker_nothing_matches(filter: &str) -> String {
     )
 }
 
+/// Build the text of the no access card for the denied `socket`.
+pub(crate) fn docker_no_access_text(socket: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerNoAccessText,
+        &[("socket", socket)],
+    )
+}
+
+/// Build the line under the no engine cards from the `places` OTTY tried.
+pub(crate) fn docker_looked_for(places: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerLookedFor,
+        &[("places", places)],
+    )
+}
+
 /// Build the notice shown above a table whose list failed with `error`.
 pub(crate) fn docker_list_failed(error: &str) -> String {
     fill_in(

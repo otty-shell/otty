@@ -25,6 +25,12 @@ pub(crate) enum DockerIntent {
     FilterChanged(String),
     /// Load every list of every engine again (the Refresh button).
     Refresh,
+    /// Search for engines again (the Check again button).
+    CheckAgain,
+    /// Copy this command to the clipboard (the Copy button).
+    CopyCommand(String),
+    /// Open this page in the browser (the Install and How to fix buttons).
+    OpenLink(String),
 }
 
 /// Effect events produced by the Docker reducer. The app runs them off the
@@ -35,6 +41,10 @@ pub(crate) enum DockerEffect {
     Discover,
     /// Load the four lists of this engine.
     LoadLists(EngineInfo),
+    /// Put this text on the clipboard.
+    CopyToClipboard(String),
+    /// Open this page in the default browser.
+    OpenUrl(String),
 }
 
 /// Docker event stream routed through the app update loop.
