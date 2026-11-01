@@ -108,9 +108,12 @@ fn run_target(app: &App, target: PaletteTarget) -> Task<AppEvent> {
         PaletteTarget::NewLaunch => {
             quick_launch_intent(QuickLaunchIntent::HeaderCreateCommand)
         },
-        PaletteTarget::NewFolder => {
-            quick_launch_intent(QuickLaunchIntent::HeaderCreateFolder)
-        },
+        // The folder name field lives in the Launches section, so show the
+        // section first; the field then gets keyboard focus on screen.
+        PaletteTarget::NewFolder => Task::done(AppEvent::Sidebar(
+            SidebarEvent::Intent(SidebarIntent::RevealLaunches),
+        ))
+        .chain(quick_launch_intent(QuickLaunchIntent::HeaderCreateFolder)),
         PaletteTarget::Settings => tabs_intent(TabsIntent::OpenSettingsTab),
         PaletteTarget::SplitPane => match focused_pane(app) {
             Some((tab_id, pane)) => Task::done(AppEvent::TerminalWorkspace(
@@ -409,23 +412,36 @@ mod tests {
     }
 
     #[test]
-    fn new_launch_and_new_folder_run_the_launches_header_actions() {
+    fn new_launch_runs_the_launches_header_action() {
         let (mut app, _) = App::new();
 
-        let launch = run(&mut app, PaletteTarget::NewLaunch);
-        let folder = run(&mut app, PaletteTarget::NewFolder);
+        let events = run(&mut app, PaletteTarget::NewLaunch);
 
         assert!(matches!(
-            launch.as_slice(),
+            events.as_slice(),
             [AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
                 QuickLaunchIntent::HeaderCreateCommand
             ))]
         ));
+    }
+
+    #[test]
+    fn new_folder_reveals_the_launches_section_before_starting_the_folder() {
+        let (mut app, _) = App::new();
+
+        let events = run(&mut app, PaletteTarget::NewFolder);
+
+        // The name field only takes keyboard focus once it is on screen.
         assert!(matches!(
-            folder.as_slice(),
-            [AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                QuickLaunchIntent::HeaderCreateFolder
-            ))]
+            events.as_slice(),
+            [
+                AppEvent::Sidebar(SidebarEvent::Intent(
+                    SidebarIntent::RevealLaunches
+                )),
+                AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                    QuickLaunchIntent::HeaderCreateFolder
+                )),
+            ]
         ));
     }
 

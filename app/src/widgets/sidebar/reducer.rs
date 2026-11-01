@@ -32,6 +32,13 @@ pub(crate) fn reduce(
             state.toggle_launches();
             Task::none()
         },
+        SidebarIntent::RevealLaunches => {
+            if state.reveal_launches() {
+                sync_terminal_grid_sizes()
+            } else {
+                Task::none()
+            }
+        },
         SidebarIntent::OpenSettings => {
             Task::done(SidebarEvent::Effect(SidebarEffect::OpenSettingsTab))
         },
@@ -514,6 +521,84 @@ mod tests {
 
         assert!(widget.vm().is_launches_open);
         assert!(open.is_empty());
+    }
+
+    #[test]
+    fn reveal_launches_shows_a_closed_left_panel_at_the_minimum_width() {
+        let mut widget = SidebarWidget::new();
+        let _close = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        let events = reduce(&mut widget, SidebarIntent::RevealLaunches);
+
+        let vm = widget.vm();
+        assert!(vm.is_left_open);
+        assert!(vm.is_right_open);
+        assert!(vm.is_launches_open);
+        assert_eq!(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert!(has_effect(&events, is_sync_grid));
+    }
+
+    #[test]
+    fn reveal_launches_leaves_focus_mode_and_restores_the_panels() {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.3);
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+        let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
+
+        let events = reduce(&mut widget, SidebarIntent::RevealLaunches);
+
+        let vm = widget.vm();
+        assert!(!vm.is_focus_mode);
+        assert_eq!(vm.focus_note_opacity, None);
+        assert!(vm.is_left_open);
+        assert!(!vm.is_right_open);
+        assert!(vm.is_launches_open);
+        assert_eq!(widget.left_ratio(), 0.3);
+        assert!(has_effect(&events, is_sync_grid));
+    }
+
+    #[test]
+    fn reveal_launches_in_focus_mode_opens_a_left_panel_closed_before() {
+        let mut widget = SidebarWidget::new();
+        let _close_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
+
+        let events = reduce(&mut widget, SidebarIntent::RevealLaunches);
+
+        let vm = widget.vm();
+        assert!(!vm.is_focus_mode);
+        assert!(vm.is_left_open);
+        assert_eq!(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert!(has_effect(&events, is_sync_grid));
+    }
+
+    #[test]
+    fn reveal_launches_opens_a_collapsed_section_without_resizing() {
+        let mut widget = SidebarWidget::new();
+        let _collapse = reduce(&mut widget, SidebarIntent::ToggleLaunches);
+
+        let events = reduce(&mut widget, SidebarIntent::RevealLaunches);
+
+        assert!(widget.vm().is_launches_open);
+        assert!(events.is_empty());
+        assert_near(widget.side_panels_ratio(), 2.0 * SIDE_PANEL_MIN_RATIO);
+    }
+
+    #[test]
+    fn reveal_launches_when_already_shown_changes_nothing() {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.3);
+
+        let events = reduce(&mut widget, SidebarIntent::RevealLaunches);
+
+        let vm = widget.vm();
+        assert!(vm.is_left_open);
+        assert!(vm.is_right_open);
+        assert!(vm.is_launches_open);
+        assert!(vm.is_sessions_open);
+        assert_eq!(widget.left_ratio(), 0.3);
+        assert_eq!(widget.right_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert!(events.is_empty());
     }
 
     #[test]

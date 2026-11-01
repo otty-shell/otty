@@ -177,6 +177,27 @@ impl SidebarState {
         self.launches_open = !self.launches_open;
     }
 
+    /// Make the Launches section visible: leave focus mode, show the left
+    /// panel at the minimum width if it is closed, and open the section.
+    /// Parts already shown stay as they are. Returns whether the main area
+    /// changed size.
+    pub(super) fn reveal_launches(&mut self) -> bool {
+        self.launches_open = true;
+
+        if self.is_left_open() {
+            return false;
+        }
+
+        self.focus_mode = false;
+        self.focus_note = None;
+        if !self.left.is_open() {
+            self.left.open(max_ratio_beside(self.right_ratio()));
+        }
+
+        self.sync_panes();
+        true
+    }
+
     /// Remember the cursor position over the workspace.
     pub(super) fn update_cursor(&mut self, position: Point) {
         self.cursor = position;
