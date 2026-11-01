@@ -167,8 +167,9 @@ pub(crate) enum Key {
     PaletteNewFolder,
     /// Action that splits the focused pane.
     PaletteSplitPane,
-    /// Action that closes the active tab.
-    PaletteCloseSession,
+    /// Closing a session: the palette action and the tooltip of the close
+    /// cross on a session row.
+    CloseSession,
     /// Action that shows or hides the left panel.
     PaletteToggleLeftPanel,
     /// Action that shows or hides the files panel.
@@ -434,7 +435,7 @@ impl Key {
         Self::PaletteNewLaunch,
         Self::PaletteNewFolder,
         Self::PaletteSplitPane,
-        Self::PaletteCloseSession,
+        Self::CloseSession,
         Self::PaletteToggleLeftPanel,
         Self::PaletteToggleFilesPanel,
         Self::WizardTitleNew,

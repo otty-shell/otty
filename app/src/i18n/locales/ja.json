@@ -76,7 +76,7 @@
     "palette_new_launch": "新しい起動項目…",
     "palette_new_folder": "新しいフォルダー",
     "palette_split_pane": "ペインを分割",
-    "palette_close_session": "セッションを閉じる",
+    "close_session": "セッションを閉じる",
     "palette_toggle_left_panel": "左パネルの表示/非表示",
     "palette_toggle_files_panel": "ファイルの表示/非表示",
 

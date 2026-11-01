@@ -578,7 +578,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         SessionRow::new("zsh  ~/projects/otty", p)
             .selected(true)
             .on_press(Message::Clicked)
-            .on_close(Message::Clicked),
+            .on_close(Message::Clicked, "Close session"),
         SessionRow::new("claude  Review tree indent", p)
             .state("needs you", SessionTone::Waiting)
             .on_press(Message::Clicked),

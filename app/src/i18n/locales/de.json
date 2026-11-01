@@ -76,7 +76,7 @@
     "palette_new_launch": "Neuer Start…",
     "palette_new_folder": "Neuer Ordner",
     "palette_split_pane": "Bereich teilen",
-    "palette_close_session": "Sitzung schließen",
+    "close_session": "Sitzung schließen",
     "palette_toggle_left_panel": "Linkes Feld ein- oder ausblenden",
     "palette_toggle_files_panel": "Dateien ein- oder ausblenden",
 

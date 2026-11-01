@@ -76,7 +76,7 @@
     "palette_new_launch": "新增啟動項目…",
     "palette_new_folder": "新增資料夾",
     "palette_split_pane": "分割窗格",
-    "palette_close_session": "關閉工作階段",
+    "close_session": "關閉工作階段",
     "palette_toggle_left_panel": "顯示或隱藏左側面板",
     "palette_toggle_files_panel": "顯示或隱藏檔案",
 

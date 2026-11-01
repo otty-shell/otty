@@ -154,7 +154,10 @@ fn session_row<'a, Message: Clone + 'a>(
         .selected(session.is_active)
         .on_press(on_intent(TabsIntent::ActivateTab { tab_id }))
         .on_middle_press(on_intent(TabsIntent::CloseTab { tab_id }))
-        .on_close(on_intent(TabsIntent::CloseTab { tab_id }));
+        .on_close(
+            on_intent(TabsIntent::CloseTab { tab_id }),
+            i18n::t(Key::CloseSession),
+        );
     if let Some(folder) = session.folder {
         row = row.folder(folder);
     }

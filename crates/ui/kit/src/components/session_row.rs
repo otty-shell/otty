@@ -76,7 +76,7 @@ pub struct SessionRow<Message> {
     on_press: Option<Message>,
     on_right_press: Option<Message>,
     on_middle_press: Option<Message>,
-    on_close: Option<Message>,
+    on_close: Option<(Message, String)>,
 }
 
 impl<Message> SessionRow<Message> {
@@ -133,8 +133,14 @@ impl<Message> SessionRow<Message> {
     }
 
     /// Shows a close cross that sends `message` while the row is hovered.
-    pub fn on_close(mut self, message: Message) -> Self {
-        self.on_close = Some(message);
+    /// `label` is the cross's tooltip, such as "Close session", in the
+    /// app's language.
+    pub fn on_close(
+        mut self,
+        message: Message,
+        label: impl Into<String>,
+    ) -> Self {
+        self.on_close = Some((message, label.into()));
         self
     }
 }
@@ -224,14 +230,14 @@ impl<'a, Message: Clone + 'a> From<SessionRow<Message>>
             area = area.on_middle_press(message);
         }
 
-        let Some(message) = value.on_close else {
+        let Some((message, label)) = value.on_close else {
             return area.into();
         };
 
         // No hover background: on a selected row it would draw a dark square
         // behind the cross. The cross itself turns brighter instead.
         let cross = container(
-            IconButton::new(glyph::cross(), "Close session", &palette)
+            IconButton::new(glyph::cross(), label, &palette)
                 .size(IconButtonSize::Small)
                 .hover_background(false)
                 .on_press(message),
@@ -267,7 +273,7 @@ mod tests {
                 .state("editor", SessionTone::Muted)
                 .on_press(Message::Open)
                 .on_right_press(Message::Menu)
-                .on_close(Message::Close),
+                .on_close(Message::Close, "Fermer la session"),
         )
         .width(260)
         .into()
@@ -297,12 +303,33 @@ mod tests {
             .state("editor", SessionTone::Muted)
             .on_press(Message::Open);
         if with_close {
-            row = row.on_close(Message::Close);
+            row = row.on_close(Message::Close, "Close session");
         }
         let mut ui = simulator(container(row).width(260));
         if is_hovered {
             ui.point_at(Point::new(40.0, size::ROW / 2.0));
         }
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("row should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    /// Draws a row with the pointer over its close cross, whose tooltip is
+    /// `label`, and checks it against the picture saved in `reference`; the
+    /// first call saves the picture.
+    fn hovered_cross_matches(label: &str, reference: &std::path::Path) -> bool {
+        let palette = UiPalette::otty_dark();
+        let row = SessionRow::new("htop", &palette)
+            .selected(true)
+            .on_close(Message::Close, label);
+        let mut ui = simulator(container(row).width(260));
+        let cross = Point::new(260.0 - 12.0, size::ROW / 2.0);
+        ui.point_at(cross);
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::CursorMoved { position: cross },
+        )]);
 
         ui.snapshot(&iced::Theme::Dark)
             .expect("row should draw")
@@ -331,6 +358,16 @@ mod tests {
 
         assert!(drawn_row_matches(true, true, &reference));
         assert!(!drawn_row_matches(false, true, &reference));
+    }
+
+    #[test]
+    fn given_close_label_when_cross_hovered_then_the_tooltip_shows_that_label()
+    {
+        let reference = reference_path("close-label");
+
+        assert!(hovered_cross_matches("Close session", &reference));
+        assert!(!hovered_cross_matches("Fermer la session", &reference));
+        assert!(hovered_cross_matches("Close session", &reference));
     }
 
     #[test]

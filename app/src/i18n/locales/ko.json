@@ -76,7 +76,7 @@
     "palette_new_launch": "새 실행 항목…",
     "palette_new_folder": "새 폴더",
     "palette_split_pane": "창 분할",
-    "palette_close_session": "세션 닫기",
+    "close_session": "세션 닫기",
     "palette_toggle_left_panel": "왼쪽 패널 표시/숨기기",
     "palette_toggle_files_panel": "파일 표시/숨기기",
 

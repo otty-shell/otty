@@ -76,7 +76,7 @@
     "palette_new_launch": "Новый запуск…",
     "palette_new_folder": "Новая папка",
     "palette_split_pane": "Разделить панель",
-    "palette_close_session": "Закрыть сеанс",
+    "close_session": "Закрыть сеанс",
     "palette_toggle_left_panel": "Показать или скрыть левую панель",
     "palette_toggle_files_panel": "Показать или скрыть файлы",
 

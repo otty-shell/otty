@@ -76,7 +76,7 @@
     "palette_new_launch": "New launch…",
     "palette_new_folder": "New folder",
     "palette_split_pane": "Split pane",
-    "palette_close_session": "Close session",
+    "close_session": "Close session",
     "palette_toggle_left_panel": "Show or hide the left panel",
     "palette_toggle_files_panel": "Show or hide files",
 

@@ -76,7 +76,7 @@
     "palette_new_launch": "Nouveau lancement…",
     "palette_new_folder": "Nouveau dossier",
     "palette_split_pane": "Diviser le volet",
-    "palette_close_session": "Fermer la session",
+    "close_session": "Fermer la session",
     "palette_toggle_left_panel": "Afficher ou masquer le panneau de gauche",
     "palette_toggle_files_panel": "Afficher ou masquer les fichiers",
 

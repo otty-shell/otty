@@ -104,7 +104,7 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
     if has_active_session {
         actions.push((
             PaletteTarget::CloseSession,
-            Key::PaletteCloseSession,
+            Key::CloseSession,
             Some(AppShortcut::CloseSession),
         ));
     }
@@ -306,7 +306,7 @@ mod tests {
                 ),
                 action(
                     PaletteTarget::CloseSession,
-                    Key::PaletteCloseSession,
+                    Key::CloseSession,
                     Some(AppShortcut::CloseSession),
                 ),
                 action(

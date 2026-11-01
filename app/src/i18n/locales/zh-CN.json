@@ -76,7 +76,7 @@
     "palette_new_launch": "新建启动项…",
     "palette_new_folder": "新建文件夹",
     "palette_split_pane": "拆分窗格",
-    "palette_close_session": "关闭会话",
+    "close_session": "关闭会话",
     "palette_toggle_left_panel": "显示或隐藏左侧面板",
     "palette_toggle_files_panel": "显示或隐藏文件",
 
