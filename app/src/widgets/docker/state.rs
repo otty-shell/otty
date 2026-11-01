@@ -4,8 +4,8 @@ use otty_docker::{
 };
 
 use super::types::{
-    LoadedLists, Place, ResourceKind, container_name, filtered, image_name,
-    network_name, volume_name,
+    LoadedLists, Place, ResourceKind, filtered, image_name, network_name,
+    shown_containers, volume_name,
 };
 
 /// Runtime state of Docker mode: the engines and their lists, the open
@@ -146,6 +146,20 @@ impl DockerState {
         self.filter.clear();
     }
 
+    /// Show all containers of the open engine again, leaving a Compose
+    /// project.
+    pub(super) fn clear_compose_project(&mut self) {
+        let Some(place) = self.place.as_ref() else {
+            return;
+        };
+        if place.compose_project().is_none() {
+            return;
+        }
+
+        let all = Place::new(place.engine().clone(), ResourceKind::Containers);
+        self.open(all);
+    }
+
     /// Replace the name filter.
     pub(super) fn set_filter(&mut self, filter: String) {
         self.filter = filter;
@@ -167,11 +181,13 @@ impl DockerState {
 
         let filter = self.filter.as_str();
         let id = match place.resource() {
-            ResourceKind::Containers => {
-                filtered(engine.containers.items(), filter, container_name)
-                    .get(index)
-                    .map(|container| container.id().to_string())
-            },
+            ResourceKind::Containers => shown_containers(
+                engine.containers.items(),
+                filter,
+                place.compose_project(),
+            )
+            .get(index)
+            .map(|container| container.id().to_string()),
             ResourceKind::Images => {
                 filtered(engine.images.items(), filter, image_name)
                     .get(index)

@@ -34,6 +34,10 @@ pub(crate) fn reduce(
             state.open(place);
             Task::none()
         },
+        DockerIntent::ClearComposeProject => {
+            state.clear_compose_project();
+            Task::none()
+        },
         DockerIntent::SelectRow(index) => {
             let _ = state.select_shown_row(index);
             Task::none()
@@ -367,6 +371,58 @@ mod tests {
         open(&mut state, ResourceKind::Containers);
 
         assert_eq!(state.filter(), "x");
+    }
+
+    #[test]
+    fn opening_a_compose_project_keeps_the_containers_and_clears_the_filter() {
+        let mut state = loaded_state();
+        let _ =
+            reduce(&mut state, DockerIntent::FilterChanged(String::from("x")));
+        let project = Place::compose(docker().address().clone(), "otty-fx");
+
+        let _ = reduce(&mut state, DockerIntent::Open(project));
+
+        let place = state.place().expect("an open place");
+        assert_eq!(place.resource(), ResourceKind::Containers);
+        assert_eq!(place.compose_project(), Some("otty-fx"));
+        assert_eq!(state.filter(), "");
+    }
+
+    #[test]
+    fn clearing_the_compose_project_opens_all_containers() {
+        let mut state = loaded_state();
+        let project = Place::compose(docker().address().clone(), "otty-fx");
+        let _ = reduce(&mut state, DockerIntent::Open(project));
+
+        let _ = reduce(&mut state, DockerIntent::ClearComposeProject);
+
+        let place = state.place().expect("an open place");
+        assert_eq!(place.resource(), ResourceKind::Containers);
+        assert_eq!(place.compose_project(), None);
+    }
+
+    #[test]
+    fn clearing_without_a_project_changes_nothing() {
+        let mut state = loaded_state();
+        let _ =
+            reduce(&mut state, DockerIntent::FilterChanged(String::from("x")));
+
+        let _ = reduce(&mut state, DockerIntent::ClearComposeProject);
+
+        assert_eq!(state.filter(), "x");
+    }
+
+    #[test]
+    fn a_row_press_in_a_compose_project_selects_that_project_container() {
+        let mut state = loaded_state();
+        let project = Place::compose(docker().address().clone(), "otty-fx");
+        let _ = reduce(&mut state, DockerIntent::Open(project));
+
+        let _ = reduce(&mut state, DockerIntent::SelectRow(0));
+
+        let engine = state.open_engine().expect("docker engine");
+        let selected = engine.containers().selected(Container::id);
+        assert_eq!(selected.map(Container::name), Some("otty-fx-web-1"));
     }
 
     #[test]

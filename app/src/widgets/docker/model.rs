@@ -11,8 +11,8 @@ use super::resource_rows::{
 };
 use super::state::{DockerState, EngineState, ListLoad, ResourceList, Search};
 use super::types::{
-    Place, ResourceKind, container_name, filtered, image_name, network_name,
-    volume_name,
+    Place, ResourceKind, compose_projects, filtered, image_name, network_name,
+    shown_containers, volume_name,
 };
 use crate::i18n::{self, Key};
 
@@ -71,6 +71,9 @@ pub(crate) struct TableViewModel<'a> {
     pub(crate) engine_label: String,
     /// The name filter text.
     pub(crate) filter: &'a str,
+    /// The "compose: <name>" chip while the containers are limited to a
+    /// Compose project.
+    pub(crate) compose_chip: Option<String>,
     pub(crate) columns: Vec<TableColumn>,
     /// Rows that match the filter, in the engine's order.
     pub(crate) rows: Vec<Vec<TableCell>>,
@@ -95,10 +98,12 @@ struct Shown<'a> {
     resource: ResourceKind,
     engine_label: String,
     filter: &'a str,
+    compose_chip: Option<String>,
 }
 
 /// The rows of the engine tree, top to bottom: each engine, and the four
-/// lists of the engine whose place is open.
+/// lists of the engine whose place is open. Containers are followed by the
+/// Compose projects, when there are any.
 pub(crate) fn tree_rows(state: &DockerState) -> Vec<TreeRowViewModel> {
     let open = state.place();
     let mut rows = Vec::new();
@@ -131,7 +136,48 @@ pub(crate) fn tree_rows(state: &DockerState) -> Vec<TreeRowViewModel> {
                 is_selected: open == Some(&place),
                 place,
             });
+            if resource == ResourceKind::Containers {
+                rows.extend(compose_rows(engine, open));
+            }
         }
+    }
+
+    rows
+}
+
+/// The "Compose projects" row and one row per project under it; none when
+/// no container belongs to a project. The group row opens the containers,
+/// the same as the Containers row.
+fn compose_rows(
+    engine: &EngineState,
+    open: Option<&Place>,
+) -> Vec<TreeRowViewModel> {
+    let address = engine.info().address();
+    let projects = compose_projects(engine.containers().items());
+    if projects.is_empty() {
+        return Vec::new();
+    }
+
+    let mut rows = vec![TreeRowViewModel {
+        label: i18n::t(Key::DockerComposeProjects).to_string(),
+        depth: 1,
+        is_engine: false,
+        is_open: false,
+        note: TreeNote::Count(projects.len()),
+        is_selected: false,
+        place: Place::new(address.clone(), ResourceKind::Containers),
+    }];
+    for (name, count) in projects {
+        let place = Place::compose(address.clone(), name);
+        rows.push(TreeRowViewModel {
+            label: name.to_string(),
+            depth: 2,
+            is_engine: false,
+            is_open: false,
+            note: TreeNote::Count(count),
+            is_selected: open == Some(&place),
+            place,
+        });
     }
 
     rows
@@ -149,35 +195,51 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
         resource: place.resource(),
         engine_label: engine_label(engine.info()),
         filter: state.filter(),
+        compose_chip: place.compose_project().map(i18n::docker_compose_chip),
     };
+    let filter = shown.filter;
 
     let table = match place.resource() {
-        ResourceKind::Containers => table(
-            shown,
-            engine.containers(),
-            container_name,
-            Container::id,
-            |container| container_cells(container, now),
-        ),
-        ResourceKind::Images => {
-            table(shown, engine.images(), image_name, Image::id, |image| {
-                image_cells(image, now)
-            })
+        ResourceKind::Containers => {
+            let items = engine.containers().items();
+            table(
+                shown,
+                engine.containers(),
+                shown_containers(items, filter, place.compose_project()),
+                Container::id,
+                |container| container_cells(container, now),
+            )
         },
-        ResourceKind::Volumes => table(
-            shown,
-            engine.volumes(),
-            volume_name,
-            Volume::name,
-            |volume| volume_cells(volume, now),
-        ),
-        ResourceKind::Networks => table(
-            shown,
-            engine.networks(),
-            network_name,
-            Network::id,
-            |network| network_cells(network, now),
-        ),
+        ResourceKind::Images => {
+            let items = engine.images().items();
+            table(
+                shown,
+                engine.images(),
+                filtered(items, filter, image_name),
+                Image::id,
+                |image| image_cells(image, now),
+            )
+        },
+        ResourceKind::Volumes => {
+            let items = engine.volumes().items();
+            table(
+                shown,
+                engine.volumes(),
+                filtered(items, filter, volume_name),
+                Volume::name,
+                |volume| volume_cells(volume, now),
+            )
+        },
+        ResourceKind::Networks => {
+            let items = engine.networks().items();
+            table(
+                shown,
+                engine.networks(),
+                filtered(items, filter, network_name),
+                Network::id,
+                |network| network_cells(network, now),
+            )
+        },
     };
     MainViewModel::Table(table)
 }
@@ -281,19 +343,16 @@ fn note<T>(load: &ListLoad<T>, loaded: fn(&[T]) -> TreeNote) -> TreeNote {
     }
 }
 
-/// The table of one list: the rows that match the filter, the position of
-/// the selected row among them, and the message or error shown instead of
-/// rows. `name_of` gives the name the filter reads, `id_of` the selection
-/// id.
+/// The table of one list: the rows of `items` (the items that match the
+/// filter), the position of the selected row among them, and the message or
+/// error shown instead of rows. `id_of` gives the selection id.
 fn table<'a, T>(
     shown: Shown<'a>,
     list: &'a ResourceList<T>,
-    name_of: fn(&T) -> &str,
+    items: Vec<&'a T>,
     id_of: fn(&T) -> &str,
     cells: impl Fn(&T) -> Vec<TableCell>,
 ) -> TableViewModel<'a> {
-    let items = filtered(list.items(), shown.filter, name_of);
-
     let selected = list
         .selected_id()
         .and_then(|id| items.iter().position(|item| id_of(item) == id));
@@ -317,6 +376,7 @@ fn table<'a, T>(
         resource: shown.resource,
         engine_label: shown.engine_label,
         filter: shown.filter,
+        compose_chip: shown.compose_chip,
         columns: columns(shown.resource),
         rows,
         selected,
@@ -497,6 +557,20 @@ mod tests {
                     docker_at(ResourceKind::Containers)
                 ),
                 tree_row(
+                    i18n::t(Key::DockerComposeProjects),
+                    1,
+                    TreeNote::Count(1),
+                    false,
+                    docker_at(ResourceKind::Containers)
+                ),
+                tree_row(
+                    "otty-fx",
+                    2,
+                    TreeNote::Count(1),
+                    false,
+                    Place::compose(docker().address().clone(), "otty-fx")
+                ),
+                tree_row(
                     i18n::t(Key::DockerImages),
                     1,
                     TreeNote::Count(3),
@@ -535,6 +609,141 @@ mod tests {
     }
 
     #[test]
+    fn compose_projects_are_listed_under_containers_with_their_counts() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        let address = docker().address().clone();
+
+        let vm = build(&state);
+
+        let labels: Vec<&str> =
+            vm.tree.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            vec![
+                "Docker 29.9.1",
+                "Containers",
+                "Compose projects",
+                "otty-fx",
+                "Images",
+                "Volumes",
+                "Networks",
+            ]
+        );
+        assert_eq!(vm.tree[2].depth, 1);
+        assert_eq!(vm.tree[2].note, TreeNote::Count(1));
+        assert!(!vm.tree[2].is_selected);
+        assert_eq!(
+            vm.tree[2].place,
+            Place::new(address.clone(), ResourceKind::Containers)
+        );
+        assert_eq!(vm.tree[3].depth, 2);
+        assert_eq!(vm.tree[3].note, TreeNote::Count(1));
+        assert_eq!(vm.tree[3].place, Place::compose(address, "otty-fx"));
+    }
+
+    #[test]
+    fn without_compose_projects_there_is_no_compose_projects_row() {
+        let mut state = found(&[EngineKind::Docker]);
+        let mut plain = lists(EngineKind::Docker);
+        plain.containers = Ok(plain
+            .containers
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|container| container.compose_project().is_none())
+            .collect());
+        load(&mut state, &docker(), plain);
+
+        let vm = build(&state);
+
+        assert!(
+            vm.tree
+                .iter()
+                .all(|row| row.label != i18n::t(Key::DockerComposeProjects))
+        );
+        assert_eq!(vm.tree.len(), 5);
+    }
+
+    #[test]
+    fn a_loading_engine_has_no_compose_projects_row() {
+        let state = found(&[EngineKind::Docker]);
+
+        let vm = build(&state);
+
+        assert_eq!(vm.tree.len(), 5);
+    }
+
+    #[test]
+    fn opening_a_project_selects_its_row_and_limits_the_containers() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        let project = Place::compose(docker().address().clone(), "otty-fx");
+        let _ = reduce(&mut state, DockerIntent::Open(project));
+
+        let vm = build(&state);
+        let table = table(&vm);
+
+        let selected: Vec<&str> = vm
+            .tree
+            .iter()
+            .filter(|row| row.is_selected)
+            .map(|row| row.label.as_str())
+            .collect();
+        assert_eq!(selected, vec!["otty-fx"]);
+        assert_eq!(table.resource, ResourceKind::Containers);
+        assert_eq!(table.rows.len(), 1);
+        assert_eq!(
+            table.compose_chip,
+            Some(i18n::docker_compose_chip("otty-fx"))
+        );
+        assert_eq!(table.empty_message, None);
+    }
+
+    #[test]
+    fn the_project_limit_works_with_the_name_filter() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        let project = Place::compose(docker().address().clone(), "otty-fx");
+        let _ = reduce(&mut state, DockerIntent::Open(project));
+        let _ = reduce(&mut state, DockerIntent::FilterChanged("exit".into()));
+
+        let vm = build(&state);
+
+        assert!(table(&vm).rows.is_empty());
+        assert!(table(&vm).empty_message.is_some());
+    }
+
+    #[test]
+    fn the_whole_containers_list_has_no_chip() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+
+        let vm = build(&state);
+
+        assert_eq!(table(&vm).compose_chip, None);
+        assert!(table(&vm).rows.len() > 1);
+    }
+
+    #[test]
+    fn clearing_the_project_shows_all_containers_again() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        let project = Place::compose(docker().address().clone(), "otty-fx");
+        let _ = reduce(&mut state, DockerIntent::Open(project));
+
+        let _ = reduce(&mut state, DockerIntent::ClearComposeProject);
+
+        let vm = build(&state);
+        assert_eq!(table(&vm).compose_chip, None);
+        assert!(table(&vm).rows.len() > 1);
+        assert!(
+            vm.tree
+                .iter()
+                .any(|row| row.label == "Containers" && row.is_selected)
+        );
+    }
+
+    #[test]
     fn a_loading_list_has_no_count_and_a_failed_one_says_so() {
         let mut state = found(&[EngineKind::Docker]);
         let mut partial = lists(EngineKind::Docker);
@@ -545,7 +754,7 @@ mod tests {
         let vm = build(&state);
         let loading_vm = build(&loading);
 
-        assert_eq!(vm.tree[3].note, TreeNote::Failed);
+        assert_eq!(vm.tree[5].note, TreeNote::Failed);
         assert_eq!(loading_vm.tree[1].note, TreeNote::Nothing);
         assert_eq!(loading_vm.tree[2].note, TreeNote::Nothing);
     }

@@ -889,6 +889,8 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .note("this computer"),
         Chip::new("prod-1", p).target(TargetKind::Prod),
         Chip::new("~/projects/otty", p).mono(true),
+        Chip::new("compose: otty-site", p)
+            .on_clear("Show all containers", Message::Clicked),
     ]
     .spacing(spacing::SPACE_3)
     .align_y(iced::Alignment::Center);
@@ -912,7 +914,11 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section("Dialog", open_dialog.into(), p),
         section("Kbd", keys.into(), p),
         section("TargetDot (local, ssh, prod, staging)", dots.into(), p),
-        section("Chip (target + note, target, mono path)", chips.into(), p),
+        section(
+            "Chip (target + note, target, mono path, clearable)",
+            chips.into(),
+            p,
+        ),
         section("StatusBar (items left and right)", status_bar.into(), p),
         section("Divider", dividers.into(), p),
         section("Menu", menu.into(), p),

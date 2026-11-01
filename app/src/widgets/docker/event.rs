@@ -19,6 +19,9 @@ pub(crate) enum DockerIntent {
     },
     /// A tree row was pressed: show this list of this engine.
     Open(Place),
+    /// The clear button of the "compose: <name>" chip was pressed: show all
+    /// containers again.
+    ClearComposeProject,
     /// The row at this position of the shown (filtered) table was pressed.
     SelectRow(usize),
     /// The name filter above the table changed.

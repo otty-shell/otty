@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use otty_docker::{Container, EngineAddress, Image, Network, Volume};
 
 use crate::i18n::Key;
@@ -60,6 +62,8 @@ impl ResourceKind {
 pub(crate) struct Place {
     engine: EngineAddress,
     resource: ResourceKind,
+    /// The Compose project the containers are limited to.
+    compose_project: Option<String>,
 }
 
 impl Place {
@@ -73,9 +77,29 @@ impl Place {
         self.resource
     }
 
+    /// The Compose project the containers are limited to; `None` shows all
+    /// of them.
+    pub(crate) fn compose_project(&self) -> Option<&str> {
+        self.compose_project.as_deref()
+    }
+
     /// The `resource` list of the engine at `engine`.
     pub(crate) fn new(engine: EngineAddress, resource: ResourceKind) -> Self {
-        Self { engine, resource }
+        Self {
+            engine,
+            resource,
+            compose_project: None,
+        }
+    }
+
+    /// The containers of the engine at `engine` that belong to the Compose
+    /// project `project`.
+    pub(crate) fn compose(engine: EngineAddress, project: &str) -> Self {
+        Self {
+            engine,
+            resource: ResourceKind::Containers,
+            compose_project: Some(project.to_string()),
+        }
     }
 }
 
@@ -100,6 +124,32 @@ impl LoadedLists {
             networks: Err(message.to_string()),
         }
     }
+}
+
+/// Return the containers whose name contains `filter` and, when `project`
+/// is set, that belong to that Compose project.
+pub(crate) fn shown_containers<'a>(
+    containers: &'a [Container],
+    filter: &str,
+    project: Option<&str>,
+) -> Vec<&'a Container> {
+    let mut shown = filtered(containers, filter, container_name);
+    if let Some(project) = project {
+        shown.retain(|container| container.compose_project() == Some(project));
+    }
+
+    shown
+}
+
+/// The Compose projects of `containers` with their container counts,
+/// ordered by project name. Containers outside any project are skipped.
+pub(crate) fn compose_projects(containers: &[Container]) -> Vec<(&str, usize)> {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for project in containers.iter().filter_map(Container::compose_project) {
+        *counts.entry(project).or_default() += 1;
+    }
+
+    counts.into_iter().collect()
 }
 
 /// The name a row is filtered by and shown under: the container, volume or
@@ -156,6 +206,40 @@ mod tests {
 
         let names: Vec<&str> = rows.iter().map(|c| c.name()).collect();
         assert_eq!(names, vec!["otty-fx-exit3", "otty-fx-exit0"]);
+    }
+
+    #[test]
+    fn containers_are_limited_to_a_compose_project_and_the_filter() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let containers = resources.containers();
+
+        let all = shown_containers(containers, "", None);
+        let project = shown_containers(containers, "", Some("otty-fx"));
+        let other = shown_containers(containers, "", Some("nope"));
+        let no_match = shown_containers(containers, "exit", Some("otty-fx"));
+
+        assert_eq!(all.len(), containers.len());
+        let names: Vec<&str> = project.iter().map(|c| c.name()).collect();
+        assert_eq!(names, vec!["otty-fx-web-1"]);
+        assert!(other.is_empty());
+        assert!(no_match.is_empty());
+    }
+
+    #[test]
+    fn compose_projects_are_counted_by_name_and_skip_loose_containers() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let mut containers = resources.containers().to_vec();
+        let web = containers
+            .iter()
+            .find(|c| c.compose_project().is_some())
+            .expect("fixture has a compose container")
+            .clone();
+        containers.push(web);
+
+        let projects = compose_projects(&containers);
+
+        assert_eq!(projects, vec![("otty-fx", 2)]);
+        assert!(compose_projects(&[]).is_empty());
     }
 
     #[test]

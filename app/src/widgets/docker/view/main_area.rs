@@ -84,7 +84,7 @@ fn table_view<'a>(
     content.push(table).into()
 }
 
-/// Title, engine chip, filter, the create button (disabled until its
+/// Title, engine chip, the Compose project chip, filter, the create button (disabled until its
 /// ticket) and Refresh.
 fn header_row<'a>(
     vm: &TableViewModel<'a>,
@@ -100,6 +100,12 @@ fn header_row<'a>(
     let engine = Chip::new(vm.engine_label.as_str(), palette)
         .target(TargetKind::Local)
         .note(i18n::t(Key::ThisComputerNote));
+    let compose = vm.compose_chip.as_deref().map(|label| {
+        Chip::new(label, palette).on_clear(
+            i18n::t(Key::DockerShowAllContainers),
+            DockerIntent::ClearComposeProject,
+        )
+    });
     let filter = TextField::new("", vm.filter, palette)
         .placeholder(i18n::t(Key::DockerFilterPlaceholder))
         .width(FILTER_WIDTH)
@@ -114,19 +120,21 @@ fn header_row<'a>(
     )
     .on_press(DockerIntent::Refresh);
 
-    row![
-        title,
-        engine,
-        Space::new().width(Length::Fill),
-        filter,
-        create,
-        refresh
-    ]
-    .spacing(spacing::SPACE_4)
-    .align_y(Alignment::Center)
-    .height(HEADER_HEIGHT)
-    .padding(Padding::from([0.0, spacing::SPACE_5]))
-    .into()
+    let mut header = row![title, engine];
+    if let Some(compose) = compose {
+        header = header.push(compose);
+    }
+
+    header
+        .push(Space::new().width(Length::Fill))
+        .push(filter)
+        .push(create)
+        .push(refresh)
+        .spacing(spacing::SPACE_4)
+        .align_y(Alignment::Center)
+        .height(HEADER_HEIGHT)
+        .padding(Padding::from([0.0, spacing::SPACE_5]))
+        .into()
 }
 
 /// A centered card with the Docker icon and `description`, while the search
@@ -173,6 +181,7 @@ mod tests {
             resource: ResourceKind::Containers,
             engine_label: String::from("Docker 29.9.1"),
             filter: "",
+            compose_chip: None,
             columns: vec![
                 TableColumn::new("Name", 3),
                 TableColumn::new("Status", 2),
@@ -229,6 +238,49 @@ mod tests {
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert!(intents.is_empty(), "the create button is disabled");
+    }
+
+    #[test]
+    fn the_compose_chip_shows_and_its_cross_shows_all_containers() {
+        let themes = ThemeManager::new();
+        let vm = match table(rows()) {
+            MainViewModel::Table(table) => {
+                MainViewModel::Table(TableViewModel {
+                    compose_chip: Some(i18n::docker_compose_chip("otty-site")),
+                    ..table
+                })
+            },
+            other => other,
+        };
+        let mut ui = simulator(view(MainAreaProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        }));
+        let chip = ui
+            .find("compose: otty-site")
+            .expect("compose chip should show");
+        let bounds = chip.bounds();
+
+        // The cross sits one gap right of the chip label.
+        ui.point_at(iced::Point::new(
+            bounds.x + bounds.width + spacing::SPACE_2 + 12.0,
+            bounds.y + bounds.height / 2.0,
+        ));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::ClearComposeProject]);
+    }
+
+    #[test]
+    fn without_a_compose_project_there_is_no_chip() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(MainAreaProps {
+            vm: table(rows()),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        assert!(ui.find("compose: otty-site").is_err());
     }
 
     #[test]

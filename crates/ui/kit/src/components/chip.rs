@@ -1,9 +1,11 @@
-//! `Chip`: small label for a target or a path.
+//! `Chip`: small label for a target, a path or an active filter.
 
 use iced::widget::text::Wrapping;
 use iced::widget::{container, row, text};
 use iced::{Alignment, Border, Element, Padding};
 
+use super::glyph;
+use super::icon_button::{IconButton, IconButtonSize};
 use super::target_dot::{TargetKind, target_dot};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
@@ -13,7 +15,8 @@ const PADDING_X: f32 = spacing::SPACE_3;
 /// Height of a chip (`height: 24px`, the same as `control-sm`).
 const HEIGHT: f32 = size::CONTROL_SM;
 
-/// Chip with a label, an optional target dot and an optional muted note.
+/// Chip with a label, an optional target dot, an optional muted note and an
+/// optional clear button.
 ///
 /// A chip is always one line [`HEIGHT`] high. In a space narrower than its
 /// texts it does not wrap: its right end is cut off at the edge of its
@@ -34,16 +37,20 @@ const HEIGHT: f32 = size::CONTROL_SM;
 ///     .into();
 /// let path: Element<'_, ()> =
 ///     Chip::new("~/projects/otty", &palette).mono(true).into();
+/// let filter: Element<'_, ()> = Chip::new("compose: web", &palette)
+///     .on_clear("Show all", ())
+///     .into();
 /// ```
-pub struct Chip {
+pub struct Chip<Message = ()> {
     label: String,
     palette: UiPalette,
     target: Option<TargetKind>,
     note: Option<String>,
     is_mono: bool,
+    on_clear: Option<(String, Message)>,
 }
 
-impl Chip {
+impl<Message> Chip<Message> {
     /// Creates a chip with `label` only.
     pub fn new(label: impl Into<String>, palette: &UiPalette) -> Self {
         Self {
@@ -52,6 +59,7 @@ impl Chip {
             target: None,
             note: None,
             is_mono: false,
+            on_clear: None,
         }
     }
 
@@ -72,10 +80,21 @@ impl Chip {
         self.is_mono = is_mono;
         self
     }
+
+    /// Adds a cross after the texts. A press on it sends `message`;
+    /// `label` is its tooltip, for example "Show all containers".
+    pub fn on_clear(
+        mut self,
+        label: impl Into<String>,
+        message: Message,
+    ) -> Self {
+        self.on_clear = Some((label.into(), message));
+        self
+    }
 }
 
-impl<'a, Message: 'a> From<Chip> for Element<'a, Message> {
-    fn from(value: Chip) -> Self {
+impl<'a, Message: Clone + 'a> From<Chip<Message>> for Element<'a, Message> {
+    fn from(value: Chip<Message>) -> Self {
         let palette = value.palette;
         let style = typography::SMALL;
         let background = palette.surface_raised();
@@ -105,6 +124,15 @@ impl<'a, Message: 'a> From<Chip> for Element<'a, Message> {
                     .font(fonts::UI)
                     .wrapping(Wrapping::None)
                     .color(palette.text_muted()),
+            );
+        }
+
+        if let Some((label, message)) = value.on_clear {
+            content = content.push(
+                IconButton::new(glyph::cross(), label, &palette)
+                    .size(IconButtonSize::Small)
+                    .hover_background(false)
+                    .on_press(message),
             );
         }
 
@@ -180,5 +208,37 @@ mod tests {
             "chip height {} should stay {HEIGHT}",
             below.y
         );
+    }
+
+    #[test]
+    fn given_clear_button_when_pressed_then_chip_sends_its_message() {
+        let palette = UiPalette::otty_dark();
+        let chip: Element<'_, u8> = Chip::new("compose: web", &palette)
+            .on_clear("Show all", 7)
+            .into();
+        let mut ui = simulator(chip);
+        let label = ui.find("compose: web").expect("label should be visible");
+        let bounds = label.bounds();
+
+        // The cross sits one gap right of the label; its button is 24px.
+        ui.point_at(iced::Point::new(
+            bounds.x + bounds.width + spacing::SPACE_2 + 12.0,
+            bounds.y + bounds.height / 2.0,
+        ));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let messages: Vec<u8> = ui.into_messages().collect();
+        assert_eq!(messages, vec![7]);
+    }
+
+    #[test]
+    fn given_chip_without_clear_when_clicked_then_nothing_is_sent() {
+        let palette = UiPalette::otty_dark();
+        let chip: Element<'_, u8> = Chip::new("fedora", &palette).into();
+        let mut ui = simulator(chip);
+
+        ui.click("fedora").expect("label should be visible");
+
+        assert_eq!(ui.into_messages().count(), 0);
     }
 }

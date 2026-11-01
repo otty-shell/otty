@@ -193,6 +193,13 @@ pub(crate) enum Key {
     /// Running containers next to Containers in the tree. Placeholder:
     /// `{count}`.
     TplDockerRunning,
+    /// Tree row that groups the Compose projects of an engine.
+    DockerComposeProjects,
+    /// Chip above the containers table that names the Compose project the
+    /// list is limited to. Placeholder: `{name}`.
+    TplDockerComposeChip,
+    /// Tooltip of the chip's cross that shows all containers again.
+    DockerShowAllContainers,
     /// Word next to a tree row whose list failed to load.
     DockerListFailedShort,
     /// Table message while a list loads.
@@ -589,7 +596,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 266] = [
+    pub(super) const ALL: [Self; 269] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -670,6 +677,9 @@ impl Key {
         Self::DockerRefresh,
         Self::DockerFilterPlaceholder,
         Self::TplDockerRunning,
+        Self::DockerComposeProjects,
+        Self::TplDockerComposeChip,
+        Self::DockerShowAllContainers,
         Self::DockerListFailedShort,
         Self::DockerLoading,
         Self::DockerNoContainers,
