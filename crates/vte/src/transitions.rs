@@ -10,6 +10,99 @@
 
 use crate::enums::{Action, State};
 
+/// Action to trigger upon entering a new state before reading the next byte.
+#[inline(always)]
+pub(crate) const fn entry_action(state: State) -> Action {
+    use Action::*;
+    use State::*;
+
+    match state {
+        Ground => None,
+        Escape => Clear,
+        EscapeIntermediate => None,
+        CsiEntry => Clear,
+        CsiParam => None,
+        CsiIntermediate => None,
+        CsiIgnore => None,
+        DcsEntry => Clear,
+        DcsParam => None,
+        DcsIntermediate => None,
+        DcsPassthrough => Hook,
+        DcsIgnore => None,
+        OscString => OscStart,
+        SosPmApcString => None,
+        Anywhere => None,
+        Utf8Sequence => None,
+        Nothing => None,
+    }
+}
+
+/// Action to trigger after leaving a state, typically to finalize buffers.
+#[inline(always)]
+pub(crate) const fn exit_action(state: State) -> Action {
+    use Action::*;
+    use State::*;
+
+    match state {
+        Ground => None,
+        Escape => None,
+        EscapeIntermediate => None,
+        CsiEntry => None,
+        CsiParam => None,
+        CsiIntermediate => None,
+        CsiIgnore => None,
+        DcsEntry => None,
+        DcsParam => None,
+        DcsIntermediate => None,
+        DcsPassthrough => Unhook,
+        DcsIgnore => None,
+        OscString => OscEnd,
+        SosPmApcString => None,
+        Anywhere => None,
+        Utf8Sequence => None,
+        Nothing => None,
+    }
+}
+
+/// Action to trigger in default ut8 parsing branch
+#[inline(always)]
+pub(crate) const fn utf8_state_action(state: State) -> Action {
+    use Action::*;
+    use State::*;
+
+    match state {
+        Ground => Print,
+        OscString => OscPut,
+        _ => None,
+    }
+}
+
+/// Core transition table that delegates to state-specific helpers.
+#[inline(always)]
+pub(crate) const fn transit(state: State, byte: u8) -> (State, Action) {
+    use Action::*;
+    use State::*;
+
+    match state {
+        Ground => ground(byte),
+        Escape => escape(byte),
+        EscapeIntermediate => escape_intermidiate(byte),
+        CsiEntry => csi_entry(byte),
+        CsiParam => csi_param(byte),
+        CsiIntermediate => csi_intermediate(byte),
+        CsiIgnore => csi_ignore(byte),
+        DcsEntry => dcs_entry(byte),
+        DcsParam => dcs_param(byte),
+        DcsIntermediate => dcs_intermediate(byte),
+        DcsIgnore => dcs_ignore(byte),
+        DcsPassthrough => dcs_passthrough(byte),
+        OscString => osc_string(byte),
+        SosPmApcString => sos_pm_apc_string(byte),
+        Anywhere => anywhere(Anywhere, byte),
+        _ => (Nothing, None),
+    }
+}
+
 /// Transition that applies from any state when processing C1 controls and
 /// common single-byte sequences.
 #[inline(always)]
@@ -264,98 +357,5 @@ const fn sos_pm_apc_string(byte: u8) -> (State, Action) {
             (SosPmApcString, Ignore)
         },
         _ => anywhere(SosPmApcString, byte),
-    }
-}
-
-/// Action to trigger upon entering a new state before reading the next byte.
-#[inline(always)]
-pub(crate) const fn entry_action(state: State) -> Action {
-    use Action::*;
-    use State::*;
-
-    match state {
-        Ground => None,
-        Escape => Clear,
-        EscapeIntermediate => None,
-        CsiEntry => Clear,
-        CsiParam => None,
-        CsiIntermediate => None,
-        CsiIgnore => None,
-        DcsEntry => Clear,
-        DcsParam => None,
-        DcsIntermediate => None,
-        DcsPassthrough => Hook,
-        DcsIgnore => None,
-        OscString => OscStart,
-        SosPmApcString => None,
-        Anywhere => None,
-        Utf8Sequence => None,
-        Nothing => None,
-    }
-}
-
-/// Action to trigger after leaving a state, typically to finalize buffers.
-#[inline(always)]
-pub(crate) const fn exit_action(state: State) -> Action {
-    use Action::*;
-    use State::*;
-
-    match state {
-        Ground => None,
-        Escape => None,
-        EscapeIntermediate => None,
-        CsiEntry => None,
-        CsiParam => None,
-        CsiIntermediate => None,
-        CsiIgnore => None,
-        DcsEntry => None,
-        DcsParam => None,
-        DcsIntermediate => None,
-        DcsPassthrough => Unhook,
-        DcsIgnore => None,
-        OscString => OscEnd,
-        SosPmApcString => None,
-        Anywhere => None,
-        Utf8Sequence => None,
-        Nothing => None,
-    }
-}
-
-/// Action to trigger in default ut8 parsing branch
-#[inline(always)]
-pub(crate) const fn utf8_state_action(state: State) -> Action {
-    use Action::*;
-    use State::*;
-
-    match state {
-        Ground => Print,
-        OscString => OscPut,
-        _ => None,
-    }
-}
-
-/// Core transition table that delegates to state-specific helpers.
-#[inline(always)]
-pub(crate) const fn transit(state: State, byte: u8) -> (State, Action) {
-    use Action::*;
-    use State::*;
-
-    match state {
-        Ground => ground(byte),
-        Escape => escape(byte),
-        EscapeIntermediate => escape_intermidiate(byte),
-        CsiEntry => csi_entry(byte),
-        CsiParam => csi_param(byte),
-        CsiIntermediate => csi_intermediate(byte),
-        CsiIgnore => csi_ignore(byte),
-        DcsEntry => dcs_entry(byte),
-        DcsParam => dcs_param(byte),
-        DcsIntermediate => dcs_intermediate(byte),
-        DcsIgnore => dcs_ignore(byte),
-        DcsPassthrough => dcs_passthrough(byte),
-        OscString => osc_string(byte),
-        SosPmApcString => sos_pm_apc_string(byte),
-        Anywhere => anywhere(Anywhere, byte),
-        _ => (Nothing, None),
     }
 }
