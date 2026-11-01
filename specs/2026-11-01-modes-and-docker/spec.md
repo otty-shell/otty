@@ -364,13 +364,13 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 11 — Container actions · Opus
 - [x] 12 — Image, volume, network actions · Opus
 - [x] 13 — Inspector tabs · Opus
-- [ ] 14 — Run container form · Opus
-- [ ] 15 — Shell into a container · Sonnet
+- [x] 14 — Run container form · Opus
+- [x] 15 — Shell into a container · Sonnet
 - [x] 16 — Live engine events · Opus
 - [x] 17 — Compose projects · Sonnet
 - [x] 18 — Status bar per mode · Sonnet
 - [ ] 19 — OTTY Light pass and screenshots · Sonnet
 - [ ] 20 — Design system and canvas sync · Opus, owner review
 - [x] 21 — Discovery additions: sockets, CLI folders, `podman-docker` · Opus
-- [ ] 22 — Logs Follow toggle · Opus
-- [ ] 23 — Volume prune keeps named volumes by default · Sonnet
+- [x] 22 — Logs Follow toggle · Opus
+- [x] 23 — Volume prune keeps named volumes by default · Sonnet
