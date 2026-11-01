@@ -80,7 +80,7 @@ mod tests {
 
     use super::handle_effect;
     use crate::events::AppEvent;
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::quick_launch::QuickLaunchEffect;
     use crate::widgets::quick_launch::types::QuickLaunch;
     use crate::widgets::tabs::types::TabMachine;

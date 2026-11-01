@@ -154,7 +154,7 @@ mod tests {
     use crate::app::App;
     use crate::events::AppEvent;
     use crate::shortcuts::AppShortcut;
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::tabs::{TabsEvent, TabsIntent};
     use crate::widgets::terminal_workspace::{
         TerminalWorkspaceEffect, TerminalWorkspaceIntent,

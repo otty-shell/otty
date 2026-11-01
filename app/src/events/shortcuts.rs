@@ -66,7 +66,7 @@ mod tests {
     use iced::keyboard::{Event, Key, Location, Modifiers};
 
     use super::*;
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
 
     fn new_terminal_press(repeat: bool) -> Event {
         let keys = AppShortcut::NewTerminal.keys(Platform::current());

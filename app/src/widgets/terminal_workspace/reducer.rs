@@ -620,7 +620,7 @@ mod tests {
     use super::{TerminalWorkspaceCtx, reduce};
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::shortcuts::AppShortcut;
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::terminal_workspace::state::TerminalWorkspaceState;
     use crate::widgets::terminal_workspace::types::TerminalKind;
     use crate::widgets::terminal_workspace::{

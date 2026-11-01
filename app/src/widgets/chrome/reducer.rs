@@ -58,7 +58,7 @@ pub(crate) fn reduce(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
 
     #[test]
     fn maximize_button_asks_to_toggle_maximize() {

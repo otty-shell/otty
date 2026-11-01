@@ -214,7 +214,7 @@ fn open_settings_tab(state: &mut TabsState) -> Task<TabsEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
 
     fn open_terminal(state: &mut TabsState, title: &str) -> u64 {
         let _ = reduce(

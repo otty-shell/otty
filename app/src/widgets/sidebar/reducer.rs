@@ -80,7 +80,7 @@ mod tests {
     use iced::time::{Duration, Instant};
     use iced::widget::pane_grid;
 
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::sidebar::side_panel::SIDE_PANEL_MIN_RATIO;
     use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu};
     use crate::widgets::sidebar::{

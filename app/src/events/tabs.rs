@@ -190,7 +190,7 @@ mod tests {
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::domain::quick_launch::WizardTabInit;
     use crate::events::AppEvent;
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
     use crate::widgets::tabs::{TabsEffect, TabsEvent, TabsIntent};

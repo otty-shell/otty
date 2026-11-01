@@ -119,7 +119,7 @@ mod tests {
     use otty_ui_kit::components::target_dot::TargetKind;
 
     use super::*;
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::tabs::model::{
         SessionGroupViewModel, SessionViewModel,
     };

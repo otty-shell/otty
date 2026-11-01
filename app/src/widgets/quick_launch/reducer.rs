@@ -1189,7 +1189,7 @@ mod tests {
     };
     use super::*;
     use crate::domain::exit_behavior::ExitBehavior;
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
 
     fn ctx(settings: &Settings) -> QuickLaunchCtx<'_> {
         QuickLaunchCtx {

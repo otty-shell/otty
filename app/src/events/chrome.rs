@@ -45,7 +45,7 @@ fn sidebar_intent(intent: SidebarIntent) -> Task<AppEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
 
     #[test]
     fn left_panel_button_maps_to_the_left_panel_toggle() {

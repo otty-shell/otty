@@ -97,7 +97,7 @@ mod tests {
 
     use super::*;
     use crate::shortcuts::{AppShortcut, Platform};
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
 
     #[test]
     fn keyboard_event_runs_the_app_shortcut_it_stands_for() {

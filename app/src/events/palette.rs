@@ -138,7 +138,7 @@ mod tests {
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::*;
-    use crate::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;
     use crate::widgets::terminal_workspace::types::TerminalKind;
 
