@@ -61,7 +61,7 @@ pub(crate) fn view(props: InspectorProps<'_>) -> Element<'_, DockerIntent> {
             .into();
     };
 
-    let status = StatusBadge::new(vm.status, vm.tone, palette);
+    let status = StatusBadge::new(vm.status, vm.tone, palette).wrapping(true);
     let mut header = InspectorHeader::new(vm.title, palette).status(status);
     if let Some(actions) = props.actions {
         for button in actions.buttons {
@@ -505,6 +505,109 @@ mod tests {
 
             ui.find("otty-fx-web-1").expect("the header stays");
             assert!(ui.find(i18n::t(Key::DockerLoading)).is_err());
+        }
+    }
+
+    /// Width of the narrow panel in the layout tests.
+    const NARROW: f32 = 260.0;
+
+    fn narrow(element: Element<'_, DockerIntent>) -> Element<'_, DockerIntent> {
+        container(element).width(NARROW).height(600).into()
+    }
+
+    #[test]
+    fn a_long_status_line_wraps_inside_the_panel() {
+        let themes = ThemeManager::new();
+        let status = "Exited (137) 3 hours ago, stopped by the out of memory \
+                      killer";
+        let mut ui = simulator(narrow(view(InspectorProps {
+            vm: Some(InspectorViewModel {
+                title: String::from("otty-fx-web-1"),
+                status: String::from(status),
+                tone: StatusTone::Error,
+            }),
+            actions: None,
+            tabs: None,
+            theme: ThemeProps::new(themes.current()),
+        })));
+
+        let line = ui.find(status).expect("status should show").bounds();
+
+        assert!(
+            line.x + line.width <= NARROW - PADDING.right + 0.5,
+            "status {line:?} should stay inside the padding"
+        );
+        assert!(line.height > 2.0 * 12.5, "status {line:?} should wrap");
+    }
+
+    #[test]
+    fn a_long_hint_under_the_buttons_wraps_inside_the_panel() {
+        let themes = ThemeManager::new();
+        let hint = "Used by otty-fx-web-1, otty-fx-web-2 and otty-fx-worker-1";
+        let mut ui = simulator(narrow(view(InspectorProps {
+            vm: header(),
+            actions: Some(ActionsViewModel {
+                buttons: vec![button(RowAction::Stop, true)],
+                hint: Some(String::from(hint)),
+            }),
+            tabs: None,
+            theme: ThemeProps::new(themes.current()),
+        })));
+
+        let line = ui.find(hint).expect("hint should show").bounds();
+
+        assert!(
+            line.x + line.width <= NARROW - PADDING.right + 0.5,
+            "hint {line:?} should stay inside the padding"
+        );
+        assert!(line.height > 2.0 * 12.0, "hint {line:?} should wrap");
+    }
+
+    #[test]
+    fn the_header_the_buttons_the_hint_the_tabs_and_the_body_share_one_side_padding()
+     {
+        let themes = ThemeManager::new();
+        let fields = vec![(
+            i18n::t(Key::DockerColumnImage),
+            String::from("busybox:1.37"),
+        )];
+        let mut ui = simulator(narrow(view(InspectorProps {
+            vm: header(),
+            actions: Some(ActionsViewModel {
+                buttons: vec![button(RowAction::Stop, true)],
+                hint: Some(String::from(HINT)),
+            }),
+            tabs: container_tabs(
+                InspectorTab::Overview,
+                TabContent::Overview(fields),
+            ),
+            theme: ThemeProps::new(themes.current()),
+        })));
+
+        let left_edges = [
+            ("title", ui.find("otty-fx-web-1").expect("title").bounds().x),
+            ("hint", ui.find(HINT).expect("hint").bounds().x),
+            (
+                "tabs",
+                ui.find(i18n::t(Key::DockerTabOverview))
+                    .expect("tab")
+                    .bounds()
+                    .x
+                    - 2.0,
+            ),
+            (
+                "body",
+                ui.find(i18n::t(Key::DockerColumnImage))
+                    .expect("label")
+                    .bounds()
+                    .x,
+            ),
+        ];
+        for (part, x) in left_edges {
+            assert!(
+                (x - PADDING.left).abs() < 0.5,
+                "{part} starts at {x}, not at the side padding"
+            );
         }
     }
 

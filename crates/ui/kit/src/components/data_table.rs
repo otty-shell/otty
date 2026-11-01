@@ -527,9 +527,15 @@ fn header_cell<'a, Message: Clone + 'a>(
                     .width(SORT_ARROW)
                     .height(SORT_ARROW)
                     .style(move |_, _| svg::Style { color: Some(color) });
+            // The title is as wide as its text so the arrow sits right
+            // against it. In a left-aligned column the arrow comes second
+            // and the title leaves room for it; in a right-aligned one the
+            // arrow comes first and the title takes what is left.
             let parts = match column.align {
-                ColumnAlign::Start => row![title, arrow],
-                ColumnAlign::End => row![arrow, title],
+                ColumnAlign::Start => {
+                    row![title.shrink(SORT_ARROW + spacing::SPACE_1), arrow]
+                },
+                ColumnAlign::End => row![arrow, title.shrink(0.0)],
             };
 
             parts
@@ -1091,6 +1097,84 @@ mod tests {
             .expect("table should draw")
             .matches_hash(reference)
             .expect("reference should be readable")
+    }
+
+    /// Two equal columns, the second right-aligned, sorted by `sorted`.
+    fn sorted_pair(sorted: usize) -> Element<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let columns = vec![
+            TableColumn::new("Name", 1).sortable(true),
+            TableColumn::new("Size", 1)
+                .align(ColumnAlign::End)
+                .sortable(true),
+        ];
+        let table: Element<'_, Message> = DataTable::new(columns, &palette)
+            .row(vec![TableCell::plain("redis"), TableCell::number("1")])
+            .sorted_by(sorted, SortDirection::Ascending)
+            .into();
+
+        container(table).width(WIDTH).height(120).into()
+    }
+
+    #[test]
+    fn given_left_aligned_sorted_column_when_laid_out_then_the_title_takes_only_its_text_so_the_arrow_follows_it()
+     {
+        let mut ui = simulator(sorted_pair(0));
+
+        let title = ui.find("Name").expect("title should be visible").bounds();
+
+        assert!(
+            (title.x - CELL_PADDING_X).abs() < 0.5,
+            "the title should start at the cell padding: {title:?}"
+        );
+        assert!(
+            title.width < 60.0,
+            "the title should be as wide as its text, so the arrow sits right \
+             after it: {title:?}"
+        );
+    }
+
+    #[test]
+    fn given_right_aligned_sorted_column_when_laid_out_then_the_title_ends_at_the_cell_edge_with_the_arrow_before_it()
+     {
+        let mut ui = simulator(sorted_pair(1));
+
+        let title = ui.find("Size").expect("title should be visible").bounds();
+
+        assert!(
+            (title.x + title.width - (WIDTH - CELL_PADDING_X)).abs() < 0.5,
+            "the title should line up with the cells at the right edge: \
+             {title:?}"
+        );
+        assert!(
+            title.width < 60.0,
+            "the title should be as wide as its text: {title:?}"
+        );
+    }
+
+    #[test]
+    fn given_long_title_in_a_narrow_sorted_column_when_laid_out_then_the_arrow_still_fits()
+     {
+        let palette = UiPalette::otty_dark();
+        let columns = vec![
+            TableColumn::new("A very long column title", 1).sortable(true),
+        ];
+        let table: Element<'_, Message> = DataTable::new(columns, &palette)
+            .row(vec![TableCell::plain("redis")])
+            .sorted_by(0, SortDirection::Ascending)
+            .into();
+        let mut ui = simulator(container(table).width(120).height(120));
+
+        let title = ui
+            .find("A very long column title")
+            .expect("title should be visible")
+            .bounds();
+
+        assert!(
+            title.x + title.width
+                <= 120.0 - CELL_PADDING_X - SORT_ARROW - spacing::SPACE_1 + 0.5,
+            "the title should leave room for the arrow: {title:?}"
+        );
     }
 
     #[test]

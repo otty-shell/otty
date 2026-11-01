@@ -1,9 +1,9 @@
 //! The mode switcher row at the top of the left panel.
 
-use iced::widget::{row, svg, text};
+use iced::widget::{row, svg};
 use iced::{Alignment, Element, Length, Padding};
 use otty_ui_kit::components::mode_switcher::{ModeSwitcher, ModeTab};
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::spacing;
 
 use super::super::event::ModesIntent;
 use super::super::model::ModesViewModel;
@@ -26,8 +26,9 @@ pub(crate) struct ModeSwitcherProps<'a> {
 }
 
 /// Render the kit `ModeSwitcher` (Terminal, the pinned modes, the temporary
-/// tab, "⋯") with the name of the active mode next to it (spec Decision
-/// 2). A tab selects its mode; "⋯" opens or closes the All modes menu.
+/// tab, "⋯"). The active tab shows the mode; no name is written next to it
+/// (spec Decision 20). A tab selects its mode; "⋯" opens or closes the All
+/// modes menu.
 pub(crate) fn view<'a>(
     props: ModeSwitcherProps<'a>,
 ) -> Element<'a, ModesIntent> {
@@ -55,14 +56,7 @@ pub(crate) fn view<'a>(
         ModesIntent::ToggleMenu,
     );
 
-    let name = text(i18n::t(vm.active.name_key()))
-        .size(typography::BODY.size())
-        .font(fonts::UI_SEMIBOLD)
-        .color(palette.text_strong())
-        .width(Length::Fill);
-
-    row![Element::from(switcher), name]
-        .spacing(spacing::SPACE_3)
+    row![Element::from(switcher)]
         .padding(ROW_PADDING)
         .align_y(Alignment::Center)
         .width(Length::Fill)
@@ -181,17 +175,18 @@ mod tests {
     }
 
     #[test]
-    fn the_name_of_the_active_mode_is_shown_next_to_the_tabs() {
+    fn no_mode_name_is_shown_next_to_the_tabs() {
         let themes = ThemeManager::new();
-        let mut state = ModesState::default();
-        state.select(Mode::Docker);
-        let mut ui = simulator(view(ModeSwitcherProps {
-            vm: ModesViewModel::from_state(&state),
-            theme: ThemeProps::new(themes.current()),
-        }));
+        for mode in [Mode::Terminal, Mode::Docker] {
+            let mut state = ModesState::default();
+            state.select(mode);
+            let mut ui = simulator(view(ModeSwitcherProps {
+                vm: ModesViewModel::from_state(&state),
+                theme: ThemeProps::new(themes.current()),
+            }));
 
-        ui.find(i18n::t(Key::ModeDocker))
-            .expect("active mode name should be visible");
-        assert!(ui.find(i18n::t(Key::ModeTerminal)).is_err());
+            assert!(ui.find(i18n::t(Key::ModeDocker)).is_err());
+            assert!(ui.find(i18n::t(Key::ModeTerminal)).is_err());
+        }
     }
 }

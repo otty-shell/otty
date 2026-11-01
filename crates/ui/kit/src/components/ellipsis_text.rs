@@ -41,6 +41,8 @@ pub(super) struct EllipsisText {
     color: Color,
     align_x: core_text::Alignment,
     is_link: bool,
+    /// Width kept free for a neighbor, set by [`EllipsisText::shrink`].
+    reserved: Option<f32>,
 }
 
 impl EllipsisText {
@@ -58,6 +60,7 @@ impl EllipsisText {
             color,
             align_x: core_text::Alignment::Left,
             is_link: false,
+            reserved: None,
         }
     }
 
@@ -74,10 +77,18 @@ impl EllipsisText {
         self
     }
 
+    /// Makes the text as wide as the shown text, so a neighbor in the same
+    /// row, such as a sort arrow, sits right after it. The text is
+    /// shortened with "…" to leave `reserved` width free for that neighbor.
+    pub(super) fn shrink(mut self, reserved: f32) -> Self {
+        self.reserved = Some(reserved);
+        self
+    }
+
     /// Returns the width the text takes: all of it, or only the shown text
-    /// for a link.
+    /// for a link or a shrunk text.
     fn width(&self) -> Length {
-        if self.is_link {
+        if self.is_link || self.reserved.is_some() {
             Length::Shrink
         } else {
             Length::Fill
@@ -140,6 +151,8 @@ impl<Message> Widget<Message, Theme, Renderer> for EllipsisText {
         limits: &layout::Limits,
     ) -> layout::Node {
         let state = tree.state.downcast_mut::<State>();
+        let limits =
+            limits.shrink(Size::new(self.reserved.unwrap_or(0.0), 0.0));
         let max_width = limits.max().width;
 
         if !state.is_fitted_for(self, max_width) {
@@ -153,7 +166,7 @@ impl<Message> Widget<Message, Theme, Renderer> for EllipsisText {
         text_widget::layout(
             &mut state.paragraph,
             renderer,
-            limits,
+            &limits,
             &state.shown,
             self.format(),
         )

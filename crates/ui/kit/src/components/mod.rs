@@ -62,6 +62,7 @@ pub mod title_search;
 pub mod token_field;
 pub mod toolbar;
 pub mod tree_row;
+mod wrapped_text;
 
 use iced::Color;
 

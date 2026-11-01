@@ -1,9 +1,10 @@
 //! `KeyValueList`: two-column list of facts about one item.
 
+use iced::Element;
 use iced::widget::text::Wrapping;
 use iced::widget::{column, row, text};
-use iced::{Element, Length};
 
+use super::wrapped_text::WrappedText;
 use crate::palette::UiPalette;
 use crate::{fonts, size, spacing};
 
@@ -64,14 +65,16 @@ impl<'a, Message: 'a> From<KeyValueList> for Element<'a, Message> {
                         .wrapping(Wrapping::Glyph)
                         .color(palette.text_muted())
                         .width(size::KEY_VALUE_KEY),
-                    // Values break at any character so a long id or path
-                    // never pushes the list wider than its panel.
-                    text(entry_value)
-                        .size(TEXT_SIZE)
-                        .font(fonts::MONO)
-                        .wrapping(Wrapping::Glyph)
-                        .color(palette.text_body())
-                        .width(Length::Fill),
+                    // Values break at spaces, slashes, dashes, colons and
+                    // dots first, and between characters only when a piece
+                    // is wider than the line, so a long id or path never
+                    // pushes the list wider than its panel.
+                    WrappedText::new(
+                        entry_value,
+                        TEXT_SIZE,
+                        fonts::MONO,
+                        palette.text_body(),
+                    ),
                 ]
                 .spacing(spacing::SPACE_3),
             );
@@ -118,6 +121,30 @@ mod tests {
             value.x,
             size::KEY_VALUE_KEY + spacing::SPACE_3,
             key.x
+        );
+    }
+
+    #[test]
+    fn given_long_port_value_when_laid_out_then_it_wraps_inside_the_width_and_keeps_its_text()
+     {
+        let palette = UiPalette::otty_dark();
+        let ports = "0.0.0.0:8080->80/tcp, [::]:8080->80/tcp";
+        let list: Element<'_, ()> = iced::widget::container(
+            KeyValueList::new(&palette).entry("Ports", ports),
+        )
+        .width(250)
+        .into();
+        let mut ui = simulator(list);
+
+        let value = ui.find(ports).expect("value should be shown").bounds();
+
+        assert!(
+            value.x + value.width <= 250.5,
+            "value {value:?} should stay inside 250px"
+        );
+        assert!(
+            value.height > TEXT_SIZE * 2.0,
+            "value {value:?} should wrap onto several lines"
         );
     }
 

@@ -4,7 +4,7 @@ use super::types::Mode;
 /// Read-only view model of the mode switcher and the All modes menu.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ModesViewModel {
-    /// Mode whose name is shown next to the switcher tabs.
+    /// The active mode, which decides what the panels show.
     pub(crate) active: Mode,
     /// Switcher tabs: Terminal, the pinned modes in pin order, then a
     /// temporary tab for the active mode when it is not pinned.
@@ -185,7 +185,6 @@ mod tests {
 
         let vm = ModesViewModel::from_state(&state);
 
-        assert_eq!(vm.active, Mode::Docker);
         assert_eq!(
             vm.tabs,
             vec![

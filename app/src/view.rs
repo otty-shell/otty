@@ -747,9 +747,11 @@ fn view_new_launch_menu<'a>(
 mod tests {
     use iced::Point;
     use iced_test::simulator;
+    use otty_ui_kit::components::menu;
     use otty_ui_kit::size;
 
     use super::*;
+    use crate::widgets::docker::DockerIntent;
     use crate::widgets::modes::ModesWidget;
 
     fn app_in(mode: Mode) -> App {
@@ -764,8 +766,10 @@ mod tests {
         let app = app_in(Mode::Terminal);
         let mut ui = simulator(view(&app));
 
-        ui.find(i18n::t(Key::ModeTerminal))
-            .expect("mode name should be visible");
+        assert!(
+            ui.find(i18n::t(Key::ModeTerminal)).is_err(),
+            "the switcher row has no mode name"
+        );
         ui.find(i18n::t(Key::SessionsPanelTitle))
             .expect("sessions should be visible");
         ui.find(i18n::t(Key::LaunchesPanelTitle))
@@ -934,6 +938,133 @@ mod tests {
             .find(i18n::t(Key::DockerFieldImage))
             .expect("the pull dialog should show");
         assert!(app.widgets.docker.has_overlay());
+    }
+
+    fn docker_app_with_lists() -> App {
+        use otty_docker::{EngineKind, fixtures};
+
+        use crate::widgets::docker::DockerIntent;
+        use crate::widgets::docker::types::LoadedLists;
+
+        let mut app = app_in(Mode::Docker);
+        // The simulator draws the window at its default size.
+        app.state.window_size = iced::Size::new(1024.0, 768.0);
+        let docker = fixtures::engine(EngineKind::Docker);
+        let resources = fixtures::resources(EngineKind::Docker);
+        let _ = app.widgets.docker.reduce(DockerIntent::Enter);
+        let _ = app.widgets.docker.reduce(DockerIntent::DiscoveryFinished(
+            fixtures::discovery(&[EngineKind::Docker]),
+        ));
+        let _ = app.widgets.docker.reduce(DockerIntent::ListsLoaded {
+            engine: docker.address().clone(),
+            lists: LoadedLists {
+                containers: Ok(resources.containers().to_vec()),
+                images: Ok(resources.images().to_vec()),
+                volumes: Ok(resources.volumes().to_vec()),
+                networks: Ok(resources.networks().to_vec()),
+            },
+        });
+
+        app
+    }
+
+    /// Presses the first container row's "⋯" button in the window and
+    /// returns the row's vertical center, the x of the press and the
+    /// intents it sent.
+    fn press_first_row_menu(app: &App) -> (f32, f32, Vec<AppEvent>) {
+        let mut ui = simulator(view(app));
+        let name = ui
+            .find("otty-fx-web-1")
+            .expect("the first container row should be visible");
+        let row_center = name.bounds().center().y;
+
+        // Sweep the row from the right until the "⋯" button takes the press.
+        let mut x = 1000.0;
+        while x > 600.0 {
+            let mut probe = simulator(view(app));
+            probe.point_at(Point::new(x, row_center));
+            let _ = probe.simulate(iced_test::simulator::click());
+            let events: Vec<AppEvent> = probe
+                .into_messages()
+                .filter(|event| {
+                    matches!(
+                        event,
+                        AppEvent::Docker(DockerEvent::Intent(
+                            DockerIntent::RowMenuPressed { .. }
+                        ))
+                    )
+                })
+                .collect();
+            if !events.is_empty() {
+                return (row_center, x, events);
+            }
+            x -= 2.0;
+        }
+
+        panic!("a press on the row button should open its menu");
+    }
+
+    #[test]
+    fn the_row_menu_button_reports_its_bottom_right_corner_in_the_window() {
+        let app = docker_app_with_lists();
+
+        let (row_center, clicked_x, events) = press_first_row_menu(&app);
+
+        let [
+            AppEvent::Docker(DockerEvent::Intent(
+                DockerIntent::RowMenuPressed { position, .. },
+            )),
+        ] = events.as_slice()
+        else {
+            panic!("one row menu intent expected");
+        };
+        assert!(
+            (position.y - (row_center + size::CONTROL_SM / 2.0)).abs() < 1.0,
+            "the point should be the button's bottom edge, got {position:?} \
+             for a row centered at {row_center}"
+        );
+        assert!(
+            position.x >= clicked_x
+                && position.x - clicked_x <= size::CONTROL_SM,
+            "the point should be the button's right edge, got {position:?} \
+             for a press at {clicked_x}"
+        );
+    }
+
+    #[test]
+    fn the_row_menu_opens_right_under_its_button() {
+        let mut app = docker_app_with_lists();
+        let (row_center, clicked_x, events) = press_first_row_menu(&app);
+        for event in events {
+            let _ = app.update(event);
+        }
+
+        let mut ui = simulator(view(&app));
+        let item = ui
+            .find(i18n::t(Key::DockerActionStop))
+            .expect("the menu should list Stop for a running container")
+            .bounds();
+
+        // The first row of the menu sits just under the button, and the
+        // menu's right edge is at the button's right edge less the margin.
+        let button_bottom = row_center + size::CONTROL_SM / 2.0;
+        assert!(
+            item.y >= button_bottom && item.y < button_bottom + 6.0 * size::ROW,
+            "the menu should start under the button, item {item:?}, button \
+             bottom {button_bottom}"
+        );
+        let button_right_min = clicked_x;
+        let button_right_max = clicked_x + size::CONTROL_SM;
+        let menu_left_min =
+            button_right_min - spacing::SPACE_2 - menu::MENU_WIDTH;
+        let menu_left_max =
+            button_right_max - spacing::SPACE_2 - menu::MENU_WIDTH;
+        assert!(
+            item.x >= menu_left_min && item.x < menu_left_max + 2.0 * size::ROW,
+            "the menu should end at the button, not in the middle of the \
+             table: item {item:?}, menu left edge between {menu_left_min} \
+             and {menu_left_max}"
+        );
     }
 
     #[test]

@@ -95,8 +95,9 @@ pub(crate) enum DockerIntent {
     /// (window coordinates).
     OpenRowMenu { index: usize, position: Point },
     /// The "⋯" button of the row at this position of the shown table was
-    /// pressed: open that row's menu at `position` (window coordinates)
-    /// without selecting it, so the inspector keeps its row.
+    /// pressed: open that row's menu at `position` (window coordinates; the
+    /// button's bottom-right corner) without selecting it, so the inspector
+    /// keeps its row.
     RowMenuPressed { index: usize, position: Point },
     /// A press outside the row menu closed it.
     CloseRowMenu,

@@ -840,7 +840,14 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .trailing(Chip::new("needs you", p)),
     ];
     let inspector_header = InspectorHeader::new("web-1", p)
-        .status(text("Running").size(12.5).color(palette.status_ok()))
+        .status(
+            StatusBadge::new(
+                "Exited (137) 3 hours ago, stopped by the out of memory killer",
+                StatusTone::Error,
+                p,
+            )
+            .wrapping(true),
+        )
         .action(
             Button::new("Stop", p)
                 .size(ButtonSize::Small)
@@ -865,12 +872,12 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     );
     let inspector_list = KeyValueList::new(p)
         .entry("Image", "nginx:1.27-alpine")
-        .entry("Ports", "0.0.0.0:8080 -> 80/tcp")
+        .entry("Ports", "0.0.0.0:8080->80/tcp, [::]:8080->80/tcp")
         .entry(
             "ID",
             "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         )
-        .entry("Created", "2026-11-01 09:58");
+        .entry("Created", "2026-11-01 18:30 UTC");
     let inspector_header: Element<'_, Message> = inspector_header.into();
     let inspector_list: Element<'_, Message> = inspector_list.into();
     let inspector = container(
@@ -1122,7 +1129,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     ];
     let inspector_parts: Vec<Element<'_, Message>> = vec![
         section(
-            "InspectorHeader + InspectorTabs + KeyValueList (long value wraps)",
+            "InspectorHeader (long status wraps) + InspectorTabs + KeyValueList (values wrap at spaces, / - : . first)",
             inspector.into(),
             p,
         ),

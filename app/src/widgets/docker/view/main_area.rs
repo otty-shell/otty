@@ -4,7 +4,7 @@
 
 use iced::widget::text::Wrapping;
 use iced::widget::{Id, column, container, row, svg, text};
-use iced::{Alignment, Element, Length, Padding};
+use iced::{Alignment, Element, Length, Padding, Point};
 use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::data_table::{DataTable, SortDirection};
 use otty_ui_kit::components::empty_card::EmptyCard;
@@ -88,7 +88,13 @@ fn table_view<'a>(
             index,
             position,
         })
-        .on_row_menu(i18n::t(Key::DockerMoreActions), |index, position| {
+        .on_row_menu(i18n::t(Key::DockerMoreActions), |index, corner| {
+            // The table reports the button's bottom-left corner. The "⋯"
+            // column is the last one, so the menu would open to the left of
+            // that corner, in the middle of the table. The bottom-right
+            // corner makes it open under the button, ending at its edge.
+            let position = Point::new(corner.x + size::CONTROL_SM, corner.y);
+
             DockerIntent::RowMenuPressed { index, position }
         });
     for (position, cells) in vm.rows.into_iter().enumerate() {

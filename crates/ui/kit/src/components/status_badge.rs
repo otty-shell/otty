@@ -66,6 +66,7 @@ pub struct StatusBadge {
     label: String,
     tone: StatusTone,
     palette: UiPalette,
+    is_wrapping: bool,
 }
 
 impl StatusBadge {
@@ -79,7 +80,16 @@ impl StatusBadge {
             label: label.into(),
             tone,
             palette: palette.clone(),
+            is_wrapping: false,
         }
+    }
+
+    /// Sets whether a label wider than the space goes on the next line
+    /// (for a status line in a panel) instead of being cut at the edge
+    /// (for a table cell). Off by default.
+    pub fn wrapping(mut self, is_wrapping: bool) -> Self {
+        self.is_wrapping = is_wrapping;
+        self
     }
 }
 
@@ -87,6 +97,11 @@ impl<'a, Message: 'a> From<StatusBadge> for Element<'a, Message> {
     fn from(value: StatusBadge) -> Self {
         let color = value.tone.color(&value.palette);
         let dot_color = value.tone.dot_color(&value.palette);
+        let wrapping = if value.is_wrapping {
+            Wrapping::WordOrGlyph
+        } else {
+            Wrapping::None
+        };
 
         row![
             dot(dot_color),
@@ -94,7 +109,7 @@ impl<'a, Message: 'a> From<StatusBadge> for Element<'a, Message> {
                 .size(TEXT_SIZE)
                 .font(fonts::UI)
                 .color(color)
-                .wrapping(Wrapping::None),
+                .wrapping(wrapping),
         ]
         .spacing(GAP)
         .align_y(Alignment::Center)
@@ -194,5 +209,43 @@ mod tests {
         let mut ui = simulator(badge);
 
         assert!(ui.find("Exited (1)").is_ok());
+    }
+
+    #[test]
+    fn given_long_label_when_wrapping_on_then_it_wraps_inside_the_width() {
+        let palette = UiPalette::otty_dark();
+        let label = "Exited (137) 3 hours ago, restarting soon";
+        let badge: Element<'_, ()> =
+            StatusBadge::new(label, StatusTone::Error, &palette)
+                .wrapping(true)
+                .into();
+        let mut ui = simulator(iced::widget::container(badge).width(120));
+
+        let word = ui.find(label).expect("label should be shown").bounds();
+
+        assert!(
+            word.x + word.width <= 120.5,
+            "label {word:?} should stay inside 120px"
+        );
+        assert!(
+            word.height > TEXT_SIZE * 2.0,
+            "label {word:?} should wrap onto several lines"
+        );
+    }
+
+    #[test]
+    fn given_long_label_when_wrapping_is_off_then_it_stays_on_one_line() {
+        let palette = UiPalette::otty_dark();
+        let label = "Exited (137) 3 hours ago, restarting soon";
+        let badge: Element<'_, ()> =
+            StatusBadge::new(label, StatusTone::Error, &palette).into();
+        let mut ui = simulator(iced::widget::container(badge).width(120));
+
+        let word = ui.find(label).expect("label should be shown").bounds();
+
+        assert!(
+            word.height < TEXT_SIZE * 2.0,
+            "label {word:?} should be one line"
+        );
     }
 }
