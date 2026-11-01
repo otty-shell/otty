@@ -1,5 +1,5 @@
-use iced::widget::{Column, scrollable, svg};
-use iced::{Element, Length};
+use iced::widget::{Column, container, scrollable, svg, text};
+use iced::{Element, Length, Padding};
 use otty_ui_kit::components::icon_button::{
     IconButton, IconButtonSize, IconTone,
 };
@@ -9,6 +9,7 @@ use otty_ui_kit::components::session_group::SessionGroup;
 use otty_ui_kit::components::session_row::{SessionRow, SessionTone};
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::TabsIntent;
 use super::super::model::{
@@ -68,6 +69,9 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
             rows = rows.push(session_row(session, palette, on_intent));
         }
     }
+    if session_count == 0 {
+        rows = rows.push(empty_hint(palette));
+    }
     let body = scrollable::Scrollable::new(rows)
         .id(SESSION_LIST_SCROLL_ID)
         .width(Length::Fill)
@@ -85,6 +89,25 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
     }
 
     section.into()
+}
+
+/// Muted hint shown while no session is open.
+fn empty_hint<'a, Message: 'a>(palette: &UiPalette) -> Element<'a, Message> {
+    let small = typography::SMALL;
+
+    container(
+        text(i18n::t(Key::NoOpenSessions))
+            .size(small.size())
+            .font(fonts::UI)
+            .color(palette.text_muted()),
+    )
+    .padding(Padding {
+        top: 2.0,
+        right: spacing::SPACE_3,
+        bottom: spacing::SPACE_2,
+        left: spacing::SPACE_3,
+    })
+    .into()
 }
 
 /// Group label: machine dot, name, and "this computer" or "ssh".
@@ -317,6 +340,24 @@ mod tests {
         assert!(ui.find("laptop").is_ok());
         assert!(ui.find("ssh").is_ok());
         assert!(ui.find("settings").is_ok());
+    }
+
+    #[test]
+    fn given_no_sessions_when_viewed_then_hint_shows() {
+        let tabs = BTreeMap::new();
+        let themes = ThemeManager::new();
+        let mut ui = simulator(section(&tabs, &themes, true));
+
+        assert!(ui.find("No open sessions.").is_ok());
+    }
+
+    #[test]
+    fn given_sessions_when_viewed_then_hint_is_hidden() {
+        let tabs = tabs();
+        let themes = ThemeManager::new();
+        let mut ui = simulator(section(&tabs, &themes, true));
+
+        assert!(ui.find("No open sessions.").is_err());
     }
 
     #[test]

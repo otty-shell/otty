@@ -16,18 +16,18 @@ use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::view::{action_bar, focus_note};
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
-use crate::widgets::quick_launch::QuickLaunchEvent;
 use crate::widgets::quick_launch::view::{
     context_menu as ql_context_menu, error_tab, secret_prompt, sidebar_panel,
     wizard_form,
 };
+use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::settings::SettingsEvent;
 use crate::widgets::settings::view::settings_form;
 use crate::widgets::sidebar::types::SidebarPane;
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent, SidebarViewModel};
-use crate::widgets::tabs::TabsEvent;
 use crate::widgets::tabs::types::TabContent;
-use crate::widgets::tabs::view::session_list;
+use crate::widgets::tabs::view::{empty_state, session_list};
+use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
 use crate::widgets::terminal_workspace::view::{
     pane_context_menu as terminal_pane_context_menu,
@@ -337,10 +337,17 @@ fn view_tab_content<'a>(
                 )),
             }
         },
-        _ => container(Space::new())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
+        _ => empty_state::view(empty_state::EmptyStateProps {
+            theme: theme_props,
+            on_new_terminal: AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::OpenTerminalTab {
+                    title: app.shell_session.name().to_string(),
+                },
+            )),
+            on_new_launch: AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::HeaderCreateCommand,
+            )),
+        }),
     }
 }
 

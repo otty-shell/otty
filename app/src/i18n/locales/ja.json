@@ -48,6 +48,11 @@
     "session_state_settings": "設定",
     "session_state_editor": "エディター",
     "session_state_failed": "失敗",
+    "empty_title": "セッションを開始",
+    "empty_description": "このコンピューターでターミナルを開くか、起動を実行します。",
+    "empty_new_terminal": "新しいターミナル",
+    "empty_new_launch": "新しい起動…",
+    "no_open_sessions": "開いているセッションはありません。",
 
     "launches_panel_title": "起動",
     "launch_running": "実行中",

@@ -48,6 +48,11 @@
     "session_state_settings": "настройки",
     "session_state_editor": "редактор",
     "session_state_failed": "ошибка",
+    "empty_title": "Начните сеанс",
+    "empty_description": "Откройте терминал на этом компьютере или запустите один из ваших запусков.",
+    "empty_new_terminal": "Новый терминал",
+    "empty_new_launch": "Новый запуск…",
+    "no_open_sessions": "Нет открытых сеансов.",
 
     "launches_panel_title": "Запуски",
     "launch_running": "работает",

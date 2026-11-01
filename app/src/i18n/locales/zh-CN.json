@@ -48,6 +48,11 @@
     "session_state_settings": "设置",
     "session_state_editor": "编辑器",
     "session_state_failed": "失败",
+    "empty_title": "开始会话",
+    "empty_description": "在此计算机上打开终端，或运行一个启动项。",
+    "empty_new_terminal": "新建终端",
+    "empty_new_launch": "新建启动项…",
+    "no_open_sessions": "没有打开的会话。",
 
     "launches_panel_title": "启动项",
     "launch_running": "运行中",

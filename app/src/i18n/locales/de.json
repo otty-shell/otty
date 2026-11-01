@@ -48,6 +48,11 @@
     "session_state_settings": "Einstellungen",
     "session_state_editor": "Editor",
     "session_state_failed": "fehlgeschlagen",
+    "empty_title": "Sitzung starten",
+    "empty_description": "Öffne ein Terminal auf diesem Computer oder führe einen deiner Starts aus.",
+    "empty_new_terminal": "Neues Terminal",
+    "empty_new_launch": "Neuer Start…",
+    "no_open_sessions": "Keine offenen Sitzungen.",
 
     "launches_panel_title": "Starts",
     "launch_running": "läuft",

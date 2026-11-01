@@ -48,6 +48,11 @@
     "session_state_settings": "paramètres",
     "session_state_editor": "éditeur",
     "session_state_failed": "échec",
+    "empty_title": "Démarrer une session",
+    "empty_description": "Ouvrez un terminal sur cet ordinateur ou exécutez l'un de vos lancements.",
+    "empty_new_terminal": "Nouveau terminal",
+    "empty_new_launch": "Nouveau lancement…",
+    "no_open_sessions": "Aucune session ouverte.",
 
     "launches_panel_title": "Lancements",
     "launch_running": "actif",

@@ -48,6 +48,11 @@
     "session_state_settings": "설정",
     "session_state_editor": "편집기",
     "session_state_failed": "실패",
+    "empty_title": "세션 시작",
+    "empty_description": "이 컴퓨터에서 터미널을 열거나 실행 항목을 실행하세요.",
+    "empty_new_terminal": "새 터미널",
+    "empty_new_launch": "새 실행…",
+    "no_open_sessions": "열린 세션이 없습니다.",
 
     "launches_panel_title": "실행",
     "launch_running": "실행 중",

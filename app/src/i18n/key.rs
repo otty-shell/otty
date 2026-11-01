@@ -106,6 +106,18 @@ pub(crate) enum Key {
     SessionStateEditor,
     /// State word on a launch error row.
     SessionStateFailed,
+    /// Hint in the Sessions section when no session is open.
+    NoOpenSessions,
+
+    // Empty state shown in the main area when no session is open.
+    /// Title of the empty card.
+    EmptyTitle,
+    /// Description under the title of the empty card.
+    EmptyDescription,
+    /// Label of the empty card tile that opens a terminal.
+    EmptyNewTerminal,
+    /// Label of the empty card tile that creates a launch.
+    EmptyNewLaunch,
 
     // Quick launch sidebar panel.
     /// Title of the Launches section of the left panel.
@@ -311,7 +323,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 134] = [
+    pub(super) const ALL: [Self; 139] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -355,6 +367,11 @@ impl Key {
         Self::SessionStateSettings,
         Self::SessionStateEditor,
         Self::SessionStateFailed,
+        Self::NoOpenSessions,
+        Self::EmptyTitle,
+        Self::EmptyDescription,
+        Self::EmptyNewTerminal,
+        Self::EmptyNewLaunch,
         Self::LaunchesPanelTitle,
         Self::LaunchRunning,
         Self::NoActiveFolder,

@@ -48,6 +48,11 @@
     "session_state_settings": "設定",
     "session_state_editor": "編輯器",
     "session_state_failed": "失敗",
+    "empty_title": "開始工作階段",
+    "empty_description": "在此電腦上開啟終端機，或執行一個啟動項。",
+    "empty_new_terminal": "新增終端機",
+    "empty_new_launch": "新增啟動項…",
+    "no_open_sessions": "沒有開啟的工作階段。",
 
     "launches_panel_title": "啟動項",
     "launch_running": "執行中",
