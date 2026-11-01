@@ -8,6 +8,7 @@ use otty_ui_kit::{fonts, spacing, typography};
 use super::super::event::ModesIntent;
 use super::super::model::ModesViewModel;
 use crate::i18n::{self, Key};
+use crate::shortcuts::AppShortcut;
 use crate::theme::ThemeProps;
 
 /// Space around the switcher row (`padding: 8px 8px 4px`).
@@ -34,16 +35,19 @@ pub(crate) fn view<'a>(
     let vm = props.vm;
 
     let mut switcher = ModeSwitcher::new(palette);
-    for tab in &vm.tabs {
-        switcher = switcher.tab(
-            ModeTab::new(
-                svg::Handle::from_memory(tab.mode.icon()),
-                i18n::t(tab.mode.name_key()),
-            )
-            .active(tab.is_active)
-            .temporary(tab.is_temporary)
-            .on_press(ModesIntent::Select(tab.mode)),
-        );
+    for (position, tab) in vm.tabs.iter().enumerate() {
+        let mut mode_tab = ModeTab::new(
+            svg::Handle::from_memory(tab.mode.icon()),
+            i18n::t(tab.mode.name_key()),
+        )
+        .active(tab.is_active)
+        .temporary(tab.is_temporary)
+        .on_press(ModesIntent::Select(tab.mode));
+        if let Some(shortcut) = tab_shortcut(position, tab.is_temporary) {
+            mode_tab = mode_tab.shortcut(shortcut);
+        }
+
+        switcher = switcher.tab(mode_tab);
     }
     let switcher = switcher.more(
         i18n::t(Key::ModesAllModes),
@@ -63,6 +67,16 @@ pub(crate) fn view<'a>(
         .align_y(Alignment::Center)
         .width(Length::Fill)
         .into()
+}
+
+/// Shortcut text for the tab at switcher `position`: Terminal and the
+/// pinned modes have one; a temporary tab has none.
+fn tab_shortcut(position: usize, is_temporary: bool) -> Option<String> {
+    if is_temporary {
+        return None;
+    }
+
+    AppShortcut::for_mode_position(position).map(AppShortcut::label)
 }
 
 #[cfg(test)]
@@ -151,6 +165,19 @@ mod tests {
             [ModesIntent::Select(Mode::Docker)]
         ));
         assert!(matches!(more.as_slice(), [ModesIntent::ToggleMenu]));
+    }
+
+    #[test]
+    fn tabs_carry_their_mode_shortcut_and_a_temporary_tab_none() {
+        assert_eq!(
+            tab_shortcut(0, false),
+            Some(AppShortcut::TerminalMode.label())
+        );
+        assert_eq!(
+            tab_shortcut(1, false),
+            Some(AppShortcut::PinnedMode1.label())
+        );
+        assert_eq!(tab_shortcut(1, true), None);
     }
 
     #[test]

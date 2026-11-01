@@ -9,6 +9,7 @@ use otty_ui_kit::components::mode_menu::{
 use super::super::event::ModesIntent;
 use super::super::model::{ModeMenuRowViewModel, ModesViewModel, PinButton};
 use crate::i18n::{self, Key};
+use crate::shortcuts::AppShortcut;
 use crate::theme::ThemeProps;
 
 /// Distance from the top of the panels to the menu: under the switcher
@@ -33,8 +34,15 @@ pub(crate) fn view<'a>(props: ModeMenuProps<'a>) -> Element<'a, ModesIntent> {
 
     let mut pinned = ModeMenuSection::new(i18n::t(Key::ModesPinnedSection))
         .note(i18n::modes_pinned_note(vm.pinned_count, vm.pin_limit));
-    for menu_row in &vm.pinned_rows {
-        pinned = pinned.row(mode_row(menu_row));
+    // A pinned row's place in the list is its switcher position, so it
+    // carries that position's shortcut.
+    for (position, menu_row) in vm.pinned_rows.iter().enumerate() {
+        let mut pinned_row = mode_row(menu_row);
+        if let Some(shortcut) = AppShortcut::for_mode_position(position) {
+            pinned_row = pinned_row.shortcut(shortcut.label());
+        }
+
+        pinned = pinned.row(pinned_row);
     }
 
     let mut others = ModeMenuSection::new(i18n::t(Key::ModesOtherSection));
@@ -150,6 +158,25 @@ mod tests {
                 .expect("other modes section should be visible");
             ui.find(i18n::t(Key::ModesNoOtherModes))
                 .expect("empty other modes hint should be visible");
+        });
+    }
+
+    #[test]
+    fn pinned_rows_show_their_mode_shortcuts() {
+        let _ = drive(&ModesState::default(), |ui| {
+            ui.find(AppShortcut::TerminalMode.label().as_str())
+                .expect("terminal shortcut should be visible");
+            ui.find(AppShortcut::PinnedMode1.label().as_str())
+                .expect("docker shortcut should be visible");
+        });
+    }
+
+    #[test]
+    fn other_modes_have_no_shortcut() {
+        let _ = drive(&ModesState::with_pinned(&[]), |ui| {
+            assert!(
+                ui.find(AppShortcut::PinnedMode1.label().as_str()).is_err()
+            );
         });
     }
 
