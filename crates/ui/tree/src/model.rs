@@ -31,6 +31,12 @@ pub struct FlattenedNode<'a, T: TreeNode> {
     pub path: TreePath,
 }
 
+#[derive(Debug)]
+enum Segment {
+    Text(String),
+    Digits(String),
+}
+
 /// Flatten a tree into a depth-first list of visible rows.
 ///
 /// The output is stable and sorted per level using these rules:
@@ -172,12 +178,6 @@ fn compare_titles(left: &str, right: &str) -> std::cmp::Ordering {
     }
 
     left.cmp(right)
-}
-
-#[derive(Debug)]
-enum Segment {
-    Text(String),
-    Digits(String),
 }
 
 fn split_segments(input: &str) -> Vec<Segment> {
