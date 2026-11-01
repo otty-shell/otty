@@ -1,8 +1,9 @@
 {
   "strings": {
-    "menu_create_tab": "Crear pestaña",
-    "menu_create_folder": "Crear carpeta",
-    "menu_create_quick_launch": "Crear inicio rápido",
+    "menu_new_terminal": "Nueva terminal",
+    "menu_split_current_pane": "Dividir el panel actual a la derecha",
+    "menu_new_launch": "Nuevo lanzamiento…",
+    "new_session_menu": "Más formas de iniciar una sesión",
 
     "terminal_tab_not_initialized": "La pestaña de terminal no está inicializada.",
     "quick_launch_editor_not_initialized": "El editor de inicio rápido no está inicializado.",

@@ -28,7 +28,7 @@ pub(super) struct SidebarState {
     left_split: pane_grid::Split,
     right_split: pane_grid::Split,
     panes: pane_grid::State<SidebarPane>,
-    add_menu: Option<SidebarAddMenuState>,
+    new_session_menu: Option<NewSessionMenuState>,
     cursor: Point,
     last_resize_at: Option<Instant>,
 }
@@ -82,12 +82,12 @@ impl SidebarState {
         self.cursor
     }
 
-    pub(super) fn add_menu_cursor(&self) -> Option<Point> {
-        self.add_menu.as_ref().map(|menu| menu.cursor)
+    pub(super) fn new_session_menu_cursor(&self) -> Option<Point> {
+        self.new_session_menu.as_ref().map(|menu| menu.cursor)
     }
 
-    pub(super) fn has_add_menu_open(&self) -> bool {
-        self.add_menu.is_some()
+    pub(super) fn has_new_session_menu_open(&self) -> bool {
+        self.new_session_menu.is_some()
     }
 
     pub(super) fn is_resizing(&self) -> bool {
@@ -151,14 +151,14 @@ impl SidebarState {
         self.cursor = position;
     }
 
-    pub(super) fn open_add_menu(&mut self) {
-        self.add_menu = Some(SidebarAddMenuState {
+    pub(super) fn open_new_session_menu(&mut self) {
+        self.new_session_menu = Some(NewSessionMenuState {
             cursor: self.cursor,
         });
     }
 
-    pub(super) fn dismiss_add_menu(&mut self) {
-        self.add_menu = None;
+    pub(super) fn dismiss_new_session_menu(&mut self) {
+        self.new_session_menu = None;
     }
 
     pub(super) fn mark_resizing(&mut self) {
@@ -228,7 +228,7 @@ impl Default for SidebarState {
             left_split,
             right_split,
             panes,
-            add_menu: None,
+            new_session_menu: None,
             cursor: Point::ORIGIN,
             last_resize_at: None,
         };
@@ -239,7 +239,7 @@ impl Default for SidebarState {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct SidebarAddMenuState {
+struct NewSessionMenuState {
     cursor: Point,
 }
 
@@ -310,13 +310,13 @@ mod tests {
     }
 
     #[test]
-    fn add_menu_opens_at_the_cursor() {
+    fn new_session_menu_opens_at_the_cursor() {
         let mut state = SidebarState::default();
         let cursor = Point::new(12.0, 34.0);
 
         state.update_cursor(cursor);
-        state.open_add_menu();
+        state.open_new_session_menu();
 
-        assert_eq!(state.add_menu_cursor(), Some(cursor));
+        assert_eq!(state.new_session_menu_cursor(), Some(cursor));
     }
 }

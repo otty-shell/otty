@@ -1,8 +1,9 @@
 {
   "strings": {
-    "menu_create_tab": "タブを作成",
-    "menu_create_folder": "フォルダーを作成",
-    "menu_create_quick_launch": "クイック起動を作成",
+    "menu_new_terminal": "新しいターミナル",
+    "menu_split_current_pane": "現在のペインを右に分割",
+    "menu_new_launch": "新しい起動…",
+    "new_session_menu": "セッションを開始するその他の方法",
 
     "terminal_tab_not_initialized": "ターミナルタブが初期化されていません。",
     "quick_launch_editor_not_initialized": "クイック起動エディターが初期化されていません。",

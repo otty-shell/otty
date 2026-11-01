@@ -35,29 +35,13 @@ pub(crate) fn reduce(
         SidebarIntent::OpenSettings => {
             Task::done(SidebarEvent::Effect(SidebarEffect::OpenSettingsTab))
         },
-        SidebarIntent::AddMenuOpen => {
-            state.open_add_menu();
+        SidebarIntent::NewSessionMenuOpen => {
+            state.open_new_session_menu();
             Task::none()
         },
-        SidebarIntent::AddMenuDismiss => {
-            state.dismiss_add_menu();
+        SidebarIntent::NewSessionMenuDismiss => {
+            state.dismiss_new_session_menu();
             Task::none()
-        },
-        SidebarIntent::AddMenuCreateTab => {
-            state.dismiss_add_menu();
-            Task::done(SidebarEvent::Effect(SidebarEffect::OpenTerminalTab))
-        },
-        SidebarIntent::AddMenuCreateCommand => {
-            state.dismiss_add_menu();
-            Task::done(SidebarEvent::Effect(
-                SidebarEffect::QuickLaunchHeaderCreateCommand,
-            ))
-        },
-        SidebarIntent::AddMenuCreateFolder => {
-            state.dismiss_add_menu();
-            Task::done(SidebarEvent::Effect(
-                SidebarEffect::QuickLaunchHeaderCreateFolder,
-            ))
         },
         SidebarIntent::WorkspaceCursorMoved { position } => {
             state.update_cursor(position);
@@ -78,10 +62,6 @@ pub(crate) fn reduce(
             }
 
             Task::batch(tasks)
-        },
-        SidebarIntent::DismissAddMenu => {
-            state.dismiss_add_menu();
-            Task::none()
         },
     }
 }
@@ -527,14 +507,33 @@ mod tests {
     }
 
     #[test]
-    fn add_menu_opens_and_dismisses() {
+    fn new_session_menu_opens_at_the_cursor_and_dismisses() {
+        let mut widget = SidebarWidget::new();
+        let cursor = Point::new(30.0, 40.0);
+        let _moved = reduce(
+            &mut widget,
+            SidebarIntent::WorkspaceCursorMoved { position: cursor },
+        );
+
+        let open = reduce(&mut widget, SidebarIntent::NewSessionMenuOpen);
+        assert!(widget.has_new_session_menu_open());
+        assert_eq!(widget.new_session_menu_cursor(), Some(cursor));
+        assert!(open.is_empty());
+
+        let dismiss = reduce(&mut widget, SidebarIntent::NewSessionMenuDismiss);
+        assert!(!widget.has_new_session_menu_open());
+        assert_eq!(widget.new_session_menu_cursor(), None);
+        assert!(dismiss.is_empty());
+    }
+
+    #[test]
+    fn dismissing_a_closed_new_session_menu_changes_nothing() {
         let mut widget = SidebarWidget::new();
 
-        let _open = reduce(&mut widget, SidebarIntent::AddMenuOpen);
-        assert!(widget.has_add_menu_open());
+        let dismiss = reduce(&mut widget, SidebarIntent::NewSessionMenuDismiss);
 
-        let _dismiss = reduce(&mut widget, SidebarIntent::AddMenuDismiss);
-        assert!(!widget.has_add_menu_open());
+        assert!(!widget.has_new_session_menu_open());
+        assert!(dismiss.is_empty());
     }
 
     #[test]

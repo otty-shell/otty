@@ -12,11 +12,10 @@ pub(crate) enum SidebarIntent {
     /// Open or close the Launches section of the left panel.
     ToggleLaunches,
     OpenSettings,
-    AddMenuOpen,
-    AddMenuDismiss,
-    AddMenuCreateTab,
-    AddMenuCreateCommand,
-    AddMenuCreateFolder,
+    /// Open the New session menu at the cursor.
+    NewSessionMenuOpen,
+    /// Close the New session menu.
+    NewSessionMenuDismiss,
     WorkspaceCursorMoved {
         position: iced::Point,
     },
@@ -25,7 +24,6 @@ pub(crate) enum SidebarIntent {
     },
     /// A panel edge was dragged; the split tells which side.
     Resized(iced::widget::pane_grid::ResizeEvent),
-    DismissAddMenu,
 }
 
 /// Effect events produced by the sidebar reducer.
@@ -33,9 +31,6 @@ pub(crate) enum SidebarIntent {
 pub(crate) enum SidebarEffect {
     SyncTerminalGridSizes,
     OpenSettingsTab,
-    OpenTerminalTab,
-    QuickLaunchHeaderCreateCommand,
-    QuickLaunchHeaderCreateFolder,
     QuickLaunchResetInteractionState,
 }
 

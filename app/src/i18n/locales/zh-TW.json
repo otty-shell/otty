@@ -1,8 +1,9 @@
 {
   "strings": {
-    "menu_create_tab": "新增分頁",
-    "menu_create_folder": "新增資料夾",
-    "menu_create_quick_launch": "新增快速啟動",
+    "menu_new_terminal": "新增終端機",
+    "menu_split_current_pane": "向右分割目前窗格",
+    "menu_new_launch": "新增啟動項…",
+    "new_session_menu": "更多開始工作階段的方式",
 
     "terminal_tab_not_initialized": "終端機分頁尚未初始化。",
     "quick_launch_editor_not_initialized": "快速啟動編輯器尚未初始化。",

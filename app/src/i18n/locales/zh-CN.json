@@ -1,8 +1,9 @@
 {
   "strings": {
-    "menu_create_tab": "新建标签页",
-    "menu_create_folder": "新建文件夹",
-    "menu_create_quick_launch": "新建快捷启动",
+    "menu_new_terminal": "新建终端",
+    "menu_split_current_pane": "向右拆分当前窗格",
+    "menu_new_launch": "新建启动项…",
+    "new_session_menu": "更多开始会话的方式",
 
     "terminal_tab_not_initialized": "终端标签页尚未初始化。",
     "quick_launch_editor_not_initialized": "快捷启动编辑器尚未初始化。",

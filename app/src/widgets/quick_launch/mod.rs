@@ -61,6 +61,11 @@ impl QuickLaunchWidget {
         }
     }
 
+    /// Titles of the launches at the top level of the tree, in tree order.
+    pub(crate) fn top_level_launch_titles(&self) -> Vec<&str> {
+        self.state.data().root().launch_titles()
+    }
+
     /// Return error tab state for a given tab id.
     pub(crate) fn error_tab(
         &self,

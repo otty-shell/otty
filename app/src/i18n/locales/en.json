@@ -1,8 +1,9 @@
 {
   "strings": {
-    "menu_create_tab": "Create tab",
-    "menu_create_folder": "Create folder",
-    "menu_create_quick_launch": "Create quick launch",
+    "menu_new_terminal": "New terminal",
+    "menu_split_current_pane": "Split current pane right",
+    "menu_new_launch": "New launch…",
+    "new_session_menu": "More ways to start a session",
 
     "terminal_tab_not_initialized": "Terminal tab is not initialized.",
     "quick_launch_editor_not_initialized": "Quick launch editor is not initialized.",

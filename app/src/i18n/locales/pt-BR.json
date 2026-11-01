@@ -1,8 +1,9 @@
 {
   "strings": {
-    "menu_create_tab": "Criar aba",
-    "menu_create_folder": "Criar pasta",
-    "menu_create_quick_launch": "Criar início rápido",
+    "menu_new_terminal": "Novo terminal",
+    "menu_split_current_pane": "Dividir o painel atual à direita",
+    "menu_new_launch": "Novo lançamento…",
+    "new_session_menu": "Mais formas de iniciar uma sessão",
 
     "terminal_tab_not_initialized": "A aba de terminal não foi inicializada.",
     "quick_launch_editor_not_initialized": "O editor de início rápido não foi inicializado.",

@@ -1,8 +1,9 @@
 {
   "strings": {
-    "menu_create_tab": "Tab erstellen",
-    "menu_create_folder": "Ordner erstellen",
-    "menu_create_quick_launch": "Schnellstart erstellen",
+    "menu_new_terminal": "Neues Terminal",
+    "menu_split_current_pane": "Aktuelles Fenster rechts teilen",
+    "menu_new_launch": "Neuer Start…",
+    "new_session_menu": "Weitere Möglichkeiten, eine Sitzung zu starten",
 
     "terminal_tab_not_initialized": "Der Terminal-Tab ist nicht initialisiert.",
     "quick_launch_editor_not_initialized": "Der Schnellstart-Editor ist nicht initialisiert.",

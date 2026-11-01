@@ -19,6 +19,11 @@ pub(crate) enum QuickLaunchIntent {
     NodeReleased {
         path: NodePath,
     },
+    /// Run a launch (or toggle a folder) as a tree click does, without the
+    /// press and release pair. Used by the New session menu.
+    LaunchNode {
+        path: NodePath,
+    },
     NodeRightClicked {
         path: NodePath,
     },
@@ -40,7 +45,6 @@ pub(crate) enum QuickLaunchIntent {
     CancelInlineEdit,
 
     // Header actions
-    HeaderAddButtonPressed,
     HeaderCreateFolder,
     HeaderCreateCommand,
     DeleteSelected,

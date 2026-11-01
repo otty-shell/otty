@@ -108,6 +108,7 @@ enum Entry<Message> {
 /// ```
 pub struct Menu<Message> {
     palette: UiPalette,
+    width: f32,
     entries: Vec<Entry<Message>>,
 }
 
@@ -116,8 +117,15 @@ impl<Message> Menu<Message> {
     pub fn new(palette: &UiPalette) -> Self {
         Self {
             palette: palette.clone(),
+            width: MENU_WIDTH,
             entries: Vec::new(),
         }
+    }
+
+    /// Sets the menu width; the default is `MENU_WIDTH`.
+    pub fn width(mut self, width: f32) -> Self {
+        self.width = width;
+        self
     }
 
     /// Appends an item.
@@ -152,10 +160,11 @@ impl<'a, Message: Clone + 'a> From<Menu<Message>> for Element<'a, Message> {
             });
         }
 
+        let width = value.width;
         let background = palette.surface_overlay();
         let shadow = palette.shadow_popover();
         container(list)
-            .width(MENU_WIDTH)
+            .width(width)
             .padding(MENU_PADDING)
             .style(move |_| container::Style {
                 background: Some(background.into()),

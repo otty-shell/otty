@@ -1,12 +1,10 @@
 use iced::widget::{Column, container, scrollable, svg, text};
 use iced::{Element, Length, Padding};
-use otty_ui_kit::components::icon_button::{
-    IconButton, IconButtonSize, IconTone,
-};
 use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::session_group::SessionGroup;
 use otty_ui_kit::components::session_row::{SessionRow, SessionTone};
+use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
@@ -35,13 +33,17 @@ pub(crate) struct SessionListProps<'a, Message> {
     pub(crate) is_open: bool,
     /// Title given to a terminal tab opened by the New session button.
     pub(crate) new_session_title: &'a str,
+    /// Whether the New session menu is open, which frames the chevron.
+    pub(crate) is_menu_open: bool,
     /// Message sent when the section title is pressed.
     pub(crate) on_toggle: Message,
+    /// Message sent when the chevron next to the plus is pressed.
+    pub(crate) on_menu: Message,
     /// Turns a tabs intent into the caller's message.
     pub(crate) on_intent: fn(TabsIntent) -> Message,
 }
 
-/// Render the Sessions section: header with the New session button, and
+/// Render the Sessions section: header with the New session split button, and
 /// one group per machine with a row per open tab.
 pub(crate) fn view<'a, Message: Clone + 'a>(
     props: SessionListProps<'a, Message>,
@@ -51,16 +53,17 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
     let session_count = props.vm.session_count;
 
     let new_session_label = i18n::t(Key::NewSession);
-    let new_session = IconButton::new(
+    let new_session = SplitButton::new(
         svg::Handle::from_memory(icons::ADD_TAB_HEADER),
         format!("{new_session_label} ({})", AppShortcut::NewTerminal.label()),
+        i18n::t(Key::NewSessionMenu),
         palette,
     )
-    .size(IconButtonSize::Small)
-    .tone(IconTone::Accent)
+    .menu_open(props.is_menu_open)
     .on_press(on_intent(TabsIntent::OpenTerminalTab {
         title: props.new_session_title.to_string(),
-    }));
+    }))
+    .on_menu(props.on_menu);
 
     let mut rows = Column::new().width(Length::Fill);
     for group in props.vm.groups {
@@ -169,6 +172,7 @@ mod tests {
     use iced::Point;
     use iced::widget::container;
     use iced_test::simulator;
+    use otty_ui_kit::size;
 
     use super::{SessionListProps, view};
     use crate::theme::{ThemeManager, ThemeProps};
@@ -182,10 +186,16 @@ mod tests {
     const HEADER_Y: f32 = 8.0 + 15.0;
     /// Middle of the close cross: section padding 8, then the 24px button.
     const CLOSE_X: f32 = PANEL_WIDTH - 8.0 - 12.0;
+    /// Middle of the chevron: section padding 8, then the chevron.
+    const CHEVRON_X: f32 = PANEL_WIDTH - 8.0 - size::SPLIT_CHEVRON / 2.0;
+    /// Middle of the plus: section padding 8, the chevron, then half the plus.
+    const PLUS_X: f32 =
+        PANEL_WIDTH - 8.0 - size::SPLIT_CHEVRON - size::CONTROL_SM / 2.0;
 
     #[derive(Debug, Clone)]
     enum Message {
         Toggle,
+        OpenMenu,
         Intent(TabsIntent),
     }
 
@@ -231,7 +241,9 @@ mod tests {
             theme: ThemeProps::new(themes.current()),
             is_open,
             new_session_title: "zsh",
+            is_menu_open: false,
             on_toggle: Message::Toggle,
+            on_menu: Message::OpenMenu,
             on_intent: Message::Intent,
         }))
         .width(PANEL_WIDTH)
@@ -304,8 +316,7 @@ mod tests {
         let themes = ThemeManager::new();
         let mut ui = simulator(section(&tabs, &themes, true));
 
-        // The New session button is the only header action, at the right.
-        ui.point_at(Point::new(PANEL_WIDTH - 8.0 - 4.0 - 12.0, HEADER_Y));
+        ui.point_at(Point::new(PLUS_X, HEADER_Y));
         let _ = ui.simulate(iced_test::simulator::click());
 
         let messages: Vec<Message> = ui.into_messages().collect();
@@ -314,6 +325,19 @@ mod tests {
             [Message::Intent(TabsIntent::OpenTerminalTab { title })]
                 if title == "zsh"
         ));
+    }
+
+    #[test]
+    fn given_header_when_chevron_pressed_then_the_menu_opens() {
+        let tabs = tabs();
+        let themes = ThemeManager::new();
+        let mut ui = simulator(section(&tabs, &themes, true));
+
+        ui.point_at(Point::new(CHEVRON_X, HEADER_Y));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert!(matches!(messages.as_slice(), [Message::OpenMenu]));
     }
 
     #[test]

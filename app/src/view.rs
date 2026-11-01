@@ -1,7 +1,6 @@
 use iced::widget::pane_grid::PaneGrid;
 use iced::widget::{Space, column, container, mouse_area, text};
-use iced::{Element, Length, Size, Theme, alignment};
-use otty_ui_kit::components::menu::{self, Menu, MenuItem};
+use iced::{Element, Length, Theme, alignment};
 use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::components::{divider, split};
@@ -10,7 +9,7 @@ use otty_ui_kit::{size, spacing};
 use super::{App, AppEvent};
 #[cfg(not(target_os = "macos"))]
 use crate::components::primitive::resize_grips;
-use crate::geometry::{anchor_position, menu_height_for_items};
+use crate::geometry::anchor_position;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
@@ -28,7 +27,7 @@ use crate::widgets::settings::view::settings_form;
 use crate::widgets::sidebar::types::SidebarPane;
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent, SidebarViewModel};
 use crate::widgets::tabs::types::TabContent;
-use crate::widgets::tabs::view::{empty_state, session_list};
+use crate::widgets::tabs::view::{empty_state, new_session_menu, session_list};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
 use crate::widgets::terminal_workspace::model::followed_program;
@@ -61,14 +60,11 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         layers.push(note);
     }
 
-    // Add menu overlay
-    if sidebar_vm.has_add_menu_open
-        && let Some(cursor) = sidebar_vm.add_menu_cursor
+    // New session menu overlay
+    if sidebar_vm.has_new_session_menu_open
+        && let Some(cursor) = sidebar_vm.new_session_menu_cursor
     {
-        layers.push(
-            view_add_menu_overlay(cursor, app.state.screen_size, theme_props)
-                .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event))),
-        );
+        layers.push(view_new_session_menu_overlay(app, cursor, theme_props));
     }
 
     // Quick launch context menu overlay
@@ -115,7 +111,7 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         .into();
 
     #[cfg(not(target_os = "macos"))]
-    let resize_grips_layer = if app.widgets.sidebar.has_add_menu_open()
+    let resize_grips_layer = if app.widgets.sidebar.has_new_session_menu_open()
         || app.widgets.quick_launch.context_menu().is_some()
         || app.widgets.quick_launch.secret_prompt().is_some()
         || app.widgets.terminal_workspace.has_any_context_menu()
@@ -283,8 +279,12 @@ fn view_left_panel<'a>(
         theme: theme_props,
         is_open: sidebar_vm.is_sessions_open,
         new_session_title: app.shell_session.name(),
+        is_menu_open: sidebar_vm.has_new_session_menu_open,
         on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
             SidebarIntent::ToggleSessions,
+        )),
+        on_menu: AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::NewSessionMenuOpen,
         )),
         on_intent: |intent| AppEvent::Tabs(TabsEvent::Intent(intent)),
     });
@@ -468,31 +468,38 @@ fn missing_tab_state<'a>(
         .into()
 }
 
-/// Render the add menu overlay with dismiss layer.
-fn view_add_menu_overlay<'a>(
+/// Render the New session menu overlay with its dismiss layer.
+fn view_new_session_menu_overlay<'a>(
+    app: &'a App,
     cursor: iced::Point,
-    area_size: Size,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
-    let menu = Menu::new(theme_props.theme.ui())
-        .item(
-            MenuItem::new(i18n::t(Key::MenuCreateTab))
-                .on_press(SidebarIntent::AddMenuCreateTab),
-        )
-        .item(
-            MenuItem::new(i18n::t(Key::MenuCreateFolder))
-                .on_press(SidebarIntent::AddMenuCreateFolder),
-        )
-        .item(
-            MenuItem::new(i18n::t(Key::MenuCreateQuickLaunch))
-                .on_press(SidebarIntent::AddMenuCreateCommand),
-        );
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let split_target = app.widgets.tabs.active_tab_id().and_then(|tab_id| {
+        let pane = app.widgets.terminal_workspace.tab(tab_id)?.focus()?;
+        Some(new_session_menu::SplitTarget { tab_id, pane })
+    });
+    let launch_titles = app.widgets.quick_launch.top_level_launch_titles();
+    let menu_height = new_session_menu::menu_height(launch_titles.len());
+
+    let menu = new_session_menu::view(new_session_menu::NewSessionMenuProps {
+        theme: theme_props,
+        shell_name: app.shell_session.name(),
+        split_target,
+        launch_titles,
+        on_tabs: |intent| AppEvent::Tabs(TabsEvent::Intent(intent)),
+        on_terminal: |intent| {
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(intent))
+        },
+        on_launch: |intent| {
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
+        },
+    });
 
     let anchor = anchor_position(
         cursor,
-        area_size,
-        menu::MENU_WIDTH,
-        menu_height_for_items(3),
+        app.state.screen_size,
+        new_session_menu::NEW_SESSION_MENU_WIDTH,
+        menu_height,
         spacing::SPACE_2,
     );
 
@@ -502,19 +509,28 @@ fn view_add_menu_overlay<'a>(
         ..iced::Padding::ZERO
     };
 
-    let positioned_menu = container(Element::from(menu))
+    let positioned_menu = container(menu)
         .padding(padding)
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(alignment::Horizontal::Left)
         .align_y(alignment::Vertical::Top);
 
+    let dismiss = || {
+        AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::NewSessionMenuDismiss,
+        ))
+    };
     let dismiss_layer = mouse_area(
         container(text("")).width(Length::Fill).height(Length::Fill),
     )
-    .on_press(SidebarIntent::DismissAddMenu)
-    .on_right_press(SidebarIntent::DismissAddMenu)
-    .on_move(|position| SidebarIntent::WorkspaceCursorMoved { position });
+    .on_press(dismiss())
+    .on_right_press(dismiss())
+    .on_move(|position| {
+        AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::WorkspaceCursorMoved { position },
+        ))
+    });
 
     iced::widget::stack!(dismiss_layer, positioned_menu)
         .width(Length::Fill)

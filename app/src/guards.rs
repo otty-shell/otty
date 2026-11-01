@@ -22,11 +22,8 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         )) => {
             use crate::widgets::sidebar::SidebarIntent as E;
             match event {
-                E::AddMenuDismiss
-                | E::AddMenuCreateTab
-                | E::AddMenuCreateCommand
-                | E::AddMenuCreateFolder => Allow,
-                E::AddMenuOpen => Ignore,
+                E::NewSessionMenuDismiss => Allow,
+                E::NewSessionMenuOpen => Ignore,
                 E::WorkspaceCursorMoved { .. }
                 | E::PaneGridCursorMoved { .. } => Allow,
                 _ => Dismiss,
@@ -128,6 +125,31 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
     }
 }
 
+/// Return `true` when the event is one of the New session menu items:
+/// open a terminal, split the pane, run a launch, or create a launch.
+///
+/// The app closes the menu and runs these instead of asking the context
+/// menu guard, which would drop the launch intents.
+pub(crate) fn is_new_session_menu_choice(event: &AppEvent) -> bool {
+    use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+    use crate::widgets::tabs::{TabsEvent, TabsIntent};
+    use crate::widgets::terminal_workspace::{
+        TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+    };
+
+    matches!(
+        event,
+        AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenTerminalTab { .. }))
+            | AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SplitPane { .. }
+            ))
+            | AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::LaunchNode { .. }
+                    | QuickLaunchIntent::HeaderCreateCommand
+            ))
+    )
+}
+
 /// Return `true` when an active inline-edit should be cancelled before the
 /// event is dispatched.
 pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
@@ -227,18 +249,82 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{MenuGuard, context_menu_guard, inline_edit_guard};
+    use super::{
+        MenuGuard, context_menu_guard, inline_edit_guard,
+        is_new_session_menu_choice,
+    };
     use crate::events::AppEvent;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
+    use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
     use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
+    use crate::widgets::tabs::{TabsEvent, TabsIntent};
+    use crate::widgets::terminal_workspace::{
+        TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+    };
 
     #[test]
-    fn given_add_menu_open_when_context_menu_guard_runs_then_event_is_ignored()
-    {
+    fn given_menu_open_when_menu_open_intent_arrives_then_it_is_ignored() {
         let guard = context_menu_guard(&AppEvent::Sidebar(
-            SidebarEvent::Intent(SidebarIntent::AddMenuOpen),
+            SidebarEvent::Intent(SidebarIntent::NewSessionMenuOpen),
         ));
         assert!(matches!(guard, MenuGuard::Ignore));
+    }
+
+    #[test]
+    fn given_menu_open_when_menu_dismiss_intent_arrives_then_it_is_allowed() {
+        let guard = context_menu_guard(&AppEvent::Sidebar(
+            SidebarEvent::Intent(SidebarIntent::NewSessionMenuDismiss),
+        ));
+        assert!(matches!(guard, MenuGuard::Allow));
+    }
+
+    #[test]
+    fn given_menu_choices_when_checked_then_each_one_is_a_new_session_menu_choice()
+     {
+        let open_terminal =
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenTerminalTab {
+                title: String::from("zsh"),
+            }));
+        let launch = AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::LaunchNode {
+                path: vec![String::from("Demo")],
+            },
+        ));
+        let new_launch = AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::HeaderCreateCommand,
+        ));
+
+        let (_panes, pane) = iced::widget::pane_grid::State::new(());
+        let split =
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SplitPane {
+                    tab_id: 0,
+                    pane,
+                    axis: iced::widget::pane_grid::Axis::Vertical,
+                },
+            ));
+
+        assert!(is_new_session_menu_choice(&open_terminal));
+        assert!(is_new_session_menu_choice(&split));
+        assert!(is_new_session_menu_choice(&launch));
+        assert!(is_new_session_menu_choice(&new_launch));
+    }
+
+    #[test]
+    fn given_other_events_when_checked_then_they_are_not_menu_choices() {
+        let close_tab =
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseTab {
+                tab_id: 1,
+            }));
+        let pressed = AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::NodePressed {
+                path: vec![String::from("Demo")],
+            },
+        ));
+
+        assert!(!is_new_session_menu_choice(&close_tab));
+        assert!(!is_new_session_menu_choice(&pressed));
+        assert!(!is_new_session_menu_choice(&AppEvent::IcedReady));
     }
 
     #[test]

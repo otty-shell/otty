@@ -1,8 +1,9 @@
 {
   "strings": {
-    "menu_create_tab": "탭 만들기",
-    "menu_create_folder": "폴더 만들기",
-    "menu_create_quick_launch": "빠른 실행 만들기",
+    "menu_new_terminal": "새 터미널",
+    "menu_split_current_pane": "현재 창을 오른쪽으로 분할",
+    "menu_new_launch": "새 실행…",
+    "new_session_menu": "세션을 시작하는 다른 방법",
 
     "terminal_tab_not_initialized": "터미널 탭이 초기화되지 않았습니다.",
     "quick_launch_editor_not_initialized": "빠른 실행 편집기가 초기화되지 않았습니다.",

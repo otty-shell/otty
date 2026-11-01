@@ -9,13 +9,15 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Key {
-    // Sidebar add menu.
-    /// "Create tab" entry in the sidebar add menu.
-    MenuCreateTab,
-    /// "Create folder" entry in the sidebar add menu.
-    MenuCreateFolder,
-    /// "Create quick launch" entry in the sidebar add menu.
-    MenuCreateQuickLaunch,
+    // New session menu.
+    /// "New terminal" entry in the New session menu.
+    MenuNewTerminal,
+    /// "Split current pane right" entry in the New session menu.
+    MenuSplitCurrentPane,
+    /// "New launch..." entry in the New session menu.
+    MenuNewLaunch,
+    /// Tooltip of the New session menu chevron.
+    NewSessionMenu,
 
     // Placeholders shown when tab state is missing.
     /// Shown when a terminal tab has no backing state.
@@ -333,10 +335,11 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 143] = [
-        Self::MenuCreateTab,
-        Self::MenuCreateFolder,
-        Self::MenuCreateQuickLaunch,
+    pub(super) const ALL: [Self; 144] = [
+        Self::MenuNewTerminal,
+        Self::MenuSplitCurrentPane,
+        Self::MenuNewLaunch,
+        Self::NewSessionMenu,
         Self::TerminalTabNotInitialized,
         Self::QuickLaunchEditorNotInitialized,
         Self::QuickLaunchErrorPayloadMissing,

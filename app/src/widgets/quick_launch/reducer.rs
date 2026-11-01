@@ -178,6 +178,9 @@ pub(crate) fn reduce(
             }
             Task::none()
         },
+        LaunchNode { path } => {
+            handle_node_left_click(state, ctx.terminal_settings, path)
+        },
         InlineEditChanged(value) => {
             if let Some(edit) = state.inline_edit_mut() {
                 edit.value = value;
@@ -326,7 +329,6 @@ pub(crate) fn reduce(
             }
             Task::none()
         },
-        _ => Task::none(),
     }
 }
 
@@ -3103,6 +3105,21 @@ mod tests {
             .launch_info(node)
             .expect("clicked command should be launching")
             .id
+    }
+
+    #[test]
+    fn given_launch_node_intent_when_reduced_then_command_starts_like_a_click()
+    {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let node = path(&["Demo"]);
+
+        run(
+            &mut state,
+            QuickLaunchIntent::LaunchNode { path: node.clone() },
+        );
+
+        assert!(state.is_launching(&node));
+        assert_eq!(state.selected_path(), Some(&node));
     }
 
     #[test]

@@ -1,8 +1,9 @@
 {
   "strings": {
-    "menu_create_tab": "Создать вкладку",
-    "menu_create_folder": "Создать папку",
-    "menu_create_quick_launch": "Создать быстрый запуск",
+    "menu_new_terminal": "Новый терминал",
+    "menu_split_current_pane": "Разделить текущую панель вправо",
+    "menu_new_launch": "Новый запуск…",
+    "new_session_menu": "Другие способы начать сеанс",
 
     "terminal_tab_not_initialized": "Вкладка терминала не инициализирована.",
     "quick_launch_editor_not_initialized": "Редактор быстрого запуска не инициализирован.",

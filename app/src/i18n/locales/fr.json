@@ -1,8 +1,9 @@
 {
   "strings": {
-    "menu_create_tab": "Nouvel onglet",
-    "menu_create_folder": "Nouveau dossier",
-    "menu_create_quick_launch": "Nouveau lancement rapide",
+    "menu_new_terminal": "Nouveau terminal",
+    "menu_split_current_pane": "Diviser le volet actuel à droite",
+    "menu_new_launch": "Nouveau lancement…",
+    "new_session_menu": "Autres façons de démarrer une session",
 
     "terminal_tab_not_initialized": "L'onglet de terminal n'est pas initialisé.",
     "quick_launch_editor_not_initialized": "L'éditeur de lancement rapide n'est pas initialisé.",

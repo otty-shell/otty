@@ -2,7 +2,10 @@ use iced::Task;
 
 use super::{App, AppEvent};
 use crate::events;
-use crate::guards::{MenuGuard, context_menu_guard, inline_edit_guard};
+use crate::guards::{
+    MenuGuard, context_menu_guard, inline_edit_guard,
+    is_new_session_menu_choice,
+};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 use crate::widgets::terminal_workspace::{
@@ -21,7 +24,16 @@ pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         ));
     }
 
-    if any_context_menu_open(app) {
+    if app.widgets.sidebar.has_new_session_menu_open()
+        && is_new_session_menu_choice(&event)
+    {
+        pre_dispatch_tasks.push(events::handle(
+            app,
+            AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::NewSessionMenuDismiss,
+            )),
+        ));
+    } else if any_context_menu_open(app) {
         match context_menu_guard(&event) {
             MenuGuard::Allow => {},
             MenuGuard::Ignore => return Task::none(),
@@ -39,7 +51,7 @@ pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
 }
 
 fn any_context_menu_open(app: &App) -> bool {
-    if app.widgets.sidebar.has_add_menu_open()
+    if app.widgets.sidebar.has_new_session_menu_open()
         || app.widgets.quick_launch.context_menu().is_some()
     {
         return true;
@@ -53,7 +65,7 @@ fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
         events::handle(
             app,
             AppEvent::Sidebar(SidebarEvent::Intent(
-                SidebarIntent::DismissAddMenu,
+                SidebarIntent::NewSessionMenuDismiss,
             )),
         ),
         events::handle(

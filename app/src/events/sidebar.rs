@@ -11,11 +11,11 @@ pub(crate) fn handle(app: &mut App, event: SidebarEvent) -> Task<AppEvent> {
         SidebarEvent::Intent(event) => {
             app.widgets.sidebar.reduce(event).map(AppEvent::Sidebar)
         },
-        SidebarEvent::Effect(effect) => handle_effect(app, effect),
+        SidebarEvent::Effect(effect) => handle_effect(effect),
     }
 }
 
-fn handle_effect(app: &App, event: SidebarEffect) -> Task<AppEvent> {
+fn handle_effect(event: SidebarEffect) -> Task<AppEvent> {
     use SidebarEffect::*;
 
     match event {
@@ -23,17 +23,6 @@ fn handle_effect(app: &App, event: SidebarEffect) -> Task<AppEvent> {
         OpenSettingsTab => Task::done(AppEvent::Tabs(TabsEvent::Intent(
             TabsIntent::OpenSettingsTab,
         ))),
-        OpenTerminalTab => Task::done(AppEvent::Tabs(TabsEvent::Intent(
-            TabsIntent::OpenTerminalTab {
-                title: app.shell_session.name().to_string(),
-            },
-        ))),
-        QuickLaunchHeaderCreateCommand => Task::done(AppEvent::QuickLaunch(
-            QuickLaunchEvent::Intent(QuickLaunchIntent::HeaderCreateCommand),
-        )),
-        QuickLaunchHeaderCreateFolder => Task::done(AppEvent::QuickLaunch(
-            QuickLaunchEvent::Intent(QuickLaunchIntent::HeaderCreateFolder),
-        )),
         QuickLaunchResetInteractionState => Task::done(AppEvent::QuickLaunch(
             QuickLaunchEvent::Intent(QuickLaunchIntent::ResetInteractionState),
         )),

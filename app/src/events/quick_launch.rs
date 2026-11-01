@@ -7,7 +7,6 @@ use crate::i18n::{self, Key};
 use crate::widgets::quick_launch::{
     QuickLaunchCtx, QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
 };
-use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::types::TabMachine;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
@@ -19,14 +18,6 @@ pub(crate) fn handle(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
 }
 
 fn handle_intent(app: &mut App, event: QuickLaunchIntent) -> Task<AppEvent> {
-    // The add button lives in the quick launch panel but triggers the
-    // sidebar add-menu overlay, so redirect instead of reducing.
-    if matches!(event, QuickLaunchIntent::HeaderAddButtonPressed) {
-        return Task::done(AppEvent::Sidebar(SidebarEvent::Intent(
-            SidebarIntent::AddMenuOpen,
-        )));
-    }
-
     let ctx = QuickLaunchCtx {
         terminal_settings: &app.terminal_settings,
         sidebar_cursor: app.widgets.sidebar.cursor(),
