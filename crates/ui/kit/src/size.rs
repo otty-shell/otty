@@ -69,3 +69,11 @@ pub const PALETTE: f32 = 560.0;
 pub const PALETTE_INPUT: f32 = 40.0;
 /// Height of a command palette entry (`.ot-palette-item`).
 pub const PALETTE_ITEM: f32 = 32.0;
+/// Width of a mode tab in the mode switcher (`.mode-tab { width: 30px }`).
+pub const MODE_TAB_WIDTH: f32 = 30.0;
+/// Height of a mode tab in the mode switcher (`.mode-tab { height: 26px }`).
+pub const MODE_TAB_HEIGHT: f32 = 26.0;
+/// Edge of the icon tile in a mode menu row (`.mm-ico { width: 22px }`).
+pub const MODE_ICON_TILE: f32 = 22.0;
+/// Width of the All modes menu (the `.mm` popover is 300px wide).
+pub const MODE_MENU: f32 = 300.0;

@@ -26,6 +26,8 @@ mod input_keys;
 pub mod kbd;
 pub mod key_value_field;
 pub mod menu;
+pub mod mode_menu;
+pub mod mode_switcher;
 pub mod palette_list;
 pub mod pane_header;
 pub mod panel_height;

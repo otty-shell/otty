@@ -780,4 +780,44 @@ mod tests {
             );
         }
     }
+
+    /// Mode switcher: the active tab icon is accent on `surface-hover`, an
+    /// idle tab icon is muted on the raised group.
+    #[test]
+    fn given_each_theme_when_mode_tab_icons_drawn_then_they_reach_4_5() {
+        for (theme, palette) in themes() {
+            assert_contrast_at_least(
+                theme,
+                ("accent", palette.accent()),
+                ("surface-hover", palette.surface_hover()),
+                TEXT_MIN,
+            );
+            assert_contrast_at_least(
+                theme,
+                ("text-muted", palette.text_muted()),
+                ("surface-raised", palette.surface_raised()),
+                TEXT_MIN,
+            );
+        }
+    }
+
+    /// Mode menu: the pinned pin is accent and the unpinned pin is
+    /// `text-faint`, both on the overlay; the unpinned pin is a mark, so 3:1.
+    #[test]
+    fn given_each_theme_when_mode_menu_pins_drawn_then_they_reach_3() {
+        for (theme, palette) in themes() {
+            assert_contrast_at_least(
+                theme,
+                ("accent", palette.accent()),
+                ("surface-overlay", palette.surface_overlay()),
+                NON_TEXT_MIN,
+            );
+            assert_contrast_at_least(
+                theme,
+                ("text-faint", palette.text_faint()),
+                ("surface-overlay", palette.surface_overlay()),
+                NON_TEXT_MIN,
+            );
+        }
+    }
 }

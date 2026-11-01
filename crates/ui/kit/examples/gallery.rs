@@ -24,6 +24,10 @@ use otty_ui_kit::components::icon_button::{
 use otty_ui_kit::components::kbd::{kbd, shortcut_text};
 use otty_ui_kit::components::key_value_field::KeyValueField;
 use otty_ui_kit::components::menu::{Menu, MenuItem};
+use otty_ui_kit::components::mode_menu::{
+    ModeMenu, ModeMenuSection, ModePin, ModeRow,
+};
+use otty_ui_kit::components::mode_switcher::{ModeSwitcher, ModeTab};
 use otty_ui_kit::components::palette_list::{PaletteItem, PaletteList};
 use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::panel_section::PanelSection;
@@ -45,6 +49,15 @@ use otty_ui_kit::{fonts, spacing, typography};
 
 /// Plus icon used by the icon buttons.
 const PLUS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>"#;
+
+/// Terminal mode icon.
+const TERMINAL_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>"#;
+
+/// Docker mode icon.
+const DOCKER_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="18" height="9" rx="2"/><path d="M6 10V7h4v3M10 10V5h4v5M14 10V7h4v3"/></svg>"#;
+
+/// Stand-in icon for modes that do not exist yet.
+const GRID_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>"#;
 
 /// Search icon of the title search.
 const SEARCH_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>"#;
@@ -506,6 +519,100 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         .spacing(spacing::SPACE_4)
         .align_y(iced::Alignment::Center);
 
+    let mode_tab =
+        |bytes: &'static [u8], name: &'static str, keys: &'static str| {
+            ModeTab::new(svg::Handle::from_memory(bytes), name)
+                .shortcut(keys)
+                .on_press(Message::Clicked)
+        };
+    let mode_switchers = row![
+        ModeSwitcher::new(p)
+            .tab(
+                mode_tab(TERMINAL_ICON, "Terminal", "Ctrl Shift 1")
+                    .active(true)
+            )
+            .tab(mode_tab(DOCKER_ICON, "Docker", "Ctrl Shift 2"))
+            .more("All modes (Ctrl Shift M)", false, Message::Clicked),
+        ModeSwitcher::new(p)
+            .tab(mode_tab(TERMINAL_ICON, "Terminal", "Ctrl Shift 1"))
+            .tab(mode_tab(DOCKER_ICON, "Docker", "Ctrl Shift 2"))
+            .tab(
+                mode_tab(GRID_ICON, "Grid", "Ctrl Shift 3")
+                    .active(true)
+                    .temporary(true)
+            )
+            .more("All modes (Ctrl Shift M)", true, Message::Clicked),
+    ]
+    .spacing(spacing::SPACE_6)
+    .align_y(iced::Alignment::Center);
+
+    let pinned = |label: &str| ModePin::Pinned {
+        label: label.to_owned(),
+        on_press: Message::Clicked,
+    };
+    let mode_row =
+        |bytes: &'static [u8], name: &'static str, keys: &'static str| {
+            ModeRow::new(svg::Handle::from_memory(bytes), name)
+                .shortcut(keys)
+                .on_press(Message::Clicked)
+        };
+    let full_menu = ModeMenu::new(p)
+        .section(
+            ModeMenuSection::new("Pinned")
+                .note("4 of 4")
+                .row(mode_row(TERMINAL_ICON, "Terminal", "Ctrl Shift 1"))
+                .row(
+                    mode_row(DOCKER_ICON, "Docker", "Ctrl Shift 2")
+                        .pin(pinned("Unpin")),
+                )
+                .row(
+                    mode_row(GRID_ICON, "Grid", "Ctrl Shift 3")
+                        .pin(pinned("Unpin")),
+                )
+                .row(
+                    mode_row(GRID_ICON, "Grid two", "Ctrl Shift 4")
+                        .pin(pinned("Unpin")),
+                )
+                .row(
+                    mode_row(GRID_ICON, "Grid three", "Ctrl Shift 5")
+                        .pin(pinned("Unpin")),
+                ),
+        )
+        .section(
+            ModeMenuSection::new("Other modes").row(
+                ModeRow::new(svg::Handle::from_memory(GRID_ICON), "Grid four")
+                    .on_press(Message::Clicked)
+                    .pin(ModePin::Disabled {
+                        hint: "Unpin another mode first".to_owned(),
+                    }),
+            ),
+        );
+    let short_menu = ModeMenu::new(p)
+        .section(
+            ModeMenuSection::new("Pinned")
+                .note("2 of 4")
+                .row(mode_row(TERMINAL_ICON, "Terminal", "Ctrl Shift 1"))
+                .row(
+                    mode_row(DOCKER_ICON, "Docker", "Ctrl Shift 2")
+                        .pin(pinned("Unpin")),
+                ),
+        )
+        .section(
+            ModeMenuSection::new("Other modes")
+                .row(
+                    ModeRow::new(svg::Handle::from_memory(GRID_ICON), "Grid")
+                        .on_press(Message::Clicked)
+                        .pin(ModePin::Unpinned {
+                            label: "Pin".to_owned(),
+                            on_press: Message::Clicked,
+                        }),
+                )
+                .hint("Every other mode is pinned."),
+        );
+    let mode_menus = row![full_menu, short_menu]
+        .spacing(spacing::SPACE_6)
+        .align_y(iced::Alignment::Start);
+
     let pane_headers = column![
         PaneHeader::new("zsh", p)
             .folder("~/projects/otty")
@@ -678,6 +785,16 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section(
             "PanelSection (open with SessionGroup + SessionRow: selected, state words, long title; collapsed)",
             panel.into(),
+            p,
+        ),
+        section(
+            "ModeSwitcher (active tab; temporary tab with the menu open)",
+            mode_switchers.into(),
+            p,
+        ),
+        section(
+            "ModeMenu (full pinned list with a disabled pin; unpinned row and hint)",
+            mode_menus.into(),
             p,
         ),
         section(
