@@ -1,6 +1,6 @@
 use std::fmt;
 
-use iced::widget::{Space, container, row, text};
+use iced::widget::{Space, column, container, row, text};
 use iced::{Element, Length, Theme};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::form_page::FormPage;
@@ -63,8 +63,10 @@ pub(crate) fn view(props: WizardFormProps<'_>) -> WizardElement<'_> {
     };
 
     let mut page = FormPage::new(palette)
+        .section(heading(editor, palette))
         .section(general_section(tab_id, editor, palette))
-        .section(command_section);
+        .section(command_section)
+        .section(exit_section(tab_id, editor, palette));
 
     if let Some(error) = unassigned_error(editor) {
         page = page.section(
@@ -76,6 +78,30 @@ pub(crate) fn view(props: WizardFormProps<'_>) -> WizardElement<'_> {
     }
 
     page.footer(footer(tab_id, palette)).into()
+}
+
+fn heading<'a>(
+    editor: &WizardEditorState,
+    palette: &UiPalette,
+) -> WizardElement<'a> {
+    let title = if editor.is_create_mode() {
+        i18n::t(Key::WizardTitleNew)
+    } else {
+        i18n::t(Key::WizardTitleEdit)
+    };
+
+    column![
+        text(title)
+            .size(typography::TITLE.size())
+            .font(fonts::UI_SEMIBOLD)
+            .color(palette.text_strong()),
+        text(i18n::t(Key::WizardSubtitle))
+            .size(typography::SMALL.size())
+            .font(fonts::UI)
+            .color(palette.text_muted()),
+    ]
+    .spacing(spacing::SPACE_1)
+    .into()
 }
 
 fn general_section<'a>(
@@ -129,13 +155,12 @@ fn general_section<'a>(
         None => title,
     };
 
-    FormSection::new(i18n::t(Key::WizardHeader), palette)
-        .field(title)
-        .field(
-            SettingRow::new(i18n::t(Key::FieldType), palette)
-                .control(command_type),
-        )
-        .into()
+    column![
+        title,
+        SettingRow::new(i18n::t(Key::FieldType), palette).control(command_type),
+    ]
+    .spacing(spacing::SPACE_4)
+    .into()
 }
 
 fn custom_section<'a>(
@@ -214,7 +239,6 @@ fn custom_section<'a>(
             .field(args)
             .field(env)
             .field(workdir)
-            .field(exit_behavior_row(tab_id, editor, palette))
             .into(),
     )
 }
@@ -298,12 +322,11 @@ fn ssh_section<'a>(
             .field(user)
             .field(identity_file)
             .field(extra_args)
-            .field(exit_behavior_row(tab_id, editor, palette))
             .into(),
     )
 }
 
-fn exit_behavior_row<'a>(
+fn exit_section<'a>(
     tab_id: u64,
     editor: &WizardEditorState,
     palette: &UiPalette,
@@ -324,9 +347,14 @@ fn exit_behavior_row<'a>(
         },
         palette,
     );
+    let hint = text(i18n::t(Key::ExitBehaviorHint))
+        .size(typography::SMALL.size())
+        .font(fonts::UI)
+        .color(palette.text_muted());
 
-    SettingRow::new(i18n::t(Key::FieldAfterExit), palette)
-        .control(control)
+    FormSection::new(i18n::t(Key::FieldAfterExit), palette)
+        .field(control)
+        .field(hint)
         .into()
 }
 
@@ -381,4 +409,89 @@ fn unassigned_error(editor: &WizardEditorState) -> Option<&str> {
     editor
         .error()
         .filter(|error| !FIELD_ERRORS.iter().any(|key| *error == i18n::t(*key)))
+}
+
+#[cfg(test)]
+mod tests {
+    use iced_test::simulator;
+
+    use super::{WizardFormProps, view};
+    use crate::i18n::{self, Key};
+    use crate::theme::{ThemeManager, ThemeProps};
+    use crate::widgets::quick_launch::event::QuickLaunchIntent;
+    use crate::widgets::quick_launch::state::WizardEditorState;
+    use crate::widgets::quick_launch::types::QuickLaunchType;
+
+    const TAB_ID: u64 = 7;
+
+    fn messages_after_click(
+        editor: &WizardEditorState,
+        label: &str,
+    ) -> Vec<QuickLaunchIntent> {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(WizardFormProps {
+            tab_id: TAB_ID,
+            editor,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(label).expect("label should be visible");
+
+        ui.into_messages().collect()
+    }
+
+    #[test]
+    fn given_form_when_save_pressed_then_save_intent_is_sent() {
+        let editor = WizardEditorState::new(Vec::new());
+
+        let messages = messages_after_click(&editor, i18n::t(Key::ButtonSave));
+
+        assert!(matches!(
+            messages.as_slice(),
+            [QuickLaunchIntent::WizardSave { tab_id: TAB_ID }]
+        ));
+    }
+
+    #[test]
+    fn given_form_when_cancel_pressed_then_cancel_intent_is_sent() {
+        let editor = WizardEditorState::new(Vec::new());
+
+        let messages =
+            messages_after_click(&editor, i18n::t(Key::ButtonCancel));
+
+        assert!(matches!(
+            messages.as_slice(),
+            [QuickLaunchIntent::WizardCancel { tab_id: TAB_ID }]
+        ));
+    }
+
+    #[test]
+    fn given_new_launch_when_ssh_pressed_then_type_intent_is_sent() {
+        let editor = WizardEditorState::new(Vec::new());
+
+        let messages = messages_after_click(&editor, i18n::t(Key::TypeSsh));
+
+        assert!(matches!(
+            messages.as_slice(),
+            [QuickLaunchIntent::WizardSelectCommandType {
+                tab_id: TAB_ID,
+                command_type: QuickLaunchType::Ssh,
+            }]
+        ));
+    }
+
+    #[test]
+    fn given_new_launch_when_shown_then_title_and_subtitle_are_visible() {
+        let editor = WizardEditorState::new(Vec::new());
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(WizardFormProps {
+            tab_id: TAB_ID,
+            editor: &editor,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        assert!(ui.find(i18n::t(Key::WizardTitleNew)).is_ok());
+        assert!(ui.find(i18n::t(Key::WizardSubtitle)).is_ok());
+        assert!(ui.find(i18n::t(Key::WizardTitleEdit)).is_err());
+    }
 }

@@ -1,37 +1,39 @@
-use iced::widget::pane_grid::PaneGrid;
-use iced::widget::{Space, column, container, mouse_area, row, text};
-use iced::{Element, Length, Size, Theme, alignment};
-use otty_ui_kit::components::menu::{self, Menu, MenuItem};
-use otty_ui_kit::components::surface::{Surface, surface};
-use otty_ui_kit::components::{divider, split};
-use otty_ui_kit::{size, spacing};
+use iced::widget::{Space, column, container, mouse_area, pane_grid, text};
+use iced::{Element, Length, Theme, alignment};
+use otty_ui_kit::components::divider;
+use otty_ui_kit::spacing;
 
 use super::{App, AppEvent};
 #[cfg(not(target_os = "macos"))]
 use crate::components::primitive::resize_grips;
-use crate::geometry::{anchor_position, menu_height_for_items};
+use crate::geometry::anchor_position;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
-use crate::widgets::chrome::view::action_bar;
+use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
+use crate::widgets::chrome::view::{action_bar, status_bar};
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
-use crate::widgets::quick_launch::QuickLaunchEvent;
+use crate::widgets::palette::{PaletteEvent, view as palette_view};
 use crate::widgets::quick_launch::view::{
-    context_menu as ql_context_menu, error_tab, secret_prompt, sidebar_panel,
-    wizard_form,
+    context_menu as ql_context_menu, error_tab, new_launch_menu, secret_prompt,
+    sidebar_panel, wizard_form,
 };
+use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::settings::SettingsEvent;
 use crate::widgets::settings::view::settings_form;
-use crate::widgets::sidebar::types::{SidebarItem, SidebarPane};
-use crate::widgets::sidebar::{self, SidebarEvent, SidebarIntent};
-use crate::widgets::tabs::TabsEvent;
-use crate::widgets::tabs::types::TabContent;
-use crate::widgets::tabs::view::tab_bar;
-use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
+use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu, SidebarPane};
+use crate::widgets::sidebar::view::{focus_note, left_panel, panels};
+use crate::widgets::sidebar::{SidebarEvent, SidebarIntent, SidebarViewModel};
+use crate::widgets::tabs::types::{TabContent, TabMachine};
+use crate::widgets::tabs::view::{empty_state, new_session_menu, session_list};
+use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::view::{
     pane_context_menu as terminal_pane_context_menu,
     pane_grid as terminal_pane_grid,
+};
+use crate::widgets::terminal_workspace::{
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
 /// Render the root application view.
@@ -41,12 +43,17 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 
     let sidebar_vm = app.widgets.sidebar.vm();
 
-    let content_row: Element<'_, AppEvent, Theme, iced::Renderer> =
-        if sidebar_vm.is_hidden {
-            view_content_only(app, theme_props)
-        } else {
-            view_sidebar_layout(app, theme_props)
-        };
+    let content_row = panels::view(panels::PanelsProps {
+        panes: app.widgets.sidebar.panes(),
+        vm: sidebar_vm,
+        theme: theme_props,
+        content: move |slot| match slot {
+            SidebarPane::Left => view_left_panel(app, sidebar_vm, theme_props),
+            SidebarPane::Main => view_tab_content(app, theme_props),
+            SidebarPane::Right => view_right_panel(app, theme_props),
+        },
+        on_intent: |intent| AppEvent::Sidebar(SidebarEvent::Intent(intent)),
+    });
 
     let content_row = mouse_area(content_row).on_move(|position| {
         AppEvent::Sidebar(SidebarEvent::Intent(
@@ -57,14 +64,16 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     let mut layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> =
         vec![content_row.into()];
 
-    // Add menu overlay
-    if sidebar_vm.has_add_menu_open
-        && let Some(cursor) = sidebar_vm.add_menu_cursor
+    // Focus mode note
+    if let Some(note) =
+        focus_note::view(sidebar_vm.focus_note_opacity, theme_props)
     {
-        layers.push(
-            view_add_menu_overlay(cursor, app.state.screen_size, theme_props)
-                .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event))),
-        );
+        layers.push(note);
+    }
+
+    // Header menu overlay (New session or Launches)
+    if let Some(open) = sidebar_vm.open_header_menu {
+        layers.push(view_header_menu_overlay(app, open, theme_props));
     }
 
     // Quick launch context menu overlay
@@ -85,6 +94,17 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     if let Some(overlay) = view_terminal_context_menu_overlay(app, theme_props)
     {
         layers.push(overlay);
+    }
+
+    // Command palette
+    if let Some(vm) = app.widgets.palette.vm() {
+        layers.push(
+            palette_view::view(palette_view::PaletteProps {
+                vm,
+                theme: theme_props,
+            })
+            .map(|intent| AppEvent::Palette(PaletteEvent::Intent(intent))),
+        );
     }
 
     // SSH secret dialog stays on top of every other overlay.
@@ -111,7 +131,7 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         .into();
 
     #[cfg(not(target_os = "macos"))]
-    let resize_grips_layer = if app.widgets.sidebar.has_add_menu_open()
+    let resize_grips_layer = if app.widgets.sidebar.has_header_menu_open()
         || app.widgets.quick_launch.context_menu().is_some()
         || app.widgets.quick_launch.secret_prompt().is_some()
         || app.widgets.terminal_workspace.has_any_context_menu()
@@ -128,10 +148,12 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         })
     };
 
-    let header = view_header(app, theme_props);
+    let header = view_header(app, sidebar_vm, theme_props);
+
+    let status_bar = view_status_bar(app, theme_props);
 
     let root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
-        column![header, content_stack]
+        column![header, content_stack, status_bar]
             .width(Length::Fill)
             .height(Length::Fill)
             .into(),
@@ -147,13 +169,18 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 /// Render the header: action bar + separator.
 fn view_header<'a>(
     app: &'a App,
+    sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     let palette = theme_props.theme.ui();
 
     let action_bar = action_bar::view(action_bar::ActionBarProps {
-        title: app.widgets.tabs.active_tab_title().unwrap_or("OTTY"),
+        title: app.widgets.tabs.active_tab_title(),
         theme: theme_props,
+        left_open: sidebar_vm.is_left_open,
+        right_open: sidebar_vm.is_right_open,
+        focus_mode: sidebar_vm.is_focus_mode,
+        is_title_bar_pressed: app.widgets.chrome.is_title_bar_pressed(),
     })
     .map(|event| AppEvent::Chrome(ChromeEvent::Intent(event)));
 
@@ -165,121 +192,110 @@ fn view_header<'a>(
         .into()
 }
 
-/// Render content without sidebar.
-fn view_content_only<'a>(
+/// Render the status bar: machine and focused pane on the left, pane and
+/// session counts on the right. It stays in focus mode.
+fn view_status_bar<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    view_tab_area(app, theme_props)
+    let tab_id = app.widgets.tabs.active_tab_id();
+    let host_name = app.host_name.as_deref();
+    // With no tabs the status bar names this computer.
+    let machine = match app.widgets.tabs.active_tab_machine() {
+        Some(machine) => machine,
+        None => &TabMachine::ThisComputer,
+    };
+    let folder = app
+        .widgets
+        .terminal_workspace
+        .focused_pane_label(tab_id)
+        .and_then(|label| label.folder_path());
+
+    let vm = StatusBarViewModel::new(StatusBarInput {
+        machine_name: machine.name(host_name),
+        machine_target: machine.target_kind(),
+        folder,
+        pane_count: app.widgets.terminal_workspace.pane_count(tab_id),
+        session_count: app.widgets.tabs.len(),
+    });
+
+    status_bar::view(&vm, env!("CARGO_PKG_VERSION"), theme_props)
 }
 
-/// Render sidebar + content split layout with PaneGrid.
-fn view_sidebar_layout<'a>(
+/// Left panel content: the Sessions section over the Launches section,
+/// sharing the panel height (see [`left_panel::view`]).
+fn view_left_panel<'a>(
     app: &'a App,
+    sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let sidebar_vm = app.widgets.sidebar.vm();
+    let host_name = app.host_name.as_deref();
 
-    let menu_rail = sidebar::view::view(sidebar::view::SidebarViewProps {
+    left_panel::view(left_panel::LeftPanelProps {
         vm: sidebar_vm,
         theme: theme_props,
-    })
-    .map(|event| AppEvent::Sidebar(SidebarEvent::Intent(event)));
+        sections: move || {
+            let sessions_vm = app.widgets.tabs.vm(host_name);
+            let sessions_content_height =
+                session_list::content_height(&sessions_vm);
+            let sessions = session_list::view(session_list::SessionListProps {
+                vm: sessions_vm,
+                theme: theme_props,
+                is_open: sidebar_vm.is_sessions_open,
+                is_menu_open: sidebar_vm
+                    .open_header_menu
+                    .is_some_and(|open| open.menu() == HeaderMenu::Sessions),
+                on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
+                    SidebarIntent::ToggleSessions,
+                )),
+                on_menu: AppEvent::Sidebar(SidebarEvent::Intent(
+                    SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions),
+                )),
+                on_intent: |intent| AppEvent::Tabs(TabsEvent::Intent(intent)),
+            });
 
-    let sidebar_separator = divider::vertical(theme_props.theme.ui());
-
-    let sidebar_pane_grid = PaneGrid::new(
-        app.widgets.sidebar.panes(),
-        move |_pane, pane_kind, _| {
-            let content: Element<'_, AppEvent, Theme, iced::Renderer> =
-                match *pane_kind {
-                    SidebarPane::Workspace => {
-                        let workspace_content = view_workspace_content(
-                            app,
-                            sidebar_vm,
-                            theme_props,
-                        );
-                        if sidebar_vm.is_workspace_open {
-                            surface(
-                                workspace_content,
-                                Surface::Panel,
-                                theme_props.theme.ui(),
-                            )
-                            .into()
-                        } else {
-                            Space::new()
-                                .width(Length::Fill)
-                                .height(Length::Fill)
-                                .into()
-                        }
+            let launches_vm = app.widgets.quick_launch.vm();
+            let launches_content_height =
+                sidebar_panel::content_height(&launches_vm);
+            let launches =
+                sidebar_panel::view(sidebar_panel::SidebarPanelProps {
+                    vm: launches_vm,
+                    theme: theme_props,
+                    is_open: sidebar_vm.is_launches_open,
+                    is_menu_open: sidebar_vm.open_header_menu.is_some_and(
+                        |open| open.menu() == HeaderMenu::Launches,
+                    ),
+                    on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
+                        SidebarIntent::ToggleLaunches,
+                    )),
+                    on_menu: AppEvent::Sidebar(SidebarEvent::Intent(
+                        SidebarIntent::HeaderMenuOpen(HeaderMenu::Launches),
+                    )),
+                    on_intent: |intent| {
+                        AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
                     },
-                    SidebarPane::Content => view_tab_area(app, theme_props),
-                };
-            iced::widget::pane_grid::Content::new(content)
+                });
+
+            left_panel::LeftPanelSections {
+                sessions,
+                sessions_content_height,
+                launches,
+                launches_content_height,
+            }
         },
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .spacing(size::LINE)
-    .min_size(0)
-    .on_resize(size::SPLIT_GRAB, |event| {
-        AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(event)))
     })
-    .style(split::style(theme_props.theme.ui()));
-
-    row![menu_rail, sidebar_separator, sidebar_pane_grid]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
 }
 
-/// Render workspace content based on the active sidebar item.
-fn view_workspace_content<'a>(
-    app: &'a App,
-    sidebar_vm: sidebar::SidebarViewModel,
-    theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    match sidebar_vm.active_item {
-        SidebarItem::Terminal => {
-            sidebar_panel::view(sidebar_panel::SidebarPanelProps {
-                vm: app.widgets.quick_launch.vm(),
-                theme: theme_props,
-            })
-            .map(|event| AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event)))
-        },
-        SidebarItem::Explorer => {
-            sidebar_tree::view(sidebar_tree::SidebarTreeProps {
-                vm: app.widgets.explorer.vm(),
-                theme: theme_props,
-            })
-            .map(|event| AppEvent::Explorer(ExplorerEvent::Intent(event)))
-        },
-    }
-}
-
-/// Render the tab bar + tab content area.
-fn view_tab_area<'a>(
+/// Right panel content: the Files section.
+fn view_right_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let tabs_vm = app.widgets.tabs.vm();
-
-    let tab_bar_props = tab_bar::TabBarProps {
-        tabs: tabs_vm.tabs,
-        active_tab_id: tabs_vm.active_tab_id,
-        new_tab_title: app.shell_session.name().to_string(),
+    sidebar_tree::view(sidebar_tree::SidebarTreeProps {
+        vm: app.widgets.explorer.vm(),
         theme: theme_props,
-    };
-
-    let tab_bar = tab_bar::view(tab_bar_props)
-        .map(|event| AppEvent::Tabs(TabsEvent::Intent(event)));
-
-    let content = view_tab_content(app, theme_props);
-
-    column![tab_bar, content]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    })
+    .map(|event| AppEvent::Explorer(ExplorerEvent::Intent(event)))
 }
 
 /// Render the active tab content based on its type.
@@ -292,20 +308,7 @@ fn view_tab_content<'a>(
 
     match (active_tab_id, active_tab_content) {
         (Some(tab_id), Some(TabContent::Terminal)) => {
-            let vm = app.widgets.terminal_workspace.vm(Some(tab_id));
-            match vm.tab {
-                Some(tab_vm) => {
-                    terminal_pane_grid::view(tab_vm, theme_props.theme.ui())
-                        .map(|event| {
-                            AppEvent::TerminalWorkspace(
-                                TerminalWorkspaceEvent::Intent(event),
-                            )
-                        })
-                },
-                None => {
-                    missing_tab_state(i18n::t(Key::TerminalTabNotInitialized))
-                },
-            }
+            view_terminal_tab(app, tab_id, theme_props)
         },
         (Some(_tab_id), Some(TabContent::Settings)) => {
             settings_form::view(settings_form::SettingsFormProps {
@@ -345,10 +348,44 @@ fn view_tab_content<'a>(
                 )),
             }
         },
-        _ => container(Space::new())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
+        _ => empty_state::view(empty_state::EmptyStateProps {
+            theme: theme_props,
+            on_new_terminal: AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::OpenTerminalTab,
+            )),
+            on_new_launch: AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::HeaderCreateCommand,
+            )),
+        }),
+    }
+}
+
+/// Render the pane grid of a terminal tab. Every pane header names the
+/// machine the tab runs on.
+fn view_terminal_tab<'a>(
+    app: &'a App,
+    tab_id: u64,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let Some(machine) = app.widgets.tabs.active_tab_machine() else {
+        return missing_tab_state(i18n::t(Key::TerminalTabNotInitialized));
+    };
+
+    let vm = app.widgets.terminal_workspace.vm(
+        Some(tab_id),
+        machine.name(app.host_name.as_deref()),
+        machine.target_kind(),
+    );
+
+    match vm.tab {
+        Some(tab_vm) => terminal_pane_grid::view(
+            tab_vm,
+            theme_props.theme.ui(),
+        )
+        .map(|event| {
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(event))
+        }),
+        None => missing_tab_state(i18n::t(Key::TerminalTabNotInitialized)),
     }
 }
 
@@ -398,31 +435,23 @@ fn missing_tab_state<'a>(
         .into()
 }
 
-/// Render the add menu overlay with dismiss layer.
-fn view_add_menu_overlay<'a>(
-    cursor: iced::Point,
-    area_size: Size,
+/// Render the open header menu with its dismiss layer, anchored at the point
+/// where it was opened.
+fn view_header_menu_overlay<'a>(
+    app: &'a App,
+    open: OpenHeaderMenu,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, SidebarIntent, Theme, iced::Renderer> {
-    let menu = Menu::new(theme_props.theme.ui())
-        .item(
-            MenuItem::new(i18n::t(Key::MenuCreateTab))
-                .on_press(SidebarIntent::AddMenuCreateTab),
-        )
-        .item(
-            MenuItem::new(i18n::t(Key::MenuCreateFolder))
-                .on_press(SidebarIntent::AddMenuCreateFolder),
-        )
-        .item(
-            MenuItem::new(i18n::t(Key::MenuCreateQuickLaunch))
-                .on_press(SidebarIntent::AddMenuCreateCommand),
-        );
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let (menu, menu_width, menu_height) = match open.menu() {
+        HeaderMenu::Sessions => view_new_session_menu(app, theme_props),
+        HeaderMenu::Launches => view_new_launch_menu(theme_props),
+    };
 
     let anchor = anchor_position(
-        cursor,
-        area_size,
-        menu::MENU_WIDTH,
-        menu_height_for_items(3),
+        open.cursor(),
+        app.state.screen_size,
+        menu_width,
+        menu_height,
         spacing::SPACE_2,
     );
 
@@ -432,22 +461,99 @@ fn view_add_menu_overlay<'a>(
         ..iced::Padding::ZERO
     };
 
-    let positioned_menu = container(Element::from(menu))
+    let positioned_menu = container(menu)
         .padding(padding)
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(alignment::Horizontal::Left)
         .align_y(alignment::Vertical::Top);
 
+    let dismiss = || {
+        AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::HeaderMenuDismiss,
+        ))
+    };
     let dismiss_layer = mouse_area(
         container(text("")).width(Length::Fill).height(Length::Fill),
     )
-    .on_press(SidebarIntent::DismissAddMenu)
-    .on_right_press(SidebarIntent::DismissAddMenu)
-    .on_move(|position| SidebarIntent::WorkspaceCursorMoved { position });
+    .on_press(dismiss())
+    .on_right_press(dismiss())
+    .on_move(|position| {
+        AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::WorkspaceCursorMoved { position },
+        ))
+    });
 
     iced::widget::stack!(dismiss_layer, positioned_menu)
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+/// The New session menu with its width and height.
+fn view_new_session_menu<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> (Element<'a, AppEvent, Theme, iced::Renderer>, f32, f32) {
+    let active_tab_id = app.widgets.tabs.active_tab_id();
+    let on_split = app
+        .widgets
+        .terminal_workspace
+        .focused_pane(active_tab_id)
+        .map(|(tab_id, pane)| {
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SplitPane {
+                    tab_id,
+                    pane,
+                    axis: pane_grid::Axis::Vertical,
+                },
+            ))
+        });
+    let launches: Vec<_> = app
+        .widgets
+        .quick_launch
+        .top_level_launches()
+        .into_iter()
+        .map(|launch| {
+            let run = QuickLaunchIntent::LaunchNode { path: launch.path };
+            (
+                launch.title,
+                AppEvent::QuickLaunch(QuickLaunchEvent::Intent(run)),
+            )
+        })
+        .collect();
+    let menu_height = new_session_menu::menu_height(launches.len());
+
+    let menu = new_session_menu::view(new_session_menu::NewSessionMenuProps {
+        theme: theme_props,
+        shell_name: app.shell_session.name(),
+        on_new_terminal: AppEvent::Tabs(TabsEvent::Intent(
+            TabsIntent::OpenTerminalTab,
+        )),
+        on_split,
+        launches,
+        on_new_launch: AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::HeaderCreateCommand,
+        )),
+    });
+
+    (menu, new_session_menu::NEW_SESSION_MENU_WIDTH, menu_height)
+}
+
+/// The Launches menu with its width and height.
+fn view_new_launch_menu<'a>(
+    theme_props: ThemeProps<'a>,
+) -> (Element<'a, AppEvent, Theme, iced::Renderer>, f32, f32) {
+    let menu = new_launch_menu::view(new_launch_menu::NewLaunchMenuProps {
+        theme: theme_props,
+        on_intent: |intent| {
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
+        },
+    });
+
+    (
+        menu,
+        otty_ui_kit::components::menu::MENU_WIDTH,
+        new_launch_menu::menu_height(),
+    )
 }

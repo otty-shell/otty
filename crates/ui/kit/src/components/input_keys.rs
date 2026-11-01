@@ -1,8 +1,12 @@
-//! Reports Backspace pressed in an empty, focused text input.
+//! Reports named keys pressed in a focused text input.
 //!
-//! `iced` 0.14 text inputs send nothing when Backspace is pressed on an empty
-//! value, so [`TokenField`](super::token_field::TokenField) wraps its input in
-//! this widget.
+//! `iced` 0.14 text inputs send nothing for Backspace on an empty value, for
+//! ↑ and ↓, and they only drop focus on Esc. [`TokenField`] and
+//! [`CommandPalette`] wrap their input in [`InputKeys`] to turn those keys
+//! into messages.
+//!
+//! [`TokenField`]: super::token_field::TokenField
+//! [`CommandPalette`]: super::command_palette::CommandPalette
 
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::{Operation, Tree, Widget, tree};
@@ -14,32 +18,48 @@ use iced::{
     mouse,
 };
 
-/// Wraps a text input and publishes a message on Backspace when the input is
-/// focused and its value is empty.
-pub(super) struct BackspaceGuard<'a, Message> {
+/// Wraps a text input and publishes the message bound to a named key when
+/// that key is pressed while the input is focused. The key press then does
+/// not reach the input.
+pub(super) struct InputKeys<'a, Message> {
     content: Element<'a, Message>,
-    is_empty: bool,
-    on_backspace: Message,
+    bindings: Vec<(Named, Message)>,
 }
 
-impl<'a, Message> BackspaceGuard<'a, Message> {
-    /// Wraps `input`, a [`text_input`] whose current value is empty when
-    /// `is_empty` is true.
-    pub(super) fn new(
-        input: impl Into<Element<'a, Message>>,
-        is_empty: bool,
-        on_backspace: Message,
-    ) -> Self {
+impl<'a, Message> InputKeys<'a, Message> {
+    /// Wraps `input`, which must be a [`text_input`], with no bound keys.
+    pub(super) fn new(input: impl Into<Element<'a, Message>>) -> Self {
         Self {
             content: input.into(),
-            is_empty,
-            on_backspace,
+            bindings: Vec::new(),
         }
+    }
+
+    /// Sends `message` when `key` is pressed in the focused input.
+    pub(super) fn on_key(mut self, key: Named, message: Message) -> Self {
+        self.bindings.push((key, message));
+        self
+    }
+
+    /// Returns the message bound to the key pressed in `event`.
+    fn bound_message(&self, event: &Event) -> Option<&Message> {
+        let Event::Keyboard(keyboard::Event::KeyPressed {
+            key: keyboard::Key::Named(pressed),
+            ..
+        }) = event
+        else {
+            return None;
+        };
+
+        self.bindings
+            .iter()
+            .find(|(key, _)| key == pressed)
+            .map(|(_, message)| message)
     }
 }
 
 impl<Message: Clone> Widget<Message, Theme, Renderer>
-    for BackspaceGuard<'_, Message>
+    for InputKeys<'_, Message>
 {
     fn size(&self) -> Size<Length> {
         self.content.as_widget().size()
@@ -121,21 +141,14 @@ impl<Message: Clone> Widget<Message, Theme, Renderer>
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        let is_backspace = matches!(
-            event,
-            Event::Keyboard(keyboard::Event::KeyPressed {
-                key: keyboard::Key::Named(Named::Backspace),
-                ..
-            })
-        );
         let is_focused = tree.children[0]
             .state
             .downcast_ref::<text_input::State<
                 <Renderer as text::Renderer>::Paragraph,
             >>()
             .is_focused();
-        if is_backspace && self.is_empty && is_focused {
-            shell.publish(self.on_backspace.clone());
+        if is_focused && let Some(message) = self.bound_message(event) {
+            shell.publish(message.clone());
             shell.capture_event();
 
             return;
@@ -188,10 +201,10 @@ impl<Message: Clone> Widget<Message, Theme, Renderer>
     }
 }
 
-impl<'a, Message: Clone + 'a> From<BackspaceGuard<'a, Message>>
+impl<'a, Message: Clone + 'a> From<InputKeys<'a, Message>>
     for Element<'a, Message>
 {
-    fn from(value: BackspaceGuard<'a, Message>) -> Self {
+    fn from(value: InputKeys<'a, Message>) -> Self {
         Element::new(value)
     }
 }

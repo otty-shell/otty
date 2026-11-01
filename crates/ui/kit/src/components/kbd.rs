@@ -12,9 +12,10 @@ const PADDING_X: f32 = 6.0;
 /// Vertical padding of a key hint.
 const PADDING_Y: f32 = 1.0;
 
-/// Builds the text of a shortcut the way Linux users read it.
+/// Builds the text of a shortcut.
 ///
-/// Modifiers come first in the order Ctrl, Alt, Shift, Super. A single
+/// Modifiers come first in the order Ctrl, Alt, Logo, Shift. `logo_name` is
+/// how the Logo key is written: "Super" on Linux, "Cmd" on macOS. A single
 /// character key is upper-cased; longer key names are kept as given.
 ///
 /// # Example
@@ -24,9 +25,13 @@ const PADDING_Y: f32 = 1.0;
 /// use otty_ui_kit::components::kbd::shortcut_text;
 ///
 /// let modifiers = Modifiers::CTRL | Modifiers::SHIFT;
-/// assert_eq!(shortcut_text(modifiers, "c"), "Ctrl Shift C");
+/// assert_eq!(shortcut_text(modifiers, "c", "Super"), "Ctrl Shift C");
 /// ```
-pub fn shortcut_text(modifiers: Modifiers, key: &str) -> String {
+pub fn shortcut_text(
+    modifiers: Modifiers,
+    key: &str,
+    logo_name: &str,
+) -> String {
     let mut parts: Vec<String> = Vec::new();
     if modifiers.control() {
         parts.push("Ctrl".to_owned());
@@ -34,11 +39,11 @@ pub fn shortcut_text(modifiers: Modifiers, key: &str) -> String {
     if modifiers.alt() {
         parts.push("Alt".to_owned());
     }
+    if modifiers.logo() {
+        parts.push(logo_name.to_owned());
+    }
     if modifiers.shift() {
         parts.push("Shift".to_owned());
-    }
-    if modifiers.logo() {
-        parts.push("Super".to_owned());
     }
 
     if key.chars().count() == 1 {
@@ -89,19 +94,32 @@ mod tests {
     fn shortcut_text_orders_modifiers_and_uppercases_key() {
         let modifiers = Modifiers::SHIFT | Modifiers::CTRL;
 
-        assert_eq!(shortcut_text(modifiers, "c"), "Ctrl Shift C");
+        assert_eq!(shortcut_text(modifiers, "c", "Super"), "Ctrl Shift C");
     }
 
     #[test]
     fn shortcut_text_keeps_named_keys() {
-        assert_eq!(shortcut_text(Modifiers::ALT, "1"), "Alt 1");
-        assert_eq!(shortcut_text(Modifiers::empty(), "Enter"), "Enter");
+        assert_eq!(shortcut_text(Modifiers::ALT, "1", "Super"), "Alt 1");
+        assert_eq!(
+            shortcut_text(Modifiers::empty(), "Enter", "Super"),
+            "Enter"
+        );
     }
 
     #[test]
-    fn shortcut_text_puts_super_last() {
-        let modifiers = Modifiers::LOGO | Modifiers::CTRL | Modifiers::ALT;
+    fn shortcut_text_puts_logo_before_shift() {
+        let modifiers = Modifiers::SHIFT | Modifiers::LOGO | Modifiers::CTRL;
 
-        assert_eq!(shortcut_text(modifiers, "t"), "Ctrl Alt Super T");
+        assert_eq!(
+            shortcut_text(modifiers, "t", "Super"),
+            "Ctrl Super Shift T"
+        );
+    }
+
+    #[test]
+    fn shortcut_text_uses_the_given_logo_name() {
+        let modifiers = Modifiers::LOGO | Modifiers::SHIFT;
+
+        assert_eq!(shortcut_text(modifiers, "e", "Cmd"), "Cmd Shift E");
     }
 }

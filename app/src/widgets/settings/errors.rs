@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-/// Errors emitted while reading, writing, or validating settings.
+/// Errors emitted while reading or writing settings.
 #[derive(Debug, Error)]
 pub(crate) enum SettingsError {
     /// Filesystem operation failed.
@@ -9,7 +9,4 @@ pub(crate) enum SettingsError {
     /// JSON serialization or deserialization failed.
     #[error("settings JSON failed")]
     Json(#[from] serde_json::Error),
-    /// A field value did not pass validation.
-    #[error("validation error: {message}")]
-    Validation { message: String },
 }

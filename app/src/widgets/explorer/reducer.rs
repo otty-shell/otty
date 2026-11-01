@@ -5,17 +5,10 @@ use iced::Task;
 use super::event::{ExplorerEffect, ExplorerEvent, ExplorerIntent};
 use super::state::ExplorerState;
 
-/// Runtime context for the explorer reducer.
-pub(crate) struct ExplorerCtx {
-    /// Pre-resolved CWD of the active shell terminal.
-    pub(crate) active_shell_cwd: Option<PathBuf>,
-}
-
 /// Reduce an explorer intent event into state updates and effects.
 pub(crate) fn reduce(
     state: &mut ExplorerState,
     event: ExplorerIntent,
-    _ctx: &ExplorerCtx,
 ) -> Task<ExplorerEvent> {
     match event {
         ExplorerIntent::NodePressed { path } => {
@@ -111,10 +104,6 @@ mod tests {
     use super::*;
     use crate::widgets::explorer::types::FileNode;
 
-    fn ctx(active_shell_cwd: Option<PathBuf>) -> ExplorerCtx {
-        ExplorerCtx { active_shell_cwd }
-    }
-
     #[test]
     fn given_node_hover_event_when_reduced_then_hover_path_is_updated() {
         let mut state = ExplorerState::default();
@@ -124,7 +113,6 @@ mod tests {
             ExplorerIntent::NodeHovered {
                 path: Some(vec![String::from("src")]),
             },
-            &ctx(None),
         );
 
         let hovered = state.hovered_path().expect("hover path should be set");
@@ -148,7 +136,6 @@ mod tests {
                     false,
                 )],
             },
-            &ctx(None),
         );
 
         assert_eq!(state.tree().len(), 1);
@@ -171,7 +158,6 @@ mod tests {
                     false,
                 )],
             },
-            &ctx(None),
         );
 
         assert!(state.tree().is_empty());
@@ -192,7 +178,6 @@ mod tests {
             ExplorerIntent::SyncRoot {
                 cwd: PathBuf::from("/tmp/new-root"),
             },
-            &ctx(None),
         );
 
         assert_eq!(state.root_label(), Some("new-root"));
@@ -214,7 +199,6 @@ mod tests {
             ExplorerIntent::SyncRoot {
                 cwd: PathBuf::from("/tmp/original"),
             },
-            &ctx(None),
         );
 
         assert_eq!(state.root_label(), Some("original"));
@@ -236,7 +220,6 @@ mod tests {
             ExplorerIntent::DirectoryChanged {
                 directory: root.clone(),
             },
-            &ctx(None),
         );
 
         assert_eq!(task.units(), 1);
@@ -257,7 +240,6 @@ mod tests {
             ExplorerIntent::DirectoryChanged {
                 directory: PathBuf::from("/tmp/other"),
             },
-            &ctx(None),
         );
 
         assert_eq!(task.units(), 0);
@@ -283,7 +265,6 @@ mod tests {
                     false,
                 )],
             },
-            &ctx(None),
         );
 
         assert_eq!(state.tree().len(), 1);
@@ -306,7 +287,6 @@ mod tests {
             ExplorerIntent::NodePressed {
                 path: vec![String::from("src")],
             },
-            &ctx(None),
         );
 
         assert_eq!(state.selected_path(), Some(&vec![String::from("src")]));
@@ -332,7 +312,6 @@ mod tests {
             ExplorerIntent::LoadFailed {
                 message: String::from("boom"),
             },
-            &ctx(None),
         );
 
         assert_eq!(state.tree().len(), 1);

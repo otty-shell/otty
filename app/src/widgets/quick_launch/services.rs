@@ -17,6 +17,7 @@ use super::types::{
     SshSecretKind, SshSecretRequest,
 };
 use crate::services::terminal_settings_for_session;
+use crate::shell_integration::{shell_integration_dir, with_shell_integration};
 
 const QUICK_LAUNCH_SSH_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -70,6 +71,91 @@ pub(crate) async fn prepare_quick_launch_setup(
         settings,
         command: Box::new(command),
     }))
+}
+
+/// Build a domain quick launch command from editor draft state.
+pub(crate) fn build_command(
+    editor: &WizardEditorState,
+) -> Result<QuickLaunch, QuickLaunchWizardError> {
+    let title = editor.title().trim();
+    if title.is_empty() {
+        return Err(QuickLaunchWizardError::TitleRequired);
+    }
+
+    let spec = match editor.command_type() {
+        QuickLaunchType::Custom => {
+            let Some(custom) = editor.custom() else {
+                return Err(QuickLaunchWizardError::MissingCustomDraft);
+            };
+            let program = custom.program().trim();
+            if program.is_empty() {
+                return Err(QuickLaunchWizardError::ProgramRequired);
+            }
+
+            let env = custom
+                .env()
+                .iter()
+                .filter_map(|(key, value)| {
+                    let key = key.trim();
+                    if key.is_empty() {
+                        return None;
+                    }
+                    Some(EnvVar {
+                        key: key.to_string(),
+                        value: value.clone(),
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            let working_directory = custom.working_directory().trim();
+
+            CommandSpec::Custom {
+                custom: CustomCommand {
+                    program: program.to_string(),
+                    args: custom.args().to_vec(),
+                    env,
+                    working_directory: if working_directory.is_empty() {
+                        None
+                    } else {
+                        Some(working_directory.to_string())
+                    },
+                },
+            }
+        },
+        QuickLaunchType::Ssh => {
+            let Some(ssh) = editor.ssh() else {
+                return Err(QuickLaunchWizardError::MissingSshDraft);
+            };
+            let host = ssh.host().trim();
+            if host.is_empty() {
+                return Err(QuickLaunchWizardError::HostRequired);
+            }
+
+            let port = ssh.port().trim();
+            let port = if port.is_empty() {
+                SSH_DEFAULT_PORT
+            } else {
+                port.parse::<u16>()
+                    .map_err(|_| QuickLaunchWizardError::InvalidPort)?
+            };
+
+            CommandSpec::Ssh {
+                ssh: SshCommand {
+                    host: host.to_string(),
+                    port,
+                    user: optional_string(ssh.user()),
+                    identity_file: optional_string(ssh.identity_file()),
+                    extra_args: ssh.extra_args().to_vec(),
+                },
+            }
+        },
+    };
+
+    Ok(QuickLaunch {
+        title: title.to_string(),
+        spec,
+        exit_behavior: editor.exit_behavior(),
+    })
 }
 
 /// Validate a quick launch command before execution.
@@ -206,16 +292,23 @@ fn command_session(
     cancel: &Arc<AtomicBool>,
 ) -> SessionKind {
     match command.spec() {
-        CommandSpec::Custom { custom } => {
-            SessionKind::from_local_options(custom_session(custom))
-        },
+        CommandSpec::Custom { custom } => SessionKind::from_local_options(
+            custom_session(custom, &shell_integration_dir()),
+        ),
         CommandSpec::Ssh { ssh } => {
             SessionKind::from_ssh_options(ssh_session(ssh, secret, cancel))
         },
     }
 }
 
-fn custom_session(custom: &super::types::CustomCommand) -> LocalSessionOptions {
+/// Build the local session of a custom launch. A launch of a plain zsh or
+/// bash, with no arguments, gets the OTTY shell integration written to
+/// `integration_dir`, so the Files panel and the session row follow it like
+/// a shell tab.
+fn custom_session(
+    custom: &super::types::CustomCommand,
+    integration_dir: &Path,
+) -> LocalSessionOptions {
     let mut options = LocalSessionOptions::default()
         .with_program(&expand_home_dir(custom.program()))
         .with_args(custom.args().to_vec());
@@ -229,7 +322,17 @@ fn custom_session(custom: &super::types::CustomCommand) -> LocalSessionOptions {
             options.with_working_directory(PathBuf::from(expand_home_dir(dir)));
     }
 
-    options
+    if !custom.args().is_empty() {
+        return options;
+    }
+
+    match with_shell_integration(options.clone(), integration_dir) {
+        Ok(integrated) => integrated,
+        Err(err) => {
+            log::warn!("shell integration for a launch failed: {err}");
+            options
+        },
+    }
 }
 
 fn ssh_session(
@@ -397,91 +500,6 @@ fn expand_home_prefix(path: &str, home: Option<&str>) -> String {
     path.to_string()
 }
 
-/// Build a domain quick launch command from editor draft state.
-pub(crate) fn build_command(
-    editor: &WizardEditorState,
-) -> Result<QuickLaunch, QuickLaunchWizardError> {
-    let title = editor.title().trim();
-    if title.is_empty() {
-        return Err(QuickLaunchWizardError::TitleRequired);
-    }
-
-    let spec = match editor.command_type() {
-        QuickLaunchType::Custom => {
-            let Some(custom) = editor.custom() else {
-                return Err(QuickLaunchWizardError::MissingCustomDraft);
-            };
-            let program = custom.program().trim();
-            if program.is_empty() {
-                return Err(QuickLaunchWizardError::ProgramRequired);
-            }
-
-            let env = custom
-                .env()
-                .iter()
-                .filter_map(|(key, value)| {
-                    let key = key.trim();
-                    if key.is_empty() {
-                        return None;
-                    }
-                    Some(EnvVar {
-                        key: key.to_string(),
-                        value: value.clone(),
-                    })
-                })
-                .collect::<Vec<_>>();
-
-            let working_directory = custom.working_directory().trim();
-
-            CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: program.to_string(),
-                    args: custom.args().to_vec(),
-                    env,
-                    working_directory: if working_directory.is_empty() {
-                        None
-                    } else {
-                        Some(working_directory.to_string())
-                    },
-                },
-            }
-        },
-        QuickLaunchType::Ssh => {
-            let Some(ssh) = editor.ssh() else {
-                return Err(QuickLaunchWizardError::MissingSshDraft);
-            };
-            let host = ssh.host().trim();
-            if host.is_empty() {
-                return Err(QuickLaunchWizardError::HostRequired);
-            }
-
-            let port = ssh.port().trim();
-            let port = if port.is_empty() {
-                SSH_DEFAULT_PORT
-            } else {
-                port.parse::<u16>()
-                    .map_err(|_| QuickLaunchWizardError::InvalidPort)?
-            };
-
-            CommandSpec::Ssh {
-                ssh: SshCommand {
-                    host: host.to_string(),
-                    port,
-                    user: optional_string(ssh.user()),
-                    identity_file: optional_string(ssh.identity_file()),
-                    extra_args: ssh.extra_args().to_vec(),
-                },
-            }
-        },
-    };
-
-    Ok(QuickLaunch {
-        title: title.to_string(),
-        spec,
-        exit_behavior: editor.exit_behavior(),
-    })
-}
-
 fn optional_string(value: &str) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -631,6 +649,48 @@ mod tests {
         );
     }
 
+    fn custom_command(program: &str, args: &[&str]) -> CustomCommand {
+        CustomCommand {
+            program: String::from(program),
+            args: args.iter().map(|arg| String::from(*arg)).collect(),
+            env: Vec::new(),
+            working_directory: Some(String::from("/tmp")),
+        }
+    }
+
+    #[test]
+    fn given_plain_zsh_launch_when_session_built_then_shell_integration_is_added()
+     {
+        let dir = std::env::temp_dir()
+            .join(format!("otty-launch-zsh-{}", std::process::id()));
+
+        let options =
+            custom_session(&custom_command("/usr/bin/zsh", &[]), &dir);
+
+        assert_eq!(options.program(), "/usr/bin/zsh");
+        assert_eq!(
+            options.envs().get("ZDOTDIR"),
+            Some(&dir.to_string_lossy().to_string()),
+        );
+        assert_eq!(options.working_directory(), &Some(PathBuf::from("/tmp")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn given_zsh_launch_with_args_when_session_built_then_it_runs_as_saved() {
+        let dir = std::env::temp_dir()
+            .join(format!("otty-launch-zsh-args-{}", std::process::id()));
+
+        let options = custom_session(
+            &custom_command("/usr/bin/zsh", &["-c", "make"]),
+            &dir,
+        );
+
+        assert_eq!(options.args(), &[String::from("-c"), String::from("make")]);
+        assert!(options.envs().get("ZDOTDIR").is_none());
+        assert!(!dir.exists());
+    }
+
     #[test]
     fn given_home_prefix_when_expanding_then_home_directory_is_substituted() {
         let home = Some("/home/user");
@@ -688,7 +748,8 @@ mod tests {
             working_directory: Some(String::from("$HOME/project")),
         };
 
-        let options = custom_session(&custom);
+        // `tool` is not a shell, so nothing is written to this folder.
+        let options = custom_session(&custom, &std::env::temp_dir());
 
         assert_eq!(options.program(), &format!("{home}/bin/tool"));
         assert_eq!(

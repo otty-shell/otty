@@ -6,8 +6,13 @@ use iced::{Border, Element, Length, Padding};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
-/// Icon edge length inside the button (`svg { width: 15px }`).
-const ICON_SIZE: f32 = 15.0;
+/// Icon edge length inside the button. The design says 15px, but 16 is a
+/// whole, even number of screen pixels at 100%, 125%, 150%, 175% and 200%
+/// scale and sits on a whole pixel inside both button sizes. iced draws an
+/// svg with nearest sampling and rounds the top and bottom of the drawn area
+/// separately, so at 15px the icon lost or doubled a row at some heights
+/// (for example the Launches plus under exactly one session at 125%).
+const ICON_SIZE: f32 = 16.0;
 
 /// Size of an [`IconButton`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +59,7 @@ pub struct IconButton<Message> {
     palette: UiPalette,
     size: IconButtonSize,
     tone: IconTone,
+    has_hover_background: bool,
     on_press: Option<Message>,
 }
 
@@ -71,6 +77,7 @@ impl<Message> IconButton<Message> {
             palette: palette.clone(),
             size: IconButtonSize::Medium,
             tone: IconTone::Default,
+            has_hover_background: true,
             on_press: None,
         }
     }
@@ -84,6 +91,14 @@ impl<Message> IconButton<Message> {
     /// Sets the idle icon tone.
     pub fn tone(mut self, tone: IconTone) -> Self {
         self.tone = tone;
+        self
+    }
+
+    /// Sets whether a background shows while the button is hovered or
+    /// pressed. On by default. Without it only the icon turns brighter on
+    /// hover, for a cross drawn over a row that has its own background.
+    pub fn hover_background(mut self, has_hover_background: bool) -> Self {
+        self.has_hover_background = has_hover_background;
         self
     }
 
@@ -107,7 +122,8 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
             IconTone::Accent => value.palette.accent(),
         };
         let hover = value.palette.text_strong();
-        let raised = value.palette.surface_raised();
+        let has_hover_background = value.has_hover_background;
+        let palette = value.palette.clone();
 
         let icon = svg(value.icon).width(ICON_SIZE).height(ICON_SIZE).style(
             move |_, status| svg::Style {
@@ -128,17 +144,8 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
         .height(edge)
         .padding(0)
         .on_press_maybe(value.on_press)
-        .style(move |_, status| button::Style {
-            background: matches!(
-                status,
-                button::Status::Hovered | button::Status::Pressed
-            )
-            .then(|| raised.into()),
-            border: Border {
-                radius: radius::RADIUS_SM.into(),
-                ..Border::default()
-            },
-            ..button::Style::default()
+        .style(move |_, status| {
+            button_style(&palette, has_hover_background, status)
         });
 
         let hint = tooltip_hint(value.label, &value.palette);
@@ -149,7 +156,7 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
 }
 
 /// Builds the tooltip bubble shown over icon buttons.
-fn tooltip_hint<'a, Message: 'a>(
+pub(super) fn tooltip_hint<'a, Message: 'a>(
     label: String,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
@@ -170,4 +177,113 @@ fn tooltip_hint<'a, Message: 'a>(
             ..container::Style::default()
         })
         .into()
+}
+
+/// Style of the button: a raised background while hovered or pressed,
+/// unless `has_hover_background` is off.
+fn button_style(
+    palette: &UiPalette,
+    has_hover_background: bool,
+    status: button::Status,
+) -> button::Style {
+    let is_active =
+        matches!(status, button::Status::Hovered | button::Status::Pressed);
+    let background = (has_hover_background && is_active)
+        .then(|| palette.surface_raised().into());
+
+    button::Style {
+        background,
+        border: Border {
+            radius: radius::RADIUS_SM.into(),
+            ..Border::default()
+        },
+        ..button::Style::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::components::glyph;
+
+    #[test]
+    fn given_default_button_when_hovered_or_pressed_then_background_is_raised()
+    {
+        let palette = UiPalette::otty_dark();
+        let raised = Some(palette.surface_raised().into());
+
+        let hovered = button_style(&palette, true, button::Status::Hovered);
+        let pressed = button_style(&palette, true, button::Status::Pressed);
+        let idle = button_style(&palette, true, button::Status::Active);
+
+        assert_eq!(hovered.background, raised);
+        assert_eq!(pressed.background, raised);
+        assert_eq!(idle.background, None);
+    }
+
+    #[test]
+    fn given_button_without_hover_background_when_hovered_then_no_background_is_drawn()
+     {
+        let palette = UiPalette::otty_dark();
+
+        for status in [
+            button::Status::Active,
+            button::Status::Hovered,
+            button::Status::Pressed,
+            button::Status::Disabled,
+        ] {
+            let style = button_style(&palette, false, status);
+
+            assert_eq!(style.background, None, "{status:?}");
+        }
+    }
+
+    #[test]
+    fn given_new_button_then_it_has_a_hover_background_until_turned_off() {
+        let palette = UiPalette::otty_dark();
+
+        let button = IconButton::<()>::new(glyph::cross(), "Close", &palette);
+        let plain = IconButton::<()>::new(glyph::cross(), "Close", &palette)
+            .hover_background(false);
+
+        assert!(button.has_hover_background);
+        assert!(!plain.has_hover_background);
+    }
+
+    #[test]
+    fn given_common_display_scales_when_icon_drawn_anywhere_then_no_row_is_lost()
+     {
+        // iced rasterizes an svg to `ceil(edge * scale)` pixels and draws it
+        // with nearest sampling in a quad whose top and bottom edges are
+        // each rounded to the pixel grid. When the rounded quad is a row
+        // shorter or taller than the texture, a row of the icon is dropped
+        // or doubled. A header moves down by whole pixels as rows are added
+        // above it, so every whole-pixel position of the button must keep
+        // all rows.
+        for scale in [1.0, 1.25, 1.5, 1.75, 2.0] {
+            let texture_rows = (ICON_SIZE * scale).ceil();
+
+            for button_top in 0..240 {
+                for edge in [size::CONTROL_SM, size::CONTROL_MD] {
+                    let top = button_top as f32 + (edge - ICON_SIZE) / 2.0;
+
+                    let rows = drawn_rows(top, scale);
+
+                    assert_eq!(
+                        rows, texture_rows,
+                        "scale {scale}, button top {button_top}, edge {edge}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Physical rows the wgpu image shader covers for an icon whose top is
+    /// at `top` logical pixels: it rounds each edge on its own, ties to
+    /// even (WGSL `round`).
+    fn drawn_rows(top: f32, scale: f32) -> f32 {
+        let bottom = top + ICON_SIZE;
+
+        (bottom * scale).round_ties_even() - (top * scale).round_ties_even()
+    }
 }

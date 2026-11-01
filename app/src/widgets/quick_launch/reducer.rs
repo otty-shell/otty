@@ -137,19 +137,6 @@ pub(crate) fn reduce(
                 parent_path: parent,
             })
         },
-        DeleteSelected => {
-            let Some(path) = state.selected_path_cloned() else {
-                return Task::none();
-            };
-            let Some(node) = state.data().node(&path) else {
-                return Task::none();
-            };
-            if matches!(node, QuickLaunchNode::Folder(_)) {
-                remove_node(state, &path);
-                state.clear_selected_path();
-            }
-            Task::none()
-        },
         NodePressed { path } => {
             state.set_pressed_path(Some(path.clone()));
             state.set_selected_path(Some(path.clone()));
@@ -178,6 +165,9 @@ pub(crate) fn reduce(
             }
             Task::none()
         },
+        LaunchNode { path } => {
+            handle_node_left_click(state, ctx.terminal_settings, path)
+        },
         InlineEditChanged(value) => {
             if let Some(edit) = state.inline_edit_mut() {
                 edit.value = value;
@@ -186,9 +176,6 @@ pub(crate) fn reduce(
             Task::none()
         },
         InlineEditSubmit => apply_inline_edit(state),
-        WizardSaveRequested(request) => {
-            apply_editor_save_request(state, request)
-        },
         ContextMenuAction(action) => {
             handle_context_menu_action(state, ctx.terminal_settings, action)
         },
@@ -236,12 +223,6 @@ pub(crate) fn reduce(
             emit_effect(QuickLaunchEffect::CloseTabRequested { tab_id })
         },
         WizardSave { tab_id } => reduce_wizard_save(state, tab_id),
-        WizardSetError { tab_id, message } => {
-            if let Some(editor) = state.wizard_mut().editor_mut(tab_id) {
-                editor.set_error(message);
-            }
-            Task::none()
-        },
         WizardUpdateTitle { tab_id, value } => {
             reduce_wizard_field(state, tab_id, |e| e.set_title(value))
         },
@@ -326,7 +307,6 @@ pub(crate) fn reduce(
             }
             Task::none()
         },
-        _ => Task::none(),
     }
 }
 
@@ -1183,10 +1163,11 @@ mod tests {
     use otty_ui_term::settings::Settings;
 
     use super::super::types::{
-        CommandSpec, CustomCommand, SshSecretKind, SshSecretRequest,
+        CommandSpec, CustomCommand, SshCommand, SshSecretKind, SshSecretRequest,
     };
     use super::*;
     use crate::domain::exit_behavior::ExitBehavior;
+    use crate::testing::task_outputs::collect_outputs;
 
     fn ctx(settings: &Settings) -> QuickLaunchCtx<'_> {
         QuickLaunchCtx {
@@ -1212,29 +1193,6 @@ mod tests {
     }
 
     #[test]
-    fn given_selected_folder_when_delete_selected_then_folder_is_removed() {
-        let mut state = QuickLaunchState::default();
-        state.data_mut().root.children.push(QuickLaunchNode::Folder(
-            QuickLaunchFolder {
-                title: String::from("Folder"),
-                expanded: true,
-                children: Vec::new(),
-            },
-        ));
-        state.set_selected_path(Some(vec![String::from("Folder")]));
-
-        let settings = Settings::default();
-        let _task = reduce(
-            &mut state,
-            QuickLaunchIntent::DeleteSelected,
-            &ctx(&settings),
-        );
-
-        assert!(state.data().root.children.is_empty());
-        assert!(state.selected_path().is_none());
-    }
-
-    #[test]
     fn given_unknown_node_when_released_then_reducer_ignores_event() {
         let mut state = QuickLaunchState::default();
         let settings = Settings::default();
@@ -1250,7 +1208,7 @@ mod tests {
     }
 
     #[test]
-    fn given_editor_create_save_request_when_reduced_then_command_is_added() {
+    fn given_editor_create_save_request_when_applied_then_command_is_added() {
         let mut state = QuickLaunchState::default();
         state.data_mut().root = QuickLaunchFolder {
             title: String::from("Root"),
@@ -1266,12 +1224,7 @@ mod tests {
             command: sample_command(),
         };
 
-        let settings = Settings::default();
-        let _task = reduce(
-            &mut state,
-            QuickLaunchIntent::WizardSaveRequested(request),
-            &ctx(&settings),
-        );
+        let _task = apply_editor_save_request(&mut state, request);
 
         assert_eq!(state.data().root.children.len(), 1);
         assert!(state.is_dirty());
@@ -1950,25 +1903,6 @@ mod tests {
     }
 
     #[test]
-    fn given_wizard_set_error_when_reduced_then_editor_error_is_set() {
-        let mut state = QuickLaunchState::default();
-        state.wizard_mut().initialize_create(1, vec![]);
-
-        let settings = Settings::default();
-        let _task = reduce(
-            &mut state,
-            QuickLaunchIntent::WizardSetError {
-                tab_id: 1,
-                message: String::from("oops"),
-            },
-            &ctx(&settings),
-        );
-
-        let editor = state.wizard().editor(1).expect("editor should exist");
-        assert_eq!(editor.error(), Some("oops"));
-    }
-
-    #[test]
     fn given_wizard_select_command_type_in_create_mode_when_reduced_then_type_changes()
      {
         let mut state = QuickLaunchState::default();
@@ -2194,7 +2128,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn given_editor_edit_save_request_when_reduced_then_command_is_updated() {
+    fn given_editor_edit_save_request_when_applied_then_command_is_updated() {
         let mut state = QuickLaunchState::default();
         state
             .data_mut()
@@ -2221,53 +2155,10 @@ mod tests {
             },
         };
 
-        let settings = Settings::default();
-        let _task = reduce(
-            &mut state,
-            QuickLaunchIntent::WizardSaveRequested(request),
-            &ctx(&settings),
-        );
+        let _task = apply_editor_save_request(&mut state, request);
 
         assert_eq!(state.data().root.children[0].title(), "Updated");
         assert!(state.is_dirty());
-    }
-
-    // -----------------------------------------------------------------------
-    // Delete selected (command node) does nothing
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn given_selected_command_when_delete_selected_then_command_is_not_removed()
-    {
-        let mut state = QuickLaunchState::default();
-        state
-            .data_mut()
-            .root
-            .children
-            .push(QuickLaunchNode::Command(sample_command()));
-        state.set_selected_path(Some(vec![String::from("Demo")]));
-
-        let settings = Settings::default();
-        let _task = reduce(
-            &mut state,
-            QuickLaunchIntent::DeleteSelected,
-            &ctx(&settings),
-        );
-
-        // DeleteSelected only removes folders, not commands
-        assert_eq!(state.data().root.children.len(), 1);
-    }
-
-    #[test]
-    fn given_no_selection_when_delete_selected_then_nothing_happens() {
-        let mut state = QuickLaunchState::default();
-        let settings = Settings::default();
-        let _task = reduce(
-            &mut state,
-            QuickLaunchIntent::DeleteSelected,
-            &ctx(&settings),
-        );
-        assert!(state.data().root.children.is_empty());
     }
 
     // -----------------------------------------------------------------------
@@ -3063,5 +2954,183 @@ mod tests {
         );
 
         assert_eq!(child_titles(&state, &[]), vec![String::from("Demo")]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Launch flow tests
+    // -----------------------------------------------------------------------
+
+    fn ssh_command_node(title: &str) -> QuickLaunchNode {
+        QuickLaunchNode::Command(QuickLaunch {
+            title: String::from(title),
+            spec: CommandSpec::Ssh {
+                ssh: SshCommand {
+                    host: String::from("example.com"),
+                    port: 22,
+                    user: Some(String::from("alice")),
+                    identity_file: Some(String::from("~/.ssh/id_ed25519")),
+                    extra_args: Vec::new(),
+                },
+            },
+            exit_behavior: ExitBehavior::Close,
+        })
+    }
+
+    /// Click a node the way the tree does: press, then release on it.
+    ///
+    /// The release starts the launch setup task; it is dropped here so no
+    /// process or SSH connection is started.
+    fn click(state: &mut QuickLaunchState, node: &NodePath) {
+        run(state, QuickLaunchIntent::NodePressed { path: node.clone() });
+        run(
+            state,
+            QuickLaunchIntent::NodeReleased { path: node.clone() },
+        );
+    }
+
+    fn launch_id(state: &QuickLaunchState, node: &NodePath) -> u64 {
+        state
+            .launch_info(node)
+            .expect("clicked command should be launching")
+            .id
+    }
+
+    #[test]
+    fn given_launch_node_intent_when_reduced_then_command_starts_like_a_click()
+    {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let node = path(&["Demo"]);
+
+        run(
+            &mut state,
+            QuickLaunchIntent::LaunchNode { path: node.clone() },
+        );
+
+        assert!(state.is_launching(&node));
+        assert_eq!(state.selected_path(), Some(&node));
+    }
+
+    #[test]
+    fn given_command_clicked_when_setup_is_prepared_then_terminal_tab_is_requested()
+     {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let node = path(&["Demo"]);
+
+        click(&mut state, &node);
+
+        assert!(state.is_launching(&node));
+        assert_eq!(state.selected_path(), Some(&node));
+
+        let settings = Settings::default();
+        let prepared = PreparedQuickLaunch {
+            path: node.clone(),
+            launch_id: launch_id(&state, &node),
+            title: String::from("Demo"),
+            settings: settings.clone(),
+            command: Box::new(sample_command()),
+        };
+        let events = collect_outputs(reduce(
+            &mut state,
+            QuickLaunchIntent::SetupCompleted(
+                QuickLaunchSetupOutcome::Prepared(Box::new(prepared)),
+            ),
+            &ctx(&settings),
+        ));
+
+        assert!(state.launching().is_empty());
+        assert!(matches!(
+            events.as_slice(),
+            [QuickLaunchEvent::Effect(
+                QuickLaunchEffect::OpenCommandTerminalTab { title, .. }
+            )] if title == "Demo"
+        ));
+    }
+
+    #[test]
+    fn given_launching_command_when_clicked_again_then_no_second_launch_starts()
+    {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let node = path(&["Demo"]);
+        click(&mut state, &node);
+        let first_launch = launch_id(&state, &node);
+
+        click(&mut state, &node);
+
+        assert_eq!(launch_id(&state, &node), first_launch);
+        assert_eq!(state.launching().len(), 1);
+    }
+
+    #[test]
+    fn given_command_clicked_when_setup_fails_then_error_tab_is_requested() {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let node = path(&["Demo"]);
+        click(&mut state, &node);
+        let settings = Settings::default();
+        let current_launch = launch_id(&state, &node);
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            QuickLaunchIntent::SetupCompleted(
+                QuickLaunchSetupOutcome::Failed {
+                    path: node.clone(),
+                    launch_id: current_launch,
+                    command: Box::new(sample_command()),
+                    error: Arc::new(
+                        super::super::errors::QuickLaunchError::ProgramRequired,
+                    ),
+                },
+            ),
+            &ctx(&settings),
+        ));
+
+        assert!(state.launching().is_empty());
+        assert!(matches!(
+            events.as_slice(),
+            [QuickLaunchEvent::Effect(
+                QuickLaunchEffect::OpenErrorTab { .. }
+            )]
+        ));
+    }
+
+    #[test]
+    fn given_ssh_command_clicked_when_passphrase_is_needed_then_prompt_opens_and_cancel_closes_it()
+     {
+        let mut state = state_with_root(vec![ssh_command_node("Prod")]);
+        let node = path(&["Prod"]);
+        let request = SshSecretRequest::new(
+            SshSecretKind::KeyPassphrase,
+            String::from("~/.ssh/id_ed25519"),
+            false,
+        );
+
+        click(&mut state, &node);
+
+        assert!(state.is_launching(&node));
+
+        let current_launch = launch_id(&state, &node);
+        run(
+            &mut state,
+            QuickLaunchIntent::SetupCompleted(
+                QuickLaunchSetupOutcome::SecretRequired {
+                    path: node.clone(),
+                    launch_id: current_launch,
+                    command: Box::new(QuickLaunch {
+                        title: String::from("Prod"),
+                        ..sample_command()
+                    }),
+                    request: request.clone(),
+                },
+            ),
+        );
+
+        let prompt = state.secret_prompt().expect("prompt should be open");
+        assert_eq!(prompt.request(), &request);
+        assert!(state.launching().is_empty());
+
+        run(&mut state, QuickLaunchIntent::SecretPromptCancel);
+
+        assert!(state.secret_prompt().is_none());
+        assert!(state.launching().is_empty());
+        assert!(!state.is_launching(&node));
     }
 }

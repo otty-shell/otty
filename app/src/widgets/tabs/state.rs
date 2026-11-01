@@ -64,10 +64,16 @@ impl TabsState {
         self.active_tab_id = tab_id;
     }
 
-    /// Update title for an existing tab.
-    pub(super) fn set_title(&mut self, tab_id: u64, title: String) {
+    /// Update the title and folder name of an existing tab.
+    pub(super) fn set_title(
+        &mut self,
+        tab_id: u64,
+        title: String,
+        folder: Option<String>,
+    ) {
         if let Some(tab) = self.tab_items.get_mut(&tab_id) {
             tab.set_title(title);
+            tab.set_folder(folder);
         }
     }
 

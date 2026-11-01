@@ -6,6 +6,7 @@ use thiserror::Error;
 use crate::dcs::MAX_DCS_CONTENT_BYTES;
 
 const MAX_CMD_LEN: usize = 1024;
+
 const MAX_CWD_LEN: usize = 512;
 
 #[derive(Debug, Error)]
@@ -45,6 +46,17 @@ pub enum BlockPhase {
     Precmd,
 }
 
+impl fmt::Display for BlockPhase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Preexec => "preexec",
+            Self::Exit => "exit",
+            Self::Precmd => "precmd",
+        };
+        f.write_str(s)
+    }
+}
+
 /// Metadata describing a single terminal block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockMeta {
@@ -80,21 +92,6 @@ struct BlockDcsPayload {
     exit_code: Option<i32>,
     #[serde(default)]
     shell: Option<String>,
-}
-
-impl fmt::Display for BlockPhase {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::Preexec => "preexec",
-            Self::Exit => "exit",
-            Self::Precmd => "precmd",
-        };
-        f.write_str(s)
-    }
-}
-
-fn truncate_opt(value: Option<String>, max_chars: usize) -> Option<String> {
-    value.map(|s| s.chars().take(max_chars).collect())
 }
 
 /// Try to parse a block event from a completed DCS payload.
@@ -156,6 +153,10 @@ pub(crate) fn parse_block_payload(
     };
 
     Ok(BlockEvent { phase, meta })
+}
+
+fn truncate_opt(value: Option<String>, max_chars: usize) -> Option<String> {
+    value.map(|s| s.chars().take(max_chars).collect())
 }
 
 #[cfg(test)]

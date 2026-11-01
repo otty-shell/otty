@@ -2,17 +2,21 @@ use iced::widget::{Id, container, mouse_area, pane_grid, text_input};
 use iced::{Background, Element, Length, Point, Size, alignment};
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::spacing;
+use otty_ui_kit::{size, spacing};
 
-use crate::geometry::{anchor_position, menu_height_for_items};
+use crate::geometry::anchor_position;
 use crate::i18n::{self, Key};
+use crate::shortcuts::AppShortcut;
 use crate::theme::ThemeProps;
 use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
-use crate::widgets::terminal_workspace::shortcuts::split_vertically_shortcut_label;
 
 /// Size of the invisible text field that keeps keyboard focus while the menu
 /// is open. It is not a design value, so it has no token.
 const FOCUS_TRAP_SIZE: f32 = 1.0;
+
+/// Height of a menu separator: 1px line plus 4px margin above and below, as
+/// drawn by the kit menu.
+const SEPARATOR_HEIGHT: f32 = 9.0;
 
 /// Props for rendering a pane context menu.
 #[derive(Debug, Clone)]
@@ -46,8 +50,8 @@ pub(crate) fn view<'a>(
                 tab_id,
                 terminal_id,
             },
-        ));
-    let mut item_count = 2;
+        ))
+        .separator();
 
     if props.has_block_selection {
         menu = menu
@@ -68,38 +72,38 @@ pub(crate) fn view<'a>(
                     tab_id,
                     terminal_id,
                 },
-            ));
-        item_count += 3;
+            ))
+            .separator();
     }
 
     menu = menu
-        .item(MenuItem::new(i18n::t(Key::SplitHorizontally)).on_press(
-            TerminalWorkspaceIntent::SplitPane {
-                tab_id,
-                pane,
-                axis: pane_grid::Axis::Horizontal,
-            },
-        ))
         .item(
-            MenuItem::new(i18n::t(Key::SplitVertically))
-                .shortcut(split_vertically_shortcut_label())
+            MenuItem::new(i18n::t(Key::SplitRight))
+                .shortcut(AppShortcut::SplitPane.label())
                 .on_press(TerminalWorkspaceIntent::SplitPane {
                     tab_id,
                     pane,
                     axis: pane_grid::Axis::Vertical,
                 }),
         )
+        .item(MenuItem::new(i18n::t(Key::SplitDown)).on_press(
+            TerminalWorkspaceIntent::SplitPane {
+                tab_id,
+                pane,
+                axis: pane_grid::Axis::Horizontal,
+            },
+        ))
+        .separator()
         .item(
             MenuItem::new(i18n::t(Key::ClosePane))
                 .on_press(TerminalWorkspaceIntent::ClosePane { tab_id, pane }),
         );
-    item_count += 3;
 
     let anchor = anchor_position(
         props.cursor,
         props.grid_size,
         menu::MENU_WIDTH,
-        menu_height_for_items(item_count),
+        pane_menu_height(props.has_block_selection),
         spacing::SPACE_2,
     );
 
@@ -148,6 +152,15 @@ pub(crate) fn view<'a>(
     .into()
 }
 
+/// Total height of the pane menu, used to keep it inside the pane grid.
+fn pane_menu_height(has_block_selection: bool) -> f32 {
+    let (rows, separators) = if has_block_selection { (8, 3) } else { (5, 2) };
+
+    2.0 * menu::MENU_PADDING
+        + size::ROW * rows as f32
+        + SEPARATOR_HEIGHT * separators as f32
+}
+
 fn focus_trap(
     tab_id: u64,
     id: Id,
@@ -176,4 +189,29 @@ fn focus_trap(
             }
         })
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_ui_kit::components::menu;
+    use otty_ui_kit::size;
+
+    use super::{SEPARATOR_HEIGHT, pane_menu_height};
+
+    #[test]
+    fn given_no_block_selection_when_height_computed_then_five_rows_and_two_separators()
+     {
+        let expected =
+            2.0 * menu::MENU_PADDING + 5.0 * size::ROW + 2.0 * SEPARATOR_HEIGHT;
+
+        assert_eq!(pane_menu_height(false), expected);
+    }
+
+    #[test]
+    fn given_block_selection_when_height_computed_then_three_rows_and_one_separator_are_added()
+     {
+        let growth = pane_menu_height(true) - pane_menu_height(false);
+
+        assert_eq!(growth, 3.0 * size::ROW + SEPARATOR_HEIGHT);
+    }
 }

@@ -22,7 +22,7 @@ log = "0.4.29"
 anyhow = "1.0.102"
 mio = "^1.1.1"
 cursor-icon = { version = "1.2.0", default-features = false }
-nix = { version = "0.31.2", features = ["term", "fs"]}
+nix = { version = "0.31.2", features = ["term", "fs", "hostname"]}
 signal-hook = "0.4.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.149"

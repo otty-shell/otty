@@ -7,6 +7,7 @@ use crate::app::App;
 use crate::layout::screen_size_from_window;
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::explorer::ExplorerEvent;
+use crate::widgets::palette::PaletteEvent;
 use crate::widgets::quick_launch::QuickLaunchEvent;
 use crate::widgets::settings::SettingsEvent;
 use crate::widgets::sidebar::SidebarEvent;
@@ -17,8 +18,10 @@ use crate::widgets::terminal_workspace::{
 
 pub(crate) mod chrome;
 pub(crate) mod explorer;
+pub(crate) mod palette;
 pub(crate) mod quick_launch;
 pub(crate) mod settings;
+pub(crate) mod shortcuts;
 pub(crate) mod sidebar;
 pub(crate) mod tabs;
 pub(crate) mod terminal_workspace;
@@ -32,6 +35,7 @@ pub(crate) enum AppEvent {
     TerminalWorkspace(TerminalWorkspaceEvent),
     Explorer(ExplorerEvent),
     Settings(SettingsEvent),
+    Palette(PaletteEvent),
     IcedReady,
     SyncTerminalGridSizes,
     Keyboard(iced::keyboard::Event),
@@ -39,12 +43,11 @@ pub(crate) enum AppEvent {
     ResizeWindow(Direction),
 }
 
+/// Route an app event to the handler of the widget it belongs to.
 pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
         AppEvent::IcedReady => Task::done(AppEvent::Tabs(TabsEvent::Intent(
-            TabsIntent::OpenTerminalTab {
-                title: app.shell_session.name().to_string(),
-            },
+            TabsIntent::OpenTerminalTab,
         ))),
         AppEvent::Sidebar(event) => sidebar::handle(app, event),
         AppEvent::Chrome(event) => chrome::handle(app, event),
@@ -55,12 +58,15 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         },
         AppEvent::Explorer(event) => explorer::handle(app, event),
         AppEvent::Settings(event) => settings::handle(app, event),
+        AppEvent::Palette(event) => palette::handle(app, event),
         AppEvent::SyncTerminalGridSizes => Task::done(
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::SyncPaneGridSize,
             )),
         ),
-        AppEvent::Keyboard(_event) => Task::none(),
+        // Only keys no widget captured arrive here, so a shortcut a focused
+        // terminal already reported does not run twice.
+        AppEvent::Keyboard(event) => shortcuts::handle_key_event(app, &event),
         AppEvent::Window(iced::window::Event::Resized(size)) => {
             app.window_size = size;
             app.state.window_size = size;
@@ -80,5 +86,40 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             window::latest().and_then(move |id| window::drag_resize(id, dir))
         },
         AppEvent::Window(_) => Task::none(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::keyboard::key::{NativeCode, Physical};
+    use iced::keyboard::{Event, Key, Location};
+
+    use super::*;
+    use crate::shortcuts::{AppShortcut, Platform};
+    use crate::testing::task_outputs::collect_outputs;
+
+    #[test]
+    fn keyboard_event_runs_the_app_shortcut_it_stands_for() {
+        let (mut app, _) = App::new();
+        let keys = AppShortcut::Settings.keys(Platform::current());
+        let event = Event::KeyPressed {
+            key: Key::Character(keys.key().into()),
+            modified_key: Key::Character(keys.key().into()),
+            physical_key: Physical::Unidentified(NativeCode::Unidentified),
+            location: Location::Standard,
+            modifiers: keys.modifiers(),
+            text: None,
+            repeat: false,
+        };
+
+        let events =
+            collect_outputs(handle(&mut app, AppEvent::Keyboard(event)));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::OpenSettingsTab
+            ))]
+        ));
     }
 }

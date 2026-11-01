@@ -1,0 +1,260 @@
+//! `PaneHeader`: thin bar above a terminal pane.
+
+use iced::widget::text::Wrapping;
+use iced::widget::{container, row, text};
+use iced::{Alignment, Element, Length, Padding};
+
+use crate::palette::UiPalette;
+use crate::{fonts, size, spacing, typography};
+
+/// Bar above a pane: program name, muted folder, a gap and an optional
+/// trailing element such as a [`Chip`] or a state word.
+///
+/// The focused pane sits on `surface-header` with a strong program name;
+/// the other panes sit on `surface-canvas` with muted text.
+///
+/// [`Chip`]: super::chip::Chip
+///
+/// # Example
+///
+/// ```
+/// use iced::Element;
+/// use otty_ui_kit::components::chip::Chip;
+/// use otty_ui_kit::components::pane_header::PaneHeader;
+/// use otty_ui_kit::components::target_dot::TargetKind;
+/// use otty_ui_kit::palette::UiPalette;
+///
+/// let palette = UiPalette::otty_dark();
+/// let header: Element<'_, ()> = PaneHeader::new("zsh", &palette)
+///     .folder("~/projects/otty")
+///     .focused(true)
+///     .trailing(Chip::new("fedora", &palette).target(TargetKind::Local))
+///     .into();
+/// ```
+pub struct PaneHeader<'a, Message> {
+    program: String,
+    palette: UiPalette,
+    folder: Option<String>,
+    is_focused: bool,
+    trailing: Option<Element<'a, Message>>,
+}
+
+impl<'a, Message> PaneHeader<'a, Message> {
+    /// Creates a header with the `program` name.
+    pub fn new(program: impl Into<String>, palette: &UiPalette) -> Self {
+        Self {
+            program: program.into(),
+            palette: palette.clone(),
+            folder: None,
+            is_focused: false,
+            trailing: None,
+        }
+    }
+
+    /// Shows the working folder after the program name, in the mono font.
+    pub fn folder(mut self, folder: impl Into<String>) -> Self {
+        self.folder = Some(folder.into());
+        self
+    }
+
+    /// Marks the header as the one of the focused pane.
+    pub fn focused(mut self, is_focused: bool) -> Self {
+        self.is_focused = is_focused;
+        self
+    }
+
+    /// Shows an element at the right edge, such as a `Chip`.
+    pub fn trailing(
+        mut self,
+        element: impl Into<Element<'a, Message>>,
+    ) -> Self {
+        self.trailing = Some(element.into());
+        self
+    }
+}
+
+impl<'a, Message: 'a> From<PaneHeader<'a, Message>> for Element<'a, Message> {
+    fn from(value: PaneHeader<'a, Message>) -> Self {
+        let palette = value.palette;
+        let style = typography::SMALL;
+        let is_focused = value.is_focused;
+        let program_color = if is_focused {
+            palette.text_strong()
+        } else {
+            palette.text_muted()
+        };
+        let background = if is_focused {
+            palette.surface_header()
+        } else {
+            palette.surface_canvas()
+        };
+
+        let mut texts = row![
+            text(value.program)
+                .size(style.size())
+                .line_height(iced::Pixels(style.line_height()))
+                .font(fonts::UI)
+                .wrapping(Wrapping::None)
+                .color(program_color)
+        ]
+        .spacing(spacing::SPACE_3)
+        .align_y(Alignment::Center);
+        if let Some(folder) = value.folder {
+            texts = texts.push(
+                text(folder)
+                    .size(style.size())
+                    .line_height(iced::Pixels(style.line_height()))
+                    .font(fonts::MONO)
+                    .wrapping(Wrapping::None)
+                    .color(palette.text_muted()),
+            );
+        }
+
+        // The texts take the space left after the trailing element and stay
+        // on one line: in a narrow pane their right end is cut off, first
+        // the folder, then the program.
+        let mut content = row![container(texts).width(Length::Fill).clip(true)]
+            .spacing(spacing::SPACE_3)
+            .align_y(Alignment::Center);
+        if let Some(trailing) = value.trailing {
+            content = content.push(trailing);
+        }
+
+        // Clipping keeps a trailing element that does not fit from being
+        // drawn over the neighbouring pane.
+        container(content)
+            .width(Length::Fill)
+            .height(size::PANE_HEADER)
+            .align_y(Alignment::Center)
+            .padding(Padding::from([0.0, spacing::SPACE_4]))
+            .clip(true)
+            .style(move |_| container::Style {
+                background: Some(background.into()),
+                ..container::Style::default()
+            })
+            .into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::widget::column;
+    use iced_test::simulator;
+
+    use super::*;
+    use crate::components::chip::Chip;
+
+    #[test]
+    fn given_program_folder_and_chip_when_rendered_then_all_are_shown() {
+        let palette = UiPalette::otty_dark();
+        let header = PaneHeader::new("zsh", &palette)
+            .folder("~/projects/otty")
+            .focused(true)
+            .trailing(Chip::new("fedora", &palette));
+        let header: Element<'_, ()> = header.into();
+        let mut ui = simulator(header);
+
+        assert!(ui.find("zsh").is_ok());
+        assert!(ui.find("~/projects/otty").is_ok());
+        assert!(ui.find("fedora").is_ok());
+    }
+
+    #[test]
+    fn given_header_without_folder_when_rendered_then_program_is_shown() {
+        let palette = UiPalette::otty_light();
+        let header: Element<'_, ()> =
+            PaneHeader::new("claude", &palette).into();
+        let mut ui = simulator(header);
+
+        assert!(ui.find("claude").is_ok());
+    }
+
+    #[test]
+    fn given_short_texts_when_laid_out_then_header_is_30px_high() {
+        let palette = UiPalette::otty_dark();
+        let header: Element<'_, ()> = column![
+            PaneHeader::new("zsh", &palette)
+                .trailing(Chip::new("fedora", &palette)),
+            text("below"),
+        ]
+        .into();
+        let mut ui = simulator(header);
+
+        let below = ui.find("below").expect("marker should be visible");
+
+        assert!(
+            (below.bounds().y - size::PANE_HEADER).abs() < 0.5,
+            "header height {} should be {}",
+            below.bounds().y,
+            size::PANE_HEADER
+        );
+    }
+
+    #[test]
+    fn given_narrow_pane_when_texts_do_not_fit_then_header_stays_one_line() {
+        let palette = UiPalette::otty_dark();
+        let width = 160.0;
+        let header: Element<'_, ()> = container(column![
+            PaneHeader::new("the-time-of-horde", &palette)
+                .folder("~/projects/main/the-time-of-horde")
+                .trailing(Chip::new("fedora", &palette)),
+            text("below"),
+        ])
+        .width(width)
+        .into();
+        let mut ui = simulator(header);
+
+        let program = ui
+            .find("the-time-of-horde")
+            .expect("program should be shown")
+            .bounds();
+        let chip = ui.find("fedora").expect("chip should be shown").bounds();
+        let below =
+            ui.find("below").expect("marker should be visible").bounds();
+
+        assert!(
+            (below.y - size::PANE_HEADER).abs() < 0.5,
+            "header height {} should stay {}",
+            below.y,
+            size::PANE_HEADER
+        );
+        assert!(
+            (program.height - typography::SMALL.line_height()).abs() < 0.5,
+            "program should stay on one line: {program:?}"
+        );
+        assert!(
+            chip.x + chip.width <= width - spacing::SPACE_4 + 0.5,
+            "chip {chip:?} should stay inside the header"
+        );
+    }
+
+    #[test]
+    fn given_long_host_in_narrow_pane_when_laid_out_then_chip_stays_one_line() {
+        let palette = UiPalette::otty_dark();
+        let host = "Ilyas-MacBook-Pro-Work-Station.local";
+        let header: Element<'_, ()> = container(column![
+            PaneHeader::new("zsh", &palette)
+                .folder("~/projects/otty")
+                .trailing(Chip::new(host, &palette)),
+            text("below"),
+        ])
+        .width(120.0)
+        .into();
+        let mut ui = simulator(header);
+
+        let chip = ui.find(host).expect("chip should be shown").bounds();
+        let below =
+            ui.find("below").expect("marker should be visible").bounds();
+
+        assert!(
+            (below.y - size::PANE_HEADER).abs() < 0.5,
+            "header height {} should stay {}",
+            below.y,
+            size::PANE_HEADER
+        );
+        assert!(
+            (chip.height - typography::SMALL.line_height()).abs() < 0.5,
+            "host name should stay on one line: {chip:?}"
+        );
+    }
+}

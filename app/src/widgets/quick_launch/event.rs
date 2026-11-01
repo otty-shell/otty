@@ -2,7 +2,7 @@ use iced::Point;
 
 use super::types::{
     ContextMenuAction, NodePath, QuickLaunch, QuickLaunchSetupOutcome,
-    QuickLaunchType, QuickLaunchWizardSaveRequest,
+    QuickLaunchType,
 };
 use crate::domain::exit_behavior::ExitBehavior;
 
@@ -17,6 +17,11 @@ pub(crate) enum QuickLaunchIntent {
         path: NodePath,
     },
     NodeReleased {
+        path: NodePath,
+    },
+    /// Run a launch (or toggle a folder) as a tree click does, without the
+    /// press and release pair. Used by the New session menu.
+    LaunchNode {
         path: NodePath,
     },
     NodeRightClicked {
@@ -40,10 +45,8 @@ pub(crate) enum QuickLaunchIntent {
     CancelInlineEdit,
 
     // Header actions
-    HeaderAddButtonPressed,
     HeaderCreateFolder,
     HeaderCreateCommand,
-    DeleteSelected,
 
     // Tab lifecycle
     OpenErrorTab {
@@ -70,10 +73,6 @@ pub(crate) enum QuickLaunchIntent {
     },
     WizardSave {
         tab_id: u64,
-    },
-    WizardSetError {
-        tab_id: u64,
-        message: String,
     },
     WizardUpdateTitle {
         tab_id: u64,
@@ -164,7 +163,6 @@ pub(crate) enum QuickLaunchIntent {
 
     // Async completions
     SetupCompleted(QuickLaunchSetupOutcome),
-    WizardSaveRequested(QuickLaunchWizardSaveRequest),
     PersistCompleted,
     PersistFailed(String),
     Tick,

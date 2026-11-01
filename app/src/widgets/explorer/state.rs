@@ -14,11 +14,6 @@ pub(crate) struct ExplorerState {
 }
 
 impl ExplorerState {
-    /// Return the current root directory path.
-    pub(crate) fn root(&self) -> Option<&PathBuf> {
-        self.root.as_ref()
-    }
-
     /// Return current root label used in the explorer header.
     pub(crate) fn root_label(&self) -> Option<&str> {
         self.root_label.as_deref()

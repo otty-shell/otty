@@ -1,5 +1,6 @@
 pub(crate) mod chrome;
 pub(crate) mod explorer;
+pub(crate) mod palette;
 pub(crate) mod quick_launch;
 pub(crate) mod settings;
 pub(crate) mod sidebar;
@@ -14,4 +15,5 @@ pub(crate) struct Widgets {
     pub(crate) terminal_workspace: terminal_workspace::TerminalWorkspaceWidget,
     pub(crate) explorer: explorer::ExplorerWidget,
     pub(crate) settings: settings::SettingsWidget,
+    pub(crate) palette: palette::PaletteWidget,
 }

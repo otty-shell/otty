@@ -236,6 +236,52 @@ impl UiPalette {
         self.shadow_sticky
     }
 
+    /// Returns the same palette with every color and shadow faded to
+    /// `opacity`, from 0.0 (invisible) to 1.0 (unchanged). Use it to fade a
+    /// whole widget in or out.
+    pub fn with_opacity(&self, opacity: f32) -> Self {
+        let fade = |color: Color| color.scale_alpha(opacity);
+        let fade_shadow = |shadow: Shadow| Shadow {
+            color: fade(shadow.color),
+            ..shadow
+        };
+
+        Self {
+            surface_chrome: fade(self.surface_chrome),
+            surface_panel: fade(self.surface_panel),
+            surface_canvas: fade(self.surface_canvas),
+            surface_header: fade(self.surface_header),
+            surface_raised: fade(self.surface_raised),
+            surface_overlay: fade(self.surface_overlay),
+            surface_hover: fade(self.surface_hover),
+            surface_selected: fade(self.surface_selected),
+            surface_error: fade(self.surface_error),
+            surface_danger: fade(self.surface_danger),
+            line: fade(self.line),
+            text_strong: fade(self.text_strong),
+            text_body: fade(self.text_body),
+            text_muted: fade(self.text_muted),
+            text_faint: fade(self.text_faint),
+            text_danger: fade(self.text_danger),
+            accent: fade(self.accent),
+            accent_hover: fade(self.accent_hover),
+            on_accent: fade(self.on_accent),
+            focus: fade(self.focus),
+            status_ok: fade(self.status_ok),
+            status_warn: fade(self.status_warn),
+            status_error: fade(self.status_error),
+            target_local: fade(self.target_local),
+            target_ssh: fade(self.target_ssh),
+            target_staging: fade(self.target_staging),
+            target_prod: fade(self.target_prod),
+            diff_add: fade(self.diff_add),
+            diff_del: fade(self.diff_del),
+            scrim: fade(self.scrim),
+            shadow_popover: fade_shadow(self.shadow_popover),
+            shadow_sticky: fade_shadow(self.shadow_sticky),
+        }
+    }
+
     /// OTTY Dark, the default theme.
     pub const fn otty_dark() -> Self {
         Self {
@@ -503,6 +549,38 @@ mod tests {
             ratio >= min,
             "{theme}: {fg_name} on {bg_name} is {ratio:.2}:1, needs {min}:1"
         );
+    }
+
+    #[test]
+    fn given_opacity_when_palette_faded_then_every_color_and_shadow_fades() {
+        for (name, palette) in themes() {
+            let faded = palette.with_opacity(0.5);
+
+            for ((token, color), (_, faded_color)) in
+                color_tokens(&palette).into_iter().zip(color_tokens(&faded))
+            {
+                assert_eq!(
+                    faded_color,
+                    color.scale_alpha(0.5),
+                    "{name} {token} should fade"
+                );
+            }
+            assert_eq!(
+                faded.shadow_popover().color,
+                palette.shadow_popover().color.scale_alpha(0.5),
+                "{name} shadow-popover should fade"
+            );
+            assert_eq!(
+                faded.shadow_sticky().color,
+                palette.shadow_sticky().color.scale_alpha(0.5),
+                "{name} shadow-sticky should fade"
+            );
+            assert_eq!(
+                faded.scrim(),
+                palette.scrim().scale_alpha(0.5),
+                "{name} scrim should fade"
+            );
+        }
     }
 
     #[test]

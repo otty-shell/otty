@@ -4,13 +4,14 @@
 //! an empty input to remove the last token. The add and remove rules live in
 //! [`TokenList`]; [`TokenField`] only draws it and reports key presses.
 
+use iced::keyboard::key::Named;
 use iced::widget::{container, row, text, text_input};
 use iced::{Alignment, Element, Length, Padding, Pixels};
 
-use super::backspace_guard::BackspaceGuard;
 use super::field_chrome::{self, Note};
 use super::glyph;
 use super::icon_button::{IconButton, IconButtonSize};
+use super::input_keys::InputKeys;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing};
 
@@ -266,14 +267,13 @@ impl<'a, Message: Clone + 'a> From<TokenField<'a, Message>>
                 },
                 selection: iced::Color { a: 0.35, ..accent },
             });
-        line = match value.on_backspace_empty {
-            Some(message) => line.push(BackspaceGuard::new(
-                input,
-                value.list.input().is_empty(),
-                message,
-            )),
-            None => line.push(input),
-        };
+        let mut keys = InputKeys::new(input);
+        if let Some(message) = value.on_backspace_empty
+            && value.list.input().is_empty()
+        {
+            keys = keys.on_key(Named::Backspace, message);
+        }
+        line = line.push(keys);
 
         let background = palette.surface_raised();
         let frame = container(line.wrap())
@@ -419,5 +419,45 @@ mod tests {
         assert!(!list.remove(5));
 
         assert_eq!(list.tokens(), ["a", "c"]);
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum Message {
+        Input(String),
+        Backspace,
+    }
+
+    /// Clicks the field's input (found by its placeholder value), then
+    /// presses Backspace.
+    fn press_backspace(list: &TokenList) -> Vec<Message> {
+        use iced_test::simulator;
+
+        let palette = UiPalette::otty_dark();
+        let field = TokenField::new("Arguments", list, &palette)
+            .on_input(Message::Input)
+            .on_backspace_empty(Message::Backspace);
+        let mut ui = simulator(field);
+
+        ui.click(list.input()).expect("input should be visible");
+        ui.tap_key(Named::Backspace);
+
+        ui.into_messages().collect()
+    }
+
+    #[test]
+    fn given_empty_focused_input_when_backspace_pressed_then_it_is_reported() {
+        let list = list(&["a"], "");
+
+        assert_eq!(press_backspace(&list), vec![Message::Backspace]);
+    }
+
+    #[test]
+    fn given_typed_text_when_backspace_pressed_then_input_edits_it() {
+        let list = list(&["a"], "xy");
+
+        assert_eq!(
+            press_backspace(&list),
+            vec![Message::Input("x".to_owned())]
+        );
     }
 }

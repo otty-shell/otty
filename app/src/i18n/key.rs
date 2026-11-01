@@ -9,13 +9,19 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Key {
-    // Sidebar add menu.
-    /// "Create tab" entry in the sidebar add menu.
-    MenuCreateTab,
-    /// "Create folder" entry in the sidebar add menu.
-    MenuCreateFolder,
-    /// "Create quick launch" entry in the sidebar add menu.
-    MenuCreateQuickLaunch,
+    // Header menus (New session, Launches).
+    /// "New terminal" entry in the New session menu.
+    MenuNewTerminal,
+    /// "Split current pane right" entry in the New session menu.
+    MenuSplitCurrentPane,
+    /// "New launch..." entry in the New session menu.
+    MenuNewLaunch,
+    /// Tooltip of the New session menu chevron.
+    NewSessionMenu,
+    /// "New folder" entry in the Launches menu.
+    MenuNewFolder,
+    /// Tooltip of the Launches menu chevron.
+    LaunchesMenu,
 
     // Placeholders shown when tab state is missing.
     /// Shown when a terminal tab has no backing state.
@@ -46,16 +52,30 @@ pub(crate) enum Key {
     CopyPrompt,
     /// Copy the selected block's command line.
     CopyCommand,
-    /// Split the pane along the horizontal axis.
-    SplitHorizontally,
-    /// Split the pane along the vertical axis.
-    SplitVertically,
+    /// Split the pane into a top and a bottom pane.
+    SplitDown,
+    /// Split the pane into a left and a right pane.
+    SplitRight,
     /// Close the pane.
     ClosePane,
-    /// Tooltip of the title bar full screen button.
-    WindowToggleFullscreen,
+    /// Name of this computer when its host name cannot be read.
+    ThisComputer,
+    /// Tooltip of the title bar button that maximizes or restores the window.
+    WindowToggleMaximize,
     /// Tooltip of the title bar minimize button.
     WindowMinimize,
+    /// Tooltip of the title bar button that shows or hides the files panel.
+    WindowFilesPanel,
+    /// Tooltip of the title bar button that shows or hides the left panel.
+    WindowLeftPanel,
+    /// Tooltip of the title bar focus mode button.
+    WindowFocusMode,
+    /// Focus mode note: says the panels are hidden.
+    FocusNoteHidden,
+    /// Focus mode note: text after the shortcut.
+    FocusNoteShow,
+    /// Tooltip of the title bar button that closes the window.
+    WindowClose,
 
     // Quick launch context menu.
     /// Terminate a running quick launch.
@@ -77,17 +97,91 @@ pub(crate) enum Key {
     /// Create a launch entry inside a folder.
     CreateLaunch,
 
+    // Sessions section of the left panel.
+    /// Title of the Sessions section of the left panel.
+    SessionsPanelTitle,
+    /// Tooltip of the Sessions header button that opens a terminal.
+    NewSession,
+    /// Muted note after this computer's group name.
+    ThisComputerNote,
+    /// Muted note after an SSH host's group name.
+    SshMachineNote,
+    /// State word on the Settings row.
+    SessionStateSettings,
+    /// State word on a launch editor row.
+    SessionStateEditor,
+    /// State word on a launch error row.
+    SessionStateFailed,
+    /// Hint in the Sessions section when no session is open.
+    NoOpenSessions,
+
+    // Empty state shown in the main area when no session is open.
+    /// Title of the empty card.
+    EmptyTitle,
+    /// Description under the title of the empty card.
+    EmptyDescription,
+    /// Label of the empty card tile that opens a terminal.
+    EmptyNewTerminal,
+    /// Label of the empty card tile that creates a launch.
+    EmptyNewLaunch,
+
     // Quick launch sidebar panel.
-    /// Header of the quick launch sidebar panel.
-    QuickLaunchPanelTitle,
+    /// Title of the Launches section of the left panel.
+    LaunchesPanelTitle,
+    /// Muted word on a launch row while the launch is running.
+    LaunchRunning,
 
     // Explorer sidebar.
     /// Shown when the explorer has no active folder.
     NoActiveFolder,
+    /// Title of the right panel files section.
+    FilesTitle,
+
+    // Status bar.
+    /// Status bar text for exactly one pane.
+    StatusPaneOne,
+    /// Status bar pane count. Placeholder: `{count}`.
+    TplStatusPanes,
+    /// Status bar text for exactly one session.
+    StatusSessionOne,
+    /// Status bar session count. Placeholder: `{count}`.
+    TplStatusSessions,
+    // Command palette and its title bar trigger.
+    /// Title bar search text while no tab is open.
+    TitleSearchNoSessions,
+    /// Text in the empty palette input.
+    PalettePlaceholder,
+    /// Line shown when no palette entry matches the query.
+    PaletteNoMatches,
+    /// Footer hint after the ↑↓ keys.
+    PaletteHintMove,
+    /// Footer hint after the Enter key.
+    PaletteHintOpen,
+    /// Group label of the app actions.
+    PaletteGroupActions,
+    /// Action that opens a terminal tab.
+    PaletteNewTerminal,
+    /// Action that opens the editor for a new launch.
+    PaletteNewLaunch,
+    /// Action that starts a new launch folder.
+    PaletteNewFolder,
+    /// Action that splits the focused pane.
+    PaletteSplitPane,
+    /// Closing a session: the palette action and the tooltip of the close
+    /// cross on a session row.
+    CloseSession,
+    /// Action that shows or hides the left panel.
+    PaletteToggleLeftPanel,
+    /// Action that shows or hides the files panel.
+    PaletteToggleFilesPanel,
 
     // Quick launch wizard.
-    /// Wizard section header.
-    WizardHeader,
+    /// Title of the form that creates a launch.
+    WizardTitleNew,
+    /// Title of the form that edits a launch.
+    WizardTitleEdit,
+    /// Muted line under the launch form title.
+    WizardSubtitle,
     /// Entry title field label.
     FieldTitle,
     /// Command type field label.
@@ -120,6 +214,8 @@ pub(crate) enum Key {
     FieldEnvironment,
     /// Label of the choice for what a tab does once its command exits.
     FieldAfterExit,
+    /// Muted hint under the exit choice.
+    ExitBehaviorHint,
     /// Exit choice: close the tab.
     ExitBehaviorClose,
     /// Exit choice: close the tab only when the command succeeds.
@@ -160,6 +256,10 @@ pub(crate) enum Key {
     SecretPromptWrongPassphrase,
     /// Shown when the server rejected the typed password.
     SecretPromptPasswordRejected,
+    /// Field label for the key passphrase.
+    SecretPromptPassphraseLabel,
+    /// Field label for the account password.
+    SecretPromptPasswordLabel,
 
     // Settings sections and fields.
     /// General settings section.
@@ -174,12 +274,20 @@ pub(crate) enum Key {
     FieldShell,
     /// Default editor field label.
     FieldDefaultEditor,
-    /// Pane layout field label.
-    FieldPaneLayout,
-    /// Option that keeps sibling pane widths even after layout changes.
+    /// Equalize panes setting label.
     OptionEqualizePanes,
+    /// Line under the equalize panes setting.
+    DescEqualizePanes,
     /// Theme selector field label.
     FieldTheme,
+    /// Line under the theme setting.
+    DescTheme,
+    /// Line under the language setting.
+    DescLanguage,
+    /// Line under the shell setting.
+    DescShell,
+    /// Line under the default editor setting.
+    DescDefaultEditor,
     /// Language option that follows the operating system locale.
     LanguageSystem,
 
@@ -232,10 +340,16 @@ pub(crate) enum Key {
     TplIdentityFileNotFound,
     /// SSH identity path is not a file. Placeholder: `{path}`.
     TplIdentityFileNotFile,
-    /// SSH secret dialog text for a key passphrase. Placeholder: `{path}`.
-    TplSecretPromptPassphraseBody,
-    /// SSH secret dialog text for a password. Placeholder: `{target}`.
-    TplSecretPromptPasswordBody,
+    /// SSH secret dialog title for a key passphrase. Placeholder: `{path}`.
+    TplSecretPromptPassphraseTitle,
+    /// SSH secret dialog title for a password. Placeholder: `{target}`.
+    TplSecretPromptPasswordTitle,
+    /// Muted line under the passphrase title. Placeholders: `{launch}`,
+    /// `{account}`.
+    TplSecretPromptPassphraseHint,
+    /// Muted line under the password title. Placeholders: `{launch}`,
+    /// `{account}`.
+    TplSecretPromptPasswordHint,
     /// Program is absent from `PATH`. Placeholder: `{program}`.
     TplProgramNotFoundInPath,
     /// Explicit program path is missing. Placeholder: `{program}`.
@@ -251,10 +365,13 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 106] = [
-        Self::MenuCreateTab,
-        Self::MenuCreateFolder,
-        Self::MenuCreateQuickLaunch,
+    pub(super) const ALL: [Self; 158] = [
+        Self::MenuNewTerminal,
+        Self::MenuSplitCurrentPane,
+        Self::MenuNewLaunch,
+        Self::NewSessionMenu,
+        Self::MenuNewFolder,
+        Self::LaunchesMenu,
         Self::TerminalTabNotInitialized,
         Self::QuickLaunchEditorNotInitialized,
         Self::QuickLaunchErrorPayloadMissing,
@@ -267,11 +384,18 @@ impl Key {
         Self::CopyContent,
         Self::CopyPrompt,
         Self::CopyCommand,
-        Self::SplitHorizontally,
-        Self::SplitVertically,
+        Self::SplitDown,
+        Self::SplitRight,
         Self::ClosePane,
-        Self::WindowToggleFullscreen,
+        Self::ThisComputer,
+        Self::WindowToggleMaximize,
         Self::WindowMinimize,
+        Self::WindowFilesPanel,
+        Self::WindowLeftPanel,
+        Self::WindowFocusMode,
+        Self::FocusNoteHidden,
+        Self::FocusNoteShow,
+        Self::WindowClose,
         Self::Kill,
         Self::Edit,
         Self::Rename,
@@ -281,9 +405,43 @@ impl Key {
         Self::CreateQuickLaunch,
         Self::Delete,
         Self::CreateLaunch,
-        Self::QuickLaunchPanelTitle,
+        Self::SessionsPanelTitle,
+        Self::NewSession,
+        Self::ThisComputerNote,
+        Self::SshMachineNote,
+        Self::SessionStateSettings,
+        Self::SessionStateEditor,
+        Self::SessionStateFailed,
+        Self::NoOpenSessions,
+        Self::EmptyTitle,
+        Self::EmptyDescription,
+        Self::EmptyNewTerminal,
+        Self::EmptyNewLaunch,
+        Self::LaunchesPanelTitle,
+        Self::LaunchRunning,
         Self::NoActiveFolder,
-        Self::WizardHeader,
+        Self::FilesTitle,
+        Self::StatusPaneOne,
+        Self::TplStatusPanes,
+        Self::StatusSessionOne,
+        Self::TplStatusSessions,
+        Self::TitleSearchNoSessions,
+        Self::PalettePlaceholder,
+        Self::PaletteNoMatches,
+        Self::PaletteHintMove,
+        Self::PaletteHintOpen,
+        Self::PaletteGroupActions,
+        Self::PaletteNewTerminal,
+        Self::PaletteNewLaunch,
+        Self::PaletteNewFolder,
+        Self::PaletteSplitPane,
+        Self::CloseSession,
+        Self::PaletteToggleLeftPanel,
+        Self::PaletteToggleFilesPanel,
+        Self::WizardTitleNew,
+        Self::WizardTitleEdit,
+        Self::WizardSubtitle,
+        Self::ExitBehaviorHint,
         Self::FieldTitle,
         Self::FieldType,
         Self::TypeCustom,
@@ -318,15 +476,21 @@ impl Key {
         Self::SecretPromptPasswordTitle,
         Self::SecretPromptWrongPassphrase,
         Self::SecretPromptPasswordRejected,
+        Self::SecretPromptPassphraseLabel,
+        Self::SecretPromptPasswordLabel,
         Self::SectionGeneral,
         Self::SectionTerminal,
         Self::SectionAppearance,
         Self::FieldLanguage,
         Self::FieldShell,
         Self::FieldDefaultEditor,
-        Self::FieldPaneLayout,
         Self::OptionEqualizePanes,
+        Self::DescEqualizePanes,
         Self::FieldTheme,
+        Self::DescTheme,
+        Self::DescLanguage,
+        Self::DescShell,
+        Self::DescDefaultEditor,
         Self::LanguageSystem,
         Self::ErrIoPrefix,
         Self::ErrJsonPrefix,
@@ -351,8 +515,10 @@ impl Key {
         Self::TplWorkingDirectoryNotDirectory,
         Self::TplIdentityFileNotFound,
         Self::TplIdentityFileNotFile,
-        Self::TplSecretPromptPassphraseBody,
-        Self::TplSecretPromptPasswordBody,
+        Self::TplSecretPromptPassphraseTitle,
+        Self::TplSecretPromptPasswordTitle,
+        Self::TplSecretPromptPassphraseHint,
+        Self::TplSecretPromptPasswordHint,
         Self::TplProgramNotFoundInPath,
         Self::TplProgramNotFound,
         Self::TplProgramIsDirectory,

@@ -192,6 +192,31 @@ impl Theme {
     }
 }
 
+impl TerminalStyle for Theme {
+    fn container_style(&self) -> container::Style {
+        container::Style {
+            background: Some(
+                Rgb::from_str(&self.palette.background)
+                    .map(|c| Color::from_rgb8(c.r, c.g, c.b))
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "invalid background color {}",
+                            self.palette.background
+                        )
+                    })
+                    .into(),
+            ),
+            ..container::Style::default()
+        }
+    }
+}
+
+pub fn parse_hex_color(value: &str) -> Color {
+    Rgb::from_str(value)
+        .map(|c| Color::from_rgb8(c.r, c.g, c.b))
+        .unwrap_or_else(|_| panic!("invalid color {}", value))
+}
+
 fn build_ansi256_colors() -> HashMap<u8, Color> {
     let mut ansi256_colors = HashMap::new();
 
@@ -217,31 +242,6 @@ fn build_ansi256_colors() -> HashMap<u8, Color> {
     }
 
     ansi256_colors
-}
-
-impl TerminalStyle for Theme {
-    fn container_style(&self) -> container::Style {
-        container::Style {
-            background: Some(
-                Rgb::from_str(&self.palette.background)
-                    .map(|c| Color::from_rgb8(c.r, c.g, c.b))
-                    .unwrap_or_else(|_| {
-                        panic!(
-                            "invalid background color {}",
-                            self.palette.background
-                        )
-                    })
-                    .into(),
-            ),
-            ..container::Style::default()
-        }
-    }
-}
-
-pub fn parse_hex_color(value: &str) -> Color {
-    Rgb::from_str(value)
-        .map(|c| Color::from_rgb8(c.r, c.g, c.b))
-        .unwrap_or_else(|_| panic!("invalid color {}", value))
 }
 
 #[cfg(test)]

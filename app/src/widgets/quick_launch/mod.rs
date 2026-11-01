@@ -15,6 +15,7 @@ pub(crate) use event::{
     QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
 };
 use iced::Task;
+use model::LaunchViewModel;
 pub(crate) use reducer::QuickLaunchCtx;
 use state::QuickLaunchState;
 
@@ -26,13 +27,6 @@ pub(crate) struct QuickLaunchWidget {
 }
 
 impl QuickLaunchWidget {
-    /// Create a new widget with default state.
-    pub(crate) fn new() -> Self {
-        Self {
-            state: QuickLaunchState::default(),
-        }
-    }
-
     /// Create a widget by loading persisted state from disk.
     pub(crate) fn load() -> Self {
         Self {
@@ -59,6 +53,12 @@ impl QuickLaunchWidget {
             launching: self.state.launching(),
             drop_target: self.state.drop_target(),
         }
+    }
+
+    /// The launches at the top level of the tree, in tree order, each with
+    /// the path that runs it.
+    pub(crate) fn top_level_launches(&self) -> Vec<LaunchViewModel<'_>> {
+        self.vm().top_level_launches()
     }
 
     /// Return error tab state for a given tab id.
@@ -112,11 +112,5 @@ impl QuickLaunchWidget {
     /// Return whether inline edit is active.
     pub(crate) fn has_inline_edit(&self) -> bool {
         self.state.inline_edit().is_some()
-    }
-
-    /// Return read-only access to state for tests.
-    #[cfg(test)]
-    pub(crate) fn state(&self) -> &QuickLaunchState {
-        &self.state
     }
 }

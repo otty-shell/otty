@@ -1,7 +1,7 @@
 //! `Menu` and `MenuItem`: context menus and dropdown lists.
 
 use iced::widget::{Space, button, column, container, row, text};
-use iced::{Alignment, Border, Element, Length, Padding};
+use iced::{Alignment, Border, Element, Length, Padding, Theme};
 
 use super::{faded, kbd};
 use crate::palette::UiPalette;
@@ -32,6 +32,7 @@ pub struct MenuItem<Message> {
     label: String,
     shortcut: Option<String>,
     active: bool,
+    danger: bool,
     on_press: Option<Message>,
 }
 
@@ -42,6 +43,7 @@ impl<Message> MenuItem<Message> {
             label: label.into(),
             shortcut: None,
             active: false,
+            danger: false,
             on_press: None,
         }
     }
@@ -55,6 +57,12 @@ impl<Message> MenuItem<Message> {
     /// Draws the item as hovered (for example the keyboard-selected item).
     pub fn active(mut self, active: bool) -> Self {
         self.active = active;
+        self
+    }
+
+    /// Draws the label in the danger color, for destructive actions.
+    pub fn danger(mut self, danger: bool) -> Self {
+        self.danger = danger;
         self
     }
 
@@ -100,6 +108,7 @@ enum Entry<Message> {
 /// ```
 pub struct Menu<Message> {
     palette: UiPalette,
+    width: f32,
     entries: Vec<Entry<Message>>,
 }
 
@@ -108,8 +117,15 @@ impl<Message> Menu<Message> {
     pub fn new(palette: &UiPalette) -> Self {
         Self {
             palette: palette.clone(),
+            width: MENU_WIDTH,
             entries: Vec::new(),
         }
+    }
+
+    /// Sets the menu width; the default is `MENU_WIDTH`.
+    pub fn width(mut self, width: f32) -> Self {
+        self.width = width;
+        self
     }
 
     /// Appends an item.
@@ -144,10 +160,11 @@ impl<'a, Message: Clone + 'a> From<Menu<Message>> for Element<'a, Message> {
             });
         }
 
+        let width = value.width;
         let background = palette.surface_overlay();
         let shadow = palette.shadow_popover();
         container(list)
-            .width(MENU_WIDTH)
+            .width(width)
             .padding(MENU_PADDING)
             .style(move |_| container::Style {
                 background: Some(background.into()),
@@ -160,6 +177,36 @@ impl<'a, Message: Clone + 'a> From<Menu<Message>> for Element<'a, Message> {
             })
             .into()
     }
+}
+
+/// Style of a menu item: `surface-hover` and `text-strong` while hovered,
+/// pressed or `active` (keyboard-selected), `text-body` otherwise.
+pub(super) fn item_style(
+    palette: &UiPalette,
+    active: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
+    item_style_with(palette, active, false)
+}
+
+/// Builds a heading row (`.ot-menu-label`). The label may be borrowed, so
+/// a caller that redraws every frame does not copy it.
+pub(super) fn heading_view<'a, Message: 'a>(
+    label: impl text::IntoFragment<'a>,
+    palette: &UiPalette,
+) -> Element<'a, Message> {
+    container(
+        text(label)
+            .size(HEADING_TEXT_SIZE)
+            .font(fonts::UI)
+            .color(palette.text_muted()),
+    )
+    .padding(Padding {
+        top: 6.0,
+        right: ITEM_PADDING_X,
+        bottom: 4.0,
+        left: ITEM_PADDING_X,
+    })
+    .into()
 }
 
 /// Builds one pressable row.
@@ -180,40 +227,58 @@ fn item_view<'a, Message: Clone + 'a>(
         content = content.push(kbd::kbd(shortcut, palette));
     }
 
-    let palette = palette.clone();
-    let active = item.active;
     button(content)
         .width(Length::Fill)
         .height(size::ROW)
         .padding(Padding::from([0.0, ITEM_PADDING_X]))
         .on_press_maybe(item.on_press)
-        .style(move |_, status| {
-            let lit = active
-                || matches!(
-                    status,
-                    button::Status::Hovered | button::Status::Pressed
-                );
-            let color = if lit {
-                palette.text_strong()
-            } else {
-                palette.text_body()
-            };
-
-            button::Style {
-                background: lit.then(|| palette.surface_hover().into()),
-                text_color: if status == button::Status::Disabled {
-                    faded(color)
-                } else {
-                    color
-                },
-                border: Border {
-                    radius: radius::RADIUS_XS.into(),
-                    ..Border::default()
-                },
-                ..button::Style::default()
-            }
-        })
+        .style(item_style_with(palette, item.active, item.danger))
         .into()
+}
+
+/// Like [`item_style`]; a `danger` item uses `text-danger` on `surface-danger`
+/// when lit, because status colors never sit on `surface-hover`.
+fn item_style_with(
+    palette: &UiPalette,
+    active: bool,
+    danger: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
+    let palette = palette.clone();
+
+    move |_, status| {
+        let lit = active
+            || matches!(
+                status,
+                button::Status::Hovered | button::Status::Pressed
+            );
+        let color = if danger {
+            palette.text_danger()
+        } else if lit {
+            palette.text_strong()
+        } else {
+            palette.text_body()
+        };
+
+        button::Style {
+            background: lit.then(|| {
+                if danger {
+                    palette.surface_danger().into()
+                } else {
+                    palette.surface_hover().into()
+                }
+            }),
+            text_color: if status == button::Status::Disabled {
+                faded(color)
+            } else {
+                color
+            },
+            border: Border {
+                radius: radius::RADIUS_XS.into(),
+                ..Border::default()
+            },
+            ..button::Style::default()
+        }
+    }
 }
 
 /// Builds a 1px separator line.
@@ -229,25 +294,5 @@ fn separator_view<'a, Message: 'a>(
         },
     ))
     .padding(SEPARATOR_MARGIN)
-    .into()
-}
-
-/// Builds a heading row.
-fn heading_view<'a, Message: 'a>(
-    label: String,
-    palette: &UiPalette,
-) -> Element<'a, Message> {
-    container(
-        text(label)
-            .size(HEADING_TEXT_SIZE)
-            .font(fonts::UI)
-            .color(palette.text_muted()),
-    )
-    .padding(Padding {
-        top: 6.0,
-        right: ITEM_PADDING_X,
-        bottom: 4.0,
-        left: ITEM_PADDING_X,
-    })
     .into()
 }

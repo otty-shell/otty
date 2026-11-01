@@ -13,12 +13,12 @@ use otty_ui_term::settings::{
 
 use crate::events::AppEvent;
 use crate::fonts::FontsConfig;
-use crate::layout;
 use crate::state::State;
 use crate::theme::{AppTheme, ThemeManager};
 use crate::widgets::Widgets;
 use crate::widgets::chrome::ChromeWidget;
 use crate::widgets::explorer::ExplorerWidget;
+use crate::widgets::palette::PaletteWidget;
 use crate::widgets::quick_launch::QuickLaunchWidget;
 use crate::widgets::settings::SettingsWidget;
 use crate::widgets::sidebar::SidebarWidget;
@@ -28,6 +28,7 @@ use crate::widgets::terminal_workspace::services::{
     fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
 use crate::widgets::terminal_workspace::types::ShellSession;
+use crate::{layout, services};
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
@@ -39,6 +40,9 @@ pub(crate) struct App {
     pub(crate) fonts: FontsConfig,
     pub(crate) terminal_settings: Settings,
     pub(crate) shell_session: ShellSession,
+    /// This computer's host name, read once at start; `None` when it could
+    /// not be read.
+    pub(crate) host_name: Option<String>,
     pub(crate) state: State,
     pub(crate) widgets: Widgets,
 }
@@ -61,6 +65,7 @@ impl App {
                 fallback_shell_session_with_shell(&shell_path)
             },
         };
+        let host_name = services::read_host_name();
 
         let window_size = Size {
             width: MIN_WINDOW_WIDTH,
@@ -77,6 +82,7 @@ impl App {
             terminal_workspace: TerminalWorkspaceWidget::new(),
             explorer: ExplorerWidget::new(),
             settings,
+            palette: PaletteWidget::new(),
         };
 
         let app = App {
@@ -85,6 +91,7 @@ impl App {
             fonts,
             terminal_settings,
             shell_session,
+            host_name,
             state,
             widgets,
         };

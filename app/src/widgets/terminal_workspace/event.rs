@@ -5,6 +5,7 @@ use iced::widget::pane_grid;
 use otty_ui_term::settings::Settings;
 
 use super::types::{TerminalEvent, TerminalKind};
+use crate::shortcuts::AppShortcut;
 
 /// Intent events handled by the terminal workspace presentation layer.
 #[derive(Clone)]
@@ -201,10 +202,18 @@ pub(crate) enum TerminalWorkspaceEffect {
         title: String,
         message: String,
     },
-    /// The tab title changed.
-    TitleChanged { tab_id: u64, title: String },
+    /// The tab title (program of the focused pane) or its folder name
+    /// changed.
+    TitleChanged {
+        tab_id: u64,
+        title: String,
+        folder: Option<String>,
+    },
     /// Request the explorer to sync from the active terminal CWD.
     SyncExplorer,
+    /// A terminal reported an app shortcut that the workspace does not run
+    /// itself; the app runs it.
+    ShortcutPressed { shortcut: AppShortcut },
 }
 
 /// Terminal workspace event stream routed through the app update loop.

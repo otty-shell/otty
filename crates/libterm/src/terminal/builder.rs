@@ -35,11 +35,6 @@ pub struct TerminalBuilder<P, E, S> {
     size: TerminalSize,
 }
 
-enum SessionSource<P> {
-    Provided(Option<P>),
-    Factory(Box<dyn FnMut(TerminalSize) -> Result<P> + Send>),
-}
-
 impl<P, E, S> TerminalBuilder<P, E, S>
 where
     P: Session,
@@ -151,6 +146,22 @@ where
     }
 }
 
+impl<P, E> TerminalBuilder<P, E, DefaultSurface>
+where
+    P: Session,
+{
+    /// Override the surface configuration used by the default surface.
+    pub fn with_surface_config(mut self, config: SurfaceConfig) -> Self {
+        self.surface = DefaultSurface::new(config, &self.size);
+        self
+    }
+}
+
+enum SessionSource<P> {
+    Provided(Option<P>),
+    Factory(Box<dyn FnMut(TerminalSize) -> Result<P> + Send>),
+}
+
 impl From<pty::LocalSessionBuilder>
     for TerminalBuilder<pty::LocalSession, DefaultParser, DefaultSurface>
 {
@@ -178,17 +189,6 @@ impl From<pty::SSHSessionBuilder>
             options: TerminalOptions::default(),
             size,
         }
-    }
-}
-
-impl<P, E> TerminalBuilder<P, E, DefaultSurface>
-where
-    P: Session,
-{
-    /// Override the surface configuration used by the default surface.
-    pub fn with_surface_config(mut self, config: SurfaceConfig) -> Self {
-        self.surface = DefaultSurface::new(config, &self.size);
-        self
     }
 }
 

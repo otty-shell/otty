@@ -220,6 +220,30 @@ pub(crate) fn t(key: Key) -> &'static str {
     text_in(current_locale(), key)
 }
 
+/// Build the status bar pane count, e.g. "2 panes".
+pub(crate) fn status_panes(count: usize) -> String {
+    if count == 1 {
+        return t(Key::StatusPaneOne).to_string();
+    }
+
+    let count = count.to_string();
+    fill_in(current_locale(), Key::TplStatusPanes, &[("count", &count)])
+}
+
+/// Build the status bar session count, e.g. "3 sessions".
+pub(crate) fn status_sessions(count: usize) -> String {
+    if count == 1 {
+        return t(Key::StatusSessionOne).to_string();
+    }
+
+    let count = count.to_string();
+    fill_in(
+        current_locale(),
+        Key::TplStatusSessions,
+        &[("count", &count)],
+    )
+}
+
 /// Build the tab title shown when editing an existing quick launch.
 pub(crate) fn edit_tab_title(command_title: &str) -> String {
     fill_in(
@@ -301,21 +325,45 @@ pub(crate) fn identity_file_not_file(path: &str) -> String {
     )
 }
 
-/// Build the SSH secret dialog text asking for a key passphrase.
-pub(crate) fn secret_prompt_passphrase_body(path: &str) -> String {
+/// Build the SSH secret dialog title asking for a key passphrase.
+pub(crate) fn secret_prompt_passphrase_title(path: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplSecretPromptPassphraseBody,
+        Key::TplSecretPromptPassphraseTitle,
         &[("path", path)],
     )
 }
 
-/// Build the SSH secret dialog text asking for a password.
-pub(crate) fn secret_prompt_password_body(target: &str) -> String {
+/// Build the SSH secret dialog title asking for a password.
+pub(crate) fn secret_prompt_password_title(target: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplSecretPromptPasswordBody,
+        Key::TplSecretPromptPasswordTitle,
         &[("target", target)],
+    )
+}
+
+/// Build the muted line explaining why a key passphrase is needed.
+pub(crate) fn secret_prompt_passphrase_hint(
+    launch: &str,
+    account: &str,
+) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplSecretPromptPassphraseHint,
+        &[("launch", launch), ("account", account)],
+    )
+}
+
+/// Build the muted line explaining why a password is needed.
+pub(crate) fn secret_prompt_password_hint(
+    launch: &str,
+    account: &str,
+) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplSecretPromptPasswordHint,
+        &[("launch", launch), ("account", account)],
     )
 }
 
@@ -681,7 +729,7 @@ mod tests {
 
     #[test]
     fn given_every_locale_when_templates_read_then_placeholders_survive() {
-        let required: [(Key, &[&str]); 13] = [
+        let required: [(Key, &[&str]); 15] = [
             (Key::TplEditTabTitle, &["{title}"]),
             (Key::TplLaunchFailedTitle, &["{title}"]),
             (Key::TplLaunchFailedBody, &["{command}", "{error}"]),
@@ -695,6 +743,8 @@ mod tests {
             (Key::TplProgramNotFound, &["{program}"]),
             (Key::TplProgramIsDirectory, &["{program}"]),
             (Key::TplProgramNotExecutable, &["{program}"]),
+            (Key::TplStatusPanes, &["{count}"]),
+            (Key::TplStatusSessions, &["{count}"]),
         ];
 
         for locale in Locale::ALL {

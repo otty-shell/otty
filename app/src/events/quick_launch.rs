@@ -7,9 +7,10 @@ use crate::i18n::{self, Key};
 use crate::widgets::quick_launch::{
     QuickLaunchCtx, QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
 };
-use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
+use crate::widgets::tabs::types::TabMachine;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
+/// Route a launches event: reduce its intents and run its effects.
 pub(crate) fn handle(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
     match event {
         QuickLaunchEvent::Intent(event) => handle_intent(app, event),
@@ -18,14 +19,6 @@ pub(crate) fn handle(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
 }
 
 fn handle_intent(app: &mut App, event: QuickLaunchIntent) -> Task<AppEvent> {
-    // The add button lives in the quick launch panel but triggers the
-    // sidebar add-menu overlay, so redirect instead of reducing.
-    if matches!(event, QuickLaunchIntent::HeaderAddButtonPressed) {
-        return Task::done(AppEvent::Sidebar(SidebarEvent::Intent(
-            SidebarIntent::AddMenuOpen,
-        )));
-    }
-
     let ctx = QuickLaunchCtx {
         terminal_settings: &app.terminal_settings,
         sidebar_cursor: app.widgets.sidebar.cursor(),
@@ -56,13 +49,21 @@ fn handle_effect(effect: QuickLaunchEffect) -> Task<AppEvent> {
             title,
             settings,
             command,
-        } => Task::done(AppEvent::Tabs(TabsEvent::Intent(
-            TabsIntent::OpenCommandTab {
-                title,
-                settings: Box::new(settings),
-                exit_behavior: command.exit_behavior(),
-            },
-        ))),
+        } => {
+            let machine = match command.ssh_host() {
+                Some(host) => TabMachine::Ssh(host.to_string()),
+                None => TabMachine::ThisComputer,
+            };
+
+            Task::done(AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::OpenCommandTab {
+                    title,
+                    settings: Box::new(settings),
+                    exit_behavior: command.exit_behavior(),
+                    machine,
+                },
+            )))
+        },
         QuickLaunchEffect::OpenErrorTab { title, message } => {
             Task::done(AppEvent::Tabs(TabsEvent::Intent(
                 TabsIntent::OpenErrorTab { title, message },
@@ -76,8 +77,76 @@ fn handle_effect(effect: QuickLaunchEffect) -> Task<AppEvent> {
 
 #[cfg(test)]
 mod tests {
+    use otty_ui_term::settings::Settings;
+
     use super::handle_effect;
+    use crate::events::AppEvent;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::quick_launch::QuickLaunchEffect;
+    use crate::widgets::quick_launch::types::QuickLaunch;
+    use crate::widgets::tabs::types::TabMachine;
+    use crate::widgets::tabs::{TabsEvent, TabsIntent};
+
+    fn launch(spec: serde_json::Value) -> QuickLaunch {
+        serde_json::from_value(serde_json::json!({
+            "title": "htop",
+            "spec": spec,
+        }))
+        .expect("launch should deserialize")
+    }
+
+    fn opened_machine(command: QuickLaunch) -> Option<TabMachine> {
+        let events = collect_outputs(handle_effect(
+            QuickLaunchEffect::OpenCommandTerminalTab {
+                title: String::from("htop"),
+                settings: Settings::default(),
+                command: Box::new(command),
+            },
+        ));
+
+        events.into_iter().find_map(|event| match event {
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenCommandTab {
+                machine,
+                ..
+            })) => Some(machine),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn given_ssh_launch_when_its_tab_opens_then_the_tab_runs_on_the_ssh_host() {
+        let command = launch(serde_json::json!({
+            "type": "Ssh",
+            "ssh": {
+                "host": "laptop",
+                "port": 22,
+                "user": null,
+                "identity_file": null,
+                "extra_args": []
+            }
+        }));
+
+        assert_eq!(
+            opened_machine(command),
+            Some(TabMachine::Ssh(String::from("laptop")))
+        );
+    }
+
+    #[test]
+    fn given_local_launch_when_its_tab_opens_then_the_tab_runs_on_this_computer()
+     {
+        let command = launch(serde_json::json!({
+            "type": "Custom",
+            "custom": {
+                "program": "htop",
+                "args": [],
+                "env": [],
+                "working_directory": null
+            }
+        }));
+
+        assert_eq!(opened_machine(command), Some(TabMachine::ThisComputer));
+    }
 
     #[test]
     fn given_wizard_create_request_when_opened_then_task_is_emitted() {

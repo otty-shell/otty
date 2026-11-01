@@ -19,13 +19,19 @@ use crate::ssh_key::is_key_file_encrypted;
 use crate::{Pollable, PtySize, Session, SessionError};
 
 const LIBSSH2_ERROR_EAGAIN: i32 = -37;
+
 const LIBSSH2_ERROR_FILE: i32 = -16;
+
 const LIBSSH2_ERROR_AUTHENTICATION_FAILED: i32 = -18;
+
 const LIBSSH2_ERROR_KEYFILE_AUTH_FAILED: i32 = -48;
+
 const REQUEST_PTY_TAG: &str = "xterm-256color";
+
 // Upper bound for a single poll tick while connecting; keeps cancel/timeout
 // checks responsive without busy-looping.
 const CONNECT_POLL_MS: u64 = 200;
+
 const SSH_RETRY_DELAY_MS: u64 = 10;
 
 /// Authentication strategy used when establishing an SSH session.
@@ -275,10 +281,6 @@ pub struct SSHSessionBuilder {
     cancel: Option<Arc<AtomicBool>>,
 }
 
-pub fn ssh() -> SSHSessionBuilder {
-    SSHSessionBuilder::default()
-}
-
 impl SSHSessionBuilder {
     /// Set the `<host>:<port>` pair that the session should connect to.
     pub fn with_host(mut self, host: &str) -> Self {
@@ -398,6 +400,39 @@ impl SSHSessionBuilder {
     }
 }
 
+struct RetryableExecutor<'a> {
+    start: Instant,
+    timeout: Option<Duration>,
+    cancel: Option<&'a Arc<AtomicBool>>,
+}
+
+impl<'a> RetryableExecutor<'a> {
+    fn exec<T>(
+        &self,
+        step: &'static str,
+        mut op: impl FnMut() -> Result<T, SshError>,
+    ) -> Result<T, SessionError> {
+        loop {
+            check_cancel(self.cancel)?;
+            check_timeout(self.start, self.timeout, step)?;
+            match op() {
+                Ok(result) => return Ok(result),
+                Err(err) if is_would_block(&err) => {
+                    std::thread::sleep(Duration::from_millis(
+                        SSH_RETRY_DELAY_MS,
+                    ));
+                    continue;
+                },
+                Err(err) => return Err(SessionError::SSH2(err)),
+            }
+        }
+    }
+}
+
+pub fn ssh() -> SSHSessionBuilder {
+    SSHSessionBuilder::default()
+}
+
 /// Log in with the configured password or key file after the agent failed.
 ///
 /// Missing secrets are reported before any network call, so libssh2 never
@@ -510,35 +545,6 @@ fn check_timeout(
         });
     }
     Ok(())
-}
-
-struct RetryableExecutor<'a> {
-    start: Instant,
-    timeout: Option<Duration>,
-    cancel: Option<&'a Arc<AtomicBool>>,
-}
-
-impl<'a> RetryableExecutor<'a> {
-    fn exec<T>(
-        &self,
-        step: &'static str,
-        mut op: impl FnMut() -> Result<T, SshError>,
-    ) -> Result<T, SessionError> {
-        loop {
-            check_cancel(self.cancel)?;
-            check_timeout(self.start, self.timeout, step)?;
-            match op() {
-                Ok(result) => return Ok(result),
-                Err(err) if is_would_block(&err) => {
-                    std::thread::sleep(Duration::from_millis(
-                        SSH_RETRY_DELAY_MS,
-                    ));
-                    continue;
-                },
-                Err(err) => return Err(SessionError::SSH2(err)),
-            }
-        }
-    }
 }
 
 fn connect_with_timeout(

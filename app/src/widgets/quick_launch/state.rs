@@ -124,10 +124,6 @@ impl QuickLaunchState {
         self.selected_path.as_ref()
     }
 
-    pub(crate) fn selected_path_cloned(&self) -> Option<NodePath> {
-        self.selected_path.clone()
-    }
-
     pub(super) fn set_selected_path(&mut self, path: Option<NodePath>) {
         self.selected_path = path;
     }
@@ -365,6 +361,16 @@ impl SecretPromptState {
         &self.request
     }
 
+    /// Title of the launch that asks for the secret.
+    pub(crate) fn launch_title(&self) -> &str {
+        self.command.title()
+    }
+
+    /// Account the launch logs in as, such as `ubuntu@192.168.1.20`.
+    pub(crate) fn account(&self) -> String {
+        self.command.ssh_account().unwrap_or_default()
+    }
+
     /// Secret typed so far.
     pub(crate) fn value(&self) -> &str {
         &self.value
@@ -375,6 +381,7 @@ impl SecretPromptState {
         &self.input_id
     }
 
+    /// Ask for `request` before running `command`, the launch at `path`.
     pub(super) fn new(
         path: NodePath,
         command: Box<QuickLaunch>,
@@ -396,6 +403,19 @@ impl SecretPromptState {
     /// Consume the prompt into the launch it belongs to and the typed secret.
     pub(super) fn into_launch(self) -> (NodePath, QuickLaunch, String) {
         (self.path, *self.command, self.value)
+    }
+}
+
+#[cfg(test)]
+impl SecretPromptState {
+    /// Prompt asking for `request` before running `command`, the launch at
+    /// `path`, for screens built outside the widget.
+    pub(crate) fn asking(
+        path: NodePath,
+        command: Box<QuickLaunch>,
+        request: SshSecretRequest,
+    ) -> Self {
+        Self::new(path, command, request)
     }
 }
 
@@ -458,6 +478,14 @@ impl ContextMenuState {
     }
 }
 
+#[cfg(test)]
+impl ContextMenuState {
+    /// Context menu for `target`, opened at `cursor`.
+    pub(crate) fn at(target: ContextMenuTarget, cursor: Point) -> Self {
+        Self { target, cursor }
+    }
+}
+
 /// Active inline edit state.
 #[derive(Debug, Clone)]
 pub(crate) struct InlineEditState {
@@ -509,15 +537,6 @@ impl WizardState {
 
     pub(super) fn remove_tab(&mut self, tab_id: u64) {
         self.editors.remove(&tab_id);
-    }
-
-    #[cfg(test)]
-    pub(super) fn set_editor(
-        &mut self,
-        tab_id: u64,
-        editor: WizardEditorState,
-    ) {
-        self.editors.insert(tab_id, editor);
     }
 }
 

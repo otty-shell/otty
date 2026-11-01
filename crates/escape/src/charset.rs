@@ -7,19 +7,6 @@ pub enum Charset {
     DecLineDrawing,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum CharsetIndex {
-    /// Designate G0 Character Set
-    #[default]
-    G0,
-    /// Designate G1 Character Set
-    G1,
-    /// Designate G2 Character Set
-    G2,
-    /// Designate G3 Character Set
-    G3,
-}
-
 impl Charset {
     /// Switch/Map character to the active charset. Ascii is the common case and
     /// for that we want to do as little as possible.
@@ -64,4 +51,17 @@ impl Charset {
             },
         }
     }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum CharsetIndex {
+    /// Designate G0 Character Set
+    #[default]
+    G0,
+    /// Designate G1 Character Set
+    G1,
+    /// Designate G2 Character Set
+    G2,
+    /// Designate G3 Character Set
+    G3,
 }

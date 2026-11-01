@@ -139,6 +139,36 @@ pub(crate) fn xparse_color(color: &[u8]) -> Option<Rgb> {
     }
 }
 
+pub(crate) fn parse_sgr_color<'a, I>(iter: &mut I) -> Option<Color>
+where
+    I: Iterator<Item = &'a CsiParam>,
+{
+    let mut iter = iter.filter(|&el| el.as_integer().is_some());
+
+    match iter.next() {
+        Some(CsiParam::Integer(5)) => {
+            let index = iter.next()?.as_integer()?;
+            (index <= u8::MAX as i64).then_some(Color::Indexed(index as u8))
+        },
+        Some(CsiParam::Integer(2)) => {
+            let r = iter.next()?.as_integer()?;
+            let g = iter.next()?.as_integer()?;
+            let b = iter.next()?.as_integer()?;
+
+            if r > u8::MAX as i64 || g > u8::MAX as i64 || b > u8::MAX as i64 {
+                return None;
+            }
+
+            Some(Color::TrueColor(Rgb {
+                r: r as u8,
+                g: g as u8,
+                b: b as u8,
+            }))
+        },
+        _ => None,
+    }
+}
+
 /// Parse colors in `#r(rrr)g(ggg)b(bbb)` format.
 fn parse_legacy_color(color: &[u8]) -> Option<Rgb> {
     let color_len = color.len() / 3;
@@ -189,36 +219,6 @@ fn parse_rgb_color(input: &[u8]) -> Option<Rgb> {
     let b = scale_hex(colors[2])?;
 
     Some(Rgb { r, g, b })
-}
-
-pub(crate) fn parse_sgr_color<'a, I>(iter: &mut I) -> Option<Color>
-where
-    I: Iterator<Item = &'a CsiParam>,
-{
-    let mut iter = iter.filter(|&el| el.as_integer().is_some());
-
-    match iter.next() {
-        Some(CsiParam::Integer(5)) => {
-            let index = iter.next()?.as_integer()?;
-            (index <= u8::MAX as i64).then_some(Color::Indexed(index as u8))
-        },
-        Some(CsiParam::Integer(2)) => {
-            let r = iter.next()?.as_integer()?;
-            let g = iter.next()?.as_integer()?;
-            let b = iter.next()?.as_integer()?;
-
-            if r > u8::MAX as i64 || g > u8::MAX as i64 || b > u8::MAX as i64 {
-                return None;
-            }
-
-            Some(Color::TrueColor(Rgb {
-                r: r as u8,
-                g: g as u8,
-                b: b as u8,
-            }))
-        },
-        _ => None,
-    }
 }
 
 #[cfg(test)]

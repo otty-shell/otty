@@ -4,17 +4,6 @@ use iced::{Length, Size, Subscription, Task, Theme, window};
 use otty_ui_term::TerminalView;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
-fn main() -> iced::Result {
-    iced::application(App::new, App::update, App::view)
-        .title(App::title)
-        .window_size(Size {
-            width: 1280.0,
-            height: 720.0,
-        })
-        .subscription(App::subscription)
-        .run()
-}
-
 #[derive(Debug, Clone)]
 pub enum Event {
     Terminal(otty_ui_term::Event),
@@ -82,4 +71,15 @@ impl App {
             .height(Length::Fill)
             .into()
     }
+}
+
+fn main() -> iced::Result {
+    iced::application(App::new, App::update, App::view)
+        .title(App::title)
+        .window_size(Size {
+            width: 1280.0,
+            height: 720.0,
+        })
+        .subscription(App::subscription)
+        .run()
 }

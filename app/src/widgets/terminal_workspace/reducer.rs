@@ -7,10 +7,10 @@ use otty_ui_term::{BlockCommand, TerminalView};
 use super::event::{
     TerminalWorkspaceEffect, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
-use super::shortcuts::TerminalWorkspaceAction;
 use super::state::{StateCommand, TerminalTabState, TerminalWorkspaceState};
 use super::types::{TerminalEvent, TerminalKind};
 use crate::i18n;
+use crate::shortcuts::AppShortcut;
 
 /// Runtime context injected into each reduce call.
 pub(crate) struct TerminalWorkspaceCtx {
@@ -24,6 +24,13 @@ pub(crate) struct TerminalWorkspaceCtx {
     pub(crate) sidebar_cursor: Point,
     /// Whether sibling panes are evened out on split and close.
     pub(crate) equalize_panes: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CopyKind {
+    Content,
+    Prompt,
+    Command,
 }
 
 /// Reduce a terminal workspace intent event into state updates and effects.
@@ -177,13 +184,6 @@ pub(crate) fn reduce(
 // Private reducer helpers
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug)]
-enum CopyKind {
-    Content,
-    Prompt,
-    Command,
-}
-
 #[allow(clippy::too_many_arguments)]
 fn reduce_open_tab(
     state: &mut TerminalWorkspaceState,
@@ -237,14 +237,12 @@ fn reduce_open_tab(
         terminal_to_tab.insert(t_id, tab_id);
     }
 
-    let title = terminal_tab.title().to_string();
+    let title_effect = title_changed(tab_id, &terminal_tab);
     state.insert_tab(tab_id, terminal_tab);
 
     let mut tasks: Vec<Task<TerminalWorkspaceEvent>> = vec![
         TerminalView::focus(widget_id),
-        Task::done(TerminalWorkspaceEvent::Effect(
-            TerminalWorkspaceEffect::TitleChanged { tab_id, title },
-        )),
+        Task::done(TerminalWorkspaceEvent::Effect(title_effect)),
     ];
     if sync_explorer {
         tasks.push(Task::done(TerminalWorkspaceEvent::Effect(
@@ -280,12 +278,6 @@ fn reduce_widget_event(
         );
     }
 
-    let refresh_titles = matches!(
-        &event,
-        otty_ui_term::Event::TitleChanged { .. }
-            | otty_ui_term::Event::ResetTitle { .. }
-    );
-
     // A pane closes when its process exits, or on a key press once it
     // has exited and was kept open.
     let may_close_pane = match &event {
@@ -305,23 +297,7 @@ fn reduce_widget_event(
         reindex_terminal_tabs(state, terminal_to_tab);
     }
 
-    if !refresh_titles {
-        return update;
-    }
-
-    let title_task = state
-        .tab(tab_id)
-        .map(|tab| {
-            Task::done(TerminalWorkspaceEvent::Effect(
-                TerminalWorkspaceEffect::TitleChanged {
-                    tab_id,
-                    title: tab.title().to_string(),
-                },
-            ))
-        })
-        .unwrap_or_else(Task::none);
-
-    Task::batch(vec![update, title_task])
+    update
 }
 
 fn reduce_focus_active(
@@ -342,18 +318,23 @@ fn reduce_focus_active(
 
 /// Act on an application shortcut a terminal widget reported.
 ///
-/// The reporting terminal identifies the pane to act on, so a shortcut
-/// only ever affects the pane that had keyboard focus when it fired.
+/// Split pane is run here: the reporting terminal identifies the pane to
+/// act on, so it only ever affects the pane that had keyboard focus when it
+/// fired. Every other shortcut is handed to the app as an effect.
 fn reduce_terminal_action(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,
     tab_id: u64,
     terminal_id: u64,
-    action: &TerminalWorkspaceAction,
+    action: &AppShortcut,
     equalize_panes: bool,
 ) -> Task<TerminalWorkspaceEvent> {
-    let TerminalWorkspaceAction::SplitPane { axis } = action;
+    if *action != AppShortcut::SplitPane {
+        return Task::done(TerminalWorkspaceEvent::Effect(
+            TerminalWorkspaceEffect::ShortcutPressed { shortcut: *action },
+        ));
+    }
 
     let Some(pane) = state
         .tab(tab_id)
@@ -368,7 +349,7 @@ fn reduce_terminal_action(
         next_terminal_id,
         tab_id,
         pane,
-        *axis,
+        pane_grid::Axis::Vertical,
         equalize_panes,
     )
 }
@@ -560,7 +541,6 @@ fn update_block_selection(
 // ---------------------------------------------------------------------------
 // Command execution and state helpers
 // ---------------------------------------------------------------------------
-
 fn with_terminal_tab<F>(
     state: &mut TerminalWorkspaceState,
     tab_id: u64,
@@ -569,20 +549,35 @@ fn with_terminal_tab<F>(
 where
     F: FnOnce(&mut TerminalTabState) -> StateCommand,
 {
-    let (cmd, title) = {
+    let (cmd, title_effect) = {
         let Some(tab) = state.tab_mut(tab_id) else {
             return Task::none();
         };
         let cmd = f(tab);
-        let title = tab.title().to_string();
-        (cmd, title)
+        let title_effect =
+            tab.take_label_change().then(|| title_changed(tab_id, tab));
+        (cmd, title_effect)
     };
 
     let command_task = execute_command(cmd);
-    let title_task = Task::done(TerminalWorkspaceEvent::Effect(
-        TerminalWorkspaceEffect::TitleChanged { tab_id, title },
-    ));
+    let Some(title_effect) = title_effect else {
+        return command_task;
+    };
+
+    let title_task = Task::done(TerminalWorkspaceEvent::Effect(title_effect));
     Task::batch(vec![command_task, title_task])
+}
+
+/// Report the tab's current title and folder name to the tabs widget.
+fn title_changed(
+    tab_id: u64,
+    tab: &TerminalTabState,
+) -> TerminalWorkspaceEffect {
+    TerminalWorkspaceEffect::TitleChanged {
+        tab_id,
+        title: tab.title().to_string(),
+        folder: tab.folder().map(str::to_string),
+    }
 }
 
 fn execute_command(command: StateCommand) -> Task<TerminalWorkspaceEvent> {
@@ -624,14 +619,19 @@ mod tests {
     use std::collections::HashMap;
 
     use iced::widget::pane_grid;
-    use iced::{Point, Size};
+    use iced::{Point, Size, Task};
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
-    use super::{TerminalWorkspaceAction, TerminalWorkspaceCtx, reduce};
+    use super::{TerminalWorkspaceCtx, reduce};
     use crate::domain::exit_behavior::ExitBehavior;
-    use crate::widgets::terminal_workspace::TerminalWorkspaceIntent;
+    use crate::shortcuts::AppShortcut;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::terminal_workspace::state::TerminalWorkspaceState;
     use crate::widgets::terminal_workspace::types::TerminalKind;
+    use crate::widgets::terminal_workspace::{
+        TerminalWorkspaceEffect, TerminalWorkspaceEvent,
+        TerminalWorkspaceIntent,
+    };
 
     #[cfg(unix)]
     const VALID_SHELL_PATH: &str = "/bin/sh";
@@ -893,11 +893,11 @@ mod tests {
             },
             &ctx,
         );
-        reduce_action(
+        let _ = reduce_action(
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            split_pane_action(),
+            AppShortcut::SplitPane,
         );
 
         for event in [
@@ -948,14 +948,14 @@ mod tests {
         (state, terminal_to_tab, next_id)
     }
 
-    /// Reduce a terminal action reported by terminal 100.
+    /// Reduce a shortcut reported by terminal 100.
     fn reduce_action(
         state: &mut TerminalWorkspaceState,
         terminal_to_tab: &mut HashMap<u64, u64>,
         next_id: &mut u64,
-        action: TerminalWorkspaceAction,
-    ) {
-        let _ = reduce(
+        action: AppShortcut,
+    ) -> Task<TerminalWorkspaceEvent> {
+        reduce(
             state,
             terminal_to_tab,
             next_id,
@@ -966,13 +966,7 @@ mod tests {
                 },
             ),
             &default_ctx(),
-        );
-    }
-
-    fn split_pane_action() -> TerminalWorkspaceAction {
-        TerminalWorkspaceAction::SplitPane {
-            axis: pane_grid::Axis::Vertical,
-        }
+        )
     }
 
     fn terminal_count(state: &TerminalWorkspaceState) -> usize {
@@ -1016,11 +1010,11 @@ mod tests {
 
         assert_eq!(terminal_count(&state), 1);
 
-        reduce_action(
+        let _ = reduce_action(
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            split_pane_action(),
+            AppShortcut::SplitPane,
         );
 
         assert_eq!(
@@ -1037,19 +1031,19 @@ mod tests {
             state_with_one_shell_tab();
 
         // Terminal 100 splits first, so the new terminal 101 takes focus.
-        reduce_action(
+        let _ = reduce_action(
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            split_pane_action(),
+            AppShortcut::SplitPane,
         );
 
         // Terminal 100 reports again while terminal 101 holds focus.
-        reduce_action(
+        let _ = reduce_action(
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            split_pane_action(),
+            AppShortcut::SplitPane,
         );
 
         let tab = state.tab(1).expect("tab must exist after opening");
@@ -1064,7 +1058,47 @@ mod tests {
             sibling_split_axis(tab.panes().layout(), reporting, created),
             Some(pane_grid::Axis::Vertical),
             "the new pane must be split off the reporting pane, not the \
-             focused one, and along the axis the action carried"
+             focused one, and vertically"
+        );
+    }
+
+    #[test]
+    fn given_an_app_shortcut_from_a_terminal_when_reduced_then_it_goes_to_the_app()
+     {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_one_shell_tab();
+
+        for shortcut in [
+            AppShortcut::CommandPalette,
+            AppShortcut::LeftPanel,
+            AppShortcut::FilesPanel,
+            AppShortcut::FocusMode,
+            AppShortcut::Settings,
+            AppShortcut::NewTerminal,
+            AppShortcut::CloseSession,
+        ] {
+            let events = collect_outputs(reduce_action(
+                &mut state,
+                &mut terminal_to_tab,
+                &mut next_id,
+                shortcut,
+            ));
+
+            assert!(
+                matches!(
+                    events.as_slice(),
+                    [TerminalWorkspaceEvent::Effect(
+                        TerminalWorkspaceEffect::ShortcutPressed { shortcut: pressed }
+                    )] if *pressed == shortcut
+                ),
+                "{shortcut:?} must be handed to the app"
+            );
+        }
+
+        assert_eq!(
+            terminal_count(&state),
+            1,
+            "only split pane changes the workspace"
         );
     }
 }

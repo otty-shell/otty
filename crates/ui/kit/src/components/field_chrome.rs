@@ -20,6 +20,9 @@ pub(super) enum Note {
 }
 
 /// Stacks the label row, `body` and the optional `note` of one field.
+///
+/// An empty `label` leaves the label row out, for fields that sit inside a
+/// row which already names them.
 pub(super) fn labelled<'a, Message: 'a>(
     label: &str,
     is_optional: bool,
@@ -43,7 +46,11 @@ pub(super) fn labelled<'a, Message: 'a>(
         );
     }
 
-    let mut field = column![label_row, body].spacing(spacing::SPACE_2);
+    let mut field = column![].spacing(spacing::SPACE_2);
+    if !label.is_empty() {
+        field = field.push(label_row);
+    }
+    field = field.push(body);
     if let Some(note) = note {
         let (content, color) = match note {
             Note::Hint(content) => (content, palette.text_muted()),

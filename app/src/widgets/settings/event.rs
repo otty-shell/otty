@@ -18,10 +18,6 @@ pub(crate) enum SettingsIntent {
     SaveFailed(String),
     /// Discard draft edits and restore the baseline.
     Reset,
-    /// A tree node was pressed.
-    NodePressed { path: Vec<String> },
-    /// A tree node was hovered (or unhovered when `path` is `None`).
-    NodeHovered { path: Option<Vec<String>> },
     /// The interface language selection changed.
     LanguageChanged(LanguageSetting),
     /// The shell text input changed.

@@ -49,25 +49,6 @@ const BRACKET_PAIRS: [(char, char); 4] =
 /// Default tab interval, corresponding to surfaceinfo `it` value.
 const INITIAL_TABSTOPS: usize = 8;
 
-/// Convert a terminal point to a viewport‑relative point.
-#[inline]
-pub fn point_to_viewport(
-    display_offset: usize,
-    point: Point,
-) -> Option<Point<usize>> {
-    let viewport_line = point.line.0 + display_offset as i32;
-    usize::try_from(viewport_line)
-        .ok()
-        .map(|line| Point::new(line, point.column))
-}
-
-/// Convert a viewport‑relative point to a terminal point.
-#[inline]
-pub fn viewport_to_point(display_offset: usize, point: Point<usize>) -> Point {
-    let line = Line(point.line as i32) - display_offset;
-    Point::new(line, point.column)
-}
-
 /// In‑memory representation of a terminal surface.
 ///
 /// A `Surface` is responsible for tracking all state required to faithfully
@@ -132,34 +113,6 @@ pub struct Surface {
 
     /// Static configuration for this surface.
     config: SurfaceConfig,
-}
-
-/// Configuration options for the [`Surface`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SurfaceConfig {
-    /// The maximum amount of scrolling history.
-    pub scrolling_history: usize,
-
-    /// Default cursor style to reset the cursor to.
-    pub default_cursor_style: CursorStyle,
-
-    /// The characters which delimit semantic selection.
-    /// The default value is [`SEMANTIC_ESCAPE_CHARS`].
-    pub semantic_escape_chars: String,
-
-    /// Whether to enable kitty keyboard protocol.
-    pub kitty_keyboard: bool,
-}
-
-impl Default for SurfaceConfig {
-    fn default() -> Self {
-        Self {
-            scrolling_history: 10000,
-            semantic_escape_chars: SEMANTIC_ESCAPE_CHARS.to_owned(),
-            default_cursor_style: Default::default(),
-            kitty_keyboard: Default::default(),
-        }
-    }
 }
 
 impl Surface {
@@ -2108,6 +2061,34 @@ impl SurfaceActor for Surface {
     }
 }
 
+/// Configuration options for the [`Surface`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurfaceConfig {
+    /// The maximum amount of scrolling history.
+    pub scrolling_history: usize,
+
+    /// Default cursor style to reset the cursor to.
+    pub default_cursor_style: CursorStyle,
+
+    /// The characters which delimit semantic selection.
+    /// The default value is [`SEMANTIC_ESCAPE_CHARS`].
+    pub semantic_escape_chars: String,
+
+    /// Whether to enable kitty keyboard protocol.
+    pub kitty_keyboard: bool,
+}
+
+impl Default for SurfaceConfig {
+    fn default() -> Self {
+        Self {
+            scrolling_history: 10000,
+            semantic_escape_chars: SEMANTIC_ESCAPE_CHARS.to_owned(),
+            default_cursor_style: Default::default(),
+            kitty_keyboard: Default::default(),
+        }
+    }
+}
+
 /// The state of the [`Mode`] and [`PrivateMode`].
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
@@ -2124,27 +2105,6 @@ impl From<bool> for ModeState {
     fn from(value: bool) -> Self {
         if value { Self::Set } else { Self::Reset }
     }
-}
-
-/// Surface version for escape sequence reports.
-///
-/// This returns the current surface version as a unique number based on otty-surface's
-/// semver version. The different versions are padded to ensure that a higher semver version will
-/// always report a higher version number.
-fn version_number(mut version: &str) -> usize {
-    if let Some(separator) = version.rfind('-') {
-        version = &version[..separator];
-    }
-
-    let mut version_number = 0;
-
-    let semver_versions = version.split('.');
-    for (i, semver_version) in semver_versions.rev().enumerate() {
-        let semver_number = semver_version.parse::<usize>().unwrap_or(0);
-        version_number += usize::pow(100, i as u32) * semver_number;
-    }
-
-    version_number
 }
 
 struct TabStops {
@@ -2191,6 +2151,46 @@ impl IndexMut<Column> for TabStops {
     fn index_mut(&mut self, index: Column) -> &mut bool {
         self.tabs.index_mut(index.0)
     }
+}
+
+/// Convert a terminal point to a viewport‑relative point.
+#[inline]
+pub fn point_to_viewport(
+    display_offset: usize,
+    point: Point,
+) -> Option<Point<usize>> {
+    let viewport_line = point.line.0 + display_offset as i32;
+    usize::try_from(viewport_line)
+        .ok()
+        .map(|line| Point::new(line, point.column))
+}
+
+/// Convert a viewport‑relative point to a terminal point.
+#[inline]
+pub fn viewport_to_point(display_offset: usize, point: Point<usize>) -> Point {
+    let line = Line(point.line as i32) - display_offset;
+    Point::new(line, point.column)
+}
+
+/// Surface version for escape sequence reports.
+///
+/// This returns the current surface version as a unique number based on otty-surface's
+/// semver version. The different versions are padded to ensure that a higher semver version will
+/// always report a higher version number.
+fn version_number(mut version: &str) -> usize {
+    if let Some(separator) = version.rfind('-') {
+        version = &version[..separator];
+    }
+
+    let mut version_number = 0;
+
+    let semver_versions = version.split('.');
+    for (i, semver_version) in semver_versions.rev().enumerate() {
+        let semver_number = semver_version.parse::<usize>().unwrap_or(0);
+        version_number += usize::pow(100, i as u32) * semver_number;
+    }
+
+    version_number
 }
 
 #[cfg(test)]

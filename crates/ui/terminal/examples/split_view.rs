@@ -8,16 +8,69 @@ use iced::{
 use otty_ui_term::TerminalView;
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
-fn main() -> iced::Result {
-    iced::application(App::new, App::update, App::view)
-        .antialiasing(false)
-        .window_size(Size {
-            width: 1280.0,
-            height: 720.0,
-        })
-        .title(App::title)
-        .subscription(App::subscription)
-        .run()
+const PANE_ID_COLOR_UNFOCUSED: Color = Color::from_rgb(
+    0xFF as f32 / 255.0,
+    0xC7 as f32 / 255.0,
+    0xC7 as f32 / 255.0,
+);
+
+const PANE_ID_COLOR_FOCUSED: Color = Color::from_rgb(
+    0xFF as f32 / 255.0,
+    0x47 as f32 / 255.0,
+    0x47 as f32 / 255.0,
+);
+
+mod style {
+    use iced::widget::container;
+    use iced::{Border, Theme};
+
+    pub fn title_bar_active(theme: &Theme) -> container::Style {
+        let palette = theme.extended_palette();
+
+        container::Style {
+            text_color: Some(palette.background.strong.text),
+            background: Some(palette.background.strong.color.into()),
+            ..Default::default()
+        }
+    }
+
+    pub fn title_bar_focused(theme: &Theme) -> container::Style {
+        let palette = theme.extended_palette();
+
+        container::Style {
+            text_color: Some(palette.primary.strong.text),
+            background: Some(palette.primary.strong.color.into()),
+            ..Default::default()
+        }
+    }
+
+    pub fn pane_active(theme: &Theme) -> container::Style {
+        let palette = theme.extended_palette();
+
+        container::Style {
+            background: Some(palette.background.weak.color.into()),
+            border: Border {
+                width: 2.0,
+                color: palette.background.strong.color,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    pub fn pane_focused(theme: &Theme) -> container::Style {
+        let palette = theme.extended_palette();
+
+        container::Style {
+            background: Some(palette.background.weak.color.into()),
+            border: Border {
+                width: 2.0,
+                color: palette.background.strong.color,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
 }
 
 struct App {
@@ -26,15 +79,6 @@ struct App {
     term_settings: otty_ui_term::settings::Settings,
     panes_created: usize,
     focus: Option<pane_grid::Pane>,
-}
-
-#[derive(Debug, Clone)]
-enum Event {
-    Split(pane_grid::Axis, pane_grid::Pane),
-    Clicked(pane_grid::Pane),
-    Resized(pane_grid::ResizeEvent),
-    Close(pane_grid::Pane),
-    Terminal(otty_ui_term::Event),
 }
 
 impl App {
@@ -211,16 +255,14 @@ impl App {
     }
 }
 
-const PANE_ID_COLOR_UNFOCUSED: Color = Color::from_rgb(
-    0xFF as f32 / 255.0,
-    0xC7 as f32 / 255.0,
-    0xC7 as f32 / 255.0,
-);
-const PANE_ID_COLOR_FOCUSED: Color = Color::from_rgb(
-    0xFF as f32 / 255.0,
-    0x47 as f32 / 255.0,
-    0x47 as f32 / 255.0,
-);
+#[derive(Debug, Clone)]
+enum Event {
+    Split(pane_grid::Axis, pane_grid::Pane),
+    Clicked(pane_grid::Pane),
+    Resized(pane_grid::ResizeEvent),
+    Close(pane_grid::Pane),
+    Terminal(otty_ui_term::Event),
+}
 
 #[derive(Clone, Copy)]
 struct Pane {
@@ -235,6 +277,18 @@ impl Pane {
             is_pinned: false,
         }
     }
+}
+
+fn main() -> iced::Result {
+    iced::application(App::new, App::update, App::view)
+        .antialiasing(false)
+        .window_size(Size {
+            width: 1280.0,
+            height: 720.0,
+        })
+        .title(App::title)
+        .subscription(App::subscription)
+        .run()
 }
 
 fn view_content(
@@ -286,57 +340,4 @@ fn view_controls<'a>(
     ));
 
     row.push(close).into()
-}
-
-mod style {
-    use iced::widget::container;
-    use iced::{Border, Theme};
-
-    pub fn title_bar_active(theme: &Theme) -> container::Style {
-        let palette = theme.extended_palette();
-
-        container::Style {
-            text_color: Some(palette.background.strong.text),
-            background: Some(palette.background.strong.color.into()),
-            ..Default::default()
-        }
-    }
-
-    pub fn title_bar_focused(theme: &Theme) -> container::Style {
-        let palette = theme.extended_palette();
-
-        container::Style {
-            text_color: Some(palette.primary.strong.text),
-            background: Some(palette.primary.strong.color.into()),
-            ..Default::default()
-        }
-    }
-
-    pub fn pane_active(theme: &Theme) -> container::Style {
-        let palette = theme.extended_palette();
-
-        container::Style {
-            background: Some(palette.background.weak.color.into()),
-            border: Border {
-                width: 2.0,
-                color: palette.background.strong.color,
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    }
-
-    pub fn pane_focused(theme: &Theme) -> container::Style {
-        let palette = theme.extended_palette();
-
-        container::Style {
-            background: Some(palette.background.weak.color.into()),
-            border: Border {
-                width: 2.0,
-                color: palette.background.strong.color,
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    }
 }

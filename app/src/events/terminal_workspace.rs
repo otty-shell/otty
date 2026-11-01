@@ -1,16 +1,18 @@
 use iced::Task;
-use otty_ui_kit::size;
 
-use super::AppEvent;
+use super::{AppEvent, shortcuts};
 use crate::app::App;
 use crate::layout::pane_grid_size;
+use crate::shortcuts::AppShortcut;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::{
-    TerminalWorkspaceAction, TerminalWorkspaceCtx, TerminalWorkspaceEffect,
-    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+    TerminalWorkspaceCtx, TerminalWorkspaceEffect, TerminalWorkspaceEvent,
+    TerminalWorkspaceIntent,
 };
 
+/// Route a terminal workspace event: reduce its intents and turn its
+/// effects into events of the other widgets.
 pub(crate) fn handle(
     app: &mut App,
     event: TerminalWorkspaceEvent,
@@ -29,13 +31,9 @@ fn handle_intent_event(
     app: &mut App,
     event: TerminalWorkspaceIntent,
 ) -> Task<AppEvent> {
-    let sidebar = &app.widgets.sidebar;
-
     let pane_grid_size = pane_grid_size(
         app.state.screen_size,
-        sidebar.is_hidden(),
-        size::RAIL,
-        sidebar.effective_workspace_ratio(),
+        app.widgets.sidebar.side_panels_ratio(),
     );
 
     let ctx = build_ctx_from_parts(
@@ -83,13 +81,22 @@ fn handle_effect_event(
                 TabsIntent::OpenErrorTab { title, message },
             ))),
         ]),
-        TerminalWorkspaceEffect::TitleChanged { tab_id, title } => {
-            Task::done(AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::SetTitle { tab_id, title },
-            )))
-        },
+        TerminalWorkspaceEffect::TitleChanged {
+            tab_id,
+            title,
+            folder,
+        } => Task::done(AppEvent::Tabs(TabsEvent::Intent(
+            TabsIntent::SetTitle {
+                tab_id,
+                title,
+                folder,
+            },
+        ))),
         TerminalWorkspaceEffect::SyncExplorer => {
             sync_explorer_from_terminal(app)
+        },
+        TerminalWorkspaceEffect::ShortcutPressed { shortcut } => {
+            shortcuts::handle(app, shortcut)
         },
     }
 }
@@ -99,7 +106,7 @@ fn sync_explorer_from_terminal(app: &mut App) -> Task<AppEvent> {
     let Some(cwd) = app
         .widgets
         .terminal_workspace
-        .shell_cwd_for_active_tab(active_tab_id)
+        .local_cwd_for_active_tab(active_tab_id)
     else {
         return Task::none();
     };
@@ -136,9 +143,7 @@ fn should_sync_explorer(event: &TerminalWorkspaceIntent) -> bool {
         // either way.
         Widget(otty_ui_term::Event::BindingActionDispatched {
             action, ..
-        }) => {
-            matches!(action, TerminalWorkspaceAction::SplitPane { .. })
-        },
+        }) => *action == AppShortcut::SplitPane,
         _ => false,
     }
 }
@@ -147,10 +152,12 @@ fn should_sync_explorer(event: &TerminalWorkspaceIntent) -> bool {
 mod tests {
     use std::sync::Arc;
 
-    use super::{
-        TerminalWorkspaceAction, handle_effect_event, should_sync_explorer,
-    };
+    use super::{handle_effect_event, should_sync_explorer};
     use crate::app::App;
+    use crate::events::AppEvent;
+    use crate::shortcuts::AppShortcut;
+    use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::tabs::{TabsEvent, TabsIntent};
     use crate::widgets::terminal_workspace::{
         TerminalWorkspaceEffect, TerminalWorkspaceIntent,
     };
@@ -186,11 +193,39 @@ mod tests {
         assert!(should_sync_explorer(&TerminalWorkspaceIntent::Widget(
             otty_ui_term::Event::BindingActionDispatched {
                 id: 42,
-                action: TerminalWorkspaceAction::SplitPane {
-                    axis: iced::widget::pane_grid::Axis::Vertical,
-                },
+                action: AppShortcut::SplitPane,
             }
         )));
+    }
+
+    #[test]
+    fn given_other_shortcut_action_when_checked_then_returns_false() {
+        assert!(!should_sync_explorer(&TerminalWorkspaceIntent::Widget(
+            otty_ui_term::Event::BindingActionDispatched {
+                id: 42,
+                action: AppShortcut::Settings,
+            }
+        )));
+    }
+
+    #[test]
+    fn given_shortcut_pressed_in_a_terminal_when_handled_then_the_app_runs_it()
+    {
+        let (mut app, _) = App::new();
+
+        let events = collect_outputs(handle_effect_event(
+            &mut app,
+            TerminalWorkspaceEffect::ShortcutPressed {
+                shortcut: AppShortcut::Settings,
+            },
+        ));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::OpenSettingsTab
+            ))]
+        ));
     }
 
     #[test]

@@ -1,9 +1,10 @@
 use otty_ui_term::settings::Settings;
 
+use super::types::TabMachine;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::domain::quick_launch::WizardTabInit;
 
-/// Intent events handled by tab bar views and cross-widget tab workflows.
+/// Intent events handled by the session list and cross-widget tab workflows.
 #[derive(Debug, Clone)]
 pub(crate) enum TabsIntent {
     ActivateTab {
@@ -12,21 +13,24 @@ pub(crate) enum TabsIntent {
     CloseTab {
         tab_id: u64,
     },
+    /// Name a terminal tab after its focused pane.
     SetTitle {
         tab_id: u64,
         title: String,
+        folder: Option<String>,
     },
     /// Refresh the title of an already-open settings tab.
     RefreshSettingsTitle {
         title: String,
     },
-    OpenTerminalTab {
-        title: String,
-    },
+    /// Open a terminal tab running the user's shell, named after it.
+    OpenTerminalTab,
     OpenCommandTab {
         title: String,
         settings: Box<Settings>,
         exit_behavior: ExitBehavior,
+        /// Machine the command runs on: the SSH host for an SSH launch.
+        machine: TabMachine,
     },
     OpenSettingsTab,
     OpenWizardTab {
@@ -69,7 +73,7 @@ pub(crate) enum TabsEffect {
         title: String,
         message: String,
     },
-    /// Tab bar should scroll to show the newest tab.
+    /// The session list should scroll to its end to show the newest tab.
     ScrollBarToEnd,
 }
 

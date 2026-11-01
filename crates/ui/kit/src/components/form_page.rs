@@ -9,8 +9,8 @@ use crate::{size, spacing};
 
 /// Scrolling form page: sections `space-6` apart and an optional footer.
 /// The page title is the caller's first section, since it often carries
-/// actions next to the text. The content is at most `size::FORM` wide and has
-/// `space-7` padding.
+/// actions next to the text. The content is at most `size::FORM` wide,
+/// centered horizontally, and has `space-7` padding.
 ///
 /// # Example
 ///
@@ -70,16 +70,46 @@ impl<'a, Message: 'a> From<FormPage<'a, Message>> for Element<'a, Message> {
             content = content.push(footer);
         }
 
-        let scrollable =
-            scrollable(container(content).padding(spacing::SPACE_7))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .direction(scrollbar::vertical())
-                .style(scrollbar::style(&value.palette));
+        let scrollable = scrollable(
+            container(content)
+                .padding(spacing::SPACE_7)
+                .center_x(Length::Fill),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .direction(scrollbar::vertical())
+        .style(scrollbar::style(&value.palette));
 
         container(scrollable)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::widget::text;
+    use iced_test::simulator;
+
+    use super::*;
+
+    #[test]
+    fn given_wide_window_when_laid_out_then_form_is_centered() {
+        let palette = UiPalette::otty_dark();
+        let page: Element<'_, ()> = FormPage::new(&palette)
+            .section(container(text("start")).width(Length::Fill))
+            .into();
+        let mut ui = simulator(page);
+
+        let start = ui.find("start").expect("marker should be visible");
+
+        let window_width = 1024.0;
+        let expected_x = (window_width - size::FORM) / 2.0;
+        assert!(
+            (start.bounds().x - expected_x).abs() < 0.5,
+            "form left edge {} should be {expected_x}",
+            start.bounds().x
+        );
     }
 }

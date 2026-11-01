@@ -35,6 +35,12 @@ pub type SnapshotArc = Arc<SnapshotOwned>;
 
 const DEFAULT_READ_BUFFER_CAPACITY: usize = 1024;
 
+const MAX_SYNC_ACTIONS: usize = 10_000;
+
+const SYNC_TIMEOUT: Duration = Duration::from_millis(10);
+
+const IDLE_TICK: Duration = Duration::from_millis(10);
+
 /// Events emitted by terminal implementations to interested clients.
 pub enum TerminalEvent {
     /// The in-memory surface contents have changed.
@@ -79,10 +85,6 @@ pub enum TerminalRequest {
     /// Close the session and terminate the event loop.
     Shutdown,
 }
-
-const MAX_SYNC_ACTIONS: usize = 10_000;
-const SYNC_TIMEOUT: Duration = Duration::from_millis(10);
-const IDLE_TICK: Duration = Duration::from_millis(10);
 
 pub(crate) struct SyncState {
     active: bool,
@@ -530,31 +532,6 @@ where
     }
 }
 
-fn to_exit_status(code: i32) -> ExitStatus {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        ExitStatusExt::from_raw(code)
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::ExitStatusExt;
-        ExitStatusExt::from_raw(code as u32)
-    }
-}
-
-#[cfg(unix)]
-fn is_session_closed_error(err: &std::io::Error) -> bool {
-    const EIO_RAW: i32 = 5;
-    err.kind() == ErrorKind::UnexpectedEof
-        || err.raw_os_error() == Some(EIO_RAW)
-}
-
-#[cfg(not(unix))]
-fn is_session_closed_error(err: &std::io::Error) -> bool {
-    err.kind() == ErrorKind::UnexpectedEof
-}
-
 impl<P, E, S> TerminalEngine<P, E, S>
 where
     P: Session + Pollable,
@@ -595,6 +572,31 @@ where
         self.session.deregister(registry)?;
         Ok(())
     }
+}
+
+fn to_exit_status(code: i32) -> ExitStatus {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        ExitStatusExt::from_raw(code)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::ExitStatusExt;
+        ExitStatusExt::from_raw(code as u32)
+    }
+}
+
+#[cfg(unix)]
+fn is_session_closed_error(err: &std::io::Error) -> bool {
+    const EIO_RAW: i32 = 5;
+    err.kind() == ErrorKind::UnexpectedEof
+        || err.raw_os_error() == Some(EIO_RAW)
+}
+
+#[cfg(not(unix))]
+fn is_session_closed_error(err: &std::io::Error) -> bool {
+    err.kind() == ErrorKind::UnexpectedEof
 }
 
 #[cfg(test)]

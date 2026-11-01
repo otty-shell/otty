@@ -2,15 +2,16 @@ use std::process::ExitStatus;
 
 use otty_ui_term::settings::SessionKind;
 
-use super::shortcuts::TerminalWorkspaceAction;
+use super::model::PaneLabel;
 use crate::domain::exit_behavior::ExitBehavior;
+use crate::shortcuts::AppShortcut;
 
 /// The terminal widget this application embeds, bound to its own
 /// action type.
-pub(crate) type Terminal = otty_ui_term::Terminal<TerminalWorkspaceAction>;
+pub(crate) type Terminal = otty_ui_term::Terminal<AppShortcut>;
 
 /// An event reported by one of this application's terminal widgets.
-pub(crate) type TerminalEvent = otty_ui_term::Event<TerminalWorkspaceAction>;
+pub(crate) type TerminalEvent = otty_ui_term::Event<AppShortcut>;
 
 /// Terminal context determining whether shell metadata is available.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,9 +52,13 @@ impl ShellSession {
 /// A terminal entry stored per pane.
 pub(crate) struct TerminalEntry {
     pub(super) terminal: Terminal,
+    /// Name the pane opened with: the shell or launch name.
     pub(super) title: String,
     /// Set once the process exited and the pane was kept open.
     pub(super) exit_status: Option<ExitStatus>,
+    /// What the pane runs and where, kept up to date on terminal events so
+    /// views read it instead of rebuilding it every frame.
+    label: PaneLabel,
 }
 
 impl TerminalEntry {
@@ -62,7 +67,7 @@ impl TerminalEntry {
         &self.terminal
     }
 
-    /// Return the current title of this terminal.
+    /// Return the name the pane opened with: the shell or launch name.
     pub(crate) fn title(&self) -> &str {
         &self.title
     }
@@ -71,6 +76,36 @@ impl TerminalEntry {
     /// open.
     pub(crate) fn exit_status(&self) -> Option<ExitStatus> {
         self.exit_status
+    }
+
+    /// Return what the pane runs and where.
+    pub(crate) fn label(&self) -> &PaneLabel {
+        &self.label
+    }
+
+    /// Create the entry of a new pane opened as `title`.
+    pub(super) fn new(terminal: Terminal, title: String) -> Self {
+        let mut entry = Self {
+            terminal,
+            label: PaneLabel::new(&title, None, None),
+            title,
+            exit_status: None,
+        };
+        entry.refresh_label();
+
+        entry
+    }
+
+    /// Read the program and folder again from the terminal. Returns whether
+    /// they changed.
+    pub(super) fn refresh_label(&mut self) -> bool {
+        let label = PaneLabel::for_entry(self);
+        if label == self.label {
+            return false;
+        }
+
+        self.label = label;
+        true
     }
 }
 

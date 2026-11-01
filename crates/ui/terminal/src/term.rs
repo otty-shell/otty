@@ -263,18 +263,6 @@ pub struct Terminal<T = ()> {
     backend_event_rx: Arc<Mutex<Receiver<TerminalEvent>>>,
 }
 
-#[derive(Clone)]
-struct TerminalSubscriptionData {
-    id: u64,
-    event_receiver: Arc<Mutex<Receiver<TerminalEvent>>>,
-}
-
-impl Hash for TerminalSubscriptionData {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
-
 impl<T> Terminal<T> {
     pub fn new(id: u64, settings: Settings) -> error::Result<Self> {
         let (backend_event_tx, backend_event_rx) = mpsc::channel(100);
@@ -450,6 +438,18 @@ impl<T> Terminal<T> {
     fn content_sync(&mut self, frame: Arc<SnapshotOwned>) {
         self.engine.sync_snapshot(frame);
         self.cache.clear();
+    }
+}
+
+#[derive(Clone)]
+struct TerminalSubscriptionData {
+    id: u64,
+    event_receiver: Arc<Mutex<Receiver<TerminalEvent>>>,
+}
+
+impl Hash for TerminalSubscriptionData {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
     }
 }
 

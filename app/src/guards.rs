@@ -22,13 +22,11 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         )) => {
             use crate::widgets::sidebar::SidebarIntent as E;
             match event {
-                E::AddMenuDismiss
-                | E::AddMenuCreateTab
-                | E::AddMenuCreateCommand
-                | E::AddMenuCreateFolder => Allow,
-                E::AddMenuOpen => Ignore,
-                E::WorkspaceCursorMoved { .. }
-                | E::PaneGridCursorMoved { .. } => Allow,
+                E::HeaderMenuDismiss => Allow,
+                E::HeaderMenuOpen(_) => Ignore,
+                E::WorkspaceCursorMoved { .. } => Allow,
+                // Frames come on their own while the focus mode note fades.
+                E::FocusNoteFrame(_) => Allow,
                 _ => Dismiss,
             }
         },
@@ -46,8 +44,7 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 E::Tick
                 | E::PersistCompleted
                 | E::PersistFailed(_)
-                | E::SetupCompleted(_)
-                | E::WizardSaveRequested(_) => Allow,
+                | E::SetupCompleted(_) => Allow,
                 _ => Ignore,
             }
         },
@@ -128,6 +125,33 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
     }
 }
 
+/// Return `true` when the event is one of the header menu items (New session
+/// or Launches): open a terminal, split the pane, run a launch, create a
+/// launch, or create a folder.
+///
+/// The app closes the menu and runs these instead of asking the context
+/// menu guard, which would drop the launch intents.
+pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
+    use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+    use crate::widgets::tabs::{TabsEvent, TabsIntent};
+    use crate::widgets::terminal_workspace::{
+        TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+    };
+
+    matches!(
+        event,
+        AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenTerminalTab))
+            | AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SplitPane { .. }
+            ))
+            | AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::LaunchNode { .. }
+                    | QuickLaunchIntent::HeaderCreateCommand
+                    | QuickLaunchIntent::HeaderCreateFolder
+            ))
+    )
+}
+
 /// Return `true` when an active inline-edit should be cancelled before the
 /// event is dispatched.
 pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
@@ -146,7 +170,6 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
                     | E::PersistCompleted
                     | E::PersistFailed(_)
                     | E::Tick
-                    | E::WizardSaveRequested(_)
             )
         },
         AppEvent::QuickLaunch(
@@ -158,7 +181,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             use crate::widgets::sidebar::SidebarIntent as E;
             !matches!(
                 event,
-                E::WorkspaceCursorMoved { .. } | E::PaneGridCursorMoved { .. }
+                E::WorkspaceCursorMoved { .. } | E::FocusNoteFrame(_)
             )
         },
         AppEvent::TerminalWorkspace(
@@ -223,22 +246,168 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
     }
 }
 
+/// Return `true` when the event carries text a terminal sends to its shell
+/// (typed keys, a paste or composed input). The app drops it while the
+/// command palette is open, so keys meant for the palette never reach a
+/// shell.
+pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
+    matches!(
+        event,
+        AppEvent::TerminalWorkspace(
+            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Intent(
+                crate::widgets::terminal_workspace::TerminalWorkspaceIntent::Widget(
+                    otty_ui_term::Event::Write { .. }
+                )
+            )
+        )
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use super::{MenuGuard, context_menu_guard, inline_edit_guard};
+    use iced::time::Instant;
+
+    use super::{
+        MenuGuard, context_menu_guard, inline_edit_guard,
+        is_header_menu_choice, is_terminal_input,
+    };
     use crate::events::AppEvent;
+    use crate::shortcuts::AppShortcut;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
+    use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+    use crate::widgets::sidebar::types::HeaderMenu;
     use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
+    use crate::widgets::tabs::{TabsEvent, TabsIntent};
+    use crate::widgets::terminal_workspace::{
+        TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+    };
+
+    fn terminal_widget_event(
+        event: otty_ui_term::Event<AppShortcut>,
+    ) -> AppEvent {
+        AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+            TerminalWorkspaceIntent::Widget(event),
+        ))
+    }
 
     #[test]
-    fn given_add_menu_open_when_context_menu_guard_runs_then_event_is_ignored()
+    fn text_a_terminal_writes_to_its_shell_is_terminal_input() {
+        let event = terminal_widget_event(otty_ui_term::Event::Write {
+            id: 1,
+            data: b"ls".to_vec(),
+        });
+
+        assert!(is_terminal_input(&event));
+    }
+
+    #[test]
+    fn other_terminal_and_app_events_are_not_terminal_input() {
+        let events = [
+            terminal_widget_event(otty_ui_term::Event::Redraw { id: 1 }),
+            terminal_widget_event(
+                otty_ui_term::Event::BindingActionDispatched {
+                    id: 1,
+                    action: AppShortcut::CommandPalette,
+                },
+            ),
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::FocusActive,
+            )),
+            AppEvent::SyncTerminalGridSizes,
+        ];
+
+        for event in events {
+            assert!(!is_terminal_input(&event));
+        }
+    }
+
+    #[test]
+    fn given_menu_open_when_menu_open_intent_arrives_then_it_is_ignored() {
+        let guard =
+            context_menu_guard(&AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions),
+            )));
+        assert!(matches!(guard, MenuGuard::Ignore));
+    }
+
+    #[test]
+    fn given_menu_open_when_menu_dismiss_intent_arrives_then_it_is_allowed() {
+        let guard = context_menu_guard(&AppEvent::Sidebar(
+            SidebarEvent::Intent(SidebarIntent::HeaderMenuDismiss),
+        ));
+        assert!(matches!(guard, MenuGuard::Allow));
+    }
+
+    #[test]
+    fn given_menu_choices_when_checked_then_each_one_is_a_header_menu_choice() {
+        let open_terminal =
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenTerminalTab));
+        let launch = AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::LaunchNode {
+                path: vec![String::from("Demo")],
+            },
+        ));
+        let new_launch = AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::HeaderCreateCommand,
+        ));
+        let new_folder = AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::HeaderCreateFolder,
+        ));
+
+        let (_panes, pane) = iced::widget::pane_grid::State::new(());
+        let split =
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SplitPane {
+                    tab_id: 0,
+                    pane,
+                    axis: iced::widget::pane_grid::Axis::Vertical,
+                },
+            ));
+
+        assert!(is_header_menu_choice(&open_terminal));
+        assert!(is_header_menu_choice(&split));
+        assert!(is_header_menu_choice(&launch));
+        assert!(is_header_menu_choice(&new_launch));
+        assert!(is_header_menu_choice(&new_folder));
+    }
+
+    #[test]
+    fn given_other_events_when_checked_then_they_are_not_menu_choices() {
+        let close_tab =
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseTab {
+                tab_id: 1,
+            }));
+        let pressed = AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::NodePressed {
+                path: vec![String::from("Demo")],
+            },
+        ));
+
+        assert!(!is_header_menu_choice(&close_tab));
+        assert!(!is_header_menu_choice(&pressed));
+        assert!(!is_header_menu_choice(&AppEvent::IcedReady));
+    }
+
+    #[test]
+    fn given_focus_note_frame_when_context_menu_guard_runs_then_it_is_allowed()
     {
         let guard = context_menu_guard(&AppEvent::Sidebar(
-            SidebarEvent::Intent(SidebarIntent::AddMenuOpen),
+            SidebarEvent::Intent(SidebarIntent::FocusNoteFrame(Instant::now())),
         ));
-        assert!(matches!(guard, MenuGuard::Ignore));
+
+        assert!(matches!(guard, MenuGuard::Allow));
+    }
+
+    #[test]
+    fn given_focus_note_frame_when_inline_edit_guard_runs_then_edit_is_not_cancelled()
+     {
+        let event = AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::FocusNoteFrame(Instant::now()),
+        ));
+
+        assert!(!inline_edit_guard(&event));
     }
 
     #[test]

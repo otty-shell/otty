@@ -8,9 +8,14 @@ use iced::widget::{
     Space, column, container, row, scrollable, stack, svg, text,
 };
 use iced::{Element, Length, Padding, Theme};
+use otty_ui_kit::components::action_tile::ActionTile;
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
+use otty_ui_kit::components::chip::Chip;
+use otty_ui_kit::components::command_palette::{CommandPalette, PaletteAction};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::divider;
+use otty_ui_kit::components::empty_card::EmptyCard;
+use otty_ui_kit::components::floating_note::FloatingNote;
 use otty_ui_kit::components::form_page::FormPage;
 use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::icon_button::{
@@ -19,13 +24,20 @@ use otty_ui_kit::components::icon_button::{
 use otty_ui_kit::components::kbd::{kbd, shortcut_text};
 use otty_ui_kit::components::key_value_field::KeyValueField;
 use otty_ui_kit::components::menu::{Menu, MenuItem};
-use otty_ui_kit::components::rail_button::{RailButton, rail_separator};
+use otty_ui_kit::components::palette_list::{PaletteItem, PaletteList};
+use otty_ui_kit::components::pane_header::PaneHeader;
+use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::select::select;
+use otty_ui_kit::components::session_group::SessionGroup;
+use otty_ui_kit::components::session_row::{SessionRow, SessionTone};
 use otty_ui_kit::components::setting_row::SettingRow;
+use otty_ui_kit::components::split_button::SplitButton;
+use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::components::switch::Switch;
-use otty_ui_kit::components::tab_strip::{Tab, TabStrip};
+use otty_ui_kit::components::target_dot::{TargetKind, target_dot};
 use otty_ui_kit::components::text_field::TextField;
+use otty_ui_kit::components::title_search::TitleSearch;
 use otty_ui_kit::components::token_field::{TokenField, TokenList};
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::palette::UiPalette;
@@ -34,33 +46,31 @@ use otty_ui_kit::{fonts, spacing, typography};
 /// Plus icon used by the icon buttons.
 const PLUS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>"#;
 
+/// Search icon of the title search.
+const SEARCH_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>"#;
+
+/// Folder icon of the empty card.
+const FOLDER_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>"#;
+
+/// Launch icon of the empty card.
+const LAUNCH_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/></svg>"#;
+
+/// Product logo, passed to the empty card as an element.
+const LOGO: &[u8] = include_bytes!("../../../../assets/logo/logo-small.svg");
+
 const KINDS: [(&str, ButtonKind); 4] = [
     ("Primary", ButtonKind::Primary),
     ("Secondary", ButtonKind::Secondary),
     ("Ghost", ButtonKind::Ghost),
     ("Danger", ButtonKind::Danger),
 ];
+
 /// Width of the tree panel.
 const PANEL_WIDTH: f32 = 260.0;
+
 const TYPES: [&str; 3] = ["Command", "Script", "SSH"];
+
 const TARGETS: [&str; 4] = ["This computer", "prod-1", "staging-2", "dev-box"];
-
-fn main() -> iced::Result {
-    let mut app = iced::application(Gallery::new, update, view).theme(
-        |state: &Gallery| {
-            if state.dark {
-                Theme::Dark
-            } else {
-                Theme::Light
-            }
-        },
-    );
-    for bytes in fonts::all_bytes() {
-        app = app.font(bytes);
-    }
-
-    app.default_font(fonts::UI).run()
-}
 
 /// Which sections the gallery shows.
 #[derive(PartialEq)]
@@ -82,10 +92,12 @@ struct Gallery {
     tokens: TokenList,
     empty_tokens: TokenList,
     variables: Vec<(String, String)>,
-    tab: usize,
     tree_selected: usize,
-    rail: usize,
     dialog_open: bool,
+    sessions_open: bool,
+    menu_open: bool,
+    commands: PaletteList<u32>,
+    no_commands: PaletteList<u32>,
 }
 
 impl Gallery {
@@ -122,10 +134,12 @@ impl Gallery {
                 ("RUST_LOG".to_owned(), "debug".to_owned()),
                 ("PATH".to_owned(), "/usr/local/bin:/usr/bin".to_owned()),
             ],
-            tab: 0,
             tree_selected: 2,
-            rail: 0,
             dialog_open: false,
+            sessions_open: true,
+            menu_open: false,
+            commands: palette_list("la"),
+            no_commands: palette_list("docker"),
         }
     }
 }
@@ -146,12 +160,30 @@ enum Message {
     VarValue(usize, String),
     VarRemove(usize),
     VarAdd,
-    Tab(usize),
 
     Tree(usize),
-    Rail(usize),
     OpenDialog,
     CloseDialog,
+    ToggleSessions,
+    ToggleMenu,
+    Palette(PaletteAction),
+}
+
+fn main() -> iced::Result {
+    let mut app = iced::application(Gallery::new, update, view).theme(
+        |state: &Gallery| {
+            if state.dark {
+                Theme::Dark
+            } else {
+                Theme::Light
+            }
+        },
+    );
+    for bytes in fonts::all_bytes() {
+        app = app.font(bytes);
+    }
+
+    app.default_font(fonts::UI).run()
 }
 
 fn update(state: &mut Gallery, message: Message) {
@@ -178,12 +210,43 @@ fn update(state: &mut Gallery, message: Message) {
             state.variables.remove(index);
         },
         Message::VarAdd => state.variables.push(Default::default()),
-        Message::Tab(index) => state.tab = index,
         Message::Tree(index) => state.tree_selected = index,
-        Message::Rail(index) => state.rail = index,
         Message::OpenDialog => state.dialog_open = true,
         Message::CloseDialog => state.dialog_open = false,
+        Message::ToggleSessions => state.sessions_open = !state.sessions_open,
+        Message::ToggleMenu => state.menu_open = !state.menu_open,
+        Message::Palette(action) => match action {
+            PaletteAction::QueryChanged(query) => {
+                state.commands.set_query(query);
+            },
+            PaletteAction::MoveUp => state.commands.move_up(),
+            PaletteAction::MoveDown => state.commands.move_down(),
+            PaletteAction::RunActive | PaletteAction::RunItem(_) => {
+                state.clicks += 1;
+            },
+            PaletteAction::Close => state.commands.set_query(String::new()),
+        },
     }
+}
+
+/// Palette entries as in the V4Palette screen, with `query` typed.
+fn palette_list(query: &str) -> PaletteList<u32> {
+    let mut list = PaletteList::new(vec![
+        PaletteItem::new(1, "Launches", "laptop")
+            .with_target(TargetKind::Ssh)
+            .with_detail("ubuntu@192.168.1.20")
+            .with_shortcut("Alt 1"),
+        PaletteItem::new(2, "Sessions", "zsh  ~/projects/otty")
+            .with_target(TargetKind::Local),
+        PaletteItem::new(3, "Sessions", "htop on laptop")
+            .with_target(TargetKind::Ssh),
+        PaletteItem::new(4, "Actions", "Settings: Language"),
+        PaletteItem::new(5, "Actions", "New launch…")
+            .with_shortcut("Ctrl Shift T"),
+    ]);
+    list.set_query(query.to_owned());
+
+    list
 }
 
 fn view(state: &Gallery) -> Element<'_, Message> {
@@ -254,7 +317,8 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             shortcut_text(
                 iced::keyboard::Modifiers::CTRL
                     | iced::keyboard::Modifiers::SHIFT,
-                "c"
+                "c",
+                "Super"
             ),
             p
         ),
@@ -331,45 +395,6 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         TreeRow::new("Static row (no message)", p).depth(3),
     ]
     .width(PANEL_WIDTH);
-
-    let rail = column![
-        RailButton::new(icon(), "Sessions", p)
-            .active(state.rail == 0)
-            .on_press(Message::Rail(0)),
-        RailButton::new(icon(), "Files", p)
-            .active(state.rail == 1)
-            .on_press(Message::Rail(1)),
-        rail_separator(p),
-        RailButton::new(icon(), "Settings", p)
-            .active(state.rail == 2)
-            .on_press(Message::Rail(2)),
-    ]
-    .width(48);
-
-    let mut tabs = TabStrip::new(p).on_new(Message::Clicked);
-    for (index, title) in [
-        "main",
-        "build logs",
-        "ssh prod-1 (a very long tab title for cutting)",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        tabs = tabs.tab(
-            Tab::new(title)
-                .active(state.tab == index)
-                .on_press(Message::Tab(index))
-                .on_close(Message::Clicked),
-        );
-    }
-    let mut many = TabStrip::new(p).on_new(Message::Clicked);
-    for index in 0..14 {
-        many = many.tab(
-            Tab::new(format!("session {index}"))
-                .active(index == 3)
-                .on_press(Message::Clicked),
-        );
-    }
 
     let fields = column![
         TextField::new("Working directory", &state.path, p)
@@ -465,6 +490,163 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         .kind(ButtonKind::Secondary)
         .on_press(Message::OpenDialog);
 
+    let plus = || svg::Handle::from_memory(PLUS_ICON);
+    let split = |is_open: bool| {
+        SplitButton::new(
+            plus(),
+            "New terminal (Ctrl T)",
+            "More ways to start a session",
+            p,
+        )
+        .menu_open(is_open)
+        .on_press(Message::Clicked)
+        .on_menu(Message::ToggleMenu)
+    };
+    let split_buttons = row![split(state.menu_open), split(true)]
+        .spacing(spacing::SPACE_4)
+        .align_y(iced::Alignment::Center);
+
+    let pane_headers = column![
+        PaneHeader::new("zsh", p)
+            .folder("~/projects/otty")
+            .focused(true)
+            .trailing(Chip::new("fedora", p).target(TargetKind::Local)),
+        PaneHeader::new("claude", p)
+            .folder("~/projects/otty")
+            .trailing(Chip::new("needs you", p)),
+    ];
+    let title_search = TitleSearch::new(
+        "zsh  ~/projects/otty",
+        "Ctrl K",
+        svg::Handle::from_memory(SEARCH_ICON),
+        p,
+    )
+    .on_press(Message::Clicked);
+    let floating_note = FloatingNote::new(p)
+        .text("Focus mode")
+        .muted("Panels are hidden")
+        .kbd("Ctrl Shift F")
+        .muted("to show them");
+    let logo = svg(svg::Handle::from_memory(LOGO))
+        .width(Length::Fill)
+        .height(Length::Fill);
+    let command_palette = |list| {
+        CommandPalette::new(list, svg::Handle::from_memory(SEARCH_ICON), p)
+            .placeholder("Search sessions, launches and actions")
+            .no_matches("No matches")
+            .hint("↑↓", "move")
+            .hint("Enter", "open")
+    };
+    let palettes = column![
+        command_palette(&state.commands).on_action(Message::Palette),
+        command_palette(&state.no_commands),
+    ]
+    .spacing(spacing::SPACE_6);
+
+    let empty_card = EmptyCard::new(
+        "Start a session",
+        "Open a terminal on this computer or run one of your launches.",
+        logo,
+        p,
+    )
+    .action(
+        ActionTile::new(svg::Handle::from_memory(PLUS_ICON), "New terminal", p)
+            .shortcut("Ctrl T")
+            .accent(true)
+            .on_press(Message::Clicked),
+    )
+    .action(
+        ActionTile::new(
+            svg::Handle::from_memory(FOLDER_ICON),
+            "Terminal in a folder…",
+            p,
+        )
+        .shortcut("Ctrl Shift T")
+        .on_press(Message::Clicked),
+    )
+    .action(
+        ActionTile::new(
+            svg::Handle::from_memory(LAUNCH_ICON),
+            "New launch…",
+            p,
+        )
+        .on_press(Message::Clicked),
+    );
+
+    let sessions_body = column![
+        SessionGroup::new("fedora", TargetKind::Local, p).note("this computer"),
+        SessionRow::new("zsh  ~/projects/otty", p)
+            .selected(true)
+            .on_press(Message::Clicked)
+            .on_close(Message::Clicked, "Close session"),
+        SessionRow::new("claude  Review tree indent", p)
+            .state("needs you", SessionTone::Waiting)
+            .on_press(Message::Clicked),
+        SessionRow::new("cargo test", p)
+            .state("done", SessionTone::Done)
+            .on_press(Message::Clicked),
+        SessionRow::new("make deploy", p)
+            .state("failed", SessionTone::Failed)
+            .on_press(Message::Clicked),
+        SessionGroup::new("laptop", TargetKind::Ssh, p).note("ssh"),
+        SessionRow::new("htop", p)
+            .state("connecting", SessionTone::Muted)
+            .on_press(Message::Clicked),
+        SessionRow::new(
+            "A very long session title that has to be cut at the row edge",
+            p
+        )
+        .on_press(Message::Clicked),
+    ]
+    .spacing(1);
+    let sessions = PanelSection::new("Sessions", p)
+        .open(state.sessions_open)
+        .count(5)
+        .action(split(state.menu_open))
+        .body(sessions_body)
+        .on_toggle(Message::ToggleSessions);
+    let collapsed = PanelSection::new("Launches", p)
+        .open(false)
+        .count(12)
+        .action(
+            IconButton::new(plus(), "Add", p)
+                .size(IconButtonSize::Small)
+                .on_press(Message::Clicked),
+        )
+        .on_toggle(Message::Clicked);
+    let panel =
+        container(column![sessions, collapsed].spacing(spacing::SPACE_3))
+            .width(PANEL_WIDTH)
+            .style({
+                let background = p.surface_panel();
+                move |_| container::Style {
+                    background: Some(background.into()),
+                    ..container::Style::default()
+                }
+            });
+
+    let dots = row![
+        target_dot(TargetKind::Local, p),
+        target_dot(TargetKind::Ssh, p),
+        target_dot(TargetKind::Prod, p),
+        target_dot(TargetKind::Staging, p),
+    ]
+    .spacing(spacing::SPACE_3);
+    let chips = row![
+        Chip::new("fedora", p)
+            .target(TargetKind::Local)
+            .note("this computer"),
+        Chip::new("prod-1", p).target(TargetKind::Prod),
+        Chip::new("~/projects/otty", p).mono(true),
+    ]
+    .spacing(spacing::SPACE_3)
+    .align_y(iced::Alignment::Center);
+    let status_bar = StatusBar::new(p)
+        .left(StatusItem::target(TargetKind::Ssh, "laptop"))
+        .left(StatusItem::mono("~/projects/otty"))
+        .right(StatusItem::text("3 sessions"))
+        .right(StatusItem::button("Settings", Message::Clicked));
+
     let first: Vec<Element<'_, Message>> = vec![
         section(
             "Button (form 34, small 28; second row disabled)",
@@ -478,6 +660,9 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         ),
         section("Dialog", open_dialog.into(), p),
         section("Kbd", keys.into(), p),
+        section("TargetDot (local, ssh, prod, staging)", dots.into(), p),
+        section("Chip (target + note, target, mono path)", chips.into(), p),
+        section("StatusBar (items left and right)", status_bar.into(), p),
         section("Divider", dividers.into(), p),
         section("Menu", menu.into(), p),
         section("Switch", switches.into(), p),
@@ -490,9 +675,33 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             tree.into(),
             p,
         ),
-        section("RailButton (active, idle, separator)", rail.into(), p),
-        section("TabStrip (active tab, hover, close, plus)", tabs.into(), p),
-        section("TabStrip (many tabs: clipped at the edge)", many.into(), p),
+        section(
+            "PanelSection (open with SessionGroup + SessionRow: selected, state words, long title; collapsed)",
+            panel.into(),
+            p,
+        ),
+        section(
+            "SplitButton (idle; menu open shows the frame)",
+            split_buttons.into(),
+            p,
+        ),
+        section(
+            "PaneHeader (focused with chip; other pane)",
+            pane_headers.into(),
+            p,
+        ),
+        section("TitleSearch", title_search.into(), p),
+        section("FloatingNote", floating_note.into(), p),
+        section(
+            "EmptyCard (ActionTile: accent icon, shortcut)",
+            empty_card.into(),
+            p,
+        ),
+        section(
+            "CommandPalette (query \"la\": active item, match in bold; no matches)",
+            palettes.into(),
+            p,
+        ),
     ];
     let form_fields: Vec<Element<'_, Message>> = vec![
         section(

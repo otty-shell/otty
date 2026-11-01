@@ -8,15 +8,15 @@ use thiserror::Error;
 use crate::{Action, EscapeActor};
 
 pub(crate) const DCS_PREFIX: &[u8] = b"otty-dcs;";
+
 pub(crate) const MAX_DCS_KIND_LEN: usize = 32;
+
 pub(crate) const MAX_DCS_CONTENT_BYTES: usize = 4096;
+
 const HEX_CHARS_PER_BYTE: usize = 2;
+
 const MAX_DCS_ENCODED_CONTENT_BYTES: usize =
     MAX_DCS_CONTENT_BYTES * HEX_CHARS_PER_BYTE;
-
-pub(crate) const fn max_dcs_buffer_len() -> usize {
-    DCS_PREFIX.len() + MAX_DCS_KIND_LEN + 1 + MAX_DCS_ENCODED_CONTENT_BYTES
-}
 
 #[derive(Debug, Error)]
 enum DcsMessageParsingError {
@@ -90,6 +90,10 @@ impl<'a> DcsMessage<'a> {
             payload: &rest[1..],
         })
     }
+}
+
+pub(crate) const fn max_dcs_buffer_len() -> usize {
+    DCS_PREFIX.len() + MAX_DCS_KIND_LEN + 1 + MAX_DCS_ENCODED_CONTENT_BYTES
 }
 
 pub(crate) fn perform<A: EscapeActor>(actor: &mut A, raw_message: &[u8]) {

@@ -12,6 +12,23 @@ pub(crate) struct ExplorerTreeViewModel<'a> {
 }
 
 #[cfg(test)]
+impl<'a> ExplorerTreeViewModel<'a> {
+    /// View model of `tree` shown under the folder named `root_label`, with
+    /// nothing selected or hovered.
+    pub(crate) fn idle(
+        root_label: Option<&'a str>,
+        tree: &'a [FileNode],
+    ) -> Self {
+        Self {
+            root_label,
+            tree,
+            selected_path: None,
+            hovered_path: None,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::cmp::Ordering;
     use std::path::PathBuf;

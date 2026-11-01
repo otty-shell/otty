@@ -10,7 +10,6 @@ mod watcher;
 
 pub(crate) use event::{ExplorerEffect, ExplorerEvent, ExplorerIntent};
 use iced::{Subscription, Task};
-pub(crate) use reducer::ExplorerCtx;
 use state::ExplorerState;
 
 /// Explorer widget: manages the file system tree browser,
@@ -32,9 +31,8 @@ impl ExplorerWidget {
     pub(crate) fn reduce(
         &mut self,
         event: ExplorerIntent,
-        ctx: &ExplorerCtx,
     ) -> Task<ExplorerEvent> {
-        reducer::reduce(&mut self.state, event, ctx)
+        reducer::reduce(&mut self.state, event)
     }
 
     /// Return active filesystem watcher subscription for loaded directories.
@@ -51,39 +49,13 @@ impl ExplorerWidget {
             hovered_path: self.state.hovered_path(),
         }
     }
-
-    /// Return the current root label for the explorer header.
-    pub(crate) fn root_label(&self) -> Option<&str> {
-        self.state.root_label()
-    }
-
-    /// Return root tree entries.
-    pub(crate) fn tree(&self) -> &[types::FileNode] {
-        self.state.tree()
-    }
-
-    /// Return the selected tree path.
-    pub(crate) fn selected_path(&self) -> Option<&types::TreePath> {
-        self.state.selected_path()
-    }
-
-    /// Return the hovered tree path.
-    pub(crate) fn hovered_path(&self) -> Option<&types::TreePath> {
-        self.state.hovered_path()
-    }
-
-    /// Return read-only access to state for tests.
-    #[cfg(test)]
-    pub(crate) fn state(&self) -> &ExplorerState {
-        &self.state
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use super::{ExplorerCtx, ExplorerIntent, ExplorerWidget};
+    use super::{ExplorerIntent, ExplorerWidget};
 
     #[test]
     fn given_empty_explorer_when_subscription_requested_then_no_units_are_registered()
@@ -97,16 +69,10 @@ mod tests {
     fn given_rooted_explorer_when_subscription_requested_then_watcher_unit_is_registered()
      {
         let mut widget = ExplorerWidget::new();
-        let ctx = ExplorerCtx {
-            active_shell_cwd: None,
-        };
 
-        let _task = widget.reduce(
-            ExplorerIntent::SyncRoot {
-                cwd: PathBuf::from("/tmp/project"),
-            },
-            &ctx,
-        );
+        let _task = widget.reduce(ExplorerIntent::SyncRoot {
+            cwd: PathBuf::from("/tmp/project"),
+        });
 
         assert_eq!(widget.subscription().units(), 1);
     }

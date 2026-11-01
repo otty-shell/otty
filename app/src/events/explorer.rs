@@ -8,11 +8,11 @@ use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::editor_terminal_settings;
 use crate::widgets::explorer::services::read_dir_nodes;
 use crate::widgets::explorer::types::FileNode;
-use crate::widgets::explorer::{
-    ExplorerCtx, ExplorerEffect, ExplorerEvent, ExplorerIntent,
-};
+use crate::widgets::explorer::{ExplorerEffect, ExplorerEvent, ExplorerIntent};
+use crate::widgets::tabs::types::TabMachine;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
+/// Route a Files panel event: reduce its intents and run its effects.
 pub(crate) fn handle(app: &mut App, event: ExplorerEvent) -> Task<AppEvent> {
     match event {
         ExplorerEvent::Intent(event) => handle_intent(app, event),
@@ -21,18 +21,7 @@ pub(crate) fn handle(app: &mut App, event: ExplorerEvent) -> Task<AppEvent> {
 }
 
 fn handle_intent(app: &mut App, event: ExplorerIntent) -> Task<AppEvent> {
-    let active_tab_id = app.widgets.tabs.active_tab_id();
-    let ctx = ExplorerCtx {
-        active_shell_cwd: app
-            .widgets
-            .terminal_workspace
-            .shell_cwd_for_active_tab(active_tab_id),
-    };
-
-    app.widgets
-        .explorer
-        .reduce(event, &ctx)
-        .map(AppEvent::Explorer)
+    app.widgets.explorer.reduce(event).map(AppEvent::Explorer)
 }
 
 fn handle_effect(app: &mut App, effect: ExplorerEffect) -> Task<AppEvent> {
@@ -107,6 +96,7 @@ fn open_file_terminal_tab(app: &mut App, file_path: PathBuf) -> Task<AppEvent> {
             title,
             settings: Box::new(settings),
             exit_behavior: ExitBehavior::Close,
+            machine: TabMachine::ThisComputer,
         },
     )))
 }

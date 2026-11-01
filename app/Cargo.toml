@@ -1,7 +1,7 @@
 [package]
 name = "otty"
 description = "OTTY - an open-source terminal-centric workspace for development and operations"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
@@ -25,6 +25,12 @@ serde_json = { workspace = true }
 shell-words = "1.1.0"
 sys-locale = "0.3.2"
 notify = "8.2.0"
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true }
+
+[dev-dependencies]
+iced_test = "0.14"
 
 [package.metadata.generate-rpm]
 maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"

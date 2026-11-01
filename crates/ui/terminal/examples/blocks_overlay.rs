@@ -20,18 +20,6 @@ use otty_ui_term::{
 
 const MAX_LOG_ENTRIES: usize = 5;
 
-fn main() -> iced::Result {
-    iced::application(App::new, App::update, App::view)
-        .antialiasing(false)
-        .window_size(Size {
-            width: 1200.0,
-            height: 720.0,
-        })
-        .title(App::title)
-        .subscription(App::subscription)
-        .run()
-}
-
 #[derive(Debug, Clone)]
 enum Message {
     Terminal(otty_ui_term::Event),
@@ -154,17 +142,6 @@ impl App {
             self.log.pop_front();
         }
         self.log.push_back(BlockLogEntry { kind, block_id });
-    }
-}
-
-fn terminal_settings() -> Settings {
-    let shell =
-        std::env::var("SHELL").unwrap_or_else(|_| String::from("/bin/sh"));
-    let session_options = LocalSessionOptions::default().with_program(&shell);
-    let session = SessionKind::from_local_options(session_options);
-    Settings {
-        backend: BackendSettings::default().with_session(session),
-        ..Default::default()
     }
 }
 
@@ -348,5 +325,28 @@ impl canvas::Program<Message> for BlockOverlay {
             }
         }
         iced::mouse::Interaction::Idle
+    }
+}
+
+fn main() -> iced::Result {
+    iced::application(App::new, App::update, App::view)
+        .antialiasing(false)
+        .window_size(Size {
+            width: 1200.0,
+            height: 720.0,
+        })
+        .title(App::title)
+        .subscription(App::subscription)
+        .run()
+}
+
+fn terminal_settings() -> Settings {
+    let shell =
+        std::env::var("SHELL").unwrap_or_else(|_| String::from("/bin/sh"));
+    let session_options = LocalSessionOptions::default().with_program(&shell);
+    let session = SessionKind::from_local_options(session_options);
+    Settings {
+        backend: BackendSettings::default().with_session(session),
+        ..Default::default()
     }
 }
