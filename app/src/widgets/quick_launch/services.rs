@@ -17,9 +17,7 @@ use super::types::{
     SshSecretKind, SshSecretRequest,
 };
 use crate::services::terminal_settings_for_session;
-use crate::widgets::terminal_workspace::services::{
-    shell_integration_dir, with_shell_integration,
-};
+use crate::shell_integration::{shell_integration_dir, with_shell_integration};
 
 const QUICK_LAUNCH_SSH_TIMEOUT: Duration = Duration::from_secs(15);
 
