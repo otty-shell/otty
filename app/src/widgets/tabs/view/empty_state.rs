@@ -1,6 +1,8 @@
 //! Empty state shown in the main area when no session is open.
 
-use iced::widget::{container, svg};
+use std::sync::OnceLock;
+
+use iced::widget::{container, image, svg};
 use iced::{Element, Length};
 use otty_ui_kit::components::action_tile::ActionTile;
 use otty_ui_kit::components::empty_card::EmptyCard;
@@ -27,7 +29,7 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
     let palette = props.theme.theme.ui();
 
     // The logo keeps its own colors; the card only gives it a slot.
-    let logo = svg(svg::Handle::from_memory(icons::LOGO))
+    let logo = image(logo_handle().clone())
         .width(Length::Fill)
         .height(Length::Fill);
 
@@ -62,6 +64,15 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
         .center_x(Length::Fill)
         .center_y(Length::Fill)
         .into()
+}
+
+/// Return the logo handle, created once. `Handle::from_bytes` gives every
+/// new handle a new id, so a handle built on each render looks like a new
+/// image to iced: it reloads the logo every frame and the logo flickers.
+fn logo_handle() -> &'static image::Handle {
+    static LOGO: OnceLock<image::Handle> = OnceLock::new();
+
+    LOGO.get_or_init(|| image::Handle::from_bytes(icons::LOGO))
 }
 
 #[cfg(test)]

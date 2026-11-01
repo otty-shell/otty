@@ -23,7 +23,10 @@ pub(crate) const FOCUS_MODE: &[u8] =
     include_bytes!("../../assets/svg/focus-mode.svg");
 pub(crate) const SEARCH: &[u8] = include_bytes!("../../assets/svg/search.svg");
 /// Product logo shown on the empty state. Drawn in its own colors.
+///
+/// A PNG, not the SVG: `logo-small.svg` only wraps a large raster image,
+/// and resvg shrinks it without averaging pixels, so it looks grainy.
 pub(crate) const LOGO: &[u8] =
-    include_bytes!("../../assets/logo/logo-small.svg");
+    include_bytes!("../../assets/logo/logo-small.png");
 pub(crate) const APP_ICON_DATA: &[u8] =
     include_bytes!("../../assets/logo/logo-small.png");

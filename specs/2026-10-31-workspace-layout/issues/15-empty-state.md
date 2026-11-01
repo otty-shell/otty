@@ -32,8 +32,9 @@ sessions." while it has no rows.
 - `app/src/widgets/tabs/view/empty_state.rs` (new): `view(EmptyStateProps)`,
   generic over the message type. New terminal (accent plus icon, shortcut text
   from `AppShortcut::NewTerminal.label()`) and New launch… (play icon). The
-  logo is `assets/logo/logo-small.svg` (`icons::LOGO`), passed as an
-  unstyled `svg` element, so it is never recolored.
+  logo is `assets/logo/logo-small.png` (`icons::LOGO`), passed as an
+  `image` element, so it is never recolored. Not the SVG: that file only
+  wraps a large raster image, which resvg shrinks into a grainy logo.
 - `app/src/view.rs`: only the fallback branch of `view_tab_content` changed.
   New terminal sends `TabsIntent::OpenTerminalTab` (shell name as title, as
   the Sessions "+" does). New launch… sends
