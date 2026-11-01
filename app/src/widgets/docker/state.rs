@@ -1,8 +1,10 @@
+use iced::Point;
 use otty_docker::{
     Container, Diagnosis, Discovery, EngineAddress, EngineInfo, Image, Network,
     Volume,
 };
 
+use super::actions::{ActionRequest, Confirm};
 use super::inspector::{
     InspectTarget, InspectorState, InspectorTab, LogTarget,
 };
@@ -12,7 +14,9 @@ use super::types::{
 };
 
 /// Runtime state of Docker mode: the engines and their lists, the open
-/// place, the selected row of each list and the name filter.
+/// place, the selected row of each list, the name filter and the actions:
+/// the ones that run, the open confirmation, the row menu and the notice of
+/// the last failure.
 #[derive(Debug, Default)]
 pub(crate) struct DockerState {
     is_active: bool,
@@ -21,6 +25,11 @@ pub(crate) struct DockerState {
     place: Option<Place>,
     filter: String,
     inspector: InspectorState,
+    running: Vec<ActionRequest>,
+    confirm: Option<Confirm>,
+    /// Where the row menu opened, in window coordinates.
+    row_menu: Option<Point>,
+    notice: Option<String>,
 }
 
 impl DockerState {
@@ -113,6 +122,35 @@ impl DockerState {
         };
 
         Some((engine, row))
+    }
+
+    /// Return the action that waits for the user to confirm it.
+    pub(crate) fn confirm(&self) -> Option<&Confirm> {
+        self.confirm.as_ref()
+    }
+
+    /// Return where the row menu is open, in window coordinates.
+    pub(crate) fn row_menu(&self) -> Option<Point> {
+        self.row_menu
+    }
+
+    /// Return the notice of the last failed action.
+    pub(crate) fn notice(&self) -> Option<&str> {
+        self.notice.as_deref()
+    }
+
+    /// Return whether an action runs on the row `target` (or, with `None`,
+    /// a prune on the whole list) of the `resource` list of the engine at
+    /// `address`.
+    pub(crate) fn is_busy(
+        &self,
+        address: &EngineAddress,
+        resource: ResourceKind,
+        target: Option<&str>,
+    ) -> bool {
+        self.running
+            .iter()
+            .any(|request| request.acts_on(address, resource, target))
     }
 
     /// Return the engine of the open place.
@@ -253,6 +291,58 @@ impl DockerState {
         self.place = Some(place);
         self.filter.clear();
         self.inspector.select_tab(InspectorTab::Overview);
+        self.notice = None;
+    }
+
+    /// Remember that `request` runs, so its buttons are disabled.
+    pub(super) fn start_action(&mut self, request: ActionRequest) {
+        self.running.push(request);
+    }
+
+    /// Forget a finished `request`.
+    pub(super) fn finish_action(&mut self, request: &ActionRequest) {
+        if let Some(index) =
+            self.running.iter().position(|running| running == request)
+        {
+            self.running.remove(index);
+        }
+    }
+
+    /// Ask the user to confirm an action.
+    pub(super) fn open_confirm(&mut self, confirm: Confirm) {
+        self.confirm = Some(confirm);
+    }
+
+    /// Close the confirmation and return it.
+    pub(super) fn take_confirm(&mut self) -> Option<Confirm> {
+        self.confirm.take()
+    }
+
+    /// Turn the switch of the open confirmation on or off.
+    pub(super) fn set_confirm_switch(&mut self, is_on: bool) {
+        if let Some(confirm) = self.confirm.as_mut() {
+            confirm.set_switch(is_on);
+        }
+    }
+
+    /// Open the row menu at `position`.
+    pub(super) fn open_row_menu(&mut self, position: Point) {
+        self.row_menu = Some(position);
+    }
+
+    /// Close the row menu.
+    pub(super) fn close_row_menu(&mut self) {
+        self.row_menu = None;
+    }
+
+    /// Show `notice` above the table until it is dismissed.
+    pub(super) fn set_notice(&mut self, notice: String) {
+        self.notice = Some(notice);
+    }
+
+    /// Hide the notice.
+    pub(super) fn dismiss_notice(&mut self) {
+        self.notice = None;
     }
 
     /// Show all containers of the open engine again, leaving a Compose
@@ -324,6 +414,14 @@ impl DockerState {
             ResourceKind::Networks => engine.networks.select(id),
         }
         true
+    }
+}
+
+#[cfg(test)]
+impl DockerState {
+    /// Return the actions the engines are running now.
+    pub(crate) fn running(&self) -> &[ActionRequest] {
+        &self.running
     }
 }
 

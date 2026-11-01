@@ -362,6 +362,22 @@ pub(crate) fn docker_used_by(names: &str) -> String {
     fill_in(current_locale(), Key::TplDockerUsedBy, &[("names", names)])
 }
 
+/// Fill the `{name}` placeholder of a Docker template, e.g. the title
+/// "Remove container web-1?".
+pub(crate) fn docker_named(key: Key, name: &str) -> String {
+    fill_in(current_locale(), key, &[("name", name)])
+}
+
+/// Build the notice of a failed Docker action from its template, the row
+/// `name` and the engine's `error`, e.g. "Could not stop web-1: busy".
+pub(crate) fn docker_action_failed(
+    key: Key,
+    name: &str,
+    error: &str,
+) -> String {
+    fill_in(current_locale(), key, &[("name", name), ("error", error)])
+}
+
 /// Build the tab title shown when editing an existing quick launch.
 pub(crate) fn edit_tab_title(command_title: &str) -> String {
     fill_in(
@@ -898,6 +914,8 @@ mod tests {
             (Key::TplDockerStatusVolumes, ("count", "7")),
             (Key::TplDockerStatusNetworks, ("count", "7")),
             (Key::TplDockerStatusAlsoFound, ("engine", "Podman 5.2")),
+            (Key::TplDockerRemoveContainerTitle, ("name", "web-1")),
+            (Key::TplDockerPruneContainersText, ("count", "3")),
         ];
 
         for locale in Locale::ALL {
@@ -918,6 +936,54 @@ mod tests {
                 &[("code", "3")]
             ),
             "Exited (3)"
+        );
+    }
+
+    #[test]
+    fn docker_action_failures_name_the_row_and_the_error_in_every_locale() {
+        let failures = [
+            Key::TplDockerStartFailed,
+            Key::TplDockerStopFailed,
+            Key::TplDockerRestartFailed,
+            Key::TplDockerPauseFailed,
+            Key::TplDockerUnpauseFailed,
+            Key::TplDockerRemoveContainerFailed,
+        ];
+
+        for locale in Locale::ALL {
+            for key in failures {
+                let text = fill_in(
+                    locale,
+                    key,
+                    &[("name", "web-1"), ("error", "engine said no")],
+                );
+
+                assert!(
+                    text.contains("web-1")
+                        && text.contains("engine said no")
+                        && !text.contains('{'),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+            let prune = fill_in(
+                locale,
+                Key::TplDockerPruneContainersFailed,
+                &[("error", "engine said no")],
+            );
+            assert!(
+                prune.contains("engine said no") && !prune.contains('{'),
+                "{} prune: {prune}",
+                locale.tag()
+            );
+        }
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplDockerStopFailed,
+                &[("name", "web-1"), ("error", "busy")]
+            ),
+            "Could not stop web-1: busy"
         );
     }
 

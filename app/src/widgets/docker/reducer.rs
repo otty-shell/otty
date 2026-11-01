@@ -1,6 +1,7 @@
 use iced::Task;
 use otty_docker::{EngineAddress, EngineInfo};
 
+use super::action_flow;
 use super::event::{DockerEffect, DockerEvent, DockerIntent};
 use super::state::{DockerState, Search};
 use super::types::{LoadedList, ResourceKind};
@@ -112,6 +113,31 @@ fn reduce_intent(
         },
         DockerIntent::ListLoaded { engine, list } => {
             apply_reloaded_list(state, &engine, list)
+        },
+        DockerIntent::Act(action) => action_flow::act(state, action),
+        DockerIntent::OpenRowMenu { index, position } => {
+            action_flow::open_row_menu(state, index, position)
+        },
+        DockerIntent::CloseRowMenu => {
+            state.close_row_menu();
+            Task::none()
+        },
+        DockerIntent::Prune => action_flow::prune(state),
+        DockerIntent::ConfirmSwitchToggled(is_on) => {
+            state.set_confirm_switch(is_on);
+            Task::none()
+        },
+        DockerIntent::ConfirmAccepted => action_flow::accept(state),
+        DockerIntent::ConfirmCancelled => {
+            let _ = state.take_confirm();
+            Task::none()
+        },
+        DockerIntent::ActionFinished { request, result } => {
+            action_flow::finish(state, &request, result)
+        },
+        DockerIntent::DismissNotice => {
+            state.dismiss_notice();
+            Task::none()
         },
     }
 }

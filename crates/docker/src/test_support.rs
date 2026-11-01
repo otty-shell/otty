@@ -1,12 +1,16 @@
 //! Test-only helpers shared by the file system, socket and mapping tests.
 
 use std::io::{Read, Write};
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread::JoinHandle;
 
-use bollard::models::ContainerSummary;
+use bollard::models::{ContainerSummary, SystemVersion};
 
+use crate::address::EngineAddress;
 use crate::container::Container;
+use crate::engine::EngineInfo;
 
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
@@ -47,6 +51,67 @@ impl Drop for TempDir {
     }
 }
 
+/// One request the fake engine got: its request line, for example
+/// `POST /containers/abc/stop HTTP/1.1`, and its body.
+pub(crate) struct Request {
+    pub(crate) line: String,
+    pub(crate) body: String,
+}
+
+/// A fake engine on a unix socket in a fresh temp dir. It answers each
+/// request with the next of its answers, in order, and records what it got.
+pub(crate) struct FakeEngine {
+    _dir: TempDir,
+    info: EngineInfo,
+    server: JoinHandle<Vec<Request>>,
+}
+
+impl FakeEngine {
+    /// The engine info that points at the fake socket.
+    pub(crate) fn info(&self) -> &EngineInfo {
+        &self.info
+    }
+
+    /// Start a fake Docker engine (API 1.44) that sends `answers`, each an
+    /// HTTP status such as `204 No Content` and a body.
+    pub(crate) fn start(answers: Vec<(&'static str, String)>) -> Self {
+        let dir = TempDir::new();
+        let path = dir.path().join("engine.sock");
+        let listener = UnixListener::bind(&path).expect("bind test socket");
+        let answer: SystemVersion =
+            serde_json::from_str(r#"{"Version":"1.0","ApiVersion":"1.44"}"#)
+                .expect("version answer");
+        let info = EngineInfo::from_version(&answer, EngineAddress::Unix(path));
+
+        let server = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            let mut incoming = listener.incoming().flatten();
+            for (status, body) in answers {
+                let Some(mut stream) = incoming.next() else {
+                    break;
+                };
+                let Some(request) = read_request(&mut stream) else {
+                    continue;
+                };
+                write_response(&mut stream, status, &body);
+                requests.push(request);
+            }
+            requests
+        });
+
+        Self {
+            _dir: dir,
+            info,
+            server,
+        }
+    }
+
+    /// Wait until every answer was sent and return the requests in order.
+    pub(crate) fn requests(self) -> Vec<Request> {
+        self.server.join().expect("fake engine thread")
+    }
+}
+
 /// Map a captured container list fixture.
 pub(crate) fn containers(json: &str) -> Vec<Container> {
     let summaries: Vec<ContainerSummary> =
@@ -70,6 +135,44 @@ pub(crate) fn read_request_line<S: Read>(stream: &mut S) -> Option<String> {
 
     let text = String::from_utf8_lossy(&request);
     text.lines().next().map(String::from)
+}
+
+/// Read one HTTP request with its body (by `Content-Length`). `None` when
+/// the peer closed the connection without a request.
+pub(crate) fn read_request<S: Read>(stream: &mut S) -> Option<Request> {
+    let mut request = Vec::new();
+    let mut buffer = [0u8; 1024];
+    let head_end = loop {
+        if let Some(end) =
+            request.windows(4).position(|window| window == b"\r\n\r\n")
+        {
+            break end + 4;
+        }
+        match stream.read(&mut buffer) {
+            Ok(0) | Err(_) => return None,
+            Ok(read) => request.extend_from_slice(&buffer[..read]),
+        }
+    };
+
+    let head = String::from_utf8_lossy(&request[..head_end]).to_string();
+    let length = head
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+        .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    while request.len() < head_end + length {
+        match stream.read(&mut buffer) {
+            Ok(0) | Err(_) => break,
+            Ok(read) => request.extend_from_slice(&buffer[..read]),
+        }
+    }
+
+    let body = String::from_utf8_lossy(&request[head_end..]).to_string();
+    Some(Request {
+        line: head.lines().next().unwrap_or_default().to_string(),
+        body,
+    })
 }
 
 /// Answer an HTTP request with a JSON body and close the connection.

@@ -373,6 +373,48 @@ pub(crate) enum Key {
     TplDockerStatusNetworks,
     /// Status bar note that another engine answered too. Placeholder: `{engine}`.
     TplDockerStatusAlsoFound,
+    /// Button and menu item that starts a stopped container.
+    DockerActionStart,
+    /// Button and menu item that stops a container.
+    DockerActionStop,
+    /// Button and menu item that restarts a container.
+    DockerActionRestart,
+    /// Button and menu item that pauses a running container.
+    DockerActionPause,
+    /// Button and menu item that lets a paused container run again.
+    DockerActionUnpause,
+    /// Button, menu item and dialog action that removes a row.
+    DockerActionRemove,
+    /// Button above the containers table that removes every stopped container.
+    DockerPruneStopped,
+    /// Action of a prune confirmation dialog.
+    DockerPrune,
+    /// Title of the remove container dialog. Placeholder: `{name}`.
+    TplDockerRemoveContainerTitle,
+    /// Text of the remove container dialog.
+    DockerRemoveContainerText,
+    /// Switch in the remove dialog of a running container.
+    DockerStopItFirst,
+    /// Title of the prune stopped containers dialog.
+    DockerPruneContainersTitle,
+    /// Text of the prune stopped containers dialog. Placeholder: `{count}`.
+    TplDockerPruneContainersText,
+    /// Tooltip of the cross that hides a Docker notice.
+    DockerDismiss,
+    /// Notice when a container did not start. Placeholders: `{name}`, `{error}`.
+    TplDockerStartFailed,
+    /// Notice when a container did not stop. Placeholders: `{name}`, `{error}`.
+    TplDockerStopFailed,
+    /// Notice when a container did not restart. Placeholders: `{name}`, `{error}`.
+    TplDockerRestartFailed,
+    /// Notice when a container did not pause. Placeholders: `{name}`, `{error}`.
+    TplDockerPauseFailed,
+    /// Notice when a container did not unpause. Placeholders: `{name}`, `{error}`.
+    TplDockerUnpauseFailed,
+    /// Notice when a container was not removed. Placeholders: `{name}`, `{error}`.
+    TplDockerRemoveContainerFailed,
+    /// Notice when the stopped containers were not pruned. Placeholder: `{error}`.
+    TplDockerPruneContainersFailed,
     // Docker mode inspector tabs.
     /// Inspector tab with the key facts of the selected row.
     DockerTabOverview,
@@ -621,7 +663,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 281] = [
+    pub(super) const ALL: [Self; 302] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -790,6 +832,27 @@ impl Key {
         Self::DockerStatusOneNetwork,
         Self::TplDockerStatusNetworks,
         Self::TplDockerStatusAlsoFound,
+        Self::DockerActionStart,
+        Self::DockerActionStop,
+        Self::DockerActionRestart,
+        Self::DockerActionPause,
+        Self::DockerActionUnpause,
+        Self::DockerActionRemove,
+        Self::DockerPruneStopped,
+        Self::DockerPrune,
+        Self::TplDockerRemoveContainerTitle,
+        Self::DockerRemoveContainerText,
+        Self::DockerStopItFirst,
+        Self::DockerPruneContainersTitle,
+        Self::TplDockerPruneContainersText,
+        Self::DockerDismiss,
+        Self::TplDockerStartFailed,
+        Self::TplDockerStopFailed,
+        Self::TplDockerRestartFailed,
+        Self::TplDockerPauseFailed,
+        Self::TplDockerUnpauseFailed,
+        Self::TplDockerRemoveContainerFailed,
+        Self::TplDockerPruneContainersFailed,
         Self::DockerTabOverview,
         Self::DockerTabLogs,
         Self::DockerTabInspect,

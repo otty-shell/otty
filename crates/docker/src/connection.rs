@@ -12,6 +12,8 @@ use bollard::query_parameters::{
 use bollard::{API_DEFAULT_VERSION, ClientVersion, Docker};
 use futures_util::future::try_join4;
 
+mod container_actions;
+
 use crate::address::EngineAddress;
 use crate::container::Container;
 use crate::engine::EngineInfo;
@@ -40,6 +42,26 @@ pub enum EngineError {
     /// something OTTY cannot read; the text says which.
     #[error(transparent)]
     Request(#[from] bollard::errors::Error),
+}
+
+impl EngineError {
+    /// The text to show the user: the engine's own words when it refused a
+    /// request (for example "cannot remove container: it is running"),
+    /// otherwise the whole error text.
+    pub fn message(&self) -> String {
+        match self {
+            Self::Request(
+                bollard::errors::Error::DockerResponseServerError {
+                    message,
+                    ..
+                },
+            ) => message.clone(),
+            Self::Request(bollard::errors::Error::DockerStreamError {
+                error,
+            }) => error.clone(),
+            _ => self.to_string(),
+        }
+    }
 }
 
 /// All four lists of one engine, loaded together.
@@ -428,6 +450,23 @@ mod tests {
             matches!(result, Err(EngineError::PathNotUtf8(_))),
             "{result:?}"
         );
+    }
+
+    #[test]
+    fn an_error_that_is_not_an_engine_answer_keeps_its_whole_text() {
+        let error = EngineError::PathNotUtf8(PathBuf::from("/tmp/x.sock"));
+
+        assert_eq!(error.message(), error.to_string());
+    }
+
+    #[test]
+    fn a_stream_error_is_the_engines_own_message() {
+        let error =
+            EngineError::Request(bollard::errors::Error::DockerStreamError {
+                error: String::from("manifest unknown"),
+            });
+
+        assert_eq!(error.message(), "manifest unknown");
     }
 
     #[test]

@@ -1,9 +1,10 @@
-//! The Docker mode right panel: the inspector header of the selected row,
-//! its tabs (Overview, Logs, Inspect) and the open tab. Its buttons come
-//! with tickets 11 and 12.
+//! The Docker mode right panel: the inspector header of the selected row
+//! with its action buttons, its tabs (Overview, Logs, Inspect) and the open
+//! tab.
 
 use iced::widget::{column, container, scrollable, svg, text};
 use iced::{Element, Length, Padding};
+use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::inspector_header::InspectorHeader;
 use otty_ui_kit::components::inspector_tabs::inspector_tabs;
 use otty_ui_kit::components::key_value_list::KeyValueList;
@@ -13,6 +14,7 @@ use otty_ui_kit::components::status_badge::StatusBadge;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
+use super::super::action_model::ActionsViewModel;
 use super::super::event::DockerIntent;
 use super::super::inspector_tabs::{
     InspectContent, InspectorTabsViewModel, TabContent,
@@ -35,14 +37,16 @@ const SECTION_GAP: f32 = 14.0;
 /// Props for the inspector.
 pub(crate) struct InspectorProps<'a> {
     pub(crate) vm: Option<InspectorViewModel>,
+    /// The action buttons of the selected row.
+    pub(crate) actions: Option<ActionsViewModel>,
     /// The tabs under the header and the open tab's body.
     pub(crate) tabs: Option<InspectorTabsViewModel<'a>>,
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the header of the selected row (its name and status line), the
-/// tabs and the open tab. With nothing selected the panel says there is
-/// nothing to inspect.
+/// Render the header of the selected row (its name, status line, action
+/// buttons and the hint under them), the tabs and the open tab. With
+/// nothing selected the panel says there is nothing to inspect.
 pub(crate) fn view(props: InspectorProps<'_>) -> Element<'_, DockerIntent> {
     let palette = props.theme.theme.ui();
 
@@ -55,7 +59,26 @@ pub(crate) fn view(props: InspectorProps<'_>) -> Element<'_, DockerIntent> {
     };
 
     let status = StatusBadge::new(vm.status, vm.tone, palette);
-    let header = InspectorHeader::new(vm.title, palette).status(status);
+    let mut header = InspectorHeader::new(vm.title, palette).status(status);
+    if let Some(actions) = props.actions {
+        for button in actions.buttons {
+            let kind = if button.is_danger {
+                ButtonKind::Danger
+            } else {
+                ButtonKind::Secondary
+            };
+            let mut action = Button::new(button.label, palette)
+                .kind(kind)
+                .size(ButtonSize::Small);
+            if button.is_enabled {
+                action = action.on_press(DockerIntent::Act(button.action));
+            }
+            header = header.action(action);
+        }
+        if let Some(hint) = actions.hint {
+            header = header.hint(hint);
+        }
+    }
 
     let mut panel = column![header]
         .spacing(SECTION_GAP)
@@ -160,6 +183,10 @@ mod tests {
 
     use super::*;
     use crate::theme::{BuiltinTheme, ThemeManager};
+    use crate::widgets::docker::action_model::{
+        ActionButton, ActionsViewModel,
+    };
+    use crate::widgets::docker::actions::RowAction;
     use crate::widgets::docker::inspector::InspectorTab;
     use crate::widgets::docker::inspector_tabs::{InspectContent, TabContent};
     use crate::widgets::docker::types::ResourceKind;
@@ -192,6 +219,7 @@ mod tests {
                 status: String::from("Up 2 hours"),
                 tone: StatusTone::Ok,
             }),
+            actions: None,
             tabs: None,
             theme: ThemeProps::new(themes.current()),
         }));
@@ -205,6 +233,7 @@ mod tests {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(InspectorProps {
             vm: None,
+            actions: None,
             tabs: None,
             theme: ThemeProps::new(themes.current()),
         }));
@@ -223,6 +252,7 @@ mod tests {
         )];
         let mut ui = simulator(view(InspectorProps {
             vm: header(),
+            actions: None,
             tabs: container_tabs(
                 InspectorTab::Overview,
                 TabContent::Overview(fields),
@@ -254,6 +284,7 @@ mod tests {
         ];
         let mut ui = simulator(view(InspectorProps {
             vm: header(),
+            actions: None,
             tabs: container_tabs(
                 InspectorTab::Overview,
                 TabContent::Overview(fields),
@@ -273,6 +304,7 @@ mod tests {
         lines.push_lines(["ready"]);
         let mut ui = simulator(view(InspectorProps {
             vm: header(),
+            actions: None,
             tabs: container_tabs(
                 InspectorTab::Logs,
                 TabContent::Logs {
@@ -293,6 +325,7 @@ mod tests {
         let themes = ThemeManager::new();
         let mut loading = simulator(view(InspectorProps {
             vm: header(),
+            actions: None,
             tabs: container_tabs(
                 InspectorTab::Inspect,
                 TabContent::Inspect(InspectContent::Loading),
@@ -301,6 +334,7 @@ mod tests {
         }));
         let mut failed = simulator(view(InspectorProps {
             vm: header(),
+            actions: None,
             tabs: container_tabs(
                 InspectorTab::Inspect,
                 TabContent::Inspect(InspectContent::Failed("no such")),
@@ -324,6 +358,7 @@ mod tests {
             themes.set_theme(theme);
             let mut ui = simulator(view(InspectorProps {
                 vm: header(),
+                actions: None,
                 tabs: container_tabs(
                     InspectorTab::Inspect,
                     TabContent::Inspect(InspectContent::Loaded(&json)),
@@ -334,5 +369,66 @@ mod tests {
             ui.find("otty-fx-web-1").expect("the header stays");
             assert!(ui.find(i18n::t(Key::DockerLoading)).is_err());
         }
+    }
+
+    fn button(action: RowAction, is_enabled: bool) -> ActionButton {
+        ActionButton {
+            action,
+            label: i18n::t(action.label_key()),
+            is_danger: action == RowAction::Remove,
+            is_enabled,
+        }
+    }
+
+    #[test]
+    fn a_press_on_an_action_button_sends_its_action() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(InspectorProps {
+            vm: header(),
+            actions: Some(ActionsViewModel {
+                buttons: vec![
+                    button(RowAction::Stop, true),
+                    button(RowAction::Remove, true),
+                ],
+                hint: None,
+            }),
+            tabs: None,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(i18n::t(Key::DockerActionStop))
+            .expect("stop should show");
+        ui.click(i18n::t(Key::DockerActionRemove))
+            .expect("remove should show");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(
+            intents,
+            vec![
+                DockerIntent::Act(RowAction::Stop),
+                DockerIntent::Act(RowAction::Remove)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_disabled_button_and_its_hint_show_but_send_nothing() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(InspectorProps {
+            vm: header(),
+            actions: Some(ActionsViewModel {
+                buttons: vec![button(RowAction::Remove, false)],
+                hint: Some(String::from("Used by otty-fx-web-1")),
+            }),
+            tabs: None,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(i18n::t(Key::DockerActionRemove))
+            .expect("remove should show");
+        ui.find("Used by otty-fx-web-1").expect("hint should show");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert!(intents.is_empty());
     }
 }

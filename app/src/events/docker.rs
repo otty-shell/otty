@@ -9,6 +9,7 @@ use otty_docker::{Container, Engine, EngineInfo, discover};
 use super::AppEvent;
 use crate::app::App;
 use crate::services;
+use crate::widgets::docker::actions::{ActionRequest, EngineAction};
 use crate::widgets::docker::inspector::InspectTarget;
 use crate::widgets::docker::types::{LoadedList, LoadedLists, ResourceKind};
 use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
@@ -67,7 +68,37 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
                 })
             })
         },
+        DockerEffect::RunAction(request) => {
+            Task::perform(run_action(request.clone()), move |result| {
+                intent(DockerIntent::ActionFinished { request, result })
+            })
+        },
     }
+}
+
+/// Make the engine call of one action. The error is the engine's own
+/// message, for the notice.
+async fn run_action(request: ActionRequest) -> Result<(), String> {
+    let engine =
+        Engine::connect(request.engine()).map_err(|err| err.message())?;
+
+    let result = match request.action() {
+        EngineAction::StartContainer(id) => engine.start_container(id).await,
+        EngineAction::StopContainer(id) => engine.stop_container(id).await,
+        EngineAction::RestartContainer(id) => {
+            engine.restart_container(id).await
+        },
+        EngineAction::PauseContainer(id) => engine.pause_container(id).await,
+        EngineAction::UnpauseContainer(id) => {
+            engine.unpause_container(id).await
+        },
+        EngineAction::RemoveContainer { id, force } => {
+            engine.remove_container(id, *force).await
+        },
+        EngineAction::PruneContainers => engine.prune_containers().await,
+    };
+
+    result.map_err(|err| err.message())
 }
 
 /// Load the four lists of one engine. The containers come first, because
@@ -173,6 +204,7 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::docker::actions::{ActionRequest, EngineAction};
 
     #[test]
     fn an_intent_is_reduced_by_the_widget_and_its_effect_comes_back() {
@@ -229,6 +261,17 @@ mod tests {
         });
 
         assert_eq!(reload.units(), 1);
+    }
+
+    #[test]
+    fn an_action_runs_one_engine_task() {
+        let stop = handle_effect(DockerEffect::RunAction(ActionRequest::new(
+            fixtures::engine(EngineKind::Docker),
+            EngineAction::StopContainer(String::from("c1")),
+            String::from("otty-fx-running"),
+        )));
+
+        assert_eq!(stop.units(), 1);
     }
 
     #[test]

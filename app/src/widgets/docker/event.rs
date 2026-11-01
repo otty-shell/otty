@@ -1,6 +1,8 @@
+use iced::Point;
 use iced::widget::text_editor::Action;
 use otty_docker::{Container, Discovery, EngineAddress, EngineInfo};
 
+use super::actions::{ActionRequest, RowAction};
 use super::inspector::{InspectTarget, InspectorTab, LogTarget};
 use super::types::{LoadedList, LoadedLists, Place, ResourceKind};
 
@@ -72,6 +74,29 @@ pub(crate) enum DockerIntent {
         engine: EngineAddress,
         list: LoadedList,
     },
+    /// An action button of the inspector or an item of the row menu was
+    /// pressed: run it on the selected row.
+    Act(RowAction),
+    /// A row was right-pressed: select it and open its menu at `position`
+    /// (window coordinates).
+    OpenRowMenu { index: usize, position: Point },
+    /// A press outside the row menu closed it.
+    CloseRowMenu,
+    /// The Prune button above the table was pressed.
+    Prune,
+    /// The switch of the confirmation dialog changed.
+    ConfirmSwitchToggled(bool),
+    /// The action button of the confirmation dialog was pressed.
+    ConfirmAccepted,
+    /// Cancel of the confirmation dialog was pressed.
+    ConfirmCancelled,
+    /// The engine finished an action; the error is the engine's message.
+    ActionFinished {
+        request: ActionRequest,
+        result: Result<(), String>,
+    },
+    /// The cross of the action notice was pressed.
+    DismissNotice,
 }
 
 /// Effect events produced by the Docker reducer. The app runs them off the
@@ -99,6 +124,8 @@ pub(crate) enum DockerEffect {
         resource: ResourceKind,
         containers: Vec<Container>,
     },
+    /// Run this action on its engine.
+    RunAction(ActionRequest),
 }
 
 /// Docker event stream routed through the app update loop.

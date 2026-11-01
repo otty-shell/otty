@@ -303,6 +303,7 @@ fn is_docker_background(event: &DockerEvent) -> bool {
                 | DockerIntent::EngineReconnected(_)
                 | DockerIntent::EngineUnreachable(_)
                 | DockerIntent::ListLoaded { .. }
+                | DockerIntent::ActionFinished { .. }
         ),
         DockerEvent::Effect(_) => true,
     }
@@ -322,6 +323,9 @@ mod tests {
     };
     use crate::events::AppEvent;
     use crate::shortcuts::AppShortcut;
+    use crate::widgets::docker::actions::{
+        ActionRequest, EngineAction, RowAction,
+    };
     use crate::widgets::docker::inspector::{
         InspectTarget, InspectorTab, LogTarget,
     };
@@ -458,6 +462,16 @@ mod tests {
                 engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
                 list: LoadedList::Images(Err(String::from("x"))),
             }),
+            docker(DockerIntent::ActionFinished {
+                request: ActionRequest::new(
+                    otty_docker::fixtures::engine(
+                        otty_docker::EngineKind::Docker,
+                    ),
+                    EngineAction::PruneContainers,
+                    String::new(),
+                ),
+                result: Ok(()),
+            }),
         ];
         let address = otty_docker::EngineAddress::Tcp(String::from("h:1"));
         let log_target = LogTarget::new(
@@ -486,6 +500,8 @@ mod tests {
             docker(DockerIntent::Refresh),
             docker(DockerIntent::SelectRow(0)),
             docker(DockerIntent::SelectInspectorTab(InspectorTab::Logs)),
+            docker(DockerIntent::Act(RowAction::Stop)),
+            docker(DockerIntent::Prune),
         ];
 
         for event in background.into_iter().chain(engine_results) {

@@ -4,6 +4,7 @@ use otty_docker::{
 use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::status_badge::StatusTone;
 
+use super::action_model::{PruneViewModel, prune_button};
 use super::no_engine::{NoEngineViewModel, no_engine};
 use super::resource_rows::{
     columns, container_cells, container_status, image_cells, image_status,
@@ -83,6 +84,10 @@ pub(crate) struct TableViewModel<'a> {
     pub(crate) empty_message: Option<String>,
     /// The engine's message when the list failed to load.
     pub(crate) error: Option<&'a str>,
+    /// The Prune button of the list.
+    pub(crate) prune: Option<PruneViewModel>,
+    /// The notice of the last failed action, with a dismiss cross.
+    pub(crate) notice: Option<&'a str>,
 }
 
 /// Header of the inspector: the selected row's name and its status line.
@@ -241,7 +246,11 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
             )
         },
     };
-    MainViewModel::Table(table)
+    MainViewModel::Table(TableViewModel {
+        prune: prune_button(state),
+        notice: state.notice(),
+        ..table
+    })
 }
 
 /// The short text of the left panel while no engine is usable; `None` when
@@ -382,6 +391,8 @@ fn table<'a, T>(
         selected,
         empty_message,
         error,
+        prune: None,
+        notice: None,
     }
 }
 

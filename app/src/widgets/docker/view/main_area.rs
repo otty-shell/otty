@@ -5,7 +5,7 @@
 use iced::widget::text::Wrapping;
 use iced::widget::{Id, Space, column, container, row, svg, text};
 use iced::{Alignment, Element, Length, Padding};
-use otty_ui_kit::components::button::{Button, ButtonSize};
+use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::data_table::DataTable;
 use otty_ui_kit::components::empty_card::EmptyCard;
@@ -63,17 +63,25 @@ fn table_view<'a>(
             svg::Handle::from_memory(icons::NOTICE_ERROR),
             palette,
         );
-        content = content.push(container(notice).padding(Padding {
-            top: 0.0,
-            right: spacing::SPACE_5,
-            bottom: spacing::SPACE_4,
-            left: spacing::SPACE_5,
-        }));
+        content = content.push(notice_row(notice));
+    }
+    if let Some(text) = vm.notice {
+        let notice = Notice::new(
+            text,
+            svg::Handle::from_memory(icons::NOTICE_ERROR),
+            palette,
+        )
+        .on_dismiss(DockerIntent::DismissNotice, i18n::t(Key::DockerDismiss));
+        content = content.push(notice_row(notice));
     }
 
     let mut table = DataTable::new(vm.columns, palette)
         .selected(vm.selected)
-        .on_row_press(DockerIntent::SelectRow);
+        .on_row_press(DockerIntent::SelectRow)
+        .on_row_right_press(|index, position| DockerIntent::OpenRowMenu {
+            index,
+            position,
+        });
     for cells in vm.rows {
         table = table.row(cells);
     }
@@ -84,8 +92,20 @@ fn table_view<'a>(
     content.push(table).into()
 }
 
-/// Title, engine chip, the Compose project chip, filter, the create button (disabled until its
-/// ticket) and Refresh.
+/// A notice under the header row, inside the page padding.
+fn notice_row<'a>(notice: Notice<DockerIntent>) -> Element<'a, DockerIntent> {
+    container(notice)
+        .padding(Padding {
+            top: 0.0,
+            right: spacing::SPACE_5,
+            bottom: spacing::SPACE_4,
+            left: spacing::SPACE_5,
+        })
+        .into()
+}
+
+/// Title, engine chip, the Compose project chip, filter, the Prune button,
+/// the create button (disabled until its ticket) and Refresh.
 fn header_row<'a>(
     vm: &TableViewModel<'a>,
     palette: &UiPalette,
@@ -120,14 +140,27 @@ fn header_row<'a>(
     )
     .on_press(DockerIntent::Refresh);
 
+    let prune = vm.prune.as_ref().map(|prune| {
+        let button = Button::new(prune.label, palette)
+            .kind(ButtonKind::Ghost)
+            .size(ButtonSize::Small);
+        if prune.is_enabled {
+            button.on_press(DockerIntent::Prune)
+        } else {
+            button
+        }
+    });
+
     let mut header = row![title, engine];
     if let Some(compose) = compose {
         header = header.push(compose);
     }
+    header = header.push(Space::new().width(Length::Fill)).push(filter);
+    if let Some(prune) = prune {
+        header = header.push(prune);
+    }
 
     header
-        .push(Space::new().width(Length::Fill))
-        .push(filter)
         .push(create)
         .push(refresh)
         .spacing(spacing::SPACE_4)
@@ -171,6 +204,7 @@ mod tests {
 
     use super::*;
     use crate::theme::ThemeManager;
+    use crate::widgets::docker::action_model::PruneViewModel;
     use crate::widgets::docker::no_engine::{
         self as no_engine_vm, NoEngineCase,
     };
@@ -190,7 +224,21 @@ mod tests {
             selected: Some(0),
             empty_message: None,
             error: None,
+            prune: Some(PruneViewModel {
+                label: i18n::t(Key::DockerPruneStopped),
+                is_enabled: true,
+            }),
+            notice: None,
         })
+    }
+
+    fn with(
+        change: impl FnOnce(TableViewModel<'static>) -> TableViewModel<'static>,
+    ) -> MainViewModel<'static> {
+        match table(rows()) {
+            MainViewModel::Table(table) => MainViewModel::Table(change(table)),
+            other => other,
+        }
     }
 
     fn rows() -> Vec<Vec<TableCell>> {
@@ -355,5 +403,101 @@ mod tests {
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![DockerIntent::CheckAgain]);
+    }
+
+    #[test]
+    fn the_prune_button_asks_to_prune() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(MainAreaProps {
+            vm: table(rows()),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(i18n::t(Key::DockerPruneStopped))
+            .expect("prune should show");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::Prune]);
+    }
+
+    #[test]
+    fn a_running_prune_disables_its_button() {
+        let themes = ThemeManager::new();
+        let vm = with(|table| TableViewModel {
+            prune: Some(PruneViewModel {
+                label: i18n::t(Key::DockerPruneStopped),
+                is_enabled: false,
+            }),
+            ..table
+        });
+        let mut ui = simulator(view(MainAreaProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(i18n::t(Key::DockerPruneStopped))
+            .expect("prune should show");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert!(intents.is_empty());
+    }
+
+    #[test]
+    fn a_failed_action_shows_a_notice_that_can_be_dismissed() {
+        let themes = ThemeManager::new();
+        let vm = with(|table| TableViewModel {
+            notice: Some("Could not stop web-1: busy"),
+            ..table
+        });
+        let mut ui = simulator(view(MainAreaProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        let notice = ui
+            .find("Could not stop web-1: busy")
+            .expect("notice should show");
+        let bounds = notice.bounds();
+
+        // The 16px dismiss cross sits one 10px gap right of the text.
+        ui.point_at(iced::Point::new(
+            bounds.x + bounds.width + 10.0 + 8.0,
+            bounds.y + bounds.height / 2.0,
+        ));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::DismissNotice]);
+    }
+
+    #[test]
+    fn a_right_press_on_a_row_opens_its_menu_at_the_pointer() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(MainAreaProps {
+            vm: table(rows()),
+            theme: ThemeProps::new(themes.current()),
+        }));
+        let cell = ui.find("db-1").expect("second row should be visible");
+        let bounds = cell.bounds();
+        let pointer = iced::Point::new(bounds.x + 2.0, bounds.y + 2.0);
+
+        ui.point_at(pointer);
+        let _ = ui.simulate([
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(
+                iced::mouse::Button::Right,
+            )),
+            iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
+                iced::mouse::Button::Right,
+            )),
+        ]);
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(
+            intents,
+            vec![DockerIntent::OpenRowMenu {
+                index: 1,
+                position: pointer
+            }]
+        );
     }
 }

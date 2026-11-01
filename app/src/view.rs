@@ -14,8 +14,9 @@ use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, status_bar};
 use crate::widgets::docker::DockerEvent;
 use crate::widgets::docker::view::{
-    engine_tree, inspector as docker_inspector, main_area as docker_main,
-    status_bar as docker_status_bar,
+    confirm_dialog as docker_confirm, engine_tree,
+    inspector as docker_inspector, main_area as docker_main,
+    row_menu as docker_row_menu, status_bar as docker_status_bar,
 };
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
@@ -171,6 +172,7 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         || app.widgets.quick_launch.context_menu().is_some()
         || app.widgets.quick_launch.secret_prompt().is_some()
         || app.widgets.terminal_workspace.has_any_context_menu()
+        || (mode == Mode::Docker && app.widgets.docker.has_overlay())
     {
         container(Space::new())
             .width(Length::Fill)
@@ -199,13 +201,18 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         ),
     };
 
-    let root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
+    let mut root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
         column![header, content_stack, status_bar]
             .width(Length::Fill)
             .height(Length::Fill)
             .into(),
-        resize_grips_layer,
     ];
+    // The Docker row menu opens at the pointer in window coordinates, so it
+    // and the dialogs lie over the whole window.
+    if mode == Mode::Docker {
+        root_layers.extend(view_docker_overlays(app, theme_props));
+    }
+    root_layers.push(resize_grips_layer);
 
     iced::widget::Stack::with_children(root_layers)
         .width(Length::Fill)
@@ -395,9 +402,39 @@ fn view_docker_inspector<'a>(
     docker_inspector::view(docker_inspector::InspectorProps {
         vm: app.widgets.docker.inspector_vm(),
         tabs: app.widgets.docker.inspector_tabs_vm(),
+        actions: app.widgets.docker.actions_vm(),
         theme: theme_props,
     })
     .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
+}
+
+/// Docker mode overlays: the row menu and the confirmation dialog.
+fn view_docker_overlays<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Vec<Element<'a, AppEvent, Theme, iced::Renderer>> {
+    let mut layers = Vec::new();
+
+    if let Some(vm) = app.widgets.docker.row_menu_vm() {
+        layers.push(docker_row_menu::view(docker_row_menu::RowMenuProps {
+            vm,
+            area: app.state.window_size,
+            theme: theme_props,
+        }));
+    }
+    if let Some(vm) = app.widgets.docker.confirm_vm() {
+        layers.push(docker_confirm::view(docker_confirm::ConfirmDialogProps {
+            vm,
+            theme: theme_props,
+        }));
+    }
+
+    layers
+        .into_iter()
+        .map(|layer| {
+            layer.map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
+        })
+        .collect()
 }
 
 /// The current time in Unix seconds, for the age column of the Docker
@@ -762,6 +799,69 @@ mod tests {
             event,
             AppEvent::Docker(DockerEvent::Intent(DockerIntent::SelectRow(2)))
         )));
+    }
+
+    #[test]
+    fn docker_mode_shows_the_row_menu_and_the_remove_dialog_over_the_table() {
+        use otty_docker::{EngineKind, fixtures};
+
+        use crate::widgets::docker::DockerIntent;
+        use crate::widgets::docker::actions::RowAction;
+        use crate::widgets::docker::types::LoadedLists;
+
+        let mut app = app_in(Mode::Docker);
+        let docker = fixtures::engine(EngineKind::Docker);
+        let resources = fixtures::resources(EngineKind::Docker);
+        let _ = app.widgets.docker.reduce(DockerIntent::Enter);
+        let _ = app.widgets.docker.reduce(DockerIntent::DiscoveryFinished(
+            fixtures::discovery(&[EngineKind::Docker]),
+        ));
+        let _ = app.widgets.docker.reduce(DockerIntent::ListsLoaded {
+            engine: docker.address().clone(),
+            lists: LoadedLists {
+                containers: Ok(resources.containers().to_vec()),
+                images: Ok(resources.images().to_vec()),
+                volumes: Ok(resources.volumes().to_vec()),
+                networks: Ok(resources.networks().to_vec()),
+            },
+        });
+        let _ = app.widgets.docker.reduce(DockerIntent::OpenRowMenu {
+            index: 2,
+            position: Point::new(400.0, 200.0),
+        });
+
+        // The inspector shows a Start button too, under the menu's dismiss
+        // layer; press the first menu item where the menu opened instead.
+        let first_item = Point::new(
+            400.0 + spacing::SPACE_2 + 40.0,
+            200.0
+                + spacing::SPACE_2
+                + otty_ui_kit::components::menu::MENU_PADDING
+                + size::ROW / 2.0,
+        );
+        let mut menu_ui = simulator(view(&app));
+        menu_ui
+            .find(i18n::t(Key::DockerActionStart))
+            .expect("menu item should show");
+        menu_ui.point_at(first_item);
+        let _ = menu_ui.simulate(iced_test::simulator::click());
+        let events: Vec<AppEvent> = menu_ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Docker(DockerEvent::Intent(DockerIntent::Act(
+                RowAction::Start
+            )))
+        )));
+
+        let _ = app
+            .widgets
+            .docker
+            .reduce(DockerIntent::Act(RowAction::Remove));
+        let mut dialog_ui = simulator(view(&app));
+        dialog_ui
+            .find(i18n::t(Key::DockerRemoveContainerText))
+            .expect("the remove dialog should show");
+        assert!(app.widgets.docker.has_overlay());
     }
 
     #[test]
