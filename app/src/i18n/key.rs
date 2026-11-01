@@ -373,6 +373,31 @@ pub(crate) enum Key {
     TplDockerStatusNetworks,
     /// Status bar note that another engine answered too. Placeholder: `{engine}`.
     TplDockerStatusAlsoFound,
+    // Docker mode inspector tabs.
+    /// Inspector tab with the key facts of the selected row.
+    DockerTabOverview,
+    /// Inspector tab with the logs of the selected container.
+    DockerTabLogs,
+    /// Inspector tab with the engine's inspect JSON.
+    DockerTabInspect,
+    /// Hint above the logs of a container.
+    DockerLogsHint,
+    /// Notice when the logs could not be read. Placeholder: `{error}`.
+    TplDockerLogsFailed,
+    /// Notice when the inspect JSON could not be loaded. Placeholder: `{error}`.
+    TplDockerInspectFailed,
+    /// Overview field: the mounts of a container.
+    DockerFieldMounts,
+    /// Overview field: the Compose project.
+    DockerFieldCompose,
+    /// Overview field: the command of a container.
+    DockerFieldCommand,
+    /// Overview field: when the item was made.
+    DockerFieldCreated,
+    /// Overview field: where a volume keeps its data.
+    DockerFieldMountpoint,
+    /// Overview field: the gateway of a network.
+    DockerFieldGateway,
     // Command palette and its title bar trigger.
     /// Title bar search text while no tab is open.
     TitleSearchNoSessions,
@@ -596,7 +621,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 269] = [
+    pub(super) const ALL: [Self; 281] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -765,6 +790,18 @@ impl Key {
         Self::DockerStatusOneNetwork,
         Self::TplDockerStatusNetworks,
         Self::TplDockerStatusAlsoFound,
+        Self::DockerTabOverview,
+        Self::DockerTabLogs,
+        Self::DockerTabInspect,
+        Self::DockerLogsHint,
+        Self::TplDockerLogsFailed,
+        Self::TplDockerInspectFailed,
+        Self::DockerFieldMounts,
+        Self::DockerFieldCompose,
+        Self::DockerFieldCommand,
+        Self::DockerFieldCreated,
+        Self::DockerFieldMountpoint,
+        Self::DockerFieldGateway,
         Self::TitleSearchNoSessions,
         Self::PalettePlaceholder,
         Self::PaletteNoMatches,

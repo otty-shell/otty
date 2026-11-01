@@ -25,11 +25,15 @@ const SELECTION_OPACITY: f32 = 0.35;
 /// While following, appended lines are added at once and the view stays at
 /// the bottom. While not following, appended lines are held back and the view
 /// does not move; they are added when following is switched on again.
+///
+/// With [`LogViewState::max_lines`] the oldest lines are dropped once there
+/// are more, so a long-running log does not grow without end.
 pub struct LogViewState {
     content: Content,
     pending: Vec<String>,
     is_following: bool,
     has_lines: bool,
+    max_lines: Option<usize>,
 }
 
 impl LogViewState {
@@ -40,7 +44,24 @@ impl LogViewState {
             pending: Vec::new(),
             is_following: true,
             has_lines: false,
+            max_lines: None,
         }
+    }
+
+    /// Keeps at most `max` lines (at least one): the oldest shown and
+    /// held-back lines are dropped first.
+    ///
+    /// ```
+    /// use otty_ui_kit::components::log_view::LogViewState;
+    ///
+    /// let mut state = LogViewState::new().max_lines(2);
+    /// state.push_lines(["one", "two", "three"]);
+    ///
+    /// assert_eq!(state.text(), "two\nthree");
+    /// ```
+    pub fn max_lines(mut self, max: usize) -> Self {
+        self.max_lines = Some(max);
+        self
     }
 
     /// Returns whether new lines are shown at once and kept in view.
@@ -75,6 +96,12 @@ impl LogViewState {
         S: Into<String>,
     {
         self.pending.extend(lines.into_iter().map(Into::into));
+        if let Some(max) = self.line_limit()
+            && self.pending.len() > max
+        {
+            let dropped = self.pending.len() - max;
+            self.pending.drain(..dropped);
+        }
 
         if self.is_following {
             self.show_pending();
@@ -99,10 +126,23 @@ impl LogViewState {
         }
     }
 
+    /// The most lines kept, at least one; `None` keeps every line.
+    fn line_limit(&self) -> Option<usize> {
+        self.max_lines.map(|max| max.max(1))
+    }
+
     /// Adds the held-back lines at the end and moves the cursor there, which
     /// brings the bottom into view.
     fn show_pending(&mut self) {
         if self.pending.is_empty() {
+            return;
+        }
+
+        let total = self.line_count() + self.pending.len();
+        if let Some(max) = self.line_limit()
+            && total > max
+        {
+            self.keep_last_lines(max);
             return;
         }
 
@@ -116,6 +156,27 @@ impl LogViewState {
         self.content.perform(Action::Move(Motion::DocumentEnd));
         self.content
             .perform(Action::Edit(Edit::Paste(Arc::new(text))));
+    }
+
+    /// Replaces the text with the last `max` of the shown and held-back
+    /// lines and moves the cursor to the end. `text_editor` cannot delete
+    /// whole lines from the top without a layout, so the text is rebuilt.
+    fn keep_last_lines(&mut self, max: usize) {
+        let mut lines: Vec<String> = if self.has_lines {
+            self.content
+                .lines()
+                .map(|line| line.text.into_owned())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        lines.append(&mut self.pending);
+
+        let first = lines.len().saturating_sub(max);
+        self.content = Content::with_text(&lines[first..].join("\n"));
+        self.has_lines = true;
+
+        self.content.perform(Action::Move(Motion::DocumentEnd));
     }
 }
 
@@ -265,6 +326,54 @@ mod tests {
         assert_eq!(state.text(), "one\ntwo\nthree");
         assert_eq!(state.pending_count(), 0);
         assert_eq!(state.content.cursor().position.line, 2);
+    }
+
+    #[test]
+    fn given_line_limit_when_more_lines_arrive_then_the_oldest_are_dropped() {
+        let mut state = LogViewState::new().max_lines(3);
+        state.push_lines(["one", "two"]);
+
+        state.push_lines(["three", "four", "five"]);
+
+        assert_eq!(state.text(), "three\nfour\nfive");
+        assert_eq!(state.line_count(), 3);
+        assert_eq!(state.content.cursor().position.line, 2);
+    }
+
+    #[test]
+    fn given_line_limit_when_one_batch_is_longer_then_its_last_lines_stay() {
+        let mut state = LogViewState::new().max_lines(2);
+
+        state.push_lines(["one", "two", "three", "four"]);
+        state.push_lines(["five"]);
+
+        assert_eq!(state.text(), "four\nfive");
+        assert_eq!(state.line_count(), 2);
+    }
+
+    #[test]
+    fn given_line_limit_when_not_following_then_held_back_lines_are_capped() {
+        let mut state = LogViewState::new().max_lines(3);
+        state.push_lines(["one"]);
+        state.set_following(false);
+
+        state.push_lines(["two", "three", "four", "five"]);
+
+        assert_eq!(state.text(), "one");
+        assert_eq!(state.pending_count(), 3);
+        state.set_following(true);
+        assert_eq!(state.text(), "three\nfour\nfive");
+        assert_eq!(state.content.cursor().position.line, 2);
+    }
+
+    #[test]
+    fn given_line_limit_when_lines_are_empty_then_they_count_too() {
+        let mut state = LogViewState::new().max_lines(3);
+
+        state.push_lines(["one", "", "three", ""]);
+
+        assert_eq!(state.text(), "\nthree\n");
+        assert_eq!(state.line_count(), 3);
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use bollard::models::Volume as EngineVolume;
 
-use crate::container::{Container, MountKind};
+use crate::container::{COMPOSE_PROJECT_LABEL, Container, MountKind};
 use crate::timestamp::unix_seconds;
 
 /// The label Docker (23 and newer) puts on volumes it made for a
@@ -21,6 +21,7 @@ pub struct Volume {
     mountpoint: String,
     created: Option<i64>,
     labels: BTreeMap<String, String>,
+    compose_project: Option<String>,
     containers: Vec<String>,
     anonymous: bool,
 }
@@ -57,6 +58,12 @@ impl Volume {
         &self.containers
     }
 
+    /// The Compose project it belongs to, from the
+    /// `com.docker.compose.project` label; blank means none.
+    pub fn compose_project(&self) -> Option<&str> {
+        self.compose_project.as_deref()
+    }
+
     /// Whether the engine made it for a mount without a name. Docker's prune
     /// removes only these unless asked for all unused volumes.
     pub fn is_anonymous(&self) -> bool {
@@ -76,6 +83,11 @@ impl Volume {
             .collect();
         let anonymous = labels.contains_key(ANONYMOUS_LABEL)
             || is_generated_name(&volume.name);
+        let compose_project = labels
+            .get(COMPOSE_PROJECT_LABEL)
+            .map(|project| project.trim())
+            .filter(|project| !project.is_empty())
+            .map(String::from);
 
         let mut users: Vec<String> = containers
             .iter()
@@ -90,6 +102,7 @@ impl Volume {
             mountpoint: volume.mountpoint.clone(),
             created: volume.created_at.as_deref().and_then(unix_seconds),
             labels,
+            compose_project,
             containers: users,
             anonymous,
         }
@@ -250,5 +263,27 @@ mod tests {
         .expect("volume");
 
         assert!(!Volume::from_volume(&volume, &[]).is_anonymous());
+    }
+
+    #[test]
+    fn a_compose_volume_names_its_project() {
+        let compose: EngineVolume = serde_json::from_str(
+            r#"{"Name":"site_data","Driver":"local","Mountpoint":"","Scope":"local","Options":{},
+                "Labels":{"com.docker.compose.project":"site","com.docker.compose.volume":"data"}}"#,
+        )
+        .expect("volume");
+        let blank: EngineVolume = serde_json::from_str(
+            r#"{"Name":"odd","Driver":"local","Mountpoint":"","Scope":"local","Options":{},
+                "Labels":{"com.docker.compose.project":" "}}"#,
+        )
+        .expect("volume");
+
+        assert_eq!(
+            Volume::from_volume(&compose, &[]).compose_project(),
+            Some("site")
+        );
+        assert_eq!(Volume::from_volume(&blank, &[]).compose_project(), None);
+        let volumes = volumes(DOCKER_VOLUMES, DOCKER_CONTAINERS);
+        assert_eq!(named(&volumes, "otty-fx-data").compose_project(), None);
     }
 }

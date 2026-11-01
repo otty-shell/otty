@@ -4,9 +4,20 @@ use super::event::{DockerEffect, DockerEvent, DockerIntent};
 use super::state::DockerState;
 
 /// Reduce a Docker intent into state changes and effects. Engine work
-/// (search, list loads) is only asked for while Docker mode is active
-/// (spec Decision 14); the reducer itself does no I/O.
+/// (search, list loads, inspect) is only asked for while Docker mode is
+/// active (spec Decision 14); the reducer itself does no I/O. After every
+/// intent the inspector follows the selection: see [`sync_inspector`].
 pub(crate) fn reduce(
+    state: &mut DockerState,
+    intent: DockerIntent,
+) -> Task<DockerEvent> {
+    let task = reduce_intent(state, intent);
+
+    let inspector = sync_inspector(state);
+    Task::batch([task, inspector])
+}
+
+fn reduce_intent(
     state: &mut DockerState,
     intent: DockerIntent,
 ) -> Task<DockerEvent> {
@@ -55,7 +66,55 @@ pub(crate) fn reduce(
             effect(DockerEffect::CopyToClipboard(command))
         },
         DockerIntent::OpenLink(url) => effect(DockerEffect::OpenUrl(url)),
+        DockerIntent::SelectInspectorTab(tab) => {
+            state.select_inspector_tab(tab);
+            Task::none()
+        },
+        DockerIntent::LogLines { target, lines } => {
+            if !state.inspector_mut().push_log_lines(&target, lines) {
+                log::debug!("docker log lines of an unfollowed container");
+            }
+            Task::none()
+        },
+        DockerIntent::LogsFailed { target, message } => {
+            if !state.inspector_mut().fail_logs(&target, message) {
+                log::debug!("docker log error of an unfollowed container");
+            }
+            Task::none()
+        },
+        DockerIntent::LogAction(action) => {
+            state.inspector_mut().perform_log_action(action);
+            Task::none()
+        },
+        DockerIntent::InspectLoaded { target, result } => {
+            if !state.inspector_mut().finish_inspect(&target, result) {
+                log::debug!("docker inspect of a row no longer shown");
+            }
+            Task::none()
+        },
+        DockerIntent::InspectAction(action) => {
+            state.inspector_mut().perform_inspect_action(action);
+            Task::none()
+        },
     }
+}
+
+/// Make the inspector match the state after an intent: follow the logs of
+/// the selected container only while the Logs tab is open in active Docker
+/// mode, and load the inspect JSON once per selection when the Inspect tab
+/// is open. A tab, selection or mode change stops the old logs.
+fn sync_inspector(state: &mut DockerState) -> Task<DockerEvent> {
+    let log_target = state.wanted_log_target();
+    state.inspector_mut().follow_logs(log_target);
+
+    let Some((engine, target)) = state.wanted_inspect_target() else {
+        return Task::none();
+    };
+    if !state.inspector_mut().start_inspect(target.clone()) {
+        return Task::none();
+    }
+
+    effect(DockerEffect::LoadInspect { engine, target })
 }
 
 /// Ask to load the lists of every engine, only while Docker mode is
@@ -84,6 +143,9 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::docker::inspector::{
+        InspectLoad, InspectTarget, InspectorTab, LogTarget, MAX_LOG_LINES,
+    };
     use crate::widgets::docker::state::{ListLoad, Search};
     use crate::widgets::docker::types::{LoadedLists, Place, ResourceKind};
 
@@ -595,5 +657,391 @@ mod tests {
         assert!(!state.is_active());
         assert_eq!(state.engines().len(), 2);
         assert!(state.place().is_some());
+    }
+
+    // Inspector tabs.
+
+    fn select_tab(
+        state: &mut DockerState,
+        tab: InspectorTab,
+    ) -> Vec<DockerEffect> {
+        effects(reduce(state, DockerIntent::SelectInspectorTab(tab)))
+    }
+
+    fn container_id(index: usize) -> String {
+        let resources = fixtures::resources(EngineKind::Docker);
+
+        resources.containers()[index].id().to_string()
+    }
+
+    fn log_target(index: usize) -> LogTarget {
+        LogTarget::new(docker(), &container_id(index))
+    }
+
+    fn followed(state: &DockerState) -> Option<String> {
+        let logs = state.inspector().logs()?;
+
+        Some(logs.target().container_id().to_string())
+    }
+
+    fn log_line_count(state: &DockerState) -> usize {
+        state
+            .inspector()
+            .logs()
+            .map_or(0, |logs| logs.lines().line_count())
+    }
+
+    fn push_lines(state: &mut DockerState, index: usize, lines: &[&str]) {
+        let lines = lines.iter().map(|line| line.to_string()).collect();
+        let _ = reduce(
+            state,
+            DockerIntent::LogLines {
+                target: log_target(index),
+                lines,
+            },
+        );
+    }
+
+    fn inspect_of(resource: ResourceKind, id: &str) -> DockerEffect {
+        DockerEffect::LoadInspect {
+            engine: docker(),
+            target: InspectTarget::new(
+                docker().address().clone(),
+                resource,
+                id,
+            ),
+        }
+    }
+
+    fn container_inspect(index: usize) -> InspectTarget {
+        InspectTarget::new(
+            docker().address().clone(),
+            ResourceKind::Containers,
+            &container_id(index),
+        )
+    }
+
+    #[test]
+    fn the_logs_follow_the_selected_container_while_the_logs_tab_is_open() {
+        let mut state = loaded_state();
+        let before = followed(&state);
+
+        let effects = select_tab(&mut state, InspectorTab::Logs);
+
+        assert_eq!(before, None);
+        assert!(effects.is_empty());
+        assert_eq!(state.inspector().tab(), InspectorTab::Logs);
+        assert_eq!(followed(&state), Some(container_id(0)));
+        let logs = state.inspector().logs().expect("followed logs");
+        assert_eq!(logs.target(), &log_target(0));
+        assert_eq!(logs.lines().line_count(), 0);
+    }
+
+    #[test]
+    fn the_logs_stop_when_another_tab_opens_and_start_fresh_on_return() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["starting", "ready"]);
+        let shown = log_line_count(&state);
+
+        let _ = select_tab(&mut state, InspectorTab::Overview);
+        let after_overview = followed(&state);
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+
+        assert_eq!(shown, 2);
+        assert_eq!(after_overview, None);
+        assert_eq!(followed(&state), Some(container_id(0)));
+        assert_eq!(log_line_count(&state), 0);
+    }
+
+    #[test]
+    fn the_logs_move_to_a_newly_selected_container_without_old_lines() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["from the first container"]);
+
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        assert_eq!(followed(&state), Some(container_id(1)));
+        assert_eq!(log_line_count(&state), 0);
+    }
+
+    #[test]
+    fn the_logs_stop_when_docker_mode_is_left_and_follow_again_on_return() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+
+        let _ = reduce(&mut state, DockerIntent::Leave);
+        let after_leave = followed(&state);
+        let _ = reduce(&mut state, DockerIntent::Enter);
+
+        assert_eq!(after_leave, None);
+        assert_eq!(followed(&state), Some(container_id(0)));
+    }
+
+    #[test]
+    fn a_reload_that_keeps_the_container_keeps_its_lines() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["one", "two"]);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: docker().address().clone(),
+                lists: lists(EngineKind::Docker),
+            },
+        );
+
+        assert_eq!(followed(&state), Some(container_id(0)));
+        assert_eq!(log_line_count(&state), 2);
+    }
+
+    #[test]
+    fn a_container_that_is_gone_is_no_longer_followed() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        let mut empty = lists(EngineKind::Docker);
+        empty.containers = Ok(Vec::new());
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: docker().address().clone(),
+                lists: empty,
+            },
+        );
+
+        assert_eq!(followed(&state), None);
+    }
+
+    #[test]
+    fn only_containers_have_a_logs_tab() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+
+        assert_eq!(state.inspector().tab(), InspectorTab::Overview);
+        assert_eq!(followed(&state), None);
+    }
+
+    #[test]
+    fn opening_another_list_goes_back_to_the_overview() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+
+        open(&mut state, ResourceKind::Images);
+        let on_images = state.inspector().tab();
+        open(&mut state, ResourceKind::Containers);
+
+        assert_eq!(on_images, InspectorTab::Overview);
+        assert_eq!(state.inspector().tab(), InspectorTab::Overview);
+        assert_eq!(followed(&state), None);
+    }
+
+    #[test]
+    fn at_most_5000_log_lines_are_kept() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        let lines: Vec<String> = (0..MAX_LOG_LINES + 100)
+            .map(|n| format!("line {n}"))
+            .collect();
+        let (first, second) = lines.split_at(4_000);
+
+        for batch in [first, second] {
+            let _ = reduce(
+                &mut state,
+                DockerIntent::LogLines {
+                    target: log_target(0),
+                    lines: batch.to_vec(),
+                },
+            );
+        }
+
+        let logs = state.inspector().logs().expect("followed logs");
+        assert_eq!(MAX_LOG_LINES, 5000);
+        assert_eq!(logs.lines().line_count(), MAX_LOG_LINES);
+        let text = logs.lines().text();
+        assert!(text.starts_with("line 100\n"), "{}", &text[..20]);
+        assert!(text.ends_with("line 5099"));
+    }
+
+    #[test]
+    fn lines_of_a_container_no_longer_followed_are_dropped() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+
+        push_lines(&mut state, 1, &["from another container"]);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::LogsFailed {
+                target: log_target(1),
+                message: String::from("gone"),
+            },
+        );
+
+        assert_eq!(log_line_count(&state), 0);
+        let logs = state.inspector().logs().expect("followed logs");
+        assert_eq!(logs.error(), None);
+    }
+
+    #[test]
+    fn a_failed_log_stream_shows_the_engine_message_and_keeps_the_lines() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["starting"]);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::LogsFailed {
+                target: log_target(0),
+                message: String::from("No such container"),
+            },
+        );
+
+        let logs = state.inspector().logs().expect("followed logs");
+        assert_eq!(logs.error(), Some("No such container"));
+        assert_eq!(logs.lines().text(), "starting");
+    }
+
+    #[test]
+    fn inspect_loads_once_per_selection_when_its_tab_opens() {
+        let mut state = loaded_state();
+
+        let first = select_tab(&mut state, InspectorTab::Inspect);
+        let overview = select_tab(&mut state, InspectorTab::Overview);
+        let again = select_tab(&mut state, InspectorTab::Inspect);
+
+        assert_eq!(
+            first,
+            vec![inspect_of(ResourceKind::Containers, &container_id(0))]
+        );
+        assert!(overview.is_empty());
+        assert!(again.is_empty());
+        let inspect = state.inspector().inspect().expect("inspect asked for");
+        assert_eq!(inspect.target(), &container_inspect(0));
+        assert!(matches!(inspect.load(), InspectLoad::Loading));
+    }
+
+    #[test]
+    fn a_new_selection_loads_its_inspect_while_the_tab_is_open() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Inspect);
+
+        let other = effects(reduce(&mut state, DockerIntent::SelectRow(1)));
+        let same = effects(reduce(&mut state, DockerIntent::SelectRow(1)));
+
+        assert_eq!(
+            other,
+            vec![inspect_of(ResourceKind::Containers, &container_id(1))]
+        );
+        assert!(same.is_empty());
+    }
+
+    #[test]
+    fn a_selection_on_the_overview_loads_when_inspect_opens() {
+        let mut state = loaded_state();
+
+        let on_overview =
+            effects(reduce(&mut state, DockerIntent::SelectRow(1)));
+        let opened = select_tab(&mut state, InspectorTab::Inspect);
+
+        assert!(on_overview.is_empty());
+        assert_eq!(
+            opened,
+            vec![inspect_of(ResourceKind::Containers, &container_id(1))]
+        );
+    }
+
+    #[test]
+    fn each_list_inspects_its_selected_row() {
+        let mut state = loaded_state();
+        let resources = fixtures::resources(EngineKind::Docker);
+        let mut asked = Vec::new();
+
+        for resource in [
+            ResourceKind::Images,
+            ResourceKind::Volumes,
+            ResourceKind::Networks,
+        ] {
+            open(&mut state, resource);
+            asked.extend(select_tab(&mut state, InspectorTab::Inspect));
+        }
+
+        assert_eq!(
+            asked,
+            vec![
+                inspect_of(ResourceKind::Images, resources.images()[0].id()),
+                inspect_of(
+                    ResourceKind::Volumes,
+                    resources.volumes()[0].name()
+                ),
+                inspect_of(
+                    ResourceKind::Networks,
+                    resources.networks()[0].id()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_inspect_json_is_kept_and_an_answer_for_another_row_is_dropped() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Inspect);
+        let json = String::from("{\n  \"Id\": \"850b\"\n}");
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::InspectLoaded {
+                target: container_inspect(0),
+                result: Ok(json.clone()),
+            },
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::InspectLoaded {
+                target: container_inspect(1),
+                result: Err(String::from("late")),
+            },
+        );
+
+        let inspect = state.inspector().inspect().expect("inspect");
+        assert_eq!(inspect.target(), &container_inspect(0));
+        let InspectLoad::Loaded(shown) = inspect.load() else {
+            panic!("expected the json, got {:?}", inspect.load());
+        };
+        assert_eq!(shown.text(), json);
+    }
+
+    #[test]
+    fn a_failed_inspect_shows_the_engine_message() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Inspect);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::InspectLoaded {
+                target: container_inspect(0),
+                result: Err(String::from("No such container")),
+            },
+        );
+
+        let inspect = state.inspector().inspect().expect("inspect");
+        assert!(matches!(
+            inspect.load(),
+            InspectLoad::Failed(message) if message == "No such container"
+        ));
+    }
+
+    #[test]
+    fn nothing_is_inspected_outside_docker_mode() {
+        let mut state = loaded_state();
+        let _ = reduce(&mut state, DockerIntent::Leave);
+
+        let effects = select_tab(&mut state, InspectorTab::Inspect);
+
+        assert!(effects.is_empty());
+        assert!(state.inspector().inspect().is_none());
     }
 }

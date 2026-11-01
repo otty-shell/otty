@@ -144,6 +144,12 @@ impl Engine {
         &self.info
     }
 
+    /// The bollard client, for the calls kept in their own files
+    /// (`inspect.rs`, `logs.rs`).
+    pub(crate) fn client(&self) -> &Docker {
+        &self.client
+    }
+
     /// Prepare a connection to a reached engine.
     pub fn connect(info: &EngineInfo) -> Result<Self, EngineError> {
         let version = request_api_version(info.api_version());

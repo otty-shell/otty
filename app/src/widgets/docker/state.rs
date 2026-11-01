@@ -3,6 +3,9 @@ use otty_docker::{
     Volume,
 };
 
+use super::inspector::{
+    InspectTarget, InspectorState, InspectorTab, LogTarget,
+};
 use super::types::{
     LoadedLists, Place, ResourceKind, filtered, image_name, network_name,
     shown_containers, volume_name,
@@ -17,6 +20,7 @@ pub(crate) struct DockerState {
     engines: Vec<EngineState>,
     place: Option<Place>,
     filter: String,
+    inspector: InspectorState,
 }
 
 impl DockerState {
@@ -45,6 +49,72 @@ impl DockerState {
         &self.filter
     }
 
+    /// Return the state of the inspector tabs.
+    pub(crate) fn inspector(&self) -> &InspectorState {
+        &self.inspector
+    }
+
+    /// Return the container whose logs should be followed now: Docker mode
+    /// is active, the Logs tab is open and a container is selected.
+    pub(crate) fn wanted_log_target(&self) -> Option<LogTarget> {
+        if !self.is_active || self.inspector.tab() != InspectorTab::Logs {
+            return None;
+        }
+
+        let (engine, row) = self.selected_row()?;
+        let SelectedRow::Container(container) = row else {
+            return None;
+        };
+
+        Some(LogTarget::new(engine.info.clone(), container.id()))
+    }
+
+    /// Return the row whose inspect JSON should be shown now, with its
+    /// engine: Docker mode is active, the Inspect tab is open and a row is
+    /// selected.
+    pub(crate) fn wanted_inspect_target(
+        &self,
+    ) -> Option<(EngineInfo, InspectTarget)> {
+        if !self.is_active || self.inspector.tab() != InspectorTab::Inspect {
+            return None;
+        }
+
+        let (engine, row) = self.selected_row()?;
+        let target = InspectTarget::new(
+            engine.info.address().clone(),
+            row.resource(),
+            row.id(),
+        );
+
+        Some((engine.info.clone(), target))
+    }
+
+    /// Return the selected row of the open list and its engine; `None` when
+    /// nothing is selected or the row is not in the loaded list.
+    pub(crate) fn selected_row(
+        &self,
+    ) -> Option<(&EngineState, SelectedRow<'_>)> {
+        let engine = self.open_engine()?;
+        let place = self.place.as_ref()?;
+
+        let row = match place.resource() {
+            ResourceKind::Containers => SelectedRow::Container(
+                engine.containers.selected(Container::id)?,
+            ),
+            ResourceKind::Images => {
+                SelectedRow::Image(engine.images.selected(Image::id)?)
+            },
+            ResourceKind::Volumes => {
+                SelectedRow::Volume(engine.volumes.selected(Volume::name)?)
+            },
+            ResourceKind::Networks => {
+                SelectedRow::Network(engine.networks.selected(Network::id)?)
+            },
+        };
+
+        Some((engine, row))
+    }
+
     /// Return the engine of the open place.
     pub(crate) fn open_engine(&self) -> Option<&EngineState> {
         let place = self.place.as_ref()?;
@@ -60,6 +130,24 @@ impl DockerState {
         self.engines
             .iter()
             .find(|engine| engine.info().address() == address)
+    }
+
+    /// Return the inspector tabs for a change.
+    pub(super) fn inspector_mut(&mut self) -> &mut InspectorState {
+        &mut self.inspector
+    }
+
+    /// Open the inspector `tab` when the open list has it (only containers
+    /// have Logs).
+    pub(super) fn select_inspector_tab(&mut self, tab: InspectorTab) {
+        let Some(place) = self.place.as_ref() else {
+            return;
+        };
+        if !InspectorTab::of(place.resource()).contains(&tab) {
+            return;
+        }
+
+        self.inspector.select_tab(tab);
     }
 
     /// Mark Docker mode as active or not.
@@ -136,7 +224,8 @@ impl DockerState {
         true
     }
 
-    /// Show `place`. Opening another place clears the filter.
+    /// Show `place`. Opening another place clears the filter and goes
+    /// back to the Overview tab.
     pub(super) fn open(&mut self, place: Place) {
         if self.place.as_ref() == Some(&place) {
             return;
@@ -144,6 +233,7 @@ impl DockerState {
 
         self.place = Some(place);
         self.filter.clear();
+        self.inspector.select_tab(InspectorTab::Overview);
     }
 
     /// Show all containers of the open engine again, leaving a Compose
@@ -352,6 +442,37 @@ impl<T> ResourceList<T> {
     /// Select the row with `id`.
     fn select(&mut self, id: String) {
         self.selected = Some(id);
+    }
+}
+
+/// The selected row of the open list.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SelectedRow<'a> {
+    Container(&'a Container),
+    Image(&'a Image),
+    Volume(&'a Volume),
+    Network(&'a Network),
+}
+
+impl SelectedRow<'_> {
+    /// Return the list the row is in.
+    pub(crate) fn resource(&self) -> ResourceKind {
+        match self {
+            Self::Container(_) => ResourceKind::Containers,
+            Self::Image(_) => ResourceKind::Images,
+            Self::Volume(_) => ResourceKind::Volumes,
+            Self::Network(_) => ResourceKind::Networks,
+        }
+    }
+
+    /// Return the row's id: container, image or network id, or volume name.
+    pub(crate) fn id(&self) -> &str {
+        match self {
+            Self::Container(container) => container.id(),
+            Self::Image(image) => image.id(),
+            Self::Volume(volume) => volume.name(),
+            Self::Network(network) => network.id(),
+        }
     }
 }
 

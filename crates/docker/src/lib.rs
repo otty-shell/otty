@@ -20,6 +20,8 @@ mod engine;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
 mod image;
+mod inspect;
+mod logs;
 mod network;
 mod probe;
 #[cfg(test)]

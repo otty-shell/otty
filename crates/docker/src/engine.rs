@@ -10,7 +10,7 @@ const PODMAN_COMPONENT: &str = "Podman Engine";
 const DOCKER_COMPONENT: &str = "Engine";
 
 /// Which engine answered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EngineKind {
     /// Docker Engine or Docker Desktop.
     Docker,
@@ -19,7 +19,7 @@ pub enum EngineKind {
 }
 
 /// A local engine that answered `/version`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EngineInfo {
     kind: EngineKind,
     version: Option<String>,

@@ -9,7 +9,8 @@ use otty_docker::{Engine, EngineInfo, discover};
 use super::AppEvent;
 use crate::app::App;
 use crate::services;
-use crate::widgets::docker::types::LoadedLists;
+use crate::widgets::docker::inspector::InspectTarget;
+use crate::widgets::docker::types::{LoadedLists, ResourceKind};
 use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
 
 /// Route a Docker event: reduce its intents and run its effects.
@@ -31,6 +32,16 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
         DockerEffect::OpenUrl(url) => {
             services::open_url(&url);
             Task::none()
+        },
+        DockerEffect::LoadInspect { engine, target } => {
+            let shown = target.clone();
+
+            Task::perform(load_inspect(engine, target), move |result| {
+                intent(DockerIntent::InspectLoaded {
+                    target: shown.clone(),
+                    result,
+                })
+            })
         },
         DockerEffect::LoadLists(info) => {
             let engine = info.address().clone();
@@ -73,6 +84,24 @@ async fn load_lists(info: EngineInfo) -> LoadedLists {
     }
 }
 
+/// Load the inspect JSON of one row; the error is the engine's message.
+async fn load_inspect(
+    info: EngineInfo,
+    target: InspectTarget,
+) -> Result<String, String> {
+    let engine = Engine::connect(&info).map_err(|err| format!("{err}"))?;
+
+    let id = target.id();
+    let json = match target.resource() {
+        ResourceKind::Containers => engine.inspect_container(id).await,
+        ResourceKind::Images => engine.inspect_image(id).await,
+        ResourceKind::Volumes => engine.inspect_volume(id).await,
+        ResourceKind::Networks => engine.inspect_network(id).await,
+    };
+
+    json.map_err(|err| format!("{err}"))
+}
+
 fn intent(intent: DockerIntent) -> AppEvent {
     AppEvent::Docker(DockerEvent::Intent(intent))
 }
@@ -111,6 +140,23 @@ mod tests {
 
         assert_eq!(search.units(), 1);
         assert_eq!(load.units(), 1);
+    }
+
+    #[test]
+    fn loading_an_inspect_runs_one_engine_task() {
+        let docker = fixtures::engine(EngineKind::Docker);
+        let target = InspectTarget::new(
+            docker.address().clone(),
+            ResourceKind::Containers,
+            "850b6438a531",
+        );
+
+        let inspect = handle_effect(DockerEffect::LoadInspect {
+            engine: docker,
+            target,
+        });
+
+        assert_eq!(inspect.units(), 1);
     }
 
     #[test]

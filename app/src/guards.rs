@@ -296,6 +296,9 @@ fn is_docker_background(event: &DockerEvent) -> bool {
                 | DockerIntent::Leave
                 | DockerIntent::DiscoveryFinished(_)
                 | DockerIntent::ListsLoaded { .. }
+                | DockerIntent::LogLines { .. }
+                | DockerIntent::LogsFailed { .. }
+                | DockerIntent::InspectLoaded { .. }
         ),
         DockerEvent::Effect(_) => true,
     }
@@ -315,7 +318,10 @@ mod tests {
     };
     use crate::events::AppEvent;
     use crate::shortcuts::AppShortcut;
-    use crate::widgets::docker::types::LoadedLists;
+    use crate::widgets::docker::inspector::{
+        InspectTarget, InspectorTab, LogTarget,
+    };
+    use crate::widgets::docker::types::{LoadedLists, ResourceKind};
     use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::types::Mode;
@@ -433,12 +439,36 @@ mod tests {
             }),
             AppEvent::Docker(DockerEvent::Effect(DockerEffect::Discover)),
         ];
+        let address = otty_docker::EngineAddress::Tcp(String::from("h:1"));
+        let log_target = LogTarget::new(
+            otty_docker::fixtures::engine(otty_docker::EngineKind::Docker),
+            "850b",
+        );
+        let engine_results = [
+            docker(DockerIntent::LogLines {
+                target: log_target.clone(),
+                lines: vec![String::from("ready")],
+            }),
+            docker(DockerIntent::LogsFailed {
+                target: log_target,
+                message: String::from("x"),
+            }),
+            docker(DockerIntent::InspectLoaded {
+                target: InspectTarget::new(
+                    address,
+                    ResourceKind::Containers,
+                    "850b",
+                ),
+                result: Ok(String::from("{}")),
+            }),
+        ];
         let clicks = [
             docker(DockerIntent::Refresh),
             docker(DockerIntent::SelectRow(0)),
+            docker(DockerIntent::SelectInspectorTab(InspectorTab::Logs)),
         ];
 
-        for event in background {
+        for event in background.into_iter().chain(engine_results) {
             assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
             assert!(!inline_edit_guard(&event));
         }

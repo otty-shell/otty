@@ -339,6 +339,24 @@ pub(crate) fn docker_list_failed(error: &str) -> String {
     )
 }
 
+/// Build the notice shown above the logs when they could not be read.
+pub(crate) fn docker_logs_failed(error: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerLogsFailed,
+        &[("error", error)],
+    )
+}
+
+/// Build the notice shown in the Inspect tab when the JSON did not load.
+pub(crate) fn docker_inspect_failed(error: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerInspectFailed,
+        &[("error", error)],
+    )
+}
+
 /// Build the inspector status of a volume used by `names`.
 pub(crate) fn docker_used_by(names: &str) -> String {
     fill_in(current_locale(), Key::TplDockerUsedBy, &[("names", names)])

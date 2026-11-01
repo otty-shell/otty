@@ -6,7 +6,7 @@ use bollard::models::{
 
 /// The label Docker Compose, `podman compose` and `podman-compose` put on
 /// every service container; its value is the project name.
-const COMPOSE_PROJECT_LABEL: &str = "com.docker.compose.project";
+pub(crate) const COMPOSE_PROJECT_LABEL: &str = "com.docker.compose.project";
 
 /// What a container is doing now, as the engine reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

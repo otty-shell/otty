@@ -1,9 +1,11 @@
+use iced::widget::text_editor::Action;
 use otty_docker::{Discovery, EngineAddress, EngineInfo};
 
+use super::inspector::{InspectTarget, InspectorTab, LogTarget};
 use super::types::{LoadedLists, Place};
 
 /// Intent events handled by the Docker widget.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DockerIntent {
     /// Docker mode became active: search for engines, then load their
     /// lists.
@@ -34,6 +36,25 @@ pub(crate) enum DockerIntent {
     CopyCommand(String),
     /// Open this page in the browser (the Install and How to fix buttons).
     OpenLink(String),
+    // Inspector tabs.
+    /// An inspector tab was pressed.
+    SelectInspectorTab(InspectorTab),
+    /// New lines of the followed logs arrived.
+    LogLines {
+        target: LogTarget,
+        lines: Vec<String>,
+    },
+    /// The followed logs could not be read; the engine's message.
+    LogsFailed { target: LogTarget, message: String },
+    /// Selection or scroll in the log view.
+    LogAction(Action),
+    /// The inspect JSON of a row arrived, or the engine's message.
+    InspectLoaded {
+        target: InspectTarget,
+        result: Result<String, String>,
+    },
+    /// Selection or scroll in the inspect view.
+    InspectAction(Action),
 }
 
 /// Effect events produced by the Docker reducer. The app runs them off the
@@ -48,6 +69,11 @@ pub(crate) enum DockerEffect {
     CopyToClipboard(String),
     /// Open this page in the default browser.
     OpenUrl(String),
+    /// Load the inspect JSON of this row from this engine.
+    LoadInspect {
+        engine: EngineInfo,
+        target: InspectTarget,
+    },
 }
 
 /// Docker event stream routed through the app update loop.

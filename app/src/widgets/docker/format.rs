@@ -1,4 +1,5 @@
-//! Short texts for the Docker tables: ages, sizes, IDs and ports.
+//! Short texts for the Docker tables and the inspector: ages, dates, sizes,
+//! IDs and ports.
 
 use otty_docker::PortMapping;
 
@@ -28,6 +29,17 @@ pub(crate) fn age_text(now: i64, created: Option<i64>) -> String {
         Some((key, count)) => i18n::with_count(key, count),
         None => i18n::t(Key::DockerAgeUnderMinute).to_string(),
     }
+}
+
+/// The date and time of `seconds` (Unix seconds) in UTC, for example
+/// "2026-11-01 18:30 UTC". OTTY has no time zone data, so the time is not
+/// local.
+pub(crate) fn date_time_text(seconds: i64) -> String {
+    let (year, month, day) = civil_date(seconds.div_euclid(DAY));
+    let minutes = seconds.rem_euclid(DAY) / MINUTE;
+    let (hour, minute) = (minutes / 60, minutes % 60);
+
+    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02} UTC")
 }
 
 /// A size in bytes with three significant digits and SI units, as the
@@ -112,6 +124,32 @@ fn age_bucket(seconds: i64) -> Option<(Key, u64)> {
     Some((Key::TplDockerAgeYears, whole(365 * DAY)))
 }
 
+/// Year, month (1–12) and day (1–31) of the day `days` after 1970-01-01,
+/// in the proleptic Gregorian calendar (Howard Hinnant's
+/// `civil_from_days`: years are counted from March, so the leap day is the
+/// last day of a year).
+fn civil_date(days: i64) -> (i64, i64, i64) {
+    let shifted = days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted.rem_euclid(146_097);
+
+    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524
+        - day_of_era / 146_096)
+        / 365;
+    let day_of_year =
+        day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_from_march = (5 * day_of_year + 2) / 153;
+
+    let day = day_of_year - (153 * month_from_march + 2) / 5 + 1;
+    let month = if month_from_march < 10 {
+        month_from_march + 3
+    } else {
+        month_from_march - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    (year, month, day)
+}
+
 /// `value` with three significant digits and no trailing zeros: "6.69",
 /// "34", "192".
 fn three_digits(value: f64) -> String {
@@ -177,6 +215,15 @@ mod tests {
             i18n::t(Key::DockerAgeUnderMinute)
         );
         assert_eq!(age_text(now, None), NO_VALUE);
+    }
+
+    #[test]
+    fn a_date_is_shown_in_utc_to_the_minute() {
+        assert_eq!(date_time_text(1_793_557_848), "2026-11-01 18:30 UTC");
+        assert_eq!(date_time_text(1_727_386_302), "2024-09-26 21:31 UTC");
+        assert_eq!(date_time_text(951_782_400), "2000-02-29 00:00 UTC");
+        assert_eq!(date_time_text(0), "1970-01-01 00:00 UTC");
+        assert_eq!(date_time_text(-60), "1969-12-31 23:59 UTC");
     }
 
     #[test]

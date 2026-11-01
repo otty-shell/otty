@@ -16,8 +16,9 @@ bollard = "0.21.1"
 # Waits on all engine probes at once and, later, reads bollard's streams.
 futures-util = "0.3.31"
 log = { workspace = true }
-# Reads the captured engine answers behind the `fixtures` feature.
-serde_json = { workspace = true, optional = true }
+# Pretty-prints the inspect answers, and reads the captured engine answers
+# behind the `fixtures` feature. bollard already depends on it.
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 # `process` runs `docker --version` with a time limit (the `podman-docker`
 # check); the workspace already builds tokio with it, so no new crate.
@@ -26,8 +27,7 @@ tokio = { version = "1.47", features = ["net", "process", "time"] }
 [features]
 # `otty_docker::fixtures`: values mapped from the captured engine answers in
 # `tests/fixtures`, for the tests of crates that use this one.
-fixtures = ["dep:serde_json"]
+fixtures = []
 
 [dev-dependencies]
-serde_json = { workspace = true }
 tokio = { version = "1.47", features = ["macros", "rt"] }

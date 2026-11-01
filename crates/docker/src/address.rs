@@ -13,7 +13,7 @@ use std::path::PathBuf;
 /// let address = EngineAddress::Unix(PathBuf::from("/var/run/docker.sock"));
 /// assert_eq!(address.to_string(), "/var/run/docker.sock");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EngineAddress {
     /// A unix socket file.
     Unix(PathBuf),

@@ -394,6 +394,7 @@ fn view_docker_inspector<'a>(
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     docker_inspector::view(docker_inspector::InspectorProps {
         vm: app.widgets.docker.inspector_vm(),
+        tabs: app.widgets.docker.inspector_tabs_vm(),
         theme: theme_props,
     })
     .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
