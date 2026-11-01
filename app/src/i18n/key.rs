@@ -383,6 +383,14 @@ pub(crate) enum Key {
     DockerActionPause,
     /// Button and menu item that lets a paused container run again.
     DockerActionUnpause,
+    /// Button and menu item that opens a shell in a running container.
+    DockerActionShell,
+    /// Hint under a disabled Shell button: the `docker` command is missing.
+    DockerShellNeedsDocker,
+    /// Hint under a disabled Shell button: the `podman` command is missing.
+    DockerShellNeedsPodman,
+    /// Title of the terminal tab of a container shell. Placeholder: `{name}`.
+    TplDockerShellTabTitle,
     /// Button, menu item and dialog action that removes a row.
     DockerActionRemove,
     /// Button above the containers table that removes every stopped container.
@@ -741,7 +749,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 341] = [
+    pub(super) const ALL: [Self; 345] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -915,6 +923,10 @@ impl Key {
         Self::DockerActionRestart,
         Self::DockerActionPause,
         Self::DockerActionUnpause,
+        Self::DockerActionShell,
+        Self::DockerShellNeedsDocker,
+        Self::DockerShellNeedsPodman,
+        Self::TplDockerShellTabTitle,
         Self::DockerActionRemove,
         Self::DockerPruneStopped,
         Self::DockerPrune,

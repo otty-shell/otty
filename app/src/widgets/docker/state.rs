@@ -1,7 +1,9 @@
+use std::path::Path;
+
 use iced::Point;
 use otty_docker::{
-    Container, Diagnosis, Discovery, EngineAddress, EngineInfo, Image, Network,
-    Volume,
+    Container, Diagnosis, Discovery, EngineAddress, EngineInfo, EngineKind,
+    Image, Network, Volume,
 };
 
 use super::actions::{ActionRequest, Confirm};
@@ -54,6 +56,19 @@ impl DockerState {
     /// Return the list the main area shows; `None` without engines.
     pub(crate) fn place(&self) -> Option<&Place> {
         self.place.as_ref()
+    }
+
+    /// Return the full path of the command line tool of `kind`, when the
+    /// last search found it (a `podman-docker` wrapper counts as Podman).
+    pub(crate) fn cli_path(&self, kind: EngineKind) -> Option<&Path> {
+        let Search::Done(discovery) = &self.search else {
+            return None;
+        };
+
+        match kind {
+            EngineKind::Docker => discovery.cli().docker_path(),
+            EngineKind::Podman => discovery.cli().podman_path(),
+        }
     }
 
     /// Return the name filter above the table.

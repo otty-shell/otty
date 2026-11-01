@@ -66,6 +66,16 @@ pub fn engine(kind: EngineKind) -> EngineInfo {
 /// With no kinds nothing answered and no command line tool is on `PATH`,
 /// so the diagnosis is [`crate::Diagnosis::NotInstalled`].
 pub fn discovery(kinds: &[EngineKind]) -> Discovery {
+    discovery_with_cli(kinds, None, None)
+}
+
+/// Like [`discovery`], with the `docker` and `podman` commands found at
+/// these paths (`None`: not installed).
+pub fn discovery_with_cli(
+    kinds: &[EngineKind],
+    docker_path: Option<&str>,
+    podman_path: Option<&str>,
+) -> Discovery {
     let probes = kinds
         .iter()
         .map(|kind| {
@@ -81,7 +91,13 @@ pub fn discovery(kinds: &[EngineKind]) -> Discovery {
         })
         .collect();
 
-    Discovery::new(probes, CliPresence::new(false, false))
+    let cli = CliPresence::new(docker_path.is_some(), podman_path.is_some())
+        .with_paths(
+            docker_path.map(PathBuf::from),
+            podman_path.map(PathBuf::from),
+        );
+
+    Discovery::new(probes, cli)
 }
 
 /// The four captured lists of `kind`, mapped as [`crate::Engine::resources`]

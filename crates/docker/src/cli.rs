@@ -25,10 +25,12 @@ const DOCKER_APP_BIN: &str = "/Applications/Docker.app/Contents/Resources/bin";
 const PODMAN_INSTALLER_BIN: &str = "/opt/podman/bin";
 
 /// Which engine command line tools are installed.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CliPresence {
     docker: bool,
     podman: bool,
+    docker_path: Option<PathBuf>,
+    podman_path: Option<PathBuf>,
 }
 
 impl CliPresence {
@@ -43,19 +45,43 @@ impl CliPresence {
         self.podman
     }
 
+    /// The full path of the `docker` command, to run it when the app's own
+    /// `PATH` is short. `None` when it is not installed or is really Podman.
+    pub fn docker_path(&self) -> Option<&Path> {
+        self.docker_path.as_deref()
+    }
+
+    /// The full path of the command that runs Podman: `podman`, or else a
+    /// `docker` command that is really Podman.
+    pub fn podman_path(&self) -> Option<&Path> {
+        self.podman_path.as_deref()
+    }
+
     /// Look for `docker` and `podman` in `dirs` and tell whether `docker` is
     /// really Podman. `docker --version` runs only when `docker` is found
     /// and is not a link to `podman`, and is stopped after `limit`.
     pub(crate) async fn find(dirs: &[PathBuf], limit: Duration) -> Self {
         let docker = find_command("docker", dirs);
-        let podman_found = find_command("podman", dirs).is_some();
+        let podman = find_command("podman", dirs);
 
         let docker_is_podman = match &docker {
             Some(command) => is_podman_command(command, limit).await,
             None => false,
         };
 
-        Self::from_lookup(docker.is_some(), docker_is_podman, podman_found)
+        let mut presence = Self::from_lookup(
+            docker.is_some(),
+            docker_is_podman,
+            podman.is_some(),
+        );
+        if presence.docker {
+            presence.docker_path = docker.clone();
+        }
+        if presence.podman {
+            presence.podman_path = podman.or(docker);
+        }
+
+        presence
     }
 
     /// Combine what the lookup found: a `docker` command that is really
@@ -70,6 +96,8 @@ impl CliPresence {
         Self {
             docker: docker_found && !docker_is_podman,
             podman: podman_found || podman_docker,
+            docker_path: None,
+            podman_path: None,
         }
     }
 }
@@ -78,7 +106,23 @@ impl CliPresence {
 impl CliPresence {
     /// Create a presence from known answers.
     pub(crate) fn new(docker: bool, podman: bool) -> Self {
-        Self { docker, podman }
+        Self {
+            docker,
+            podman,
+            docker_path: None,
+            podman_path: None,
+        }
+    }
+
+    /// Add the full paths of the commands.
+    pub(crate) fn with_paths(
+        mut self,
+        docker_path: Option<PathBuf>,
+        podman_path: Option<PathBuf>,
+    ) -> Self {
+        self.docker_path = docker_path;
+        self.podman_path = podman_path;
+        self
     }
 }
 
@@ -197,6 +241,10 @@ mod tests {
     const PODMAN_DOCKER_VERSION: &str = "podman version 5.8.8\n";
     /// A time limit long enough for a shell script on a busy test machine.
     const LIMIT: Duration = Duration::from_secs(5);
+
+    fn installed(presence: &CliPresence) -> (bool, bool) {
+        (presence.docker(), presence.podman())
+    }
 
     fn write_file(dir: &Path, name: &str, mode: u32) {
         write_script(dir, name, "", mode);
@@ -381,7 +429,7 @@ mod tests {
         let presence =
             CliPresence::find(&[dir.path().to_path_buf()], LIMIT).await;
 
-        assert_eq!(presence, CliPresence::new(true, true));
+        assert_eq!(installed(&presence), (true, true));
     }
 
     #[tokio::test]
@@ -399,7 +447,7 @@ mod tests {
         let presence =
             CliPresence::find(&[dir.path().to_path_buf()], LIMIT).await;
 
-        assert_eq!(presence, CliPresence::new(false, true));
+        assert_eq!(installed(&presence), (false, true));
     }
 
     #[tokio::test]
@@ -421,7 +469,7 @@ mod tests {
         let presence =
             CliPresence::find(&[dir.path().to_path_buf()], LIMIT).await;
 
-        assert_eq!(presence, CliPresence::new(false, true));
+        assert_eq!(installed(&presence), (false, true));
     }
 
     #[tokio::test]
@@ -436,7 +484,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(presence, CliPresence::new(true, false));
+        assert_eq!(installed(&presence), (true, false));
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 
@@ -448,7 +496,7 @@ mod tests {
         let presence =
             CliPresence::find(&[dir.path().to_path_buf()], LIMIT).await;
 
-        assert_eq!(presence, CliPresence::new(true, false));
+        assert_eq!(installed(&presence), (true, false));
     }
 
     #[tokio::test]
@@ -459,5 +507,72 @@ mod tests {
             CliPresence::find(&[dir.path().to_path_buf()], LIMIT).await;
 
         assert_eq!(presence, CliPresence::default());
+    }
+
+    #[tokio::test]
+    async fn find_keeps_the_path_of_docker_found_in_an_install_folder() {
+        let path_dir = TempDir::new();
+        let install_dir = TempDir::new();
+        write_script(
+            install_dir.path(),
+            "docker",
+            &format!("printf '{DOCKER_VERSION}'\n"),
+            0o755,
+        );
+
+        let presence = CliPresence::find(
+            &[
+                path_dir.path().to_path_buf(),
+                install_dir.path().to_path_buf(),
+            ],
+            LIMIT,
+        )
+        .await;
+
+        assert_eq!(
+            presence.docker_path(),
+            Some(install_dir.path().join("docker").as_path())
+        );
+        assert_eq!(presence.podman_path(), None);
+    }
+
+    #[tokio::test]
+    async fn find_runs_podman_through_the_podman_docker_wrapper() {
+        let dir = TempDir::new();
+        write_script(
+            dir.path(),
+            "docker",
+            &format!("printf '{PODMAN_DOCKER_VERSION}'\n"),
+            0o755,
+        );
+
+        let presence =
+            CliPresence::find(&[dir.path().to_path_buf()], LIMIT).await;
+
+        assert_eq!(presence.docker_path(), None);
+        assert_eq!(
+            presence.podman_path(),
+            Some(dir.path().join("docker").as_path())
+        );
+    }
+
+    #[tokio::test]
+    async fn find_prefers_the_podman_command_over_the_wrapper() {
+        let dir = TempDir::new();
+        write_script(
+            dir.path(),
+            "docker",
+            &format!("printf '{PODMAN_DOCKER_VERSION}'\n"),
+            0o755,
+        );
+        write_file(dir.path(), "podman", 0o755);
+
+        let presence =
+            CliPresence::find(&[dir.path().to_path_buf()], LIMIT).await;
+
+        assert_eq!(
+            presence.podman_path(),
+            Some(dir.path().join("podman").as_path())
+        );
     }
 }

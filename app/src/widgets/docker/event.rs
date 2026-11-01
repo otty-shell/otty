@@ -125,6 +125,13 @@ pub(crate) enum DockerEffect {
     LoadLists(EngineInfo),
     /// Put this text on the clipboard.
     CopyToClipboard(String),
+    /// Open a terminal tab named `title` running `program` with `args`
+    /// (`docker exec -it <id> sh`), then show Terminal mode.
+    OpenShell {
+        title: String,
+        program: String,
+        args: Vec<String>,
+    },
     /// Open this page in the default browser.
     OpenUrl(String),
     /// Load the inspect JSON of this row from this engine.

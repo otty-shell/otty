@@ -6,14 +6,20 @@ use iced::Task;
 use iced::futures::future::join3;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use otty_docker::{Container, Engine, EngineInfo, discover};
+use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
 use super::AppEvent;
 use crate::app::App;
-use crate::services;
+use crate::domain::exit_behavior::ExitBehavior;
+use crate::services::{self, terminal_settings_for_session};
 use crate::widgets::docker::actions::{ActionRequest, EngineAction};
 use crate::widgets::docker::inspector::InspectTarget;
 use crate::widgets::docker::types::{LoadedList, LoadedLists, ResourceKind};
 use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
+use crate::widgets::modes::types::Mode;
+use crate::widgets::modes::{ModesEvent, ModesIntent};
+use crate::widgets::tabs::types::TabMachine;
+use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
 /// Route a Docker event: reduce its intents and run its effects.
 pub(crate) fn handle(app: &mut App, event: DockerEvent) -> Task<AppEvent> {
@@ -31,8 +37,43 @@ pub(crate) fn handle(app: &mut App, event: DockerEvent) -> Task<AppEvent> {
             app.widgets.docker.cancel_pull();
             Task::none()
         },
+        DockerEvent::Effect(DockerEffect::OpenShell {
+            title,
+            program,
+            args,
+        }) => open_shell_tab(&app.terminal_settings, title, program, args),
         DockerEvent::Effect(effect) => handle_effect(effect),
     }
+}
+
+/// Open a command tab on this computer running `program` with `args`, the
+/// way a quick launch opens one, then show Terminal mode.
+fn open_shell_tab(
+    base: &Settings,
+    title: String,
+    program: String,
+    args: Vec<String>,
+) -> Task<AppEvent> {
+    let options = LocalSessionOptions::default()
+        .with_program(&program)
+        .with_args(args);
+    let settings = terminal_settings_for_session(
+        base,
+        SessionKind::from_local_options(options),
+    );
+
+    let open_tab =
+        AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenCommandTab {
+            title,
+            settings: Box::new(settings),
+            exit_behavior: ExitBehavior::default(),
+            machine: TabMachine::ThisComputer,
+        }));
+    let show_terminal = AppEvent::Modes(ModesEvent::Intent(
+        ModesIntent::Select(Mode::Terminal),
+    ));
+
+    Task::done(open_tab).chain(Task::done(show_terminal))
 }
 
 /// Run the effects that need no app state; the pull effects are run by
@@ -86,9 +127,9 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
                 intent(DockerIntent::ActionFinished { request, result })
             })
         },
-        DockerEffect::StartPull { .. } | DockerEffect::CancelPull => {
-            Task::none()
-        },
+        DockerEffect::StartPull { .. }
+        | DockerEffect::CancelPull
+        | DockerEffect::OpenShell { .. } => Task::none(),
     }
 }
 
@@ -372,5 +413,42 @@ mod tests {
         )));
 
         assert_eq!(copy.units(), 1);
+    }
+
+    #[test]
+    fn the_shell_effect_opens_a_command_tab_then_switches_to_terminal_mode() {
+        let (mut app, _) = App::new();
+
+        let events = collect_outputs(handle(
+            &mut app,
+            DockerEvent::Effect(DockerEffect::OpenShell {
+                title: String::from("shell web-1"),
+                program: String::from("/opt/homebrew/bin/docker"),
+                args: ["exec", "-it", "abc123", "sh"]
+                    .map(String::from)
+                    .to_vec(),
+            }),
+        ));
+
+        let [
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenCommandTab {
+                title,
+                settings,
+                machine,
+                ..
+            })),
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(mode))),
+        ] = events.as_slice()
+        else {
+            panic!("expected a command tab and a mode switch");
+        };
+        assert_eq!(title, "shell web-1");
+        assert_eq!(machine, &TabMachine::ThisComputer);
+        assert_eq!(*mode, Mode::Terminal);
+        let SessionKind::Local(options) = &settings.backend.session else {
+            panic!("expected a local session");
+        };
+        assert_eq!(options.program(), "/opt/homebrew/bin/docker");
+        assert_eq!(options.args(), ["exec", "-it", "abc123", "sh"]);
     }
 }

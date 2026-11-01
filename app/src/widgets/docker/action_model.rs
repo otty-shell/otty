@@ -2,7 +2,7 @@
 //! confirmation dialog and the Prune button.
 
 use iced::Point;
-use otty_docker::{Container, Image, Network, Volume};
+use otty_docker::{Container, EngineKind, Image, Network, Volume};
 
 use super::actions::{
     EngineAction, REMOVE_ONLY, RowAction, container_actions, image_actions,
@@ -86,12 +86,14 @@ pub(crate) fn action_buttons(state: &DockerState) -> Option<ActionsViewModel> {
         },
     };
     let is_busy = state.is_busy(place.engine(), place.resource(), Some(id));
+    let shell_hint = shell_hint(state, engine.info().kind(), offered);
 
     let buttons = offered
         .iter()
         .map(|&action| {
-            let is_blocked =
-                action == RowAction::Remove && remove_hint.is_some();
+            let is_blocked = (action == RowAction::Remove
+                && remove_hint.is_some())
+                || (action == RowAction::Shell && shell_hint.is_some());
             ActionButton {
                 action,
                 label: i18n::t(action.label_key()),
@@ -103,8 +105,27 @@ pub(crate) fn action_buttons(state: &DockerState) -> Option<ActionsViewModel> {
 
     Some(ActionsViewModel {
         buttons,
-        hint: remove_hint,
+        hint: shell_hint.or(remove_hint),
     })
+}
+
+/// Why Shell is disabled: the search did not find the engine's command line
+/// tool. `None` when the row offers no Shell or the tool was found.
+fn shell_hint(
+    state: &DockerState,
+    kind: EngineKind,
+    offered: &[RowAction],
+) -> Option<String> {
+    if !offered.contains(&RowAction::Shell) || state.cli_path(kind).is_some() {
+        return None;
+    }
+
+    let key = match kind {
+        EngineKind::Docker => Key::DockerShellNeedsDocker,
+        EngineKind::Podman => Key::DockerShellNeedsPodman,
+    };
+
+    Some(i18n::t(key).to_string())
 }
 
 /// The open row menu with the actions of the selected row.
@@ -263,9 +284,11 @@ mod tests {
         let _ = reduce(&mut state, DockerIntent::Enter);
         let _ = reduce(
             &mut state,
-            DockerIntent::DiscoveryFinished(fixtures::discovery(&[
-                EngineKind::Docker,
-            ])),
+            DockerIntent::DiscoveryFinished(fixtures::discovery_with_cli(
+                &[EngineKind::Docker],
+                Some("/usr/local/bin/docker"),
+                None,
+            )),
         );
         let _ = reduce(
             &mut state,
@@ -314,6 +337,7 @@ mod tests {
         assert_eq!(
             running.map(|vm| vm.buttons),
             Some(vec![
+                button(RowAction::Shell, true),
                 button(RowAction::Restart, true),
                 button(RowAction::Stop, true),
                 button(RowAction::Pause, true),
@@ -736,5 +760,51 @@ mod tests {
             on.text,
             i18n::with_count(Key::TplDockerPruneVolumesText, 2)
         );
+    }
+
+    #[test]
+    fn shell_is_disabled_with_a_hint_when_the_engines_command_is_missing() {
+        let mut state = DockerState::default();
+        let _ = reduce(&mut state, DockerIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ])),
+        );
+        let resources = fixtures::resources(EngineKind::Docker);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: docker().address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(resources.containers().to_vec()),
+                    images: Ok(resources.images().to_vec()),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            },
+        );
+        select(&mut state, "otty-fx-running");
+
+        let view = action_buttons(&state).expect("buttons");
+
+        assert_eq!(view.buttons[0], button(RowAction::Shell, false));
+        assert_eq!(view.buttons[1], button(RowAction::Restart, true));
+        assert_eq!(
+            view.hint.as_deref(),
+            Some(i18n::t(Key::DockerShellNeedsDocker))
+        );
+    }
+
+    #[test]
+    fn shell_is_enabled_without_a_hint_when_the_command_is_found() {
+        let mut state = loaded_state();
+        select(&mut state, "otty-fx-running");
+
+        let view = action_buttons(&state).expect("buttons");
+
+        assert_eq!(view.buttons[0], button(RowAction::Shell, true));
+        assert_eq!(view.hint, None);
     }
 }

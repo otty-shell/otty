@@ -17,6 +17,8 @@ pub(crate) const REMOVE_ONLY: &[RowAction] = &[RowAction::Remove];
 /// selected row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RowAction {
+    /// Opens a terminal tab with a shell in the container.
+    Shell,
     Start,
     Stop,
     Restart,
@@ -32,6 +34,7 @@ impl RowAction {
     /// Translation key of the button and the menu item.
     pub(crate) fn label_key(self) -> Key {
         match self {
+            Self::Shell => Key::DockerActionShell,
             Self::Start => Key::DockerActionStart,
             Self::Stop => Key::DockerActionStop,
             Self::Restart => Key::DockerActionRestart,
@@ -295,12 +298,12 @@ impl Confirm {
 }
 
 /// The actions a container in `state` offers, in button order (spec
-/// Decision 11). Shell joins the running ones with ticket 15.
+/// Decision 11).
 pub(crate) fn container_actions(state: ContainerState) -> &'static [RowAction] {
     use RowAction::*;
 
     match state {
-        ContainerState::Running => &[Restart, Stop, Pause, Remove],
+        ContainerState::Running => &[Shell, Restart, Stop, Pause, Remove],
         ContainerState::Paused => &[Unpause, Stop, Remove],
         ContainerState::Restarting => &[Stop, Remove],
         ContainerState::Exited | ContainerState::Created => &[Start, Remove],
@@ -387,7 +390,7 @@ mod tests {
 
         assert_eq!(
             offered(ContainerState::Running),
-            vec![Restart, Stop, Pause, Remove]
+            vec![Shell, Restart, Stop, Pause, Remove]
         );
         assert_eq!(
             offered(ContainerState::Paused),

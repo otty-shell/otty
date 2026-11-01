@@ -31,9 +31,9 @@ impl Discovery {
         &self.probes
     }
 
-    /// Which engine command line tools are on `PATH`.
-    pub fn cli(&self) -> CliPresence {
-        self.cli
+    /// Which engine command line tools are installed.
+    pub fn cli(&self) -> &CliPresence {
+        &self.cli
     }
 
     /// What the search means for the user.
@@ -43,7 +43,7 @@ impl Discovery {
 
     /// Diagnose the given search results.
     pub(crate) fn new(probes: Vec<Probe>, cli: CliPresence) -> Self {
-        let diagnosis = diagnose(&probes, cli);
+        let diagnosis = diagnose(&probes, cli.clone());
 
         Self {
             probes,

@@ -17,6 +17,7 @@ use super::event::{DockerEffect, DockerEvent};
 use super::forms::{Form, split_reference};
 use super::state::DockerState;
 use super::types::{ResourceKind, image_name};
+use crate::i18n::{self, Key};
 
 /// The selected row of the open list and what it allows, copied out of the
 /// state so the state can change.
@@ -71,6 +72,7 @@ pub(super) fn act(
             state.open_form(Form::pull(item.engine, image, tag));
             return Task::none();
         },
+        RowAction::Shell => return open_shell(state, &item),
         RowAction::Start => EngineAction::StartContainer(item.id),
         RowAction::Stop => EngineAction::StopContainer(item.id),
         RowAction::Restart => EngineAction::RestartContainer(item.id),
@@ -79,6 +81,23 @@ pub(super) fn act(
     };
 
     run(state, ActionRequest::new(item.engine, call, item.name))
+}
+
+/// Open a terminal tab with a shell in the selected container, run by the
+/// engine's own command line tool. Does nothing when the search did not find
+/// that tool.
+fn open_shell(state: &DockerState, item: &SelectedItem) -> Task<DockerEvent> {
+    let Some(program) = state.cli_path(item.engine.kind()) else {
+        return Task::none();
+    };
+
+    effect(DockerEffect::OpenShell {
+        title: i18n::docker_named(Key::TplDockerShellTabTitle, &item.name),
+        program: program.to_string_lossy().into_owned(),
+        args: ["exec", "-it", item.id.as_str(), "sh"]
+            .map(String::from)
+            .to_vec(),
+    })
 }
 
 /// Select the row at `index` of the shown table and open its menu at
@@ -330,6 +349,10 @@ mod tests {
         LoadedLists, Place, ResourceKind, image_name,
     };
 
+    /// Where the tests find the `docker` command: an install folder, not
+    /// `PATH`.
+    const DOCKER_CLI: &str = "/Users/ann/.docker/bin/docker";
+
     fn docker() -> EngineInfo {
         fixtures::engine(EngineKind::Docker)
     }
@@ -352,9 +375,11 @@ mod tests {
         let _ = reduce(&mut state, DockerIntent::Enter);
         let _ = reduce(
             &mut state,
-            DockerIntent::DiscoveryFinished(fixtures::discovery(&[
-                EngineKind::Docker,
-            ])),
+            DockerIntent::DiscoveryFinished(fixtures::discovery_with_cli(
+                &[EngineKind::Docker],
+                Some(DOCKER_CLI),
+                None,
+            )),
         );
         let _ = reduce(
             &mut state,
@@ -1083,5 +1108,131 @@ mod tests {
         let _ = reduce(&mut state, DockerIntent::ConfirmSwitchToggled(false));
 
         assert_eq!(state.confirm().map(Confirm::count), Some(1));
+    }
+
+    /// Podman mode active, the Podman fixture engine found and loaded, with
+    /// the given commands found.
+    fn podman_state(
+        docker_cli: Option<&str>,
+        podman_cli: Option<&str>,
+    ) -> DockerState {
+        let engine = fixtures::engine(EngineKind::Podman);
+        let resources = fixtures::resources(EngineKind::Podman);
+        let mut state = DockerState::default();
+        let _ = reduce(&mut state, DockerIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery_with_cli(
+                &[EngineKind::Podman],
+                docker_cli,
+                podman_cli,
+            )),
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: engine.address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(resources.containers().to_vec()),
+                    images: Ok(resources.images().to_vec()),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            },
+        );
+        let index = resources
+            .containers()
+            .iter()
+            .position(|container| container.name() == "otty-fx-running")
+            .expect("fixture container");
+        let _ = reduce(&mut state, DockerIntent::SelectRow(index));
+        state
+    }
+
+    fn podman_container_id() -> String {
+        fixtures::resources(EngineKind::Podman)
+            .containers()
+            .iter()
+            .find(|container| container.name() == "otty-fx-running")
+            .map(|container| container.id().to_string())
+            .expect("fixture container")
+    }
+
+    fn shell(program: &str, id: &str) -> DockerEffect {
+        DockerEffect::OpenShell {
+            title: String::from("shell otty-fx-running"),
+            program: program.to_string(),
+            args: ["exec", "-it", id, "sh"].map(String::from).to_vec(),
+        }
+    }
+
+    #[test]
+    fn shell_opens_docker_exec_with_the_command_found_in_an_install_folder() {
+        let mut state = loaded_state();
+        let id = select(&mut state, "otty-fx-running");
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::Act(RowAction::Shell)));
+
+        assert_eq!(effects, vec![shell(DOCKER_CLI, &id)]);
+    }
+
+    #[test]
+    fn shell_on_a_podman_engine_opens_podman_exec() {
+        let mut state = podman_state(None, Some("/opt/podman/bin/podman"));
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::Act(RowAction::Shell)));
+
+        assert_eq!(
+            effects,
+            vec![shell("/opt/podman/bin/podman", &podman_container_id())]
+        );
+    }
+
+    #[test]
+    fn shell_on_a_podman_engine_runs_the_podman_docker_wrapper() {
+        // The wrapper is the only command found: it counts as Podman, so the
+        // cli reports it as the Podman command and not as Docker.
+        let mut state = podman_state(None, Some("/usr/bin/docker"));
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::Act(RowAction::Shell)));
+
+        assert_eq!(
+            effects,
+            vec![shell("/usr/bin/docker", &podman_container_id())]
+        );
+    }
+
+    #[test]
+    fn shell_on_a_podman_engine_ignores_a_real_docker_command() {
+        let mut state = podman_state(Some(DOCKER_CLI), None);
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::Act(RowAction::Shell)));
+
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn shell_without_the_command_does_nothing() {
+        let mut state = podman_state(None, None);
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::Act(RowAction::Shell)));
+
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn shell_on_a_stopped_container_does_nothing() {
+        let mut state = loaded_state();
+        let _ = select(&mut state, "otty-fx-exit0");
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::Act(RowAction::Shell)));
+
+        assert!(effects.is_empty());
     }
 }
