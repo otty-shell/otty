@@ -280,6 +280,42 @@ none of those are in scope (see Out of Scope).
     field as typed. Containers that need a terminal (`-it`) are started
     detached; the user opens them with Shell.
 
+19. **Owner review, round 1** (2026-11-01). Where this list and an earlier
+    decision or a screen disagree, this list wins.
+    - **No Compose projects in the tree.** The tree under an engine root is
+      Containers, Images, Volumes, Networks. The Containers table gets a
+      **Compose** column; the project name in a row is a link, and pressing
+      it filters the table to that project (the "compose: <name>" chip with
+      its clear button stays above the table).
+    - **Sorting.** Every table can be sorted by pressing a column header;
+      pressing again reverses it; an arrow shows the column and direction.
+      The order follows the column's meaning: text alphabetically
+      (case-insensitive), ages and dates by time (first press: newest first),
+      sizes and counts by number (first press: largest first), status by
+      state (running, restarting, paused, created, exited, dead). Default
+      order: containers running first, then by name; images, volumes and
+      networks by name. The chosen sort is kept per table while OTTY runs.
+    - **No "this computer"** in Docker mode: engine roots in the tree show
+      "Docker 29.9.1" only, and the header above the table has no engine
+      chip (the version is already in the tree and the status bar).
+    - **Ports read like `docker ps`:** `8080:80/tcp` (host:container), in
+      the table, the inspector and the Run form's row separator.
+    - **Header layout:** first row the title (and the compose chip when a
+      project filter is on); second row the controls: the name filter, then
+      the actions as icon buttons with tooltips (create / run, prune,
+      refresh); then the table. When the controls row is too narrow, the
+      action buttons move into a "⋯" menu at the end of the row; the filter
+      stays and shrinks first.
+    - **Row "⋯" button:** every table row whose resource has actions ends
+      with a "⋯" button. It opens the same actions menu as a right click,
+      for that row, without changing the selection or opening the
+      inspector.
+    - **Inspector actions as icon buttons** with tooltips (Remove keeps its
+      danger color); the hint under them stays.
+    - Icons are original simple stroke icons in the style of
+      `assets/svg/*` (24×24 view box, round caps, one stroke width); no
+      third-party icon set is copied.
+
 ## Ticket classes
 
 Same classes as `specs/2026-10-31-workspace-layout`: **A** restyle / kit,
@@ -344,6 +380,10 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 21 | Discovery: more sockets, CLI install folders, `podman-docker` wrapper (Decision 8 additions) | C | Opus | 07 |
 | 22 | Logs Follow toggle (Decision 12) | C | Opus | 11, 13 |
 | 23 | Volume prune: anonymous only by default, switch for named volumes (Decision 11) | C | Sonnet | 12 |
+| 24 | Kit: sortable `DataTable` headers, clickable link cell, row "⋯" button column; collapsing `Toolbar`; icon buttons with tooltips (Decision 19) | A | Opus | 02 |
+| 25 | Docker tables: Compose column with link filter, no Compose tree group, no "this computer" / engine chip, `host:container` ports (Decision 19) | B | Sonnet | 24 |
+| 26 | Docker tables: sorting, defaults and kept choice (Decision 19) | C | Sonnet | 24, 25 |
+| 27 | Docker header layout with collapsing controls, row "⋯" menus, icon actions in the inspector (Decision 19) | C | Opus | 24, 26 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -374,3 +414,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 21 — Discovery additions: sockets, CLI folders, `podman-docker` · Opus
 - [x] 22 — Logs Follow toggle · Opus
 - [x] 23 — Volume prune keeps named volumes by default · Sonnet
+- [ ] 24 — Kit: sortable table, link cell, row ⋯, Toolbar, icon tooltips · Opus
+- [ ] 25 — Compose column, no "this computer", `host:container` ports · Sonnet
+- [ ] 26 — Table sorting · Sonnet
+- [ ] 27 — Header layout, row ⋯ menus, icon actions · Opus
