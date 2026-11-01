@@ -1,11 +1,11 @@
 //! Gallery of the kit components in every state, in OTTY Dark and OTTY Light.
 //!
 //! Run with `cargo run -p otty-ui-kit --example gallery`; add `light` for
-//! OTTY Light, and `rows`, `fields` or `settings` to show one group of
-//! the second set.
+//! OTTY Light, and `rows`, `fields`, `settings` or `inspector` to show one
+//! group of the second set.
 
 use iced::widget::{
-    Space, column, container, row, scrollable, stack, svg, text,
+    Space, column, container, row, scrollable, stack, svg, text, text_editor,
 };
 use iced::{Element, Length, Padding, Theme};
 use otty_ui_kit::components::action_tile::ActionTile;
@@ -21,8 +21,12 @@ use otty_ui_kit::components::form_section::FormSection;
 use otty_ui_kit::components::icon_button::{
     IconButton, IconButtonSize, IconTone,
 };
+use otty_ui_kit::components::inspector_header::InspectorHeader;
+use otty_ui_kit::components::inspector_tabs::inspector_tabs;
 use otty_ui_kit::components::kbd::{kbd, shortcut_text};
 use otty_ui_kit::components::key_value_field::KeyValueField;
+use otty_ui_kit::components::key_value_list::KeyValueList;
+use otty_ui_kit::components::log_view::{LogView, LogViewState};
 use otty_ui_kit::components::menu::{Menu, MenuItem};
 use otty_ui_kit::components::mode_menu::{
     ModeMenu, ModeMenuSection, ModePin, ModeRow,
@@ -85,6 +89,8 @@ const TYPES: [&str; 3] = ["Command", "Script", "SSH"];
 
 const TARGETS: [&str; 4] = ["This computer", "prod-1", "staging-2", "dev-box"];
 
+const INSPECTOR_TABS: [&str; 3] = ["Overview", "Logs", "Inspect"];
+
 /// Which sections the gallery shows.
 #[derive(PartialEq)]
 enum Part {
@@ -92,9 +98,13 @@ enum Part {
     Rows,
     Fields,
     Settings,
+    Inspector,
 }
 
 struct Gallery {
+    inspector_tab: &'static str,
+    log: LogViewState,
+    log_lines: u32,
     dark: bool,
     part: Part,
     switch_on: bool,
@@ -120,9 +130,24 @@ impl Gallery {
         let args: Vec<String> = std::env::args().collect();
         let light = args.iter().any(|arg| arg == "light");
 
+        let mut log = LogViewState::new();
+        log.push_lines((1..=30).map(|n| {
+            format!("2026-11-01T10:00:{n:02}Z INFO request {n} served")
+        }));
+        log.push_lines([
+            "2026-11-01T10:00:31Z WARN upstream answered slowly: \
+             0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_owned(),
+        ]);
+
         Self {
+            inspector_tab: INSPECTOR_TABS[0],
+            log,
+            log_lines: 31,
             dark: !light,
-            part: if args.iter().any(|arg| arg == "rows") {
+            part: if args.iter().any(|arg| arg == "inspector") {
+                Part::Inspector
+            } else if args.iter().any(|arg| arg == "rows") {
                 Part::Rows
             } else if args.iter().any(|arg| arg == "fields") {
                 Part::Fields
@@ -180,6 +205,10 @@ enum Message {
     ToggleSessions,
     ToggleMenu,
     Palette(PaletteAction),
+    InspectorTab(&'static str),
+    Log(text_editor::Action),
+    ToggleFollow,
+    AppendLog,
 }
 
 fn main() -> iced::Result {
@@ -228,6 +257,18 @@ fn update(state: &mut Gallery, message: Message) {
         Message::CloseDialog => state.dialog_open = false,
         Message::ToggleSessions => state.sessions_open = !state.sessions_open,
         Message::ToggleMenu => state.menu_open = !state.menu_open,
+        Message::InspectorTab(tab) => state.inspector_tab = tab,
+        Message::Log(action) => state.log.perform(action),
+        Message::ToggleFollow => {
+            let is_following = !state.log.is_following();
+            state.log.set_following(is_following);
+        },
+        Message::AppendLog => {
+            state.log_lines += 1;
+            let line =
+                format!("2026-11-01T10:01:00Z INFO line {}", state.log_lines);
+            state.log.push_lines([line]);
+        },
         Message::Palette(action) => match action {
             PaletteAction::QueryChanged(query) => {
                 state.commands.set_query(query);
@@ -622,6 +663,65 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .folder("~/projects/otty")
             .trailing(Chip::new("needs you", p)),
     ];
+    let inspector_header = InspectorHeader::new("web-1", p)
+        .status(text("Running").size(12.5).color(palette.status_ok()))
+        .action(
+            Button::new("Stop", p)
+                .size(ButtonSize::Small)
+                .on_press(Message::Clicked),
+        )
+        .action(
+            Button::new("Restart", p)
+                .size(ButtonSize::Small)
+                .on_press(Message::Clicked),
+        )
+        .action(
+            Button::new("Remove", p)
+                .size(ButtonSize::Small)
+                .kind(ButtonKind::Danger),
+        )
+        .hint("Stop the container before removing it.");
+    let inspector_tabs = inspector_tabs(
+        &INSPECTOR_TABS,
+        &state.inspector_tab,
+        Message::InspectorTab,
+        p,
+    );
+    let inspector_list = KeyValueList::new(p)
+        .entry("Image", "nginx:1.27-alpine")
+        .entry("Ports", "0.0.0.0:8080 -> 80/tcp")
+        .entry(
+            "ID",
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+        .entry("Created", "2026-11-01 09:58");
+    let inspector_header: Element<'_, Message> = inspector_header.into();
+    let inspector_list: Element<'_, Message> = inspector_list.into();
+    let inspector = container(
+        column![inspector_header, inspector_tabs, inspector_list]
+            .spacing(spacing::SPACE_4),
+    )
+    .width(320);
+    let follow_label = if state.log.is_following() {
+        "Following: on".to_owned()
+    } else {
+        format!("Following: off ({} held back)", state.log.pending_count())
+    };
+    let log_view = column![
+        row![
+            Button::new(follow_label, p)
+                .size(ButtonSize::Small)
+                .on_press(Message::ToggleFollow),
+            Button::new("Add line", p)
+                .size(ButtonSize::Small)
+                .on_press(Message::AppendLog),
+        ]
+        .spacing(spacing::SPACE_3),
+        LogView::new(&state.log, p)
+            .height(200)
+            .on_action(Message::Log),
+    ]
+    .spacing(spacing::SPACE_3);
     let title_search = TitleSearch::new(
         "zsh  ~/projects/otty",
         "Ctrl K",
@@ -820,6 +920,18 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
     ];
+    let inspector_parts: Vec<Element<'_, Message>> = vec![
+        section(
+            "InspectorHeader + InspectorTabs + KeyValueList (long value wraps)",
+            inspector.into(),
+            p,
+        ),
+        section(
+            "LogView (follow toggle and Add line are gallery only)",
+            container(log_view).width(480).into(),
+            p,
+        ),
+    ];
     let form_fields: Vec<Element<'_, Message>> = vec![
         section(
             "TextField (optional+hint+action, placeholder, error, disabled, short)",
@@ -844,6 +956,9 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     }
     if matches!(state.part, Part::All | Part::Rows) {
         body = body.extend(rows);
+    }
+    if matches!(state.part, Part::All | Part::Inspector) {
+        body = body.extend(inspector_parts);
     }
     if matches!(state.part, Part::All | Part::Fields) {
         body = body.extend(form_fields);

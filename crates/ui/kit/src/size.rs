@@ -77,3 +77,7 @@ pub const MODE_TAB_HEIGHT: f32 = 26.0;
 pub const MODE_ICON_TILE: f32 = 22.0;
 /// Width of the All modes menu (the `.mm` popover is 300px wide).
 pub const MODE_MENU: f32 = 300.0;
+/// Width of the key column of a key-value list (`.ot-insp-kv` columns).
+pub const KEY_VALUE_KEY: f32 = 96.0;
+/// Height of an inspector tab (`.ot-insp-tabs button { height: 30px }`).
+pub const INSPECTOR_TAB: f32 = 30.0;
