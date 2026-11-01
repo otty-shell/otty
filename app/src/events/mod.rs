@@ -46,9 +46,7 @@ pub(crate) enum AppEvent {
 pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
         AppEvent::IcedReady => Task::done(AppEvent::Tabs(TabsEvent::Intent(
-            TabsIntent::OpenTerminalTab {
-                title: app.shell_session.name().to_string(),
-            },
+            TabsIntent::OpenTerminalTab,
         ))),
         AppEvent::Sidebar(event) => sidebar::handle(app, event),
         AppEvent::Chrome(event) => chrome::handle(app, event),

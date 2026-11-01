@@ -264,7 +264,6 @@ fn left_panel<'a>(
                 vm: sessions_vm,
                 theme,
                 is_open: sidebar_vm.is_sessions_open,
-                new_session_title: "zsh",
                 is_menu_open: is_menu_open(HeaderMenu::Sessions),
                 on_toggle: (),
                 on_menu: (),

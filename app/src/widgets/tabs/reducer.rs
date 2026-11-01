@@ -8,10 +8,17 @@ use crate::domain::exit_behavior::ExitBehavior;
 use crate::domain::quick_launch::WizardTabInit;
 use crate::i18n::{self, Key};
 
+/// What the tabs widget needs from the rest of the app to reduce an intent.
+pub(crate) struct TabsCtx<'a> {
+    /// Name of the user's shell, given to new terminal tabs.
+    pub(crate) shell_name: &'a str,
+}
+
 /// Reduce a tabs intent event into state mutation and effect tasks.
 pub(crate) fn reduce(
     state: &mut TabsState,
     event: TabsIntent,
+    ctx: &TabsCtx<'_>,
 ) -> Task<TabsEvent> {
     match event {
         TabsIntent::ActivateTab { tab_id } => activate(state, tab_id),
@@ -28,8 +35,8 @@ pub(crate) fn reduce(
             state.set_settings_title(title);
             Task::none()
         },
-        TabsIntent::OpenTerminalTab { title } => {
-            open_terminal_tab(state, title)
+        TabsIntent::OpenTerminalTab => {
+            open_terminal_tab(state, ctx.shell_name.to_string())
         },
         TabsIntent::OpenCommandTab {
             title,
@@ -216,12 +223,20 @@ mod tests {
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
 
-    fn open_terminal(state: &mut TabsState, title: &str) -> u64 {
-        let _ = reduce(
+    /// Shell the tests open terminal tabs with.
+    const SHELL: &str = "bash";
+
+    /// Reduce `intent` with [`SHELL`] as the shell.
+    fn reduce(state: &mut TabsState, intent: TabsIntent) -> Task<TabsEvent> {
+        super::reduce(state, intent, &TabsCtx { shell_name: SHELL })
+    }
+
+    /// Open a terminal tab with the shell `shell_name`.
+    fn open_terminal(state: &mut TabsState, shell_name: &str) -> u64 {
+        let _ = super::reduce(
             state,
-            TabsIntent::OpenTerminalTab {
-                title: String::from(title),
-            },
+            TabsIntent::OpenTerminalTab,
+            &TabsCtx { shell_name },
         );
         state.active_tab_id().expect("terminal tab should open")
     }
@@ -247,14 +262,9 @@ mod tests {
     }
 
     #[test]
-    fn open_terminal_tab_activates_new_tab() {
+    fn open_terminal_tab_activates_new_tab_named_after_the_shell() {
         let mut state = TabsState::default();
-        let _ = reduce(
-            &mut state,
-            TabsIntent::OpenTerminalTab {
-                title: String::from("bash"),
-            },
-        );
+        let _ = reduce(&mut state, TabsIntent::OpenTerminalTab);
 
         assert_eq!(state.len(), 1);
         let active = state.active_tab().expect("should have active tab");
@@ -360,12 +370,7 @@ mod tests {
         let settings_id =
             state.active_tab_id().expect("settings tab should open");
 
-        let _ = reduce(
-            &mut state,
-            TabsIntent::OpenTerminalTab {
-                title: String::from("shell"),
-            },
-        );
+        let _ = reduce(&mut state, TabsIntent::OpenTerminalTab);
         assert_eq!(state.len(), 2);
 
         let _ = reduce(&mut state, TabsIntent::OpenSettingsTab);
@@ -380,14 +385,7 @@ mod tests {
         let _ = reduce(&mut state, TabsIntent::OpenSettingsTab);
         let settings_id =
             state.active_tab_id().expect("settings tab should open");
-        let _ = reduce(
-            &mut state,
-            TabsIntent::OpenTerminalTab {
-                title: String::from("shell"),
-            },
-        );
-        let terminal_id =
-            state.active_tab_id().expect("terminal tab should open");
+        let terminal_id = open_terminal(&mut state, "shell");
 
         let _ = reduce(
             &mut state,
@@ -417,20 +415,10 @@ mod tests {
     #[test]
     fn close_active_tab_activates_previous() {
         let mut state = TabsState::default();
-        let _ = reduce(
-            &mut state,
-            TabsIntent::OpenTerminalTab {
-                title: String::from("First"),
-            },
-        );
+        let _ = reduce(&mut state, TabsIntent::OpenTerminalTab);
         let first_id = state.active_tab_id().unwrap();
 
-        let _ = reduce(
-            &mut state,
-            TabsIntent::OpenTerminalTab {
-                title: String::from("Second"),
-            },
-        );
+        let _ = reduce(&mut state, TabsIntent::OpenTerminalTab);
         let second_id = state.active_tab_id().unwrap();
 
         let _ = reduce(&mut state, TabsIntent::CloseTab { tab_id: second_id });
@@ -440,12 +428,7 @@ mod tests {
     #[test]
     fn close_last_tab_clears_active() {
         let mut state = TabsState::default();
-        let _ = reduce(
-            &mut state,
-            TabsIntent::OpenTerminalTab {
-                title: String::from("Only"),
-            },
-        );
+        let _ = reduce(&mut state, TabsIntent::OpenTerminalTab);
         let tab_id = state.active_tab_id().unwrap();
 
         let _ = reduce(&mut state, TabsIntent::CloseTab { tab_id });
@@ -456,12 +439,7 @@ mod tests {
     #[test]
     fn set_title_updates_tab() {
         let mut state = TabsState::default();
-        let _ = reduce(
-            &mut state,
-            TabsIntent::OpenTerminalTab {
-                title: String::from("old"),
-            },
-        );
+        let _ = reduce(&mut state, TabsIntent::OpenTerminalTab);
         let tab_id = state.active_tab_id().unwrap();
 
         let _ = reduce(
@@ -482,12 +460,8 @@ mod tests {
     fn open_terminal_tab_emits_opened_and_scroll_effects() {
         let mut state = TabsState::default();
 
-        let events = collect_outputs(reduce(
-            &mut state,
-            TabsIntent::OpenTerminalTab {
-                title: String::from("bash"),
-            },
-        ));
+        let events =
+            collect_outputs(reduce(&mut state, TabsIntent::OpenTerminalTab));
 
         let tab_id = state.active_tab_id().expect("terminal tab should open");
         assert!(events.iter().any(|event| matches!(

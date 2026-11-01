@@ -33,8 +33,6 @@ pub(crate) struct SessionListProps<'a, Message> {
     pub(crate) theme: ThemeProps<'a>,
     /// Whether the section body is shown.
     pub(crate) is_open: bool,
-    /// Title given to a terminal tab opened by the New session button.
-    pub(crate) new_session_title: &'a str,
     /// Whether the New session menu is open, which frames the chevron.
     pub(crate) is_menu_open: bool,
     /// Message sent when the section title is pressed.
@@ -62,9 +60,7 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
         palette,
     )
     .menu_open(props.is_menu_open)
-    .on_press(on_intent(TabsIntent::OpenTerminalTab {
-        title: props.new_session_title.to_string(),
-    }))
+    .on_press(on_intent(TabsIntent::OpenTerminalTab))
     .on_menu(props.on_menu);
 
     let mut rows = Column::new().width(Length::Fill);
@@ -262,7 +258,6 @@ mod tests {
             vm: TabsViewModel::new(tabs, Some(1), Some("fedora")),
             theme: ThemeProps::new(themes.current()),
             is_open,
-            new_session_title: "zsh",
             is_menu_open: false,
             on_toggle: Message::Toggle,
             on_menu: Message::OpenMenu,
@@ -344,8 +339,7 @@ mod tests {
         let messages: Vec<Message> = ui.into_messages().collect();
         assert!(matches!(
             messages.as_slice(),
-            [Message::Intent(TabsIntent::OpenTerminalTab { title })]
-                if title == "zsh"
+            [Message::Intent(TabsIntent::OpenTerminalTab)]
         ));
     }
 

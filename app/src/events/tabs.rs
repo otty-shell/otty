@@ -9,7 +9,7 @@ use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::settings::{SettingsEvent, SettingsIntent};
 use crate::widgets::tabs::view::session_list::SESSION_LIST_SCROLL_ID;
-use crate::widgets::tabs::{TabsEffect, TabsEvent};
+use crate::widgets::tabs::{TabsCtx, TabsEffect, TabsEvent};
 use crate::widgets::terminal_workspace::types::TerminalKind;
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
@@ -18,7 +18,10 @@ use crate::widgets::terminal_workspace::{
 pub(crate) fn handle(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
     match event {
         TabsEvent::Intent(event) => {
-            app.widgets.tabs.reduce(event).map(AppEvent::Tabs)
+            let ctx = TabsCtx {
+                shell_name: app.shell_session.name(),
+            };
+            app.widgets.tabs.reduce(event, &ctx).map(AppEvent::Tabs)
         },
         TabsEvent::Effect(effect) => handle_effect(app, effect),
     }
@@ -193,11 +196,14 @@ mod tests {
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
-    use crate::widgets::tabs::{TabsEffect, TabsEvent, TabsIntent};
+    use crate::widgets::tabs::{TabsCtx, TabsEffect, TabsEvent, TabsIntent};
     use crate::widgets::terminal_workspace::types::TerminalKind;
     use crate::widgets::terminal_workspace::{
         TerminalWorkspaceCtx, TerminalWorkspaceEvent, TerminalWorkspaceIntent,
     };
+
+    /// Context the tests reduce tabs intents with.
+    const SH: TabsCtx<'static> = TabsCtx { shell_name: "sh" };
 
     #[cfg(unix)]
     const TEST_SHELL_PATH: &str = "/bin/sh";
@@ -233,9 +239,7 @@ mod tests {
     /// Open a local terminal tab of `kind` and make its terminal report
     /// `cwd`.
     fn open_tab_in(app: &mut App, cwd: &str, kind: TerminalKind) -> u64 {
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenTerminalTab {
-            title: String::from("sh"),
-        });
+        let _ = app.widgets.tabs.reduce(TabsIntent::OpenTerminalTab, &SH);
         let tab_id = app
             .widgets
             .tabs
@@ -394,7 +398,7 @@ mod tests {
     fn given_settings_tab_when_activated_then_explorer_keeps_its_folder() {
         let (mut app, _) = App::new();
         let _shell_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab);
+        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
         let settings_id = app
             .widgets
             .tabs
@@ -457,5 +461,19 @@ mod tests {
             }),
         );
         assert_eq!(task.units(), 1);
+    }
+
+    #[test]
+    fn open_terminal_tab_is_named_after_the_app_shell() {
+        let (mut app, _) = App::new();
+        let shell_name = app.shell_session.name().to_string();
+
+        let _ =
+            handle(&mut app, TabsEvent::Intent(TabsIntent::OpenTerminalTab));
+
+        assert_eq!(
+            app.widgets.tabs.active_tab_title(),
+            Some(shell_name.as_str())
+        );
     }
 }

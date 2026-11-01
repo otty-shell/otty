@@ -9,6 +9,7 @@ use iced::Task;
 
 pub(crate) use self::event::{TabsEffect, TabsEvent, TabsIntent};
 use self::model::TabsViewModel;
+pub(crate) use self::reducer::TabsCtx;
 use self::state::TabsState;
 
 /// Tabs widget managing tab metadata and lifecycle.
@@ -25,8 +26,12 @@ impl TabsWidget {
     }
 
     /// Reduce a tabs intent event into state updates and effect events.
-    pub(crate) fn reduce(&mut self, event: TabsIntent) -> Task<TabsEvent> {
-        reducer::reduce(&mut self.state, event)
+    pub(crate) fn reduce(
+        &mut self,
+        event: TabsIntent,
+        ctx: &TabsCtx<'_>,
+    ) -> Task<TabsEvent> {
+        reducer::reduce(&mut self.state, event, ctx)
     }
 
     /// Produce the Sessions view model: open tabs grouped by machine.

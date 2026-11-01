@@ -76,9 +76,7 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
         format!("{} ({})", i18n::t(Key::MenuNewTerminal), props.shell_name);
     let new_terminal = MenuItem::new(new_terminal)
         .shortcut(AppShortcut::NewTerminal.label())
-        .on_press(on_tabs(TabsIntent::OpenTerminalTab {
-            title: props.shell_name.to_string(),
-        }));
+        .on_press(on_tabs(TabsIntent::OpenTerminalTab));
 
     let mut split = MenuItem::new(i18n::t(Key::MenuSplitCurrentPane))
         .shortcut(AppShortcut::SplitPane.label());
@@ -176,8 +174,7 @@ mod tests {
 
         assert!(matches!(
             messages.as_slice(),
-            [Message::Tabs(TabsIntent::OpenTerminalTab { title })]
-                if title == "zsh"
+            [Message::Tabs(TabsIntent::OpenTerminalTab)]
         ));
     }
 

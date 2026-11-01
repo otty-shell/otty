@@ -241,7 +241,6 @@ fn view_left_panel<'a>(
                 vm: sessions_vm,
                 theme: theme_props,
                 is_open: sidebar_vm.is_sessions_open,
-                new_session_title: app.shell_session.name(),
                 is_menu_open: sidebar_vm
                     .open_header_menu
                     .is_some_and(|open| open.menu == HeaderMenu::Sessions),
@@ -351,9 +350,7 @@ fn view_tab_content<'a>(
         _ => empty_state::view(empty_state::EmptyStateProps {
             theme: theme_props,
             on_new_terminal: AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenTerminalTab {
-                    title: app.shell_session.name().to_string(),
-                },
+                TabsIntent::OpenTerminalTab,
             )),
             on_new_launch: AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
                 QuickLaunchIntent::HeaderCreateCommand,

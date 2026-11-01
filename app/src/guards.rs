@@ -140,7 +140,7 @@ pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
 
     matches!(
         event,
-        AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenTerminalTab { .. }))
+        AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenTerminalTab))
             | AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::SplitPane { .. }
             ))
@@ -342,9 +342,7 @@ mod tests {
     #[test]
     fn given_menu_choices_when_checked_then_each_one_is_a_header_menu_choice() {
         let open_terminal =
-            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenTerminalTab {
-                title: String::from("zsh"),
-            }));
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenTerminalTab));
         let launch = AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
             QuickLaunchIntent::LaunchNode {
                 path: vec![String::from("Demo")],

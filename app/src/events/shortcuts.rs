@@ -30,9 +30,7 @@ pub(crate) fn handle_key_event(
 pub(crate) fn handle(app: &App, shortcut: AppShortcut) -> Task<AppEvent> {
     match shortcut {
         AppShortcut::Settings => tabs_intent(TabsIntent::OpenSettingsTab),
-        AppShortcut::NewTerminal => tabs_intent(TabsIntent::OpenTerminalTab {
-            title: app.shell_session.name().to_string(),
-        }),
+        AppShortcut::NewTerminal => tabs_intent(TabsIntent::OpenTerminalTab),
         AppShortcut::CloseSession => match app.widgets.tabs.active_tab_id() {
             Some(tab_id) => tabs_intent(TabsIntent::CloseTab { tab_id }),
             None => Task::none(),
@@ -67,6 +65,10 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::tabs::TabsCtx;
+
+    /// Context the tests reduce tabs intents with.
+    const SH: TabsCtx<'static> = TabsCtx { shell_name: "sh" };
 
     fn new_terminal_press(repeat: bool) -> Event {
         let keys = AppShortcut::NewTerminal.keys(Platform::current());
@@ -97,23 +99,23 @@ mod tests {
     }
 
     #[test]
-    fn new_terminal_shortcut_opens_a_shell_tab_named_after_the_shell() {
+    fn new_terminal_shortcut_opens_a_shell_tab() {
         let (app, _) = App::new();
-        let shell_name = app.shell_session.name().to_string();
 
         let events = collect_outputs(handle(&app, AppShortcut::NewTerminal));
 
         assert!(matches!(
             events.as_slice(),
-            [AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenTerminalTab { title }))]
-                if *title == shell_name
+            [AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::OpenTerminalTab
+            ))]
         ));
     }
 
     #[test]
     fn close_session_shortcut_closes_the_active_tab() {
         let (mut app, _) = App::new();
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab);
+        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
         let active = app
             .widgets
             .tabs
@@ -211,7 +213,7 @@ mod tests {
         assert!(matches!(
             events.as_slice(),
             [AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenTerminalTab { .. }
+                TabsIntent::OpenTerminalTab
             ))]
         ));
     }

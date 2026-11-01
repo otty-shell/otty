@@ -62,11 +62,7 @@ fn run_target(app: &App, target: PaletteTarget) -> Task<AppEvent> {
             quick_launch_intent(QuickLaunchIntent::LaunchNode { path }),
             focus_active_terminal(),
         ]),
-        PaletteTarget::NewTerminal => {
-            tabs_intent(TabsIntent::OpenTerminalTab {
-                title: app.shell_session.name().to_string(),
-            })
-        },
+        PaletteTarget::NewTerminal => tabs_intent(TabsIntent::OpenTerminalTab),
         PaletteTarget::NewLaunch => {
             quick_launch_intent(QuickLaunchIntent::HeaderCreateCommand)
         },
@@ -139,8 +135,12 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::tabs::TabsCtx;
     use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;
     use crate::widgets::terminal_workspace::types::TerminalKind;
+
+    /// Context the tests reduce tabs intents with.
+    const SH: TabsCtx<'static> = TabsCtx { shell_name: "sh" };
 
     #[cfg(unix)]
     const TEST_SHELL_PATH: &str = "/bin/sh";
@@ -165,9 +165,7 @@ mod tests {
 
     /// Open a shell tab with one real terminal and return its id.
     fn open_shell_tab(app: &mut App) -> u64 {
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenTerminalTab {
-            title: String::from("sh"),
-        });
+        let _ = app.widgets.tabs.reduce(TabsIntent::OpenTerminalTab, &SH);
         let tab_id = app
             .widgets
             .tabs
@@ -204,7 +202,7 @@ mod tests {
     #[test]
     fn opening_lists_the_open_tabs_from_the_tabs_widget() {
         let (mut app, _) = App::new();
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab);
+        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
         let settings_tab = app
             .widgets
             .tabs
@@ -259,16 +257,16 @@ mod tests {
     }
 
     #[test]
-    fn new_terminal_opens_a_shell_tab_named_after_the_shell() {
+    fn new_terminal_opens_a_shell_tab() {
         let (mut app, _) = App::new();
-        let shell_name = app.shell_session.name().to_string();
 
         let events = run(&mut app, PaletteTarget::NewTerminal);
 
         assert!(matches!(
             events.as_slice(),
-            [AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenTerminalTab { title }))]
-                if *title == shell_name
+            [AppEvent::Tabs(TabsEvent::Intent(
+                TabsIntent::OpenTerminalTab
+            ))]
         ));
     }
 
@@ -335,7 +333,7 @@ mod tests {
     #[test]
     fn split_pane_without_a_terminal_tab_does_nothing() {
         let (mut app, _) = App::new();
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab);
+        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
 
         let events = run(&mut app, PaletteTarget::SplitPane);
 
@@ -345,7 +343,7 @@ mod tests {
     #[test]
     fn close_session_closes_the_active_tab() {
         let (mut app, _) = App::new();
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab);
+        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
         let active = app
             .widgets
             .tabs

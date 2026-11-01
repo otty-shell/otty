@@ -23,9 +23,8 @@ pub(crate) enum TabsIntent {
     RefreshSettingsTitle {
         title: String,
     },
-    OpenTerminalTab {
-        title: String,
-    },
+    /// Open a terminal tab running the user's shell, named after it.
+    OpenTerminalTab,
     OpenCommandTab {
         title: String,
         settings: Box<Settings>,
