@@ -1,4 +1,5 @@
 use crate::events::AppEvent;
+use crate::widgets::docker::{DockerEvent, DockerIntent};
 
 /// Determines how the event loop should treat an incoming event when a
 /// context menu is open.
@@ -121,6 +122,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // The All modes menu is one of the menus: its rows, pin toggles and
         // dismiss layer send these, and a switch reports its change.
         AppEvent::Modes(_) => Allow,
+        // Engine results and mode changes arrive on their own; a click in
+        // the Docker views closes the menus like any other click.
+        AppEvent::Docker(event) if is_docker_background(event) => Allow,
         AppEvent::Keyboard(_) => Ignore,
         AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Intent(_))
         | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Intent(_)) => Allow,
@@ -256,6 +260,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             ),
         ) => false,
         AppEvent::SyncTerminalGridSizes => false,
+        AppEvent::Docker(event) if is_docker_background(event) => false,
         AppEvent::Keyboard(_) | AppEvent::Window(_) => false,
         AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Effect(_))
         | AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Effect(_))
@@ -281,6 +286,21 @@ pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
     )
 }
 
+/// Return `true` for a Docker event the user did not cause by a click: a
+/// mode change, an engine result or an effect.
+fn is_docker_background(event: &DockerEvent) -> bool {
+    match event {
+        DockerEvent::Intent(intent) => matches!(
+            intent,
+            DockerIntent::Enter
+                | DockerIntent::Leave
+                | DockerIntent::DiscoveryFinished(_)
+                | DockerIntent::ListsLoaded { .. }
+        ),
+        DockerEvent::Effect(_) => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -295,6 +315,8 @@ mod tests {
     };
     use crate::events::AppEvent;
     use crate::shortcuts::AppShortcut;
+    use crate::widgets::docker::types::LoadedLists;
+    use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::types::Mode;
     use crate::widgets::modes::{ModesEffect, ModesEvent, ModesIntent};
@@ -396,6 +418,33 @@ mod tests {
 
         for event in events {
             assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
+        }
+    }
+
+    #[test]
+    fn engine_results_pass_open_menus_and_inline_edits_but_clicks_close_them() {
+        let docker = |intent| AppEvent::Docker(DockerEvent::Intent(intent));
+        let background = [
+            docker(DockerIntent::Enter),
+            docker(DockerIntent::Leave),
+            docker(DockerIntent::ListsLoaded {
+                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
+                lists: LoadedLists::failed("x"),
+            }),
+            AppEvent::Docker(DockerEvent::Effect(DockerEffect::Discover)),
+        ];
+        let clicks = [
+            docker(DockerIntent::Refresh),
+            docker(DockerIntent::SelectRow(0)),
+        ];
+
+        for event in background {
+            assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
+            assert!(!inline_edit_guard(&event));
+        }
+        for event in clicks {
+            assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
+            assert!(inline_edit_guard(&event));
         }
     }
 

@@ -17,6 +17,7 @@ use crate::state::State;
 use crate::theme::{AppTheme, ThemeManager};
 use crate::widgets::Widgets;
 use crate::widgets::chrome::ChromeWidget;
+use crate::widgets::docker::DockerWidget;
 use crate::widgets::explorer::ExplorerWidget;
 use crate::widgets::modes::ModesWidget;
 use crate::widgets::palette::PaletteWidget;
@@ -85,6 +86,7 @@ impl App {
             settings,
             palette: PaletteWidget::new(),
             modes: ModesWidget::load(),
+            docker: DockerWidget::new(),
         };
 
         let app = App {

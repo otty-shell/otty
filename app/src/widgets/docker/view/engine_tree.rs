@@ -1,0 +1,142 @@
+//! The Docker mode left panel under the switcher: one root per engine and
+//! its four lists with their counts.
+
+use iced::widget::{Column, container, scrollable};
+use iced::{Element, Length, Padding};
+use otty_ui_kit::components::scrollbar;
+use otty_ui_kit::components::session_row::SessionTone;
+use otty_ui_kit::components::target_dot::TargetKind;
+use otty_ui_kit::components::tree_row::TreeRow;
+use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::spacing;
+
+use super::super::event::DockerIntent;
+use super::super::model::{TreeNote, TreeRowViewModel};
+use crate::i18n::{self, Key};
+use crate::theme::ThemeProps;
+
+/// Props for the engine tree.
+pub(crate) struct EngineTreeProps<'a> {
+    pub(crate) rows: Vec<TreeRowViewModel>,
+    pub(crate) theme: ThemeProps<'a>,
+}
+
+/// Render the engine tree. A press on a row opens its list; a press on an
+/// engine root opens that engine's containers.
+pub(crate) fn view(props: EngineTreeProps<'_>) -> Element<'_, DockerIntent> {
+    let palette = props.theme.theme.ui();
+
+    let rows = props.rows.into_iter().map(|row| tree_row(row, palette));
+
+    let list = Column::with_children(rows).width(Length::Fill);
+
+    let body = scrollable(list)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .direction(scrollbar::vertical())
+        .style(scrollbar::style(palette));
+
+    container(body)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(Padding {
+            top: spacing::SPACE_1,
+            right: spacing::SPACE_3,
+            bottom: spacing::SPACE_3,
+            left: spacing::SPACE_3,
+        })
+        .into()
+}
+
+fn tree_row<'a>(
+    vm: TreeRowViewModel,
+    palette: &UiPalette,
+) -> Element<'a, DockerIntent> {
+    let mut row = TreeRow::new(vm.label, palette)
+        .depth(vm.depth)
+        .selected(vm.is_selected)
+        .on_press(DockerIntent::Open(vm.place));
+    if vm.is_engine {
+        row = row.caret(vm.is_open).dot(TargetKind::Local);
+    }
+
+    let row = match vm.note {
+        TreeNote::Count(count) => row.count(count),
+        TreeNote::Text(text) => row.state(text),
+        TreeNote::Failed => row
+            .state(i18n::t(Key::DockerListFailedShort))
+            .count_tone(SessionTone::Failed),
+        TreeNote::Nothing => row,
+    };
+
+    row.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use iced_test::simulator;
+    use otty_docker::{EngineKind, fixtures};
+
+    use super::*;
+    use crate::theme::ThemeManager;
+    use crate::widgets::docker::types::{Place, ResourceKind};
+
+    fn row(label: &str, note: TreeNote, place: Place) -> TreeRowViewModel {
+        TreeRowViewModel {
+            label: label.to_string(),
+            depth: 1,
+            is_engine: false,
+            is_open: false,
+            note,
+            is_selected: false,
+            place,
+        }
+    }
+
+    fn place(resource: ResourceKind) -> Place {
+        Place::new(
+            fixtures::engine(EngineKind::Docker).address().clone(),
+            resource,
+        )
+    }
+
+    #[test]
+    fn a_press_on_a_list_row_opens_that_list() {
+        let themes = ThemeManager::new();
+        let rows = vec![
+            TreeRowViewModel {
+                depth: 0,
+                is_engine: true,
+                is_open: true,
+                ..row(
+                    "Docker 29.9.1",
+                    TreeNote::Text(String::from("this computer")),
+                    place(ResourceKind::Containers),
+                )
+            },
+            row(
+                "Containers",
+                TreeNote::Text(String::from("2 running")),
+                place(ResourceKind::Containers),
+            ),
+            row("Images", TreeNote::Count(3), place(ResourceKind::Images)),
+            row("Volumes", TreeNote::Failed, place(ResourceKind::Volumes)),
+        ];
+        let mut ui = simulator(view(EngineTreeProps {
+            rows,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.find("2 running").expect("running count should show");
+        ui.find("3").expect("image count should show");
+        ui.find(i18n::t(Key::DockerListFailedShort))
+            .expect("failed list should say so");
+        ui.click("Images").expect("images row should be visible");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(
+            intents,
+            vec![DockerIntent::Open(place(ResourceKind::Images))]
+        );
+    }
+}

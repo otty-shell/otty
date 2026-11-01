@@ -16,6 +16,7 @@ otty-ui-term = { path = "../crates/ui/terminal", version = "0.1.0" }
 otty-ui-tree = { path = "../crates/ui/tree", version = "0.1.0" }
 otty-ui-kit = { path = "../crates/ui/kit", version = "0.1.0" }
 otty-libterm = { path = "../crates/libterm", version = "0.1.0" }
+otty-docker = { path = "../crates/docker", version = "0.1.0" }
 log = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
 env_logger = "0.11"
@@ -31,6 +32,7 @@ nix = { workspace = true }
 
 [dev-dependencies]
 iced_test = "0.14"
+otty-docker = { path = "../crates/docker", version = "0.1.0", features = ["fixtures"] }
 
 [package.metadata.generate-rpm]
 maintainer = "Ilya Shvyryalkin <ilyashvy@gmail.com>"

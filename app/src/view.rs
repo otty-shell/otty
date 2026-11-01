@@ -12,13 +12,16 @@ use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, status_bar};
+use crate::widgets::docker::DockerEvent;
+use crate::widgets::docker::view::{
+    engine_tree, inspector as docker_inspector, main_area as docker_main,
+    status_bar as docker_status_bar,
+};
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::modes::ModesEvent;
 use crate::widgets::modes::types::Mode;
-use crate::widgets::modes::view::{
-    docker_placeholder, mode_menu, mode_switcher,
-};
+use crate::widgets::modes::view::{mode_menu, mode_switcher};
 use crate::widgets::palette::{PaletteEvent, view as palette_view};
 use crate::widgets::quick_launch::view::{
     context_menu as ql_context_menu, error_tab, new_launch_menu, secret_prompt,
@@ -62,14 +65,14 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
             (SidebarPane::Main, Mode::Terminal) => {
                 view_tab_content(app, theme_props)
             },
-            (SidebarPane::Main, _) => {
-                docker_placeholder::main_area(theme_props)
+            (SidebarPane::Main, Mode::Docker) => {
+                view_docker_main(app, theme_props)
             },
             (SidebarPane::Right, Mode::Terminal) => {
                 view_right_panel(app, theme_props)
             },
-            (SidebarPane::Right, _) => {
-                Space::new().width(Length::Fill).height(Length::Fill).into()
+            (SidebarPane::Right, Mode::Docker) => {
+                view_docker_inspector(app, theme_props)
             },
         },
         on_intent: |intent| AppEvent::Sidebar(SidebarEvent::Intent(intent)),
@@ -185,10 +188,9 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 
     let status_bar = match mode {
         Mode::Terminal => view_status_bar(app, theme_props),
-        _ => docker_placeholder::status_bar(
-            env!("CARGO_PKG_VERSION"),
-            theme_props,
-        ),
+        Mode::Docker => {
+            docker_status_bar::view(env!("CARGO_PKG_VERSION"), theme_props)
+        },
     };
 
     let root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
@@ -281,7 +283,7 @@ fn view_left_panel<'a>(
         Mode::Terminal => {
             view_terminal_left_panel(app, sidebar_vm, theme_props)
         },
-        _ => Space::new().width(Length::Fill).height(Length::Fill).into(),
+        Mode::Docker => view_docker_tree(app, theme_props),
     };
 
     column![switcher, content]
@@ -352,6 +354,52 @@ fn view_terminal_left_panel<'a>(
             }
         },
     })
+}
+
+/// Docker mode left panel content: the engine tree.
+fn view_docker_tree<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    engine_tree::view(engine_tree::EngineTreeProps {
+        rows: app.widgets.docker.tree_vm(),
+        theme: theme_props,
+    })
+    .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
+}
+
+/// Docker mode main area: the open list of an engine.
+fn view_docker_main<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    docker_main::view(docker_main::MainAreaProps {
+        vm: app.widgets.docker.main_vm(unix_now()),
+        theme: theme_props,
+    })
+    .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
+}
+
+/// Docker mode right panel content: the inspector of the selected row.
+fn view_docker_inspector<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    docker_inspector::view(docker_inspector::InspectorProps {
+        vm: app.widgets.docker.inspector_vm(),
+        theme: theme_props,
+    })
+    .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
+}
+
+/// The current time in Unix seconds, for the age column of the Docker
+/// tables; 0 when the clock is before 1970.
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX)
+        })
 }
 
 /// Right panel content: the Files section.
@@ -655,7 +703,7 @@ mod tests {
             .expect("launches should be visible");
         ui.find(i18n::t(Key::EmptyTitle))
             .expect("empty state should be visible");
-        assert!(ui.find(i18n::t(Key::DockerPlaceholderDescription)).is_err());
+        assert!(ui.find(i18n::t(Key::DockerSearching)).is_err());
     }
 
     #[test]
@@ -663,11 +711,49 @@ mod tests {
         let app = app_in(Mode::Docker);
         let mut ui = simulator(view(&app));
 
-        ui.find(i18n::t(Key::DockerPlaceholderDescription))
-            .expect("docker placeholder should be visible");
+        ui.find(i18n::t(Key::DockerSearching))
+            .expect("docker main area should be visible");
         assert!(ui.find(i18n::t(Key::SessionsPanelTitle)).is_err());
         assert!(ui.find(i18n::t(Key::LaunchesPanelTitle)).is_err());
         assert!(ui.find(i18n::t(Key::EmptyTitle)).is_err());
+    }
+
+    #[test]
+    fn docker_mode_shows_the_engine_tree_the_table_and_the_inspector() {
+        use otty_docker::{EngineKind, fixtures};
+
+        use crate::widgets::docker::DockerIntent;
+        use crate::widgets::docker::types::LoadedLists;
+
+        let mut app = app_in(Mode::Docker);
+        let docker = fixtures::engine(EngineKind::Docker);
+        let resources = fixtures::resources(EngineKind::Docker);
+        let _ = app.widgets.docker.reduce(DockerIntent::Enter);
+        let _ = app.widgets.docker.reduce(DockerIntent::DiscoveryFinished(
+            fixtures::discovery(&[EngineKind::Docker]),
+        ));
+        let _ = app.widgets.docker.reduce(DockerIntent::ListsLoaded {
+            engine: docker.address().clone(),
+            lists: LoadedLists {
+                containers: Ok(resources.containers().to_vec()),
+                images: Ok(resources.images().to_vec()),
+                volumes: Ok(resources.volumes().to_vec()),
+                networks: Ok(resources.networks().to_vec()),
+            },
+        });
+        let mut ui = simulator(view(&app));
+
+        ui.find(i18n::t(Key::DockerImages))
+            .expect("tree should list the images");
+        ui.find("otty-fx-exit3")
+            .expect("table should list containers");
+        ui.click("otty-fx-exit3").expect("row should be clickable");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Docker(DockerEvent::Intent(DockerIntent::SelectRow(2)))
+        )));
     }
 
     #[test]

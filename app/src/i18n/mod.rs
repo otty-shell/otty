@@ -250,6 +250,45 @@ pub(crate) fn modes_pinned_note(count: usize, limit: usize) -> String {
     modes_pinned_note_in(current_locale(), count, limit)
 }
 
+/// Fill the `{count}` placeholder of the template behind `key`, e.g.
+/// "2 running" or "3 h".
+pub(crate) fn with_count(key: Key, count: u64) -> String {
+    fill_in(current_locale(), key, &[("count", &format!("{count}"))])
+}
+
+/// Build the badge word of a container that exited with `code`, e.g.
+/// "Exited (3)".
+pub(crate) fn docker_exited(code: i64) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerStateExitedCode,
+        &[("code", &format!("{code}"))],
+    )
+}
+
+/// Build the table message shown when no row matches `filter`.
+pub(crate) fn docker_nothing_matches(filter: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerNothingMatches,
+        &[("filter", filter)],
+    )
+}
+
+/// Build the notice shown above a table whose list failed with `error`.
+pub(crate) fn docker_list_failed(error: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerListFailed,
+        &[("error", error)],
+    )
+}
+
+/// Build the inspector status of a volume used by `names`.
+pub(crate) fn docker_used_by(names: &str) -> String {
+    fill_in(current_locale(), Key::TplDockerUsedBy, &[("names", names)])
+}
+
 /// Build the tab title shown when editing an existing quick launch.
 pub(crate) fn edit_tab_title(command_title: &str) -> String {
     fill_in(
@@ -710,6 +749,38 @@ mod tests {
                 locale.tag()
             );
         }
+    }
+
+    #[test]
+    fn docker_templates_fill_their_placeholders_in_every_locale() {
+        let fills = [
+            (Key::TplDockerRunning, ("count", "2")),
+            (Key::TplDockerAgeHours, ("count", "3")),
+            (Key::TplDockerStateExitedCode, ("code", "137")),
+            (Key::TplDockerNothingMatches, ("filter", "web")),
+            (Key::TplDockerListFailed, ("error", "boom")),
+            (Key::TplDockerUsedBy, ("names", "db-1")),
+        ];
+
+        for locale in Locale::ALL {
+            for (key, (name, value)) in fills {
+                let text = fill_in(locale, key, &[(name, value)]);
+
+                assert!(
+                    text.contains(value) && !text.contains('{'),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+        }
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplDockerStateExitedCode,
+                &[("code", "3")]
+            ),
+            "Exited (3)"
+        );
     }
 
     #[test]

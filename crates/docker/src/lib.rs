@@ -17,6 +17,8 @@ mod container;
 mod diagnosis;
 mod discovery;
 mod engine;
+#[cfg(feature = "fixtures")]
+pub mod fixtures;
 mod image;
 mod network;
 mod probe;

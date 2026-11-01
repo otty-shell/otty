@@ -1,4 +1,5 @@
 pub(crate) mod chrome;
+pub(crate) mod docker;
 pub(crate) mod explorer;
 pub(crate) mod modes;
 pub(crate) mod palette;
@@ -18,4 +19,5 @@ pub(crate) struct Widgets {
     pub(crate) settings: settings::SettingsWidget,
     pub(crate) palette: palette::PaletteWidget,
     pub(crate) modes: modes::ModesWidget,
+    pub(crate) docker: docker::DockerWidget,
 }

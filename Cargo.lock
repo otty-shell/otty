@@ -3395,6 +3395,7 @@ dependencies = [
  "log",
  "nix 0.31.2",
  "notify",
+ "otty-docker",
  "otty-libterm",
  "otty-ui-kit",
  "otty-ui-term",

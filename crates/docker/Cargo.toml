@@ -16,8 +16,15 @@ bollard = "0.21.1"
 # Waits on all engine probes at once and, later, reads bollard's streams.
 futures-util = "0.3.31"
 log = { workspace = true }
+# Reads the captured engine answers behind the `fixtures` feature.
+serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { version = "1.47", features = ["net", "time"] }
+
+[features]
+# `otty_docker::fixtures`: values mapped from the captured engine answers in
+# `tests/fixtures`, for the tests of crates that use this one.
+fixtures = ["dep:serde_json"]
 
 [dev-dependencies]
 serde_json = { workspace = true }

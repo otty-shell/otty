@@ -35,7 +35,7 @@ impl CliPresence {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "fixtures"))]
 impl CliPresence {
     /// Create a presence from known answers.
     pub(crate) fn new(docker: bool, podman: bool) -> Self {

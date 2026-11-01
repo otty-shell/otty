@@ -168,9 +168,128 @@ pub(crate) enum Key {
     ModesUnpinAnotherFirst,
     /// Hint in the empty Other modes section of the All modes menu.
     ModesNoOtherModes,
-    /// What the Docker mode will show, on its placeholder card until the
-    /// Docker views exist.
-    DockerPlaceholderDescription,
+    // Docker mode: engine tree, tables and inspector.
+    /// Containers list in the engine tree and the main area title; also the
+    /// Networks column with the container count.
+    DockerContainers,
+    /// Images list in the engine tree and the main area title.
+    DockerImages,
+    /// Volumes list in the engine tree and the main area title.
+    DockerVolumes,
+    /// Networks list in the engine tree and the main area title.
+    DockerNetworks,
+    /// Create button above the containers table.
+    DockerRunContainer,
+    /// Create button above the images table.
+    DockerPullImage,
+    /// Create button above the volumes table.
+    DockerCreateVolume,
+    /// Create button above the networks table.
+    DockerCreateNetwork,
+    /// Tooltip of the button that loads every list again.
+    DockerRefresh,
+    /// Placeholder of the name filter above the table.
+    DockerFilterPlaceholder,
+    /// Running containers next to Containers in the tree. Placeholder:
+    /// `{count}`.
+    TplDockerRunning,
+    /// Word next to a tree row whose list failed to load.
+    DockerListFailedShort,
+    /// Table message while a list loads.
+    DockerLoading,
+    /// Message of an empty containers table.
+    DockerNoContainers,
+    /// Message of an empty images table.
+    DockerNoImages,
+    /// Message of an empty volumes table.
+    DockerNoVolumes,
+    /// Message of an empty networks table.
+    DockerNoNetworks,
+    /// Table message when no row matches the filter. Placeholder: `{filter}`.
+    TplDockerNothingMatches,
+    /// Notice above a table whose list failed to load. Placeholder: `{error}`.
+    TplDockerListFailed,
+    /// Main area text while OTTY looks for engines.
+    DockerSearching,
+    /// Main area text when no engine answered.
+    DockerNoEngine,
+    /// Table column: the name of a container, volume or network.
+    DockerColumnName,
+    /// Table column: the state of a container.
+    DockerColumnStatus,
+    /// Table column: the image of a container.
+    DockerColumnImage,
+    /// Table column: the ports of a container.
+    DockerColumnPorts,
+    /// Table column: how long ago the item was created.
+    DockerColumnAge,
+    /// Table column: the repository and tag of an image.
+    DockerColumnRepositoryTag,
+    /// Table column: the short ID of an image.
+    DockerColumnId,
+    /// Table column: the size of an image.
+    DockerColumnSize,
+    /// Table column: the containers that use an image or a volume.
+    DockerColumnUsedBy,
+    /// Table column: the driver of a volume or a network.
+    DockerColumnDriver,
+    /// Table column: the scope of a network.
+    DockerColumnScope,
+    /// Table column: the subnet of a network.
+    DockerColumnSubnet,
+    /// Container state badge: running.
+    DockerStateRunning,
+    /// Container state badge: paused.
+    DockerStatePaused,
+    /// Container state badge: restarting.
+    DockerStateRestarting,
+    /// Container state badge: created, never started.
+    DockerStateCreated,
+    /// Container state badge: exited, code unknown.
+    DockerStateExited,
+    /// Container state badge: exited with a code. Placeholder: `{code}`.
+    TplDockerStateExitedCode,
+    /// Container state badge: dead.
+    DockerStateDead,
+    /// Container state badge: being removed.
+    DockerStateRemoving,
+    /// Container state badge: stopping.
+    DockerStateStopping,
+    /// Container state badge: a state OTTY does not know.
+    DockerStateUnknown,
+    /// Inspector status of an image without a tag that no container uses.
+    DockerImageDangling,
+    /// Inspector status of an image one container uses.
+    DockerUsedByOneContainer,
+    /// Inspector status of an image several containers use. Placeholder:
+    /// `{count}`.
+    TplDockerUsedByContainers,
+    /// Inspector status of an image or volume no container uses.
+    DockerNotUsed,
+    /// Inspector status of a volume: the containers that use it. Placeholder:
+    /// `{names}`.
+    TplDockerUsedBy,
+    /// Inspector status of a network the engine creates itself.
+    DockerBuiltInNetwork,
+    /// Inspector status of a network with one container.
+    DockerOneContainerConnected,
+    /// Inspector status of a network with several containers. Placeholder:
+    /// `{count}`.
+    TplDockerContainersConnected,
+    /// Age of an item created less than a minute ago.
+    DockerAgeUnderMinute,
+    /// Age in minutes. Placeholder: `{count}`.
+    TplDockerAgeMinutes,
+    /// Age in hours. Placeholder: `{count}`.
+    TplDockerAgeHours,
+    /// Age in days. Placeholder: `{count}`.
+    TplDockerAgeDays,
+    /// Age in weeks. Placeholder: `{count}`.
+    TplDockerAgeWeeks,
+    /// Age in months. Placeholder: `{count}`.
+    TplDockerAgeMonths,
+    /// Age in years. Placeholder: `{count}`.
+    TplDockerAgeYears,
     // Command palette and its title bar trigger.
     /// Title bar search text while no tab is open.
     TitleSearchNoSessions,
@@ -394,7 +513,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 171] = [
+    pub(super) const ALL: [Self; 228] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -464,7 +583,64 @@ impl Key {
         Self::ModesUnpin,
         Self::ModesUnpinAnotherFirst,
         Self::ModesNoOtherModes,
-        Self::DockerPlaceholderDescription,
+        Self::DockerContainers,
+        Self::DockerImages,
+        Self::DockerVolumes,
+        Self::DockerNetworks,
+        Self::DockerRunContainer,
+        Self::DockerPullImage,
+        Self::DockerCreateVolume,
+        Self::DockerCreateNetwork,
+        Self::DockerRefresh,
+        Self::DockerFilterPlaceholder,
+        Self::TplDockerRunning,
+        Self::DockerListFailedShort,
+        Self::DockerLoading,
+        Self::DockerNoContainers,
+        Self::DockerNoImages,
+        Self::DockerNoVolumes,
+        Self::DockerNoNetworks,
+        Self::TplDockerNothingMatches,
+        Self::TplDockerListFailed,
+        Self::DockerSearching,
+        Self::DockerNoEngine,
+        Self::DockerColumnName,
+        Self::DockerColumnStatus,
+        Self::DockerColumnImage,
+        Self::DockerColumnPorts,
+        Self::DockerColumnAge,
+        Self::DockerColumnRepositoryTag,
+        Self::DockerColumnId,
+        Self::DockerColumnSize,
+        Self::DockerColumnUsedBy,
+        Self::DockerColumnDriver,
+        Self::DockerColumnScope,
+        Self::DockerColumnSubnet,
+        Self::DockerStateRunning,
+        Self::DockerStatePaused,
+        Self::DockerStateRestarting,
+        Self::DockerStateCreated,
+        Self::DockerStateExited,
+        Self::TplDockerStateExitedCode,
+        Self::DockerStateDead,
+        Self::DockerStateRemoving,
+        Self::DockerStateStopping,
+        Self::DockerStateUnknown,
+        Self::DockerImageDangling,
+        Self::DockerUsedByOneContainer,
+        Self::TplDockerUsedByContainers,
+        Self::DockerNotUsed,
+        Self::TplDockerUsedBy,
+        Self::DockerBuiltInNetwork,
+        Self::DockerOneContainerConnected,
+        Self::TplDockerContainersConnected,
+        Self::DockerAgeUnderMinute,
+        Self::TplDockerAgeMinutes,
+        Self::TplDockerAgeHours,
+        Self::TplDockerAgeDays,
+        Self::TplDockerAgeWeeks,
+        Self::TplDockerAgeMonths,
+        Self::TplDockerAgeYears,
         Self::TitleSearchNoSessions,
         Self::PalettePlaceholder,
         Self::PaletteNoMatches,

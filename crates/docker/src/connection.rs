@@ -2,6 +2,10 @@
 
 use std::path::PathBuf;
 
+use bollard::models::{
+    ContainerSummary, ImageSummary, Network as EngineNetwork,
+    Volume as EngineVolume,
+};
 use bollard::query_parameters::{
     ListContainersOptions, ListImagesOptions, ListVolumesOptions,
 };
@@ -66,6 +70,38 @@ impl Resources {
     /// Every network, built-in ones included.
     pub fn networks(&self) -> &[Network] {
         &self.networks
+    }
+
+    /// Map the four list answers of one engine; "used by" comes from the
+    /// container list of the same answers.
+    pub(crate) fn from_answers(
+        container_list: &[ContainerSummary],
+        image_list: &[ImageSummary],
+        volume_list: &[EngineVolume],
+        network_list: &[EngineNetwork],
+    ) -> Self {
+        let containers: Vec<Container> =
+            container_list.iter().map(Container::from_summary).collect();
+
+        let images = image_list
+            .iter()
+            .map(|image| Image::from_summary(image, &containers))
+            .collect();
+        let volumes = volume_list
+            .iter()
+            .map(|volume| Volume::from_volume(volume, &containers))
+            .collect();
+        let networks = network_list
+            .iter()
+            .map(|network| Network::from_network(network, &containers))
+            .collect();
+
+        Self {
+            containers,
+            images,
+            volumes,
+            networks,
+        }
     }
 }
 
@@ -134,29 +170,12 @@ impl Engine {
             )
             .await?;
 
-        let containers: Vec<Container> =
-            container_list.iter().map(Container::from_summary).collect();
-        let images = image_list
-            .iter()
-            .map(|image| Image::from_summary(image, &containers))
-            .collect();
-        let volumes = volume_list
-            .volumes
-            .iter()
-            .flatten()
-            .map(|volume| Volume::from_volume(volume, &containers))
-            .collect();
-        let networks = network_list
-            .iter()
-            .map(|network| Network::from_network(network, &containers))
-            .collect();
-
-        Ok(Resources {
-            containers,
-            images,
-            volumes,
-            networks,
-        })
+        Ok(Resources::from_answers(
+            &container_list,
+            &image_list,
+            volume_list.volumes.as_deref().unwrap_or_default(),
+            &network_list,
+        ))
     }
 
     /// Every container, running or not.
