@@ -125,7 +125,7 @@ mod tests {
                 is_open: true,
                 ..row(
                     "Docker 29.9.1",
-                    TreeNote::Text(String::from("this computer")),
+                    TreeNote::Nothing,
                     place(ResourceKind::Containers),
                 )
             },
@@ -153,41 +153,6 @@ mod tests {
         assert_eq!(
             intents,
             vec![DockerIntent::Open(place(ResourceKind::Images))]
-        );
-    }
-
-    #[test]
-    fn a_press_on_a_compose_project_opens_its_containers() {
-        let themes = ThemeManager::new();
-        let address = fixtures::engine(EngineKind::Docker).address().clone();
-        let rows = vec![
-            row(
-                "Compose projects",
-                TreeNote::Count(1),
-                place(ResourceKind::Containers),
-            ),
-            TreeRowViewModel {
-                depth: 2,
-                ..row(
-                    "otty-site",
-                    TreeNote::Count(2),
-                    Place::compose(address.clone(), "otty-site"),
-                )
-            },
-        ];
-        let mut ui = simulator(view(EngineTreeProps {
-            rows,
-            note: None,
-            theme: ThemeProps::new(themes.current()),
-        }));
-
-        ui.click("otty-site")
-            .expect("project row should be visible");
-
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
-        assert_eq!(
-            intents,
-            vec![DockerIntent::Open(Place::compose(address, "otty-site"))]
         );
     }
 

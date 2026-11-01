@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use otty_docker::{Container, EngineAddress, Image, Network, Volume};
 
 use crate::i18n::Key;
@@ -150,17 +148,6 @@ pub(crate) fn shown_containers<'a>(
     shown
 }
 
-/// The Compose projects of `containers` with their container counts,
-/// ordered by project name. Containers outside any project are skipped.
-pub(crate) fn compose_projects(containers: &[Container]) -> Vec<(&str, usize)> {
-    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-    for project in containers.iter().filter_map(Container::compose_project) {
-        *counts.entry(project).or_default() += 1;
-    }
-
-    counts.into_iter().collect()
-}
-
 /// The name a row is filtered by and shown under: the container, volume or
 /// network name, or the first tag of an image.
 pub(crate) fn container_name(container: &Container) -> &str {
@@ -232,23 +219,6 @@ mod tests {
         assert_eq!(names, vec!["otty-fx-web-1"]);
         assert!(other.is_empty());
         assert!(no_match.is_empty());
-    }
-
-    #[test]
-    fn compose_projects_are_counted_by_name_and_skip_loose_containers() {
-        let resources = fixtures::resources(EngineKind::Docker);
-        let mut containers = resources.containers().to_vec();
-        let web = containers
-            .iter()
-            .find(|c| c.compose_project().is_some())
-            .expect("fixture has a compose container")
-            .clone();
-        containers.push(web);
-
-        let projects = compose_projects(&containers);
-
-        assert_eq!(projects, vec![("otty-fx", 2)]);
-        assert!(compose_projects(&[]).is_empty());
     }
 
     #[test]

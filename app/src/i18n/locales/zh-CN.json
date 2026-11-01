@@ -87,7 +87,6 @@
     "docker_refresh": "刷新",
     "docker_filter_placeholder": "按名称筛选",
     "tpl_docker_running": "{count} 个运行中",
-    "docker_compose_projects": "Compose 项目",
     "tpl_docker_compose_chip": "compose: {name}",
     "docker_show_all_containers": "显示所有容器",
     "docker_list_failed_short": "失败",

@@ -439,6 +439,36 @@ impl DockerState {
         self.open(all);
     }
 
+    /// Show only the containers of the Compose project of the container at
+    /// `index` of the shown, filtered containers table. Returns `false`
+    /// when there is no such row or it has no project.
+    pub(super) fn open_compose_project_of_row(&mut self, index: usize) -> bool {
+        let (Some(place), Some(engine)) =
+            (self.place.as_ref(), self.open_engine())
+        else {
+            return false;
+        };
+        if place.resource() != ResourceKind::Containers {
+            return false;
+        }
+
+        let shown = shown_containers(
+            engine.containers.items(),
+            self.filter.as_str(),
+            place.compose_project(),
+        );
+        let Some(project) = shown
+            .get(index)
+            .and_then(|container| container.compose_project())
+        else {
+            return false;
+        };
+
+        let compose = Place::compose(place.engine().clone(), project);
+        self.open(compose);
+        true
+    }
+
     /// Replace the name filter.
     pub(super) fn set_filter(&mut self, filter: String) {
         self.filter = filter;

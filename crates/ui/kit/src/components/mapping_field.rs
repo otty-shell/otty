@@ -154,6 +154,7 @@ pub struct MappingField<'a, Message> {
     palette: UiPalette,
     rows: Vec<MappingRow<'a, Message>>,
     control_width: f32,
+    separator: String,
     hint: Option<String>,
     add_label: String,
     on_add: Option<Message>,
@@ -172,6 +173,7 @@ impl<'a, Message> MappingField<'a, Message> {
             palette: palette.clone(),
             rows: Vec::new(),
             control_width: CONTROL_WIDTH,
+            separator: "→".to_owned(),
             hint: None,
             add_label: "Add".to_owned(),
             on_add: None,
@@ -187,6 +189,12 @@ impl<'a, Message> MappingField<'a, Message> {
     /// Sets the width of the control column, so every row lines up.
     pub fn control_width(mut self, width: f32) -> Self {
         self.control_width = width;
+        self
+    }
+
+    /// Sets the text between the two inputs of every row (default "→").
+    pub fn separator(mut self, separator: impl Into<String>) -> Self {
+        self.separator = separator.into();
         self
     }
 
@@ -228,7 +236,12 @@ impl<'a, Message: Clone + 'a> From<MappingField<'a, Message>>
             ));
         }
         for mapping in value.rows {
-            body = body.push(mapping_row(mapping, control_width, &palette));
+            body = body.push(mapping_row(
+                mapping,
+                &value.separator,
+                control_width,
+                &palette,
+            ));
         }
 
         let mut add = Button::new(value.add_label, &palette)
@@ -276,10 +289,11 @@ fn heading_row<'a, Message: 'a>(
     .into()
 }
 
-/// One row: source → target, the control, the cross, and the error under
-/// them.
+/// One row: source, `separator`, target, the control, the cross, and the
+/// error under them.
 fn mapping_row<'a, Message: Clone + 'a>(
     mapping: MappingRow<'a, Message>,
+    separator: &str,
     control_width: f32,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
@@ -297,7 +311,7 @@ fn mapping_row<'a, Message: Clone + 'a>(
         palette,
     )
     .on_input_maybe(mapping.on_target);
-    let arrow = text("→")
+    let arrow = text(separator.to_owned())
         .font(fonts::UI)
         .color(palette.text_faint())
         .width(ARROW_WIDTH)
@@ -413,6 +427,20 @@ mod tests {
                 assert!(ui.find(shown).is_ok(), "{shown} should be visible");
             }
         }
+    }
+
+    #[test]
+    fn given_a_separator_when_drawn_then_it_replaces_the_arrow() {
+        let palette = UiPalette::otty_dark();
+        let field: Element<'_, Message> =
+            MappingField::new("Host port", "Container port", &palette)
+                .separator(":")
+                .row(MappingRow::new("8081", "80"))
+                .into();
+        let mut ui = simulator(field);
+
+        assert!(ui.find(":").is_ok(), "the separator should be visible");
+        assert!(ui.find("→").is_err(), "the arrow should be gone");
     }
 
     #[test]

@@ -53,6 +53,10 @@ fn reduce_intent(
             state.clear_compose_project();
             Task::none()
         },
+        DockerIntent::OpenComposeProject(index) => {
+            let _ = state.open_compose_project_of_row(index);
+            Task::none()
+        },
         DockerIntent::SelectRow(index) => {
             let _ = state.select_shown_row(index);
             Task::none()
@@ -664,6 +668,81 @@ mod tests {
         let _ = reduce(&mut state, DockerIntent::ClearComposeProject);
 
         assert_eq!(state.filter(), "x");
+    }
+
+    #[test]
+    fn a_compose_link_opens_the_project_of_the_shown_row() {
+        let mut state = loaded_state();
+        let index = {
+            let engine = state.open_engine().expect("docker engine");
+            engine
+                .containers()
+                .items()
+                .iter()
+                .position(|c| c.compose_project() == Some("otty-fx"))
+                .expect("a compose container")
+        };
+
+        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(index));
+
+        let place = state.place().expect("an open place");
+        assert_eq!(place.resource(), ResourceKind::Containers);
+        assert_eq!(place.compose_project(), Some("otty-fx"));
+    }
+
+    #[test]
+    fn a_compose_link_row_is_looked_up_in_the_filtered_table() {
+        let mut state = loaded_state();
+        let _ = reduce(
+            &mut state,
+            DockerIntent::FilterChanged(String::from("web")),
+        );
+
+        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(0));
+
+        let place = state.place().expect("an open place");
+        assert_eq!(place.compose_project(), Some("otty-fx"));
+    }
+
+    #[test]
+    fn a_compose_link_on_a_row_without_a_project_changes_nothing() {
+        let mut state = loaded_state();
+        let index = {
+            let engine = state.open_engine().expect("docker engine");
+            engine
+                .containers()
+                .items()
+                .iter()
+                .position(|c| c.compose_project().is_none())
+                .expect("a loose container")
+        };
+
+        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(index));
+        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(999));
+
+        assert_eq!(state.place().and_then(Place::compose_project), None);
+    }
+
+    #[test]
+    fn a_compose_link_outside_the_containers_list_changes_nothing() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+
+        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(0));
+
+        let place = state.place().expect("an open place");
+        assert_eq!(place.resource(), ResourceKind::Images);
+        assert_eq!(place.compose_project(), None);
+    }
+
+    #[test]
+    fn compose_intents_without_an_open_engine_change_nothing() {
+        let mut state = DockerState::default();
+
+        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(0));
+        let _ = reduce(&mut state, DockerIntent::ClearComposeProject);
+
+        assert_eq!(state.place(), None);
     }
 
     #[test]

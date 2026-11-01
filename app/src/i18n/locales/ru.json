@@ -87,7 +87,6 @@
     "docker_refresh": "Обновить",
     "docker_filter_placeholder": "Фильтр по имени",
     "tpl_docker_running": "запущено: {count}",
-    "docker_compose_projects": "Проекты Compose",
     "tpl_docker_compose_chip": "compose: {name}",
     "docker_show_all_containers": "Показать все контейнеры",
     "docker_list_failed_short": "ошибка",

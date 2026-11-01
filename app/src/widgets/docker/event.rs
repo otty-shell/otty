@@ -31,6 +31,9 @@ pub(crate) enum DockerIntent {
     /// The clear button of the "compose: <name>" chip was pressed: show all
     /// containers again.
     ClearComposeProject,
+    /// The Compose link of the row at this position of the shown (filtered)
+    /// containers table was pressed: show only that project's containers.
+    OpenComposeProject(usize),
     /// The row at this position of the shown (filtered) table was pressed.
     SelectRow(usize),
     /// The name filter above the table changed.

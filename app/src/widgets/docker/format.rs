@@ -70,7 +70,7 @@ pub(crate) fn short_id(id: &str) -> &str {
     id.get(..SHORT_ID_LENGTH).unwrap_or(id)
 }
 
-/// Published and exposed ports: "18080→80/tcp, 53/udp". Docker lists a
+/// Published and exposed ports: "18080:80/tcp, 53/udp". Docker lists a
 /// published port once for `0.0.0.0` and once for `::`; it is shown once.
 pub(crate) fn ports_text(ports: &[PortMapping]) -> String {
     let mut shown: Vec<(Option<u16>, u16, &str)> = Vec::new();
@@ -88,7 +88,7 @@ pub(crate) fn ports_text(ports: &[PortMapping]) -> String {
     shown
         .into_iter()
         .map(|(host, container, protocol)| match host {
-            Some(host) => format!("{host}→{container}/{protocol}"),
+            Some(host) => format!("{host}:{container}/{protocol}"),
             None => format!("{container}/{protocol}"),
         })
         .collect::<Vec<_>>()
@@ -261,7 +261,7 @@ mod tests {
 
         assert_eq!(running.name(), "otty-fx-running");
         assert_eq!(running.ports().len(), 2);
-        assert_eq!(ports_text(running.ports()), "18080→80/tcp");
+        assert_eq!(ports_text(running.ports()), "18080:80/tcp");
     }
 
     #[test]

@@ -167,7 +167,7 @@ fn command_section<'a>(
         .into()
 }
 
-/// Host port → container port rows with their protocol.
+/// Host port : container port rows with their protocol.
 fn ports_section<'a>(
     vm: &RunFormViewModel<'a>,
     palette: &UiPalette,
@@ -177,6 +177,7 @@ fn ports_section<'a>(
         i18n::t(Key::DockerRunContainerPort),
         palette,
     )
+    .separator(":")
     .control_width(PROTOCOL_WIDTH)
     .add_label(i18n::t(Key::DockerRunAddPort));
     for (index, port) in vm.ports.iter().enumerate() {
@@ -579,6 +580,21 @@ mod tests {
         let messages = press(&ready(), i18n::t(Key::ButtonCancel));
 
         assert_eq!(messages, vec![DockerIntent::RunCancelled]);
+    }
+
+    #[test]
+    fn a_port_row_separates_host_and_container_with_a_colon() {
+        let state =
+            state(Some(fixtures::image_defaults()), vec![RunEdit::AddPort]);
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let vm = run_form(&state).expect("form");
+        let mut ui = tall(view(RunFormProps {
+            vm,
+            theme: ThemeProps::new(&theme),
+        }));
+
+        assert!(ui.find(":").is_ok(), "the port separator should be a colon");
+        assert!(ui.find("→").is_err(), "no arrow without volume rows");
     }
 
     #[test]

@@ -155,7 +155,7 @@ mod tests {
             vec![
                 field(Key::DockerColumnImage, "busybox:1.37"),
                 field(Key::DockerColumnId, "850b6438a531"),
-                field(Key::DockerColumnPorts, "18081→8080/tcp"),
+                field(Key::DockerColumnPorts, "18081:8080/tcp"),
                 field(Key::DockerNetworks, "otty-fx-net"),
                 field(Key::DockerFieldCompose, "otty-fx"),
                 field(Key::DockerFieldCommand, "sleep 3600"),

@@ -1,4 +1,4 @@
-//! The Docker mode main area: the header row (title, engine chip, filter,
+//! The Docker mode main area: the header row (title, filter,
 //! create button, Refresh) over the table of the open list, or a card while
 //! no engine is known.
 
@@ -11,7 +11,6 @@ use otty_ui_kit::components::data_table::DataTable;
 use otty_ui_kit::components::empty_card::EmptyCard;
 use otty_ui_kit::components::icon_button::IconButton;
 use otty_ui_kit::components::notice::Notice;
-use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
@@ -78,6 +77,7 @@ fn table_view<'a>(
     let mut table = DataTable::new(vm.columns, palette)
         .selected(vm.selected)
         .on_row_press(DockerIntent::SelectRow)
+        .on_link_press(|row, _column| DockerIntent::OpenComposeProject(row))
         .on_row_right_press(|index, position| DockerIntent::OpenRowMenu {
             index,
             position,
@@ -104,7 +104,7 @@ fn notice_row<'a>(notice: Notice<DockerIntent>) -> Element<'a, DockerIntent> {
         .into()
 }
 
-/// Title, engine chip, the Compose project chip, filter, the Prune button,
+/// Title, the Compose project chip, filter, the Prune button,
 /// the create button (Run container waits for ticket 14) and Refresh.
 fn header_row<'a>(
     vm: &TableViewModel<'a>,
@@ -117,9 +117,6 @@ fn header_row<'a>(
         .font(fonts::UI_SEMIBOLD)
         .color(palette.text_strong())
         .wrapping(Wrapping::None);
-    let engine = Chip::new(vm.engine_label.as_str(), palette)
-        .target(TargetKind::Local)
-        .note(i18n::t(Key::ThisComputerNote));
     let compose = vm.compose_chip.as_deref().map(|label| {
         Chip::new(label, palette).on_clear(
             i18n::t(Key::DockerShowAllContainers),
@@ -154,7 +151,7 @@ fn header_row<'a>(
         }
     });
 
-    let mut header = row![title, engine];
+    let mut header = row![title];
     if let Some(compose) = compose {
         header = header.push(compose);
     }
@@ -216,7 +213,6 @@ mod tests {
     fn table<'a>(rows: Vec<Vec<TableCell>>) -> MainViewModel<'a> {
         MainViewModel::Table(TableViewModel {
             resource: ResourceKind::Containers,
-            engine_label: String::from("Docker 29.9.1"),
             filter: "",
             compose_chip: None,
             columns: vec![
@@ -273,6 +269,31 @@ mod tests {
     }
 
     #[test]
+    fn a_press_on_a_compose_link_opens_that_project() {
+        let themes = ThemeManager::new();
+        let rows = vec![
+            vec![TableCell::mono("web-1"), TableCell::link("otty-site")],
+            vec![TableCell::mono("db-1"), TableCell::muted("")],
+        ];
+        let mut ui = simulator(view(MainAreaProps {
+            vm: with(|mut table| {
+                table.columns = vec![
+                    TableColumn::new("Name", 3),
+                    TableColumn::new("Compose", 2),
+                ];
+                table.rows = rows;
+                table
+            }),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click("otty-site").expect("link should be visible");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::OpenComposeProject(0)]);
+    }
+
+    #[test]
     fn the_header_shows_title_engine_filter_and_create_button() {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(MainAreaProps {
@@ -282,7 +303,11 @@ mod tests {
 
         ui.find(i18n::t(Key::DockerContainers))
             .expect("title should show");
-        ui.find("Docker 29.9.1").expect("engine chip should show");
+        assert!(ui.find("Docker 29.9.1").is_err(), "the engine chip is gone");
+        assert!(
+            ui.find(i18n::t(Key::ThisComputerNote)).is_err(),
+            "no this computer note"
+        );
         ui.find(i18n::t(Key::DockerRunContainer))
             .expect("create button should show");
         ui.click(i18n::t(Key::DockerRunContainer))

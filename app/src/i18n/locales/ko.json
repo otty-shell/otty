@@ -87,7 +87,6 @@
     "docker_refresh": "새로 고침",
     "docker_filter_placeholder": "이름으로 필터",
     "tpl_docker_running": "{count}개 실행 중",
-    "docker_compose_projects": "Compose 프로젝트",
     "tpl_docker_compose_chip": "compose: {name}",
     "docker_show_all_containers": "모든 컨테이너 표시",
     "docker_list_failed_short": "실패",

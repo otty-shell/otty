@@ -87,7 +87,6 @@
     "docker_refresh": "Aktualisieren",
     "docker_filter_placeholder": "Nach Name filtern",
     "tpl_docker_running": "{count} laufen",
-    "docker_compose_projects": "Compose-Projekte",
     "tpl_docker_compose_chip": "compose: {name}",
     "docker_show_all_containers": "Alle Container anzeigen",
     "docker_list_failed_short": "fehlgeschlagen",

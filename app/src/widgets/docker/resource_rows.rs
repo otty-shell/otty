@@ -22,6 +22,7 @@ pub(crate) fn columns(resource: ResourceKind) -> Vec<TableColumn> {
             column(Key::DockerColumnName, 3),
             column(Key::DockerColumnStatus, 2),
             column(Key::DockerColumnImage, 3),
+            column(Key::DockerFieldCompose, 2),
             column(Key::DockerColumnPorts, 2),
             column(Key::DockerColumnAge, 1),
         ],
@@ -49,7 +50,8 @@ pub(crate) fn columns(resource: ResourceKind) -> Vec<TableColumn> {
     }
 }
 
-/// The cells of a container row: name, status badge, image, ports, age.
+/// The cells of a container row: name, status badge, image, Compose project
+/// link (blank without a project), ports, age.
 pub(crate) fn container_cells(
     container: &Container,
     now: i64,
@@ -57,10 +59,16 @@ pub(crate) fn container_cells(
     let (word, tone) =
         container_badge(container.state(), container.exit_code());
 
+    let project = match container.compose_project() {
+        Some(project) => TableCell::link(project),
+        None => TableCell::muted(""),
+    };
+
     vec![
         TableCell::mono(container.name()),
         TableCell::badge(word, tone),
         TableCell::muted_mono(container.image()),
+        project,
         TableCell::muted_mono(ports_text(container.ports())),
         TableCell::muted(age_text(now, container.created())),
     ]
@@ -226,13 +234,14 @@ mod tests {
     }
 
     #[test]
-    fn containers_have_name_status_image_ports_and_age() {
+    fn containers_have_name_status_image_compose_ports_and_age() {
         assert_eq!(
             titles(ResourceKind::Containers),
             vec![
                 TableColumn::new(i18n::t(Key::DockerColumnName), 3),
                 TableColumn::new(i18n::t(Key::DockerColumnStatus), 2),
                 TableColumn::new(i18n::t(Key::DockerColumnImage), 3),
+                TableColumn::new(i18n::t(Key::DockerFieldCompose), 2),
                 TableColumn::new(i18n::t(Key::DockerColumnPorts), 2),
                 TableColumn::new(i18n::t(Key::DockerColumnAge), 1),
             ]
@@ -332,10 +341,23 @@ mod tests {
                     StatusTone::Ok
                 ),
                 TableCell::muted_mono("busybox:1.37"),
-                TableCell::muted_mono("18080→80/tcp"),
+                TableCell::muted(""),
+                TableCell::muted_mono("18080:80/tcp"),
                 TableCell::muted(age_text(NOW, running.created())),
             ]
         );
+    }
+
+    #[test]
+    fn a_compose_container_shows_its_project_as_a_link() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let web = resources
+            .containers()
+            .iter()
+            .find(|container| container.compose_project().is_some())
+            .expect("fixture has a compose container");
+
+        assert_eq!(container_cells(web, NOW)[3], TableCell::link("otty-fx"));
     }
 
     #[test]
