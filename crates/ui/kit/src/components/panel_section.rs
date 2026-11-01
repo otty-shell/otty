@@ -10,7 +10,10 @@ use crate::{fonts, size, spacing, typography};
 /// Edge of the caret (`.sec-caret svg { width: 11px }`).
 const CARET_SIZE: f32 = 11.0;
 /// Gap between header items and between header and body (`gap: 1px`).
-const BODY_GAP: f32 = 1.0;
+pub(crate) const BODY_GAP: f32 = 1.0;
+/// Height of a closed section: the header row and the padding around it.
+pub(crate) const HEADER_HEIGHT: f32 =
+    spacing::SPACE_3 + size::ROW + spacing::SPACE_3;
 /// Most actions a header can hold.
 const MAX_ACTIONS: usize = 3;
 

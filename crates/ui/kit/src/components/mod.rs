@@ -28,6 +28,7 @@ pub mod key_value_field;
 pub mod menu;
 pub mod palette_list;
 pub mod pane_header;
+pub mod panel_height;
 pub mod panel_section;
 pub mod scrollbar;
 pub mod segmented;

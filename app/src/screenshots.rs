@@ -19,10 +19,12 @@ use iced_test::Simulator;
 use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::pane_header::PaneHeader;
+use otty_ui_kit::components::panel_height::SectionHeight;
 use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::{fonts, size, typography};
 
+use crate::app::view::stack_left_panel;
 use crate::theme::{AppTheme, BuiltinTheme, ThemeProps};
 use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, focus_note, status_bar};
@@ -66,6 +68,7 @@ type Screen<'a> = Element<'a, ()>;
 struct Frame {
     active_tab: Option<u64>,
     show_tabs: bool,
+    many_sessions: bool,
     left_open: bool,
     right_open: bool,
     focus_mode: bool,
@@ -76,6 +79,7 @@ struct Frame {
 /// Fixed data behind every screen.
 struct Fixture {
     tabs: BTreeMap<u64, TabItem>,
+    many_tabs: BTreeMap<u64, TabItem>,
     no_tabs: BTreeMap<u64, TabItem>,
     launches: QuickLaunchFile,
     files: Vec<FileNode>,
@@ -104,6 +108,19 @@ fn screenshots_workspace() {
             terminal_main(fx, theme),
             Vec::new(),
         )
+    });
+}
+
+#[test]
+#[ignore = "writes PNG files; run with --ignored screenshots"]
+fn screenshots_many_sessions() {
+    shoot("many-sessions", |fx, theme| {
+        let frame = Frame {
+            many_sessions: true,
+            ..Frame::terminal()
+        };
+
+        window(fx, theme, frame, terminal_main(fx, theme), Vec::new())
     });
 }
 
@@ -306,6 +323,7 @@ impl Frame {
         Self {
             active_tab: Some(TAB_ZSH),
             show_tabs: true,
+            many_sessions: false,
             left_open: true,
             right_open: true,
             focus_mode: false,
@@ -377,6 +395,7 @@ impl Fixture {
 
         Self {
             tabs,
+            many_tabs: many_tabs(),
             no_tabs: BTreeMap::new(),
             launches,
             files: files(),
@@ -465,10 +484,12 @@ fn window<'a>(
     overlays: Vec<Screen<'a>>,
 ) -> Screen<'a> {
     let palette = theme.theme.ui();
-    let tabs = if frame.show_tabs {
-        &fx.tabs
-    } else {
+    let tabs = if !frame.show_tabs {
         &fx.no_tabs
+    } else if frame.many_sessions {
+        &fx.many_tabs
+    } else {
+        &fx.tabs
     };
 
     let title = tabs
@@ -538,7 +559,8 @@ fn window<'a>(
         .into()
 }
 
-/// Sessions over Launches on the panel surface.
+/// Sessions over Launches on the panel surface, sharing the panel height
+/// the way `view.rs` does.
 fn left_panel<'a>(
     fx: &'a Fixture,
     tabs: &'a BTreeMap<u64, TabItem>,
@@ -546,41 +568,55 @@ fn left_panel<'a>(
     frame: Frame,
 ) -> Screen<'a> {
     let palette = theme.theme.ui();
+    let launches_vm = || QuickLaunchTreeViewModel {
+        data: &fx.launches,
+        selected_path: None,
+        hovered_path: None,
+        inline_edit: None,
+        launching: &fx.launching,
+        drop_target: None,
+    };
+    let sessions_vm =
+        move || TabsViewModel::new(tabs, frame.active_tab, Some("fedora"));
 
-    let sessions = session_list::view(session_list::SessionListProps {
-        vm: TabsViewModel::new(tabs, frame.active_tab, Some("fedora")),
-        theme,
-        is_open: true,
-        new_session_title: "zsh",
-        is_menu_open: frame.menu_open,
-        on_toggle: (),
-        on_menu: (),
-        on_intent: |_| (),
-    });
+    let sessions_height = SectionHeight::panel_section(
+        session_list::content_height(&sessions_vm()),
+        true,
+    );
+    let launches_height = SectionHeight::panel_section(
+        sidebar_panel::content_height(&launches_vm()),
+        true,
+    );
 
-    let launches = sidebar_panel::view(sidebar_panel::SidebarPanelProps {
-        vm: QuickLaunchTreeViewModel {
-            data: &fx.launches,
-            selected_path: None,
-            hovered_path: None,
-            inline_edit: None,
-            launching: &fx.launching,
-            drop_target: None,
-        },
-        theme,
-        is_open: true,
-        on_toggle: (),
-        on_intent: |_| (),
-    });
-
-    surface(
-        column![sessions, divider::horizontal(palette), launches]
-            .width(Length::Fill)
-            .height(Length::Fill),
-        Surface::Panel,
+    let sections = stack_left_panel(
+        sessions_height,
+        launches_height,
         palette,
-    )
-    .into()
+        move || {
+            let sessions = session_list::view(session_list::SessionListProps {
+                vm: sessions_vm(),
+                theme,
+                is_open: true,
+                new_session_title: "zsh",
+                is_menu_open: frame.menu_open,
+                on_toggle: (),
+                on_menu: (),
+                on_intent: |_| (),
+            });
+            let launches =
+                sidebar_panel::view(sidebar_panel::SidebarPanelProps {
+                    vm: launches_vm(),
+                    theme,
+                    is_open: true,
+                    on_toggle: (),
+                    on_intent: |_| (),
+                });
+
+            (sessions, launches)
+        },
+    );
+
+    surface(sections, Surface::Panel, palette).into()
 }
 
 /// Two panes with headers and a few lines of terminal text.
@@ -699,6 +735,28 @@ fn ssh_launch() -> QuickLaunch {
               "user": "deploy", "identity_file": null, "extra_args": []}}}"#,
     )
     .expect("ssh launch fixture should parse")
+}
+
+/// Thirty terminal tabs on this computer and on two SSH hosts: more rows
+/// than the Sessions section can show next to Launches.
+fn many_tabs() -> BTreeMap<u64, TabItem> {
+    (0..30)
+        .map(|id| {
+            let machine = match id % 3 {
+                0 => TabMachine::ThisComputer,
+                1 => TabMachine::Ssh(String::from("prod-api")),
+                _ => TabMachine::Ssh(String::from("build-box")),
+            };
+            let tab = TabItem::new(
+                id,
+                format!("shell {id}"),
+                TabContent::Terminal,
+                machine,
+            );
+
+            (id, tab)
+        })
+        .collect()
 }
 
 /// Rows of the Files section.

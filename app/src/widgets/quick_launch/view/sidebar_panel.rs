@@ -2,9 +2,12 @@ use iced::Element;
 use iced::widget::svg;
 use otty_ui_kit::components::icon_button::{IconButton, IconButtonSize};
 use otty_ui_kit::components::panel_section::PanelSection;
+use otty_ui_kit::size;
+use otty_ui_tree::flatten_tree;
 
 use super::super::event::QuickLaunchIntent;
 use super::super::model::QuickLaunchTreeViewModel;
+use super::super::types::InlineEditKind;
 use super::sidebar_tree;
 use crate::i18n::{self, Key};
 use crate::icons;
@@ -78,25 +81,50 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
     section.into()
 }
 
+/// Height of the launch tree: one row per visible launch or folder, and one
+/// more while a new folder name is typed.
+///
+/// Counted from the rows because iced cannot measure a widget before the
+/// left panel shares its height between the sections. An error line under a name input is not counted: Launches is the last
+/// section and takes the height left under the others anyway.
+pub(crate) fn content_height(vm: &QuickLaunchTreeViewModel<'_>) -> f32 {
+    let visible_rows = flatten_tree(vm.data.root().children()).len();
+    let is_creating_folder = matches!(
+        vm.inline_edit.map(|edit| &edit.kind),
+        Some(InlineEditKind::CreateFolder { .. })
+    );
+
+    let rows = if is_creating_folder {
+        visible_rows + 1
+    } else {
+        visible_rows
+    };
+    rows as f32 * size::ROW
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     use iced::Point;
     use iced_test::simulator;
+    use otty_ui_kit::size;
 
-    use super::{SidebarPanelProps, view};
+    use super::{SidebarPanelProps, content_height, view};
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::quick_launch::event::QuickLaunchIntent;
     use crate::widgets::quick_launch::model::QuickLaunchTreeViewModel;
+    use crate::widgets::quick_launch::state::InlineEditState;
     use crate::widgets::quick_launch::types::{
-        CommandSpec, CustomCommand, LaunchInfo, QuickLaunch, QuickLaunchFile,
-        QuickLaunchNode,
+        CommandSpec, CustomCommand, InlineEditKind, LaunchInfo, QuickLaunch,
+        QuickLaunchFile, QuickLaunchNode,
     };
 
     /// Width of the panel in the tests.
     const PANEL_WIDTH: f32 = 260.0;
+    /// Section padding 8, header row 30, gap 1: the top of the rows.
+    const BODY_TOP: f32 = 8.0 + 30.0 + 1.0;
     /// Section padding 8, header row 30 high: the middle of the header.
     const HEADER_Y: f32 = 8.0 + 15.0;
 
@@ -121,6 +149,45 @@ mod tests {
             exit_behavior: ExitBehavior::Close,
         })];
         file
+    }
+
+    /// A "Work" folder with two launches, then "htop" at the root.
+    fn file_with_folder(is_expanded: bool) -> QuickLaunchFile {
+        let launch = |title: &str| {
+            format!(
+                r#"{{"kind": "Command", "title": "{title}",
+                    "spec": {{"type": "Custom", "custom": {{"program": "{title}",
+                      "args": [], "env": [], "working_directory": null}}}}}}"#
+            )
+        };
+        let json = format!(
+            r#"{{"version": 1, "root": {{"title": "Root", "expanded": true,
+                "children": [
+                  {{"kind": "Folder", "title": "Work", "expanded": {is_expanded},
+                    "children": [{}, {}]}},
+                  {}
+                ]}}}}"#,
+            launch("build"),
+            launch("deploy"),
+            launch("htop"),
+        );
+
+        serde_json::from_str(&json).expect("launch fixture should parse")
+    }
+
+    fn tree_vm<'a>(
+        file: &'a QuickLaunchFile,
+        launching: &'a HashMap<Vec<String>, LaunchInfo>,
+        inline_edit: Option<&'a InlineEditState>,
+    ) -> QuickLaunchTreeViewModel<'a> {
+        QuickLaunchTreeViewModel {
+            data: file,
+            selected_path: None,
+            hovered_path: None,
+            inline_edit,
+            launching,
+            drop_target: None,
+        }
     }
 
     fn panel<'a>(
@@ -240,5 +307,68 @@ mod tests {
 
         assert!(idle_ui.find("running").is_err());
         assert!(active_ui.find("running").is_ok());
+    }
+
+    #[test]
+    fn given_tree_when_content_height_read_then_it_counts_visible_rows() {
+        let expanded = file_with_folder(true);
+        let collapsed = file_with_folder(false);
+        let launching = HashMap::new();
+
+        let expanded_height =
+            content_height(&tree_vm(&expanded, &launching, None));
+        let collapsed_height =
+            content_height(&tree_vm(&collapsed, &launching, None));
+
+        assert_eq!(expanded_height, 4.0 * size::ROW);
+        assert_eq!(collapsed_height, 2.0 * size::ROW);
+    }
+
+    #[test]
+    fn given_tree_when_content_height_read_then_it_ends_at_the_last_row() {
+        let file = file_with_folder(true);
+        let launching = HashMap::new();
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel(&file, &launching, &themes, true));
+
+        let content = content_height(&tree_vm(&file, &launching, None));
+        let last = ui.find("htop").expect("last row should be visible");
+
+        let row_middle = BODY_TOP + content - size::ROW / 2.0;
+        assert!(
+            (last.bounds().center_y() - row_middle).abs() < 1.0,
+            "last row middle {} should be at {row_middle}",
+            last.bounds().center_y()
+        );
+    }
+
+    #[test]
+    fn given_new_folder_input_when_content_height_read_then_it_adds_a_row() {
+        let file = file_with_folder(false);
+        let launching = HashMap::new();
+        let create = InlineEditState {
+            kind: InlineEditKind::CreateFolder {
+                parent_path: Vec::new(),
+            },
+            value: String::new(),
+            error: None,
+            id: iced::widget::Id::unique(),
+        };
+        let rename = InlineEditState {
+            kind: InlineEditKind::Rename {
+                path: vec![String::from("htop")],
+            },
+            value: String::new(),
+            error: None,
+            id: iced::widget::Id::unique(),
+        };
+
+        let creating =
+            content_height(&tree_vm(&file, &launching, Some(&create)));
+        let renaming =
+            content_height(&tree_vm(&file, &launching, Some(&rename)));
+
+        assert_eq!(creating, 3.0 * size::ROW);
+        assert_eq!(renaming, 2.0 * size::ROW);
     }
 }

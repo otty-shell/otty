@@ -1,9 +1,13 @@
 use iced::widget::pane_grid::PaneGrid;
-use iced::widget::{Space, column, container, mouse_area, text};
+use iced::widget::{Space, column, container, mouse_area, responsive, text};
 use iced::{Element, Length, Theme, alignment};
+use otty_ui_kit::components::panel_height::{
+    SectionHeight, share_panel_height,
+};
 use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::components::{divider, split};
+use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
 
 use super::{App, AppEvent};
@@ -158,6 +162,47 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         .into()
 }
 
+/// Stack the Sessions and Launches sections with a line between them and
+/// share the panel height with [`share_panel_height`]: each open section
+/// takes its content height while everything fits, and scrolls inside its
+/// share when it does not.
+///
+/// The panel height is known only during layout, so this uses
+/// `iced::widget::responsive`, and `sections` builds both sections again
+/// whenever the panel size changes. Launches is the last section and takes
+/// all height left under Sessions, so its empty area still takes drops and
+/// right clicks.
+pub(crate) fn stack_left_panel<'a, Message: 'a>(
+    sessions_height: SectionHeight,
+    launches_height: SectionHeight,
+    palette: &UiPalette,
+    sections: impl Fn() -> (Element<'a, Message>, Element<'a, Message>) + 'a,
+) -> Element<'a, Message> {
+    let palette = palette.clone();
+
+    responsive(move |panel| {
+        let available = (panel.height - size::LINE).max(0.0);
+        let heights =
+            share_panel_height(available, &[sessions_height, launches_height]);
+        let sessions_share = heights.first().copied().unwrap_or(0.0);
+
+        let (sessions, launches) = sections();
+
+        column![
+            container(sessions)
+                .width(Length::Fill)
+                .height(sessions_share)
+                .clip(true),
+            divider::horizontal(&palette),
+            container(launches).width(Length::Fill).height(Length::Fill),
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    })
+    .into()
+}
+
 /// Render the header: action bar + separator.
 fn view_header<'a>(
     app: &'a App,
@@ -277,50 +322,60 @@ fn side_panel<'a>(
     surface(content, Surface::Panel, theme_props.theme.ui()).into()
 }
 
-/// Left panel content: the Sessions section over the Launches section.
-/// Launches is the only growing section, so it takes the height left under
-/// Sessions.
+/// Left panel content: the Sessions section over the Launches section,
+/// sharing the panel height (see [`stack_left_panel`]).
 fn view_left_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     let sidebar_vm = app.widgets.sidebar.vm();
+    let host_name = app.host_name.as_deref();
 
-    let sessions = session_list::view(session_list::SessionListProps {
-        vm: app.widgets.tabs.vm(app.host_name.as_deref()),
-        theme: theme_props,
-        is_open: sidebar_vm.is_sessions_open,
-        new_session_title: app.shell_session.name(),
-        is_menu_open: sidebar_vm.has_new_session_menu_open,
-        on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
-            SidebarIntent::ToggleSessions,
-        )),
-        on_menu: AppEvent::Sidebar(SidebarEvent::Intent(
-            SidebarIntent::NewSessionMenuOpen,
-        )),
-        on_intent: |intent| AppEvent::Tabs(TabsEvent::Intent(intent)),
-    });
+    let sessions_height = SectionHeight::panel_section(
+        session_list::content_height(&app.widgets.tabs.vm(host_name)),
+        sidebar_vm.is_sessions_open,
+    );
+    let launches_height = SectionHeight::panel_section(
+        sidebar_panel::content_height(&app.widgets.quick_launch.vm()),
+        sidebar_vm.is_launches_open,
+    );
 
-    let launches = sidebar_panel::view(sidebar_panel::SidebarPanelProps {
-        vm: app.widgets.quick_launch.vm(),
-        theme: theme_props,
-        is_open: sidebar_vm.is_launches_open,
-        on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
-            SidebarIntent::ToggleLaunches,
-        )),
-        on_intent: |intent| {
-            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
+    stack_left_panel(
+        sessions_height,
+        launches_height,
+        theme_props.theme.ui(),
+        move || {
+            let sessions = session_list::view(session_list::SessionListProps {
+                vm: app.widgets.tabs.vm(host_name),
+                theme: theme_props,
+                is_open: sidebar_vm.is_sessions_open,
+                new_session_title: app.shell_session.name(),
+                is_menu_open: sidebar_vm.has_new_session_menu_open,
+                on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
+                    SidebarIntent::ToggleSessions,
+                )),
+                on_menu: AppEvent::Sidebar(SidebarEvent::Intent(
+                    SidebarIntent::NewSessionMenuOpen,
+                )),
+                on_intent: |intent| AppEvent::Tabs(TabsEvent::Intent(intent)),
+            });
+
+            let launches =
+                sidebar_panel::view(sidebar_panel::SidebarPanelProps {
+                    vm: app.widgets.quick_launch.vm(),
+                    theme: theme_props,
+                    is_open: sidebar_vm.is_launches_open,
+                    on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
+                        SidebarIntent::ToggleLaunches,
+                    )),
+                    on_intent: |intent| {
+                        AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
+                    },
+                });
+
+            (sessions, launches)
         },
-    });
-
-    column![
-        sessions,
-        divider::horizontal(theme_props.theme.ui()),
-        launches
-    ]
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .into()
+    )
 }
 
 /// Right panel content: the Files section.

@@ -7,7 +7,7 @@ use otty_ui_kit::components::session_row::{SessionRow, SessionTone};
 use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::TabsIntent;
 use super::super::model::{
@@ -20,6 +20,8 @@ use crate::theme::ThemeProps;
 
 /// Id of the session list scrollable, scrolled to its end when a tab opens.
 pub(crate) const SESSION_LIST_SCROLL_ID: &str = "session_list_scroll";
+/// Space above the empty hint.
+const EMPTY_HINT_TOP: f32 = 2.0;
 
 /// Props for the Sessions section of the left panel.
 ///
@@ -94,6 +96,20 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
     section.into()
 }
 
+/// Height of the section body: group labels and rows, or the empty hint.
+///
+/// Counted from the rows because iced cannot measure a widget before the
+/// left panel shares its height between the sections.
+pub(crate) fn content_height(vm: &TabsViewModel<'_>) -> f32 {
+    if vm.session_count == 0 {
+        return EMPTY_HINT_TOP
+            + typography::SMALL.line_height()
+            + spacing::SPACE_2;
+    }
+
+    vm.groups.len() as f32 * size::GROUP + vm.session_count as f32 * size::ROW
+}
+
 /// Muted hint shown while no session is open.
 fn empty_hint<'a, Message: 'a>(palette: &UiPalette) -> Element<'a, Message> {
     let small = typography::SMALL;
@@ -101,11 +117,12 @@ fn empty_hint<'a, Message: 'a>(palette: &UiPalette) -> Element<'a, Message> {
     container(
         text(i18n::t(Key::NoOpenSessions))
             .size(small.size())
+            .line_height(iced::Pixels(small.line_height()))
             .font(fonts::UI)
             .color(palette.text_muted()),
     )
     .padding(Padding {
-        top: 2.0,
+        top: EMPTY_HINT_TOP,
         right: spacing::SPACE_3,
         bottom: spacing::SPACE_2,
         left: spacing::SPACE_3,
@@ -172,9 +189,9 @@ mod tests {
     use iced::Point;
     use iced::widget::container;
     use iced_test::simulator;
-    use otty_ui_kit::size;
+    use otty_ui_kit::{size, spacing};
 
-    use super::{SessionListProps, view};
+    use super::{SessionListProps, content_height, view};
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::tabs::TabsIntent;
     use crate::widgets::tabs::model::TabsViewModel;
@@ -182,6 +199,8 @@ mod tests {
 
     /// Width of the panel in the tests.
     const PANEL_WIDTH: f32 = 260.0;
+    /// Section padding 8, header row 30, gap 1: the top of the rows.
+    const BODY_TOP: f32 = 8.0 + 30.0 + 1.0;
     /// Section padding 8, header row 30 high: the middle of the header.
     const HEADER_Y: f32 = 8.0 + 15.0;
     /// Middle of the close cross: section padding 8, then the 24px button.
@@ -392,5 +411,44 @@ mod tests {
 
         assert!(ui.find("zsh").is_err());
         assert!(ui.find("3").is_ok());
+    }
+
+    #[test]
+    fn given_sessions_when_content_height_read_then_it_ends_at_the_last_row() {
+        let tabs = tabs();
+        let themes = ThemeManager::new();
+        let vm = TabsViewModel::new(&tabs, Some(1), Some("fedora"));
+        let mut ui = simulator(section(&tabs, &themes, true));
+
+        let content = content_height(&vm);
+        let last = ui.find("htop").expect("last row should be visible");
+
+        assert_eq!(content, 2.0 * size::GROUP + 3.0 * size::ROW);
+        let row_middle = BODY_TOP + content - size::ROW / 2.0;
+        assert!(
+            (last.bounds().center_y() - row_middle).abs() < 1.0,
+            "last row middle {} should be at {row_middle}",
+            last.bounds().center_y()
+        );
+    }
+
+    #[test]
+    fn given_no_sessions_when_content_height_read_then_it_ends_under_the_hint()
+    {
+        let tabs = BTreeMap::new();
+        let themes = ThemeManager::new();
+        let vm = TabsViewModel::new(&tabs, None, Some("fedora"));
+        let mut ui = simulator(section(&tabs, &themes, true));
+
+        let content = content_height(&vm);
+        let hint = ui.find("No open sessions.").expect("hint should show");
+
+        let hint_bottom =
+            hint.bounds().y + hint.bounds().height + spacing::SPACE_2;
+        assert!(
+            (hint_bottom - (BODY_TOP + content)).abs() < 1.0,
+            "hint ends at {hint_bottom}, content at {}",
+            BODY_TOP + content
+        );
     }
 }
