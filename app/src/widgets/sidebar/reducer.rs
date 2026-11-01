@@ -465,8 +465,11 @@ mod tests {
 
     #[test]
     fn entering_focus_mode_shows_the_note_until_a_frame_after_it_fades() {
+        let first_frame = Instant::now();
         let mut widget = SidebarWidget::new();
         let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
+        let _first =
+            reduce(&mut widget, SidebarIntent::FocusNoteFrame(first_frame));
 
         assert_eq!(widget.vm().focus_note_opacity, Some(1.0));
         assert!(widget.is_focus_note_shown());
@@ -474,7 +477,7 @@ mod tests {
         let events = reduce(
             &mut widget,
             SidebarIntent::FocusNoteFrame(
-                Instant::now() + Duration::from_secs(10),
+                first_frame + Duration::from_secs(10),
             ),
         );
 

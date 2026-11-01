@@ -150,8 +150,7 @@ impl SidebarState {
     /// shows the focus mode note, which fades out on its own.
     pub(super) fn toggle_focus_mode(&mut self) {
         self.focus_mode = !self.focus_mode;
-        self.focus_note =
-            self.focus_mode.then(|| FocusNote::new(Instant::now()));
+        self.focus_note = self.focus_mode.then(FocusNote::new);
 
         self.sync_panes();
     }
@@ -365,11 +364,24 @@ mod tests {
     }
 
     #[test]
-    fn note_is_removed_once_it_has_faded_out() {
+    fn note_starts_counting_at_its_first_frame() {
+        let first_frame = Instant::now() + Duration::from_secs(60);
         let mut state = SidebarState::default();
         state.toggle_focus_mode();
 
-        state.advance_focus_note(Instant::now() + Duration::from_secs(10));
+        state.advance_focus_note(first_frame);
+
+        assert_eq!(state.focus_note_opacity(), Some(1.0));
+    }
+
+    #[test]
+    fn note_is_removed_once_it_has_faded_out() {
+        let first_frame = Instant::now();
+        let mut state = SidebarState::default();
+        state.toggle_focus_mode();
+        state.advance_focus_note(first_frame);
+
+        state.advance_focus_note(first_frame + Duration::from_secs(10));
 
         assert!(state.is_focus_mode());
         assert_eq!(state.focus_note_opacity(), None);
