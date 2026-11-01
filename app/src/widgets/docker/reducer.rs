@@ -1,7 +1,9 @@
 use iced::Task;
+use otty_docker::{EngineAddress, EngineInfo};
 
 use super::event::{DockerEffect, DockerEvent, DockerIntent};
-use super::state::DockerState;
+use super::state::{DockerState, Search};
+use super::types::{LoadedList, ResourceKind};
 
 /// Reduce a Docker intent into state changes and effects. Engine work
 /// (search, list loads, inspect) is only asked for while Docker mode is
@@ -96,6 +98,21 @@ fn reduce_intent(
             state.inspector_mut().perform_inspect_action(action);
             Task::none()
         },
+        DockerIntent::ListChanged { engine, resource } => {
+            reload_changed_list(state, &engine, resource)
+        },
+        DockerIntent::EngineReconnected(engine) => {
+            match active_engine_info(state, &engine) {
+                Some(info) => effect(DockerEffect::LoadLists(info)),
+                None => Task::none(),
+            }
+        },
+        DockerIntent::EngineUnreachable(engine) => {
+            search_after_lost_engine(state, &engine)
+        },
+        DockerIntent::ListLoaded { engine, list } => {
+            apply_reloaded_list(state, &engine, list)
+        },
     }
 }
 
@@ -115,6 +132,102 @@ fn sync_inspector(state: &mut DockerState) -> Task<DockerEvent> {
     }
 
     effect(DockerEffect::LoadInspect { engine, target })
+}
+
+/// An engine event changed `resource`: reload it while Docker mode is
+/// active. "Used by" of images, volumes and networks is read from the
+/// containers shown now; a container reload brings its own list.
+fn reload_changed_list(
+    state: &DockerState,
+    address: &EngineAddress,
+    resource: ResourceKind,
+) -> Task<DockerEvent> {
+    let Some(info) = active_engine_info(state, address) else {
+        return Task::none();
+    };
+
+    let containers = match resource {
+        ResourceKind::Containers => Vec::new(),
+        _ => state
+            .engine(address)
+            .map(|engine| engine.containers().items().to_vec())
+            .unwrap_or_default(),
+    };
+
+    effect(DockerEffect::LoadList {
+        info,
+        resource,
+        containers,
+    })
+}
+
+/// Take a reloaded list. A new container list also reloads images, volumes
+/// and networks with it, so their "used by" stays right; a failed one shows
+/// its error and leaves the other lists as they are.
+fn apply_reloaded_list(
+    state: &mut DockerState,
+    address: &EngineAddress,
+    list: LoadedList,
+) -> Task<DockerEvent> {
+    let new_containers = match &list {
+        LoadedList::Containers(Ok(containers)) => Some(containers.clone()),
+        _ => None,
+    };
+
+    if !state.apply_list(address, list) {
+        log::debug!("docker list of a gone engine dropped: {address}");
+        return Task::none();
+    }
+
+    let (Some(containers), Some(info)) =
+        (new_containers, active_engine_info(state, address))
+    else {
+        return Task::none();
+    };
+
+    Task::batch(
+        [
+            ResourceKind::Images,
+            ResourceKind::Volumes,
+            ResourceKind::Networks,
+        ]
+        .into_iter()
+        .map(|resource| {
+            effect(DockerEffect::LoadList {
+                info: info.clone(),
+                resource,
+                containers: containers.clone(),
+            })
+        }),
+    )
+}
+
+/// An engine stopped answering: search again, unless a search runs, so the
+/// tree and the no-engine card show what is left (ticket 10).
+fn search_after_lost_engine(
+    state: &mut DockerState,
+    address: &EngineAddress,
+) -> Task<DockerEvent> {
+    if active_engine_info(state, address).is_none()
+        || state.search() == &Search::Searching
+    {
+        return Task::none();
+    }
+
+    state.start_search();
+    effect(DockerEffect::Discover)
+}
+
+/// The engine at `address`, only while Docker mode is active.
+fn active_engine_info(
+    state: &DockerState,
+    address: &EngineAddress,
+) -> Option<EngineInfo> {
+    if !state.is_active() {
+        return None;
+    }
+
+    state.engine(address).map(|engine| engine.info().clone())
 }
 
 /// Ask to load the lists of every engine, only while Docker mode is
@@ -147,7 +260,9 @@ mod tests {
         InspectLoad, InspectTarget, InspectorTab, LogTarget, MAX_LOG_LINES,
     };
     use crate::widgets::docker::state::{ListLoad, Search};
-    use crate::widgets::docker::types::{LoadedLists, Place, ResourceKind};
+    use crate::widgets::docker::types::{
+        LoadedList, LoadedLists, Place, ResourceKind,
+    };
 
     fn docker() -> EngineInfo {
         fixtures::engine(EngineKind::Docker)
@@ -1043,5 +1158,276 @@ mod tests {
 
         assert!(effects.is_empty());
         assert!(state.inspector().inspect().is_none());
+    }
+
+    // Live updates from engine events (ticket 16).
+
+    fn changed(resource: ResourceKind) -> DockerIntent {
+        DockerIntent::ListChanged {
+            engine: docker().address().clone(),
+            resource,
+        }
+    }
+
+    fn docker_containers() -> Vec<Container> {
+        fixtures::resources(EngineKind::Docker)
+            .containers()
+            .to_vec()
+    }
+
+    #[test]
+    fn a_container_event_reloads_the_container_list() {
+        let mut state = loaded_state();
+
+        let effects =
+            effects(reduce(&mut state, changed(ResourceKind::Containers)));
+
+        assert_eq!(
+            effects,
+            vec![DockerEffect::LoadList {
+                info: docker(),
+                resource: ResourceKind::Containers,
+                containers: Vec::new(),
+            }]
+        );
+    }
+
+    #[test]
+    fn an_image_volume_or_network_event_reloads_that_list_with_the_shown_containers()
+     {
+        for resource in [
+            ResourceKind::Images,
+            ResourceKind::Volumes,
+            ResourceKind::Networks,
+        ] {
+            let mut state = loaded_state();
+
+            let effects = effects(reduce(&mut state, changed(resource)));
+
+            assert_eq!(
+                effects,
+                vec![DockerEffect::LoadList {
+                    info: docker(),
+                    resource,
+                    containers: docker_containers(),
+                }]
+            );
+        }
+    }
+
+    #[test]
+    fn events_start_no_engine_work_outside_docker_mode() {
+        let mut state = loaded_state();
+        let _ = reduce(&mut state, DockerIntent::Leave);
+        let docker_address = docker().address().clone();
+
+        let intents = [
+            changed(ResourceKind::Containers),
+            changed(ResourceKind::Images),
+            DockerIntent::EngineReconnected(docker_address.clone()),
+            DockerIntent::EngineUnreachable(docker_address),
+        ];
+
+        for intent in intents {
+            assert!(effects(reduce(&mut state, intent)).is_empty());
+        }
+        assert!(matches!(state.search(), Search::Done(_)));
+    }
+
+    #[test]
+    fn events_of_an_unknown_engine_are_dropped() {
+        let mut state = loaded_state();
+        let unknown = otty_docker::EngineAddress::Tcp(String::from("h:1"));
+
+        let intents = [
+            DockerIntent::ListChanged {
+                engine: unknown.clone(),
+                resource: ResourceKind::Containers,
+            },
+            DockerIntent::EngineReconnected(unknown.clone()),
+            DockerIntent::EngineUnreachable(unknown),
+        ];
+
+        for intent in intents {
+            assert!(effects(reduce(&mut state, intent)).is_empty());
+        }
+        assert!(matches!(state.search(), Search::Done(_)));
+    }
+
+    #[test]
+    fn a_new_container_list_reloads_images_volumes_and_networks_with_it() {
+        let mut state = loaded_state();
+        let mut containers = docker_containers();
+        containers.truncate(2);
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::ListLoaded {
+                engine: docker().address().clone(),
+                list: LoadedList::Containers(Ok(containers.clone())),
+            },
+        ));
+
+        let engine = state.open_engine().expect("docker engine");
+        assert_eq!(engine.containers().items(), containers.as_slice());
+        assert_eq!(
+            effects,
+            vec![
+                DockerEffect::LoadList {
+                    info: docker(),
+                    resource: ResourceKind::Images,
+                    containers: containers.clone(),
+                },
+                DockerEffect::LoadList {
+                    info: docker(),
+                    resource: ResourceKind::Volumes,
+                    containers: containers.clone(),
+                },
+                DockerEffect::LoadList {
+                    info: docker(),
+                    resource: ResourceKind::Networks,
+                    containers,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_failed_container_reload_shows_its_error_and_keeps_the_other_lists() {
+        let mut state = loaded_state();
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::ListLoaded {
+                engine: docker().address().clone(),
+                list: LoadedList::Containers(Err(String::from(
+                    "unknown variant `unknown`",
+                ))),
+            },
+        ));
+
+        assert!(effects.is_empty());
+        let engine = state.open_engine().expect("docker engine");
+        assert_eq!(
+            engine.containers().load(),
+            &ListLoad::Failed(String::from("unknown variant `unknown`"))
+        );
+        assert_eq!(engine.images().items().len(), 3);
+        assert_eq!(engine.volumes().items().len(), 2);
+        assert_eq!(engine.networks().items().len(), 4);
+        let main = crate::widgets::docker::model::main_area(&state, 0);
+        let crate::widgets::docker::model::MainViewModel::Table(table) = main
+        else {
+            panic!("the containers table is shown");
+        };
+        assert_eq!(table.error, Some("unknown variant `unknown`"));
+    }
+
+    #[test]
+    fn a_reloaded_image_volume_or_network_list_replaces_only_that_list() {
+        let mut state = loaded_state();
+        let resources = fixtures::resources(EngineKind::Docker);
+        let one_image = vec![resources.images()[0].clone()];
+        let one_volume = vec![resources.volumes()[0].clone()];
+        let one_network = vec![resources.networks()[0].clone()];
+
+        let mut all_effects = Vec::new();
+        for list in [
+            LoadedList::Images(Ok(one_image.clone())),
+            LoadedList::Volumes(Ok(one_volume.clone())),
+            LoadedList::Networks(Ok(one_network.clone())),
+        ] {
+            all_effects.extend(effects(reduce(
+                &mut state,
+                DockerIntent::ListLoaded {
+                    engine: docker().address().clone(),
+                    list,
+                },
+            )));
+        }
+
+        assert!(all_effects.is_empty());
+        let engine = state.open_engine().expect("docker engine");
+        assert_eq!(engine.containers().items().len(), 6);
+        assert_eq!(engine.images().items(), one_image.as_slice());
+        assert_eq!(engine.volumes().items(), one_volume.as_slice());
+        assert_eq!(engine.networks().items(), one_network.as_slice());
+    }
+
+    #[test]
+    fn a_reloaded_list_of_a_gone_engine_is_dropped() {
+        let mut state = loaded_state();
+        let gone = otty_docker::EngineAddress::Tcp(String::from("h:1"));
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::ListLoaded {
+                engine: gone,
+                list: LoadedList::Containers(Ok(Vec::new())),
+            },
+        ));
+
+        assert!(effects.is_empty());
+        let engine = state.open_engine().expect("docker engine");
+        assert_eq!(engine.containers().items().len(), 6);
+    }
+
+    #[test]
+    fn a_reconnected_engine_reloads_every_list() {
+        let mut state = loaded_state();
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::EngineReconnected(podman().address().clone()),
+        ));
+
+        assert_eq!(effects, vec![DockerEffect::LoadLists(podman())]);
+    }
+
+    #[test]
+    fn an_unreachable_engine_starts_a_new_search() {
+        let mut state = loaded_state();
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::EngineUnreachable(docker().address().clone()),
+        ));
+
+        assert_eq!(effects, vec![DockerEffect::Discover]);
+        assert_eq!(state.search(), &Search::Searching);
+        assert_eq!(state.engines().len(), 2);
+    }
+
+    #[test]
+    fn an_unreachable_engine_during_a_search_starts_no_second_one() {
+        let mut state = loaded_state();
+        let _ = reduce(&mut state, DockerIntent::CheckAgain);
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::EngineUnreachable(docker().address().clone()),
+        ));
+
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn an_event_reload_keeps_the_logs_of_a_kept_container_and_stops_a_gone_one()
+    {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["ready"]);
+        let reload = |containers: Vec<Container>| DockerIntent::ListLoaded {
+            engine: docker().address().clone(),
+            list: LoadedList::Containers(Ok(containers)),
+        };
+
+        let _ = reduce(&mut state, reload(docker_containers()));
+        let kept = (followed(&state), log_line_count(&state));
+        let _ = reduce(&mut state, reload(docker_containers()[1..].to_vec()));
+
+        assert_eq!(kept, (Some(container_id(0)), 1));
+        assert_eq!(followed(&state), Some(container_id(1)));
+        assert_eq!(log_line_count(&state), 0);
     }
 }

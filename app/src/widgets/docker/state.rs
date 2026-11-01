@@ -7,8 +7,8 @@ use super::inspector::{
     InspectTarget, InspectorState, InspectorTab, LogTarget,
 };
 use super::types::{
-    LoadedLists, Place, ResourceKind, filtered, image_name, network_name,
-    shown_containers, volume_name,
+    LoadedList, LoadedLists, Place, ResourceKind, filtered, image_name,
+    network_name, shown_containers, volume_name,
 };
 
 /// Runtime state of Docker mode: the engines and their lists, the open
@@ -224,6 +224,25 @@ impl DockerState {
         true
     }
 
+    /// Take one reloaded list. Returns `false` when the engine is no longer
+    /// known.
+    pub(super) fn apply_list(
+        &mut self,
+        address: &EngineAddress,
+        list: LoadedList,
+    ) -> bool {
+        let Some(engine) = self
+            .engines
+            .iter_mut()
+            .find(|engine| engine.info.address() == address)
+        else {
+            return false;
+        };
+
+        engine.apply_list(list);
+        true
+    }
+
     /// Show `place`. Opening another place clears the filter and goes
     /// back to the Overview tab.
     pub(super) fn open(&mut self, place: Place) {
@@ -372,6 +391,22 @@ impl EngineState {
         self.images.apply(lists.images, Image::id);
         self.volumes.apply(lists.volumes, Volume::name);
         self.networks.apply(lists.networks, Network::id);
+    }
+
+    /// Take one reloaded list; the other lists stay as they are.
+    fn apply_list(&mut self, list: LoadedList) {
+        match list {
+            LoadedList::Containers(result) => {
+                self.containers.apply(result, Container::id);
+            },
+            LoadedList::Images(result) => self.images.apply(result, Image::id),
+            LoadedList::Volumes(result) => {
+                self.volumes.apply(result, Volume::name);
+            },
+            LoadedList::Networks(result) => {
+                self.networks.apply(result, Network::id);
+            },
+        }
     }
 }
 

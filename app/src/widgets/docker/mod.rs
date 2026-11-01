@@ -10,6 +10,7 @@ mod reducer;
 pub(crate) mod resource_rows;
 mod state;
 pub(crate) mod status;
+mod subscription;
 pub(crate) mod types;
 pub(crate) mod view;
 
@@ -29,6 +30,11 @@ pub(crate) struct DockerWidget {
 }
 
 impl DockerWidget {
+    /// Return whether Docker mode is the active mode.
+    pub(crate) fn is_active(&self) -> bool {
+        self.state.is_active()
+    }
+
     /// Create the widget before any engine search.
     pub(crate) fn new() -> Self {
         Self {
@@ -73,20 +79,29 @@ impl DockerWidget {
         inspector_tabs::inspector_tabs(&self.state)
     }
 
-    /// Follow the logs of the selected container while the Logs tab is open
-    /// in Docker mode; nothing otherwise (spec Decisions 12 and 14).
+    /// The Docker mode subscriptions: the engine events watch and the
+    /// followed logs. Nothing runs in another mode (spec Decisions 12 and
+    /// 14).
     pub(crate) fn subscription(&self) -> Subscription<DockerEvent> {
+        Subscription::batch([self.engine_watch(), self.followed_logs()])
+    }
+
+    /// Watch the events of every reached engine while Docker mode is
+    /// active; nothing is watched in another mode.
+    fn engine_watch(&self) -> Subscription<DockerEvent> {
+        if !self.is_active() {
+            return Subscription::none();
+        }
+
+        subscription::subscription(&self.state)
+    }
+
+    /// Follow the logs of the selected container while the Logs tab is open
+    /// in Docker mode; nothing otherwise.
+    fn followed_logs(&self) -> Subscription<DockerEvent> {
         let target = self.state.inspector().logs().map(|logs| logs.target());
 
         logs::subscription(target)
-    }
-}
-
-#[cfg(test)]
-impl DockerWidget {
-    /// Return whether Docker mode is the active mode.
-    pub(crate) fn is_active(&self) -> bool {
-        self.state.is_active()
     }
 }
 
@@ -98,6 +113,7 @@ mod tests {
     use otty_docker::{EngineKind, fixtures};
 
     use super::*;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::docker::inspector::InspectorTab;
     use crate::widgets::docker::types::LoadedLists;
 
@@ -122,9 +138,9 @@ mod tests {
         widget
     }
 
-    /// The identity of every running subscription.
+    /// The identity of every running logs subscription.
     fn subscriptions(widget: &DockerWidget) -> Vec<u64> {
-        into_recipes(widget.subscription())
+        into_recipes(widget.followed_logs())
             .iter()
             .map(|recipe| {
                 let mut hasher = Hasher::default();
@@ -184,5 +200,38 @@ mod tests {
         let _ = widget.reduce(DockerIntent::Leave);
 
         assert!(subscriptions(&widget).is_empty());
+    }
+
+    fn found(widget: &mut DockerWidget) {
+        let _ = collect_outputs(widget.reduce(DockerIntent::Enter));
+        let _ =
+            collect_outputs(widget.reduce(DockerIntent::DiscoveryFinished(
+                fixtures::discovery(&[EngineKind::Docker, EngineKind::Podman]),
+            )));
+    }
+
+    #[test]
+    fn engines_are_watched_only_in_docker_mode() {
+        let mut widget = DockerWidget::new();
+        assert_eq!(widget.engine_watch().units(), 0);
+
+        found(&mut widget);
+        assert_eq!(widget.engine_watch().units(), 2);
+
+        let _ = collect_outputs(widget.reduce(DockerIntent::Leave));
+        assert_eq!(widget.engine_watch().units(), 0);
+    }
+
+    #[test]
+    fn docker_mode_runs_the_engine_watch_and_the_followed_logs_together() {
+        let mut widget = loaded();
+        assert_eq!(widget.subscription().units(), 1);
+
+        let _ =
+            widget.reduce(DockerIntent::SelectInspectorTab(InspectorTab::Logs));
+        assert_eq!(widget.subscription().units(), 2);
+
+        let _ = widget.reduce(DockerIntent::Leave);
+        assert_eq!(widget.subscription().units(), 0);
     }
 }

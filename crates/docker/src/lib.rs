@@ -7,16 +7,19 @@
 //! Start with [`discover`]: it tries the known sockets and returns a
 //! [`Discovery`] whose [`Diagnosis`] lists the reached engines or says why
 //! none was reached. Then [`Engine::connect`] to a reached engine and load
-//! its [`Container`]s, [`Image`]s, [`Volume`]s and [`Network`]s.
+//! its [`Container`]s, [`Image`]s, [`Volume`]s and [`Network`]s;
+//! [`Engine::watch`] says when one of those lists changed.
 
 mod address;
 mod candidates;
 mod cli;
 mod connection;
 mod container;
+mod debounce;
 mod diagnosis;
 mod discovery;
 mod engine;
+mod events;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
 mod image;
@@ -28,6 +31,7 @@ mod probe;
 mod test_support;
 mod timestamp;
 mod volume;
+mod watch;
 
 pub use crate::address::EngineAddress;
 pub use crate::candidates::{CandidateSource, SocketCandidate};
@@ -39,7 +43,9 @@ pub use crate::container::{
 pub use crate::diagnosis::Diagnosis;
 pub use crate::discovery::{Discovery, discover};
 pub use crate::engine::{EngineInfo, EngineKind};
+pub use crate::events::ListKind;
 pub use crate::image::Image;
 pub use crate::network::Network;
 pub use crate::probe::{Probe, ProbeOutcome};
 pub use crate::volume::Volume;
+pub use crate::watch::WatchEvent;

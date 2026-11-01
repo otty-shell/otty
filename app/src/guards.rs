@@ -299,6 +299,10 @@ fn is_docker_background(event: &DockerEvent) -> bool {
                 | DockerIntent::LogLines { .. }
                 | DockerIntent::LogsFailed { .. }
                 | DockerIntent::InspectLoaded { .. }
+                | DockerIntent::ListChanged { .. }
+                | DockerIntent::EngineReconnected(_)
+                | DockerIntent::EngineUnreachable(_)
+                | DockerIntent::ListLoaded { .. }
         ),
         DockerEvent::Effect(_) => true,
     }
@@ -321,7 +325,9 @@ mod tests {
     use crate::widgets::docker::inspector::{
         InspectTarget, InspectorTab, LogTarget,
     };
-    use crate::widgets::docker::types::{LoadedLists, ResourceKind};
+    use crate::widgets::docker::types::{
+        LoadedList, LoadedLists, ResourceKind,
+    };
     use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::types::Mode;
@@ -438,6 +444,20 @@ mod tests {
                 lists: LoadedLists::failed("x"),
             }),
             AppEvent::Docker(DockerEvent::Effect(DockerEffect::Discover)),
+            docker(DockerIntent::ListChanged {
+                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
+                resource: ResourceKind::Containers,
+            }),
+            docker(DockerIntent::EngineReconnected(
+                otty_docker::EngineAddress::Tcp(String::from("h:1")),
+            )),
+            docker(DockerIntent::EngineUnreachable(
+                otty_docker::EngineAddress::Tcp(String::from("h:1")),
+            )),
+            docker(DockerIntent::ListLoaded {
+                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
+                list: LoadedList::Images(Err(String::from("x"))),
+            }),
         ];
         let address = otty_docker::EngineAddress::Tcp(String::from("h:1"));
         let log_target = LogTarget::new(

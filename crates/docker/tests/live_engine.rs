@@ -5,7 +5,10 @@
 //! For a Podman service on another socket, set
 //! `DOCKER_HOST=unix:///path/to/podman.sock`.
 
-use otty_docker::{Diagnosis, Engine, discover};
+use std::time::{Duration, Instant};
+
+use futures_util::StreamExt;
+use otty_docker::{Diagnosis, Engine, WatchEvent, discover};
 
 #[tokio::test]
 #[ignore = "needs a running Docker or Podman engine"]
@@ -51,4 +54,35 @@ async fn discovery_reaches_a_live_engine_and_lists_its_resources() {
                 .all(|container| !container.id().is_empty())
         );
     }
+}
+
+/// Prints what watching the first reached engine says for 20 seconds. Start
+/// and remove a throwaway container meanwhile, for example
+/// `docker run --rm --name otty-fx-evt busybox:1.37 true`.
+#[tokio::test]
+#[ignore = "needs a running Docker or Podman engine and a change on it"]
+async fn watching_a_live_engine_sees_its_changes() {
+    let discovery = discover().await;
+    let Diagnosis::Engines(engines) = discovery.diagnosis() else {
+        panic!("no engine reached: {:?}", discovery.diagnosis());
+    };
+    let engine = Engine::connect(&engines[0]).expect("connect");
+    let mut watch = Box::pin(engine.watch());
+
+    let mut changes = Vec::new();
+    let limit = tokio::time::sleep(Duration::from_secs(20));
+    tokio::pin!(limit);
+    loop {
+        tokio::select! {
+            () = &mut limit => break,
+            Some(event) = watch.next() => {
+                println!("{:?} {event:?}", Instant::now());
+                if let WatchEvent::Changed(list) = event {
+                    changes.push(list);
+                }
+            },
+        }
+    }
+
+    assert!(!changes.is_empty(), "no change seen in 20 s");
 }

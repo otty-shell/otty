@@ -1,8 +1,8 @@
 use iced::widget::text_editor::Action;
-use otty_docker::{Discovery, EngineAddress, EngineInfo};
+use otty_docker::{Container, Discovery, EngineAddress, EngineInfo};
 
 use super::inspector::{InspectTarget, InspectorTab, LogTarget};
-use super::types::{LoadedLists, Place};
+use super::types::{LoadedList, LoadedLists, Place, ResourceKind};
 
 /// Intent events handled by the Docker widget.
 #[derive(Debug, Clone, PartialEq)]
@@ -55,6 +55,23 @@ pub(crate) enum DockerIntent {
     },
     /// Selection or scroll in the inspect view.
     InspectAction(Action),
+    // Live updates from engine events.
+    /// An engine event changed this list of this engine (the events watch
+    /// sends it at most once per 500 ms per list).
+    ListChanged {
+        engine: EngineAddress,
+        resource: ResourceKind,
+    },
+    /// The events stream of this engine broke and is open again; changes in
+    /// between were missed.
+    EngineReconnected(EngineAddress),
+    /// This engine stopped answering.
+    EngineUnreachable(EngineAddress),
+    /// One list of an engine was loaded again.
+    ListLoaded {
+        engine: EngineAddress,
+        list: LoadedList,
+    },
 }
 
 /// Effect events produced by the Docker reducer. The app runs them off the
@@ -73,6 +90,14 @@ pub(crate) enum DockerEffect {
     LoadInspect {
         engine: EngineInfo,
         target: InspectTarget,
+    },
+    /// Load one list of this engine again. "Used by" of images, volumes and
+    /// networks is read from `containers`; a container load does not use
+    /// it.
+    LoadList {
+        info: EngineInfo,
+        resource: ResourceKind,
+        containers: Vec<Container>,
     },
 }
 

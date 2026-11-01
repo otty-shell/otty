@@ -4,13 +4,13 @@
 
 use iced::Task;
 use iced::futures::future::join3;
-use otty_docker::{Engine, EngineInfo, discover};
+use otty_docker::{Container, Engine, EngineInfo, discover};
 
 use super::AppEvent;
 use crate::app::App;
 use crate::services;
 use crate::widgets::docker::inspector::InspectTarget;
-use crate::widgets::docker::types::{LoadedLists, ResourceKind};
+use crate::widgets::docker::types::{LoadedList, LoadedLists, ResourceKind};
 use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
 
 /// Route a Docker event: reduce its intents and run its effects.
@@ -50,6 +50,20 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
                 intent(DockerIntent::ListsLoaded {
                     engine: engine.clone(),
                     lists,
+                })
+            })
+        },
+        DockerEffect::LoadList {
+            info,
+            resource,
+            containers,
+        } => {
+            let engine = info.address().clone();
+
+            Task::perform(load_list(info, resource, containers), move |list| {
+                intent(DockerIntent::ListLoaded {
+                    engine: engine.clone(),
+                    list,
                 })
             })
         },
@@ -100,6 +114,53 @@ async fn load_inspect(
     };
 
     json.map_err(|err| format!("{err}"))
+}
+
+/// Load one list of one engine again, after an engine event. "Used by" of
+/// images, volumes and networks is read from `containers`.
+async fn load_list(
+    info: EngineInfo,
+    resource: ResourceKind,
+    containers: Vec<Container>,
+) -> LoadedList {
+    let engine = match Engine::connect(&info) {
+        Ok(engine) => engine,
+        Err(err) => return failed_list(resource, format!("{err}")),
+    };
+
+    match resource {
+        ResourceKind::Containers => LoadedList::Containers(
+            engine.containers().await.map_err(|err| format!("{err}")),
+        ),
+        ResourceKind::Images => LoadedList::Images(
+            engine
+                .images(&containers)
+                .await
+                .map_err(|err| format!("{err}")),
+        ),
+        ResourceKind::Volumes => LoadedList::Volumes(
+            engine
+                .volumes(&containers)
+                .await
+                .map_err(|err| format!("{err}")),
+        ),
+        ResourceKind::Networks => LoadedList::Networks(
+            engine
+                .networks(&containers)
+                .await
+                .map_err(|err| format!("{err}")),
+        ),
+    }
+}
+
+/// `resource` failed to load with `message`.
+fn failed_list(resource: ResourceKind, message: String) -> LoadedList {
+    match resource {
+        ResourceKind::Containers => LoadedList::Containers(Err(message)),
+        ResourceKind::Images => LoadedList::Images(Err(message)),
+        ResourceKind::Volumes => LoadedList::Volumes(Err(message)),
+        ResourceKind::Networks => LoadedList::Networks(Err(message)),
+    }
 }
 
 fn intent(intent: DockerIntent) -> AppEvent {
@@ -157,6 +218,17 @@ mod tests {
         });
 
         assert_eq!(inspect.units(), 1);
+    }
+
+    #[test]
+    fn reloading_one_list_runs_one_engine_task() {
+        let reload = handle_effect(DockerEffect::LoadList {
+            info: fixtures::engine(EngineKind::Docker),
+            resource: ResourceKind::Images,
+            containers: Vec::new(),
+        });
+
+        assert_eq!(reload.units(), 1);
     }
 
     #[test]

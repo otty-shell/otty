@@ -84,3 +84,17 @@ pub(crate) fn write_response<S: Write>(
     );
     let _ = stream.write_all(response.as_bytes());
 }
+
+/// Start a streamed answer, as the engine does for `/events`: no length, the
+/// body runs until the connection closes. Send the lines with
+/// [`write_stream_line`].
+pub(crate) fn write_stream_head<S: Write>(stream: &mut S) {
+    let head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n";
+    let _ = stream.write_all(head.as_bytes());
+}
+
+/// Send one JSON line of a streamed answer.
+pub(crate) fn write_stream_line<S: Write>(stream: &mut S, line: &str) {
+    let _ = stream.write_all(format!("{line}\n").as_bytes());
+    let _ = stream.flush();
+}

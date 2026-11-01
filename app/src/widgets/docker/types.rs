@@ -126,6 +126,15 @@ impl LoadedLists {
     }
 }
 
+/// One list of an engine as a reload returned it, or the engine's message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LoadedList {
+    Containers(Result<Vec<Container>, String>),
+    Images(Result<Vec<Image>, String>),
+    Volumes(Result<Vec<Volume>, String>),
+    Networks(Result<Vec<Network>, String>),
+}
+
 /// Return the containers whose name contains `filter` and, when `project`
 /// is set, that belong to that Compose project.
 pub(crate) fn shown_containers<'a>(
