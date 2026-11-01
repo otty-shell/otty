@@ -11,6 +11,8 @@ use crate::widgets::terminal_workspace::{
     TerminalWorkspaceIntent,
 };
 
+/// Route a terminal workspace event: reduce its intents and turn its
+/// effects into events of the other widgets.
 pub(crate) fn handle(
     app: &mut App,
     event: TerminalWorkspaceEvent,

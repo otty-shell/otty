@@ -43,6 +43,7 @@ pub(crate) enum AppEvent {
     ResizeWindow(Direction),
 }
 
+/// Route an app event to the handler of the widget it belongs to.
 pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     match event {
         AppEvent::IcedReady => Task::done(AppEvent::Tabs(TabsEvent::Intent(

@@ -179,6 +179,36 @@ impl<'a, Message: Clone + 'a> From<Menu<Message>> for Element<'a, Message> {
     }
 }
 
+/// Style of a menu item: `surface-hover` and `text-strong` while hovered,
+/// pressed or `active` (keyboard-selected), `text-body` otherwise.
+pub(super) fn item_style(
+    palette: &UiPalette,
+    active: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
+    item_style_with(palette, active, false)
+}
+
+/// Builds a heading row (`.ot-menu-label`). The label may be borrowed, so
+/// a caller that redraws every frame does not copy it.
+pub(super) fn heading_view<'a, Message: 'a>(
+    label: impl text::IntoFragment<'a>,
+    palette: &UiPalette,
+) -> Element<'a, Message> {
+    container(
+        text(label)
+            .size(HEADING_TEXT_SIZE)
+            .font(fonts::UI)
+            .color(palette.text_muted()),
+    )
+    .padding(Padding {
+        top: 6.0,
+        right: ITEM_PADDING_X,
+        bottom: 4.0,
+        left: ITEM_PADDING_X,
+    })
+    .into()
+}
+
 /// Builds one pressable row.
 fn item_view<'a, Message: Clone + 'a>(
     item: MenuItem<Message>,
@@ -204,15 +234,6 @@ fn item_view<'a, Message: Clone + 'a>(
         .on_press_maybe(item.on_press)
         .style(item_style_with(palette, item.active, item.danger))
         .into()
-}
-
-/// Style of a menu item: `surface-hover` and `text-strong` while hovered,
-/// pressed or `active` (keyboard-selected), `text-body` otherwise.
-pub(super) fn item_style(
-    palette: &UiPalette,
-    active: bool,
-) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
-    item_style_with(palette, active, false)
 }
 
 /// Like [`item_style`]; a `danger` item uses `text-danger` on `surface-danger`
@@ -273,26 +294,5 @@ fn separator_view<'a, Message: 'a>(
         },
     ))
     .padding(SEPARATOR_MARGIN)
-    .into()
-}
-
-/// Builds a heading row (`.ot-menu-label`). The label may be borrowed, so
-/// a caller that redraws every frame does not copy it.
-pub(super) fn heading_view<'a, Message: 'a>(
-    label: impl text::IntoFragment<'a>,
-    palette: &UiPalette,
-) -> Element<'a, Message> {
-    container(
-        text(label)
-            .size(HEADING_TEXT_SIZE)
-            .font(fonts::UI)
-            .color(palette.text_muted()),
-    )
-    .padding(Padding {
-        top: 6.0,
-        right: ITEM_PADDING_X,
-        bottom: 4.0,
-        left: ITEM_PADDING_X,
-    })
     .into()
 }

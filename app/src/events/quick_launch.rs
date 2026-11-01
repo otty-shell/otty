@@ -10,6 +10,7 @@ use crate::widgets::quick_launch::{
 use crate::widgets::tabs::types::TabMachine;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
+/// Route a launches event: reduce its intents and run its effects.
 pub(crate) fn handle(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
     match event {
         QuickLaunchEvent::Intent(event) => handle_intent(app, event),

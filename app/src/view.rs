@@ -243,7 +243,7 @@ fn view_left_panel<'a>(
                 is_open: sidebar_vm.is_sessions_open,
                 is_menu_open: sidebar_vm
                     .open_header_menu
-                    .is_some_and(|open| open.menu == HeaderMenu::Sessions),
+                    .is_some_and(|open| open.menu() == HeaderMenu::Sessions),
                 on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
                     SidebarIntent::ToggleSessions,
                 )),
@@ -261,9 +261,9 @@ fn view_left_panel<'a>(
                     vm: launches_vm,
                     theme: theme_props,
                     is_open: sidebar_vm.is_launches_open,
-                    is_menu_open: sidebar_vm
-                        .open_header_menu
-                        .is_some_and(|open| open.menu == HeaderMenu::Launches),
+                    is_menu_open: sidebar_vm.open_header_menu.is_some_and(
+                        |open| open.menu() == HeaderMenu::Launches,
+                    ),
                     on_toggle: AppEvent::Sidebar(SidebarEvent::Intent(
                         SidebarIntent::ToggleLaunches,
                     )),
@@ -441,13 +441,13 @@ fn view_header_menu_overlay<'a>(
     open: OpenHeaderMenu,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let (menu, menu_width, menu_height) = match open.menu {
+    let (menu, menu_width, menu_height) = match open.menu() {
         HeaderMenu::Sessions => view_new_session_menu(app, theme_props),
         HeaderMenu::Launches => view_new_launch_menu(theme_props),
     };
 
     let anchor = anchor_position(
-        open.cursor,
+        open.cursor(),
         app.state.screen_size,
         menu_width,
         menu_height,

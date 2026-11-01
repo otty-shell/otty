@@ -545,10 +545,7 @@ mod tests {
         );
         assert_eq!(
             widget.open_header_menu(),
-            Some(OpenHeaderMenu {
-                menu: HeaderMenu::Sessions,
-                cursor,
-            })
+            Some(OpenHeaderMenu::new(HeaderMenu::Sessions, cursor))
         );
         assert!(open.is_empty());
 
@@ -573,10 +570,7 @@ mod tests {
 
         assert_eq!(
             widget.vm().open_header_menu,
-            Some(OpenHeaderMenu {
-                menu: HeaderMenu::Launches,
-                cursor,
-            })
+            Some(OpenHeaderMenu::new(HeaderMenu::Launches, cursor))
         );
         assert!(open.is_empty());
     }
@@ -595,7 +589,7 @@ mod tests {
         );
 
         let open = widget.open_header_menu().expect("a menu should be open");
-        assert_eq!(open.menu, HeaderMenu::Launches);
+        assert_eq!(open.menu(), HeaderMenu::Launches);
     }
 
     #[test]

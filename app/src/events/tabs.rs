@@ -15,6 +15,8 @@ use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
+/// Route a tabs event: reduce its intents with the user's shell and run
+/// its effects.
 pub(crate) fn handle(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
     match event {
         TabsEvent::Intent(event) => {

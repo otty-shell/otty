@@ -18,6 +18,8 @@ use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
+/// Route a command palette event: reduce its intents and run the entry
+/// it chose.
 pub(crate) fn handle(app: &mut App, event: PaletteEvent) -> Task<AppEvent> {
     match event {
         PaletteEvent::Intent(intent) => handle_intent(app, intent),

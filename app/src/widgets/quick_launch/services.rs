@@ -75,6 +75,91 @@ pub(crate) async fn prepare_quick_launch_setup(
     }))
 }
 
+/// Build a domain quick launch command from editor draft state.
+pub(crate) fn build_command(
+    editor: &WizardEditorState,
+) -> Result<QuickLaunch, QuickLaunchWizardError> {
+    let title = editor.title().trim();
+    if title.is_empty() {
+        return Err(QuickLaunchWizardError::TitleRequired);
+    }
+
+    let spec = match editor.command_type() {
+        QuickLaunchType::Custom => {
+            let Some(custom) = editor.custom() else {
+                return Err(QuickLaunchWizardError::MissingCustomDraft);
+            };
+            let program = custom.program().trim();
+            if program.is_empty() {
+                return Err(QuickLaunchWizardError::ProgramRequired);
+            }
+
+            let env = custom
+                .env()
+                .iter()
+                .filter_map(|(key, value)| {
+                    let key = key.trim();
+                    if key.is_empty() {
+                        return None;
+                    }
+                    Some(EnvVar {
+                        key: key.to_string(),
+                        value: value.clone(),
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            let working_directory = custom.working_directory().trim();
+
+            CommandSpec::Custom {
+                custom: CustomCommand {
+                    program: program.to_string(),
+                    args: custom.args().to_vec(),
+                    env,
+                    working_directory: if working_directory.is_empty() {
+                        None
+                    } else {
+                        Some(working_directory.to_string())
+                    },
+                },
+            }
+        },
+        QuickLaunchType::Ssh => {
+            let Some(ssh) = editor.ssh() else {
+                return Err(QuickLaunchWizardError::MissingSshDraft);
+            };
+            let host = ssh.host().trim();
+            if host.is_empty() {
+                return Err(QuickLaunchWizardError::HostRequired);
+            }
+
+            let port = ssh.port().trim();
+            let port = if port.is_empty() {
+                SSH_DEFAULT_PORT
+            } else {
+                port.parse::<u16>()
+                    .map_err(|_| QuickLaunchWizardError::InvalidPort)?
+            };
+
+            CommandSpec::Ssh {
+                ssh: SshCommand {
+                    host: host.to_string(),
+                    port,
+                    user: optional_string(ssh.user()),
+                    identity_file: optional_string(ssh.identity_file()),
+                    extra_args: ssh.extra_args().to_vec(),
+                },
+            }
+        },
+    };
+
+    Ok(QuickLaunch {
+        title: title.to_string(),
+        spec,
+        exit_behavior: editor.exit_behavior(),
+    })
+}
+
 /// Validate a quick launch command before execution.
 fn validate_command(command: &QuickLaunch) -> Result<(), QuickLaunchError> {
     match command.spec() {
@@ -415,91 +500,6 @@ fn expand_home_prefix(path: &str, home: Option<&str>) -> String {
     }
 
     path.to_string()
-}
-
-/// Build a domain quick launch command from editor draft state.
-pub(crate) fn build_command(
-    editor: &WizardEditorState,
-) -> Result<QuickLaunch, QuickLaunchWizardError> {
-    let title = editor.title().trim();
-    if title.is_empty() {
-        return Err(QuickLaunchWizardError::TitleRequired);
-    }
-
-    let spec = match editor.command_type() {
-        QuickLaunchType::Custom => {
-            let Some(custom) = editor.custom() else {
-                return Err(QuickLaunchWizardError::MissingCustomDraft);
-            };
-            let program = custom.program().trim();
-            if program.is_empty() {
-                return Err(QuickLaunchWizardError::ProgramRequired);
-            }
-
-            let env = custom
-                .env()
-                .iter()
-                .filter_map(|(key, value)| {
-                    let key = key.trim();
-                    if key.is_empty() {
-                        return None;
-                    }
-                    Some(EnvVar {
-                        key: key.to_string(),
-                        value: value.clone(),
-                    })
-                })
-                .collect::<Vec<_>>();
-
-            let working_directory = custom.working_directory().trim();
-
-            CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: program.to_string(),
-                    args: custom.args().to_vec(),
-                    env,
-                    working_directory: if working_directory.is_empty() {
-                        None
-                    } else {
-                        Some(working_directory.to_string())
-                    },
-                },
-            }
-        },
-        QuickLaunchType::Ssh => {
-            let Some(ssh) = editor.ssh() else {
-                return Err(QuickLaunchWizardError::MissingSshDraft);
-            };
-            let host = ssh.host().trim();
-            if host.is_empty() {
-                return Err(QuickLaunchWizardError::HostRequired);
-            }
-
-            let port = ssh.port().trim();
-            let port = if port.is_empty() {
-                SSH_DEFAULT_PORT
-            } else {
-                port.parse::<u16>()
-                    .map_err(|_| QuickLaunchWizardError::InvalidPort)?
-            };
-
-            CommandSpec::Ssh {
-                ssh: SshCommand {
-                    host: host.to_string(),
-                    port,
-                    user: optional_string(ssh.user()),
-                    identity_file: optional_string(ssh.identity_file()),
-                    extra_args: ssh.extra_args().to_vec(),
-                },
-            }
-        },
-    };
-
-    Ok(QuickLaunch {
-        title: title.to_string(),
-        spec,
-        exit_behavior: editor.exit_behavior(),
-    })
 }
 
 fn optional_string(value: &str) -> Option<String> {

@@ -47,6 +47,7 @@ impl SidebarState {
         self.right.is_open() && !self.focus_mode
     }
 
+    /// Whether focus mode hides both panels.
     pub(super) fn is_focus_mode(&self) -> bool {
         self.focus_mode
     }
@@ -57,10 +58,12 @@ impl SidebarState {
         self.focus_note.map(|note| note.opacity())
     }
 
+    /// Whether the Sessions section of the left panel is open.
     pub(super) fn is_sessions_open(&self) -> bool {
         self.sessions_open
     }
 
+    /// Whether the Launches section of the left panel is open.
     pub(super) fn is_launches_open(&self) -> bool {
         self.launches_open
     }
@@ -83,10 +86,12 @@ impl SidebarState {
         }
     }
 
+    /// The `left | main | right` pane grid the view draws.
     pub(super) fn panes(&self) -> &pane_grid::State<SidebarPane> {
         &self.panes
     }
 
+    /// Last cursor position over the workspace; header menus open here.
     pub(super) fn cursor(&self) -> Point {
         self.cursor
     }
@@ -96,6 +101,8 @@ impl SidebarState {
         self.header_menu
     }
 
+    /// Whether a panel edge was dragged a moment ago, so hover effects
+    /// wait until the drag settles.
     pub(super) fn is_resizing(&self) -> bool {
         self.last_resize_at
             .map(|last| {
@@ -171,6 +178,7 @@ impl SidebarState {
         self.launches_open = !self.launches_open;
     }
 
+    /// Remember the cursor position over the workspace.
     pub(super) fn update_cursor(&mut self, position: Point) {
         self.cursor = position;
     }
@@ -178,16 +186,15 @@ impl SidebarState {
     /// Open a header menu at the cursor. Only one can be open, so this
     /// replaces any other.
     pub(super) fn open_header_menu(&mut self, menu: HeaderMenu) {
-        self.header_menu = Some(OpenHeaderMenu {
-            menu,
-            cursor: self.cursor,
-        });
+        self.header_menu = Some(OpenHeaderMenu::new(menu, self.cursor));
     }
 
+    /// Close the open header menu, if any.
     pub(super) fn dismiss_header_menu(&mut self) {
         self.header_menu = None;
     }
 
+    /// Note that a panel edge is being dragged now.
     pub(super) fn mark_resizing(&mut self) {
         self.last_resize_at = Some(Instant::now());
     }
@@ -396,10 +403,7 @@ mod tests {
 
         assert_eq!(
             state.header_menu(),
-            Some(OpenHeaderMenu {
-                menu: HeaderMenu::Launches,
-                cursor,
-            })
+            Some(OpenHeaderMenu::new(HeaderMenu::Launches, cursor))
         );
     }
 }

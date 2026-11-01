@@ -249,7 +249,7 @@ fn left_panel<'a>(
     let is_menu_open = move |menu| {
         sidebar_vm
             .open_header_menu
-            .is_some_and(|open| open.menu == menu)
+            .is_some_and(|open| open.menu() == menu)
     };
 
     left_panel::view(left_panel::LeftPanelProps {

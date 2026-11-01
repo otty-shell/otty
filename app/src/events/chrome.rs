@@ -7,6 +7,8 @@ use crate::widgets::palette::{PaletteEvent, PaletteIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
+/// Route a chrome event: reduce its intents and turn its effects into
+/// events of the widgets that own them.
 pub(crate) fn handle(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
     match event {
         ChromeEvent::Intent(event) => {

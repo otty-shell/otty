@@ -18,6 +18,23 @@ pub(crate) enum HeaderMenu {
 /// A header menu that is open, with the point where it was opened.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct OpenHeaderMenu {
-    pub(crate) menu: HeaderMenu,
-    pub(crate) cursor: iced::Point,
+    menu: HeaderMenu,
+    cursor: iced::Point,
+}
+
+impl OpenHeaderMenu {
+    /// Return which header menu is open.
+    pub(crate) fn menu(&self) -> HeaderMenu {
+        self.menu
+    }
+
+    /// Return the point where the menu was opened.
+    pub(crate) fn cursor(&self) -> iced::Point {
+        self.cursor
+    }
+
+    /// Open `menu` at `cursor`.
+    pub(crate) fn new(menu: HeaderMenu, cursor: iced::Point) -> Self {
+        Self { menu, cursor }
+    }
 }
