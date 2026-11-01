@@ -13,10 +13,6 @@ pub(crate) const FOLDER_CLOSED: &[u8] =
     include_bytes!("../../assets/svg/folder-closed.svg");
 pub(crate) const FOLDER_PLUS: &[u8] =
     include_bytes!("../../assets/svg/folder-plus.svg");
-/// New launch button of the Launches section: a page with a plus, drawn
-/// like `FOLDER_PLUS` so the two header buttons line up.
-pub(crate) const FILE_PLUS: &[u8] =
-    include_bytes!("../../assets/svg/file-plus.svg");
 pub(crate) const FILE: &[u8] = include_bytes!("../../assets/svg/file.svg");
 pub(crate) const PLAY: &[u8] = include_bytes!("../../assets/svg/play.svg");
 pub(crate) const SETTINGS: &[u8] =
