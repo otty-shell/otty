@@ -61,7 +61,6 @@
     "launch_running": "运行中",
     "no_active_folder": "无活动文件夹",
     "files_title": "文件",
-    "tpl_files_follows": "跟随 {shell}",
     "status_pane_one": "1 个窗格",
     "tpl_status_panes": "{count} 个窗格",
     "status_session_one": "1 个会话",

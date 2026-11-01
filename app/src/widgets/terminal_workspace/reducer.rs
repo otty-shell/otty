@@ -237,14 +237,12 @@ fn reduce_open_tab(
         terminal_to_tab.insert(t_id, tab_id);
     }
 
-    let title = terminal_tab.title().to_string();
+    let title_effect = title_changed(tab_id, &terminal_tab);
     state.insert_tab(tab_id, terminal_tab);
 
     let mut tasks: Vec<Task<TerminalWorkspaceEvent>> = vec![
         TerminalView::focus(widget_id),
-        Task::done(TerminalWorkspaceEvent::Effect(
-            TerminalWorkspaceEffect::TitleChanged { tab_id, title },
-        )),
+        Task::done(TerminalWorkspaceEvent::Effect(title_effect)),
     ];
     if sync_explorer {
         tasks.push(Task::done(TerminalWorkspaceEvent::Effect(
@@ -280,12 +278,6 @@ fn reduce_widget_event(
         );
     }
 
-    let refresh_titles = matches!(
-        &event,
-        otty_ui_term::Event::TitleChanged { .. }
-            | otty_ui_term::Event::ResetTitle { .. }
-    );
-
     // A pane closes when its process exits, or on a key press once it
     // has exited and was kept open.
     let may_close_pane = match &event {
@@ -305,23 +297,7 @@ fn reduce_widget_event(
         reindex_terminal_tabs(state, terminal_to_tab);
     }
 
-    if !refresh_titles {
-        return update;
-    }
-
-    let title_task = state
-        .tab(tab_id)
-        .map(|tab| {
-            Task::done(TerminalWorkspaceEvent::Effect(
-                TerminalWorkspaceEffect::TitleChanged {
-                    tab_id,
-                    title: tab.title().to_string(),
-                },
-            ))
-        })
-        .unwrap_or_else(Task::none);
-
-    Task::batch(vec![update, title_task])
+    update
 }
 
 fn reduce_focus_active(
@@ -574,20 +550,29 @@ fn with_terminal_tab<F>(
 where
     F: FnOnce(&mut TerminalTabState) -> StateCommand,
 {
-    let (cmd, title) = {
+    let (cmd, title_effect) = {
         let Some(tab) = state.tab_mut(tab_id) else {
             return Task::none();
         };
         let cmd = f(tab);
-        let title = tab.title().to_string();
-        (cmd, title)
+        (cmd, title_changed(tab_id, tab))
     };
 
     let command_task = execute_command(cmd);
-    let title_task = Task::done(TerminalWorkspaceEvent::Effect(
-        TerminalWorkspaceEffect::TitleChanged { tab_id, title },
-    ));
+    let title_task = Task::done(TerminalWorkspaceEvent::Effect(title_effect));
     Task::batch(vec![command_task, title_task])
+}
+
+/// Report the tab's current title and folder name to the tabs widget.
+fn title_changed(
+    tab_id: u64,
+    tab: &TerminalTabState,
+) -> TerminalWorkspaceEffect {
+    TerminalWorkspaceEffect::TitleChanged {
+        tab_id,
+        title: tab.title().to_string(),
+        folder: tab.folder().map(str::to_string),
+    }
 }
 
 fn execute_command(command: StateCommand) -> Task<TerminalWorkspaceEvent> {

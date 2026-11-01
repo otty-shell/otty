@@ -27,7 +27,7 @@ fn handle_intent(app: &mut App, event: ExplorerIntent) -> Task<AppEvent> {
         active_shell_cwd: app
             .widgets
             .terminal_workspace
-            .shell_cwd_for_active_tab(active_tab_id),
+            .local_cwd_for_active_tab(active_tab_id),
     };
 
     app.widgets

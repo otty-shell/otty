@@ -61,7 +61,6 @@
     "launch_running": "работает",
     "no_active_folder": "Нет активной папки",
     "files_title": "Файлы",
-    "tpl_files_follows": "следует за {shell}",
     "status_pane_one": "1 панель",
     "tpl_status_panes": "Панелей: {count}",
     "status_session_one": "1 сеанс",

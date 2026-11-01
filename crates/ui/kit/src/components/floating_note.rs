@@ -63,6 +63,13 @@ impl FloatingNote {
         self
     }
 
+    /// Fades the whole note to `opacity`, from 0.0 (invisible) to 1.0 (fully
+    /// shown).
+    pub fn opacity(mut self, opacity: f32) -> Self {
+        self.palette = self.palette.with_opacity(opacity);
+        self
+    }
+
     /// Adds a shortcut hint.
     pub fn kbd(mut self, shortcut: impl Into<String>) -> Self {
         self.parts.push(Part::Key(shortcut.into()));

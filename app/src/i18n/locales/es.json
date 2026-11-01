@@ -61,7 +61,6 @@
     "launch_running": "activo",
     "no_active_folder": "Ninguna carpeta activa",
     "files_title": "Archivos",
-    "tpl_files_follows": "sigue a {shell}",
     "status_pane_one": "1 panel",
     "tpl_status_panes": "{count} paneles",
     "status_session_one": "1 sesión",

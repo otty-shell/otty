@@ -136,8 +136,6 @@ pub(crate) enum Key {
     NoActiveFolder,
     /// Title of the right panel files section.
     FilesTitle,
-    /// Explorer line naming the followed shell. Placeholder: `{shell}`.
-    TplFilesFollows,
 
     // Status bar.
     /// Status bar text for exactly one pane.
@@ -366,7 +364,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 159] = [
+    pub(super) const ALL: [Self; 158] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -422,7 +420,6 @@ impl Key {
         Self::LaunchRunning,
         Self::NoActiveFolder,
         Self::FilesTitle,
-        Self::TplFilesFollows,
         Self::StatusPaneOne,
         Self::TplStatusPanes,
         Self::StatusSessionOne,

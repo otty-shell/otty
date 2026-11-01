@@ -51,7 +51,7 @@ use crate::widgets::sidebar::types::HeaderMenu;
 use crate::widgets::tabs::model::TabsViewModel;
 use crate::widgets::tabs::types::{TabContent, TabItem, TabMachine};
 use crate::widgets::tabs::view::{empty_state, new_session_menu, session_list};
-use crate::widgets::terminal_workspace::model::PaneHeaderViewModel;
+use crate::widgets::terminal_workspace::model::PaneLabel;
 use crate::widgets::terminal_workspace::view::pane_context_menu;
 
 /// Window size of every screenshot, as in the design.
@@ -88,7 +88,7 @@ struct Fixture {
     no_tabs: BTreeMap<u64, TabItem>,
     launches: QuickLaunchFile,
     files: Vec<FileNode>,
-    pane: PaneHeaderViewModel,
+    pane: PaneLabel,
     settings: SettingsWidget,
     new_launch: WizardEditorState,
     secret: SecretPromptState,
@@ -155,11 +155,14 @@ fn screenshots_hovered_session() {
     let nvim_y = zsh_y + size::ROW;
     // Middle of the close cross: section padding 8, then the 24px button.
     let cross_x = LEFT_WIDTH - 8.0 - size::CONTROL_SM / 2.0;
+    // Left part of the title search, away from its shortcut hint.
+    let title_search = Point::new(500.0, size::TITLEBAR / 2.0);
 
     for (screen, cursor) in [
         ("session-hover", Point::new(80.0, nvim_y)),
         ("session-close-hover", Point::new(cross_x, nvim_y)),
         ("session-close-hover-selected", Point::new(cross_x, zsh_y)),
+        ("title-search-hover", title_search),
     ] {
         shoot_at(screen, Some(cursor), |fx, theme| {
             window(
@@ -183,7 +186,7 @@ fn screenshots_focus_mode() {
             focus_mode: true,
             ..Frame::terminal()
         };
-        let note = focus_note::view(true, theme).expect("focus note");
+        let note = focus_note::view(Some(1.0), theme).expect("focus note");
 
         window(fx, theme, frame, terminal_main(fx, theme), vec![note])
     });
@@ -476,11 +479,10 @@ impl Fixture {
             no_tabs: BTreeMap::new(),
             launches,
             files: files(),
-            pane: PaneHeaderViewModel::new(
+            pane: PaneLabel::new(
                 "zsh",
                 Some(Path::new("/home/ann/otty")),
                 Some(Path::new("/home/ann")),
-                "fedora",
             ),
             settings: SettingsWidget::new(),
             new_launch: WizardEditorState::new(Vec::new()),
@@ -621,7 +623,6 @@ fn window<'a>(
                         selected_path: None,
                         hovered_path: None,
                     },
-                    shell_name: "zsh",
                     theme,
                 })
                 .map(|_| ()),
@@ -721,8 +722,7 @@ fn terminal_main<'a>(fx: &'a Fixture, theme: ThemeProps<'a>) -> Screen<'a> {
     let palette = theme.theme.ui();
 
     let pane = |program: &str, folder: &str, is_focused: bool| {
-        let chip =
-            Chip::new(fx.pane.machine(), palette).target(TargetKind::Local);
+        let chip = Chip::new("fedora", palette).target(TargetKind::Local);
         let header = PaneHeader::new(program, palette)
             .folder(folder)
             .focused(is_focused)
@@ -753,9 +753,13 @@ fn terminal_main<'a>(fx: &'a Fixture, theme: ThemeProps<'a>) -> Screen<'a> {
     };
 
     let panes = row![
-        pane("zsh", "~/otty", true),
+        pane(
+            fx.pane.program(),
+            fx.pane.folder_name().unwrap_or("~"),
+            true
+        ),
         divider::vertical(palette),
-        pane("cargo", "~/otty/app", false),
+        pane("cargo", "app", false),
     ];
 
     panes.width(Length::Fill).height(Length::Fill).into()

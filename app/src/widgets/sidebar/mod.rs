@@ -1,4 +1,5 @@
 mod event;
+mod focus_note;
 mod model;
 mod reducer;
 mod side_panel;
@@ -39,6 +40,7 @@ impl SidebarWidget {
             is_left_open: self.state.is_left_open(),
             is_right_open: self.state.is_right_open(),
             is_focus_mode: self.state.is_focus_mode(),
+            focus_note_opacity: self.state.focus_note_opacity(),
             is_sessions_open: self.state.is_sessions_open(),
             is_launches_open: self.state.is_launches_open(),
             open_header_menu: self.state.header_menu(),
@@ -63,6 +65,12 @@ impl SidebarWidget {
     /// Return whether a header menu is currently open.
     pub(crate) fn has_header_menu_open(&self) -> bool {
         self.state.header_menu().is_some()
+    }
+
+    /// Return whether the focus mode note is on screen, so frames must keep
+    /// coming until it fades out.
+    pub(crate) fn is_focus_note_shown(&self) -> bool {
+        self.state.focus_note_opacity().is_some()
     }
 
     /// Return whether the user is actively resizing a side panel.

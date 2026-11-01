@@ -16,8 +16,12 @@ pub(crate) fn reduce(
     match event {
         TabsIntent::ActivateTab { tab_id } => activate(state, tab_id),
         TabsIntent::CloseTab { tab_id } => close(state, tab_id),
-        TabsIntent::SetTitle { tab_id, title } => {
-            state.set_title(tab_id, title);
+        TabsIntent::SetTitle {
+            tab_id,
+            title,
+            folder,
+        } => {
+            state.set_title(tab_id, title, folder);
             Task::none()
         },
         TabsIntent::RefreshSettingsTitle { title } => {
@@ -465,11 +469,13 @@ mod tests {
             TabsIntent::SetTitle {
                 tab_id,
                 title: String::from("new"),
+                folder: Some(String::from("otty")),
             },
         );
 
         let tab = state.active_tab().unwrap();
         assert_eq!(tab.title(), "new");
+        assert_eq!(tab.folder(), Some("otty"));
     }
 
     #[test]

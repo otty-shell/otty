@@ -165,6 +165,7 @@ mod tests {
         SessionViewModel {
             tab_id,
             title,
+            folder: None,
             state: None,
             is_active,
         }

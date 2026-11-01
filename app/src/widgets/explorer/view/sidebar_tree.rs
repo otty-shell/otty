@@ -20,8 +20,6 @@ use crate::theme::ThemeProps;
 #[derive(Debug, Clone)]
 pub(crate) struct SidebarTreeProps<'a> {
     pub(crate) vm: ExplorerTreeViewModel<'a>,
-    /// Name of the shell the active tab runs; shown as "follows <shell>".
-    pub(crate) shell_name: &'a str,
     pub(crate) theme: ThemeProps<'a>,
 }
 
@@ -30,7 +28,7 @@ pub(crate) fn view(
     props: SidebarTreeProps<'_>,
 ) -> Element<'_, ExplorerIntent, iced::Theme, iced::Renderer> {
     let ui = props.theme.theme.ui();
-    let folder_line = folder_line(props.vm.root_label, props.shell_name, ui);
+    let folder_line = folder_line(props.vm.root_label, ui);
     let tree_list = explorer_tree(&props.vm, ui);
 
     let body = column![folder_line, tree_list]
@@ -44,30 +42,24 @@ pub(crate) fn view(
         .into()
 }
 
-/// Render the muted line: machine dot, folder in mono, followed shell.
+/// Render the muted line: machine dot and folder name in mono.
 fn folder_line<'a>(
     root_label: Option<&'a str>,
-    shell_name: &str,
     palette: &UiPalette,
 ) -> Element<'a, ExplorerIntent, iced::Theme, iced::Renderer> {
     let style = typography::SMALL;
     let folder = root_label.unwrap_or(i18n::t(Key::NoActiveFolder));
 
-    // The panel follows shell tabs only, and shell tabs always run on this
-    // computer (SSH launches open command tabs), so the folder is local.
+    // The panel follows only tabs that run on this computer (shells and
+    // local launches, not SSH), so the folder is local.
     let dot = target_dot(TargetKind::Local, palette);
     let folder = text(folder)
         .size(style.size())
         .font(fonts::MONO)
         .color(palette.text_body())
         .wrapping(Wrapping::None);
-    let follows = text(i18n::files_follows(shell_name))
-        .size(style.size())
-        .font(fonts::UI)
-        .color(palette.text_muted())
-        .wrapping(Wrapping::None);
 
-    row![dot, folder, follows]
+    row![dot, folder]
         .spacing(spacing::SPACE_2)
         .align_y(Alignment::Center)
         .width(Length::Fill)
@@ -145,20 +137,19 @@ mod tests {
                 selected_path: None,
                 hovered_path: None,
             },
-            shell_name: "zsh",
             theme: ThemeProps::new(themes.current()),
         }
     }
 
     #[test]
-    fn given_open_folder_when_panel_drawn_then_it_shows_title_folder_and_shell()
+    fn given_open_folder_when_panel_drawn_then_it_shows_title_and_folder_only()
     {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(props(&themes, &[])));
 
         assert!(ui.find("Files").is_ok());
         assert!(ui.find("otty").is_ok());
-        assert!(ui.find("follows zsh").is_ok());
+        assert!(ui.find("follows zsh").is_err());
     }
 
     #[test]

@@ -26,6 +26,8 @@ pub(crate) enum SidebarIntent {
     },
     /// A panel edge was dragged; the split tells which side.
     Resized(iced::widget::pane_grid::ResizeEvent),
+    /// A new frame was drawn while the focus mode note is shown.
+    FocusNoteFrame(iced::time::Instant),
 }
 
 /// Effect events produced by the sidebar reducer.

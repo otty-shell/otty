@@ -51,6 +51,7 @@ impl ShellSession {
 /// A terminal entry stored per pane.
 pub(crate) struct TerminalEntry {
     pub(super) terminal: Terminal,
+    /// Name the pane opened with: the shell or launch name.
     pub(super) title: String,
     /// Set once the process exited and the pane was kept open.
     pub(super) exit_status: Option<ExitStatus>,
@@ -62,7 +63,7 @@ impl TerminalEntry {
         &self.terminal
     }
 
-    /// Return the current title of this terminal.
+    /// Return the name the pane opened with: the shell or launch name.
     pub(crate) fn title(&self) -> &str {
         &self.title
     }

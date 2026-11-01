@@ -13,9 +13,11 @@ pub(crate) enum TabsIntent {
     CloseTab {
         tab_id: u64,
     },
+    /// Name a terminal tab after its focused pane.
     SetTitle {
         tab_id: u64,
         title: String,
+        folder: Option<String>,
     },
     /// Refresh the title of an already-open settings tab.
     RefreshSettingsTitle {

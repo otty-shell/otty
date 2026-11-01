@@ -41,7 +41,8 @@ impl SessionTone {
 
 /// Session row, indented to line up under its [`SessionGroup`] name.
 ///
-/// The title is cut at the row edge: `iced` has no text ellipsis. The close
+/// The title and the muted folder after it are cut at the row edge: `iced`
+/// has no text ellipsis. The close
 /// cross is set with `on_close` and shows only while the pointer is over the
 /// row. The row always keeps room for it, so nothing shifts when it appears.
 ///
@@ -60,13 +61,15 @@ impl SessionTone {
 /// }
 ///
 /// let palette = UiPalette::otty_dark();
-/// let row: Element<'_, Message> = SessionRow::new("claude  Review", &palette)
+/// let row: Element<'_, Message> = SessionRow::new("claude", &palette)
+///     .folder("otty")
 ///     .state("needs you", SessionTone::Waiting)
 ///     .on_press(Message::Open)
 ///     .into();
 /// ```
 pub struct SessionRow<Message> {
     title: String,
+    folder: Option<String>,
     palette: UiPalette,
     is_selected: bool,
     state: Option<(String, SessionTone)>,
@@ -81,6 +84,7 @@ impl<Message> SessionRow<Message> {
     pub fn new(title: impl Into<String>, palette: &UiPalette) -> Self {
         Self {
             title: title.into(),
+            folder: None,
             palette: palette.clone(),
             is_selected: false,
             state: None,
@@ -94,6 +98,12 @@ impl<Message> SessionRow<Message> {
     /// Marks the row as the selected one.
     pub fn selected(mut self, is_selected: bool) -> Self {
         self.is_selected = is_selected;
+        self
+    }
+
+    /// Shows the folder the session works in after the title, muted.
+    pub fn folder(mut self, folder: impl Into<String>) -> Self {
+        self.folder = Some(folder.into());
         self
     }
 
@@ -138,19 +148,29 @@ impl<'a, Message: Clone + 'a> From<SessionRow<Message>>
         let body = typography::BODY;
         let caption = typography::CAPTION;
 
-        let mut content = row![
-            container(
-                text(value.title)
-                    .size(body.size())
-                    .font(fonts::UI)
-                    .wrapping(Wrapping::None),
-            )
-            .width(Length::Fill)
-            .clip(true),
+        let mut label = row![
+            text(value.title)
+                .size(body.size())
+                .font(fonts::UI)
+                .wrapping(Wrapping::None),
         ]
         .spacing(GAP)
-        .height(Length::Fill)
         .align_y(Alignment::Center);
+        if let Some(folder) = value.folder {
+            label = label.push(
+                text(folder)
+                    .size(caption.size())
+                    .font(fonts::MONO)
+                    .color(palette.text_muted())
+                    .wrapping(Wrapping::None),
+            );
+        }
+
+        let mut content =
+            row![container(label).width(Length::Fill).clip(true),]
+                .spacing(GAP)
+                .height(Length::Fill)
+                .align_y(Alignment::Center);
         if let Some((word, tone)) = value.state {
             content = content.push(
                 text(word)
@@ -377,6 +397,25 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::Close]);
+    }
+
+    #[test]
+    fn given_row_with_folder_when_rendered_then_title_and_folder_show() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(
+            container(
+                SessionRow::new("zsh", &palette)
+                    .folder("otty")
+                    .on_press(Message::Open),
+            )
+            .width(260),
+        );
+
+        ui.find("zsh").expect("title should be visible");
+        ui.click("otty").expect("folder should be visible");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Open]);
     }
 
     #[test]

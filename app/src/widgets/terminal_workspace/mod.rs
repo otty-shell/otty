@@ -20,7 +20,7 @@ pub(crate) use reducer::TerminalWorkspaceCtx;
 use state::{TerminalTabState, TerminalWorkspaceState};
 
 use self::model::{
-    PaneHeaderViewModel, TerminalTabViewModel, TerminalWorkspaceViewModel,
+    PaneLabel, TerminalTabViewModel, TerminalWorkspaceViewModel,
 };
 
 /// Terminal workspace widget: manages terminal sessions across tabs.
@@ -96,13 +96,14 @@ impl TerminalWorkspaceWidget {
         self.state.tabs()
     }
 
-    /// Return the active shell tab if it is a shell session.
-    pub(crate) fn active_shell_tab(
+    /// Return the active terminal tab if it runs on this computer: a shell
+    /// or a local launch.
+    pub(crate) fn active_local_tab(
         &self,
         active_tab_id: Option<u64>,
     ) -> Option<&TerminalTabState> {
         let tab_id = active_tab_id?;
-        self.state.tab(tab_id).filter(|tab| tab.is_shell())
+        self.state.tab(tab_id).filter(|tab| tab.runs_locally())
     }
 
     /// Return whether any terminal tab has an open context menu.
@@ -112,34 +113,26 @@ impl TerminalWorkspaceWidget {
             .any(|(_, tab)| tab.context_menu().is_some())
     }
 
-    /// Resolve the active terminal working directory from block metadata.
-    pub(crate) fn shell_cwd_for_active_tab(
+    /// Resolve the working directory of the active local terminal tab from
+    /// block metadata. `None` until its shell reports one.
+    pub(crate) fn local_cwd_for_active_tab(
         &self,
         active_tab_id: Option<u64>,
     ) -> Option<PathBuf> {
-        let tab = self.active_shell_tab(active_tab_id)?;
+        let tab = self.active_local_tab(active_tab_id)?;
         tab.focused_terminal_entry().and_then(|entry| {
             services::terminal_cwd_from_blocks(&entry.terminal().blocks())
         })
     }
 
-    /// Return the header data of the focused pane of a terminal tab.
-    pub(crate) fn focused_pane_header(
+    /// Return the program and folder of the focused pane of a terminal tab.
+    pub(crate) fn focused_pane_label(
         &self,
         tab_id: Option<u64>,
-        machine: &str,
-    ) -> Option<PaneHeaderViewModel> {
+    ) -> Option<PaneLabel> {
         let entry = self.state.tab(tab_id?)?.focused_terminal_entry()?;
 
-        Some(PaneHeaderViewModel::for_entry(entry, machine))
-    }
-
-    /// Return the program (terminal title) of the focused pane of a terminal
-    /// tab.
-    pub(crate) fn focused_program(&self, tab_id: Option<u64>) -> Option<&str> {
-        let entry = self.state.tab(tab_id?)?.focused_terminal_entry()?;
-
-        Some(entry.title())
+        Some(PaneLabel::for_entry(entry))
     }
 
     /// Return the number of panes in a terminal tab.

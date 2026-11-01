@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use iced::Point;
 use iced::widget::pane_grid;
 
+use super::focus_note::FocusNote;
 use super::side_panel::SidePanel;
 use super::types::{HeaderMenu, OpenHeaderMenu, SidebarPane};
 
@@ -21,6 +22,8 @@ pub(super) struct SidebarState {
     left: SidePanel,
     right: SidePanel,
     focus_mode: bool,
+    /// Note about focus mode, shown for a moment after entering it.
+    focus_note: Option<FocusNote>,
     /// Sessions section of the left panel is open. View state, not saved.
     sessions_open: bool,
     /// Launches section of the left panel is open. View state, not saved.
@@ -46,6 +49,12 @@ impl SidebarState {
 
     pub(super) fn is_focus_mode(&self) -> bool {
         self.focus_mode
+    }
+
+    /// How visible the focus mode note is now; `None` once it has faded out
+    /// or outside focus mode.
+    pub(super) fn focus_note_opacity(&self) -> Option<f32> {
+        self.focus_note.map(|note| note.opacity())
     }
 
     pub(super) fn is_sessions_open(&self) -> bool {
@@ -102,6 +111,7 @@ impl SidebarState {
         let show = !self.is_left_open();
 
         self.focus_mode = false;
+        self.focus_note = None;
         if show {
             self.left.open(max_ratio_beside(self.right_ratio()));
         } else {
@@ -118,6 +128,7 @@ impl SidebarState {
         let show = !self.is_right_open();
 
         self.focus_mode = false;
+        self.focus_note = None;
         if show {
             self.right.open(max_ratio_beside(self.left_ratio()));
         } else {
@@ -128,10 +139,26 @@ impl SidebarState {
     }
 
     /// Enter or leave focus mode. Focus mode hides both panels without
-    /// closing them, so leaving it shows what was open before.
+    /// closing them, so leaving it shows what was open before. Entering it
+    /// shows the focus mode note, which fades out on its own.
     pub(super) fn toggle_focus_mode(&mut self) {
         self.focus_mode = !self.focus_mode;
+        self.focus_note =
+            self.focus_mode.then(|| FocusNote::new(Instant::now()));
+
         self.sync_panes();
+    }
+
+    /// Move the focus mode note to the frame at `now`, removing it once it
+    /// has faded out.
+    pub(super) fn advance_focus_note(&mut self, now: Instant) {
+        let Some(note) = self.focus_note.as_mut() else {
+            return;
+        };
+
+        if !note.advance(now) {
+            self.focus_note = None;
+        }
     }
 
     /// Open the Sessions section if it is closed, close it if it is open.
@@ -221,8 +248,9 @@ impl Default for SidebarState {
 
         let mut state = Self {
             left: SidePanel::new(true),
-            right: SidePanel::new(false),
+            right: SidePanel::new(true),
             focus_mode: false,
+            focus_note: None,
             sessions_open: true,
             launches_open: true,
             left_split,
@@ -247,9 +275,11 @@ fn max_ratio_beside(other_ratio: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use iced::Point;
+    use iced::time::{Duration, Instant};
     use iced::widget::pane_grid;
 
     use super::SidebarState;
+    use crate::widgets::sidebar::side_panel::SIDE_PANEL_MIN_RATIO;
     use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu};
 
     /// Ratios of the two splits: (left | rest) and, inside the rest,
@@ -268,32 +298,83 @@ mod tests {
     }
 
     #[test]
-    fn new_sidebar_gives_the_left_panel_a_fifth_and_the_rest_to_main() {
+    fn new_sidebar_opens_both_panels_at_the_minimum_width() {
         let state = SidebarState::default();
 
-        assert_eq!(split_ratios(&state), (0.2, 1.0));
+        // Main gets what the two panels leave, as a share of the area right
+        // of the left panel.
+        let rest = 1.0 - SIDE_PANEL_MIN_RATIO;
+        let expected_main = (rest - SIDE_PANEL_MIN_RATIO) / rest;
+        let (left, main) = split_ratios(&state);
+        assert_eq!(left, SIDE_PANEL_MIN_RATIO);
+        assert!((main - expected_main).abs() < 1e-6);
     }
 
     #[test]
-    fn opened_right_panel_takes_its_share_of_the_area_right_of_the_left() {
+    fn closed_right_panel_gives_main_the_area_right_of_the_left() {
         let mut state = SidebarState::default();
 
         state.toggle_right();
 
-        // Main is 0.6 of the window, that is 0.75 of the 0.8 wide rest.
-        let (left, main) = split_ratios(&state);
-        assert_eq!(left, 0.2);
-        assert!((main - 0.75).abs() < 1e-6);
+        assert_eq!(split_ratios(&state), (SIDE_PANEL_MIN_RATIO, 1.0));
     }
 
     #[test]
     fn focus_mode_gives_the_whole_width_to_main() {
         let mut state = SidebarState::default();
-        state.toggle_right();
 
         state.toggle_focus_mode();
 
         assert_eq!(split_ratios(&state), (0.0, 1.0));
+    }
+
+    #[test]
+    fn entering_focus_mode_shows_the_note_fully() {
+        let mut state = SidebarState::default();
+
+        state.toggle_focus_mode();
+
+        assert_eq!(state.focus_note_opacity(), Some(1.0));
+    }
+
+    #[test]
+    fn leaving_focus_mode_hides_the_note() {
+        let mut state = SidebarState::default();
+        state.toggle_focus_mode();
+
+        state.toggle_focus_mode();
+
+        assert_eq!(state.focus_note_opacity(), None);
+    }
+
+    #[test]
+    fn showing_a_panel_from_focus_mode_hides_the_note() {
+        let mut state = SidebarState::default();
+        state.toggle_focus_mode();
+
+        state.toggle_left();
+
+        assert_eq!(state.focus_note_opacity(), None);
+    }
+
+    #[test]
+    fn note_is_removed_once_it_has_faded_out() {
+        let mut state = SidebarState::default();
+        state.toggle_focus_mode();
+
+        state.advance_focus_note(Instant::now() + Duration::from_secs(10));
+
+        assert!(state.is_focus_mode());
+        assert_eq!(state.focus_note_opacity(), None);
+    }
+
+    #[test]
+    fn frame_outside_focus_mode_shows_no_note() {
+        let mut state = SidebarState::default();
+
+        state.advance_focus_note(Instant::now());
+
+        assert_eq!(state.focus_note_opacity(), None);
     }
 
     #[test]

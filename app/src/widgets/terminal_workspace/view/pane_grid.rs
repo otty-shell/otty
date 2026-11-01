@@ -13,7 +13,7 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 use otty_ui_term::TerminalView;
 
 use super::super::event::TerminalWorkspaceIntent;
-use super::super::model::{PaneHeaderViewModel, TerminalTabViewModel};
+use super::super::model::{PaneLabel, TerminalTabViewModel};
 use super::super::types::TerminalEntry;
 use crate::i18n::{self, Key};
 
@@ -100,13 +100,13 @@ fn view_pane_header<'a>(
     is_focused: bool,
     palette: &UiPalette,
 ) -> Element<'a, TerminalWorkspaceIntent> {
-    let header_text = PaneHeaderViewModel::for_entry(entry, machine);
-    let chip = Chip::new(header_text.machine(), palette).target(machine_target);
+    let label = PaneLabel::for_entry(entry);
+    let chip = Chip::new(machine, palette).target(machine_target);
 
-    let mut header = PaneHeader::new(header_text.program(), palette)
+    let mut header = PaneHeader::new(label.program(), palette)
         .focused(is_focused)
         .trailing(chip);
-    if let Some(folder) = header_text.folder() {
+    if let Some(folder) = label.folder_name() {
         header = header.folder(folder);
     }
 

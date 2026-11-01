@@ -29,6 +29,7 @@ impl<'a> TabsViewModel<'a> {
             let session = SessionViewModel {
                 tab_id,
                 title: tab.title(),
+                folder: tab.folder(),
                 state: SessionState::for_content(tab.content()),
                 is_active: active_tab_id == Some(tab_id),
             };
@@ -68,6 +69,8 @@ pub(crate) struct SessionGroupViewModel<'a> {
 pub(crate) struct SessionViewModel<'a> {
     pub(crate) tab_id: u64,
     pub(crate) title: &'a str,
+    /// Folder name shown muted after the title; `None` without one.
+    pub(crate) folder: Option<&'a str>,
     /// State word shown after the title; `None` for a terminal.
     pub(crate) state: Option<SessionState>,
     pub(crate) is_active: bool,
@@ -158,6 +161,22 @@ mod tests {
         assert_eq!(titles(&vm.groups[0]), vec!["zsh", "claude"]);
         assert_eq!(titles(&vm.groups[1]), vec!["htop", "logs"]);
         assert_eq!(vm.session_count, 4);
+    }
+
+    #[test]
+    fn given_tab_with_folder_when_built_then_its_session_shows_the_folder() {
+        let (id, mut shell) = local_shell(0, "zsh");
+        shell.set_folder(Some(String::from("otty")));
+        let tabs = BTreeMap::from([(id, shell), local_shell(1, "htop")]);
+
+        let vm = TabsViewModel::new(&tabs, None, Some("fedora"));
+
+        let folders: Vec<Option<&str>> = vm.groups[0]
+            .sessions
+            .iter()
+            .map(|session| session.folder)
+            .collect();
+        assert_eq!(folders, vec![Some("otty"), None]);
     }
 
     #[test]
@@ -254,6 +273,7 @@ mod tests {
             vec![SessionViewModel {
                 tab_id: 1,
                 title: "htop",
+                folder: None,
                 state: None,
                 is_active: true,
             }]

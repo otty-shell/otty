@@ -79,11 +79,17 @@ fn handle_effect_event(
                 TabsIntent::OpenErrorTab { title, message },
             ))),
         ]),
-        TerminalWorkspaceEffect::TitleChanged { tab_id, title } => {
-            Task::done(AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::SetTitle { tab_id, title },
-            )))
-        },
+        TerminalWorkspaceEffect::TitleChanged {
+            tab_id,
+            title,
+            folder,
+        } => Task::done(AppEvent::Tabs(TabsEvent::Intent(
+            TabsIntent::SetTitle {
+                tab_id,
+                title,
+                folder,
+            },
+        ))),
         TerminalWorkspaceEffect::SyncExplorer => {
             sync_explorer_from_terminal(app)
         },
@@ -98,7 +104,7 @@ fn sync_explorer_from_terminal(app: &mut App) -> Task<AppEvent> {
     let Some(cwd) = app
         .widgets
         .terminal_workspace
-        .shell_cwd_for_active_tab(active_tab_id)
+        .local_cwd_for_active_tab(active_tab_id)
     else {
         return Task::none();
     };

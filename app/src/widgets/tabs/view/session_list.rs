@@ -159,6 +159,9 @@ fn session_row<'a, Message: Clone + 'a>(
         .on_press(on_intent(TabsIntent::ActivateTab { tab_id }))
         .on_middle_press(on_intent(TabsIntent::CloseTab { tab_id }))
         .on_close(on_intent(TabsIntent::CloseTab { tab_id }));
+    if let Some(folder) = session.folder {
+        row = row.folder(folder);
+    }
     if let Some(state) = session.state {
         let (word, tone) = state_word(state);
         row = row.state(word, tone);

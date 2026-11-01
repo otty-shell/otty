@@ -61,7 +61,6 @@
     "launch_running": "actif",
     "no_active_folder": "Aucun dossier actif",
     "files_title": "Fichiers",
-    "tpl_files_follows": "suit {shell}",
     "status_pane_one": "1 volet",
     "tpl_status_panes": "{count} volets",
     "status_session_one": "1 session",

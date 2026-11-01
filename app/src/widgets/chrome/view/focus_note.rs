@@ -9,20 +9,19 @@ use crate::theme::ThemeProps;
 /// Distance between the top of the main area and the note.
 const NOTE_TOP_GAP: f32 = 12.0;
 
-/// Render the focus mode note at the top center of the main area, or `None`
-/// outside focus mode.
+/// Render the focus mode note at the top center of the main area, faded to
+/// `opacity`, or `None` when the note is not shown.
 ///
 /// The returned layer is full size but has no interactive parts, so mouse
 /// input outside the note still reaches the layers below.
 pub(crate) fn view<'a, Message: 'a>(
-    focus_mode: bool,
+    opacity: Option<f32>,
     theme: ThemeProps<'a>,
 ) -> Option<Element<'a, Message>> {
-    if !focus_mode {
-        return None;
-    }
+    let opacity = opacity?;
 
     let note: Element<'a, Message> = FloatingNote::new(theme.theme.ui())
+        .opacity(opacity)
         .text(i18n::t(Key::WindowFocusMode))
         .muted(i18n::t(Key::FocusNoteHidden))
         .kbd(AppShortcut::FocusMode.label())
@@ -51,16 +50,16 @@ mod tests {
     use crate::theme::ThemeManager;
 
     #[test]
-    fn note_is_hidden_outside_focus_mode() {
+    fn note_is_hidden_without_an_opacity() {
         let themes = ThemeManager::new();
 
-        assert!(view::<()>(false, ThemeProps::new(themes.current())).is_none());
+        assert!(view::<()>(None, ThemeProps::new(themes.current())).is_none());
     }
 
     #[test]
-    fn note_names_the_mode_and_the_shortcut_in_focus_mode() {
+    fn note_names_the_mode_and_the_shortcut_while_shown() {
         let themes = ThemeManager::new();
-        let note = view::<()>(true, ThemeProps::new(themes.current()))
+        let note = view::<()>(Some(0.5), ThemeProps::new(themes.current()))
             .expect("focus mode should show the note");
         let mut ui = simulator(note);
 

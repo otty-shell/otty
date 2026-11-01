@@ -61,7 +61,6 @@
     "launch_running": "執行中",
     "no_active_folder": "無使用中的資料夾",
     "files_title": "檔案",
-    "tpl_files_follows": "跟隨 {shell}",
     "status_pane_one": "1 個窗格",
     "tpl_status_panes": "{count} 個窗格",
     "status_session_one": "1 個工作階段",

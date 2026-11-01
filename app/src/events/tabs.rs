@@ -46,7 +46,7 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
             if let Some(cwd) = app
                 .widgets
                 .terminal_workspace
-                .shell_cwd_for_active_tab(active_tab_id)
+                .local_cwd_for_active_tab(active_tab_id)
             {
                 tasks.push(Task::done(AppEvent::Explorer(
                     ExplorerEvent::Intent(ExplorerIntent::SyncRoot { cwd }),
@@ -81,7 +81,7 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                 && let Some(cwd) = app
                     .widgets
                     .terminal_workspace
-                    .shell_cwd_for_active_tab(Some(active_id))
+                    .local_cwd_for_active_tab(Some(active_id))
             {
                 tasks.push(Task::done(AppEvent::Explorer(
                     ExplorerEvent::Intent(ExplorerIntent::SyncRoot { cwd }),
@@ -136,7 +136,7 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
                 default_title: title,
                 settings,
                 kind: TerminalKind::Command { exit_behavior },
-                sync_explorer: false,
+                sync_explorer: true,
             }),
         )),
         TabsEffect::SettingsTabOpened => Task::done(AppEvent::Settings(
@@ -187,6 +187,7 @@ mod tests {
 
     use super::handle;
     use crate::app::App;
+    use crate::domain::exit_behavior::ExitBehavior;
     use crate::domain::quick_launch::WizardTabInit;
     use crate::events::AppEvent;
     use crate::task_outputs::collect_outputs;
@@ -226,6 +227,12 @@ mod tests {
     /// Open a shell tab and make its terminal report `cwd`, the way shell
     /// integration does after a prompt.
     fn open_shell_tab_in(app: &mut App, cwd: &str) -> u64 {
+        open_tab_in(app, cwd, TerminalKind::Shell)
+    }
+
+    /// Open a local terminal tab of `kind` and make its terminal report
+    /// `cwd`.
+    fn open_tab_in(app: &mut App, cwd: &str, kind: TerminalKind) -> u64 {
         let _ = app.widgets.tabs.reduce(TabsIntent::OpenTerminalTab {
             title: String::from("sh"),
         });
@@ -241,7 +248,7 @@ mod tests {
                 tab_id,
                 default_title: String::from("sh"),
                 settings: Box::new(shell_settings()),
-                kind: TerminalKind::Shell,
+                kind,
                 sync_explorer: false,
             },
             &ctx,
@@ -328,6 +335,30 @@ mod tests {
                 TerminalWorkspaceIntent::SyncSelection { tab_id }
             )) if *tab_id == first_id
         )));
+    }
+
+    #[test]
+    fn given_local_command_tab_reporting_a_folder_when_activated_then_explorer_follows_it()
+     {
+        let (mut app, _) = App::new();
+        let launch_id = open_tab_in(
+            &mut app,
+            "/tmp/otty-launch",
+            TerminalKind::Command {
+                exit_behavior: ExitBehavior::Close,
+            },
+        );
+        let _shell_id = open_shell_tab_in(&mut app, "/tmp/otty-shell");
+
+        let events = route_intent(
+            &mut app,
+            TabsIntent::ActivateTab { tab_id: launch_id },
+        );
+
+        assert_eq!(
+            explorer_roots(&events),
+            vec![Path::new("/tmp/otty-launch").to_path_buf()]
+        );
     }
 
     #[test]

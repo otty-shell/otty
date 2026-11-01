@@ -3,6 +3,7 @@ use iced::{Subscription, window};
 use crate::app::{App, AppEvent};
 use crate::widgets::quick_launch::constants::QUICK_LAUNCHES_TICK_MS;
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
@@ -42,6 +43,16 @@ pub(super) fn subscription(app: &App) -> Subscription<AppEvent> {
             ))
         });
         subs.push(tick);
+    }
+
+    // Frames for the focus mode note while it stays and fades out
+    if app.widgets.sidebar.is_focus_note_shown() {
+        let frames = window::frames().map(|now| {
+            AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::FocusNoteFrame(now),
+            ))
+        });
+        subs.push(frames);
     }
 
     Subscription::batch(subs)

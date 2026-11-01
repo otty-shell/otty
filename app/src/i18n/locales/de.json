@@ -61,7 +61,6 @@
     "launch_running": "läuft",
     "no_active_folder": "Kein aktiver Ordner",
     "files_title": "Dateien",
-    "tpl_files_follows": "folgt {shell}",
     "status_pane_one": "1 Bereich",
     "tpl_status_panes": "{count} Bereiche",
     "status_session_one": "1 Sitzung",

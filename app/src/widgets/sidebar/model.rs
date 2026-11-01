@@ -9,6 +9,8 @@ pub(crate) struct SidebarViewModel {
     pub(crate) is_right_open: bool,
     /// Focus mode hides both panels.
     pub(crate) is_focus_mode: bool,
+    /// How visible the focus mode note is; `None` once it has faded out.
+    pub(crate) focus_note_opacity: Option<f32>,
     /// The Sessions section of the left panel is open.
     pub(crate) is_sessions_open: bool,
     /// The Launches section of the left panel is open.

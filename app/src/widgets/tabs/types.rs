@@ -47,6 +47,9 @@ impl TabMachine {
 pub(crate) struct TabItem {
     id: u64,
     title: String,
+    /// Folder name of the focused pane; `None` for other tabs or before the
+    /// shell reports one.
+    folder: Option<String>,
     content: TabContent,
     machine: TabMachine,
 }
@@ -60,6 +63,11 @@ impl TabItem {
     /// Return tab title shown in the session list and the title bar.
     pub(crate) fn title(&self) -> &str {
         &self.title
+    }
+
+    /// Return the folder name shown after the title in the session list.
+    pub(crate) fn folder(&self) -> Option<&str> {
+        self.folder.as_deref()
     }
 
     /// Return content discriminator.
@@ -83,6 +91,7 @@ impl TabItem {
         Self {
             id,
             title,
+            folder: None,
             content,
             machine,
         }
@@ -91,6 +100,11 @@ impl TabItem {
     /// Update tab title.
     pub(crate) fn set_title(&mut self, title: String) {
         self.title = title;
+    }
+
+    /// Update the folder name shown after the title.
+    pub(crate) fn set_folder(&mut self, folder: Option<String>) {
+        self.folder = folder;
     }
 }
 

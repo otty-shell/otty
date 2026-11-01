@@ -35,7 +35,6 @@ use crate::widgets::tabs::types::TabContent;
 use crate::widgets::tabs::view::{empty_state, new_session_menu, session_list};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
-use crate::widgets::terminal_workspace::model::followed_program;
 use crate::widgets::terminal_workspace::view::{
     pane_context_menu as terminal_pane_context_menu,
     pane_grid as terminal_pane_grid,
@@ -60,7 +59,8 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         vec![content_row.into()];
 
     // Focus mode note
-    if let Some(note) = focus_note::view(sidebar_vm.is_focus_mode, theme_props)
+    if let Some(note) =
+        focus_note::view(sidebar_vm.focus_note_opacity, theme_props)
     {
         layers.push(note);
     }
@@ -242,10 +242,8 @@ fn view_status_bar<'a>(
                 TargetKind::Local,
             ),
         };
-    let focused_pane = app
-        .widgets
-        .terminal_workspace
-        .focused_pane_header(tab_id, machine_name);
+    let focused_pane =
+        app.widgets.terminal_workspace.focused_pane_label(tab_id);
 
     let vm = StatusBarViewModel::new(StatusBarInput {
         machine_name,
@@ -389,14 +387,8 @@ fn view_right_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let focused_program = app
-        .widgets
-        .terminal_workspace
-        .focused_program(app.widgets.tabs.active_tab_id());
-
     sidebar_tree::view(sidebar_tree::SidebarTreeProps {
         vm: app.widgets.explorer.vm(),
-        shell_name: followed_program(focused_program, app.shell_session.name()),
         theme: theme_props,
     })
     .map(|event| AppEvent::Explorer(ExplorerEvent::Intent(event)))

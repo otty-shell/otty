@@ -7,9 +7,10 @@ use crate::theme::ThemeProps;
 
 /// Render the status bar at the bottom of the window.
 ///
-/// With open sessions the left side names the machine, the program and the
-/// folder of the focused pane, and the right side counts panes and
-/// sessions. With no session it shows the machine and `OTTY <version>`.
+/// The left side names the machine and, with open sessions, the folder path
+/// of the focused pane. With open sessions the right side counts panes and
+/// sessions. The program is left out: the header above the focused pane
+/// names it. `OTTY <version>` always ends the right side.
 pub(crate) fn view<'a, Message: Clone + 'a>(
     vm: &StatusBarViewModel,
     version: &str,
@@ -19,25 +20,20 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
         StatusItem::plain_target(vm.machine_target(), vm.machine_name()),
     );
 
-    if vm.is_empty() {
-        bar = bar.right(StatusItem::text(format!("OTTY {version}")));
+    if !vm.is_empty() {
+        if let Some(folder) = vm.folder() {
+            bar = bar.left(StatusItem::mono(folder));
+        }
 
-        return bar.into();
+        if let Some(count) = vm.pane_count() {
+            bar = bar.right(StatusItem::text(i18n::status_panes(count)));
+        }
+
+        bar = bar
+            .right(StatusItem::text(i18n::status_sessions(vm.session_count())));
     }
 
-    if let Some(program) = vm.program() {
-        bar = bar.left(StatusItem::text(program));
-    }
-
-    if let Some(folder) = vm.folder() {
-        bar = bar.left(StatusItem::mono(folder));
-    }
-
-    if let Some(count) = vm.pane_count() {
-        bar = bar.right(StatusItem::text(i18n::status_panes(count)));
-    }
-
-    bar.right(StatusItem::text(i18n::status_sessions(vm.session_count())))
+    bar.right(StatusItem::text(format!("OTTY {version}")))
         .into()
 }
 
@@ -51,10 +47,10 @@ mod tests {
     use super::*;
     use crate::theme::ThemeManager;
     use crate::widgets::chrome::model::StatusBarInput;
-    use crate::widgets::terminal_workspace::model::PaneHeaderViewModel;
+    use crate::widgets::terminal_workspace::model::PaneLabel;
 
     fn vm(
-        pane: Option<&PaneHeaderViewModel>,
+        pane: Option<&PaneLabel>,
         pane_count: Option<usize>,
         session_count: usize,
     ) -> StatusBarViewModel {
@@ -68,13 +64,13 @@ mod tests {
     }
 
     #[test]
-    fn given_terminal_tab_when_rendered_then_machine_pane_and_counts_show() {
+    fn given_terminal_tab_when_rendered_then_machine_folder_counts_and_version_show()
+     {
         let themes = ThemeManager::new();
-        let pane = PaneHeaderViewModel::new(
+        let pane = PaneLabel::new(
             "zsh",
             Some(Path::new("/home/ann/otty")),
             Some(Path::new("/home/ann")),
-            "fedora",
         );
         let vm = vm(Some(&pane), Some(2), 3);
         let mut ui = simulator(view::<()>(
@@ -83,9 +79,11 @@ mod tests {
             ThemeProps::new(themes.current()),
         ));
 
-        for label in ["fedora", "zsh", "~/otty", "2 panes", "3 sessions"] {
+        for label in ["fedora", "~/otty", "2 panes", "3 sessions", "OTTY 0.4.0"]
+        {
             ui.find(label).expect("status bar item should be visible");
         }
+        assert!(ui.find("zsh").is_err());
     }
 
     #[test]

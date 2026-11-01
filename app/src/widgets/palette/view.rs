@@ -92,6 +92,7 @@ mod tests {
             .map(|(index, title)| SessionViewModel {
                 tab_id: index as u64,
                 title,
+                folder: None,
                 state: None,
                 is_active: index == 0,
             })

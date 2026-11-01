@@ -202,8 +202,13 @@ pub(crate) enum TerminalWorkspaceEffect {
         title: String,
         message: String,
     },
-    /// The tab title changed.
-    TitleChanged { tab_id: u64, title: String },
+    /// The tab title (program of the focused pane) or its folder name
+    /// changed.
+    TitleChanged {
+        tab_id: u64,
+        title: String,
+        folder: Option<String>,
+    },
     /// Request the explorer to sync from the active terminal CWD.
     SyncExplorer,
     /// A terminal reported an app shortcut that the workspace does not run

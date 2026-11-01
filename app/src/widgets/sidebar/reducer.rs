@@ -63,6 +63,10 @@ pub(crate) fn reduce(
 
             Task::batch(tasks)
         },
+        SidebarIntent::FocusNoteFrame(now) => {
+            state.advance_focus_note(now);
+            Task::none()
+        },
     }
 }
 
@@ -73,9 +77,11 @@ fn sync_terminal_grid_sizes() -> Task<SidebarEvent> {
 #[cfg(test)]
 mod tests {
     use iced::Point;
+    use iced::time::{Duration, Instant};
     use iced::widget::pane_grid;
 
     use crate::task_outputs::collect_outputs;
+    use crate::widgets::sidebar::side_panel::SIDE_PANEL_MIN_RATIO;
     use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu};
     use crate::widgets::sidebar::{
         SidebarEffect, SidebarEvent, SidebarIntent, SidebarWidget,
@@ -175,21 +181,21 @@ mod tests {
     }
 
     #[test]
-    fn new_sidebar_shows_the_left_panel_at_a_fifth_and_hides_the_right() {
+    fn new_sidebar_shows_both_panels_at_the_minimum_width() {
         let widget = SidebarWidget::new();
         let vm = widget.vm();
 
         assert!(vm.is_left_open);
-        assert!(!vm.is_right_open);
+        assert!(vm.is_right_open);
         assert!(!vm.is_focus_mode);
-        assert_eq!(widget.left_ratio(), 0.2);
-        assert_eq!(widget.right_ratio(), 0.0);
-        assert_eq!(widget.side_panels_ratio(), 0.2);
+        assert_eq!(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert_eq!(widget.right_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert_near(widget.side_panels_ratio(), 2.0 * SIDE_PANEL_MIN_RATIO);
         assert!(!widget.is_resizing());
     }
 
     #[test]
-    fn toggle_left_hides_the_panel_and_shows_it_again_at_the_same_width() {
+    fn toggle_left_hides_the_panel_and_shows_it_again_at_the_minimum_width() {
         let mut widget = SidebarWidget::new();
 
         let hide = reduce(&mut widget, SidebarIntent::ToggleLeft);
@@ -201,39 +207,31 @@ mod tests {
         let show = reduce(&mut widget, SidebarIntent::ToggleLeft);
 
         assert!(widget.vm().is_left_open);
-        assert_eq!(widget.left_ratio(), 0.2);
+        assert_eq!(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
         assert!(has_effect(&show, is_sync_grid));
     }
 
     #[test]
-    fn toggle_right_opens_the_closed_panel_at_a_fifth_and_resyncs_the_grid() {
+    fn toggle_right_hides_the_panel_and_shows_it_again_at_the_minimum_width() {
         let mut widget = SidebarWidget::new();
 
-        let events = reduce(&mut widget, SidebarIntent::ToggleRight);
-
-        assert!(widget.vm().is_right_open);
-        assert_eq!(widget.right_ratio(), 0.2);
-        assert_eq!(widget.left_ratio(), 0.2);
-        assert_near(widget.side_panels_ratio(), 0.4);
-        assert!(has_effect(&events, is_sync_grid));
-    }
-
-    #[test]
-    fn toggle_right_twice_closes_the_panel_again() {
-        let mut widget = SidebarWidget::new();
-        let _open = reduce(&mut widget, SidebarIntent::ToggleRight);
-
-        let events = reduce(&mut widget, SidebarIntent::ToggleRight);
+        let hide = reduce(&mut widget, SidebarIntent::ToggleRight);
 
         assert!(!widget.vm().is_right_open);
         assert_eq!(widget.right_ratio(), 0.0);
-        assert!(has_effect(&events, is_sync_grid));
+        assert_eq!(widget.side_panels_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert!(has_effect(&hide, is_sync_grid));
+
+        let show = reduce(&mut widget, SidebarIntent::ToggleRight);
+
+        assert!(widget.vm().is_right_open);
+        assert_eq!(widget.right_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert!(has_effect(&show, is_sync_grid));
     }
 
     #[test]
     fn focus_mode_hides_both_panels_and_leaving_it_restores_their_widths() {
         let mut widget = SidebarWidget::new();
-        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
         let _wider_left = drag_left_to(&mut widget, 0.3);
 
         let enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
@@ -252,13 +250,14 @@ mod tests {
         assert!(vm.is_left_open);
         assert!(vm.is_right_open);
         assert_eq!(widget.left_ratio(), 0.3);
-        assert_eq!(widget.right_ratio(), 0.2);
+        assert_eq!(widget.right_ratio(), SIDE_PANEL_MIN_RATIO);
         assert!(has_effect(&leave, is_sync_grid));
     }
 
     #[test]
     fn leaving_focus_mode_keeps_a_panel_closed_that_was_closed_before() {
         let mut widget = SidebarWidget::new();
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
 
         let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
         let _leave = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
@@ -271,7 +270,6 @@ mod tests {
     #[test]
     fn toggle_left_in_focus_mode_leaves_focus_mode_and_shows_both_panels() {
         let mut widget = SidebarWidget::new();
-        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
         let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
 
         let events = reduce(&mut widget, SidebarIntent::ToggleLeft);
@@ -286,6 +284,7 @@ mod tests {
     #[test]
     fn toggle_right_in_focus_mode_opens_it_even_if_it_was_closed_before() {
         let mut widget = SidebarWidget::new();
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
         let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
 
         let events = reduce(&mut widget, SidebarIntent::ToggleRight);
@@ -312,6 +311,7 @@ mod tests {
     #[test]
     fn dragging_the_left_edge_too_far_keeps_a_fifth_for_the_main_area() {
         let mut widget = SidebarWidget::new();
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
 
         let _events = drag_left_to(&mut widget, 0.95);
 
@@ -321,17 +321,17 @@ mod tests {
     #[test]
     fn dragging_the_left_edge_too_far_leaves_room_for_the_open_right_panel() {
         let mut widget = SidebarWidget::new();
-        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
 
         let _events = drag_left_to(&mut widget, 0.95);
 
-        assert_near(widget.left_ratio(), 0.6);
-        assert_eq!(widget.right_ratio(), 0.2);
+        // The main area keeps a fifth of the window.
+        assert_near(widget.left_ratio(), 0.8 - SIDE_PANEL_MIN_RATIO);
+        assert_eq!(widget.right_ratio(), SIDE_PANEL_MIN_RATIO);
     }
 
     #[test]
     fn dragging_the_left_edge_below_the_collapse_width_closes_the_panel() {
-        // The collapse width is 0.04 of the window width.
+        // The collapse width is half of the minimum width.
         let mut widget = SidebarWidget::new();
 
         let events = drag_left_to(&mut widget, 0.03);
@@ -342,25 +342,25 @@ mod tests {
     }
 
     #[test]
-    fn dragging_the_left_edge_just_above_the_collapse_width_keeps_it_open() {
+    fn dragging_the_left_edge_just_above_the_collapse_width_keeps_the_minimum_width()
+     {
         let mut widget = SidebarWidget::new();
 
-        let _events = drag_left_to(&mut widget, 0.05);
+        let _events = drag_left_to(&mut widget, 0.1);
 
         assert!(widget.vm().is_left_open);
-        assert_eq!(widget.left_ratio(), 0.05);
+        assert_eq!(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
     }
 
     #[test]
-    fn dragging_a_closed_left_panel_open_opens_it_at_the_collapse_width() {
+    fn dragging_a_closed_left_panel_open_opens_it_at_the_minimum_width() {
         let mut widget = SidebarWidget::new();
         let _close = reduce(&mut widget, SidebarIntent::ToggleLeft);
 
         let events = drag_left_to(&mut widget, 0.5);
 
-        // 0.2 * 0.2 in `f32` is not exactly 0.04.
         assert!(widget.vm().is_left_open);
-        assert_near(widget.left_ratio(), 0.04);
+        assert_near(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
         assert!(has_effect(&events, is_sync_grid));
     }
 
@@ -379,26 +379,27 @@ mod tests {
     #[test]
     fn dragging_the_left_edge_keeps_the_right_panel_width() {
         let mut widget = SidebarWidget::new();
-        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
 
         let _events = drag_left_to(&mut widget, 0.3);
 
-        // Main takes 0.5 of the window, that is 0.5 / 0.7 of the area right
-        // of the left panel.
-        assert_eq!(widget.right_ratio(), 0.2);
-        assert_near(right_split_ratio(&widget), 0.5 / 0.7);
+        // Main takes what the panels leave, as a share of the 0.7 wide area
+        // right of the left panel.
+        assert_eq!(widget.right_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert_near(
+            right_split_ratio(&widget),
+            (0.7 - SIDE_PANEL_MIN_RATIO) / 0.7,
+        );
     }
 
     #[test]
     fn dragging_the_right_edge_sets_its_width_and_resyncs_the_grid() {
         let mut widget = SidebarWidget::new();
-        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
 
-        // The middle of the area right of the left panel (0.8 wide).
+        // The middle of the area right of the left panel.
         let events = drag_right_split_to(&mut widget, 0.5);
 
-        assert_near(widget.right_ratio(), 0.4);
-        assert_eq!(widget.left_ratio(), 0.2);
+        assert_near(widget.right_ratio(), (1.0 - SIDE_PANEL_MIN_RATIO) / 2.0);
+        assert_eq!(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
         assert!(widget.is_resizing());
         assert!(has_effect(&events, is_reset_quick_launch));
         assert!(has_effect(&events, is_sync_grid));
@@ -407,19 +408,18 @@ mod tests {
     #[test]
     fn dragging_the_right_edge_too_far_keeps_a_fifth_for_the_main_area() {
         let mut widget = SidebarWidget::new();
-        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
 
         let _events = drag_right_split_to(&mut widget, 0.0);
 
-        assert_near(widget.right_ratio(), 0.6);
+        assert_near(widget.right_ratio(), 0.8 - SIDE_PANEL_MIN_RATIO);
     }
 
     #[test]
     fn dragging_the_right_edge_below_the_collapse_width_closes_the_panel() {
         let mut widget = SidebarWidget::new();
-        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
 
-        // 0.01 of the 0.8 wide area is 0.008 of the window.
+        // 0.01 of the area right of the left panel is under 0.01 of the
+        // window.
         let events = drag_right_split_to(&mut widget, 0.99);
 
         assert!(!widget.vm().is_right_open);
@@ -428,19 +428,21 @@ mod tests {
     }
 
     #[test]
-    fn dragging_a_closed_right_panel_open_opens_it_at_the_collapse_width() {
+    fn dragging_a_closed_right_panel_open_opens_it_at_the_minimum_width() {
         let mut widget = SidebarWidget::new();
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
 
         let events = drag_right_split_to(&mut widget, 0.5);
 
         assert!(widget.vm().is_right_open);
-        assert_near(widget.right_ratio(), 0.04);
+        assert_near(widget.right_ratio(), SIDE_PANEL_MIN_RATIO);
         assert!(has_effect(&events, is_sync_grid));
     }
 
     #[test]
     fn dragging_a_closed_right_panel_a_little_does_not_resync_the_grid() {
         let mut widget = SidebarWidget::new();
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
 
         let events = drag_right_split_to(&mut widget, 0.99);
 
@@ -462,6 +464,27 @@ mod tests {
     }
 
     #[test]
+    fn entering_focus_mode_shows_the_note_until_a_frame_after_it_fades() {
+        let mut widget = SidebarWidget::new();
+        let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
+
+        assert_eq!(widget.vm().focus_note_opacity, Some(1.0));
+        assert!(widget.is_focus_note_shown());
+
+        let events = reduce(
+            &mut widget,
+            SidebarIntent::FocusNoteFrame(
+                Instant::now() + Duration::from_secs(10),
+            ),
+        );
+
+        assert!(events.is_empty());
+        assert!(widget.vm().is_focus_mode);
+        assert_eq!(widget.vm().focus_note_opacity, None);
+        assert!(!widget.is_focus_note_shown());
+    }
+
+    #[test]
     fn open_settings_opens_the_settings_tab_without_resizing() {
         let mut widget = SidebarWidget::new();
 
@@ -471,7 +494,7 @@ mod tests {
             events.as_slice(),
             [SidebarEvent::Effect(SidebarEffect::OpenSettingsTab)]
         ));
-        assert_eq!(widget.side_panels_ratio(), 0.2);
+        assert_near(widget.side_panels_ratio(), 2.0 * SIDE_PANEL_MIN_RATIO);
     }
 
     #[test]

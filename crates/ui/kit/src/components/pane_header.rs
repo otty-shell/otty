@@ -1,6 +1,7 @@
 //! `PaneHeader`: thin bar above a terminal pane.
 
-use iced::widget::{Space, container, row, text};
+use iced::widget::text::Wrapping;
+use iced::widget::{container, row, text};
 use iced::{Alignment, Element, Length, Padding};
 
 use crate::palette::UiPalette;
@@ -88,34 +89,45 @@ impl<'a, Message: 'a> From<PaneHeader<'a, Message>> for Element<'a, Message> {
             palette.surface_canvas()
         };
 
-        let mut content = row![
+        let mut texts = row![
             text(value.program)
                 .size(style.size())
                 .line_height(iced::Pixels(style.line_height()))
                 .font(fonts::UI)
+                .wrapping(Wrapping::None)
                 .color(program_color)
         ]
         .spacing(spacing::SPACE_3)
         .align_y(Alignment::Center);
         if let Some(folder) = value.folder {
-            content = content.push(
+            texts = texts.push(
                 text(folder)
                     .size(style.size())
                     .line_height(iced::Pixels(style.line_height()))
                     .font(fonts::MONO)
+                    .wrapping(Wrapping::None)
                     .color(palette.text_muted()),
             );
         }
-        content = content.push(Space::new().width(Length::Fill));
+
+        // The texts take the space left after the trailing element and stay
+        // on one line: in a narrow pane their right end is cut off, first
+        // the folder, then the program.
+        let mut content = row![container(texts).width(Length::Fill).clip(true)]
+            .spacing(spacing::SPACE_3)
+            .align_y(Alignment::Center);
         if let Some(trailing) = value.trailing {
             content = content.push(trailing);
         }
 
+        // Clipping keeps a trailing element that does not fit from being
+        // drawn over the neighbouring pane.
         container(content)
             .width(Length::Fill)
             .height(size::PANE_HEADER)
             .align_y(Alignment::Center)
             .padding(Padding::from([0.0, spacing::SPACE_4]))
+            .clip(true)
             .style(move |_| container::Style {
                 background: Some(background.into()),
                 ..container::Style::default()
@@ -126,6 +138,7 @@ impl<'a, Message: 'a> From<PaneHeader<'a, Message>> for Element<'a, Message> {
 
 #[cfg(test)]
 mod tests {
+    use iced::widget::column;
     use iced_test::simulator;
 
     use super::*;
@@ -154,5 +167,64 @@ mod tests {
         let mut ui = simulator(header);
 
         assert!(ui.find("claude").is_ok());
+    }
+
+    #[test]
+    fn given_short_texts_when_laid_out_then_header_is_30px_high() {
+        let palette = UiPalette::otty_dark();
+        let header: Element<'_, ()> = column![
+            PaneHeader::new("zsh", &palette)
+                .trailing(Chip::new("fedora", &palette)),
+            text("below"),
+        ]
+        .into();
+        let mut ui = simulator(header);
+
+        let below = ui.find("below").expect("marker should be visible");
+
+        assert!(
+            (below.bounds().y - size::PANE_HEADER).abs() < 0.5,
+            "header height {} should be {}",
+            below.bounds().y,
+            size::PANE_HEADER
+        );
+    }
+
+    #[test]
+    fn given_narrow_pane_when_texts_do_not_fit_then_header_stays_one_line() {
+        let palette = UiPalette::otty_dark();
+        let width = 160.0;
+        let header: Element<'_, ()> = container(column![
+            PaneHeader::new("the-time-of-horde", &palette)
+                .folder("~/projects/main/the-time-of-horde")
+                .trailing(Chip::new("fedora", &palette)),
+            text("below"),
+        ])
+        .width(width)
+        .into();
+        let mut ui = simulator(header);
+
+        let program = ui
+            .find("the-time-of-horde")
+            .expect("program should be shown")
+            .bounds();
+        let chip = ui.find("fedora").expect("chip should be shown").bounds();
+        let below =
+            ui.find("below").expect("marker should be visible").bounds();
+
+        assert!(
+            (below.y - size::PANE_HEADER).abs() < 0.5,
+            "header height {} should stay {}",
+            below.y,
+            size::PANE_HEADER
+        );
+        assert!(
+            (program.height - typography::SMALL.line_height()).abs() < 0.5,
+            "program should stay on one line: {program:?}"
+        );
+        assert!(
+            chip.x + chip.width <= width - spacing::SPACE_4 + 0.5,
+            "chip {chip:?} should stay inside the header"
+        );
     }
 }

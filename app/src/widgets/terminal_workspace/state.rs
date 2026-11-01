@@ -4,9 +4,10 @@ use std::process::ExitStatus;
 use iced::widget::{Id, pane_grid};
 use iced::{Point, Size};
 use otty_ui_term::SurfaceMode;
-use otty_ui_term::settings::{Settings, ThemeSettings};
+use otty_ui_term::settings::{SessionKind, Settings, ThemeSettings};
 
 use super::errors::TerminalWorkspaceError;
+use super::model::PaneLabel;
 use super::pane_balance;
 use super::types::{
     BlockSelection, Terminal, TerminalEntry, TerminalEvent, TerminalKind,
@@ -139,7 +140,10 @@ impl PaneContextMenuState {
 /// Runtime state for a single terminal tab with pane management and selection.
 pub(crate) struct TerminalTabState {
     pub(super) tab_id: u64,
+    /// Program of the focused pane.
     pub(super) title: String,
+    /// Folder name of the focused pane.
+    pub(super) folder: Option<String>,
     pub(super) kind: TerminalKind,
     pub(super) terminal_settings: Settings,
     pub(super) panes: pane_grid::State<u64>,
@@ -179,6 +183,7 @@ impl TerminalTabState {
         let tab = Self {
             tab_id,
             title: default_title.clone(),
+            folder: None,
             kind,
             terminal_settings: settings,
             panes,
@@ -194,14 +199,24 @@ impl TerminalTabState {
         Ok((tab, widget_id))
     }
 
-    /// Return the current tab title.
+    /// Return the current tab title: the program of the focused pane.
     pub(crate) fn title(&self) -> &str {
         &self.title
     }
 
-    /// Report whether this terminal tab represents a shell session.
-    pub(crate) fn is_shell(&self) -> bool {
-        matches!(self.kind, TerminalKind::Shell)
+    /// Return the folder name of the focused pane, if the shell reported
+    /// one.
+    pub(crate) fn folder(&self) -> Option<&str> {
+        self.folder.as_deref()
+    }
+
+    /// Report whether the tab runs on this computer, so its folders exist
+    /// here. SSH launches run elsewhere.
+    pub(crate) fn runs_locally(&self) -> bool {
+        matches!(
+            self.terminal_settings.backend.session,
+            SessionKind::Local(_)
+        )
     }
 
     /// Return the pane grid state.
@@ -370,7 +385,7 @@ impl TerminalTabState {
             if let Some((source_terminal_id, _)) = source_terminal.as_ref() {
                 self.clear_selected_block_for_terminal(*source_terminal_id);
             }
-            self.update_title_from_terminal(Some(terminal_id));
+            self.refresh_label();
 
             let mut commands = Vec::new();
             if let Some((_, source_widget_id)) = source_terminal {
@@ -420,7 +435,7 @@ impl TerminalTabState {
                     && let Some(entry) = self.terminals.get(&next_id)
                 {
                     let widget_id = entry.terminal.widget_id().clone();
-                    self.update_title_from_terminal(Some(next_id));
+                    self.refresh_label();
                     return StateCommand::FocusTerminal(widget_id);
                 }
             }
@@ -533,29 +548,17 @@ impl TerminalTabState {
                     return self.close_pane(pane, equalize_panes);
                 }
             },
-            TitleChanged { title, .. } => {
-                if let Some(entry) = self.terminal_entry_mut(terminal_id) {
-                    entry.title = title.clone();
-                }
-                if self.focused_terminal_id() == Some(terminal_id) {
-                    self.title = title;
-                }
-            },
-            ResetTitle { .. } => {
-                let reset_title = self.default_title.clone();
-                if let Some(entry) = self.terminal_entry_mut(terminal_id) {
-                    entry.title = reset_title.clone();
-                }
-                if self.focused_terminal_id() == Some(terminal_id) {
-                    self.title = reset_title;
-                }
-            },
+            // Shells put the folder in their titles, and the folder is
+            // already shown next to the program, so these are ignored.
+            TitleChanged { .. } | ResetTitle { .. } => {},
             other => {
                 if let Some(entry) = self.terminal_entry_mut(terminal_id) {
                     entry.terminal.handle(other);
                 }
             },
         }
+
+        self.refresh_label();
 
         StateCommand::None
     }
@@ -599,7 +602,7 @@ impl TerminalTabState {
         if close_menu {
             self.context_menu = None;
         }
-        self.update_title_from_terminal(Some(terminal_id));
+        self.refresh_label();
 
         if focus_terminal_widget
             && let Some(entry) = self.terminals.get(&terminal_id)
@@ -639,15 +642,17 @@ impl TerminalTabState {
         StateCommand::None
     }
 
-    fn update_title_from_terminal(&mut self, terminal_id: Option<u64>) {
-        if let Some(id) = terminal_id
-            && let Some(entry) = self.terminals.get(&id)
-        {
-            self.title = entry.title.clone();
+    /// Name the tab after its focused pane: the program and folder name.
+    fn refresh_label(&mut self) {
+        let Some(entry) = self.focused_terminal_entry() else {
+            self.title = self.default_title.clone();
+            self.folder = None;
             return;
-        }
+        };
 
-        self.title = self.default_title.clone();
+        let label = PaneLabel::for_entry(entry);
+        self.title = label.program().to_string();
+        self.folder = label.folder_name().map(str::to_string);
     }
 
     fn clamp_point(point: Point, bounds: Size) -> Point {
@@ -792,7 +797,7 @@ mod tests {
             state.pane_terminal_id(focused_pane).expect("terminal id");
 
         assert_eq!(state.title(), "Shell");
-        assert!(state.is_shell());
+        assert!(state.runs_locally());
         assert_eq!(state.panes().len(), 1);
         assert_eq!(state.terminals().len(), 1);
         assert_eq!(focused_terminal_id, 10);
@@ -1001,17 +1006,18 @@ mod tests {
     }
 
     #[test]
-    fn given_title_events_when_handled_then_tab_title_updates_and_resets() {
+    fn given_shell_title_events_when_handled_then_tab_keeps_its_name() {
         let mut state = build_terminal_state("Shell");
 
         let _task = state.handle_terminal_event(
             otty_ui_term::Event::TitleChanged {
                 id: 10,
-                title: String::from("Renamed"),
+                title: String::from("ann@fedora:~/projects/otty"),
             },
             true,
         );
-        assert_eq!(state.title(), "Renamed");
+        assert_eq!(state.title(), "Shell");
+        assert_eq!(state.folder(), None);
 
         let _task = state.handle_terminal_event(
             otty_ui_term::Event::ResetTitle { id: 10 },

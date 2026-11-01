@@ -18,20 +18,46 @@ pub(crate) fn setup_shell_session_with_shell(
     shell_path: &str,
 ) -> Result<ShellSession, TerminalWorkspaceError> {
     let shell_name = shell_name(shell_path);
+    let options = with_shell_integration(
+        shell_session_options(shell_path),
+        &shell_integration_dir(),
+    )?;
 
-    let dir = config_dir();
-    fs::create_dir_all(&dir)?;
+    Ok(ShellSession::new(
+        shell_name,
+        SessionKind::from_local_options(options),
+    ))
+}
 
-    let session = match shell_name.as_str() {
-        "zsh" => setup_zsh_session(shell_path, &dir)?,
-        "bash" => setup_bash_session(shell_path, &dir)?,
-        _ => {
-            let options = shell_session_options(shell_path);
-            SessionKind::from_local_options(options)
+/// Add the OTTY shell integration, with its files written to `dir`, to a
+/// session whose program is zsh or bash, so the shell reports its commands
+/// and folder. Other programs are returned unchanged.
+pub(crate) fn with_shell_integration(
+    options: LocalSessionOptions,
+    dir: &Path,
+) -> std::io::Result<LocalSessionOptions> {
+    match shell_name(options.program()).as_str() {
+        "zsh" => {
+            fs::create_dir_all(dir)?;
+            zsh_integration(options, dir)
         },
-    };
+        "bash" => {
+            fs::create_dir_all(dir)?;
+            bash_integration(options, dir)
+        },
+        _ => Ok(options),
+    }
+}
 
-    Ok(ShellSession::new(shell_name, session))
+/// Return the folder the OTTY shell integration files are written to.
+pub(crate) fn shell_integration_dir() -> PathBuf {
+    if let Ok(home) = env::var("HOME") {
+        return Path::new(&home)
+            .join(".config")
+            .join(SHELL_INTEGRATIONS_DIR);
+    }
+
+    env::temp_dir().join(SHELL_INTEGRATIONS_DIR)
 }
 
 /// Build a shell session without writing shell integration files.
@@ -55,6 +81,26 @@ pub(crate) fn terminal_cwd_from_blocks(
         .map(PathBuf::from)
 }
 
+/// Return the program of the command running in the latest block: its
+/// first word, without leading `NAME=value` words and folders. `None` while
+/// the shell waits at the prompt.
+pub(crate) fn running_program_from_blocks(
+    blocks: &[otty_ui_term::BlockSnapshot],
+) -> Option<&str> {
+    let meta = &blocks.last()?.meta;
+    if meta.is_finished {
+        return None;
+    }
+
+    let program = meta
+        .cmd
+        .as_deref()?
+        .split_whitespace()
+        .find(|word| !word.contains('='))?;
+
+    Path::new(program).file_name()?.to_str()
+}
+
 fn shell_name(shell_path: &str) -> String {
     Path::new(shell_path)
         .file_name()
@@ -73,20 +119,10 @@ fn shell_session_options(shell_path: &str) -> LocalSessionOptions {
     options
 }
 
-fn config_dir() -> PathBuf {
-    if let Ok(home) = env::var("HOME") {
-        return Path::new(&home)
-            .join(".config")
-            .join(SHELL_INTEGRATIONS_DIR);
-    }
-
-    env::temp_dir().join(SHELL_INTEGRATIONS_DIR)
-}
-
-fn setup_zsh_session(
-    shell_path: &str,
+fn zsh_integration(
+    options: LocalSessionOptions,
     dir: &Path,
-) -> std::io::Result<SessionKind> {
+) -> std::io::Result<LocalSessionOptions> {
     let original_zdotdir = env::var("ZDOTDIR").ok();
 
     let script_path = dir.join("otty.zsh");
@@ -109,8 +145,7 @@ fi
     fs::write(&zshrc_path, zshrc_contents.trim_start())?;
 
     let dir_str = dir.to_string_lossy();
-    let mut options =
-        shell_session_options(shell_path).with_env("ZDOTDIR", dir_str.as_ref());
+    let mut options = options.with_env("ZDOTDIR", dir_str.as_ref());
 
     if let Some(value) = original_zdotdir
         && Path::new(&value) != dir
@@ -118,13 +153,13 @@ fi
         options = options.with_env("OTTY_ORIG_ZDOTDIR", &value);
     }
 
-    Ok(SessionKind::from_local_options(options))
+    Ok(options)
 }
 
-fn setup_bash_session(
-    shell_path: &str,
+fn bash_integration(
+    options: LocalSessionOptions,
     dir: &Path,
-) -> std::io::Result<SessionKind> {
+) -> std::io::Result<LocalSessionOptions> {
     let script_path = dir.join("otty.bash");
     fs::write(&script_path, OTTY_BASH_SCRIPT)?;
 
@@ -145,10 +180,8 @@ fi
     fs::write(&wrapper_path, wrapper_contents.trim_start())?;
 
     let wrapper_path = wrapper_path.to_string_lossy().into_owned();
-    let options = shell_session_options(shell_path)
-        .with_args(vec!["--rcfile".to_string(), wrapper_path]);
 
-    Ok(SessionKind::from_local_options(options))
+    Ok(options.with_args(vec!["--rcfile".to_string(), wrapper_path]))
 }
 
 #[cfg(test)]
@@ -157,11 +190,12 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use std::{fs, process};
 
-    use otty_ui_term::settings::SessionKind;
+    use otty_ui_term::BlockSnapshot;
+    use otty_ui_term::settings::{LocalSessionOptions, SessionKind};
 
     use super::{
-        fallback_shell_session_with_shell, setup_bash_session,
-        setup_zsh_session,
+        fallback_shell_session_with_shell, running_program_from_blocks,
+        shell_session_options, with_shell_integration,
     };
 
     struct TempDirGuard {
@@ -188,6 +222,59 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+
+    fn block(cmd: Option<&str>, is_finished: bool) -> BlockSnapshot {
+        let mut block = BlockSnapshot::default();
+        block.meta.cmd = cmd.map(String::from);
+        block.meta.is_finished = is_finished;
+        block
+    }
+
+    #[test]
+    fn given_running_command_when_read_then_its_first_word_is_the_program() {
+        let blocks = [
+            block(Some("ls"), true),
+            block(Some("cargo build --release"), false),
+        ];
+
+        assert_eq!(running_program_from_blocks(&blocks), Some("cargo"));
+    }
+
+    #[test]
+    fn given_finished_command_when_read_then_there_is_no_program() {
+        let blocks = [block(Some("cargo build"), true)];
+
+        assert_eq!(running_program_from_blocks(&blocks), None);
+    }
+
+    #[test]
+    fn given_prompt_after_command_when_read_then_there_is_no_program() {
+        let blocks = [block(Some("cargo build"), true), block(None, false)];
+
+        assert_eq!(running_program_from_blocks(&blocks), None);
+    }
+
+    #[test]
+    fn given_no_blocks_when_read_then_there_is_no_program() {
+        assert_eq!(running_program_from_blocks(&[]), None);
+    }
+
+    #[test]
+    fn given_env_words_and_a_path_when_read_then_only_the_program_name_stays() {
+        let blocks = [block(
+            Some("RUST_LOG=debug ./target/debug/otty --verbose"),
+            false,
+        )];
+
+        assert_eq!(running_program_from_blocks(&blocks), Some("otty"));
+    }
+
+    #[test]
+    fn given_blank_command_when_read_then_there_is_no_program() {
+        let blocks = [block(Some("   "), false)];
+
+        assert_eq!(running_program_from_blocks(&blocks), None);
     }
 
     #[test]
@@ -224,61 +311,64 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn given_temp_dir_when_setup_bash_session_then_wrapper_files_are_written() {
+    fn given_bash_when_integration_added_then_wrapper_files_are_written() {
         let temp_dir = TempDirGuard::new("bash");
-        let session =
-            setup_bash_session("/bin/bash", &temp_dir.path).expect("setup");
+        let options = with_shell_integration(
+            shell_session_options("/bin/bash"),
+            &temp_dir.path,
+        )
+        .expect("setup");
 
         let script_path = temp_dir.path.join("otty.bash");
         let wrapper_path = temp_dir.path.join("otty.bashrc");
         assert!(script_path.exists());
         assert!(wrapper_path.exists());
-
-        match session {
-            SessionKind::Local(options) => {
-                assert_eq!(options.program(), "/bin/bash");
-                assert_eq!(options.args().len(), 2);
-                assert_eq!(options.args()[0], "--rcfile");
-                assert_eq!(options.args()[1], wrapper_path.to_string_lossy());
-                assert_eq!(
-                    options.working_directory(),
-                    &std::env::var_os("HOME").map(PathBuf::from),
-                );
-            },
-            SessionKind::Ssh(_) => {
-                panic!("expected local session kind");
-            },
-        }
+        assert_eq!(options.program(), "/bin/bash");
+        assert_eq!(options.args().len(), 2);
+        assert_eq!(options.args()[0], "--rcfile");
+        assert_eq!(options.args()[1], wrapper_path.to_string_lossy());
+        assert_eq!(
+            options.working_directory(),
+            &std::env::var_os("HOME").map(PathBuf::from),
+        );
     }
 
     #[cfg(unix)]
     #[test]
-    fn given_temp_dir_when_setup_zsh_session_then_wrapper_files_are_written() {
+    fn given_zsh_when_integration_added_then_wrapper_files_are_written() {
         let temp_dir = TempDirGuard::new("zsh");
-        let session =
-            setup_zsh_session("/bin/zsh", &temp_dir.path).expect("setup");
+        let options = with_shell_integration(
+            shell_session_options("/bin/zsh"),
+            &temp_dir.path,
+        )
+        .expect("setup");
 
         let script_path = temp_dir.path.join("otty.zsh");
         let zshrc_path = temp_dir.path.join(".zshrc");
         assert!(script_path.exists());
         assert!(zshrc_path.exists());
+        assert_eq!(options.program(), "/bin/zsh");
+        assert_eq!(
+            options.envs().get("ZDOTDIR"),
+            Some(&temp_dir.path.to_string_lossy().to_string()),
+        );
+        assert_eq!(
+            options.working_directory(),
+            &std::env::var_os("HOME").map(PathBuf::from),
+        );
+    }
 
-        match session {
-            SessionKind::Local(options) => {
-                assert_eq!(options.program(), "/bin/zsh");
-                let zdotdir = options.envs().get("ZDOTDIR");
-                assert_eq!(
-                    zdotdir,
-                    Some(&temp_dir.path.to_string_lossy().to_string()),
-                );
-                assert_eq!(
-                    options.working_directory(),
-                    &std::env::var_os("HOME").map(PathBuf::from),
-                );
-            },
-            SessionKind::Ssh(_) => {
-                panic!("expected local session kind");
-            },
-        }
+    #[test]
+    fn given_other_program_when_integration_added_then_options_are_unchanged() {
+        let temp_dir = TempDirGuard::new("htop");
+        let options = LocalSessionOptions::default().with_program("htop");
+
+        let integrated = with_shell_integration(options, &temp_dir.path)
+            .expect("nothing to set up");
+
+        assert_eq!(integrated.program(), "htop");
+        assert!(integrated.args().is_empty());
+        assert!(integrated.envs().get("ZDOTDIR").is_none());
+        assert!(!temp_dir.path.join("otty.zsh").exists());
     }
 }

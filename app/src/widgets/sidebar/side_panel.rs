@@ -4,13 +4,13 @@
 //! panels existed. Both panels follow the same rules, so the sidebar state
 //! holds two of these.
 
-/// Share of the window width a side panel takes when it first opens.
-pub(super) const SIDE_PANEL_DEFAULT_RATIO: f32 = 0.2;
+/// Smallest share an open side panel takes; side panels start at it and a
+/// drag below it stops here.
+pub(super) const SIDE_PANEL_MIN_RATIO: f32 = 0.16;
 /// Share below which a dragged side panel collapses.
-pub(super) const SIDE_PANEL_COLLAPSE_RATIO: f32 =
-    SIDE_PANEL_DEFAULT_RATIO * 0.2;
+pub(super) const SIDE_PANEL_COLLAPSE_RATIO: f32 = SIDE_PANEL_MIN_RATIO * 0.5;
 
-/// Open flag and remembered width of one side panel.
+/// Open flag and width of one side panel.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SidePanel {
     open: bool,
@@ -29,38 +29,39 @@ impl SidePanel {
         if self.open { self.ratio } else { 0.0 }
     }
 
-    /// Create a panel at the default width.
+    /// Create a panel at the minimum width.
     pub(super) fn new(open: bool) -> Self {
         Self {
             open,
-            ratio: SIDE_PANEL_DEFAULT_RATIO,
+            ratio: SIDE_PANEL_MIN_RATIO,
         }
     }
 
-    /// Open the panel at its last width, at least the default width and at
-    /// most `max_ratio`.
+    /// Open the panel at the minimum width, at most `max_ratio`. The panel
+    /// buttons use this; a drag sets any other width.
     pub(super) fn open(&mut self, max_ratio: f32) {
-        self.ratio = self.ratio.max(SIDE_PANEL_DEFAULT_RATIO).min(max_ratio);
+        self.ratio = SIDE_PANEL_MIN_RATIO.min(max_ratio);
         self.open = true;
     }
 
-    /// Close the panel; its width is kept for the next open.
+    /// Close the panel.
     pub(super) fn close(&mut self) {
         self.open = false;
     }
 
     /// Apply a drag of the panel edge to `ratio` of the window width.
     ///
-    /// An open panel follows the drag up to `max_ratio` and closes below
-    /// the collapse width. A closed panel opens at the collapse width once
-    /// the drag passes it. Returns whether the panel width changed.
+    /// An open panel follows the drag between the minimum width and
+    /// `max_ratio`, and closes below the collapse width. A closed panel
+    /// opens at the minimum width once the drag passes the collapse width.
+    /// Returns whether the panel width changed.
     pub(super) fn drag_to(&mut self, ratio: f32, max_ratio: f32) -> bool {
         if !self.open {
             if ratio <= SIDE_PANEL_COLLAPSE_RATIO {
                 return false;
             }
 
-            self.ratio = SIDE_PANEL_COLLAPSE_RATIO.min(max_ratio);
+            self.ratio = SIDE_PANEL_MIN_RATIO.min(max_ratio);
             self.open = true;
             return true;
         }
@@ -70,26 +71,24 @@ impl SidePanel {
             return true;
         }
 
-        self.ratio = ratio.min(max_ratio);
+        self.ratio = ratio.max(SIDE_PANEL_MIN_RATIO).min(max_ratio);
         true
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        SIDE_PANEL_COLLAPSE_RATIO, SIDE_PANEL_DEFAULT_RATIO, SidePanel,
-    };
+    use super::{SIDE_PANEL_COLLAPSE_RATIO, SIDE_PANEL_MIN_RATIO, SidePanel};
 
     /// Widest share a panel may take when the other panel is closed.
     const MAX_RATIO: f32 = 0.8;
 
     #[test]
-    fn new_open_panel_takes_the_default_width() {
+    fn new_open_panel_takes_the_minimum_width() {
         let panel = SidePanel::new(true);
 
         assert!(panel.is_open());
-        assert_eq!(panel.width_ratio(), SIDE_PANEL_DEFAULT_RATIO);
+        assert_eq!(panel.width_ratio(), SIDE_PANEL_MIN_RATIO);
     }
 
     #[test]
@@ -101,7 +100,7 @@ mod tests {
     }
 
     #[test]
-    fn wide_panel_keeps_its_width_when_closed_and_opened_again() {
+    fn wide_panel_opens_again_at_the_minimum_width() {
         let mut panel = SidePanel::new(true);
         assert!(panel.drag_to(0.5, MAX_RATIO));
 
@@ -109,18 +108,16 @@ mod tests {
         assert_eq!(panel.width_ratio(), 0.0);
         panel.open(MAX_RATIO);
 
-        assert_eq!(panel.width_ratio(), 0.5);
+        assert_eq!(panel.width_ratio(), SIDE_PANEL_MIN_RATIO);
     }
 
     #[test]
-    fn narrow_panel_opens_again_at_least_at_the_default_width() {
-        let mut panel = SidePanel::new(true);
-        assert!(panel.drag_to(0.05, MAX_RATIO));
+    fn new_closed_panel_opens_at_the_minimum_width() {
+        let mut panel = SidePanel::new(false);
 
-        panel.close();
         panel.open(MAX_RATIO);
 
-        assert_eq!(panel.width_ratio(), SIDE_PANEL_DEFAULT_RATIO);
+        assert_eq!(panel.width_ratio(), SIDE_PANEL_MIN_RATIO);
     }
 
     #[test]
@@ -142,6 +139,17 @@ mod tests {
     }
 
     #[test]
+    fn open_panel_dragged_below_the_minimum_width_stops_at_it() {
+        let mut panel = SidePanel::new(true);
+        let between = (SIDE_PANEL_COLLAPSE_RATIO + SIDE_PANEL_MIN_RATIO) / 2.0;
+
+        assert!(panel.drag_to(between, MAX_RATIO));
+
+        assert!(panel.is_open());
+        assert_eq!(panel.width_ratio(), SIDE_PANEL_MIN_RATIO);
+    }
+
+    #[test]
     fn open_panel_dragged_below_the_collapse_width_closes() {
         let mut panel = SidePanel::new(true);
 
@@ -160,12 +168,13 @@ mod tests {
     }
 
     #[test]
-    fn closed_panel_dragged_past_the_collapse_width_opens_at_that_width() {
+    fn closed_panel_dragged_past_the_collapse_width_opens_at_the_minimum_width()
+    {
         let mut panel = SidePanel::new(false);
 
         assert!(panel.drag_to(0.5, MAX_RATIO));
 
         assert!(panel.is_open());
-        assert_eq!(panel.width_ratio(), SIDE_PANEL_COLLAPSE_RATIO);
+        assert_eq!(panel.width_ratio(), SIDE_PANEL_MIN_RATIO);
     }
 }
