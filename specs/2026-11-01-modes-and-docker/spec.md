@@ -316,6 +316,36 @@ none of those are in scope (see Out of Scope).
       `assets/svg/*` (24×24 view box, round caps, one stroke width); no
       third-party icon set is copied.
 
+20. **Owner review, round 2** (2026-11-02). Wins over earlier decisions and
+    screens where they disagree.
+    - **Run form, SELinux:** on a system where SELinux is enabled
+      (`/sys/fs/selinux/enforce` exists), a volume row whose source is a
+      folder on this computer has a switch "Let the container read this
+      folder (:z)", off by default, with a hint that it changes the SELinux
+      labels of the folder's files. On, the bind gets the `z` option. Other
+      systems never show it.
+    - **Run form, Restart** starts at No (owner approved).
+    - **Pressing a table row opens the right panel** when it is closed, so
+      the inspector shows the row. The row "⋯" button and the right click do
+      not open it.
+    - **Inspector layout:** the same side padding for every part; the status
+      line and other text wrap instead of being cut; values wrap at spaces,
+      slashes and dashes, not in the middle of a word; dates read
+      `2026-11-01 18:30 UTC`. When the tabs do not fit the panel width,
+      they become a kit select with the same choices.
+    - **No mode name** next to the mode switcher; the active tab is enough.
+    - **Links in Overview:** a published TCP port opens
+      `http://localhost:<host port>` in the browser; the image, network and
+      volume values jump to that list and select the item; the compose
+      project opens the compose filter. Values that point nowhere stay text.
+    - **Inspect is a readable tree, not raw JSON:** collapsible sections for
+      the top-level keys (State, Config, HostConfig, NetworkSettings,
+      Mounts, …), nested objects as indented key and value rows, lists as
+      numbered rows, empty values hidden behind "Show empty"; a "Raw JSON"
+      switch shows the JSON as today, and "Copy JSON" copies it.
+    - **Polish from round 1:** the row "⋯" menu opens at its button; the sort
+      arrow sits right after the column title.
+
 ## Ticket classes
 
 Same classes as `specs/2026-10-31-workspace-layout`: **A** restyle / kit,
@@ -384,6 +414,11 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 25 | Docker tables: Compose column with link filter, no Compose tree group, no "this computer" / engine chip, `host:container` ports (Decision 19) | B | Sonnet | 24 |
 | 26 | Docker tables: sorting, defaults and kept choice (Decision 19) | C | Sonnet | 24, 25 |
 | 27 | Docker header layout with collapsing controls, row "⋯" menus, icon actions in the inspector (Decision 19) | C | Opus | 24, 26 |
+| 28 | Polish: no mode name, row ⋯ menu at its button, sort arrow after the title, inspector wrapping, padding and short dates (Decision 20) | A | Sonnet | 27 |
+| 29 | Run form: SELinux `:z` switch, Restart starts at No (Decision 20) | C | Sonnet | 14 |
+| 30 | Row press opens the right panel; inspector tabs become a select when narrow (Decision 20) | C | Sonnet | 28 |
+| 31 | Overview links: ports to localhost, image/network/volume jump, compose filter (Decision 20) | C | Opus | 28 |
+| 32 | Inspect as a readable tree with Raw JSON and Copy (Decision 20) | C | Opus | 28 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -418,3 +453,8 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 25 — Compose column, no "this computer", `host:container` ports · Sonnet
 - [x] 26 — Table sorting · Sonnet
 - [x] 27 — Header layout, row ⋯ menus, icon actions · Opus
+- [ ] 28 — Polish: mode name, menu position, sort arrow, inspector text · Sonnet
+- [ ] 29 — Run form: SELinux `:z`, Restart No · Sonnet
+- [ ] 30 — Row opens the right panel; tabs to select when narrow · Sonnet
+- [ ] 31 — Overview links · Opus
+- [ ] 32 — Inspect as a readable tree · Opus
