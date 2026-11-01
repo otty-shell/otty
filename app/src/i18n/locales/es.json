@@ -89,6 +89,8 @@
     "close_session": "Cerrar sesión",
     "palette_toggle_left_panel": "Mostrar u ocultar el panel izquierdo",
     "palette_toggle_files_panel": "Mostrar u ocultar archivos",
+    "palette_switch_to_terminal_mode": "Cambiar al modo Terminal",
+    "palette_switch_to_docker_mode": "Cambiar al modo Docker",
 
     "wizard_title_new": "Nuevo lanzamiento",
     "wizard_title_edit": "Editar lanzamiento",

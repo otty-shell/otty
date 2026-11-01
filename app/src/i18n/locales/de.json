@@ -89,6 +89,8 @@
     "close_session": "Sitzung schließen",
     "palette_toggle_left_panel": "Linkes Feld ein- oder ausblenden",
     "palette_toggle_files_panel": "Dateien ein- oder ausblenden",
+    "palette_switch_to_terminal_mode": "Zum Terminal-Modus wechseln",
+    "palette_switch_to_docker_mode": "Zum Docker-Modus wechseln",
 
     "wizard_title_new": "Neuer Start",
     "wizard_title_edit": "Start bearbeiten",

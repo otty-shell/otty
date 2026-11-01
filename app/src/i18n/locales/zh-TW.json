@@ -89,6 +89,8 @@
     "close_session": "關閉工作階段",
     "palette_toggle_left_panel": "顯示或隱藏左側面板",
     "palette_toggle_files_panel": "顯示或隱藏檔案",
+    "palette_switch_to_terminal_mode": "切換到終端機模式",
+    "palette_switch_to_docker_mode": "切換到 Docker 模式",
 
     "wizard_title_new": "新增啟動項目",
     "wizard_title_edit": "編輯啟動項目",

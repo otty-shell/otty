@@ -157,6 +157,8 @@ mod tests {
     use crate::events::AppEvent;
     use crate::shortcuts::AppShortcut;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::modes::types::Mode;
+    use crate::widgets::modes::{ModesEvent, ModesIntent, ModesWidget};
     use crate::widgets::tabs::{TabsEvent, TabsIntent};
     use crate::widgets::terminal_workspace::{
         TerminalWorkspaceEffect, TerminalWorkspaceIntent,
@@ -225,6 +227,27 @@ mod tests {
             [AppEvent::Tabs(TabsEvent::Intent(
                 TabsIntent::OpenSettingsTab
             ))]
+        ));
+    }
+
+    #[test]
+    fn given_mode_shortcut_pressed_in_a_terminal_when_handled_then_the_mode_switches()
+     {
+        let (mut app, _) = App::new();
+        app.widgets.modes = ModesWidget::new();
+
+        let events = collect_outputs(handle_effect_event(
+            &mut app,
+            TerminalWorkspaceEffect::ShortcutPressed {
+                shortcut: AppShortcut::PinnedMode1,
+            },
+        ));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
+                Mode::Docker
+            )))]
         ));
     }
 

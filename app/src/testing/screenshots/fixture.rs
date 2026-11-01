@@ -9,6 +9,7 @@ use iced::Point;
 use super::window::Frame;
 use crate::events::palette::palette_ctx;
 use crate::widgets::explorer::types::FileNode;
+use crate::widgets::modes::types::Mode;
 use crate::widgets::palette::{PaletteIntent, PaletteWidget};
 use crate::widgets::quick_launch::model::QuickLaunchTreeViewModel;
 use crate::widgets::quick_launch::state::{
@@ -94,6 +95,7 @@ impl Fixture {
             &TabsViewModel::new(&tabs, Some(TAB_ZSH), Some("fedora")),
             QuickLaunchTreeViewModel::idle(&launches, &fx_launching).launches(),
             true,
+            vec![Mode::Terminal, Mode::Docker],
         );
         let _ = palette.reduce(PaletteIntent::Open, &ctx);
         drop(ctx);

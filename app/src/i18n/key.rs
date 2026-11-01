@@ -194,6 +194,10 @@ pub(crate) enum Key {
     PaletteToggleLeftPanel,
     /// Action that shows or hides the files panel.
     PaletteToggleFilesPanel,
+    /// Action that switches to Terminal mode.
+    PaletteSwitchToTerminalMode,
+    /// Action that switches to Docker mode.
+    PaletteSwitchToDockerMode,
 
     // Quick launch wizard.
     /// Title of the form that creates a launch.
@@ -385,7 +389,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 167] = [
+    pub(super) const ALL: [Self; 169] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -467,6 +471,8 @@ impl Key {
         Self::CloseSession,
         Self::PaletteToggleLeftPanel,
         Self::PaletteToggleFilesPanel,
+        Self::PaletteSwitchToTerminalMode,
+        Self::PaletteSwitchToDockerMode,
         Self::WizardTitleNew,
         Self::WizardTitleEdit,
         Self::WizardSubtitle,

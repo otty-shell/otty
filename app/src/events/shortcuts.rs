@@ -10,6 +10,7 @@ use iced::{Task, keyboard};
 use super::AppEvent;
 use crate::app::App;
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
+use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::palette::{PaletteEvent, PaletteIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
@@ -47,6 +48,28 @@ pub(crate) fn handle(app: &App, shortcut: AppShortcut) -> Task<AppEvent> {
         AppShortcut::CommandPalette => Task::done(AppEvent::Palette(
             PaletteEvent::Intent(PaletteIntent::Open),
         )),
+        AppShortcut::TerminalMode
+        | AppShortcut::PinnedMode1
+        | AppShortcut::PinnedMode2
+        | AppShortcut::PinnedMode3
+        | AppShortcut::PinnedMode4 => select_mode(app, shortcut),
+        AppShortcut::AllModesMenu => modes_intent(ModesIntent::ToggleMenu),
+    }
+}
+
+/// Switch to the mode at the switcher position of a mode shortcut:
+/// Terminal, then the pinned modes. With fewer pinned modes than the
+/// position, nothing happens; a temporary tab is never a pinned mode.
+fn select_mode(app: &App, shortcut: AppShortcut) -> Task<AppEvent> {
+    let pinned_rows = app.widgets.modes.vm().pinned_rows;
+    let mode = shortcut
+        .mode_position()
+        .and_then(|position| pinned_rows.get(position))
+        .map(|row| row.mode);
+
+    match mode {
+        Some(mode) => modes_intent(ModesIntent::Select(mode)),
+        None => Task::none(),
     }
 }
 
@@ -58,6 +81,10 @@ fn sidebar_intent(intent: SidebarIntent) -> Task<AppEvent> {
     Task::done(AppEvent::Sidebar(SidebarEvent::Intent(intent)))
 }
 
+fn modes_intent(intent: ModesIntent) -> Task<AppEvent> {
+    Task::done(AppEvent::Modes(ModesEvent::Intent(intent)))
+}
+
 #[cfg(test)]
 mod tests {
     use iced::keyboard::key::{NativeCode, Physical};
@@ -65,6 +92,8 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::modes::ModesWidget;
+    use crate::widgets::modes::types::Mode;
     use crate::widgets::tabs::TabsCtx;
 
     /// Context the tests reduce tabs intents with.
@@ -82,6 +111,119 @@ mod tests {
             text: None,
             repeat,
         }
+    }
+
+    /// App on first start: Terminal active, Docker pinned, without reading
+    /// `modes.json`.
+    fn first_start_app() -> App {
+        let (mut app, _) = App::new();
+        app.widgets.modes = ModesWidget::new();
+        app
+    }
+
+    /// The press of the physical key a mode shortcut has on this platform,
+    /// reporting `character` (Shift may change it).
+    fn mode_key_press(shortcut: AppShortcut, character: &str) -> Event {
+        let keys = shortcut.keys(Platform::current());
+        let code = keys.code().expect("mode digits are physical keys");
+
+        Event::KeyPressed {
+            key: Key::Character(character.into()),
+            modified_key: Key::Character(character.into()),
+            physical_key: Physical::Code(code),
+            location: Location::Standard,
+            modifiers: keys.modifiers(),
+            text: None,
+            repeat: false,
+        }
+    }
+
+    fn selected_mode(events: &[AppEvent]) -> Option<Mode> {
+        match events {
+            [
+                AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(mode))),
+            ] => Some(*mode),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn terminal_mode_shortcut_switches_to_terminal() {
+        let app = first_start_app();
+
+        let events = collect_outputs(handle(&app, AppShortcut::TerminalMode));
+
+        assert_eq!(selected_mode(&events), Some(Mode::Terminal));
+    }
+
+    #[test]
+    fn pinned_mode_1_shortcut_switches_to_the_first_pinned_mode() {
+        let app = first_start_app();
+
+        let events = collect_outputs(handle(&app, AppShortcut::PinnedMode1));
+
+        assert_eq!(selected_mode(&events), Some(Mode::Docker));
+    }
+
+    #[test]
+    fn pinned_mode_shortcut_past_the_pinned_modes_does_nothing() {
+        let app = first_start_app();
+
+        for shortcut in [
+            AppShortcut::PinnedMode2,
+            AppShortcut::PinnedMode3,
+            AppShortcut::PinnedMode4,
+        ] {
+            let events = collect_outputs(handle(&app, shortcut));
+
+            assert!(events.is_empty(), "{shortcut:?}");
+        }
+    }
+
+    #[test]
+    fn pinned_mode_shortcut_without_pinned_modes_does_nothing() {
+        let mut app = first_start_app();
+        let _ = app.widgets.modes.reduce(ModesIntent::Unpin(Mode::Docker));
+
+        let events = collect_outputs(handle(&app, AppShortcut::PinnedMode1));
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn pinned_mode_shortcut_skips_the_temporary_tab() {
+        // Docker unpinned but active: its tab is temporary, not pinned
+        // mode 1.
+        let mut app = first_start_app();
+        let _ = app.widgets.modes.reduce(ModesIntent::Unpin(Mode::Docker));
+        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+
+        let events = collect_outputs(handle(&app, AppShortcut::PinnedMode1));
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn all_modes_menu_shortcut_toggles_the_menu() {
+        let app = first_start_app();
+
+        let events = collect_outputs(handle(&app, AppShortcut::AllModesMenu));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Modes(ModesEvent::Intent(ModesIntent::ToggleMenu))]
+        ));
+    }
+
+    #[test]
+    fn mode_key_press_from_the_subscription_switches_mode() {
+        let app = first_start_app();
+        // With Shift held the US layout reports "@" for the 2 key.
+        let event = mode_key_press(AppShortcut::PinnedMode1, "@");
+
+        let events = collect_outputs(handle_key_event(&app, &event));
+
+        assert_eq!(selected_mode(&events), Some(Mode::Docker));
     }
 
     #[test]

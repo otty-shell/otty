@@ -89,6 +89,8 @@
     "close_session": "세션 닫기",
     "palette_toggle_left_panel": "왼쪽 패널 표시/숨기기",
     "palette_toggle_files_panel": "파일 표시/숨기기",
+    "palette_switch_to_terminal_mode": "터미널 모드로 전환",
+    "palette_switch_to_docker_mode": "Docker 모드로 전환",
 
     "wizard_title_new": "새 실행 항목",
     "wizard_title_edit": "실행 항목 편집",

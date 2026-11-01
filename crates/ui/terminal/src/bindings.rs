@@ -1,5 +1,5 @@
 use iced_core::keyboard::Modifiers;
-use iced_core::keyboard::key::Named;
+use iced_core::keyboard::key::{Code, Named};
 use iced_core::mouse::Button;
 use otty_libterm::surface::SurfaceMode;
 
@@ -29,6 +29,11 @@ pub enum BindingAction<T = ()> {
 pub enum InputKind {
     Char(String),
     KeyCode(Named),
+    /// A key matched by its place on the keyboard, whatever character the
+    /// layout and the held modifiers make it type. Shift changes the digit
+    /// row (Shift 1 is `!` on a US layout, and the unshifted key is `&` on
+    /// a French one), so a digit shortcut with Shift needs this.
+    Physical(Code),
     Mouse(Button),
 }
 

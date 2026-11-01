@@ -12,7 +12,13 @@
 //!
 //! Auto-repeat presses run nothing on either route, so a held key runs its
 //! shortcut once.
+//!
+//! Most keys are matched by the character they type without modifiers. The
+//! digit row of the mode shortcuts is matched by physical key instead,
+//! because Shift and the layout change its character (Shift 1 is `!` on a
+//! US layout, and the unshifted key is `&` on a French one).
 
+use iced::keyboard::key::{Code, Physical};
 use iced::keyboard::{self, Key, Modifiers};
 use otty_ui_kit::components::kbd::shortcut_text;
 use otty_ui_term::SurfaceMode;
@@ -42,11 +48,23 @@ pub(crate) enum AppShortcut {
     CloseSession,
     /// Split the focused pane vertically.
     SplitPane,
+    /// Switch to Terminal mode, the first switcher tab.
+    TerminalMode,
+    /// Switch to the first pinned mode, if any.
+    PinnedMode1,
+    /// Switch to the second pinned mode, if any.
+    PinnedMode2,
+    /// Switch to the third pinned mode, if any.
+    PinnedMode3,
+    /// Switch to the fourth pinned mode, if any.
+    PinnedMode4,
+    /// Open or close the All modes menu.
+    AllModesMenu,
 }
 
 impl AppShortcut {
-    /// Every shortcut, in the order of the spec table.
-    pub(crate) const ALL: [AppShortcut; 8] = [
+    /// Every shortcut, in the order of the spec tables.
+    pub(crate) const ALL: [AppShortcut; 14] = [
         AppShortcut::CommandPalette,
         AppShortcut::LeftPanel,
         AppShortcut::FilesPanel,
@@ -55,6 +73,22 @@ impl AppShortcut {
         AppShortcut::NewTerminal,
         AppShortcut::CloseSession,
         AppShortcut::SplitPane,
+        AppShortcut::TerminalMode,
+        AppShortcut::PinnedMode1,
+        AppShortcut::PinnedMode2,
+        AppShortcut::PinnedMode3,
+        AppShortcut::PinnedMode4,
+        AppShortcut::AllModesMenu,
+    ];
+
+    /// The mode shortcuts in switcher order: shortcut N selects the mode
+    /// at position N of Terminal followed by the pinned modes.
+    const MODE_SHORTCUTS: [AppShortcut; 5] = [
+        AppShortcut::TerminalMode,
+        AppShortcut::PinnedMode1,
+        AppShortcut::PinnedMode2,
+        AppShortcut::PinnedMode3,
+        AppShortcut::PinnedMode4,
     ];
 
     /// Return the keys that press this shortcut on `platform`.
@@ -62,7 +96,9 @@ impl AppShortcut {
     /// This is the keymap table. On Linux app shortcuts use Ctrl Shift, so
     /// Ctrl plus a letter, `\` or `-` stays with the shell; on macOS they
     /// use Cmd. Split pane keeps its old keys: Super Shift D on Linux, so
-    /// Ctrl D still sends EOF, and Cmd D on macOS.
+    /// Ctrl D still sends EOF, and Cmd D on macOS. The mode digits are
+    /// physical keys, so Ctrl 1–5 and Ctrl M without Shift stay with the
+    /// shell too.
     pub(crate) fn keys(self, platform: Platform) -> ShortcutKeys {
         let ctrl_shift = Modifiers::CTRL | Modifiers::SHIFT;
         let cmd = Modifiers::LOGO;
@@ -118,7 +154,57 @@ impl AppShortcut {
             (AppShortcut::SplitPane, Platform::MacOs) => {
                 ShortcutKeys::new("d", cmd)
             },
+            (AppShortcut::TerminalMode, Platform::Linux) => {
+                ShortcutKeys::physical(Code::Digit1, "1", ctrl_shift)
+            },
+            (AppShortcut::TerminalMode, Platform::MacOs) => {
+                ShortcutKeys::physical(Code::Digit1, "1", cmd)
+            },
+            (AppShortcut::PinnedMode1, Platform::Linux) => {
+                ShortcutKeys::physical(Code::Digit2, "2", ctrl_shift)
+            },
+            (AppShortcut::PinnedMode1, Platform::MacOs) => {
+                ShortcutKeys::physical(Code::Digit2, "2", cmd)
+            },
+            (AppShortcut::PinnedMode2, Platform::Linux) => {
+                ShortcutKeys::physical(Code::Digit3, "3", ctrl_shift)
+            },
+            (AppShortcut::PinnedMode2, Platform::MacOs) => {
+                ShortcutKeys::physical(Code::Digit3, "3", cmd)
+            },
+            (AppShortcut::PinnedMode3, Platform::Linux) => {
+                ShortcutKeys::physical(Code::Digit4, "4", ctrl_shift)
+            },
+            (AppShortcut::PinnedMode3, Platform::MacOs) => {
+                ShortcutKeys::physical(Code::Digit4, "4", cmd)
+            },
+            (AppShortcut::PinnedMode4, Platform::Linux) => {
+                ShortcutKeys::physical(Code::Digit5, "5", ctrl_shift)
+            },
+            (AppShortcut::PinnedMode4, Platform::MacOs) => {
+                ShortcutKeys::physical(Code::Digit5, "5", cmd)
+            },
+            (AppShortcut::AllModesMenu, Platform::Linux) => {
+                ShortcutKeys::new("m", ctrl_shift)
+            },
+            (AppShortcut::AllModesMenu, Platform::MacOs) => {
+                ShortcutKeys::new("m", cmd_shift)
+            },
         }
+    }
+
+    /// Return the switcher position this shortcut selects: 0 for Terminal
+    /// mode, N for pinned mode N, `None` for every other shortcut.
+    pub(crate) fn mode_position(self) -> Option<usize> {
+        Self::MODE_SHORTCUTS
+            .iter()
+            .position(|shortcut| *shortcut == self)
+    }
+
+    /// Return the shortcut that selects the mode at switcher `position`
+    /// (Terminal, then the pinned modes); `None` past pinned mode 4.
+    pub(crate) fn for_mode_position(position: usize) -> Option<AppShortcut> {
+        Self::MODE_SHORTCUTS.get(position).copied()
     }
 
     /// Return the shortcut text for menus and `Kbd` hints on the current
@@ -168,13 +254,22 @@ impl Platform {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ShortcutKeys {
     key: &'static str,
+    code: Option<Code>,
     modifiers: Modifiers,
 }
 
 impl ShortcutKeys {
-    /// The key as the keyboard reports it without modifiers, lower case.
+    /// The key as labels show it. For a key matched by character, it is
+    /// also the character the keyboard reports without modifiers, lower
+    /// case.
     pub(crate) fn key(&self) -> &'static str {
         self.key
+    }
+
+    /// The physical key the shortcut is matched by, whatever character it
+    /// types; `None` for a key matched by its character.
+    pub(crate) fn code(&self) -> Option<Code> {
+        self.code
     }
 
     /// The modifiers that must be held, exactly.
@@ -182,8 +277,41 @@ impl ShortcutKeys {
         self.modifiers
     }
 
+    /// A key matched by the character it types without modifiers.
     fn new(key: &'static str, modifiers: Modifiers) -> Self {
-        Self { key, modifiers }
+        Self {
+            key,
+            code: None,
+            modifiers,
+        }
+    }
+
+    /// A key matched by its place on the keyboard, labelled `label`.
+    fn physical(code: Code, label: &'static str, modifiers: Modifiers) -> Self {
+        Self {
+            key: label,
+            code: Some(code),
+            modifiers,
+        }
+    }
+
+    /// Return whether a press of `key` (without modifiers) on the physical
+    /// key `physical` with exactly `modifiers` held is this shortcut.
+    fn is_pressed_by(
+        &self,
+        key: &Key,
+        physical: Physical,
+        modifiers: Modifiers,
+    ) -> bool {
+        let is_same_key = match self.code {
+            Some(code) => physical == Physical::Code(code),
+            None => match key {
+                Key::Character(key) => key.to_ascii_lowercase() == self.key,
+                _ => false,
+            },
+        };
+
+        is_same_key && modifiers == self.modifiers
     }
 }
 
@@ -201,15 +329,16 @@ pub(crate) fn terminal_bindings()
 /// stands for.
 ///
 /// It matches keys the same way the terminal widget matches its bindings:
-/// the key without modifiers, lower-cased, and exactly the table's
-/// modifiers. Auto-repeat presses, key releases and modifier changes return
-/// `None`.
+/// the physical key for the mode digits, otherwise the key without
+/// modifiers, lower-cased; and exactly the table's modifiers. Auto-repeat
+/// presses, key releases and modifier changes return `None`.
 pub(crate) fn shortcut_for_key_press(
     event: &keyboard::Event,
     platform: Platform,
 ) -> Option<AppShortcut> {
     let keyboard::Event::KeyPressed {
-        key: Key::Character(key),
+        key,
+        physical_key,
         modifiers,
         repeat: false,
         ..
@@ -218,10 +347,10 @@ pub(crate) fn shortcut_for_key_press(
         return None;
     };
 
-    let key = key.to_ascii_lowercase();
     AppShortcut::ALL.into_iter().find(|shortcut| {
-        let keys = shortcut.keys(platform);
-        keys.key() == key && keys.modifiers() == *modifiers
+        shortcut
+            .keys(platform)
+            .is_pressed_by(key, *physical_key, *modifiers)
     })
 }
 
@@ -232,8 +361,12 @@ fn terminal_bindings_for(
         .into_iter()
         .map(|shortcut| {
             let keys = shortcut.keys(platform);
+            let target = match keys.code() {
+                Some(code) => InputKind::Physical(code),
+                None => InputKind::Char(keys.key().to_string()),
+            };
             let binding = KeyboardBinding {
-                target: InputKind::Char(keys.key().to_string()),
+                target,
                 modifiers: keys.modifiers(),
                 mode_include: SurfaceMode::empty(),
                 mode_exclude: SurfaceMode::empty(),
@@ -246,7 +379,7 @@ fn terminal_bindings_for(
 
 #[cfg(test)]
 mod tests {
-    use iced::keyboard::key::{NativeCode, Physical};
+    use iced::keyboard::key::{Code, NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
 
     use super::*;
@@ -263,6 +396,35 @@ mod tests {
             text: None,
             repeat,
         }
+    }
+
+    /// Build a press of the physical key `physical` that reports `key`, as
+    /// the layout and the held modifiers make it.
+    fn physical_key_press(
+        physical: Physical,
+        key: &str,
+        modifiers: Modifiers,
+    ) -> Event {
+        Event::KeyPressed {
+            key: Key::Character(key.into()),
+            modified_key: Key::Character(key.into()),
+            physical_key: physical,
+            location: Location::Standard,
+            modifiers,
+            text: None,
+            repeat: false,
+        }
+    }
+
+    /// Build the press the keymap table describes for `keys`: the physical
+    /// key when it is matched by place, the character otherwise.
+    fn own_key_press(keys: ShortcutKeys) -> Event {
+        let physical = match keys.code() {
+            Some(code) => Physical::Code(code),
+            None => Physical::Unidentified(NativeCode::Unidentified),
+        };
+
+        physical_key_press(physical, keys.key(), keys.modifiers())
     }
 
     #[test]
@@ -285,13 +447,13 @@ mod tests {
     }
 
     #[test]
-    fn linux_shortcuts_never_take_ctrl_letter_backslash_or_minus_from_the_shell()
+    fn linux_shortcuts_never_take_ctrl_letter_digit_backslash_or_minus_from_the_shell()
      {
         for shortcut in AppShortcut::ALL {
             let keys = shortcut.keys(Platform::Linux);
             let modifiers = keys.modifiers();
             let is_shell_key =
-                keys.key().chars().all(|c| c.is_ascii_alphabetic())
+                keys.key().chars().all(|c| c.is_ascii_alphanumeric())
                     || keys.key() == "\\"
                     || keys.key() == "-";
 
@@ -308,9 +470,12 @@ mod tests {
         for platform in [Platform::Linux, Platform::MacOs] {
             for (index, shortcut) in AppShortcut::ALL.iter().enumerate() {
                 for other in &AppShortcut::ALL[index + 1..] {
+                    let keys = shortcut.keys(platform);
+                    let other_keys = other.keys(platform);
+
                     assert_ne!(
-                        shortcut.keys(platform),
-                        other.keys(platform),
+                        (keys.key(), keys.modifiers()),
+                        (other_keys.key(), other_keys.modifiers()),
                         "{shortcut:?} and {other:?} share keys on {platform:?}"
                     );
                 }
@@ -336,6 +501,12 @@ mod tests {
                 (AppShortcut::NewTerminal, String::from("Ctrl Shift T")),
                 (AppShortcut::CloseSession, String::from("Ctrl Shift W")),
                 (AppShortcut::SplitPane, String::from("Super Shift D")),
+                (AppShortcut::TerminalMode, String::from("Ctrl Shift 1")),
+                (AppShortcut::PinnedMode1, String::from("Ctrl Shift 2")),
+                (AppShortcut::PinnedMode2, String::from("Ctrl Shift 3")),
+                (AppShortcut::PinnedMode3, String::from("Ctrl Shift 4")),
+                (AppShortcut::PinnedMode4, String::from("Ctrl Shift 5")),
+                (AppShortcut::AllModesMenu, String::from("Ctrl Shift M")),
             ]
         );
     }
@@ -358,6 +529,12 @@ mod tests {
                 (AppShortcut::NewTerminal, String::from("Cmd T")),
                 (AppShortcut::CloseSession, String::from("Cmd W")),
                 (AppShortcut::SplitPane, String::from("Cmd D")),
+                (AppShortcut::TerminalMode, String::from("Cmd 1")),
+                (AppShortcut::PinnedMode1, String::from("Cmd 2")),
+                (AppShortcut::PinnedMode2, String::from("Cmd 3")),
+                (AppShortcut::PinnedMode3, String::from("Cmd 4")),
+                (AppShortcut::PinnedMode4, String::from("Cmd 5")),
+                (AppShortcut::AllModesMenu, String::from("Cmd Shift M")),
             ]
         );
     }
@@ -404,11 +581,12 @@ mod tests {
                 bindings.iter().zip(AppShortcut::ALL)
             {
                 let keys = shortcut.keys(platform);
+                let target = match keys.code() {
+                    Some(code) => InputKind::Physical(code),
+                    None => InputKind::Char(keys.key().to_string()),
+                };
 
-                assert_eq!(
-                    binding.target,
-                    InputKind::Char(keys.key().to_string())
-                );
+                assert_eq!(binding.target, target, "{shortcut:?}");
                 assert_eq!(binding.modifiers, keys.modifiers());
                 assert_eq!(binding.mode_include, SurfaceMode::empty());
                 assert_eq!(binding.mode_exclude, SurfaceMode::empty());
@@ -429,8 +607,7 @@ mod tests {
     fn every_shortcut_is_found_from_its_own_key_press() {
         for platform in [Platform::Linux, Platform::MacOs] {
             for shortcut in AppShortcut::ALL {
-                let keys = shortcut.keys(platform);
-                let event = key_press(keys.key(), keys.modifiers(), false);
+                let event = own_key_press(shortcut.keys(platform));
 
                 assert_eq!(
                     shortcut_for_key_press(&event, platform),
@@ -519,5 +696,117 @@ mod tests {
             shortcut_for_key_press(&linux_new_terminal, Platform::MacOs),
             None
         );
+    }
+
+    #[test]
+    fn mode_digits_are_matched_by_physical_key_on_both_platforms() {
+        let digits = [
+            (AppShortcut::TerminalMode, Code::Digit1, "1"),
+            (AppShortcut::PinnedMode1, Code::Digit2, "2"),
+            (AppShortcut::PinnedMode2, Code::Digit3, "3"),
+            (AppShortcut::PinnedMode3, Code::Digit4, "4"),
+            (AppShortcut::PinnedMode4, Code::Digit5, "5"),
+        ];
+
+        for platform in [Platform::Linux, Platform::MacOs] {
+            for (shortcut, code, label) in digits {
+                let keys = shortcut.keys(platform);
+
+                assert_eq!(keys.code(), Some(code), "{shortcut:?}");
+                assert_eq!(keys.key(), label, "{shortcut:?}");
+            }
+            assert_eq!(AppShortcut::AllModesMenu.keys(platform).code(), None);
+        }
+    }
+
+    #[test]
+    fn a_digit_shortcut_runs_whatever_character_the_layout_types() {
+        // Ctrl Shift 1 on a US layout reports "1" or "!", on a French
+        // AZERTY layout "&".
+        for character in ["1", "!", "&"] {
+            let event = physical_key_press(
+                Physical::Code(Code::Digit1),
+                character,
+                CTRL_SHIFT,
+            );
+
+            assert_eq!(
+                shortcut_for_key_press(&event, Platform::Linux),
+                Some(AppShortcut::TerminalMode),
+                "{character:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_same_digit_on_another_key_runs_no_mode_shortcut() {
+        let keypad =
+            physical_key_press(Physical::Code(Code::Numpad2), "2", CTRL_SHIFT);
+        let unknown_key = key_press("2", CTRL_SHIFT, false);
+
+        assert_eq!(shortcut_for_key_press(&keypad, Platform::Linux), None);
+        assert_eq!(shortcut_for_key_press(&unknown_key, Platform::Linux), None);
+    }
+
+    #[test]
+    fn ctrl_digits_and_ctrl_m_stay_with_the_shell_on_linux() {
+        let keys = [
+            (Code::Digit1, "1"),
+            (Code::Digit2, "2"),
+            (Code::Digit3, "3"),
+            (Code::Digit4, "4"),
+            (Code::Digit5, "5"),
+            (Code::KeyM, "m"),
+        ];
+
+        for (code, key) in keys {
+            let event =
+                physical_key_press(Physical::Code(code), key, Modifiers::CTRL);
+
+            assert_eq!(
+                shortcut_for_key_press(&event, Platform::Linux),
+                None,
+                "Ctrl {key} must stay with the shell"
+            );
+        }
+    }
+
+    #[test]
+    fn mode_shortcuts_select_the_switcher_positions_in_order() {
+        let positions: Vec<Option<usize>> = AppShortcut::ALL
+            .into_iter()
+            .map(AppShortcut::mode_position)
+            .collect();
+
+        assert_eq!(
+            positions,
+            vec![
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(0),
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                None,
+            ]
+        );
+    }
+
+    #[test]
+    fn every_switcher_position_up_to_four_has_its_shortcut() {
+        for position in 0..=4 {
+            let shortcut = AppShortcut::for_mode_position(position)
+                .expect("positions 0 to 4 have a shortcut");
+
+            assert_eq!(shortcut.mode_position(), Some(position));
+        }
+        assert_eq!(AppShortcut::for_mode_position(5), None);
     }
 }

@@ -101,6 +101,7 @@ mod tests {
             sessions,
             launches: Vec::new(),
             can_split_pane: true,
+            pinned_modes: Vec::new(),
         }
     }
 

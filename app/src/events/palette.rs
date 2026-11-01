@@ -7,6 +7,8 @@ use iced::widget::pane_grid;
 
 use super::AppEvent;
 use crate::app::App;
+use crate::widgets::modes::types::Mode;
+use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::palette::types::PaletteTarget;
 use crate::widgets::palette::{
     PaletteCtx, PaletteEffect, PaletteEvent, PaletteIntent, PaletteLaunch,
@@ -32,11 +34,13 @@ pub(crate) fn handle(app: &mut App, event: PaletteEvent) -> Task<AppEvent> {
 
 /// Build what the palette lists from the tabs and launches view models:
 /// sessions keep the machine grouping of the Sessions panel, launches
-/// keep tree order.
+/// keep tree order. `pinned_modes` is Terminal and the pinned modes in
+/// switcher order, for the mode shortcut labels.
 pub(crate) fn palette_ctx<'a>(
     tabs: &TabsViewModel<'a>,
     launches: Vec<LaunchViewModel<'a>>,
     can_split_pane: bool,
+    pinned_modes: Vec<Mode>,
 ) -> PaletteCtx<'a> {
     let sessions = tabs
         .groups
@@ -64,14 +68,24 @@ pub(crate) fn palette_ctx<'a>(
         sessions,
         launches,
         can_split_pane,
+        pinned_modes,
     }
 }
 
 fn handle_intent(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
+    let pinned_modes = app
+        .widgets
+        .modes
+        .vm()
+        .pinned_rows
+        .iter()
+        .map(|row| row.mode)
+        .collect();
     let ctx = palette_ctx(
         &app.widgets.tabs.vm(app.host_name.as_deref()),
         app.widgets.quick_launch.vm().launches(),
         focused_pane(app).is_some(),
+        pinned_modes,
     );
 
     app.widgets
@@ -140,6 +154,21 @@ fn run_target(app: &App, target: PaletteTarget) -> Task<AppEvent> {
         PaletteTarget::ToggleFocusMode => {
             toggle_panel(SidebarIntent::ToggleFocusMode)
         },
+        PaletteTarget::SwitchMode(mode) => switch_mode(mode),
+    }
+}
+
+/// Send the intent a switcher tab sends for `mode`. In Terminal mode the
+/// terminal the user was in gets its keyboard focus back from the palette
+/// input; other modes have no terminal on screen.
+fn switch_mode(mode: Mode) -> Task<AppEvent> {
+    let select = Task::done(AppEvent::Modes(ModesEvent::Intent(
+        ModesIntent::Select(mode),
+    )));
+
+    match mode {
+        Mode::Terminal => Task::batch(vec![select, focus_active_terminal()]),
+        _ => select,
     }
 }
 
@@ -180,6 +209,7 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::modes::ModesWidget;
     use crate::widgets::tabs::TabsCtx;
     use crate::widgets::tabs::model::{
         SessionGroupViewModel, SessionViewModel,
@@ -294,7 +324,12 @@ mod tests {
             },
         ];
 
-        let ctx = palette_ctx(&tabs, launches, true);
+        let ctx = palette_ctx(
+            &tabs,
+            launches,
+            true,
+            vec![Mode::Terminal, Mode::Docker],
+        );
 
         assert_eq!(
             ctx.sessions,
@@ -338,6 +373,57 @@ mod tests {
             ]
         );
         assert!(ctx.can_split_pane);
+        assert_eq!(ctx.pinned_modes, vec![Mode::Terminal, Mode::Docker]);
+    }
+
+    #[test]
+    fn opening_lists_the_pinned_modes_from_the_modes_widget() {
+        let (mut app, _) = App::new();
+        app.widgets.modes = ModesWidget::new();
+        let _ = app.widgets.modes.reduce(ModesIntent::Unpin(Mode::Docker));
+
+        let _ = handle(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
+
+        let vm = app.widgets.palette.vm().expect("palette should be open");
+        let docker = vm
+            .list
+            .matches()
+            .find(|(item, _)| {
+                *item.key() == PaletteTarget::SwitchMode(Mode::Docker)
+            })
+            .map(|(item, _)| item.clone())
+            .expect("an unpinned mode is still listed");
+        assert_eq!(docker.shortcut(), None);
+    }
+
+    #[test]
+    fn switching_mode_runs_the_switcher_intent() {
+        let (mut app, _) = App::new();
+
+        let events = run(&mut app, PaletteTarget::SwitchMode(Mode::Docker));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
+                Mode::Docker
+            )))]
+        ));
+    }
+
+    #[test]
+    fn switching_to_terminal_mode_gives_the_terminal_its_focus_back() {
+        let (mut app, _) = App::new();
+
+        let events = run(&mut app, PaletteTarget::SwitchMode(Mode::Terminal));
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
+                Mode::Terminal
+            )))
+        )));
+        assert!(events.iter().any(is_focus_active));
+        assert_eq!(events.len(), 2);
     }
 
     #[test]

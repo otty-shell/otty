@@ -89,6 +89,8 @@
     "close_session": "セッションを閉じる",
     "palette_toggle_left_panel": "左パネルの表示/非表示",
     "palette_toggle_files_panel": "ファイルの表示/非表示",
+    "palette_switch_to_terminal_mode": "ターミナルモードに切り替え",
+    "palette_switch_to_docker_mode": "Docker モードに切り替え",
 
     "wizard_title_new": "新しい起動項目",
     "wizard_title_edit": "起動項目を編集",

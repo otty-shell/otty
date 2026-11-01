@@ -1076,6 +1076,12 @@ mod tests {
             AppShortcut::Settings,
             AppShortcut::NewTerminal,
             AppShortcut::CloseSession,
+            AppShortcut::TerminalMode,
+            AppShortcut::PinnedMode1,
+            AppShortcut::PinnedMode2,
+            AppShortcut::PinnedMode3,
+            AppShortcut::PinnedMode4,
+            AppShortcut::AllModesMenu,
         ] {
             let events = collect_outputs(reduce_action(
                 &mut state,

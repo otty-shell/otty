@@ -7,6 +7,7 @@ use super::event::{PaletteEffect, PaletteEvent, PaletteIntent};
 use super::items::palette_items;
 use super::state::PaletteState;
 use super::types::PaletteTarget;
+use crate::widgets::modes::types::Mode;
 
 /// What the palette lists. The app fills it from the other widgets when
 /// the palette opens and on every query change.
@@ -18,6 +19,9 @@ pub(crate) struct PaletteCtx<'a> {
     pub(crate) launches: Vec<PaletteLaunch<'a>>,
     /// The active tab is a terminal with a focused pane to split.
     pub(crate) can_split_pane: bool,
+    /// Terminal and the pinned modes, in switcher order: the mode at
+    /// position N has mode shortcut N.
+    pub(crate) pinned_modes: Vec<Mode>,
 }
 
 /// One open tab the palette can switch to.
@@ -164,6 +168,7 @@ mod tests {
                 is_ssh: true,
             }],
             can_split_pane: true,
+            pinned_modes: Vec::new(),
         }
     }
 

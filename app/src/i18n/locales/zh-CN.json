@@ -89,6 +89,8 @@
     "close_session": "关闭会话",
     "palette_toggle_left_panel": "显示或隐藏左侧面板",
     "palette_toggle_files_panel": "显示或隐藏文件",
+    "palette_switch_to_terminal_mode": "切换到终端模式",
+    "palette_switch_to_docker_mode": "切换到 Docker 模式",
 
     "wizard_title_new": "新建启动项",
     "wizard_title_edit": "编辑启动项",

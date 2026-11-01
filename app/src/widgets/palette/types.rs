@@ -1,3 +1,5 @@
+use crate::widgets::modes::types::Mode;
+
 /// What running a palette entry does. Every entry carries one as its key;
 /// the app router turns it into the event the owning widget already
 /// handles.
@@ -26,4 +28,6 @@ pub(crate) enum PaletteTarget {
     ToggleFilesPanel,
     /// Enter or leave focus mode.
     ToggleFocusMode,
+    /// Switch to this mode, pinned or not.
+    SwitchMode(Mode),
 }

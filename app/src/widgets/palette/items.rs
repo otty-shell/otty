@@ -5,10 +5,12 @@ use super::reducer::{PaletteCtx, PaletteLaunch, PaletteSession};
 use super::types::PaletteTarget;
 use crate::i18n::{self, Key};
 use crate::shortcuts::AppShortcut;
+use crate::widgets::modes::types::Mode;
 
 /// Build every palette entry: open sessions, then launches, then the app
 /// actions. Split pane is listed only when there is a focused pane to
-/// split, Close session only when a tab is active.
+/// split, Close session only when a tab is active. Every mode can be
+/// switched to, pinned or not.
 pub(super) fn palette_items(
     ctx: &PaletteCtx<'_>,
 ) -> Vec<PaletteItem<PaletteTarget>> {
@@ -125,6 +127,19 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
             Some(AppShortcut::FocusMode),
         ),
     ]);
+    actions.extend(Mode::ALL.into_iter().map(|mode| {
+        let shortcut = ctx
+            .pinned_modes
+            .iter()
+            .position(|pinned| *pinned == mode)
+            .and_then(AppShortcut::for_mode_position);
+
+        (
+            PaletteTarget::SwitchMode(mode),
+            switch_mode_title(mode),
+            shortcut,
+        )
+    }));
 
     let group = i18n::t(Key::PaletteGroupActions);
     actions
@@ -139,9 +154,18 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
         .collect()
 }
 
+/// Title of the palette entry that switches to `mode`.
+fn switch_mode_title(mode: Mode) -> Key {
+    match mode {
+        Mode::Terminal => Key::PaletteSwitchToTerminalMode,
+        Mode::Docker => Key::PaletteSwitchToDockerMode,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::widgets::modes::types::Mode;
 
     fn session(
         tab_id: u64,
@@ -176,6 +200,7 @@ mod tests {
             sessions: Vec::new(),
             launches: Vec::new(),
             can_split_pane: false,
+            pinned_modes: vec![Mode::Terminal, Mode::Docker],
         }
     }
 
@@ -324,6 +349,16 @@ mod tests {
                     Key::WindowFocusMode,
                     Some(AppShortcut::FocusMode),
                 ),
+                action(
+                    PaletteTarget::SwitchMode(Mode::Terminal),
+                    Key::PaletteSwitchToTerminalMode,
+                    Some(AppShortcut::TerminalMode),
+                ),
+                action(
+                    PaletteTarget::SwitchMode(Mode::Docker),
+                    Key::PaletteSwitchToDockerMode,
+                    Some(AppShortcut::PinnedMode1),
+                ),
             ]
         );
     }
@@ -342,6 +377,36 @@ mod tests {
                 PaletteTarget::ToggleLeftPanel,
                 PaletteTarget::ToggleFilesPanel,
                 PaletteTarget::ToggleFocusMode,
+                PaletteTarget::SwitchMode(Mode::Terminal),
+                PaletteTarget::SwitchMode(Mode::Docker),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unpinned_mode_can_be_switched_to_but_has_no_shortcut() {
+        let ctx = PaletteCtx {
+            pinned_modes: vec![Mode::Terminal],
+            ..empty_ctx()
+        };
+
+        let items = palette_items(&ctx);
+
+        let group = i18n::t(Key::PaletteGroupActions);
+        assert_eq!(
+            items[items.len() - 2..],
+            [
+                PaletteItem::new(
+                    PaletteTarget::SwitchMode(Mode::Terminal),
+                    group,
+                    i18n::t(Key::PaletteSwitchToTerminalMode),
+                )
+                .with_shortcut(AppShortcut::TerminalMode.label()),
+                PaletteItem::new(
+                    PaletteTarget::SwitchMode(Mode::Docker),
+                    group,
+                    i18n::t(Key::PaletteSwitchToDockerMode),
+                ),
             ]
         );
     }
@@ -377,7 +442,7 @@ mod tests {
                 false,
             )],
             launches: vec![launch(&["htop"], "htop", false)],
-            can_split_pane: false,
+            ..empty_ctx()
         };
 
         let items = palette_items(&ctx);

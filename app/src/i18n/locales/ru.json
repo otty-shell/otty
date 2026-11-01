@@ -89,6 +89,8 @@
     "close_session": "Закрыть сеанс",
     "palette_toggle_left_panel": "Показать или скрыть левую панель",
     "palette_toggle_files_panel": "Показать или скрыть файлы",
+    "palette_switch_to_terminal_mode": "Перейти в режим «Терминал»",
+    "palette_switch_to_docker_mode": "Перейти в режим Docker",
 
     "wizard_title_new": "Новый запуск",
     "wizard_title_edit": "Изменить запуск",
