@@ -449,12 +449,12 @@ pub(crate) struct ContextMenuState {
 }
 
 impl ContextMenuState {
-    pub(crate) fn with_target(mut self, target: ContextMenuTarget) -> Self {
+    pub(super) fn with_target(mut self, target: ContextMenuTarget) -> Self {
         self.target = target;
         self
     }
 
-    pub(crate) fn with_cursor(mut self, cursor: Point) -> Self {
+    pub(super) fn with_cursor(mut self, cursor: Point) -> Self {
         self.cursor = cursor;
         self
     }
@@ -465,6 +465,14 @@ impl ContextMenuState {
 
     pub(crate) fn cursor(&self) -> Point {
         self.cursor
+    }
+}
+
+#[cfg(test)]
+impl ContextMenuState {
+    /// Context menu for `target`, opened at `cursor`.
+    pub(crate) fn at(target: ContextMenuTarget, cursor: Point) -> Self {
+        Self { target, cursor }
     }
 }
 

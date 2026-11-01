@@ -94,15 +94,8 @@ impl Fixture {
         let fx_launching = HashMap::new();
         let ctx = PaletteCtx {
             sessions: TabsViewModel::new(&tabs, Some(TAB_ZSH), Some("fedora")),
-            launches: QuickLaunchTreeViewModel {
-                data: &launches,
-                selected_path: None,
-                hovered_path: None,
-                inline_edit: None,
-                launching: &fx_launching,
-                drop_target: None,
-            }
-            .launches(),
+            launches: QuickLaunchTreeViewModel::idle(&launches, &fx_launching)
+                .launches(),
             can_split_pane: true,
         };
         let _ = palette.reduce(PaletteIntent::Open, &ctx);
@@ -127,11 +120,10 @@ impl Fixture {
             secret,
             palette,
             launching: HashMap::new(),
-            launch_menu: ContextMenuState::default()
-                .with_target(ContextMenuTarget::Command(vec![String::from(
-                    "htop",
-                )]))
-                .with_cursor(Point::new(140.0, 420.0)),
+            launch_menu: ContextMenuState::at(
+                ContextMenuTarget::Command(vec![String::from("htop")]),
+                Point::new(140.0, 420.0),
+            ),
         }
     }
 }

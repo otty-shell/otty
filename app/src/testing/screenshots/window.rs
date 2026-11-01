@@ -269,14 +269,8 @@ fn left_panel<'a>(
                 on_menu: (),
                 on_intent: |_| (),
             });
-            let launches_vm = QuickLaunchTreeViewModel {
-                data: &fx.launches,
-                selected_path: None,
-                hovered_path: None,
-                inline_edit: None,
-                launching: &fx.launching,
-                drop_target: None,
-            };
+            let launches_vm =
+                QuickLaunchTreeViewModel::idle(&fx.launches, &fx.launching);
             let launches_content_height =
                 sidebar_panel::content_height(&launches_vm);
             let launches =
