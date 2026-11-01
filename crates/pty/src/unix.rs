@@ -226,16 +226,6 @@ pub struct LocalSessionBuilder {
     controlling_tty: bool,
 }
 
-/// Start building a Unix PTY session for the provided executable.
-pub fn local(program: &str) -> LocalSessionBuilder {
-    LocalSessionBuilder {
-        cmd: Command::new(program),
-        size: PtySize::default(),
-        work_dir: None,
-        controlling_tty: false,
-    }
-}
-
 impl Default for LocalSessionBuilder {
     fn default() -> Self {
         local("/bin/bash").set_controling_tty_enable()
@@ -357,6 +347,16 @@ impl LocalSessionBuilder {
             signal_pipe,
             signal_pipe_id,
         ))
+    }
+}
+
+/// Start building a Unix PTY session for the provided executable.
+pub fn local(program: &str) -> LocalSessionBuilder {
+    LocalSessionBuilder {
+        cmd: Command::new(program),
+        size: PtySize::default(),
+        work_dir: None,
+        controlling_tty: false,
     }
 }
 

@@ -228,16 +228,6 @@ pub struct UnixSessionBuilder {
     controlling_tty: bool,
 }
 
-/// Start building a Unix PTY session for the provided executable.
-pub fn unix(program: &str) -> UnixSessionBuilder {
-    UnixSessionBuilder {
-        cmd: Command::new(program),
-        size: PtySize::default(),
-        work_dir: None,
-        controlling_tty: false,
-    }
-}
-
 impl UnixSessionBuilder {
     /// Append a single argument to the command line.
     pub fn with_arg(mut self, arg: &str) -> Self {
@@ -348,6 +338,16 @@ impl UnixSessionBuilder {
         set_nonblocking(raw_master)?;
 
         Ok(UnixSession::new(master, child, signal_pipe, signal_pipe_id))
+    }
+}
+
+/// Start building a Unix PTY session for the provided executable.
+pub fn unix(program: &str) -> UnixSessionBuilder {
+    UnixSessionBuilder {
+        cmd: Command::new(program),
+        size: PtySize::default(),
+        work_dir: None,
+        controlling_tty: false,
     }
 }
 
