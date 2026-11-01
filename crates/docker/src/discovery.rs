@@ -3,15 +3,18 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use futures_util::future::join_all;
+use futures_util::future::{join, join_all};
 
 use crate::candidates::{DiscoveryEnv, drop_same_sockets, socket_candidates};
-use crate::cli::CliPresence;
+use crate::cli::{CliPresence, command_dirs};
 use crate::diagnosis::{Diagnosis, diagnose};
 use crate::probe::{Probe, probe};
 
 /// How long one candidate may take to connect and answer `/version`.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+/// How long `docker --version` may take (the `podman-docker` check). It runs
+/// alongside the probes, so it adds no time to the search.
+const CLI_VERSION_TIMEOUT: Duration = Duration::from_millis(1500);
 
 /// The result of one engine search: what was tried and what it means.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,8 +56,10 @@ impl Discovery {
 /// Look for local Docker and Podman engines (spec Decisions 8 and 9).
 ///
 /// Tries every candidate at once, each with a short time limit and no
-/// retries, so the whole search takes about two seconds at most. Never
-/// fails: an unreachable engine is part of the result.
+/// retries, while it looks for the `docker` and `podman` commands (and asks
+/// a found `docker` for its version, to spot Podman's `podman-docker`), so
+/// the whole search takes about two seconds at most. Never fails: an
+/// unreachable engine is part of the result.
 ///
 /// Needs a tokio runtime.
 ///
@@ -79,14 +84,16 @@ pub async fn discover() -> Discovery {
     let env = DiscoveryEnv::from_process();
     let candidates =
         drop_same_sockets(socket_candidates(&env), resolve_socket_path);
+    let command_dirs =
+        command_dirs(std::env::var_os("PATH").as_deref(), env.home.as_deref());
 
     let probes = join_all(
         candidates
             .into_iter()
             .map(|candidate| probe(candidate, PROBE_TIMEOUT)),
-    )
-    .await;
-    let cli = CliPresence::from_path(std::env::var_os("PATH").as_deref());
+    );
+    let cli = CliPresence::find(&command_dirs, CLI_VERSION_TIMEOUT);
+    let (probes, cli) = join(probes, cli).await;
 
     for probe in &probes {
         let address = probe.candidate().address();

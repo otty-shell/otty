@@ -10,7 +10,7 @@ use crate::address::EngineAddress;
 /// Docker's default socket on Linux and macOS.
 const DOCKER_SOCKET: &str = "/var/run/docker.sock";
 /// Docker Desktop's per-user socket on macOS.
-const DOCKER_DESKTOP_SOCKET: &str = ".docker/run/docker.sock";
+const DOCKER_DESKTOP_MAC_SOCKET: &str = ".docker/run/docker.sock";
 /// Rootless Podman socket, relative to the user runtime directory.
 const PODMAN_ROOTLESS_SOCKET: &str = "podman/podman.sock";
 /// Rootful Podman socket on Linux.
@@ -24,6 +24,13 @@ const PODMAN_4_MACHINE_SOCKETS: [&str; 2] = [
 ];
 /// Podman falls back to `/tmp` when `$TMPDIR` is not set.
 const DEFAULT_TMPDIR: &str = "/tmp";
+/// Docker Desktop's per-user socket on Linux, relative to `$HOME`.
+const DOCKER_DESKTOP_LINUX_SOCKET: &str = ".docker/desktop/docker.sock";
+/// Colima's socket for its default profile (Colima 0.4.0 and newer) on
+/// Linux and macOS, relative to `$HOME`.
+const COLIMA_SOCKET: &str = ".colima/default/docker.sock";
+/// OrbStack's socket on macOS, relative to `$HOME`.
+const ORBSTACK_SOCKET: &str = ".orbstack/run/docker.sock";
 
 /// The operating system the search runs on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,8 +113,9 @@ impl SocketCandidate {
 
 /// Build the ordered search list (spec Decision 8).
 ///
-/// Order: `$DOCKER_HOST`, the Docker sockets, the Podman sockets. The same
-/// address is listed once, at its first place.
+/// Order: `$DOCKER_HOST`, the Docker sockets, the Podman sockets, the other
+/// Docker-compatible engines. The same address is listed once, at its first
+/// place.
 pub(crate) fn socket_candidates(env: &DiscoveryEnv) -> Vec<SocketCandidate> {
     let mut candidates = Vec::new();
 
@@ -125,6 +133,11 @@ pub(crate) fn socket_candidates(env: &DiscoveryEnv) -> Vec<SocketCandidate> {
     for path in podman_socket_paths(env) {
         let address = EngineAddress::Unix(path);
         push_unique(&mut candidates, address, CandidateSource::Podman);
+    }
+
+    for path in compatible_socket_paths(env) {
+        let address = EngineAddress::Unix(path);
+        push_unique(&mut candidates, address, CandidateSource::Docker);
     }
 
     candidates
@@ -182,7 +195,7 @@ fn docker_socket_paths(env: &DiscoveryEnv) -> Vec<PathBuf> {
     if env.platform == Platform::MacOs
         && let Some(home) = &env.home
     {
-        paths.push(home.join(DOCKER_DESKTOP_SOCKET));
+        paths.push(home.join(DOCKER_DESKTOP_MAC_SOCKET));
     }
 
     paths
@@ -219,6 +232,22 @@ fn podman_socket_paths(env: &DiscoveryEnv) -> Vec<PathBuf> {
     }
 
     paths
+}
+
+/// Other engines that serve the Docker API and show as Docker: Docker
+/// Desktop on Linux and Colima, or Colima and OrbStack on macOS. All live
+/// under `$HOME`.
+fn compatible_socket_paths(env: &DiscoveryEnv) -> Vec<PathBuf> {
+    let Some(home) = &env.home else {
+        return Vec::new();
+    };
+
+    let sockets = match env.platform {
+        Platform::Linux => [DOCKER_DESKTOP_LINUX_SOCKET, COLIMA_SOCKET],
+        Platform::MacOs => [COLIMA_SOCKET, ORBSTACK_SOCKET],
+    };
+
+    sockets.iter().map(|socket| home.join(socket)).collect()
 }
 
 /// Add a candidate unless its address is already listed.
@@ -280,6 +309,26 @@ mod tests {
         SocketCandidate::new(EngineAddress::Unix(PathBuf::from(path)), source)
     }
 
+    fn linux_compatible_sockets() -> Vec<SocketCandidate> {
+        vec![
+            unix(
+                "/home/ann/.docker/desktop/docker.sock",
+                CandidateSource::Docker,
+            ),
+            unix(
+                "/home/ann/.colima/default/docker.sock",
+                CandidateSource::Docker,
+            ),
+        ]
+    }
+
+    fn with_linux_compatible_sockets(
+        mut candidates: Vec<SocketCandidate>,
+    ) -> Vec<SocketCandidate> {
+        candidates.extend(linux_compatible_sockets());
+        candidates
+    }
+
     fn tcp(host: &str) -> SocketCandidate {
         SocketCandidate::new(
             EngineAddress::Tcp(String::from(host)),
@@ -309,6 +358,14 @@ mod tests {
                     CandidateSource::Podman
                 ),
                 unix("/run/podman/podman.sock", CandidateSource::Podman),
+                unix(
+                    "/home/ann/.docker/desktop/docker.sock",
+                    CandidateSource::Docker
+                ),
+                unix(
+                    "/home/ann/.colima/default/docker.sock",
+                    CandidateSource::Docker
+                ),
             ]
         );
     }
@@ -319,14 +376,14 @@ mod tests {
 
         assert_eq!(
             candidates,
-            vec![
+            with_linux_compatible_sockets(vec![
                 unix("/var/run/docker.sock", CandidateSource::Docker),
                 unix(
                     "/run/user/1000/podman/podman.sock",
                     CandidateSource::Podman
                 ),
                 unix("/run/podman/podman.sock", CandidateSource::Podman),
-            ]
+            ])
         );
     }
 
@@ -339,7 +396,7 @@ mod tests {
 
         let candidates = socket_candidates(&env);
 
-        assert_eq!(candidates.len(), 3);
+        assert_eq!(candidates.len(), 5);
     }
 
     #[test]
@@ -354,10 +411,10 @@ mod tests {
 
         assert_eq!(
             candidates,
-            vec![
+            with_linux_compatible_sockets(vec![
                 unix("/var/run/docker.sock", CandidateSource::Docker),
                 unix("/run/podman/podman.sock", CandidateSource::Podman),
-            ]
+            ])
         );
     }
 
@@ -390,7 +447,7 @@ mod tests {
             candidates[0],
             unix("/home/ann/.docker.sock", CandidateSource::DockerHost)
         );
-        assert_eq!(candidates.len(), 4);
+        assert_eq!(candidates.len(), 6);
     }
 
     #[test]
@@ -403,7 +460,7 @@ mod tests {
         let candidates = socket_candidates(&env);
 
         assert_eq!(candidates[0], tcp("127.0.0.1:2375"));
-        assert_eq!(candidates.len(), 4);
+        assert_eq!(candidates.len(), 6);
     }
 
     #[test]
@@ -429,14 +486,14 @@ mod tests {
 
         assert_eq!(
             candidates,
-            vec![
+            with_linux_compatible_sockets(vec![
                 unix("/var/run/docker.sock", CandidateSource::DockerHost),
                 unix(
                     "/run/user/1000/podman/podman.sock",
                     CandidateSource::Podman
                 ),
                 unix("/run/podman/podman.sock", CandidateSource::Podman),
-            ]
+            ])
         );
     }
 
@@ -452,13 +509,13 @@ mod tests {
 
             let candidates = socket_candidates(&env);
 
-            assert_eq!(candidates.len(), 3, "DOCKER_HOST={value}");
+            assert_eq!(candidates.len(), 5, "DOCKER_HOST={value}");
             assert_eq!(candidates[0].source(), CandidateSource::Docker);
         }
     }
 
     #[test]
-    fn macos_lists_docker_desktop_and_podman_machine_sockets() {
+    fn macos_lists_docker_desktop_podman_machine_colima_and_orbstack() {
         let candidates = socket_candidates(&macos_env());
 
         assert_eq!(
@@ -480,6 +537,14 @@ mod tests {
                 unix(
                     "/Users/ann/.local/share/containers/podman/machine/qemu/podman.sock",
                     CandidateSource::Podman
+                ),
+                unix(
+                    "/Users/ann/.colima/default/docker.sock",
+                    CandidateSource::Docker
+                ),
+                unix(
+                    "/Users/ann/.orbstack/run/docker.sock",
+                    CandidateSource::Docker
                 ),
             ]
         );
@@ -519,7 +584,7 @@ mod tests {
                 CandidateSource::Podman
             )
         );
-        assert_eq!(candidates.len(), 6);
+        assert_eq!(candidates.len(), 8);
     }
 
     #[test]
@@ -541,6 +606,122 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn linux_without_home_skips_docker_desktop_and_colima() {
+        let env = DiscoveryEnv {
+            home: None,
+            ..linux_env()
+        };
+
+        let candidates = socket_candidates(&env);
+
+        assert_eq!(
+            candidates,
+            vec![
+                unix("/var/run/docker.sock", CandidateSource::Docker),
+                unix(
+                    "/run/user/1000/podman/podman.sock",
+                    CandidateSource::Podman
+                ),
+                unix("/run/podman/podman.sock", CandidateSource::Podman),
+            ]
+        );
+    }
+
+    #[test]
+    fn linux_does_not_list_orbstack() {
+        let candidates = socket_candidates(&linux_env());
+
+        assert!(candidates.iter().all(|candidate| {
+            !candidate.address().to_string().contains(".orbstack")
+        }));
+    }
+
+    #[test]
+    fn macos_does_not_list_docker_desktop_for_linux() {
+        let candidates = socket_candidates(&macos_env());
+
+        assert!(candidates.iter().all(|candidate| {
+            !candidate.address().to_string().contains(".docker/desktop")
+        }));
+    }
+
+    #[test]
+    fn colima_socket_in_docker_host_is_listed_once_first() {
+        let env = DiscoveryEnv {
+            docker_host: Some(String::from(
+                "unix:///home/ann/.colima/default/docker.sock",
+            )),
+            ..linux_env()
+        };
+
+        let candidates = socket_candidates(&env);
+
+        assert_eq!(
+            candidates,
+            vec![
+                unix(
+                    "/home/ann/.colima/default/docker.sock",
+                    CandidateSource::DockerHost
+                ),
+                unix("/var/run/docker.sock", CandidateSource::Docker),
+                unix(
+                    "/run/user/1000/podman/podman.sock",
+                    CandidateSource::Podman
+                ),
+                unix("/run/podman/podman.sock", CandidateSource::Podman),
+                unix(
+                    "/home/ann/.docker/desktop/docker.sock",
+                    CandidateSource::Docker
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn orbstack_socket_in_docker_host_is_listed_once_first() {
+        let env = DiscoveryEnv {
+            docker_host: Some(String::from(
+                "unix:///Users/ann/.orbstack/run/docker.sock",
+            )),
+            ..macos_env()
+        };
+
+        let candidates = socket_candidates(&env);
+
+        assert_eq!(
+            candidates[0],
+            unix(
+                "/Users/ann/.orbstack/run/docker.sock",
+                CandidateSource::DockerHost
+            )
+        );
+        assert_eq!(candidates.len(), 7);
+    }
+
+    #[test]
+    fn default_socket_linked_to_orbstack_is_tried_once() {
+        let candidates = socket_candidates(&macos_env());
+        let resolve = |path: &Path| {
+            if path == Path::new("/var/run/docker.sock") {
+                PathBuf::from("/Users/ann/.orbstack/run/docker.sock")
+            } else {
+                path.to_path_buf()
+            }
+        };
+
+        let kept = drop_same_sockets(candidates, resolve);
+
+        assert_eq!(kept.len(), 6);
+        assert_eq!(
+            kept[0],
+            unix("/var/run/docker.sock", CandidateSource::Docker)
+        );
+        assert!(kept.iter().all(|candidate| {
+            !candidate.address().to_string().contains(".orbstack")
+        }));
     }
 
     #[test]

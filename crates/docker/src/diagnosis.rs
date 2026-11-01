@@ -12,13 +12,14 @@ pub enum Diagnosis {
     Engines(Vec<EngineInfo>),
     /// A socket is there, but this user may not connect to it.
     NoPermission(SocketCandidate),
-    /// Docker is installed (`docker` on `PATH`, or a Docker socket that does
-    /// not answer) but no Docker socket answers.
+    /// Docker is installed (Docker's `docker` command found, or a Docker
+    /// socket that does not answer) but no Docker socket answers.
     DockerNotRunning,
-    /// Podman is installed (`podman` on `PATH`, or a Podman socket that does
-    /// not answer) but its API service does not answer.
+    /// Podman is installed (`podman` found, or a `docker` command that is
+    /// really Podman, or a Podman socket that does not answer) but its API
+    /// service does not answer.
     PodmanApiOff,
-    /// No engine answered and neither `docker` nor `podman` is on `PATH`.
+    /// No engine answered and neither `docker` nor `podman` was found.
     NotInstalled,
 }
 
@@ -201,6 +202,26 @@ mod tests {
         ];
 
         let diagnosis = diagnose(&probes, CliPresence::new(false, false));
+
+        assert_eq!(diagnosis, Diagnosis::PodmanApiOff);
+    }
+
+    #[test]
+    fn podman_docker_user_without_answer_is_podman_api_off() {
+        let docker_is_podman = true;
+        let cli = CliPresence::from_lookup(true, docker_is_podman, true);
+
+        let diagnosis = diagnose(&nothing_answers(), cli);
+
+        assert_eq!(diagnosis, Diagnosis::PodmanApiOff);
+    }
+
+    #[test]
+    fn podman_docker_wrapper_alone_is_podman_api_off() {
+        let docker_is_podman = true;
+        let cli = CliPresence::from_lookup(true, docker_is_podman, false);
+
+        let diagnosis = diagnose(&nothing_answers(), cli);
 
         assert_eq!(diagnosis, Diagnosis::PodmanApiOff);
     }

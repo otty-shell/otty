@@ -19,7 +19,9 @@ log = { workspace = true }
 # Reads the captured engine answers behind the `fixtures` feature.
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
-tokio = { version = "1.47", features = ["net", "time"] }
+# `process` runs `docker --version` with a time limit (the `podman-docker`
+# check); the workspace already builds tokio with it, so no new crate.
+tokio = { version = "1.47", features = ["net", "process", "time"] }
 
 [features]
 # `otty_docker::fixtures`: values mapped from the captured engine answers in
