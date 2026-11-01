@@ -122,7 +122,7 @@
     "docker_panel_podman_off": "Podman API 服務已關閉。",
     "docker_panel_no_access": "無法存取 Docker socket。",
     "docker_nothing_to_inspect": "沒有可檢查的項目。",
-    "tpl_docker_looked_for": "OTTY 已尋找 {places}，以及 PATH 中的 docker 與 podman。",
+    "tpl_docker_looked_for": "OTTY 已尋找 {places}，以及 PATH 與常用安裝資料夾中的 docker 與 podman。",
     "docker_column_name": "名稱",
     "docker_column_status": "狀態",
     "docker_column_image": "映像檔",

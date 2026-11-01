@@ -294,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn the_looked_for_line_lists_every_place_and_the_path_search() {
+    fn the_looked_for_line_lists_every_place_and_the_command_search() {
         let vm = view_model(NoEngineCase::NotInstalled, "", &places());
 
         assert_eq!(

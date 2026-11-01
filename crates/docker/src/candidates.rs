@@ -26,9 +26,18 @@ const PODMAN_4_MACHINE_SOCKETS: [&str; 2] = [
 const DEFAULT_TMPDIR: &str = "/tmp";
 /// Docker Desktop's per-user socket on Linux, relative to `$HOME`.
 const DOCKER_DESKTOP_LINUX_SOCKET: &str = ".docker/desktop/docker.sock";
-/// Colima's socket for its default profile (Colima 0.4.0 and newer) on
-/// Linux and macOS, relative to `$HOME`.
-const COLIMA_SOCKET: &str = ".colima/default/docker.sock";
+/// Colima's socket for its default profile (Colima 0.4.0 and newer),
+/// relative to Colima's base folder (see [`colima_dir`]).
+const COLIMA_SOCKET: &str = "default/docker.sock";
+/// Colima's older base folder, relative to `$HOME`; still used when it
+/// exists, and on macOS by a fresh install.
+const COLIMA_HOME_DIR: &str = ".colima";
+/// Colima's base folder inside the config folder (`$XDG_CONFIG_HOME` or
+/// `~/.config`); a fresh install on Linux uses it.
+const COLIMA_CONFIG_DIR: &str = "colima";
+/// The config folder when `$XDG_CONFIG_HOME` is not set, relative to
+/// `$HOME`.
+const DEFAULT_CONFIG_DIR: &str = ".config";
 /// OrbStack's socket on macOS, relative to `$HOME`.
 const ORBSTACK_SOCKET: &str = ".orbstack/run/docker.sock";
 
@@ -59,21 +68,49 @@ pub(crate) struct DiscoveryEnv {
     pub(crate) home: Option<PathBuf>,
     pub(crate) tmpdir: Option<PathBuf>,
     pub(crate) uid: Option<u32>,
+    /// Colima's base folder, chosen as Colima chooses it.
+    pub(crate) colima_dir: Option<PathBuf>,
 }
 
 impl DiscoveryEnv {
     /// Read the search inputs from the environment of this process.
     pub(crate) fn from_process() -> Self {
+        let platform = Platform::current();
+        let home = non_empty_var("HOME").map(PathBuf::from);
+        let colima_home = non_empty_var("COLIMA_HOME").map(PathBuf::from);
+        let xdg_config_home =
+            non_empty_var("XDG_CONFIG_HOME").map(PathBuf::from);
+
+        let colima_dir = colima_dir(
+            &ColimaInputs {
+                platform,
+                colima_home: colima_home.as_deref(),
+                home: home.as_deref(),
+                xdg_config_home: xdg_config_home.as_deref(),
+            },
+            Path::exists,
+        );
+
         Self {
-            platform: Platform::current(),
+            platform,
             docker_host: non_empty_var("DOCKER_HOST"),
             xdg_runtime_dir: non_empty_var("XDG_RUNTIME_DIR")
                 .map(PathBuf::from),
-            home: non_empty_var("HOME").map(PathBuf::from),
+            home,
             tmpdir: non_empty_var("TMPDIR").map(PathBuf::from),
             uid: current_uid(),
+            colima_dir,
         }
     }
+}
+
+/// What Colima reads to choose its base folder.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ColimaInputs<'a> {
+    pub(crate) platform: Platform,
+    pub(crate) colima_home: Option<&'a Path>,
+    pub(crate) home: Option<&'a Path>,
+    pub(crate) xdg_config_home: Option<&'a Path>,
 }
 
 /// Which step of the search order produced a candidate.
@@ -167,6 +204,47 @@ pub(crate) fn drop_same_sockets(
     kept
 }
 
+/// Colima's base folder, in Colima's own order (`config/files.go`,
+/// `configBaseDir`): `$COLIMA_HOME` if it exists; else `~/.colima` if it
+/// exists; else `$XDG_CONFIG_HOME/colima` when that variable is set; else
+/// `~/.config/colima` if it exists; else `~/.colima` on macOS and
+/// `~/.config/colima` on Linux. `exists` checks the file system.
+pub(crate) fn colima_dir(
+    inputs: &ColimaInputs<'_>,
+    exists: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    if let Some(colima_home) = inputs.colima_home
+        && exists(colima_home)
+    {
+        return Some(colima_home.to_path_buf());
+    }
+
+    let dot_colima = inputs.home.map(|home| home.join(COLIMA_HOME_DIR));
+    if let Some(dot_colima) = &dot_colima
+        && exists(dot_colima)
+    {
+        return Some(dot_colima.clone());
+    }
+
+    if let Some(config) = inputs.xdg_config_home {
+        return Some(config.join(COLIMA_CONFIG_DIR));
+    }
+
+    let config_colima = inputs
+        .home
+        .map(|home| home.join(DEFAULT_CONFIG_DIR).join(COLIMA_CONFIG_DIR));
+    if let Some(config_colima) = &config_colima
+        && exists(config_colima)
+    {
+        return Some(config_colima.clone());
+    }
+
+    match inputs.platform {
+        Platform::MacOs => dot_colima,
+        Platform::Linux => config_colima,
+    }
+}
+
 /// Read a `DOCKER_HOST` value. Only local kinds are supported: `unix://`
 /// sockets and plain `tcp://` (or `http://`) addresses.
 fn docker_host_address(value: &str) -> Option<EngineAddress> {
@@ -235,19 +313,28 @@ fn podman_socket_paths(env: &DiscoveryEnv) -> Vec<PathBuf> {
 }
 
 /// Other engines that serve the Docker API and show as Docker: Docker
-/// Desktop on Linux and Colima, or Colima and OrbStack on macOS. All live
-/// under `$HOME`.
+/// Desktop on Linux and Colima, or Colima and OrbStack on macOS. Docker
+/// Desktop and OrbStack live under `$HOME`; Colima in its base folder.
 fn compatible_socket_paths(env: &DiscoveryEnv) -> Vec<PathBuf> {
-    let Some(home) = &env.home else {
-        return Vec::new();
-    };
+    let home = env.home.as_deref();
+    let colima = env.colima_dir.as_deref();
+    let mut paths = Vec::new();
 
-    let sockets = match env.platform {
-        Platform::Linux => [DOCKER_DESKTOP_LINUX_SOCKET, COLIMA_SOCKET],
-        Platform::MacOs => [COLIMA_SOCKET, ORBSTACK_SOCKET],
-    };
+    if env.platform == Platform::Linux
+        && let Some(home) = home
+    {
+        paths.push(home.join(DOCKER_DESKTOP_LINUX_SOCKET));
+    }
+    if let Some(colima) = colima {
+        paths.push(colima.join(COLIMA_SOCKET));
+    }
+    if env.platform == Platform::MacOs
+        && let Some(home) = home
+    {
+        paths.push(home.join(ORBSTACK_SOCKET));
+    }
 
-    sockets.iter().map(|socket| home.join(socket)).collect()
+    paths
 }
 
 /// Add a candidate unless its address is already listed.
@@ -291,6 +378,7 @@ mod tests {
             home: Some(PathBuf::from("/home/ann")),
             tmpdir: None,
             uid: Some(1000),
+            colima_dir: Some(PathBuf::from("/home/ann/.config/colima")),
         }
     }
 
@@ -302,6 +390,7 @@ mod tests {
             home: Some(PathBuf::from("/Users/ann")),
             tmpdir: Some(PathBuf::from("/var/folders/xy/abc/T/")),
             uid: None,
+            colima_dir: Some(PathBuf::from("/Users/ann/.colima")),
         }
     }
 
@@ -316,7 +405,7 @@ mod tests {
                 CandidateSource::Docker,
             ),
             unix(
-                "/home/ann/.colima/default/docker.sock",
+                "/home/ann/.config/colima/default/docker.sock",
                 CandidateSource::Docker,
             ),
         ]
@@ -363,7 +452,7 @@ mod tests {
                     CandidateSource::Docker
                 ),
                 unix(
-                    "/home/ann/.colima/default/docker.sock",
+                    "/home/ann/.config/colima/default/docker.sock",
                     CandidateSource::Docker
                 ),
             ]
@@ -591,6 +680,7 @@ mod tests {
     fn macos_without_home_skips_the_home_sockets() {
         let env = DiscoveryEnv {
             home: None,
+            colima_dir: None,
             ..macos_env()
         };
 
@@ -612,6 +702,7 @@ mod tests {
     fn linux_without_home_skips_docker_desktop_and_colima() {
         let env = DiscoveryEnv {
             home: None,
+            colima_dir: None,
             ..linux_env()
         };
 
@@ -652,7 +743,7 @@ mod tests {
     fn colima_socket_in_docker_host_is_listed_once_first() {
         let env = DiscoveryEnv {
             docker_host: Some(String::from(
-                "unix:///home/ann/.colima/default/docker.sock",
+                "unix:///home/ann/.config/colima/default/docker.sock",
             )),
             ..linux_env()
         };
@@ -663,7 +754,7 @@ mod tests {
             candidates,
             vec![
                 unix(
-                    "/home/ann/.colima/default/docker.sock",
+                    "/home/ann/.config/colima/default/docker.sock",
                     CandidateSource::DockerHost
                 ),
                 unix("/var/run/docker.sock", CandidateSource::Docker),
@@ -750,5 +841,195 @@ mod tests {
                 tcp("localhost:2375"),
             ]
         );
+    }
+
+    // Colima's base folder (ticket 21 follow-up).
+
+    const LINUX_HOME: &str = "/home/ann";
+    const MAC_HOME: &str = "/Users/ann";
+
+    fn colima_inputs(platform: Platform, home: &str) -> ColimaInputs<'_> {
+        ColimaInputs {
+            platform,
+            colima_home: None,
+            home: Some(Path::new(home)),
+            xdg_config_home: None,
+        }
+    }
+
+    /// A file system where only `existing` folders are there.
+    fn only<'a>(existing: &'a [&'a str]) -> impl Fn(&Path) -> bool + 'a {
+        move |path: &Path| existing.iter().any(|dir| path == Path::new(dir))
+    }
+
+    #[test]
+    fn a_fresh_colima_on_linux_uses_the_config_folder() {
+        let inputs = colima_inputs(Platform::Linux, LINUX_HOME);
+
+        let dir = colima_dir(&inputs, only(&[]));
+
+        assert_eq!(dir, Some(PathBuf::from("/home/ann/.config/colima")));
+    }
+
+    #[test]
+    fn a_fresh_colima_on_macos_uses_dot_colima() {
+        let inputs = colima_inputs(Platform::MacOs, MAC_HOME);
+
+        let dir = colima_dir(&inputs, only(&[]));
+
+        assert_eq!(dir, Some(PathBuf::from("/Users/ann/.colima")));
+    }
+
+    #[test]
+    fn an_existing_dot_colima_wins_over_the_config_folder() {
+        let inputs = ColimaInputs {
+            xdg_config_home: Some(Path::new("/home/ann/.xdg")),
+            ..colima_inputs(Platform::Linux, LINUX_HOME)
+        };
+
+        let dir = colima_dir(
+            &inputs,
+            only(&["/home/ann/.colima", "/home/ann/.xdg/colima"]),
+        );
+
+        assert_eq!(dir, Some(PathBuf::from("/home/ann/.colima")));
+    }
+
+    #[test]
+    fn xdg_config_home_is_used_when_dot_colima_is_missing() {
+        for platform in [Platform::Linux, Platform::MacOs] {
+            let inputs = ColimaInputs {
+                xdg_config_home: Some(Path::new("/home/ann/.xdg")),
+                ..colima_inputs(platform, LINUX_HOME)
+            };
+
+            let dir = colima_dir(&inputs, only(&[]));
+
+            assert_eq!(dir, Some(PathBuf::from("/home/ann/.xdg/colima")));
+        }
+    }
+
+    #[test]
+    fn an_existing_config_folder_is_used_on_macos_too() {
+        let inputs = colima_inputs(Platform::MacOs, MAC_HOME);
+
+        let dir = colima_dir(&inputs, only(&["/Users/ann/.config/colima"]));
+
+        assert_eq!(dir, Some(PathBuf::from("/Users/ann/.config/colima")));
+    }
+
+    #[test]
+    fn an_existing_colima_home_overrides_both() {
+        let inputs = ColimaInputs {
+            colima_home: Some(Path::new("/srv/colima")),
+            xdg_config_home: Some(Path::new("/home/ann/.xdg")),
+            ..colima_inputs(Platform::Linux, LINUX_HOME)
+        };
+
+        let dir =
+            colima_dir(&inputs, only(&["/srv/colima", "/home/ann/.colima"]));
+
+        assert_eq!(dir, Some(PathBuf::from("/srv/colima")));
+    }
+
+    #[test]
+    fn a_missing_colima_home_is_passed_over() {
+        let inputs = ColimaInputs {
+            colima_home: Some(Path::new("/srv/colima")),
+            ..colima_inputs(Platform::Linux, LINUX_HOME)
+        };
+
+        let dir = colima_dir(&inputs, only(&["/home/ann/.colima"]));
+
+        assert_eq!(dir, Some(PathBuf::from("/home/ann/.colima")));
+    }
+
+    #[test]
+    fn without_home_only_colima_home_or_xdg_config_home_count() {
+        let no_home = ColimaInputs {
+            home: None,
+            ..colima_inputs(Platform::Linux, LINUX_HOME)
+        };
+        let with_colima_home = ColimaInputs {
+            colima_home: Some(Path::new("/srv/colima")),
+            ..no_home
+        };
+        let with_xdg = ColimaInputs {
+            xdg_config_home: Some(Path::new("/etc/xdg")),
+            ..no_home
+        };
+
+        assert_eq!(colima_dir(&no_home, only(&[])), None);
+        assert_eq!(
+            colima_dir(&with_colima_home, only(&["/srv/colima"])),
+            Some(PathBuf::from("/srv/colima"))
+        );
+        assert_eq!(
+            colima_dir(&with_xdg, only(&[])),
+            Some(PathBuf::from("/etc/xdg/colima"))
+        );
+    }
+
+    #[test]
+    fn colima_in_its_base_folder_is_listed_after_docker_desktop_on_linux() {
+        let env = DiscoveryEnv {
+            colima_dir: Some(PathBuf::from("/srv/colima")),
+            ..linux_env()
+        };
+
+        let candidates = socket_candidates(&env);
+
+        assert_eq!(
+            candidates[3..],
+            [
+                unix(
+                    "/home/ann/.docker/desktop/docker.sock",
+                    CandidateSource::Docker
+                ),
+                unix(
+                    "/srv/colima/default/docker.sock",
+                    CandidateSource::Docker
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn colima_in_its_base_folder_is_listed_before_orbstack_on_macos() {
+        let env = DiscoveryEnv {
+            colima_dir: Some(PathBuf::from("/Users/ann/.config/colima")),
+            ..macos_env()
+        };
+
+        let candidates = socket_candidates(&env);
+
+        assert_eq!(
+            candidates[5..],
+            [
+                unix(
+                    "/Users/ann/.config/colima/default/docker.sock",
+                    CandidateSource::Docker
+                ),
+                unix(
+                    "/Users/ann/.orbstack/run/docker.sock",
+                    CandidateSource::Docker
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn without_a_colima_folder_colima_is_not_listed() {
+        let env = DiscoveryEnv {
+            colima_dir: None,
+            ..linux_env()
+        };
+
+        let candidates = socket_candidates(&env);
+
+        assert!(candidates.iter().all(|candidate| {
+            !candidate.address().to_string().contains("colima")
+        }));
+        assert_eq!(candidates.len(), 4);
     }
 }

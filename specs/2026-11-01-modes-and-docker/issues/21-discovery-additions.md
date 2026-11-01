@@ -106,6 +106,28 @@ and packaging:
   `/var/run/docker.sock` link, so a running rootful Podman is reached once
   and shows as Podman.
 
+### Follow-up: Colima's real base folder and the "looked for" text (2026-11-01)
+
+Done after ticket 16, in its own commit, tests first.
+
+- `candidates.rs`: Colima's socket is now `<colima base>/default/docker.sock`,
+  where the base folder is chosen as Colima's `configBaseDir`
+  (`config/files.go`, `main`) does: `$COLIMA_HOME` if it exists; else
+  `~/.colima` if it exists; else `$XDG_CONFIG_HOME/colima` when that
+  variable is set; else `~/.config/colima` if it exists; else `~/.colima`
+  on macOS and `~/.config/colima` on Linux. A fresh Colima on Linux is
+  therefore found at `~/.config/colima/default/docker.sock`. The choice is
+  the pure `colima_dir(&ColimaInputs, exists)`, tested with a fake
+  `exists`; `DiscoveryEnv::from_process` calls it with `Path::exists` and
+  keeps the result in `DiscoveryEnv::colima_dir`. The place in the order
+  (after Docker Desktop on Linux, before OrbStack on macOS) and the
+  deduplication are unchanged. Without `$HOME`, only an existing
+  `$COLIMA_HOME` or a set `$XDG_CONFIG_HOME` gives a Colima socket.
+- The no-engine card's line now says "…, and for docker and podman on
+  PATH and in the usual install folders." (`tpl_docker_looked_for` in the
+  ten locales; an i18n test checks the text of every locale). No new keys.
+- Coverage (lines): 84.02% on `4d43660` → 84.07%.
+
 ## Answer
 
 Done in `crates/docker`. The public API is unchanged: same types, same

@@ -122,7 +122,7 @@
     "docker_panel_podman_off": "El servicio de API de Podman está apagado.",
     "docker_panel_no_access": "Sin acceso al socket de Docker.",
     "docker_nothing_to_inspect": "Nada que inspeccionar.",
-    "tpl_docker_looked_for": "OTTY buscó {places}, y docker y podman en PATH.",
+    "tpl_docker_looked_for": "OTTY buscó {places}, y docker y podman en PATH y en las carpetas de instalación habituales.",
     "docker_column_name": "Nombre",
     "docker_column_status": "Estado",
     "docker_column_image": "Imagen",

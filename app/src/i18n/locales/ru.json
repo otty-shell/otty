@@ -122,7 +122,7 @@
     "docker_panel_podman_off": "Служба API Podman выключена.",
     "docker_panel_no_access": "Нет доступа к сокету Docker.",
     "docker_nothing_to_inspect": "Нечего проверять.",
-    "tpl_docker_looked_for": "OTTY искал {places}, а также docker и podman в PATH.",
+    "tpl_docker_looked_for": "OTTY искал {places}, а также docker и podman в PATH и в обычных папках установки.",
     "docker_column_name": "Имя",
     "docker_column_status": "Состояние",
     "docker_column_image": "Образ",

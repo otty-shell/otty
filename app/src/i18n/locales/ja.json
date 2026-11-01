@@ -122,7 +122,7 @@
     "docker_panel_podman_off": "Podman の API サービスがオフです。",
     "docker_panel_no_access": "Docker ソケットにアクセスできません。",
     "docker_nothing_to_inspect": "調べる項目がありません。",
-    "tpl_docker_looked_for": "OTTY は {places} と、PATH 上の docker と podman を探しました。",
+    "tpl_docker_looked_for": "OTTY は {places} と、PATH 上と一般的なインストール先フォルダーにある docker と podman を探しました。",
     "docker_column_name": "名前",
     "docker_column_status": "状態",
     "docker_column_image": "イメージ",

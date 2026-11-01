@@ -825,6 +825,64 @@ mod tests {
     }
 
     #[test]
+    fn the_looked_for_line_names_path_and_the_install_folders_in_every_locale()
+    {
+        let expected = [
+            (
+                Locale::En,
+                "OTTY looked for /run/docker.sock, and for docker and podman on PATH and in the usual install folders.",
+            ),
+            (
+                Locale::De,
+                "OTTY hat gesucht nach /run/docker.sock sowie nach docker und podman in PATH und in den üblichen Installationsordnern.",
+            ),
+            (
+                Locale::Es,
+                "OTTY buscó /run/docker.sock, y docker y podman en PATH y en las carpetas de instalación habituales.",
+            ),
+            (
+                Locale::Fr,
+                "OTTY a cherché /run/docker.sock, ainsi que docker et podman dans le PATH et dans les dossiers d'installation habituels.",
+            ),
+            (
+                Locale::Ja,
+                "OTTY は /run/docker.sock と、PATH 上と一般的なインストール先フォルダーにある docker と podman を探しました。",
+            ),
+            (
+                Locale::Ko,
+                "OTTY는 /run/docker.sock와(과) PATH 및 일반적인 설치 폴더의 docker, podman을 찾았습니다.",
+            ),
+            (
+                Locale::PtBr,
+                "O OTTY procurou /run/docker.sock, e docker e podman no PATH e nas pastas de instalação habituais.",
+            ),
+            (
+                Locale::Ru,
+                "OTTY искал /run/docker.sock, а также docker и podman в PATH и в обычных папках установки.",
+            ),
+            (
+                Locale::ZhCn,
+                "OTTY 查找了 /run/docker.sock，以及 PATH 和常用安装文件夹中的 docker 和 podman。",
+            ),
+            (
+                Locale::ZhTw,
+                "OTTY 已尋找 /run/docker.sock，以及 PATH 與常用安裝資料夾中的 docker 與 podman。",
+            ),
+        ];
+        assert_eq!(expected.len(), Locale::ALL.len());
+
+        for (locale, text) in expected {
+            let filled = fill_in(
+                locale,
+                Key::TplDockerLookedFor,
+                &[("places", "/run/docker.sock")],
+            );
+
+            assert_eq!(filled, text, "{}", locale.tag());
+        }
+    }
+
+    #[test]
     fn docker_templates_fill_their_placeholders_in_every_locale() {
         let fills = [
             (Key::TplDockerRunning, ("count", "2")),
