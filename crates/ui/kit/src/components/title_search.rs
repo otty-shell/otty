@@ -16,6 +16,8 @@ const GAP: f32 = 10.0;
 const PADDING_X: f32 = 10.0;
 /// Font size of the title (`font-size: 12.5px`).
 const FONT_SIZE: f32 = 12.5;
+/// Width of the border that keeps the button visible on the title bar.
+const BORDER_WIDTH: f32 = 1.0;
 
 /// Button that opens the command palette. It shows a search icon, the title
 /// of the focused session and the palette shortcut. The whole button sends
@@ -80,7 +82,10 @@ impl<'a, Message: Clone + 'a> From<TitleSearch<Message>>
     fn from(value: TitleSearch<Message>) -> Self {
         let palette = value.palette;
         let muted = palette.text_muted();
-        let background = palette.surface_raised();
+        let body = palette.text_body();
+        let background = palette.surface_overlay();
+        let hover_background = palette.surface_hover();
+        let border_color = palette.line();
 
         let content = row![
             svg(value.icon)
@@ -108,14 +113,26 @@ impl<'a, Message: Clone + 'a> From<TitleSearch<Message>>
             .height(size::TITLE_SEARCH_HEIGHT)
             .padding(Padding::from([0.0, PADDING_X]))
             .on_press_maybe(value.on_press)
-            .style(move |_, _| button::Style {
-                background: Some(background.into()),
-                text_color: muted,
-                border: Border {
-                    radius: radius::RADIUS_SM.into(),
-                    ..Border::default()
-                },
-                ..button::Style::default()
+            .style(move |_, status| {
+                let hovered = matches!(
+                    status,
+                    button::Status::Hovered | button::Status::Pressed
+                );
+
+                button::Style {
+                    background: Some(if hovered {
+                        hover_background.into()
+                    } else {
+                        background.into()
+                    }),
+                    text_color: if hovered { body } else { muted },
+                    border: Border {
+                        color: border_color,
+                        width: BORDER_WIDTH,
+                        radius: radius::RADIUS_SM.into(),
+                    },
+                    ..button::Style::default()
+                }
             })
             .into()
     }

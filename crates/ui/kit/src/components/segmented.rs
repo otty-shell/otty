@@ -18,6 +18,8 @@ const SEGMENT_HEIGHT: f32 = 28.0;
 const SEGMENT_PADDING_X: f32 = spacing::SPACE_4;
 /// Segment text size (`font-size: 12.5px`).
 const SEGMENT_TEXT_SIZE: f32 = 12.5;
+/// Border width of the selected segment.
+const SELECTED_BORDER_WIDTH: f32 = 1.0;
 
 /// Renders `options` as one row of segments; the one equal to `selected` is
 /// highlighted. Pressing a segment sends `on_select(option)`.
@@ -73,25 +75,37 @@ where
                     button::Status::Hovered | button::Status::Pressed
                 );
 
+                // The selected segment is a raised card with a border, so it
+                // stands out from the darker frame in both themes.
+                let border = if is_selected {
+                    Border {
+                        color: palette.line(),
+                        width: SELECTED_BORDER_WIDTH,
+                        radius: radius::RADIUS_SM.into(),
+                    }
+                } else {
+                    Border {
+                        radius: radius::RADIUS_SM.into(),
+                        ..Border::default()
+                    }
+                };
+
                 button::Style {
                     background: is_selected
-                        .then(|| palette.surface_hover().into()),
+                        .then(|| palette.surface_overlay().into()),
                     text_color: if is_selected || hovered {
                         palette.text_strong()
                     } else {
                         palette.text_muted()
                     },
-                    border: Border {
-                        radius: radius::RADIUS_SM.into(),
-                        ..Border::default()
-                    },
+                    border,
                     ..button::Style::default()
                 }
             }),
         );
     }
 
-    let background = palette.surface_raised();
+    let background = palette.surface_chrome();
     container(segments)
         .padding(FRAME_PADDING)
         .style(move |_| container::Style {

@@ -11,6 +11,10 @@ use crate::{fonts, radius, size, spacing, typography};
 const PADDING_X: f32 = spacing::SPACE_3;
 /// Height of a chip (`height: 24px`, the same as `control-sm`).
 const HEIGHT: f32 = size::CONTROL_SM;
+/// Vertical padding that makes a one-line chip [`HEIGHT`] high. Using
+/// padding instead of a fixed height lets the background grow with a
+/// label that wraps in a narrow space.
+const PADDING_Y: f32 = (HEIGHT - typography::SMALL.line_height()) / 2.0;
 
 /// Chip with a label, an optional target dot and an optional muted note.
 ///
@@ -102,9 +106,7 @@ impl<'a, Message: 'a> From<Chip> for Element<'a, Message> {
         }
 
         container(content)
-            .height(HEIGHT)
-            .align_y(Alignment::Center)
-            .padding(Padding::from([0.0, PADDING_X]))
+            .padding(Padding::from([PADDING_Y, PADDING_X]))
             .style(move |_| container::Style {
                 background: Some(background.into()),
                 border: Border {
@@ -114,5 +116,64 @@ impl<'a, Message: 'a> From<Chip> for Element<'a, Message> {
                 ..container::Style::default()
             })
             .into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::widget::column;
+    use iced_test::simulator;
+
+    use super::*;
+
+    #[test]
+    fn given_short_label_when_laid_out_then_chip_is_24px_high() {
+        let palette = UiPalette::otty_dark();
+        let chip: Element<'_, ()> = column![
+            Chip::new("fedora", &palette).target(TargetKind::Local),
+            text("below"),
+        ]
+        .into();
+        let mut ui = simulator(chip);
+
+        let below = ui.find("below").expect("marker should be visible");
+
+        assert!(
+            (below.bounds().y - HEIGHT).abs() < 0.5,
+            "chip height {} should be {HEIGHT}",
+            below.bounds().y
+        );
+    }
+
+    #[test]
+    fn given_narrow_space_when_label_wraps_then_background_keeps_padding() {
+        let palette = UiPalette::otty_dark();
+        let chip: Element<'_, ()> = container(column![
+            Chip::new("fedora work station", &palette)
+                .target(TargetKind::Local),
+            text("below"),
+        ])
+        .width(70)
+        .into();
+        let mut ui = simulator(chip);
+
+        let label = ui
+            .find("fedora work station")
+            .expect("label should be visible")
+            .bounds();
+        let below =
+            ui.find("below").expect("marker should be visible").bounds();
+
+        assert!(label.height > HEIGHT, "label should wrap: {label:?}");
+        assert!(
+            label.y >= PADDING_Y - 0.5,
+            "label top {} should leave {PADDING_Y} padding",
+            label.y
+        );
+        assert!(
+            below.y >= label.y + label.height + PADDING_Y - 0.5,
+            "chip bottom {} should leave {PADDING_Y} padding under label {label:?}",
+            below.y
+        );
     }
 }
