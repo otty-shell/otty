@@ -78,6 +78,18 @@ impl PaneHeaderViewModel {
     }
 }
 
+/// Return the program the Files panel says it follows: the program of the
+/// focused pane, or `default_shell` when there is no terminal tab (or the
+/// pane has no title yet).
+pub(crate) fn followed_program<'a>(
+    focused_program: Option<&'a str>,
+    default_shell: &'a str,
+) -> &'a str {
+    focused_program
+        .filter(|program| !program.is_empty())
+        .unwrap_or(default_shell)
+}
+
 fn display_folder(cwd: &Path, home: Option<&Path>) -> String {
     let Some(rest) = home.and_then(|home| cwd.strip_prefix(home).ok()) else {
         return cwd.display().to_string();
@@ -94,7 +106,22 @@ fn display_folder(cwd: &Path, home: Option<&Path>) -> String {
 mod tests {
     use std::path::Path;
 
-    use super::PaneHeaderViewModel;
+    use super::{PaneHeaderViewModel, followed_program};
+
+    #[test]
+    fn given_focused_pane_when_following_then_its_program_is_used() {
+        assert_eq!(followed_program(Some("nvim"), "zsh"), "nvim");
+    }
+
+    #[test]
+    fn given_no_terminal_tab_when_following_then_default_shell_is_used() {
+        assert_eq!(followed_program(None, "zsh"), "zsh");
+    }
+
+    #[test]
+    fn given_pane_without_title_when_following_then_default_shell_is_used() {
+        assert_eq!(followed_program(Some(""), "zsh"), "zsh");
+    }
 
     #[test]
     fn given_folder_inside_home_when_header_built_then_home_is_tilde() {

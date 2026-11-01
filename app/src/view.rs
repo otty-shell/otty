@@ -3,6 +3,7 @@ use iced::widget::{Space, column, container, mouse_area, text};
 use iced::{Element, Length, Size, Theme, alignment};
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
 use otty_ui_kit::components::surface::{Surface, surface};
+use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::components::{divider, split};
 use otty_ui_kit::{size, spacing};
 
@@ -13,7 +14,8 @@ use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
-use crate::widgets::chrome::view::{action_bar, focus_note};
+use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
+use crate::widgets::chrome::view::{action_bar, focus_note, status_bar};
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::quick_launch::view::{
@@ -29,6 +31,7 @@ use crate::widgets::tabs::types::TabContent;
 use crate::widgets::tabs::view::{empty_state, session_list};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
+use crate::widgets::terminal_workspace::model::followed_program;
 use crate::widgets::terminal_workspace::view::{
     pane_context_menu as terminal_pane_context_menu,
     pane_grid as terminal_pane_grid,
@@ -131,8 +134,10 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 
     let header = view_header(app, sidebar_vm, theme_props);
 
+    let status_bar = view_status_bar(app, theme_props);
+
     let root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
-        column![header, content_stack]
+        column![header, content_stack, status_bar]
             .width(Length::Fill)
             .height(Length::Fill)
             .into(),
@@ -168,6 +173,38 @@ fn view_header<'a>(
         .width(Length::Fill)
         .height(Length::Shrink)
         .into()
+}
+
+/// Render the status bar: machine and focused pane on the left, pane and
+/// session counts on the right. It stays in focus mode.
+fn view_status_bar<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let tab_id = app.widgets.tabs.active_tab_id();
+    let host_name = app.host_name.as_deref();
+    let (machine_name, machine_target) =
+        match app.widgets.tabs.active_tab_machine() {
+            Some(machine) => (machine.name(host_name), machine.target_kind()),
+            None => (
+                host_name.unwrap_or(i18n::t(Key::ThisComputer)),
+                TargetKind::Local,
+            ),
+        };
+    let focused_pane = app
+        .widgets
+        .terminal_workspace
+        .focused_pane_header(tab_id, machine_name);
+
+    let vm = StatusBarViewModel::new(StatusBarInput {
+        machine_name,
+        machine_target,
+        focused_pane: focused_pane.as_ref(),
+        pane_count: app.widgets.terminal_workspace.pane_count(tab_id),
+        session_count: app.widgets.tabs.len(),
+    });
+
+    status_bar::view(&vm, env!("CARGO_PKG_VERSION"), theme_props)
 }
 
 /// Render `left panel | main | right panel` with a pane grid. A closed panel
@@ -279,9 +316,14 @@ fn view_right_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let focused_program = app
+        .widgets
+        .terminal_workspace
+        .focused_program(app.widgets.tabs.active_tab_id());
+
     sidebar_tree::view(sidebar_tree::SidebarTreeProps {
         vm: app.widgets.explorer.vm(),
-        shell_name: app.shell_session.name(),
+        shell_name: followed_program(focused_program, app.shell_session.name()),
         theme: theme_props,
     })
     .map(|event| AppEvent::Explorer(ExplorerEvent::Intent(event)))

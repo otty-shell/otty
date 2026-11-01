@@ -59,6 +59,10 @@
     "no_active_folder": "アクティブなフォルダーがありません",
     "files_title": "ファイル",
     "tpl_files_follows": "{shell} に追従",
+    "status_pane_one": "1 ペイン",
+    "tpl_status_panes": "{count} ペイン",
+    "status_session_one": "1 セッション",
+    "tpl_status_sessions": "{count} セッション",
 
     "wizard_title_new": "新しい起動項目",
     "wizard_title_edit": "起動項目を編集",

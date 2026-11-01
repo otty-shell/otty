@@ -59,6 +59,10 @@
     "no_active_folder": "활성 폴더 없음",
     "files_title": "파일",
     "tpl_files_follows": "{shell} 따라가기",
+    "status_pane_one": "패널 1개",
+    "tpl_status_panes": "패널 {count}개",
+    "status_session_one": "세션 1개",
+    "tpl_status_sessions": "세션 {count}개",
 
     "wizard_title_new": "새 실행 항목",
     "wizard_title_edit": "실행 항목 편집",

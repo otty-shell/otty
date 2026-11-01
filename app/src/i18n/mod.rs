@@ -225,6 +225,30 @@ pub(crate) fn files_follows(shell: &str) -> String {
     fill_in(current_locale(), Key::TplFilesFollows, &[("shell", shell)])
 }
 
+/// Build the status bar pane count, e.g. "2 panes".
+pub(crate) fn status_panes(count: usize) -> String {
+    if count == 1 {
+        return t(Key::StatusPaneOne).to_string();
+    }
+
+    let count = count.to_string();
+    fill_in(current_locale(), Key::TplStatusPanes, &[("count", &count)])
+}
+
+/// Build the status bar session count, e.g. "3 sessions".
+pub(crate) fn status_sessions(count: usize) -> String {
+    if count == 1 {
+        return t(Key::StatusSessionOne).to_string();
+    }
+
+    let count = count.to_string();
+    fill_in(
+        current_locale(),
+        Key::TplStatusSessions,
+        &[("count", &count)],
+    )
+}
+
 /// Build the tab title shown when editing an existing quick launch.
 pub(crate) fn edit_tab_title(command_title: &str) -> String {
     fill_in(
@@ -710,7 +734,7 @@ mod tests {
 
     #[test]
     fn given_every_locale_when_templates_read_then_placeholders_survive() {
-        let required: [(Key, &[&str]); 14] = [
+        let required: [(Key, &[&str]); 16] = [
             (Key::TplEditTabTitle, &["{title}"]),
             (Key::TplLaunchFailedTitle, &["{title}"]),
             (Key::TplLaunchFailedBody, &["{command}", "{error}"]),
@@ -725,6 +749,8 @@ mod tests {
             (Key::TplProgramIsDirectory, &["{program}"]),
             (Key::TplProgramNotExecutable, &["{program}"]),
             (Key::TplFilesFollows, &["{shell}"]),
+            (Key::TplStatusPanes, &["{count}"]),
+            (Key::TplStatusSessions, &["{count}"]),
         ];
 
         for locale in Locale::ALL {

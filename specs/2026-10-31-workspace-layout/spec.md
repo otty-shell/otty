@@ -184,7 +184,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 09 — Left panel: Launches · Sonnet
 - [x] 10 — Left panel: Sessions · Opus
 - [x] 11 — Title bar · Sonnet
-- [ ] 12 — Status bar · Sonnet
+- [x] 12 — Status bar · Sonnet
 - [x] 13 — Pane headers and pane menu · Sonnet
 - [x] 14 — Focus mode note · Sonnet
 - [x] 15 — Empty state · Sonnet

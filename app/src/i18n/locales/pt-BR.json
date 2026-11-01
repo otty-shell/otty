@@ -59,6 +59,10 @@
     "no_active_folder": "Nenhuma pasta ativa",
     "files_title": "Arquivos",
     "tpl_files_follows": "segue {shell}",
+    "status_pane_one": "1 painel",
+    "tpl_status_panes": "{count} painéis",
+    "status_session_one": "1 sessão",
+    "tpl_status_sessions": "{count} sessões",
 
     "wizard_title_new": "Novo lançamento",
     "wizard_title_edit": "Editar lançamento",

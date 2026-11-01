@@ -59,6 +59,10 @@
     "no_active_folder": "No active folder",
     "files_title": "Files",
     "tpl_files_follows": "follows {shell}",
+    "status_pane_one": "1 pane",
+    "tpl_status_panes": "{count} panes",
+    "status_session_one": "1 session",
+    "tpl_status_sessions": "{count} sessions",
 
     "wizard_title_new": "New launch",
     "wizard_title_edit": "Edit launch",

@@ -19,7 +19,9 @@ use otty_ui_kit::components::target_dot::TargetKind;
 pub(crate) use reducer::TerminalWorkspaceCtx;
 use state::{TerminalTabState, TerminalWorkspaceState};
 
-use self::model::{TerminalTabViewModel, TerminalWorkspaceViewModel};
+use self::model::{
+    PaneHeaderViewModel, TerminalTabViewModel, TerminalWorkspaceViewModel,
+};
 
 /// Terminal workspace widget: manages terminal sessions across tabs.
 ///
@@ -119,6 +121,30 @@ impl TerminalWorkspaceWidget {
         tab.focused_terminal_entry().and_then(|entry| {
             services::terminal_cwd_from_blocks(&entry.terminal().blocks())
         })
+    }
+
+    /// Return the header data of the focused pane of a terminal tab.
+    pub(crate) fn focused_pane_header(
+        &self,
+        tab_id: Option<u64>,
+        machine: &str,
+    ) -> Option<PaneHeaderViewModel> {
+        let entry = self.state.tab(tab_id?)?.focused_terminal_entry()?;
+
+        Some(PaneHeaderViewModel::for_entry(entry, machine))
+    }
+
+    /// Return the program (terminal title) of the focused pane of a terminal
+    /// tab.
+    pub(crate) fn focused_program(&self, tab_id: Option<u64>) -> Option<&str> {
+        let entry = self.state.tab(tab_id?)?.focused_terminal_entry()?;
+
+        Some(entry.title())
+    }
+
+    /// Return the number of panes in a terminal tab.
+    pub(crate) fn pane_count(&self, tab_id: Option<u64>) -> Option<usize> {
+        self.state.tab(tab_id?).map(|tab| tab.panes().len())
     }
 
     /// Return read-only access to state for tests.

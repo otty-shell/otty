@@ -133,6 +133,16 @@ pub(crate) enum Key {
     /// Explorer line naming the followed shell. Placeholder: `{shell}`.
     TplFilesFollows,
 
+    // Status bar.
+    /// Status bar text for exactly one pane.
+    StatusPaneOne,
+    /// Status bar pane count. Placeholder: `{count}`.
+    TplStatusPanes,
+    /// Status bar text for exactly one session.
+    StatusSessionOne,
+    /// Status bar session count. Placeholder: `{count}`.
+    TplStatusSessions,
+
     // Quick launch wizard.
     /// Title of the form that creates a launch.
     WizardTitleNew,
@@ -323,7 +333,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 139] = [
+    pub(super) const ALL: [Self; 143] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -377,6 +387,10 @@ impl Key {
         Self::NoActiveFolder,
         Self::FilesTitle,
         Self::TplFilesFollows,
+        Self::StatusPaneOne,
+        Self::TplStatusPanes,
+        Self::StatusSessionOne,
+        Self::TplStatusSessions,
         Self::WizardTitleNew,
         Self::WizardTitleEdit,
         Self::WizardSubtitle,
