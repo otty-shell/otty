@@ -13,6 +13,7 @@ use crate::{Flags, Point, SnapshotCell, SnapshotSize, point_to_viewport};
 /// Matches common URL schemes including http(s), ftp, file, git, ssh, and various
 /// alternative protocols. Excludes whitespace and control characters.
 const URL_PATTERN: &str = "(?:ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file://|git://|ssh:|ftp://)[^\\s<>\\x00-\\x1F\\x7F-\\x9F\"']+";
+
 static URL_LINE_REGEX: LazyLock<HybridRegex> =
     LazyLock::new(build_url_line_regex);
 
@@ -25,22 +26,6 @@ pub struct HyperlinkSpan {
     pub start: Point,
     /// Last cell of the hyperlink in grid coordinates.
     pub end: Point,
-}
-
-/// Internal map for efficient hyperlink lookup and storage.
-///
-/// Maintains both a list of hyperlink spans and a cell-to-span index
-/// for O(1) lookup by grid coordinates.
-#[derive(Default, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct HyperlinkMap {
-    /// All hyperlink spans in the viewport.
-    spans: Vec<HyperlinkSpan>,
-    /// Maps each visible cell to its span ID (if any).
-    cell_to_span: Vec<Option<u32>>,
-    /// Number of columns in the terminal.
-    columns: usize,
-    /// Number of visible lines on screen.
-    screen_lines: usize,
 }
 
 impl HyperlinkSpan {
@@ -60,6 +45,22 @@ impl HyperlinkSpan {
             },
         }
     }
+}
+
+/// Internal map for efficient hyperlink lookup and storage.
+///
+/// Maintains both a list of hyperlink spans and a cell-to-span index
+/// for O(1) lookup by grid coordinates.
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct HyperlinkMap {
+    /// All hyperlink spans in the viewport.
+    spans: Vec<HyperlinkSpan>,
+    /// Maps each visible cell to its span ID (if any).
+    cell_to_span: Vec<Option<u32>>,
+    /// Number of columns in the terminal.
+    columns: usize,
+    /// Number of visible lines on screen.
+    screen_lines: usize,
 }
 
 impl HyperlinkMap {
@@ -395,27 +396,6 @@ struct DetectedSymbol {
     is_spacer: bool,
 }
 
-fn row_wraps(row_cells: &[SnapshotCell]) -> bool {
-    row_cells
-        .iter()
-        .rev()
-        .find(|indexed| {
-            !indexed.cell.flags.intersects(
-                Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
-            )
-        })
-        .map(|indexed| indexed.cell.flags.contains(Flags::WRAPLINE))
-        .unwrap_or(false)
-}
-
-fn build_url_line_regex() -> HybridRegex {
-    let mut builder = HybridRegex::builder();
-    builder.syntax(RegexSyntaxConfig::new().case_insensitive(true));
-    builder
-        .build(URL_PATTERN)
-        .expect("hyperlink regex must compile")
-}
-
 /// Accumulates contiguous characters of a detected URL before flushing as a span.
 ///
 /// Used during URL detection to build up segments that may be interrupted by
@@ -467,6 +447,27 @@ impl DetectedSegment {
         self.indices.clear();
         self.start = None;
     }
+}
+
+fn row_wraps(row_cells: &[SnapshotCell]) -> bool {
+    row_cells
+        .iter()
+        .rev()
+        .find(|indexed| {
+            !indexed.cell.flags.intersects(
+                Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
+            )
+        })
+        .map(|indexed| indexed.cell.flags.contains(Flags::WRAPLINE))
+        .unwrap_or(false)
+}
+
+fn build_url_line_regex() -> HybridRegex {
+    let mut builder = HybridRegex::builder();
+    builder.syntax(RegexSyntaxConfig::new().case_insensitive(true));
+    builder
+        .build(URL_PATTERN)
+        .expect("hyperlink regex must compile")
 }
 
 #[cfg(test)]

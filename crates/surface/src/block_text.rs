@@ -2,65 +2,6 @@ use crate::block::{BlockKind, BlockSnapshot};
 use crate::cell::Flags;
 use crate::snapshot::{SnapshotCell, SnapshotOwned, SnapshotView};
 
-/// Trim trailing ASCII spaces from a buffer and return an owned string.
-fn trim_trailing_spaces(buffer: &str) -> String {
-    buffer.trim_end_matches(' ').to_string()
-}
-
-/// Aggregate the textual content for the provided block from snapshot cells.
-///
-/// Returns `None` for prompt blocks or entries with zero visible lines.
-pub fn collect_block_text(
-    block: &BlockSnapshot,
-    cells: &[SnapshotCell],
-) -> Option<String> {
-    if let Some(text) = &block.cached_text {
-        if matches!(block.meta.kind, BlockKind::Prompt) {
-            return None;
-        }
-        let text = text.as_ref();
-        if text.is_empty() {
-            return None;
-        }
-        return Some(text.to_string());
-    }
-
-    if block.line_count == 0 || matches!(block.meta.kind, BlockKind::Prompt) {
-        return None;
-    }
-
-    let start = block.start_line;
-    let end = start + block.line_count as i32;
-    let mut lines = Vec::with_capacity(block.line_count);
-    let mut current_line = None;
-    let mut buffer = String::new();
-
-    for cell in cells {
-        let line_value = cell.point.line.0;
-        if line_value < start || line_value >= end {
-            continue;
-        }
-
-        if current_line != Some(line_value) {
-            if current_line.is_some() {
-                lines.push(trim_trailing_spaces(&buffer));
-                buffer.clear();
-            }
-            current_line = Some(line_value);
-        }
-
-        if !cell.cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
-            buffer.push(cell.cell.c);
-        }
-    }
-
-    if current_line.is_some() {
-        lines.push(trim_trailing_spaces(&buffer));
-    }
-
-    Some(lines.join("\n"))
-}
-
 impl<'a> SnapshotView<'a> {
     /// Return the concatenated text for a block identified by its id.
     pub fn block_text(&self, block_id: &str) -> Option<String> {
@@ -168,6 +109,65 @@ impl SnapshotOwned {
     ) -> Option<String> {
         self.view().block_prompt_text_from_snapshot(block)
     }
+}
+
+/// Aggregate the textual content for the provided block from snapshot cells.
+///
+/// Returns `None` for prompt blocks or entries with zero visible lines.
+pub fn collect_block_text(
+    block: &BlockSnapshot,
+    cells: &[SnapshotCell],
+) -> Option<String> {
+    if let Some(text) = &block.cached_text {
+        if matches!(block.meta.kind, BlockKind::Prompt) {
+            return None;
+        }
+        let text = text.as_ref();
+        if text.is_empty() {
+            return None;
+        }
+        return Some(text.to_string());
+    }
+
+    if block.line_count == 0 || matches!(block.meta.kind, BlockKind::Prompt) {
+        return None;
+    }
+
+    let start = block.start_line;
+    let end = start + block.line_count as i32;
+    let mut lines = Vec::with_capacity(block.line_count);
+    let mut current_line = None;
+    let mut buffer = String::new();
+
+    for cell in cells {
+        let line_value = cell.point.line.0;
+        if line_value < start || line_value >= end {
+            continue;
+        }
+
+        if current_line != Some(line_value) {
+            if current_line.is_some() {
+                lines.push(trim_trailing_spaces(&buffer));
+                buffer.clear();
+            }
+            current_line = Some(line_value);
+        }
+
+        if !cell.cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
+            buffer.push(cell.cell.c);
+        }
+    }
+
+    if current_line.is_some() {
+        lines.push(trim_trailing_spaces(&buffer));
+    }
+
+    Some(lines.join("\n"))
+}
+
+/// Trim trailing ASCII spaces from a buffer and return an owned string.
+fn trim_trailing_spaces(buffer: &str) -> String {
+    buffer.trim_end_matches(' ').to_string()
 }
 
 #[cfg(test)]

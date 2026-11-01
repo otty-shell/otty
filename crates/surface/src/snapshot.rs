@@ -73,6 +73,15 @@ pub enum SnapshotDamage {
     Partial(Vec<LineDamageBounds>),
 }
 
+impl From<SurfaceDamage<'_>> for SnapshotDamage {
+    fn from(damage: SurfaceDamage<'_>) -> Self {
+        match damage {
+            SurfaceDamage::Full => Self::Full,
+            SurfaceDamage::Partial(iter) => Self::Partial(iter.collect()),
+        }
+    }
+}
+
 /// Owned snapshot capturing all renderable surface state.
 #[derive(Default, Clone)]
 pub struct SnapshotOwned {
@@ -87,32 +96,6 @@ pub struct SnapshotOwned {
     damage: SnapshotDamage,
     visible_cell_count: usize,
     pub blocks: Vec<BlockSnapshot>,
-}
-
-/// View over an owned snapshot suitable for rendering.
-pub struct SnapshotView<'a> {
-    /// Owned cells with grid positions.
-    pub cells: &'a [SnapshotCell],
-    /// Resolved selection range in grid coordinates, if any.
-    pub selection: Option<&'a SelectionRange>,
-    /// Hyperlink mapping for the visible viewport.
-    pub(crate) hyperlinks: &'a HyperlinkMap,
-    /// Cursor state suitable for rendering.
-    pub cursor: &'a CursorSnapshot,
-    /// Current scrollback display offset.
-    pub display_offset: usize,
-    /// Effective color palette.
-    pub colors: &'a Colors,
-    /// Active surface modes.
-    pub mode: SurfaceMode,
-    /// Grid geometry at capture time.
-    pub size: SnapshotSize,
-    /// Damage collected since last reset.
-    pub damage: &'a SnapshotDamage,
-    /// Total number of cells across visible viewport (cols × rows).
-    pub visible_cell_count: usize,
-    /// Ordered list of block metadata captured alongside this snapshot.
-    pub(crate) blocks: &'a [BlockSnapshot],
 }
 
 impl SnapshotOwned {
@@ -209,32 +192,30 @@ impl From<&mut Surface> for SnapshotOwned {
     }
 }
 
-impl From<SurfaceDamage<'_>> for SnapshotDamage {
-    fn from(damage: SurfaceDamage<'_>) -> Self {
-        match damage {
-            SurfaceDamage::Full => Self::Full,
-            SurfaceDamage::Partial(iter) => Self::Partial(iter.collect()),
-        }
-    }
-}
-
-/// Apply actions and export owned snapshots.
-pub trait SurfaceModel {
-    /// Export an owned frame capturing the current surface state.
-    fn snapshot_owned(&mut self) -> SnapshotOwned;
-
-    /// Reset any accumulated damage bookkeeping after a frame is consumed.
-    fn reset_damage(&mut self) {}
-}
-
-impl SurfaceModel for Surface {
-    fn snapshot_owned(&mut self) -> SnapshotOwned {
-        SnapshotOwned::from_surface(self)
-    }
-
-    fn reset_damage(&mut self) {
-        Surface::reset_damage(self);
-    }
+/// View over an owned snapshot suitable for rendering.
+pub struct SnapshotView<'a> {
+    /// Owned cells with grid positions.
+    pub cells: &'a [SnapshotCell],
+    /// Resolved selection range in grid coordinates, if any.
+    pub selection: Option<&'a SelectionRange>,
+    /// Hyperlink mapping for the visible viewport.
+    pub(crate) hyperlinks: &'a HyperlinkMap,
+    /// Cursor state suitable for rendering.
+    pub cursor: &'a CursorSnapshot,
+    /// Current scrollback display offset.
+    pub display_offset: usize,
+    /// Effective color palette.
+    pub colors: &'a Colors,
+    /// Active surface modes.
+    pub mode: SurfaceMode,
+    /// Grid geometry at capture time.
+    pub size: SnapshotSize,
+    /// Damage collected since last reset.
+    pub damage: &'a SnapshotDamage,
+    /// Total number of cells across visible viewport (cols × rows).
+    pub visible_cell_count: usize,
+    /// Ordered list of block metadata captured alongside this snapshot.
+    pub(crate) blocks: &'a [BlockSnapshot],
 }
 
 impl<'a> SnapshotView<'a> {
@@ -285,6 +266,25 @@ impl<'a> SnapshotView<'a> {
             let end = start + block.line_count as i32;
             point.line.0 >= start && point.line.0 < end
         })
+    }
+}
+
+/// Apply actions and export owned snapshots.
+pub trait SurfaceModel {
+    /// Export an owned frame capturing the current surface state.
+    fn snapshot_owned(&mut self) -> SnapshotOwned;
+
+    /// Reset any accumulated damage bookkeeping after a frame is consumed.
+    fn reset_damage(&mut self) {}
+}
+
+impl SurfaceModel for Surface {
+    fn snapshot_owned(&mut self) -> SnapshotOwned {
+        SnapshotOwned::from_surface(self)
+    }
+
+    fn reset_damage(&mut self) {
+        Surface::reset_damage(self);
     }
 }
 
