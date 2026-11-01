@@ -306,21 +306,45 @@ pub(crate) fn identity_file_not_file(path: &str) -> String {
     )
 }
 
-/// Build the SSH secret dialog text asking for a key passphrase.
-pub(crate) fn secret_prompt_passphrase_body(path: &str) -> String {
+/// Build the SSH secret dialog title asking for a key passphrase.
+pub(crate) fn secret_prompt_passphrase_title(path: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplSecretPromptPassphraseBody,
+        Key::TplSecretPromptPassphraseTitle,
         &[("path", path)],
     )
 }
 
-/// Build the SSH secret dialog text asking for a password.
-pub(crate) fn secret_prompt_password_body(target: &str) -> String {
+/// Build the SSH secret dialog title asking for a password.
+pub(crate) fn secret_prompt_password_title(target: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplSecretPromptPasswordBody,
+        Key::TplSecretPromptPasswordTitle,
         &[("target", target)],
+    )
+}
+
+/// Build the muted line explaining why a key passphrase is needed.
+pub(crate) fn secret_prompt_passphrase_hint(
+    launch: &str,
+    account: &str,
+) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplSecretPromptPassphraseHint,
+        &[("launch", launch), ("account", account)],
+    )
+}
+
+/// Build the muted line explaining why a password is needed.
+pub(crate) fn secret_prompt_password_hint(
+    launch: &str,
+    account: &str,
+) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplSecretPromptPasswordHint,
+        &[("launch", launch), ("account", account)],
     )
 }
 

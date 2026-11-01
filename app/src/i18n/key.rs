@@ -202,6 +202,10 @@ pub(crate) enum Key {
     SecretPromptWrongPassphrase,
     /// Shown when the server rejected the typed password.
     SecretPromptPasswordRejected,
+    /// Field label for the key passphrase.
+    SecretPromptPassphraseLabel,
+    /// Field label for the account password.
+    SecretPromptPasswordLabel,
 
     // Settings sections and fields.
     /// General settings section.
@@ -282,10 +286,16 @@ pub(crate) enum Key {
     TplIdentityFileNotFound,
     /// SSH identity path is not a file. Placeholder: `{path}`.
     TplIdentityFileNotFile,
-    /// SSH secret dialog text for a key passphrase. Placeholder: `{path}`.
-    TplSecretPromptPassphraseBody,
-    /// SSH secret dialog text for a password. Placeholder: `{target}`.
-    TplSecretPromptPasswordBody,
+    /// SSH secret dialog title for a key passphrase. Placeholder: `{path}`.
+    TplSecretPromptPassphraseTitle,
+    /// SSH secret dialog title for a password. Placeholder: `{target}`.
+    TplSecretPromptPasswordTitle,
+    /// Muted line under the passphrase title. Placeholders: `{launch}`,
+    /// `{account}`.
+    TplSecretPromptPassphraseHint,
+    /// Muted line under the password title. Placeholders: `{launch}`,
+    /// `{account}`.
+    TplSecretPromptPasswordHint,
     /// Program is absent from `PATH`. Placeholder: `{program}`.
     TplProgramNotFoundInPath,
     /// Explicit program path is missing. Placeholder: `{program}`.
@@ -301,7 +311,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 130] = [
+    pub(super) const ALL: [Self; 134] = [
         Self::MenuCreateTab,
         Self::MenuCreateFolder,
         Self::MenuCreateQuickLaunch,
@@ -388,6 +398,8 @@ impl Key {
         Self::SecretPromptPasswordTitle,
         Self::SecretPromptWrongPassphrase,
         Self::SecretPromptPasswordRejected,
+        Self::SecretPromptPassphraseLabel,
+        Self::SecretPromptPasswordLabel,
         Self::SectionGeneral,
         Self::SectionTerminal,
         Self::SectionAppearance,
@@ -425,8 +437,10 @@ impl Key {
         Self::TplWorkingDirectoryNotDirectory,
         Self::TplIdentityFileNotFound,
         Self::TplIdentityFileNotFile,
-        Self::TplSecretPromptPassphraseBody,
-        Self::TplSecretPromptPasswordBody,
+        Self::TplSecretPromptPassphraseTitle,
+        Self::TplSecretPromptPasswordTitle,
+        Self::TplSecretPromptPassphraseHint,
+        Self::TplSecretPromptPasswordHint,
         Self::TplProgramNotFoundInPath,
         Self::TplProgramNotFound,
         Self::TplProgramIsDirectory,

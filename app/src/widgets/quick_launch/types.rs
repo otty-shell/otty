@@ -56,6 +56,18 @@ impl QuickLaunch {
             _ => None,
         }
     }
+
+    /// `user@host` of an SSH command (just `host` without a user), or `None`
+    /// for a local command.
+    pub(crate) fn ssh_account(&self) -> Option<String> {
+        match &self.spec {
+            CommandSpec::Ssh { ssh } => Some(match ssh.user() {
+                Some(user) => format!("{user}@{}", ssh.host()),
+                None => ssh.host().to_string(),
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// Command specification variant.

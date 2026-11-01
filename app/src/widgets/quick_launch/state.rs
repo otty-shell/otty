@@ -365,6 +365,16 @@ impl SecretPromptState {
         &self.request
     }
 
+    /// Title of the launch that asks for the secret.
+    pub(crate) fn launch_title(&self) -> &str {
+        self.command.title()
+    }
+
+    /// Account the launch logs in as, such as `ubuntu@192.168.1.20`.
+    pub(crate) fn account(&self) -> String {
+        self.command.ssh_account().unwrap_or_default()
+    }
+
     /// Secret typed so far.
     pub(crate) fn value(&self) -> &str {
         &self.value
