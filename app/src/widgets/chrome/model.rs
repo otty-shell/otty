@@ -1,16 +1,14 @@
 use otty_ui_kit::components::target_dot::TargetKind;
 
-use crate::widgets::terminal_workspace::model::PaneLabel;
-
 /// What the status bar needs from the rest of the app.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct StatusBarInput<'a> {
     /// Machine of the active session, or this computer with no tabs.
     pub(crate) machine_name: &'a str,
     pub(crate) machine_target: TargetKind,
-    /// Program and folder of the focused pane; `None` unless the active
-    /// tab is a terminal tab.
-    pub(crate) focused_pane: Option<&'a PaneLabel>,
+    /// Short folder path of the focused pane, with `~` for home; `None`
+    /// unless the active tab is a terminal tab whose shell reported one.
+    pub(crate) folder: Option<&'a str>,
     /// Number of panes in the active terminal tab.
     pub(crate) pane_count: Option<usize>,
     /// Number of open tabs.
@@ -64,10 +62,7 @@ impl StatusBarViewModel {
         Self {
             machine_name: input.machine_name.to_string(),
             machine_target: input.machine_target,
-            folder: input
-                .focused_pane
-                .and_then(|pane| pane.folder_path())
-                .map(str::to_string),
+            folder: input.folder.map(str::to_string),
             pane_count: input.pane_count,
             session_count: input.session_count,
         }
@@ -76,27 +71,17 @@ impl StatusBarViewModel {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use super::*;
 
-    fn pane(cwd: &str) -> PaneLabel {
-        PaneLabel::new(
-            "zsh",
-            Some(Path::new(cwd)),
-            Some(Path::new("/home/ann")),
-        )
-    }
-
-    fn input<'a>(
-        focused_pane: Option<&'a PaneLabel>,
+    fn input(
+        folder: Option<&str>,
         pane_count: Option<usize>,
         session_count: usize,
-    ) -> StatusBarInput<'a> {
+    ) -> StatusBarInput<'_> {
         StatusBarInput {
             machine_name: "fedora",
             machine_target: TargetKind::Local,
-            focused_pane,
+            folder,
             pane_count,
             session_count,
         }
@@ -104,9 +89,11 @@ mod tests {
 
     #[test]
     fn given_terminal_tab_when_built_then_folder_path_and_counts_are_shown() {
-        let pane = pane("/home/ann/projects/main/ottyrun/otty");
-
-        let vm = StatusBarViewModel::new(input(Some(&pane), Some(2), 3));
+        let vm = StatusBarViewModel::new(input(
+            Some("~/…/ottyrun/otty"),
+            Some(2),
+            3,
+        ));
 
         assert_eq!(vm.machine_name(), "fedora");
         assert_eq!(vm.machine_target(), TargetKind::Local);
@@ -138,11 +125,9 @@ mod tests {
 
     #[test]
     fn given_folder_change_when_rebuilt_then_new_folder_is_shown() {
-        let before = pane("/home/ann");
-        let after = pane("/var/log");
-
-        let first = StatusBarViewModel::new(input(Some(&before), Some(1), 1));
-        let second = StatusBarViewModel::new(input(Some(&after), Some(1), 1));
+        let first = StatusBarViewModel::new(input(Some("~"), Some(1), 1));
+        let second =
+            StatusBarViewModel::new(input(Some("/var/log"), Some(1), 1));
 
         assert_eq!(first.folder(), Some("~"));
         assert_eq!(second.folder(), Some("/var/log"));
@@ -150,11 +135,9 @@ mod tests {
 
     #[test]
     fn given_split_then_close_when_rebuilt_then_pane_count_follows() {
-        let pane = pane("/home/ann");
-
-        let one = StatusBarViewModel::new(input(Some(&pane), Some(1), 1));
-        let two = StatusBarViewModel::new(input(Some(&pane), Some(2), 1));
-        let back = StatusBarViewModel::new(input(Some(&pane), Some(1), 1));
+        let one = StatusBarViewModel::new(input(Some("~"), Some(1), 1));
+        let two = StatusBarViewModel::new(input(Some("~"), Some(2), 1));
+        let back = StatusBarViewModel::new(input(Some("~"), Some(1), 1));
 
         assert_eq!(one.pane_count(), Some(1));
         assert_eq!(two.pane_count(), Some(2));

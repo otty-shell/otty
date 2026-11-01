@@ -209,13 +209,16 @@ fn view_status_bar<'a>(
                 TargetKind::Local,
             ),
         };
-    let focused_pane =
-        app.widgets.terminal_workspace.focused_pane_label(tab_id);
+    let folder = app
+        .widgets
+        .terminal_workspace
+        .focused_pane_label(tab_id)
+        .and_then(|label| label.folder_path());
 
     let vm = StatusBarViewModel::new(StatusBarInput {
         machine_name,
         machine_target,
-        focused_pane,
+        folder,
         pane_count: app.widgets.terminal_workspace.pane_count(tab_id),
         session_count: app.widgets.tabs.len(),
     });

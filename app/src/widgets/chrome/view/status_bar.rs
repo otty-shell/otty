@@ -39,25 +39,22 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use iced_test::simulator;
     use otty_ui_kit::components::target_dot::TargetKind;
 
     use super::*;
     use crate::theme::ThemeManager;
     use crate::widgets::chrome::model::StatusBarInput;
-    use crate::widgets::terminal_workspace::model::PaneLabel;
 
     fn vm(
-        pane: Option<&PaneLabel>,
+        folder: Option<&str>,
         pane_count: Option<usize>,
         session_count: usize,
     ) -> StatusBarViewModel {
         StatusBarViewModel::new(StatusBarInput {
             machine_name: "fedora",
             machine_target: TargetKind::Local,
-            focused_pane: pane,
+            folder,
             pane_count,
             session_count,
         })
@@ -67,12 +64,7 @@ mod tests {
     fn given_terminal_tab_when_rendered_then_machine_folder_counts_and_version_show()
      {
         let themes = ThemeManager::new();
-        let pane = PaneLabel::new(
-            "zsh",
-            Some(Path::new("/home/ann/otty")),
-            Some(Path::new("/home/ann")),
-        );
-        let vm = vm(Some(&pane), Some(2), 3);
+        let vm = vm(Some("~/otty"), Some(2), 3);
         let mut ui = simulator(view::<()>(
             &vm,
             "0.4.0",
@@ -83,7 +75,6 @@ mod tests {
         {
             ui.find(label).expect("status bar item should be visible");
         }
-        assert!(ui.find("zsh").is_err());
     }
 
     #[test]

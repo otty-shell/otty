@@ -159,11 +159,11 @@ pub(super) fn window<'a>(
         .height(Length::Fill);
 
     let session_count = tabs.len();
-    let focused = (frame.pane_count.is_some()).then_some(&fx.pane);
+    let folder = frame.pane_count.and_then(|_| fx.pane.folder_path());
     let status = StatusBarViewModel::new(StatusBarInput {
         machine_name: "fedora",
         machine_target: TargetKind::Local,
-        focused_pane: focused,
+        folder,
         pane_count: frame.pane_count,
         session_count,
     });
