@@ -45,6 +45,26 @@ pub fn flatten_tree<'a, T: TreeNode>(
     flatten_nodes(nodes, true)
 }
 
+/// Count the rows [`flatten_tree`] would return, without building them.
+///
+/// Use it when only the number of visible rows is needed, for example to
+/// measure a tree's height on every frame.
+pub fn visible_row_count<T: TreeNode>(nodes: &[T]) -> usize {
+    nodes
+        .iter()
+        .map(|node| {
+            let children = match node.children() {
+                Some(children) if node.is_folder() && node.expanded() => {
+                    visible_row_count(children)
+                },
+                _ => 0,
+            };
+
+            1 + children
+        })
+        .sum()
+}
+
 /// Flatten a tree like [`flatten_tree`], but keep siblings in input order.
 pub(crate) fn flatten_tree_in_source_order<'a, T: TreeNode>(
     nodes: &'a [T],
@@ -389,6 +409,41 @@ mod tests {
         for entry in entries {
             assert_eq!(entry.path.len(), entry.depth + 1);
         }
+    }
+
+    #[test]
+    fn visible_row_count_is_zero_for_empty_input() {
+        let nodes: Vec<TestNode> = Vec::new();
+
+        assert_eq!(visible_row_count(&nodes), 0);
+    }
+
+    #[test]
+    fn visible_row_count_matches_flatten_tree() {
+        let nodes = vec![
+            TestNode::folder(
+                "root",
+                true,
+                vec![
+                    TestNode::file("child"),
+                    TestNode::folder(
+                        "collapsed",
+                        false,
+                        vec![TestNode::file("hidden")],
+                    ),
+                    TestNode::folder(
+                        "open",
+                        true,
+                        vec![TestNode::file("a"), TestNode::file("b")],
+                    ),
+                ],
+            ),
+            TestNode::virtual_folder("virtual", true),
+            TestNode::file("top"),
+        ];
+
+        assert_eq!(visible_row_count(&nodes), 8);
+        assert_eq!(visible_row_count(&nodes), flatten_tree(&nodes).len());
     }
 
     #[test]

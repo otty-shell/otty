@@ -84,5 +84,7 @@
 mod model;
 mod view;
 
-pub use model::{FlattenedNode, TreeNode, TreePath, flatten_tree};
+pub use model::{
+    FlattenedNode, TreeNode, TreePath, flatten_tree, visible_row_count,
+};
 pub use view::{TreeRow, TreeRowContext, TreeView};

@@ -3,7 +3,7 @@ use iced::widget::svg;
 use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::size;
-use otty_ui_tree::flatten_tree;
+use otty_ui_tree::visible_row_count;
 
 use super::super::event::QuickLaunchIntent;
 use super::super::model::QuickLaunchTreeViewModel;
@@ -85,7 +85,7 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
 /// left panel shares its height between the sections. An error line under a name input is not counted: Launches is the last
 /// section and takes the height left under the others anyway.
 pub(crate) fn content_height(vm: &QuickLaunchTreeViewModel<'_>) -> f32 {
-    let visible_rows = flatten_tree(vm.data.root().children()).len();
+    let visible_rows = visible_row_count(vm.data.root().children());
     let is_creating_folder = matches!(
         vm.inline_edit.map(|edit| &edit.kind),
         Some(InlineEditKind::CreateFolder { .. })
