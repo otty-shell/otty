@@ -155,11 +155,10 @@ fn screenshots_new_session_menu() {
             new_session_menu::view(new_session_menu::NewSessionMenuProps {
                 theme,
                 shell_name: "zsh",
-                split_target: None,
-                launch_titles: vec!["htop", "build"],
-                on_tabs: |_| (),
-                on_terminal: |_| (),
-                on_launch: |_| (),
+                on_new_terminal: (),
+                on_split: None,
+                launches: vec![("htop", ()), ("build", ())],
+                on_new_launch: (),
             });
         let anchor =
             Point::new(left_panel_width() - 60.0, size::TITLEBAR + 48.0);

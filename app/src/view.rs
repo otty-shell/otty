@@ -1,4 +1,4 @@
-use iced::widget::{Space, column, container, mouse_area, text};
+use iced::widget::{Space, column, container, mouse_area, pane_grid, text};
 use iced::{Element, Length, Theme, alignment};
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::target_dot::TargetKind;
@@ -29,10 +29,12 @@ use crate::widgets::sidebar::{SidebarEvent, SidebarIntent, SidebarViewModel};
 use crate::widgets::tabs::types::TabContent;
 use crate::widgets::tabs::view::{empty_state, new_session_menu, session_list};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
-use crate::widgets::terminal_workspace::TerminalWorkspaceEvent;
 use crate::widgets::terminal_workspace::view::{
     pane_context_menu as terminal_pane_context_menu,
     pane_grid as terminal_pane_grid,
+};
+use crate::widgets::terminal_workspace::{
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
 /// Render the root application view.
@@ -494,25 +496,41 @@ fn view_new_session_menu<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> (Element<'a, AppEvent, Theme, iced::Renderer>, f32, f32) {
-    let split_target = app.widgets.tabs.active_tab_id().and_then(|tab_id| {
+    let on_split = app.widgets.tabs.active_tab_id().and_then(|tab_id| {
         let pane = app.widgets.terminal_workspace.tab(tab_id)?.focus()?;
-        Some(new_session_menu::SplitTarget { tab_id, pane })
+        Some(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+            TerminalWorkspaceIntent::SplitPane {
+                tab_id,
+                pane,
+                axis: pane_grid::Axis::Vertical,
+            },
+        )))
     });
-    let launch_titles = app.widgets.quick_launch.top_level_launch_titles();
-    let menu_height = new_session_menu::menu_height(launch_titles.len());
+    let launches: Vec<_> = app
+        .widgets
+        .quick_launch
+        .top_level_launch_titles()
+        .into_iter()
+        .map(|title| {
+            let run = QuickLaunchIntent::LaunchNode {
+                path: vec![title.to_string()],
+            };
+            (title, AppEvent::QuickLaunch(QuickLaunchEvent::Intent(run)))
+        })
+        .collect();
+    let menu_height = new_session_menu::menu_height(launches.len());
 
     let menu = new_session_menu::view(new_session_menu::NewSessionMenuProps {
         theme: theme_props,
         shell_name: app.shell_session.name(),
-        split_target,
-        launch_titles,
-        on_tabs: |intent| AppEvent::Tabs(TabsEvent::Intent(intent)),
-        on_terminal: |intent| {
-            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(intent))
-        },
-        on_launch: |intent| {
-            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
-        },
+        on_new_terminal: AppEvent::Tabs(TabsEvent::Intent(
+            TabsIntent::OpenTerminalTab,
+        )),
+        on_split,
+        launches,
+        on_new_launch: AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::HeaderCreateCommand,
+        )),
     });
 
     (menu, new_session_menu::NEW_SESSION_MENU_WIDTH, menu_height)
