@@ -48,10 +48,13 @@ const PLUS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 
 
 /// Search icon of the title search.
 const SEARCH_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>"#;
+
 /// Folder icon of the empty card.
 const FOLDER_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>"#;
+
 /// Launch icon of the empty card.
 const LAUNCH_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/></svg>"#;
+
 /// Product logo, passed to the empty card as an element.
 const LOGO: &[u8] = include_bytes!("../../../../assets/logo/logo-small.svg");
 
@@ -61,27 +64,13 @@ const KINDS: [(&str, ButtonKind); 4] = [
     ("Ghost", ButtonKind::Ghost),
     ("Danger", ButtonKind::Danger),
 ];
+
 /// Width of the tree panel.
 const PANEL_WIDTH: f32 = 260.0;
+
 const TYPES: [&str; 3] = ["Command", "Script", "SSH"];
+
 const TARGETS: [&str; 4] = ["This computer", "prod-1", "staging-2", "dev-box"];
-
-fn main() -> iced::Result {
-    let mut app = iced::application(Gallery::new, update, view).theme(
-        |state: &Gallery| {
-            if state.dark {
-                Theme::Dark
-            } else {
-                Theme::Light
-            }
-        },
-    );
-    for bytes in fonts::all_bytes() {
-        app = app.font(bytes);
-    }
-
-    app.default_font(fonts::UI).run()
-}
 
 /// Which sections the gallery shows.
 #[derive(PartialEq)]
@@ -178,6 +167,23 @@ enum Message {
     ToggleSessions,
     ToggleMenu,
     Palette(PaletteAction),
+}
+
+fn main() -> iced::Result {
+    let mut app = iced::application(Gallery::new, update, view).theme(
+        |state: &Gallery| {
+            if state.dark {
+                Theme::Dark
+            } else {
+                Theme::Light
+            }
+        },
+    );
+    for bytes in fonts::all_bytes() {
+        app = app.font(bytes);
+    }
+
+    app.default_font(fonts::UI).run()
 }
 
 fn update(state: &mut Gallery, message: Message) {
