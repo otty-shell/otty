@@ -3,6 +3,7 @@ use iced::{Task, window};
 use super::AppEvent;
 use crate::app::App;
 use crate::widgets::chrome::{ChromeEffect, ChromeEvent};
+use crate::widgets::palette::{PaletteEvent, PaletteIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
@@ -32,6 +33,9 @@ fn handle_effect(effect: ChromeEffect) -> Task<AppEvent> {
         OpenSettings => Task::done(AppEvent::Tabs(TabsEvent::Intent(
             TabsIntent::OpenSettingsTab,
         ))),
+        OpenCommandPalette => Task::done(AppEvent::Palette(
+            PaletteEvent::Intent(PaletteIntent::Open),
+        )),
         StartWindowDrag => window::latest().and_then(window::drag),
     }
 }
@@ -81,6 +85,17 @@ mod tests {
             [AppEvent::Sidebar(SidebarEvent::Intent(
                 SidebarIntent::ToggleFocusMode
             ))]
+        ));
+    }
+
+    #[test]
+    fn title_search_opens_the_command_palette() {
+        let events =
+            collect_outputs(handle_effect(ChromeEffect::OpenCommandPalette));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Open))]
         ));
     }
 

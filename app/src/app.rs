@@ -18,6 +18,7 @@ use crate::theme::{AppTheme, ThemeManager};
 use crate::widgets::Widgets;
 use crate::widgets::chrome::ChromeWidget;
 use crate::widgets::explorer::ExplorerWidget;
+use crate::widgets::palette::PaletteWidget;
 use crate::widgets::quick_launch::QuickLaunchWidget;
 use crate::widgets::settings::SettingsWidget;
 use crate::widgets::sidebar::SidebarWidget;
@@ -81,6 +82,7 @@ impl App {
             terminal_workspace: TerminalWorkspaceWidget::new(),
             explorer: ExplorerWidget::new(),
             settings,
+            palette: PaletteWidget::new(),
         };
 
         let app = App {

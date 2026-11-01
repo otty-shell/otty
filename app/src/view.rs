@@ -17,6 +17,7 @@ use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, focus_note, status_bar};
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
+use crate::widgets::palette::{PaletteEvent, view as palette_view};
 use crate::widgets::quick_launch::view::{
     context_menu as ql_context_menu, error_tab, secret_prompt, sidebar_panel,
     wizard_form,
@@ -87,6 +88,17 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         layers.push(overlay);
     }
 
+    // Command palette
+    if let Some(vm) = app.widgets.palette.vm() {
+        layers.push(
+            palette_view::view(palette_view::PaletteProps {
+                vm,
+                theme: theme_props,
+            })
+            .map(|intent| AppEvent::Palette(PaletteEvent::Intent(intent))),
+        );
+    }
+
     // SSH secret dialog stays on top of every other overlay.
     if let Some(prompt) = app.widgets.quick_launch.secret_prompt() {
         layers.push(
@@ -155,7 +167,7 @@ fn view_header<'a>(
     let palette = theme_props.theme.ui();
 
     let action_bar = action_bar::view(action_bar::ActionBarProps {
-        title: app.widgets.tabs.active_tab_title().unwrap_or("OTTY"),
+        title: app.widgets.tabs.active_tab_title(),
         theme: theme_props,
         left_open: sidebar_vm.is_left_open,
         right_open: sidebar_vm.is_right_open,

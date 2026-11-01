@@ -38,6 +38,9 @@ pub(crate) fn reduce(
         ChromeIntent::OpenSettings => {
             Task::done(ChromeEvent::Effect(ChromeEffect::OpenSettings))
         },
+        ChromeIntent::OpenCommandPalette => {
+            Task::done(ChromeEvent::Effect(ChromeEffect::OpenCommandPalette))
+        },
         ChromeIntent::StartWindowDrag => {
             Task::done(ChromeEvent::Effect(ChromeEffect::StartWindowDrag))
         },
@@ -111,6 +114,21 @@ mod tests {
         assert!(matches!(
             events.as_slice(),
             [ChromeEvent::Effect(ChromeEffect::ToggleLeftPanel)]
+        ));
+    }
+
+    #[test]
+    fn title_search_asks_to_open_the_command_palette() {
+        let mut state = ChromeState::default();
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            ChromeIntent::OpenCommandPalette,
+        ));
+
+        assert!(matches!(
+            events.as_slice(),
+            [ChromeEvent::Effect(ChromeEffect::OpenCommandPalette)]
         ));
     }
 

@@ -17,8 +17,9 @@ use crate::theme::ThemeProps;
 /// Props for rendering the title bar.
 #[derive(Debug, Clone)]
 pub(crate) struct ActionBarProps<'a> {
-    /// Title of the active tab, shown in the search button.
-    pub(crate) title: &'a str,
+    /// Title of the active tab, shown in the search button; `None` while
+    /// no tab is open.
+    pub(crate) title: Option<&'a str>,
     pub(crate) theme: ThemeProps<'a>,
     /// The left panel is shown; its toggle uses the accent color.
     pub(crate) left_open: bool,
@@ -41,13 +42,17 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
         palette,
     );
 
-    // Pressing the search button will open the command palette (ticket 17).
+    // The search button captures its press, so it opens the command
+    // palette and does not start a window drag.
     let title_search = TitleSearch::new(
-        props.title,
+        props
+            .title
+            .unwrap_or_else(|| i18n::t(Key::TitleSearchNoSessions)),
         AppShortcut::CommandPalette.label(),
         svg::Handle::from_memory(SEARCH),
         palette,
-    );
+    )
+    .on_press(ChromeIntent::OpenCommandPalette);
 
     let right_controls = row![
         toggle_button(
@@ -174,7 +179,7 @@ mod tests {
 
     fn props(themes: &ThemeManager) -> ActionBarProps<'_> {
         ActionBarProps {
-            title: "zsh  ~/otty",
+            title: Some("zsh  ~/otty"),
             theme: ThemeProps::new(themes.current()),
             left_open: true,
             right_open: false,
@@ -250,18 +255,35 @@ mod tests {
     }
 
     #[test]
-    fn title_search_shows_the_title_and_only_lets_the_window_drag() {
+    fn title_search_opens_the_command_palette_without_a_window_drag() {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(props(&themes)));
 
         ui.click("zsh  ~/otty").expect("title should be visible");
 
         let intents: Vec<ChromeIntent> = ui.into_messages().collect();
-        assert!(
-            intents
-                .iter()
-                .all(|intent| matches!(intent, ChromeIntent::StartWindowDrag))
-        );
+        assert!(matches!(
+            intents.as_slice(),
+            [ChromeIntent::OpenCommandPalette]
+        ));
+    }
+
+    #[test]
+    fn title_search_without_tabs_invites_to_search_launches_and_actions() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(ActionBarProps {
+            title: None,
+            ..props(&themes)
+        }));
+
+        ui.click(i18n::t(Key::TitleSearchNoSessions))
+            .expect("search text should be visible");
+
+        let intents: Vec<ChromeIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            intents.as_slice(),
+            [ChromeIntent::OpenCommandPalette]
+        ));
     }
 
     #[test]

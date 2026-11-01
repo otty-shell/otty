@@ -10,6 +10,7 @@ use iced::{Task, keyboard};
 use super::AppEvent;
 use crate::app::App;
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
+use crate::widgets::palette::{PaletteEvent, PaletteIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
@@ -45,8 +46,9 @@ pub(crate) fn handle(app: &App, shortcut: AppShortcut) -> Task<AppEvent> {
         AppShortcut::FocusMode => {
             sidebar_intent(SidebarIntent::ToggleFocusMode)
         },
-        // The command palette is wired by ticket 17.
-        AppShortcut::CommandPalette => Task::none(),
+        AppShortcut::CommandPalette => Task::done(AppEvent::Palette(
+            PaletteEvent::Intent(PaletteIntent::Open),
+        )),
     }
 }
 
@@ -179,14 +181,24 @@ mod tests {
     }
 
     #[test]
-    fn shortcuts_without_an_action_yet_do_nothing() {
+    fn command_palette_shortcut_opens_the_palette() {
         let (app, _) = App::new();
 
-        for shortcut in [AppShortcut::CommandPalette, AppShortcut::SplitPane] {
-            let events = collect_outputs(handle(&app, shortcut));
+        let events = collect_outputs(handle(&app, AppShortcut::CommandPalette));
 
-            assert!(events.is_empty(), "{shortcut:?} must do nothing yet");
-        }
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Open))]
+        ));
+    }
+
+    #[test]
+    fn split_pane_from_the_subscription_does_nothing() {
+        let (app, _) = App::new();
+
+        let events = collect_outputs(handle(&app, AppShortcut::SplitPane));
+
+        assert!(events.is_empty());
     }
 
     #[test]

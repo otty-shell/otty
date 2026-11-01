@@ -245,15 +245,33 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
     }
 }
 
+/// Return `true` when the event carries text a terminal sends to its shell
+/// (typed keys, a paste or composed input). The app drops it while the
+/// command palette is open, so keys meant for the palette never reach a
+/// shell.
+pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
+    matches!(
+        event,
+        AppEvent::TerminalWorkspace(
+            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Intent(
+                crate::widgets::terminal_workspace::TerminalWorkspaceIntent::Widget(
+                    otty_ui_term::Event::Write { .. }
+                )
+            )
+        )
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use super::{
         MenuGuard, context_menu_guard, inline_edit_guard,
-        is_new_session_menu_choice,
+        is_new_session_menu_choice, is_terminal_input,
     };
     use crate::events::AppEvent;
+    use crate::shortcuts::AppShortcut;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
     use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
@@ -261,6 +279,45 @@ mod tests {
     use crate::widgets::terminal_workspace::{
         TerminalWorkspaceEvent, TerminalWorkspaceIntent,
     };
+
+    fn terminal_widget_event(
+        event: otty_ui_term::Event<AppShortcut>,
+    ) -> AppEvent {
+        AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+            TerminalWorkspaceIntent::Widget(event),
+        ))
+    }
+
+    #[test]
+    fn text_a_terminal_writes_to_its_shell_is_terminal_input() {
+        let event = terminal_widget_event(otty_ui_term::Event::Write {
+            id: 1,
+            data: b"ls".to_vec(),
+        });
+
+        assert!(is_terminal_input(&event));
+    }
+
+    #[test]
+    fn other_terminal_and_app_events_are_not_terminal_input() {
+        let events = [
+            terminal_widget_event(otty_ui_term::Event::Redraw { id: 1 }),
+            terminal_widget_event(
+                otty_ui_term::Event::BindingActionDispatched {
+                    id: 1,
+                    action: AppShortcut::CommandPalette,
+                },
+            ),
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::FocusActive,
+            )),
+            AppEvent::SyncTerminalGridSizes,
+        ];
+
+        for event in events {
+            assert!(!is_terminal_input(&event));
+        }
+    }
 
     #[test]
     fn given_menu_open_when_menu_open_intent_arrives_then_it_is_ignored() {

@@ -4,7 +4,7 @@ use super::{App, AppEvent};
 use crate::events;
 use crate::guards::{
     MenuGuard, context_menu_guard, inline_edit_guard,
-    is_new_session_menu_choice,
+    is_new_session_menu_choice, is_terminal_input,
 };
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
@@ -13,6 +13,12 @@ use crate::widgets::terminal_workspace::{
 };
 
 pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
+    // Keys typed while the command palette is open belong to the palette,
+    // even if a terminal still had keyboard focus.
+    if app.widgets.palette.is_open() && is_terminal_input(&event) {
+        return Task::none();
+    }
+
     let mut pre_dispatch_tasks = Vec::new();
 
     if app.widgets.quick_launch.has_inline_edit() && inline_edit_guard(&event) {

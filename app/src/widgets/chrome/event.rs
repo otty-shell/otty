@@ -14,6 +14,8 @@ pub(crate) enum ChromeIntent {
     ToggleFocusMode,
     /// Open the Settings tab.
     OpenSettings,
+    /// The title bar search was pressed: open the command palette.
+    OpenCommandPalette,
     StartWindowDrag,
 }
 
@@ -27,6 +29,7 @@ pub(crate) enum ChromeEffect {
     ToggleFilesPanel,
     ToggleFocusMode,
     OpenSettings,
+    OpenCommandPalette,
     StartWindowDrag,
 }
 

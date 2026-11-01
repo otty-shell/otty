@@ -144,6 +144,33 @@ pub(crate) enum Key {
     StatusSessionOne,
     /// Status bar session count. Placeholder: `{count}`.
     TplStatusSessions,
+    // Command palette and its title bar trigger.
+    /// Title bar search text while no tab is open.
+    TitleSearchNoSessions,
+    /// Text in the empty palette input.
+    PalettePlaceholder,
+    /// Line shown when no palette entry matches the query.
+    PaletteNoMatches,
+    /// Footer hint after the ↑↓ keys.
+    PaletteHintMove,
+    /// Footer hint after the Enter key.
+    PaletteHintOpen,
+    /// Group label of the app actions.
+    PaletteGroupActions,
+    /// Action that opens a terminal tab.
+    PaletteNewTerminal,
+    /// Action that opens the editor for a new launch.
+    PaletteNewLaunch,
+    /// Action that starts a new launch folder.
+    PaletteNewFolder,
+    /// Action that splits the focused pane.
+    PaletteSplitPane,
+    /// Action that closes the active tab.
+    PaletteCloseSession,
+    /// Action that shows or hides the left panel.
+    PaletteToggleLeftPanel,
+    /// Action that shows or hides the files panel.
+    PaletteToggleFilesPanel,
 
     // Quick launch wizard.
     /// Title of the form that creates a launch.
@@ -335,7 +362,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 144] = [
+    pub(super) const ALL: [Self; 157] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -394,6 +421,19 @@ impl Key {
         Self::TplStatusPanes,
         Self::StatusSessionOne,
         Self::TplStatusSessions,
+        Self::TitleSearchNoSessions,
+        Self::PalettePlaceholder,
+        Self::PaletteNoMatches,
+        Self::PaletteHintMove,
+        Self::PaletteHintOpen,
+        Self::PaletteGroupActions,
+        Self::PaletteNewTerminal,
+        Self::PaletteNewLaunch,
+        Self::PaletteNewFolder,
+        Self::PaletteSplitPane,
+        Self::PaletteCloseSession,
+        Self::PaletteToggleLeftPanel,
+        Self::PaletteToggleFilesPanel,
         Self::WizardTitleNew,
         Self::WizardTitleEdit,
         Self::WizardSubtitle,
