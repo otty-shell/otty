@@ -64,3 +64,4 @@ running-launch blink, tooltips.
 - Title bar search: the icon, title and shortcut are centered in the 26px pill (the row now fills the button height).
 - Session close cross: no background on hover, only the glyph turns brighter (`IconButton::hover_background(false)`); the old surface-raised square showed as a dark shape on the selected row. Screenshots `session-hover`, `session-close-hover`, `session-close-hover-selected`.
 - Launches header: the New launch button keeps the plus icon (`add-tab.svg`). The plus is now centered in its 24px grid, so it lines up with `folder-plus.svg`.
+- Launches header uses a split button (New launch / New folder) like Sessions: the plus runs New launch, the chevron opens the Launches menu (`new_launch_menu.rs`). One `HeaderMenu` state in the sidebar (`Sessions` or `Launches`, opened at the cursor) replaces the New session menu state. `folder-plus.svg` removed. Screenshot `launches-menu`.

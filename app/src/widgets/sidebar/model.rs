@@ -1,4 +1,4 @@
-use iced::Point;
+use super::types::OpenHeaderMenu;
 
 /// Read-only view model for the side panels around the main area.
 #[derive(Debug, Clone, Copy)]
@@ -13,8 +13,6 @@ pub(crate) struct SidebarViewModel {
     pub(crate) is_sessions_open: bool,
     /// The Launches section of the left panel is open.
     pub(crate) is_launches_open: bool,
-    /// The New session menu is open.
-    pub(crate) has_new_session_menu_open: bool,
-    /// Where the New session menu opened; `None` while it is closed.
-    pub(crate) new_session_menu_cursor: Option<Point>,
+    /// The header menu that is open; `None` while both are closed.
+    pub(crate) open_header_menu: Option<OpenHeaderMenu>,
 }

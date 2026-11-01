@@ -35,12 +35,12 @@ pub(crate) fn reduce(
         SidebarIntent::OpenSettings => {
             Task::done(SidebarEvent::Effect(SidebarEffect::OpenSettingsTab))
         },
-        SidebarIntent::NewSessionMenuOpen => {
-            state.open_new_session_menu();
+        SidebarIntent::HeaderMenuOpen(menu) => {
+            state.open_header_menu(menu);
             Task::none()
         },
-        SidebarIntent::NewSessionMenuDismiss => {
-            state.dismiss_new_session_menu();
+        SidebarIntent::HeaderMenuDismiss => {
+            state.dismiss_header_menu();
             Task::none()
         },
         SidebarIntent::WorkspaceCursorMoved { position } => {
@@ -76,6 +76,7 @@ mod tests {
     use iced::widget::pane_grid;
 
     use crate::task_outputs::collect_outputs;
+    use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu};
     use crate::widgets::sidebar::{
         SidebarEffect, SidebarEvent, SidebarIntent, SidebarWidget,
     };
@@ -507,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn new_session_menu_opens_at_the_cursor_and_dismisses() {
+    fn header_menu_opens_at_the_cursor_and_dismisses() {
         let mut widget = SidebarWidget::new();
         let cursor = Point::new(30.0, 40.0);
         let _moved = reduce(
@@ -515,24 +516,72 @@ mod tests {
             SidebarIntent::WorkspaceCursorMoved { position: cursor },
         );
 
-        let open = reduce(&mut widget, SidebarIntent::NewSessionMenuOpen);
-        assert!(widget.has_new_session_menu_open());
-        assert_eq!(widget.new_session_menu_cursor(), Some(cursor));
+        let open = reduce(
+            &mut widget,
+            SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions),
+        );
+        assert_eq!(
+            widget.open_header_menu(),
+            Some(OpenHeaderMenu {
+                menu: HeaderMenu::Sessions,
+                cursor,
+            })
+        );
         assert!(open.is_empty());
 
-        let dismiss = reduce(&mut widget, SidebarIntent::NewSessionMenuDismiss);
-        assert!(!widget.has_new_session_menu_open());
-        assert_eq!(widget.new_session_menu_cursor(), None);
+        let dismiss = reduce(&mut widget, SidebarIntent::HeaderMenuDismiss);
+        assert_eq!(widget.open_header_menu(), None);
         assert!(dismiss.is_empty());
     }
 
     #[test]
-    fn dismissing_a_closed_new_session_menu_changes_nothing() {
+    fn launches_header_menu_opens_at_the_cursor() {
+        let mut widget = SidebarWidget::new();
+        let cursor = Point::new(12.0, 18.0);
+        let _moved = reduce(
+            &mut widget,
+            SidebarIntent::WorkspaceCursorMoved { position: cursor },
+        );
+
+        let open = reduce(
+            &mut widget,
+            SidebarIntent::HeaderMenuOpen(HeaderMenu::Launches),
+        );
+
+        assert_eq!(
+            widget.vm().open_header_menu,
+            Some(OpenHeaderMenu {
+                menu: HeaderMenu::Launches,
+                cursor,
+            })
+        );
+        assert!(open.is_empty());
+    }
+
+    #[test]
+    fn opening_one_header_menu_closes_the_other() {
+        let mut widget = SidebarWidget::new();
+        let _sessions = reduce(
+            &mut widget,
+            SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions),
+        );
+
+        let _launches = reduce(
+            &mut widget,
+            SidebarIntent::HeaderMenuOpen(HeaderMenu::Launches),
+        );
+
+        let open = widget.open_header_menu().expect("a menu should be open");
+        assert_eq!(open.menu, HeaderMenu::Launches);
+    }
+
+    #[test]
+    fn dismissing_a_closed_header_menu_changes_nothing() {
         let mut widget = SidebarWidget::new();
 
-        let dismiss = reduce(&mut widget, SidebarIntent::NewSessionMenuDismiss);
+        let dismiss = reduce(&mut widget, SidebarIntent::HeaderMenuDismiss);
 
-        assert!(!widget.has_new_session_menu_open());
+        assert_eq!(widget.open_header_menu(), None);
         assert!(dismiss.is_empty());
     }
 

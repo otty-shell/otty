@@ -4,6 +4,8 @@
     "menu_split_current_pane": "Diviser le volet actuel à droite",
     "menu_new_launch": "Nouveau lancement…",
     "new_session_menu": "Autres façons de démarrer une session",
+    "menu_new_folder": "Nouveau dossier",
+    "launches_menu": "Autres façons d'ajouter",
 
     "terminal_tab_not_initialized": "L'onglet de terminal n'est pas initialisé.",
     "quick_launch_editor_not_initialized": "L'éditeur de lancement rapide n'est pas initialisé.",

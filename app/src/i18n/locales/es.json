@@ -4,6 +4,8 @@
     "menu_split_current_pane": "Dividir el panel actual a la derecha",
     "menu_new_launch": "Nuevo lanzamiento…",
     "new_session_menu": "Más formas de iniciar una sesión",
+    "menu_new_folder": "Nueva carpeta",
+    "launches_menu": "Más formas de añadir",
 
     "terminal_tab_not_initialized": "La pestaña de terminal no está inicializada.",
     "quick_launch_editor_not_initialized": "El editor de inicio rápido no está inicializado.",

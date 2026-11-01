@@ -1,7 +1,7 @@
 use iced::Element;
 use iced::widget::svg;
-use otty_ui_kit::components::icon_button::{IconButton, IconButtonSize};
 use otty_ui_kit::components::panel_section::PanelSection;
+use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::size;
 use otty_ui_tree::flatten_tree;
 
@@ -16,42 +16,40 @@ use crate::theme::ThemeProps;
 /// Props for the Launches section of the left panel.
 ///
 /// The section is generic over the message type because its header toggle
-/// belongs to the sidebar, while the tree and the header buttons send
+/// and chevron belong to the sidebar, while the tree and the plus send
 /// quick launch intents.
 pub(crate) struct SidebarPanelProps<'a, Message> {
     pub(crate) vm: QuickLaunchTreeViewModel<'a>,
     pub(crate) theme: ThemeProps<'a>,
     /// Whether the section body is shown.
     pub(crate) is_open: bool,
+    /// Whether the Launches menu is open, which frames the chevron.
+    pub(crate) is_menu_open: bool,
     /// Message sent when the section title is pressed.
     pub(crate) on_toggle: Message,
+    /// Message sent when the chevron next to the plus is pressed.
+    pub(crate) on_menu: Message,
     /// Turns a quick launch intent into the caller's message.
     pub(crate) on_intent: fn(QuickLaunchIntent) -> Message,
 }
 
-/// Render the Launches section: header with New folder and New launch
-/// buttons, and the launch tree as its body.
+/// Render the Launches section: header with the New launch split button, and
+/// the launch tree as its body.
 pub(crate) fn view<'a, Message: Clone + 'a>(
     props: SidebarPanelProps<'a, Message>,
 ) -> Element<'a, Message> {
     let palette = props.theme.theme.ui();
     let on_intent = props.on_intent;
 
-    let new_folder = IconButton::new(
-        svg::Handle::from_memory(icons::FOLDER_PLUS),
-        i18n::t(Key::CreateFolder),
-        palette,
-    )
-    .size(IconButtonSize::Small)
-    .on_press(on_intent(QuickLaunchIntent::HeaderCreateFolder));
-
-    let new_launch = IconButton::new(
+    let new_launch = SplitButton::new(
         svg::Handle::from_memory(icons::ADD_TAB_HEADER),
         i18n::t(Key::CreateQuickLaunch),
+        i18n::t(Key::LaunchesMenu),
         palette,
     )
-    .size(IconButtonSize::Small)
-    .on_press(on_intent(QuickLaunchIntent::HeaderCreateCommand));
+    .menu_open(props.is_menu_open)
+    .on_press(on_intent(QuickLaunchIntent::HeaderCreateCommand))
+    .on_menu(props.on_menu);
 
     let launch_count = props.vm.data.launch_count();
 
@@ -70,7 +68,6 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
         PanelSection::new(i18n::t(Key::LaunchesPanelTitle), palette)
             .open(props.is_open)
             .grow(true)
-            .action(new_folder)
             .action(new_launch)
             .body(tree)
             .on_toggle(props.on_toggle);
@@ -125,12 +122,18 @@ mod tests {
     const PANEL_WIDTH: f32 = 260.0;
     /// Section padding 8, header row 30, gap 1: the top of the rows.
     const BODY_TOP: f32 = 8.0 + 30.0 + 1.0;
+    /// The plus of the split button, from the right edge of the panel.
+    const PLUS_X: f32 =
+        PANEL_WIDTH - 8.0 - size::SPLIT_CHEVRON - size::CONTROL_SM / 2.0;
+    /// The chevron of the split button, from the right edge of the panel.
+    const CHEVRON_X: f32 = PANEL_WIDTH - 8.0 - size::SPLIT_CHEVRON / 2.0;
     /// Section padding 8, header row 30 high: the middle of the header.
     const HEADER_Y: f32 = 8.0 + 15.0;
 
     #[derive(Debug, Clone)]
     enum Message {
         Toggle,
+        OpenMenu,
         Intent(QuickLaunchIntent),
     }
 
@@ -209,7 +212,9 @@ mod tests {
             vm,
             theme: ThemeProps::new(themes.current()),
             is_open,
+            is_menu_open: false,
             on_toggle: Message::Toggle,
+            on_menu: Message::OpenMenu,
             on_intent: Message::Intent,
         }))
         .width(PANEL_WIDTH)
@@ -242,9 +247,8 @@ mod tests {
     }
 
     #[test]
-    fn given_header_when_new_launch_pressed_then_header_create_command_is_sent()
-    {
-        let messages = click_header_at(PANEL_WIDTH - 24.0, true);
+    fn given_header_when_plus_pressed_then_header_create_command_is_sent() {
+        let messages = click_header_at(PLUS_X, true);
 
         assert!(matches!(
             messages.as_slice(),
@@ -253,14 +257,10 @@ mod tests {
     }
 
     #[test]
-    fn given_header_when_new_folder_pressed_then_header_create_folder_is_sent()
-    {
-        let messages = click_header_at(PANEL_WIDTH - 54.0, true);
+    fn given_header_when_chevron_pressed_then_the_menu_opens() {
+        let messages = click_header_at(CHEVRON_X, true);
 
-        assert!(matches!(
-            messages.as_slice(),
-            [Message::Intent(QuickLaunchIntent::HeaderCreateFolder)]
-        ));
+        assert!(matches!(messages.as_slice(), [Message::OpenMenu]));
     }
 
     #[test]

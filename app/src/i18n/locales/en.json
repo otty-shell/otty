@@ -4,6 +4,8 @@
     "menu_split_current_pane": "Split current pane right",
     "menu_new_launch": "New launch…",
     "new_session_menu": "More ways to start a session",
+    "menu_new_folder": "New folder",
+    "launches_menu": "More ways to add",
 
     "terminal_tab_not_initialized": "Terminal tab is not initialized.",
     "quick_launch_editor_not_initialized": "Quick launch editor is not initialized.",

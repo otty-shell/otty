@@ -4,6 +4,8 @@
     "menu_split_current_pane": "現在のペインを右に分割",
     "menu_new_launch": "新しい起動…",
     "new_session_menu": "セッションを開始するその他の方法",
+    "menu_new_folder": "新しいフォルダー",
+    "launches_menu": "その他の追加方法",
 
     "terminal_tab_not_initialized": "ターミナルタブが初期化されていません。",
     "quick_launch_editor_not_initialized": "クイック起動エディターが初期化されていません。",

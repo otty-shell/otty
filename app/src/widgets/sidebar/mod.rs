@@ -12,7 +12,7 @@ pub(crate) use model::SidebarViewModel;
 use state::SidebarState;
 
 /// Sidebar widget owning the left and right panels around the main area,
-/// focus mode and the New session menu.
+/// focus mode and the header menus.
 pub(crate) struct SidebarWidget {
     state: SidebarState,
 }
@@ -41,8 +41,7 @@ impl SidebarWidget {
             is_focus_mode: self.state.is_focus_mode(),
             is_sessions_open: self.state.is_sessions_open(),
             is_launches_open: self.state.is_launches_open(),
-            has_new_session_menu_open: self.state.has_new_session_menu_open(),
-            new_session_menu_cursor: self.state.new_session_menu_cursor(),
+            open_header_menu: self.state.header_menu(),
         }
     }
 
@@ -56,14 +55,14 @@ impl SidebarWidget {
         self.state.cursor()
     }
 
-    /// Return the New session menu anchor when the menu is open.
-    pub(crate) fn new_session_menu_cursor(&self) -> Option<Point> {
-        self.state.new_session_menu_cursor()
+    /// Return the open header menu with its anchor, if any.
+    pub(crate) fn open_header_menu(&self) -> Option<types::OpenHeaderMenu> {
+        self.state.header_menu()
     }
 
-    /// Return whether the New session menu is currently open.
-    pub(crate) fn has_new_session_menu_open(&self) -> bool {
-        self.state.has_new_session_menu_open()
+    /// Return whether a header menu is currently open.
+    pub(crate) fn has_header_menu_open(&self) -> bool {
+        self.state.header_menu().is_some()
     }
 
     /// Return whether the user is actively resizing a side panel.

@@ -1,3 +1,5 @@
+use super::types::HeaderMenu;
+
 /// Intent events handled by the sidebar presentation layer.
 #[derive(Debug, Clone)]
 pub(crate) enum SidebarIntent {
@@ -12,10 +14,10 @@ pub(crate) enum SidebarIntent {
     /// Open or close the Launches section of the left panel.
     ToggleLaunches,
     OpenSettings,
-    /// Open the New session menu at the cursor.
-    NewSessionMenuOpen,
-    /// Close the New session menu.
-    NewSessionMenuDismiss,
+    /// Open a header menu at the cursor, closing the other one.
+    HeaderMenuOpen(HeaderMenu),
+    /// Close the open header menu.
+    HeaderMenuDismiss,
     WorkspaceCursorMoved {
         position: iced::Point,
     },

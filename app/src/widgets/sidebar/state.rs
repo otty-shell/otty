@@ -4,14 +4,14 @@ use iced::Point;
 use iced::widget::pane_grid;
 
 use super::side_panel::SidePanel;
-use super::types::SidebarPane;
+use super::types::{HeaderMenu, OpenHeaderMenu, SidebarPane};
 
 /// Smallest share of the window width the main area keeps when a side
 /// panel opens or is dragged wider.
 const MIN_MAIN_RATIO: f32 = 0.2;
 const SIDEBAR_RESIZE_HOVER_SUPPRESS_MS: u64 = 200;
 
-/// Internal runtime state for both side panels, focus mode and the add menu.
+/// Internal runtime state for both side panels, focus mode and the open header menu.
 ///
 /// The pane grid is `left | (main | right)`. Panel widths are kept as shares
 /// of the window width; the two split ratios are derived from them after
@@ -28,7 +28,7 @@ pub(super) struct SidebarState {
     left_split: pane_grid::Split,
     right_split: pane_grid::Split,
     panes: pane_grid::State<SidebarPane>,
-    new_session_menu: Option<NewSessionMenuState>,
+    header_menu: Option<OpenHeaderMenu>,
     cursor: Point,
     last_resize_at: Option<Instant>,
 }
@@ -82,12 +82,9 @@ impl SidebarState {
         self.cursor
     }
 
-    pub(super) fn new_session_menu_cursor(&self) -> Option<Point> {
-        self.new_session_menu.as_ref().map(|menu| menu.cursor)
-    }
-
-    pub(super) fn has_new_session_menu_open(&self) -> bool {
-        self.new_session_menu.is_some()
+    /// The header menu that is open, if any, with where it opened.
+    pub(super) fn header_menu(&self) -> Option<OpenHeaderMenu> {
+        self.header_menu
     }
 
     pub(super) fn is_resizing(&self) -> bool {
@@ -151,14 +148,17 @@ impl SidebarState {
         self.cursor = position;
     }
 
-    pub(super) fn open_new_session_menu(&mut self) {
-        self.new_session_menu = Some(NewSessionMenuState {
+    /// Open a header menu at the cursor. Only one can be open, so this
+    /// replaces any other.
+    pub(super) fn open_header_menu(&mut self, menu: HeaderMenu) {
+        self.header_menu = Some(OpenHeaderMenu {
+            menu,
             cursor: self.cursor,
         });
     }
 
-    pub(super) fn dismiss_new_session_menu(&mut self) {
-        self.new_session_menu = None;
+    pub(super) fn dismiss_header_menu(&mut self) {
+        self.header_menu = None;
     }
 
     pub(super) fn mark_resizing(&mut self) {
@@ -228,7 +228,7 @@ impl Default for SidebarState {
             left_split,
             right_split,
             panes,
-            new_session_menu: None,
+            header_menu: None,
             cursor: Point::ORIGIN,
             last_resize_at: None,
         };
@@ -236,11 +236,6 @@ impl Default for SidebarState {
 
         state
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct NewSessionMenuState {
-    cursor: Point,
 }
 
 /// Widest share a panel may take next to the other panel's `other_ratio`,
@@ -255,6 +250,7 @@ mod tests {
     use iced::widget::pane_grid;
 
     use super::SidebarState;
+    use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu};
 
     /// Ratios of the two splits: (left | rest) and, inside the rest,
     /// (main | right).
@@ -310,13 +306,19 @@ mod tests {
     }
 
     #[test]
-    fn new_session_menu_opens_at_the_cursor() {
+    fn header_menu_opens_at_the_cursor() {
         let mut state = SidebarState::default();
         let cursor = Point::new(12.0, 34.0);
 
         state.update_cursor(cursor);
-        state.open_new_session_menu();
+        state.open_header_menu(HeaderMenu::Launches);
 
-        assert_eq!(state.new_session_menu_cursor(), Some(cursor));
+        assert_eq!(
+            state.header_menu(),
+            Some(OpenHeaderMenu {
+                menu: HeaderMenu::Launches,
+                cursor,
+            })
+        );
     }
 }

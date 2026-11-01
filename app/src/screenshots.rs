@@ -43,10 +43,11 @@ use crate::widgets::quick_launch::types::{
     SshSecretRequest,
 };
 use crate::widgets::quick_launch::view::{
-    context_menu, secret_prompt, sidebar_panel, wizard_form,
+    context_menu, new_launch_menu, secret_prompt, sidebar_panel, wizard_form,
 };
 use crate::widgets::settings::SettingsWidget;
 use crate::widgets::settings::view::settings_form;
+use crate::widgets::sidebar::types::HeaderMenu;
 use crate::widgets::tabs::model::TabsViewModel;
 use crate::widgets::tabs::types::{TabContent, TabItem, TabMachine};
 use crate::widgets::tabs::view::{empty_state, new_session_menu, session_list};
@@ -74,7 +75,7 @@ struct Frame {
     left_open: bool,
     right_open: bool,
     focus_mode: bool,
-    menu_open: bool,
+    menu_open: Option<HeaderMenu>,
     pane_count: Option<usize>,
 }
 
@@ -217,7 +218,7 @@ fn screenshots_palette() {
 fn screenshots_new_session_menu() {
     shoot("new-session-menu", |fx, theme| {
         let frame = Frame {
-            menu_open: true,
+            menu_open: Some(HeaderMenu::Sessions),
             ..Frame::terminal()
         };
         let menu =
@@ -239,6 +240,32 @@ fn screenshots_new_session_menu() {
             vec![at(
                 menu,
                 Point::new(LEFT_WIDTH - 60.0, size::TITLEBAR + 48.0),
+            )],
+        )
+    });
+}
+
+#[test]
+#[ignore = "writes PNG files; run with --ignored screenshots"]
+fn screenshots_launches_menu() {
+    shoot("launches-menu", |fx, theme| {
+        let frame = Frame {
+            menu_open: Some(HeaderMenu::Launches),
+            ..Frame::terminal()
+        };
+        let menu = new_launch_menu::view(new_launch_menu::NewLaunchMenuProps {
+            theme,
+            on_intent: |_| (),
+        });
+
+        window(
+            fx,
+            theme,
+            frame,
+            terminal_main(fx, theme),
+            vec![at(
+                menu,
+                Point::new(LEFT_WIDTH - 60.0, size::TITLEBAR + 48.0 + 220.0),
             )],
         )
     });
@@ -360,7 +387,7 @@ impl Frame {
             left_open: true,
             right_open: true,
             focus_mode: false,
-            menu_open: false,
+            menu_open: None,
             pane_count: Some(2),
         }
     }
@@ -647,7 +674,7 @@ fn left_panel<'a>(
                 theme,
                 is_open: true,
                 new_session_title: "zsh",
-                is_menu_open: frame.menu_open,
+                is_menu_open: frame.menu_open == Some(HeaderMenu::Sessions),
                 on_toggle: (),
                 on_menu: (),
                 on_intent: |_| (),
@@ -657,7 +684,9 @@ fn left_panel<'a>(
                     vm: launches_vm(),
                     theme,
                     is_open: true,
+                    is_menu_open: frame.menu_open == Some(HeaderMenu::Launches),
                     on_toggle: (),
+                    on_menu: (),
                     on_intent: |_| (),
                 });
 

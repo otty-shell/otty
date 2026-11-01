@@ -22,8 +22,8 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         )) => {
             use crate::widgets::sidebar::SidebarIntent as E;
             match event {
-                E::NewSessionMenuDismiss => Allow,
-                E::NewSessionMenuOpen => Ignore,
+                E::HeaderMenuDismiss => Allow,
+                E::HeaderMenuOpen(_) => Ignore,
                 E::WorkspaceCursorMoved { .. }
                 | E::PaneGridCursorMoved { .. } => Allow,
                 _ => Dismiss,
@@ -125,12 +125,13 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
     }
 }
 
-/// Return `true` when the event is one of the New session menu items:
-/// open a terminal, split the pane, run a launch, or create a launch.
+/// Return `true` when the event is one of the header menu items (New session
+/// or Launches): open a terminal, split the pane, run a launch, create a
+/// launch, or create a folder.
 ///
 /// The app closes the menu and runs these instead of asking the context
 /// menu guard, which would drop the launch intents.
-pub(crate) fn is_new_session_menu_choice(event: &AppEvent) -> bool {
+pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
     use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
     use crate::widgets::tabs::{TabsEvent, TabsIntent};
     use crate::widgets::terminal_workspace::{
@@ -146,6 +147,7 @@ pub(crate) fn is_new_session_menu_choice(event: &AppEvent) -> bool {
             | AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
                 QuickLaunchIntent::LaunchNode { .. }
                     | QuickLaunchIntent::HeaderCreateCommand
+                    | QuickLaunchIntent::HeaderCreateFolder
             ))
     )
 }
@@ -268,12 +270,13 @@ mod tests {
 
     use super::{
         MenuGuard, context_menu_guard, inline_edit_guard,
-        is_new_session_menu_choice, is_terminal_input,
+        is_header_menu_choice, is_terminal_input,
     };
     use crate::events::AppEvent;
     use crate::shortcuts::AppShortcut;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+    use crate::widgets::sidebar::types::HeaderMenu;
     use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
     use crate::widgets::tabs::{TabsEvent, TabsIntent};
     use crate::widgets::terminal_workspace::{
@@ -321,23 +324,23 @@ mod tests {
 
     #[test]
     fn given_menu_open_when_menu_open_intent_arrives_then_it_is_ignored() {
-        let guard = context_menu_guard(&AppEvent::Sidebar(
-            SidebarEvent::Intent(SidebarIntent::NewSessionMenuOpen),
-        ));
+        let guard =
+            context_menu_guard(&AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions),
+            )));
         assert!(matches!(guard, MenuGuard::Ignore));
     }
 
     #[test]
     fn given_menu_open_when_menu_dismiss_intent_arrives_then_it_is_allowed() {
         let guard = context_menu_guard(&AppEvent::Sidebar(
-            SidebarEvent::Intent(SidebarIntent::NewSessionMenuDismiss),
+            SidebarEvent::Intent(SidebarIntent::HeaderMenuDismiss),
         ));
         assert!(matches!(guard, MenuGuard::Allow));
     }
 
     #[test]
-    fn given_menu_choices_when_checked_then_each_one_is_a_new_session_menu_choice()
-     {
+    fn given_menu_choices_when_checked_then_each_one_is_a_header_menu_choice() {
         let open_terminal =
             AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenTerminalTab {
                 title: String::from("zsh"),
@@ -350,6 +353,9 @@ mod tests {
         let new_launch = AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
             QuickLaunchIntent::HeaderCreateCommand,
         ));
+        let new_folder = AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::HeaderCreateFolder,
+        ));
 
         let (_panes, pane) = iced::widget::pane_grid::State::new(());
         let split =
@@ -361,10 +367,11 @@ mod tests {
                 },
             ));
 
-        assert!(is_new_session_menu_choice(&open_terminal));
-        assert!(is_new_session_menu_choice(&split));
-        assert!(is_new_session_menu_choice(&launch));
-        assert!(is_new_session_menu_choice(&new_launch));
+        assert!(is_header_menu_choice(&open_terminal));
+        assert!(is_header_menu_choice(&split));
+        assert!(is_header_menu_choice(&launch));
+        assert!(is_header_menu_choice(&new_launch));
+        assert!(is_header_menu_choice(&new_folder));
     }
 
     #[test]
@@ -379,9 +386,9 @@ mod tests {
             },
         ));
 
-        assert!(!is_new_session_menu_choice(&close_tab));
-        assert!(!is_new_session_menu_choice(&pressed));
-        assert!(!is_new_session_menu_choice(&AppEvent::IcedReady));
+        assert!(!is_header_menu_choice(&close_tab));
+        assert!(!is_header_menu_choice(&pressed));
+        assert!(!is_header_menu_choice(&AppEvent::IcedReady));
     }
 
     #[test]

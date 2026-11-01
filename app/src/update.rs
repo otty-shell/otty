@@ -3,8 +3,8 @@ use iced::Task;
 use super::{App, AppEvent};
 use crate::events;
 use crate::guards::{
-    MenuGuard, context_menu_guard, inline_edit_guard,
-    is_new_session_menu_choice, is_terminal_input,
+    MenuGuard, context_menu_guard, inline_edit_guard, is_header_menu_choice,
+    is_terminal_input,
 };
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
@@ -30,13 +30,13 @@ pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         ));
     }
 
-    if app.widgets.sidebar.has_new_session_menu_open()
-        && is_new_session_menu_choice(&event)
+    if app.widgets.sidebar.has_header_menu_open()
+        && is_header_menu_choice(&event)
     {
         pre_dispatch_tasks.push(events::handle(
             app,
             AppEvent::Sidebar(SidebarEvent::Intent(
-                SidebarIntent::NewSessionMenuDismiss,
+                SidebarIntent::HeaderMenuDismiss,
             )),
         ));
     } else if any_context_menu_open(app) {
@@ -57,7 +57,7 @@ pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
 }
 
 fn any_context_menu_open(app: &App) -> bool {
-    if app.widgets.sidebar.has_new_session_menu_open()
+    if app.widgets.sidebar.has_header_menu_open()
         || app.widgets.quick_launch.context_menu().is_some()
     {
         return true;
@@ -71,7 +71,7 @@ fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
         events::handle(
             app,
             AppEvent::Sidebar(SidebarEvent::Intent(
-                SidebarIntent::NewSessionMenuDismiss,
+                SidebarIntent::HeaderMenuDismiss,
             )),
         ),
         events::handle(

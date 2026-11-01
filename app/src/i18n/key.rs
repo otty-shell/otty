@@ -9,7 +9,7 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Key {
-    // New session menu.
+    // Header menus (New session, Launches).
     /// "New terminal" entry in the New session menu.
     MenuNewTerminal,
     /// "Split current pane right" entry in the New session menu.
@@ -18,6 +18,10 @@ pub(crate) enum Key {
     MenuNewLaunch,
     /// Tooltip of the New session menu chevron.
     NewSessionMenu,
+    /// "New folder" entry in the Launches menu.
+    MenuNewFolder,
+    /// Tooltip of the Launches menu chevron.
+    LaunchesMenu,
 
     // Placeholders shown when tab state is missing.
     /// Shown when a terminal tab has no backing state.
@@ -362,11 +366,13 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 157] = [
+    pub(super) const ALL: [Self; 159] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
         Self::NewSessionMenu,
+        Self::MenuNewFolder,
+        Self::LaunchesMenu,
         Self::TerminalTabNotInitialized,
         Self::QuickLaunchEditorNotInitialized,
         Self::QuickLaunchErrorPayloadMissing,

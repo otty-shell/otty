@@ -11,8 +11,6 @@ pub(crate) const FOLDER_OPENED: &[u8] =
     include_bytes!("../../assets/svg/folder-opened.svg");
 pub(crate) const FOLDER_CLOSED: &[u8] =
     include_bytes!("../../assets/svg/folder-closed.svg");
-pub(crate) const FOLDER_PLUS: &[u8] =
-    include_bytes!("../../assets/svg/folder-plus.svg");
 pub(crate) const FILE: &[u8] = include_bytes!("../../assets/svg/file.svg");
 pub(crate) const PLAY: &[u8] = include_bytes!("../../assets/svg/play.svg");
 pub(crate) const SETTINGS: &[u8] =
