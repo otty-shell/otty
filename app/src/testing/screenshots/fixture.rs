@@ -80,7 +80,7 @@ impl Fixture {
         }
 
         let launches = launch_file();
-        let secret = SecretPromptState::new(
+        let secret = SecretPromptState::asking(
             vec![String::from("prod-api")],
             Box::new(ssh_launch()),
             SshSecretRequest::new(

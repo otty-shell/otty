@@ -385,7 +385,8 @@ impl SecretPromptState {
         &self.input_id
     }
 
-    pub(crate) fn new(
+    /// Ask for `request` before running `command`, the launch at `path`.
+    pub(super) fn new(
         path: NodePath,
         command: Box<QuickLaunch>,
         request: SshSecretRequest,
@@ -406,6 +407,19 @@ impl SecretPromptState {
     /// Consume the prompt into the launch it belongs to and the typed secret.
     pub(super) fn into_launch(self) -> (NodePath, QuickLaunch, String) {
         (self.path, *self.command, self.value)
+    }
+}
+
+#[cfg(test)]
+impl SecretPromptState {
+    /// Prompt asking for `request` before running `command`, the launch at
+    /// `path`, for screens built outside the widget.
+    pub(crate) fn asking(
+        path: NodePath,
+        command: Box<QuickLaunch>,
+        request: SshSecretRequest,
+    ) -> Self {
+        Self::new(path, command, request)
     }
 }
 
