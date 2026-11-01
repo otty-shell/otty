@@ -26,6 +26,13 @@ pub(crate) struct TerminalWorkspaceCtx {
     pub(crate) equalize_panes: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum CopyKind {
+    Content,
+    Prompt,
+    Command,
+}
+
 /// Reduce a terminal workspace intent event into state updates and effects.
 pub(crate) fn reduce(
     state: &mut TerminalWorkspaceState,
@@ -176,13 +183,6 @@ pub(crate) fn reduce(
 // ---------------------------------------------------------------------------
 // Private reducer helpers
 // ---------------------------------------------------------------------------
-
-#[derive(Clone, Copy, Debug)]
-enum CopyKind {
-    Content,
-    Prompt,
-    Command,
-}
 
 #[allow(clippy::too_many_arguments)]
 fn reduce_open_tab(
@@ -541,7 +541,6 @@ fn update_block_selection(
 // ---------------------------------------------------------------------------
 // Command execution and state helpers
 // ---------------------------------------------------------------------------
-
 fn with_terminal_tab<F>(
     state: &mut TerminalWorkspaceState,
     tab_id: u64,
