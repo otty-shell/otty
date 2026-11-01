@@ -350,16 +350,16 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 06 — Root view by mode · Opus
 - [x] 07 — `otty-docker`: engine discovery · Opus
 - [x] 08 — `otty-docker`: lists · Opus
-- [ ] 09 — `docker` widget · Opus
-- [ ] 10 — No engine states · Sonnet
+- [x] 09 — `docker` widget · Opus
+- [x] 10 — No engine states · Sonnet
 - [ ] 11 — Container actions · Opus
 - [ ] 12 — Image, volume, network actions · Opus
 - [ ] 13 — Inspector tabs · Opus
 - [ ] 14 — Run container form · Opus
 - [ ] 15 — Shell into a container · Sonnet
 - [ ] 16 — Live engine events · Opus
-- [ ] 17 — Compose projects · Sonnet
-- [ ] 18 — Status bar per mode · Sonnet
+- [x] 17 — Compose projects · Sonnet
+- [x] 18 — Status bar per mode · Sonnet
 - [ ] 19 — OTTY Light pass and screenshots · Sonnet
 - [ ] 20 — Design system and canvas sync · Opus, owner review
-- [ ] 21 — Discovery additions: sockets, CLI folders, `podman-docker` · Opus
+- [x] 21 — Discovery additions: sockets, CLI folders, `podman-docker` · Opus
