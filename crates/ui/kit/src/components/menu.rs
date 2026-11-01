@@ -276,9 +276,10 @@ fn separator_view<'a, Message: 'a>(
     .into()
 }
 
-/// Builds a heading row (`.ot-menu-label`).
+/// Builds a heading row (`.ot-menu-label`). The label may be borrowed, so
+/// a caller that redraws every frame does not copy it.
 pub(super) fn heading_view<'a, Message: 'a>(
-    label: String,
+    label: impl text::IntoFragment<'a>,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
     container(

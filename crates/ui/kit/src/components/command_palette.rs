@@ -301,8 +301,7 @@ fn entries_view<'a, K, Message: Clone + 'a>(
     let mut group: Option<&str> = None;
     for (index, (item, ranges)) in list.matches().enumerate() {
         if group != Some(item.group()) {
-            entries = entries
-                .push(menu::heading_view(item.group().to_owned(), palette));
+            entries = entries.push(menu::heading_view(item.group(), palette));
             group = Some(item.group());
         }
 
