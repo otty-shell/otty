@@ -308,7 +308,8 @@ mod tests {
             .position(|container| container.name() == name)
             .expect("fixture container");
 
-        let _ = reduce(state, DockerIntent::SelectRow(index));
+        let position = state.shown_position(index);
+        let _ = reduce(state, DockerIntent::SelectRow(position));
     }
 
     fn button(action: RowAction, is_enabled: bool) -> ActionButton {
@@ -552,7 +553,8 @@ mod tests {
         }
         .expect("fixture row");
 
-        let _ = reduce(state, DockerIntent::SelectRow(index));
+        let position = state.shown_position(index);
+        let _ = reduce(state, DockerIntent::SelectRow(position));
     }
 
     fn buttons_of(state: &DockerState) -> (Vec<ActionButton>, Option<String>) {

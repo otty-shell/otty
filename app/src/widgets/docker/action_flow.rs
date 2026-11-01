@@ -418,7 +418,8 @@ mod tests {
             .position(|container| container.name() == name)
             .expect("fixture container");
 
-        let _ = reduce(state, DockerIntent::SelectRow(index));
+        let position = state.shown_position(index);
+        let _ = reduce(state, DockerIntent::SelectRow(position));
         container(name).id().to_string()
     }
 
@@ -741,11 +742,10 @@ mod tests {
     fn a_right_press_selects_the_row_and_opens_its_menu_there() {
         let mut state = loaded_state();
         let position = Point::new(120.0, 80.0);
+        let index = state.shown_position(2);
 
-        let _ = reduce(
-            &mut state,
-            DockerIntent::OpenRowMenu { index: 2, position },
-        );
+        let _ =
+            reduce(&mut state, DockerIntent::OpenRowMenu { index, position });
 
         let engine = state.open_engine().expect("docker engine");
         let selected = engine.containers().selected(Container::id);
@@ -756,10 +756,11 @@ mod tests {
     #[test]
     fn a_menu_item_closes_the_menu_and_runs_its_action() {
         let mut state = loaded_state();
+        let index = state.shown_position(2);
         let _ = reduce(
             &mut state,
             DockerIntent::OpenRowMenu {
-                index: 2,
+                index,
                 position: Point::ORIGIN,
             },
         );
@@ -859,7 +860,8 @@ mod tests {
         }
         .expect("fixture row");
 
-        let _ = reduce(state, DockerIntent::SelectRow(index));
+        let position = state.shown_position(index);
+        let _ = reduce(state, DockerIntent::SelectRow(position));
     }
 
     fn image_id(name: &str) -> String {
@@ -1149,7 +1151,8 @@ mod tests {
             .iter()
             .position(|container| container.name() == "otty-fx-running")
             .expect("fixture container");
-        let _ = reduce(&mut state, DockerIntent::SelectRow(index));
+        let position = state.shown_position(index);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
         state
     }
 

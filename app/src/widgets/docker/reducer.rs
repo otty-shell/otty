@@ -57,6 +57,10 @@ fn reduce_intent(
             let _ = state.open_compose_project_of_row(index);
             Task::none()
         },
+        DockerIntent::SortBy(column) => {
+            state.sort_by(column);
+            Task::none()
+        },
         DockerIntent::SelectRow(index) => {
             let _ = state.select_shown_row(index);
             Task::none()
@@ -340,6 +344,7 @@ mod tests {
     use crate::widgets::docker::inspector::{
         InspectLoad, InspectTarget, InspectorTab, LogTarget, MAX_LOG_LINES,
     };
+    use crate::widgets::docker::sort::SortOrder;
     use crate::widgets::docker::state::{ListLoad, Search};
     use crate::widgets::docker::types::{
         LoadedList, LoadedLists, Place, ResourceKind,
@@ -682,6 +687,7 @@ mod tests {
                 .position(|c| c.compose_project() == Some("otty-fx"))
                 .expect("a compose container")
         };
+        let index = state.shown_position(index);
 
         let _ = reduce(&mut state, DockerIntent::OpenComposeProject(index));
 
@@ -716,11 +722,71 @@ mod tests {
                 .position(|c| c.compose_project().is_none())
                 .expect("a loose container")
         };
+        let index = state.shown_position(index);
 
         let _ = reduce(&mut state, DockerIntent::OpenComposeProject(index));
         let _ = reduce(&mut state, DockerIntent::OpenComposeProject(999));
 
         assert_eq!(state.place().and_then(Place::compose_project), None);
+    }
+
+    #[test]
+    fn a_header_press_sorts_the_open_table_and_a_second_press_reverses_it() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+
+        let _ = reduce(&mut state, DockerIntent::SortBy(2));
+        let first = state.sort(ResourceKind::Images);
+        let _ = reduce(&mut state, DockerIntent::SortBy(2));
+        let second = state.sort(ResourceKind::Images);
+
+        assert_eq!(first.column(), 2);
+        assert_eq!(first.order(), SortOrder::Descending);
+        assert_eq!(second.column(), 2);
+        assert_eq!(second.order(), SortOrder::Ascending);
+    }
+
+    #[test]
+    fn the_sort_of_a_table_is_kept_when_another_list_is_shown() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+        let _ = reduce(&mut state, DockerIntent::SortBy(2));
+
+        open(&mut state, ResourceKind::Volumes);
+        let _ = reduce(&mut state, DockerIntent::SortBy(1));
+        open(&mut state, ResourceKind::Images);
+
+        assert_eq!(state.sort(ResourceKind::Images).column(), 2);
+        assert_eq!(state.sort(ResourceKind::Volumes).column(), 1);
+        assert_eq!(state.sort(ResourceKind::Networks).column(), 0);
+    }
+
+    #[test]
+    fn a_header_press_without_an_open_place_changes_nothing() {
+        let mut state = DockerState::default();
+
+        let _ = reduce(&mut state, DockerIntent::SortBy(2));
+
+        assert_eq!(state.sort(ResourceKind::Images).column(), 0);
+    }
+
+    #[test]
+    fn the_selected_row_is_the_same_item_after_a_sort() {
+        let mut state = loaded_state();
+        let position = state.shown_position(1);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
+        let id = |state: &DockerState| {
+            let engine = state.open_engine().expect("docker engine");
+            engine
+                .containers()
+                .selected(Container::id)
+                .map(|c| c.id().to_string())
+        };
+        let before = id(&state);
+
+        let _ = reduce(&mut state, DockerIntent::SortBy(0));
+
+        assert_eq!(id(&state), before);
     }
 
     #[test]
@@ -766,11 +832,12 @@ mod tests {
             DockerIntent::FilterChanged(String::from("exit")),
         );
 
+        // The shown rows are exit0 and exit3 (same status, so by name).
         let _ = reduce(&mut state, DockerIntent::SelectRow(1));
 
         let engine = state.open_engine().expect("docker engine");
         let selected = engine.containers().selected(Container::id);
-        assert_eq!(selected.map(Container::name), Some("otty-fx-exit0"));
+        assert_eq!(selected.map(Container::name), Some("otty-fx-exit3"));
     }
 
     #[test]
@@ -779,7 +846,8 @@ mod tests {
 
         for resource in ResourceKind::ALL {
             open(&mut state, resource);
-            let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+            let position = state.shown_position(1);
+            let _ = reduce(&mut state, DockerIntent::SelectRow(position));
         }
 
         let engine = state.open_engine().expect("docker engine");
@@ -814,7 +882,8 @@ mod tests {
     #[test]
     fn a_reload_keeps_the_selection_while_the_row_is_there() {
         let mut state = loaded_state();
-        let _ = reduce(&mut state, DockerIntent::SelectRow(2));
+        let position = state.shown_position(2);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
         let selected = selected_container(&state).map(str::to_string);
         let mut reloaded = lists(EngineKind::Docker);
         if let Ok(containers) = reloaded.containers.as_mut() {
@@ -835,7 +904,8 @@ mod tests {
     #[test]
     fn a_reload_without_the_selected_row_selects_the_first_row() {
         let mut state = loaded_state();
-        let _ = reduce(&mut state, DockerIntent::SelectRow(2));
+        let position = state.shown_position(2);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
         let mut reloaded = lists(EngineKind::Docker);
         if let Ok(containers) = reloaded.containers.as_mut() {
             containers.remove(2);
@@ -1031,7 +1101,8 @@ mod tests {
         let _ = select_tab(&mut state, InspectorTab::Logs);
         push_lines(&mut state, 0, &["from the first container"]);
 
-        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+        let position = state.shown_position(1);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
 
         assert_eq!(followed(&state), Some(container_id(1)));
         assert_eq!(log_line_count(&state), 0);
@@ -1244,7 +1315,8 @@ mod tests {
     fn follow_is_on_again_after_another_container_is_selected() {
         let mut state = logs_without_follow();
 
-        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+        let position = state.shown_position(1);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
 
         assert_eq!(followed(&state), Some(container_id(1)));
         assert!(log_view(&state).is_following());
@@ -1331,8 +1403,11 @@ mod tests {
         let mut state = loaded_state();
         let _ = select_tab(&mut state, InspectorTab::Inspect);
 
-        let other = effects(reduce(&mut state, DockerIntent::SelectRow(1)));
-        let same = effects(reduce(&mut state, DockerIntent::SelectRow(1)));
+        let position = state.shown_position(1);
+        let other =
+            effects(reduce(&mut state, DockerIntent::SelectRow(position)));
+        let same =
+            effects(reduce(&mut state, DockerIntent::SelectRow(position)));
 
         assert_eq!(
             other,
@@ -1345,8 +1420,9 @@ mod tests {
     fn a_selection_on_the_overview_loads_when_inspect_opens() {
         let mut state = loaded_state();
 
+        let position = state.shown_position(1);
         let on_overview =
-            effects(reduce(&mut state, DockerIntent::SelectRow(1)));
+            effects(reduce(&mut state, DockerIntent::SelectRow(position)));
         let opened = select_tab(&mut state, InspectorTab::Inspect);
 
         assert!(on_overview.is_empty());

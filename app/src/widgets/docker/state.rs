@@ -12,9 +12,10 @@ use super::inspector::{
     InspectTarget, InspectorState, InspectorTab, LogTarget,
 };
 use super::run_form::RunForm;
+use super::sort::{TableSort, TableSorts};
 use super::types::{
-    LoadedList, LoadedLists, Place, ResourceKind, filtered, image_name,
-    network_name, shown_containers, volume_name,
+    LoadedList, LoadedLists, Place, ResourceKind, shown_containers,
+    shown_images, shown_networks, shown_volumes,
 };
 
 /// Runtime state of Docker mode: the engines and their lists, the open
@@ -28,6 +29,8 @@ pub(crate) struct DockerState {
     engines: Vec<EngineState>,
     place: Option<Place>,
     filter: String,
+    /// The kept sort of each table; not saved to disk.
+    sorts: TableSorts,
     inspector: InspectorState,
     running: Vec<ActionRequest>,
     confirm: Option<Confirm>,
@@ -82,6 +85,11 @@ impl DockerState {
     /// Return the name filter above the table.
     pub(crate) fn filter(&self) -> &str {
         &self.filter
+    }
+
+    /// Return how the `resource` table is sorted.
+    pub(crate) fn sort(&self, resource: ResourceKind) -> TableSort {
+        self.sorts.get(resource)
     }
 
     /// Return the state of the inspector tabs.
@@ -456,6 +464,7 @@ impl DockerState {
             engine.containers.items(),
             self.filter.as_str(),
             place.compose_project(),
+            self.sorts.get(ResourceKind::Containers),
         );
         let Some(project) = shown
             .get(index)
@@ -467,6 +476,17 @@ impl DockerState {
         let compose = Place::compose(place.engine().clone(), project);
         self.open(compose);
         true
+    }
+
+    /// Sort the open table by the column at `column`, or turn its order
+    /// around when it is sorted by that column already. The selected item
+    /// stays selected: a selection is the item's id, not a position.
+    pub(super) fn sort_by(&mut self, column: usize) {
+        let Some(place) = self.place.as_ref() else {
+            return;
+        };
+
+        self.sorts = self.sorts.pressed(place.resource(), column);
     }
 
     /// Replace the name filter.
@@ -489,26 +509,28 @@ impl DockerState {
         };
 
         let filter = self.filter.as_str();
+        let sort = self.sorts.get(place.resource());
         let id = match place.resource() {
             ResourceKind::Containers => shown_containers(
                 engine.containers.items(),
                 filter,
                 place.compose_project(),
+                sort,
             )
             .get(index)
             .map(|container| container.id().to_string()),
             ResourceKind::Images => {
-                filtered(engine.images.items(), filter, image_name)
+                shown_images(engine.images.items(), filter, sort)
                     .get(index)
                     .map(|image| image.id().to_string())
             },
             ResourceKind::Volumes => {
-                filtered(engine.volumes.items(), filter, volume_name)
+                shown_volumes(engine.volumes.items(), filter, sort)
                     .get(index)
                     .map(|volume| volume.name().to_string())
             },
             ResourceKind::Networks => {
-                filtered(engine.networks.items(), filter, network_name)
+                shown_networks(engine.networks.items(), filter, sort)
                     .get(index)
                     .map(|network| network.id().to_string())
             },
@@ -529,6 +551,52 @@ impl DockerState {
 
 #[cfg(test)]
 impl DockerState {
+    /// Return the position in the shown table of the item the engine listed
+    /// at `engine_index` in the open list, so a test can press the row of a
+    /// known item whatever the sort is.
+    pub(crate) fn shown_position(&self, engine_index: usize) -> usize {
+        let place = self.place().expect("an open place");
+        let engine = self.open_engine().expect("an open engine");
+        let filter = self.filter.as_str();
+        let sort = self.sorts.get(place.resource());
+
+        match place.resource() {
+            ResourceKind::Containers => {
+                let item = &engine.containers.items()[engine_index];
+                shown_containers(
+                    engine.containers.items(),
+                    filter,
+                    place.compose_project(),
+                    sort,
+                )
+                .iter()
+                .position(|shown| shown.id() == item.id())
+                .expect("the item is shown")
+            },
+            ResourceKind::Images => {
+                let item = &engine.images.items()[engine_index];
+                shown_images(engine.images.items(), filter, sort)
+                    .iter()
+                    .position(|shown| shown.id() == item.id())
+                    .expect("the item is shown")
+            },
+            ResourceKind::Volumes => {
+                let item = &engine.volumes.items()[engine_index];
+                shown_volumes(engine.volumes.items(), filter, sort)
+                    .iter()
+                    .position(|shown| shown.name() == item.name())
+                    .expect("the item is shown")
+            },
+            ResourceKind::Networks => {
+                let item = &engine.networks.items()[engine_index];
+                shown_networks(engine.networks.items(), filter, sort)
+                    .iter()
+                    .position(|shown| shown.id() == item.id())
+                    .expect("the item is shown")
+            },
+        }
+    }
+
     /// Return the actions the engines are running now.
     pub(crate) fn running(&self) -> &[ActionRequest] {
         &self.running

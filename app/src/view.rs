@@ -821,7 +821,7 @@ mod tests {
         let events: Vec<AppEvent> = ui.into_messages().collect();
         assert!(events.iter().any(|event| matches!(
             event,
-            AppEvent::Docker(DockerEvent::Intent(DockerIntent::SelectRow(2)))
+            AppEvent::Docker(DockerEvent::Intent(DockerIntent::SelectRow(5)))
         )));
     }
 
@@ -883,7 +883,7 @@ mod tests {
             },
         });
         let _ = app.widgets.docker.reduce(DockerIntent::OpenRowMenu {
-            index: 2,
+            index: 5,
             position: Point::new(400.0, 200.0),
         });
 

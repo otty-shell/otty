@@ -10,10 +10,11 @@ use super::resource_rows::{
     columns, container_cells, container_status, image_cells, image_status,
     network_cells, network_status, volume_cells, volume_status,
 };
+use super::sort::TableSort;
 use super::state::{DockerState, EngineState, ListLoad, ResourceList, Search};
 use super::types::{
-    Place, ResourceKind, filtered, image_name, network_name, shown_containers,
-    volume_name,
+    Place, ResourceKind, image_name, shown_containers, shown_images,
+    shown_networks, shown_volumes,
 };
 use crate::i18n::{self, Key};
 
@@ -73,8 +74,10 @@ pub(crate) struct TableViewModel<'a> {
     /// The "compose: <name>" chip while the containers are limited to a
     /// Compose project.
     pub(crate) compose_chip: Option<String>,
+    /// The column the table is sorted by and the way.
+    pub(crate) sort: TableSort,
     pub(crate) columns: Vec<TableColumn>,
-    /// Rows that match the filter, in the engine's order.
+    /// Rows that match the filter, in the order of `sort`.
     pub(crate) rows: Vec<Vec<TableCell>>,
     /// Position of the selected row among `rows`.
     pub(crate) selected: Option<usize>,
@@ -103,6 +106,7 @@ struct Shown<'a> {
     resource: ResourceKind,
     filter: &'a str,
     compose_chip: Option<String>,
+    sort: TableSort,
 }
 
 /// The rows of the engine tree, top to bottom: each engine, and the four
@@ -161,8 +165,10 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
         resource: place.resource(),
         filter: state.filter(),
         compose_chip: place.compose_project().map(i18n::docker_compose_chip),
+        sort: state.sort(place.resource()),
     };
     let filter = shown.filter;
+    let sort = shown.sort;
 
     let table = match place.resource() {
         ResourceKind::Containers => {
@@ -170,7 +176,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
             table(
                 shown,
                 engine.containers(),
-                shown_containers(items, filter, place.compose_project()),
+                shown_containers(items, filter, place.compose_project(), sort),
                 Container::id,
                 |container| container_cells(container, now),
             )
@@ -180,7 +186,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
             table(
                 shown,
                 engine.images(),
-                filtered(items, filter, image_name),
+                shown_images(items, filter, sort),
                 Image::id,
                 |image| image_cells(image, now),
             )
@@ -190,7 +196,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
             table(
                 shown,
                 engine.volumes(),
-                filtered(items, filter, volume_name),
+                shown_volumes(items, filter, sort),
                 Volume::name,
                 |volume| volume_cells(volume, now),
             )
@@ -200,7 +206,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
             table(
                 shown,
                 engine.networks(),
-                filtered(items, filter, network_name),
+                shown_networks(items, filter, sort),
                 Network::id,
                 |network| network_cells(network, now),
             )
@@ -346,6 +352,7 @@ fn table<'a, T>(
         resource: shown.resource,
         filter: shown.filter,
         compose_chip: shown.compose_chip,
+        sort: shown.sort,
         columns: columns(shown.resource),
         rows,
         selected,
@@ -606,6 +613,7 @@ mod tests {
         assert_eq!(
             table.columns[3],
             TableColumn::new(i18n::t(Key::DockerFieldCompose), 2)
+                .sortable(true)
         );
         let projects: Vec<&TableCell> =
             table.rows.iter().map(|cells| &cells[3]).collect();
@@ -714,13 +722,91 @@ mod tests {
             resource_rows::columns(ResourceKind::Containers)
         );
         assert_eq!(table.rows.len(), 6);
+        let selected = table.selected.expect("a selected row");
         assert_eq!(
-            table.rows[0],
+            table.rows[selected],
             resource_rows::container_cells(&resources.containers()[0], NOW)
         );
-        assert_eq!(table.selected, Some(0));
         assert_eq!(table.empty_message, None);
         assert_eq!(table.error, None);
+    }
+
+    #[test]
+    fn the_containers_are_shown_running_first_by_default() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+
+        let vm = build(&state);
+        let table = table(&vm);
+
+        assert_eq!(table.sort, state.sort(ResourceKind::Containers));
+        assert_eq!(table.sort.column(), 1);
+        let running = i18n::t(Key::DockerStateRunning);
+        let first_status = &table.rows[0][1];
+        assert_eq!(first_status, &TableCell::badge(running, StatusTone::Ok));
+    }
+
+    #[test]
+    fn a_sort_press_reorders_the_rows_and_keeps_the_selected_item() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        let _ = reduce(&mut state, DockerIntent::SelectRow(2));
+        let selected_name = |vm: &Vm<'_>| {
+            let table = table(vm);
+            table.rows[table.selected.expect("a selected row")][0].clone()
+        };
+        let before = selected_name(&build(&state));
+
+        let _ = reduce(&mut state, DockerIntent::SortBy(0));
+        let vm = build(&state);
+        let table = table(&vm);
+
+        assert_eq!(table.sort.column(), 0);
+        let names: Vec<&TableCell> =
+            table.rows.iter().map(|cells| &cells[0]).collect();
+        let mut sorted = names.clone();
+        sorted.sort_by_key(|cell| format!("{cell:?}"));
+        assert_eq!(names, sorted);
+        assert_eq!(selected_name(&vm), before);
+    }
+
+    #[test]
+    fn a_row_press_after_a_sort_selects_the_row_that_is_shown() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        let _ = reduce(&mut state, DockerIntent::SortBy(0));
+        let vm = build(&state);
+        let expected = table(&vm).rows[3][0].clone();
+
+        let _ = reduce(&mut state, DockerIntent::SelectRow(3));
+
+        let vm = build(&state);
+        let table = table(&vm);
+        assert_eq!(table.selected, Some(3));
+        assert_eq!(table.rows[3][0], expected);
+    }
+
+    #[test]
+    fn sorting_applies_inside_the_filter_and_the_compose_project() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        let _ = reduce(&mut state, DockerIntent::FilterChanged("exit".into()));
+        let _ = reduce(&mut state, DockerIntent::SortBy(0));
+        let _ = reduce(&mut state, DockerIntent::SortBy(0));
+
+        let vm = build(&state);
+        let table = table(&vm);
+
+        assert!(table.rows.len() > 1);
+        let names: Vec<String> = table
+            .rows
+            .iter()
+            .map(|cells| format!("{:?}", cells[0]))
+            .collect();
+        let mut reversed = names.clone();
+        reversed.sort();
+        reversed.reverse();
+        assert_eq!(names, reversed);
     }
 
     #[test]
@@ -760,7 +846,8 @@ mod tests {
     fn the_filter_keeps_matching_rows_and_moves_the_selected_position() {
         let mut state = found(&[EngineKind::Docker]);
         load(&mut state, &docker(), lists(EngineKind::Docker));
-        let _ = reduce(&mut state, DockerIntent::SelectRow(3));
+        let position = state.shown_position(3);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
         let _ = reduce(
             &mut state,
             DockerIntent::FilterChanged(String::from("exit")),
@@ -771,8 +858,8 @@ mod tests {
 
         assert_eq!(table.filter, "exit");
         assert_eq!(table.rows.len(), 2);
-        assert_eq!(table.rows[1][0], TableCell::mono("otty-fx-exit0"));
-        assert_eq!(table.selected, Some(1));
+        assert_eq!(table.rows[0][0], TableCell::mono("otty-fx-exit0"));
+        assert_eq!(table.selected, Some(0));
     }
 
     #[test]

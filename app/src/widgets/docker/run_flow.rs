@@ -385,7 +385,8 @@ mod tests {
                     .position(|image| !image.is_dangling())
             })
             .expect("a tagged image");
-        let _ = reduce(&mut state, DockerIntent::SelectRow(tagged));
+        let position = state.shown_position(tagged);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
 
         let effects = effects(reduce(
             &mut state,

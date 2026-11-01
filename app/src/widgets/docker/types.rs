@@ -1,5 +1,8 @@
 use otty_docker::{Container, EngineAddress, Image, Network, Volume};
 
+use super::sort::{
+    TableSort, sort_containers, sort_images, sort_networks, sort_volumes,
+};
 use crate::i18n::Key;
 
 /// How `docker images` names an image without a tag.
@@ -134,16 +137,54 @@ pub(crate) enum LoadedList {
 }
 
 /// Return the containers whose name contains `filter` and, when `project`
-/// is set, that belong to that Compose project.
+/// is set, that belong to that Compose project, ordered by `sort`.
 pub(crate) fn shown_containers<'a>(
     containers: &'a [Container],
     filter: &str,
     project: Option<&str>,
+    sort: TableSort,
 ) -> Vec<&'a Container> {
     let mut shown = filtered(containers, filter, container_name);
     if let Some(project) = project {
         shown.retain(|container| container.compose_project() == Some(project));
     }
+    sort_containers(&mut shown, sort);
+
+    shown
+}
+
+/// Return the images whose name contains `filter`, ordered by `sort`.
+pub(crate) fn shown_images<'a>(
+    images: &'a [Image],
+    filter: &str,
+    sort: TableSort,
+) -> Vec<&'a Image> {
+    let mut shown = filtered(images, filter, image_name);
+    sort_images(&mut shown, sort);
+
+    shown
+}
+
+/// Return the volumes whose name contains `filter`, ordered by `sort`.
+pub(crate) fn shown_volumes<'a>(
+    volumes: &'a [Volume],
+    filter: &str,
+    sort: TableSort,
+) -> Vec<&'a Volume> {
+    let mut shown = filtered(volumes, filter, volume_name);
+    sort_volumes(&mut shown, sort);
+
+    shown
+}
+
+/// Return the networks whose name contains `filter`, ordered by `sort`.
+pub(crate) fn shown_networks<'a>(
+    networks: &'a [Network],
+    filter: &str,
+    sort: TableSort,
+) -> Vec<&'a Network> {
+    let mut shown = filtered(networks, filter, network_name);
+    sort_networks(&mut shown, sort);
 
     shown
 }
@@ -193,6 +234,7 @@ mod tests {
     use otty_docker::{EngineKind, fixtures};
 
     use super::*;
+    use crate::widgets::docker::sort::TableSorts;
 
     #[test]
     fn the_filter_matches_part_of_the_name_ignoring_case() {
@@ -208,11 +250,13 @@ mod tests {
     fn containers_are_limited_to_a_compose_project_and_the_filter() {
         let resources = fixtures::resources(EngineKind::Docker);
         let containers = resources.containers();
+        let sort = TableSorts::default().get(ResourceKind::Containers);
 
-        let all = shown_containers(containers, "", None);
-        let project = shown_containers(containers, "", Some("otty-fx"));
-        let other = shown_containers(containers, "", Some("nope"));
-        let no_match = shown_containers(containers, "exit", Some("otty-fx"));
+        let all = shown_containers(containers, "", None, sort);
+        let project = shown_containers(containers, "", Some("otty-fx"), sort);
+        let other = shown_containers(containers, "", Some("nope"), sort);
+        let no_match =
+            shown_containers(containers, "exit", Some("otty-fx"), sort);
 
         assert_eq!(all.len(), containers.len());
         let names: Vec<&str> = project.iter().map(|c| c.name()).collect();

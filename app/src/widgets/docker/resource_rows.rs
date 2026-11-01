@@ -8,6 +8,7 @@ use otty_ui_kit::components::data_table::{
 use otty_ui_kit::components::status_badge::StatusTone;
 
 use super::format::{NO_VALUE, age_text, ports_text, short_id, size_text};
+use super::sort::is_sortable;
 use super::types::{ResourceKind, image_name};
 use crate::i18n::{self, Key};
 
@@ -17,7 +18,7 @@ pub(crate) fn columns(resource: ResourceKind) -> Vec<TableColumn> {
     let column = |key: Key, share: u16| TableColumn::new(i18n::t(key), share);
     let number = |key: Key| column(key, 1).align(ColumnAlign::End);
 
-    match resource {
+    let columns = match resource {
         ResourceKind::Containers => vec![
             column(Key::DockerColumnName, 3),
             column(Key::DockerColumnStatus, 2),
@@ -47,7 +48,13 @@ pub(crate) fn columns(resource: ResourceKind) -> Vec<TableColumn> {
             number(Key::DockerContainers),
             column(Key::DockerColumnAge, 1),
         ],
-    }
+    };
+
+    columns
+        .into_iter()
+        .enumerate()
+        .map(|(index, column)| column.sortable(is_sortable(resource, index)))
+        .collect()
 }
 
 /// The cells of a container row: name, status badge, image, Compose project
@@ -238,12 +245,17 @@ mod tests {
         assert_eq!(
             titles(ResourceKind::Containers),
             vec![
-                TableColumn::new(i18n::t(Key::DockerColumnName), 3),
-                TableColumn::new(i18n::t(Key::DockerColumnStatus), 2),
-                TableColumn::new(i18n::t(Key::DockerColumnImage), 3),
-                TableColumn::new(i18n::t(Key::DockerFieldCompose), 2),
+                TableColumn::new(i18n::t(Key::DockerColumnName), 3)
+                    .sortable(true),
+                TableColumn::new(i18n::t(Key::DockerColumnStatus), 2)
+                    .sortable(true),
+                TableColumn::new(i18n::t(Key::DockerColumnImage), 3)
+                    .sortable(true),
+                TableColumn::new(i18n::t(Key::DockerFieldCompose), 2)
+                    .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnPorts), 2),
-                TableColumn::new(i18n::t(Key::DockerColumnAge), 1),
+                TableColumn::new(i18n::t(Key::DockerColumnAge), 1)
+                    .sortable(true),
             ]
         );
     }
@@ -253,13 +265,18 @@ mod tests {
         assert_eq!(
             titles(ResourceKind::Images),
             vec![
-                TableColumn::new(i18n::t(Key::DockerColumnRepositoryTag), 4),
-                TableColumn::new(i18n::t(Key::DockerColumnId), 2),
+                TableColumn::new(i18n::t(Key::DockerColumnRepositoryTag), 4)
+                    .sortable(true),
+                TableColumn::new(i18n::t(Key::DockerColumnId), 2)
+                    .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnSize), 1)
+                    .sortable(true)
                     .align(ColumnAlign::End),
                 TableColumn::new(i18n::t(Key::DockerColumnUsedBy), 1)
+                    .sortable(true)
                     .align(ColumnAlign::End),
-                TableColumn::new(i18n::t(Key::DockerColumnAge), 1),
+                TableColumn::new(i18n::t(Key::DockerColumnAge), 1)
+                    .sortable(true),
             ]
         );
     }
@@ -269,10 +286,14 @@ mod tests {
         assert_eq!(
             titles(ResourceKind::Volumes),
             vec![
-                TableColumn::new(i18n::t(Key::DockerColumnName), 4),
-                TableColumn::new(i18n::t(Key::DockerColumnDriver), 1),
-                TableColumn::new(i18n::t(Key::DockerColumnUsedBy), 3),
-                TableColumn::new(i18n::t(Key::DockerColumnAge), 1),
+                TableColumn::new(i18n::t(Key::DockerColumnName), 4)
+                    .sortable(true),
+                TableColumn::new(i18n::t(Key::DockerColumnDriver), 1)
+                    .sortable(true),
+                TableColumn::new(i18n::t(Key::DockerColumnUsedBy), 3)
+                    .sortable(true),
+                TableColumn::new(i18n::t(Key::DockerColumnAge), 1)
+                    .sortable(true),
             ]
         );
     }
@@ -282,13 +303,19 @@ mod tests {
         assert_eq!(
             titles(ResourceKind::Networks),
             vec![
-                TableColumn::new(i18n::t(Key::DockerColumnName), 3),
-                TableColumn::new(i18n::t(Key::DockerColumnDriver), 1),
-                TableColumn::new(i18n::t(Key::DockerColumnScope), 1),
-                TableColumn::new(i18n::t(Key::DockerColumnSubnet), 2),
+                TableColumn::new(i18n::t(Key::DockerColumnName), 3)
+                    .sortable(true),
+                TableColumn::new(i18n::t(Key::DockerColumnDriver), 1)
+                    .sortable(true),
+                TableColumn::new(i18n::t(Key::DockerColumnScope), 1)
+                    .sortable(true),
+                TableColumn::new(i18n::t(Key::DockerColumnSubnet), 2)
+                    .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerContainers), 1)
+                    .sortable(true)
                     .align(ColumnAlign::End),
-                TableColumn::new(i18n::t(Key::DockerColumnAge), 1),
+                TableColumn::new(i18n::t(Key::DockerColumnAge), 1)
+                    .sortable(true),
             ]
         );
     }

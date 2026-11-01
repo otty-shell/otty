@@ -18,6 +18,7 @@ pub(crate) mod run_checks;
 mod run_flow;
 pub(crate) mod run_form;
 pub(crate) mod run_model;
+pub(crate) mod sort;
 mod state;
 pub(crate) mod status;
 mod subscription;
@@ -257,9 +258,9 @@ mod tests {
             widget.reduce(DockerIntent::SelectInspectorTab(InspectorTab::Logs));
         let first = subscriptions(&widget);
 
-        let _ = widget.reduce(DockerIntent::SelectRow(1));
+        let _ = widget.reduce(DockerIntent::SelectRow(0));
         let second = subscriptions(&widget);
-        let _ = widget.reduce(DockerIntent::SelectRow(1));
+        let _ = widget.reduce(DockerIntent::SelectRow(0));
 
         assert_eq!(first.len(), 1);
         assert_eq!(second.len(), 1);

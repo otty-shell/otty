@@ -34,6 +34,9 @@ pub(crate) enum DockerIntent {
     /// The Compose link of the row at this position of the shown (filtered)
     /// containers table was pressed: show only that project's containers.
     OpenComposeProject(usize),
+    /// The title of the sortable column at this position of the open table
+    /// was pressed.
+    SortBy(usize),
     /// The row at this position of the shown (filtered) table was pressed.
     SelectRow(usize),
     /// The name filter above the table changed.

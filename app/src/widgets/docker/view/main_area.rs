@@ -7,7 +7,7 @@ use iced::widget::{Id, Space, column, container, row, svg, text};
 use iced::{Alignment, Element, Length, Padding};
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::chip::Chip;
-use otty_ui_kit::components::data_table::DataTable;
+use otty_ui_kit::components::data_table::{DataTable, SortDirection};
 use otty_ui_kit::components::empty_card::EmptyCard;
 use otty_ui_kit::components::icon_button::IconButton;
 use otty_ui_kit::components::notice::Notice;
@@ -17,6 +17,7 @@ use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::DockerIntent;
 use super::super::model::{MainViewModel, TableViewModel};
+use super::super::sort::SortOrder;
 use super::no_engine;
 use crate::i18n::{self, Key};
 use crate::icons;
@@ -75,6 +76,8 @@ fn table_view<'a>(
     }
 
     let mut table = DataTable::new(vm.columns, palette)
+        .sorted_by(vm.sort.column(), sort_direction(vm.sort.order()))
+        .on_sort(DockerIntent::SortBy)
         .selected(vm.selected)
         .on_row_press(DockerIntent::SelectRow)
         .on_link_press(|row, _column| DockerIntent::OpenComposeProject(row))
@@ -90,6 +93,14 @@ fn table_view<'a>(
     }
 
     content.push(table).into()
+}
+
+/// The arrow of a sort order: up for ascending, down for descending.
+fn sort_direction(order: SortOrder) -> SortDirection {
+    match order {
+        SortOrder::Ascending => SortDirection::Ascending,
+        SortOrder::Descending => SortDirection::Descending,
+    }
 }
 
 /// A notice under the header row, inside the page padding.
@@ -208,6 +219,7 @@ mod tests {
     use crate::widgets::docker::no_engine::{
         self as no_engine_vm, NoEngineCase,
     };
+    use crate::widgets::docker::sort::TableSorts;
     use crate::widgets::docker::types::ResourceKind;
 
     fn table<'a>(rows: Vec<Vec<TableCell>>) -> MainViewModel<'a> {
@@ -215,9 +227,10 @@ mod tests {
             resource: ResourceKind::Containers,
             filter: "",
             compose_chip: None,
+            sort: TableSorts::default().get(ResourceKind::Containers),
             columns: vec![
-                TableColumn::new("Name", 3),
-                TableColumn::new("Status", 2),
+                TableColumn::new("Name", 3).sortable(true),
+                TableColumn::new("Status", 2).sortable(true),
             ],
             rows,
             selected: Some(0),
@@ -266,6 +279,20 @@ mod tests {
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![DockerIntent::SelectRow(1)]);
+    }
+
+    #[test]
+    fn a_press_on_a_column_title_sorts_by_that_column() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(MainAreaProps {
+            vm: table(rows()),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click("Name").expect("title should be visible");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![DockerIntent::SortBy(0)]);
     }
 
     #[test]
