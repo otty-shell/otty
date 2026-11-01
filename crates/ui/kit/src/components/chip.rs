@@ -1,5 +1,6 @@
 //! `Chip`: small label for a target or a path.
 
+use iced::widget::text::Wrapping;
 use iced::widget::{container, row, text};
 use iced::{Alignment, Border, Element, Padding};
 
@@ -11,12 +12,12 @@ use crate::{fonts, radius, size, spacing, typography};
 const PADDING_X: f32 = spacing::SPACE_3;
 /// Height of a chip (`height: 24px`, the same as `control-sm`).
 const HEIGHT: f32 = size::CONTROL_SM;
-/// Vertical padding that makes a one-line chip [`HEIGHT`] high. Using
-/// padding instead of a fixed height lets the background grow with a
-/// label that wraps in a narrow space.
-const PADDING_Y: f32 = (HEIGHT - typography::SMALL.line_height()) / 2.0;
 
 /// Chip with a label, an optional target dot and an optional muted note.
+///
+/// A chip is always one line [`HEIGHT`] high. In a space narrower than its
+/// texts it does not wrap: its right end is cut off at the edge of its
+/// background, so the texts never spill out of it.
 ///
 /// # Example
 ///
@@ -93,6 +94,7 @@ impl<'a, Message: 'a> From<Chip> for Element<'a, Message> {
                 } else {
                     fonts::UI
                 })
+                .wrapping(Wrapping::None)
                 .color(palette.text_body()),
         );
         if let Some(note) = value.note {
@@ -101,12 +103,16 @@ impl<'a, Message: 'a> From<Chip> for Element<'a, Message> {
                     .size(style.size())
                     .line_height(iced::Pixels(style.line_height()))
                     .font(fonts::UI)
+                    .wrapping(Wrapping::None)
                     .color(palette.text_muted()),
             );
         }
 
         container(content)
-            .padding(Padding::from([PADDING_Y, PADDING_X]))
+            .height(HEIGHT)
+            .align_y(Alignment::Center)
+            .padding(Padding::from([0.0, PADDING_X]))
+            .clip(true)
             .style(move |_| container::Style {
                 background: Some(background.into()),
                 border: Border {
@@ -146,11 +152,12 @@ mod tests {
     }
 
     #[test]
-    fn given_narrow_space_when_label_wraps_then_background_keeps_padding() {
+    fn given_narrow_space_when_label_is_long_then_chip_stays_one_line() {
         let palette = UiPalette::otty_dark();
         let chip: Element<'_, ()> = container(column![
             Chip::new("fedora work station", &palette)
-                .target(TargetKind::Local),
+                .target(TargetKind::Local)
+                .note("this computer"),
             text("below"),
         ])
         .width(70)
@@ -164,15 +171,13 @@ mod tests {
         let below =
             ui.find("below").expect("marker should be visible").bounds();
 
-        assert!(label.height > HEIGHT, "label should wrap: {label:?}");
         assert!(
-            label.y >= PADDING_Y - 0.5,
-            "label top {} should leave {PADDING_Y} padding",
-            label.y
+            (label.height - typography::SMALL.line_height()).abs() < 0.5,
+            "label should stay on one line: {label:?}"
         );
         assert!(
-            below.y >= label.y + label.height + PADDING_Y - 0.5,
-            "chip bottom {} should leave {PADDING_Y} padding under label {label:?}",
+            (below.y - HEIGHT).abs() < 0.5,
+            "chip height {} should stay {HEIGHT}",
             below.y
         );
     }

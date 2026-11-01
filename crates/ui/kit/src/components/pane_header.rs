@@ -227,4 +227,34 @@ mod tests {
             "chip {chip:?} should stay inside the header"
         );
     }
+
+    #[test]
+    fn given_long_host_in_narrow_pane_when_laid_out_then_chip_stays_one_line() {
+        let palette = UiPalette::otty_dark();
+        let host = "Ilyas-MacBook-Pro-Work-Station.local";
+        let header: Element<'_, ()> = container(column![
+            PaneHeader::new("zsh", &palette)
+                .folder("~/projects/otty")
+                .trailing(Chip::new(host, &palette)),
+            text("below"),
+        ])
+        .width(120.0)
+        .into();
+        let mut ui = simulator(header);
+
+        let chip = ui.find(host).expect("chip should be shown").bounds();
+        let below =
+            ui.find("below").expect("marker should be visible").bounds();
+
+        assert!(
+            (below.y - size::PANE_HEADER).abs() < 0.5,
+            "header height {} should stay {}",
+            below.y,
+            size::PANE_HEADER
+        );
+        assert!(
+            (chip.height - typography::SMALL.line_height()).abs() < 0.5,
+            "host name should stay on one line: {chip:?}"
+        );
+    }
 }
