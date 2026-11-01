@@ -98,6 +98,10 @@ show some features OTTY does not have yet (see Out of Scope).
     `hostname` feature of `nix` is enabled for it (owner approved,
     2026-10-31); no new crate. If the name cannot be read, the label is
     "This computer".
+11. **The Files panel dot is always this computer.** Files follows only the
+    folder of local shell tabs; SSH launches open their own command tabs, so
+    the panel never shows a remote folder. Using the active tab's machine
+    would put an SSH dot next to a local folder (owner approved, 2026-11-01).
 
 ## Ticket classes
 
@@ -197,3 +201,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - Draft (2026-10-31): owner answers before the draft: side session list only; Ctrl Shift shortcuts; command blocks and the terminal widget out of scope; command palette in scope; `iced_test` approved; new elements go into the kit first; features and architecture stay as they are.
 - Round 1 (2026-10-31, owner): show the host name (Decision 10, `nix` feature `hostname`); spec approved; tickets written.
 - Round 2 (2026-11-01, owner): Files panel shortcut on Linux is Ctrl Shift O (Ctrl Shift E is IBus emoji on GNOME).
+- Round 3 (2026-11-01, owner): the Files panel dot stays "this computer" (Decision 11), as ticket 10 left it.
