@@ -2,12 +2,6 @@ use otty_ui_kit::components::target_dot::TargetKind;
 
 use crate::widgets::terminal_workspace::model::PaneLabel;
 
-/// View model for the chrome widget.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ChromeViewModel {
-    pub(crate) is_fullscreen: bool,
-}
-
 /// What the status bar needs from the rest of the app.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct StatusBarInput<'a> {

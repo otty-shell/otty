@@ -215,6 +215,7 @@ fn view_header<'a>(
         left_open: sidebar_vm.is_left_open,
         right_open: sidebar_vm.is_right_open,
         focus_mode: sidebar_vm.is_focus_mode,
+        is_title_bar_pressed: app.widgets.chrome.is_title_bar_pressed(),
     })
     .map(|event| AppEvent::Chrome(ChromeEvent::Intent(event)));
 

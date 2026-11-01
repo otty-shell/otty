@@ -60,8 +60,8 @@ pub(crate) enum Key {
     ClosePane,
     /// Name of this computer when its host name cannot be read.
     ThisComputer,
-    /// Tooltip of the title bar full screen button.
-    WindowToggleFullscreen,
+    /// Tooltip of the title bar button that maximizes or restores the window.
+    WindowToggleMaximize,
     /// Tooltip of the title bar minimize button.
     WindowMinimize,
     /// Tooltip of the title bar button that shows or hides the files panel.
@@ -387,7 +387,7 @@ impl Key {
         Self::SplitRight,
         Self::ClosePane,
         Self::ThisComputer,
-        Self::WindowToggleFullscreen,
+        Self::WindowToggleMaximize,
         Self::WindowMinimize,
         Self::WindowFilesPanel,
         Self::WindowLeftPanel,

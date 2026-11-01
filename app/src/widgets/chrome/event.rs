@@ -1,9 +1,8 @@
-use iced::window;
-
 /// Intent events handled by chrome widget views.
 #[derive(Debug, Clone)]
 pub(crate) enum ChromeIntent {
-    ToggleFullScreen,
+    /// Maximize the window to the free screen area, or restore it.
+    ToggleMaximize,
     MinimizeWindow,
     CloseWindow,
     /// Show or hide the left panel.
@@ -16,13 +15,18 @@ pub(crate) enum ChromeIntent {
     OpenSettings,
     /// The title bar search was pressed: open the command palette.
     OpenCommandPalette,
-    StartWindowDrag,
+    /// The left button went down on the empty title bar.
+    PressTitleBar,
+    /// The pointer moved, or left the title bar, while the button is held.
+    MoveOnTitleBar,
+    /// The left button went up on the title bar.
+    ReleaseTitleBar,
 }
 
 /// Effect events produced by the chrome reducer.
 #[derive(Debug, Clone)]
 pub(crate) enum ChromeEffect {
-    FullScreenToggled { mode: window::Mode },
+    ToggleMaximize,
     MinimizeWindow,
     CloseWindow,
     ToggleLeftPanel,

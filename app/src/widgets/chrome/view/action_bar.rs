@@ -27,6 +27,9 @@ pub(crate) struct ActionBarProps<'a> {
     pub(crate) right_open: bool,
     /// Focus mode is on; its toggle uses the accent color.
     pub(crate) focus_mode: bool,
+    /// The left button is held on the empty title bar; pointer moves are
+    /// reported only then.
+    pub(crate) is_title_bar_pressed: bool,
 }
 
 /// Render the draggable title bar: left panel toggle, title search and the
@@ -87,10 +90,10 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
         Space::new().width(spacing::SPACE_2),
         IconButton::new(
             svg::Handle::from_memory(WINDOW_FULLSCREEN),
-            i18n::t(Key::WindowToggleFullscreen),
+            i18n::t(Key::WindowToggleMaximize),
             palette,
         )
-        .on_press(ChromeIntent::ToggleFullScreen),
+        .on_press(ChromeIntent::ToggleMaximize),
         IconButton::new(
             svg::Handle::from_memory(WINDOW_TRAY),
             i18n::t(Key::WindowMinimize),
@@ -126,14 +129,22 @@ pub(crate) fn view<'a>(props: ActionBarProps<'a>) -> Element<'a, ChromeIntent> {
         .padding([0.0, spacing::SPACE_2]);
 
     // The drag surface sits under the bar, so empty space between the
-    // buttons still drags the window.
-    let drag_surface = MouseArea::new(
+    // buttons still drags the window. The drag starts on the first move
+    // after a press, not on the press itself, so a double click maximizes
+    // the window without a drag fighting it.
+    let mut drag_surface = MouseArea::new(
         container(Space::new().width(Length::Fill).height(Length::Fill))
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(ChromeIntent::StartWindowDrag)
-    .on_double_click(ChromeIntent::ToggleFullScreen);
+    .on_press(ChromeIntent::PressTitleBar)
+    .on_double_click(ChromeIntent::ToggleMaximize);
+    if props.is_title_bar_pressed {
+        drag_surface = drag_surface
+            .on_move(|_| ChromeIntent::MoveOnTitleBar)
+            .on_exit(ChromeIntent::MoveOnTitleBar)
+            .on_release(ChromeIntent::ReleaseTitleBar);
+    }
 
     let content = Stack::new().push(drag_surface).push(bar);
 
@@ -169,8 +180,8 @@ fn tooltip_label(name: &str, shortcut: AppShortcut) -> String {
 
 #[cfg(test)]
 mod tests {
-    use iced::Point;
-    use iced_test::simulator;
+    use iced::{Event, Point, mouse};
+    use iced_test::{Simulator, simulator};
 
     use super::*;
     use crate::theme::ThemeManager;
@@ -184,6 +195,7 @@ mod tests {
             left_open: true,
             right_open: false,
             focus_mode: false,
+            is_title_bar_pressed: false,
         }
     }
 
@@ -196,6 +208,74 @@ mod tests {
         let _ = ui.simulate(iced_test::simulator::click());
 
         ui.into_messages().collect()
+    }
+
+    #[test]
+    fn given_double_click_on_empty_title_bar_then_window_maximizes() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(props(&themes)));
+
+        ui.point_at(Point::new(160.0, BAR_Y));
+        let _ = ui.simulate(iced_test::simulator::click());
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let intents: Vec<ChromeIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            intents.as_slice(),
+            [
+                ChromeIntent::PressTitleBar,
+                ChromeIntent::PressTitleBar,
+                ChromeIntent::ToggleMaximize,
+            ]
+        ));
+    }
+
+    #[test]
+    fn given_pressed_title_bar_when_pointer_moves_then_move_and_release_are_reported()
+     {
+        let themes = ThemeManager::new();
+        let pressed = ActionBarProps {
+            is_title_bar_pressed: true,
+            ..props(&themes)
+        };
+        let mut ui = simulator(view(pressed));
+
+        move_to(&mut ui, 160.0);
+        move_to(&mut ui, 170.0);
+        let _ = ui.simulate([Event::Mouse(mouse::Event::ButtonReleased(
+            mouse::Button::Left,
+        ))]);
+
+        let intents: Vec<ChromeIntent> = ui.into_messages().collect();
+        assert!(
+            intents
+                .iter()
+                .any(|intent| matches!(intent, ChromeIntent::MoveOnTitleBar)),
+            "move should be reported: {intents:?}"
+        );
+        assert!(matches!(
+            intents.last(),
+            Some(ChromeIntent::ReleaseTitleBar)
+        ));
+    }
+
+    #[test]
+    fn given_idle_title_bar_when_pointer_moves_then_nothing_is_reported() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(props(&themes)));
+
+        move_to(&mut ui, 160.0);
+        move_to(&mut ui, 170.0);
+
+        assert_eq!(ui.into_messages().count(), 0);
+    }
+
+    /// Move the pointer to `x` on the title bar.
+    fn move_to(ui: &mut Simulator<'_, ChromeIntent>, x: f32) {
+        let position = Point::new(x, BAR_Y);
+        ui.point_at(position);
+        let _ =
+            ui.simulate([Event::Mouse(mouse::Event::CursorMoved { position })]);
     }
 
     #[test]
@@ -234,7 +314,7 @@ mod tests {
     fn window_buttons_emit_their_intents() {
         assert!(matches!(
             click_at(940.0).as_slice(),
-            [ChromeIntent::ToggleFullScreen]
+            [ChromeIntent::ToggleMaximize]
         ));
         assert!(matches!(
             click_at(972.0).as_slice(),
@@ -247,10 +327,10 @@ mod tests {
     }
 
     #[test]
-    fn empty_title_bar_space_starts_a_window_drag() {
+    fn empty_title_bar_space_reports_a_press() {
         assert!(matches!(
             click_at(160.0).as_slice(),
-            [ChromeIntent::StartWindowDrag]
+            [ChromeIntent::PressTitleBar]
         ));
     }
 

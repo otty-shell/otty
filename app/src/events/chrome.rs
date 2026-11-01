@@ -20,9 +20,7 @@ fn handle_effect(effect: ChromeEffect) -> Task<AppEvent> {
     use ChromeEffect::*;
 
     match effect {
-        FullScreenToggled { mode } => {
-            window::latest().and_then(move |id| window::set_mode(id, mode))
-        },
+        ToggleMaximize => window::latest().and_then(window::toggle_maximize),
         MinimizeWindow => {
             window::latest().and_then(|id| window::minimize(id, true))
         },

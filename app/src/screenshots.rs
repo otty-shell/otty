@@ -599,6 +599,7 @@ fn window<'a>(
             left_open: frame.left_open,
             right_open: frame.right_open,
             focus_mode: frame.focus_mode,
+            is_title_bar_pressed: false,
         })
         .map(|_| ()),
         divider::horizontal(palette),
