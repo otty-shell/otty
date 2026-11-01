@@ -1,23 +1,46 @@
 use iced::Task;
 use iced::widget::operation;
 use otty_ui_kit::components::command_palette::{PaletteAction, input_id};
+use otty_ui_kit::components::target_dot::TargetKind;
 
 use super::event::{PaletteEffect, PaletteEvent, PaletteIntent};
 use super::items::palette_items;
 use super::state::PaletteState;
 use super::types::PaletteTarget;
-use crate::widgets::quick_launch::model::LaunchViewModel;
-use crate::widgets::tabs::model::TabsViewModel;
 
-/// What the palette lists, read from the other widgets' view models when
-/// it opens and on every query change.
+/// What the palette lists. The app fills it from the other widgets when
+/// the palette opens and on every query change.
 pub(crate) struct PaletteCtx<'a> {
-    /// Open tabs grouped by machine.
-    pub(crate) sessions: TabsViewModel<'a>,
-    /// Every launch of the launch tree.
-    pub(crate) launches: Vec<LaunchViewModel<'a>>,
+    /// Open tabs, grouped by machine in the order the Sessions panel
+    /// shows them.
+    pub(crate) sessions: Vec<PaletteSession<'a>>,
+    /// Every launch of the launch tree, in tree order.
+    pub(crate) launches: Vec<PaletteLaunch<'a>>,
     /// The active tab is a terminal with a focused pane to split.
     pub(crate) can_split_pane: bool,
+}
+
+/// One open tab the palette can switch to.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct PaletteSession<'a> {
+    pub(crate) tab_id: u64,
+    pub(crate) title: &'a str,
+    /// Name of the machine the tab runs on, shown as the entry detail.
+    pub(crate) machine: &'a str,
+    /// Kind of that machine, shown as the entry's target dot.
+    pub(crate) target: TargetKind,
+    /// The tab is the active one.
+    pub(crate) is_active: bool,
+}
+
+/// One launch the palette can run.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct PaletteLaunch<'a> {
+    /// Path in the launch tree: the folder titles, then the launch title.
+    pub(crate) path: Vec<String>,
+    pub(crate) title: &'a str,
+    /// The launch connects over SSH.
+    pub(crate) is_ssh: bool,
 }
 
 /// Reduce a palette intent into state changes and effects. The palette
@@ -116,38 +139,26 @@ mod tests {
     use iced::futures::executor::block_on;
     use iced_test::runtime::Action;
     use iced_test::runtime::task::into_stream;
-    use otty_ui_kit::components::target_dot::TargetKind;
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::tabs::model::{
-        SessionGroupViewModel, SessionViewModel,
-    };
 
     fn ctx_with_sessions(titles: &[&'static str]) -> PaletteCtx<'static> {
         let sessions = titles
             .iter()
             .enumerate()
-            .map(|(index, title)| SessionViewModel {
+            .map(|(index, title)| PaletteSession {
                 tab_id: index as u64,
                 title,
-                folder: None,
-                state: None,
+                machine: "fedora",
+                target: TargetKind::Local,
                 is_active: index == 0,
             })
-            .collect::<Vec<_>>();
-        let session_count = sessions.len();
+            .collect();
 
         PaletteCtx {
-            sessions: TabsViewModel {
-                groups: vec![SessionGroupViewModel {
-                    name: "fedora",
-                    target: TargetKind::Local,
-                    sessions,
-                }],
-                session_count,
-            },
-            launches: vec![LaunchViewModel {
+            sessions,
+            launches: vec![PaletteLaunch {
                 path: vec![String::from("servers"), String::from("laptop")],
                 title: "laptop",
                 is_ssh: true,

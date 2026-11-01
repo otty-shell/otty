@@ -9,7 +9,7 @@ pub(crate) mod view;
 pub(crate) use event::{PaletteEffect, PaletteEvent, PaletteIntent};
 use iced::Task;
 pub(crate) use model::PaletteViewModel;
-pub(crate) use reducer::PaletteCtx;
+pub(crate) use reducer::{PaletteCtx, PaletteLaunch, PaletteSession};
 use state::PaletteState;
 
 /// Command palette widget: a search over open sessions, launches and app

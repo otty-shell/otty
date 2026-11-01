@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 use iced::Point;
 
 use super::window::Frame;
+use crate::events::palette::palette_ctx;
 use crate::widgets::explorer::types::FileNode;
-use crate::widgets::palette::{PaletteCtx, PaletteIntent, PaletteWidget};
+use crate::widgets::palette::{PaletteIntent, PaletteWidget};
 use crate::widgets::quick_launch::model::QuickLaunchTreeViewModel;
 use crate::widgets::quick_launch::state::{
     ContextMenuState, SecretPromptState, WizardEditorState,
@@ -92,12 +93,11 @@ impl Fixture {
 
         let mut palette = PaletteWidget::new();
         let fx_launching = HashMap::new();
-        let ctx = PaletteCtx {
-            sessions: TabsViewModel::new(&tabs, Some(TAB_ZSH), Some("fedora")),
-            launches: QuickLaunchTreeViewModel::idle(&launches, &fx_launching)
-                .launches(),
-            can_split_pane: true,
-        };
+        let ctx = palette_ctx(
+            &TabsViewModel::new(&tabs, Some(TAB_ZSH), Some("fedora")),
+            QuickLaunchTreeViewModel::idle(&launches, &fx_launching).launches(),
+            true,
+        );
         let _ = palette.reduce(PaletteIntent::Open, &ctx);
         drop(ctx);
 

@@ -1,17 +1,14 @@
 use otty_ui_kit::components::palette_list::PaletteItem;
 use otty_ui_kit::components::target_dot::TargetKind;
 
-use super::reducer::PaletteCtx;
+use super::reducer::{PaletteCtx, PaletteLaunch, PaletteSession};
 use super::types::PaletteTarget;
 use crate::i18n::{self, Key};
 use crate::shortcuts::AppShortcut;
-use crate::widgets::quick_launch::model::LaunchViewModel;
-use crate::widgets::tabs::model::TabsViewModel;
 
-/// Build every palette entry from the other widgets' view models: open
-/// sessions, then launches, then the app actions. Split pane is listed only
-/// when there is a focused pane to split, Close session only when a tab is
-/// active.
+/// Build every palette entry: open sessions, then launches, then the app
+/// actions. Split pane is listed only when there is a focused pane to
+/// split, Close session only when a tab is active.
 pub(super) fn palette_items(
     ctx: &PaletteCtx<'_>,
 ) -> Vec<PaletteItem<PaletteTarget>> {
@@ -24,34 +21,30 @@ pub(super) fn palette_items(
 
 /// One entry per open tab, the machine name as detail.
 fn session_items(
-    sessions: &TabsViewModel<'_>,
+    sessions: &[PaletteSession<'_>],
 ) -> Vec<PaletteItem<PaletteTarget>> {
     let group = i18n::t(Key::SessionsPanelTitle);
-    let mut items = Vec::new();
 
-    for machine in &sessions.groups {
-        for session in &machine.sessions {
-            items.push(
-                PaletteItem::new(
-                    PaletteTarget::Session {
-                        tab_id: session.tab_id,
-                    },
-                    group,
-                    session.title,
-                )
-                .with_detail(machine.name)
-                .with_target(machine.target),
-            );
-        }
-    }
-
-    items
+    sessions
+        .iter()
+        .map(|session| {
+            PaletteItem::new(
+                PaletteTarget::Session {
+                    tab_id: session.tab_id,
+                },
+                group,
+                session.title,
+            )
+            .with_detail(session.machine)
+            .with_target(session.target)
+        })
+        .collect()
 }
 
 /// One entry per launch, its folder path as detail (none at the top of
 /// the tree).
 fn launch_items(
-    launches: &[LaunchViewModel<'_>],
+    launches: &[PaletteLaunch<'_>],
 ) -> Vec<PaletteItem<PaletteTarget>> {
     let group = i18n::t(Key::LaunchesPanelTitle);
     let mut items = Vec::new();
@@ -84,12 +77,8 @@ fn launch_items(
 
 /// The app actions, each with its shortcut when it has one.
 fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
-    let has_active_session = ctx
-        .sessions
-        .groups
-        .iter()
-        .flat_map(|machine| &machine.sessions)
-        .any(|session| session.is_active);
+    let has_active_session =
+        ctx.sessions.iter().any(|session| session.is_active);
 
     let mut actions = vec![
         (
@@ -153,46 +142,38 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widgets::tabs::model::{
-        SessionGroupViewModel, SessionViewModel,
-    };
 
     fn session(
         tab_id: u64,
         title: &'static str,
+        machine: &'static str,
+        target: TargetKind,
         is_active: bool,
-    ) -> SessionViewModel<'static> {
-        SessionViewModel {
+    ) -> PaletteSession<'static> {
+        PaletteSession {
             tab_id,
             title,
-            folder: None,
-            state: None,
+            machine,
+            target,
             is_active,
         }
     }
 
-    fn sessions(
-        groups: Vec<SessionGroupViewModel<'static>>,
-    ) -> TabsViewModel<'static> {
-        let session_count = groups.iter().map(|g| g.sessions.len()).sum();
-
-        TabsViewModel {
-            groups,
-            session_count,
-        }
-    }
-
-    fn launch(path: &[&str], is_ssh: bool) -> LaunchViewModel<'static> {
-        LaunchViewModel {
+    fn launch(
+        path: &[&str],
+        title: &'static str,
+        is_ssh: bool,
+    ) -> PaletteLaunch<'static> {
+        PaletteLaunch {
             path: path.iter().map(|segment| String::from(*segment)).collect(),
-            title: "",
+            title,
             is_ssh,
         }
     }
 
     fn empty_ctx() -> PaletteCtx<'static> {
         PaletteCtx {
-            sessions: sessions(Vec::new()),
+            sessions: Vec::new(),
             launches: Vec::new(),
             can_split_pane: false,
         }
@@ -205,18 +186,10 @@ mod tests {
     #[test]
     fn sessions_name_their_machine_and_switch_to_their_tab() {
         let ctx = PaletteCtx {
-            sessions: sessions(vec![
-                SessionGroupViewModel {
-                    name: "fedora",
-                    target: TargetKind::Local,
-                    sessions: vec![session(1, "zsh  ~/otty", true)],
-                },
-                SessionGroupViewModel {
-                    name: "laptop",
-                    target: TargetKind::Ssh,
-                    sessions: vec![session(4, "htop", false)],
-                },
-            ]),
+            sessions: vec![
+                session(1, "zsh  ~/otty", "fedora", TargetKind::Local, true),
+                session(4, "htop", "laptop", TargetKind::Ssh, false),
+            ],
             ..empty_ctx()
         };
 
@@ -247,12 +220,11 @@ mod tests {
 
     #[test]
     fn launches_show_their_folder_path_and_run_by_tree_path() {
-        let mut laptop = launch(&["servers", "prod", "laptop"], true);
-        laptop.title = "laptop";
-        let mut htop = launch(&["htop"], false);
-        htop.title = "htop";
         let ctx = PaletteCtx {
-            launches: vec![laptop, htop],
+            launches: vec![
+                launch(&["servers", "prod", "laptop"], "laptop", true),
+                launch(&["htop"], "htop", false),
+            ],
             ..empty_ctx()
         };
 
@@ -291,11 +263,13 @@ mod tests {
     #[test]
     fn with_an_active_terminal_every_action_is_listed_with_its_shortcut() {
         let ctx = PaletteCtx {
-            sessions: sessions(vec![SessionGroupViewModel {
-                name: "fedora",
-                target: TargetKind::Local,
-                sessions: vec![session(1, "zsh", true)],
-            }]),
+            sessions: vec![session(
+                1,
+                "zsh",
+                "fedora",
+                TargetKind::Local,
+                true,
+            )],
             can_split_pane: true,
             ..empty_ctx()
         };
@@ -375,11 +349,13 @@ mod tests {
     #[test]
     fn a_non_terminal_active_tab_can_be_closed_but_not_split() {
         let ctx = PaletteCtx {
-            sessions: sessions(vec![SessionGroupViewModel {
-                name: "fedora",
-                target: TargetKind::Local,
-                sessions: vec![session(2, "Settings", true)],
-            }]),
+            sessions: vec![session(
+                2,
+                "Settings",
+                "fedora",
+                TargetKind::Local,
+                true,
+            )],
             can_split_pane: false,
             ..empty_ctx()
         };
@@ -392,15 +368,15 @@ mod tests {
 
     #[test]
     fn groups_come_in_order_sessions_launches_actions() {
-        let mut htop = launch(&["htop"], false);
-        htop.title = "htop";
         let ctx = PaletteCtx {
-            sessions: sessions(vec![SessionGroupViewModel {
-                name: "fedora",
-                target: TargetKind::Local,
-                sessions: vec![session(1, "zsh", false)],
-            }]),
-            launches: vec![htop],
+            sessions: vec![session(
+                1,
+                "zsh",
+                "fedora",
+                TargetKind::Local,
+                false,
+            )],
+            launches: vec![launch(&["htop"], "htop", false)],
             can_split_pane: false,
         };
 

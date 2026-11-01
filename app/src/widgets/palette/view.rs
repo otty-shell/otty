@@ -78,35 +78,27 @@ mod tests {
     use crate::theme::ThemeManager;
     use crate::widgets::palette::PaletteEffect;
     use crate::widgets::palette::event::PaletteEvent;
-    use crate::widgets::palette::reducer::{PaletteCtx, reduce};
+    use crate::widgets::palette::reducer::{
+        PaletteCtx, PaletteSession, reduce,
+    };
     use crate::widgets::palette::state::PaletteState;
     use crate::widgets::palette::types::PaletteTarget;
-    use crate::widgets::tabs::model::{
-        SessionGroupViewModel, SessionViewModel, TabsViewModel,
-    };
 
     fn ctx() -> PaletteCtx<'static> {
         let sessions = ["zsh", "htop", "htop logs"]
             .into_iter()
             .enumerate()
-            .map(|(index, title)| SessionViewModel {
+            .map(|(index, title)| PaletteSession {
                 tab_id: index as u64,
                 title,
-                folder: None,
-                state: None,
+                machine: "fedora",
+                target: TargetKind::Local,
                 is_active: index == 0,
             })
-            .collect::<Vec<_>>();
+            .collect();
 
         PaletteCtx {
-            sessions: TabsViewModel {
-                groups: vec![SessionGroupViewModel {
-                    name: "fedora",
-                    target: TargetKind::Local,
-                    sessions,
-                }],
-                session_count: 3,
-            },
+            sessions,
             launches: Vec::new(),
             can_split_pane: true,
         }

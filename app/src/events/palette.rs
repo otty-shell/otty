@@ -9,10 +9,13 @@ use super::AppEvent;
 use crate::app::App;
 use crate::widgets::palette::types::PaletteTarget;
 use crate::widgets::palette::{
-    PaletteCtx, PaletteEffect, PaletteEvent, PaletteIntent,
+    PaletteCtx, PaletteEffect, PaletteEvent, PaletteIntent, PaletteLaunch,
+    PaletteSession,
 };
+use crate::widgets::quick_launch::model::LaunchViewModel;
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
+use crate::widgets::tabs::model::TabsViewModel;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
@@ -27,12 +30,49 @@ pub(crate) fn handle(app: &mut App, event: PaletteEvent) -> Task<AppEvent> {
     }
 }
 
+/// Build what the palette lists from the tabs and launches view models:
+/// sessions keep the machine grouping of the Sessions panel, launches
+/// keep tree order.
+pub(crate) fn palette_ctx<'a>(
+    tabs: &TabsViewModel<'a>,
+    launches: Vec<LaunchViewModel<'a>>,
+    can_split_pane: bool,
+) -> PaletteCtx<'a> {
+    let sessions = tabs
+        .groups
+        .iter()
+        .flat_map(|machine| {
+            machine.sessions.iter().map(|session| PaletteSession {
+                tab_id: session.tab_id,
+                title: session.title,
+                machine: machine.name,
+                target: machine.target,
+                is_active: session.is_active,
+            })
+        })
+        .collect();
+    let launches = launches
+        .into_iter()
+        .map(|launch| PaletteLaunch {
+            path: launch.path,
+            title: launch.title,
+            is_ssh: launch.is_ssh,
+        })
+        .collect();
+
+    PaletteCtx {
+        sessions,
+        launches,
+        can_split_pane,
+    }
+}
+
 fn handle_intent(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
-    let ctx = PaletteCtx {
-        sessions: app.widgets.tabs.vm(app.host_name.as_deref()),
-        launches: app.widgets.quick_launch.vm().launches(),
-        can_split_pane: focused_pane(app).is_some(),
-    };
+    let ctx = palette_ctx(
+        &app.widgets.tabs.vm(app.host_name.as_deref()),
+        app.widgets.quick_launch.vm().launches(),
+        focused_pane(app).is_some(),
+    );
 
     app.widgets
         .palette
@@ -132,11 +172,15 @@ fn quick_launch_intent(intent: QuickLaunchIntent) -> Task<AppEvent> {
 #[cfg(test)]
 mod tests {
     use iced::{Point, Size};
+    use otty_ui_kit::components::target_dot::TargetKind;
     use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::tabs::TabsCtx;
+    use crate::widgets::tabs::model::{
+        SessionGroupViewModel, SessionViewModel,
+    };
     use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;
     use crate::widgets::terminal_workspace::types::TerminalKind;
 
@@ -198,6 +242,99 @@ mod tests {
         );
 
         tab_id
+    }
+
+    fn session_vm(
+        tab_id: u64,
+        title: &'static str,
+        is_active: bool,
+    ) -> SessionViewModel<'static> {
+        SessionViewModel {
+            tab_id,
+            title,
+            folder: None,
+            state: None,
+            is_active,
+        }
+    }
+
+    #[test]
+    fn the_palette_lists_sessions_by_machine_and_launches_in_tree_order() {
+        let tabs = TabsViewModel {
+            groups: vec![
+                SessionGroupViewModel {
+                    name: "fedora",
+                    target: TargetKind::Local,
+                    sessions: vec![
+                        session_vm(0, "zsh", false),
+                        session_vm(3, "nvim", true),
+                    ],
+                },
+                SessionGroupViewModel {
+                    name: "prod-api",
+                    target: TargetKind::Ssh,
+                    sessions: vec![session_vm(2, "api-prod", false)],
+                },
+            ],
+            session_count: 3,
+        };
+        let launches = vec![
+            LaunchViewModel {
+                path: vec![String::from("htop")],
+                title: "htop",
+                is_ssh: false,
+            },
+            LaunchViewModel {
+                path: vec![String::from("servers"), String::from("laptop")],
+                title: "laptop",
+                is_ssh: true,
+            },
+        ];
+
+        let ctx = palette_ctx(&tabs, launches, true);
+
+        assert_eq!(
+            ctx.sessions,
+            vec![
+                PaletteSession {
+                    tab_id: 0,
+                    title: "zsh",
+                    machine: "fedora",
+                    target: TargetKind::Local,
+                    is_active: false,
+                },
+                PaletteSession {
+                    tab_id: 3,
+                    title: "nvim",
+                    machine: "fedora",
+                    target: TargetKind::Local,
+                    is_active: true,
+                },
+                PaletteSession {
+                    tab_id: 2,
+                    title: "api-prod",
+                    machine: "prod-api",
+                    target: TargetKind::Ssh,
+                    is_active: false,
+                },
+            ]
+        );
+        assert_eq!(
+            ctx.launches,
+            vec![
+                PaletteLaunch {
+                    path: vec![String::from("htop")],
+                    title: "htop",
+                    is_ssh: false,
+                },
+                PaletteLaunch {
+                    path: vec![String::from("servers"), String::from("laptop"),],
+                    title: "laptop",
+                    is_ssh: true,
+                },
+            ]
+        );
+        assert!(ctx.can_split_pane);
     }
 
     #[test]
