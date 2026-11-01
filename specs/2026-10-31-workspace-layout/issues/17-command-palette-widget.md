@@ -164,10 +164,7 @@ Follow-up: a launch now runs with one `QuickLaunchIntent::LaunchNode` (ticket 16
   4. Esc and a click outside close it and the terminal gets keys again; a
      click on the palette background keeps it open and typing still works.
   5. Look at both themes (OTTY Dark and Light).
-- A launch run from the palette is a press then a release on its tree path,
-  chained. A cursor move over the launch tree landing between the two could,
-  in theory, start a drag; the window is one event long. A dedicated "run
-  launch" intent would remove it but means a quick launch reducer change.
+- **Resolved in 2327fba:** a launch run from the palette now sends one `LaunchNode` intent, so the press/release race is gone.
 - Ticket 16 also lists launches (top level only); `launches()` lists the
   whole tree and could be shared.
 - Opening the palette while a context menu is open only closes the menu

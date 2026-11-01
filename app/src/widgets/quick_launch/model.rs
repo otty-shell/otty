@@ -9,12 +9,12 @@ use super::types::{
 /// Read-only view model for the quick launch tree.
 #[derive(Debug, Clone)]
 pub(crate) struct QuickLaunchTreeViewModel<'a> {
-    pub(super) data: &'a QuickLaunchFile,
-    pub(super) selected_path: Option<&'a NodePath>,
-    pub(super) hovered_path: Option<&'a NodePath>,
-    pub(super) inline_edit: Option<&'a InlineEditState>,
-    pub(super) launching: &'a HashMap<NodePath, LaunchInfo>,
-    pub(super) drop_target: Option<&'a DropTarget>,
+    pub(crate) data: &'a QuickLaunchFile,
+    pub(crate) selected_path: Option<&'a NodePath>,
+    pub(crate) hovered_path: Option<&'a NodePath>,
+    pub(crate) inline_edit: Option<&'a InlineEditState>,
+    pub(crate) launching: &'a HashMap<NodePath, LaunchInfo>,
+    pub(crate) drop_target: Option<&'a DropTarget>,
 }
 
 impl<'a> QuickLaunchTreeViewModel<'a> {

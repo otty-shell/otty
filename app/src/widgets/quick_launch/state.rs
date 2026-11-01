@@ -385,7 +385,7 @@ impl SecretPromptState {
         &self.input_id
     }
 
-    pub(super) fn new(
+    pub(crate) fn new(
         path: NodePath,
         command: Box<QuickLaunch>,
         request: SshSecretRequest,
@@ -449,12 +449,12 @@ pub(crate) struct ContextMenuState {
 }
 
 impl ContextMenuState {
-    pub(super) fn with_target(mut self, target: ContextMenuTarget) -> Self {
+    pub(crate) fn with_target(mut self, target: ContextMenuTarget) -> Self {
         self.target = target;
         self
     }
 
-    pub(super) fn with_cursor(mut self, cursor: Point) -> Self {
+    pub(crate) fn with_cursor(mut self, cursor: Point) -> Self {
         self.cursor = cursor;
         self
     }

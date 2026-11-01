@@ -12,6 +12,8 @@ mod guards;
 mod i18n;
 mod icons;
 mod layout;
+#[cfg(test)]
+mod screenshots;
 mod services;
 mod shortcuts;
 mod state;

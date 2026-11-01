@@ -5,10 +5,10 @@ use super::types::FileNode;
 /// Read-only view model for the explorer tree.
 #[derive(Debug, Clone)]
 pub(crate) struct ExplorerTreeViewModel<'a> {
-    pub(super) root_label: Option<&'a str>,
-    pub(super) tree: &'a [FileNode],
-    pub(super) selected_path: Option<&'a TreePath>,
-    pub(super) hovered_path: Option<&'a TreePath>,
+    pub(crate) root_label: Option<&'a str>,
+    pub(crate) tree: &'a [FileNode],
+    pub(crate) selected_path: Option<&'a TreePath>,
+    pub(crate) hovered_path: Option<&'a TreePath>,
 }
 
 #[cfg(test)]

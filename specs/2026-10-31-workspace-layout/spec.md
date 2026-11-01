@@ -193,7 +193,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 18 — Launch editor and launch menu · Sonnet
 - [x] 19 — Settings page · Sonnet
 - [x] 20 — Passphrase dialog and connecting state · Sonnet
-- [ ] 21 — OTTY Light pass · Sonnet
+- [x] 21 — OTTY Light pass · Sonnet
 - [ ] 22 — Design system sync · Opus, owner review
 
 ## Round Log

@@ -60,7 +60,7 @@ impl<Message> MenuItem<Message> {
         self
     }
 
-    /// Draws the label in the error color, for destructive actions.
+    /// Draws the label in the danger color, for destructive actions.
     pub fn danger(mut self, danger: bool) -> Self {
         self.danger = danger;
         self
@@ -215,7 +215,8 @@ pub(super) fn item_style(
     item_style_with(palette, active, false)
 }
 
-/// Like [`item_style`]; a `danger` item uses `status-error` for its text.
+/// Like [`item_style`]; a `danger` item uses `text-danger` on `surface-danger`
+/// when lit, because status colors never sit on `surface-hover`.
 fn item_style_with(
     palette: &UiPalette,
     active: bool,
@@ -230,7 +231,7 @@ fn item_style_with(
                 button::Status::Hovered | button::Status::Pressed
             );
         let color = if danger {
-            palette.status_error()
+            palette.text_danger()
         } else if lit {
             palette.text_strong()
         } else {
@@ -238,7 +239,13 @@ fn item_style_with(
         };
 
         button::Style {
-            background: lit.then(|| palette.surface_hover().into()),
+            background: lit.then(|| {
+                if danger {
+                    palette.surface_danger().into()
+                } else {
+                    palette.surface_hover().into()
+                }
+            }),
             text_color: if status == button::Status::Disabled {
                 faded(color)
             } else {
