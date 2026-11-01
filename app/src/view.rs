@@ -1,7 +1,6 @@
 use iced::widget::{Space, column, container, mouse_area, pane_grid, text};
 use iced::{Element, Length, Theme, alignment};
 use otty_ui_kit::components::divider;
-use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::spacing;
 
 use super::{App, AppEvent};
@@ -26,7 +25,7 @@ use crate::widgets::settings::view::settings_form;
 use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu, SidebarPane};
 use crate::widgets::sidebar::view::{focus_note, left_panel, panels};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent, SidebarViewModel};
-use crate::widgets::tabs::types::TabContent;
+use crate::widgets::tabs::types::{TabContent, TabMachine};
 use crate::widgets::tabs::view::{empty_state, new_session_menu, session_list};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::view::{
@@ -201,14 +200,11 @@ fn view_status_bar<'a>(
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     let tab_id = app.widgets.tabs.active_tab_id();
     let host_name = app.host_name.as_deref();
-    let (machine_name, machine_target) =
-        match app.widgets.tabs.active_tab_machine() {
-            Some(machine) => (machine.name(host_name), machine.target_kind()),
-            None => (
-                host_name.unwrap_or(i18n::t(Key::ThisComputer)),
-                TargetKind::Local,
-            ),
-        };
+    // With no tabs the status bar names this computer.
+    let machine = match app.widgets.tabs.active_tab_machine() {
+        Some(machine) => machine,
+        None => &TabMachine::ThisComputer,
+    };
     let folder = app
         .widgets
         .terminal_workspace
@@ -216,8 +212,8 @@ fn view_status_bar<'a>(
         .and_then(|label| label.folder_path());
 
     let vm = StatusBarViewModel::new(StatusBarInput {
-        machine_name,
-        machine_target,
+        machine_name: machine.name(host_name),
+        machine_target: machine.target_kind(),
         folder,
         pane_count: app.widgets.terminal_workspace.pane_count(tab_id),
         session_count: app.widgets.tabs.len(),
@@ -499,16 +495,20 @@ fn view_new_session_menu<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> (Element<'a, AppEvent, Theme, iced::Renderer>, f32, f32) {
-    let on_split = app.widgets.tabs.active_tab_id().and_then(|tab_id| {
-        let pane = app.widgets.terminal_workspace.tab(tab_id)?.focus()?;
-        Some(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-            TerminalWorkspaceIntent::SplitPane {
-                tab_id,
-                pane,
-                axis: pane_grid::Axis::Vertical,
-            },
-        )))
-    });
+    let active_tab_id = app.widgets.tabs.active_tab_id();
+    let on_split = app
+        .widgets
+        .terminal_workspace
+        .focused_pane(active_tab_id)
+        .map(|(tab_id, pane)| {
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SplitPane {
+                    tab_id,
+                    pane,
+                    axis: pane_grid::Axis::Vertical,
+                },
+            ))
+        });
     let launches: Vec<_> = app
         .widgets
         .quick_launch

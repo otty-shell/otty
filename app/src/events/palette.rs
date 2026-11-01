@@ -103,10 +103,9 @@ fn run_target(app: &App, target: PaletteTarget) -> Task<AppEvent> {
 /// The active terminal tab and its focused pane, the pane the pane menu's
 /// "Split right" would split.
 fn focused_pane(app: &App) -> Option<(u64, pane_grid::Pane)> {
-    let tab_id = app.widgets.tabs.active_tab_id()?;
-    let pane = app.widgets.terminal_workspace.tab(tab_id)?.focus()?;
+    let tab_id = app.widgets.tabs.active_tab_id();
 
-    Some((tab_id, pane))
+    app.widgets.terminal_workspace.focused_pane(tab_id)
 }
 
 fn toggle_panel(intent: SidebarIntent) -> Task<AppEvent> {
