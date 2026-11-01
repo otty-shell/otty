@@ -8,6 +8,10 @@ pub const CONTROL_MD: f32 = 28.0;
 pub const CONTROL_LG: f32 = 34.0;
 /// `row`: list, tree and session rows; menu items.
 pub const ROW: f32 = 30.0;
+/// Height of the header row of a data table (`.ot-table th { height: 32px }`).
+pub const TABLE_HEADER: f32 = 32.0;
+/// Height of a body row of a data table (`.ot-table td { height: 34px }`).
+pub const TABLE_ROW: f32 = 34.0;
 /// `tab`: top tab strip height.
 pub const TAB: f32 = 34.0;
 /// `titlebar`: window title bar.

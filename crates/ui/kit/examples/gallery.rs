@@ -1,8 +1,8 @@
 //! Gallery of the kit components in every state, in OTTY Dark and OTTY Light.
 //!
 //! Run with `cargo run -p otty-ui-kit --example gallery`; add `light` for
-//! OTTY Light, and `rows`, `fields`, `settings` or `inspector` to show one
-//! group of the second set.
+//! OTTY Light, and `rows`, `fields`, `settings`, `inspector` or `data` to
+//! show one group of the second set.
 
 use iced::widget::{
     Space, column, container, row, scrollable, stack, svg, text, text_editor,
@@ -12,6 +12,9 @@ use otty_ui_kit::components::action_tile::ActionTile;
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::command_palette::{CommandPalette, PaletteAction};
+use otty_ui_kit::components::data_table::{
+    ColumnAlign, DataTable, TableCell, TableColumn,
+};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::empty_card::EmptyCard;
@@ -32,6 +35,7 @@ use otty_ui_kit::components::mode_menu::{
     ModeMenu, ModeMenuSection, ModePin, ModeRow,
 };
 use otty_ui_kit::components::mode_switcher::{ModeSwitcher, ModeTab};
+use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::palette_list::{PaletteItem, PaletteList};
 use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::panel_section::PanelSection;
@@ -41,6 +45,7 @@ use otty_ui_kit::components::session_group::SessionGroup;
 use otty_ui_kit::components::session_row::{SessionRow, SessionTone};
 use otty_ui_kit::components::setting_row::SettingRow;
 use otty_ui_kit::components::split_button::SplitButton;
+use otty_ui_kit::components::status_badge::{StatusBadge, StatusTone};
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::components::target_dot::{TargetKind, target_dot};
@@ -72,6 +77,9 @@ const FOLDER_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="
 /// Launch icon of the empty card.
 const LAUNCH_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/></svg>"#;
 
+/// Error icon of the notice.
+const ERROR_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>"#;
+
 /// Product logo, passed to the empty card as an element.
 const LOGO: &[u8] = include_bytes!("../../../../assets/logo/logo-small.svg");
 
@@ -99,6 +107,7 @@ enum Part {
     Fields,
     Settings,
     Inspector,
+    Data,
 }
 
 struct Gallery {
@@ -121,6 +130,9 @@ struct Gallery {
     menu_open: bool,
     commands: PaletteList<u32>,
     no_commands: PaletteList<u32>,
+    table_selected: Option<usize>,
+    table_menu_at: Option<iced::Point>,
+    notice_open: bool,
 }
 
 impl Gallery {
@@ -153,6 +165,8 @@ impl Gallery {
                 Part::Fields
             } else if args.iter().any(|arg| arg == "settings") {
                 Part::Settings
+            } else if args.iter().any(|arg| arg == "data") {
+                Part::Data
             } else {
                 Part::All
             },
@@ -178,6 +192,9 @@ impl Gallery {
             menu_open: false,
             commands: palette_list("la"),
             no_commands: palette_list("docker"),
+            table_selected: Some(1),
+            table_menu_at: None,
+            notice_open: true,
         }
     }
 }
@@ -209,6 +226,11 @@ enum Message {
     Log(text_editor::Action),
     ToggleFollow,
     AppendLog,
+
+    TableRow(usize),
+    TableMenu(usize, iced::Point),
+    DismissNotice,
+    ShowNotice,
 }
 
 fn main() -> iced::Result {
@@ -280,6 +302,13 @@ fn update(state: &mut Gallery, message: Message) {
             },
             PaletteAction::Close => state.commands.set_query(String::new()),
         },
+        Message::TableRow(index) => state.table_selected = Some(index),
+        Message::TableMenu(index, point) => {
+            state.table_selected = Some(index);
+            state.table_menu_at = Some(point);
+        },
+        Message::DismissNotice => state.notice_open = false,
+        Message::ShowNotice => state.notice_open = true,
     }
 }
 
@@ -966,6 +995,9 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     if matches!(state.part, Part::All | Part::Settings) {
         body = body.extend(settings_parts);
     }
+    if matches!(state.part, Part::All | Part::Data) {
+        body = body.extend(data_parts(state, p));
+    }
     let body = body
         .push(Space::new().height(240))
         .spacing(spacing::SPACE_6)
@@ -1020,4 +1052,168 @@ fn section<'a>(
     column![label(title.to_owned(), palette), content]
         .spacing(spacing::SPACE_3)
         .into()
+}
+
+/// Sections of the data components: tables, status badges, the notice and
+/// the tree row count tones.
+fn data_parts<'a>(state: &Gallery, p: &UiPalette) -> Vec<Element<'a, Message>> {
+    let columns = || {
+        vec![
+            TableColumn::new("Name", 3),
+            TableColumn::new("Status", 2),
+            TableColumn::new("Image", 2),
+            TableColumn::new("Ports", 2),
+            TableColumn::new("Size", 1).align(ColumnAlign::End),
+            TableColumn::new("Age", 1),
+        ]
+    };
+    let containers = [
+        (
+            "otty-site-web-1",
+            "Running",
+            StatusTone::Ok,
+            "nginx:1.27",
+            "8080→80/tcp",
+            "192 MB",
+        ),
+        (
+            "otty-site-build-1",
+            "Exited (1)",
+            StatusTone::Error,
+            "node:22",
+            "—",
+            "1.12 GB",
+        ),
+        (
+            "mailpit",
+            "Restarting",
+            StatusTone::Warn,
+            "axllent/mailpit",
+            "8025→8025/tcp",
+            "34 MB",
+        ),
+        (
+            "hello",
+            "Exited (0)",
+            StatusTone::Neutral,
+            "hello-world",
+            "—",
+            "13 kB",
+        ),
+        (
+            "a-container-with-a-very-long-name-that-ends-with-an-ellipsis",
+            "Running",
+            StatusTone::Ok,
+            "registry.example.com/team/very-long-image-name:2026.11.01",
+            "5432→5432/tcp, 5433→5433/tcp",
+            "438 MB",
+        ),
+    ];
+    let mut table = DataTable::new(columns(), p)
+        .selected(state.table_selected)
+        .empty_message("No containers")
+        .on_row_press(Message::TableRow)
+        .on_row_right_press(Message::TableMenu);
+    for (name, status, tone, image, ports, size) in containers {
+        table = table.row(vec![
+            TableCell::mono(name),
+            TableCell::badge(status, tone),
+            TableCell::muted_mono(image),
+            TableCell::muted_mono(ports),
+            TableCell::number(size),
+            TableCell::muted("2 h"),
+        ]);
+    }
+    let plain = DataTable::<Message>::new(
+        vec![TableColumn::new("Plain", 1), TableColumn::new("Muted", 1)],
+        p,
+    )
+    .row(vec![
+        TableCell::plain("Plain text"),
+        TableCell::muted("Muted text"),
+    ]);
+    let empty = DataTable::<Message>::new(columns(), p)
+        .empty_message("Nothing matches “web”.");
+
+    let badges = row![
+        StatusBadge::new("Running", StatusTone::Ok, p),
+        StatusBadge::new("Restarting", StatusTone::Warn, p),
+        StatusBadge::new("Exited (1)", StatusTone::Error, p),
+        StatusBadge::new("Exited (0)", StatusTone::Neutral, p),
+    ]
+    .spacing(spacing::SPACE_6);
+
+    let notice: Element<'a, Message> = if state.notice_open {
+        Notice::new(
+            "Error response from daemon: cannot stop container mailpit: \
+             permission denied.",
+            svg::Handle::from_memory(ERROR_ICON),
+            p,
+        )
+        .on_dismiss(Message::DismissNotice, "Dismiss")
+        .into()
+    } else {
+        Button::new("Show notice", p)
+            .kind(ButtonKind::Secondary)
+            .on_press(Message::ShowNotice)
+            .into()
+    };
+
+    let tones = column![
+        TreeRow::<Message>::new("Containers", p)
+            .depth(1)
+            .state("3 running"),
+        TreeRow::<Message>::new("Pods", p)
+            .depth(1)
+            .state("2 failing")
+            .count_tone(SessionTone::Failed),
+        TreeRow::<Message>::new("Deployments", p)
+            .depth(1)
+            .count(1)
+            .count_tone(SessionTone::Waiting),
+        TreeRow::<Message>::new("Jobs", p)
+            .depth(1)
+            .count(4)
+            .count_tone(SessionTone::Done),
+    ]
+    .width(PANEL_WIDTH);
+
+    let right_click = match state.table_menu_at {
+        Some(point) => format!(
+            "last right click at {:.0}, {:.0} (gallery scroll coordinates)",
+            point.x, point.y
+        ),
+        None => "right click a row to see where the menu would open".to_owned(),
+    };
+
+    vec![
+        section(
+            "DataTable (selected row, every cell kind, long text cut with …; click and right click)",
+            column![container(table).height(240), label(right_click, p)]
+                .spacing(spacing::SPACE_2)
+                .into(),
+            p,
+        ),
+        section(
+            "DataTable (plain and muted cells)",
+            container(plain).height(80).into(),
+            p,
+        ),
+        section(
+            "DataTable (no rows: empty message)",
+            container(empty).height(90).into(),
+            p,
+        ),
+        section("StatusBadge (ok, warn, error, neutral)", badges.into(), p),
+        section(
+            "Notice (error; dismiss hides it)",
+            container(notice).width(560).into(),
+            p,
+        ),
+        section(
+            "TreeRow count tone (default, failed, waiting, done)",
+            tones.into(),
+            p,
+        ),
+    ]
 }

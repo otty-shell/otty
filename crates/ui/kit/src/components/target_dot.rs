@@ -50,8 +50,12 @@ pub fn target_dot<'a, Message: 'a>(
     kind: TargetKind,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
-    let color = kind.color(palette);
+    dot(kind.color(palette))
+}
 
+/// Renders a round `.ot-dot` in `color`, shared by target dots and status
+/// badges.
+pub(super) fn dot<'a, Message: 'a>(color: Color) -> Element<'a, Message> {
     container(Space::new())
         .width(size::DOT)
         .height(size::DOT)

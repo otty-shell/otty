@@ -5,6 +5,7 @@ use iced::widget::{Space, button, container, row, svg, text};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
 use super::glyph;
+use super::session_row::SessionTone;
 use super::target_dot::{TargetKind, target_dot};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
@@ -51,6 +52,7 @@ pub struct TreeRow<Message> {
     depth: u16,
     caret: Option<bool>,
     count: Option<usize>,
+    count_tone: SessionTone,
     is_selected: bool,
     is_hovered: bool,
     is_drop_target: bool,
@@ -69,6 +71,7 @@ impl<Message> TreeRow<Message> {
             depth: 0,
             caret: None,
             count: None,
+            count_tone: SessionTone::Muted,
             is_selected: false,
             is_hovered: false,
             is_drop_target: false,
@@ -95,6 +98,14 @@ impl<Message> TreeRow<Message> {
     /// Shows the number of children on the right.
     pub fn count(mut self, count: usize) -> Self {
         self.count = Some(count);
+        self
+    }
+
+    /// Colors the count and the state word on the right, for example a
+    /// failing count in `status-error`. The default is
+    /// [`SessionTone::Muted`].
+    pub fn count_tone(mut self, tone: SessionTone) -> Self {
+        self.count_tone = tone;
         self
     }
 
@@ -193,12 +204,13 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
             .width(Length::Fill)
             .clip(true),
         );
+        let count_color = value.count_tone.color(&palette);
         if let Some(word) = value.state {
             content = content.push(
                 text(word)
                     .size(typography::CAPTION.size())
                     .font(fonts::UI)
-                    .color(muted),
+                    .color(count_color),
             );
         }
         if let Some(count) = value.count {
@@ -207,7 +219,7 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
                 text(count.to_string())
                     .size(caption.size())
                     .font(fonts::UI)
-                    .color(muted),
+                    .color(count_color),
             );
         }
 
@@ -242,5 +254,74 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
                 }
             })
             .into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced_test::simulator;
+
+    use super::*;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum Message {
+        Open,
+    }
+
+    /// Draws a "Pods" row with a count of 2 and the state word "failing" in
+    /// `tone` (the default when `None`), and checks it against the picture
+    /// saved in `reference`; the first call saves the picture.
+    fn drawn_row_matches(
+        tone: Option<SessionTone>,
+        reference: &std::path::Path,
+    ) -> bool {
+        let palette = UiPalette::otty_dark();
+        let mut row = TreeRow::<Message>::new("Pods", &palette)
+            .count(2)
+            .state("failing");
+        if let Some(tone) = tone {
+            row = row.count_tone(tone);
+        }
+        let mut ui = simulator(container(row).width(260));
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("row should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    #[test]
+    fn given_count_tone_when_row_drawn_then_count_takes_the_tone_color() {
+        let reference = std::env::temp_dir()
+            .join(format!("otty-tree-row-{}", std::process::id()))
+            .join("count-tone");
+
+        assert!(drawn_row_matches(None, &reference));
+        assert!(drawn_row_matches(Some(SessionTone::Muted), &reference));
+        assert!(!drawn_row_matches(Some(SessionTone::Failed), &reference));
+        assert!(!drawn_row_matches(Some(SessionTone::Done), &reference));
+    }
+
+    #[test]
+    fn given_row_with_message_when_pressed_then_message_is_sent() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(
+            container(
+                TreeRow::new("Containers", &palette)
+                    .depth(1)
+                    .caret(false)
+                    .icon(glyph::plus(), None)
+                    .dot(TargetKind::Local)
+                    .count(3)
+                    .count_tone(SessionTone::Waiting)
+                    .on_press(Message::Open),
+            )
+            .width(260),
+        );
+
+        ui.click("Containers").expect("label should be visible");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Open]);
     }
 }

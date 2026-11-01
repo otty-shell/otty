@@ -14,7 +14,10 @@ const GAP: f32 = spacing::SPACE_3;
 /// Right padding of the row (`padding: 0 8px`).
 const PADDING_RIGHT: f32 = spacing::SPACE_3;
 
-/// Color of the state word of a [`SessionRow`].
+/// Color of the state word of a [`SessionRow`], and of the count and state
+/// word of a [`TreeRow`] (`.ot-state-*`).
+///
+/// [`TreeRow`]: super::tree_row::TreeRow
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionTone {
     /// `text-muted`: "connecting", "editor".
