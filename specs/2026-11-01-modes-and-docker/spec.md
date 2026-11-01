@@ -360,12 +360,12 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 08 — `otty-docker`: lists · Opus
 - [x] 09 — `docker` widget · Opus
 - [x] 10 — No engine states · Sonnet
-- [ ] 11 — Container actions · Opus
-- [ ] 12 — Image, volume, network actions · Opus
-- [ ] 13 — Inspector tabs · Opus
+- [x] 11 — Container actions · Opus
+- [x] 12 — Image, volume, network actions · Opus
+- [x] 13 — Inspector tabs · Opus
 - [ ] 14 — Run container form · Opus
 - [ ] 15 — Shell into a container · Sonnet
-- [ ] 16 — Live engine events · Opus
+- [x] 16 — Live engine events · Opus
 - [x] 17 — Compose projects · Sonnet
 - [x] 18 — Status bar per mode · Sonnet
 - [ ] 19 — OTTY Light pass and screenshots · Sonnet
