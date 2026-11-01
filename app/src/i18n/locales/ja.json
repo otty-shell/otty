@@ -75,6 +75,8 @@
     "modes_pin": "ピン留め",
     "modes_unpin": "ピン留めを外す",
     "modes_unpin_another_first": "先に別のモードのピン留めを外してください",
+    "modes_no_other_modes": "ほかのモードはまだありません。Kubernetes とエージェント作業はここに表示されます。",
+    "docker_placeholder_description": "Docker と Podman のコンテナー、イメージ、ボリューム、ネットワークがここに表示されます。",
 
     "title_search_no_sessions": "起動項目とアクションを検索",
     "palette_placeholder": "セッション、起動項目、アクションを検索",

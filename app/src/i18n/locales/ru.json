@@ -75,6 +75,8 @@
     "modes_pin": "Закрепить",
     "modes_unpin": "Открепить",
     "modes_unpin_another_first": "Сначала открепите другой режим",
+    "modes_no_other_modes": "Других режимов пока нет. Здесь появятся Kubernetes и работа с агентами.",
+    "docker_placeholder_description": "Здесь появятся контейнеры, образы, тома и сети Docker и Podman.",
 
     "title_search_no_sessions": "Поиск запусков и действий",
     "palette_placeholder": "Поиск сеансов, запусков и действий",

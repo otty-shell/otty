@@ -166,6 +166,11 @@ pub(crate) enum Key {
     ModesUnpin,
     /// Hint on the disabled pin toggle while every pin slot is taken.
     ModesUnpinAnotherFirst,
+    /// Hint in the empty Other modes section of the All modes menu.
+    ModesNoOtherModes,
+    /// What the Docker mode will show, on its placeholder card until the
+    /// Docker views exist.
+    DockerPlaceholderDescription,
     // Command palette and its title bar trigger.
     /// Title bar search text while no tab is open.
     TitleSearchNoSessions,
@@ -389,7 +394,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 169] = [
+    pub(super) const ALL: [Self; 171] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -458,6 +463,8 @@ impl Key {
         Self::ModesPin,
         Self::ModesUnpin,
         Self::ModesUnpinAnotherFirst,
+        Self::ModesNoOtherModes,
+        Self::DockerPlaceholderDescription,
         Self::TitleSearchNoSessions,
         Self::PalettePlaceholder,
         Self::PaletteNoMatches,

@@ -75,6 +75,8 @@
     "modes_pin": "Pin",
     "modes_unpin": "Unpin",
     "modes_unpin_another_first": "Unpin another mode first",
+    "modes_no_other_modes": "No other modes yet. Kubernetes and agent work will appear here.",
+    "docker_placeholder_description": "Containers, images, volumes and networks of Docker and Podman will show here.",
 
     "title_search_no_sessions": "Search launches and actions",
     "palette_placeholder": "Search sessions, launches and actions",

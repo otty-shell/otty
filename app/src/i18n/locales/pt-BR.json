@@ -75,6 +75,8 @@
     "modes_pin": "Fixar",
     "modes_unpin": "Desafixar",
     "modes_unpin_another_first": "Desafixe outro modo primeiro",
+    "modes_no_other_modes": "Ainda não há outros modos. Kubernetes e o trabalho com agentes aparecerão aqui.",
+    "docker_placeholder_description": "Contêineres, imagens, volumes e redes do Docker e do Podman aparecerão aqui.",
 
     "title_search_no_sessions": "Buscar lançamentos e ações",
     "palette_placeholder": "Buscar sessões, lançamentos e ações",

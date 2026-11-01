@@ -75,6 +75,8 @@
     "modes_pin": "固定",
     "modes_unpin": "取消固定",
     "modes_unpin_another_first": "请先取消固定其他模式",
+    "modes_no_other_modes": "暂无其他模式。Kubernetes 和智能体工作将显示在这里。",
+    "docker_placeholder_description": "Docker 和 Podman 的容器、镜像、卷和网络将显示在这里。",
 
     "title_search_no_sessions": "搜索启动项和操作",
     "palette_placeholder": "搜索会话、启动项和操作",

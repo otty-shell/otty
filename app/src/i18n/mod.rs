@@ -244,6 +244,12 @@ pub(crate) fn status_sessions(count: usize) -> String {
     )
 }
 
+/// Build the note after the Pinned label of the All modes menu, e.g.
+/// "1 of 4".
+pub(crate) fn modes_pinned_note(count: usize, limit: usize) -> String {
+    modes_pinned_note_in(current_locale(), count, limit)
+}
+
 /// Build the tab title shown when editing an existing quick launch.
 pub(crate) fn edit_tab_title(command_title: &str) -> String {
     fill_in(
@@ -422,6 +428,17 @@ fn process_exited_in(locale: Locale, exit_code: Option<i32>) -> String {
     )
 }
 
+fn modes_pinned_note_in(locale: Locale, count: usize, limit: usize) -> String {
+    fill_in(
+        locale,
+        Key::TplModesPinnedNote,
+        &[
+            ("count", &format!("{count}")),
+            ("limit", &format!("{limit}")),
+        ],
+    )
+}
+
 /// Return the translation of `key` in `locale`.
 ///
 /// Falls back to English when a key is absent, so a partial catalog degrades
@@ -492,7 +509,7 @@ fn catalog(locale: Locale) -> &'static Catalog {
 mod tests {
     use super::{
         Catalog, Key, Locale, catalog, fill_in, locale_from_system_preference,
-        process_exited_in, text_in,
+        modes_pinned_note_in, process_exited_in, text_in,
     };
 
     #[test]
@@ -693,6 +710,13 @@ mod tests {
                 locale.tag()
             );
         }
+    }
+
+    #[test]
+    fn given_pinned_count_and_limit_when_building_the_pinned_note_then_both_show()
+     {
+        assert_eq!(modes_pinned_note_in(Locale::En, 1, 4), "1 of 4");
+        assert_eq!(modes_pinned_note_in(Locale::En, 0, 4), "0 of 4");
     }
 
     #[test]

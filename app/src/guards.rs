@@ -118,6 +118,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         ) => Allow,
         AppEvent::Window(_) | AppEvent::ResizeWindow(_) => Allow,
         AppEvent::SyncTerminalGridSizes => Allow,
+        // The All modes menu is one of the menus: its rows, pin toggles and
+        // dismiss layer send these, and a switch reports its change.
+        AppEvent::Modes(_) => Allow,
         AppEvent::Keyboard(_) => Ignore,
         AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Intent(_))
         | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Intent(_)) => Allow,
@@ -149,6 +152,21 @@ pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
                     | QuickLaunchIntent::HeaderCreateCommand
                     | QuickLaunchIntent::HeaderCreateFolder
             ))
+    )
+}
+
+/// Return `true` when the event is a press of the Esc key that no widget
+/// took. The app closes the All modes menu with it.
+pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
+    use iced::keyboard::key::Named;
+    use iced::keyboard::{Event, Key};
+
+    matches!(
+        event,
+        AppEvent::Keyboard(Event::KeyPressed {
+            key: Key::Named(Named::Escape),
+            ..
+        })
     )
 }
 
@@ -267,15 +285,19 @@ pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
 mod tests {
     use std::path::PathBuf;
 
+    use iced::keyboard::key::{Code, Named, NativeCode, Physical};
+    use iced::keyboard::{Event, Key, Location, Modifiers};
     use iced::time::Instant;
 
     use super::{
-        MenuGuard, context_menu_guard, inline_edit_guard,
+        MenuGuard, context_menu_guard, inline_edit_guard, is_escape_press,
         is_header_menu_choice, is_terminal_input,
     };
     use crate::events::AppEvent;
     use crate::shortcuts::AppShortcut;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
+    use crate::widgets::modes::types::Mode;
+    use crate::widgets::modes::{ModesEffect, ModesEvent, ModesIntent};
     use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
     use crate::widgets::sidebar::types::HeaderMenu;
     use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
@@ -320,6 +342,60 @@ mod tests {
 
         for event in events {
             assert!(!is_terminal_input(&event));
+        }
+    }
+
+    fn key_press(key: Key, physical_key: Physical) -> AppEvent {
+        AppEvent::Keyboard(Event::KeyPressed {
+            key: key.clone(),
+            modified_key: key,
+            physical_key,
+            location: Location::Standard,
+            modifiers: Modifiers::empty(),
+            text: None,
+            repeat: false,
+        })
+    }
+
+    #[test]
+    fn a_pressed_escape_key_is_an_escape_press() {
+        let event =
+            key_press(Key::Named(Named::Escape), Physical::Code(Code::Escape));
+
+        assert!(is_escape_press(&event));
+    }
+
+    #[test]
+    fn other_keys_and_a_released_escape_are_not_an_escape_press() {
+        let letter = key_press(
+            Key::Character("a".into()),
+            Physical::Unidentified(NativeCode::Unidentified),
+        );
+        let released = AppEvent::Keyboard(Event::KeyReleased {
+            key: Key::Named(Named::Escape),
+            modified_key: Key::Named(Named::Escape),
+            physical_key: Physical::Code(Code::Escape),
+            location: Location::Standard,
+            modifiers: Modifiers::empty(),
+        });
+
+        assert!(!is_escape_press(&letter));
+        assert!(!is_escape_press(&released));
+        assert!(!is_escape_press(&AppEvent::SyncTerminalGridSizes));
+    }
+
+    #[test]
+    fn given_menu_open_when_modes_events_arrive_then_they_are_allowed() {
+        let events = [
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::CloseMenu)),
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Pin(Mode::Docker))),
+            AppEvent::Modes(ModesEvent::Effect(ModesEffect::ModeChanged(
+                Mode::Docker,
+            ))),
+        ];
+
+        for event in events {
+            assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
         }
     }
 

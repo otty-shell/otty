@@ -75,6 +75,8 @@
     "modes_pin": "釘選",
     "modes_unpin": "取消釘選",
     "modes_unpin_another_first": "請先取消釘選其他模式",
+    "modes_no_other_modes": "目前沒有其他模式。Kubernetes 與代理工作將顯示在這裡。",
+    "docker_placeholder_description": "Docker 與 Podman 的容器、映像檔、磁碟區與網路將顯示在這裡。",
 
     "title_search_no_sessions": "搜尋啟動項和動作",
     "palette_placeholder": "搜尋工作階段、啟動項和動作",

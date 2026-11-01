@@ -31,6 +31,14 @@ pub(crate) const FOCUS_MODE: &[u8] =
     include_bytes!("../../assets/svg/focus-mode.svg");
 /// Magnifier in the title search and the command palette input.
 pub(crate) const SEARCH: &[u8] = include_bytes!("../../assets/svg/search.svg");
+/// Terminal mode in the mode switcher and the All modes menu: a window
+/// with a prompt.
+pub(crate) const MODE_TERMINAL: &[u8] =
+    include_bytes!("../../assets/svg/mode-terminal.svg");
+/// Docker mode in the mode switcher and the All modes menu: stacked boxes
+/// on a base.
+pub(crate) const MODE_DOCKER: &[u8] =
+    include_bytes!("../../assets/svg/mode-docker.svg");
 /// Product logo shown on the empty state. Drawn in its own colors.
 ///
 /// A PNG, not the SVG: `logo-small.svg` only wraps a large raster image,

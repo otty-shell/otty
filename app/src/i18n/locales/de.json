@@ -75,6 +75,8 @@
     "modes_pin": "Anheften",
     "modes_unpin": "Lösen",
     "modes_unpin_another_first": "Zuerst einen anderen Modus lösen",
+    "modes_no_other_modes": "Noch keine weiteren Modi. Kubernetes und Agentenarbeit erscheinen hier.",
+    "docker_placeholder_description": "Container, Images, Volumes und Netzwerke von Docker und Podman werden hier angezeigt.",
 
     "title_search_no_sessions": "Starts und Aktionen suchen",
     "palette_placeholder": "Sitzungen, Starts und Aktionen suchen",

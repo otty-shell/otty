@@ -14,6 +14,11 @@ use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, status_bar};
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
+use crate::widgets::modes::ModesEvent;
+use crate::widgets::modes::types::Mode;
+use crate::widgets::modes::view::{
+    docker_placeholder, mode_menu, mode_switcher,
+};
 use crate::widgets::palette::{PaletteEvent, view as palette_view};
 use crate::widgets::quick_launch::view::{
     context_menu as ql_context_menu, error_tab, new_launch_menu, secret_prompt,
@@ -42,15 +47,30 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     let theme_props: ThemeProps<'_> = ThemeProps::new(theme);
 
     let sidebar_vm = app.widgets.sidebar.vm();
+    let mode = app.widgets.modes.active();
 
+    // The active mode decides what goes into each slot (spec Decision 5);
+    // the sidebar keeps the panels open or closed and their widths.
     let content_row = panels::view(panels::PanelsProps {
         panes: app.widgets.sidebar.panes(),
         vm: sidebar_vm,
         theme: theme_props,
-        content: move |slot| match slot {
-            SidebarPane::Left => view_left_panel(app, sidebar_vm, theme_props),
-            SidebarPane::Main => view_tab_content(app, theme_props),
-            SidebarPane::Right => view_right_panel(app, theme_props),
+        content: |slot| match (slot, mode) {
+            (SidebarPane::Left, _) => {
+                view_left_panel(app, sidebar_vm, theme_props)
+            },
+            (SidebarPane::Main, Mode::Terminal) => {
+                view_tab_content(app, theme_props)
+            },
+            (SidebarPane::Main, _) => {
+                docker_placeholder::main_area(theme_props)
+            },
+            (SidebarPane::Right, Mode::Terminal) => {
+                view_right_panel(app, theme_props)
+            },
+            (SidebarPane::Right, _) => {
+                Space::new().width(Length::Fill).height(Length::Fill).into()
+            },
         },
         on_intent: |intent| AppEvent::Sidebar(SidebarEvent::Intent(intent)),
     });
@@ -74,6 +94,18 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     // Header menu overlay (New session or Launches)
     if let Some(open) = sidebar_vm.open_header_menu {
         layers.push(view_header_menu_overlay(app, open, theme_props));
+    }
+
+    // All modes menu under the switcher
+    let modes_vm = app.widgets.modes.vm();
+    if modes_vm.is_menu_open {
+        layers.push(
+            mode_menu::view(mode_menu::ModeMenuProps {
+                vm: modes_vm,
+                theme: theme_props,
+            })
+            .map(|intent| AppEvent::Modes(ModesEvent::Intent(intent))),
+        );
     }
 
     // Quick launch context menu overlay
@@ -132,6 +164,7 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 
     #[cfg(not(target_os = "macos"))]
     let resize_grips_layer = if app.widgets.sidebar.has_header_menu_open()
+        || app.widgets.modes.is_menu_open()
         || app.widgets.quick_launch.context_menu().is_some()
         || app.widgets.quick_launch.secret_prompt().is_some()
         || app.widgets.terminal_workspace.has_any_context_menu()
@@ -150,7 +183,13 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 
     let header = view_header(app, sidebar_vm, theme_props);
 
-    let status_bar = view_status_bar(app, theme_props);
+    let status_bar = match mode {
+        Mode::Terminal => view_status_bar(app, theme_props),
+        _ => docker_placeholder::status_bar(
+            env!("CARGO_PKG_VERSION"),
+            theme_props,
+        ),
+    };
 
     let root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
         column![header, content_stack, status_bar]
@@ -222,9 +261,38 @@ fn view_status_bar<'a>(
     status_bar::view(&vm, env!("CARGO_PKG_VERSION"), theme_props)
 }
 
-/// Left panel content: the Sessions section over the Launches section,
-/// sharing the panel height (see [`left_panel::view`]).
+/// Left panel content: the mode switcher, then the active mode's content.
+/// The panel and the switcher hide together.
 fn view_left_panel<'a>(
+    app: &'a App,
+    sidebar_vm: SidebarViewModel,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+    let modes_vm = app.widgets.modes.vm();
+    let mode = modes_vm.active;
+
+    let switcher = mode_switcher::view(mode_switcher::ModeSwitcherProps {
+        vm: modes_vm,
+        theme: theme_props,
+    })
+    .map(|intent| AppEvent::Modes(ModesEvent::Intent(intent)));
+
+    let content = match mode {
+        Mode::Terminal => {
+            view_terminal_left_panel(app, sidebar_vm, theme_props)
+        },
+        _ => Space::new().width(Length::Fill).height(Length::Fill).into(),
+    };
+
+    column![switcher, content]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+/// Terminal mode left panel: the Sessions section over the Launches
+/// section, sharing the panel height (see [`left_panel::view`]).
+fn view_terminal_left_panel<'a>(
     app: &'a App,
     sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
@@ -556,4 +624,126 @@ fn view_new_launch_menu<'a>(
         otty_ui_kit::components::menu::MENU_WIDTH,
         new_launch_menu::menu_height(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::Point;
+    use iced_test::simulator;
+    use otty_ui_kit::size;
+
+    use super::*;
+    use crate::widgets::modes::{ModesIntent, ModesWidget};
+
+    fn app_in(mode: Mode) -> App {
+        let (mut app, _) = App::new();
+        app.widgets.modes = ModesWidget::new();
+        let _ = app.widgets.modes.reduce(ModesIntent::Select(mode));
+        app
+    }
+
+    #[test]
+    fn terminal_mode_shows_the_switcher_over_sessions_and_launches() {
+        let app = app_in(Mode::Terminal);
+        let mut ui = simulator(view(&app));
+
+        ui.find(i18n::t(Key::ModeTerminal))
+            .expect("mode name should be visible");
+        ui.find(i18n::t(Key::SessionsPanelTitle))
+            .expect("sessions should be visible");
+        ui.find(i18n::t(Key::LaunchesPanelTitle))
+            .expect("launches should be visible");
+        ui.find(i18n::t(Key::EmptyTitle))
+            .expect("empty state should be visible");
+        assert!(ui.find(i18n::t(Key::DockerPlaceholderDescription)).is_err());
+    }
+
+    #[test]
+    fn docker_mode_swaps_the_left_panel_main_area_and_status_bar() {
+        let app = app_in(Mode::Docker);
+        let mut ui = simulator(view(&app));
+
+        ui.find(i18n::t(Key::DockerPlaceholderDescription))
+            .expect("docker placeholder should be visible");
+        assert!(ui.find(i18n::t(Key::SessionsPanelTitle)).is_err());
+        assert!(ui.find(i18n::t(Key::LaunchesPanelTitle)).is_err());
+        assert!(ui.find(i18n::t(Key::EmptyTitle)).is_err());
+    }
+
+    #[test]
+    fn a_hidden_left_panel_hides_the_switcher() {
+        let mut app = app_in(Mode::Terminal);
+        let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleLeft);
+        let mut ui = simulator(view(&app));
+
+        assert!(!app.widgets.sidebar.vm().is_left_open);
+        assert!(ui.find(i18n::t(Key::ModeTerminal)).is_err());
+    }
+
+    #[test]
+    fn clicking_tabs_and_more_in_the_window_switches_modes_and_opens_the_menu()
+    {
+        // Centers of the first, second and third switcher tabs: under the
+        // title bar and its line, inside the row padding and the group.
+        let tab = |index: f32| {
+            Point::new(
+                8.0 + 3.0 + 15.0 + index * 32.0,
+                size::TITLEBAR + size::LINE + 8.0 + 3.0 + 13.0,
+            )
+        };
+        let mut app = app_in(Mode::Terminal);
+
+        for (point, expected) in
+            [(tab(1.0), Mode::Docker), (tab(0.0), Mode::Terminal)]
+        {
+            let events = click_in_window(&app, point);
+            for event in events {
+                let _ = app.update(event);
+            }
+            assert_eq!(app.widgets.modes.active(), expected);
+        }
+
+        for event in click_in_window(&app, tab(2.0)) {
+            let _ = app.update(event);
+        }
+        assert!(app.widgets.modes.is_menu_open());
+    }
+
+    fn click_in_window(app: &App, point: Point) -> Vec<AppEvent> {
+        let mut ui = simulator(view(app));
+        ui.point_at(point);
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        ui.into_messages()
+            .filter(|event| matches!(event, AppEvent::Modes(_)))
+            .collect()
+    }
+
+    #[test]
+    fn an_open_modes_menu_is_drawn_over_the_window() {
+        let mut app = app_in(Mode::Terminal);
+        let _ = app.widgets.modes.reduce(ModesIntent::ToggleMenu);
+        let mut ui = simulator(view(&app));
+
+        ui.find(i18n::t(Key::ModesPinnedSection))
+            .expect("all modes menu should be visible");
+    }
+
+    #[test]
+    fn clicking_a_mode_name_in_the_open_menu_selects_it() {
+        let mut app = app_in(Mode::Terminal);
+        let _ = app.widgets.modes.reduce(ModesIntent::ToggleMenu);
+        let mut ui = simulator(view(&app));
+
+        ui.click(i18n::t(Key::ModeDocker))
+            .expect("docker row should be visible");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
+                Mode::Docker
+            )))]
+        ));
+    }
 }

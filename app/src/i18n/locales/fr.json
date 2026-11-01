@@ -75,6 +75,8 @@
     "modes_pin": "Épingler",
     "modes_unpin": "Désépingler",
     "modes_unpin_another_first": "Désépinglez d’abord un autre mode",
+    "modes_no_other_modes": "Pas encore d’autres modes. Kubernetes et le travail avec des agents apparaîtront ici.",
+    "docker_placeholder_description": "Les conteneurs, images, volumes et réseaux de Docker et Podman s’afficheront ici.",
 
     "title_search_no_sessions": "Rechercher des lancements et des actions",
     "palette_placeholder": "Rechercher des sessions, des lancements et des actions",

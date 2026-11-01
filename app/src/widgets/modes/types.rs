@@ -1,4 +1,5 @@
 use crate::i18n::Key;
+use crate::icons;
 
 /// A way of working OTTY can switch to.
 ///
@@ -23,6 +24,14 @@ impl Mode {
         match self {
             Self::Terminal => Key::ModeTerminal,
             Self::Docker => Key::ModeDocker,
+        }
+    }
+
+    /// SVG icon of the mode's switcher tab and menu row.
+    pub(crate) fn icon(self) -> &'static [u8] {
+        match self {
+            Self::Terminal => icons::MODE_TERMINAL,
+            Self::Docker => icons::MODE_DOCKER,
         }
     }
 
@@ -62,6 +71,13 @@ mod tests {
             );
         }
         assert_eq!(Mode::from_storage_name("kubernetes"), None);
+    }
+
+    #[test]
+    fn every_mode_has_its_own_icon() {
+        assert_eq!(Mode::Terminal.icon(), icons::MODE_TERMINAL);
+        assert_eq!(Mode::Docker.icon(), icons::MODE_DOCKER);
+        assert_ne!(Mode::Terminal.icon(), Mode::Docker.icon());
     }
 
     #[test]
