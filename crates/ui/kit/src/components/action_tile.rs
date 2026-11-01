@@ -111,6 +111,7 @@ impl<'a, Message: Clone + 'a> From<ActionTile<Message>>
             .width(Length::Fill),
         ]
         .spacing(GAP)
+        .height(Length::Fill)
         .align_y(Alignment::Center);
         if let Some(shortcut) = value.shortcut {
             content = content.push(kbd(shortcut, &palette));
@@ -170,6 +171,27 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::NewTerminal]);
+    }
+
+    #[test]
+    fn given_action_tile_when_laid_out_then_label_is_centered_in_44px_height() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(
+            ActionTile::<Message>::new(glyph::plus(), "New terminal", &palette)
+                .shortcut("Ctrl T"),
+        );
+
+        let bounds = ui
+            .find("New terminal")
+            .expect("label should be visible")
+            .bounds();
+
+        let center = bounds.y + bounds.height / 2.0;
+        assert!(
+            (center - size::ACTION_TILE / 2.0).abs() < 1.0,
+            "label center {center} should be at half of {}",
+            size::ACTION_TILE
+        );
     }
 
     #[test]
