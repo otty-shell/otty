@@ -1,0 +1,345 @@
+# Modes and the Docker Mode
+
+Created: 2026-11-01
+Author: holland.deception@gmail.com
+Agent: Claude Code
+Status: IN PROGRESS
+Approved: Yes
+Worktree: No
+Type: Build
+
+## Summary
+
+**Goal:** Let OTTY switch between ways of working ("modes"). Terminal is the
+default mode and stays as it is today. The first new mode is Docker: see and
+manage containers, images, volumes and networks of the local Docker or Podman
+engine in tables, with an inspector on the right. Later modes (Kubernetes,
+agent work) plug in the same way.
+
+The mode switcher sits at the top of the left panel. Pinned modes are icon
+tabs; after them a "⋯" button opens the All modes menu, where every mode can
+be opened, pinned or unpinned.
+
+**References:**
+
+- Screens: the redesign canvas (https://claude.ai/artifact/5QkFQQUDrqMuqVSFyBZCh6), page "v4 today", row "Where to switch between Terminal, Docker and Kubernetes":
+  - `V4ModeSwitch`, variant `panel-icons` ("Option A: mode icons at the top of the left panel"): switcher, Docker tree, table, inspector.
+  - `V4ModesMany` ("Option A with many plugins: pinned modes and the All modes menu"): pinned tabs, temporary tab, All modes menu.
+  - `V4FutureModes`: the Docker tree, columns and inspector fields in more detail.
+- Screens for this spec: the same canvas, page "Docker mode" (drawn 2026-11-01). These win over the "v4 today" boards above:
+  - `DockerMode` (interactive): switcher, engine tree, Containers table, inspector with Overview / Logs / Inspect, remove dialog, error notice. Tweaks: `resource`, `menu`, `confirm`, `notice`, `theme`.
+  - `DockerModesMenu`: the All modes menu open; Pin / Unpin works.
+  - `DockerImages`, `DockerVolumes`, `DockerNetworks`: the other tables and their inspectors, including disabled Remove.
+  - `DockerRun` (interactive): the Run container form. Tweaks: `state` (ready, pulling, error), `invalid`.
+  - `DockerNoEngine`, `DockerEngineStopped`, `DockerPodmanOff`, `DockerNoAccess`: the four Decision 9 cases.
+- Design system (https://claude.ai/artifact/7zMwx63cZnNmTUeTL1FQF3).
+- Engine client: [bollard](https://github.com/fussybeaver/bollard) 0.21.1 (Apache-2.0). It speaks the Docker Engine API, which Podman also serves (`podman system service`), and has `Docker::connect_with_podman_defaults()` for Podman sockets.
+- Previous spec: `specs/2026-10-31-workspace-layout` (left/right panels, kit-first rule, shortcut rules; done).
+
+Where a screen and this spec disagree, the Decisions section wins. The screens
+show plugins, Kubernetes, a bottom terminal dock and right-panel plugin tabs;
+none of those are in scope (see Out of Scope).
+
+### Current state (research, 2026-11-01)
+
+| Fact | Location |
+|---|---|
+| The window is title bar, `left \| main \| right` pane grid, status bar; the sidebar widget owns both panels, widths and focus mode | `app/src/widgets/sidebar/state.rs`, `app/src/view.rs` |
+| The left panel shows Sessions over Launches; the right panel shows Files | `app/src/widgets/sidebar/view/left_panel.rs`, `app/src/view.rs` (`view_left_panel`, `view_right_panel`) |
+| There is no notion of a mode; the main area always shows the active tab | `app/src/view.rs` (`view_tab_content`) |
+| Every widget follows `state → reducer → vm() → view(Props) → Intent`; events are routed in `app/src/events/` | `app/src/widgets/*`, `app/src/events/mod.rs` |
+| Async work runs through `Task::perform`; long-lived streams through `Subscription::run_with` | `app/src/events/explorer.rs:64`, `app/src/widgets/explorer/watcher.rs:71` |
+| iced runs on tokio (`iced` feature `tokio`), which bollard needs | `app/Cargo.toml` |
+| One keymap table feeds both the terminal bindings and the app keyboard subscription; Linux uses Ctrl Shift, macOS uses Cmd | `app/src/shortcuts.rs` |
+| Settings are saved to `~/.config/otty/settings.json` through an explicit Save button | `app/src/widgets/settings/storage.rs` |
+| Kit components exist for tree rows, menus, segmented control, dialog, empty card, chip, target dot, status bar, buttons | `crates/ui/kit/src/components/` |
+| The kit has no table, status badge, key-value list, log view, inline notice or mode switcher | `crates/ui/kit/src/components/` |
+| Nothing opens a URL in the browser today | — |
+| Supported platforms are Linux and macOS | `README.md` |
+| bollard 0.21.1: default features `http`, `pipe`; Podman socket order: `$DOCKER_HOST` (unix), `$XDG_RUNTIME_DIR/podman/podman.sock`, `/run/user/$UID/podman/podman.sock`, `/run/podman/podman.sock` | bollard `src/docker.rs:975-1022` |
+
+## Decisions
+
+1. **A mode is a closed list, not a plugin.** `Mode` is an enum with
+   `Terminal` and `Docker`. Adding Kubernetes or agent work later means a new
+   variant and a new widget. No plugin API, no mode trait, no registry: there
+   is one real implementation per mode and nothing outside OTTY adds modes
+   today.
+2. **The switcher is at the top of the left panel** (Option A). It shows:
+   Terminal, then the pinned modes in the order they were pinned, then a
+   temporary tab for the active mode if it is not pinned, then the "⋯" (All
+   modes) button. The name of the active mode is shown next to the tabs.
+   - Terminal is always first and cannot be unpinned.
+   - Up to 4 modes besides Terminal can be pinned. When 4 are pinned, the
+     pin button of other modes is disabled with the hint "Unpin another mode
+     first".
+   - Docker is pinned on first start (owner approved, 2026-11-01).
+   - The temporary tab has an outline (`mode-tab-temp` on the screen) and
+     disappears when another mode is chosen.
+3. **The All modes menu** opens under the "⋯" button. Sections: "Pinned (N of
+   4)" with Terminal and the pinned modes, each with its shortcut and an
+   Unpin button (none for Terminal); "Other modes" with a Pin button. Clicking
+   a name switches to that mode and closes the menu. Esc or a click outside
+   closes it. No search field, no drag to reorder and no "Get more modes"
+   item until there are enough modes to need them.
+4. **Pinned modes are saved right away** in `~/.config/otty/modes.json`, not in
+   `settings.json`: pinning is not a settings form change and must not wait
+   for the Save button or overwrite unsaved form edits. A missing or broken
+   file falls back to the defaults (Docker pinned) with a log warning. OTTY
+   always starts in Terminal mode.
+5. **A new `modes` widget owns the active mode, the pinned list and whether
+   the menu is open.** The sidebar widget keeps the panels: open/closed and
+   widths are shared by all modes. The root view asks the active mode what to
+   put in the left panel, main area and right panel:
+
+   | Slot | Terminal | Docker |
+   |---|---|---|
+   | Left panel | switcher + Sessions + Launches (today) | switcher + engine tree |
+   | Main area | active tab (today) | resource table |
+   | Right panel | Files (today) | Inspector of the selected item |
+   | Status bar | today's items | engine name and version, item counts |
+
+   Terminal tabs keep running while another mode is shown. When the left
+   panel is hidden (panel toggle, focus mode) the switcher is hidden too;
+   shortcuts and the command palette still switch modes.
+6. **Shortcuts follow the keymap rules** (no keys taken from the shell):
+
+   | Action | Linux | macOS |
+   |---|---|---|
+   | Terminal mode | Ctrl Shift 1 | Cmd 1 |
+   | Pinned mode 1–4 | Ctrl Shift 2–5 | Cmd 2–5 |
+   | All modes menu | Ctrl Shift M | Cmd Shift M |
+
+   Digits are matched by physical key, because Shift changes the character
+   (Shift 1 is `!` on US layouts). Owner approved Ctrl Shift over Alt
+   (2026-11-01). The old `V4ModeSwitch` and `V4ModesMany` boards show Ctrl
+   1–5; the Docker mode boards (see References) already use this table. The
+   command palette gets "Switch to Terminal mode" and "Switch to Docker
+   mode".
+7. **Docker logic lives in a new crate `otty-docker`** (`crates/docker`). It is
+   the only place that uses bollard. Reason: it crosses a real infrastructure
+   boundary (the engine socket), and bollard's generated types (every field
+   `Option`) are mapped once into small OTTY types (`Container`, `Image`,
+   `Volume`, `Network`, `EngineInfo`). The crate has no trait over the engine:
+   the mapping and the engine discovery are pure functions tested on plain
+   inputs, and the calls themselves are thin.
+8. **Docker and Podman work the same way.** OTTY finds engines in this order
+   and shows every engine it reaches as a root in the left tree:
+   - `$DOCKER_HOST`, if set (unix socket or tcp).
+   - Docker: `/var/run/docker.sock`; on macOS also `~/.docker/run/docker.sock`.
+   - Podman: the rootless socket, then `/run/podman/podman.sock` (bollard's
+     order); on macOS the socket of the default Podman machine.
+   - The same socket found twice counts once.
+
+   Whether an engine is Docker or Podman is read from its `/version` answer
+   (Podman reports a "Podman Engine" component). The root row shows "Docker"
+   or "Podman", the version and the "this computer" note. Only local engines
+   are in scope.
+9. **When no engine is reachable, the Docker mode says why and what to do,**
+   using the kit `EmptyCard` in the main area (left tree and inspector are
+   empty):
+
+   | Case | How it is detected | Text and buttons |
+   |---|---|---|
+   | Nothing installed | No socket answers and neither `docker` nor `podman` is on `PATH` | "Docker or Podman is not installed". Buttons: **Install Docker** (https://docs.docker.com/get-started/get-docker/), **Install Podman** (https://podman.io/docs/installation), **Check again** |
+   | Docker not running | `docker` is on `PATH`, no Docker socket answers | "Docker is installed but not running", command `sudo systemctl start docker` (macOS note: open Docker Desktop), **Copy**, **Check again**, **How to fix** (https://docs.docker.com/engine/daemon/start/) |
+   | Podman API off | `podman` is on `PATH`, no Podman socket answers | "Podman is installed but its API service is off", command `systemctl --user enable --now podman.socket` (macOS note: `podman machine start`), **Copy**, **Check again**, **How to fix** (https://docs.podman.io/en/latest/markdown/podman-system-service.1.html) |
+   | No permission | The socket exists, connecting fails with permission denied | "OTTY has no access to the Docker socket", command `sudo usermod -aG docker $USER` with the note to log out and back in and that the docker group has root-level access, **Copy**, **Check again**, **How to fix** (https://docs.docker.com/engine/install/linux-postinstall/) |
+
+   Under every card a line lists what OTTY looked for (`$DOCKER_HOST`, the
+   sockets, `docker` and `podman` on `PATH`). Links open in the default
+   browser with `xdg-open` (Linux) or `open` (macOS) through
+   `std::process::Command`; no new crate. Copy uses the iced clipboard.
+10. **Resources and columns.** The left tree under each engine root has
+    Containers (with "N running"), Compose projects (one child per
+    `com.docker.compose.project` label, which filters the containers table),
+    Images, Volumes, Networks, each with a count. The table columns:
+
+    | Resource | Columns |
+    |---|---|
+    | Containers | Name, Status (badge), Image, Ports, Age |
+    | Images | Repository:Tag, ID (12 chars), Size, Used by (containers), Age |
+    | Volumes | Name, Driver, Used by, Age |
+    | Networks | Name, Driver, Scope, Subnet, Containers, Age |
+
+    Above the table: the resource title, the engine chip, a name filter field,
+    the resource's create button (Run container, Pull image, Create volume,
+    Create network) and Refresh. One row can be selected; the inspector
+    shows it. Status badges use the status tones: running → ok, paused and
+    restarting → warn, exited with a non-zero code and dead → error, created
+    and exited (0) → neutral.
+11. **Actions.**
+
+    | Resource | Actions |
+    |---|---|
+    | Container | Run (form, Decision 18), Start, Stop, Restart, Pause / Unpause, Remove (confirm; "Also stop it" when running), Logs, Shell; Prune stopped containers (confirm) |
+    | Image | Run (opens the Run form with this image), Pull (dialog: name and tag, progress line), Remove (confirm; "Force" when containers use it); Prune dangling images (confirm) |
+    | Volume | Create (dialog: name, driver `local`), Remove (confirm); Prune unused volumes (confirm) |
+    | Network | Create (dialog: name, driver `bridge`), Remove (confirm); Prune unused networks (confirm) |
+
+    Actions on the selected row are buttons in the inspector header and items
+    of the row's context menu. Remove is disabled, with a hint under the
+    buttons, when the engine would refuse it: a volume or network that a
+    container uses, and the built-in networks `bridge`, `host`, `none`. Every destructive action asks first with the
+    kit dialog. A failed action shows a kit `Notice` above the table with the
+    engine's message; the table stays as it was.
+12. **Inspector tabs.** Overview (key-value list: image, ports, mounts,
+    networks, compose project, created, command for containers; matching
+    fields for the other resources), Logs (containers only: last 500 lines,
+    then follows new lines while the tab is open; mono, scrolls, stops when
+    the tab or the selection changes) and Inspect (the engine's inspect JSON,
+    read-only, mono).
+13. **Shell opens a terminal session.** "Shell" opens a new terminal tab that
+    runs `docker exec -it <id> sh` (or `podman exec …` for a Podman engine)
+    and switches to Terminal mode. The tab is grouped under "this computer".
+    If the matching CLI is not on `PATH`, the button is disabled with a hint.
+    No in-app exec over the API: the terminal widget works with a PTY, and the
+    CLI already handles TTY sizing and signals.
+14. **The tables stay fresh through engine events.** While Docker mode is
+    active, a subscription listens to `/events` of each engine and reloads the
+    affected list (container, image, volume or network events), at most once
+    per 500 ms per list. Entering Docker mode and Refresh reload all lists.
+    Nothing polls while another mode is active.
+15. **Kit first** (owner rule, 2026-11-01). Every new interface element is a
+    component in `otty-ui-kit` with a gallery section in both themes and an
+    `iced_test` interaction test before the app uses it:
+
+    | Component | Shape (screen reference) |
+    |---|---|
+    | `ModeSwitcher` | Raised group of 30×26 icon tabs, active tab `surface-hover` with accent icon, temporary tab with outline, trailing "⋯" button that shows it is open (`.mode-tabs`, `.mode-tab`, `.mode-more`) |
+    | `ModeMenu` | Floating menu, 300 wide: section labels with a right-aligned note, rows with icon, name, shortcut `Kbd` and a pin toggle (on: accent; disabled with hint) (`.mm-item`, `.mm-pin`) |
+    | `DataTable` | Header row, body rows with one selected row, cell kinds plain / mono / muted / number / badge, empty-table message, vertical scroll, row click and right click messages (`ot-table`) |
+    | `StatusBadge` | Dot plus text in tone ok / warn / error / neutral (`ot-status`) |
+    | `KeyValueList` | Two-column list, keys muted, values mono, long values wrap (`ot-insp-kv`) |
+    | `InspectorHeader` | Mono title, status badge line, wrapping row of small secondary buttons |
+    | `InspectorTabs` | Underlined text tabs (`ot-insp-tabs`) |
+    | `LogView` | Mono, selectable, scrolls, sticks to the bottom while following |
+    | `Notice` | Inline message with tone, text and dismiss button (`ot-banner`) |
+
+    Existing parts are reused: `TreeRow` (gains a count tone, e.g. failed),
+    `EmptyCard`, `Chip`, `TargetDot`, `Dialog`, `Menu`, `TextField`,
+    `TokenField`, `KeyValueField` (gains a placeholder per column if it has
+    none), `Select`, `Segmented`, `Switch`, `FormPage`, `FormSection`,
+    `Button`. App views only compose kit components and pass `UiPalette`.
+16. **New dependencies.** `bollard = "0.21.1"` (default features: unix socket
+    and http; no ssl, no ssh) and `futures-util` (already in the tree through
+    bollard and iced) to read bollard's streams, both only in `otty-docker`
+    (owner approved, 2026-11-01). `cargo deny check` must stay clean.
+17. **All new text is translated** in the ten locales of `app/src/i18n/locales`.
+18. **Run container is a form in the main area** (owner request, 2026-11-01),
+    laid out like the launch editor. It opens from "Run container" above the
+    Containers table (empty image field) and from "Run" on an image (image
+    filled in).
+
+    | Section | Fields |
+    |---|---|
+    | Image | Engine (select; shown only when more than one engine is reached), Image (`name:tag`, required), Name (optional; the engine picks one when empty), "Pull the image if it is missing" (switch, on) |
+    | Command | Command (tokens, optional; replaces the image's command) |
+    | Ports | Rows of host port → container port, protocol `tcp` / `udp` |
+    | Environment | Rows of name = value |
+    | Volumes | Rows of source (volume name or absolute host path) → container path, read-only switch |
+    | Options | Network (select of the engine's networks, default `bridge`), Restart (segmented: No, On failure, Unless stopped, Always), "Remove the container when it stops" (switch, off) |
+
+    "Remove the container when it stops" and a restart policy cannot go
+    together (the engine rejects it), so turning the switch on sets Restart
+    to No and disables the other choices with a hint. The right panel shows
+    what the chosen image sets on its own (listening ports, command,
+    entrypoint, workdir), or that it is not on this computer yet.
+
+    Checks before Run: image is not empty; ports are 1–65535; container
+    paths are absolute; a host path source exists. Each problem shows under
+    its field and Run stays disabled. On Run: pull the image if it is missing
+    and the switch is on (progress line in the footer), create the container,
+    start it, then show the Containers table with the new container selected.
+    An engine error shows a `Notice` at the top of the form and keeps every
+    field as typed. Containers that need a terminal (`-it`) are started
+    detached; the user opens them with Shell.
+
+## Ticket classes
+
+Same classes as `specs/2026-10-31-workspace-layout`: **A** restyle / kit,
+**B** new view of existing data, **C** behavior (tests first). Each ticket has
+a `Class:` line; review checks the diff against it.
+
+## Acceptance Criteria
+
+- [ ] AC1: The left panel starts with the switcher: Terminal tab, the pinned tabs, "⋯". Clicking a tab switches the left panel, main area, right panel and status bar to that mode; the terminal tabs keep running and are back as they were when Terminal mode returns.
+- [ ] AC2: The All modes menu lists Pinned (with "N of 4") and Other modes; Pin and Unpin change the tabs at once; Terminal has no Unpin; with 4 pinned, Pin is disabled with the hint; picking an unpinned mode shows it as a temporary outlined tab that goes away when another mode is chosen.
+- [ ] AC3: Pinned modes survive a restart (`modes.json`); a missing or broken file gives the defaults; OTTY starts in Terminal mode.
+- [ ] AC4: The shortcuts in Decision 6 work with and without a focused terminal; Ctrl 1–5 and Ctrl M without Shift still reach the shell (keymap unit test plus a manual `cat -v` check). The palette switches modes.
+- [ ] AC5: With Docker running, Docker mode shows a "Docker <version>" root with Containers, Compose projects, Images, Volumes, Networks and their counts; with Podman (`podman.socket` on) a "Podman <version>" root; with both, two roots. Lists match `docker ps -a`, `docker images`, `docker volume ls`, `docker network ls` (and the `podman` equivalents).
+- [ ] AC6: Each case in Decision 9 shows its text and buttons; the install and docs buttons open the browser; Copy command puts the command on the clipboard; Check again finds an engine started meanwhile without a restart.
+- [ ] AC7: Every action in Decision 11 works on Docker and on Podman; destructive actions ask first; an engine error shows a Notice and leaves the table as it was (reducer tests for each action's effect; mapping tests in `otty-docker`).
+- [ ] AC8: The inspector shows Overview, Logs (follows new lines, stops on tab or selection change) and Inspect for the selected row.
+- [ ] AC8a: Run container starts a container with the image, name, command, ports, environment, volumes, network, restart policy and auto remove from the form (checked with `docker inspect` / `podman inspect`); a missing image is pulled first when the switch is on; each check in Decision 18 blocks Run with its message; an engine error keeps the form as typed (reducer tests for the checks and for the mapping of the form to the create request).
+- [ ] AC9: Shell opens a terminal tab inside the container with the engine's own CLI and switches to Terminal mode; without the CLI the button is disabled with a hint.
+- [ ] AC10: Starting, stopping or removing a container from another terminal updates the table within a second without Refresh; nothing talks to the engine while Terminal mode is active (event subscription test on the mode).
+- [ ] AC11: Every component in Decision 15 is in `otty-ui-kit`, shown in `cargo run -p otty-ui-kit --example gallery` in both themes, with at least one `iced_test` interaction test.
+- [ ] AC12: Screenshots of Terminal mode with the switcher, the open All modes menu, each Docker table, the inspector tabs and each Decision 9 case, in OTTY Dark and OTTY Light, are attached to the PR.
+- [ ] AC13: `cargo +nightly fmt --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features` and `cargo deny check` pass; line coverage from `cargo llvm-cov --workspace --all-features` is strictly greater than on the merge base.
+
+## Out of Scope
+
+Shown on the screens or easy to imagine, but each needs its own spec.
+
+- Plugins and extensions: "Get more modes from extensions…", the "+ Add a mode" rail button, plugin tabs in the right panel (Git, Notes), plugin items in the status bar (AWS, branch).
+- Kubernetes, agent work, PostgreSQL, AWS and other modes.
+- The bottom terminal dock inside Docker mode (`V4FutureModes`, `V4ModesMany`).
+- Remote engines (SSH, tcp with TLS), Docker contexts, Docker Swarm.
+- CPU and memory columns (they need a stats call per container).
+- Running a container attached to a terminal (`run -it`), resource limits, health checks and labels in the Run form; building images, `docker compose up/down`, connecting containers to networks, editing containers.
+- Search, drag to reorder and the grip in the All modes menu.
+- Multi-select and column sorting in tables.
+- Windows (not a supported platform).
+
+## Tickets
+
+| # | Ticket | Class | Model | Blocked by |
+|---|---|---|---|---|
+| 01 | Kit: `ModeSwitcher`, `ModeMenu` | A | Sonnet | — |
+| 02 | Kit: `DataTable`, `StatusBadge`, `Notice`; `TreeRow` count tone | A | Opus | — |
+| 03 | Kit: `KeyValueList`, `InspectorHeader`, `InspectorTabs`, `LogView` | A | Sonnet | — |
+| 04 | `modes` widget: `Mode`, active mode, pin rules, menu state, `modes.json` | C | Opus | — |
+| 05 | Mode shortcuts and palette actions | C | Opus | 04 |
+| 06 | Root view by mode: switcher and menu in the left panel; Docker slots show a placeholder | C | Opus | 01, 04 |
+| 07 | `otty-docker` crate: add bollard (owner approval), engine discovery for Docker and Podman on Linux and macOS, `EngineInfo` | C | Opus | — |
+| 08 | `otty-docker`: list and map containers, images, volumes, networks | C | Opus | 07 |
+| 09 | `docker` widget: engines, tree, tables, selection, filter, Refresh | C | Opus | 02, 06, 08 |
+| 10 | No engine states (Decision 9), open links, copy command | C | Sonnet | 06, 07 |
+| 11 | Container actions, confirm dialogs, notices | C | Opus | 09 |
+| 12 | Image pull, volume and network create, remove and prune | C | Opus | 09 |
+| 13 | Inspector: Overview, Logs (follow), Inspect | C | Opus | 03, 09 |
+| 14 | Run container form (Decision 18) | C | Opus | 09, 12 |
+| 15 | Shell into a container as a terminal tab | C | Sonnet | 11 |
+| 16 | Live updates from engine events | C | Opus | 09 |
+| 17 | Compose projects in the tree | B | Sonnet | 09 |
+| 18 | Status bar per mode | B | Sonnet | 09 |
+| 19 | OTTY Light pass and screenshots | A | Sonnet | 10–18 |
+| 20 | Update the design system and the canvas boards to what was built (new kit parts, shortcut table on the old mode boards) | — | Opus, owner review | 19 |
+
+Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
+
+Tickets live in `issues/`. Each ticket names the model that runs it on its `Model:` line; a subagent started for a ticket is launched with that model.
+
+## Progress Tracking
+
+- [ ] 01 — Kit: ModeSwitcher, ModeMenu · Sonnet
+- [ ] 02 — Kit: DataTable, StatusBadge, Notice · Opus
+- [ ] 03 — Kit: KeyValueList, InspectorHeader, InspectorTabs, LogView · Sonnet
+- [ ] 04 — `modes` widget · Opus
+- [ ] 05 — Mode shortcuts and palette · Opus
+- [ ] 06 — Root view by mode · Opus
+- [ ] 07 — `otty-docker`: engine discovery · Opus
+- [ ] 08 — `otty-docker`: lists · Opus
+- [ ] 09 — `docker` widget · Opus
+- [ ] 10 — No engine states · Sonnet
+- [ ] 11 — Container actions · Opus
+- [ ] 12 — Image, volume, network actions · Opus
+- [ ] 13 — Inspector tabs · Opus
+- [ ] 14 — Run container form · Opus
+- [ ] 15 — Shell into a container · Sonnet
+- [ ] 16 — Live engine events · Opus
+- [ ] 17 — Compose projects · Sonnet
+- [ ] 18 — Status bar per mode · Sonnet
+- [ ] 19 — OTTY Light pass and screenshots · Sonnet
+- [ ] 20 — Design system and canvas sync · Opus, owner review
