@@ -114,13 +114,16 @@ impl SidebarState {
 
     /// Show the left panel if it is hidden, hide it if it is shown. In focus
     /// mode the panel is hidden, so this leaves focus mode and shows it.
+    /// The panel shows at the minimum width; a right panel too wide for it
+    /// shrinks so the main area keeps its minimum share.
     pub(super) fn toggle_left(&mut self) {
         let show = !self.is_left_open();
 
         self.focus_mode = false;
         self.focus_note = None;
         if show {
-            self.left.open(max_ratio_beside(self.right_ratio()));
+            self.left.open();
+            self.right.shrink_to(max_ratio_beside(self.left_ratio()));
         } else {
             self.left.close();
         }
@@ -130,14 +133,16 @@ impl SidebarState {
 
     /// Show the right panel if it is hidden, hide it if it is shown. In
     /// focus mode the panel is hidden, so this leaves focus mode and shows
-    /// it.
+    /// it. The panel shows at the minimum width; a left panel too wide for
+    /// it shrinks so the main area keeps its minimum share.
     pub(super) fn toggle_right(&mut self) {
         let show = !self.is_right_open();
 
         self.focus_mode = false;
         self.focus_note = None;
         if show {
-            self.right.open(max_ratio_beside(self.left_ratio()));
+            self.right.open();
+            self.left.shrink_to(max_ratio_beside(self.right_ratio()));
         } else {
             self.right.close();
         }
@@ -230,15 +235,31 @@ impl SidebarState {
         }
 
         let changed = if event.split == self.left_split {
+            let was_open = self.left.is_open();
             let max_ratio = max_ratio_beside(self.right_ratio());
-            self.left.drag_to(event.ratio, max_ratio)
+            let changed = self.left.drag_to(event.ratio, max_ratio);
+
+            // A drag that opens the panel makes room for it, as the button does.
+            if !was_open {
+                self.right.shrink_to(max_ratio_beside(self.left_ratio()));
+            }
+
+            changed
         } else if event.split == self.right_split {
             // The pane grid gives the edge position inside the area right of
             // the left panel; the right panel is what lies past it.
+            let was_open = self.right.is_open();
             let rest = 1.0 - self.left_ratio();
             let right_ratio = (1.0 - event.ratio) * rest;
             let max_ratio = max_ratio_beside(self.left_ratio());
-            self.right.drag_to(right_ratio, max_ratio)
+            let changed = self.right.drag_to(right_ratio, max_ratio);
+
+            // A drag that opens the panel makes room for it, as the button does.
+            if !was_open {
+                self.left.shrink_to(max_ratio_beside(self.right_ratio()));
+            }
+
+            changed
         } else {
             false
         };
@@ -305,7 +326,7 @@ mod tests {
     use iced::time::{Duration, Instant};
     use iced::widget::pane_grid;
 
-    use super::SidebarState;
+    use super::{MIN_MAIN_RATIO, SidebarState};
     use crate::widgets::sidebar::side_panel::SIDE_PANEL_MIN_RATIO;
     use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu};
 
@@ -322,6 +343,24 @@ mod tests {
         };
 
         (*left, *main)
+    }
+
+    /// Drag the edge of the left panel to `ratio` of the window width.
+    fn drag_left_edge(state: &mut SidebarState, ratio: f32) {
+        let split = state.left_split;
+        state.apply_resize(pane_grid::ResizeEvent { split, ratio });
+    }
+
+    /// Drag the edge of the right panel to `ratio` of the area right of the
+    /// left panel, as the pane grid reports it.
+    fn drag_right_edge(state: &mut SidebarState, ratio: f32) {
+        let split = state.right_split;
+        state.apply_resize(pane_grid::ResizeEvent { split, ratio });
+    }
+
+    /// Share of the window width left for the main area.
+    fn main_ratio(state: &SidebarState) -> f32 {
+        1.0 - state.left_ratio() - state.right_ratio()
     }
 
     #[test]
@@ -344,6 +383,66 @@ mod tests {
         state.toggle_right();
 
         assert_eq!(split_ratios(&state), (SIDE_PANEL_MIN_RATIO, 1.0));
+    }
+
+    #[test]
+    fn right_panel_opened_beside_a_widest_left_panel_takes_the_minimum_width() {
+        let mut state = SidebarState::default();
+        state.toggle_right();
+        drag_left_edge(&mut state, 1.0);
+        assert!((state.left_ratio() - (1.0 - MIN_MAIN_RATIO)).abs() < 1e-6);
+
+        state.toggle_right();
+
+        assert!(state.is_left_open());
+        assert!(state.is_right_open());
+        assert_eq!(state.right_ratio(), SIDE_PANEL_MIN_RATIO);
+        let shrunk_left = 1.0 - MIN_MAIN_RATIO - SIDE_PANEL_MIN_RATIO;
+        assert!((state.left_ratio() - shrunk_left).abs() < 1e-6);
+        assert!((main_ratio(&state) - MIN_MAIN_RATIO).abs() < 1e-6);
+    }
+
+    #[test]
+    fn left_panel_opened_beside_a_widest_right_panel_takes_the_minimum_width() {
+        let mut state = SidebarState::default();
+        state.toggle_left();
+        drag_right_edge(&mut state, 0.0);
+        assert!((state.right_ratio() - (1.0 - MIN_MAIN_RATIO)).abs() < 1e-6);
+
+        state.toggle_left();
+
+        assert!(state.is_left_open());
+        assert!(state.is_right_open());
+        assert_eq!(state.left_ratio(), SIDE_PANEL_MIN_RATIO);
+        let shrunk_right = 1.0 - MIN_MAIN_RATIO - SIDE_PANEL_MIN_RATIO;
+        assert!((state.right_ratio() - shrunk_right).abs() < 1e-6);
+        assert!((main_ratio(&state) - MIN_MAIN_RATIO).abs() < 1e-6);
+    }
+
+    #[test]
+    fn right_panel_dragged_open_beside_a_widest_left_panel_takes_the_minimum_width()
+     {
+        let mut state = SidebarState::default();
+        state.toggle_right();
+        drag_left_edge(&mut state, 1.0);
+
+        drag_right_edge(&mut state, 0.0);
+
+        assert!(state.is_right_open());
+        assert_eq!(state.right_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert!((main_ratio(&state) - MIN_MAIN_RATIO).abs() < 1e-6);
+    }
+
+    #[test]
+    fn right_panel_opened_beside_a_wide_left_panel_with_room_leaves_it_alone() {
+        let mut state = SidebarState::default();
+        state.toggle_right();
+        drag_left_edge(&mut state, 0.5);
+
+        state.toggle_right();
+
+        assert_eq!(state.left_ratio(), 0.5);
+        assert_eq!(state.right_ratio(), SIDE_PANEL_MIN_RATIO);
     }
 
     #[test]
