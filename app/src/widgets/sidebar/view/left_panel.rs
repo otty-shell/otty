@@ -17,13 +17,19 @@ use crate::theme::ThemeProps;
 pub(crate) struct LeftPanelProps<'a, Sections> {
     pub(crate) vm: SidebarViewModel,
     pub(crate) theme: ThemeProps<'a>,
-    /// Height the Sessions rows need to be shown without scrolling.
-    pub(crate) sessions_content_height: f32,
-    /// Height the Launches rows need to be shown without scrolling.
-    pub(crate) launches_content_height: f32,
-    /// Builds the Sessions and Launches sections. It runs again whenever
-    /// the panel size changes.
+    /// Builds both sections with the heights their rows need. It runs
+    /// during layout, once per panel size, so each section's data is built
+    /// once and used for both its height and its rows.
     pub(crate) sections: Sections,
+}
+
+/// The two sections of the left panel and the heights their rows need to
+/// be shown without scrolling.
+pub(crate) struct LeftPanelSections<'a, Message> {
+    pub(crate) sessions: Element<'a, Message>,
+    pub(crate) sessions_content_height: f32,
+    pub(crate) launches: Element<'a, Message>,
+    pub(crate) launches_content_height: f32,
 }
 
 /// Stack the Sessions and Launches sections with a line between them and
@@ -40,26 +46,32 @@ pub(crate) fn view<'a, Message, Sections>(
 ) -> Element<'a, Message>
 where
     Message: 'a,
-    Sections: Fn() -> (Element<'a, Message>, Element<'a, Message>) + 'a,
+    Sections: Fn() -> LeftPanelSections<'a, Message> + 'a,
 {
-    let sessions_height = SectionHeight::panel_section(
-        props.sessions_content_height,
-        props.vm.is_sessions_open,
-    );
-    let launches_height = SectionHeight::panel_section(
-        props.launches_content_height,
-        props.vm.is_launches_open,
-    );
+    let vm = props.vm;
     let palette = props.theme.theme.ui();
     let sections = props.sections;
 
     responsive(move |panel| {
+        let LeftPanelSections {
+            sessions,
+            sessions_content_height,
+            launches,
+            launches_content_height,
+        } = sections();
+
+        let sessions_height = SectionHeight::panel_section(
+            sessions_content_height,
+            vm.is_sessions_open,
+        );
+        let launches_height = SectionHeight::panel_section(
+            launches_content_height,
+            vm.is_launches_open,
+        );
         let available = (panel.height - size::LINE).max(0.0);
         let heights =
             share_panel_height(available, &[sessions_height, launches_height]);
         let sessions_share = heights.first().copied().unwrap_or(0.0);
-
-        let (sessions, launches) = sections();
 
         column![
             container(sessions)
@@ -93,10 +105,11 @@ mod tests {
         let panel: Element<'_, ()> = view(LeftPanelProps {
             vm: sidebar.vm(),
             theme: ThemeProps::new(themes.current()),
-            sessions_content_height: 40.0,
-            launches_content_height: 40.0,
-            sections: || {
-                (text("Sessions rows").into(), text("Launches rows").into())
+            sections: || LeftPanelSections {
+                sessions: text("Sessions rows").into(),
+                sessions_content_height: 40.0,
+                launches: text("Launches rows").into(),
+                launches_content_height: 40.0,
             },
         });
         let mut ui = simulator(panel);

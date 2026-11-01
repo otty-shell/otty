@@ -233,15 +233,12 @@ fn view_left_panel<'a>(
     left_panel::view(left_panel::LeftPanelProps {
         vm: sidebar_vm,
         theme: theme_props,
-        sessions_content_height: session_list::content_height(
-            &app.widgets.tabs.vm(host_name),
-        ),
-        launches_content_height: sidebar_panel::content_height(
-            &app.widgets.quick_launch.vm(),
-        ),
         sections: move || {
+            let sessions_vm = app.widgets.tabs.vm(host_name);
+            let sessions_content_height =
+                session_list::content_height(&sessions_vm);
             let sessions = session_list::view(session_list::SessionListProps {
-                vm: app.widgets.tabs.vm(host_name),
+                vm: sessions_vm,
                 theme: theme_props,
                 is_open: sidebar_vm.is_sessions_open,
                 new_session_title: app.shell_session.name(),
@@ -257,9 +254,12 @@ fn view_left_panel<'a>(
                 on_intent: |intent| AppEvent::Tabs(TabsEvent::Intent(intent)),
             });
 
+            let launches_vm = app.widgets.quick_launch.vm();
+            let launches_content_height =
+                sidebar_panel::content_height(&launches_vm);
             let launches =
                 sidebar_panel::view(sidebar_panel::SidebarPanelProps {
-                    vm: app.widgets.quick_launch.vm(),
+                    vm: launches_vm,
                     theme: theme_props,
                     is_open: sidebar_vm.is_launches_open,
                     is_menu_open: sidebar_vm
@@ -276,7 +276,12 @@ fn view_left_panel<'a>(
                     },
                 });
 
-            (sessions, launches)
+            left_panel::LeftPanelSections {
+                sessions,
+                sessions_content_height,
+                launches,
+                launches_content_height,
+            }
         },
     })
 }

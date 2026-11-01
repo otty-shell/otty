@@ -246,16 +246,6 @@ fn left_panel<'a>(
     sidebar_vm: SidebarViewModel,
 ) -> Screen<'a> {
     let active_tab = fx.frame.active_tab;
-    let launches_vm = || QuickLaunchTreeViewModel {
-        data: &fx.launches,
-        selected_path: None,
-        hovered_path: None,
-        inline_edit: None,
-        launching: &fx.launching,
-        drop_target: None,
-    };
-    let sessions_vm =
-        move || TabsViewModel::new(tabs, active_tab, Some("fedora"));
     let is_menu_open = move |menu| {
         sidebar_vm
             .open_header_menu
@@ -265,11 +255,13 @@ fn left_panel<'a>(
     left_panel::view(left_panel::LeftPanelProps {
         vm: sidebar_vm,
         theme,
-        sessions_content_height: session_list::content_height(&sessions_vm()),
-        launches_content_height: sidebar_panel::content_height(&launches_vm()),
         sections: move || {
+            let sessions_vm =
+                TabsViewModel::new(tabs, active_tab, Some("fedora"));
+            let sessions_content_height =
+                session_list::content_height(&sessions_vm);
             let sessions = session_list::view(session_list::SessionListProps {
-                vm: sessions_vm(),
+                vm: sessions_vm,
                 theme,
                 is_open: sidebar_vm.is_sessions_open,
                 new_session_title: "zsh",
@@ -278,9 +270,19 @@ fn left_panel<'a>(
                 on_menu: (),
                 on_intent: |_| (),
             });
+            let launches_vm = QuickLaunchTreeViewModel {
+                data: &fx.launches,
+                selected_path: None,
+                hovered_path: None,
+                inline_edit: None,
+                launching: &fx.launching,
+                drop_target: None,
+            };
+            let launches_content_height =
+                sidebar_panel::content_height(&launches_vm);
             let launches =
                 sidebar_panel::view(sidebar_panel::SidebarPanelProps {
-                    vm: launches_vm(),
+                    vm: launches_vm,
                     theme,
                     is_open: sidebar_vm.is_launches_open,
                     is_menu_open: is_menu_open(HeaderMenu::Launches),
@@ -289,7 +291,12 @@ fn left_panel<'a>(
                     on_intent: |_| (),
                 });
 
-            (sessions, launches)
+            left_panel::LeftPanelSections {
+                sessions,
+                sessions_content_height,
+                launches,
+                launches_content_height,
+            }
         },
     })
 }
