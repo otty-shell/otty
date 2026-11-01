@@ -25,7 +25,7 @@ Spec: [../spec.md](../spec.md)
   (`TerminalTabState::runs_locally`, `local_cwd_for_active_tab`); SSH tabs
   are skipped because their folders are remote. Command tabs now ask for a
   Files sync when they open.
-- Side panels: an open panel is at least 15% of the window wide
+- Side panels: an open panel is at least 16% of the window wide
   (`SIDE_PANEL_MIN_RATIO`, set by the owner); a drag below that stops at it,
   and a drag below half of it closes the panel. A closed panel dragged open
   starts at the minimum width.
