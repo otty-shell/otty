@@ -1,14 +1,8 @@
-use iced::widget::pane_grid::PaneGrid;
-use iced::widget::{Space, column, container, mouse_area, responsive, text};
+use iced::widget::{Space, column, container, mouse_area, text};
 use iced::{Element, Length, Theme, alignment};
-use otty_ui_kit::components::panel_height::{
-    SectionHeight, share_panel_height,
-};
-use otty_ui_kit::components::surface::{Surface, surface};
+use otty_ui_kit::components::divider;
 use otty_ui_kit::components::target_dot::TargetKind;
-use otty_ui_kit::components::{divider, split};
-use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{size, spacing};
+use otty_ui_kit::spacing;
 
 use super::{App, AppEvent};
 #[cfg(not(target_os = "macos"))]
@@ -18,7 +12,7 @@ use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
-use crate::widgets::chrome::view::{action_bar, focus_note, status_bar};
+use crate::widgets::chrome::view::{action_bar, status_bar};
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::palette::{PaletteEvent, view as palette_view};
@@ -30,6 +24,7 @@ use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::settings::SettingsEvent;
 use crate::widgets::settings::view::settings_form;
 use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu, SidebarPane};
+use crate::widgets::sidebar::view::{focus_note, left_panel, panels};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent, SidebarViewModel};
 use crate::widgets::tabs::types::TabContent;
 use crate::widgets::tabs::view::{empty_state, new_session_menu, session_list};
@@ -47,7 +42,17 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 
     let sidebar_vm = app.widgets.sidebar.vm();
 
-    let content_row = view_panels_layout(app, sidebar_vm, theme_props);
+    let content_row = panels::view(panels::PanelsProps {
+        panes: app.widgets.sidebar.panes(),
+        vm: sidebar_vm,
+        theme: theme_props,
+        content: move |slot| match slot {
+            SidebarPane::Left => view_left_panel(app, sidebar_vm, theme_props),
+            SidebarPane::Main => view_tab_content(app, theme_props),
+            SidebarPane::Right => view_right_panel(app, theme_props),
+        },
+        on_intent: |intent| AppEvent::Sidebar(SidebarEvent::Intent(intent)),
+    });
 
     let content_row = mouse_area(content_row).on_move(|position| {
         AppEvent::Sidebar(SidebarEvent::Intent(
@@ -160,47 +165,6 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         .into()
 }
 
-/// Stack the Sessions and Launches sections with a line between them and
-/// share the panel height with [`share_panel_height`]: each open section
-/// takes its content height while everything fits, and scrolls inside its
-/// share when it does not.
-///
-/// The panel height is known only during layout, so this uses
-/// `iced::widget::responsive`, and `sections` builds both sections again
-/// whenever the panel size changes. Launches is the last section and takes
-/// all height left under Sessions, so its empty area still takes drops and
-/// right clicks.
-pub(crate) fn stack_left_panel<'a, Message: 'a>(
-    sessions_height: SectionHeight,
-    launches_height: SectionHeight,
-    palette: &UiPalette,
-    sections: impl Fn() -> (Element<'a, Message>, Element<'a, Message>) + 'a,
-) -> Element<'a, Message> {
-    let palette = palette.clone();
-
-    responsive(move |panel| {
-        let available = (panel.height - size::LINE).max(0.0);
-        let heights =
-            share_panel_height(available, &[sessions_height, launches_height]);
-        let sessions_share = heights.first().copied().unwrap_or(0.0);
-
-        let (sessions, launches) = sections();
-
-        column![
-            container(sessions)
-                .width(Length::Fill)
-                .height(sessions_share)
-                .clip(true),
-            divider::horizontal(&palette),
-            container(launches).width(Length::Fill).height(Length::Fill),
-        ]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-    })
-    .into()
-}
-
 /// Render the header: action bar + separator.
 fn view_header<'a>(
     app: &'a App,
@@ -257,91 +221,25 @@ fn view_status_bar<'a>(
     status_bar::view(&vm, env!("CARGO_PKG_VERSION"), theme_props)
 }
 
-/// Render `left panel | main | right panel` with a pane grid. A closed panel
-/// is a zero-width pane, so its edge can still be dragged open.
-///
-/// Focus mode keeps the same pane grid with both panels at zero width, so
-/// the main area keeps its widget state (terminal focus, scroll); only the
-/// drag handles are removed.
-fn view_panels_layout<'a>(
+/// Left panel content: the Sessions section over the Launches section,
+/// sharing the panel height (see [`left_panel::view`]).
+fn view_left_panel<'a>(
     app: &'a App,
     sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let panels = PaneGrid::new(
-        app.widgets.sidebar.panes(),
-        move |_pane, pane_kind, _| {
-            let content: Element<'_, AppEvent, Theme, iced::Renderer> =
-                match *pane_kind {
-                    SidebarPane::Left if sidebar_vm.is_left_open => side_panel(
-                        view_left_panel(app, theme_props),
-                        theme_props,
-                    ),
-                    SidebarPane::Right if sidebar_vm.is_right_open => {
-                        side_panel(
-                            view_right_panel(app, theme_props),
-                            theme_props,
-                        )
-                    },
-                    SidebarPane::Main => view_tab_content(app, theme_props),
-                    _ => Space::new()
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .into(),
-                };
-            iced::widget::pane_grid::Content::new(content)
-        },
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .spacing(size::LINE)
-    .min_size(0)
-    .style(split::style(theme_props.theme.ui()));
-
-    if sidebar_vm.is_focus_mode {
-        return panels.into();
-    }
-
-    panels
-        .on_resize(size::SPLIT_GRAB, |event| {
-            AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::Resized(
-                event,
-            )))
-        })
-        .into()
-}
-
-/// Put panel content on the panel surface.
-fn side_panel<'a>(
-    content: Element<'a, AppEvent, Theme, iced::Renderer>,
-    theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    surface(content, Surface::Panel, theme_props.theme.ui()).into()
-}
-
-/// Left panel content: the Sessions section over the Launches section,
-/// sharing the panel height (see [`stack_left_panel`]).
-fn view_left_panel<'a>(
-    app: &'a App,
-    theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let sidebar_vm = app.widgets.sidebar.vm();
     let host_name = app.host_name.as_deref();
 
-    let sessions_height = SectionHeight::panel_section(
-        session_list::content_height(&app.widgets.tabs.vm(host_name)),
-        sidebar_vm.is_sessions_open,
-    );
-    let launches_height = SectionHeight::panel_section(
-        sidebar_panel::content_height(&app.widgets.quick_launch.vm()),
-        sidebar_vm.is_launches_open,
-    );
-
-    stack_left_panel(
-        sessions_height,
-        launches_height,
-        theme_props.theme.ui(),
-        move || {
+    left_panel::view(left_panel::LeftPanelProps {
+        vm: sidebar_vm,
+        theme: theme_props,
+        sessions_content_height: session_list::content_height(
+            &app.widgets.tabs.vm(host_name),
+        ),
+        launches_content_height: sidebar_panel::content_height(
+            &app.widgets.quick_launch.vm(),
+        ),
+        sections: move || {
             let sessions = session_list::view(session_list::SessionListProps {
                 vm: app.widgets.tabs.vm(host_name),
                 theme: theme_props,
@@ -380,7 +278,7 @@ fn view_left_panel<'a>(
 
             (sessions, launches)
         },
-    )
+    })
 }
 
 /// Right panel content: the Files section.

@@ -5,6 +5,7 @@ mod reducer;
 mod side_panel;
 mod state;
 pub(crate) mod types;
+pub(crate) mod view;
 
 pub(crate) use event::{SidebarEffect, SidebarEvent, SidebarIntent};
 use iced::widget::pane_grid;

@@ -8,25 +8,28 @@ use iced_test::Simulator;
 use otty_ui_kit::fonts;
 
 use super::fixture::Fixture;
-use super::window::{Screen, WINDOW};
+use super::window::{Frame, Screen, WINDOW};
 use crate::theme::{AppTheme, BuiltinTheme, ThemeProps};
 
-/// Render `build` in both themes and write the PNG files.
+/// Render `build` with the panels of `frame` in both themes and write the
+/// PNG files.
 pub(super) fn shoot(
     screen: &str,
+    frame: Frame,
     build: impl for<'a> Fn(&'a Fixture, ThemeProps<'a>) -> Screen<'a>,
 ) {
-    shoot_at(screen, None, build);
+    shoot_at(screen, frame, None, build);
 }
 
-/// Render `build` in both themes with the pointer at `cursor`, if any, and
-/// write the PNG files.
+/// Render `build` with the panels of `frame` in both themes with the pointer
+/// at `cursor`, if any, and write the PNG files.
 pub(super) fn shoot_at(
     screen: &str,
+    frame: Frame,
     cursor: Option<Point>,
     build: impl for<'a> Fn(&'a Fixture, ThemeProps<'a>) -> Screen<'a>,
 ) {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new(frame);
 
     for (suffix, builtin) in [
         ("dark", BuiltinTheme::OttyDark),

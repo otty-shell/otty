@@ -1,10 +1,12 @@
-//! Fixed data behind every screen: tabs, launches, files and widget states.
+//! Fixed data behind every screen: tabs, launches, files, widget states and
+//! the panels of the screen.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use iced::Point;
 
+use super::window::Frame;
 use crate::widgets::explorer::types::FileNode;
 use crate::widgets::palette::{PaletteCtx, PaletteIntent, PaletteWidget};
 use crate::widgets::quick_launch::model::QuickLaunchTreeViewModel;
@@ -16,6 +18,7 @@ use crate::widgets::quick_launch::types::{
     SshSecretRequest,
 };
 use crate::widgets::settings::SettingsWidget;
+use crate::widgets::sidebar::SidebarWidget;
 use crate::widgets::tabs::model::TabsViewModel;
 use crate::widgets::tabs::types::{TabContent, TabItem, TabMachine};
 use crate::widgets::terminal_workspace::model::PaneLabel;
@@ -27,6 +30,8 @@ pub(super) const TAB_SETTINGS: u64 = 4;
 
 /// Fixed data behind every screen.
 pub(super) struct Fixture {
+    pub(super) frame: Frame,
+    pub(super) sidebar: SidebarWidget,
     pub(super) tabs: BTreeMap<u64, TabItem>,
     pub(super) many_tabs: BTreeMap<u64, TabItem>,
     pub(super) one_tab: BTreeMap<u64, TabItem>,
@@ -43,7 +48,8 @@ pub(super) struct Fixture {
 }
 
 impl Fixture {
-    pub(super) fn new() -> Self {
+    /// Fixed data for a screen with the panels of `frame`.
+    pub(super) fn new(frame: Frame) -> Self {
         let mut tabs = BTreeMap::new();
         for (id, title, content, machine) in [
             (0, "zsh", TabContent::Terminal, TabMachine::ThisComputer),
@@ -103,6 +109,8 @@ impl Fixture {
         drop(ctx);
 
         Self {
+            frame,
+            sidebar: frame.sidebar(),
             tabs,
             many_tabs: many_tabs(),
             one_tab: one_tab(),

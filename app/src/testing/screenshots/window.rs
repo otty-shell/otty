@@ -1,7 +1,9 @@
 //! The app window around a screen: title bar, panels, status bar.
 //!
-//! The window is composed here the way `view.rs` composes it, because
-//! `App::new()` loads the user's settings and opens a terminal.
+//! `App::new()` loads the user's settings and opens a terminal, so the
+//! window is put together here from fixed data. The panels around the main
+//! area come from the sidebar's own views and a real sidebar widget, the
+//! same as in `view.rs`, so panel widths and focus mode match the app.
 
 use std::collections::BTreeMap;
 
@@ -10,13 +12,10 @@ use iced::{Element, Length, Padding, Point, Size};
 use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::pane_header::PaneHeader;
-use otty_ui_kit::components::panel_height::SectionHeight;
-use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::{fonts, typography};
 
 use super::fixture::{Fixture, TAB_ZSH};
-use crate::app::view::stack_left_panel;
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, status_bar};
@@ -24,17 +23,15 @@ use crate::widgets::explorer::model::ExplorerTreeViewModel;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::quick_launch::model::QuickLaunchTreeViewModel;
 use crate::widgets::quick_launch::view::sidebar_panel;
-use crate::widgets::sidebar::types::HeaderMenu;
+use crate::widgets::sidebar::types::{HeaderMenu, SidebarPane};
+use crate::widgets::sidebar::view::{focus_note, left_panel, panels};
+use crate::widgets::sidebar::{SidebarIntent, SidebarViewModel, SidebarWidget};
 use crate::widgets::tabs::model::TabsViewModel;
 use crate::widgets::tabs::types::TabItem;
 use crate::widgets::tabs::view::session_list;
 
 /// Window size of every screenshot, as in the design.
 pub(super) const WINDOW: Size = Size::new(1440.0, 900.0);
-/// Width of the left panel (a fifth of the window, the default).
-pub(super) const LEFT_WIDTH: f32 = 288.0;
-/// Width of the right panel when it is open.
-const RIGHT_WIDTH: f32 = 280.0;
 
 /// The message type of every screen: nothing is clicked.
 pub(super) type Screen<'a> = Element<'a, ()>;
@@ -46,7 +43,6 @@ pub(super) struct Frame {
     pub(super) show_tabs: bool,
     pub(super) many_sessions: bool,
     pub(super) one_session: bool,
-    pub(super) left_open: bool,
     pub(super) right_open: bool,
     pub(super) focus_mode: bool,
     pub(super) menu_open: Option<HeaderMenu>,
@@ -61,24 +57,48 @@ impl Frame {
             show_tabs: true,
             many_sessions: false,
             one_session: false,
-            left_open: true,
             right_open: true,
             focus_mode: false,
             menu_open: None,
             pane_count: Some(2),
         }
     }
+
+    /// The sidebar widget with the panels of this frame, set with the same
+    /// intents the app uses, so panel widths match the app.
+    pub(super) fn sidebar(&self) -> SidebarWidget {
+        let mut sidebar = SidebarWidget::new();
+
+        if !self.right_open {
+            let _ = sidebar.reduce(SidebarIntent::ToggleRight);
+        }
+        if self.focus_mode {
+            let _ = sidebar.reduce(SidebarIntent::ToggleFocusMode);
+        }
+        if let Some(menu) = self.menu_open {
+            let _ = sidebar.reduce(SidebarIntent::HeaderMenuOpen(menu));
+        }
+
+        sidebar
+    }
 }
 
-/// The window: title bar, panels around `main`, status bar and `overlays`
-/// on top of the panels and the main area.
+/// Width of the left panel when the app opens.
+pub(super) fn left_panel_width() -> f32 {
+    WINDOW.width * SidebarWidget::new().left_ratio()
+}
+
+/// The window: title bar, the sidebar panels around the main area built by
+/// `main`, status bar, and `overlays` on top of the panels and the main
+/// area.
 pub(super) fn window<'a>(
     fx: &'a Fixture,
     theme: ThemeProps<'a>,
-    frame: Frame,
-    main: Screen<'a>,
+    main: impl Fn() -> Screen<'a>,
     overlays: Vec<Screen<'a>>,
 ) -> Screen<'a> {
+    let frame = fx.frame;
+    let sidebar_vm = fx.sidebar.vm();
     let palette = theme.theme.ui();
     let tabs = if !frame.show_tabs {
         &fx.no_tabs
@@ -97,27 +117,23 @@ pub(super) fn window<'a>(
         action_bar::view(action_bar::ActionBarProps {
             title,
             theme,
-            left_open: frame.left_open,
-            right_open: frame.right_open,
-            focus_mode: frame.focus_mode,
+            left_open: sidebar_vm.is_left_open,
+            right_open: sidebar_vm.is_right_open,
+            focus_mode: sidebar_vm.is_focus_mode,
             is_title_bar_pressed: false,
         })
         .map(|_| ()),
         divider::horizontal(palette),
     ];
 
-    let mut body = row![].height(Length::Fill);
-    if frame.left_open {
-        body = body
-            .push(
-                container(left_panel(fx, tabs, theme, frame)).width(LEFT_WIDTH),
-            )
-            .push(divider::vertical(palette));
-    }
-    body = body.push(container(main).width(Length::Fill));
-    if frame.right_open {
-        body = body.push(divider::vertical(palette)).push(
-            container(surface(
+    let body = panels::view(panels::PanelsProps {
+        panes: fx.sidebar.panes(),
+        vm: sidebar_vm,
+        theme,
+        content: |slot| match slot {
+            SidebarPane::Left => left_panel(fx, tabs, theme, sidebar_vm),
+            SidebarPane::Main => main(),
+            SidebarPane::Right => {
                 sidebar_tree::view(sidebar_tree::SidebarTreeProps {
                     vm: ExplorerTreeViewModel {
                         root_label: Some("otty"),
@@ -127,15 +143,16 @@ pub(super) fn window<'a>(
                     },
                     theme,
                 })
-                .map(|_| ()),
-                Surface::Panel,
-                palette,
-            ))
-            .width(RIGHT_WIDTH),
-        );
-    }
+                .map(|_| ())
+            },
+        },
+        on_intent: |_| (),
+    });
 
-    let mut layers = vec![body.into()];
+    let mut layers = vec![body];
+    if let Some(note) = focus_note::view(sidebar_vm.focus_note_opacity, theme) {
+        layers.push(note);
+    }
     layers.extend(overlays);
     let content = iced::widget::Stack::with_children(layers)
         .width(Length::Fill)
@@ -221,15 +238,14 @@ pub(super) fn at<'a>(element: Screen<'a>, point: Point) -> Screen<'a> {
         .into()
 }
 
-/// Sessions over Launches on the panel surface, sharing the panel height
-/// the way `view.rs` does.
+/// Sessions over Launches, laid out by the sidebar's left panel view.
 fn left_panel<'a>(
     fx: &'a Fixture,
     tabs: &'a BTreeMap<u64, TabItem>,
     theme: ThemeProps<'a>,
-    frame: Frame,
+    sidebar_vm: SidebarViewModel,
 ) -> Screen<'a> {
-    let palette = theme.theme.ui();
+    let active_tab = fx.frame.active_tab;
     let launches_vm = || QuickLaunchTreeViewModel {
         data: &fx.launches,
         selected_path: None,
@@ -239,28 +255,25 @@ fn left_panel<'a>(
         drop_target: None,
     };
     let sessions_vm =
-        move || TabsViewModel::new(tabs, frame.active_tab, Some("fedora"));
+        move || TabsViewModel::new(tabs, active_tab, Some("fedora"));
+    let is_menu_open = move |menu| {
+        sidebar_vm
+            .open_header_menu
+            .is_some_and(|open| open.menu == menu)
+    };
 
-    let sessions_height = SectionHeight::panel_section(
-        session_list::content_height(&sessions_vm()),
-        true,
-    );
-    let launches_height = SectionHeight::panel_section(
-        sidebar_panel::content_height(&launches_vm()),
-        true,
-    );
-
-    let sections = stack_left_panel(
-        sessions_height,
-        launches_height,
-        palette,
-        move || {
+    left_panel::view(left_panel::LeftPanelProps {
+        vm: sidebar_vm,
+        theme,
+        sessions_content_height: session_list::content_height(&sessions_vm()),
+        launches_content_height: sidebar_panel::content_height(&launches_vm()),
+        sections: move || {
             let sessions = session_list::view(session_list::SessionListProps {
                 vm: sessions_vm(),
                 theme,
-                is_open: true,
+                is_open: sidebar_vm.is_sessions_open,
                 new_session_title: "zsh",
-                is_menu_open: frame.menu_open == Some(HeaderMenu::Sessions),
+                is_menu_open: is_menu_open(HeaderMenu::Sessions),
                 on_toggle: (),
                 on_menu: (),
                 on_intent: |_| (),
@@ -269,8 +282,8 @@ fn left_panel<'a>(
                 sidebar_panel::view(sidebar_panel::SidebarPanelProps {
                     vm: launches_vm(),
                     theme,
-                    is_open: true,
-                    is_menu_open: frame.menu_open == Some(HeaderMenu::Launches),
+                    is_open: sidebar_vm.is_launches_open,
+                    is_menu_open: is_menu_open(HeaderMenu::Launches),
                     on_toggle: (),
                     on_menu: (),
                     on_intent: |_| (),
@@ -278,9 +291,7 @@ fn left_panel<'a>(
 
             (sessions, launches)
         },
-    );
-
-    surface(sections, Surface::Panel, palette).into()
+    })
 }
 
 /// One line of terminal text: a prompt and a command.
