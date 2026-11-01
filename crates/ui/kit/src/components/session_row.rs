@@ -208,9 +208,12 @@ impl<'a, Message: Clone + 'a> From<SessionRow<Message>>
             return area.into();
         };
 
+        // No hover background: on a selected row it would draw a dark square
+        // behind the cross. The cross itself turns brighter instead.
         let cross = container(
             IconButton::new(glyph::cross(), "Close session", &palette)
                 .size(IconButtonSize::Small)
+                .hover_background(false)
                 .on_press(message),
         )
         .width(Length::Fill)

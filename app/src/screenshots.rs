@@ -57,6 +57,8 @@ use crate::widgets::terminal_workspace::view::pane_context_menu;
 const WINDOW: Size = Size::new(1440.0, 900.0);
 /// Width of the left panel (a fifth of the window, the default).
 const LEFT_WIDTH: f32 = 288.0;
+/// Top of a section body: section padding 8, header row 30, gap 1.
+const SECTION_BODY_TOP: f32 = 8.0 + 30.0 + 1.0;
 /// Width of the right panel when it is open.
 const RIGHT_WIDTH: f32 = 280.0;
 
@@ -122,6 +124,37 @@ fn screenshots_many_sessions() {
 
         window(fx, theme, frame, terminal_main(fx, theme), Vec::new())
     });
+}
+
+#[test]
+#[ignore = "writes PNG files; run with --ignored screenshots"]
+fn screenshots_hovered_session() {
+    // Middle of the "zsh" row (selected) and the "nvim" row under it, first
+    // and second under the "fedora" group label.
+    let zsh_y = size::TITLEBAR
+        + size::LINE
+        + SECTION_BODY_TOP
+        + size::GROUP
+        + size::ROW / 2.0;
+    let nvim_y = zsh_y + size::ROW;
+    // Middle of the close cross: section padding 8, then the 24px button.
+    let cross_x = LEFT_WIDTH - 8.0 - size::CONTROL_SM / 2.0;
+
+    for (screen, cursor) in [
+        ("session-hover", Point::new(80.0, nvim_y)),
+        ("session-close-hover", Point::new(cross_x, nvim_y)),
+        ("session-close-hover-selected", Point::new(cross_x, zsh_y)),
+    ] {
+        shoot_at(screen, Some(cursor), |fx, theme| {
+            window(
+                fx,
+                theme,
+                Frame::terminal(),
+                terminal_main(fx, theme),
+                Vec::new(),
+            )
+        });
+    }
 }
 
 #[test]
@@ -424,6 +457,16 @@ fn shoot(
     screen: &str,
     build: impl for<'a> Fn(&'a Fixture, ThemeProps<'a>) -> Screen<'a>,
 ) {
+    shoot_at(screen, None, build);
+}
+
+/// Render `build` in both themes with the pointer at `cursor`, if any, and
+/// write the PNG files.
+fn shoot_at(
+    screen: &str,
+    cursor: Option<Point>,
+    build: impl for<'a> Fn(&'a Fixture, ThemeProps<'a>) -> Screen<'a>,
+) {
     let fixture = Fixture::new();
 
     for (suffix, builtin) in [
@@ -443,6 +486,12 @@ fn shoot(
             ..iced::Settings::default()
         };
         let mut ui = Simulator::with_size(settings, WINDOW, element);
+        if let Some(cursor) = cursor {
+            ui.point_at(cursor);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::CursorMoved { position: cursor },
+            )]);
+        }
         let snapshot = ui.snapshot(&iced_theme).expect("snapshot should draw");
 
         save(&snapshot, &format!("{screen}-{suffix}"));
