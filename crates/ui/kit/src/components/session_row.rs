@@ -1,7 +1,7 @@
 //! `SessionRow`: one session under a group label.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{button, container, mouse_area, row, text};
+use iced::widget::{button, container, hover, mouse_area, row, space, text};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
 use super::glyph;
@@ -42,8 +42,8 @@ impl SessionTone {
 /// Session row, indented to line up under its [`SessionGroup`] name.
 ///
 /// The title is cut at the row edge: `iced` has no text ellipsis. The close
-/// cross shows whenever `on_close` is set, so the caller decides for which
-/// rows (for example the selected one).
+/// cross is set with `on_close` and shows only while the pointer is over the
+/// row. The row always keeps room for it, so nothing shifts when it appears.
 ///
 /// [`SessionGroup`]: super::session_group::SessionGroup
 ///
@@ -122,7 +122,7 @@ impl<Message> SessionRow<Message> {
         self
     }
 
-    /// Shows a close cross that sends `message`.
+    /// Shows a close cross that sends `message` while the row is hovered.
     pub fn on_close(mut self, message: Message) -> Self {
         self.on_close = Some(message);
         self
@@ -160,16 +160,13 @@ impl<'a, Message: Clone + 'a> From<SessionRow<Message>>
             );
         }
         let has_close = value.on_close.is_some();
-        if let Some(message) = value.on_close {
-            content = content.push(
-                IconButton::new(glyph::cross(), "Close session", &palette)
-                    .size(IconButtonSize::Small)
-                    .on_press(message),
-            );
+        if has_close {
+            content = content.push(space().width(size::CONTROL_SM));
         }
 
-        // The close cross sits inside the row button and catches its own
-        // press, so it keeps a smaller right padding.
+        // The cross is drawn over the reserved room at the right edge, so the
+        // row button keeps no right padding when a cross is possible.
+        let row_palette = palette.clone();
         let control = button(content)
             .width(Length::Fill)
             .height(size::ROW)
@@ -182,15 +179,15 @@ impl<'a, Message: Clone + 'a> From<SessionRow<Message>>
             .on_press_maybe(value.on_press)
             .style(move |_, status| button::Style {
                 background: if is_selected {
-                    Some(palette.surface_selected().into())
+                    Some(row_palette.surface_selected().into())
                 } else {
                     (status == button::Status::Hovered)
-                        .then(|| palette.surface_raised().into())
+                        .then(|| row_palette.surface_raised().into())
                 },
                 text_color: if is_selected {
-                    palette.text_strong()
+                    row_palette.text_strong()
                 } else {
-                    palette.text_body()
+                    row_palette.text_body()
                 },
                 border: Border {
                     radius: radius::RADIUS_SM.into(),
@@ -207,7 +204,21 @@ impl<'a, Message: Clone + 'a> From<SessionRow<Message>>
             area = area.on_middle_press(message);
         }
 
-        area.into()
+        let Some(message) = value.on_close else {
+            return area.into();
+        };
+
+        let cross = container(
+            IconButton::new(glyph::cross(), "Close session", &palette)
+                .size(IconButtonSize::Small)
+                .on_press(message),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::End)
+        .align_y(Alignment::Center);
+
+        hover(area, cross)
     }
 }
 
@@ -249,11 +260,71 @@ mod tests {
         assert_eq!(messages, vec![Message::Open]);
     }
 
+    /// Draws a selected row and checks it against the picture saved in
+    /// `reference`; the first call saves the picture. The row is selected so
+    /// that hover does not change its background: only the cross can differ.
+    fn drawn_row_matches(
+        with_close: bool,
+        is_hovered: bool,
+        reference: &std::path::Path,
+    ) -> bool {
+        let palette = UiPalette::otty_dark();
+        let mut row = SessionRow::new("htop", &palette)
+            .selected(true)
+            .state("editor", SessionTone::Muted)
+            .on_press(Message::Open);
+        if with_close {
+            row = row.on_close(Message::Close);
+        }
+        let mut ui = simulator(container(row).width(260));
+        if is_hovered {
+            ui.point_at(Point::new(40.0, size::ROW / 2.0));
+        }
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("row should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    fn reference_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir()
+            .join(format!("otty-session-row-{}", std::process::id()))
+            .join(name)
+    }
+
     #[test]
-    fn given_row_when_close_pressed_then_only_close_is_sent() {
+    fn given_selected_row_without_hover_then_close_cross_is_not_drawn() {
+        let reference = reference_path("hovered");
+
+        assert!(drawn_row_matches(true, true, &reference));
+        assert!(!drawn_row_matches(true, false, &reference));
+        assert!(drawn_row_matches(true, true, &reference));
+    }
+
+    #[test]
+    fn given_row_when_pointer_over_it_then_close_cross_is_drawn() {
+        let reference = reference_path("with-close");
+
+        assert!(drawn_row_matches(true, true, &reference));
+        assert!(!drawn_row_matches(false, true, &reference));
+    }
+
+    #[test]
+    fn given_row_without_close_then_hover_draws_no_cross() {
+        let reference = reference_path("no-close");
+
+        assert!(drawn_row_matches(false, true, &reference));
+        assert!(drawn_row_matches(false, false, &reference));
+    }
+
+    #[test]
+    fn given_hovered_row_when_close_pressed_then_only_close_is_sent() {
         let mut ui = simulator(row_view());
 
-        // Close cross is the last 24px of the 260px wide row.
+        // Move over the row first, then press the cross: the last 24px of
+        // the 260px wide row.
+        ui.point_at(Point::new(40.0, size::ROW / 2.0));
         ui.point_at(Point::new(260.0 - 12.0, size::ROW / 2.0));
         let _ = ui.simulate(iced_test::simulator::click());
 

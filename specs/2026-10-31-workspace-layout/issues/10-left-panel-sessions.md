@@ -152,3 +152,4 @@ All of ticket 01's tab close-order tests pass unchanged.
   the `hostname` feature is new.
 - Coverage (`cargo llvm-cov --workspace --all-features`, lines): base
   `957f800` 76.80% → this ticket 77.21%.
+- Round 4 (2026-11-01, owner): the close cross on a session row now shows only while the row is hovered (kit `SessionRow`, built with `iced::widget::hover`); the room for it is always reserved, so the state word does not move.

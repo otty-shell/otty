@@ -128,7 +128,7 @@ fn group_label<'a, Message: 'a>(
         .into()
 }
 
-/// One session row: press activates the tab, the close cross and a middle
+/// One session row: press activates the tab, the close cross (shown on hover) and a middle
 /// click close it.
 fn session_row<'a, Message: Clone + 'a>(
     session: SessionViewModel<'_>,
