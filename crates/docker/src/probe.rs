@@ -3,22 +3,13 @@
 use std::io;
 use std::time::Duration;
 
-use bollard::{ClientVersion, Docker};
 use tokio::net::{TcpStream, UnixStream};
 
 use crate::address::EngineAddress;
 use crate::candidates::SocketCandidate;
+use crate::connection::{BASELINE_API_VERSION, EngineError, open_client};
 use crate::engine::EngineInfo;
 
-/// The API version used to ask `/version`. Docker rejects requests for a
-/// newer API than it speaks and for one older than its minimum; 1.40
-/// (Docker 19.03) is accepted by every Docker from 19.03 to 29 and by
-/// Podman, which accepts any version. Later calls use the version the
-/// engine reports.
-const DISCOVERY_API_VERSION: ClientVersion = ClientVersion {
-    major_version: 1,
-    minor_version: 40,
-};
 /// bollard's own request limit in whole seconds; the probe's shorter limit
 /// is applied around the whole exchange.
 const CLIENT_TIMEOUT_SECS: u64 = 5;
@@ -68,8 +59,8 @@ impl Probe {
 enum ProbeError {
     #[error("cannot connect: {0}")]
     Connect(#[source] io::Error),
-    #[error("socket path is not valid UTF-8")]
-    PathNotUtf8,
+    #[error(transparent)]
+    Client(#[from] EngineError),
     #[error(transparent)]
     Engine(#[from] bollard::errors::Error),
 }
@@ -116,7 +107,10 @@ async fn ask_version(
 ) -> Result<EngineInfo, ProbeError> {
     check_connect(address).await.map_err(ProbeError::Connect)?;
 
-    let client = connect(address)?;
+    // Docker rejects a URL version outside its range; the baseline is
+    // inside every supported engine's range.
+    let client =
+        open_client(address, CLIENT_TIMEOUT_SECS, &BASELINE_API_VERSION)?;
     let answer = client.version().await?;
 
     Ok(EngineInfo::from_version(&answer, address.clone()))
@@ -133,28 +127,6 @@ async fn check_connect(address: &EngineAddress) -> io::Result<()> {
     }
 }
 
-fn connect(address: &EngineAddress) -> Result<Docker, ProbeError> {
-    match address {
-        EngineAddress::Unix(path) => {
-            let path = path.to_str().ok_or(ProbeError::PathNotUtf8)?;
-            let client = Docker::connect_with_unix(
-                path,
-                CLIENT_TIMEOUT_SECS,
-                &DISCOVERY_API_VERSION,
-            )?;
-            Ok(client)
-        },
-        EngineAddress::Tcp(host) => {
-            let client = Docker::connect_with_http(
-                host,
-                CLIENT_TIMEOUT_SECS,
-                &DISCOVERY_API_VERSION,
-            )?;
-            Ok(client)
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::{Read, Write};
@@ -166,7 +138,7 @@ mod tests {
     use super::*;
     use crate::candidates::CandidateSource;
     use crate::engine::EngineKind;
-    use crate::test_support::TempDir;
+    use crate::test_support::{TempDir, read_request_line, write_response};
 
     const DOCKER_VERSION: &str =
         include_str!("../tests/fixtures/docker-version.json");
@@ -188,20 +160,9 @@ mod tests {
     /// Answer every request with `status` and `body`; a connection closed
     /// without a request (the connect check) is skipped.
     fn answer<S: Read + Write>(mut stream: S, status: &str, body: &str) {
-        let mut request = Vec::new();
-        let mut buffer = [0u8; 1024];
-        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
-            match stream.read(&mut buffer) {
-                Ok(0) | Err(_) => return,
-                Ok(read) => request.extend_from_slice(&buffer[..read]),
-            }
+        if read_request_line(&mut stream).is_some() {
+            write_response(&mut stream, status, body);
         }
-
-        let length = body.len();
-        let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n{body}"
-        );
-        let _ = stream.write_all(response.as_bytes());
     }
 
     fn serve_unix(

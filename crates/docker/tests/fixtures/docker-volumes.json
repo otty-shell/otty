@@ -1,0 +1,27 @@
+{
+  "Volumes": [
+    {
+      "CreatedAt": "2026-11-01T19:30:37+01:00",
+      "Driver": "local",
+      "Labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "Mountpoint": "/var/lib/docker/volumes/4514faedbefcc99b3d3cf6e7fc9326c567a0bf10868c99f98a5210f7681a7d55/_data",
+      "Name": "4514faedbefcc99b3d3cf6e7fc9326c567a0bf10868c99f98a5210f7681a7d55",
+      "Options": null,
+      "Scope": "local"
+    },
+    {
+      "CreatedAt": "2026-11-01T19:30:36+01:00",
+      "Driver": "local",
+      "Labels": {
+        "otty.fixture": "1"
+      },
+      "Mountpoint": "/var/lib/docker/volumes/otty-fx-data/_data",
+      "Name": "otty-fx-data",
+      "Options": null,
+      "Scope": "local"
+    }
+  ],
+  "Warnings": null
+}

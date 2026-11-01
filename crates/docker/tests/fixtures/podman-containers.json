@@ -1,0 +1,285 @@
+[
+  {
+    "Command": "sleep 3600",
+    "Config": null,
+    "Created": 1793557898,
+    "DefaultReadOnlyNonRecursive": false,
+    "Id": "2b592c3eb8639f158e6eefb185c5ed2075ccb13e6bfb13d628505e5a38076637",
+    "Image": "docker.io/library/busybox:1.37",
+    "ImageID": "sha256:30ecbe1509090b38ef3260f3609d64d8261230464eaa4d235901db496e9647fb",
+    "Labels": {},
+    "Mounts": [],
+    "Name": "",
+    "Names": [
+      "/otty-fx-paused"
+    ],
+    "NetworkSettings": {
+      "Networks": null
+    },
+    "NetworkingConfig": null,
+    "Platform": null,
+    "Ports": [],
+    "State": "paused",
+    "Status": "Up 31 seconds (Paused)"
+  },
+  {
+    "Command": "true",
+    "Config": null,
+    "Created": 1793557898,
+    "DefaultReadOnlyNonRecursive": false,
+    "Id": "5d484a8f3f18208803fc841073e299d846ee0ab72cdaa807758a493a67ba1cd6",
+    "Image": "docker.io/library/busybox:1.37",
+    "ImageID": "sha256:30ecbe1509090b38ef3260f3609d64d8261230464eaa4d235901db496e9647fb",
+    "Labels": {},
+    "Mounts": [],
+    "Name": "",
+    "Names": [
+      "/otty-fx-exit0"
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "pasta": {
+          "Aliases": null,
+          "DNSNames": null,
+          "DriverOpts": null,
+          "EndpointID": "",
+          "Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "",
+          "NetworkID": "pasta"
+        }
+      }
+    },
+    "NetworkingConfig": null,
+    "Platform": null,
+    "Ports": [],
+    "State": "exited",
+    "Status": "Exited (0) 31 seconds ago"
+  },
+  {
+    "Command": "sh -c exit 3",
+    "Config": null,
+    "Created": 1793557898,
+    "DefaultReadOnlyNonRecursive": false,
+    "Id": "3b2845ec7f57791f532efd4d6bd6e5224f1350aefc9901a46745ded01013a01b",
+    "Image": "docker.io/library/busybox:1.37",
+    "ImageID": "sha256:30ecbe1509090b38ef3260f3609d64d8261230464eaa4d235901db496e9647fb",
+    "Labels": {},
+    "Mounts": [
+      {
+        "Destination": "/scratch",
+        "Driver": "local",
+        "Mode": "",
+        "Name": "a7ff7d743086eaae3743e96daa8ca2a91d90db8aca373b1d23c848f37a474010",
+        "Propagation": "rprivate",
+        "RW": true,
+        "Source": "/home/user/.local/share/containers/storage/volumes/a7ff7d743086eaae3743e96daa8ca2a91d90db8aca373b1d23c848f37a474010/_data",
+        "Type": "volume"
+      }
+    ],
+    "Name": "",
+    "Names": [
+      "/otty-fx-exit3"
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "pasta": {
+          "Aliases": null,
+          "DNSNames": null,
+          "DriverOpts": null,
+          "EndpointID": "",
+          "Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "",
+          "NetworkID": "pasta"
+        }
+      }
+    },
+    "NetworkingConfig": null,
+    "Platform": null,
+    "Ports": [],
+    "State": "exited",
+    "Status": "Exited (3) 31 seconds ago"
+  },
+  {
+    "Command": "true",
+    "Config": null,
+    "Created": 1793557898,
+    "DefaultReadOnlyNonRecursive": false,
+    "Id": "0383cf33877dc84eb6153f50ee67291c98943b4dd17b020df6f716c13c054766",
+    "Image": "docker.io/library/busybox:1.37",
+    "ImageID": "sha256:30ecbe1509090b38ef3260f3609d64d8261230464eaa4d235901db496e9647fb",
+    "Labels": {},
+    "Mounts": [],
+    "Name": "",
+    "Names": [
+      "/otty-fx-created"
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "pasta": {
+          "Aliases": null,
+          "DNSNames": null,
+          "DriverOpts": null,
+          "EndpointID": "",
+          "Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "",
+          "NetworkID": "pasta"
+        }
+      }
+    },
+    "NetworkingConfig": null,
+    "Platform": null,
+    "Ports": [],
+    "State": "created",
+    "Status": "Created"
+  },
+  {
+    "Command": "sleep 3600",
+    "Config": null,
+    "Created": 1793557926,
+    "DefaultReadOnlyNonRecursive": false,
+    "Id": "02090e84b406a023e8c52c68aac82f3bdea697bdd1583657efada5500004f23d",
+    "Image": "docker.io/library/busybox:1.37",
+    "ImageID": "sha256:30ecbe1509090b38ef3260f3609d64d8261230464eaa4d235901db496e9647fb",
+    "Labels": {
+      "otty.fixture": "1"
+    },
+    "Mounts": [
+      {
+        "Destination": "/data",
+        "Driver": "local",
+        "Mode": "",
+        "Name": "otty-fx-data",
+        "Propagation": "rprivate",
+        "RW": true,
+        "Source": "/home/user/.local/share/containers/storage/volumes/otty-fx-data/_data",
+        "Type": "volume"
+      }
+    ],
+    "Name": "",
+    "Names": [
+      "/otty-fx-running"
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "otty-fx-net": {
+          "Aliases": [
+            "02090e84b406"
+          ],
+          "DNSNames": null,
+          "DriverOpts": null,
+          "EndpointID": "",
+          "Gateway": "10.89.0.1",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "10.89.0.3",
+          "IPPrefixLen": 24,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "2a:c5:08:61:11:4e",
+          "NetworkID": "ef005cc1878ecb329c12624e315aac5835e2f1d17a47803afb6aca283fea1e39"
+        }
+      }
+    },
+    "NetworkingConfig": null,
+    "Platform": null,
+    "Ports": [
+      {
+        "IP": "0.0.0.0",
+        "PrivatePort": 80,
+        "PublicPort": 18080,
+        "Type": "tcp"
+      }
+    ],
+    "State": "running",
+    "Status": "Up 3 seconds"
+  },
+  {
+    "Command": "sleep 3600",
+    "Config": null,
+    "Created": 1793557926,
+    "DefaultReadOnlyNonRecursive": false,
+    "Id": "deedad8a01e660cb923d82131aa63c8b0a8a4a377488cbfd4021973fc0ad3b11",
+    "Image": "docker.io/library/busybox:1.37",
+    "ImageID": "sha256:30ecbe1509090b38ef3260f3609d64d8261230464eaa4d235901db496e9647fb",
+    "Labels": {
+      "com.docker.compose.config-hash": "a4892e4731094d555230d622256457844c4a878be3f1d4ad3e071e1b360dcf56",
+      "com.docker.compose.container-number": "1",
+      "com.docker.compose.depends_on": "",
+      "com.docker.compose.image": "sha256:30ecbe1509090b38ef3260f3609d64d8261230464eaa4d235901db496e9647fb",
+      "com.docker.compose.oneoff": "False",
+      "com.docker.compose.project": "otty-fx",
+      "com.docker.compose.project.config_files": "/home/user/otty-fx/compose.yaml",
+      "com.docker.compose.project.working_dir": "/home/user/otty-fx",
+      "com.docker.compose.service": "web",
+      "com.docker.compose.version": "5.6.0"
+    },
+    "Mounts": [],
+    "Name": "",
+    "Names": [
+      "/otty-fx-web-1"
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "otty-fx-net": {
+          "Aliases": [
+            "otty-fx-web-1",
+            "web",
+            "deedad8a01e6"
+          ],
+          "DNSNames": null,
+          "DriverOpts": null,
+          "EndpointID": "",
+          "Gateway": "10.89.0.1",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "10.89.0.4",
+          "IPPrefixLen": 24,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "16:0a:e7:e9:f3:24",
+          "NetworkID": "ef005cc1878ecb329c12624e315aac5835e2f1d17a47803afb6aca283fea1e39"
+        }
+      }
+    },
+    "NetworkingConfig": null,
+    "Platform": null,
+    "Ports": [
+      {
+        "IP": "0.0.0.0",
+        "PrivatePort": 8080,
+        "PublicPort": 18081,
+        "Type": "tcp"
+      }
+    ],
+    "State": "running",
+    "Status": "Up 3 seconds"
+  }
+]

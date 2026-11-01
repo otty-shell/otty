@@ -6,22 +6,36 @@
 //!
 //! Start with [`discover`]: it tries the known sockets and returns a
 //! [`Discovery`] whose [`Diagnosis`] lists the reached engines or says why
-//! none was reached.
+//! none was reached. Then [`Engine::connect`] to a reached engine and load
+//! its [`Container`]s, [`Image`]s, [`Volume`]s and [`Network`]s.
 
 mod address;
 mod candidates;
 mod cli;
+mod connection;
+mod container;
 mod diagnosis;
 mod discovery;
 mod engine;
+mod image;
+mod network;
 mod probe;
 #[cfg(test)]
 mod test_support;
+mod timestamp;
+mod volume;
 
 pub use crate::address::EngineAddress;
 pub use crate::candidates::{CandidateSource, SocketCandidate};
 pub use crate::cli::CliPresence;
+pub use crate::connection::{Engine, EngineError, Resources};
+pub use crate::container::{
+    Container, ContainerNetwork, ContainerState, Mount, MountKind, PortMapping,
+};
 pub use crate::diagnosis::Diagnosis;
 pub use crate::discovery::{Discovery, discover};
 pub use crate::engine::{EngineInfo, EngineKind};
+pub use crate::image::Image;
+pub use crate::network::Network;
 pub use crate::probe::{Probe, ProbeOutcome};
+pub use crate::volume::Volume;

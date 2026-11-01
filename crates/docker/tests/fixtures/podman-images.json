@@ -1,0 +1,67 @@
+[
+  {
+    "Containers": 6,
+    "Created": 1727386302,
+    "Digest": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "History": [
+      "docker.io/library/busybox:1.37"
+    ],
+    "Id": "sha256:30ecbe1509090b38ef3260f3609d64d8261230464eaa4d235901db496e9647fb",
+    "Labels": null,
+    "Names": [
+      "docker.io/library/busybox:1.37"
+    ],
+    "ParentId": "",
+    "RepoDigests": [
+      "docker.io/library/busybox@sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4",
+      "docker.io/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec"
+    ],
+    "RepoTags": [
+      "docker.io/library/busybox:1.37"
+    ],
+    "SharedSize": -1,
+    "Size": 4670414
+  },
+  {
+    "Containers": 0,
+    "Created": 1793557898,
+    "Dangling": true,
+    "Digest": "sha256:221ad1731d32a617e792d96ae02816cc6f45f0d39945762708b958a7c6530a79",
+    "History": [
+      "localhost/otty-fx-img:1"
+    ],
+    "Id": "sha256:4680008d40665732537c01efcd2640eae8430bba4a62bd973ccfbc156272e1cf",
+    "Labels": {
+      "otty.fixture": "1"
+    },
+    "ParentId": "30ecbe1509090b38ef3260f3609d64d8261230464eaa4d235901db496e9647fb",
+    "RepoDigests": [],
+    "RepoTags": [],
+    "SharedSize": -1,
+    "Size": 4667510
+  },
+  {
+    "Containers": 0,
+    "Created": 1793557898,
+    "Digest": "sha256:3ea7039b968372d99172d9ab3a8bf6f61a256d0751c1e8179f3575a4d467808b",
+    "History": [
+      "localhost/otty-fx-img:1"
+    ],
+    "Id": "sha256:0e3cbe2869e3b9a7fe4ebf327f6afa2194f9631b2b36dabb8b2038d1a44cbb0f",
+    "Labels": {
+      "otty.fixture": "2"
+    },
+    "Names": [
+      "localhost/otty-fx-img:1"
+    ],
+    "ParentId": "30ecbe1509090b38ef3260f3609d64d8261230464eaa4d235901db496e9647fb",
+    "RepoDigests": [
+      "localhost/otty-fx-img@sha256:3ea7039b968372d99172d9ab3a8bf6f61a256d0751c1e8179f3575a4d467808b"
+    ],
+    "RepoTags": [
+      "localhost/otty-fx-img:1"
+    ],
+    "SharedSize": -1,
+    "Size": 4667510
+  }
+]

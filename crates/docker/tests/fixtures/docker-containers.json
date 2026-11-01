@@ -1,0 +1,429 @@
+[
+  {
+    "Command": "sleep 3600",
+    "Created": 1793557848,
+    "Health": {
+      "FailingStreak": 0,
+      "Status": "none"
+    },
+    "HostConfig": {
+      "NetworkMode": "otty-fx-net"
+    },
+    "Id": "850b6438a531e84485d54a3563fa575f1598b9a9e5b2b8534a6b0eec9a6db961",
+    "Image": "busybox:1.37",
+    "ImageID": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "ImageManifestDescriptor": {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "amd64",
+        "org.opencontainers.image.base.name": "scratch",
+        "org.opencontainers.image.created": "2026-09-08T23:04:09Z",
+        "org.opencontainers.image.revision": "066dbf90090ab2dbb905310fac2fa10ea39a7ba6",
+        "org.opencontainers.image.source": "https://github.com/docker-library/busybox.git",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/busybox",
+        "org.opencontainers.image.version": "1.37.0-glibc"
+      },
+      "digest": "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      "size": 610
+    },
+    "Labels": {
+      "com.docker.compose.config-hash": "a4892e4731094d555230d622256457844c4a878be3f1d4ad3e071e1b360dcf56",
+      "com.docker.compose.container-number": "1",
+      "com.docker.compose.depends_on": "",
+      "com.docker.compose.image": "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4",
+      "com.docker.compose.oneoff": "False",
+      "com.docker.compose.project": "otty-fx",
+      "com.docker.compose.project.config_files": "/home/user/otty-fx/compose.yaml",
+      "com.docker.compose.project.working_dir": "/home/user/otty-fx",
+      "com.docker.compose.service": "web",
+      "com.docker.compose.version": "5.6.0"
+    },
+    "Mounts": [],
+    "Names": [
+      "/otty-fx-web-1"
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "otty-fx-net": {
+          "Aliases": null,
+          "DNSNames": null,
+          "DriverOpts": null,
+          "EndpointID": "d8ee3dd9562f4046272151113c26fe31d21f757923d96f9dedc7d9b065002f71",
+          "Gateway": "192.168.160.1",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "192.168.160.3",
+          "IPPrefixLen": 20,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "ee:34:e7:e4:a0:5f",
+          "NetworkID": "9b5579d1a73566f77bb264f1e2736a6b5d645dc49324250df2dcd496ae346af8"
+        }
+      }
+    },
+    "Ports": [
+      {
+        "IP": "0.0.0.0",
+        "PrivatePort": 8080,
+        "PublicPort": 18081,
+        "Type": "tcp"
+      },
+      {
+        "IP": "::",
+        "PrivatePort": 8080,
+        "PublicPort": 18081,
+        "Type": "tcp"
+      }
+    ],
+    "State": "running",
+    "Status": "Up 25 seconds"
+  },
+  {
+    "Command": "true",
+    "Created": 1793557837,
+    "Health": {
+      "FailingStreak": 0,
+      "Status": "none"
+    },
+    "HostConfig": {
+      "NetworkMode": "bridge"
+    },
+    "Id": "c531fcde192fe345ed83569957cdda29fc32abb89b564c16948a1dba16f69041",
+    "Image": "busybox:1.37",
+    "ImageID": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "ImageManifestDescriptor": {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "amd64",
+        "org.opencontainers.image.base.name": "scratch",
+        "org.opencontainers.image.created": "2026-09-08T23:04:09Z",
+        "org.opencontainers.image.revision": "066dbf90090ab2dbb905310fac2fa10ea39a7ba6",
+        "org.opencontainers.image.source": "https://github.com/docker-library/busybox.git",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/busybox",
+        "org.opencontainers.image.version": "1.37.0-glibc"
+      },
+      "digest": "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      "size": 610
+    },
+    "Labels": {},
+    "Mounts": [],
+    "Names": [
+      "/otty-fx-created"
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "bridge": {
+          "Aliases": null,
+          "DNSNames": null,
+          "DriverOpts": null,
+          "EndpointID": "",
+          "Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "",
+          "NetworkID": ""
+        }
+      }
+    },
+    "Ports": [],
+    "State": "created",
+    "Status": "Created"
+  },
+  {
+    "Command": "sh -c 'exit 3'",
+    "Created": 1793557837,
+    "Health": {
+      "FailingStreak": 0,
+      "Status": "none"
+    },
+    "HostConfig": {
+      "NetworkMode": "bridge"
+    },
+    "Id": "02b7ca6a0e6823110824196eb601bc4a26eb17c2d8a1ae6fd7becee3c2ec6353",
+    "Image": "busybox:1.37",
+    "ImageID": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "ImageManifestDescriptor": {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "amd64",
+        "org.opencontainers.image.base.name": "scratch",
+        "org.opencontainers.image.created": "2026-09-08T23:04:09Z",
+        "org.opencontainers.image.revision": "066dbf90090ab2dbb905310fac2fa10ea39a7ba6",
+        "org.opencontainers.image.source": "https://github.com/docker-library/busybox.git",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/busybox",
+        "org.opencontainers.image.version": "1.37.0-glibc"
+      },
+      "digest": "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      "size": 610
+    },
+    "Labels": {},
+    "Mounts": [
+      {
+        "Destination": "/scratch",
+        "Driver": "local",
+        "Mode": "",
+        "Name": "4514faedbefcc99b3d3cf6e7fc9326c567a0bf10868c99f98a5210f7681a7d55",
+        "Propagation": "",
+        "RW": true,
+        "Source": "",
+        "Type": "volume"
+      }
+    ],
+    "Names": [
+      "/otty-fx-exit3"
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "bridge": {
+          "Aliases": null,
+          "DNSNames": null,
+          "DriverOpts": null,
+          "EndpointID": "",
+          "Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "",
+          "NetworkID": "223d4f086cec4a90d7d423471bffac84e170ffd60775609002aba53ce2484a1f"
+        }
+      }
+    },
+    "Ports": [],
+    "State": "exited",
+    "Status": "Exited (3) 36 seconds ago"
+  },
+  {
+    "Command": "true",
+    "Created": 1793557836,
+    "Health": {
+      "FailingStreak": 0,
+      "Status": "none"
+    },
+    "HostConfig": {
+      "NetworkMode": "bridge"
+    },
+    "Id": "85848f683badb6d0bc326c4bde891c25cd8d1bab3e9f0883a0e171581975e9ff",
+    "Image": "busybox:1.37",
+    "ImageID": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "ImageManifestDescriptor": {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "amd64",
+        "org.opencontainers.image.base.name": "scratch",
+        "org.opencontainers.image.created": "2026-09-08T23:04:09Z",
+        "org.opencontainers.image.revision": "066dbf90090ab2dbb905310fac2fa10ea39a7ba6",
+        "org.opencontainers.image.source": "https://github.com/docker-library/busybox.git",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/busybox",
+        "org.opencontainers.image.version": "1.37.0-glibc"
+      },
+      "digest": "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      "size": 610
+    },
+    "Labels": {},
+    "Mounts": [],
+    "Names": [
+      "/otty-fx-exit0"
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "bridge": {
+          "Aliases": null,
+          "DNSNames": null,
+          "DriverOpts": null,
+          "EndpointID": "",
+          "Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "",
+          "NetworkID": "223d4f086cec4a90d7d423471bffac84e170ffd60775609002aba53ce2484a1f"
+        }
+      }
+    },
+    "Ports": [],
+    "State": "exited",
+    "Status": "Exited (0) 37 seconds ago"
+  },
+  {
+    "Command": "sleep 3600",
+    "Created": 1793557836,
+    "Health": {
+      "FailingStreak": 0,
+      "Status": "none"
+    },
+    "HostConfig": {
+      "NetworkMode": "bridge"
+    },
+    "Id": "71deb458b9cc8a6774575a3918a527fc641f57c13fd9b36a45da38cfad747f1d",
+    "Image": "busybox:1.37",
+    "ImageID": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "ImageManifestDescriptor": {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "amd64",
+        "org.opencontainers.image.base.name": "scratch",
+        "org.opencontainers.image.created": "2026-09-08T23:04:09Z",
+        "org.opencontainers.image.revision": "066dbf90090ab2dbb905310fac2fa10ea39a7ba6",
+        "org.opencontainers.image.source": "https://github.com/docker-library/busybox.git",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/busybox",
+        "org.opencontainers.image.version": "1.37.0-glibc"
+      },
+      "digest": "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      "size": 610
+    },
+    "Labels": {},
+    "Mounts": [],
+    "Names": [
+      "/otty-fx-paused"
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "bridge": {
+          "Aliases": null,
+          "DNSNames": null,
+          "DriverOpts": null,
+          "EndpointID": "d42acef2195427241c4b116292bc773beb7621adb950864ded9c1b365a98ec7c",
+          "Gateway": "172.17.0.1",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "172.17.0.3",
+          "IPPrefixLen": 16,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "92:79:2f:81:8c:c4",
+          "NetworkID": "223d4f086cec4a90d7d423471bffac84e170ffd60775609002aba53ce2484a1f"
+        }
+      }
+    },
+    "Ports": [],
+    "State": "paused",
+    "Status": "Up 37 seconds (Paused)"
+  },
+  {
+    "Command": "sleep 3600",
+    "Created": 1793557836,
+    "Health": {
+      "FailingStreak": 0,
+      "Status": "none"
+    },
+    "HostConfig": {
+      "NetworkMode": "otty-fx-net"
+    },
+    "Id": "3bae86f2fff630944ef9e0306e969614d4a2cbc89ff9da972d29915382ace25c",
+    "Image": "busybox:1.37",
+    "ImageID": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "ImageManifestDescriptor": {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "amd64",
+        "org.opencontainers.image.base.name": "scratch",
+        "org.opencontainers.image.created": "2026-09-08T23:04:09Z",
+        "org.opencontainers.image.revision": "066dbf90090ab2dbb905310fac2fa10ea39a7ba6",
+        "org.opencontainers.image.source": "https://github.com/docker-library/busybox.git",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/busybox",
+        "org.opencontainers.image.version": "1.37.0-glibc"
+      },
+      "digest": "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      "size": 610
+    },
+    "Labels": {
+      "otty.fixture": "1"
+    },
+    "Mounts": [
+      {
+        "Destination": "/data",
+        "Driver": "local",
+        "Mode": "z",
+        "Name": "otty-fx-data",
+        "Propagation": "",
+        "RW": true,
+        "Source": "/var/lib/docker/volumes/otty-fx-data/_data",
+        "Type": "volume"
+      }
+    ],
+    "Names": [
+      "/otty-fx-running"
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "otty-fx-net": {
+          "Aliases": null,
+          "DNSNames": null,
+          "DriverOpts": null,
+          "EndpointID": "313092570f626982952a26ace2ece02191d7c3c214f04cdddb13e45762f8b968",
+          "Gateway": "192.168.160.1",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "192.168.160.2",
+          "IPPrefixLen": 20,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "96:81:98:67:f8:2d",
+          "NetworkID": "9b5579d1a73566f77bb264f1e2736a6b5d645dc49324250df2dcd496ae346af8"
+        }
+      }
+    },
+    "Ports": [
+      {
+        "IP": "0.0.0.0",
+        "PrivatePort": 80,
+        "PublicPort": 18080,
+        "Type": "tcp"
+      },
+      {
+        "IP": "::",
+        "PrivatePort": 80,
+        "PublicPort": 18080,
+        "Type": "tcp"
+      }
+    ],
+    "State": "running",
+    "Status": "Up 37 seconds"
+  }
+]
