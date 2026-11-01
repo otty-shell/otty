@@ -57,14 +57,9 @@ fn run_target(app: &App, target: PaletteTarget) -> Task<AppEvent> {
         PaletteTarget::Session { tab_id } => {
             tabs_intent(TabsIntent::ActivateTab { tab_id })
         },
-        // A click on a launch row is a press and a release on it.
+        // The same single message the New session menu sends for a launch.
         PaletteTarget::Launch { path } => Task::batch(vec![
-            quick_launch_intent(QuickLaunchIntent::NodePressed {
-                path: path.clone(),
-            })
-            .chain(quick_launch_intent(
-                QuickLaunchIntent::NodeReleased { path },
-            )),
+            quick_launch_intent(QuickLaunchIntent::LaunchNode { path }),
             focus_active_terminal(),
         ]),
         PaletteTarget::NewTerminal => {
@@ -240,35 +235,27 @@ mod tests {
     }
 
     #[test]
-    fn a_launch_is_clicked_in_the_launch_tree_and_the_terminal_gets_focus() {
+    fn a_launch_runs_with_one_intent_and_the_terminal_gets_focus() {
         let (mut app, _) = App::new();
         let path = vec![String::from("servers"), String::from("laptop")];
 
         let events =
             run(&mut app, PaletteTarget::Launch { path: path.clone() });
 
-        let pressed = events.iter().position(|event| {
-            matches!(
-                event,
-                AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                    QuickLaunchIntent::NodePressed { path: pressed }
-                )) if *pressed == path
-            )
-        });
-        let released = events.iter().position(|event| {
-            matches!(
-                event,
-                AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                    QuickLaunchIntent::NodeReleased { path: released }
-                )) if *released == path
-            )
-        });
-        assert!(
-            matches!((pressed, released), (Some(p), Some(r)) if p < r),
-            "press must come before release: {pressed:?} {released:?}"
-        );
+        let launches = events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                        QuickLaunchIntent::LaunchNode { path: launched }
+                    )) if *launched == path
+                )
+            })
+            .count();
+        assert_eq!(launches, 1);
         assert!(events.iter().any(is_focus_active));
-        assert_eq!(events.len(), 3);
+        assert_eq!(events.len(), 2);
     }
 
     #[test]

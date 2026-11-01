@@ -74,7 +74,7 @@ No file search (spec Out of Scope).
 | Entry | Event sent (the one its button sends) |
 |---|---|
 | Session | `TabsIntent::ActivateTab { tab_id }` |
-| Launch | `QuickLaunchIntent::NodePressed` then `NodeReleased` on its path (chained: a click on the row) + `FocusActive` |
+| Launch | `QuickLaunchIntent::LaunchNode { path }` + `FocusActive` |
 | New terminal | `TabsIntent::OpenTerminalTab { title: shell name }` |
 | New launch… | `QuickLaunchIntent::HeaderCreateCommand` |
 | New folder | `QuickLaunchIntent::HeaderCreateFolder` |
@@ -125,6 +125,8 @@ i18n (all 10 locales): `title_search_no_sessions`, `palette_placeholder`,
 `palette_toggle_left_panel`, `palette_toggle_files_panel`. Group names and
 Settings / Focus mode reuse `sessions_panel_title`, `launches_panel_title`,
 `settings_tab_title`, `window_focus_mode`.
+
+Follow-up: a launch now runs with one `QuickLaunchIntent::LaunchNode` (ticket 16) instead of a chained press and release, so a cursor move cannot start a drag in between.
 
 ### Tests (written first; 46 failed on `todo!()` before the code)
 
