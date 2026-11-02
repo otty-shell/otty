@@ -386,6 +386,13 @@ mod tests {
     }
 
     #[test]
+    fn an_action_without_a_switch_ignores_the_switch() {
+        let action = EngineAction::StopContainer(String::from("web"));
+
+        assert_eq!(action.clone().with_switch(true), action);
+    }
+
+    #[test]
     fn each_container_state_offers_its_actions() {
         use RowAction::*;
 

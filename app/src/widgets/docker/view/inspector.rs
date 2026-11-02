@@ -235,10 +235,9 @@ fn inspect_body<'a>(
 enum ControlsLayout {
     /// The switches and the icon on one row.
     OneRow,
-    /// Each switch on its own row, the icon at the end of the first one.
-    IconOnFirstRow,
-    /// Each switch on its own row and the icon on a line of its own.
-    IconOnOwnLine,
+    /// Each switch on its own row, the icon on a row of its own under them,
+    /// at the left edge.
+    Stacked,
 }
 
 /// Picks the layout of the Inspect controls for `available` width, from the
@@ -248,16 +247,15 @@ fn controls_layout(
     raw: f32,
     show_empty: Option<f32>,
 ) -> ControlsLayout {
-    let raw_and_icon = raw + spacing::SPACE_3 + size::CONTROL_SM;
-    let one_row =
-        raw_and_icon + show_empty.map_or(0.0, |width| spacing::SPACE_4 + width);
+    let one_row = raw
+        + show_empty.map_or(0.0, |width| spacing::SPACE_4 + width)
+        + spacing::SPACE_3
+        + size::CONTROL_SM;
 
     if one_row <= available {
         ControlsLayout::OneRow
-    } else if raw_and_icon <= available {
-        ControlsLayout::IconOnFirstRow
     } else {
-        ControlsLayout::IconOnOwnLine
+        ControlsLayout::Stacked
     }
 }
 
@@ -297,22 +295,9 @@ fn inspect_controls<'a>(
                     .spacing(spacing::SPACE_3)
                     .into()
             },
-            ControlsLayout::IconOnFirstRow => {
-                let first_row = row![container(raw).width(Length::Fill), icon]
-                    .spacing(spacing::SPACE_3);
-
-                column![first_row, show_empty]
-                    .spacing(spacing::SPACE_3)
-                    .into()
-            },
-            ControlsLayout::IconOnOwnLine => {
-                let icon_line =
-                    container(icon).width(Length::Fill).align_x(Alignment::End);
-
-                column![raw, show_empty, icon_line]
-                    .spacing(spacing::SPACE_3)
-                    .into()
-            },
+            ControlsLayout::Stacked => column![raw, show_empty, icon]
+                .spacing(spacing::SPACE_3)
+                .into(),
         }
     })
     .height(Length::Shrink)
@@ -932,18 +917,19 @@ mod tests {
         let themes = ThemeManager::new();
         let json = json_lines(&["{}"]);
         let open = only_state_open();
-        let mut ui = simulator(inspect_view(
+        let mut ui = controls_ui(
             &json,
             Some(fixture_tree()),
             &open,
             ThemeProps::new(themes.current()),
-        ));
+            WIDE,
+        );
 
         ui.click(i18n::t(Key::DockerInspectRawJson))
             .expect("raw json switch");
         ui.click(i18n::t(Key::DockerInspectShowEmpty))
             .expect("show empty switch");
-        let copy = copy_center(&mut ui, NARROW);
+        let copy = copy_center(&mut ui, WIDE);
         click_at(&mut ui, copy);
 
         assert_eq!(
@@ -1399,87 +1385,55 @@ mod tests {
     }
 
     #[test]
-    fn at_240_px_each_switch_has_its_row_and_the_icon_ends_the_first_one() {
-        const WIDTH: f32 = 240.0;
-
+    fn at_narrow_widths_the_icon_sits_under_the_switches_at_their_left_edge() {
         let themes = ThemeManager::new();
         let json = json_lines(&["{}"]);
         let open = only_state_open();
-        let mut ui = controls_ui(
-            &json,
-            Some(fixture_tree()),
-            &open,
-            ThemeProps::new(themes.current()),
-            WIDTH,
-        );
-
-        let raw = ui
-            .find(i18n::t(Key::DockerInspectRawJson))
-            .expect("raw json switch")
-            .bounds();
-        let empty = ui
-            .find(i18n::t(Key::DockerInspectShowEmpty))
-            .expect("show empty switch")
-            .bounds();
-        let icon = icon_bounds(WIDTH, raw.center_y());
-        ui.click(i18n::t(Key::DockerInspectRawJson)).expect("raw");
-        ui.click(i18n::t(Key::DockerInspectShowEmpty))
-            .expect("empty");
-        click_at(&mut ui, icon.center());
-
-        assert_one_line(raw, one_line_height(), WIDTH);
-        assert_one_line(empty, one_line_height(), WIDTH);
-        assert_row_gap(raw, empty);
-        assert!(raw.x + raw.width + spacing::SPACE_3 <= icon.x + 0.5);
-        assert_eq!(
-            ui.into_messages().collect::<Vec<_>>(),
-            vec![
-                DockerIntent::InspectRawJsonToggled(true),
-                DockerIntent::InspectShowEmptyToggled(true),
-                DockerIntent::CopyInspectJson,
-            ]
-        );
-    }
-
-    #[test]
-    fn at_the_minimum_width_the_icon_has_its_own_line_and_nothing_overlaps() {
-        let themes = ThemeManager::new();
-        let json = json_lines(&["{}"]);
-        let open = only_state_open();
-        let mut ui = controls_ui(
-            &json,
-            Some(fixture_tree()),
-            &open,
-            ThemeProps::new(themes.current()),
-            MIN_PANEL,
-        );
-
-        let raw = ui
-            .find(i18n::t(Key::DockerInspectRawJson))
-            .expect("raw json switch")
-            .bounds();
-        let empty = ui
-            .find(i18n::t(Key::DockerInspectShowEmpty))
-            .expect("show empty switch")
-            .bounds();
         let row_step = otty_ui_kit::size::CONTROL_SM + spacing::SPACE_3;
-        let icon = icon_bounds(MIN_PANEL, empty.center_y() + row_step);
-        ui.click(i18n::t(Key::DockerInspectRawJson)).expect("raw");
-        ui.click(i18n::t(Key::DockerInspectShowEmpty))
-            .expect("empty");
-        click_at(&mut ui, icon.center());
 
-        assert_one_line(raw, one_line_height(), MIN_PANEL);
-        assert_one_line(empty, one_line_height(), MIN_PANEL);
-        assert_row_gap(raw, empty);
-        assert_eq!(
-            ui.into_messages().collect::<Vec<_>>(),
-            vec![
-                DockerIntent::InspectRawJsonToggled(true),
-                DockerIntent::InspectShowEmptyToggled(true),
-                DockerIntent::CopyInspectJson,
-            ]
-        );
+        for width in [MIN_PANEL, 170.0, 240.0] {
+            let mut ui = controls_ui(
+                &json,
+                Some(fixture_tree()),
+                &open,
+                ThemeProps::new(themes.current()),
+                width,
+            );
+
+            let raw = ui
+                .find(i18n::t(Key::DockerInspectRawJson))
+                .expect("raw json switch")
+                .bounds();
+            let empty = ui
+                .find(i18n::t(Key::DockerInspectShowEmpty))
+                .expect("show empty switch")
+                .bounds();
+            let icon = iced::Rectangle {
+                x: PADDING.left,
+                y: empty.center_y() + row_step
+                    - otty_ui_kit::size::CONTROL_SM / 2.0,
+                width: otty_ui_kit::size::CONTROL_SM,
+                height: otty_ui_kit::size::CONTROL_SM,
+            };
+            ui.click(i18n::t(Key::DockerInspectRawJson)).expect("raw");
+            ui.click(i18n::t(Key::DockerInspectShowEmpty))
+                .expect("empty");
+            click_at(&mut ui, icon.center());
+
+            assert_one_line(raw, one_line_height(), width);
+            assert_one_line(empty, one_line_height(), width);
+            assert_row_gap(raw, empty);
+            assert!((empty.x - raw.x).abs() < 0.5, "{empty:?} at {width}");
+            assert_eq!(
+                ui.into_messages().collect::<Vec<_>>(),
+                vec![
+                    DockerIntent::InspectRawJsonToggled(true),
+                    DockerIntent::InspectShowEmptyToggled(true),
+                    DockerIntent::CopyInspectJson,
+                ],
+                "the icon is under the switches at {width}"
+            );
+        }
     }
 
     #[test]
@@ -1487,6 +1441,7 @@ mod tests {
         let themes = ThemeManager::new();
         let json = json_lines(&["{}"]);
         let open = only_state_open();
+        let row_step = otty_ui_kit::size::CONTROL_SM + spacing::SPACE_3;
 
         for (width, shares_the_row) in [(240.0, true), (MIN_PANEL, false)] {
             let mut ui = controls_ui(
@@ -1501,11 +1456,12 @@ mod tests {
                 .find(i18n::t(Key::DockerInspectRawJson))
                 .expect("raw json switch")
                 .bounds();
-            let row_step = otty_ui_kit::size::CONTROL_SM + spacing::SPACE_3;
             let icon = if shares_the_row {
                 icon_bounds(width, raw.center_y())
             } else {
-                icon_bounds(width, raw.center_y() + row_step)
+                let mut under = icon_bounds(width, raw.center_y() + row_step);
+                under.x = PADDING.left;
+                under
             };
             click_at(&mut ui, icon.center());
 
@@ -1531,15 +1487,7 @@ mod tests {
         );
         assert_eq!(
             controls_layout(one_row - 1.0, RAW, Some(EMPTY)),
-            ControlsLayout::IconOnFirstRow
-        );
-        assert_eq!(
-            controls_layout(raw_and_icon, RAW, Some(EMPTY)),
-            ControlsLayout::IconOnFirstRow
-        );
-        assert_eq!(
-            controls_layout(raw_and_icon - 1.0, RAW, Some(EMPTY)),
-            ControlsLayout::IconOnOwnLine
+            ControlsLayout::Stacked
         );
         assert_eq!(
             controls_layout(raw_and_icon, RAW, None),
@@ -1547,7 +1495,7 @@ mod tests {
         );
         assert_eq!(
             controls_layout(raw_and_icon - 1.0, RAW, None),
-            ControlsLayout::IconOnOwnLine
+            ControlsLayout::Stacked
         );
     }
 
@@ -1838,6 +1786,8 @@ mod tests {
             vec![
                 button(RowAction::Stop, true),
                 button(RowAction::Remove, true),
+                button(RowAction::Unpause, true),
+                button(RowAction::PullAgain, true),
             ],
             ThemeProps::new(themes.current()),
         ));

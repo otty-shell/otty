@@ -850,6 +850,20 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_podman_command_names_podman_in_the_shell_hint() {
+        let state = DockerState::default();
+
+        assert_eq!(
+            shell_hint(&state, EngineKind::Podman, &[RowAction::Shell]),
+            Some(i18n::t(Key::DockerShellNeedsPodman).to_string())
+        );
+        assert_eq!(
+            shell_hint(&state, EngineKind::Podman, &[RowAction::Remove]),
+            None
+        );
+    }
+
+    #[test]
     fn shell_is_enabled_without_a_hint_when_the_command_is_found() {
         let mut state = loaded_state();
         select(&mut state, "otty-fx-running");
