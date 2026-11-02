@@ -1,12 +1,13 @@
 //! Reports named keys pressed in a focused text input.
 //!
 //! `iced` 0.14 text inputs send nothing for Backspace on an empty value, for
-//! ↑ and ↓, and they only drop focus on Esc. [`TokenField`] and
-//! [`CommandPalette`] wrap their input in [`InputKeys`] to turn those keys
-//! into messages.
+//! ↑ and ↓, they only drop focus on Esc, and they do not say when they get
+//! the focus. [`TokenField`], [`CommandPalette`] and [`TagSearchField`] wrap
+//! their input in [`InputKeys`] to turn those into messages.
 //!
 //! [`TokenField`]: super::token_field::TokenField
 //! [`CommandPalette`]: super::command_palette::CommandPalette
+//! [`TagSearchField`]: super::tag_search_field::TagSearchField
 
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::{Operation, Tree, Widget, tree};
@@ -24,6 +25,7 @@ use iced::{
 pub(super) struct InputKeys<'a, Message> {
     content: Element<'a, Message>,
     bindings: Vec<(Named, Message)>,
+    on_focus: Option<Message>,
 }
 
 impl<'a, Message> InputKeys<'a, Message> {
@@ -32,12 +34,20 @@ impl<'a, Message> InputKeys<'a, Message> {
         Self {
             content: input.into(),
             bindings: Vec::new(),
+            on_focus: None,
         }
     }
 
     /// Sends `message` when `key` is pressed in the focused input.
     pub(super) fn on_key(mut self, key: Named, message: Message) -> Self {
         self.bindings.push((key, message));
+        self
+    }
+
+    /// Sends `message` when the input gets the focus. A focus given by the
+    /// app (`iced::widget::operation::focus`) is reported on the next event.
+    pub(super) fn on_focus(mut self, message: Message) -> Self {
+        self.on_focus = Some(message);
         self
     }
 
@@ -104,7 +114,11 @@ impl<Message: Clone> Widget<Message, Theme, Renderer>
     }
 
     fn tag(&self) -> tree::Tag {
-        tree::Tag::stateless()
+        tree::Tag::of::<State>()
+    }
+
+    fn state(&self) -> tree::State {
+        tree::State::new(State::default())
     }
 
     fn children(&self) -> Vec<Tree> {
@@ -141,13 +155,9 @@ impl<Message: Clone> Widget<Message, Theme, Renderer>
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        let is_focused = tree.children[0]
-            .state
-            .downcast_ref::<text_input::State<
-                <Renderer as text::Renderer>::Paragraph,
-            >>()
-            .is_focused();
-        if is_focused && let Some(message) = self.bound_message(event) {
+        if input_is_focused(tree)
+            && let Some(message) = self.bound_message(event)
+        {
             shell.publish(message.clone());
             shell.capture_event();
 
@@ -164,6 +174,16 @@ impl<Message: Clone> Widget<Message, Theme, Renderer>
             shell,
             viewport,
         );
+
+        let is_focused = input_is_focused(tree);
+        let state = tree.state.downcast_mut::<State>();
+        if is_focused
+            && !state.was_focused
+            && let Some(message) = &self.on_focus
+        {
+            shell.publish(message.clone());
+        }
+        state.was_focused = is_focused;
     }
 
     fn mouse_interaction(
@@ -207,4 +227,19 @@ impl<'a, Message: Clone + 'a> From<InputKeys<'a, Message>>
     fn from(value: InputKeys<'a, Message>) -> Self {
         Element::new(value)
     }
+}
+
+/// Whether the wrapped input had the focus after the last event.
+#[derive(Default)]
+struct State {
+    was_focused: bool,
+}
+
+/// Whether the text input wrapped by the [`InputKeys`] of `tree` has the
+/// focus.
+fn input_is_focused(tree: &Tree) -> bool {
+    tree.children[0]
+        .state
+        .downcast_ref::<text_input::State<<Renderer as text::Renderer>::Paragraph>>()
+        .is_focused()
 }

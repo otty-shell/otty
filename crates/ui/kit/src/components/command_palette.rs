@@ -267,7 +267,7 @@ pub const fn input_id() -> Id {
 
 /// Splits `title` into pieces at the edges of `ranges`. Each piece says
 /// whether it is part of a match.
-fn title_pieces<'t>(
+pub(super) fn title_pieces<'t>(
     title: &'t str,
     ranges: &[Range<usize>],
 ) -> Vec<(&'t str, bool)> {

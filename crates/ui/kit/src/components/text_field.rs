@@ -10,9 +10,9 @@ use crate::palette::UiPalette;
 use crate::{fonts, spacing, typography};
 
 /// Horizontal padding of the input (`padding: 0 11px`).
-const PADDING_X: f32 = 11.0;
+pub(super) const PADDING_X: f32 = 11.0;
 /// Vertical padding that makes a 13/20 text line 34px high.
-const PADDING_Y: f32 = 7.0;
+pub(super) const PADDING_Y: f32 = 7.0;
 
 /// Single-line input with a label above and a note below. Without an input
 /// handler the field is disabled.

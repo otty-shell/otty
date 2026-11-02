@@ -84,6 +84,14 @@ fn save_settings_to_path(
 }
 
 fn settings_path() -> PathBuf {
+    // Loading settings sets the process-wide language, so tests that build the
+    // widget must not depend on the language of the user running them.
+    if cfg!(test) {
+        return std::env::temp_dir()
+            .join("otty-tests")
+            .join("settings.json");
+    }
+
     if let Ok(home) = std::env::var("HOME") {
         return Path::new(&home)
             .join(".config")
@@ -108,11 +116,20 @@ mod tests {
 
     use super::{
         SettingsData, SettingsLoadStatus, load_settings_from_path,
-        save_settings_to_path,
+        save_settings_to_path, settings_path,
     };
     use crate::i18n::Locale;
     use crate::theme::BuiltinTheme;
     use crate::widgets::settings::types::LanguageSetting;
+
+    #[test]
+    fn tests_never_read_the_settings_of_the_user() {
+        let Ok(home) = std::env::var("HOME") else {
+            return;
+        };
+
+        assert!(!settings_path().starts_with(home));
+    }
 
     #[test]
     fn given_valid_settings_when_save_and_load_then_round_trip_matches() {

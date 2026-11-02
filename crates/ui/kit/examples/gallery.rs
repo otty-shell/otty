@@ -54,6 +54,11 @@ use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::status_badge::{StatusBadge, StatusTone};
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::components::switch::Switch;
+use otty_ui_kit::components::tag_row::TagRow;
+use otty_ui_kit::components::tag_search::{
+    SearchRow, TagSchema, TagSearch, TagSearchAction,
+};
+use otty_ui_kit::components::tag_search_field::TagSearchField;
 use otty_ui_kit::components::target_dot::{TargetKind, target_dot};
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::components::title_search::TitleSearch;
@@ -63,6 +68,9 @@ use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::components::{divider, scrollbar};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
+
+/// Keys of the tag search, in the order of its imagined columns.
+const TAG_KEYS: &[&str] = &["name", "status", "image", "ports"];
 
 /// Plus icon used by the icon buttons.
 const PLUS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>"#;
@@ -180,6 +188,7 @@ struct Gallery {
     table_sort: (usize, SortDirection),
     table_event: String,
     toolbar_filter: String,
+    tag_search: TagSearch,
     inspector_event: String,
     data_tree_state_open: bool,
     data_tree_mounts_open: bool,
@@ -194,6 +203,9 @@ impl Gallery {
         let light = args.iter().any(|arg| arg == "light");
 
         let mut log = LogViewState::new();
+        let mut tag_search = TagSearch::default();
+        let _ = tag_search.set_tag("status", "Running");
+
         log.push_lines((1..=30).map(|n| {
             format!("2026-11-01T10:00:{n:02}Z INFO request {n} served")
         }));
@@ -249,6 +261,7 @@ impl Gallery {
             table_sort: (0, SortDirection::Ascending),
             table_event: "press a title, a Compose link or a row ⋯".to_owned(),
             toolbar_filter: String::new(),
+            tag_search,
             inspector_event: "press a link in the list".to_owned(),
             data_tree_state_open: true,
             data_tree_mounts_open: false,
@@ -301,6 +314,7 @@ enum Message {
     TableRowMenu(usize, iced::Point),
     ToolbarFilter(String),
     ToolbarAction(&'static str),
+    TagSearch(TagSearchAction),
     InspectorLink(&'static str),
     ToggleDataTree(&'static str),
     SplitResized(pane_grid::ResizeEvent),
@@ -407,6 +421,9 @@ fn update(state: &mut Gallery, message: Message) {
         Message::ToolbarAction(action) => {
             state.table_event = format!("toolbar: {action}");
         },
+        Message::TagSearch(action) => {
+            let _ = state.tag_search.perform(action, &tag_schema());
+        },
         Message::InspectorLink(link) => {
             state.inspector_event = format!("link: {link}");
         },
@@ -417,6 +434,26 @@ fn update(state: &mut Gallery, message: Message) {
             state.data_tree_mounts_open = !state.data_tree_mounts_open;
         },
     }
+}
+
+/// What the gallery's tag search knows: its keys and twelve rows, enough for
+/// the suggestion list to scroll.
+fn tag_schema() -> TagSchema {
+    let rows = (1..=12)
+        .map(|index| {
+            let name = format!("web-{index}");
+            let status = if index % 3 == 0 { "Exited" } else { "Running" };
+
+            SearchRow::new(name.as_str())
+                .value("name", name)
+                .value("status", status)
+                .value("image", format!("nginx:1.{index}"))
+                .value("ports", format!("80{index:02}:80/tcp"))
+                .value("ports", format!("84{index:02}:443/tcp"))
+        })
+        .collect();
+
+    TagSchema::new(TAG_KEYS, rows)
 }
 
 /// A tree as the Inspect tab of a container shows it.
@@ -1787,6 +1824,39 @@ fn data_parts<'a>(
     ]
     .spacing(spacing::SPACE_4);
 
+    let tag_field_palette = p.clone();
+    let search = &state.tag_search;
+    let schema = tag_schema();
+    let suggestions = search.suggestions(&schema);
+    let passing = schema
+        .rows()
+        .iter()
+        .filter(|row| search.passes(schema.keys(), row))
+        .count();
+    let tag_bar = Toolbar::new("More actions", p)
+        .field(160.0, 320.0, move || {
+            TagSearchField::new(search, suggestions.clone(), &tag_field_palette)
+                .placeholder("Filter: name or key:value")
+                .on_action(Message::TagSearch)
+                .into()
+        })
+        .item(
+            ToolbarItem::new(svg::Handle::from_memory(REFRESH_ICON), "Refresh")
+                .on_press(Message::ToolbarAction("Refresh")),
+        );
+    let tag_search_parts = column![
+        container(tag_bar).width(640),
+        container(
+            TagRow::new(search.tags(), p)
+                .remove_label("Remove this tag")
+                .clear_all_label("Clear all")
+                .on_action(Message::TagSearch)
+        )
+        .width(640),
+        label(format!("{passing} of 12 rows pass"), p),
+    ]
+    .spacing(spacing::SPACE_3);
+
     let mut icons = row![].spacing(spacing::SPACE_3);
     for (name, bytes) in ACTION_ICONS {
         icons = icons.push(
@@ -1804,6 +1874,11 @@ fn data_parts<'a>(
             ]
             .spacing(spacing::SPACE_2)
             .into(),
+            p,
+        ),
+        section(
+            "TagSearchField and TagRow (focus the field for the keys; try sta Enter, run Enter, Backspace, a cross, Clear all)",
+            tag_search_parts.into(),
             p,
         ),
         section(

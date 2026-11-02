@@ -146,6 +146,11 @@ impl TagSchema {
         self.keys
     }
 
+    /// The rows of the table.
+    pub fn rows(&self) -> &[SearchRow] {
+        &self.rows
+    }
+
     /// Creates a schema.
     pub fn new(keys: &'static [&'static str], rows: Vec<SearchRow>) -> Self {
         Self { keys, rows }
