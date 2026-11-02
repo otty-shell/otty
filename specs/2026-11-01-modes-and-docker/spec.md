@@ -345,6 +345,9 @@ none of those are in scope (see Out of Scope).
       switch shows the JSON as today, and "Copy JSON" copies it.
     - **Polish from round 1:** the row "⋯" menu opens at its button; the sort
       arrow sits right after the column title.
+    - **Port links in the table** too: each published TCP port in the
+      Containers table's Ports cell links like in the Overview, without
+      selecting the row (owner request, 2026-11-02).
 
 ## Ticket classes
 
@@ -420,6 +423,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 31 | Overview links: ports to localhost, image/network/volume jump, compose filter (Decision 20) | C | Opus | 28 |
 | 32 | Inspect as a readable tree with Raw JSON and Copy (Decision 20) | C | Opus | 28 |
 | 33 | Bug: opening or activating a tab from another mode switches to Terminal mode | C | Sonnet | 31 |
+| 34 | Port links in the Containers table (Decision 20) | C | Sonnet | 31, 33 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -459,4 +463,5 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 30 — Row opens the right panel; tabs to select when narrow · Sonnet
 - [x] 31 — Overview links · Opus
 - [ ] 32 — Inspect as a readable tree · Opus
-- [ ] 33 — Bug: tab open switches to Terminal mode · Sonnet
+- [x] 33 — Bug: tab open switches to Terminal mode · Sonnet
+- [ ] 34 — Port links in the Containers table · Sonnet
