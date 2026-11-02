@@ -477,4 +477,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 35 — Key-value list stacks when narrow · Sonnet
 - [x] 36 — Bug: narrow tree labels and table columns · Sonnet
 - [x] 37 — Inspect: copy icon, links in the tree · Opus
-- [ ] 38 — Bug: volume prune dialog text · Sonnet
+- [x] 38 — Bug: volume prune dialog text · Sonnet
