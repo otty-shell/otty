@@ -123,6 +123,7 @@
     "docker_panel_no_access": "Docker 소켓에 접근할 수 없습니다.",
     "docker_nothing_to_inspect": "검사할 항목이 없습니다.",
     "tpl_docker_looked_for": "OTTY는 {places}와(과) PATH 및 일반적인 설치 폴더의 docker, podman을 찾았습니다.",
+    "docker_looked_for_commands": "OTTY는 PATH 및 일반적인 설치 폴더의 docker, podman을 찾았습니다.",
     "docker_column_name": "이름",
     "docker_column_status": "상태",
     "docker_column_image": "이미지",

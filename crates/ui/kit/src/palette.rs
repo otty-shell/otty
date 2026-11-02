@@ -384,6 +384,7 @@ mod tests {
     use iced::{Color, Shadow, Vector};
 
     use super::UiPalette;
+    use crate::components::status_badge::StatusTone;
     use crate::contrast::contrast_ratio;
 
     /// WCAG 2.1 AA minimum for normal text.
@@ -798,6 +799,32 @@ mod tests {
                 ("surface-raised", palette.surface_raised()),
                 TEXT_MIN,
             );
+        }
+    }
+
+    /// Neutral status badge: its dot is a mark, so it needs 3:1 on every
+    /// surface a table row or inspector header can have (ticket 02 found
+    /// `text-faint` on `surface-selected` just under 3:1).
+    #[test]
+    fn given_each_theme_when_neutral_dot_drawn_then_it_reaches_3_on_row_surfaces()
+     {
+        for (theme, palette) in themes() {
+            let dot = StatusTone::Neutral.dot_color(&palette);
+
+            for (name, surface) in [
+                ("surface-panel", palette.surface_panel()),
+                ("surface-canvas", palette.surface_canvas()),
+                ("surface-raised", palette.surface_raised()),
+                ("surface-hover", palette.surface_hover()),
+                ("surface-selected", palette.surface_selected()),
+            ] {
+                assert_contrast_at_least(
+                    theme,
+                    ("neutral-dot", dot),
+                    (name, surface),
+                    NON_TEXT_MIN,
+                );
+            }
         }
     }
 

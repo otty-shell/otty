@@ -23,7 +23,7 @@ pub enum StatusTone {
     Warn,
     /// `status-error`: failed, dead.
     Error,
-    /// `text-muted` with a `text-faint` dot: created, stopped cleanly.
+    /// `text-muted` word and dot: created, stopped cleanly.
     Neutral,
 }
 
@@ -40,10 +40,9 @@ impl StatusTone {
 
     /// Returns the color of the dot in `palette`.
     pub const fn dot_color(self, palette: &UiPalette) -> Color {
-        match self {
-            Self::Neutral => palette.text_faint(),
-            _ => self.color(palette),
-        }
+        // `text-faint` is under 3:1 on `surface-selected`, so the neutral
+        // dot takes the color of the word too.
+        self.color(palette)
     }
 }
 
@@ -197,7 +196,7 @@ mod tests {
         assert_eq!(StatusTone::Ok.dot_color(&palette), palette.status_ok());
         assert_eq!(
             StatusTone::Neutral.dot_color(&palette),
-            palette.text_faint()
+            palette.text_muted()
         );
     }
 

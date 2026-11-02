@@ -107,7 +107,11 @@ pub(crate) fn view_model(
     socket: &str,
     places: &[String],
 ) -> NoEngineViewModel {
-    let looked_for = i18n::docker_looked_for(&places.join(", "));
+    let looked_for = if places.is_empty() {
+        i18n::t(Key::DockerLookedForCommands).to_string()
+    } else {
+        i18n::docker_looked_for(&places.join(", "))
+    };
 
     match case {
         NoEngineCase::NotInstalled => NoEngineViewModel {
@@ -304,6 +308,14 @@ mod tests {
             )
         );
         assert!(vm.looked_for.contains("/run/podman/podman.sock"));
+    }
+
+    #[test]
+    fn the_looked_for_line_has_no_empty_place_list_without_probes() {
+        let vm = view_model(NoEngineCase::NotInstalled, "", &[]);
+
+        assert_eq!(vm.looked_for, i18n::t(Key::DockerLookedForCommands));
+        assert!(!vm.looked_for.contains("for ,"));
     }
 
     #[test]

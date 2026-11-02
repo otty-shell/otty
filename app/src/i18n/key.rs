@@ -267,6 +267,8 @@ pub(crate) enum Key {
     DockerNothingToInspect,
     /// Line under the no engine cards. Placeholder: `{places}`.
     TplDockerLookedFor,
+    /// Line under the no engine cards when no socket was tried.
+    DockerLookedForCommands,
     /// Table column: the name of a container, volume or network.
     DockerColumnName,
     /// Table column: the state of a container.
@@ -876,7 +878,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 407] = [
+    pub(super) const ALL: [Self; 408] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -993,6 +995,7 @@ impl Key {
         Self::DockerPanelNoAccess,
         Self::DockerNothingToInspect,
         Self::TplDockerLookedFor,
+        Self::DockerLookedForCommands,
         Self::DockerColumnName,
         Self::DockerColumnStatus,
         Self::DockerColumnImage,

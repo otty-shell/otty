@@ -53,9 +53,17 @@ pub(crate) fn status_bar(state: &DockerState) -> StatusViewModel {
         Some(i18n::docker_status_also_found(&others.join(PART_SEPARATOR)))
     };
 
+    // The Run form replaces the table, so the counts of the table would
+    // describe something that is not on screen.
+    let info = if state.run_form().is_some() {
+        i18n::t(Key::DockerRunContainer).to_string()
+    } else {
+        counts(open, place.resource())
+    };
+
     StatusViewModel {
         engine: Some(engine_label(open.info())),
-        info: counts(open, place.resource()),
+        info,
         also_found,
     }
 }
@@ -184,6 +192,17 @@ mod tests {
         assert_eq!(vm.engine, None);
         assert_eq!(vm.info, "Looking for engines…");
         assert_eq!(vm.also_found, None);
+    }
+
+    #[test]
+    fn while_the_run_form_is_open_the_bar_says_run_container() {
+        let mut state = loaded(&[EngineKind::Docker]);
+        let _ = reduce(&mut state, DockerIntent::OpenCreate);
+
+        let vm = status_bar(&state);
+
+        assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
+        assert_eq!(vm.info, "Run container");
     }
 
     #[test]

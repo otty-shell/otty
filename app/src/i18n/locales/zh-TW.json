@@ -123,6 +123,7 @@
     "docker_panel_no_access": "無法存取 Docker socket。",
     "docker_nothing_to_inspect": "沒有可檢查的項目。",
     "tpl_docker_looked_for": "OTTY 已尋找 {places}，以及 PATH 與常用安裝資料夾中的 docker 與 podman。",
+    "docker_looked_for_commands": "OTTY 已在 PATH 與常用安裝資料夾中尋找 docker 與 podman。",
     "docker_column_name": "名稱",
     "docker_column_status": "狀態",
     "docker_column_image": "映像檔",

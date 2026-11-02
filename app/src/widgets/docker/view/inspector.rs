@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 
 use iced::widget::text::IntoFragment;
-use iced::widget::{Row, column, container, row, scrollable, svg, text};
+use iced::widget::{Row, Space, column, container, row, scrollable, svg, text};
 use iced::{Alignment, Element, Length, Padding};
 use otty_ui_kit::components::button::{Button, ButtonSize};
 use otty_ui_kit::components::data_tree::DataTree;
@@ -143,22 +143,28 @@ fn tab_body<'a>(
                 list =
                     list.entry_parts(label, value.into_iter().map(value_part));
             }
-            scrollable(list).height(Length::Fill).into()
+            // The thin bar draws over the content: the padding keeps the
+            // values clear of it, as in the Inspect tree.
+            let rows = container(list).padding(Padding {
+                right: spacing::SPACE_3,
+                ..Padding::ZERO
+            });
+
+            scrollable(rows)
+                .direction(scrollbar::vertical())
+                .style(scrollbar::style(palette))
+                .height(Length::Fill)
+                .into()
         },
         TabContent::Logs { lines, error } => {
-            let mut header = row![
-                container(hint(i18n::t(Key::DockerLogsHint), palette))
-                    .width(Length::Fill)
-            ]
-            .spacing(spacing::SPACE_3)
-            .align_y(Alignment::Center);
-            if let Some(lines) = lines {
-                header = log_follow(header, lines, palette);
-            }
-
-            let mut body = column![header]
+            // The hint has its own line: beside the Follow switch it wraps
+            // to one word per line in the narrow panel.
+            let mut body = column![hint(i18n::t(Key::DockerLogsHint), palette)]
                 .spacing(spacing::SPACE_3)
                 .height(Length::Fill);
+            if let Some(lines) = lines {
+                body = body.push(log_follow(lines, palette));
+            }
             if let Some(error) = error {
                 body = body.push(error_notice(
                     i18n::docker_logs_failed(error),
@@ -277,21 +283,25 @@ fn value_part(piece: Piece) -> ValuePart<DockerIntent> {
 /// Add to the logs header how many lines wait (while Follow is off and some
 /// do) and the Follow switch.
 fn log_follow<'a>(
-    mut header: Row<'a, DockerIntent>,
     lines: &LogViewState,
     palette: &UiPalette,
 ) -> Row<'a, DockerIntent> {
     let waiting = lines.pending_count();
-    if !lines.is_following() && waiting > 0 {
-        header =
-            header.push(hint(i18n::docker_logs_new_lines(waiting), palette));
-    }
+    let count: Element<'a, DockerIntent> =
+        if !lines.is_following() && waiting > 0 {
+            hint(i18n::docker_logs_new_lines(waiting), palette)
+        } else {
+            Space::new().into()
+        };
 
-    header.push(
+    row![
+        container(count).width(Length::Fill),
         Switch::new(lines.is_following(), palette)
             .label(i18n::t(Key::DockerLogsFollow))
             .on_toggle(DockerIntent::LogFollowToggled),
-    )
+    ]
+    .spacing(spacing::SPACE_3)
+    .align_y(Alignment::Center)
 }
 
 /// A muted small line of text.
@@ -911,6 +921,35 @@ mod tests {
                 "{control:?} stays inside the padding"
             );
         }
+    }
+
+    #[test]
+    fn the_overview_values_stay_clear_of_the_thin_scrollbar() {
+        let themes = ThemeManager::new();
+        let fields = vec![text_field(
+            Key::DockerFieldCommand,
+            "sleep 3600 and a long tail of words that has to wrap",
+        )];
+        let mut ui = simulator(narrow(view(InspectorProps {
+            vm: header(),
+            actions: None,
+            tabs: container_tabs(
+                InspectorTab::Overview,
+                TabContent::Overview(fields),
+            ),
+            theme: ThemeProps::new(themes.current()),
+        })));
+
+        let value = ui
+            .find("sleep 3600 and a long tail of words that has to wrap")
+            .expect("value")
+            .bounds();
+
+        assert!(
+            value.x + value.width
+                <= NARROW - PADDING.right - spacing::SPACE_3 + 0.5,
+            "{value:?} stays clear of the scrollbar"
+        );
     }
 
     /// Width of the narrow panel in the layout tests.

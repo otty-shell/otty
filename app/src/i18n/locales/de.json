@@ -123,6 +123,7 @@
     "docker_panel_no_access": "Kein Zugriff auf den Docker-Socket.",
     "docker_nothing_to_inspect": "Nichts zu untersuchen.",
     "tpl_docker_looked_for": "OTTY hat gesucht nach {places} sowie nach docker und podman in PATH und in den üblichen Installationsordnern.",
+    "docker_looked_for_commands": "OTTY hat nach docker und podman in PATH und in den üblichen Installationsordnern gesucht.",
     "docker_column_name": "Name",
     "docker_column_status": "Status",
     "docker_column_image": "Image",

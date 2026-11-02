@@ -123,6 +123,7 @@
     "docker_panel_no_access": "无权访问 Docker 套接字。",
     "docker_nothing_to_inspect": "没有可检查的内容。",
     "tpl_docker_looked_for": "OTTY 查找了 {places}，以及 PATH 和常用安装文件夹中的 docker 和 podman。",
+    "docker_looked_for_commands": "OTTY 在 PATH 和常用安装文件夹中查找了 docker 和 podman。",
     "docker_column_name": "名称",
     "docker_column_status": "状态",
     "docker_column_image": "镜像",
