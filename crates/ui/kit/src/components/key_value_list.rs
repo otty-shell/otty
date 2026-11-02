@@ -1,8 +1,8 @@
 //! `KeyValueList`: two-column list of facts about one item.
 
-use iced::Element;
 use iced::widget::text::Wrapping;
-use iced::widget::{column, row, text};
+use iced::widget::{column, responsive, row, text};
+use iced::{Element, Length};
 
 use super::wrapped_text::WrappedText;
 use crate::palette::UiPalette;
@@ -11,9 +11,10 @@ use crate::{fonts, size, spacing};
 /// Text size of keys and values (`font-size: 12.5px`).
 const TEXT_SIZE: f32 = 12.5;
 
-/// Two columns: muted keys at a fixed width, mono values that wrap. A value
-/// can hold links: accent text, underlined under the pointer, each sending
-/// its own message when pressed.
+/// Two columns: muted keys at a fixed width, mono values that wrap. Below
+/// [`size::KEY_VALUE_STACK_BELOW`] wide, each value sits under its key
+/// instead. A value can hold links: accent text, underlined under the
+/// pointer, each sending its own message when pressed.
 ///
 /// # Example
 ///
@@ -77,39 +78,22 @@ impl<'a, Message: Clone + 'a> From<KeyValueList<Message>>
 {
     fn from(value: KeyValueList<Message>) -> Self {
         let palette = value.palette;
-        let mut lines = column![].spacing(spacing::SPACE_3);
+        let entries = value.entries;
 
-        for (key, parts) in value.entries {
-            let parts = parts
-                .into_iter()
-                .map(|part| (part.text, part.on_press))
-                .collect();
+        // `responsive` fills the height by default; shrinking keeps the list
+        // as tall as its entries, also inside a scrollable panel.
+        responsive(move |available| {
+            let stacked = available.width < size::KEY_VALUE_STACK_BELOW;
+            let mut lines = column![].spacing(spacing::SPACE_3);
 
-            lines = lines.push(
-                row![
-                    text(key)
-                        .size(TEXT_SIZE)
-                        .font(fonts::UI)
-                        .wrapping(Wrapping::Glyph)
-                        .color(palette.text_muted())
-                        .width(size::KEY_VALUE_KEY),
-                    // Values break at spaces, slashes, dashes, colons and
-                    // dots first, and between characters only when a piece
-                    // is wider than the line, so a long id or path never
-                    // pushes the list wider than its panel.
-                    WrappedText::new(
-                        parts,
-                        TEXT_SIZE,
-                        fonts::MONO,
-                        palette.text_body(),
-                        link_color(&palette),
-                    ),
-                ]
-                .spacing(spacing::SPACE_3),
-            );
-        }
+            for (key, parts) in &entries {
+                lines = lines.push(entry_view(key, parts, stacked, &palette));
+            }
 
-        lines.into()
+            lines.into()
+        })
+        .height(Length::Shrink)
+        .into()
     }
 }
 
@@ -148,6 +132,42 @@ impl<Message> ValuePart<Message> {
             text: text.into(),
             on_press: Some(on_press),
         }
+    }
+}
+
+/// Draws one entry: the key left of its value, or above it when `stacked`.
+fn entry_view<'a, Message: Clone + 'a>(
+    key: &str,
+    parts: &[ValuePart<Message>],
+    stacked: bool,
+    palette: &UiPalette,
+) -> Element<'a, Message> {
+    let key = text(key.to_owned())
+        .size(TEXT_SIZE)
+        .font(fonts::UI)
+        .wrapping(Wrapping::Glyph)
+        .color(palette.text_muted());
+
+    // Values break at spaces, slashes, dashes, colons and dots first, and
+    // between characters only when a piece is wider than the line, so a long
+    // id or path never pushes the list wider than its panel.
+    let value = WrappedText::new(
+        parts
+            .iter()
+            .map(|part| (part.text.clone(), part.on_press.clone()))
+            .collect(),
+        TEXT_SIZE,
+        fonts::MONO,
+        palette.text_body(),
+        link_color(palette),
+    );
+
+    if stacked {
+        column![key, value].spacing(spacing::SPACE_1).into()
+    } else {
+        row![key.width(size::KEY_VALUE_KEY), value]
+            .spacing(spacing::SPACE_3)
+            .into()
     }
 }
 
@@ -215,15 +235,15 @@ mod tests {
         let list: Element<'_, ()> = iced::widget::container(
             KeyValueList::new(&palette).entry("Ports", ports),
         )
-        .width(250)
+        .width(160)
         .into();
         let mut ui = simulator(list);
 
         let value = ui.find(ports).expect("value should be shown").bounds();
 
         assert!(
-            value.x + value.width <= 250.5,
-            "value {value:?} should stay inside 250px"
+            value.x + value.width <= 160.5,
+            "value {value:?} should stay inside 160px"
         );
         assert!(
             value.height > TEXT_SIZE * 2.0,
@@ -344,7 +364,7 @@ mod tests {
                     ValuePart::link("18443:8443/tcp", Message::Port(18443)),
                 ],
             ))
-            .width(200)
+            .width(96)
             .into();
         let mut ui = simulator(list);
 
@@ -357,11 +377,119 @@ mod tests {
         ui.click("18443:8443/tcp").expect("second link");
         ui.click("18080:8080/tcp").expect("first link");
 
-        assert!(value.x + value.width <= 200.5, "{value:?} inside 200px");
+        assert!(value.x + value.width <= 96.5, "{value:?} inside 96px");
         assert!(value.height > TEXT_SIZE * 2.0, "{value:?} should wrap");
         assert!(second.y > first.y, "{second:?} on the next line");
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::Port(18443), Message::Port(18080)]);
+    }
+
+    /// The linked list inside a container `width` pixels wide.
+    fn linked_list_in(palette: &UiPalette, width: f32) -> Element<'_, Message> {
+        iced::widget::container(linked_list(palette))
+            .width(width)
+            .into()
+    }
+
+    #[test]
+    fn given_a_wide_width_when_laid_out_then_the_value_sits_right_of_its_key() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(linked_list_in(&palette, 400.0));
+
+        let key = ui.find("Mounts").expect("key").bounds();
+        let value = ui.find("otty-fx-data").expect("link").bounds();
+
+        assert!(
+            value.x > key.x + key.width - 0.5,
+            "{value:?} right of {key:?}"
+        );
+        assert!(
+            (value.y - key.y).abs() < 4.0,
+            "{value:?} level with {key:?}"
+        );
+    }
+
+    #[test]
+    fn given_a_narrow_width_when_laid_out_then_the_value_sits_below_its_key() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(linked_list_in(
+            &palette,
+            size::KEY_VALUE_STACK_BELOW - 20.0,
+        ));
+
+        let key = ui.find("Mounts").expect("key").bounds();
+        let value = ui.find("otty-fx-data").expect("link").bounds();
+
+        assert!((value.x - key.x).abs() < 0.5, "{value:?} under {key:?}");
+        assert!(
+            value.y >= key.y + key.height - 0.5,
+            "{value:?} below {key:?}"
+        );
+    }
+
+    #[test]
+    fn given_the_threshold_width_when_laid_out_then_it_is_still_two_columns() {
+        let palette = UiPalette::otty_dark();
+        let mut ui =
+            simulator(linked_list_in(&palette, size::KEY_VALUE_STACK_BELOW));
+
+        let key = ui.find("Mounts").expect("key").bounds();
+        let value = ui.find("otty-fx-data").expect("link").bounds();
+
+        assert!(
+            value.x > key.x + key.width - 0.5,
+            "{value:?} right of {key:?}"
+        );
+    }
+
+    #[test]
+    fn given_a_narrow_width_when_links_are_pressed_then_each_sends_its_message()
+    {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(linked_list_in(&palette, 200.0));
+
+        ui.click("8443:443/tcp").expect("port link");
+        ui.click("otty-fx-data").expect("volume link");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Port(8443), Message::Volume]);
+    }
+
+    #[test]
+    fn given_a_long_value_in_a_narrow_list_when_laid_out_then_it_wraps_inside_the_width()
+     {
+        let palette = UiPalette::otty_dark();
+        let long = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef";
+        let list: Element<'_, ()> = iced::widget::container(
+            KeyValueList::new(&palette).entry("ID", long),
+        )
+        .width(150)
+        .into();
+        let mut ui = simulator(list);
+
+        let value = ui.find(long).expect("value").bounds();
+
+        assert!(value.x + value.width <= 150.5, "{value:?} inside 150px");
+        assert!(value.height > TEXT_SIZE * 2.0, "{value:?} should wrap");
+    }
+
+    #[test]
+    fn given_a_list_in_a_scrollable_when_laid_out_then_it_sizes_to_its_content()
+    {
+        let palette = UiPalette::otty_dark();
+        let list: Element<'_, Message> = iced::widget::container(
+            iced::widget::scrollable(linked_list(&palette)),
+        )
+        .width(200)
+        .height(400)
+        .into();
+        let mut ui = simulator(list);
+
+        let key = ui.find("Ports").expect("first key").bounds();
+        let last = ui.find("otty-fx-data").expect("last link").bounds();
+
+        assert!(last.y > key.y, "{last:?} below {key:?}");
+        assert!(last.y < 200.0, "{last:?} sits near the top, not centered");
     }
 
     /// Draws the linked list with the pointer at `pointer` and checks it

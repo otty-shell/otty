@@ -83,5 +83,9 @@ pub const MODE_ICON_TILE: f32 = 22.0;
 pub const MODE_MENU: f32 = 300.0;
 /// Width of the key column of a key-value list (`.ot-insp-kv` columns).
 pub const KEY_VALUE_KEY: f32 = 96.0;
-/// Height of an inspector tab (`.ot-insp-tabs button { height: 30px }`).
+/// Width below which a key-value list stacks each value under its key. It is
+/// the key column, the gap and about 160px for values, so a two-column list
+/// never leaves a value narrower than that.
+pub const KEY_VALUE_STACK_BELOW: f32 = KEY_VALUE_KEY + 8.0 + 160.0;
+/// Height of an inspector tab(`.ot-insp-tabs button { height: 30px }`).
 pub const INSPECTOR_TAB: f32 = 30.0;

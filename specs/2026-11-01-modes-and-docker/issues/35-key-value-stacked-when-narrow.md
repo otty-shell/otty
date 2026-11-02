@@ -1,6 +1,6 @@
 # 35 — Key-value list stacks key over value when narrow
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Class: A
 Model: Sonnet 5.5 (claude-sonnet-5-5)
@@ -32,3 +32,19 @@ Tests first. Run fmt, clippy, tests, `cargo deny check` and compare
 - Kit `iced_test`: at a wide width the value sits right of its key; at a
   narrow width the value sits below its key; links still emit their
   messages in both layouts.
+
+## Answer
+
+- `size::KEY_VALUE_STACK_BELOW` = 96 (key) + 8 (gap) + 160 (values) = 264 px.
+  Below it each value sits under its key (gap `SPACE_1`); at 264 and wider
+  it stays two columns.
+- `KeyValueList` is built with `responsive(...).height(Length::Shrink)`, the
+  same pattern as `inspector_tabs`. With a shrinking height the list is as
+  tall as its entries, also inside the inspector's `scrollable` (checked with
+  an `iced_test` that places the list in a scrollable). The app needed no
+  change.
+- Links and `WrappedText` wrapping are shared by both layouts through one
+  private `entry_view`. Two old wrap tests now use narrower widths (160 and
+  96 px), because at 250 and 200 px the list is stacked and the value fits.
+- Gallery: the inspector section shows the list at 320 px and at 200 px.
+- Line coverage 87.20% -> 87.22%.

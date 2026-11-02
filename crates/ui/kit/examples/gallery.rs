@@ -894,7 +894,9 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         p,
     ))
     .width(120);
-    let inspector_list = KeyValueList::new(p)
+    // The same list twice: two columns at 320px, stacked at 200px.
+    let inspector_list = || -> Element<'_, Message> {
+        KeyValueList::new(p)
         .entry_parts(
             "Image",
             [ValuePart::link(
@@ -931,15 +933,17 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             "ID",
             "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         )
-        .entry("Created", "2026-11-01 18:30 UTC");
+        .entry("Created", "2026-11-01 18:30 UTC")
+        .into()
+    };
     let inspector_header: Element<'_, Message> = inspector_header.into();
-    let inspector_list: Element<'_, Message> = inspector_list.into();
     let inspector = container(
         column![
             inspector_header,
             wide_tabs,
             narrow_tabs,
-            inspector_list,
+            inspector_list(),
+            container(inspector_list()).width(200),
             label(state.inspector_event.clone(), p),
         ]
         .spacing(spacing::SPACE_4),
