@@ -5,7 +5,9 @@
 //! Containers table. An engine error keeps the form as typed.
 
 use iced::Task;
-use otty_docker::{EngineAddress, EngineInfo, ImageDefaults, PullProgress};
+use otty_docker::{
+    EngineAddress, EngineInfo, ImageDefaults, PullProgress, is_selinux_enabled,
+};
 
 use super::action_flow::reload;
 use super::event::{DockerEffect, DockerEvent};
@@ -30,7 +32,7 @@ pub(super) fn open(
         .map(default_network)
         .unwrap_or_default();
 
-    let mut form = RunForm::new(engine, image, &network);
+    let mut form = RunForm::new(engine, image, &network, is_selinux_enabled());
     let lookup = lookup(&mut form);
 
     state.open_run_form(form);

@@ -561,6 +561,10 @@ pub(crate) enum Key {
     DockerRunVolumeTarget,
     /// Switch of a volume row.
     DockerRunReadOnly,
+    /// Switch of a folder volume row on a computer with SELinux.
+    DockerRunRelabel,
+    /// Hint beside the SELinux switch of a volume row.
+    DockerRunRelabelHint,
     /// Button that adds a volume row.
     DockerRunAddVolume,
     /// Tooltip of the cross of a volume row.
@@ -864,7 +868,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 401] = [
+    pub(super) const ALL: [Self; 403] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1125,6 +1129,8 @@ impl Key {
         Self::DockerRunVolumeSource,
         Self::DockerRunVolumeTarget,
         Self::DockerRunReadOnly,
+        Self::DockerRunRelabel,
+        Self::DockerRunRelabelHint,
         Self::DockerRunAddVolume,
         Self::DockerRunRemoveVolume,
         Self::DockerFieldNetwork,

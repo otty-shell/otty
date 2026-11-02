@@ -267,6 +267,8 @@
     "docker_run_volume_source": "이 컴퓨터의 볼륨 또는 폴더",
     "docker_run_volume_target": "컨테이너 안의 경로",
     "docker_run_read_only": "읽기 전용",
+    "docker_run_relabel": "컨테이너가 이 폴더를 읽을 수 있게 하기 (:z)",
+    "docker_run_relabel_hint": "폴더 안 파일의 SELinux 레이블을 변경합니다.",
     "docker_run_add_volume": "볼륨 추가",
     "docker_run_remove_volume": "이 볼륨 제거",
     "docker_field_network": "네트워크",

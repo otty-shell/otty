@@ -305,6 +305,9 @@ fn volume_row<'a>(
         .placeholders("otty-data", "/data")
         .invalid(volume.is_source_invalid, volume.is_target_invalid)
         .control(read_only);
+    if volume.offers_relabel {
+        row = row.detail(relabel_switch(index, volume, is_editable, palette));
+    }
     if let Some(problem) = volume.problem {
         row = row.error(problem);
     }
@@ -318,6 +321,31 @@ fn volume_row<'a>(
             );
     }
     row
+}
+
+/// The SELinux switch of a folder row with its hint, shown under the row
+/// on a computer with SELinux.
+fn relabel_switch<'a>(
+    index: usize,
+    volume: &VolumeRowViewModel<'a>,
+    is_editable: bool,
+    palette: &UiPalette,
+) -> RunElement<'a> {
+    let mut switch = Switch::new(volume.is_relabeled, palette)
+        .label(i18n::t(Key::DockerRunRelabel));
+    if is_editable {
+        switch = switch
+            .on_toggle(move |is_on| edit(RunEdit::VolumeRelabel(index, is_on)));
+    }
+    let hint = text(i18n::t(Key::DockerRunRelabelHint))
+        .size(typography::SMALL.size())
+        .font(fonts::UI)
+        .color(palette.text_muted());
+
+    row![switch, hint]
+        .spacing(spacing::SPACE_3)
+        .align_y(Alignment::Center)
+        .into()
 }
 
 /// Network, Restart and the auto remove switch.
@@ -595,6 +623,72 @@ mod tests {
 
         assert!(ui.find(":").is_ok(), "the port separator should be a colon");
         assert!(ui.find("→").is_err(), "no arrow without volume rows");
+    }
+
+    /// The ready form with one volume row from `source`, SELinux on or off.
+    fn with_volume_row(source: &str, is_selinux_enabled: bool) -> DockerState {
+        let mut state = state(
+            Some(fixtures::image_defaults()),
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(0, source.to_string()),
+                RunEdit::VolumeTarget(0, String::from("/data")),
+            ],
+        );
+        state
+            .run_form_mut()
+            .expect("the form is open")
+            .set_selinux(is_selinux_enabled);
+
+        state
+    }
+
+    fn shows_relabel(state: &DockerState) -> bool {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let mut ui = tall(view(RunFormProps {
+            vm: run_form(state).expect("form"),
+            theme: ThemeProps::new(&theme),
+        }));
+
+        let has_switch = ui.find(i18n::t(Key::DockerRunRelabel)).is_ok();
+        let has_hint = ui.find(i18n::t(Key::DockerRunRelabelHint)).is_ok();
+        assert_eq!(has_switch, has_hint, "the switch and its hint go together");
+
+        has_switch
+    }
+
+    #[test]
+    fn a_folder_row_shows_the_relabel_switch_only_with_selinux() {
+        assert!(shows_relabel(&with_volume_row("/srv/site", true)));
+        assert!(!shows_relabel(&with_volume_row("/srv/site", false)));
+    }
+
+    #[test]
+    fn a_named_volume_row_never_shows_the_relabel_switch() {
+        assert!(!shows_relabel(&with_volume_row("otty-data", true)));
+        assert!(!shows_relabel(&ready()));
+    }
+
+    #[test]
+    fn the_relabel_switch_sends_its_new_state() {
+        let state = with_volume_row("/srv/site", true);
+
+        let messages = press(&state, i18n::t(Key::DockerRunRelabel));
+
+        assert_eq!(
+            messages,
+            vec![DockerIntent::RunEdited(RunEdit::VolumeRelabel(0, true))]
+        );
+    }
+
+    #[test]
+    fn restart_starts_at_no() {
+        let state = ready();
+
+        let vm = run_form(&state).expect("form");
+
+        assert_eq!(vm.restart.policy, otty_docker::RestartPolicy::No);
+        assert_eq!(vm.restart_hint, i18n::t(Key::DockerRestartHintNo));
     }
 
     #[test]

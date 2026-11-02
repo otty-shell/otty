@@ -267,6 +267,8 @@
     "docker_run_volume_source": "Volume ou pasta deste computador",
     "docker_run_volume_target": "Caminho no contêiner",
     "docker_run_read_only": "Somente leitura",
+    "docker_run_relabel": "Permitir que o contêiner leia esta pasta (:z)",
+    "docker_run_relabel_hint": "Altera os rótulos SELinux dos arquivos da pasta.",
     "docker_run_add_volume": "Adicionar volume",
     "docker_run_remove_volume": "Remover este volume",
     "docker_field_network": "Rede",

@@ -267,6 +267,8 @@
     "docker_run_volume_source": "Volume or folder on this computer",
     "docker_run_volume_target": "Path in the container",
     "docker_run_read_only": "Read only",
+    "docker_run_relabel": "Let the container read this folder (:z)",
+    "docker_run_relabel_hint": "Changes the SELinux labels of the folder's files.",
     "docker_run_add_volume": "Add volume",
     "docker_run_remove_volume": "Remove this volume",
     "docker_field_network": "Network",

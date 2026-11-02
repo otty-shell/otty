@@ -48,12 +48,14 @@ impl PortRow {
     }
 }
 
-/// One volume row as typed: source → path in the container, read-only.
+/// One volume row as typed: source → path in the container, read-only,
+/// and the SELinux relabel switch.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct VolumeRow {
     source: String,
     target: String,
     is_read_only: bool,
+    is_relabeled: bool,
 }
 
 impl VolumeRow {
@@ -70,6 +72,13 @@ impl VolumeRow {
     /// Whether the container can only read it.
     pub(crate) fn is_read_only(&self) -> bool {
         self.is_read_only
+    }
+
+    /// Whether the switch "Let the container read this folder (:z)" is on.
+    /// It counts only for a folder, and only on a computer with SELinux
+    /// (see [`RunForm::offers_relabel`]).
+    pub(crate) fn is_relabeled(&self) -> bool {
+        self.is_relabeled
     }
 
     /// Whether nothing was typed in the row; such a row is left out.
@@ -134,6 +143,7 @@ pub(crate) enum RunEdit {
     VolumeSource(usize, String),
     VolumeTarget(usize, String),
     VolumeReadOnly(usize, bool),
+    VolumeRelabel(usize, bool),
     AddVolume,
     RemoveVolume(usize),
     Network(String),
@@ -155,6 +165,8 @@ pub(crate) struct RunForm {
     network: String,
     restart: RestartPolicy,
     is_auto_remove: bool,
+    /// Whether SELinux is enabled, read once when the form opens.
+    is_selinux_enabled: bool,
     /// The image reference the lookup is about.
     lookup_reference: String,
     lookup: ImageLookup,
@@ -249,9 +261,26 @@ impl RunForm {
         self.lookup == ImageLookup::Missing && self.pulls_missing
     }
 
+    /// Whether the volume row at `index` shows the SELinux switch: the
+    /// computer has SELinux and the row's source is a folder on it. A named
+    /// volume never does.
+    pub(crate) fn offers_relabel(&self, index: usize) -> bool {
+        self.is_selinux_enabled
+            && self
+                .volumes
+                .get(index)
+                .is_some_and(|row| row.host_path().is_some())
+    }
+
     /// A new form on `engine` with `image` typed and `network` chosen; the
-    /// pull switch is on, Restart is No.
-    pub(crate) fn new(engine: EngineInfo, image: &str, network: &str) -> Self {
+    /// pull switch is on, Restart is No. `is_selinux_enabled` says whether
+    /// a folder volume can be relabeled.
+    pub(crate) fn new(
+        engine: EngineInfo,
+        image: &str,
+        network: &str,
+        is_selinux_enabled: bool,
+    ) -> Self {
         Self {
             engine,
             image: image.to_string(),
@@ -264,6 +293,7 @@ impl RunForm {
             network: network.to_string(),
             restart: RestartPolicy::No,
             is_auto_remove: false,
+            is_selinux_enabled,
             lookup_reference: String::new(),
             lookup: ImageLookup::NotAsked,
             phase: RunPhase::Editing,
@@ -348,6 +378,11 @@ impl RunForm {
             RunEdit::VolumeReadOnly(index, is_read_only) => {
                 if let Some(row) = self.volumes.get_mut(index) {
                     row.is_read_only = is_read_only;
+                }
+            },
+            RunEdit::VolumeRelabel(index, is_relabeled) => {
+                if let Some(row) = self.volumes.get_mut(index) {
+                    row.is_relabeled = is_relabeled;
                 }
             },
             RunEdit::AddVolume => self.volumes.push(VolumeRow::default()),
@@ -473,16 +508,21 @@ impl RunForm {
                 request = request.with_env(name, value);
             }
         }
-        for row in self.volumes.iter().filter(|row| !row.is_blank()) {
+        for (index, row) in self
+            .volumes
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| !row.is_blank())
+        {
             let source = match row.host_path() {
                 Some(path) => MountSource::HostPath(path),
                 None => MountSource::Volume(row.source.trim().to_string()),
             };
-            request = request.with_volume(VolumeMount::new(
-                source,
-                row.target.trim(),
-                row.is_read_only,
-            ));
+            let is_relabeled = row.is_relabeled && self.offers_relabel(index);
+            request = request.with_volume(
+                VolumeMount::new(source, row.target.trim(), row.is_read_only)
+                    .with_relabel(is_relabeled),
+            );
         }
         let network = self.network.trim();
         if !network.is_empty() {
@@ -492,6 +532,15 @@ impl RunForm {
         request
             .with_restart(self.restart)
             .with_auto_remove(self.is_auto_remove)
+    }
+}
+
+#[cfg(test)]
+impl RunForm {
+    /// Pretend SELinux is on or off, whatever this computer has, so tests
+    /// do not depend on the machine they run on.
+    pub(crate) fn set_selinux(&mut self, is_enabled: bool) {
+        self.is_selinux_enabled = is_enabled;
     }
 }
 
@@ -534,13 +583,84 @@ mod tests {
     }
 
     fn form() -> RunForm {
-        RunForm::new(docker(), "nginx:1.27", "bridge")
+        RunForm::new(docker(), "nginx:1.27", "bridge", false)
+    }
+
+    fn selinux_form() -> RunForm {
+        RunForm::new(docker(), "nginx:1.27", "bridge", true)
     }
 
     fn edit(form: &mut RunForm, edits: Vec<RunEdit>) {
         for change in edits {
             form.apply(change);
         }
+    }
+
+    /// A form with one volume row from `source` to `/data`, with the
+    /// relabel switch turned on.
+    fn relabeled(mut form: RunForm, source: &str) -> RunForm {
+        edit(
+            &mut form,
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(0, source.to_string()),
+                RunEdit::VolumeTarget(0, String::from("/data")),
+                RunEdit::VolumeRelabel(0, true),
+            ],
+        );
+        form
+    }
+
+    #[test]
+    fn the_relabel_switch_starts_off() {
+        let mut form = selinux_form();
+
+        form.apply(RunEdit::AddVolume);
+
+        assert!(!form.volumes()[0].is_relabeled());
+    }
+
+    #[test]
+    fn the_relabel_switch_is_offered_for_a_folder_only_and_only_with_selinux() {
+        let folder = relabeled(selinux_form(), "/srv/site");
+        let home_folder = relabeled(selinux_form(), "~/site");
+        let named = relabeled(selinux_form(), "otty-data");
+        let no_selinux = relabeled(form(), "/srv/site");
+
+        assert!(folder.offers_relabel(0));
+        assert!(home_folder.offers_relabel(0));
+        assert!(!named.offers_relabel(0));
+        assert!(!no_selinux.offers_relabel(0));
+        assert!(!folder.offers_relabel(5));
+    }
+
+    #[test]
+    fn a_relabeled_folder_goes_into_the_request_with_z() {
+        let request = relabeled(selinux_form(), "/srv/site").request();
+
+        assert!(request.volumes()[0].is_relabeled());
+    }
+
+    #[test]
+    fn a_named_volume_or_a_computer_without_selinux_never_relabels() {
+        let named = relabeled(selinux_form(), "otty-data").request();
+        let no_selinux = relabeled(form(), "/srv/site").request();
+        let untouched = {
+            let mut form = selinux_form();
+            edit(
+                &mut form,
+                vec![
+                    RunEdit::AddVolume,
+                    RunEdit::VolumeSource(0, String::from("/srv/site")),
+                    RunEdit::VolumeTarget(0, String::from("/data")),
+                ],
+            );
+            form.request()
+        };
+
+        assert!(!named.volumes()[0].is_relabeled());
+        assert!(!no_selinux.volumes()[0].is_relabeled());
+        assert!(!untouched.volumes()[0].is_relabeled());
     }
 
     #[test]

@@ -267,6 +267,8 @@
     "docker_run_volume_source": "本機的磁碟區或資料夾",
     "docker_run_volume_target": "容器內路徑",
     "docker_run_read_only": "唯讀",
+    "docker_run_relabel": "允許容器讀取此資料夾 (:z)",
+    "docker_run_relabel_hint": "會變更資料夾中檔案的 SELinux 標籤。",
     "docker_run_add_volume": "新增磁碟區",
     "docker_run_remove_volume": "移除此磁碟區",
     "docker_field_network": "網路",

@@ -267,6 +267,8 @@
     "docker_run_volume_source": "このコンピューターのボリュームまたはフォルダー",
     "docker_run_volume_target": "コンテナ内のパス",
     "docker_run_read_only": "読み取り専用",
+    "docker_run_relabel": "コンテナがこのフォルダーを読めるようにする (:z)",
+    "docker_run_relabel_hint": "フォルダー内のファイルの SELinux ラベルを変更します。",
     "docker_run_add_volume": "ボリュームを追加",
     "docker_run_remove_volume": "このボリュームを削除",
     "docker_field_network": "ネットワーク",

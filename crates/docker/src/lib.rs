@@ -30,6 +30,7 @@ mod network;
 mod probe;
 mod pull;
 mod run;
+mod selinux;
 #[cfg(test)]
 mod test_support;
 mod timestamp;
@@ -56,5 +57,6 @@ pub use crate::run::{
     MountSource, PortProtocol, PublishedPort, RestartPolicy, RunRequest,
     VolumeMount,
 };
+pub use crate::selinux::is_selinux_enabled;
 pub use crate::volume::Volume;
 pub use crate::watch::WatchEvent;

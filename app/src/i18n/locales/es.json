@@ -267,6 +267,8 @@
     "docker_run_volume_source": "Volumen o carpeta de este equipo",
     "docker_run_volume_target": "Ruta en el contenedor",
     "docker_run_read_only": "Solo lectura",
+    "docker_run_relabel": "Dejar que el contenedor lea esta carpeta (:z)",
+    "docker_run_relabel_hint": "Cambia las etiquetas SELinux de los archivos de la carpeta.",
     "docker_run_add_volume": "Añadir volumen",
     "docker_run_remove_volume": "Quitar este volumen",
     "docker_field_network": "Red",

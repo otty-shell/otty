@@ -639,6 +639,16 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     .row(
         MappingRow::new("~/projects/otty-site/dist", "/usr/share/nginx/html")
             .control(Switch::new(true, p).label("Read only"))
+            .detail(
+                row![
+                    Switch::new(false, p)
+                        .label("Let the container read this folder (:z)"),
+                    text("Changes the SELinux labels of the folder's files.")
+                        .size(typography::SMALL.size())
+                        .color(palette.text_muted()),
+                ]
+                .spacing(spacing::SPACE_3),
+            )
             .on_remove(Message::Clicked, "Remove this volume"),
     )
     .add_label("Add volume");
@@ -1157,7 +1167,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section(
-            "MappingField (ports: protocol, error row; volumes: read-only, disabled)",
+            "MappingField (ports: protocol, error row; volumes: read-only, detail under the row, disabled)",
             container(mappings).width(720).into(),
             p,
         ),

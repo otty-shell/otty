@@ -86,6 +86,7 @@ pub struct VolumeMount {
     source: MountSource,
     target: String,
     is_read_only: bool,
+    is_relabeled: bool,
 }
 
 impl VolumeMount {
@@ -104,28 +105,54 @@ impl VolumeMount {
         self.is_read_only
     }
 
-    /// Mount `source` at `target` inside the container.
+    /// Whether the engine relabels the folder for SELinux (the `z` bind
+    /// option). Only a folder on this computer is ever relabeled.
+    pub fn is_relabeled(&self) -> bool {
+        self.is_relabeled
+    }
+
+    /// Mount `source` at `target` inside the container, without relabeling.
     pub fn new(source: MountSource, target: &str, is_read_only: bool) -> Self {
         Self {
             source,
             target: target.to_string(),
             is_read_only,
+            is_relabeled: false,
         }
     }
 
-    /// The engine's bind text: `source:target`, with `:ro` when read-only.
+    /// Ask the engine to relabel the folder so that the container can read
+    /// it under SELinux (`z`). It changes the labels of the folder's files
+    /// on this computer. A named volume ignores it.
+    pub fn with_relabel(mut self, is_relabeled: bool) -> Self {
+        self.is_relabeled = is_relabeled;
+        self
+    }
+
+    /// The engine's bind text: `source:target`, then the options `ro` and
+    /// `z` joined by a comma when set, such as `source:target:ro,z`.
     /// `docker run -v` sends the same text for folders and named volumes.
     fn bind(&self) -> String {
-        let source = match &self.source {
-            MountSource::HostPath(path) => path.display().to_string(),
-            MountSource::Volume(name) => name.clone(),
+        let (source, is_relabeled) = match &self.source {
+            MountSource::HostPath(path) => {
+                (path.display().to_string(), self.is_relabeled)
+            },
+            MountSource::Volume(name) => (name.clone(), false),
         };
         let target = &self.target;
 
+        let mut options: Vec<&str> = Vec::new();
         if self.is_read_only {
-            format!("{source}:{target}:ro")
-        } else {
+            options.push("ro");
+        }
+        if is_relabeled {
+            options.push("z");
+        }
+
+        if options.is_empty() {
             format!("{source}:{target}")
+        } else {
+            format!("{source}:{target}:{}", options.join(","))
         }
     }
 }
@@ -496,6 +523,60 @@ mod tests {
                 "otty-fx-cache:/cache"
             ])
         );
+    }
+
+    #[test]
+    fn the_bind_text_of_a_folder_has_ro_and_z_for_each_combination() {
+        let folder = |is_read_only: bool, is_relabeled: bool| {
+            VolumeMount::new(
+                MountSource::HostPath(PathBuf::from("/srv/site")),
+                "/site",
+                is_read_only,
+            )
+            .with_relabel(is_relabeled)
+            .bind()
+        };
+
+        assert_eq!(folder(false, false), "/srv/site:/site");
+        assert_eq!(folder(true, false), "/srv/site:/site:ro");
+        assert_eq!(folder(false, true), "/srv/site:/site:z");
+        assert_eq!(folder(true, true), "/srv/site:/site:ro,z");
+    }
+
+    #[test]
+    fn a_named_volume_never_gets_the_relabel_option() {
+        let volume = |is_read_only: bool| {
+            VolumeMount::new(
+                MountSource::Volume(String::from("otty-fx-cache")),
+                "/cache",
+                is_read_only,
+            )
+            .with_relabel(true)
+            .bind()
+        };
+
+        assert_eq!(volume(false), "otty-fx-cache:/cache");
+        assert_eq!(volume(true), "otty-fx-cache:/cache:ro");
+    }
+
+    #[test]
+    fn a_relabeled_folder_reaches_the_create_body() {
+        let request = RunRequest::new("nginx").with_volume(
+            VolumeMount::new(
+                MountSource::HostPath(PathBuf::from("/srv/site")),
+                "/site",
+                false,
+            )
+            .with_relabel(true),
+        );
+
+        let body = body_json(&request);
+
+        assert_eq!(
+            body["HostConfig"]["Binds"],
+            serde_json::json!(["/srv/site:/site:z"])
+        );
+        assert!(request.volumes()[0].is_relabeled());
     }
 
     #[test]

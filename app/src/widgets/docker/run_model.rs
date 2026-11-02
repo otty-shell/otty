@@ -59,6 +59,10 @@ pub(crate) struct VolumeRowViewModel<'a> {
     pub(crate) source: &'a str,
     pub(crate) target: &'a str,
     pub(crate) is_read_only: bool,
+    /// The row shows the SELinux switch: SELinux is on and the source is a
+    /// folder on this computer.
+    pub(crate) offers_relabel: bool,
+    pub(crate) is_relabeled: bool,
     pub(crate) problem: Option<&'static str>,
     pub(crate) is_source_invalid: bool,
     pub(crate) is_target_invalid: bool,
@@ -168,6 +172,8 @@ pub(crate) fn run_form(state: &DockerState) -> Option<RunFormViewModel<'_>> {
                 source: row.source(),
                 target: row.target(),
                 is_read_only: row.is_read_only(),
+                offers_relabel: form.offers_relabel(index),
+                is_relabeled: row.is_relabeled(),
                 problem: problem.map(|problem| i18n::t(problem.message())),
                 is_source_invalid: problem.is_some_and(|p| p.is_source()),
                 is_target_invalid: problem.is_some_and(|p| p.is_target()),
@@ -489,6 +495,64 @@ mod tests {
             );
         }
         state
+    }
+
+    /// The form of `here()` with one volume row from `source` and SELinux
+    /// on or off.
+    fn with_volume_row(source: &str, is_selinux_enabled: bool) -> DockerState {
+        let mut state = here();
+        for edit in [
+            RunEdit::AddVolume,
+            RunEdit::VolumeSource(0, source.to_string()),
+            RunEdit::VolumeTarget(0, String::from("/data")),
+        ] {
+            let _ = reduce(&mut state, DockerIntent::RunEdited(edit));
+        }
+        state
+            .run_form_mut()
+            .expect("the form is open")
+            .set_selinux(is_selinux_enabled);
+
+        state
+    }
+
+    #[test]
+    fn a_folder_row_offers_the_relabel_switch_only_with_selinux() {
+        let cases = [
+            ("/srv/site", true, true),
+            ("~/site", true, true),
+            ("otty-data", true, false),
+            ("/srv/site", false, false),
+        ];
+
+        for (source, is_selinux_enabled, expected) in cases {
+            let state = with_volume_row(source, is_selinux_enabled);
+
+            let vm = run_form(&state).expect("form");
+
+            assert_eq!(
+                vm.volumes[0].offers_relabel, expected,
+                "{source} with SELinux {is_selinux_enabled}"
+            );
+            assert!(!vm.volumes[0].is_relabeled, "off by default");
+        }
+    }
+
+    #[test]
+    fn turning_the_relabel_switch_on_shows_in_the_row() {
+        let mut state = with_volume_row("/srv/site", true);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::RunEdited(RunEdit::VolumeRelabel(0, true)),
+        );
+
+        let vm = run_form(&state).expect("form");
+        assert!(vm.volumes[0].is_relabeled);
+        assert!(
+            state.run_form().expect("form").request().volumes()[0]
+                .is_relabeled()
+        );
     }
 
     fn here() -> DockerState {

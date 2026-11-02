@@ -267,6 +267,8 @@
     "docker_run_volume_source": "Том или папка на этом компьютере",
     "docker_run_volume_target": "Путь в контейнере",
     "docker_run_read_only": "Только чтение",
+    "docker_run_relabel": "Разрешить контейнеру читать эту папку (:z)",
+    "docker_run_relabel_hint": "Меняет метки SELinux у файлов папки.",
     "docker_run_add_volume": "Добавить том",
     "docker_run_remove_volume": "Убрать этот том",
     "docker_field_network": "Сеть",

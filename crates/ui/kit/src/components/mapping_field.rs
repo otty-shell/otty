@@ -33,6 +33,7 @@ pub struct MappingRow<'a, Message> {
     is_target_invalid: bool,
     error: Option<String>,
     control: Option<Element<'a, Message>>,
+    detail: Option<Element<'a, Message>>,
     on_source: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_target: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_remove: Option<Message>,
@@ -51,6 +52,7 @@ impl<'a, Message> MappingRow<'a, Message> {
             is_target_invalid: false,
             error: None,
             control: None,
+            detail: None,
             on_source: None,
             on_target: None,
             on_remove: None,
@@ -85,6 +87,13 @@ impl<'a, Message> MappingRow<'a, Message> {
     /// Sets the control between the target input and the cross.
     pub fn control(mut self, control: impl Into<Element<'a, Message>>) -> Self {
         self.control = Some(control.into());
+        self
+    }
+
+    /// Sets an element under the inputs and above the error, such as an
+    /// option that applies to this row only (a switch with its hint).
+    pub fn detail(mut self, detail: impl Into<Element<'a, Message>>) -> Self {
+        self.detail = Some(detail.into());
         self
     }
 
@@ -336,19 +345,25 @@ fn mapping_row<'a, Message: Clone + 'a>(
     .spacing(spacing::SPACE_2)
     .align_y(Alignment::Center);
 
-    let Some(error) = mapping.error else {
+    if mapping.detail.is_none() && mapping.error.is_none() {
         return line.into();
-    };
-    let style = typography::SMALL;
-    column![
-        line,
-        text(error)
-            .size(style.size())
-            .font(fonts::UI)
-            .color(palette.status_error()),
-    ]
-    .spacing(spacing::SPACE_1)
-    .into()
+    }
+
+    let mut lines = column![line].spacing(spacing::SPACE_1);
+    if let Some(detail) = mapping.detail {
+        lines = lines.push(detail);
+    }
+    if let Some(error) = mapping.error {
+        let style = typography::SMALL;
+        lines = lines.push(
+            text(error)
+                .size(style.size())
+                .font(fonts::UI)
+                .color(palette.status_error()),
+        );
+    }
+
+    lines.into()
 }
 
 /// A boxed mono input of control-lg height; `invalid` colors its border.
@@ -505,6 +520,55 @@ mod tests {
         let _ = ui.click("Add");
 
         assert_eq!(ui.into_messages().count(), 0);
+    }
+
+    #[test]
+    fn given_a_detail_when_drawn_then_it_sits_under_the_inputs_and_above_the_error()
+     {
+        let palette = UiPalette::otty_dark();
+        let field: Element<'_, Message> =
+            MappingField::new("Source", "Path in the container", &palette)
+                .row(
+                    MappingRow::new("/srv", "/data")
+                        .error("Bad path")
+                        .detail(text("Relabel this folder")),
+                )
+                .into();
+        let mut ui = simulator(container(field).width(WIDTH));
+
+        let input = ui.find("/srv").expect("source input").bounds();
+        let detail = ui.find("Relabel this folder").expect("detail").bounds();
+        let error = ui.find("Bad path").expect("error").bounds();
+
+        assert!(
+            detail.y >= input.y + input.height,
+            "detail {detail:?} should be under the input {input:?}"
+        );
+        assert!(
+            error.y >= detail.y + detail.height,
+            "error {error:?} should be under the detail {detail:?}"
+        );
+        assert!(
+            (detail.x - input.x).abs() < 0.5,
+            "detail {detail:?} should line up with the source input {input:?}"
+        );
+    }
+
+    #[test]
+    fn given_a_detail_with_a_button_when_pressed_then_its_message_is_sent() {
+        let palette = UiPalette::otty_dark();
+        let field: Element<'_, Message> =
+            MappingField::new("Source", "Path in the container", &palette)
+                .row(MappingRow::new("/srv", "/data").detail(
+                    iced::widget::button("Relabel").on_press(Message::Add),
+                ))
+                .into();
+        let mut ui = simulator(container(field).width(WIDTH));
+
+        ui.click("Relabel").expect("detail button");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Add]);
     }
 
     #[test]

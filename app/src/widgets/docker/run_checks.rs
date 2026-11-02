@@ -151,6 +151,7 @@ mod tests {
             fixtures::engine(EngineKind::Docker),
             "nginx:1.27",
             "bridge",
+            false,
         );
         for edit in edits {
             form.apply(edit);
