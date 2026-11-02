@@ -476,7 +476,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 43 | Kit: tag search model (parsing, suggestions, matching) (Decision 21) | C | Opus | 42 |
 | 44 | Kit: `TagSearchField` and `TagRow` views (Decision 21) | A | Opus | 43 |
 | 45 | Docker tables use tag search; compose becomes a tag; tags kept per table (Decision 21) | C | Opus | 44 |
-| 46 | Fuzzy suggestions with `frizbee` (needs the owner's approval of the dependency) | C | Sonnet | 43 |
+| 46 | Fuzzy suggestions with `frizbee` (dependency approved by the owner, 2026-11-02) | C | Sonnet | 45 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -526,7 +526,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 40 — Bug: resize never scrolls, scrollbar never resizes · Opus
 - [x] 41 — Bug: narrow panel text never squeezes · Sonnet
 - [x] 42 — Copy icon under the switches when narrow · Sonnet
-- [ ] 43 — Kit: tag search model · Opus
-- [ ] 44 — Kit: tag search views · Opus
-- [ ] 45 — Docker tables use tag search · Opus
-- [ ] 46 — Fuzzy suggestions with `frizbee` (waits for approval) · Sonnet
+- [x] 43 — Kit: tag search model · Opus
+- [x] 44 — Kit: tag search views · Opus
+- [x] 45 — Docker tables use tag search · Opus
+- [ ] 46 — Fuzzy suggestions with `frizbee` · Sonnet

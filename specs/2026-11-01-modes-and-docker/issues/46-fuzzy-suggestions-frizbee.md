@@ -1,16 +1,16 @@
 # 46 — Fuzzy suggestions with `frizbee`
 
-Status: needs-info
+Status: ready-for-agent
 Type: task
 Class: C
 Model: Sonnet 5.5 (claude-sonnet-5-5)
-Blocked by: 43
+Blocked by: 45
 Spec: [../spec.md](../spec.md)
 
 ## What
 
-**Do not start before the owner approves the new dependency**: `frizbee` 0.13,
-MIT, no required dependencies, a SIMD fuzzy matcher that tolerates typos.
+The owner approved the new dependency (2026-11-02): `frizbee` 0.13, MIT, no
+required dependencies, a SIMD fuzzy matcher that tolerates typos.
 
 Replace the body of the private ranking function of ticket 43 with `frizbee`, in
 `otty-ui-kit` only. Only suggestions change: filtering the table stays substring.
