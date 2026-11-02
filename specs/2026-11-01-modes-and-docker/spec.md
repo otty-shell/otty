@@ -354,6 +354,42 @@ none of those are in scope (see Out of Scope).
       each key sits on its own line with its value under it, instead of two
       columns (owner request, 2026-11-02).
 
+21. **Tag search** (owner request, 2026-11-02). Wins over earlier decisions
+    where they disagree. Built to be reused by other widgets: the kit holds
+    the model and the views, and a widget only supplies its keys and values.
+    - **Layout:** title row; then the search field and action buttons; then
+      a row of tags; then the table. The tags row wraps and is not shown when
+      there are no tags. The compose chip next to the title goes away.
+    - **Plain text** in the field filters by name, as today.
+    - **Tags are `key:value`.** The key is a column of the table on screen,
+      with a stable English name in any interface language (`name`, `status`,
+      `image`, `compose`, `ports`, `age`, `repository`, `id`, `size`,
+      `used-by`, `driver`, `scope`, `subnet`, `containers`). Text before the
+      first `:` counts as a key only if it is one of these; otherwise the
+      whole text is a name filter (so `redis:7` stays plain text).
+    - **Matching:** case-insensitive substring on the text shown in the cell;
+      a cell with several values (ports) matches if any does. Different keys
+      must all match; several tags with one key match if any does.
+    - **Suggestions while typing:**
+      - no key yet: the matching keys in column order, then matching names;
+      - after `key:`: the values of that column, from the rows the other
+        filters leave.
+      The first suggestion is highlighted. ↑ ↓ move, Esc closes, a click
+      picks. An empty focused field shows the keys.
+    - **Enter or Tab applies the highlighted suggestion:** a name fills the
+      field and filters; a key puts `key:` in the field and shows its values;
+      a value adds the tag and clears the field. With no suggestion, Enter
+      after `key:text` adds that tag; otherwise it does nothing. Backspace in
+      an empty field removes the last tag.
+    - **Removing:** every tag has a clear cross, and the tags row ends with a
+      "Clear all" button that removes all tags of this table.
+    - **Compose is a tag:** the Compose link adds `compose:<name>`, replacing
+      another `compose` tag.
+    - **Kept per table:** each list keeps its own tags while OTTY runs, like
+      its sort (not saved to disk). The text in the field is not kept. A link
+      to an item that the target table's tags would hide removes those tags,
+      so the item is shown.
+
 ## Ticket classes
 
 Same classes as `specs/2026-10-31-workspace-layout`: **A** restyle / kit,
@@ -437,6 +473,10 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 40 | Bug: dragging a split never scrolls, dragging a scrollbar never resizes | C | Opus | 39 |
 | 41 | Bug: text in narrow panels stays on one line, nothing overlaps | A | Sonnet | 40 |
 | 42 | Narrow Inspect: the copy icon sits on the left under the switches | A | Sonnet | 41 |
+| 43 | Kit: tag search model (parsing, suggestions, matching) (Decision 21) | C | Opus | 42 |
+| 44 | Kit: `TagSearchField` and `TagRow` views (Decision 21) | A | Opus | 43 |
+| 45 | Docker tables use tag search; compose becomes a tag; tags kept per table (Decision 21) | C | Opus | 44 |
+| 46 | Fuzzy suggestions with `frizbee` (needs the owner's approval of the dependency) | C | Sonnet | 43 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -486,3 +526,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 40 — Bug: resize never scrolls, scrollbar never resizes · Opus
 - [x] 41 — Bug: narrow panel text never squeezes · Sonnet
 - [x] 42 — Copy icon under the switches when narrow · Sonnet
+- [ ] 43 — Kit: tag search model · Opus
+- [ ] 44 — Kit: tag search views · Opus
+- [ ] 45 — Docker tables use tag search · Opus
+- [ ] 46 — Fuzzy suggestions with `frizbee` (waits for approval) · Sonnet
