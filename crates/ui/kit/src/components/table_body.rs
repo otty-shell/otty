@@ -13,6 +13,8 @@
 //!
 //! [`DataTable`]: super::data_table::DataTable
 
+use std::rc::Rc;
+
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::{Operation, Tree, Widget, tree};
 use iced::advanced::{Clipboard, Shell, overlay, renderer};
@@ -21,13 +23,16 @@ use iced::{
     mouse,
 };
 
-/// Message builder for a right click: row index and pointer position.
+use super::table_sideways::SidewaysOffset;
+
+/// Message builder for a right click: row index and pointer position. Shared
+/// because the table builds its body again whenever its width changes.
 pub(super) type RightPress<'a, Message> =
-    Box<dyn Fn(usize, Point) -> Message + 'a>;
+    Rc<dyn Fn(usize, Point) -> Message + 'a>;
 /// Message builder for a "⋯" press: row index and the bottom-left corner of
-/// the button.
+/// the button. Shared like [`RightPress`].
 pub(super) type MenuPress<'a, Message> =
-    Box<dyn Fn(usize, Point) -> Message + 'a>;
+    Rc<dyn Fn(usize, Point) -> Message + 'a>;
 
 /// Wraps the column of table rows. Each child of the column is one row.
 pub(super) struct TableBody<'a, Message> {
@@ -35,6 +40,7 @@ pub(super) struct TableBody<'a, Message> {
     on_right_press: Option<RightPress<'a, Message>>,
     menu_rows: Vec<bool>,
     on_menu_press: Option<MenuPress<'a, Message>>,
+    sideways: Option<SidewaysOffset>,
 }
 
 impl<'a, Message> TableBody<'a, Message> {
@@ -48,7 +54,24 @@ impl<'a, Message> TableBody<'a, Message> {
             on_right_press,
             menu_rows: Vec::new(),
             on_menu_press: None,
+            sideways: None,
         }
+    }
+
+    /// Takes back the sideways scroll of a table that scrolls in a
+    /// [`SidewaysScroll`](super::table_sideways::SidewaysScroll) too.
+    pub(super) fn sideways(mut self, offset: SidewaysOffset) -> Self {
+        self.sideways = Some(offset);
+        self
+    }
+
+    /// Returns the scroll offset to take out of a point: the vertical scroll
+    /// of the body and the sideways scroll of the table.
+    fn scroll(&self, layout: Layout<'_>, viewport: &Rectangle) -> Vector {
+        let sideways =
+            self.sideways.as_ref().map_or(0.0, |offset| offset.get());
+
+        scroll_offset(layout, viewport) + Vector::new(sideways, 0.0)
     }
 
     /// Sends `on_menu_press` when the "⋯" button of a row is pressed.
@@ -172,7 +195,7 @@ impl<Message> Widget<Message, Theme, Renderer> for TableBody<'_, Message> {
                 .children()
                 .position(|row| row.bounds().contains(position))
         {
-            let scroll = scroll_offset(layout, viewport);
+            let scroll = self.scroll(layout, viewport);
 
             shell.publish(on_right_press(index, position - scroll));
             shell.capture_event();
@@ -186,7 +209,7 @@ impl<Message> Widget<Message, Theme, Renderer> for TableBody<'_, Message> {
             && let Some(position) = cursor.position_over(layout.bounds())
             && let Some((index, button)) = self.menu_button_at(layout, position)
         {
-            let scroll = scroll_offset(layout, viewport);
+            let scroll = self.scroll(layout, viewport);
             let corner = Point::new(button.x, button.y + button.height);
 
             shell.publish(on_menu_press(index, corner - scroll));

@@ -1,6 +1,6 @@
 # 36 — Narrow window: tree labels and short table columns stay readable
 
-Status: ready-for-agent
+Status: resolved
 Type: bug
 Class: A
 Model: Sonnet 5.5 (claude-sonnet-5-5)
@@ -40,3 +40,48 @@ deny check` and compare `cargo llvm-cov` with the merge base before the commit.
   header moves with the rows; row, link and "⋯" presses still hit the right
   row and column after a sideways scroll.
 - A snapshot of the 900 px window shows "Containers" and "Age" readable.
+
+## Answer
+
+Tests were written first and seen failing (8 kit tests: the width split,
+the minimum kept, the header moving with the rows, and the two tree row
+cases). Then the code.
+
+### Kit (`otty-ui-kit`)
+
+- `TreeRow`: the label is an `EllipsisText` that takes the room it needs
+  first. The state word and the count are now one text on the right
+  ("running 2"), which takes what is left and ends with "…" or shows
+  nothing when the room is gone. Other callers are unchanged.
+- `TableColumn::min_width(u16)` (pixels, side padding included, default 0).
+  A private `column_widths` splits the width by shares; a column below its
+  minimum keeps the minimum and the rest share what is left, repeated until
+  stable. When the minimums do not fit, columns are their minimums (a column
+  with no minimum is 0 wide, so give every column a minimum).
+- `DataTable` is built inside `responsive`, so it knows its width. When the
+  minimums do not fit, header and rows sit in one horizontal `scrollable`
+  (new `scrollbar::horizontal()`, same thin style). New private
+  `table_sideways.rs` (`SidewaysScroll`) reads the scroll offset before each
+  event; `TableBody` takes it out of right-press and "⋯" points, so the row
+  menu still opens at its button. Handlers became `Rc` for this.
+- Gallery: a "minimum widths" section (520 and 320 wide) and a "TreeRow
+  narrow" section (200, 150, 90 wide), in both themes.
+
+### App
+
+Minimums in `resource_rows::columns()` (px): Containers Name 110, Status
+104, Image 96, Compose 80, Ports 130 (one port), Age 52 (sum 572, fits the
+576 px a 900 px window leaves); Images 140, ID 118, Size 76, Used by 76, Age
+52; Volumes 140, Driver 76, Used by 110, Age 52; Networks Name 120, Driver
+76, Scope 72, Subnet 124, Containers 100, Age 52. Tests of the columns
+updated.
+
+Coverage (lines): 87.54% (68517 lines, 8536 missed) -> 87.59% (68968 lines,
+8559 missed). fmt, clippy, workspace tests and `cargo deny check` pass.
+
+### Notes
+
+- Snapshot of the 900 px window (throwaway, not committed):
+  `scratchpad/shots36/narrow-dark-wgpu.png` and `narrow-light-wgpu.png`.
+- When the table scrolls sideways the vertical scrollbar sits at the right
+  end of the wide content, so it shows after scrolling right.

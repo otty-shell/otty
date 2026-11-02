@@ -57,6 +57,7 @@ pub mod status_bar;
 pub mod surface;
 pub mod switch;
 mod table_body;
+mod table_sideways;
 pub mod target_dot;
 pub mod text_field;
 pub mod title_search;

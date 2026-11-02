@@ -631,6 +631,7 @@ mod tests {
         assert_eq!(
             table.columns[3],
             TableColumn::new(i18n::t(Key::DockerFieldCompose), 2)
+                .min_width(80)
                 .sortable(true)
         );
         let projects: Vec<&TableCell> =

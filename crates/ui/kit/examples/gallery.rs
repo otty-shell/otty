@@ -1454,6 +1454,42 @@ fn data_parts<'a>(
     ]);
     let empty = DataTable::<Message>::new(columns(), p)
         .empty_message("Nothing matches “web”.");
+    let narrow_table = |width: f32| {
+        let table = DataTable::<Message>::new(
+            vec![
+                TableColumn::new("Name", 3).min_width(140),
+                TableColumn::new("Status", 2).min_width(110),
+                TableColumn::new("Size", 1)
+                    .align(ColumnAlign::End)
+                    .min_width(84),
+                TableColumn::new("Age", 1).min_width(64),
+            ],
+            p,
+        )
+        .on_row_menu("More actions", |_, _| Message::Clicked)
+        .row(vec![
+            TableCell::mono("otty-site-web-1"),
+            TableCell::badge("Running", StatusTone::Ok),
+            TableCell::number("192 MB"),
+            TableCell::muted("2 h"),
+        ])
+        .row(vec![
+            TableCell::mono("postgres-dev-db-1"),
+            TableCell::badge("Exited (1)", StatusTone::Error),
+            TableCell::number("1.2 GB"),
+            TableCell::muted("3 d"),
+        ]);
+
+        container(container(table).width(width).height(110))
+    };
+    let narrow_rows = column![
+        TreeRow::<Message>::new("Containers", p)
+            .depth(1)
+            .state("2 running"),
+        TreeRow::<Message>::new("Docker 29.9.1", p)
+            .caret(true)
+            .dot(TargetKind::Local),
+    ];
 
     let badges = row![
         StatusBadge::new("Running", StatusTone::Ok, p),
@@ -1653,6 +1689,38 @@ fn data_parts<'a>(
             column![container(table).height(240), label(right_click, p)]
                 .spacing(spacing::SPACE_2)
                 .into(),
+            p,
+        ),
+        section(
+            "DataTable minimum widths (520 wide: Size and Age keep theirs while Name shrinks; 320 wide: the table scrolls sideways with its header)",
+            column![narrow_table(520.0), narrow_table(320.0)]
+                .spacing(spacing::SPACE_4)
+                .into(),
+            p,
+        ),
+        section(
+            "TreeRow narrow (200, 150 and 90 wide: the label stays whole, the note gives way, then the label ends with …)",
+            column![
+                container(narrow_rows.width(200)),
+                container(
+                    column![
+                        TreeRow::<Message>::new("Containers", p)
+                            .depth(1)
+                            .state("2 running"),
+                    ]
+                    .width(150)
+                ),
+                container(
+                    column![
+                        TreeRow::<Message>::new("Containers", p)
+                            .depth(1)
+                            .state("2 running"),
+                    ]
+                    .width(90)
+                ),
+            ]
+            .spacing(spacing::SPACE_2)
+            .into(),
             p,
         ),
         section(

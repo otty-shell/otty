@@ -36,6 +36,31 @@ pub fn vertical() -> Direction {
     )
 }
 
+/// Horizontal scrolling with a thin bar on the bottom edge of the content.
+///
+/// # Example
+///
+/// ```
+/// use iced::Element;
+/// use iced::widget::{scrollable, text};
+/// use otty_ui_kit::components::scrollbar;
+/// use otty_ui_kit::palette::UiPalette;
+///
+/// let palette = UiPalette::otty_dark();
+/// let wide: Element<'_, ()> = scrollable(text("A wide row"))
+///     .direction(scrollbar::horizontal())
+///     .style(scrollbar::style(&palette))
+///     .into();
+/// ```
+pub fn horizontal() -> Direction {
+    Direction::Horizontal(
+        Scrollbar::new()
+            .width(WIDTH)
+            .margin(0)
+            .scroller_width(WIDTH),
+    )
+}
+
 /// Style of a thin scrollbar: square, without a track, with a
 /// `surface-hover` scroller that turns `text-faint` while the pointer is on
 /// it or drags it.

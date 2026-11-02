@@ -1,9 +1,10 @@
 //! `TreeRow`: one row of a folder or session tree.
 
-use iced::widget::text::Wrapping;
-use iced::widget::{Space, button, container, row, svg, text};
+use iced::widget::text::Alignment as TextAlignment;
+use iced::widget::{Space, button, container, row, svg};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
+use super::ellipsis_text::EllipsisText;
 use super::glyph;
 use super::session_row::SessionTone;
 use super::target_dot::{TargetKind, target_dot};
@@ -24,7 +25,9 @@ const PADDING_X: f32 = spacing::SPACE_3;
 
 /// Row of a tree. A row without a message is shown static.
 ///
-/// The label is cut at the row edge: `iced` has no text ellipsis.
+/// The label comes first: it keeps its width and ends with "…" only when it
+/// does not fit. The state word and count on the right give way first, ending
+/// with "…" or nothing when little room is left.
 ///
 /// # Example
 ///
@@ -194,32 +197,34 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
                     .padding(Padding::from([0.0, DOT_MARGIN])),
             );
         }
+        let label_color = if is_drop_target {
+            palette.on_accent()
+        } else if is_selected {
+            palette.text_strong()
+        } else {
+            palette.text_body()
+        };
+        // The label takes the room it needs first; the note on the right
+        // takes what is left and ends with "…" when that is too little.
         content = content.push(
-            container(
-                text(value.label)
-                    .size(body.size())
-                    .font(fonts::UI)
-                    .wrapping(Wrapping::None),
-            )
-            .width(Length::Fill)
-            .clip(true),
+            EllipsisText::new(value.label, body.size(), fonts::UI, label_color)
+                .shrink(0.0),
         );
-        let count_color = value.count_tone.color(&palette);
-        if let Some(word) = value.state {
+        let note = match (value.state, value.count) {
+            (Some(word), Some(count)) => Some(format!("{word} {count}")),
+            (Some(word), None) => Some(word),
+            (None, Some(count)) => Some(count.to_string()),
+            (None, None) => None,
+        };
+        if let Some(note) = note {
             content = content.push(
-                text(word)
-                    .size(typography::CAPTION.size())
-                    .font(fonts::UI)
-                    .color(count_color),
-            );
-        }
-        if let Some(count) = value.count {
-            let caption = typography::CAPTION;
-            content = content.push(
-                text(count.to_string())
-                    .size(caption.size())
-                    .font(fonts::UI)
-                    .color(count_color),
+                EllipsisText::new(
+                    note,
+                    typography::CAPTION.size(),
+                    fonts::UI,
+                    value.count_tone.color(&palette),
+                )
+                .align_x(TextAlignment::Right),
             );
         }
 
@@ -300,6 +305,61 @@ mod tests {
         assert!(drawn_row_matches(Some(SessionTone::Muted), &reference));
         assert!(!drawn_row_matches(Some(SessionTone::Failed), &reference));
         assert!(!drawn_row_matches(Some(SessionTone::Done), &reference));
+    }
+
+    /// A "Containers" row with the note "running" and a count of 2, in a
+    /// space `width` wide.
+    fn containers_row(width: f32) -> Element<'static, Message> {
+        let palette = UiPalette::otty_dark();
+
+        container(
+            TreeRow::new("Containers", &palette)
+                .caret(true)
+                .count(2)
+                .state("running"),
+        )
+        .width(width)
+        .into()
+    }
+
+    /// Width of the label and of the note and count of the row.
+    fn label_and_note_widths(width: f32) -> (f32, f32) {
+        let mut ui = simulator(containers_row(width));
+        let label = ui.find("Containers").expect("label").bounds().width;
+        let note = ui.find("running 2").expect("note").bounds().width;
+
+        (label, note)
+    }
+
+    #[test]
+    fn given_narrow_row_when_laid_out_then_the_label_keeps_its_width_and_the_note_gives_way()
+     {
+        let (full_label, full_note) = label_and_note_widths(400.0);
+
+        let (label, note) = label_and_note_widths(150.0);
+
+        assert!(
+            (label - full_label).abs() < 0.5,
+            "the label should keep its width: {label} against {full_label}"
+        );
+        assert!(
+            note < full_note,
+            "the note should shrink: {note} against {full_note}"
+        );
+    }
+
+    #[test]
+    fn given_very_narrow_row_when_laid_out_then_the_label_ends_with_an_ellipsis()
+     {
+        let (full_label, _) = label_and_note_widths(400.0);
+
+        let (label, note) = label_and_note_widths(90.0);
+
+        assert!(
+            label < full_label,
+            "the label should be cut: {label} against {full_label}"
+        );
+        assert!(note < 20.0, "the note should be nearly gone: {note}");
     }
 
     #[test]

@@ -19,41 +19,50 @@ use crate::i18n::{self, Key};
 /// the port links.
 pub(crate) const PORTS_COLUMN: usize = 4;
 
-/// The table columns of `resource`, with their width shares. Number
-/// columns are right-aligned.
+/// The table columns of `resource`, with their width shares and minimum
+/// widths. Number columns are right-aligned. A minimum keeps the title and a
+/// typical value readable (side padding included); on a narrow window the
+/// table scrolls sideways instead of going below the minimums.
 pub(crate) fn columns(resource: ResourceKind) -> Vec<TableColumn> {
-    let column = |key: Key, share: u16| TableColumn::new(i18n::t(key), share);
-    let number = |key: Key| column(key, 1).align(ColumnAlign::End);
+    let column = |key: Key, share: u16, min: u16| {
+        TableColumn::new(i18n::t(key), share).min_width(min)
+    };
+    let number =
+        |key: Key, min: u16| column(key, 1, min).align(ColumnAlign::End);
 
     let columns = match resource {
         ResourceKind::Containers => vec![
-            column(Key::DockerColumnName, 3),
-            column(Key::DockerColumnStatus, 2),
-            column(Key::DockerColumnImage, 3),
-            column(Key::DockerFieldCompose, 2),
-            column(Key::DockerColumnPorts, 2),
-            column(Key::DockerColumnAge, 1),
+            column(Key::DockerColumnName, 3, 110),
+            // The dot and "Exited (3)".
+            column(Key::DockerColumnStatus, 2, 104),
+            column(Key::DockerColumnImage, 3, 96),
+            column(Key::DockerFieldCompose, 2, 80),
+            // One published port such as `18080:8080/tcp`.
+            column(Key::DockerColumnPorts, 2, 130),
+            column(Key::DockerColumnAge, 1, 52),
         ],
         ResourceKind::Images => vec![
-            column(Key::DockerColumnRepositoryTag, 4),
-            column(Key::DockerColumnId, 2),
-            number(Key::DockerColumnSize),
-            number(Key::DockerColumnUsedBy),
-            column(Key::DockerColumnAge, 1),
+            column(Key::DockerColumnRepositoryTag, 4, 140),
+            // A short ID of 12 characters.
+            column(Key::DockerColumnId, 2, 118),
+            number(Key::DockerColumnSize, 76),
+            number(Key::DockerColumnUsedBy, 76),
+            column(Key::DockerColumnAge, 1, 52),
         ],
         ResourceKind::Volumes => vec![
-            column(Key::DockerColumnName, 4),
-            column(Key::DockerColumnDriver, 1),
-            column(Key::DockerColumnUsedBy, 3),
-            column(Key::DockerColumnAge, 1),
+            column(Key::DockerColumnName, 4, 140),
+            column(Key::DockerColumnDriver, 1, 76),
+            column(Key::DockerColumnUsedBy, 3, 110),
+            column(Key::DockerColumnAge, 1, 52),
         ],
         ResourceKind::Networks => vec![
-            column(Key::DockerColumnName, 3),
-            column(Key::DockerColumnDriver, 1),
-            column(Key::DockerColumnScope, 1),
-            column(Key::DockerColumnSubnet, 2),
-            number(Key::DockerContainers),
-            column(Key::DockerColumnAge, 1),
+            column(Key::DockerColumnName, 3, 120),
+            column(Key::DockerColumnDriver, 1, 76),
+            column(Key::DockerColumnScope, 1, 72),
+            // A subnet such as `172.17.0.0/16`.
+            column(Key::DockerColumnSubnet, 2, 124),
+            number(Key::DockerContainers, 100),
+            column(Key::DockerColumnAge, 1, 52),
         ],
     };
 
@@ -289,15 +298,21 @@ mod tests {
             titles(ResourceKind::Containers),
             vec![
                 TableColumn::new(i18n::t(Key::DockerColumnName), 3)
+                    .min_width(110)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnStatus), 2)
+                    .min_width(104)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnImage), 3)
+                    .min_width(96)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerFieldCompose), 2)
+                    .min_width(80)
                     .sortable(true),
-                TableColumn::new(i18n::t(Key::DockerColumnPorts), 2),
+                TableColumn::new(i18n::t(Key::DockerColumnPorts), 2)
+                    .min_width(130),
                 TableColumn::new(i18n::t(Key::DockerColumnAge), 1)
+                    .min_width(52)
                     .sortable(true),
             ]
         );
@@ -309,16 +324,21 @@ mod tests {
             titles(ResourceKind::Images),
             vec![
                 TableColumn::new(i18n::t(Key::DockerColumnRepositoryTag), 4)
+                    .min_width(140)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnId), 2)
+                    .min_width(118)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnSize), 1)
+                    .min_width(76)
                     .sortable(true)
                     .align(ColumnAlign::End),
                 TableColumn::new(i18n::t(Key::DockerColumnUsedBy), 1)
+                    .min_width(76)
                     .sortable(true)
                     .align(ColumnAlign::End),
                 TableColumn::new(i18n::t(Key::DockerColumnAge), 1)
+                    .min_width(52)
                     .sortable(true),
             ]
         );
@@ -330,12 +350,16 @@ mod tests {
             titles(ResourceKind::Volumes),
             vec![
                 TableColumn::new(i18n::t(Key::DockerColumnName), 4)
+                    .min_width(140)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnDriver), 1)
+                    .min_width(76)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnUsedBy), 3)
+                    .min_width(110)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnAge), 1)
+                    .min_width(52)
                     .sortable(true),
             ]
         );
@@ -347,17 +371,23 @@ mod tests {
             titles(ResourceKind::Networks),
             vec![
                 TableColumn::new(i18n::t(Key::DockerColumnName), 3)
+                    .min_width(120)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnDriver), 1)
+                    .min_width(76)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnScope), 1)
+                    .min_width(72)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnSubnet), 2)
+                    .min_width(124)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerContainers), 1)
+                    .min_width(100)
                     .sortable(true)
                     .align(ColumnAlign::End),
                 TableColumn::new(i18n::t(Key::DockerColumnAge), 1)
+                    .min_width(52)
                     .sortable(true),
             ]
         );

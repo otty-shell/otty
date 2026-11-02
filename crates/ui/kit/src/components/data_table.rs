@@ -1,15 +1,20 @@
 //! `DataTable`: a header row over scrolling rows of cells, for lists of
 //! resources such as containers or images.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use iced::widget::text::Alignment as TextAlignment;
 use iced::widget::{
-    Space, button, column, container, row, scrollable, svg, text, tooltip,
+    Space, button, column, container, responsive, row, scrollable, svg, text,
+    tooltip,
 };
 use iced::{Alignment, Color, Element, Font, Length, Padding, Point};
 
 use super::ellipsis_text::EllipsisText;
 use super::status_badge::{StatusBadge, StatusTone, TEXT_SIZE};
 use super::table_body::{MenuPress, RightPress, TableBody};
+use super::table_sideways::{SidewaysOffset, SidewaysScroll};
 use super::{glyph, icon_button, scrollbar};
 use crate::palette::UiPalette;
 use crate::{fonts, size, spacing, typography};
@@ -92,19 +97,32 @@ pub struct TableColumn {
     share: u16,
     align: ColumnAlign,
     is_sortable: bool,
+    min_width: u16,
 }
 
 impl TableColumn {
-    /// Creates a left-aligned column that is not sortable. `share` is its
-    /// part of the table width: a column with share 2 is twice as wide as
-    /// one with share 1.
+    /// Creates a left-aligned column that is not sortable and has no minimum
+    /// width. `share` is its part of the table width: a column with share 2
+    /// is twice as wide as one with share 1.
     pub fn new(title: impl Into<String>, share: u16) -> Self {
         Self {
             title: title.into(),
             share,
             align: ColumnAlign::Start,
             is_sortable: false,
+            min_width: 0,
         }
+    }
+
+    /// Sets the width in pixels the column never goes below, side padding
+    /// included. Columns with no minimum give way first when the table is
+    /// narrow. When even the minimums do not fit, the table scrolls sideways
+    /// with its header, and a column with no minimum is not shown, so give
+    /// every column a minimum if the table should scroll instead of hiding
+    /// one.
+    pub fn min_width(mut self, min_width: u16) -> Self {
+        self.min_width = min_width;
+        self
     }
 
     /// Sets the alignment of the title and the cells.
@@ -214,7 +232,10 @@ impl TableCell {
 /// Table with a fixed header and rows that scroll under it. One row can be
 /// selected. When there are no rows, the empty message shows instead.
 ///
-/// The table fills the space it gets. Each row is a list of cells in column
+/// The table fills the space it gets. Columns share the width by their
+/// shares but never go below their [`TableColumn::min_width`]; when the
+/// minimums do not fit, the header and the rows scroll sideways together
+/// with a thin scrollbar. Each row is a list of cells in column
 /// order; missing cells stay blank and extra cells are not shown.
 ///
 /// A right click on a row sends its index and the pointer position in the
@@ -362,7 +383,7 @@ impl<'a, Message> DataTable<'a, Message> {
     ) -> Self {
         self.row_menu = Some(RowMenu {
             label: label.into(),
-            on_press: Box::new(on_press),
+            on_press: Rc::new(on_press),
         });
         self
     }
@@ -396,7 +417,7 @@ impl<'a, Message> DataTable<'a, Message> {
         mut self,
         on_right_press: impl Fn(usize, Point) -> Message + 'a,
     ) -> Self {
-        self.on_row_right_press = Some(Box::new(on_right_press));
+        self.on_row_right_press = Some(Rc::new(on_right_press));
         self
     }
 }
@@ -405,94 +426,17 @@ impl<'a, Message: Clone + 'a> From<DataTable<'a, Message>>
     for Element<'a, Message>
 {
     fn from(value: DataTable<'a, Message>) -> Self {
-        let DataTable {
-            columns,
-            rows,
-            palette,
-            selected,
-            sort,
-            empty_message,
-            on_row_press,
-            on_row_right_press,
-            on_sort,
-            on_link_press,
-            row_menu,
-        } = value;
-        let canvas = palette.surface_canvas();
-        let has_menu_column = row_menu.is_some();
+        // The columns depend on the width the table gets, which is known only
+        // while laying out, so the table is built again for each width.
+        let sideways: SidewaysOffset = Rc::new(Cell::new(0.0));
 
-        let header = header_view(
-            &columns,
-            sort,
-            on_sort.as_deref(),
-            has_menu_column,
-            &palette,
-        );
-
-        let body: Element<'a, Message> = if rows.is_empty() {
-            empty_view(empty_message, &palette)
-        } else {
-            let menu_rows: Vec<bool> =
-                rows.iter().map(|row| row.has_menu).collect();
-            let menu_label = row_menu.as_ref().map(|menu| menu.label.as_str());
-
-            let rows = rows
-                .into_iter()
-                .enumerate()
-                .map(|(index, row)| {
-                    let on_press =
-                        on_row_press.as_ref().map(|on_press| on_press(index));
-                    let on_link = |column: usize, link: usize| {
-                        on_link_press.as_ref().map(|on_link_press| {
-                            on_link_press(index, column, link)
-                        })
-                    };
-                    let menu_cell = menu_label.map(|label| {
-                        if row.has_menu {
-                            menu_button(label, &palette)
-                        } else {
-                            Space::new().into()
-                        }
-                    });
-
-                    row_view(
-                        row.cells,
-                        &columns,
-                        selected == Some(index),
-                        on_press,
-                        &on_link,
-                        menu_cell,
-                        &palette,
-                    )
-                })
-                .collect::<Vec<_>>();
-
-            let mut body = TableBody::new(column(rows), on_row_right_press);
-            if let Some(menu) = row_menu {
-                body = body.row_menus(menu_rows, menu.on_press);
-            }
-
-            scrollable(body)
-                .direction(scrollbar::vertical())
-                .style(scrollbar::style(&palette))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        };
-
-        container(column![header, body])
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(move |_| container::Style {
-                background: Some(canvas.into()),
-                ..container::Style::default()
-            })
-            .into()
+        responsive(move |size| table_view(&value, size.width, &sideways)).into()
     }
 }
 
 /// One body row of a [`DataTable`]: its cells and whether it ends with a
 /// "⋯" button.
+#[derive(Clone)]
 struct TableRow {
     cells: Vec<TableCell>,
     has_menu: bool,
@@ -504,25 +448,163 @@ struct RowMenu<'a, Message> {
     on_press: MenuPress<'a, Message>,
 }
 
+/// Draws `table` for the `width` it gets. The columns share the width, but
+/// never go below their minimums. When the minimums do not fit, the header
+/// and the rows scroll sideways together, and `sideways` holds how far.
+fn table_view<'a, Message: Clone + 'a>(
+    table: &DataTable<'a, Message>,
+    width: f32,
+    sideways: &SidewaysOffset,
+) -> Element<'a, Message> {
+    let palette = &table.palette;
+    let canvas = palette.surface_canvas();
+    let has_menu_column = table.row_menu.is_some();
+    let menu_width = if has_menu_column {
+        MENU_COLUMN_WIDTH
+    } else {
+        0.0
+    };
+
+    let available = (width - menu_width).max(0.0);
+    let minimum = minimum_width(&table.columns);
+    let is_sideways = minimum > available;
+    let widths = column_widths(&table.columns, available);
+
+    let header = header_view(
+        &table.columns,
+        &widths,
+        table.sort,
+        table.on_sort.as_deref(),
+        has_menu_column,
+        palette,
+    );
+    let body: Element<'a, Message> = if table.rows.is_empty() {
+        empty_view(table.empty_message.clone(), palette)
+    } else {
+        rows_view(table, &widths, is_sideways.then(|| sideways.clone()))
+    };
+
+    if !is_sideways {
+        sideways.set(0.0);
+    }
+    let content_width = if is_sideways {
+        Length::Fixed(minimum + menu_width)
+    } else {
+        Length::Fill
+    };
+    let content = column![header, body]
+        .width(content_width)
+        .height(Length::Fill);
+    let content: Element<'a, Message> = if is_sideways {
+        SidewaysScroll::new(
+            scrollable(content)
+                .direction(scrollbar::horizontal())
+                .style(scrollbar::style(palette))
+                .width(Length::Fill)
+                .height(Length::Fill),
+            sideways.clone(),
+        )
+        .into()
+    } else {
+        content.into()
+    };
+
+    container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_| container::Style {
+            background: Some(canvas.into()),
+            ..container::Style::default()
+        })
+        .into()
+}
+
+/// Draws the body rows of `table` with the column `widths`, scrolling
+/// vertically. `sideways` is given when the table also scrolls sideways.
+fn rows_view<'a, Message: Clone + 'a>(
+    table: &DataTable<'a, Message>,
+    widths: &[f32],
+    sideways: Option<SidewaysOffset>,
+) -> Element<'a, Message> {
+    let palette = &table.palette;
+    let menu_rows: Vec<bool> =
+        table.rows.iter().map(|row| row.has_menu).collect();
+    let menu_label = table.row_menu.as_ref().map(|menu| menu.label.as_str());
+
+    let rows = table
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let on_press =
+                table.on_row_press.as_ref().map(|on_press| on_press(index));
+            let on_link = |column: usize, link: usize| {
+                table
+                    .on_link_press
+                    .as_ref()
+                    .map(|on_link_press| on_link_press(index, column, link))
+            };
+            let menu_cell = menu_label.map(|label| {
+                if row.has_menu {
+                    menu_button(label, palette)
+                } else {
+                    Space::new().into()
+                }
+            });
+
+            row_view(
+                row.cells.clone(),
+                &table.columns,
+                widths,
+                table.selected == Some(index),
+                on_press,
+                &on_link,
+                menu_cell,
+                palette,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut body =
+        TableBody::new(column(rows), table.on_row_right_press.clone());
+    if let Some(menu) = &table.row_menu {
+        body = body.row_menus(menu_rows, menu.on_press.clone());
+    }
+    if let Some(sideways) = sideways {
+        body = body.sideways(sideways);
+    }
+
+    scrollable(body)
+        .direction(scrollbar::vertical())
+        .style(scrollbar::style(palette))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
 /// Draws the header: medium titles over a `line` rule, and a blank title
-/// over the "⋯" column when `has_menu_column`.
+/// over the "⋯" column when `has_menu_column`. `widths` are the column
+/// widths.
 fn header_view<'a, Message: Clone + 'a>(
     columns: &[TableColumn],
+    widths: &[f32],
     sort: Option<(usize, SortDirection)>,
     on_sort: Option<&(dyn Fn(usize) -> Message + 'a)>,
     has_menu_column: bool,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
-    let mut titles = row(columns.iter().enumerate().map(|(index, column)| {
-        let direction = sort
-            .filter(|(sorted, _)| *sorted == index)
-            .map(|(_, direction)| direction);
-        let on_press = on_sort
-            .filter(|_| column.is_sortable)
-            .map(|on_sort| on_sort(index));
+    let mut titles = row(columns.iter().zip(widths).enumerate().map(
+        |(index, (column, width))| {
+            let direction = sort
+                .filter(|(sorted, _)| *sorted == index)
+                .map(|(_, direction)| direction);
+            let on_press = on_sort
+                .filter(|_| column.is_sortable)
+                .map(|on_sort| on_sort(index));
 
-        header_cell(column, direction, on_press, palette)
-    }));
+            header_cell(column, *width, direction, on_press, palette)
+        },
+    ));
     if has_menu_column {
         titles = titles.push(Space::new().width(MENU_COLUMN_WIDTH));
     }
@@ -530,13 +612,14 @@ fn header_view<'a, Message: Clone + 'a>(
     column![titles.height(size::TABLE_HEADER), rule(palette.line())].into()
 }
 
-/// Draws the title of `column`: muted, or `text-body` with an arrow in
-/// `direction` when it is the sorted column. The arrow sits after the
-/// title, or before it in a right-aligned column so the title still lines
-/// up with the cells. With `on_press` the title is a button that shows
+/// Draws the title of `column`, `width` wide: muted, or `text-body` with an
+/// arrow in `direction` when it is the sorted column. The arrow sits after
+/// the title, or before it in a right-aligned column so the title still
+/// lines up with the cells. With `on_press` the title is a button that shows
 /// `surface-header` on hover.
 fn header_cell<'a, Message: Clone + 'a>(
     column: &TableColumn,
+    width: f32,
     direction: Option<SortDirection>,
     on_press: Option<Message>,
     palette: &UiPalette,
@@ -579,14 +662,14 @@ fn header_cell<'a, Message: Clone + 'a>(
                 .into()
         },
     };
-    let cell = cell_frame(content, column.share, column.align);
+    let cell = cell_frame(content, width, column.align);
 
     let Some(message) = on_press else {
         return cell;
     };
 
     button(cell)
-        .width(Length::FillPortion(column.share))
+        .width(width)
         .height(Length::Fill)
         .padding(0)
         .on_press(message)
@@ -605,13 +688,14 @@ fn header_cell<'a, Message: Clone + 'a>(
 /// The row shows `surface-header` on hover and `surface-selected` with
 /// `text-strong` text when selected. `on_link` builds the message of a
 /// link in the column at an index. `menu_cell` fills the "⋯" column when
-/// the table has one.
+/// the table has one. `widths` are the column widths.
 ///
 /// `table_body::menu_button_bounds` finds the "⋯" button by this layout:
 /// the row button, its row of cells, the last cell, its first child.
 fn row_view<'a, Message: Clone + 'a>(
     cells: Vec<TableCell>,
     columns: &[TableColumn],
+    widths: &[f32],
     is_selected: bool,
     on_press: Option<Message>,
     on_link: &dyn Fn(usize, usize) -> Option<Message>,
@@ -622,20 +706,22 @@ fn row_view<'a, Message: Clone + 'a>(
     let selected = palette.surface_selected();
 
     let mut cells = cells.into_iter();
-    let mut content = row(columns.iter().enumerate().map(|(index, column)| {
-        let (content, align) = match cells.next() {
-            Some(cell) => cell_view(
-                cell,
-                column.align,
-                is_selected,
-                &|link| on_link(index, link),
-                palette,
-            ),
-            None => (Space::new().into(), column.align),
-        };
+    let mut content = row(columns.iter().zip(widths).enumerate().map(
+        |(index, (column, width))| {
+            let (content, align) = match cells.next() {
+                Some(cell) => cell_view(
+                    cell,
+                    column.align,
+                    is_selected,
+                    &|link| on_link(index, link),
+                    palette,
+                ),
+                None => (Space::new().into(), column.align),
+            };
 
-        cell_frame(content, column.share, align)
-    }))
+            cell_frame(content, *width, align)
+        },
+    ))
     .height(Length::Fill);
     if let Some(menu_cell) = menu_cell {
         content = content.push(
@@ -816,15 +902,15 @@ fn menu_button<'a, Message: 'a>(
     .into()
 }
 
-/// Places cell or title `content` in its column: `share` of the width,
-/// 12px side padding, centered vertically, cut at the edge.
+/// Places cell or title `content` in its column: `width` wide, 12px side
+/// padding, centered vertically, cut at the edge.
 fn cell_frame<'a, Message: 'a>(
     content: Element<'a, Message>,
-    share: u16,
+    width: f32,
     align: ColumnAlign,
 ) -> Element<'a, Message> {
     container(content)
-        .width(Length::FillPortion(share))
+        .width(width)
         .height(Length::Fill)
         .padding(Padding::from([0.0, CELL_PADDING_X]))
         .align_x(align.alignment())
@@ -853,6 +939,82 @@ fn empty_view<'a, Message: 'a>(
     .width(Length::Fill)
     .padding(EMPTY_PADDING)
     .into()
+}
+
+/// Returns the least width `columns` can have: the sum of their minimums.
+fn minimum_width(columns: &[TableColumn]) -> f32 {
+    columns
+        .iter()
+        .map(|column| f32::from(column.min_width))
+        .sum()
+}
+
+/// Splits `available` width between `columns` by their shares. A column
+/// whose share is below its minimum keeps the minimum, and the others share
+/// what is left, which may push another column below its minimum in turn.
+/// When even the minimums do not fit, every column is its minimum and a
+/// column with no minimum is 0 wide.
+fn column_widths(columns: &[TableColumn], available: f32) -> Vec<f32> {
+    let mut is_minimum = vec![false; columns.len()];
+
+    loop {
+        let (free, shares) = free_width(columns, &is_minimum, available);
+
+        let mut is_changed = false;
+        for (index, column) in columns.iter().enumerate() {
+            let width = share_width(column, free, shares);
+            if !is_minimum[index] && width < f32::from(column.min_width) {
+                is_minimum[index] = true;
+                is_changed = true;
+            }
+        }
+        if !is_changed {
+            break;
+        }
+    }
+
+    let (free, shares) = free_width(columns, &is_minimum, available);
+
+    columns
+        .iter()
+        .zip(&is_minimum)
+        .map(|(column, is_minimum)| {
+            if *is_minimum {
+                f32::from(column.min_width)
+            } else {
+                share_width(column, free, shares)
+            }
+        })
+        .collect()
+}
+
+/// Returns the width left for the columns that are not at their minimum,
+/// and the sum of their shares.
+fn free_width(
+    columns: &[TableColumn],
+    is_minimum: &[bool],
+    available: f32,
+) -> (f32, f32) {
+    let mut taken = 0.0;
+    let mut shares = 0.0;
+    for (column, is_minimum) in columns.iter().zip(is_minimum) {
+        if *is_minimum {
+            taken += f32::from(column.min_width);
+        } else {
+            shares += f32::from(column.share);
+        }
+    }
+
+    ((available - taken).max(0.0), shares)
+}
+
+/// Returns the part of `free` width that `column` gets out of `shares`.
+fn share_width(column: &TableColumn, free: f32, shares: f32) -> f32 {
+    if shares > 0.0 {
+        free * f32::from(column.share) / shares
+    } else {
+        0.0
+    }
 }
 
 /// Color of a link cell, on every row look: `accent`.
@@ -1515,6 +1677,214 @@ mod tests {
         assert!(hovered_menu_button_matches("More actions", &reference));
         assert!(!hovered_menu_button_matches("Row actions", &reference));
         assert!(hovered_menu_button_matches("More actions", &reference));
+    }
+
+    /// Minimum widths of the "Name", "Compose" and "Size" columns of
+    /// [`minimum_columns`].
+    const NAME_MIN: u16 = 150;
+    const COMPOSE_MIN: u16 = 150;
+    const SIZE_MIN: u16 = 100;
+
+    /// The action columns with a minimum width on each.
+    fn minimum_columns() -> Vec<TableColumn> {
+        vec![
+            TableColumn::new("Name", 3)
+                .sortable(true)
+                .min_width(NAME_MIN),
+            TableColumn::new("Compose", 2).min_width(COMPOSE_MIN),
+            TableColumn::new("Size", 1)
+                .align(ColumnAlign::End)
+                .sortable(true)
+                .min_width(SIZE_MIN),
+        ]
+    }
+
+    /// Table of `count` rows like [`action_table`], with minimum widths, in a
+    /// space `width` wide.
+    fn minimum_table(
+        count: usize,
+        width: f32,
+        height: f32,
+    ) -> Element<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let mut table = DataTable::new(minimum_columns(), &palette)
+            .on_row_press(Message::Pressed)
+            .on_row_right_press(Message::RightPressed)
+            .on_sort(Message::Sorted)
+            .on_link_press(Message::Linked)
+            .on_row_menu("More actions", Message::MenuPressed);
+        for index in 0..count {
+            table = table.row(vec![
+                TableCell::mono(format!("row-{index}")),
+                TableCell::link(format!("site-{index}")),
+                TableCell::number("1 MB"),
+            ]);
+        }
+
+        container(table).width(width).height(height).into()
+    }
+
+    /// Scrolls the table under `pointer` sideways as far as it goes.
+    fn scroll_to_the_right_end(
+        ui: &mut iced_test::Simulator<'_, Message>,
+        pointer: Point,
+    ) {
+        ui.point_at(pointer);
+        let _ = ui.simulate([Event::Mouse(mouse::Event::WheelScrolled {
+            delta: ScrollDelta::Pixels {
+                x: -10_000.0,
+                y: 0.0,
+            },
+        })]);
+    }
+
+    /// Width of the text of a title or cell: the column minus its padding.
+    fn text_width(
+        ui: &mut iced_test::Simulator<'_, Message>,
+        text: &str,
+    ) -> f32 {
+        ui.find(text).expect("text should be shown").bounds().width
+    }
+
+    #[test]
+    fn given_columns_without_minimums_when_laid_out_then_widths_follow_shares()
+    {
+        let columns = vec![TableColumn::new("A", 3), TableColumn::new("B", 1)];
+
+        assert_eq!(column_widths(&columns, 400.0), vec![300.0, 100.0]);
+    }
+
+    #[test]
+    fn given_column_below_its_minimum_when_laid_out_then_it_keeps_the_minimum_and_others_shrink()
+     {
+        let columns = vec![
+            TableColumn::new("A", 3),
+            TableColumn::new("B", 1).min_width(80),
+        ];
+
+        // B would get 25 of 100; it keeps 80 and A gets what is left.
+        assert_eq!(column_widths(&columns, 100.0), vec![20.0, 80.0]);
+    }
+
+    #[test]
+    fn given_several_minimums_when_laid_out_then_each_is_kept_in_turn() {
+        let columns = vec![
+            TableColumn::new("A", 3),
+            TableColumn::new("B", 2).min_width(150),
+            TableColumn::new("C", 1).min_width(100),
+        ];
+
+        // Shares give C 77, then B 146 after C keeps 100: both keep theirs.
+        assert_eq!(column_widths(&columns, 464.0), vec![214.0, 150.0, 100.0]);
+    }
+
+    #[test]
+    fn given_less_room_than_the_minimums_when_laid_out_then_columns_are_their_minimums()
+     {
+        let columns = vec![
+            TableColumn::new("A", 3).min_width(150),
+            TableColumn::new("B", 1).min_width(100),
+            TableColumn::new("C", 1),
+        ];
+
+        assert_eq!(column_widths(&columns, 200.0), vec![150.0, 100.0, 0.0]);
+    }
+
+    #[test]
+    fn given_column_with_minimum_when_table_is_narrow_then_it_keeps_it_and_the_others_shrink()
+     {
+        let mut wide = simulator(minimum_table(1, 800.0, 200.0));
+        let mut narrow = simulator(minimum_table(1, 500.0, 200.0));
+
+        let wide_size = text_width(&mut wide, "Size");
+        let narrow_size = text_width(&mut narrow, "Size");
+        let wide_name = text_width(&mut wide, "Name");
+        let narrow_name = text_width(&mut narrow, "Name");
+
+        assert!(
+            narrow_size >= f32::from(SIZE_MIN) - 2.0 * CELL_PADDING_X - 0.5,
+            "Size should keep its minimum: {narrow_size}"
+        );
+        assert!(narrow_size <= wide_size);
+        assert!(
+            narrow_name < wide_name,
+            "Name should give way: {narrow_name} against {wide_name}"
+        );
+    }
+
+    #[test]
+    fn given_less_room_than_the_minimums_when_scrolled_sideways_then_the_header_moves_with_the_rows()
+     {
+        // The table is 300 wide, so the minimums (400) and the "⋯" column
+        // do not fit. Scrolled to the end, the Size column is under x = 200
+        // and the Compose column, which does not sort, was there before.
+        let title = Point::new(200.0, size::TABLE_HEADER / 2.0);
+
+        let mut resting = simulator(minimum_table(2, 300.0, 200.0));
+        let size_width = text_width(&mut resting, "Size");
+        left_click_at(&mut resting, title);
+        let resting: Vec<Message> = resting.into_messages().collect();
+
+        let mut scrolled = simulator(minimum_table(2, 300.0, 200.0));
+        scroll_to_the_right_end(&mut scrolled, Point::new(100.0, BODY_TOP));
+        left_click_at(&mut scrolled, title);
+        let scrolled: Vec<Message> = scrolled.into_messages().collect();
+
+        assert!(
+            (size_width - (f32::from(SIZE_MIN) - 2.0 * CELL_PADDING_X)).abs()
+                < 0.5,
+            "the column should be its minimum: {size_width}"
+        );
+        assert_eq!(resting, Vec::<Message>::new());
+        assert_eq!(scrolled, vec![Message::Sorted(2)]);
+    }
+
+    #[test]
+    fn given_less_room_than_the_minimums_when_scrolled_sideways_then_presses_hit_the_right_row_and_column()
+     {
+        let row_y = |index: usize| {
+            BODY_TOP + index as f32 * ROW_STRIDE + size::TABLE_ROW / 2.0
+        };
+        let width = 300.0;
+        let menu_x = width - MENU_COLUMN_WIDTH / 2.0;
+        let corner = Point::new(
+            width - MENU_COLUMN_WIDTH
+                + (MENU_COLUMN_WIDTH - size::CONTROL_SM) / 2.0,
+            BODY_TOP + ROW_STRIDE + (size::TABLE_ROW + size::CONTROL_SM) / 2.0,
+        );
+        let pointer = Point::new(100.0, row_y(1));
+
+        let mut row = simulator(minimum_table(3, width, 300.0));
+        scroll_to_the_right_end(&mut row, Point::new(100.0, row_y(0)));
+        left_click_at(&mut row, pointer);
+        let row: Vec<Message> = row.into_messages().collect();
+
+        let mut right = simulator(minimum_table(3, width, 300.0));
+        scroll_to_the_right_end(&mut right, Point::new(100.0, row_y(0)));
+        right.point_at(pointer);
+        let _ = right.simulate(right_click());
+        let right: Vec<Message> = right.into_messages().collect();
+
+        let mut menu = simulator(minimum_table(3, width, 300.0));
+        scroll_to_the_right_end(&mut menu, Point::new(100.0, row_y(0)));
+        left_click_at(&mut menu, Point::new(menu_x, row_y(1)));
+        let menu: Vec<Message> = menu.into_messages().collect();
+
+        let mut link = simulator(minimum_table(3, width, 300.0));
+        scroll_to_the_right_end(&mut link, Point::new(100.0, row_y(0)));
+        link.click("site-2").expect("link should be shown");
+        let link: Vec<Message> = link.into_messages().collect();
+
+        let mut sort = simulator(minimum_table(3, width, 300.0));
+        scroll_to_the_right_end(&mut sort, Point::new(100.0, row_y(0)));
+        left_click_at(&mut sort, Point::new(5.0, size::TABLE_HEADER / 2.0));
+        let sort: Vec<Message> = sort.into_messages().collect();
+
+        assert_eq!(row, vec![Message::Pressed(1)]);
+        assert_eq!(right, vec![Message::RightPressed(1, pointer)]);
+        assert_eq!(menu, vec![Message::MenuPressed(1, corner)]);
+        assert_eq!(link, vec![Message::Linked(2, 1, 0)]);
+        assert_eq!(sort, vec![Message::Sorted(0)]);
     }
 
     #[test]
