@@ -874,12 +874,19 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 .kind(ButtonKind::Danger),
         )
         .hint("Stop the container before removing it.");
-    let inspector_tabs = inspector_tabs(
+    let wide_tabs = inspector_tabs(
         &INSPECTOR_TABS,
         &state.inspector_tab,
         Message::InspectorTab,
         p,
     );
+    let narrow_tabs = container(inspector_tabs(
+        &INSPECTOR_TABS,
+        &state.inspector_tab,
+        Message::InspectorTab,
+        p,
+    ))
+    .width(120);
     let inspector_list = KeyValueList::new(p)
         .entry("Image", "nginx:1.27-alpine")
         .entry("Ports", "0.0.0.0:8080->80/tcp, [::]:8080->80/tcp")
@@ -891,7 +898,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     let inspector_header: Element<'_, Message> = inspector_header.into();
     let inspector_list: Element<'_, Message> = inspector_list.into();
     let inspector = container(
-        column![inspector_header, inspector_tabs, inspector_list]
+        column![inspector_header, wide_tabs, narrow_tabs, inspector_list]
             .spacing(spacing::SPACE_4),
     )
     .width(320);
@@ -1139,7 +1146,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     ];
     let inspector_parts: Vec<Element<'_, Message>> = vec![
         section(
-            "InspectorHeader (long status wraps) + InspectorTabs + KeyValueList (values wrap at spaces, / - : . first)",
+            "InspectorHeader (long status wraps) + InspectorTabs (a select when narrow, second row) + KeyValueList (values wrap at spaces, / - : . first)",
             inspector.into(),
             p,
         ),

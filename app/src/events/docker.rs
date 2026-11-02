@@ -20,6 +20,7 @@ use crate::widgets::docker::types::{LoadedList, LoadedLists, ResourceKind};
 use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
 use crate::widgets::modes::types::Mode;
 use crate::widgets::modes::{ModesEvent, ModesIntent};
+use crate::widgets::sidebar::SidebarIntent;
 use crate::widgets::tabs::types::TabMachine;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
@@ -27,7 +28,23 @@ use crate::widgets::tabs::{TabsEvent, TabsIntent};
 pub(crate) fn handle(app: &mut App, event: DockerEvent) -> Task<AppEvent> {
     match event {
         DockerEvent::Intent(intent) => {
-            app.widgets.docker.reduce(intent).map(AppEvent::Docker)
+            // A press on a table row shows it in the inspector, so a closed
+            // right panel opens. The row "⋯" button and the right click
+            // send other intents and leave the panel as it is.
+            let is_row_press = matches!(intent, DockerIntent::SelectRow(_));
+            let docker_task =
+                app.widgets.docker.reduce(intent).map(AppEvent::Docker);
+            if !is_row_press || app.widgets.sidebar.vm().is_right_open {
+                return docker_task;
+            }
+
+            let open_panel = app
+                .widgets
+                .sidebar
+                .reduce(SidebarIntent::ToggleRight)
+                .map(AppEvent::Sidebar);
+
+            Task::batch([docker_task, open_panel])
         },
         DockerEvent::Effect(DockerEffect::StartPull { engine, image, tag }) => {
             let (task, handle) =
@@ -386,6 +403,62 @@ mod tests {
                 DockerEffect::Discover
             ))]
         ));
+    }
+
+    /// An app with the right panel closed.
+    fn app_with_closed_right_panel() -> App {
+        let (mut app, _) = App::new();
+        if app.widgets.sidebar.vm().is_right_open {
+            let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
+        }
+        assert!(!app.widgets.sidebar.vm().is_right_open);
+
+        app
+    }
+
+    #[test]
+    fn pressing_a_row_opens_the_closed_right_panel() {
+        let mut app = app_with_closed_right_panel();
+
+        let _ =
+            handle(&mut app, DockerEvent::Intent(DockerIntent::SelectRow(0)));
+
+        assert!(app.widgets.sidebar.vm().is_right_open);
+    }
+
+    #[test]
+    fn pressing_a_row_with_the_right_panel_open_leaves_it_open() {
+        let mut app = app_with_closed_right_panel();
+        let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
+        assert!(app.widgets.sidebar.vm().is_right_open);
+
+        for _ in 0..2 {
+            let _ = handle(
+                &mut app,
+                DockerEvent::Intent(DockerIntent::SelectRow(0)),
+            );
+        }
+
+        assert!(app.widgets.sidebar.vm().is_right_open);
+    }
+
+    #[test]
+    fn the_row_menu_button_and_the_right_click_leave_the_panel_closed() {
+        let mut app = app_with_closed_right_panel();
+
+        for intent in [
+            DockerIntent::RowMenuPressed {
+                index: 0,
+                position: iced::Point::ORIGIN,
+            },
+            DockerIntent::OpenRowMenu {
+                index: 0,
+                position: iced::Point::ORIGIN,
+            },
+        ] {
+            let _ = handle(&mut app, DockerEvent::Intent(intent));
+            assert!(!app.widgets.sidebar.vm().is_right_open);
+        }
     }
 
     #[test]
