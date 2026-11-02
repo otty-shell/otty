@@ -428,6 +428,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 33 | Bug: opening or activating a tab from another mode switches to Terminal mode | C | Sonnet | 31 |
 | 34 | Port links in the Containers table (Decision 20) | C | Sonnet | 31, 33 |
 | 35 | Key-value list stacks key over value when narrow (Decision 20) | A | Sonnet | 34 |
+| 36 | Bug: narrow window keeps tree labels and short table columns readable (Decision 19) | A | Sonnet | 19 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -453,7 +454,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 16 — Live engine events · Opus
 - [x] 17 — Compose projects · Sonnet
 - [x] 18 — Status bar per mode · Sonnet
-- [ ] 19 — OTTY Light pass and screenshots · Sonnet
+- [x] 19 — OTTY Light pass and screenshots · Sonnet
 - [ ] 20 — Design system and canvas sync · Opus, owner review
 - [x] 21 — Discovery additions: sockets, CLI folders, `podman-docker` · Opus
 - [x] 22 — Logs Follow toggle · Opus
@@ -470,3 +471,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 33 — Bug: tab open switches to Terminal mode · Sonnet
 - [x] 34 — Port links in the Containers table · Sonnet
 - [x] 35 — Key-value list stacks when narrow · Sonnet
+- [ ] 36 — Bug: narrow tree labels and table columns · Sonnet
