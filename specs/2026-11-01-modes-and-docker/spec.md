@@ -342,7 +342,9 @@ none of those are in scope (see Out of Scope).
       the top-level keys (State, Config, HostConfig, NetworkSettings,
       Mounts, …), nested objects as indented key and value rows, lists as
       numbered rows, empty values hidden behind "Show empty"; a "Raw JSON"
-      switch shows the JSON as today, and "Copy JSON" copies it.
+      switch shows the JSON as today, and an icon button copies it. Values
+      in the tree that name something OTTY can show are links, like in
+      Overview (owner request, 2026-11-02).
     - **Polish from round 1:** the row "⋯" menu opens at its button; the sort
       arrow sits right after the column title.
     - **Port links in the table** too: each published TCP port in the
@@ -429,6 +431,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 34 | Port links in the Containers table (Decision 20) | C | Sonnet | 31, 33 |
 | 35 | Key-value list stacks key over value when narrow (Decision 20) | A | Sonnet | 34 |
 | 36 | Bug: narrow window keeps tree labels and short table columns readable (Decision 19) | A | Sonnet | 19 |
+| 37 | Inspect: Copy JSON as an icon, links in the tree (Decision 20) | C | Opus | 32 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -472,3 +475,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 34 — Port links in the Containers table · Sonnet
 - [x] 35 — Key-value list stacks when narrow · Sonnet
 - [x] 36 — Bug: narrow tree labels and table columns · Sonnet
+- [ ] 37 — Inspect: copy icon, links in the tree · Opus
