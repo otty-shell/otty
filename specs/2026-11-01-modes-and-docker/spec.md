@@ -419,6 +419,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 30 | Row press opens the right panel; inspector tabs become a select when narrow (Decision 20) | C | Sonnet | 28 |
 | 31 | Overview links: ports to localhost, image/network/volume jump, compose filter (Decision 20) | C | Opus | 28 |
 | 32 | Inspect as a readable tree with Raw JSON and Copy (Decision 20) | C | Opus | 28 |
+| 33 | Bug: opening or activating a tab from another mode switches to Terminal mode | C | Sonnet | 31 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -453,8 +454,9 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 25 — Compose column, no "this computer", `host:container` ports · Sonnet
 - [x] 26 — Table sorting · Sonnet
 - [x] 27 — Header layout, row ⋯ menus, icon actions · Opus
-- [ ] 28 — Polish: mode name, menu position, sort arrow, inspector text · Sonnet
-- [ ] 29 — Run form: SELinux `:z`, Restart No · Sonnet
-- [ ] 30 — Row opens the right panel; tabs to select when narrow · Sonnet
-- [ ] 31 — Overview links · Opus
+- [x] 28 — Polish: mode name, menu position, sort arrow, inspector text · Sonnet
+- [x] 29 — Run form: SELinux `:z`, Restart No · Sonnet
+- [x] 30 — Row opens the right panel; tabs to select when narrow · Sonnet
+- [x] 31 — Overview links · Opus
 - [ ] 32 — Inspect as a readable tree · Opus
+- [ ] 33 — Bug: tab open switches to Terminal mode · Sonnet
