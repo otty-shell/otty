@@ -1235,6 +1235,38 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 }
             });
 
+    // The same section at the panel's minimum width (128) and a little more.
+    let narrow_panel = |width: f32| {
+        let body = column![
+            SessionGroup::new("fedora", TargetKind::Local, p)
+                .note("this computer"),
+            SessionRow::new("claude", p)
+                .folder("otty")
+                .state("needs you", SessionTone::Waiting)
+                .on_press(Message::Clicked)
+                .on_close(Message::Clicked, "Close session"),
+            SessionRow::new("A long session title", p)
+                .on_press(Message::Clicked),
+        ]
+        .spacing(1);
+
+        container(
+            PanelSection::new("Sessions", p)
+                .open(true)
+                .count(2)
+                .action(split(false))
+                .body(body),
+        )
+        .width(width)
+        .style({
+            let background = p.surface_panel();
+            move |_| container::Style {
+                background: Some(background.into()),
+                ..container::Style::default()
+            }
+        })
+    };
+
     let dots = row![
         target_dot(TargetKind::Local, p),
         target_dot(TargetKind::Ssh, p),
@@ -1299,6 +1331,13 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section(
             "PanelSection (open with SessionGroup + SessionRow: selected, state words, long title; collapsed)",
             panel.into(),
+            p,
+        ),
+        section(
+            "PanelSection narrow (170 and 128 wide: titles and names stay whole, notes give way, nothing wraps or reaches a button)",
+            row![narrow_panel(170.0), narrow_panel(128.0)]
+                .spacing(spacing::SPACE_4)
+                .into(),
             p,
         ),
         section(

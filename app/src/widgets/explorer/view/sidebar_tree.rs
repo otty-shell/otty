@@ -153,6 +153,25 @@ mod tests {
     }
 
     #[test]
+    fn given_long_folder_name_in_minimum_panel_when_drawn_then_it_stays_inside()
+    {
+        const WIDTH: f32 = 128.0;
+        const LONG: &str = "a-very-long-project-folder-name-that-cannot-fit";
+        let themes = ThemeManager::new();
+        let mut long_props = props(&themes, &[]);
+        long_props.vm.root_label = Some(LONG);
+        let mut ui =
+            simulator(iced::widget::container(view(long_props)).width(WIDTH));
+
+        let folder = ui.find(LONG).expect("folder should show").bounds();
+
+        assert!(
+            folder.x + folder.width <= WIDTH + 0.5,
+            "the folder name must stay inside the panel: {folder:?}"
+        );
+    }
+
+    #[test]
     fn given_a_file_row_when_clicked_then_node_pressed_is_sent() {
         let themes = ThemeManager::new();
         let tree = [FileNode::new(
