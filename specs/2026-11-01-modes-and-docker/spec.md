@@ -348,6 +348,9 @@ none of those are in scope (see Out of Scope).
     - **Port links in the table** too: each published TCP port in the
       Containers table's Ports cell links like in the Overview, without
       selecting the row (owner request, 2026-11-02).
+    - **Narrow inspector lists stack:** when the key-value list is narrow,
+      each key sits on its own line with its value under it, instead of two
+      columns (owner request, 2026-11-02).
 
 ## Ticket classes
 
@@ -424,6 +427,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 32 | Inspect as a readable tree with Raw JSON and Copy (Decision 20) | C | Opus | 28 |
 | 33 | Bug: opening or activating a tab from another mode switches to Terminal mode | C | Sonnet | 31 |
 | 34 | Port links in the Containers table (Decision 20) | C | Sonnet | 31, 33 |
+| 35 | Key-value list stacks key over value when narrow (Decision 20) | A | Sonnet | 34 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -464,4 +468,5 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 31 — Overview links · Opus
 - [ ] 32 — Inspect as a readable tree · Opus
 - [x] 33 — Bug: tab open switches to Terminal mode · Sonnet
-- [ ] 34 — Port links in the Containers table · Sonnet
+- [x] 34 — Port links in the Containers table · Sonnet
+- [ ] 35 — Key-value list stacks when narrow · Sonnet
