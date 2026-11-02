@@ -433,6 +433,8 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 36 | Bug: narrow window keeps tree labels and short table columns readable (Decision 19) | A | Sonnet | 19 |
 | 37 | Inspect: Copy JSON as an icon, links in the tree (Decision 20) | C | Opus | 32 |
 | 38 | Bug: the volume prune dialog says what will really be removed (Decision 11) | C | Sonnet | 37 |
+| 39 | Bug: Inspect controls: labels on one line, copy icon never overlaps | A | Opus | 37 |
+| 40 | Bug: dragging a split never scrolls, dragging a scrollbar never resizes | C | Opus | 39 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -478,3 +480,5 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 36 — Bug: narrow tree labels and table columns · Sonnet
 - [x] 37 — Inspect: copy icon, links in the tree · Opus
 - [x] 38 — Bug: volume prune dialog text · Sonnet
+- [ ] 39 — Bug: Inspect controls layout · Opus
+- [ ] 40 — Bug: resize never scrolls, scrollbar never resizes · Opus
