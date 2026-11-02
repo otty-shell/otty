@@ -18,8 +18,6 @@ use crate::widgets::docker::actions::{ActionRequest, EngineAction};
 use crate::widgets::docker::inspector::InspectTarget;
 use crate::widgets::docker::types::{LoadedList, LoadedLists, ResourceKind};
 use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
-use crate::widgets::modes::types::Mode;
-use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::sidebar::SidebarIntent;
 use crate::widgets::tabs::types::TabMachine;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
@@ -66,7 +64,8 @@ pub(crate) fn handle(app: &mut App, event: DockerEvent) -> Task<AppEvent> {
 }
 
 /// Open a command tab on this computer running `program` with `args`, the
-/// way a quick launch opens one, then show Terminal mode.
+/// way a quick launch opens one. The tabs handler shows Terminal mode, like
+/// for every opened tab.
 fn open_shell_tab(
     base: &Settings,
     title: String,
@@ -81,18 +80,14 @@ fn open_shell_tab(
         SessionKind::from_local_options(options),
     );
 
-    let open_tab =
-        AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenCommandTab {
+    Task::done(AppEvent::Tabs(TabsEvent::Intent(
+        TabsIntent::OpenCommandTab {
             title,
             settings: Box::new(settings),
             exit_behavior: ExitBehavior::default(),
             machine: TabMachine::ThisComputer,
-        }));
-    let show_terminal = AppEvent::Modes(ModesEvent::Intent(
-        ModesIntent::Select(Mode::Terminal),
-    ));
-
-    Task::done(open_tab).chain(Task::done(show_terminal))
+        },
+    )))
 }
 
 /// Run the effects that need no app state; the pull effects are run by
@@ -558,7 +553,7 @@ mod tests {
     }
 
     #[test]
-    fn the_shell_effect_opens_a_command_tab_then_switches_to_terminal_mode() {
+    fn the_shell_effect_opens_one_command_tab() {
         let (mut app, _) = App::new();
 
         let events = collect_outputs(handle(
@@ -579,14 +574,12 @@ mod tests {
                 machine,
                 ..
             })),
-            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(mode))),
         ] = events.as_slice()
         else {
-            panic!("expected a command tab and a mode switch");
+            panic!("expected one command tab");
         };
         assert_eq!(title, "shell web-1");
         assert_eq!(machine, &TabMachine::ThisComputer);
-        assert_eq!(*mode, Mode::Terminal);
         let SessionKind::Local(options) = &settings.backend.session else {
             panic!("expected a local session");
         };

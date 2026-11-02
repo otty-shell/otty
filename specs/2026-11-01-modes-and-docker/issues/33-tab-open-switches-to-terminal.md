@@ -1,6 +1,6 @@
 # 33 — Opening or activating a tab switches to Terminal mode
 
-Status: ready-for-agent
+Status: resolved
 Type: bug
 Class: C
 Model: Sonnet 5.5 (claude-sonnet-5-5)
@@ -35,3 +35,14 @@ Tests first. Run fmt, clippy, tests, `cargo deny check` and compare
   running a launch — each ends in Terminal mode with that tab active.
 - In Terminal mode the same actions do not emit a mode change.
 - Closing a tab does not switch modes.
+
+## Answer
+
+Tests were written first and seen failing (7 of 10), then the fix.
+
+- Fix: `handle_effect` in `app/src/events/tabs.rs`. Every opened-tab effect (terminal, command, settings, wizard, error) and `Activated` now also sends `ModesIntent::Select(Mode::Terminal)` when the active mode is not Terminal. Every caller (title bar button, shortcuts, palette, launches, launch editor, Shell) ends in these effects, so none needed a change. In Terminal mode nothing extra is sent; `Closed` and the other effects never switch.
+- Shell: its own `Select(Terminal)` in `app/src/events/docker.rs` was redundant and is removed. Shell still opens one command tab and ends in Terminal mode through the tabs handler. Its handler test now checks only the opened tab; the mode switch is covered by the running-a-launch test, which uses the same command-tab path.
+
+Tests (in `events/tabs.rs`, from Docker mode): Settings opened, Settings activated again, New terminal, activating a session, running a launch, the launch editor, an error tab - each emits exactly one switch to Terminal mode. In Terminal mode the same actions emit none. Closing a tab from Docker mode emits none.
+
+Deviations: the Shell handler test no longer asserts the mode switch (it moved to the tabs handler tests). The palette, shortcut and chrome paths are covered through their tab intents, which existing handler tests already check.

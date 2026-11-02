@@ -6,6 +6,8 @@ use crate::app::App;
 use crate::domain::quick_launch::WizardTabInit;
 use crate::services::terminal_settings_for_session;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
+use crate::widgets::modes::types::Mode;
+use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::settings::{SettingsEvent, SettingsIntent};
 use crate::widgets::tabs::view::session_list::SESSION_LIST_SCROLL_ID;
@@ -29,7 +31,36 @@ pub(crate) fn handle(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
     }
 }
 
+/// Run a tabs effect. Tabs only show in Terminal mode (spec Decision 5), so
+/// a tab that opens or becomes active while another mode is shown also
+/// switches to Terminal mode. This is the one place that does it, for every
+/// way a tab can be opened or activated.
 fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
+    let shows_tab = matches!(
+        effect,
+        TabsEffect::Activated { .. }
+            | TabsEffect::TerminalTabOpened { .. }
+            | TabsEffect::CommandTabOpened { .. }
+            | TabsEffect::SettingsTabOpened
+            | TabsEffect::WizardTabOpened { .. }
+            | TabsEffect::ErrorTabOpened { .. }
+    );
+    let needs_terminal_mode =
+        shows_tab && app.widgets.modes.active() != Mode::Terminal;
+
+    let run = run_effect(app, effect);
+
+    if needs_terminal_mode {
+        let show_terminal = Task::done(AppEvent::Modes(ModesEvent::Intent(
+            ModesIntent::Select(Mode::Terminal),
+        )));
+        return Task::batch([run, show_terminal]);
+    }
+
+    run
+}
+
+fn run_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
     match effect {
         TabsEffect::Activated { tab_id } => {
             let mut tasks: Vec<Task<AppEvent>> = Vec::new();
@@ -197,7 +228,10 @@ mod tests {
     use crate::events::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
+    use crate::widgets::modes::types::Mode;
+    use crate::widgets::modes::{ModesEvent, ModesIntent};
     use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+    use crate::widgets::tabs::types::TabMachine;
     use crate::widgets::tabs::{TabsCtx, TabsEffect, TabsEvent, TabsIntent};
     use crate::widgets::terminal_workspace::types::TerminalKind;
     use crate::widgets::terminal_workspace::{
@@ -463,6 +497,150 @@ mod tests {
             }),
         );
         assert_eq!(task.units(), 1);
+    }
+
+    fn docker_app() -> App {
+        let (mut app, _) = App::new();
+        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+
+        app
+    }
+
+    fn terminal_switches(events: &[AppEvent]) -> usize {
+        events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
+                        Mode::Terminal
+                    )))
+                )
+            })
+            .count()
+    }
+
+    fn open_command_tab_intent() -> TabsIntent {
+        TabsIntent::OpenCommandTab {
+            title: String::from("launch"),
+            settings: Box::new(shell_settings()),
+            exit_behavior: ExitBehavior::default(),
+            machine: TabMachine::ThisComputer,
+        }
+    }
+
+    #[test]
+    fn opening_settings_from_docker_mode_switches_to_terminal_mode() {
+        let mut app = docker_app();
+
+        let events = route_intent(&mut app, TabsIntent::OpenSettingsTab);
+
+        assert_eq!(terminal_switches(&events), 1);
+    }
+
+    #[test]
+    fn activating_an_open_settings_tab_from_docker_mode_switches_to_terminal_mode()
+     {
+        let mut app = docker_app();
+        let _ = route_intent(&mut app, TabsIntent::OpenSettingsTab);
+        let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
+
+        let events = route_intent(&mut app, TabsIntent::OpenSettingsTab);
+
+        assert_eq!(terminal_switches(&events), 1);
+    }
+
+    #[test]
+    fn opening_a_new_terminal_from_docker_mode_switches_to_terminal_mode() {
+        let mut app = docker_app();
+
+        let events = route_intent(&mut app, TabsIntent::OpenTerminalTab);
+
+        assert_eq!(terminal_switches(&events), 1);
+    }
+
+    #[test]
+    fn activating_a_session_from_docker_mode_switches_to_terminal_mode() {
+        let mut app = docker_app();
+        let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
+        let first_id = app.widgets.tabs.active_tab_id().expect("first tab");
+        let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
+
+        let events = route_intent(
+            &mut app,
+            TabsIntent::ActivateTab { tab_id: first_id },
+        );
+
+        assert_eq!(terminal_switches(&events), 1);
+    }
+
+    #[test]
+    fn running_a_launch_from_docker_mode_switches_to_terminal_mode() {
+        let mut app = docker_app();
+
+        let events = route_intent(&mut app, open_command_tab_intent());
+
+        assert_eq!(terminal_switches(&events), 1);
+    }
+
+    #[test]
+    fn opening_the_launch_editor_from_docker_mode_switches_to_terminal_mode() {
+        let mut app = docker_app();
+
+        let events = route_intent(
+            &mut app,
+            TabsIntent::OpenWizardTab {
+                title: String::from("New launch"),
+                init: WizardTabInit::Create {
+                    parent_path: vec![String::from("Demo")],
+                },
+            },
+        );
+
+        assert_eq!(terminal_switches(&events), 1);
+    }
+
+    #[test]
+    fn opening_an_error_tab_from_docker_mode_switches_to_terminal_mode() {
+        let mut app = docker_app();
+
+        let events = route_intent(
+            &mut app,
+            TabsIntent::OpenErrorTab {
+                title: String::from("Failed"),
+                message: String::from("boom"),
+            },
+        );
+
+        assert_eq!(terminal_switches(&events), 1);
+    }
+
+    #[test]
+    fn opening_and_activating_tabs_in_terminal_mode_emits_no_mode_change() {
+        let mut app = App::new().0;
+        let intents = [
+            TabsIntent::OpenSettingsTab,
+            TabsIntent::OpenSettingsTab,
+            TabsIntent::OpenTerminalTab,
+            open_command_tab_intent(),
+        ];
+
+        for intent in intents {
+            let events = route_intent(&mut app, intent);
+
+            assert_eq!(terminal_switches(&events), 0);
+        }
+    }
+
+    #[test]
+    fn closing_a_tab_from_docker_mode_does_not_switch_modes() {
+        let mut app = docker_app();
+        let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
+        let tab_id = app.widgets.tabs.active_tab_id().expect("tab");
+
+        let events = route_intent(&mut app, TabsIntent::CloseTab { tab_id });
+
+        assert_eq!(terminal_switches(&events), 0);
     }
 
     #[test]
