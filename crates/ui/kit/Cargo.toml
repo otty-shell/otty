@@ -11,6 +11,10 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+# Fuzzy matcher (MIT, no required dependencies) that ranks the suggestions of
+# `TagSearch` and tolerates a typo. It picks a SIMD backend at run time and
+# falls back to plain code, so it needs no target-specific setup.
+frizbee = "0.13"
 iced = { workspace = true, features = ["svg", "advanced"] }
 
 [dev-dependencies]

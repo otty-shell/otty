@@ -10,6 +10,9 @@ use std::ops::Range;
 
 use super::palette_list::FoldedText;
 
+/// A query of this many letters or fewer allows no typo when ranking.
+const SHORT_QUERY_LETTERS: usize = 3;
+
 /// One `key:value` filter of a [`TagSearch`].
 ///
 /// # Example
@@ -655,35 +658,57 @@ fn parse<'a>(input: &'a str, keys: &[&'static str]) -> ParsedInput<'a> {
     ParsedInput::Plain(input.trim())
 }
 
-/// Returns the candidates that match `query`, best first. All of the
-/// suggestion ranking lives here: those containing the query, ignoring case,
-/// the ones starting with it first, the given order otherwise. An empty query
-/// keeps every candidate in the given order.
+/// Returns the candidates that fuzzy-match `query`, best first. All of the
+/// suggestion ranking lives here. The case is ignored and the letters of the
+/// query may be apart in the candidate. A query of up to three letters allows
+/// no typo, a longer one allows one. An empty query keeps every candidate in
+/// the given order.
 fn rank(query: &str, candidates: &[&str]) -> Vec<Ranked> {
-    let folded = FoldedText::new(query.trim());
-    let needle = folded.text();
+    let needle = query.trim();
 
-    let mut ranked = Vec::new();
-    for (index, candidate) in candidates.iter().enumerate() {
-        if needle.is_empty() {
-            ranked.push(Ranked {
+    if needle.is_empty() {
+        return (0..candidates.len())
+            .map(|index| Ranked {
                 index,
                 ranges: Vec::new(),
-            });
-            continue;
-        }
-
-        let ranges = FoldedText::new(candidate).find_all(needle);
-        if !ranges.is_empty() {
-            ranked.push(Ranked { index, ranges });
-        }
+            })
+            .collect();
     }
 
-    ranked.sort_by_key(|one| {
-        one.ranges.first().is_some_and(|range| range.start != 0)
-    });
+    let max_typos = if needle.chars().count() <= SHORT_QUERY_LETTERS {
+        0
+    } else {
+        1
+    };
+    let config = frizbee::Config {
+        max_typos: Some(max_typos),
+        casing: frizbee::CaseMatching::Ignore,
+        ..frizbee::Config::default()
+    };
+    // `frizbee` ignores case for ASCII only, so both sides are lower-cased
+    // first. It reports the matched bytes of the lower-cased text, which
+    // `FoldedText` maps back to the shown text.
+    let needle = FoldedText::new(needle);
+    let folded: Vec<FoldedText> =
+        candidates.iter().map(|one| FoldedText::new(one)).collect();
+    let lowered: Vec<&str> = folded.iter().map(FoldedText::text).collect();
 
-    ranked
+    let mut matcher = frizbee::Matcher::new(needle.text(), &config);
+
+    matcher
+        .match_list_indices(&lowered)
+        .into_iter()
+        .map(|found| {
+            let index = found.index as usize;
+            let bytes: Vec<usize> =
+                found.indices.iter().map(|&one| one as usize).collect();
+
+            Ranked {
+                index,
+                ranges: folded[index].originals_of(&bytes),
+            }
+        })
+        .collect()
 }
 
 /// Builds the suggestions of the `ranked` entries of `candidates`.
@@ -955,6 +980,73 @@ mod tests {
         let indexes: Vec<usize> = ranked.iter().map(|one| one.index).collect();
         assert_eq!(indexes, vec![0, 1]);
         assert!(ranked.iter().all(|one| one.ranges.is_empty()));
+    }
+
+    fn ranked_indexes(query: &str, candidates: &[&str]) -> Vec<usize> {
+        rank(query, candidates)
+            .iter()
+            .map(|one| one.index)
+            .collect()
+    }
+
+    #[test]
+    fn rank_finds_a_candidate_with_one_typo() {
+        let found = ranked_indexes("contaner", &["image", "container"]);
+
+        assert_eq!(found, vec![1]);
+    }
+
+    #[test]
+    fn rank_finds_letters_that_are_not_next_to_each_other() {
+        let found = ranked_indexes("cntnr", &["image", "container"]);
+
+        assert_eq!(found, vec![1]);
+    }
+
+    #[test]
+    fn rank_puts_the_better_match_first() {
+        let found = ranked_indexes("run", &["pruned", "running", "other"]);
+
+        assert_eq!(found, vec![1, 0]);
+    }
+
+    #[test]
+    fn rank_ignores_case() {
+        let found = ranked_indexes("RUNNING", &["Running", "exited"]);
+
+        assert_eq!(found, vec![0]);
+    }
+
+    #[test]
+    fn rank_allows_no_typo_in_a_short_query() {
+        assert!(ranked_indexes("rx", &["running"]).is_empty());
+        assert!(ranked_indexes("stx", &["status"]).is_empty());
+    }
+
+    #[test]
+    fn rank_allows_at_most_one_typo() {
+        assert!(ranked_indexes("contanxxr", &["container"]).is_empty());
+    }
+
+    #[test]
+    fn rank_marks_the_matched_letters_as_byte_ranges() {
+        let found = rank("run", &["a running"]);
+
+        assert_eq!(found[0].ranges, vec![2..5]);
+    }
+
+    #[test]
+    fn rank_marks_separate_letters_as_separate_ranges() {
+        let found = rank("rg", &["rung"]);
+
+        assert_eq!(found[0].ranges, vec![0..1, 3..4]);
+    }
+
+    #[test]
+    fn rank_ranges_stay_byte_ranges_after_wide_letters() {
+        let found = rank("вер", &["Сервер"]);
+
+        assert_eq!(found[0].ranges, vec![6..12]);
     }
 
     // Moving.

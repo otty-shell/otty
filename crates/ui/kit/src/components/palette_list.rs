@@ -273,6 +273,32 @@ impl FoldedText {
         Self { text, origins }
     }
 
+    /// Returns the original letters that own the given bytes of the folded
+    /// text, as byte ranges of the original text; letters that are next to
+    /// each other make one range.
+    pub(super) fn originals_of(&self, bytes: &[usize]) -> Vec<Range<usize>> {
+        let mut sorted: Vec<usize> = bytes
+            .iter()
+            .copied()
+            .filter(|&byte| byte < self.origins.len())
+            .collect();
+        sorted.sort_unstable();
+
+        let mut ranges: Vec<Range<usize>> = Vec::new();
+        for byte in sorted {
+            let origin = self.origins[byte].clone();
+
+            match ranges.last_mut() {
+                Some(last) if origin.start <= last.end => {
+                    last.end = last.end.max(origin.end);
+                },
+                _ => ranges.push(origin),
+            }
+        }
+
+        ranges
+    }
+
     /// Returns the non-overlapping places of `needle`, an already folded
     /// text, as byte ranges of the original text.
     pub(super) fn find_all(&self, needle: &str) -> Vec<Range<usize>> {
