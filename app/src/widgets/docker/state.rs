@@ -11,6 +11,7 @@ use super::forms::Form;
 use super::inspector::{
     InspectTarget, InspectorState, InspectorTab, LogTarget,
 };
+use super::resource_rows::port_urls;
 use super::run_form::RunForm;
 use super::sort::{TableSort, TableSorts};
 use super::types::{
@@ -514,6 +515,29 @@ impl DockerState {
 
         self.open_compose_project(&project);
         true
+    }
+
+    /// The page opened by the port link at position `link` among the links
+    /// of the container at `index` of the shown, filtered containers table.
+    /// `None` when there is no such row or link.
+    pub(super) fn port_url_of_row(
+        &self,
+        index: usize,
+        link: usize,
+    ) -> Option<String> {
+        let (place, engine) = (self.place.as_ref()?, self.open_engine()?);
+        if place.resource() != ResourceKind::Containers {
+            return None;
+        }
+
+        let shown = shown_containers(
+            engine.containers.items(),
+            self.filter.as_str(),
+            place.compose_project(),
+            self.sorts.get(ResourceKind::Containers),
+        );
+
+        port_urls(shown.get(index)?.ports()).into_iter().nth(link)
     }
 
     /// Sort the open table by the column at `column`, or turn its order

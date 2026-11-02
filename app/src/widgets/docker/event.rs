@@ -35,6 +35,11 @@ pub(crate) enum DockerIntent {
     /// The Compose link of the row at this position of the shown (filtered)
     /// containers table was pressed: show only that project's containers.
     OpenComposeProject(usize),
+    /// A port link of the container at this position of the shown (filtered)
+    /// containers table was pressed: open the page of that link in the
+    /// browser. `link` counts the port links of the row from 0. The row is
+    /// not selected.
+    OpenPortLink { row: usize, link: usize },
     /// The title of the sortable column at this position of the open table
     /// was pressed.
     SortBy(usize),

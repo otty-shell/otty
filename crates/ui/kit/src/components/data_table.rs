@@ -35,8 +35,9 @@ const SORT_ARROW: f32 = 12.0;
 type RowPress<'a, Message> = Box<dyn Fn(usize) -> Message + 'a>;
 /// Message builder for a header press: column index.
 type SortPress<'a, Message> = Box<dyn Fn(usize) -> Message + 'a>;
-/// Message builder for a link press: row index and column index.
-type LinkPress<'a, Message> = Box<dyn Fn(usize, usize) -> Message + 'a>;
+/// Message builder for a link press: row index, column index and the
+/// position of the link among the links of its cell.
+type LinkPress<'a, Message> = Box<dyn Fn(usize, usize, usize) -> Message + 'a>;
 
 /// Direction of the sorted column of a [`DataTable`], shown as an arrow in
 /// its header.
@@ -120,9 +121,36 @@ impl TableColumn {
     }
 }
 
+/// One piece of a [`TableCell::Parts`] cell: text or a link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CellPart {
+    /// Muted mono text between or beside links.
+    Text(String),
+    /// A link in the accent color; pressing it sends the table's
+    /// [`DataTable::on_link_press`] message with the link's position among
+    /// the links of the cell.
+    Link(String),
+}
+
+impl CellPart {
+    /// Creates a text part.
+    pub fn text(value: impl Into<String>) -> Self {
+        Self::Text(value.into())
+    }
+
+    /// Creates a link part.
+    pub fn link(label: impl Into<String>) -> Self {
+        Self::Link(label.into())
+    }
+}
+
 /// One cell of a [`DataTable`] row. Long text ends with "…".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TableCell {
+    /// Several [`CellPart`]s on one line in the mono font: links with text
+    /// between them, such as published ports. A part that does not fit is
+    /// cut at the cell edge.
+    Parts(Vec<CellPart>),
     /// Body text in the interface font.
     Plain(String),
     /// Body text in the mono font: names, IDs.
@@ -176,6 +204,11 @@ impl TableCell {
     pub fn link(label: impl Into<String>) -> Self {
         Self::Link(label.into())
     }
+
+    /// Creates a cell of text and links.
+    pub fn parts(parts: Vec<CellPart>) -> Self {
+        Self::Parts(parts)
+    }
 }
 
 /// Table with a fixed header and rows that scroll under it. One row can be
@@ -206,7 +239,7 @@ impl TableCell {
 ///     Select(usize),
 ///     OpenMenu(usize, Point),
 ///     Sort(usize),
-///     OpenLink(usize, usize),
+///     OpenLink(usize, usize, usize),
 /// }
 ///
 /// let palette = UiPalette::otty_dark();
@@ -304,12 +337,14 @@ impl<'a, Message> DataTable<'a, Message> {
         self
     }
 
-    /// Sets the message sent when a [`TableCell::Link`] is pressed, built
-    /// from its row index and column index. The row is not pressed.
-    /// Without it links are drawn but not pressable.
+    /// Sets the message sent when a [`TableCell::Link`] or a link of a
+    /// [`TableCell::Parts`] is pressed, built from its row index, column
+    /// index and position among the links of the cell (0 for a
+    /// [`TableCell::Link`]). The row is not pressed. Without it links are
+    /// drawn but not pressable.
     pub fn on_link_press(
         mut self,
-        on_link_press: impl Fn(usize, usize) -> Message + 'a,
+        on_link_press: impl Fn(usize, usize, usize) -> Message + 'a,
     ) -> Self {
         self.on_link_press = Some(Box::new(on_link_press));
         self
@@ -407,10 +442,10 @@ impl<'a, Message: Clone + 'a> From<DataTable<'a, Message>>
                 .map(|(index, row)| {
                     let on_press =
                         on_row_press.as_ref().map(|on_press| on_press(index));
-                    let on_link = |column: usize| {
-                        on_link_press
-                            .as_ref()
-                            .map(|on_link_press| on_link_press(index, column))
+                    let on_link = |column: usize, link: usize| {
+                        on_link_press.as_ref().map(|on_link_press| {
+                            on_link_press(index, column, link)
+                        })
                     };
                     let menu_cell = menu_label.map(|label| {
                         if row.has_menu {
@@ -579,7 +614,7 @@ fn row_view<'a, Message: Clone + 'a>(
     columns: &[TableColumn],
     is_selected: bool,
     on_press: Option<Message>,
-    on_link: &dyn Fn(usize) -> Option<Message>,
+    on_link: &dyn Fn(usize, usize) -> Option<Message>,
     menu_cell: Option<Element<'a, Message>>,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
@@ -593,7 +628,7 @@ fn row_view<'a, Message: Clone + 'a>(
                 cell,
                 column.align,
                 is_selected,
-                on_link(index),
+                &|link| on_link(index, link),
                 palette,
             ),
             None => (Space::new().into(), column.align),
@@ -639,12 +674,13 @@ fn row_view<'a, Message: Clone + 'a>(
 /// Draws the content of `cell` and returns it with its alignment: the
 /// column's, except numbers, which are always right-aligned. On a selected
 /// row every text cell is `text-strong`; badges and links keep their color.
-/// `on_link` is the message of a link cell.
+/// `on_link` gives the message of the link at a position among the links of
+/// the cell.
 fn cell_view<'a, Message: Clone + 'a>(
     cell: TableCell,
     align: ColumnAlign,
     is_selected: bool,
-    on_link: Option<Message>,
+    on_link: &dyn Fn(usize) -> Option<Message>,
     palette: &UiPalette,
 ) -> (Element<'a, Message>, ColumnAlign) {
     let body = if is_selected {
@@ -671,7 +707,10 @@ fn cell_view<'a, Message: Clone + 'a>(
                 return (StatusBadge::new(label, tone, palette).into(), align);
             },
             TableCell::Link(label) => {
-                return (link_view(label, align, on_link, palette), align);
+                return (link_view(label, align, on_link(0), palette), align);
+            },
+            TableCell::Parts(parts) => {
+                return (parts_view(parts, muted, on_link, palette), align);
             },
         };
 
@@ -703,6 +742,50 @@ fn link_view<'a, Message: Clone + 'a>(
         .on_press(message)
         .style(|_, _| button::Style::default())
         .into()
+}
+
+/// Draws the parts of a cell side by side in the mono font: text in `muted`,
+/// links in the accent color. `on_link` gives the message of the link at a
+/// position among the links; a link without one is drawn but not pressable.
+/// Each link is its own button, so pressing one does not reach the row, and
+/// the text around it presses the row.
+fn parts_view<'a, Message: Clone + 'a>(
+    parts: Vec<CellPart>,
+    muted: Color,
+    on_link: &dyn Fn(usize) -> Option<Message>,
+    palette: &UiPalette,
+) -> Element<'a, Message> {
+    let mut links = 0;
+    let views = parts.into_iter().map(|part| -> Element<'a, Message> {
+        match part {
+            CellPart::Text(value) => {
+                EllipsisText::new(value, TEXT_SIZE, fonts::MONO, muted)
+                    .shrink(0.0)
+                    .into()
+            },
+            CellPart::Link(label) => {
+                let text = EllipsisText::new(
+                    label,
+                    TEXT_SIZE,
+                    fonts::MONO,
+                    link_color(palette),
+                );
+                let message = on_link(links);
+                links += 1;
+
+                match message {
+                    Some(message) => button(text.link())
+                        .padding(0)
+                        .on_press(message)
+                        .style(|_, _| button::Style::default())
+                        .into(),
+                    None => text.shrink(0.0).into(),
+                }
+            },
+        }
+    });
+
+    row(views).into()
 }
 
 /// Draws the "⋯" button of a row: dots in `text-muted`, `text-strong` under
@@ -820,7 +903,7 @@ mod tests {
         Pressed(usize),
         RightPressed(usize, Point),
         Sorted(usize),
-        Linked(usize, usize),
+        Linked(usize, usize, usize),
         MenuPressed(usize, Point),
     }
 
@@ -1205,7 +1288,82 @@ mod tests {
         ui.click("site-2").expect("link should be visible");
 
         let messages: Vec<Message> = ui.into_messages().collect();
-        assert_eq!(messages, vec![Message::Linked(2, 1)]);
+        assert_eq!(messages, vec![Message::Linked(2, 1, 0)]);
+    }
+
+    /// Table with one row whose Ports cell holds two links with text
+    /// between and after them, and a row press.
+    fn ports_table() -> Element<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let table = DataTable::new(
+            vec![TableColumn::new("Name", 1), TableColumn::new("Ports", 3)],
+            &palette,
+        )
+        .on_row_press(Message::Pressed)
+        .on_link_press(Message::Linked)
+        .row(vec![
+            TableCell::mono("web"),
+            TableCell::parts(vec![
+                CellPart::link("8080:80/tcp"),
+                CellPart::text(" and "),
+                CellPart::link("5432/tcp"),
+                CellPart::text(" then 53/udp"),
+            ]),
+        ]);
+
+        container(table).width(WIDTH).height(120).into()
+    }
+
+    #[test]
+    fn given_two_links_in_one_cell_when_each_is_pressed_then_each_sends_its_own_index()
+     {
+        let mut first = simulator(ports_table());
+        first.click("8080:80/tcp").expect("first link is visible");
+        let first: Vec<Message> = first.into_messages().collect();
+
+        let mut second = simulator(ports_table());
+        second.click("5432/tcp").expect("second link is visible");
+        let second: Vec<Message> = second.into_messages().collect();
+
+        assert_eq!(first, vec![Message::Linked(0, 1, 0)]);
+        assert_eq!(second, vec![Message::Linked(0, 1, 1)]);
+    }
+
+    #[test]
+    fn given_text_between_links_when_pressed_then_the_row_is_pressed_not_a_link()
+     {
+        let mut ui = simulator(ports_table());
+
+        ui.click(" and ").expect("text is visible");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Pressed(0)]);
+    }
+
+    #[test]
+    fn given_parts_cell_when_rendered_then_each_part_shows_in_order() {
+        let mut ui = simulator(ports_table());
+
+        for part in ["8080:80/tcp", " and ", "5432/tcp", " then 53/udp"] {
+            assert!(ui.find(part).is_ok(), "{part:?} should be shown");
+        }
+    }
+
+    #[test]
+    fn given_parts_cell_without_handler_when_a_link_is_pressed_then_the_row_is_pressed()
+     {
+        let palette = UiPalette::otty_dark();
+        let table: Element<'_, Message> =
+            DataTable::new(vec![TableColumn::new("Ports", 1)], &palette)
+                .on_row_press(Message::Pressed)
+                .row(vec![TableCell::parts(vec![CellPart::link("80/tcp")])])
+                .into();
+        let mut ui = simulator(container(table).width(WIDTH).height(120));
+
+        ui.click("80/tcp").expect("link is visible");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Pressed(0)]);
     }
 
     /// Draws the first row of the action table with the pointer at

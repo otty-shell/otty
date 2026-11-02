@@ -58,6 +58,12 @@ fn reduce_intent(
             let _ = state.open_compose_project_of_row(index);
             Task::none()
         },
+        DockerIntent::OpenPortLink { row, link } => {
+            match state.port_url_of_row(row, link) {
+                Some(url) => effect(DockerEffect::OpenUrl(url)),
+                None => Task::none(),
+            }
+        },
         DockerIntent::SortBy(column) => {
             state.sort_by(column);
             Task::none()
@@ -724,6 +730,90 @@ mod tests {
         let place = state.place().expect("an open place");
         assert_eq!(place.resource(), ResourceKind::Containers);
         assert_eq!(place.compose_project(), Some("otty-fx"));
+    }
+
+    /// Position in the shown table of the fixture container `name`.
+    fn row_of(state: &DockerState, name: &str) -> usize {
+        let index = {
+            let engine = state.open_engine().expect("docker engine");
+            engine
+                .containers()
+                .items()
+                .iter()
+                .position(|c| c.name() == name)
+                .expect("fixture container")
+        };
+
+        state.shown_position(index)
+    }
+
+    #[test]
+    fn a_port_link_opens_the_page_of_that_port_and_selects_nothing() {
+        let mut state = loaded_state();
+        let before = selected_container(&state).map(str::to_string);
+        let row = row_of(&state, "otty-fx-running");
+
+        let sent = effects(reduce(
+            &mut state,
+            DockerIntent::OpenPortLink { row, link: 0 },
+        ));
+
+        assert_eq!(
+            sent,
+            vec![DockerEffect::OpenUrl(String::from(
+                "http://localhost:18080"
+            ))]
+        );
+        assert_eq!(selected_container(&state).map(str::to_string), before);
+    }
+
+    #[test]
+    fn a_port_link_is_looked_up_in_the_filtered_table() {
+        let mut state = loaded_state();
+        let _ = reduce(
+            &mut state,
+            DockerIntent::FilterChanged(String::from("otty-fx-web")),
+        );
+
+        let sent = effects(reduce(
+            &mut state,
+            DockerIntent::OpenPortLink { row: 0, link: 0 },
+        ));
+
+        assert_eq!(
+            sent,
+            vec![DockerEffect::OpenUrl(String::from(
+                "http://localhost:18081"
+            ))]
+        );
+    }
+
+    #[test]
+    fn a_port_link_that_is_not_there_does_nothing() {
+        let mut state = loaded_state();
+        let row = row_of(&state, "otty-fx-running");
+
+        for (row, link) in [(row, 1), (999, 0)] {
+            let sent = effects(reduce(
+                &mut state,
+                DockerIntent::OpenPortLink { row, link },
+            ));
+            assert!(sent.is_empty(), "{sent:?}");
+        }
+
+        open(&mut state, ResourceKind::Images);
+        let sent = effects(reduce(
+            &mut state,
+            DockerIntent::OpenPortLink { row: 0, link: 0 },
+        ));
+        assert!(sent.is_empty(), "{sent:?}");
+
+        let mut empty = DockerState::default();
+        let sent = effects(reduce(
+            &mut empty,
+            DockerIntent::OpenPortLink { row: 0, link: 0 },
+        ));
+        assert!(sent.is_empty(), "{sent:?}");
     }
 
     #[test]

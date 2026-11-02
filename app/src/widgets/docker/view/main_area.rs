@@ -16,6 +16,7 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::DockerIntent;
 use super::super::model::{MainViewModel, TableViewModel};
+use super::super::resource_rows::PORTS_COLUMN;
 use super::super::sort::SortOrder;
 use super::super::types::ResourceKind;
 use super::no_engine;
@@ -83,7 +84,10 @@ fn table_view<'a>(
         .on_sort(DockerIntent::SortBy)
         .selected(vm.selected)
         .on_row_press(DockerIntent::SelectRow)
-        .on_link_press(|row, _column| DockerIntent::OpenComposeProject(row))
+        .on_link_press(|row, column, link| match column {
+            PORTS_COLUMN => DockerIntent::OpenPortLink { row, link },
+            _ => DockerIntent::OpenComposeProject(row),
+        })
         .on_row_right_press(|index, position| DockerIntent::OpenRowMenu {
             index,
             position,
@@ -253,7 +257,9 @@ fn card<'a>(
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
-    use otty_ui_kit::components::data_table::{TableCell, TableColumn};
+    use otty_ui_kit::components::data_table::{
+        CellPart, TableCell, TableColumn,
+    };
     use otty_ui_kit::components::status_badge::StatusTone;
 
     use super::*;
@@ -362,6 +368,44 @@ mod tests {
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![DockerIntent::OpenComposeProject(0)]);
+    }
+
+    #[test]
+    fn a_press_on_a_port_link_opens_that_port_without_selecting_the_row() {
+        let themes = ThemeManager::new();
+        let ports = TableCell::parts(vec![
+            CellPart::link("8080:80/tcp"),
+            CellPart::text(", "),
+            CellPart::link("5432/tcp"),
+        ]);
+        let mut columns = vec![TableColumn::new("Name", 1); PORTS_COLUMN];
+        columns.push(TableColumn::new("Ports", 4));
+        let mut row = vec![TableCell::mono("web-1"); PORTS_COLUMN];
+        row.push(ports);
+        let make = || {
+            let (columns, row) = (columns.clone(), row.clone());
+            view(MainAreaProps {
+                vm: with(|mut table| {
+                    table.columns = columns;
+                    table.rows = vec![row];
+                    table
+                }),
+                theme: ThemeProps::new(themes.current()),
+            })
+        };
+
+        let mut first = simulator(make());
+        first.click("8080:80/tcp").expect("link should be visible");
+        let mut second = simulator(make());
+        second.click("5432/tcp").expect("link should be visible");
+
+        let first: Vec<DockerIntent> = first.into_messages().collect();
+        let second: Vec<DockerIntent> = second.into_messages().collect();
+        assert_eq!(first, vec![DockerIntent::OpenPortLink { row: 0, link: 0 }]);
+        assert_eq!(
+            second,
+            vec![DockerIntent::OpenPortLink { row: 0, link: 1 }]
+        );
     }
 
     /// Width of a wide main area in the tests.

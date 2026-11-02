@@ -438,10 +438,12 @@ mod tests {
     }
 
     #[test]
-    fn the_row_menu_button_and_the_right_click_leave_the_panel_closed() {
+    fn the_row_menu_button_the_right_click_and_a_port_link_leave_the_panel_closed()
+     {
         let mut app = app_with_closed_right_panel();
 
         for intent in [
+            DockerIntent::OpenPortLink { row: 0, link: 0 },
             DockerIntent::RowMenuPressed {
                 index: 0,
                 position: iced::Point::ORIGIN,

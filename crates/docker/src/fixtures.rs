@@ -26,6 +26,7 @@ use crate::address::EngineAddress;
 use crate::candidates::{CandidateSource, SocketCandidate};
 use crate::cli::CliPresence;
 use crate::connection::Resources;
+use crate::container::Container;
 use crate::discovery::Discovery;
 use crate::engine::{EngineInfo, EngineKind};
 use crate::image_defaults::ImageDefaults;
@@ -111,6 +112,33 @@ pub fn resources(kind: EngineKind) -> Resources {
 /// existed: nothing uses them, so every one can be removed.
 pub fn idle_resources(kind: EngineKind) -> Resources {
     load_resources(kind, false)
+}
+
+/// A container named `web` that lists `ports`, each as host address, host
+/// port, container port and protocol, as the engine would send them. A
+/// port without a host port is only exposed.
+pub fn container_with_ports(
+    ports: &[(Option<&str>, Option<u16>, u16, &str)],
+) -> Container {
+    let ports: Vec<serde_json::Value> = ports
+        .iter()
+        .map(|(ip, public, private, protocol)| {
+            serde_json::json!({
+                "IP": ip,
+                "PublicPort": public,
+                "PrivatePort": private,
+                "Type": protocol,
+            })
+        })
+        .collect();
+    let summary: ContainerSummary = serde_json::from_value(serde_json::json!({
+        "Id": "web-id",
+        "Names": ["/web"],
+        "Ports": ports,
+    }))
+    .expect("the container summary should parse");
+
+    Container::from_summary(&summary)
 }
 
 /// What `nginx:1.27` sets on its own: ports 80 and 443, the nginx command,

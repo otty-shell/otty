@@ -237,8 +237,9 @@ fn joined(values: Vec<Vec<Piece>>) -> Vec<Piece> {
 }
 
 /// The ports as `docker ps` shows them, each published TCP port a link to
-/// its page.
-fn ports_value(ports: &[PortMapping]) -> Vec<Piece> {
+/// its page. The containers table builds its Ports cell from the same
+/// pieces.
+pub(crate) fn ports_value(ports: &[PortMapping]) -> Vec<Piece> {
     let shown = shown_ports(ports)
         .into_iter()
         .map(|port| {

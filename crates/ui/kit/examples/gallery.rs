@@ -14,7 +14,7 @@ use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::command_box::CommandBox;
 use otty_ui_kit::components::command_palette::{CommandPalette, PaletteAction};
 use otty_ui_kit::components::data_table::{
-    ColumnAlign, DataTable, SortDirection, TableCell, TableColumn,
+    CellPart, ColumnAlign, DataTable, SortDirection, TableCell, TableColumn,
 };
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::divider;
@@ -278,7 +278,7 @@ enum Message {
     DismissNotice,
     ShowNotice,
     TableSort(usize),
-    TableLink(usize, usize),
+    TableLink(usize, usize, usize),
     TableRowMenu(usize, iced::Point),
     ToolbarFilter(String),
     ToolbarAction(&'static str),
@@ -369,8 +369,9 @@ fn update(state: &mut Gallery, message: Message) {
             state.table_sort = (column, direction);
             state.table_event = format!("sort column {column}, {direction:?}");
         },
-        Message::TableLink(row, column) => {
-            state.table_event = format!("link in row {row}, column {column}");
+        Message::TableLink(row, column, link) => {
+            state.table_event =
+                format!("link {link} in row {row}, column {column}");
         },
         Message::TableRowMenu(row, point) => {
             state.table_event = format!(
@@ -1456,6 +1457,7 @@ fn data_parts<'a>(
             TableColumn::new("Name", 3).sortable(true),
             TableColumn::new("Status", 2).sortable(true),
             TableColumn::new("Compose", 2),
+            TableColumn::new("Ports", 3),
             TableColumn::new("Size", 1)
                 .align(ColumnAlign::End)
                 .sortable(true),
@@ -1489,10 +1491,22 @@ fn data_parts<'a>(
         } else {
             TableCell::link(compose)
         };
+        // Two port links with text between and after them.
+        let ports = if name == "mailpit" {
+            TableCell::muted_mono("—")
+        } else {
+            TableCell::parts(vec![
+                CellPart::link("8080:80/tcp"),
+                CellPart::text(", "),
+                CellPart::link("5432/tcp"),
+                CellPart::text(", 53/udp"),
+            ])
+        };
         sortable = sortable.row(vec![
             TableCell::mono(name),
             TableCell::badge(status, tone),
             compose,
+            ports,
             TableCell::number(size),
         ]);
     }
@@ -1500,6 +1514,7 @@ fn data_parts<'a>(
         TableCell::mono("hello"),
         TableCell::badge("Exited (0)", StatusTone::Neutral),
         TableCell::muted(""),
+        TableCell::muted_mono("—"),
         TableCell::number("13 kB"),
     ]);
 

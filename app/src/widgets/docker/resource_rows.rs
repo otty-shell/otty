@@ -1,16 +1,23 @@
 //! How each resource is shown: table columns and cells (spec Decision 10)
 //! and the status line of the inspector.
 
-use otty_docker::{Container, ContainerState, Image, Network, Volume};
+use otty_docker::{
+    Container, ContainerState, Image, Network, PortMapping, Volume,
+};
 use otty_ui_kit::components::data_table::{
-    ColumnAlign, TableCell, TableColumn,
+    CellPart, ColumnAlign, TableCell, TableColumn,
 };
 use otty_ui_kit::components::status_badge::StatusTone;
 
 use super::format::{NO_VALUE, age_text, ports_text, short_id, size_text};
+use super::overview::{LinkTarget, Piece, ports_value};
 use super::sort::is_sortable;
 use super::types::{ResourceKind, image_name};
 use crate::i18n::{self, Key};
+
+/// Position of the Ports column of the containers table; its cell holds
+/// the port links.
+pub(crate) const PORTS_COLUMN: usize = 4;
 
 /// The table columns of `resource`, with their width shares. Number
 /// columns are right-aligned.
@@ -76,9 +83,45 @@ pub(crate) fn container_cells(
         TableCell::badge(word, tone),
         TableCell::muted_mono(container.image()),
         project,
-        TableCell::muted_mono(ports_text(container.ports())),
+        ports_cell(container.ports()),
         TableCell::muted(age_text(now, container.created())),
     ]
+}
+
+/// The Ports cell: the ports as `docker ps` shows them, each published TCP
+/// port a link (the same rule as the Overview). Without any link it is
+/// plain muted text.
+pub(crate) fn ports_cell(ports: &[PortMapping]) -> TableCell {
+    let pieces = ports_value(ports);
+    if !pieces.iter().any(|piece| matches!(piece, Piece::Link(..))) {
+        return TableCell::muted_mono(ports_text(ports));
+    }
+
+    let mut parts: Vec<CellPart> = Vec::new();
+    for piece in pieces {
+        match piece {
+            Piece::Link(text, _) => parts.push(CellPart::link(text)),
+            // Neighboring texts (a separator and an unlinked port) are one
+            // part.
+            Piece::Text(text) => match parts.last_mut() {
+                Some(CellPart::Text(previous)) => previous.push_str(&text),
+                _ => parts.push(CellPart::text(text)),
+            },
+        }
+    }
+
+    TableCell::parts(parts)
+}
+
+/// The pages the links of [`ports_cell`] open, in the order of the links.
+pub(crate) fn port_urls(ports: &[PortMapping]) -> Vec<String> {
+    ports_value(ports)
+        .into_iter()
+        .filter_map(|piece| match piece {
+            Piece::Link(_, LinkTarget::Url(url)) => Some(url),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The cells of an image row: repository and tag, short ID, size, how many
@@ -369,10 +412,101 @@ mod tests {
                 ),
                 TableCell::muted_mono("busybox:1.37"),
                 TableCell::muted(""),
-                TableCell::muted_mono("18080:80/tcp"),
+                TableCell::parts(vec![CellPart::link("18080:80/tcp")]),
                 TableCell::muted(age_text(NOW, running.created())),
             ]
         );
+    }
+
+    /// The ports of a container as `(host address, host port, container
+    /// port, protocol)`.
+    type Ports<'a> = &'a [(Option<&'a str>, Option<u16>, u16, &'a str)];
+
+    fn cell_of(ports: Ports) -> TableCell {
+        let container = fixtures::container_with_ports(ports);
+
+        ports_cell(container.ports())
+    }
+
+    fn urls_of(ports: Ports) -> Vec<String> {
+        let container = fixtures::container_with_ports(ports);
+
+        port_urls(container.ports())
+    }
+
+    #[test]
+    fn a_published_tcp_port_is_a_link() {
+        let ports: Ports = &[(Some("0.0.0.0"), Some(8080), 80, "tcp")];
+
+        assert_eq!(
+            cell_of(ports),
+            TableCell::parts(vec![CellPart::link("8080:80/tcp")])
+        );
+        assert_eq!(urls_of(ports), vec!["http://localhost:8080"]);
+    }
+
+    #[test]
+    fn a_port_on_both_address_families_is_one_link() {
+        let ports: Ports = &[
+            (Some("0.0.0.0"), Some(8080), 80, "tcp"),
+            (Some("::"), Some(8080), 80, "tcp"),
+        ];
+
+        assert_eq!(
+            cell_of(ports),
+            TableCell::parts(vec![CellPart::link("8080:80/tcp")])
+        );
+        assert_eq!(urls_of(ports), vec!["http://localhost:8080"]);
+    }
+
+    #[test]
+    fn udp_and_exposed_only_ports_stay_text_between_the_links() {
+        let ports: Ports = &[
+            (Some("0.0.0.0"), Some(8080), 80, "tcp"),
+            (Some("0.0.0.0"), Some(5353), 53, "udp"),
+            (None, None, 443, "tcp"),
+            (Some("127.0.0.1"), Some(5432), 5432, "tcp"),
+        ];
+
+        assert_eq!(
+            cell_of(ports),
+            TableCell::parts(vec![
+                CellPart::link("8080:80/tcp"),
+                CellPart::text(", 5353:53/udp, 443/tcp, "),
+                CellPart::link("5432:5432/tcp"),
+            ])
+        );
+        assert_eq!(
+            urls_of(ports),
+            vec!["http://localhost:8080", "http://localhost:5432"]
+        );
+    }
+
+    #[test]
+    fn a_port_bound_to_one_address_links_to_that_address() {
+        let ports: Ports = &[(Some("192.168.1.20"), Some(8080), 80, "tcp")];
+
+        assert_eq!(urls_of(ports), vec!["http://192.168.1.20:8080"]);
+    }
+
+    #[test]
+    fn ports_without_a_link_are_one_muted_text() {
+        let ports: Ports = &[
+            (Some("0.0.0.0"), Some(5353), 53, "udp"),
+            (None, None, 443, "tcp"),
+        ];
+
+        assert_eq!(
+            cell_of(ports),
+            TableCell::muted_mono("5353:53/udp, 443/tcp")
+        );
+        assert!(urls_of(ports).is_empty());
+    }
+
+    #[test]
+    fn a_container_without_ports_shows_no_value_and_no_links() {
+        assert_eq!(cell_of(&[]), TableCell::muted_mono(NO_VALUE));
+        assert!(urls_of(&[]).is_empty());
     }
 
     #[test]
