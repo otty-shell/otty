@@ -4,8 +4,10 @@
 //! OTTY Light, and `rows`, `fields`, `settings`, `inspector` or `data` to
 //! show one group of the second set.
 
+use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{
-    Space, column, container, row, scrollable, stack, svg, text, text_editor,
+    Column, Space, column, container, row, scrollable, stack, svg, text,
+    text_editor,
 };
 use iced::{Element, Length, Padding, Theme};
 use otty_ui_kit::components::action_tile::ActionTile;
@@ -18,7 +20,6 @@ use otty_ui_kit::components::data_table::{
 };
 use otty_ui_kit::components::data_tree::{DataRow, DataTree};
 use otty_ui_kit::components::dialog::Dialog;
-use otty_ui_kit::components::divider;
 use otty_ui_kit::components::empty_card::EmptyCard;
 use otty_ui_kit::components::floating_note::FloatingNote;
 use otty_ui_kit::components::form_page::FormPage;
@@ -48,6 +49,7 @@ use otty_ui_kit::components::select::select;
 use otty_ui_kit::components::session_group::SessionGroup;
 use otty_ui_kit::components::session_row::{SessionRow, SessionTone};
 use otty_ui_kit::components::setting_row::SettingRow;
+use otty_ui_kit::components::split::{self, ResizableGrid};
 use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::status_badge::{StatusBadge, StatusTone};
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
@@ -58,8 +60,9 @@ use otty_ui_kit::components::title_search::TitleSearch;
 use otty_ui_kit::components::token_field::{TokenField, TokenList};
 use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
 use otty_ui_kit::components::tree_row::TreeRow;
+use otty_ui_kit::components::{divider, scrollbar};
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 /// Plus icon used by the icon buttons.
 const PLUS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>"#;
@@ -180,6 +183,7 @@ struct Gallery {
     inspector_event: String,
     data_tree_state_open: bool,
     data_tree_mounts_open: bool,
+    split_panes: pane_grid::State<&'static str>,
 }
 
 impl Gallery {
@@ -248,6 +252,14 @@ impl Gallery {
             inspector_event: "press a link in the list".to_owned(),
             data_tree_state_open: true,
             data_tree_mounts_open: false,
+            split_panes: pane_grid::State::with_configuration(
+                pane_grid::Configuration::Split {
+                    axis: pane_grid::Axis::Vertical,
+                    ratio: 0.5,
+                    a: Box::new(pane_grid::Configuration::Pane("left")),
+                    b: Box::new(pane_grid::Configuration::Pane("right")),
+                },
+            ),
         }
     }
 }
@@ -291,6 +303,7 @@ enum Message {
     ToolbarAction(&'static str),
     InspectorLink(&'static str),
     ToggleDataTree(&'static str),
+    SplitResized(pane_grid::ResizeEvent),
 }
 
 fn main() -> iced::Result {
@@ -315,6 +328,9 @@ fn update(state: &mut Gallery, message: Message) {
         Message::ToggleTheme => state.dark = !state.dark,
         Message::Clicked => state.clicks += 1,
         Message::Switched(on) => state.switch_on = on,
+        Message::SplitResized(event) => {
+            state.split_panes.resize(event.split, event.ratio);
+        },
         Message::Kind(kind) => state.kind = kind,
         Message::Target(target) => state.target = Some(target),
         Message::Path(path) => state.path = path,
@@ -637,6 +653,27 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         .width(180),
     ]
     .spacing(spacing::SPACE_3);
+
+    let split_grid = PaneGrid::new(&state.split_panes, |_, title, _| {
+        let rows = (1..=30).map(|n| text(format!("{title} {n}")).into());
+        let list = scrollable(Column::with_children(rows))
+            .direction(scrollbar::vertical())
+            .style(scrollbar::style(p))
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        pane_grid::Content::new(list)
+    })
+    .spacing(size::LINE)
+    .min_size(50)
+    .style(split::style(p));
+    let split_view: Element<'_, Message> = container(
+        ResizableGrid::new(split_grid, &state.split_panes, 50.0, p)
+            .on_resize(Message::SplitResized),
+    )
+    .width(360)
+    .height(140)
+    .into();
 
     let segments = column![
         segmented(&TYPES, &state.kind, Message::Kind, p),
@@ -1245,6 +1282,11 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section("Divider", dividers.into(), p),
         section("Menu", menu.into(), p),
         section("Switch", switches.into(), p),
+        section(
+            "ResizableGrid (a drag on the line resizes; a drag on the bar beside it scrolls)",
+            split_view,
+            p,
+        ),
         section("Segmented", segments.into(), p),
         container(section("Select", dropdown, p)).width(280).into(),
     ];

@@ -47,8 +47,10 @@ pub const LOGO: f32 = 20.0;
 pub const FORM: f32 = 720.0;
 /// Width of the 1px `line` rule between panes, panels and under the title bar.
 pub const LINE: f32 = 1.0;
-/// Width of the invisible zone around a split line that the pointer can drag.
-pub const SPLIT_GRAB: f32 = 8.0;
+/// Width of the invisible zone beside a split line that the pointer can drag:
+/// right of a vertical line, below a horizontal one. The other side stays free
+/// because thin scrollbars sit there, right up to the line.
+pub const SPLIT_GRAB: f32 = 4.0;
 /// Width of a modal dialog.
 pub const DIALOG: f32 = 420.0;
 /// Height of a pane header (`.pane-head { height: 30px }`).

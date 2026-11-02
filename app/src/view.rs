@@ -940,6 +940,151 @@ mod tests {
         assert!(app.widgets.docker.has_overlay());
     }
 
+    /// Height of a window where the Docker table has to scroll.
+    const SHORT_WINDOW: iced::Size = iced::Size::new(1024.0, 250.0);
+
+    /// Where the line of the `main | right panel` split starts.
+    fn main_right_line(app: &App) -> f32 {
+        app.widgets
+            .sidebar
+            .panes()
+            .layout()
+            .split_regions(size::LINE, 0.0, SHORT_WINDOW)
+            .values()
+            .map(|(axis, region, ratio)| {
+                axis.split_line_bounds(*region, *ratio, size::LINE).x
+            })
+            .fold(0.0, f32::max)
+    }
+
+    /// Presses at `from` in a short window, moves along `path` and releases.
+    /// Returns whether a panel resize was sent and how far the first table
+    /// row moved up.
+    fn drag_in_short_window(
+        app: &App,
+        from: Point,
+        path: &[Point],
+    ) -> (bool, f32) {
+        const ROW: &str = "otty-fx-web-1";
+
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            SHORT_WINDOW,
+            view(app),
+        );
+        let row_y = |ui: &mut iced_test::Simulator<'_, AppEvent>| {
+            let row = ui.find(ROW).expect("the first row should exist");
+            row.visible_bounds().unwrap_or_default().y
+        };
+        let before = row_y(&mut ui);
+
+        for (index, position) in std::iter::once(&from).chain(path).enumerate()
+        {
+            ui.point_at(*position);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::CursorMoved {
+                    position: *position,
+                },
+            )]);
+            if index == 0 {
+                let _ = ui.simulate([iced::Event::Mouse(
+                    iced::mouse::Event::ButtonPressed(
+                        iced::mouse::Button::Left,
+                    ),
+                )]);
+            }
+        }
+        let after = row_y(&mut ui);
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left),
+        )]);
+
+        let resized = ui.into_messages().any(|event| {
+            matches!(
+                event,
+                AppEvent::Sidebar(SidebarEvent::Intent(
+                    SidebarIntent::Resized(_)
+                ))
+            )
+        });
+
+        (resized, before - after)
+    }
+
+    /// A height inside the table body of a [`SHORT_WINDOW`].
+    const TABLE_Y: f32 = 190.0;
+
+    #[test]
+    fn dragging_the_panel_split_beside_the_table_bar_only_resizes() {
+        let app = docker_app_with_lists();
+        let line = main_right_line(&app);
+
+        let (resized, scrolled) = drag_in_short_window(
+            &app,
+            Point::new(line + 0.5, TABLE_Y),
+            &[
+                Point::new(line - 40.0, TABLE_Y + 20.0),
+                Point::new(line - 60.0, TABLE_Y + 40.0),
+            ],
+        );
+
+        assert!(resized, "the panel should resize");
+        assert_eq!(scrolled, 0.0, "the table should not scroll");
+    }
+
+    #[test]
+    fn dragging_the_table_bar_beside_the_panel_split_only_scrolls() {
+        let app = docker_app_with_lists();
+        let line = main_right_line(&app);
+        let bar = line - 2.0;
+
+        let (resized, scrolled) = drag_in_short_window(
+            &app,
+            Point::new(bar, TABLE_Y),
+            &[
+                Point::new(bar, TABLE_Y + 20.0),
+                Point::new(bar, TABLE_Y + 40.0),
+            ],
+        );
+
+        assert!(!resized, "the panel should not resize");
+        assert!(scrolled > 0.0, "the table should scroll, moved {scrolled}");
+    }
+
+    #[test]
+    fn dragging_the_panel_split_across_the_table_does_not_scroll_it() {
+        let app = docker_app_with_lists();
+        let line = main_right_line(&app);
+
+        let (resized, scrolled) = drag_in_short_window(
+            &app,
+            Point::new(line + 0.5, TABLE_Y),
+            &[
+                Point::new(line - 100.0, TABLE_Y),
+                Point::new(line - 2.0, TABLE_Y),
+                Point::new(line - 2.0, TABLE_Y + 40.0),
+            ],
+        );
+
+        assert!(resized, "the panel should resize");
+        assert_eq!(scrolled, 0.0, "the table should not scroll");
+    }
+
+    #[test]
+    fn in_focus_mode_the_panel_split_cannot_be_dragged() {
+        let mut app = docker_app_with_lists();
+        let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleFocusMode);
+        let line = main_right_line(&app);
+
+        let (resized, _) = drag_in_short_window(
+            &app,
+            Point::new(line + 0.5, TABLE_Y),
+            &[Point::new(line - 100.0, TABLE_Y)],
+        );
+
+        assert!(!resized, "focus mode has no drag handles");
+    }
+
     fn docker_app_with_lists() -> App {
         use otty_docker::{EngineKind, fixtures};
 

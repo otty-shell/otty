@@ -1,7 +1,7 @@
 use iced::widget::Space;
 use iced::widget::pane_grid::{self, Content, PaneGrid};
 use iced::{Element, Length};
-use otty_ui_kit::components::split;
+use otty_ui_kit::components::split::{self, ResizableGrid};
 use otty_ui_kit::components::surface::{Surface, surface};
 use otty_ui_kit::size;
 
@@ -65,14 +65,13 @@ where
     .min_size(0)
     .style(split::style(palette));
 
+    let panels = ResizableGrid::new(panels, props.panes, 0.0, palette);
     if vm.is_focus_mode {
         return panels.into();
     }
 
     panels
-        .on_resize(size::SPLIT_GRAB, move |event| {
-            on_intent(SidebarIntent::Resized(event))
-        })
+        .on_resize(move |event| on_intent(SidebarIntent::Resized(event)))
         .into()
 }
 

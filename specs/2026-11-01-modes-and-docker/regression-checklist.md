@@ -149,9 +149,24 @@ Setup before the first walk:
     inspector keeps readable values (key and value stack when narrow); no
     text is drawn outside its panel. Look at both themes.
 
+23. Make the window short, so a Docker table scrolls. Drag the `main | right
+    panel` split by its line and the first pixels right of it.
+    Expected: the pointer shows the resize shape there, the panel follows, the
+    table does not scroll, and nothing lights up under the pointer on the way.
+    Then drag the table's scrollbar, right beside the line.
+    Expected: the bar lights up, the table scrolls and the panel stays put, even
+    when the pointer goes over the line during the drag. Do the same with the
+    left panel, Sessions or the Files tree having a scrollbar in Terminal mode.
+24. Split a terminal tab side by side and run `seq 1 200`. Drag the split by its
+    line.
+    Expected: the panes resize; no text gets selected and the program gets no
+    mouse events. Then select text in the left pane up to its last column, and
+    let go on the line.
+    Expected: the selection follows to the end and ends there; no resize starts.
+
 ## Both themes
 
-23. Walk steps 1, 3, 5, 12 and 20 in OTTY Light as well.
+25. Walk steps 1, 3, 5, 12 and 20 in OTTY Light as well.
     Expected: every text, badge dot and icon is easy to read on its surface;
     the selected row, hovered row and the row "..." menu all keep clear
     contrast.

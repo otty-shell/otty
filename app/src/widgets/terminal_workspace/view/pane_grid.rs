@@ -6,7 +6,7 @@ use iced::widget::{Stack, container, mouse_area, text};
 use iced::{Element, Length, Theme, alignment};
 use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::pane_header::PaneHeader;
-use otty_ui_kit::components::split;
+use otty_ui_kit::components::split::{self, ResizableGrid};
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
@@ -16,6 +16,9 @@ use super::super::event::TerminalWorkspaceIntent;
 use super::super::model::TerminalTabViewModel;
 use super::super::types::TerminalEntry;
 use crate::i18n::{self, Key};
+
+/// Smallest width or height of a terminal pane while a split is dragged.
+const MIN_PANE_SIZE: f32 = 50.0;
 
 /// Render the pane grid for a terminal tab.
 pub(crate) fn view<'a>(
@@ -60,10 +63,12 @@ pub(crate) fn view<'a>(
     .width(Length::Fill)
     .height(Length::Fill)
     .spacing(size::LINE)
-    .style(split::style(palette))
-    .on_resize(size::SPLIT_GRAB, move |event| {
-        TerminalWorkspaceIntent::PaneResized { tab_id, event }
-    });
+    .min_size(MIN_PANE_SIZE)
+    .style(split::style(palette));
+    let grid =
+        ResizableGrid::new(grid, vm.panes, MIN_PANE_SIZE, palette).on_resize(
+            move |event| TerminalWorkspaceIntent::PaneResized { tab_id, event },
+        );
 
     // The container is painted `line` so the 1px gaps between panes show as rules.
     let grid_container = container(grid)
@@ -198,4 +203,87 @@ fn exit_banner<'a>(
         .height(Length::Fill)
         .align_y(alignment::Vertical::Bottom)
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::widget::pane_grid::{Axis, Configuration};
+    use iced::{Event, Point, Size, mouse};
+    use iced_test::Simulator;
+
+    use super::*;
+
+    const WINDOW: Size = Size::new(400.0, 300.0);
+    /// Where the line of a split at the middle of [`WINDOW`] starts.
+    const LINE: f32 = 200.0;
+
+    fn split_panes() -> pane_grid::State<u64> {
+        pane_grid::State::with_configuration(Configuration::Split {
+            axis: Axis::Vertical,
+            ratio: 0.5,
+            a: Box::new(Configuration::Pane(1)),
+            b: Box::new(Configuration::Pane(2)),
+        })
+    }
+
+    /// Presses at `x` in a grid of two panes, moves and releases; returns
+    /// whether a resize of pane splits was sent.
+    fn resized_by_a_press_at(x: f32) -> bool {
+        let panes = split_panes();
+        let terminals = HashMap::new();
+        let palette = UiPalette::otty_dark();
+        let grid = view(
+            TerminalTabViewModel {
+                tab_id: 7,
+                panes: &panes,
+                terminals: &terminals,
+                focus: None,
+                machine: "host",
+                machine_target: TargetKind::Local,
+            },
+            &palette,
+        );
+        let mut ui =
+            Simulator::with_size(iced::Settings::default(), WINDOW, grid);
+
+        for (index, x) in [x, 300.0].into_iter().enumerate() {
+            let position = Point::new(x, 150.0);
+            ui.point_at(position);
+            let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
+                position,
+            })]);
+            if index == 0 {
+                let _ = ui.simulate([Event::Mouse(
+                    mouse::Event::ButtonPressed(mouse::Button::Left),
+                )]);
+            }
+        }
+        let _ = ui.simulate([Event::Mouse(mouse::Event::ButtonReleased(
+            mouse::Button::Left,
+        ))]);
+
+        ui.into_messages().any(|intent| {
+            matches!(
+                intent,
+                TerminalWorkspaceIntent::PaneResized { tab_id: 7, .. }
+            )
+        })
+    }
+
+    #[test]
+    fn a_press_on_a_pane_split_resizes_the_panes() {
+        assert!(resized_by_a_press_at(LINE + 0.5));
+        assert!(resized_by_a_press_at(LINE + 3.0));
+    }
+
+    #[test]
+    fn a_press_left_of_the_line_stays_with_the_left_terminal() {
+        assert!(!resized_by_a_press_at(LINE - 2.0));
+    }
+
+    #[test]
+    fn a_press_away_from_the_line_does_not_resize() {
+        assert!(!resized_by_a_press_at(LINE + 20.0));
+        assert!(!resized_by_a_press_at(LINE - 20.0));
+    }
 }
