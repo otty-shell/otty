@@ -241,6 +241,12 @@ mod tests {
     const PODMAN_DOCKER_VERSION: &str = "podman version 5.8.8\n";
     /// A time limit long enough for a shell script on a busy test machine.
     const LIMIT: Duration = Duration::from_secs(5);
+    /// Taken by the tests that write a script and run it. A process another
+    /// test forks at that moment inherits the script's open write handle
+    /// until it execs, and running the script then fails with "text file
+    /// busy", which reads as a `docker` that cannot run.
+    static SCRIPT_RUN: tokio::sync::Mutex<()> =
+        tokio::sync::Mutex::const_new(());
 
     fn installed(presence: &CliPresence) -> (bool, bool) {
         (presence.docker(), presence.podman())
@@ -417,6 +423,8 @@ mod tests {
 
     #[tokio::test]
     async fn find_reads_docker_version_answer() {
+        let _running = SCRIPT_RUN.lock().await;
+
         let dir = TempDir::new();
         write_script(
             dir.path(),
@@ -434,6 +442,8 @@ mod tests {
 
     #[tokio::test]
     async fn find_counts_podman_docker_wrapper_as_podman() {
+        let _running = SCRIPT_RUN.lock().await;
+
         let dir = TempDir::new();
         write_script(
             dir.path(),
@@ -452,6 +462,8 @@ mod tests {
 
     #[tokio::test]
     async fn find_counts_docker_link_to_podman_as_podman() {
+        let _running = SCRIPT_RUN.lock().await;
+
         let bin = TempDir::new();
         let dir = TempDir::new();
         write_script(
@@ -474,6 +486,8 @@ mod tests {
 
     #[tokio::test]
     async fn find_does_not_wait_for_a_hanging_docker() {
+        let _running = SCRIPT_RUN.lock().await;
+
         let dir = TempDir::new();
         write_script(dir.path(), "docker", "exec sleep 10\n", 0o755);
         let started = Instant::now();
@@ -490,6 +504,8 @@ mod tests {
 
     #[tokio::test]
     async fn find_keeps_docker_when_its_version_cannot_run() {
+        let _running = SCRIPT_RUN.lock().await;
+
         let dir = TempDir::new();
         write_script(dir.path(), "docker", "exit 1\n", 0o755);
 
@@ -511,6 +527,8 @@ mod tests {
 
     #[tokio::test]
     async fn find_keeps_the_path_of_docker_found_in_an_install_folder() {
+        let _running = SCRIPT_RUN.lock().await;
+
         let path_dir = TempDir::new();
         let install_dir = TempDir::new();
         write_script(
@@ -538,6 +556,8 @@ mod tests {
 
     #[tokio::test]
     async fn find_runs_podman_through_the_podman_docker_wrapper() {
+        let _running = SCRIPT_RUN.lock().await;
+
         let dir = TempDir::new();
         write_script(
             dir.path(),
@@ -558,6 +578,8 @@ mod tests {
 
     #[tokio::test]
     async fn find_prefers_the_podman_command_over_the_wrapper() {
+        let _running = SCRIPT_RUN.lock().await;
+
         let dir = TempDir::new();
         write_script(
             dir.path(),
