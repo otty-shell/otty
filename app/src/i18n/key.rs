@@ -452,6 +452,9 @@ pub(crate) enum Key {
     DockerPruneVolumesTitle,
     /// Text of the prune unused volumes dialog. Placeholder: `{count}`.
     TplDockerPruneVolumesText,
+    /// Text of the prune unused volumes dialog while named volumes stay
+    /// (switch off). Placeholder: `{count}`.
+    TplDockerPruneAnonymousVolumesText,
     /// Title of the remove network dialog. Placeholder: `{name}`.
     TplDockerRemoveNetworkTitle,
     /// Text of the remove network dialog.
@@ -878,7 +881,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 408] = [
+    pub(super) const ALL: [Self; 409] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1086,6 +1089,7 @@ impl Key {
         Self::DockerRemoveVolumeText,
         Self::DockerPruneVolumesTitle,
         Self::TplDockerPruneVolumesText,
+        Self::TplDockerPruneAnonymousVolumesText,
         Self::TplDockerRemoveNetworkTitle,
         Self::DockerRemoveNetworkText,
         Self::DockerPruneNetworksTitle,

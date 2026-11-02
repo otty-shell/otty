@@ -214,6 +214,7 @@
     "docker_remove_volume_text": "Das Volume und alle Daten darin werden gelöscht. Das kann nicht rückgängig gemacht werden.",
     "docker_prune_volumes_title": "Ungenutzte Volumes bereinigen?",
     "tpl_docker_prune_volumes_text": "Volumes, die kein Container nutzt: {count}. Sie und alle Daten darin werden gelöscht, auch benannte. Das kann nicht rückgängig gemacht werden.",
+    "tpl_docker_prune_anonymous_volumes_text": "Anonyme Volumes, die kein Container nutzt: {count}. Sie und alle Daten darin werden gelöscht. Benannte Volumes bleiben erhalten. Das kann nicht rückgängig gemacht werden.",
     "tpl_docker_remove_network_title": "Netzwerk {name} entfernen?",
     "docker_remove_network_text": "Container können ihm nicht mehr beitreten.",
     "docker_prune_networks_title": "Ungenutzte Netzwerke bereinigen?",

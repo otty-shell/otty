@@ -214,6 +214,7 @@
     "docker_remove_volume_text": "ボリュームとその中のすべてのデータが削除されます。元に戻せません。",
     "docker_prune_volumes_title": "未使用のボリュームを整理しますか？",
     "tpl_docker_prune_volumes_text": "どのコンテナーも使用していないボリューム: {count}。名前付きも含め、中のデータごと削除されます。元に戻せません。",
+    "tpl_docker_prune_anonymous_volumes_text": "どのコンテナーも使用していない匿名ボリューム: {count}。中のデータごと削除されます。名前付きボリュームは残ります。元に戻せません。",
     "tpl_docker_remove_network_title": "ネットワーク {name} を削除しますか？",
     "docker_remove_network_text": "コンテナーはこのネットワークに参加できなくなります。",
     "docker_prune_networks_title": "未使用のネットワークを整理しますか？",

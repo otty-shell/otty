@@ -214,6 +214,7 @@
     "docker_remove_volume_text": "The volume and all data in it are deleted. This cannot be undone.",
     "docker_prune_volumes_title": "Prune unused volumes?",
     "tpl_docker_prune_volumes_text": "Volumes no container uses: {count}. They and all data in them are deleted, named ones too. This cannot be undone.",
+    "tpl_docker_prune_anonymous_volumes_text": "Anonymous volumes no container uses: {count}. They and all data in them are deleted. Named volumes stay. This cannot be undone.",
     "tpl_docker_remove_network_title": "Remove network {name}?",
     "docker_remove_network_text": "Containers can no longer join it.",
     "docker_prune_networks_title": "Prune unused networks?",

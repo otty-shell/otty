@@ -194,9 +194,14 @@ pub(crate) fn confirm_dialog(state: &DockerState) -> Option<ConfirmViewModel> {
             confirm.count(),
         ),
         EngineAction::PruneVolumes { .. } => {
+            let text_key = if confirm.switch() == Some(true) {
+                Key::TplDockerPruneVolumesText
+            } else {
+                Key::TplDockerPruneAnonymousVolumesText
+            };
             let (title, text, _, confirm_key) = prune_texts(
                 Key::DockerPruneVolumesTitle,
-                Key::TplDockerPruneVolumesText,
+                text_key,
                 confirm.count(),
             );
             (
@@ -787,7 +792,12 @@ mod tests {
         );
         assert_eq!(
             off.text,
-            i18n::with_count(Key::TplDockerPruneVolumesText, 1)
+            i18n::with_count(Key::TplDockerPruneAnonymousVolumesText, 1)
+        );
+        assert_eq!(
+            off.text,
+            "Anonymous volumes no container uses: 1. They and all data in \
+             them are deleted. Named volumes stay. This cannot be undone."
         );
         assert_eq!(
             on.switch,
@@ -796,6 +806,11 @@ mod tests {
         assert_eq!(
             on.text,
             i18n::with_count(Key::TplDockerPruneVolumesText, 2)
+        );
+        assert_eq!(
+            on.text,
+            "Volumes no container uses: 2. They and all data in them are \
+             deleted, named ones too. This cannot be undone."
         );
     }
 

@@ -1,6 +1,6 @@
 # 38 — Volume prune dialog says what will really be removed
 
-Status: ready-for-agent
+Status: resolved
 Type: bug
 Class: C
 Model: Sonnet 5.5 (claude-sonnet-5-5)
@@ -30,3 +30,16 @@ commit.
 
 - View model test: each switch position gives its text with the right count.
 - The i18n test fills both templates in every locale.
+
+## Answer
+
+The dialog now picks its text by the switch. Off uses the new
+`tpl_docker_prune_anonymous_volumes_text` (`Key::TplDockerPruneAnonymousVolumesText`)
+and says named volumes stay. On keeps `tpl_docker_prune_volumes_text`
+unchanged. Both exist in all ten locales, and the "named volumes stay"
+sentence is in every off text. `Key::ALL` is now 409 long.
+
+- The view model test checks the exact English text for both switch
+  positions, with counts 1 and 2.
+- The i18n fill test includes the new template for every locale.
+- Not run against a live engine.

@@ -973,6 +973,7 @@ mod tests {
             (Key::TplDockerRemoveNetworkTitle, ("name", "web_default")),
             (Key::TplDockerPruneImagesText, ("count", "3")),
             (Key::TplDockerPruneVolumesText, ("count", "3")),
+            (Key::TplDockerPruneAnonymousVolumesText, ("count", "3")),
             (Key::TplDockerPruneNetworksText, ("count", "3")),
             (Key::TplDockerVolumeInUseHint, ("names", "db-1")),
             (Key::TplDockerPulling, ("image", "nginx:latest")),

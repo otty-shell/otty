@@ -214,6 +214,7 @@
     "docker_remove_volume_text": "O volume e todos os dados nele são apagados. Isso não pode ser desfeito.",
     "docker_prune_volumes_title": "Limpar os volumes sem uso?",
     "tpl_docker_prune_volumes_text": "Volumes que nenhum contêiner usa: {count}. Eles e todos os seus dados são apagados, inclusive os nomeados. Isso não pode ser desfeito.",
+    "tpl_docker_prune_anonymous_volumes_text": "Volumes anônimos que nenhum contêiner usa: {count}. Eles e todos os seus dados são apagados. Os volumes nomeados permanecem. Isso não pode ser desfeito.",
     "tpl_docker_remove_network_title": "Remover a rede {name}?",
     "docker_remove_network_text": "Os contêineres não poderão mais entrar nela.",
     "docker_prune_networks_title": "Limpar as redes sem uso?",

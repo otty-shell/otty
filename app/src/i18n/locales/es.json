@@ -214,6 +214,7 @@
     "docker_remove_volume_text": "Se eliminan el volumen y todos sus datos. No se puede deshacer.",
     "docker_prune_volumes_title": "¿Limpiar los volúmenes sin uso?",
     "tpl_docker_prune_volumes_text": "Volúmenes que ningún contenedor usa: {count}. Se eliminan con todos sus datos, también los que tienen nombre. No se puede deshacer.",
+    "tpl_docker_prune_anonymous_volumes_text": "Volúmenes anónimos que ningún contenedor usa: {count}. Se eliminan con todos sus datos. Los volúmenes con nombre se conservan. No se puede deshacer.",
     "tpl_docker_remove_network_title": "¿Eliminar la red {name}?",
     "docker_remove_network_text": "Los contenedores ya no podrán unirse a ella.",
     "docker_prune_networks_title": "¿Limpiar las redes sin uso?",

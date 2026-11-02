@@ -214,6 +214,7 @@
     "docker_remove_volume_text": "Le volume et toutes ses données sont supprimés. Cette action est irréversible.",
     "docker_prune_volumes_title": "Nettoyer les volumes inutilisés ?",
     "tpl_docker_prune_volumes_text": "Volumes qu’aucun conteneur n’utilise : {count}. Ils sont supprimés avec toutes leurs données, nommés compris. Cette action est irréversible.",
+    "tpl_docker_prune_anonymous_volumes_text": "Volumes anonymes qu’aucun conteneur n’utilise : {count}. Ils sont supprimés avec toutes leurs données. Les volumes nommés sont conservés. Cette action est irréversible.",
     "tpl_docker_remove_network_title": "Supprimer le réseau {name} ?",
     "docker_remove_network_text": "Les conteneurs ne pourront plus le rejoindre.",
     "docker_prune_networks_title": "Nettoyer les réseaux inutilisés ?",

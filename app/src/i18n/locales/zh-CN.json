@@ -214,6 +214,7 @@
     "docker_remove_volume_text": "卷及其中的所有数据将被删除。此操作无法撤销。",
     "docker_prune_volumes_title": "清理未使用的卷？",
     "tpl_docker_prune_volumes_text": "没有容器使用的卷：{count}。它们及其中的所有数据将被删除，包括具名卷。此操作无法撤销。",
+    "tpl_docker_prune_anonymous_volumes_text": "没有容器使用的匿名卷：{count}。它们及其中的所有数据将被删除。具名卷会保留。此操作无法撤销。",
     "tpl_docker_remove_network_title": "删除网络 {name}？",
     "docker_remove_network_text": "容器将无法再加入该网络。",
     "docker_prune_networks_title": "清理未使用的网络？",
