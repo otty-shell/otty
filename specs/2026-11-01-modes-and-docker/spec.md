@@ -477,6 +477,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 44 | Kit: `TagSearchField` and `TagRow` views (Decision 21) | A | Opus | 43 |
 | 45 | Docker tables use tag search; compose becomes a tag; tags kept per table (Decision 21) | C | Opus | 44 |
 | 46 | Fuzzy suggestions with `frizbee` (dependency approved by the owner, 2026-11-02) | C | Sonnet | 45 |
+| 47 | Bug: after a suggestion is applied the cursor goes to the end of the field | C | Sonnet | 46 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -530,3 +531,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 44 — Kit: tag search views · Opus
 - [x] 45 — Docker tables use tag search · Opus
 - [x] 46 — Fuzzy suggestions with `frizbee` · Sonnet
+- [ ] 47 — Bug: search cursor after a suggestion · Sonnet
