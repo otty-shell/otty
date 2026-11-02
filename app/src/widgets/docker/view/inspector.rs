@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 
 use iced::widget::text::IntoFragment;
-use iced::widget::{Row, Space, column, container, row, scrollable, svg, text};
+use iced::widget::{column, container, responsive, row, scrollable, svg, text};
 use iced::{Alignment, Element, Length, Padding};
 use otty_ui_kit::components::data_tree::{DataRow, DataTree};
 use otty_ui_kit::components::icon_button::{
@@ -194,32 +194,13 @@ fn tab_body<'a>(
 }
 
 /// The loaded Inspect tab: its switches and the Copy JSON icon above the
-/// tree, or above the raw JSON when there is no tree to show. The icon stays
-/// at the end of the first row of switches; the switches wrap when narrow.
+/// tree, or above the raw JSON when there is no tree to show.
 fn inspect_body<'a>(
     loaded: InspectLoadedViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, DockerIntent> {
-    let mut switches = row![inspect_switch(
-        Switch::new(loaded.tree.is_none(), palette)
-            .label(i18n::t(Key::DockerInspectRawJson))
-            .on_toggle(DockerIntent::InspectRawJsonToggled)
-    )]
-    .spacing(spacing::SPACE_4);
-    if loaded.tree.is_some() {
-        switches = switches.push(inspect_switch(
-            Switch::new(loaded.shows_empty, palette)
-                .label(i18n::t(Key::DockerInspectShowEmpty))
-                .on_toggle(DockerIntent::InspectShowEmptyToggled),
-        ));
-    }
-
-    let controls = row![
-        container(switches.wrap().vertical_spacing(spacing::SPACE_2))
-            .width(Length::Fill),
-        copy_json_button(palette),
-    ]
-    .spacing(spacing::SPACE_3);
+    let controls =
+        inspect_controls(loaded.tree.is_some(), loaded.shows_empty, palette);
 
     let body: Element<'a, DockerIntent> = match loaded.tree {
         Some(tree) => {
@@ -249,8 +230,97 @@ fn inspect_body<'a>(
         .into()
 }
 
+/// How the Inspect controls share the width of the panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlsLayout {
+    /// The switches and the icon on one row.
+    OneRow,
+    /// Each switch on its own row, the icon at the end of the first one.
+    IconOnFirstRow,
+    /// Each switch on its own row and the icon on a line of its own.
+    IconOnOwnLine,
+}
+
+/// Picks the layout of the Inspect controls for `available` width, from the
+/// widths of the Raw JSON switch and of the Show empty switch.
+fn controls_layout(
+    available: f32,
+    raw: f32,
+    show_empty: Option<f32>,
+) -> ControlsLayout {
+    let raw_and_icon = raw + spacing::SPACE_3 + size::CONTROL_SM;
+    let one_row =
+        raw_and_icon + show_empty.map_or(0.0, |width| spacing::SPACE_4 + width);
+
+    if one_row <= available {
+        ControlsLayout::OneRow
+    } else if raw_and_icon <= available {
+        ControlsLayout::IconOnFirstRow
+    } else {
+        ControlsLayout::IconOnOwnLine
+    }
+}
+
+/// The Raw JSON switch, the Show empty switch (only with a tree to show) and
+/// the Copy JSON icon, laid out for the width they get.
+fn inspect_controls<'a>(
+    has_tree: bool,
+    shows_empty: bool,
+    palette: &UiPalette,
+) -> Element<'a, DockerIntent> {
+    let palette = palette.clone();
+
+    responsive(move |available| {
+        let raw = Switch::new(!has_tree, &palette)
+            .label(i18n::t(Key::DockerInspectRawJson))
+            .on_toggle(DockerIntent::InspectRawJsonToggled);
+        let show_empty = has_tree.then(|| {
+            Switch::new(shows_empty, &palette)
+                .label(i18n::t(Key::DockerInspectShowEmpty))
+                .on_toggle(DockerIntent::InspectShowEmptyToggled)
+        });
+        let layout = controls_layout(
+            available.width,
+            raw.width(),
+            show_empty.as_ref().map(Switch::width),
+        );
+
+        let raw = inspect_switch(raw);
+        let show_empty = show_empty.map(inspect_switch);
+        let icon = copy_json_button(&palette);
+
+        match layout {
+            ControlsLayout::OneRow => {
+                let switches = row![raw, show_empty].spacing(spacing::SPACE_4);
+
+                row![container(switches).width(Length::Fill), icon]
+                    .spacing(spacing::SPACE_3)
+                    .into()
+            },
+            ControlsLayout::IconOnFirstRow => {
+                let first_row = row![container(raw).width(Length::Fill), icon]
+                    .spacing(spacing::SPACE_3);
+
+                column![first_row, show_empty]
+                    .spacing(spacing::SPACE_3)
+                    .into()
+            },
+            ControlsLayout::IconOnOwnLine => {
+                let icon_line =
+                    container(icon).width(Length::Fill).align_x(Alignment::End);
+
+                column![raw, show_empty, icon_line]
+                    .spacing(spacing::SPACE_3)
+                    .into()
+            },
+        }
+    })
+    .height(Length::Shrink)
+    .into()
+}
+
 /// One switch of the Inspect controls, as tall as the Copy JSON icon, so
-/// they line up when the switches wrap too.
+/// they line up on a shared row too.
 fn inspect_switch<'a>(
     switch: Switch<'a, DockerIntent>,
 ) -> Element<'a, DockerIntent> {
@@ -318,28 +388,31 @@ fn value_part(piece: Piece) -> ValuePart<DockerIntent> {
     }
 }
 
-/// Add to the logs header how many lines wait (while Follow is off and some
-/// do) and the Follow switch.
+/// How many lines wait (while Follow is off and some do) and the Follow
+/// switch, at the end of the logs header. The count moves above the switch
+/// when the two do not fit on one row.
 fn log_follow<'a>(
     lines: &LogViewState,
     palette: &UiPalette,
-) -> Row<'a, DockerIntent> {
+) -> Element<'a, DockerIntent> {
     let waiting = lines.pending_count();
-    let count: Element<'a, DockerIntent> =
-        if !lines.is_following() && waiting > 0 {
-            hint(i18n::docker_logs_new_lines(waiting), palette)
-        } else {
-            Space::new().into()
-        };
+    let count = (!lines.is_following() && waiting > 0)
+        .then(|| hint(i18n::docker_logs_new_lines(waiting), palette));
+    let follow = Switch::new(lines.is_following(), palette)
+        .label(i18n::t(Key::DockerLogsFollow))
+        .on_toggle(DockerIntent::LogFollowToggled);
 
-    row![
-        container(count).width(Length::Fill),
-        Switch::new(lines.is_following(), palette)
-            .label(i18n::t(Key::DockerLogsFollow))
-            .on_toggle(DockerIntent::LogFollowToggled),
-    ]
-    .spacing(spacing::SPACE_3)
-    .align_y(Alignment::Center)
+    let items = row![count, follow]
+        .spacing(spacing::SPACE_3)
+        .align_y(Alignment::Center)
+        .wrap()
+        .vertical_spacing(spacing::SPACE_3)
+        .align_x(Alignment::End);
+
+    container(items)
+        .width(Length::Fill)
+        .align_x(Alignment::End)
+        .into()
 }
 
 /// A muted small line of text.
@@ -1207,9 +1280,382 @@ mod tests {
 
     /// Width of the narrow panel in the layout tests.
     const NARROW: f32 = 260.0;
+    /// The panel's minimum width: 16% of the smallest window, 800 px wide.
+    const MIN_PANEL: f32 = 128.0;
 
     fn narrow(element: Element<'_, DockerIntent>) -> Element<'_, DockerIntent> {
         container(element).width(NARROW).height(600).into()
+    }
+
+    /// The Inspect tab in a panel `width` wide, with the tree or raw JSON.
+    fn controls_ui<'a>(
+        json: &'a LogViewState,
+        tree: Option<InspectTree>,
+        open: &'a BTreeSet<String>,
+        theme: ThemeProps<'a>,
+        width: f32,
+    ) -> iced_test::Simulator<'a, DockerIntent> {
+        let panel = inspect_panel(json, tree, open, theme);
+
+        simulator(container(panel).width(width).height(600))
+    }
+
+    /// Where the Copy JSON icon should be in a panel `width` wide: at the end
+    /// of the row whose middle is at `center_y`.
+    fn icon_bounds(width: f32, center_y: f32) -> iced::Rectangle {
+        let side = otty_ui_kit::size::CONTROL_SM;
+
+        iced::Rectangle {
+            x: width - PADDING.right - side,
+            y: center_y - side / 2.0,
+            width: side,
+            height: side,
+        }
+    }
+
+    /// Checks that `label` is inside the panel and one line tall.
+    fn assert_one_line(label: iced::Rectangle, one_line: f32, width: f32) {
+        assert!(
+            (label.height - one_line).abs() < 0.5,
+            "{label:?} is one line tall ({one_line})"
+        );
+        assert!(
+            label.x + label.width <= width - PADDING.right + 0.5,
+            "{label:?} stays inside the panel"
+        );
+    }
+
+    /// Checks that the rows of `upper` and `lower` have the gap between them.
+    fn assert_row_gap(upper: iced::Rectangle, lower: iced::Rectangle) {
+        let row_height = otty_ui_kit::size::CONTROL_SM;
+        let gap = lower.center_y() - upper.center_y() - row_height;
+
+        assert!(
+            gap >= spacing::SPACE_3 - 0.5,
+            "{upper:?} and {lower:?} have a gap of {gap}"
+        );
+    }
+
+    /// Height of one line of a switch label.
+    fn one_line_height() -> f32 {
+        let themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+        let mut ui = controls_ui(
+            &json,
+            Some(fixture_tree()),
+            &open,
+            ThemeProps::new(themes.current()),
+            2000.0,
+        );
+
+        ui.find(i18n::t(Key::DockerInspectRawJson))
+            .expect("raw json switch")
+            .bounds()
+            .height
+    }
+
+    #[test]
+    fn in_the_widest_panel_the_controls_share_one_row_and_each_sends_its_intent()
+     {
+        let themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+        let mut ui = controls_ui(
+            &json,
+            Some(fixture_tree()),
+            &open,
+            ThemeProps::new(themes.current()),
+            WIDE,
+        );
+
+        let raw = ui
+            .find(i18n::t(Key::DockerInspectRawJson))
+            .expect("raw json switch")
+            .bounds();
+        let empty = ui
+            .find(i18n::t(Key::DockerInspectShowEmpty))
+            .expect("show empty switch")
+            .bounds();
+        let icon = icon_bounds(WIDE, raw.center_y());
+        ui.click(i18n::t(Key::DockerInspectRawJson)).expect("raw");
+        ui.click(i18n::t(Key::DockerInspectShowEmpty))
+            .expect("empty");
+        click_at(&mut ui, icon.center());
+
+        assert_one_line(raw, one_line_height(), WIDE);
+        assert_one_line(empty, one_line_height(), WIDE);
+        assert!((raw.center_y() - empty.center_y()).abs() < 0.5);
+        assert!(raw.x + raw.width + spacing::SPACE_3 <= empty.x);
+        assert!(empty.x + empty.width + spacing::SPACE_3 <= icon.x + 0.5);
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            vec![
+                DockerIntent::InspectRawJsonToggled(true),
+                DockerIntent::InspectShowEmptyToggled(true),
+                DockerIntent::CopyInspectJson,
+            ]
+        );
+    }
+
+    #[test]
+    fn at_240_px_each_switch_has_its_row_and_the_icon_ends_the_first_one() {
+        const WIDTH: f32 = 240.0;
+
+        let themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+        let mut ui = controls_ui(
+            &json,
+            Some(fixture_tree()),
+            &open,
+            ThemeProps::new(themes.current()),
+            WIDTH,
+        );
+
+        let raw = ui
+            .find(i18n::t(Key::DockerInspectRawJson))
+            .expect("raw json switch")
+            .bounds();
+        let empty = ui
+            .find(i18n::t(Key::DockerInspectShowEmpty))
+            .expect("show empty switch")
+            .bounds();
+        let icon = icon_bounds(WIDTH, raw.center_y());
+        ui.click(i18n::t(Key::DockerInspectRawJson)).expect("raw");
+        ui.click(i18n::t(Key::DockerInspectShowEmpty))
+            .expect("empty");
+        click_at(&mut ui, icon.center());
+
+        assert_one_line(raw, one_line_height(), WIDTH);
+        assert_one_line(empty, one_line_height(), WIDTH);
+        assert_row_gap(raw, empty);
+        assert!(raw.x + raw.width + spacing::SPACE_3 <= icon.x + 0.5);
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            vec![
+                DockerIntent::InspectRawJsonToggled(true),
+                DockerIntent::InspectShowEmptyToggled(true),
+                DockerIntent::CopyInspectJson,
+            ]
+        );
+    }
+
+    #[test]
+    fn at_the_minimum_width_the_icon_has_its_own_line_and_nothing_overlaps() {
+        let themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+        let mut ui = controls_ui(
+            &json,
+            Some(fixture_tree()),
+            &open,
+            ThemeProps::new(themes.current()),
+            MIN_PANEL,
+        );
+
+        let raw = ui
+            .find(i18n::t(Key::DockerInspectRawJson))
+            .expect("raw json switch")
+            .bounds();
+        let empty = ui
+            .find(i18n::t(Key::DockerInspectShowEmpty))
+            .expect("show empty switch")
+            .bounds();
+        let row_step = otty_ui_kit::size::CONTROL_SM + spacing::SPACE_3;
+        let icon = icon_bounds(MIN_PANEL, empty.center_y() + row_step);
+        ui.click(i18n::t(Key::DockerInspectRawJson)).expect("raw");
+        ui.click(i18n::t(Key::DockerInspectShowEmpty))
+            .expect("empty");
+        click_at(&mut ui, icon.center());
+
+        assert_one_line(raw, one_line_height(), MIN_PANEL);
+        assert_one_line(empty, one_line_height(), MIN_PANEL);
+        assert_row_gap(raw, empty);
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            vec![
+                DockerIntent::InspectRawJsonToggled(true),
+                DockerIntent::InspectShowEmptyToggled(true),
+                DockerIntent::CopyInspectJson,
+            ]
+        );
+    }
+
+    #[test]
+    fn with_raw_json_the_icon_follows_the_same_rule() {
+        let themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+
+        for (width, shares_the_row) in [(240.0, true), (MIN_PANEL, false)] {
+            let mut ui = controls_ui(
+                &json,
+                None,
+                &open,
+                ThemeProps::new(themes.current()),
+                width,
+            );
+
+            let raw = ui
+                .find(i18n::t(Key::DockerInspectRawJson))
+                .expect("raw json switch")
+                .bounds();
+            let row_step = otty_ui_kit::size::CONTROL_SM + spacing::SPACE_3;
+            let icon = if shares_the_row {
+                icon_bounds(width, raw.center_y())
+            } else {
+                icon_bounds(width, raw.center_y() + row_step)
+            };
+            click_at(&mut ui, icon.center());
+
+            assert_one_line(raw, one_line_height(), width);
+            assert_eq!(
+                ui.into_messages().collect::<Vec<_>>(),
+                vec![DockerIntent::CopyInspectJson]
+            );
+        }
+    }
+
+    #[test]
+    fn the_controls_layout_uses_the_room_it_has() {
+        const RAW: f32 = 100.0;
+        const EMPTY: f32 = 120.0;
+        let icon = otty_ui_kit::size::CONTROL_SM;
+        let one_row = RAW + spacing::SPACE_4 + EMPTY + spacing::SPACE_3 + icon;
+        let raw_and_icon = RAW + spacing::SPACE_3 + icon;
+
+        assert_eq!(
+            controls_layout(one_row, RAW, Some(EMPTY)),
+            ControlsLayout::OneRow
+        );
+        assert_eq!(
+            controls_layout(one_row - 1.0, RAW, Some(EMPTY)),
+            ControlsLayout::IconOnFirstRow
+        );
+        assert_eq!(
+            controls_layout(raw_and_icon, RAW, Some(EMPTY)),
+            ControlsLayout::IconOnFirstRow
+        );
+        assert_eq!(
+            controls_layout(raw_and_icon - 1.0, RAW, Some(EMPTY)),
+            ControlsLayout::IconOnOwnLine
+        );
+        assert_eq!(
+            controls_layout(raw_and_icon, RAW, None),
+            ControlsLayout::OneRow
+        );
+        assert_eq!(
+            controls_layout(raw_and_icon - 1.0, RAW, None),
+            ControlsLayout::IconOnOwnLine
+        );
+    }
+
+    #[test]
+    fn at_the_minimum_width_the_follow_switch_keeps_one_line_and_sends_its_intent()
+     {
+        let themes = ThemeManager::new();
+        let lines = LogViewState::new();
+        let panel = view(InspectorProps {
+            vm: header(),
+            actions: None,
+            tabs: container_tabs(
+                InspectorTab::Logs,
+                TabContent::Logs {
+                    lines: Some(&lines),
+                    error: None,
+                },
+            ),
+            theme: ThemeProps::new(themes.current()),
+        });
+        let mut ui = simulator(container(panel).width(MIN_PANEL).height(600));
+
+        let follow = ui
+            .find(i18n::t(Key::DockerLogsFollow))
+            .expect("follow switch")
+            .bounds();
+        ui.click(i18n::t(Key::DockerLogsFollow)).expect("follow");
+
+        assert_one_line(follow, one_line_height(), MIN_PANEL);
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            vec![DockerIntent::LogFollowToggled(false)]
+        );
+    }
+
+    #[test]
+    fn with_nothing_waiting_the_follow_label_uses_all_the_room_of_its_row() {
+        let themes = ThemeManager::new();
+        let lines = LogViewState::new();
+        let panel = |width: f32| {
+            let panel = view(InspectorProps {
+                vm: header(),
+                actions: None,
+                tabs: container_tabs(
+                    InspectorTab::Logs,
+                    TabContent::Logs {
+                        lines: Some(&lines),
+                        error: None,
+                    },
+                ),
+                theme: ThemeProps::new(themes.current()),
+            });
+            simulator(container(panel).width(width).height(600))
+                .find(i18n::t(Key::DockerLogsFollow))
+                .expect("follow switch")
+                .bounds()
+        };
+
+        // Room for the switch and nothing more: wide enough for the whole
+        // label only when no gap is kept for a count that is not there.
+        let wide = panel(WIDE);
+        let tight = PADDING.left + PADDING.right + wide.width + 42.0;
+        let follow = panel(tight);
+
+        assert!(
+            (follow.width - wide.width).abs() < 0.5,
+            "{follow:?} shows the whole label like {wide:?}"
+        );
+    }
+
+    #[test]
+    fn at_the_minimum_width_the_waiting_count_and_follow_do_not_overlap() {
+        let themes = ThemeManager::new();
+        let mut lines = LogViewState::new();
+        lines.set_following(false);
+        lines.push_lines(["one", "two", "three"]);
+        let panel = view(InspectorProps {
+            vm: header(),
+            actions: None,
+            tabs: container_tabs(
+                InspectorTab::Logs,
+                TabContent::Logs {
+                    lines: Some(&lines),
+                    error: None,
+                },
+            ),
+            theme: ThemeProps::new(themes.current()),
+        });
+        let mut ui = simulator(container(panel).width(MIN_PANEL).height(600));
+
+        let count = ui
+            .find(i18n::docker_logs_new_lines(3))
+            .expect("waiting count")
+            .bounds();
+        let follow = ui
+            .find(i18n::t(Key::DockerLogsFollow))
+            .expect("follow switch")
+            .bounds();
+
+        assert_one_line(follow, one_line_height(), MIN_PANEL);
+        assert!(
+            count.height < 2.0 * typography::SMALL.line_height(),
+            "{count:?} has room for its text"
+        );
+        assert!(
+            count.y + count.height <= follow.y,
+            "{count:?} sits above {follow:?}"
+        );
     }
 
     #[test]

@@ -1,8 +1,9 @@
 //! `Switch`: on or off setting that applies right away.
 
-use iced::widget::{button, container, row, text};
+use iced::widget::{button, container, row};
 use iced::{Alignment, Border, Element, Length, Padding, border};
 
+use super::ellipsis_text::EllipsisText;
 use crate::palette::UiPalette;
 use crate::{fonts, spacing, typography};
 
@@ -16,6 +17,7 @@ const KNOB_SIZE: f32 = 14.0;
 const KNOB_INSET: f32 = 3.0;
 
 /// Switch with an optional label. Without a message it is not interactive.
+/// The label stays on one line; without room it ends with "…".
 ///
 /// # Example
 ///
@@ -43,6 +45,19 @@ pub struct Switch<'a, Message> {
 }
 
 impl<'a, Message> Switch<'a, Message> {
+    /// Returns the width the switch takes when its label is shown in full, so
+    /// a caller can decide what fits on one line.
+    pub fn width(&self) -> f32 {
+        match &self.label {
+            Some(label) => {
+                TRACK_WIDTH
+                    + spacing::SPACE_3
+                    + label_text(label, &self.palette).full_width()
+            },
+            None => TRACK_WIDTH,
+        }
+    }
+
     /// Creates a switch in the given state.
     pub fn new(is_on: bool, palette: &UiPalette) -> Self {
         Self {
@@ -121,13 +136,7 @@ impl<'a, Message: Clone + 'a> From<Switch<'a, Message>>
             .spacing(spacing::SPACE_3)
             .align_y(Alignment::Center);
         if let Some(label) = value.label {
-            let style = typography::BODY;
-            content = content.push(
-                text(label)
-                    .font(fonts::UI)
-                    .size(style.size())
-                    .color(palette.text_body()),
-            );
+            content = content.push(label_text(&label, &palette));
         }
 
         let message = value.on_toggle.map(|on_toggle| on_toggle(!is_on));
@@ -138,6 +147,18 @@ impl<'a, Message: Clone + 'a> From<Switch<'a, Message>>
             .style(|_, _| button::Style::default())
             .into()
     }
+}
+
+/// The label on one line, as wide as its text: when the room runs out it ends
+/// with "…" instead of wrapping.
+fn label_text(label: &str, palette: &UiPalette) -> EllipsisText {
+    EllipsisText::new(
+        label,
+        typography::BODY.size(),
+        fonts::UI,
+        palette.text_body(),
+    )
+    .shrink(0.0)
 }
 
 #[cfg(test)]
@@ -185,5 +206,72 @@ mod tests {
         ui.click("Follow").expect("label should show");
 
         assert!(ui.into_messages().next().is_none());
+    }
+
+    /// Bounds of `label` in a switch placed in a box `width` wide.
+    fn label_bounds(label: &'static str, width: f32) -> iced::Rectangle {
+        let palette = UiPalette::otty_dark();
+        let switch: Element<'_, bool> =
+            Switch::new(true, &palette).label(label).into();
+        let mut ui = simulator(container(switch).width(width));
+
+        ui.find(label).expect("label should show").bounds()
+    }
+
+    #[test]
+    fn given_long_label_in_a_narrow_box_when_laid_out_then_it_keeps_one_line() {
+        const LONG: &str = "Allow the container to read this folder";
+        const WIDTH: f32 = 120.0;
+
+        let one_line = label_bounds(LONG, 2000.0);
+        let narrow = label_bounds(LONG, WIDTH);
+
+        assert!(
+            (narrow.height - one_line.height).abs() < 0.5,
+            "{narrow:?} is one line tall like {one_line:?}"
+        );
+        assert!(
+            narrow.x + narrow.width <= WIDTH + 0.5,
+            "{narrow:?} stays inside the box"
+        );
+    }
+
+    #[test]
+    fn given_long_label_in_a_narrow_box_when_pressed_then_it_still_asks() {
+        const LONG: &str = "Allow the container to read this folder";
+
+        let palette = UiPalette::otty_dark();
+        let switch: Element<'_, bool> = Switch::new(false, &palette)
+            .label(LONG)
+            .on_toggle(|is_on| is_on)
+            .into();
+        let mut ui = simulator(container(switch).width(120));
+
+        ui.click(LONG).expect("label should show");
+
+        assert_eq!(ui.into_messages().collect::<Vec<_>>(), vec![true]);
+    }
+
+    #[test]
+    fn given_label_when_width_asked_then_it_is_the_room_the_switch_takes() {
+        let palette = UiPalette::otty_dark();
+        let switch: Switch<'_, bool> =
+            Switch::new(true, &palette).label("Show empty");
+
+        let label = label_bounds("Show empty", 2000.0);
+
+        assert!(
+            (switch.width() - (label.x + label.width)).abs() < 0.5,
+            "{} ends where {label:?} ends",
+            switch.width()
+        );
+    }
+
+    #[test]
+    fn given_no_label_when_width_asked_then_it_is_the_track() {
+        let palette = UiPalette::otty_dark();
+        let switch: Switch<'_, bool> = Switch::new(true, &palette);
+
+        assert_eq!(switch.width(), TRACK_WIDTH);
     }
 }

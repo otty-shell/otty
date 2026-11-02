@@ -686,6 +686,10 @@ fn catalog(locale: Locale) -> &'static Catalog {
 
 #[cfg(test)]
 mod tests {
+    use otty_ui_kit::components::switch::Switch;
+    use otty_ui_kit::palette::UiPalette;
+    use otty_ui_kit::{size, spacing};
+
     use super::{
         Catalog, Key, Locale, catalog, docker_logs_new_lines_in, fill_in,
         locale_from_system_preference, modes_pinned_note_in, process_exited_in,
@@ -807,6 +811,37 @@ mod tests {
         assert_eq!(text_in(Locale::ZhCn, Key::SectionAppearance), "外观");
         assert_eq!(text_in(Locale::En, Key::ButtonSave), "Save");
         assert_eq!(text_in(Locale::En, Key::SectionAppearance), "Appearance");
+    }
+
+    /// A dialog switch stays on one line, so its label has to fit whole: it
+    /// says what a removal will force. The Chinese, Japanese and Korean labels
+    /// are short, and a test machine may have no font to measure them with.
+    #[test]
+    fn given_a_confirm_dialog_switch_then_its_label_fits_the_dialog() {
+        let palette = UiPalette::otty_dark();
+        let room = size::DIALOG - 2.0 * spacing::SPACE_5;
+
+        for locale in [
+            Locale::En,
+            Locale::Fr,
+            Locale::De,
+            Locale::Es,
+            Locale::PtBr,
+            Locale::Ru,
+        ] {
+            for key in [Key::DockerStopItFirst, Key::DockerForceRemoveImage] {
+                let label = text_in(locale, key);
+                let switch: Switch<'_, ()> =
+                    Switch::new(true, &palette).label(label);
+
+                assert!(
+                    switch.width() <= room,
+                    "{label} in {} is {} wide, the dialog has {room}",
+                    locale.tag(),
+                    switch.width(),
+                );
+            }
+        }
     }
 
     #[test]

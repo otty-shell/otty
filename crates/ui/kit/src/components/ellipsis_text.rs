@@ -85,6 +85,11 @@ impl EllipsisText {
         self
     }
 
+    /// Returns the width of the whole text on one line, before any shortening.
+    pub(super) fn full_width(&self) -> f32 {
+        self.measure(&self.content)
+    }
+
     /// Returns the width the text takes: all of it, or only the shown text
     /// for a link or a shrunk text.
     fn width(&self) -> Length {

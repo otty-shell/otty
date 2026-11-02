@@ -628,6 +628,13 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .label("Off")
             .on_toggle(Message::Switched),
         Switch::<Message>::new(true, p).label("On, static"),
+        // A label stays on one line; without room it ends with "…".
+        container(
+            Switch::new(state.switch_on, p)
+                .label("Remove the container when it stops")
+                .on_toggle(Message::Switched),
+        )
+        .width(180),
     ]
     .spacing(spacing::SPACE_3);
 
