@@ -436,6 +436,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 39 | Bug: Inspect controls: labels on one line, copy icon never overlaps | A | Opus | 37 |
 | 40 | Bug: dragging a split never scrolls, dragging a scrollbar never resizes | C | Opus | 39 |
 | 41 | Bug: text in narrow panels stays on one line, nothing overlaps | A | Sonnet | 40 |
+| 42 | Narrow Inspect: the copy icon sits on the left under the switches | A | Sonnet | 41 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -483,4 +484,5 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 38 — Bug: volume prune dialog text · Sonnet
 - [x] 39 — Bug: Inspect controls layout · Opus
 - [x] 40 — Bug: resize never scrolls, scrollbar never resizes · Opus
-- [ ] 41 — Bug: narrow panel text never squeezes · Sonnet
+- [x] 41 — Bug: narrow panel text never squeezes · Sonnet
+- [ ] 42 — Copy icon under the switches when narrow · Sonnet
