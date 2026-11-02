@@ -432,6 +432,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 35 | Key-value list stacks key over value when narrow (Decision 20) | A | Sonnet | 34 |
 | 36 | Bug: narrow window keeps tree labels and short table columns readable (Decision 19) | A | Sonnet | 19 |
 | 37 | Inspect: Copy JSON as an icon, links in the tree (Decision 20) | C | Opus | 32 |
+| 38 | Bug: the volume prune dialog says what will really be removed (Decision 11) | C | Sonnet | 37 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -475,4 +476,5 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 34 — Port links in the Containers table · Sonnet
 - [x] 35 — Key-value list stacks when narrow · Sonnet
 - [x] 36 — Bug: narrow tree labels and table columns · Sonnet
-- [ ] 37 — Inspect: copy icon, links in the tree · Opus
+- [x] 37 — Inspect: copy icon, links in the tree · Opus
+- [ ] 38 — Bug: volume prune dialog text · Sonnet
