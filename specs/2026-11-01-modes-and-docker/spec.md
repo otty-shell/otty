@@ -471,4 +471,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 33 — Bug: tab open switches to Terminal mode · Sonnet
 - [x] 34 — Port links in the Containers table · Sonnet
 - [x] 35 — Key-value list stacks when narrow · Sonnet
-- [ ] 36 — Bug: narrow tree labels and table columns · Sonnet
+- [x] 36 — Bug: narrow tree labels and table columns · Sonnet
