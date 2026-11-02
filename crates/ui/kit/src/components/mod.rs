@@ -58,6 +58,7 @@ pub mod surface;
 pub mod switch;
 mod table_body;
 mod table_sideways;
+pub mod tag_search;
 pub mod target_dot;
 pub mod text_field;
 pub mod title_search;

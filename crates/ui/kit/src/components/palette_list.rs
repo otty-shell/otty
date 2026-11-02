@@ -246,14 +246,19 @@ impl<K> PaletteList<K> {
 /// Lower-case copy of a text that remembers which original char each of its
 /// bytes comes from, so matches found in the copy map back to the original
 /// even when lower-casing changes the byte length.
-struct FoldedText {
+pub(super) struct FoldedText {
     text: String,
     origins: Vec<Range<usize>>,
 }
 
 impl FoldedText {
+    /// The lower-case text.
+    pub(super) fn text(&self) -> &str {
+        &self.text
+    }
+
     /// Lower-cases `original` char by char.
-    fn new(original: &str) -> Self {
+    pub(super) fn new(original: &str) -> Self {
         let mut text = String::with_capacity(original.len());
         let mut origins = Vec::with_capacity(original.len());
 
@@ -270,7 +275,7 @@ impl FoldedText {
 
     /// Returns the non-overlapping places of `needle`, an already folded
     /// text, as byte ranges of the original text.
-    fn find_all(&self, needle: &str) -> Vec<Range<usize>> {
+    pub(super) fn find_all(&self, needle: &str) -> Vec<Range<usize>> {
         let mut ranges: Vec<Range<usize>> = Vec::new();
 
         for (start, found) in self.text.match_indices(needle) {
