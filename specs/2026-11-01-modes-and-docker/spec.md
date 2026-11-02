@@ -529,4 +529,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 43 — Kit: tag search model · Opus
 - [x] 44 — Kit: tag search views · Opus
 - [x] 45 — Docker tables use tag search · Opus
-- [ ] 46 — Fuzzy suggestions with `frizbee` · Sonnet
+- [x] 46 — Fuzzy suggestions with `frizbee` · Sonnet
