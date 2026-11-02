@@ -2,7 +2,7 @@ use iced::Task;
 use otty_docker::{EngineAddress, EngineInfo};
 
 use super::event::{DockerEffect, DockerEvent, DockerIntent};
-use super::overview::LinkTarget;
+use super::links::LinkTarget;
 use super::state::{DockerState, Search};
 use super::types::{LoadedList, ResourceKind};
 use super::{action_flow, form_flow, run_flow};
@@ -396,14 +396,19 @@ mod tests {
     use otty_docker::{
         Container, EngineInfo, EngineKind, Image, Network, Volume, fixtures,
     };
+    use otty_ui_kit::components::data_tree::DataRow;
+    use otty_ui_kit::components::key_value_list::ValuePart;
     use otty_ui_kit::components::log_view::LogViewState;
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::docker::inspect_tree::InspectTree;
     use crate::widgets::docker::inspector::{
         InspectLoad, InspectTarget, InspectorTab, LogTarget, MAX_LOG_LINES,
     };
-    use crate::widgets::docker::overview::LinkTarget;
+    use crate::widgets::docker::inspector_tabs::{
+        InspectContent, TabContent, inspector_tabs,
+    };
     use crate::widgets::docker::sort::SortOrder;
     use crate::widgets::docker::state::{ListLoad, Search};
     use crate::widgets::docker::types::{
@@ -971,6 +976,128 @@ mod tests {
             .find(|image| image.tags() == ["busybox:1.37"])
             .map(|image| image.id().to_string())
             .expect("busybox image")
+    }
+
+    /// The tree of the Inspect tab of the selected container, with `json` as
+    /// the engine's answer.
+    fn inspected_tree(state: &mut DockerState, json: &str) -> InspectTree {
+        let id = state.selected_id().expect("a selected row").to_string();
+        let _ = reduce(
+            state,
+            DockerIntent::SelectInspectorTab(InspectorTab::Inspect),
+        );
+        let _ = reduce(
+            state,
+            DockerIntent::InspectLoaded {
+                target: InspectTarget::new(
+                    docker().address().clone(),
+                    ResourceKind::Containers,
+                    &id,
+                ),
+                result: Ok(json.to_string()),
+            },
+        );
+
+        let vm = inspector_tabs(state).expect("a selected container");
+        let TabContent::Inspect(InspectContent::Loaded(loaded)) = vm.content
+        else {
+            panic!("expected the loaded inspect");
+        };
+
+        loaded.tree.expect("the tree")
+    }
+
+    #[test]
+    fn a_link_in_the_inspect_tree_opens_its_item_through_follow_link() {
+        let mut state = loaded_state();
+        let busybox = busybox_id(&state);
+        let target = LinkTarget::Item(ResourceKind::Images, busybox.clone());
+
+        let tree = inspected_tree(
+            &mut state,
+            &format!("{{ \"Image\": \"{busybox}\" }}"),
+        );
+        let effects = follow(&mut state, target.clone());
+
+        assert_eq!(
+            tree.general,
+            vec![DataRow::with_parts(
+                0,
+                "Image",
+                [ValuePart::link(busybox.clone(), target)]
+            )]
+        );
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(
+            state.place(),
+            Some(&Place::new(
+                docker().address().clone(),
+                ResourceKind::Images
+            ))
+        );
+        assert_eq!(state.selected_id(), Some(busybox.as_str()));
+        assert_eq!(state.inspector().tab(), InspectorTab::Overview);
+    }
+
+    #[test]
+    fn a_compose_label_in_the_inspect_tree_opens_the_filter_through_follow_link()
+     {
+        let mut state = loaded_state();
+        let target = LinkTarget::ComposeProject(String::from("otty-fx"));
+
+        let tree = inspected_tree(
+            &mut state,
+            "{ \"Config\": { \"Labels\": { \"com.docker.compose.project\": \
+             \"otty-fx\" } } }",
+        );
+        let effects = follow(&mut state, target.clone());
+
+        assert_eq!(
+            tree.sections[0].rows,
+            vec![
+                DataRow::heading(0, "Labels"),
+                DataRow::with_parts(
+                    1,
+                    "com.docker.compose.project",
+                    [ValuePart::link("otty-fx", target)]
+                ),
+            ]
+        );
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(
+            state.place(),
+            Some(&Place::compose(docker().address().clone(), "otty-fx"))
+        );
+    }
+
+    #[test]
+    fn a_port_in_the_inspect_tree_opens_its_page_through_follow_link() {
+        let mut state = loaded_state();
+        let target = LinkTarget::Url(String::from("http://localhost:18081"));
+        let place = state.place().cloned();
+
+        let tree = inspected_tree(
+            &mut state,
+            "{ \"NetworkSettings\": { \"Ports\": { \"8080/tcp\": [{ \
+             \"HostIp\": \"0.0.0.0\", \"HostPort\": \"18081\" }] } } }",
+        );
+        let effects = follow(&mut state, target.clone());
+
+        assert_eq!(
+            tree.sections[0].rows[4],
+            DataRow::with_parts(
+                3,
+                "HostPort",
+                [ValuePart::link("18081", target)]
+            )
+        );
+        assert_eq!(
+            effects,
+            vec![DockerEffect::OpenUrl(String::from(
+                "http://localhost:18081"
+            ))]
+        );
+        assert_eq!(state.place().cloned(), place);
     }
 
     #[test]

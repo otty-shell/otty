@@ -2,11 +2,8 @@
 //! label and value pairs (spec Decision 12). Fields without a value are
 //! left out.
 //!
-//! A value that names something OTTY can show is a link (spec Decision 20):
-//! a published TCP port opens in the browser, an image, network, volume or
-//! container opens its list with that item selected, and a Compose project
-//! opens the compose filter. A value that names nothing in the engine's
-//! lists stays text.
+//! A value that names something OTTY can show is a link; `links.rs` holds
+//! the rules. A value that names nothing in the engine's lists stays text.
 
 use otty_docker::{
     Container, ContainerNetwork, Image, Mount, MountKind, Network, PortMapping,
@@ -16,14 +13,12 @@ use otty_docker::{
 use super::format::{
     NO_VALUE, date_time_text, port_text, short_id, shown_ports, size_text,
 };
-use super::types::ResourceKind;
+use super::links::{
+    LinkTarget, compose_target, container_target, image_target,
+    named_container_target, network_target, port_url, volume_target,
+};
 use crate::i18n::{self, Key};
 
-/// Host addresses that mean "every address of this computer" or its
-/// loopback: a port published on them opens at `localhost`.
-const LOCAL_HOSTS: [&str; 3] = ["0.0.0.0", "::", "127.0.0.1"];
-/// The protocol a browser can open.
-const BROWSER_PROTOCOL: &str = "tcp";
 /// Separator between the items of a list value.
 const LIST_SEPARATOR: &str = ", ";
 
@@ -46,18 +41,6 @@ impl Piece {
     }
 }
 
-/// Where an Overview link leads.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum LinkTarget {
-    /// A page opened in the browser: a published port.
-    Url(String),
-    /// The item with this id (container, image or network id, or volume
-    /// name) in this list of the open engine.
-    Item(ResourceKind, String),
-    /// The containers of this Compose project.
-    ComposeProject(String),
-}
-
 /// Image, ID, ports, mounts, networks, Compose project, command and
 /// creation time of a container. `images`, `volumes` and `networks` are
 /// the engine's lists the values link to.
@@ -67,10 +50,7 @@ pub(crate) fn container_fields(
     volumes: &[Volume],
     networks: &[Network],
 ) -> Vec<Field> {
-    let image = images
-        .iter()
-        .find(|image| image.id() == container.image_id())
-        .map(|image| LinkTarget::Item(ResourceKind::Images, image.id().into()));
+    let image = image_target(container.image_id(), images);
     let mounts = container
         .mounts()
         .iter()
@@ -169,35 +149,6 @@ pub(crate) fn network_fields(
     ])
 }
 
-/// The page a published port opens in the browser: `localhost` for a port
-/// published on every address (`0.0.0.0`, `::`), on `127.0.0.1` or on no
-/// stated address, else the address it is bound to. `None` for a port
-/// that is only exposed or is not TCP.
-pub(crate) fn port_url(
-    host_ip: Option<&str>,
-    host_port: Option<u16>,
-    protocol: &str,
-) -> Option<String> {
-    let port = host_port?;
-    if protocol != BROWSER_PROTOCOL {
-        return None;
-    }
-
-    let host = match host_ip {
-        Some(ip) if !ip.is_empty() && !LOCAL_HOSTS.contains(&ip) => {
-            // An IPv6 address goes in brackets in a URL.
-            if ip.contains(':') {
-                format!("[{ip}]")
-            } else {
-                ip.to_string()
-            }
-        },
-        _ => String::from("localhost"),
-    };
-
-    Some(format!("http://{host}:{port}"))
-}
-
 /// The fields that have a value, with their labels translated.
 fn present(fields: Vec<(Key, Vec<Piece>)>) -> Vec<Field> {
     fields
@@ -260,14 +211,8 @@ fn mount_value(mount: &Mount, volumes: &[Volume]) -> Vec<Piece> {
     let source = match mount.kind() {
         MountKind::Volume => {
             let name = mount.name().unwrap_or(mount.source());
-            let volume = mount
-                .name()
-                .filter(|name| {
-                    volumes.iter().any(|volume| volume.name() == *name)
-                })
-                .map(|name| {
-                    LinkTarget::Item(ResourceKind::Volumes, name.into())
-                });
+            let volume =
+                mount.name().and_then(|name| volume_target(name, volumes));
             piece(name, volume)
         },
         MountKind::Bind => Piece::Text(mount.source().to_string()),
@@ -286,13 +231,7 @@ fn network_value(
     attached: &ContainerNetwork,
     networks: &[Network],
 ) -> Vec<Piece> {
-    let listed = networks.iter().find(|network| match attached.id() {
-        Some(id) => network.id() == id,
-        None => network.name() == attached.name(),
-    });
-    let target = listed.map(|network| {
-        LinkTarget::Item(ResourceKind::Networks, network.id().into())
-    });
+    let target = network_target(attached.id(), attached.name(), networks);
 
     vec![piece(attached.name(), target)]
 }
@@ -307,13 +246,7 @@ fn compose_value(
         return Vec::new();
     };
 
-    let has_containers = containers
-        .iter()
-        .any(|container| container.compose_project() == Some(project));
-    let target =
-        has_containers.then(|| LinkTarget::ComposeProject(project.to_string()));
-
-    vec![piece(project, target)]
+    vec![piece(project, compose_target(project, containers))]
 }
 
 /// Container names, each a link to the container when it is listed.
@@ -323,12 +256,7 @@ fn container_names_value(
 ) -> Vec<Piece> {
     let values = names
         .iter()
-        .map(|name| {
-            match containers.iter().find(|container| container.name() == name) {
-                Some(container) => vec![container_link(container)],
-                None => text(name),
-            }
-        })
+        .map(|name| vec![piece(name, named_container_target(name, containers))])
         .collect();
 
     joined(values)
@@ -336,10 +264,7 @@ fn container_names_value(
 
 /// The name of `container` as a link to it.
 fn container_link(container: &Container) -> Piece {
-    let target =
-        LinkTarget::Item(ResourceKind::Containers, container.id().into());
-
-    piece(container.name(), Some(target))
+    piece(container.name(), Some(container_target(container)))
 }
 
 fn text_or_empty(value: Option<&str>) -> Vec<Piece> {
@@ -358,6 +283,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::{self, Key};
+    use crate::widgets::docker::types::ResourceKind;
 
     fn docker() -> Resources {
         fixtures::resources(EngineKind::Docker)
@@ -587,37 +513,6 @@ mod tests {
             value_of(&fields, Key::DockerNetworks),
             vec![plain("pasta")]
         );
-    }
-
-    #[test]
-    fn a_port_on_every_address_or_the_loopback_opens_on_localhost() {
-        for host_ip in [None, Some("0.0.0.0"), Some("::"), Some("127.0.0.1")] {
-            assert_eq!(
-                port_url(host_ip, Some(8080), "tcp"),
-                Some(String::from("http://localhost:8080")),
-                "{host_ip:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_port_bound_to_one_address_opens_on_that_address() {
-        assert_eq!(
-            port_url(Some("192.168.1.20"), Some(8080), "tcp"),
-            Some(String::from("http://192.168.1.20:8080"))
-        );
-        assert_eq!(
-            port_url(Some("fd00::5"), Some(8443), "tcp"),
-            Some(String::from("http://[fd00::5]:8443"))
-        );
-    }
-
-    #[test]
-    fn an_exposed_or_udp_port_opens_nothing() {
-        assert_eq!(port_url(Some("0.0.0.0"), None, "tcp"), None);
-        assert_eq!(port_url(None, None, "tcp"), None);
-        assert_eq!(port_url(Some("0.0.0.0"), Some(53), "udp"), None);
-        assert_eq!(port_url(Some("0.0.0.0"), Some(9000), "sctp"), None);
     }
 
     #[test]

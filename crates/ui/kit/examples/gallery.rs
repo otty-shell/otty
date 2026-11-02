@@ -103,9 +103,10 @@ const CREATE_ICON: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");
 const MORE_ICON: &[u8] = include_bytes!("../../../../assets/svg/more.svg");
 const REFRESH_ICON: &[u8] =
     include_bytes!("../../../../assets/svg/refresh.svg");
+const COPY_ICON: &[u8] = include_bytes!("../../../../assets/svg/copy.svg");
 
 /// The action icons with their names, in the order the gallery shows them.
-const ACTION_ICONS: [(&str, &[u8]); 12] = [
+const ACTION_ICONS: [(&str, &[u8]); 13] = [
     ("Start", START_ICON),
     ("Stop", STOP_ICON),
     ("Restart", RESTART_ICON),
@@ -118,6 +119,7 @@ const ACTION_ICONS: [(&str, &[u8]); 12] = [
     ("Create", CREATE_ICON),
     ("More", MORE_ICON),
     ("Refresh", REFRESH_ICON),
+    ("Copy JSON", COPY_ICON),
 ];
 
 const KINDS: [(&str, ButtonKind); 4] = [
@@ -409,8 +411,38 @@ fn data_tree<'a>(state: &Gallery, palette: &UiPalette) -> Element<'a, Message> {
             "Id",
             "sha256:0123456789abcdef0123456789abcdef0123456789abcdef",
         ),
+        DataRow::with_parts(
+            0,
+            "Image",
+            [ValuePart::link(
+                "nginx:1.27",
+                Message::InspectorLink("image"),
+            )],
+        ),
         DataRow::new(0, "Name", "/web-1"),
+        DataRow::with_parts(
+            0,
+            "Ports",
+            [
+                ValuePart::link(
+                    "8080:80/tcp",
+                    Message::InspectorLink("http://localhost:8080"),
+                ),
+                ValuePart::text(", "),
+                ValuePart::link(
+                    "8443:443/tcp",
+                    Message::InspectorLink("http://localhost:8443"),
+                ),
+            ],
+        ),
         DataRow::new(0, "RestartCount", "0"),
+        DataRow::heading(0, "Networks"),
+        DataRow::heading_link(
+            1,
+            "otty-fx-net",
+            Message::InspectorLink("network"),
+        ),
+        DataRow::new(2, "IPAddress", "172.18.0.2"),
     ];
     let state_rows = vec![
         DataRow::new(0, "Status", "running"),
@@ -424,6 +456,14 @@ fn data_tree<'a>(state: &Gallery, palette: &UiPalette) -> Element<'a, Message> {
     let mounts_rows = vec![
         DataRow::heading(0, "1"),
         DataRow::new(1, "Destination", "/usr/share/nginx/html"),
+        DataRow::with_parts(
+            1,
+            "Name",
+            [ValuePart::link(
+                "otty-fx-data",
+                Message::InspectorLink("volume"),
+            )],
+        ),
         DataRow::new(1, "Type", "volume"),
     ];
 
@@ -1258,12 +1298,16 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section(
-            "DataTree (group, sections that open and close, indented and numbered rows; values wrap; stacked at 200 wide)",
-            row![
-                container(data_tree(state, p)).width(360),
-                container(data_tree(state, p)).width(200),
+            "DataTree (group, sections that open and close, indented and numbered rows; values wrap; stacked at 200 wide; values and a heading can be links, the last press is printed)",
+            column![
+                row![
+                    container(data_tree(state, p)).width(360),
+                    container(data_tree(state, p)).width(200),
+                ]
+                .spacing(spacing::SPACE_6),
+                label(state.inspector_event.clone(), p),
             ]
-            .spacing(spacing::SPACE_6)
+            .spacing(spacing::SPACE_3)
             .into(),
             p,
         ),

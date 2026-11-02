@@ -1,9 +1,14 @@
 //! The engine's inspect JSON as readable rows (spec Decision 20): top-level
 //! values that read in one line go to a General group, the rest become
 //! sections; nested objects are indented rows and lists are numbered rows.
+//! Values that name something OTTY can show are links (`inspect_links.rs`).
 
 use otty_ui_kit::components::data_tree::DataRow;
+use otty_ui_kit::components::key_value_list::ValuePart;
 use serde_json::{Map, Value};
+
+use super::inspect_links::{InspectLinks, LIST_ITEM};
+use super::links::LinkTarget;
 
 /// General values that read first.
 const GENERAL_FIRST: [&str; 3] = ["Id", "Name", "Created"];
@@ -19,53 +24,156 @@ const JOINED_LIST_MAX: usize = 60;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InspectSection {
     pub(crate) title: String,
-    pub(crate) rows: Vec<DataRow>,
+    pub(crate) rows: Vec<DataRow<LinkTarget>>,
 }
 
-/// The rows of one inspect answer.
+/// The rows of one inspect answer. A link in a row carries where it leads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InspectTree {
     /// The top-level values that read in one line.
-    pub(crate) general: Vec<DataRow>,
+    pub(crate) general: Vec<DataRow<LinkTarget>>,
     /// The other top-level keys, in reading order.
     pub(crate) sections: Vec<InspectSection>,
 }
 
+/// The walk over one top-level value: it adds rows and keeps the path of the
+/// value it is at.
+struct RowWalk<'a> {
+    show_empty: bool,
+    links: &'a InspectLinks<'a>,
+    path: Vec<&'a str>,
+    rows: Vec<DataRow<LinkTarget>>,
+}
+
+impl<'a> RowWalk<'a> {
+    /// Add the rows of the items of `value`, an object or a list, at `depth`.
+    /// List items are numbered from 1; a hidden item keeps its number free.
+    fn push_children(&mut self, value: &'a Value, depth: u16) {
+        match value {
+            Value::Object(object) => {
+                for (key, item) in object {
+                    self.push_entry(key, key, item, value, depth);
+                }
+            },
+            Value::Array(items) => {
+                for (index, item) in items.iter().enumerate() {
+                    let number = (index + 1).to_string();
+                    self.push_entry(&number, LIST_ITEM, item, value, depth);
+                }
+            },
+            _ => {},
+        }
+    }
+
+    /// Add the rows of `key`: one key and value row when `value` reads in
+    /// one line, or else a heading with the rows of its items one level
+    /// deeper. `path_key` is the place of `key` in the path, and `parent`
+    /// holds `value`.
+    fn push_entry(
+        &mut self,
+        key: &str,
+        path_key: &'a str,
+        value: &'a Value,
+        parent: &'a Value,
+        depth: u16,
+    ) {
+        if is_hidden(value, self.show_empty) {
+            return;
+        }
+
+        self.path.push(path_key);
+
+        if let Some(text) = one_line(value, self.show_empty) {
+            let target = self.links.value_target(&self.path, value, parent);
+            self.rows.push(value_row(depth, key, text, target));
+        } else {
+            let heading = match self.links.key_target(&self.path, value) {
+                Some(target) => DataRow::heading_link(depth, key, target),
+                None => DataRow::heading(depth, key),
+            };
+            self.rows.push(heading);
+            self.push_children(value, depth + 1);
+        }
+
+        self.path.pop();
+    }
+}
+
 /// The rows of `value`; `None` when it is not a JSON object. Empty values
 /// (null, "", [], {} and objects or lists holding only those) are left out
-/// unless `show_empty`.
+/// unless `show_empty`. `links` tells which values are links.
 pub(crate) fn inspect_tree(
     value: &Value,
     show_empty: bool,
+    links: &InspectLinks<'_>,
 ) -> Option<InspectTree> {
     let object = value.as_object()?;
 
     let mut general = Vec::new();
-    for (key, value) in in_order(object, &GENERAL_FIRST) {
-        if is_hidden(value, show_empty) {
+    for (key, item) in in_order(object, &GENERAL_FIRST) {
+        if is_hidden(item, show_empty) {
             continue;
         }
-        if let Some(text) = one_line(value, show_empty) {
-            general.push(DataRow::new(0, key, text));
+        if let Some(text) = one_line(item, show_empty) {
+            let target = links.value_target(&[key.as_str()], item, value);
+            general.push(value_row(0, key, text, target));
         }
     }
 
     let mut sections = Vec::new();
-    for (key, value) in in_order(object, &SECTIONS_FIRST) {
-        if is_hidden(value, show_empty) || one_line(value, show_empty).is_some()
-        {
+    for (key, item) in in_order(object, &SECTIONS_FIRST) {
+        if !is_section(item, show_empty) {
             continue;
         }
 
-        let mut rows = Vec::new();
-        push_children(&mut rows, value, 0, show_empty);
+        let mut walk = RowWalk {
+            show_empty,
+            links,
+            path: vec![key.as_str()],
+            rows: Vec::new(),
+        };
+        walk.push_children(item, 0);
         sections.push(InspectSection {
             title: key.to_string(),
-            rows,
+            rows: walk.rows,
         });
     }
 
     Some(InspectTree { general, sections })
+}
+
+/// The title of the first section of the tree of `value`.
+pub(crate) fn first_section_title(
+    value: &Value,
+    show_empty: bool,
+) -> Option<&str> {
+    let object = value.as_object()?;
+
+    in_order(object, &SECTIONS_FIRST)
+        .into_iter()
+        .find(|(_, item)| is_section(item, show_empty))
+        .map(|(key, _)| key.as_str())
+}
+
+/// Whether the top-level `value` is a section: it is shown and does not read
+/// in one line.
+fn is_section(value: &Value, show_empty: bool) -> bool {
+    !is_hidden(value, show_empty) && one_line(value, show_empty).is_none()
+}
+
+/// A key and value row: the value is a link when it has a `target`.
+fn value_row(
+    depth: u16,
+    key: &str,
+    text: String,
+    target: Option<LinkTarget>,
+) -> DataRow<LinkTarget> {
+    match target {
+        Some(target) => {
+            DataRow::with_parts(depth, key, [ValuePart::link(text, target)])
+        },
+        None => DataRow::new(depth, key, text),
+    }
 }
 
 /// The entries of `object`: the keys of `first` that it has, in that order,
@@ -80,52 +188,6 @@ fn in_order<'a>(
         .filter(|(key, _)| !first.contains(&key.as_str()));
 
     listed.chain(others).collect()
-}
-
-/// Add the rows of the items of `value`, an object or a list, at `depth`.
-/// List items are numbered from 1; a hidden item keeps its number free.
-fn push_children(
-    rows: &mut Vec<DataRow>,
-    value: &Value,
-    depth: u16,
-    show_empty: bool,
-) {
-    match value {
-        Value::Object(object) => {
-            for (key, item) in object {
-                push_entry(rows, key, item, depth, show_empty);
-            }
-        },
-        Value::Array(items) => {
-            for (index, item) in items.iter().enumerate() {
-                let number = (index + 1).to_string();
-                push_entry(rows, &number, item, depth, show_empty);
-            }
-        },
-        _ => {},
-    }
-}
-
-/// Add the rows of `key`: one key and value row when `value` reads in one
-/// line, or else a heading with the rows of its items one level deeper.
-fn push_entry(
-    rows: &mut Vec<DataRow>,
-    key: &str,
-    value: &Value,
-    depth: u16,
-    show_empty: bool,
-) {
-    if is_hidden(value, show_empty) {
-        return;
-    }
-
-    if let Some(text) = one_line(value, show_empty) {
-        rows.push(DataRow::new(depth, key, text));
-        return;
-    }
-
-    rows.push(DataRow::heading(depth, key));
-    push_children(rows, value, depth + 1, show_empty);
 }
 
 /// Whether `value` is left out of the tree.
@@ -190,13 +252,18 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::widgets::docker::types::ResourceKind;
+
+    fn no_links() -> InspectLinks<'static> {
+        InspectLinks::without_lists(ResourceKind::Containers)
+    }
 
     fn tree(value: &Value) -> InspectTree {
-        inspect_tree(value, false).expect("an object")
+        inspect_tree(value, false, &no_links()).expect("an object")
     }
 
     fn tree_with_empty(value: &Value) -> InspectTree {
-        inspect_tree(value, true).expect("an object")
+        inspect_tree(value, true, &no_links()).expect("an object")
     }
 
     fn titles(tree: &InspectTree) -> Vec<&str> {
@@ -206,7 +273,10 @@ mod tests {
             .collect()
     }
 
-    fn section<'a>(tree: &'a InspectTree, title: &str) -> &'a [DataRow] {
+    fn section<'a>(
+        tree: &'a InspectTree,
+        title: &str,
+    ) -> &'a [DataRow<LinkTarget>] {
         &tree
             .sections
             .iter()
@@ -539,9 +609,24 @@ mod tests {
     }
 
     #[test]
+    fn the_first_section_title_is_the_first_shown_section_of_the_tree() {
+        let value = json!({
+            "Zebra": { "a": 1 },
+            "Name": "/web",
+            "State": { "Status": null },
+            "Config": { "Image": "busybox" },
+        });
+
+        assert_eq!(first_section_title(&value, false), Some("Config"));
+        assert_eq!(first_section_title(&value, true), Some("State"));
+        assert_eq!(first_section_title(&json!({ "Id": "a" }), false), None);
+        assert_eq!(first_section_title(&json!([1, 2]), false), None);
+    }
+
+    #[test]
     fn a_value_that_is_not_an_object_has_no_tree() {
-        assert_eq!(inspect_tree(&json!([1, 2]), false), None);
-        assert_eq!(inspect_tree(&json!("text"), true), None);
-        assert_eq!(inspect_tree(&Value::Null, false), None);
+        assert_eq!(inspect_tree(&json!([1, 2]), false, &no_links()), None);
+        assert_eq!(inspect_tree(&json!("text"), true, &no_links()), None);
+        assert_eq!(inspect_tree(&Value::Null, false, &no_links()), None);
     }
 }

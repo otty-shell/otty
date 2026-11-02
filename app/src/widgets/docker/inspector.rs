@@ -10,7 +10,7 @@ use otty_docker::{EngineAddress, EngineInfo};
 use otty_ui_kit::components::log_view::LogViewState;
 use serde_json::Value;
 
-use super::inspect_tree::inspect_tree;
+use super::inspect_tree::first_section_title;
 use super::types::ResourceKind;
 use crate::i18n::{self, Key};
 
@@ -198,9 +198,8 @@ impl LoadedInspect {
     fn new(json: &str, shows_empty: bool) -> Self {
         let value = serde_json::from_str(json).unwrap_or(Value::Null);
 
-        let first_section = inspect_tree(&value, shows_empty)
-            .and_then(|tree| tree.sections.into_iter().next())
-            .map(|section| section.title);
+        let first_section =
+            first_section_title(&value, shows_empty).map(str::to_string);
 
         Self {
             json: json_view(json),

@@ -112,6 +112,7 @@ impl<'a, Message: Clone + 'a> From<KeyValueList<Message>>
 /// ];
 /// assert_eq!(ports.len(), 3);
 /// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValuePart<Message> {
     text: String,
     on_press: Option<Message>,
@@ -131,6 +132,17 @@ impl<Message> ValuePart<Message> {
         Self {
             text: text.into(),
             on_press: Some(on_press),
+        }
+    }
+
+    /// The same part with the message of a link changed by `change`.
+    pub fn map<Mapped>(
+        self,
+        change: impl FnOnce(Message) -> Mapped,
+    ) -> ValuePart<Mapped> {
+        ValuePart {
+            text: self.text,
+            on_press: self.on_press.map(change),
         }
     }
 }
@@ -172,7 +184,7 @@ pub(super) fn entry_view<'a, Message: Clone + 'a>(
 }
 
 /// Color of a link in a value, on every panel: `accent`.
-fn link_color(palette: &UiPalette) -> iced::Color {
+pub(super) fn link_color(palette: &UiPalette) -> iced::Color {
     palette.accent()
 }
 

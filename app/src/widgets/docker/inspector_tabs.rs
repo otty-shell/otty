@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 
 use otty_ui_kit::components::log_view::LogViewState;
 
+use super::inspect_links::InspectLinks;
 use super::inspect_tree::{InspectTree, inspect_tree};
 use super::inspector::{InspectLoad, InspectTarget, InspectorTab};
 use super::overview::{
@@ -104,7 +105,8 @@ fn overview_fields(engine: &EngineState, row: &SelectedRow<'_>) -> Vec<Field> {
     }
 }
 
-/// The inspect JSON of `row`; loading until it is the one that arrived.
+/// The inspect JSON of `row`; loading until it is the one that arrived. The
+/// links of its tree point into the engine's lists.
 fn inspect_content<'a>(
     state: &'a DockerState,
     engine: &EngineState,
@@ -128,10 +130,17 @@ fn inspect_content<'a>(
     match inspect.load() {
         InspectLoad::Loaded(loaded) => {
             let shows_empty = inspector.shows_empty();
+            let links = InspectLinks {
+                resource: row.resource(),
+                containers: engine.containers().items(),
+                images: engine.images().items(),
+                volumes: engine.volumes().items(),
+                networks: engine.networks().items(),
+            };
             let tree = if inspector.is_raw_json() {
                 None
             } else {
-                inspect_tree(loaded.value(), shows_empty)
+                inspect_tree(loaded.value(), shows_empty, &links)
             };
 
             InspectContent::Loaded(InspectLoadedViewModel {
@@ -150,10 +159,12 @@ fn inspect_content<'a>(
 mod tests {
     use otty_docker::{EngineInfo, EngineKind, fixtures};
     use otty_ui_kit::components::data_tree::DataRow;
+    use otty_ui_kit::components::key_value_list::ValuePart;
 
     use super::*;
     use crate::widgets::docker::event::DockerIntent;
     use crate::widgets::docker::inspector::{InspectTarget, LogTarget};
+    use crate::widgets::docker::links::LinkTarget;
     use crate::widgets::docker::overview;
     use crate::widgets::docker::reducer::reduce;
     use crate::widgets::docker::types::{LoadedLists, Place, ResourceKind};
@@ -359,6 +370,103 @@ mod tests {
             );
             assert!(loaded.json.text().starts_with("{\n  \"Id\""));
             assert!(!loaded.shows_empty);
+        });
+    }
+
+    #[test]
+    fn the_links_of_the_inspect_tree_point_into_the_loaded_lists() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let image_id = resources.containers()[0].image_id();
+        let state = with_inspect(&format!(
+            "{{ \"Image\": \"{image_id}\", \"Mounts\": [{{ \"Name\": \
+             \"otty-fx-data\" }}] }}"
+        ));
+
+        check_loaded(&state, |loaded| {
+            let tree = loaded.tree.expect("the tree");
+            assert_eq!(
+                tree.general,
+                vec![DataRow::with_parts(
+                    0,
+                    "Image",
+                    [ValuePart::link(
+                        image_id,
+                        LinkTarget::Item(
+                            ResourceKind::Images,
+                            image_id.to_string()
+                        )
+                    )]
+                )]
+            );
+            assert_eq!(
+                tree.sections[0].rows,
+                vec![
+                    DataRow::heading(0, "1"),
+                    DataRow::with_parts(
+                        1,
+                        "Name",
+                        [ValuePart::link(
+                            "otty-fx-data",
+                            LinkTarget::Item(
+                                ResourceKind::Volumes,
+                                String::from("otty-fx-data")
+                            )
+                        )]
+                    ),
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn the_links_of_the_inspect_tree_follow_the_kind_of_the_selected_row() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let web = resources
+            .containers()
+            .iter()
+            .find(|container| container.name() == "otty-fx-web-1")
+            .expect("web container");
+        let network = resources.networks()[0].id();
+        let mut state = loaded();
+        let place =
+            Place::new(docker().address().clone(), ResourceKind::Networks);
+        let _ = reduce(&mut state, DockerIntent::Open(place));
+        select_tab(&mut state, InspectorTab::Inspect);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::InspectLoaded {
+                target: InspectTarget::new(
+                    docker().address().clone(),
+                    ResourceKind::Networks,
+                    network,
+                ),
+                result: Ok(String::from(
+                    "{ \"Containers\": { \"a\": { \"Name\": \"otty-fx-web-1\" \
+                     } } }",
+                )),
+            },
+        );
+
+        check_loaded(&state, |loaded| {
+            let tree = loaded.tree.expect("the tree");
+            assert_eq!(
+                tree.sections[0].rows,
+                vec![
+                    DataRow::heading(0, "a"),
+                    DataRow::with_parts(
+                        1,
+                        "Name",
+                        [ValuePart::link(
+                            "otty-fx-web-1",
+                            LinkTarget::Item(
+                                ResourceKind::Containers,
+                                web.id().to_string()
+                            )
+                        )]
+                    ),
+                ]
+            );
         });
     }
 

@@ -7,9 +7,10 @@ use std::collections::BTreeSet;
 use iced::widget::text::IntoFragment;
 use iced::widget::{Row, Space, column, container, row, scrollable, svg, text};
 use iced::{Alignment, Element, Length, Padding};
-use otty_ui_kit::components::button::{Button, ButtonSize};
-use otty_ui_kit::components::data_tree::DataTree;
-use otty_ui_kit::components::icon_button::{IconButton, IconTone};
+use otty_ui_kit::components::data_tree::{DataRow, DataTree};
+use otty_ui_kit::components::icon_button::{
+    IconButton, IconButtonSize, IconTone,
+};
 use otty_ui_kit::components::inspector_header::InspectorHeader;
 use otty_ui_kit::components::inspector_tabs::inspector_tabs;
 use otty_ui_kit::components::key_value_list::{KeyValueList, ValuePart};
@@ -19,7 +20,7 @@ use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::status_badge::StatusBadge;
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::action_model::ActionsViewModel;
 use super::super::actions::RowAction;
@@ -28,6 +29,7 @@ use super::super::inspect_tree::InspectTree;
 use super::super::inspector_tabs::{
     InspectContent, InspectLoadedViewModel, InspectorTabsViewModel, TabContent,
 };
+use super::super::links::LinkTarget;
 use super::super::model::InspectorViewModel;
 use super::super::overview::Piece;
 use crate::i18n::{self, Key};
@@ -191,31 +193,33 @@ fn tab_body<'a>(
     }
 }
 
-/// The loaded Inspect tab: its switches and Copy JSON above the tree, or
-/// above the raw JSON when there is no tree to show.
+/// The loaded Inspect tab: its switches and the Copy JSON icon above the
+/// tree, or above the raw JSON when there is no tree to show. The icon stays
+/// at the end of the first row of switches; the switches wrap when narrow.
 fn inspect_body<'a>(
     loaded: InspectLoadedViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, DockerIntent> {
-    let mut controls = row![
+    let mut switches = row![inspect_switch(
         Switch::new(loaded.tree.is_none(), palette)
             .label(i18n::t(Key::DockerInspectRawJson))
             .on_toggle(DockerIntent::InspectRawJsonToggled)
-    ]
-    .spacing(spacing::SPACE_4)
-    .align_y(Alignment::Center);
+    )]
+    .spacing(spacing::SPACE_4);
     if loaded.tree.is_some() {
-        controls = controls.push(
+        switches = switches.push(inspect_switch(
             Switch::new(loaded.shows_empty, palette)
                 .label(i18n::t(Key::DockerInspectShowEmpty))
                 .on_toggle(DockerIntent::InspectShowEmptyToggled),
-        );
+        ));
     }
-    controls = controls.push(
-        Button::new(i18n::t(Key::DockerInspectCopyJson), palette)
-            .size(ButtonSize::Small)
-            .on_press(DockerIntent::CopyInspectJson),
-    );
+
+    let controls = row![
+        container(switches.wrap().vertical_spacing(spacing::SPACE_2))
+            .width(Length::Fill),
+        copy_json_button(palette),
+    ]
+    .spacing(spacing::SPACE_3);
 
     let body: Element<'a, DockerIntent> = match loaded.tree {
         Some(tree) => {
@@ -239,10 +243,33 @@ fn inspect_body<'a>(
             .into(),
     };
 
-    column![controls.wrap().vertical_spacing(spacing::SPACE_2), body]
+    column![controls, body]
         .spacing(spacing::SPACE_3)
         .height(Length::Fill)
         .into()
+}
+
+/// One switch of the Inspect controls, as tall as the Copy JSON icon, so
+/// they line up when the switches wrap too.
+fn inspect_switch<'a>(
+    switch: Switch<'a, DockerIntent>,
+) -> Element<'a, DockerIntent> {
+    container(switch)
+        .height(size::CONTROL_SM)
+        .align_y(Alignment::Center)
+        .into()
+}
+
+/// The Copy JSON icon button; its label shows as a tooltip.
+fn copy_json_button<'a>(palette: &UiPalette) -> Element<'a, DockerIntent> {
+    IconButton::new(
+        svg::Handle::from_memory(icons::COPY),
+        i18n::t(Key::DockerInspectCopyJson),
+        palette,
+    )
+    .size(IconButtonSize::Small)
+    .on_press(DockerIntent::CopyInspectJson)
+    .into()
 }
 
 /// The inspect rows as a kit tree: the General group (when it has rows),
@@ -254,19 +281,30 @@ fn data_tree(
 ) -> DataTree<DockerIntent> {
     let mut data_tree = DataTree::new(palette);
     if !tree.general.is_empty() {
-        data_tree =
-            data_tree.group(i18n::t(Key::DockerInspectGeneral), tree.general);
+        data_tree = data_tree
+            .group(i18n::t(Key::DockerInspectGeneral), tree_rows(tree.general));
     }
 
     for section in tree.sections {
         let is_open = open_sections.contains(&section.title);
         let on_toggle =
             DockerIntent::InspectSectionToggled(section.title.clone());
-        data_tree =
-            data_tree.section(section.title, is_open, section.rows, on_toggle);
+        data_tree = data_tree.section(
+            section.title,
+            is_open,
+            tree_rows(section.rows),
+            on_toggle,
+        );
     }
 
     data_tree
+}
+
+/// Inspect rows for the kit tree: a link follows its target when pressed.
+fn tree_rows(rows: Vec<DataRow<LinkTarget>>) -> Vec<DataRow<DockerIntent>> {
+    rows.into_iter()
+        .map(|row| row.map(DockerIntent::FollowLink))
+        .collect()
 }
 
 /// A piece of an Overview value as a kit value part: a link follows its
@@ -335,7 +373,6 @@ fn error_notice<'a>(
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
-    use otty_ui_kit::components::data_tree::DataRow;
     use otty_ui_kit::components::log_view::LogViewState;
     use otty_ui_kit::components::status_badge::StatusTone;
 
@@ -347,7 +384,7 @@ mod tests {
     use crate::widgets::docker::actions::RowAction;
     use crate::widgets::docker::inspect_tree::InspectSection;
     use crate::widgets::docker::inspector::InspectorTab;
-    use crate::widgets::docker::overview::{Field, LinkTarget};
+    use crate::widgets::docker::overview::Field;
     use crate::widgets::docker::types::ResourceKind;
 
     fn header() -> Option<InspectorViewModel> {
@@ -694,15 +731,14 @@ mod tests {
         }
     }
 
-    /// The inspector on the Inspect tab with `tree` (`None`: raw JSON) in a
-    /// narrow panel; only State is open.
-    fn inspect_view<'a>(
+    /// The inspector on the Inspect tab with `tree` (`None`: raw JSON).
+    fn inspect_panel<'a>(
         json: &'a LogViewState,
         tree: Option<InspectTree>,
         open_sections: &'a BTreeSet<String>,
         theme: ThemeProps<'a>,
     ) -> Element<'a, DockerIntent> {
-        narrow(view(InspectorProps {
+        view(InspectorProps {
             vm: header(),
             actions: None,
             tabs: container_tabs(
@@ -717,7 +753,17 @@ mod tests {
                 )),
             ),
             theme,
-        }))
+        })
+    }
+
+    /// [`inspect_panel`] in a narrow panel; only State is open.
+    fn inspect_view<'a>(
+        json: &'a LogViewState,
+        tree: Option<InspectTree>,
+        open_sections: &'a BTreeSet<String>,
+        theme: ThemeProps<'a>,
+    ) -> Element<'a, DockerIntent> {
+        narrow(inspect_panel(json, tree, open_sections, theme))
     }
 
     fn only_state_open() -> BTreeSet<String> {
@@ -791,6 +837,23 @@ mod tests {
         );
     }
 
+    /// Center of the Copy JSON icon: at the end of the first row of controls,
+    /// beside the Raw JSON switch, in a panel `width` wide.
+    fn copy_center(
+        ui: &mut iced_test::Simulator<'_, DockerIntent>,
+        width: f32,
+    ) -> iced::Point {
+        let raw = ui
+            .find(i18n::t(Key::DockerInspectRawJson))
+            .expect("raw json switch")
+            .bounds();
+
+        iced::Point::new(
+            width - PADDING.right - otty_ui_kit::size::CONTROL_SM / 2.0,
+            raw.center_y(),
+        )
+    }
+
     #[test]
     fn the_inspect_controls_send_their_intents() {
         let themes = ThemeManager::new();
@@ -807,8 +870,8 @@ mod tests {
             .expect("raw json switch");
         ui.click(i18n::t(Key::DockerInspectShowEmpty))
             .expect("show empty switch");
-        ui.click(i18n::t(Key::DockerInspectCopyJson))
-            .expect("copy button");
+        let copy = copy_center(&mut ui, NARROW);
+        click_at(&mut ui, copy);
 
         assert_eq!(
             ui.into_messages().collect::<Vec<_>>(),
@@ -837,8 +900,8 @@ mod tests {
         assert!(ui.find(i18n::t(Key::DockerInspectShowEmpty)).is_err());
         ui.click(i18n::t(Key::DockerInspectRawJson))
             .expect("raw json switch");
-        ui.click(i18n::t(Key::DockerInspectCopyJson))
-            .expect("copy button");
+        let copy = copy_center(&mut ui, NARROW);
+        click_at(&mut ui, copy);
 
         assert_eq!(
             ui.into_messages().collect::<Vec<_>>(),
@@ -847,6 +910,202 @@ mod tests {
                 DockerIntent::CopyInspectJson,
             ]
         );
+    }
+
+    /// Width of a panel where all controls fit on one row.
+    const WIDE: f32 = 420.0;
+
+    #[test]
+    fn the_copy_icon_sits_on_the_row_of_the_switches_in_both_themes() {
+        let mut themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+
+        for theme in BuiltinTheme::ALL {
+            themes.set_theme(theme);
+            let panel = inspect_panel(
+                &json,
+                Some(fixture_tree()),
+                &open,
+                ThemeProps::new(themes.current()),
+            );
+            let mut ui = simulator(container(panel).width(WIDE).height(600));
+
+            let raw = ui
+                .find(i18n::t(Key::DockerInspectRawJson))
+                .expect("raw json switch")
+                .bounds();
+            let empty = ui
+                .find(i18n::t(Key::DockerInspectShowEmpty))
+                .expect("show empty switch")
+                .bounds();
+            let copy = copy_center(&mut ui, WIDE);
+            click_at(&mut ui, copy);
+
+            assert!(
+                (raw.center_y() - empty.center_y()).abs() < 0.5,
+                "{raw:?} and {empty:?} on one row"
+            );
+            assert!(copy.x > empty.x + empty.width, "{copy:?} after {empty:?}");
+            assert_eq!(
+                ui.into_messages().collect::<Vec<_>>(),
+                vec![DockerIntent::CopyInspectJson]
+            );
+        }
+    }
+
+    #[test]
+    fn the_copy_json_text_shows_only_as_a_tooltip() {
+        let themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+        let mut ui = simulator(inspect_view(
+            &json,
+            Some(fixture_tree()),
+            &open,
+            ThemeProps::new(themes.current()),
+        ));
+
+        assert!(ui.find(i18n::t(Key::DockerInspectCopyJson)).is_err());
+    }
+
+    /// Draws `button` with the pointer over it and checks it against the
+    /// picture saved in `reference`; the first call saves the picture.
+    /// Tooltips are overlays that widget queries do not reach.
+    fn hovered_copy_button_matches(
+        button: Element<'_, DockerIntent>,
+        reference: &std::path::Path,
+    ) -> bool {
+        const MARGIN: f32 = 80.0;
+        let mut ui =
+            simulator(container(button).padding(MARGIN).width(320).height(200));
+        let center = iced::Point::new(
+            MARGIN + otty_ui_kit::size::CONTROL_SM / 2.0,
+            MARGIN + otty_ui_kit::size::CONTROL_SM / 2.0,
+        );
+        ui.point_at(center);
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::CursorMoved { position: center },
+        )]);
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("button should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    #[test]
+    fn a_hovered_copy_icon_shows_the_copy_json_text_as_its_tooltip() {
+        let reference = std::env::temp_dir()
+            .join(format!("otty-docker-copy-json-{}", std::process::id()))
+            .join("tooltip");
+        let palette = UiPalette::otty_dark();
+        let icon_button = |label: &'static str| -> Element<'_, DockerIntent> {
+            IconButton::new(
+                svg::Handle::from_memory(icons::COPY),
+                label,
+                &palette,
+            )
+            .size(IconButtonSize::Small)
+            .on_press(DockerIntent::CopyInspectJson)
+            .into()
+        };
+
+        assert!(hovered_copy_button_matches(
+            copy_json_button(&palette),
+            &reference
+        ));
+        assert!(hovered_copy_button_matches(
+            icon_button(i18n::t(Key::DockerInspectCopyJson)),
+            &reference
+        ));
+        assert!(!hovered_copy_button_matches(
+            icon_button("Another text"),
+            &reference
+        ));
+    }
+
+    /// A tree with an image link in General, a port link and a text value in
+    /// the open State section, a network heading link under it, and a link
+    /// in the closed Config section.
+    fn linked_tree() -> InspectTree {
+        let image =
+            LinkTarget::Item(ResourceKind::Images, String::from("sha256:a7db"));
+        let network =
+            LinkTarget::Item(ResourceKind::Networks, String::from("9b55"));
+        let port = LinkTarget::Url(String::from("http://localhost:18081"));
+        let project = LinkTarget::ComposeProject(String::from("otty-fx"));
+
+        InspectTree {
+            general: vec![DataRow::with_parts(
+                0,
+                "Image",
+                [ValuePart::link("sha256:a7db", image)],
+            )],
+            sections: vec![
+                InspectSection {
+                    title: String::from("State"),
+                    rows: vec![
+                        DataRow::with_parts(
+                            0,
+                            "HostPort",
+                            [ValuePart::link("18081", port)],
+                        ),
+                        DataRow::new(0, "HostIp", "0.0.0.0"),
+                        DataRow::heading_link(0, "otty-fx-net", network),
+                    ],
+                },
+                InspectSection {
+                    title: String::from("Config"),
+                    rows: vec![DataRow::with_parts(
+                        0,
+                        "Project",
+                        [ValuePart::link("otty-fx", project)],
+                    )],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn pressing_a_link_of_the_inspect_tree_follows_it_in_both_themes() {
+        let mut themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+
+        for theme in BuiltinTheme::ALL {
+            themes.set_theme(theme);
+            let mut ui = simulator(inspect_view(
+                &json,
+                Some(linked_tree()),
+                &open,
+                ThemeProps::new(themes.current()),
+            ));
+
+            ui.click("sha256:a7db").expect("image link");
+            ui.click("18081").expect("port link");
+            ui.click("otty-fx-net").expect("network heading link");
+            ui.click("0.0.0.0").expect("plain value");
+            ui.click("HostPort").expect("key");
+            assert!(ui.find("otty-fx").is_err(), "the section is closed");
+
+            assert_eq!(
+                ui.into_messages().collect::<Vec<_>>(),
+                vec![
+                    DockerIntent::FollowLink(LinkTarget::Item(
+                        ResourceKind::Images,
+                        String::from("sha256:a7db")
+                    )),
+                    DockerIntent::FollowLink(LinkTarget::Url(String::from(
+                        "http://localhost:18081"
+                    ))),
+                    DockerIntent::FollowLink(LinkTarget::Item(
+                        ResourceKind::Networks,
+                        String::from("9b55")
+                    )),
+                ]
+            );
+        }
     }
 
     /// Draws raw JSON of `lines` and checks it against the picture saved in
@@ -895,10 +1154,6 @@ mod tests {
             .find(i18n::t(Key::DockerInspectGeneral))
             .expect("group")
             .bounds();
-        let copy = ui
-            .find(i18n::t(Key::DockerInspectCopyJson))
-            .expect("copy button")
-            .bounds();
         let empty = ui
             .find(i18n::t(Key::DockerInspectShowEmpty))
             .expect("show empty switch")
@@ -915,12 +1170,10 @@ mod tests {
                 <= NARROW - PADDING.right - spacing::SPACE_3 + 0.5,
             "{value:?} stays clear of the scrollbar"
         );
-        for control in [copy, empty] {
-            assert!(
-                control.x + control.width <= NARROW - PADDING.right + 0.5,
-                "{control:?} stays inside the padding"
-            );
-        }
+        assert!(
+            empty.x + empty.width <= NARROW - PADDING.right + 0.5,
+            "{empty:?} stays inside the padding"
+        );
     }
 
     #[test]

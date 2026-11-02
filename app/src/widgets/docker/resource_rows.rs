@@ -10,7 +10,8 @@ use otty_ui_kit::components::data_table::{
 use otty_ui_kit::components::status_badge::StatusTone;
 
 use super::format::{NO_VALUE, age_text, ports_text, short_id, size_text};
-use super::overview::{LinkTarget, Piece, ports_value};
+use super::links::LinkTarget;
+use super::overview::{Piece, ports_value};
 use super::sort::is_sortable;
 use super::types::{ResourceKind, image_name};
 use crate::i18n::{self, Key};

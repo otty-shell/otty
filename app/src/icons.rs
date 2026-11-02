@@ -64,6 +64,8 @@ pub(crate) const RESUME: &[u8] = include_bytes!("../../assets/svg/resume.svg");
 pub(crate) const TRASH: &[u8] = include_bytes!("../../assets/svg/trash.svg");
 /// Docker Shell action: a prompt.
 pub(crate) const SHELL: &[u8] = include_bytes!("../../assets/svg/shell.svg");
+/// Copy to the clipboard: one sheet over another.
+pub(crate) const COPY: &[u8] = include_bytes!("../../assets/svg/copy.svg");
 /// Link that opens outside the app: an arrow leaving a square.
 pub(crate) const EXTERNAL_LINK: &[u8] =
     include_bytes!("../../assets/svg/external-link.svg");

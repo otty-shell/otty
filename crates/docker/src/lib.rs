@@ -42,7 +42,8 @@ pub use crate::candidates::{CandidateSource, SocketCandidate};
 pub use crate::cli::CliPresence;
 pub use crate::connection::{Engine, EngineError, Resources};
 pub use crate::container::{
-    Container, ContainerNetwork, ContainerState, Mount, MountKind, PortMapping,
+    COMPOSE_PROJECT_LABEL, Container, ContainerNetwork, ContainerState, Mount,
+    MountKind, PortMapping,
 };
 pub use crate::diagnosis::Diagnosis;
 pub use crate::discovery::{Discovery, discover};

@@ -8,7 +8,7 @@ use otty_docker::{
 use super::actions::{ActionRequest, RowAction};
 use super::forms::FormField;
 use super::inspector::{InspectTarget, InspectorTab, LogTarget};
-use super::overview::LinkTarget;
+use super::links::LinkTarget;
 use super::run_form::RunEdit;
 use super::types::{LoadedList, LoadedLists, Place, ResourceKind};
 
