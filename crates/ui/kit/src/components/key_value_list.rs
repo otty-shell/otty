@@ -9,7 +9,7 @@ use crate::palette::UiPalette;
 use crate::{fonts, size, spacing};
 
 /// Text size of keys and values (`font-size: 12.5px`).
-const TEXT_SIZE: f32 = 12.5;
+pub(super) const TEXT_SIZE: f32 = 12.5;
 
 /// Two columns: muted keys at a fixed width, mono values that wrap. Below
 /// [`size::KEY_VALUE_STACK_BELOW`] wide, each value sits under its key
@@ -136,7 +136,7 @@ impl<Message> ValuePart<Message> {
 }
 
 /// Draws one entry: the key left of its value, or above it when `stacked`.
-fn entry_view<'a, Message: Clone + 'a>(
+pub(super) fn entry_view<'a, Message: Clone + 'a>(
     key: &str,
     parts: &[ValuePart<Message>],
     stacked: bool,

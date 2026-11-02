@@ -521,6 +521,14 @@ pub(crate) enum Key {
     TplDockerLogsFailed,
     /// Notice when the inspect JSON could not be loaded. Placeholder: `{error}`.
     TplDockerInspectFailed,
+    /// Title of the group of top-level values in the inspect tree.
+    DockerInspectGeneral,
+    /// Label of the switch that shows empty values in the inspect tree.
+    DockerInspectShowEmpty,
+    /// Label of the switch that shows the inspect JSON instead of the tree.
+    DockerInspectRawJson,
+    /// Button that copies the inspect JSON.
+    DockerInspectCopyJson,
 
     // Run container form (spec Decision 18).
     /// "Run" action on an image and the action button of the Run form.
@@ -868,7 +876,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 403] = [
+    pub(super) const ALL: [Self; 407] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1110,6 +1118,10 @@ impl Key {
         Self::TplDockerLogsNewLines,
         Self::TplDockerLogsFailed,
         Self::TplDockerInspectFailed,
+        Self::DockerInspectGeneral,
+        Self::DockerInspectShowEmpty,
+        Self::DockerInspectRawJson,
+        Self::DockerInspectCopyJson,
         Self::DockerActionRun,
         Self::DockerRunSubtitle,
         Self::DockerRunSectionOptions,

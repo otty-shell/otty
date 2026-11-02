@@ -15,6 +15,7 @@ pub mod chip;
 pub mod command_box;
 pub mod command_palette;
 pub mod data_table;
+pub mod data_tree;
 pub mod dialog;
 pub mod divider;
 mod ellipsis_text;

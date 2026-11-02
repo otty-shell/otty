@@ -2,15 +2,20 @@
 //! with its action buttons, its tabs (Overview, Logs, Inspect) and the open
 //! tab.
 
+use std::collections::BTreeSet;
+
 use iced::widget::text::IntoFragment;
 use iced::widget::{Row, column, container, row, scrollable, svg, text};
 use iced::{Alignment, Element, Length, Padding};
+use otty_ui_kit::components::button::{Button, ButtonSize};
+use otty_ui_kit::components::data_tree::DataTree;
 use otty_ui_kit::components::icon_button::{IconButton, IconTone};
 use otty_ui_kit::components::inspector_header::InspectorHeader;
 use otty_ui_kit::components::inspector_tabs::inspector_tabs;
 use otty_ui_kit::components::key_value_list::{KeyValueList, ValuePart};
 use otty_ui_kit::components::log_view::{LogView, LogViewState};
 use otty_ui_kit::components::notice::Notice;
+use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::status_badge::StatusBadge;
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::palette::UiPalette;
@@ -19,8 +24,9 @@ use otty_ui_kit::{fonts, spacing, typography};
 use super::super::action_model::ActionsViewModel;
 use super::super::actions::RowAction;
 use super::super::event::DockerIntent;
+use super::super::inspect_tree::InspectTree;
 use super::super::inspector_tabs::{
-    InspectContent, InspectorTabsViewModel, TabContent,
+    InspectContent, InspectLoadedViewModel, InspectorTabsViewModel, TabContent,
 };
 use super::super::model::InspectorViewModel;
 use super::super::overview::Piece;
@@ -173,12 +179,88 @@ fn tab_body<'a>(
         TabContent::Inspect(InspectContent::Failed(error)) => {
             error_notice(i18n::docker_inspect_failed(error), palette)
         },
-        TabContent::Inspect(InspectContent::Loaded(json)) => {
-            LogView::new(json, palette)
-                .on_action(DockerIntent::InspectAction)
-                .into()
+        TabContent::Inspect(InspectContent::Loaded(loaded)) => {
+            inspect_body(loaded, palette)
         },
     }
+}
+
+/// The loaded Inspect tab: its switches and Copy JSON above the tree, or
+/// above the raw JSON when there is no tree to show.
+fn inspect_body<'a>(
+    loaded: InspectLoadedViewModel<'a>,
+    palette: &UiPalette,
+) -> Element<'a, DockerIntent> {
+    let mut controls = row![
+        Switch::new(loaded.tree.is_none(), palette)
+            .label(i18n::t(Key::DockerInspectRawJson))
+            .on_toggle(DockerIntent::InspectRawJsonToggled)
+    ]
+    .spacing(spacing::SPACE_4)
+    .align_y(Alignment::Center);
+    if loaded.tree.is_some() {
+        controls = controls.push(
+            Switch::new(loaded.shows_empty, palette)
+                .label(i18n::t(Key::DockerInspectShowEmpty))
+                .on_toggle(DockerIntent::InspectShowEmptyToggled),
+        );
+    }
+    controls = controls.push(
+        Button::new(i18n::t(Key::DockerInspectCopyJson), palette)
+            .size(ButtonSize::Small)
+            .on_press(DockerIntent::CopyInspectJson),
+    );
+
+    let body: Element<'a, DockerIntent> = match loaded.tree {
+        Some(tree) => {
+            // The thin bar draws over the content: the padding keeps the
+            // values clear of it.
+            let rows =
+                container(data_tree(tree, loaded.open_sections, palette))
+                    .padding(Padding {
+                        right: spacing::SPACE_3,
+                        ..Padding::ZERO
+                    });
+
+            scrollable(rows)
+                .direction(scrollbar::vertical())
+                .style(scrollbar::style(palette))
+                .height(Length::Fill)
+                .into()
+        },
+        None => LogView::new(loaded.json, palette)
+            .on_action(DockerIntent::InspectAction)
+            .into(),
+    };
+
+    column![controls.wrap().vertical_spacing(spacing::SPACE_2), body]
+        .spacing(spacing::SPACE_3)
+        .height(Length::Fill)
+        .into()
+}
+
+/// The inspect rows as a kit tree: the General group (when it has rows),
+/// then the sections with their engine-given titles.
+fn data_tree(
+    tree: InspectTree,
+    open_sections: &BTreeSet<String>,
+    palette: &UiPalette,
+) -> DataTree<DockerIntent> {
+    let mut data_tree = DataTree::new(palette);
+    if !tree.general.is_empty() {
+        data_tree =
+            data_tree.group(i18n::t(Key::DockerInspectGeneral), tree.general);
+    }
+
+    for section in tree.sections {
+        let is_open = open_sections.contains(&section.title);
+        let on_toggle =
+            DockerIntent::InspectSectionToggled(section.title.clone());
+        data_tree =
+            data_tree.section(section.title, is_open, section.rows, on_toggle);
+    }
+
+    data_tree
 }
 
 /// A piece of an Overview value as a kit value part: a link follows its
@@ -243,6 +325,7 @@ fn error_notice<'a>(
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
+    use otty_ui_kit::components::data_tree::DataRow;
     use otty_ui_kit::components::log_view::LogViewState;
     use otty_ui_kit::components::status_badge::StatusTone;
 
@@ -252,8 +335,8 @@ mod tests {
         ActionButton, ActionsViewModel,
     };
     use crate::widgets::docker::actions::RowAction;
+    use crate::widgets::docker::inspect_tree::InspectSection;
     use crate::widgets::docker::inspector::InspectorTab;
-    use crate::widgets::docker::inspector_tabs::{InspectContent, TabContent};
     use crate::widgets::docker::overview::{Field, LinkTarget};
     use crate::widgets::docker::types::ResourceKind;
 
@@ -577,26 +660,256 @@ mod tests {
             .expect("error notice");
     }
 
-    #[test]
-    fn the_loaded_json_renders_in_both_themes() {
-        let mut themes = ThemeManager::new();
+    /// `lines` as the view of the inspect JSON.
+    fn json_lines(lines: &[&str]) -> LogViewState {
         let mut json = LogViewState::new();
-        json.push_lines(["{", "  \"Id\": \"850b\"", "}"]);
+        json.push_lines(lines.iter().copied());
+        json
+    }
+
+    /// A General row, an open State section and a closed Config section.
+    fn fixture_tree() -> InspectTree {
+        InspectTree {
+            general: vec![DataRow::new(0, "Id", "850b")],
+            sections: vec![
+                InspectSection {
+                    title: String::from("State"),
+                    rows: vec![DataRow::new(0, "Status", "running")],
+                },
+                InspectSection {
+                    title: String::from("Config"),
+                    rows: vec![DataRow::new(0, "Image", "busybox:1.37")],
+                },
+            ],
+        }
+    }
+
+    /// The inspector on the Inspect tab with `tree` (`None`: raw JSON) in a
+    /// narrow panel; only State is open.
+    fn inspect_view<'a>(
+        json: &'a LogViewState,
+        tree: Option<InspectTree>,
+        open_sections: &'a BTreeSet<String>,
+        theme: ThemeProps<'a>,
+    ) -> Element<'a, DockerIntent> {
+        narrow(view(InspectorProps {
+            vm: header(),
+            actions: None,
+            tabs: container_tabs(
+                InspectorTab::Inspect,
+                TabContent::Inspect(InspectContent::Loaded(
+                    InspectLoadedViewModel {
+                        json,
+                        tree,
+                        open_sections,
+                        shows_empty: false,
+                    },
+                )),
+            ),
+            theme,
+        }))
+    }
+
+    fn only_state_open() -> BTreeSet<String> {
+        BTreeSet::from([String::from("State")])
+    }
+
+    #[test]
+    fn the_inspect_tree_shows_general_and_the_open_section_in_both_themes() {
+        let mut themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
 
         for theme in BuiltinTheme::ALL {
             themes.set_theme(theme);
-            let mut ui = simulator(view(InspectorProps {
-                vm: header(),
-                actions: None,
-                tabs: container_tabs(
-                    InspectorTab::Inspect,
-                    TabContent::Inspect(InspectContent::Loaded(&json)),
-                ),
-                theme: ThemeProps::new(themes.current()),
-            }));
+            let mut ui = simulator(inspect_view(
+                &json,
+                Some(fixture_tree()),
+                &open,
+                ThemeProps::new(themes.current()),
+            ));
 
-            ui.find("otty-fx-web-1").expect("the header stays");
-            assert!(ui.find(i18n::t(Key::DockerLoading)).is_err());
+            ui.find(i18n::t(Key::DockerInspectGeneral)).expect("group");
+            ui.find("850b").expect("general value");
+            ui.find("running").expect("value of the open section");
+            ui.find("Config").expect("title of the closed section");
+            assert!(ui.find("busybox:1.37").is_err());
+        }
+    }
+
+    #[test]
+    fn an_inspect_tree_without_general_values_shows_no_general_title() {
+        let themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+        let tree = InspectTree {
+            general: Vec::new(),
+            ..fixture_tree()
+        };
+        let mut ui = simulator(inspect_view(
+            &json,
+            Some(tree),
+            &open,
+            ThemeProps::new(themes.current()),
+        ));
+
+        ui.find("State").expect("the section stays");
+        assert!(ui.find(i18n::t(Key::DockerInspectGeneral)).is_err());
+    }
+
+    #[test]
+    fn pressing_a_section_title_asks_to_toggle_that_section() {
+        let themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+        let mut ui = simulator(inspect_view(
+            &json,
+            Some(fixture_tree()),
+            &open,
+            ThemeProps::new(themes.current()),
+        ));
+
+        ui.click("Config").expect("closed section");
+        ui.click("State").expect("open section");
+
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            vec![
+                DockerIntent::InspectSectionToggled(String::from("Config")),
+                DockerIntent::InspectSectionToggled(String::from("State")),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_inspect_controls_send_their_intents() {
+        let themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+        let mut ui = simulator(inspect_view(
+            &json,
+            Some(fixture_tree()),
+            &open,
+            ThemeProps::new(themes.current()),
+        ));
+
+        ui.click(i18n::t(Key::DockerInspectRawJson))
+            .expect("raw json switch");
+        ui.click(i18n::t(Key::DockerInspectShowEmpty))
+            .expect("show empty switch");
+        ui.click(i18n::t(Key::DockerInspectCopyJson))
+            .expect("copy button");
+
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            vec![
+                DockerIntent::InspectRawJsonToggled(true),
+                DockerIntent::InspectShowEmptyToggled(true),
+                DockerIntent::CopyInspectJson,
+            ]
+        );
+    }
+
+    #[test]
+    fn raw_json_replaces_the_tree_and_keeps_its_switch_and_copy() {
+        let themes = ThemeManager::new();
+        let json = json_lines(&["{", "  \"Id\": \"850b\"", "}"]);
+        let open = only_state_open();
+        let mut ui = simulator(inspect_view(
+            &json,
+            None,
+            &open,
+            ThemeProps::new(themes.current()),
+        ));
+
+        assert!(ui.find("State").is_err());
+        assert!(ui.find(i18n::t(Key::DockerInspectGeneral)).is_err());
+        assert!(ui.find(i18n::t(Key::DockerInspectShowEmpty)).is_err());
+        ui.click(i18n::t(Key::DockerInspectRawJson))
+            .expect("raw json switch");
+        ui.click(i18n::t(Key::DockerInspectCopyJson))
+            .expect("copy button");
+
+        assert_eq!(
+            ui.into_messages().collect::<Vec<_>>(),
+            vec![
+                DockerIntent::InspectRawJsonToggled(false),
+                DockerIntent::CopyInspectJson,
+            ]
+        );
+    }
+
+    /// Draws raw JSON of `lines` and checks it against the picture saved in
+    /// `reference`; the first call saves it. A text editor is not reached by
+    /// widget queries.
+    fn raw_json_matches(lines: &[&str], reference: &std::path::Path) -> bool {
+        let themes = ThemeManager::new();
+        let json = json_lines(lines);
+        let open = BTreeSet::new();
+        let mut ui = simulator(inspect_view(
+            &json,
+            None,
+            &open,
+            ThemeProps::new(themes.current()),
+        ));
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("inspector should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    #[test]
+    fn raw_json_draws_the_json_text() {
+        let reference = std::env::temp_dir()
+            .join(format!("otty-docker-raw-json-{}", std::process::id()))
+            .join("raw");
+
+        assert!(raw_json_matches(&["{\"Id\": \"850b\"}"], &reference));
+        assert!(!raw_json_matches(&["{\"Id\": \"9c21\"}"], &reference));
+    }
+
+    #[test]
+    fn the_inspect_tree_and_its_controls_stay_inside_the_panel_padding() {
+        let themes = ThemeManager::new();
+        let json = json_lines(&["{}"]);
+        let open = only_state_open();
+        let mut ui = simulator(inspect_view(
+            &json,
+            Some(fixture_tree()),
+            &open,
+            ThemeProps::new(themes.current()),
+        ));
+
+        let general = ui
+            .find(i18n::t(Key::DockerInspectGeneral))
+            .expect("group")
+            .bounds();
+        let copy = ui
+            .find(i18n::t(Key::DockerInspectCopyJson))
+            .expect("copy button")
+            .bounds();
+        let empty = ui
+            .find(i18n::t(Key::DockerInspectShowEmpty))
+            .expect("show empty switch")
+            .bounds();
+
+        let value = ui.find("850b").expect("general value").bounds();
+
+        assert!(
+            (general.x - PADDING.left).abs() < 0.5,
+            "{general:?} starts at the side padding"
+        );
+        assert!(
+            value.x + value.width
+                <= NARROW - PADDING.right - spacing::SPACE_3 + 0.5,
+            "{value:?} stays clear of the scrollbar"
+        );
+        for control in [copy, empty] {
+            assert!(
+                control.x + control.width <= NARROW - PADDING.right + 0.5,
+                "{control:?} stays inside the padding"
+            );
         }
     }
 

@@ -6,6 +6,7 @@ pub(crate) mod form_flow;
 pub(crate) mod form_model;
 pub(crate) mod format;
 pub(crate) mod forms;
+pub(crate) mod inspect_tree;
 pub(crate) mod inspector;
 pub(crate) mod inspector_tabs;
 mod logs;

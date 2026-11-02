@@ -2,12 +2,15 @@
 //! followed logs of the selected container and the inspect JSON of the
 //! selected row.
 
+use std::collections::BTreeSet;
 use std::fmt;
 
 use iced::widget::text_editor::{Action, Motion};
 use otty_docker::{EngineAddress, EngineInfo};
 use otty_ui_kit::components::log_view::LogViewState;
+use serde_json::Value;
 
+use super::inspect_tree::inspect_tree;
 use super::types::ResourceKind;
 use crate::i18n::{self, Key};
 
@@ -34,7 +37,7 @@ pub(crate) enum InspectorTab {
     Overview,
     /// The followed logs of the selected container.
     Logs,
-    /// The engine's inspect JSON of the selected row.
+    /// The engine's inspect answer of the selected row, as a tree or JSON.
     Inspect,
 }
 
@@ -168,12 +171,58 @@ impl fmt::Debug for ContainerLogs {
     }
 }
 
+/// The inspect answer of one row and how its tree is open.
+pub(crate) struct LoadedInspect {
+    json: LogViewState,
+    value: Value,
+    open_sections: BTreeSet<String>,
+}
+
+impl LoadedInspect {
+    /// The pretty-printed JSON, shown from its first line.
+    pub(crate) fn json(&self) -> &LogViewState {
+        &self.json
+    }
+
+    /// The parsed JSON; `Null` when the answer does not parse.
+    pub(crate) fn value(&self) -> &Value {
+        &self.value
+    }
+
+    /// The titles of the open sections of the tree.
+    pub(crate) fn open_sections(&self) -> &BTreeSet<String> {
+        &self.open_sections
+    }
+
+    /// The answer `json`, with the first shown section of its tree open.
+    fn new(json: &str, shows_empty: bool) -> Self {
+        let value = serde_json::from_str(json).unwrap_or(Value::Null);
+
+        let first_section = inspect_tree(&value, shows_empty)
+            .and_then(|tree| tree.sections.into_iter().next())
+            .map(|section| section.title);
+
+        Self {
+            json: json_view(json),
+            value,
+            open_sections: first_section.into_iter().collect(),
+        }
+    }
+
+    /// Open the section `title`, or close it when it is open.
+    fn toggle_section(&mut self, title: &str) {
+        if !self.open_sections.remove(title) {
+            self.open_sections.insert(title.to_string());
+        }
+    }
+}
+
 /// Load state of the inspect JSON.
 pub(crate) enum InspectLoad {
     /// Asked for, not here yet.
     Loading,
-    /// The pretty-printed JSON, shown from its first line.
-    Loaded(LogViewState),
+    /// The answer: the JSON and its tree.
+    Loaded(LoadedInspect),
     /// The engine's message.
     Failed(String),
 }
@@ -182,9 +231,9 @@ impl fmt::Debug for InspectLoad {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Loading => formatter.write_str("Loading"),
-            Self::Loaded(json) => formatter
+            Self::Loaded(loaded) => formatter
                 .debug_tuple("Loaded")
-                .field(&json.line_count())
+                .field(&loaded.json.line_count())
                 .finish(),
             Self::Failed(message) => {
                 formatter.debug_tuple("Failed").field(message).finish()
@@ -218,12 +267,24 @@ pub(crate) struct InspectorState {
     tab: InspectorTab,
     logs: Option<ContainerLogs>,
     inspect: Option<InspectData>,
+    is_raw_json: bool,
+    shows_empty: bool,
 }
 
 impl InspectorState {
     /// The open tab.
     pub(crate) fn tab(&self) -> InspectorTab {
         self.tab
+    }
+
+    /// Whether the Inspect tab shows the raw JSON instead of the tree.
+    pub(crate) fn is_raw_json(&self) -> bool {
+        self.is_raw_json
+    }
+
+    /// Whether the inspect tree shows empty values.
+    pub(crate) fn shows_empty(&self) -> bool {
+        self.shows_empty
     }
 
     /// The followed logs; `None` while no logs are followed.
@@ -235,6 +296,14 @@ impl InspectorState {
     /// loads once per selection.
     pub(crate) fn inspect(&self) -> Option<&InspectData> {
         self.inspect.as_ref()
+    }
+
+    /// The text of the loaded inspect JSON, for the clipboard.
+    pub(crate) fn inspect_json_text(&self) -> Option<String> {
+        match self.inspect()?.load() {
+            InspectLoad::Loaded(loaded) => Some(loaded.json.text()),
+            _ => None,
+        }
     }
 
     /// Open `tab`.
@@ -334,20 +403,58 @@ impl InspectorState {
         };
 
         inspect.load = match result {
-            Ok(json) => InspectLoad::Loaded(json_view(&json)),
+            Ok(json) => {
+                InspectLoad::Loaded(LoadedInspect::new(&json, self.shows_empty))
+            },
             Err(message) => InspectLoad::Failed(message),
         };
         true
     }
 
+    /// Forget the kept JSON, with its open sections, when `selected` is not
+    /// its row: the open state lasts until the selection changes.
+    pub(super) fn forget_inspect_unless(
+        &mut self,
+        selected: Option<&InspectTarget>,
+    ) {
+        let is_other = self
+            .inspect
+            .as_ref()
+            .is_some_and(|inspect| Some(&inspect.target) != selected);
+        if is_other {
+            self.inspect = None;
+        }
+    }
+
     /// Apply a selection or scroll action of the inspect view.
     pub(super) fn perform_inspect_action(&mut self, action: Action) {
-        if let Some(InspectData {
-            load: InspectLoad::Loaded(json),
-            ..
-        }) = self.inspect.as_mut()
-        {
-            json.perform(action);
+        if let Some(loaded) = self.loaded_inspect_mut() {
+            loaded.json.perform(action);
+        }
+    }
+
+    /// Open the inspect section `title`, or close it when it is open.
+    pub(super) fn toggle_inspect_section(&mut self, title: &str) {
+        if let Some(loaded) = self.loaded_inspect_mut() {
+            loaded.toggle_section(title);
+        }
+    }
+
+    /// Turn the Show empty switch of the inspect tree on or off.
+    pub(super) fn set_shows_empty(&mut self, shows_empty: bool) {
+        self.shows_empty = shows_empty;
+    }
+
+    /// Turn the Raw JSON switch of the Inspect tab on or off.
+    pub(super) fn set_raw_json(&mut self, is_raw_json: bool) {
+        self.is_raw_json = is_raw_json;
+    }
+
+    /// The loaded inspect answer, if any.
+    fn loaded_inspect_mut(&mut self) -> Option<&mut LoadedInspect> {
+        match self.inspect.as_mut()?.load {
+            InspectLoad::Loaded(ref mut loaded) => Some(loaded),
+            _ => None,
         }
     }
 

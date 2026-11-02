@@ -80,6 +80,14 @@ pub(crate) enum DockerIntent {
     },
     /// Selection or scroll in the inspect view.
     InspectAction(Action),
+    /// The title of this inspect section was pressed: open or close it.
+    InspectSectionToggled(String),
+    /// The Show empty switch of the inspect tree was turned on or off.
+    InspectShowEmptyToggled(bool),
+    /// The Raw JSON switch of the Inspect tab was turned on or off.
+    InspectRawJsonToggled(bool),
+    /// Copy the inspect JSON to the clipboard (the Copy JSON button).
+    CopyInspectJson,
     // Live updates from engine events.
     /// An engine event changed this list of this engine (the events watch
     /// sends it at most once per 500 ms per list).

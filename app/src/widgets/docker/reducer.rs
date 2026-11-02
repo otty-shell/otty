@@ -120,6 +120,24 @@ fn reduce_intent(
             state.inspector_mut().perform_inspect_action(action);
             Task::none()
         },
+        DockerIntent::InspectSectionToggled(title) => {
+            state.inspector_mut().toggle_inspect_section(&title);
+            Task::none()
+        },
+        DockerIntent::InspectShowEmptyToggled(is_on) => {
+            state.inspector_mut().set_shows_empty(is_on);
+            Task::none()
+        },
+        DockerIntent::InspectRawJsonToggled(is_on) => {
+            state.inspector_mut().set_raw_json(is_on);
+            Task::none()
+        },
+        DockerIntent::CopyInspectJson => {
+            match state.inspector().inspect_json_text() {
+                Some(json) => effect(DockerEffect::CopyToClipboard(json)),
+                None => Task::none(),
+            }
+        },
         DockerIntent::ListChanged { engine, resource } => {
             reload_changed_list(state, &engine, resource)
         },
@@ -213,10 +231,16 @@ fn reduce_intent(
 /// Make the inspector match the state after an intent: follow the logs of
 /// the selected container only while the Logs tab is open in active Docker
 /// mode, and load the inspect JSON once per selection when the Inspect tab
-/// is open. A tab, selection or mode change stops the old logs.
+/// is open. A tab, selection or mode change stops the old logs; a selection
+/// change forgets the old JSON and its open sections.
 fn sync_inspector(state: &mut DockerState) -> Task<DockerEvent> {
     let log_target = state.wanted_log_target();
     state.inspector_mut().follow_logs(log_target);
+
+    let selected = state.selected_inspect_target();
+    state
+        .inspector_mut()
+        .forget_inspect_unless(selected.as_ref());
 
     let Some((engine, target)) = state.wanted_inspect_target() else {
         return Task::none();
@@ -1798,7 +1822,7 @@ mod tests {
         let InspectLoad::Loaded(shown) = inspect.load() else {
             panic!("expected the json, got {:?}", inspect.load());
         };
-        assert_eq!(shown.text(), json);
+        assert_eq!(shown.json().text(), json);
     }
 
     #[test]
@@ -1830,6 +1854,198 @@ mod tests {
 
         assert!(effects.is_empty());
         assert!(state.inspector().inspect().is_none());
+    }
+
+    // Inspect as a tree (ticket 32).
+
+    /// A State, a Config and a Mounts section.
+    const TREE_JSON: &str = r#"{
+        "Id": "850b",
+        "Mounts": [{ "Type": "bind" }],
+        "Config": { "Image": "busybox" },
+        "State": { "Status": "running" }
+    }"#;
+
+    /// Docker mode on the Inspect tab of the first container, with `json`
+    /// loaded.
+    fn state_with_inspect(json: &str) -> DockerState {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Inspect);
+        load_inspect(&mut state, 0, json);
+        state
+    }
+
+    fn load_inspect(state: &mut DockerState, index: usize, json: &str) {
+        let _ = reduce(
+            state,
+            DockerIntent::InspectLoaded {
+                target: container_inspect(index),
+                result: Ok(json.to_string()),
+            },
+        );
+    }
+
+    fn toggle_section(state: &mut DockerState, title: &str) {
+        let _ = reduce(
+            state,
+            DockerIntent::InspectSectionToggled(title.to_string()),
+        );
+    }
+
+    fn open_sections(state: &DockerState) -> Vec<String> {
+        let inspect = state.inspector().inspect().expect("inspect");
+        let InspectLoad::Loaded(loaded) = inspect.load() else {
+            panic!("expected the json, got {:?}", inspect.load());
+        };
+
+        loaded.open_sections().iter().cloned().collect()
+    }
+
+    #[test]
+    fn only_the_first_section_is_open_when_the_json_arrives() {
+        let state = state_with_inspect(TREE_JSON);
+
+        assert_eq!(open_sections(&state), vec!["State"]);
+    }
+
+    #[test]
+    fn the_first_section_shown_is_the_open_one() {
+        let state = state_with_inspect(
+            r#"{ "State": { "Error": "" }, "Config": { "Image": "busybox" } }"#,
+        );
+
+        assert_eq!(open_sections(&state), vec!["Config"]);
+    }
+
+    #[test]
+    fn pressing_a_section_title_opens_and_closes_it() {
+        let mut state = state_with_inspect(TREE_JSON);
+
+        toggle_section(&mut state, "Config");
+        let both = open_sections(&state);
+        toggle_section(&mut state, "State");
+        let config = open_sections(&state);
+        toggle_section(&mut state, "Config");
+        let none = open_sections(&state);
+
+        assert_eq!(both, vec!["Config", "State"]);
+        assert_eq!(config, vec!["Config"]);
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn pressing_a_section_title_before_the_json_arrives_changes_nothing() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Inspect);
+
+        toggle_section(&mut state, "State");
+
+        let inspect = state.inspector().inspect().expect("inspect");
+        assert!(matches!(inspect.load(), InspectLoad::Loading));
+    }
+
+    #[test]
+    fn the_open_sections_are_kept_over_a_tab_change() {
+        let mut state = state_with_inspect(TREE_JSON);
+        toggle_section(&mut state, "Mounts");
+
+        let _ = select_tab(&mut state, InspectorTab::Overview);
+        let back = select_tab(&mut state, InspectorTab::Inspect);
+
+        assert!(back.is_empty());
+        assert_eq!(open_sections(&state), vec!["Mounts", "State"]);
+    }
+
+    #[test]
+    fn another_selection_starts_with_the_default_sections() {
+        let mut state = state_with_inspect(TREE_JSON);
+        toggle_section(&mut state, "Config");
+        toggle_section(&mut state, "State");
+
+        let position = state.shown_position(1);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
+        load_inspect(&mut state, 1, TREE_JSON);
+
+        assert_eq!(open_sections(&state), vec!["State"]);
+    }
+
+    #[test]
+    fn a_selection_changed_on_another_tab_also_forgets_the_open_sections() {
+        let mut state = state_with_inspect(TREE_JSON);
+        toggle_section(&mut state, "Config");
+        let _ = select_tab(&mut state, InspectorTab::Overview);
+
+        let other = state.shown_position(1);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(other));
+        let first = state.shown_position(0);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(first));
+        let opened = select_tab(&mut state, InspectorTab::Inspect);
+        load_inspect(&mut state, 0, TREE_JSON);
+
+        assert_eq!(
+            opened,
+            vec![inspect_of(ResourceKind::Containers, &container_id(0))]
+        );
+        assert_eq!(open_sections(&state), vec!["State"]);
+    }
+
+    #[test]
+    fn the_raw_json_and_show_empty_switches_stay_over_a_new_selection() {
+        let mut state = state_with_inspect(TREE_JSON);
+
+        let _ = reduce(&mut state, DockerIntent::InspectRawJsonToggled(true));
+        let _ = reduce(&mut state, DockerIntent::InspectShowEmptyToggled(true));
+        let position = state.shown_position(1);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
+
+        assert!(state.inspector().is_raw_json());
+        assert!(state.inspector().shows_empty());
+
+        let _ = reduce(&mut state, DockerIntent::InspectRawJsonToggled(false));
+        let _ =
+            reduce(&mut state, DockerIntent::InspectShowEmptyToggled(false));
+
+        assert!(!state.inspector().is_raw_json());
+        assert!(!state.inspector().shows_empty());
+    }
+
+    #[test]
+    fn copy_json_asks_for_the_clipboard_with_the_json_text() {
+        let mut state = state_with_inspect("{\n  \"Id\": \"850b\"\n}");
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::CopyInspectJson));
+
+        assert_eq!(
+            effects,
+            vec![DockerEffect::CopyToClipboard(String::from(
+                "{\n  \"Id\": \"850b\"\n}"
+            ))]
+        );
+    }
+
+    #[test]
+    fn copy_json_does_nothing_before_the_json_arrives() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Inspect);
+
+        let effects =
+            effects(reduce(&mut state, DockerIntent::CopyInspectJson));
+
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn an_answer_that_is_not_an_object_keeps_its_text_and_opens_no_section() {
+        let mut state = state_with_inspect("not json");
+
+        let copied = effects(reduce(&mut state, DockerIntent::CopyInspectJson));
+
+        assert!(open_sections(&state).is_empty());
+        assert_eq!(
+            copied,
+            vec![DockerEffect::CopyToClipboard(String::from("not json"))]
+        );
     }
 
     // Live updates from engine events (ticket 16).

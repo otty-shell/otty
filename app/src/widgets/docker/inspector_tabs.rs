@@ -1,8 +1,11 @@
 //! View model of the inspector tabs: the tabs of the selected row, the open
 //! one and what it shows.
 
+use std::collections::BTreeSet;
+
 use otty_ui_kit::components::log_view::LogViewState;
 
+use super::inspect_tree::{InspectTree, inspect_tree};
 use super::inspector::{InspectLoad, InspectTarget, InspectorTab};
 use super::overview::{
     self, Field, container_fields, network_fields, volume_fields,
@@ -27,7 +30,7 @@ pub(crate) enum TabContent<'a> {
         lines: Option<&'a LogViewState>,
         error: Option<&'a str>,
     },
-    /// The inspect JSON of the selected row.
+    /// The inspect answer of the selected row.
     Inspect(InspectContent<'a>),
 }
 
@@ -35,10 +38,23 @@ pub(crate) enum TabContent<'a> {
 pub(crate) enum InspectContent<'a> {
     /// The JSON is on its way.
     Loading,
-    /// The pretty-printed JSON.
-    Loaded(&'a LogViewState),
+    /// The answer, as a tree or as JSON.
+    Loaded(InspectLoadedViewModel<'a>),
     /// The engine's message.
     Failed(&'a str),
+}
+
+/// A loaded Inspect tab.
+pub(crate) struct InspectLoadedViewModel<'a> {
+    /// The pretty-printed JSON.
+    pub(crate) json: &'a LogViewState,
+    /// The rows to show; `None` shows the JSON instead: the Raw JSON switch
+    /// is on, or the answer is not a JSON object.
+    pub(crate) tree: Option<InspectTree>,
+    /// The titles of the open sections of the tree.
+    pub(crate) open_sections: &'a BTreeSet<String>,
+    /// Whether the tree shows empty values.
+    pub(crate) shows_empty: bool,
 }
 
 /// The tabs of the selected row of the open list; `None` when nothing is
@@ -107,8 +123,24 @@ fn inspect_content<'a>(
         return InspectContent::Loading;
     };
 
+    let inspector = state.inspector();
+
     match inspect.load() {
-        InspectLoad::Loaded(json) => InspectContent::Loaded(json),
+        InspectLoad::Loaded(loaded) => {
+            let shows_empty = inspector.shows_empty();
+            let tree = if inspector.is_raw_json() {
+                None
+            } else {
+                inspect_tree(loaded.value(), shows_empty)
+            };
+
+            InspectContent::Loaded(InspectLoadedViewModel {
+                json: loaded.json(),
+                tree,
+                open_sections: loaded.open_sections(),
+                shows_empty,
+            })
+        },
         InspectLoad::Failed(message) => InspectContent::Failed(message),
         _ => InspectContent::Loading,
     }
@@ -117,6 +149,7 @@ fn inspect_content<'a>(
 #[cfg(test)]
 mod tests {
     use otty_docker::{EngineInfo, EngineKind, fixtures};
+    use otty_ui_kit::components::data_tree::DataRow;
 
     use super::*;
     use crate::widgets::docker::event::DockerIntent;
@@ -269,16 +302,11 @@ mod tests {
         assert_eq!(error, Some("stream closed"));
     }
 
-    #[test]
-    fn the_inspect_tab_shows_loading_then_the_json() {
+    /// The Inspect tab of the first container with `json` loaded.
+    fn with_inspect(json: &str) -> DockerState {
         let mut state = loaded();
         let resources = fixtures::resources(EngineKind::Docker);
         select_tab(&mut state, InspectorTab::Inspect);
-        let loading = matches!(
-            inspector_tabs(&state).map(|vm| vm.content),
-            Some(TabContent::Inspect(InspectContent::Loading))
-        );
-
         let _ = reduce(
             &mut state,
             DockerIntent::InspectLoaded {
@@ -287,17 +315,98 @@ mod tests {
                     ResourceKind::Containers,
                     resources.containers()[0].id(),
                 ),
-                result: Ok(String::from("{\n  \"Id\": \"850b\"\n}")),
+                result: Ok(json.to_string()),
             },
+        );
+        state
+    }
+
+    /// Runs `check` on the loaded Inspect tab of `state`.
+    fn check_loaded(
+        state: &DockerState,
+        check: impl FnOnce(InspectLoadedViewModel<'_>),
+    ) {
+        let vm = inspector_tabs(state).expect("a selected container");
+        let TabContent::Inspect(InspectContent::Loaded(loaded)) = vm.content
+        else {
+            panic!("expected the loaded inspect");
+        };
+
+        check(loaded);
+    }
+
+    #[test]
+    fn the_inspect_tab_shows_loading_then_the_tree_and_the_json() {
+        let mut state = loaded();
+        select_tab(&mut state, InspectorTab::Inspect);
+
+        let loading = matches!(
+            inspector_tabs(&state).map(|vm| vm.content),
+            Some(TabContent::Inspect(InspectContent::Loading))
+        );
+        let state = with_inspect(
+            "{\n  \"Id\": \"850b\",\n  \"State\": {\n    \"Status\": \"up\"\n  }\n}",
         );
 
         assert!(loading);
-        let vm = inspector_tabs(&state).expect("a selected container");
-        let TabContent::Inspect(InspectContent::Loaded(json)) = vm.content
-        else {
-            panic!("expected the json");
-        };
-        assert_eq!(json.text(), "{\n  \"Id\": \"850b\"\n}");
+        check_loaded(&state, |loaded| {
+            let tree = loaded.tree.expect("the tree");
+            assert_eq!(tree.general, vec![DataRow::new(0, "Id", "850b")]);
+            assert_eq!(tree.sections[0].title, "State");
+            assert_eq!(
+                loaded.open_sections.iter().collect::<Vec<_>>(),
+                vec!["State"]
+            );
+            assert!(loaded.json.text().starts_with("{\n  \"Id\""));
+            assert!(!loaded.shows_empty);
+        });
+    }
+
+    #[test]
+    fn the_raw_json_switch_shows_the_json_instead_of_the_tree() {
+        let mut state = with_inspect("{ \"Id\": \"850b\" }");
+
+        let _ = reduce(&mut state, DockerIntent::InspectRawJsonToggled(true));
+
+        check_loaded(&state, |loaded| {
+            assert!(loaded.tree.is_none());
+            assert_eq!(loaded.json.text(), "{ \"Id\": \"850b\" }");
+        });
+    }
+
+    #[test]
+    fn the_show_empty_switch_brings_the_empty_values_into_the_tree() {
+        let mut state = with_inspect("{ \"Id\": \"850b\", \"Name\": \"\" }");
+        check_loaded(&state, |loaded| {
+            let tree = loaded.tree.expect("the tree");
+            assert_eq!(tree.general, vec![DataRow::new(0, "Id", "850b")]);
+        });
+
+        let _ = reduce(&mut state, DockerIntent::InspectShowEmptyToggled(true));
+
+        check_loaded(&state, |loaded| {
+            let tree = loaded.tree.expect("the tree");
+            assert_eq!(
+                tree.general,
+                vec![
+                    DataRow::new(0, "Id", "850b"),
+                    DataRow::new(0, "Name", "\"\""),
+                ]
+            );
+            assert!(loaded.shows_empty);
+        });
+    }
+
+    #[test]
+    fn an_answer_that_is_not_an_object_shows_as_json() {
+        for answer in ["not json", "[1, 2]"] {
+            let state = with_inspect(answer);
+
+            check_loaded(&state, |loaded| {
+                assert!(loaded.tree.is_none());
+                assert_eq!(loaded.json.text(), answer);
+            });
+        }
     }
 
     #[test]

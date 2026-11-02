@@ -133,6 +133,18 @@ impl DockerState {
         Some((engine.info.clone(), target))
     }
 
+    /// Return the selected row as an inspect target, on any tab and in any
+    /// mode; `None` when nothing is selected.
+    pub(crate) fn selected_inspect_target(&self) -> Option<InspectTarget> {
+        let (engine, row) = self.selected_row()?;
+
+        Some(InspectTarget::new(
+            engine.info.address().clone(),
+            row.resource(),
+            row.id(),
+        ))
+    }
+
     /// Return the selected row of the open list and its engine; `None` when
     /// nothing is selected or the row is not in the loaded list.
     pub(crate) fn selected_row(

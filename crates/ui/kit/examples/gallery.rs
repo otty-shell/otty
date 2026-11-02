@@ -16,6 +16,7 @@ use otty_ui_kit::components::command_palette::{CommandPalette, PaletteAction};
 use otty_ui_kit::components::data_table::{
     CellPart, ColumnAlign, DataTable, SortDirection, TableCell, TableColumn,
 };
+use otty_ui_kit::components::data_tree::{DataRow, DataTree};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::empty_card::EmptyCard;
@@ -175,6 +176,8 @@ struct Gallery {
     table_event: String,
     toolbar_filter: String,
     inspector_event: String,
+    data_tree_state_open: bool,
+    data_tree_mounts_open: bool,
 }
 
 impl Gallery {
@@ -241,6 +244,8 @@ impl Gallery {
             table_event: "press a title, a Compose link or a row ⋯".to_owned(),
             toolbar_filter: String::new(),
             inspector_event: "press a link in the list".to_owned(),
+            data_tree_state_open: true,
+            data_tree_mounts_open: false,
         }
     }
 }
@@ -283,6 +288,7 @@ enum Message {
     ToolbarFilter(String),
     ToolbarAction(&'static str),
     InspectorLink(&'static str),
+    ToggleDataTree(&'static str),
 }
 
 fn main() -> iced::Result {
@@ -386,7 +392,56 @@ fn update(state: &mut Gallery, message: Message) {
         Message::InspectorLink(link) => {
             state.inspector_event = format!("link: {link}");
         },
+        Message::ToggleDataTree("State") => {
+            state.data_tree_state_open = !state.data_tree_state_open;
+        },
+        Message::ToggleDataTree(_) => {
+            state.data_tree_mounts_open = !state.data_tree_mounts_open;
+        },
     }
+}
+
+/// A tree as the Inspect tab of a container shows it.
+fn data_tree<'a>(state: &Gallery, palette: &UiPalette) -> Element<'a, Message> {
+    let general = vec![
+        DataRow::new(
+            0,
+            "Id",
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef",
+        ),
+        DataRow::new(0, "Name", "/web-1"),
+        DataRow::new(0, "RestartCount", "0"),
+    ];
+    let state_rows = vec![
+        DataRow::new(0, "Status", "running"),
+        DataRow::heading(0, "Health"),
+        DataRow::new(1, "FailingStreak", "0"),
+        DataRow::heading(1, "Log"),
+        DataRow::heading(2, "1"),
+        DataRow::new(3, "ExitCode", "0"),
+        DataRow::new(3, "Output", "ok"),
+    ];
+    let mounts_rows = vec![
+        DataRow::heading(0, "1"),
+        DataRow::new(1, "Destination", "/usr/share/nginx/html"),
+        DataRow::new(1, "Type", "volume"),
+    ];
+
+    DataTree::new(palette)
+        .group("General", general)
+        .section(
+            "State",
+            state.data_tree_state_open,
+            state_rows,
+            Message::ToggleDataTree("State"),
+        )
+        .section(
+            "Mounts",
+            state.data_tree_mounts_open,
+            mounts_rows,
+            Message::ToggleDataTree("Mounts"),
+        )
+        .into()
 }
 
 /// Palette entries as in the V4Palette screen, with `query` typed.
@@ -1200,6 +1255,16 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section(
             "LogView with the Follow switch (Add line is gallery only)",
             container(log_view).width(480).into(),
+            p,
+        ),
+        section(
+            "DataTree (group, sections that open and close, indented and numbered rows; values wrap; stacked at 200 wide)",
+            row![
+                container(data_tree(state, p)).width(360),
+                container(data_tree(state, p)).width(200),
+            ]
+            .spacing(spacing::SPACE_6)
+            .into(),
             p,
         ),
     ];
