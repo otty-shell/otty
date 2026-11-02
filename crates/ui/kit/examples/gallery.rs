@@ -29,7 +29,7 @@ use otty_ui_kit::components::inspector_header::InspectorHeader;
 use otty_ui_kit::components::inspector_tabs::inspector_tabs;
 use otty_ui_kit::components::kbd::{kbd, shortcut_text};
 use otty_ui_kit::components::key_value_field::KeyValueField;
-use otty_ui_kit::components::key_value_list::KeyValueList;
+use otty_ui_kit::components::key_value_list::{KeyValueList, ValuePart};
 use otty_ui_kit::components::log_view::{LogView, LogViewState};
 use otty_ui_kit::components::mapping_field::{MappingField, MappingRow};
 use otty_ui_kit::components::menu::{Menu, MenuItem};
@@ -174,6 +174,7 @@ struct Gallery {
     table_sort: (usize, SortDirection),
     table_event: String,
     toolbar_filter: String,
+    inspector_event: String,
 }
 
 impl Gallery {
@@ -239,6 +240,7 @@ impl Gallery {
             table_sort: (0, SortDirection::Ascending),
             table_event: "press a title, a Compose link or a row ⋯".to_owned(),
             toolbar_filter: String::new(),
+            inspector_event: "press a link in the list".to_owned(),
         }
     }
 }
@@ -280,6 +282,7 @@ enum Message {
     TableRowMenu(usize, iced::Point),
     ToolbarFilter(String),
     ToolbarAction(&'static str),
+    InspectorLink(&'static str),
 }
 
 fn main() -> iced::Result {
@@ -378,6 +381,9 @@ fn update(state: &mut Gallery, message: Message) {
         Message::ToolbarFilter(filter) => state.toolbar_filter = filter,
         Message::ToolbarAction(action) => {
             state.table_event = format!("toolbar: {action}");
+        },
+        Message::InspectorLink(link) => {
+            state.inspector_event = format!("link: {link}");
         },
     }
 }
@@ -888,8 +894,38 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     ))
     .width(120);
     let inspector_list = KeyValueList::new(p)
-        .entry("Image", "nginx:1.27-alpine")
-        .entry("Ports", "0.0.0.0:8080->80/tcp, [::]:8080->80/tcp")
+        .entry_parts(
+            "Image",
+            [ValuePart::link(
+                "nginx:1.27-alpine",
+                Message::InspectorLink("image"),
+            )],
+        )
+        .entry_parts(
+            "Ports",
+            [
+                ValuePart::link(
+                    "8080:80/tcp",
+                    Message::InspectorLink("http://localhost:8080"),
+                ),
+                ValuePart::text(", "),
+                ValuePart::link(
+                    "8443:443/tcp",
+                    Message::InspectorLink("http://localhost:8443"),
+                ),
+                ValuePart::text(", 53/udp"),
+            ],
+        )
+        .entry_parts(
+            "Mounts",
+            [
+                ValuePart::link(
+                    "otty-site-data",
+                    Message::InspectorLink("volume"),
+                ),
+                ValuePart::text(" → /usr/share/nginx/html, /srv/site → /srv"),
+            ],
+        )
         .entry(
             "ID",
             "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -898,8 +934,14 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     let inspector_header: Element<'_, Message> = inspector_header.into();
     let inspector_list: Element<'_, Message> = inspector_list.into();
     let inspector = container(
-        column![inspector_header, wide_tabs, narrow_tabs, inspector_list]
-            .spacing(spacing::SPACE_4),
+        column![
+            inspector_header,
+            wide_tabs,
+            narrow_tabs,
+            inspector_list,
+            label(state.inspector_event.clone(), p),
+        ]
+        .spacing(spacing::SPACE_4),
     )
     .width(320);
     let waiting = match state.log.pending_count() {
@@ -1146,7 +1188,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     ];
     let inspector_parts: Vec<Element<'_, Message>> = vec![
         section(
-            "InspectorHeader (long status wraps) + InspectorTabs (a select when narrow, second row) + KeyValueList (values wrap at spaces, / - : . first)",
+            "InspectorHeader (long status wraps) + InspectorTabs (a select when narrow, second row) + KeyValueList (values wrap at spaces, / - : . first; links underline under the pointer, the last press is printed)",
             inspector.into(),
             p,
         ),

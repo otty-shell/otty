@@ -70,16 +70,21 @@ pub(crate) fn inspector_tabs(
     })
 }
 
-/// The Overview fields of `row`; an image counts its users in the engine's
-/// containers.
+/// The Overview fields of `row`; their links point into the engine's
+/// lists, and an image counts its users in the engine's containers.
 fn overview_fields(engine: &EngineState, row: &SelectedRow<'_>) -> Vec<Field> {
+    let containers = engine.containers().items();
+
     match row {
-        SelectedRow::Container(container) => container_fields(container),
-        SelectedRow::Image(image) => {
-            overview::image_fields(image, engine.containers().items())
-        },
-        SelectedRow::Volume(volume) => volume_fields(volume),
-        SelectedRow::Network(network) => network_fields(network),
+        SelectedRow::Container(container) => container_fields(
+            container,
+            engine.images().items(),
+            engine.volumes().items(),
+            engine.networks().items(),
+        ),
+        SelectedRow::Image(image) => overview::image_fields(image, containers),
+        SelectedRow::Volume(volume) => volume_fields(volume, containers),
+        SelectedRow::Network(network) => network_fields(network, containers),
     }
 }
 
@@ -181,7 +186,12 @@ mod tests {
         };
         assert_eq!(
             fields,
-            overview::container_fields(&resources.containers()[0])
+            overview::container_fields(
+                &resources.containers()[0],
+                resources.images(),
+                resources.volumes(),
+                resources.networks(),
+            )
         );
     }
 
@@ -216,8 +226,14 @@ mod tests {
                     &resources.images()[0],
                     resources.containers()
                 ),
-                overview::volume_fields(&resources.volumes()[0]),
-                overview::network_fields(&resources.networks()[0]),
+                overview::volume_fields(
+                    &resources.volumes()[0],
+                    resources.containers()
+                ),
+                overview::network_fields(
+                    &resources.networks()[0],
+                    resources.containers()
+                ),
             ]
         );
     }

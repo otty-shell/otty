@@ -73,13 +73,7 @@ pub(crate) fn short_id(id: &str) -> &str {
 /// Published and exposed ports: "18080:80/tcp, 53/udp". Docker lists a
 /// published port once for `0.0.0.0` and once for `::`; it is shown once.
 pub(crate) fn ports_text(ports: &[PortMapping]) -> String {
-    let mut shown: Vec<(Option<u16>, u16, &str)> = Vec::new();
-    for port in ports {
-        let key = (port.host_port(), port.container_port(), port.protocol());
-        if !shown.contains(&key) {
-            shown.push(key);
-        }
-    }
+    let shown = shown_ports(ports);
 
     if shown.is_empty() {
         return NO_VALUE.to_string();
@@ -87,12 +81,40 @@ pub(crate) fn ports_text(ports: &[PortMapping]) -> String {
 
     shown
         .into_iter()
-        .map(|(host, container, protocol)| match host {
-            Some(host) => format!("{host}:{container}/{protocol}"),
-            None => format!("{container}/{protocol}"),
-        })
+        .map(port_text)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// The ports to show, in the engine's order: the first mapping of each
+/// host port, container port and protocol. Docker lists a published port
+/// once for `0.0.0.0` and once for `::`; only the first is kept.
+pub(crate) fn shown_ports(ports: &[PortMapping]) -> Vec<&PortMapping> {
+    let mut shown: Vec<&PortMapping> = Vec::new();
+    for port in ports {
+        let is_shown = shown.iter().any(|kept| {
+            kept.host_port() == port.host_port()
+                && kept.container_port() == port.container_port()
+                && kept.protocol() == port.protocol()
+        });
+        if !is_shown {
+            shown.push(port);
+        }
+    }
+
+    shown
+}
+
+/// One port as `docker ps` shows it: "18080:80/tcp" when published, or
+/// "53/udp" when only exposed.
+pub(crate) fn port_text(port: &PortMapping) -> String {
+    let container = port.container_port();
+    let protocol = port.protocol();
+
+    match port.host_port() {
+        Some(host) => format!("{host}:{container}/{protocol}"),
+        None => format!("{container}/{protocol}"),
+    }
 }
 
 /// The template and number of an age of `seconds`; `None` for under a

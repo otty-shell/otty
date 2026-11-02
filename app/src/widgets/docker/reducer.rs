@@ -2,6 +2,7 @@ use iced::Task;
 use otty_docker::{EngineAddress, EngineInfo};
 
 use super::event::{DockerEffect, DockerEvent, DockerIntent};
+use super::overview::LinkTarget;
 use super::state::{DockerState, Search};
 use super::types::{LoadedList, ResourceKind};
 use super::{action_flow, form_flow, run_flow};
@@ -78,6 +79,7 @@ fn reduce_intent(
             effect(DockerEffect::CopyToClipboard(command))
         },
         DockerIntent::OpenLink(url) => effect(DockerEffect::OpenUrl(url)),
+        DockerIntent::FollowLink(target) => follow_link(state, target),
         DockerIntent::SelectInspectorTab(tab) => {
             state.select_inspector_tab(tab);
             Task::none()
@@ -220,6 +222,30 @@ fn sync_inspector(state: &mut DockerState) -> Task<DockerEvent> {
     effect(DockerEffect::LoadInspect { engine, target })
 }
 
+/// Follow an Overview link: open a published port's page in the browser,
+/// show the named item selected in its list of the open engine, or show the
+/// containers of a Compose project (spec Decision 20).
+fn follow_link(
+    state: &mut DockerState,
+    target: LinkTarget,
+) -> Task<DockerEvent> {
+    match target {
+        LinkTarget::Url(url) => effect(DockerEffect::OpenUrl(url)),
+        LinkTarget::Item(resource, id) => {
+            if let Some(engine) =
+                state.place().map(|place| place.engine().clone())
+            {
+                state.show_item(&engine, resource, id);
+            }
+            Task::none()
+        },
+        LinkTarget::ComposeProject(project) => {
+            state.open_compose_project(&project);
+            Task::none()
+        },
+    }
+}
+
 /// An engine event changed `resource`: reload it while Docker mode is
 /// active. "Used by" of images, volumes and networks is read from the
 /// containers shown now; a container reload brings its own list.
@@ -347,6 +373,7 @@ mod tests {
     use crate::widgets::docker::inspector::{
         InspectLoad, InspectTarget, InspectorTab, LogTarget, MAX_LOG_LINES,
     };
+    use crate::widgets::docker::overview::LinkTarget;
     use crate::widgets::docker::sort::SortOrder;
     use crate::widgets::docker::state::{ListLoad, Search};
     use crate::widgets::docker::types::{
@@ -810,6 +837,195 @@ mod tests {
 
         let _ = reduce(&mut state, DockerIntent::OpenComposeProject(0));
         let _ = reduce(&mut state, DockerIntent::ClearComposeProject);
+
+        assert_eq!(state.place(), None);
+    }
+
+    fn follow(
+        state: &mut DockerState,
+        target: LinkTarget,
+    ) -> Vec<DockerEffect> {
+        effects(reduce(state, DockerIntent::FollowLink(target)))
+    }
+
+    fn busybox_id(state: &DockerState) -> String {
+        let engine = state.open_engine().expect("docker engine");
+        engine
+            .images()
+            .items()
+            .iter()
+            .find(|image| image.tags() == ["busybox:1.37"])
+            .map(|image| image.id().to_string())
+            .expect("busybox image")
+    }
+
+    #[test]
+    fn an_image_link_shows_the_images_list_with_that_image_selected() {
+        let mut state = loaded_state();
+        let busybox = busybox_id(&state);
+        open(&mut state, ResourceKind::Images);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::FilterChanged(String::from("no such image")),
+        );
+        let _ = reduce(&mut state, DockerIntent::SortBy(2));
+        open(&mut state, ResourceKind::Containers);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::SelectInspectorTab(InspectorTab::Inspect),
+        );
+
+        let effects = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Images, busybox.clone()),
+        );
+
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(
+            state.place(),
+            Some(&Place::new(
+                docker().address().clone(),
+                ResourceKind::Images
+            ))
+        );
+        assert_eq!(state.filter(), "");
+        assert_eq!(state.selected_id(), Some(busybox.as_str()));
+        assert_eq!(state.inspector().tab(), InspectorTab::Overview);
+        let (_, row) = state.selected_row().expect("the image is selected");
+        assert_eq!(row.id(), busybox);
+        // The image is shown in the table, sorted as the user left it.
+        assert_eq!(state.sort(ResourceKind::Images).column(), 2);
+        let engine_index = state
+            .open_engine()
+            .expect("docker engine")
+            .images()
+            .items()
+            .iter()
+            .position(|image| image.id() == busybox)
+            .expect("listed image");
+        let position = state.shown_position(engine_index);
+        assert_eq!(state.shown_row_id(position), Some(busybox.clone()));
+        // A later sort keeps the same image selected.
+        let _ = reduce(&mut state, DockerIntent::SortBy(0));
+        assert_eq!(state.selected_id(), Some(busybox.as_str()));
+    }
+
+    #[test]
+    fn a_container_link_shows_every_container_with_that_one_selected() {
+        let mut state = loaded_state();
+        let running = {
+            let engine = state.open_engine().expect("docker engine");
+            engine
+                .containers()
+                .items()
+                .iter()
+                .find(|c| c.name() == "otty-fx-running")
+                .map(|c| c.id().to_string())
+                .expect("running container")
+        };
+        let project = Place::compose(docker().address().clone(), "otty-fx");
+        let _ = reduce(&mut state, DockerIntent::Open(project));
+        open(&mut state, ResourceKind::Volumes);
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Containers, running.clone()),
+        );
+
+        assert_eq!(
+            state.place(),
+            Some(&Place::new(
+                docker().address().clone(),
+                ResourceKind::Containers
+            ))
+        );
+        assert_eq!(selected_container(&state), Some(running.as_str()));
+    }
+
+    #[test]
+    fn a_volume_and_a_network_link_select_their_item() {
+        let mut state = loaded_state();
+        let network = {
+            let engine = state.open_engine().expect("docker engine");
+            engine
+                .networks()
+                .items()
+                .iter()
+                .find(|network| network.name() == "otty-fx-net")
+                .map(|network| network.id().to_string())
+                .expect("user network")
+        };
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(
+                ResourceKind::Volumes,
+                String::from("otty-fx-data"),
+            ),
+        );
+        let volume = state.selected_id().map(str::to_string);
+        let volume_place = state.place().map(Place::resource);
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Networks, network.clone()),
+        );
+
+        assert_eq!(volume_place, Some(ResourceKind::Volumes));
+        assert_eq!(volume.as_deref(), Some("otty-fx-data"));
+        assert_eq!(
+            state.place().map(Place::resource),
+            Some(ResourceKind::Networks)
+        );
+        assert_eq!(state.selected_id(), Some(network.as_str()));
+    }
+
+    #[test]
+    fn a_port_link_opens_its_page_and_keeps_the_list() {
+        let mut state = loaded_state();
+        let before = state.place().cloned();
+
+        let effects = follow(
+            &mut state,
+            LinkTarget::Url(String::from("http://localhost:18081")),
+        );
+
+        assert_eq!(
+            effects,
+            vec![DockerEffect::OpenUrl(String::from(
+                "http://localhost:18081"
+            ))]
+        );
+        assert_eq!(state.place().cloned(), before);
+    }
+
+    #[test]
+    fn a_compose_project_link_opens_the_compose_filter() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Volumes);
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
+
+        assert_eq!(
+            state.place(),
+            Some(&Place::compose(docker().address().clone(), "otty-fx"))
+        );
+    }
+
+    #[test]
+    fn links_without_an_open_engine_change_nothing() {
+        let mut state = DockerState::default();
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Images, String::from("sha256:a7db")),
+        );
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
 
         assert_eq!(state.place(), None);
     }

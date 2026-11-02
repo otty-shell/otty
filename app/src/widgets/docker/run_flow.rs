@@ -15,6 +15,7 @@ use super::forms::split_reference;
 use super::run_checks::check;
 use super::run_form::{ImageLookup, RunEdit, RunForm, RunPhase};
 use super::state::{DockerState, EngineState};
+use super::types::ResourceKind;
 use crate::i18n::{self, Key};
 
 /// The network a new container joins unless another one is chosen.
@@ -188,7 +189,7 @@ pub(super) fn finish(
     match result {
         Ok(id) => {
             let _ = state.take_run_form();
-            state.show_new_container(engine, id);
+            state.show_item(engine, ResourceKind::Containers, id);
             reload(state, engine)
         },
         Err(message) => {

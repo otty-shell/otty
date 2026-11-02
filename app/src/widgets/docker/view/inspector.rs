@@ -8,7 +8,7 @@ use iced::{Alignment, Element, Length, Padding};
 use otty_ui_kit::components::icon_button::{IconButton, IconTone};
 use otty_ui_kit::components::inspector_header::InspectorHeader;
 use otty_ui_kit::components::inspector_tabs::inspector_tabs;
-use otty_ui_kit::components::key_value_list::KeyValueList;
+use otty_ui_kit::components::key_value_list::{KeyValueList, ValuePart};
 use otty_ui_kit::components::log_view::{LogView, LogViewState};
 use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::status_badge::StatusBadge;
@@ -23,6 +23,7 @@ use super::super::inspector_tabs::{
     InspectContent, InspectorTabsViewModel, TabContent,
 };
 use super::super::model::InspectorViewModel;
+use super::super::overview::Piece;
 use crate::i18n::{self, Key};
 use crate::icons;
 use crate::theme::ThemeProps;
@@ -133,7 +134,8 @@ fn tab_body<'a>(
         TabContent::Overview(fields) => {
             let mut list = KeyValueList::new(palette);
             for (label, value) in fields {
-                list = list.entry(label, value);
+                list =
+                    list.entry_parts(label, value.into_iter().map(value_part));
             }
             scrollable(list).height(Length::Fill).into()
         },
@@ -176,6 +178,17 @@ fn tab_body<'a>(
                 .on_action(DockerIntent::InspectAction)
                 .into()
         },
+    }
+}
+
+/// A piece of an Overview value as a kit value part: a link follows its
+/// target when pressed.
+fn value_part(piece: Piece) -> ValuePart<DockerIntent> {
+    match piece {
+        Piece::Link(text, target) => {
+            ValuePart::link(text, DockerIntent::FollowLink(target))
+        },
+        Piece::Text(text) => ValuePart::text(text),
     }
 }
 
@@ -241,6 +254,7 @@ mod tests {
     use crate::widgets::docker::actions::RowAction;
     use crate::widgets::docker::inspector::InspectorTab;
     use crate::widgets::docker::inspector_tabs::{InspectContent, TabContent};
+    use crate::widgets::docker::overview::{Field, LinkTarget};
     use crate::widgets::docker::types::ResourceKind;
 
     fn header() -> Option<InspectorViewModel> {
@@ -295,13 +309,15 @@ mod tests {
             .expect("the hint should show");
     }
 
+    /// An Overview field with a plain text value.
+    fn text_field(key: Key, value: &str) -> Field {
+        (i18n::t(key), vec![Piece::Text(String::from(value))])
+    }
+
     #[test]
     fn the_tabs_show_under_the_header_and_a_press_selects_one() {
         let themes = ThemeManager::new();
-        let fields = vec![(
-            i18n::t(Key::DockerColumnImage),
-            String::from("busybox:1.37"),
-        )];
+        let fields = vec![text_field(Key::DockerColumnImage, "busybox:1.37")];
         let mut ui = simulator(view(InspectorProps {
             vm: header(),
             actions: None,
@@ -328,11 +344,8 @@ mod tests {
     fn the_overview_lists_its_fields() {
         let themes = ThemeManager::new();
         let fields = vec![
-            (
-                i18n::t(Key::DockerColumnImage),
-                String::from("busybox:1.37"),
-            ),
-            (i18n::t(Key::DockerFieldCommand), String::from("sleep 3600")),
+            text_field(Key::DockerColumnImage, "busybox:1.37"),
+            text_field(Key::DockerFieldCommand, "sleep 3600"),
         ];
         let mut ui = simulator(view(InspectorProps {
             vm: header(),
@@ -347,6 +360,85 @@ mod tests {
         ui.find(i18n::t(Key::DockerColumnImage)).expect("label");
         ui.find("busybox:1.37").expect("value");
         ui.find("sleep 3600").expect("value");
+    }
+
+    /// Overview fields with an image link, two port links (the UDP port is
+    /// text) and a network link, as a container shows them.
+    fn linked_fields() -> Vec<Field> {
+        let port =
+            |port: u16| LinkTarget::Url(format!("http://localhost:{port}"));
+
+        vec![
+            (
+                i18n::t(Key::DockerColumnImage),
+                vec![Piece::Link(
+                    String::from("busybox:1.37"),
+                    LinkTarget::Item(
+                        ResourceKind::Images,
+                        String::from("sha256:a7db"),
+                    ),
+                )],
+            ),
+            (
+                i18n::t(Key::DockerColumnPorts),
+                vec![
+                    Piece::Link(String::from("18080:80/tcp"), port(18080)),
+                    Piece::Text(String::from(", ")),
+                    Piece::Link(String::from("18443:443/tcp"), port(18443)),
+                    Piece::Text(String::from(", 53/udp")),
+                ],
+            ),
+            (
+                i18n::t(Key::DockerNetworks),
+                vec![Piece::Link(
+                    String::from("otty-fx-net"),
+                    LinkTarget::Item(
+                        ResourceKind::Networks,
+                        String::from("9b55"),
+                    ),
+                )],
+            ),
+        ]
+    }
+
+    #[test]
+    fn pressing_an_overview_link_follows_it_in_both_themes() {
+        let mut themes = ThemeManager::new();
+
+        for theme in BuiltinTheme::ALL {
+            themes.set_theme(theme);
+            let mut ui = simulator(narrow(view(InspectorProps {
+                vm: header(),
+                actions: None,
+                tabs: container_tabs(
+                    InspectorTab::Overview,
+                    TabContent::Overview(linked_fields()),
+                ),
+                theme: ThemeProps::new(themes.current()),
+            })));
+
+            ui.click("18443:443/tcp").expect("second port link");
+            ui.click("busybox:1.37").expect("image link");
+            ui.click("otty-fx-net").expect("network link");
+            ui.click(i18n::t(Key::DockerColumnPorts)).expect("label");
+
+            assert_eq!(
+                ui.into_messages().collect::<Vec<_>>(),
+                vec![
+                    DockerIntent::FollowLink(LinkTarget::Url(String::from(
+                        "http://localhost:18443"
+                    ))),
+                    DockerIntent::FollowLink(LinkTarget::Item(
+                        ResourceKind::Images,
+                        String::from("sha256:a7db")
+                    )),
+                    DockerIntent::FollowLink(LinkTarget::Item(
+                        ResourceKind::Networks,
+                        String::from("9b55")
+                    )),
+                ]
+            );
+        }
     }
 
     #[test]
@@ -567,10 +659,7 @@ mod tests {
     fn the_header_the_buttons_the_hint_the_tabs_and_the_body_share_one_side_padding()
      {
         let themes = ThemeManager::new();
-        let fields = vec![(
-            i18n::t(Key::DockerColumnImage),
-            String::from("busybox:1.37"),
-        )];
+        let fields = vec![text_field(Key::DockerColumnImage, "busybox:1.37")];
         let mut ui = simulator(narrow(view(InspectorProps {
             vm: header(),
             actions: Some(ActionsViewModel {

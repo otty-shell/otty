@@ -8,6 +8,7 @@ use otty_docker::{
 use super::actions::{ActionRequest, RowAction};
 use super::forms::FormField;
 use super::inspector::{InspectTarget, InspectorTab, LogTarget};
+use super::overview::LinkTarget;
 use super::run_form::RunEdit;
 use super::types::{LoadedList, LoadedLists, Place, ResourceKind};
 
@@ -49,6 +50,10 @@ pub(crate) enum DockerIntent {
     CopyCommand(String),
     /// Open this page in the browser (the Install and How to fix buttons).
     OpenLink(String),
+    /// A link in the inspector Overview was pressed: open the page of a
+    /// published port, show the named item selected in its list, or show
+    /// the containers of a Compose project.
+    FollowLink(LinkTarget),
     // Inspector tabs.
     /// An inspector tab was pressed.
     SelectInspectorTab(InspectorTab),

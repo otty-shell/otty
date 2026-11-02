@@ -11,27 +11,37 @@ use crate::{fonts, size, spacing};
 /// Text size of keys and values (`font-size: 12.5px`).
 const TEXT_SIZE: f32 = 12.5;
 
-/// Two columns: muted keys at a fixed width, mono values that wrap.
+/// Two columns: muted keys at a fixed width, mono values that wrap. A value
+/// can hold links: accent text, underlined under the pointer, each sending
+/// its own message when pressed.
 ///
 /// # Example
 ///
 /// ```
 /// use iced::Element;
-/// use otty_ui_kit::components::key_value_list::KeyValueList;
+/// use otty_ui_kit::components::key_value_list::{KeyValueList, ValuePart};
 /// use otty_ui_kit::palette::UiPalette;
 ///
+/// #[derive(Debug, Clone)]
+/// enum Message {
+///     OpenImage,
+/// }
+///
 /// let palette = UiPalette::otty_dark();
-/// let list: Element<'_, ()> = KeyValueList::new(&palette)
-///     .entry("Image", "nginx:1.27")
+/// let list: Element<'_, Message> = KeyValueList::new(&palette)
+///     .entry_parts(
+///         "Image",
+///         [ValuePart::link("nginx:1.27", Message::OpenImage)],
+///     )
 ///     .entry("Ports", "8080:80/tcp")
 ///     .into();
 /// ```
-pub struct KeyValueList {
+pub struct KeyValueList<Message> {
     palette: UiPalette,
-    entries: Vec<(String, String)>,
+    entries: Vec<(String, Vec<ValuePart<Message>>)>,
 }
 
-impl KeyValueList {
+impl<Message> KeyValueList<Message> {
     /// Creates an empty list.
     pub fn new(palette: &UiPalette) -> Self {
         Self {
@@ -40,23 +50,41 @@ impl KeyValueList {
         }
     }
 
-    /// Adds a `key` and its `value` below the previous entry.
+    /// Adds a `key` and its plain `value` below the previous entry.
     pub fn entry(
-        mut self,
+        self,
         key: impl Into<String>,
         value: impl Into<String>,
     ) -> Self {
-        self.entries.push((key.into(), value.into()));
+        self.entry_parts(key, [ValuePart::text(value)])
+    }
+
+    /// Adds a `key` whose value is `parts` in order, below the previous
+    /// entry: plain text and links. The value wraps like a plain one, and
+    /// each link is pressed on its own.
+    pub fn entry_parts(
+        mut self,
+        key: impl Into<String>,
+        parts: impl IntoIterator<Item = ValuePart<Message>>,
+    ) -> Self {
+        self.entries.push((key.into(), parts.into_iter().collect()));
         self
     }
 }
 
-impl<'a, Message: 'a> From<KeyValueList> for Element<'a, Message> {
-    fn from(value: KeyValueList) -> Self {
+impl<'a, Message: Clone + 'a> From<KeyValueList<Message>>
+    for Element<'a, Message>
+{
+    fn from(value: KeyValueList<Message>) -> Self {
         let palette = value.palette;
         let mut lines = column![].spacing(spacing::SPACE_3);
 
-        for (key, entry_value) in value.entries {
+        for (key, parts) in value.entries {
+            let parts = parts
+                .into_iter()
+                .map(|part| (part.text, part.on_press))
+                .collect();
+
             lines = lines.push(
                 row![
                     text(key)
@@ -70,10 +98,11 @@ impl<'a, Message: 'a> From<KeyValueList> for Element<'a, Message> {
                     // is wider than the line, so a long id or path never
                     // pushes the list wider than its panel.
                     WrappedText::new(
-                        entry_value,
+                        parts,
                         TEXT_SIZE,
                         fonts::MONO,
                         palette.text_body(),
+                        link_color(&palette),
                     ),
                 ]
                 .spacing(spacing::SPACE_3),
@@ -84,11 +113,65 @@ impl<'a, Message: 'a> From<KeyValueList> for Element<'a, Message> {
     }
 }
 
+/// One piece of a [`KeyValueList`] value: plain text, or a link that sends
+/// a message when pressed.
+///
+/// # Example
+///
+/// ```
+/// use otty_ui_kit::components::key_value_list::ValuePart;
+///
+/// let ports: Vec<ValuePart<u16>> = vec![
+///     ValuePart::link("8080:80/tcp", 8080),
+///     ValuePart::text(", "),
+///     ValuePart::text("53/udp"),
+/// ];
+/// assert_eq!(ports.len(), 3);
+/// ```
+pub struct ValuePart<Message> {
+    text: String,
+    on_press: Option<Message>,
+}
+
+impl<Message> ValuePart<Message> {
+    /// Plain text.
+    pub fn text(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            on_press: None,
+        }
+    }
+
+    /// A link showing `text` that sends `on_press` when pressed.
+    pub fn link(text: impl Into<String>, on_press: Message) -> Self {
+        Self {
+            text: text.into(),
+            on_press: Some(on_press),
+        }
+    }
+}
+
+/// Color of a link in a value, on every panel: `accent`.
+fn link_color(palette: &UiPalette) -> iced::Color {
+    palette.accent()
+}
+
 #[cfg(test)]
 mod tests {
+    use iced::{Event, Point, mouse};
     use iced_test::simulator;
 
     use super::*;
+    use crate::contrast::contrast_ratio;
+
+    /// WCAG 2.1 contrast for normal text.
+    const TEXT_MIN: f32 = 4.5;
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum Message {
+        Port(u16),
+        Volume,
+    }
 
     #[test]
     fn given_entries_when_rendered_then_keys_and_values_are_shown() {
@@ -169,5 +252,161 @@ mod tests {
             value.height > TEXT_SIZE * 2.0,
             "value {value:?} should wrap onto several lines"
         );
+    }
+
+    /// A list with two port links and a volume link followed by text.
+    fn linked_list(palette: &UiPalette) -> Element<'_, Message> {
+        KeyValueList::new(palette)
+            .entry_parts(
+                "Ports",
+                [
+                    ValuePart::link("8080:80/tcp", Message::Port(8080)),
+                    ValuePart::text(", "),
+                    ValuePart::link("8443:443/tcp", Message::Port(8443)),
+                    ValuePart::text(", 53/udp"),
+                ],
+            )
+            .entry_parts(
+                "Mounts",
+                [
+                    ValuePart::link("otty-fx-data", Message::Volume),
+                    ValuePart::text(" → /data"),
+                ],
+            )
+            .into()
+    }
+
+    #[test]
+    fn given_two_links_in_one_value_when_each_is_pressed_then_each_sends_its_own_message()
+     {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(linked_list(&palette));
+
+        ui.click("8443:443/tcp").expect("second link should show");
+        ui.click("8080:80/tcp").expect("first link should show");
+        ui.click("otty-fx-data").expect("volume link should show");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(
+            messages,
+            vec![Message::Port(8443), Message::Port(8080), Message::Volume]
+        );
+    }
+
+    #[test]
+    fn given_links_when_laid_out_then_they_sit_side_by_side_in_their_value() {
+        let palette = UiPalette::otty_light();
+        let mut ui = simulator(linked_list(&palette));
+
+        let value = ui
+            .find("8080:80/tcp, 8443:443/tcp, 53/udp")
+            .expect("whole value should show")
+            .bounds();
+        let first = ui.find("8080:80/tcp").expect("first link").bounds();
+        let second = ui.find("8443:443/tcp").expect("second link").bounds();
+
+        assert!((first.x - value.x).abs() < 0.5, "{first:?} in {value:?}");
+        assert!(
+            second.x > first.x + first.width,
+            "{second:?} after {first:?}"
+        );
+        assert!((second.y - first.y).abs() < 0.5, "{second:?} on one line");
+        assert!(first.width < value.width, "a link is as wide as its text");
+    }
+
+    #[test]
+    fn given_text_beside_a_link_when_pressed_then_nothing_is_sent() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(linked_list(&palette));
+        let link = ui.find("otty-fx-data").expect("volume link").bounds();
+        // Inside " → /data", right after the link.
+        let beside =
+            Point::new(link.x + link.width + 3.0 * TEXT_SIZE, link.center_y());
+
+        ui.point_at(beside);
+        let _ = ui.simulate(simulator::click());
+        ui.click("Mounts").expect("key should show");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert!(messages.is_empty(), "{messages:?}");
+    }
+
+    #[test]
+    fn given_a_long_linked_value_when_laid_out_then_it_wraps_and_each_link_still_works()
+     {
+        let palette = UiPalette::otty_dark();
+        let list: Element<'_, Message> =
+            iced::widget::container(KeyValueList::new(&palette).entry_parts(
+                "Ports",
+                [
+                    ValuePart::link("18080:8080/tcp", Message::Port(18080)),
+                    ValuePart::text(", "),
+                    ValuePart::link("18443:8443/tcp", Message::Port(18443)),
+                ],
+            ))
+            .width(200)
+            .into();
+        let mut ui = simulator(list);
+
+        let value = ui
+            .find("18080:8080/tcp, 18443:8443/tcp")
+            .expect("whole value should show")
+            .bounds();
+        let first = ui.find("18080:8080/tcp").expect("first link").bounds();
+        let second = ui.find("18443:8443/tcp").expect("second link").bounds();
+        ui.click("18443:8443/tcp").expect("second link");
+        ui.click("18080:8080/tcp").expect("first link");
+
+        assert!(value.x + value.width <= 200.5, "{value:?} inside 200px");
+        assert!(value.height > TEXT_SIZE * 2.0, "{value:?} should wrap");
+        assert!(second.y > first.y, "{second:?} on the next line");
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Port(18443), Message::Port(18080)]);
+    }
+
+    /// Draws the linked list with the pointer at `pointer` and checks it
+    /// against the picture saved in `reference`; the first call saves it.
+    fn hovered_list_matches(
+        pointer: Point,
+        reference: &std::path::Path,
+    ) -> bool {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(linked_list(&palette));
+        ui.point_at(pointer);
+        let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
+            position: pointer,
+        })]);
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("list should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    #[test]
+    fn given_a_link_when_the_pointer_is_over_it_then_it_is_underlined() {
+        let reference = std::env::temp_dir()
+            .join(format!("otty-key-value-list-{}", std::process::id()))
+            .join("link-hovered");
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(linked_list(&palette));
+        let link = ui.find("otty-fx-data").expect("volume link").bounds();
+        let on_link = link.center();
+        let beside = Point::new(link.center_x(), link.y + 4.0 * link.height);
+
+        assert!(hovered_list_matches(beside, &reference));
+        assert!(!hovered_list_matches(on_link, &reference));
+        assert!(hovered_list_matches(beside, &reference));
+    }
+
+    #[test]
+    fn given_each_theme_when_links_drawn_on_panels_then_they_reach_4_5() {
+        for palette in [UiPalette::otty_dark(), UiPalette::otty_light()] {
+            for surface in [palette.surface_panel(), palette.surface_canvas()] {
+                let ratio = contrast_ratio(link_color(&palette), surface);
+
+                assert!(ratio >= TEXT_MIN, "link on {surface:?}: {ratio:.2}");
+            }
+        }
     }
 }

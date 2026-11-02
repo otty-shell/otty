@@ -432,23 +432,43 @@ impl DockerState {
         self.run_form.take()
     }
 
-    /// Show the containers of `engine` without a filter and select the
-    /// container with `id`, which a reload brings into the list.
-    pub(super) fn show_new_container(
+    /// Show the whole `resource` list of `engine` (no name filter, no
+    /// Compose project) and select the item with `id` in it: a container,
+    /// image or network id, or a volume name. A new container is selected
+    /// before the reload that brings it into the list.
+    pub(super) fn show_item(
         &mut self,
         engine: &EngineAddress,
+        resource: ResourceKind,
         id: String,
     ) {
-        self.open(Place::new(engine.clone(), ResourceKind::Containers));
+        self.open(Place::new(engine.clone(), resource));
         self.filter.clear();
 
-        if let Some(engine) = self
+        let Some(engine) = self
             .engines
             .iter_mut()
             .find(|state| state.info.address() == engine)
-        {
-            engine.containers.select(id);
+        else {
+            return;
+        };
+        match resource {
+            ResourceKind::Containers => engine.containers.select(id),
+            ResourceKind::Images => engine.images.select(id),
+            ResourceKind::Volumes => engine.volumes.select(id),
+            ResourceKind::Networks => engine.networks.select(id),
         }
+    }
+
+    /// Show only the containers of the Compose project `project` of the
+    /// open engine.
+    pub(super) fn open_compose_project(&mut self, project: &str) {
+        let Some(place) = self.place.as_ref() else {
+            return;
+        };
+
+        let compose = Place::compose(place.engine().clone(), project);
+        self.open(compose);
     }
 
     /// Show all containers of the open engine again, leaving a Compose
@@ -487,12 +507,12 @@ impl DockerState {
         let Some(project) = shown
             .get(index)
             .and_then(|container| container.compose_project())
+            .map(str::to_string)
         else {
             return false;
         };
 
-        let compose = Place::compose(place.engine().clone(), project);
-        self.open(compose);
+        self.open_compose_project(&project);
         true
     }
 
