@@ -466,7 +466,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 29 — Run form: SELinux `:z`, Restart No · Sonnet
 - [x] 30 — Row opens the right panel; tabs to select when narrow · Sonnet
 - [x] 31 — Overview links · Opus
-- [ ] 32 — Inspect as a readable tree · Opus
+- [x] 32 — Inspect as a readable tree · Opus
 - [x] 33 — Bug: tab open switches to Terminal mode · Sonnet
 - [x] 34 — Port links in the Containers table · Sonnet
-- [ ] 35 — Key-value list stacks when narrow · Sonnet
+- [x] 35 — Key-value list stacks when narrow · Sonnet
