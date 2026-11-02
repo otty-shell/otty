@@ -189,9 +189,10 @@ statuses) in the list.
     an empty field.
     Expected: the cross removes only its tag; Clear all removes all; Backspace
     removes the last tag.
-30. Use the Compose link next to the search, if the list has one.
-    Expected: it opens the Compose view and the search field still works after
-    you come back.
+30. In the Containers table press a project name in the Compose column, then
+    press another project's name.
+    Expected: the first press adds the tag `compose:<name>` and filters the
+    table; the second replaces that tag. The row is not selected by the press.
 31. Type a word with a typo, such as `stauts`.
     Expected: the suggestions still list the close matches (`status`).
 32. Open the suggestions with the list below the field.
