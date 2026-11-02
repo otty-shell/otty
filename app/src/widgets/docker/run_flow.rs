@@ -270,6 +270,7 @@ mod tests {
         EngineKind, MountSource, PortProtocol, PublishedPort, RestartPolicy,
         RunRequest, VolumeMount, fixtures,
     };
+    use otty_ui_kit::components::tag_search::TagSearchAction;
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
@@ -604,8 +605,12 @@ mod tests {
     fn a_run_shows_the_new_container_selected_in_the_containers_table() {
         let mut state =
             form_with("nginx:1.27", Some(fixtures::image_defaults()));
-        let _ =
-            reduce(&mut state, DockerIntent::FilterChanged(String::from("x")));
+        for action in [
+            TagSearchAction::InputChanged(String::from("x")),
+            TagSearchAction::Close,
+        ] {
+            let _ = reduce(&mut state, DockerIntent::TagSearch(action));
+        }
         let _ = reduce(&mut state, DockerIntent::RunSubmitted);
 
         let effects = effects(reduce(
@@ -620,7 +625,7 @@ mod tests {
         let place = state.place().expect("a place");
         assert_eq!(place.resource(), ResourceKind::Containers);
         assert_eq!(place.engine(), docker().address());
-        assert_eq!(state.filter(), "");
+        assert_eq!(state.table_search(ResourceKind::Containers).input(), "");
         let selected = state
             .engine(docker().address())
             .and_then(|engine| engine.containers().selected_id());

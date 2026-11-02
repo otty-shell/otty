@@ -3,6 +3,7 @@ use otty_docker::{
 };
 use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::status_badge::StatusTone;
+use otty_ui_kit::components::tag_search::{Suggestion, TagSearch};
 
 use super::action_model::{PruneViewModel, can_create, prune_button};
 use super::actions::container_actions;
@@ -70,15 +71,14 @@ pub(crate) enum MainViewModel<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TableViewModel<'a> {
     pub(crate) resource: ResourceKind,
-    /// The name filter text.
-    pub(crate) filter: &'a str,
-    /// The "compose: <name>" chip while the containers are limited to a
-    /// Compose project.
-    pub(crate) compose_chip: Option<String>,
+    /// The tag search of this table: the field's text and the tags.
+    pub(crate) search: &'a TagSearch,
+    /// What the open suggestion list shows; empty while it is closed.
+    pub(crate) suggestions: Vec<Suggestion>,
     /// The column the table is sorted by and the way.
     pub(crate) sort: TableSort,
     pub(crate) columns: Vec<TableColumn>,
-    /// Rows that match the filter, in the order of `sort`.
+    /// Rows that pass the search, in the order of `sort`.
     pub(crate) rows: Vec<Vec<TableCell>>,
     /// Positions among `rows` of the items without actions (a container
     /// being removed); these rows have no "⋯" button.
@@ -108,8 +108,8 @@ pub(crate) struct InspectorViewModel {
 /// What every table of the main area needs besides its list.
 struct Shown<'a> {
     resource: ResourceKind,
-    filter: &'a str,
-    compose_chip: Option<String>,
+    search: &'a TagSearch,
+    suggestions: Vec<Suggestion>,
     sort: TableSort,
 }
 
@@ -138,7 +138,6 @@ pub(crate) fn tree_rows(state: &DockerState) -> Vec<TreeRowViewModel> {
 
         for resource in ResourceKind::ALL {
             let place = Place::new(address.clone(), resource);
-            // A Compose filter keeps the Containers row selected.
             let is_shown = open.is_some_and(|open| {
                 open.engine() == address && open.resource() == resource
             });
@@ -165,14 +164,15 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
             .map_or(MainViewModel::Searching, MainViewModel::NoEngine);
     };
 
+    let search = state.table_search(place.resource());
+    let sort = state.sort(place.resource());
+    let clock = state.age_clock();
     let shown = Shown {
         resource: place.resource(),
-        filter: state.filter(),
-        compose_chip: place.compose_project().map(i18n::docker_compose_chip),
-        sort: state.sort(place.resource()),
+        search,
+        suggestions: suggestions(state, search),
+        sort,
     };
-    let filter = shown.filter;
-    let sort = shown.sort;
 
     let table = match place.resource() {
         ResourceKind::Containers => {
@@ -180,7 +180,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
             table(
                 shown,
                 engine.containers(),
-                shown_containers(items, filter, place.compose_project(), sort),
+                shown_containers(items, search, clock, sort),
                 Container::id,
                 |container| !container_actions(container.state()).is_empty(),
                 |container| container_cells(container, now),
@@ -191,7 +191,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
             table(
                 shown,
                 engine.images(),
-                shown_images(items, filter, sort),
+                shown_images(items, search, clock, sort),
                 Image::id,
                 |_| true,
                 |image| image_cells(image, now),
@@ -202,7 +202,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
             table(
                 shown,
                 engine.volumes(),
-                shown_volumes(items, filter, sort),
+                shown_volumes(items, search, clock, sort),
                 Volume::name,
                 |_| true,
                 |volume| volume_cells(volume, now),
@@ -213,7 +213,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
             table(
                 shown,
                 engine.networks(),
-                shown_networks(items, filter, sort),
+                shown_networks(items, search, clock, sort),
                 Network::id,
                 |_| true,
                 |network| network_cells(network, now),
@@ -290,6 +290,18 @@ pub(super) fn no_engine_view(state: &DockerState) -> Option<NoEngineViewModel> {
     }
 }
 
+/// What the suggestion list of the open table shows. The rows are read only
+/// while the list is open.
+fn suggestions(state: &DockerState, search: &TagSearch) -> Vec<Suggestion> {
+    if !search.is_open() {
+        return Vec::new();
+    }
+
+    state
+        .open_table_schema()
+        .map_or_else(Vec::new, |schema| search.suggestions(&schema))
+}
+
 fn list_note(engine: &EngineState, resource: ResourceKind) -> TreeNote {
     match resource {
         ResourceKind::Containers => {
@@ -327,8 +339,8 @@ fn note<T>(load: &ListLoad<T>, loaded: fn(&[T]) -> TreeNote) -> TreeNote {
     }
 }
 
-/// The table of one list: the rows of `items` (the items that match the
-/// filter), the position of the selected row among them, the rows whose
+/// The table of one list: the rows of `items` (the items that pass the
+/// search), the position of the selected row among them, the rows whose
 /// item has no actions, and the message or error shown instead of rows.
 /// `id_of` gives the selection id; `has_actions` tells whether an item has
 /// a row menu.
@@ -360,15 +372,15 @@ fn table<'a, T>(
             (None, Some(i18n::t(shown.resource.empty_key()).to_string()))
         },
         ListLoad::Loaded(_) if rows.is_empty() => {
-            (None, Some(i18n::docker_nothing_matches(shown.filter)))
+            (None, Some(i18n::t(Key::DockerNothingMatches).to_string()))
         },
         ListLoad::Loaded(_) => (None, None),
     };
 
     TableViewModel {
         resource: shown.resource,
-        filter: shown.filter,
-        compose_chip: shown.compose_chip,
+        search: shown.search,
+        suggestions: shown.suggestions,
         sort: shown.sort,
         columns: columns(shown.resource),
         rows,
@@ -385,6 +397,7 @@ fn table<'a, T>(
 #[cfg(test)]
 mod tests {
     use otty_docker::{Container, EngineKind, fixtures};
+    use otty_ui_kit::components::tag_search::TagSearchAction;
 
     use super::*;
     use crate::i18n::{self, Key};
@@ -640,12 +653,37 @@ mod tests {
         assert!(projects.contains(&&TableCell::muted("")));
     }
 
+    fn search_does(state: &mut DockerState, action: TagSearchAction) {
+        let _ = reduce(state, DockerIntent::TagSearch(action));
+    }
+
+    fn type_text(state: &mut DockerState, text: &str) {
+        search_does(state, TagSearchAction::InputChanged(text.to_string()));
+    }
+
+    /// Adds the typed `key:text` as it is, as Enter does with no suggestion.
+    fn add_tag(state: &mut DockerState, text: &str) {
+        type_text(state, text);
+        search_does(state, TagSearchAction::Close);
+        search_does(state, TagSearchAction::Apply);
+    }
+
+    /// The texts of the suggestions the table shows.
+    fn suggested(state: &DockerState) -> Vec<String> {
+        let vm = build(state);
+
+        table(&vm)
+            .suggestions
+            .iter()
+            .map(|suggestion| suggestion.text().to_string())
+            .collect()
+    }
+
     #[test]
-    fn opening_a_project_keeps_the_containers_row_selected_and_limits_them() {
+    fn a_compose_tag_keeps_the_containers_row_selected_and_limits_the_rows() {
         let mut state = found(&[EngineKind::Docker]);
         load(&mut state, &docker(), lists(EngineKind::Docker));
-        let project = Place::compose(docker().address().clone(), "otty-fx");
-        let _ = reduce(&mut state, DockerIntent::Open(project));
+        add_tag(&mut state, "compose:otty-fx");
 
         let vm = build(&state);
         let table = table(&vm);
@@ -659,20 +697,16 @@ mod tests {
         assert_eq!(selected, vec!["Containers"]);
         assert_eq!(table.resource, ResourceKind::Containers);
         assert_eq!(table.rows.len(), 1);
-        assert_eq!(
-            table.compose_chip,
-            Some(i18n::docker_compose_chip("otty-fx"))
-        );
+        assert_eq!(table.search.tags().len(), 1);
         assert_eq!(table.empty_message, None);
     }
 
     #[test]
-    fn the_project_limit_works_with_the_name_filter() {
+    fn a_tag_works_with_the_name_text() {
         let mut state = found(&[EngineKind::Docker]);
         load(&mut state, &docker(), lists(EngineKind::Docker));
-        let project = Place::compose(docker().address().clone(), "otty-fx");
-        let _ = reduce(&mut state, DockerIntent::Open(project));
-        let _ = reduce(&mut state, DockerIntent::FilterChanged("exit".into()));
+        add_tag(&mut state, "compose:otty-fx");
+        type_text(&mut state, "exit");
 
         let vm = build(&state);
 
@@ -681,33 +715,88 @@ mod tests {
     }
 
     #[test]
-    fn the_whole_containers_list_has_no_chip() {
+    fn clear_all_shows_every_row_again() {
         let mut state = found(&[EngineKind::Docker]);
         load(&mut state, &docker(), lists(EngineKind::Docker));
+        add_tag(&mut state, "compose:otty-fx");
+
+        search_does(&mut state, TagSearchAction::ClearTags);
 
         let vm = build(&state);
-
-        assert_eq!(table(&vm).compose_chip, None);
+        assert!(table(&vm).search.tags().is_empty());
         assert!(table(&vm).rows.len() > 1);
     }
 
     #[test]
-    fn clearing_the_project_shows_all_containers_again() {
+    fn a_closed_search_has_no_suggestions() {
         let mut state = found(&[EngineKind::Docker]);
         load(&mut state, &docker(), lists(EngineKind::Docker));
-        let project = Place::compose(docker().address().clone(), "otty-fx");
-        let _ = reduce(&mut state, DockerIntent::Open(project));
 
-        let _ = reduce(&mut state, DockerIntent::ClearComposeProject);
+        assert!(suggested(&state).is_empty());
+    }
+
+    #[test]
+    fn a_focused_empty_search_suggests_the_keys_of_each_table() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+
+        for resource in ResourceKind::ALL {
+            open(&mut state, resource);
+            search_does(&mut state, TagSearchAction::Focused);
+
+            assert_eq!(
+                suggested(&state),
+                crate::widgets::docker::table_search::keys(resource),
+                "{resource:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn values_of_a_key_come_from_each_table() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        // (list, typed text, expected first value)
+        let cases = [
+            (ResourceKind::Images, "repository:busy", "busybox:1.37"),
+            (ResourceKind::Volumes, "name:otty-fx", "otty-fx-data"),
+            (ResourceKind::Networks, "name:bri", "bridge"),
+            (ResourceKind::Containers, "ports:18080", "18080:80/tcp"),
+        ];
+
+        for (resource, text, expected) in cases {
+            open(&mut state, resource);
+            type_text(&mut state, text);
+
+            assert_eq!(
+                suggested(&state).first().map(String::as_str),
+                Some(expected),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn values_of_a_key_come_from_the_rows_the_other_tags_leave() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        add_tag(&mut state, "compose:otty-fx");
+
+        type_text(&mut state, "name:");
+
+        assert_eq!(suggested(&state), vec!["otty-fx-web-1"]);
+    }
+
+    #[test]
+    fn a_tag_filters_each_table_by_its_own_values() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        open(&mut state, ResourceKind::Networks);
+
+        add_tag(&mut state, "driver:null");
 
         let vm = build(&state);
-        assert_eq!(table(&vm).compose_chip, None);
-        assert!(table(&vm).rows.len() > 1);
-        assert!(
-            vm.tree
-                .iter()
-                .any(|row| row.label == "Containers" && row.is_selected)
-        );
+        assert_eq!(table(&vm).rows.len(), 1);
     }
 
     #[test]
@@ -806,10 +895,10 @@ mod tests {
     }
 
     #[test]
-    fn sorting_applies_inside_the_filter_and_the_compose_project() {
+    fn sorting_applies_inside_the_search() {
         let mut state = found(&[EngineKind::Docker]);
         load(&mut state, &docker(), lists(EngineKind::Docker));
-        let _ = reduce(&mut state, DockerIntent::FilterChanged("exit".into()));
+        type_text(&mut state, "exit");
         let _ = reduce(&mut state, DockerIntent::SortBy(0));
         let _ = reduce(&mut state, DockerIntent::SortBy(0));
 
@@ -867,15 +956,12 @@ mod tests {
         load(&mut state, &docker(), lists(EngineKind::Docker));
         let position = state.shown_position(3);
         let _ = reduce(&mut state, DockerIntent::SelectRow(position));
-        let _ = reduce(
-            &mut state,
-            DockerIntent::FilterChanged(String::from("exit")),
-        );
+        type_text(&mut state, "exit");
 
         let vm = build(&state);
         let table = table(&vm);
 
-        assert_eq!(table.filter, "exit");
+        assert_eq!(table.search.input(), "exit");
         assert_eq!(table.rows.len(), 2);
         assert_eq!(table.rows[0][0], TableCell::mono("otty-fx-exit0"));
         assert_eq!(table.selected, Some(0));
@@ -885,10 +971,7 @@ mod tests {
     fn a_selected_row_outside_the_filter_is_not_highlighted() {
         let mut state = found(&[EngineKind::Docker]);
         load(&mut state, &docker(), lists(EngineKind::Docker));
-        let _ = reduce(
-            &mut state,
-            DockerIntent::FilterChanged(String::from("paused")),
-        );
+        type_text(&mut state, "paused");
 
         let vm = build(&state);
         let table = table(&vm);
@@ -902,21 +985,21 @@ mod tests {
     }
 
     #[test]
-    fn a_filter_without_matches_says_nothing_matches() {
-        let mut state = found(&[EngineKind::Docker]);
-        load(&mut state, &docker(), lists(EngineKind::Docker));
-        let _ = reduce(
-            &mut state,
-            DockerIntent::FilterChanged(String::from("zzz")),
-        );
+    fn a_search_without_matches_says_nothing_matches() {
+        let mut tagged = found(&[EngineKind::Docker]);
+        load(&mut tagged, &docker(), lists(EngineKind::Docker));
+        add_tag(&mut tagged, "status:zzz");
+        let mut typed = found(&[EngineKind::Docker]);
+        load(&mut typed, &docker(), lists(EngineKind::Docker));
+        type_text(&mut typed, "zzz");
+        let expected = Some(i18n::t(Key::DockerNothingMatches).to_string());
 
-        let vm = build(&state);
+        for state in [&tagged, &typed] {
+            let vm = build(state);
 
-        assert!(table(&vm).rows.is_empty());
-        assert_eq!(
-            table(&vm).empty_message,
-            Some(i18n::docker_nothing_matches("zzz"))
-        );
+            assert!(table(&vm).rows.is_empty());
+            assert_eq!(table(&vm).empty_message, expected);
+        }
     }
 
     #[test]

@@ -5,6 +5,9 @@ use otty_docker::{
     Container, Diagnosis, Discovery, EngineAddress, EngineInfo, EngineKind,
     Image, Network, Volume,
 };
+use otty_ui_kit::components::tag_search::{
+    TagSchema, TagSearch, TagSearchAction,
+};
 
 use super::actions::{ActionRequest, Confirm};
 use super::forms::Form;
@@ -14,24 +17,31 @@ use super::inspector::{
 use super::resource_rows::port_urls;
 use super::run_form::RunForm;
 use super::sort::{TableSort, TableSorts};
+use super::table_search::{
+    COMPOSE_KEY, TableSearches, container_row, containers_schema, image_row,
+    images_schema, network_row, networks_schema, volume_row, volumes_schema,
+};
 use super::types::{
     LoadedList, LoadedLists, Place, ResourceKind, shown_containers,
     shown_images, shown_networks, shown_volumes,
 };
 
 /// Runtime state of Docker mode: the engines and their lists, the open
-/// place, the selected row of each list, the name filter and the actions:
-/// the ones that run, the open confirmation, the row menu and the notice of
-/// the last failure.
+/// place, the selected row of each list, the tag search of each table and the
+/// actions: the ones that run, the open confirmation, the row menu and the
+/// notice of the last failure.
 #[derive(Debug, Default)]
 pub(crate) struct DockerState {
     is_active: bool,
     search: Search,
     engines: Vec<EngineState>,
     place: Option<Place>,
-    filter: String,
+    /// See [`Self::age_clock`].
+    age_clock: i64,
     /// The kept sort of each table; not saved to disk.
     sorts: TableSorts,
+    /// The kept tag search of each table; not saved to disk.
+    searches: TableSearches,
     inspector: InspectorState,
     running: Vec<ActionRequest>,
     confirm: Option<Confirm>,
@@ -83,14 +93,48 @@ impl DockerState {
         }
     }
 
-    /// Return the name filter above the table.
-    pub(crate) fn filter(&self) -> &str {
-        &self.filter
-    }
-
     /// Return how the `resource` table is sorted.
     pub(crate) fn sort(&self, resource: ResourceKind) -> TableSort {
         self.sorts.get(resource)
+    }
+
+    /// Return the tag search of the `resource` table.
+    pub(crate) fn table_search(&self, resource: ResourceKind) -> &TagSearch {
+        self.searches.get(resource)
+    }
+
+    /// Return the time (Unix seconds) the tag search counts ages with. It
+    /// moves only between intents: the rows the view filtered and the rows a
+    /// press is looked up in must be the same, or a press on a row could reach
+    /// another row when an `age` tag is on.
+    pub(crate) fn age_clock(&self) -> i64 {
+        self.age_clock
+    }
+
+    /// Return what the tag search of the open table knows; `None` with no
+    /// open table.
+    pub(crate) fn open_table_schema(&self) -> Option<TagSchema> {
+        let place = self.place.as_ref()?;
+        let engine = self.open_engine()?;
+        let now = self.age_clock;
+        let sort = self.sorts.get(place.resource());
+
+        let schema = match place.resource() {
+            ResourceKind::Containers => {
+                containers_schema(engine.containers.items(), now, sort)
+            },
+            ResourceKind::Images => {
+                images_schema(engine.images.items(), now, sort)
+            },
+            ResourceKind::Volumes => {
+                volumes_schema(engine.volumes.items(), now, sort)
+            },
+            ResourceKind::Networks => {
+                networks_schema(engine.networks.items(), now, sort)
+            },
+        };
+
+        Some(schema)
     }
 
     /// Return the state of the inspector tabs.
@@ -351,15 +395,17 @@ impl DockerState {
         true
     }
 
-    /// Show `place`. Opening another place clears the filter and goes
-    /// back to the Overview tab.
+    /// Show `place`. Opening another place forgets the text in the search
+    /// field, keeps the tags of each table and goes back to the Overview tab.
     pub(super) fn open(&mut self, place: Place) {
         if self.place.as_ref() == Some(&place) {
             return;
         }
 
+        if let Some(left) = self.place.as_ref() {
+            self.searches.get_mut(left.resource()).clear_input();
+        }
         self.place = Some(place);
-        self.filter.clear();
         self.inspector.select_tab(InspectorTab::Overview);
         self.notice = None;
     }
@@ -445,10 +491,12 @@ impl DockerState {
         self.run_form.take()
     }
 
-    /// Show the whole `resource` list of `engine` (no name filter, no
-    /// Compose project) and select the item with `id` in it: a container,
-    /// image or network id, or a volume name. A new container is selected
-    /// before the reload that brings it into the list.
+    /// Show the `resource` list of `engine` and select the item with `id` in
+    /// it: a container, image or network id, or a volume name. The text in the
+    /// field goes away, and so do the table's tags when they would hide the
+    /// item. A new container is selected before the reload that brings it
+    /// into the list, so a tag cannot be checked against it; the tags go away
+    /// then too.
     pub(super) fn show_item(
         &mut self,
         engine: &EngineAddress,
@@ -456,7 +504,13 @@ impl DockerState {
         id: String,
     ) {
         self.open(Place::new(engine.clone(), resource));
-        self.filter.clear();
+
+        let passes = self.item_passes_tags(engine, resource, &id);
+        let search = self.searches.get_mut(resource);
+        search.clear_input();
+        if !passes {
+            let _ = search.clear_tags();
+        }
 
         let Some(engine) = self
             .engines
@@ -473,52 +527,29 @@ impl DockerState {
         }
     }
 
-    /// Show only the containers of the Compose project `project` of the
-    /// open engine.
+    /// Show the containers of the open engine with the tag
+    /// `compose:<project>`, replacing another `compose` tag. The text in the
+    /// field goes away, so the project shows.
     pub(super) fn open_compose_project(&mut self, project: &str) {
         let Some(place) = self.place.as_ref() else {
             return;
         };
 
-        let compose = Place::compose(place.engine().clone(), project);
-        self.open(compose);
+        let containers =
+            Place::new(place.engine().clone(), ResourceKind::Containers);
+        self.open(containers);
+
+        let search = self.searches.get_mut(ResourceKind::Containers);
+        search.clear_input();
+        let _ = search.set_tag(COMPOSE_KEY, project);
     }
 
-    /// Show all containers of the open engine again, leaving a Compose
-    /// project.
-    pub(super) fn clear_compose_project(&mut self) {
-        let Some(place) = self.place.as_ref() else {
-            return;
-        };
-        if place.compose_project().is_none() {
-            return;
-        }
-
-        let all = Place::new(place.engine().clone(), ResourceKind::Containers);
-        self.open(all);
-    }
-
-    /// Show only the containers of the Compose project of the container at
-    /// `index` of the shown, filtered containers table. Returns `false`
-    /// when there is no such row or it has no project.
+    /// Open the Compose project of the container at `index` of the shown,
+    /// filtered containers table. Returns `false` when there is no such row
+    /// or it has no project.
     pub(super) fn open_compose_project_of_row(&mut self, index: usize) -> bool {
-        let (Some(place), Some(engine)) =
-            (self.place.as_ref(), self.open_engine())
-        else {
-            return false;
-        };
-        if place.resource() != ResourceKind::Containers {
-            return false;
-        }
-
-        let shown = shown_containers(
-            engine.containers.items(),
-            self.filter.as_str(),
-            place.compose_project(),
-            self.sorts.get(ResourceKind::Containers),
-        );
-        let Some(project) = shown
-            .get(index)
+        let Some(project) = self
+            .shown_container(index)
             .and_then(|container| container.compose_project())
             .map(str::to_string)
         else {
@@ -537,19 +568,9 @@ impl DockerState {
         index: usize,
         link: usize,
     ) -> Option<String> {
-        let (place, engine) = (self.place.as_ref()?, self.open_engine()?);
-        if place.resource() != ResourceKind::Containers {
-            return None;
-        }
+        let container = self.shown_container(index)?;
 
-        let shown = shown_containers(
-            engine.containers.items(),
-            self.filter.as_str(),
-            place.compose_project(),
-            self.sorts.get(ResourceKind::Containers),
-        );
-
-        port_urls(shown.get(index)?.ports()).into_iter().nth(link)
+        port_urls(container.ports()).into_iter().nth(link)
     }
 
     /// Sort the open table by the column at `column`, or turn its order
@@ -563,9 +584,24 @@ impl DockerState {
         self.sorts = self.sorts.pressed(place.resource(), column);
     }
 
-    /// Replace the name filter.
-    pub(super) fn set_filter(&mut self, filter: String) {
-        self.filter = filter;
+    /// Do what the user did in the tag search of the open table.
+    pub(super) fn perform_search(&mut self, action: TagSearchAction) {
+        let Some(schema) = self.open_table_schema() else {
+            return;
+        };
+        let Some(place) = self.place.as_ref() else {
+            return;
+        };
+
+        let _ = self
+            .searches
+            .get_mut(place.resource())
+            .perform(action, &schema);
+    }
+
+    /// Set the time the tag search counts ages with; see [`Self::age_clock`].
+    pub(super) fn set_age_clock(&mut self, now: i64) {
+        self.age_clock = now;
     }
 
     /// Return the id of the row at `index` of the shown, filtered table;
@@ -573,30 +609,28 @@ impl DockerState {
     pub(super) fn shown_row_id(&self, index: usize) -> Option<String> {
         let place = self.place.as_ref()?;
         let engine = self.open_engine()?;
-        let filter = self.filter.as_str();
+        let search = self.searches.get(place.resource());
+        let now = self.age_clock;
         let sort = self.sorts.get(place.resource());
 
         let id = match place.resource() {
-            ResourceKind::Containers => shown_containers(
-                engine.containers.items(),
-                filter,
-                place.compose_project(),
-                sort,
-            )
-            .get(index)
-            .map(|container| container.id()),
+            ResourceKind::Containers => {
+                shown_containers(engine.containers.items(), search, now, sort)
+                    .get(index)
+                    .map(|container| container.id())
+            },
             ResourceKind::Images => {
-                shown_images(engine.images.items(), filter, sort)
+                shown_images(engine.images.items(), search, now, sort)
                     .get(index)
                     .map(|image| image.id())
             },
             ResourceKind::Volumes => {
-                shown_volumes(engine.volumes.items(), filter, sort)
+                shown_volumes(engine.volumes.items(), search, now, sort)
                     .get(index)
                     .map(|volume| volume.name())
             },
             ResourceKind::Networks => {
-                shown_networks(engine.networks.items(), filter, sort)
+                shown_networks(engine.networks.items(), search, now, sort)
                     .get(index)
                     .map(|network| network.id())
             },
@@ -630,6 +664,59 @@ impl DockerState {
         }
         true
     }
+
+    /// Return the container at `index` of the shown, filtered containers
+    /// table; `None` when another list is open or there is no such row.
+    fn shown_container(&self, index: usize) -> Option<&Container> {
+        let (place, engine) = (self.place.as_ref()?, self.open_engine()?);
+        if place.resource() != ResourceKind::Containers {
+            return None;
+        }
+
+        let shown = shown_containers(
+            engine.containers.items(),
+            self.searches.get(ResourceKind::Containers),
+            self.age_clock,
+            self.sorts.get(ResourceKind::Containers),
+        );
+
+        shown.get(index).copied()
+    }
+
+    /// Return whether the tags of the `resource` table let the item with `id`
+    /// of the engine at `address` through; `false` when it is not listed.
+    fn item_passes_tags(
+        &self,
+        address: &EngineAddress,
+        resource: ResourceKind,
+        id: &str,
+    ) -> bool {
+        let Some(engine) = self.engine(address) else {
+            return false;
+        };
+        let now = self.age_clock;
+
+        let row = match resource {
+            ResourceKind::Containers => engine
+                .containers
+                .find(id, Container::id)
+                .map(|container| container_row(container, now)),
+            ResourceKind::Images => engine
+                .images
+                .find(id, Image::id)
+                .map(|image| image_row(image, now)),
+            ResourceKind::Volumes => engine
+                .volumes
+                .find(id, Volume::name)
+                .map(|volume| volume_row(volume, now)),
+            ResourceKind::Networks => engine
+                .networks
+                .find(id, Network::id)
+                .map(|network| network_row(network, now)),
+        };
+
+        row.is_some_and(|row| self.searches.get(resource).passes_tags(&row))
+    }
 }
 
 #[cfg(test)]
@@ -640,39 +727,35 @@ impl DockerState {
     pub(crate) fn shown_position(&self, engine_index: usize) -> usize {
         let place = self.place().expect("an open place");
         let engine = self.open_engine().expect("an open engine");
-        let filter = self.filter.as_str();
+        let search = self.searches.get(place.resource());
+        let now = self.age_clock;
         let sort = self.sorts.get(place.resource());
 
         match place.resource() {
             ResourceKind::Containers => {
                 let item = &engine.containers.items()[engine_index];
-                shown_containers(
-                    engine.containers.items(),
-                    filter,
-                    place.compose_project(),
-                    sort,
-                )
-                .iter()
-                .position(|shown| shown.id() == item.id())
-                .expect("the item is shown")
+                shown_containers(engine.containers.items(), search, now, sort)
+                    .iter()
+                    .position(|shown| shown.id() == item.id())
+                    .expect("the item is shown")
             },
             ResourceKind::Images => {
                 let item = &engine.images.items()[engine_index];
-                shown_images(engine.images.items(), filter, sort)
+                shown_images(engine.images.items(), search, now, sort)
                     .iter()
                     .position(|shown| shown.id() == item.id())
                     .expect("the item is shown")
             },
             ResourceKind::Volumes => {
                 let item = &engine.volumes.items()[engine_index];
-                shown_volumes(engine.volumes.items(), filter, sort)
+                shown_volumes(engine.volumes.items(), search, now, sort)
                     .iter()
                     .position(|shown| shown.name() == item.name())
                     .expect("the item is shown")
             },
             ResourceKind::Networks => {
                 let item = &engine.networks.items()[engine_index];
-                shown_networks(engine.networks.items(), filter, sort)
+                shown_networks(engine.networks.items(), search, now, sort)
                     .iter()
                     .position(|shown| shown.id() == item.id())
                     .expect("the item is shown")

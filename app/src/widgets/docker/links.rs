@@ -1,7 +1,7 @@
 //! Where a value that names something OTTY can show leads (spec Decision
 //! 20): a published TCP port opens in the browser, an image, network, volume
 //! or container opens its list with that item selected, and a Compose project
-//! opens the compose filter. A value that names nothing in the engine's lists
+//! adds its `compose` tag. A value that names nothing in the engine's lists
 //! has no target and stays text. The Overview and the Inspect tree share
 //! these rules.
 
@@ -128,7 +128,7 @@ pub(crate) fn container_id_target(
         .map(container_target)
 }
 
-/// The compose filter of `project`, when some container belongs to it.
+/// The `compose` tag of `project`, when some container belongs to it.
 pub(crate) fn compose_target(
     project: &str,
     containers: &[Container],

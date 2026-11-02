@@ -18,6 +18,16 @@ const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
 const DAY: i64 = 24 * HOUR;
 
+/// The current time in Unix seconds, for the age column of the tables; 0 when
+/// the clock is before 1970.
+pub(crate) fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX)
+        })
+}
+
 /// How long ago `created` was, at `now` (both Unix seconds): "2 min", "2 h",
 /// "3 d", "2 w", "1 mo", "1 y". Unknown times show [`NO_VALUE`].
 pub(crate) fn age_text(now: i64, created: Option<i64>) -> String {

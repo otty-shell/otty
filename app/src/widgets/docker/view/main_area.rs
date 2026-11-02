@@ -1,15 +1,15 @@
-//! The Docker mode main area: the header (the title row, then the toolbar
-//! with the name filter and the create, Prune and Refresh buttons) over the
-//! table of the open list, or a card while no engine is known.
+//! The Docker mode main area: the header (the title row, the toolbar with the
+//! tag search and the create, Prune and Refresh buttons, then the tags) over
+//! the table of the open list, or a card while no engine is known.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{Id, column, container, row, svg, text};
+use iced::widget::{Id, column, container, svg, text};
 use iced::{Alignment, Element, Length, Padding, Point};
-use otty_ui_kit::components::chip::Chip;
 use otty_ui_kit::components::data_table::{DataTable, SortDirection};
 use otty_ui_kit::components::empty_card::EmptyCard;
 use otty_ui_kit::components::notice::Notice;
-use otty_ui_kit::components::text_field::TextField;
+use otty_ui_kit::components::tag_row::TagRow;
+use otty_ui_kit::components::tag_search_field::TagSearchField;
 use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
@@ -24,15 +24,16 @@ use crate::i18n::{self, Key};
 use crate::icons;
 use crate::theme::ThemeProps;
 
-/// Height of the title row: as tall as the compose chip and a button.
+/// Height of the title row: as tall as a button.
 const TITLE_ROW_HEIGHT: f32 = size::CONTROL_MD;
-/// Smallest width of the name filter; it shrinks to it before any button
+/// Smallest width of the search field; it shrinks to it before any button
 /// moves into the toolbar's "⋯" menu.
-const FILTER_MIN_WIDTH: f32 = 140.0;
-/// Width of the name filter when there is room.
-const FILTER_MAX_WIDTH: f32 = 240.0;
-/// Widget id of the name filter.
-const FILTER_ID: &str = "docker_filter";
+const SEARCH_MIN_WIDTH: f32 = 140.0;
+/// Width of the search field when there is room; a typed `key:value` needs
+/// more than a name did.
+const SEARCH_MAX_WIDTH: f32 = 320.0;
+/// Widget id of the search field.
+const SEARCH_ID: &str = "docker_search";
 
 /// Props for the Docker main area.
 pub(crate) struct MainAreaProps<'a> {
@@ -135,19 +136,28 @@ fn notice_row<'a>(notice: Notice<DockerIntent>) -> Element<'a, DockerIntent> {
         .into()
 }
 
-/// The header above the table: the title row, then the toolbar.
+/// The header above the table: the title row, the toolbar and, when the table
+/// has tags, the row of tags.
 fn header<'a>(
     vm: &TableViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, DockerIntent> {
-    column![title_row(vm, palette), toolbar(vm, palette)]
+    let mut header = column![title_row(vm, palette), toolbar(vm, palette)]
         .spacing(spacing::SPACE_3)
-        .padding(Padding::from([spacing::SPACE_4, spacing::SPACE_5]))
-        .into()
+        .padding(Padding::from([spacing::SPACE_4, spacing::SPACE_5]));
+    if !vm.search.tags().is_empty() {
+        header = header.push(
+            TagRow::new(vm.search.tags(), palette)
+                .remove_label(i18n::t(Key::DockerTagRemove))
+                .clear_all_label(i18n::t(Key::DockerTagsClearAll))
+                .on_action(DockerIntent::TagSearch),
+        );
+    }
+
+    header.into()
 }
 
-/// The title and, while the containers are limited to a Compose project,
-/// the project chip with its clear button.
+/// The title.
 fn title_row<'a>(
     vm: &TableViewModel<'a>,
     palette: &UiPalette,
@@ -160,28 +170,21 @@ fn title_row<'a>(
         .color(palette.text_strong())
         .wrapping(Wrapping::None);
 
-    let mut title_row = row![title]
-        .spacing(spacing::SPACE_4)
+    container(title)
+        .height(TITLE_ROW_HEIGHT)
         .align_y(Alignment::Center)
-        .height(TITLE_ROW_HEIGHT);
-    if let Some(label) = vm.compose_chip.as_deref() {
-        title_row = title_row.push(Chip::new(label, palette).on_clear(
-            i18n::t(Key::DockerShowAllContainers),
-            DockerIntent::ClearComposeProject,
-        ));
-    }
-
-    title_row.into()
+        .into()
 }
 
-/// The name filter, then the create, Prune and Refresh icon buttons; their
-/// labels are the tooltips. When the row is too narrow the filter shrinks
+/// The search field, then the create, Prune and Refresh icon buttons; their
+/// labels are the tooltips. When the row is too narrow the field shrinks
 /// first, then the last buttons move into the "⋯" menu.
 fn toolbar<'a>(
     vm: &TableViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, DockerIntent> {
-    let filter = vm.filter;
+    let search = vm.search;
+    let suggestions = vm.suggestions.clone();
     let field_palette = palette.clone();
 
     let create = ToolbarItem::new(
@@ -190,11 +193,11 @@ fn toolbar<'a>(
     )
     .on_press_maybe(vm.can_create.then_some(DockerIntent::OpenCreate));
     let mut toolbar = Toolbar::new(i18n::t(Key::DockerMoreActions), palette)
-        .field(FILTER_MIN_WIDTH, FILTER_MAX_WIDTH, move || {
-            TextField::new("", filter, &field_palette)
-                .placeholder(i18n::t(Key::DockerFilterPlaceholder))
-                .id(Id::new(FILTER_ID))
-                .on_input(DockerIntent::FilterChanged)
+        .field(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH, move || {
+            TagSearchField::new(search, suggestions.clone(), &field_palette)
+                .placeholder(i18n::t(Key::DockerSearchPlaceholder))
+                .id(Id::new(SEARCH_ID))
+                .on_action(DockerIntent::TagSearch)
                 .into()
         })
         .item(create);
@@ -256,26 +259,40 @@ fn card<'a>(
 
 #[cfg(test)]
 mod tests {
+    use iced::keyboard::key::Named;
     use iced_test::simulator;
+    use otty_docker::{Container, EngineKind, fixtures};
     use otty_ui_kit::components::data_table::{
         CellPart, TableCell, TableColumn,
     };
     use otty_ui_kit::components::status_badge::StatusTone;
+    use otty_ui_kit::components::tag_search::{
+        Suggestion, Tag, TagSearch, TagSearchAction,
+    };
 
     use super::*;
     use crate::theme::ThemeManager;
     use crate::widgets::docker::action_model::PruneViewModel;
+    use crate::widgets::docker::model;
     use crate::widgets::docker::no_engine::{
         self as no_engine_vm, NoEngineCase,
     };
+    use crate::widgets::docker::reducer::reduce;
     use crate::widgets::docker::sort::TableSorts;
-    use crate::widgets::docker::types::ResourceKind;
+    use crate::widgets::docker::state::DockerState;
+    use crate::widgets::docker::types::{LoadedLists, ResourceKind};
+
+    const NOW: i64 = 1_793_557_960;
+
+    /// A search with nothing typed and no tags.
+    static EMPTY_SEARCH: std::sync::LazyLock<TagSearch> =
+        std::sync::LazyLock::new(TagSearch::default);
 
     fn table<'a>(rows: Vec<Vec<TableCell>>) -> MainViewModel<'a> {
         MainViewModel::Table(TableViewModel {
             resource: ResourceKind::Containers,
-            filter: "",
-            compose_chip: None,
+            search: &EMPTY_SEARCH,
+            suggestions: Vec::new(),
             sort: TableSorts::default().get(ResourceKind::Containers),
             columns: vec![
                 TableColumn::new("Name", 3).sortable(true),
@@ -295,9 +312,9 @@ mod tests {
         })
     }
 
-    fn with(
-        change: impl FnOnce(TableViewModel<'static>) -> TableViewModel<'static>,
-    ) -> MainViewModel<'static> {
+    fn with<'a>(
+        change: impl FnOnce(TableViewModel<'a>) -> TableViewModel<'a>,
+    ) -> MainViewModel<'a> {
         match table(rows()) {
             MainViewModel::Table(table) => MainViewModel::Table(change(table)),
             other => other,
@@ -437,9 +454,9 @@ mod tests {
         width: f32,
         from_end: usize,
     ) -> iced::Point {
-        let filter = ui
-            .find(Id::new(FILTER_ID))
-            .expect("filter should be visible")
+        let field = ui
+            .find(Id::new(SEARCH_ID))
+            .expect("field should be visible")
             .bounds();
 
         iced::Point::new(
@@ -447,7 +464,7 @@ mod tests {
                 - spacing::SPACE_5
                 - BUTTON / 2.0
                 - from_end as f32 * (BUTTON + spacing::SPACE_2),
-            filter.center_y(),
+            field.center_y(),
         )
     }
 
@@ -459,11 +476,22 @@ mod tests {
         let _ = ui.simulate(iced_test::simulator::click());
     }
 
+    /// A search with `tags`.
+    fn tagged(tags: &[(&'static str, &str)]) -> TagSearch {
+        let mut search = TagSearch::default();
+        for (key, value) in tags {
+            let _ = search.set_tag(key, value);
+        }
+
+        search
+    }
+
     #[test]
-    fn the_title_and_the_compose_chip_sit_above_the_filter_row() {
+    fn title_search_tags_and_table_come_in_that_order() {
         let themes = ThemeManager::new();
+        let search = tagged(&[("compose", "otty-site")]);
         let vm = with(|table| TableViewModel {
-            compose_chip: Some(i18n::docker_compose_chip("otty-site")),
+            search: &search,
             ..table
         });
         let mut ui =
@@ -473,17 +501,19 @@ mod tests {
             .find(i18n::t(Key::DockerContainers))
             .expect("title should show")
             .bounds();
-        let chip = ui
-            .find("compose: otty-site")
-            .expect("chip should show")
+        let field = ui
+            .find(Id::new(SEARCH_ID))
+            .expect("field should show")
             .bounds();
-        let filter = ui
-            .find(Id::new(FILTER_ID))
-            .expect("filter should show")
+        let tag = ui
+            .find("compose:otty-site")
+            .expect("tag should show")
             .bounds();
+        let table = ui.find("Name").expect("header should show").bounds();
 
-        assert!(title.y + title.height <= filter.y, "title above the filter");
-        assert!(chip.y + chip.height <= filter.y, "chip above the filter");
+        assert!(title.y + title.height <= field.y, "title above the field");
+        assert!(field.y + field.height <= tag.y, "field above the tag");
+        assert!(tag.y + tag.height <= table.y, "tag above the table");
         assert!(ui.find("Docker 29.9.1").is_err(), "the engine chip is gone");
         assert!(
             ui.find(i18n::t(Key::ThisComputerNote)).is_err(),
@@ -571,8 +601,8 @@ mod tests {
 
         let create = toolbar_button(&mut ui, NARROW, 1);
         click_at(&mut ui, create);
-        ui.click(Id::new(FILTER_ID))
-            .expect("filter should be visible");
+        ui.click(Id::new(SEARCH_ID))
+            .expect("field should be visible");
         let _ = ui.typewrite("w");
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
@@ -580,7 +610,10 @@ mod tests {
             intents,
             vec![
                 DockerIntent::OpenCreate,
-                DockerIntent::FilterChanged(String::from("w"))
+                DockerIntent::TagSearch(TagSearchAction::Focused),
+                DockerIntent::TagSearch(TagSearchAction::InputChanged(
+                    String::from("w")
+                )),
             ]
         );
     }
@@ -633,65 +666,250 @@ mod tests {
     }
 
     #[test]
-    fn the_compose_chip_shows_and_its_cross_shows_all_containers() {
+    fn the_cross_of_a_tag_and_clear_all_send_their_actions() {
         let themes = ThemeManager::new();
-        let vm = match table(rows()) {
-            MainViewModel::Table(table) => {
-                MainViewModel::Table(TableViewModel {
-                    compose_chip: Some(i18n::docker_compose_chip("otty-site")),
-                    ..table
-                })
-            },
-            other => other,
-        };
-        let mut ui = simulator(view(MainAreaProps {
-            vm,
-            theme: ThemeProps::new(themes.current()),
-        }));
-        let chip = ui
-            .find("compose: otty-site")
-            .expect("compose chip should show");
-        let bounds = chip.bounds();
+        let search = tagged(&[("compose", "otty-site"), ("status", "Running")]);
+        let vm = with(|table| TableViewModel {
+            search: &search,
+            ..table
+        });
+        let mut ui =
+            simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
+        let tag = ui.find("status:Running").expect("tag should show").bounds();
 
         // The cross sits one gap right of the chip label.
-        ui.point_at(iced::Point::new(
-            bounds.x + bounds.width + spacing::SPACE_2 + 12.0,
-            bounds.y + bounds.height / 2.0,
-        ));
-        let _ = ui.simulate(iced_test::simulator::click());
+        click_at(
+            &mut ui,
+            iced::Point::new(
+                tag.x + tag.width + spacing::SPACE_2 + 12.0,
+                tag.y + tag.height / 2.0,
+            ),
+        );
+        ui.click(i18n::t(Key::DockerTagsClearAll))
+            .expect("clear all should show");
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
-        assert_eq!(intents, vec![DockerIntent::ClearComposeProject]);
+        assert_eq!(
+            intents,
+            vec![
+                DockerIntent::TagSearch(TagSearchAction::RemoveTag(1)),
+                DockerIntent::TagSearch(TagSearchAction::ClearTags),
+            ]
+        );
     }
 
     #[test]
-    fn without_a_compose_project_there_is_no_chip() {
+    fn without_tags_there_is_no_tags_row() {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(MainAreaProps {
             vm: table(rows()),
             theme: ThemeProps::new(themes.current()),
         }));
 
-        assert!(ui.find("compose: otty-site").is_err());
+        assert!(ui.find(i18n::t(Key::DockerTagsClearAll)).is_err());
     }
 
     #[test]
-    fn typing_in_the_filter_changes_it() {
+    fn typing_in_the_search_field_sends_the_text() {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(MainAreaProps {
             vm: table(rows()),
             theme: ThemeProps::new(themes.current()),
         }));
 
-        ui.click(Id::new(FILTER_ID))
-            .expect("filter should be visible");
+        ui.click(Id::new(SEARCH_ID))
+            .expect("field should be visible");
         let _ = ui.typewrite("w");
 
         let intents: Vec<DockerIntent> = ui.into_messages().collect();
         assert_eq!(
             intents,
-            vec![DockerIntent::FilterChanged(String::from("w"))]
+            vec![
+                DockerIntent::TagSearch(TagSearchAction::Focused),
+                DockerIntent::TagSearch(TagSearchAction::InputChanged(
+                    String::from("w")
+                )),
+            ]
         );
+    }
+
+    // The whole flow, over the real state and reducer.
+
+    /// Docker mode with the fixture engine and its lists.
+    fn loaded_state() -> DockerState {
+        let docker = fixtures::engine(EngineKind::Docker);
+        let resources = fixtures::resources(EngineKind::Docker);
+        let mut state = DockerState::default();
+        let _ = reduce(&mut state, DockerIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ])),
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: docker.address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(resources.containers().to_vec()),
+                    images: Ok(resources.images().to_vec()),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            },
+        );
+
+        state
+    }
+
+    /// Draws the main area of `state`, does `step` in it and reduces what it
+    /// sent, as the app does between frames.
+    fn in_frame(
+        state: &mut DockerState,
+        step: impl FnOnce(&mut iced_test::Simulator<'_, DockerIntent>),
+    ) {
+        let themes = ThemeManager::new();
+        let intents: Vec<DockerIntent> = {
+            let vm = model::main_area(state, NOW);
+            let mut ui =
+                simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
+            step(&mut ui);
+            ui.into_messages().collect()
+        };
+
+        for intent in intents {
+            let _ = reduce(state, intent);
+        }
+    }
+
+    /// Clicks the field and types one character per frame, as a person does.
+    fn type_in_field(state: &mut DockerState, text: &str) {
+        for character in text.chars() {
+            in_frame(state, |ui| {
+                ui.click(Id::new(SEARCH_ID))
+                    .expect("field should be visible");
+                let _ = ui.typewrite(character.to_string().as_str());
+            });
+        }
+    }
+
+    fn tap_in_field(state: &mut DockerState, key: Named) {
+        in_frame(state, |ui| {
+            ui.click(Id::new(SEARCH_ID))
+                .expect("field should be visible");
+            ui.tap_key(key);
+        });
+    }
+
+    /// The rows the main area of `state` shows.
+    fn row_count(state: &DockerState) -> usize {
+        match model::main_area(state, NOW) {
+            MainViewModel::Table(table) => table.rows.len(),
+            _ => 0,
+        }
+    }
+
+    #[test]
+    fn typing_a_key_and_a_value_with_enter_gives_a_tag_and_fewer_rows() {
+        let mut state = loaded_state();
+        let before = row_count(&state);
+        let search = |state: &DockerState| {
+            state.table_search(ResourceKind::Containers).clone()
+        };
+
+        type_in_field(&mut state, "sta");
+        assert_eq!(row_count(&state), 0, "plain text filters by name");
+        tap_in_field(&mut state, Named::Enter);
+        assert_eq!(search(&state).input(), "status:");
+        assert_eq!(
+            row_count(&state),
+            before,
+            "a half typed tag filters nothing"
+        );
+
+        type_in_field(&mut state, "run");
+        tap_in_field(&mut state, Named::Enter);
+
+        let labels: Vec<String> =
+            search(&state).tags().iter().map(Tag::label).collect();
+        assert_eq!(
+            labels,
+            vec![format!("status:{}", i18n::t(Key::DockerStateRunning))]
+        );
+        assert_eq!(search(&state).input(), "");
+        assert_eq!(row_count(&state), 2);
+        assert!(before > 2);
+    }
+
+    #[test]
+    fn focusing_the_empty_field_lists_the_keys_of_the_table() {
+        let mut state = loaded_state();
+
+        in_frame(&mut state, |ui| {
+            ui.click(Id::new(SEARCH_ID))
+                .expect("field should be visible");
+        });
+
+        let MainViewModel::Table(table) = model::main_area(&state, NOW) else {
+            panic!("expected a table");
+        };
+        let keys: Vec<&str> =
+            table.suggestions.iter().map(Suggestion::text).collect();
+        assert_eq!(
+            keys,
+            ["name", "status", "image", "compose", "ports", "age"]
+        );
+    }
+
+    #[test]
+    fn pressing_a_suggestion_applies_it_and_the_list_closes_on_a_press_outside()
+    {
+        let mut state = loaded_state();
+        type_in_field(&mut state, "status:");
+
+        in_frame(&mut state, |ui| {
+            ui.click(i18n::t(Key::DockerStatePaused))
+                .expect("value should be listed");
+        });
+        let tags = state.table_search(ResourceKind::Containers).tags().len();
+
+        in_frame(&mut state, |ui| {
+            click_at(ui, iced::Point::new(WIDE - 2.0, 590.0));
+        });
+
+        assert_eq!(tags, 1);
+        assert!(!state.table_search(ResourceKind::Containers).is_open());
+    }
+
+    #[test]
+    fn a_row_press_after_filtering_hits_the_row_that_is_shown() {
+        let mut state = loaded_state();
+        type_in_field(&mut state, "status:ex");
+        tap_in_field(&mut state, Named::ArrowDown);
+        tap_in_field(&mut state, Named::Enter);
+        tap_in_field(&mut state, Named::Escape);
+
+        in_frame(&mut state, |ui| {
+            ui.click("otty-fx-exit3").expect("the row should be shown");
+        });
+
+        let engine = state.open_engine().expect("docker engine");
+        let selected = engine.containers().selected(Container::id);
+        assert_eq!(selected.map(Container::name), Some("otty-fx-exit3"));
+    }
+
+    #[test]
+    fn a_table_with_tags_and_no_rows_says_nothing_matches_the_search() {
+        let mut state = loaded_state();
+        type_in_field(&mut state, "status:");
+        type_in_field(&mut state, "zzz");
+        tap_in_field(&mut state, Named::Enter);
+        tap_in_field(&mut state, Named::Escape);
+
+        in_frame(&mut state, |ui| {
+            assert!(ui.find(i18n::t(Key::DockerNothingMatches)).is_ok());
+        });
     }
 
     #[test]

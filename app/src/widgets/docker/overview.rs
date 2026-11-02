@@ -61,8 +61,8 @@ pub(crate) fn container_fields(
         .iter()
         .map(|network| network_value(network, networks))
         .collect();
-    // The container itself belongs to its project, so the filter is never
-    // empty.
+    // The container itself belongs to its project, so the tag always leaves
+    // a row.
     let compose = container.compose_project().map(|project| {
         let target = LinkTarget::ComposeProject(project.to_string());
         vec![Piece::Link(project.to_string(), target)]
@@ -236,7 +236,7 @@ fn network_value(
     vec![piece(attached.name(), target)]
 }
 
-/// A Compose project, a link to the compose filter when some container
+/// A Compose project, a link that adds its `compose` tag when some container
 /// belongs to it.
 fn compose_value(
     project: Option<&str>,

@@ -50,10 +50,6 @@ fn reduce_intent(
             state.open(place);
             closed
         },
-        DockerIntent::ClearComposeProject => {
-            state.clear_compose_project();
-            Task::none()
-        },
         DockerIntent::OpenComposeProject(index) => {
             let _ = state.open_compose_project_of_row(index);
             Task::none()
@@ -72,8 +68,8 @@ fn reduce_intent(
             let _ = state.select_shown_row(index);
             Task::none()
         },
-        DockerIntent::FilterChanged(filter) => {
-            state.set_filter(filter);
+        DockerIntent::TagSearch(action) => {
+            state.perform_search(action);
             Task::none()
         },
         DockerIntent::Refresh => load_every_engine(state),
@@ -253,8 +249,8 @@ fn sync_inspector(state: &mut DockerState) -> Task<DockerEvent> {
 }
 
 /// Follow an Overview link: open a published port's page in the browser,
-/// show the named item selected in its list of the open engine, or show the
-/// containers of a Compose project (spec Decision 20).
+/// show the named item selected in its list of the open engine, or add the
+/// `compose` tag of a Compose project (spec Decisions 20 and 21).
 fn follow_link(
     state: &mut DockerState,
     target: LinkTarget,
@@ -399,6 +395,7 @@ mod tests {
     use otty_ui_kit::components::data_tree::DataRow;
     use otty_ui_kit::components::key_value_list::ValuePart;
     use otty_ui_kit::components::log_view::LogViewState;
+    use otty_ui_kit::components::tag_search::{Tag, TagSearchAction};
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
@@ -668,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn opening_each_resource_shows_it_and_clears_the_filter() {
+    fn opening_each_resource_shows_it_and_forgets_the_text() {
         let mut state = loaded_state();
 
         // Containers are open first, so they come back last.
@@ -678,87 +675,13 @@ mod tests {
             ResourceKind::Networks,
             ResourceKind::Containers,
         ] {
-            let _ = reduce(
-                &mut state,
-                DockerIntent::FilterChanged(String::from("otty")),
-            );
+            type_text(&mut state, "otty");
 
             open(&mut state, resource);
 
             assert_eq!(state.place().map(Place::resource), Some(resource));
-            assert_eq!(state.filter(), "");
+            assert_eq!(input_of(&state, resource), "");
         }
-    }
-
-    #[test]
-    fn opening_the_shown_place_again_keeps_the_filter() {
-        let mut state = loaded_state();
-        let _ =
-            reduce(&mut state, DockerIntent::FilterChanged(String::from("x")));
-
-        open(&mut state, ResourceKind::Containers);
-
-        assert_eq!(state.filter(), "x");
-    }
-
-    #[test]
-    fn opening_a_compose_project_keeps_the_containers_and_clears_the_filter() {
-        let mut state = loaded_state();
-        let _ =
-            reduce(&mut state, DockerIntent::FilterChanged(String::from("x")));
-        let project = Place::compose(docker().address().clone(), "otty-fx");
-
-        let _ = reduce(&mut state, DockerIntent::Open(project));
-
-        let place = state.place().expect("an open place");
-        assert_eq!(place.resource(), ResourceKind::Containers);
-        assert_eq!(place.compose_project(), Some("otty-fx"));
-        assert_eq!(state.filter(), "");
-    }
-
-    #[test]
-    fn clearing_the_compose_project_opens_all_containers() {
-        let mut state = loaded_state();
-        let project = Place::compose(docker().address().clone(), "otty-fx");
-        let _ = reduce(&mut state, DockerIntent::Open(project));
-
-        let _ = reduce(&mut state, DockerIntent::ClearComposeProject);
-
-        let place = state.place().expect("an open place");
-        assert_eq!(place.resource(), ResourceKind::Containers);
-        assert_eq!(place.compose_project(), None);
-    }
-
-    #[test]
-    fn clearing_without_a_project_changes_nothing() {
-        let mut state = loaded_state();
-        let _ =
-            reduce(&mut state, DockerIntent::FilterChanged(String::from("x")));
-
-        let _ = reduce(&mut state, DockerIntent::ClearComposeProject);
-
-        assert_eq!(state.filter(), "x");
-    }
-
-    #[test]
-    fn a_compose_link_opens_the_project_of_the_shown_row() {
-        let mut state = loaded_state();
-        let index = {
-            let engine = state.open_engine().expect("docker engine");
-            engine
-                .containers()
-                .items()
-                .iter()
-                .position(|c| c.compose_project() == Some("otty-fx"))
-                .expect("a compose container")
-        };
-        let index = state.shown_position(index);
-
-        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(index));
-
-        let place = state.place().expect("an open place");
-        assert_eq!(place.resource(), ResourceKind::Containers);
-        assert_eq!(place.compose_project(), Some("otty-fx"));
     }
 
     /// Position in the shown table of the fixture container `name`.
@@ -799,10 +722,7 @@ mod tests {
     #[test]
     fn a_port_link_is_looked_up_in_the_filtered_table() {
         let mut state = loaded_state();
-        let _ = reduce(
-            &mut state,
-            DockerIntent::FilterChanged(String::from("otty-fx-web")),
-        );
+        type_text(&mut state, "otty-fx-web");
 
         let sent = effects(reduce(
             &mut state,
@@ -848,15 +768,14 @@ mod tests {
     #[test]
     fn a_compose_link_row_is_looked_up_in_the_filtered_table() {
         let mut state = loaded_state();
-        let _ = reduce(
-            &mut state,
-            DockerIntent::FilterChanged(String::from("web")),
-        );
+        type_text(&mut state, "web");
 
         let _ = reduce(&mut state, DockerIntent::OpenComposeProject(0));
 
-        let place = state.place().expect("an open place");
-        assert_eq!(place.compose_project(), Some("otty-fx"));
+        assert_eq!(
+            tags_of(&state, ResourceKind::Containers),
+            vec!["compose:otty-fx"]
+        );
     }
 
     #[test]
@@ -876,7 +795,7 @@ mod tests {
         let _ = reduce(&mut state, DockerIntent::OpenComposeProject(index));
         let _ = reduce(&mut state, DockerIntent::OpenComposeProject(999));
 
-        assert_eq!(state.place().and_then(Place::compose_project), None);
+        assert!(tags_of(&state, ResourceKind::Containers).is_empty());
     }
 
     #[test]
@@ -947,15 +866,14 @@ mod tests {
 
         let place = state.place().expect("an open place");
         assert_eq!(place.resource(), ResourceKind::Images);
-        assert_eq!(place.compose_project(), None);
+        assert!(tags_of(&state, ResourceKind::Containers).is_empty());
     }
 
     #[test]
-    fn compose_intents_without_an_open_engine_change_nothing() {
+    fn a_compose_link_without_an_open_engine_changes_nothing() {
         let mut state = DockerState::default();
 
         let _ = reduce(&mut state, DockerIntent::OpenComposeProject(0));
-        let _ = reduce(&mut state, DockerIntent::ClearComposeProject);
 
         assert_eq!(state.place(), None);
     }
@@ -1065,8 +983,8 @@ mod tests {
         );
         assert!(effects.is_empty(), "{effects:?}");
         assert_eq!(
-            state.place(),
-            Some(&Place::compose(docker().address().clone(), "otty-fx"))
+            tags_of(&state, ResourceKind::Containers),
+            vec!["compose:otty-fx"]
         );
     }
 
@@ -1105,10 +1023,7 @@ mod tests {
         let mut state = loaded_state();
         let busybox = busybox_id(&state);
         open(&mut state, ResourceKind::Images);
-        let _ = reduce(
-            &mut state,
-            DockerIntent::FilterChanged(String::from("no such image")),
-        );
+        type_text(&mut state, "no such image");
         let _ = reduce(&mut state, DockerIntent::SortBy(2));
         open(&mut state, ResourceKind::Containers);
         let _ = reduce(
@@ -1129,7 +1044,7 @@ mod tests {
                 ResourceKind::Images
             ))
         );
-        assert_eq!(state.filter(), "");
+        assert_eq!(input_of(&state, ResourceKind::Images), "");
         assert_eq!(state.selected_id(), Some(busybox.as_str()));
         assert_eq!(state.inspector().tab(), InspectorTab::Overview);
         let (_, row) = state.selected_row().expect("the image is selected");
@@ -1152,7 +1067,7 @@ mod tests {
     }
 
     #[test]
-    fn a_container_link_shows_every_container_with_that_one_selected() {
+    fn a_container_link_shows_that_container_selected_past_the_tags() {
         let mut state = loaded_state();
         let running = {
             let engine = state.open_engine().expect("docker engine");
@@ -1164,14 +1079,15 @@ mod tests {
                 .map(|c| c.id().to_string())
                 .expect("running container")
         };
-        let project = Place::compose(docker().address().clone(), "otty-fx");
-        let _ = reduce(&mut state, DockerIntent::Open(project));
+        add_tag(&mut state, "compose:otty-fx");
         open(&mut state, ResourceKind::Volumes);
 
         let _ = follow(
             &mut state,
             LinkTarget::Item(ResourceKind::Containers, running.clone()),
         );
+
+        assert!(tags_of(&state, ResourceKind::Containers).is_empty());
 
         assert_eq!(
             state.place(),
@@ -1240,22 +1156,6 @@ mod tests {
     }
 
     #[test]
-    fn a_compose_project_link_opens_the_compose_filter() {
-        let mut state = loaded_state();
-        open(&mut state, ResourceKind::Volumes);
-
-        let _ = follow(
-            &mut state,
-            LinkTarget::ComposeProject(String::from("otty-fx")),
-        );
-
-        assert_eq!(
-            state.place(),
-            Some(&Place::compose(docker().address().clone(), "otty-fx"))
-        );
-    }
-
-    #[test]
     fn links_without_an_open_engine_change_nothing() {
         let mut state = DockerState::default();
 
@@ -1274,8 +1174,10 @@ mod tests {
     #[test]
     fn a_row_press_in_a_compose_project_selects_that_project_container() {
         let mut state = loaded_state();
-        let project = Place::compose(docker().address().clone(), "otty-fx");
-        let _ = reduce(&mut state, DockerIntent::Open(project));
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
 
         let _ = reduce(&mut state, DockerIntent::SelectRow(0));
 
@@ -1287,10 +1189,7 @@ mod tests {
     #[test]
     fn a_row_press_selects_that_row_of_the_filtered_table() {
         let mut state = loaded_state();
-        let _ = reduce(
-            &mut state,
-            DockerIntent::FilterChanged(String::from("exit")),
-        );
+        type_text(&mut state, "exit");
 
         // The shown rows are exit0 and exit3 (same status, so by name).
         let _ = reduce(&mut state, DockerIntent::SelectRow(1));
@@ -2444,5 +2343,395 @@ mod tests {
         assert_eq!(kept, (Some(container_id(0)), 1));
         assert_eq!(followed(&state), Some(container_id(1)));
         assert_eq!(log_line_count(&state), 0);
+    }
+
+    // Tag search.
+
+    fn search_does(state: &mut DockerState, action: TagSearchAction) {
+        let _ = reduce(state, DockerIntent::TagSearch(action));
+    }
+
+    fn type_text(state: &mut DockerState, text: &str) {
+        search_does(state, TagSearchAction::InputChanged(text.to_string()));
+    }
+
+    /// Adds the typed `key:text` as it is, as Enter does with no suggestion.
+    fn add_tag(state: &mut DockerState, text: &str) {
+        type_text(state, text);
+        search_does(state, TagSearchAction::Close);
+        search_does(state, TagSearchAction::Apply);
+    }
+
+    fn tags_of(state: &DockerState, resource: ResourceKind) -> Vec<String> {
+        state
+            .table_search(resource)
+            .tags()
+            .iter()
+            .map(Tag::label)
+            .collect()
+    }
+
+    fn input_of(state: &DockerState, resource: ResourceKind) -> &str {
+        state.table_search(resource).input()
+    }
+
+    /// The names of the rows the containers table shows, top to bottom.
+    fn shown_containers(state: &DockerState) -> Vec<String> {
+        let engine = state.open_engine().expect("docker engine");
+
+        (0..)
+            .map_while(|row| state.shown_row_id(row))
+            .map(|id| {
+                let container = engine.containers().find(&id, Container::id);
+
+                container.expect("a listed container").name().to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn typing_in_the_search_goes_to_the_search_of_the_open_table() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Volumes);
+
+        type_text(&mut state, "dr");
+        search_does(&mut state, TagSearchAction::Apply);
+
+        assert_eq!(input_of(&state, ResourceKind::Volumes), "driver:");
+        assert_eq!(input_of(&state, ResourceKind::Containers), "");
+    }
+
+    #[test]
+    fn a_search_action_with_nothing_open_changes_nothing() {
+        let mut state = DockerState::default();
+
+        type_text(&mut state, "x");
+
+        assert_eq!(input_of(&state, ResourceKind::Containers), "");
+    }
+
+    #[test]
+    fn tags_per_table_survive_switching_lists_and_back() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "status:running");
+        open(&mut state, ResourceKind::Images);
+        add_tag(&mut state, "repository:busybox");
+
+        open(&mut state, ResourceKind::Containers);
+        let containers = tags_of(&state, ResourceKind::Containers);
+        let images = tags_of(&state, ResourceKind::Images);
+        open(&mut state, ResourceKind::Images);
+
+        assert_eq!(containers, vec!["status:running"]);
+        assert_eq!(images, vec!["repository:busybox"]);
+        assert_eq!(
+            tags_of(&state, ResourceKind::Images),
+            vec!["repository:busybox"]
+        );
+    }
+
+    #[test]
+    fn opening_another_list_forgets_the_text_and_closes_the_suggestions() {
+        let mut state = loaded_state();
+        type_text(&mut state, "web");
+
+        open(&mut state, ResourceKind::Images);
+        open(&mut state, ResourceKind::Containers);
+
+        let search = state.table_search(ResourceKind::Containers);
+        assert_eq!(search.input(), "");
+        assert!(!search.is_open());
+    }
+
+    #[test]
+    fn opening_the_shown_list_again_keeps_the_text() {
+        let mut state = loaded_state();
+        type_text(&mut state, "web");
+
+        open(&mut state, ResourceKind::Containers);
+
+        assert_eq!(input_of(&state, ResourceKind::Containers), "web");
+    }
+
+    #[test]
+    fn clear_all_removes_the_tags_of_this_table_only() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+        add_tag(&mut state, "repository:busybox");
+        open(&mut state, ResourceKind::Containers);
+        add_tag(&mut state, "status:running");
+        add_tag(&mut state, "image:busybox");
+
+        search_does(&mut state, TagSearchAction::ClearTags);
+
+        assert!(tags_of(&state, ResourceKind::Containers).is_empty());
+        assert_eq!(
+            tags_of(&state, ResourceKind::Images),
+            vec!["repository:busybox"]
+        );
+    }
+
+    #[test]
+    fn a_single_cross_removes_that_tag() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "status:running");
+        add_tag(&mut state, "image:busybox");
+
+        search_does(&mut state, TagSearchAction::RemoveTag(0));
+
+        assert_eq!(
+            tags_of(&state, ResourceKind::Containers),
+            vec!["image:busybox"]
+        );
+    }
+
+    #[test]
+    fn a_compose_link_adds_a_tag_and_keeps_the_list() {
+        let mut state = loaded_state();
+        let row = row_of(&state, "otty-fx-web-1");
+
+        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(row));
+
+        assert_eq!(
+            tags_of(&state, ResourceKind::Containers),
+            vec!["compose:otty-fx"]
+        );
+        assert_eq!(shown_containers(&state), vec!["otty-fx-web-1"]);
+    }
+
+    #[test]
+    fn a_compose_link_replaces_another_compose_tag_and_keeps_other_keys() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "status:running");
+        add_tag(&mut state, "compose:other");
+        add_tag(&mut state, "compose:another");
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
+
+        assert_eq!(
+            tags_of(&state, ResourceKind::Containers),
+            vec!["status:running", "compose:otty-fx"]
+        );
+    }
+
+    #[test]
+    fn a_compose_link_clears_the_text_so_the_project_shows() {
+        let mut state = loaded_state();
+        type_text(&mut state, "web");
+
+        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(0));
+
+        assert_eq!(input_of(&state, ResourceKind::Containers), "");
+    }
+
+    #[test]
+    fn a_compose_link_row_is_looked_up_among_the_tagged_rows() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "name:web");
+
+        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(0));
+
+        assert_eq!(
+            tags_of(&state, ResourceKind::Containers),
+            vec!["name:web", "compose:otty-fx"]
+        );
+    }
+
+    #[test]
+    fn a_compose_link_in_another_list_opens_the_containers_with_the_tag() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Volumes);
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
+
+        assert_eq!(
+            state.place().map(Place::resource),
+            Some(ResourceKind::Containers)
+        );
+        assert_eq!(
+            tags_of(&state, ResourceKind::Containers),
+            vec!["compose:otty-fx"]
+        );
+        assert!(tags_of(&state, ResourceKind::Volumes).is_empty());
+    }
+
+    #[test]
+    fn a_link_to_a_hidden_item_removes_the_tags_of_the_target_table() {
+        let mut state = loaded_state();
+        let busybox = busybox_id(&state);
+        open(&mut state, ResourceKind::Images);
+        add_tag(&mut state, "repository:otty-fx-img");
+        open(&mut state, ResourceKind::Containers);
+        add_tag(&mut state, "status:running");
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Images, busybox.clone()),
+        );
+
+        assert!(tags_of(&state, ResourceKind::Images).is_empty());
+        assert_eq!(
+            tags_of(&state, ResourceKind::Containers),
+            vec!["status:running"]
+        );
+        assert_eq!(state.selected_id(), Some(busybox.as_str()));
+    }
+
+    #[test]
+    fn a_link_to_a_visible_item_keeps_the_tags_of_the_target_table() {
+        let mut state = loaded_state();
+        let busybox = busybox_id(&state);
+        open(&mut state, ResourceKind::Images);
+        add_tag(&mut state, "repository:busybox");
+        open(&mut state, ResourceKind::Containers);
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Images, busybox.clone()),
+        );
+
+        assert_eq!(
+            tags_of(&state, ResourceKind::Images),
+            vec!["repository:busybox"]
+        );
+        assert_eq!(state.selected_id(), Some(busybox.as_str()));
+    }
+
+    #[test]
+    fn a_link_to_each_kind_of_item_keeps_tags_that_show_it() {
+        let mut state = loaded_state();
+        let resources = fixtures::resources(EngineKind::Docker);
+        let cases = [
+            (
+                ResourceKind::Volumes,
+                "name:otty-fx-data",
+                resources.volumes()[1].name().to_string(),
+            ),
+            (
+                ResourceKind::Networks,
+                "name:bridge",
+                resources.networks()[0].id().to_string(),
+            ),
+            (
+                ResourceKind::Containers,
+                "name:otty-fx-web-1",
+                resources.containers()[0].id().to_string(),
+            ),
+        ];
+
+        for (resource, tag, id) in cases {
+            open(&mut state, resource);
+            add_tag(&mut state, tag);
+            open(&mut state, ResourceKind::Images);
+
+            let _ = follow(&mut state, LinkTarget::Item(resource, id));
+
+            assert_eq!(tags_of(&state, resource), vec![tag], "{resource:?}");
+        }
+    }
+
+    #[test]
+    fn a_link_forgets_the_text_of_the_target_table_even_on_that_table() {
+        let mut state = loaded_state();
+        let first = state.selected_id().expect("a selected row").to_string();
+        type_text(&mut state, "no such name");
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Containers, first),
+        );
+
+        assert_eq!(input_of(&state, ResourceKind::Containers), "");
+    }
+
+    #[test]
+    fn a_link_to_an_item_not_loaded_yet_removes_the_tags() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "status:running");
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Item(ResourceKind::Containers, String::from("new")),
+        );
+
+        assert!(tags_of(&state, ResourceKind::Containers).is_empty());
+    }
+
+    #[test]
+    fn a_row_press_selects_that_row_among_the_tagged_rows() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "status:running");
+
+        let names = shown_containers(&state);
+        assert_eq!(names.len(), 2, "two running containers: {names:?}");
+
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        let engine = state.open_engine().expect("docker engine");
+        let selected = engine.containers().selected(Container::id);
+        assert_eq!(selected.map(Container::name), Some(names[1].as_str()));
+    }
+
+    #[test]
+    fn the_row_menu_opens_for_that_row_among_the_tagged_rows() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "name:exit3");
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::RowMenuPressed {
+                index: 0,
+                position: iced::Point::ORIGIN,
+            },
+        );
+
+        let exit3 = docker_containers()
+            .into_iter()
+            .find(|container| container.name() == "otty-fx-exit3")
+            .expect("fixture container");
+        assert_eq!(state.row_menu_target(), Some(exit3.id()));
+    }
+
+    #[test]
+    fn a_port_link_is_looked_up_among_the_tagged_rows() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "ports:18081");
+
+        let sent = effects(reduce(
+            &mut state,
+            DockerIntent::OpenPortLink { row: 0, link: 0 },
+        ));
+
+        assert_eq!(
+            sent,
+            vec![DockerEffect::OpenUrl(String::from(
+                "http://localhost:18081"
+            ))]
+        );
+    }
+
+    #[test]
+    fn an_age_tag_counts_ages_with_the_kept_clock() {
+        const NOW: i64 = 1_793_557_960;
+        const MUCH_LATER: i64 = NOW + 3_000_000;
+        let mut state = loaded_state();
+        let resources = fixtures::resources(EngineKind::Docker);
+        let created = resources.containers()[0].created();
+        let age = crate::widgets::docker::format::age_text(NOW, created);
+        state.set_age_clock(NOW);
+        add_tag(&mut state, &format!("age:{age}"));
+
+        let at_now = shown_containers(&state).len();
+        state.set_age_clock(MUCH_LATER);
+        let much_later = shown_containers(&state).len();
+
+        assert!(at_now > 0);
+        assert_eq!(much_later, 0);
     }
 }

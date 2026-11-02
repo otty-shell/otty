@@ -25,6 +25,7 @@ pub(crate) mod sort;
 mod state;
 pub(crate) mod status;
 mod subscription;
+pub(crate) mod table_search;
 pub(crate) mod types;
 pub(crate) mod view;
 
@@ -40,8 +41,8 @@ use status::StatusViewModel;
 
 /// Docker widget: the engines found on this computer, their containers,
 /// images, volumes and networks, the open list, the selected rows and the
-/// name filter (spec Decisions 5, 8 and 10). It asks for engine work only
-/// while Docker mode is active.
+/// tag search of each table (spec Decisions 5, 8, 10 and 21). It asks for
+/// engine work only while Docker mode is active.
 pub(crate) struct DockerWidget {
     state: DockerState,
     /// Aborts the running image pull when dropped or cancelled. It lives
@@ -76,9 +77,14 @@ impl DockerWidget {
         }
     }
 
-    /// Reduce an intent into state changes and effect events.
+    /// Reduce an intent into state changes and effect events. The clock of
+    /// the tag search moves after the intent, so the rows the next view shows
+    /// and the rows the next press is looked up in are counted at one time.
     pub(crate) fn reduce(&mut self, intent: DockerIntent) -> Task<DockerEvent> {
-        reducer::reduce(&mut self.state, intent)
+        let task = reducer::reduce(&mut self.state, intent);
+        self.state.set_age_clock(format::unix_now());
+
+        task
     }
 
     /// Build the rows of the engine tree in the left panel.
@@ -228,6 +234,16 @@ mod tests {
                 hasher.finish()
             })
             .collect()
+    }
+
+    #[test]
+    fn each_intent_moves_the_clock_of_the_tag_search() {
+        let mut widget = DockerWidget::new();
+        assert_eq!(widget.state.age_clock(), 0);
+
+        let _ = widget.reduce(DockerIntent::Leave);
+
+        assert!(widget.state.age_clock() > 0);
     }
 
     #[test]

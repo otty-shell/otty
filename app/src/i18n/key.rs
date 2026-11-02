@@ -191,16 +191,15 @@ pub(crate) enum Key {
     /// Tooltip of the "⋯" button that holds the header actions that do not
     /// fit, and of the "⋯" button at the end of a table row.
     DockerMoreActions,
-    /// Placeholder of the name filter above the table.
-    DockerFilterPlaceholder,
+    /// Placeholder of the tag search above the table.
+    DockerSearchPlaceholder,
+    /// Tooltip of the cross of a tag above the table.
+    DockerTagRemove,
+    /// Button at the end of the tags above the table.
+    DockerTagsClearAll,
     /// Running containers next to Containers in the tree. Placeholder:
     /// `{count}`.
     TplDockerRunning,
-    /// Chip above the containers table that names the Compose project the
-    /// list is limited to. Placeholder: `{name}`.
-    TplDockerComposeChip,
-    /// Tooltip of the chip's cross that shows all containers again.
-    DockerShowAllContainers,
     /// Word next to a tree row whose list failed to load.
     DockerListFailedShort,
     /// Table message while a list loads.
@@ -213,8 +212,8 @@ pub(crate) enum Key {
     DockerNoVolumes,
     /// Message of an empty networks table.
     DockerNoNetworks,
-    /// Table message when no row matches the filter. Placeholder: `{filter}`.
-    TplDockerNothingMatches,
+    /// Table message when no row passes the search.
+    DockerNothingMatches,
     /// Notice above a table whose list failed to load. Placeholder: `{error}`.
     TplDockerListFailed,
     /// Main area text while OTTY looks for engines.
@@ -961,17 +960,17 @@ impl Key {
         Self::DockerCreateNetwork,
         Self::DockerRefresh,
         Self::DockerMoreActions,
-        Self::DockerFilterPlaceholder,
+        Self::DockerSearchPlaceholder,
+        Self::DockerTagRemove,
+        Self::DockerTagsClearAll,
         Self::TplDockerRunning,
-        Self::TplDockerComposeChip,
-        Self::DockerShowAllContainers,
         Self::DockerListFailedShort,
         Self::DockerLoading,
         Self::DockerNoContainers,
         Self::DockerNoImages,
         Self::DockerNoVolumes,
         Self::DockerNoNetworks,
-        Self::TplDockerNothingMatches,
+        Self::DockerNothingMatches,
         Self::TplDockerListFailed,
         Self::DockerSearching,
         Self::DockerNotInstalledTitle,

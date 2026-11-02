@@ -12,13 +12,13 @@ use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, status_bar};
-use crate::widgets::docker::DockerEvent;
 use crate::widgets::docker::view::{
     confirm_dialog as docker_confirm, engine_tree, form_dialog as docker_form,
     inspector as docker_inspector, main_area as docker_main,
     row_menu as docker_row_menu, run_form as docker_run_form,
     run_panel as docker_run_panel, status_bar as docker_status_bar,
 };
+use crate::widgets::docker::{DockerEvent, format as docker_format};
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::modes::types::Mode;
@@ -395,7 +395,7 @@ fn view_docker_main<'a>(
             theme: theme_props,
         }),
         None => docker_main::view(docker_main::MainAreaProps {
-            vm: app.widgets.docker.main_vm(unix_now()),
+            vm: app.widgets.docker.main_vm(docker_format::unix_now()),
             theme: theme_props,
         }),
     };
@@ -459,16 +459,6 @@ fn view_docker_overlays<'a>(
             layer.map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
         })
         .collect()
-}
-
-/// The current time in Unix seconds, for the age column of the Docker
-/// tables; 0 when the clock is before 1970.
-fn unix_now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| {
-            i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX)
-        })
 }
 
 /// Right panel content: the Files section.

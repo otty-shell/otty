@@ -266,24 +266,6 @@ pub(crate) fn docker_exited(code: i64) -> String {
     )
 }
 
-/// Build the table message shown when no row matches `filter`.
-pub(crate) fn docker_nothing_matches(filter: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplDockerNothingMatches,
-        &[("filter", filter)],
-    )
-}
-
-/// Build the label of the Compose project chip for the project `name`.
-pub(crate) fn docker_compose_chip(name: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplDockerComposeChip,
-        &[("name", name)],
-    )
-}
-
 /// Build the text of the no access card for the denied `socket`.
 pub(crate) fn docker_no_access_text(socket: &str) -> String {
     fill_in(
@@ -989,10 +971,8 @@ mod tests {
     fn docker_templates_fill_their_placeholders_in_every_locale() {
         let fills = [
             (Key::TplDockerRunning, ("count", "2")),
-            (Key::TplDockerComposeChip, ("name", "web")),
             (Key::TplDockerAgeHours, ("count", "3")),
             (Key::TplDockerStateExitedCode, ("code", "137")),
-            (Key::TplDockerNothingMatches, ("filter", "web")),
             (Key::TplDockerListFailed, ("error", "boom")),
             (Key::TplDockerUsedBy, ("names", "db-1")),
             (Key::TplDockerStatusNoAccess, ("socket", "/run/docker.sock")),

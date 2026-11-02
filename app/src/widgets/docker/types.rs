@@ -1,7 +1,11 @@
 use otty_docker::{Container, EngineAddress, Image, Network, Volume};
+use otty_ui_kit::components::tag_search::TagSearch;
 
 use super::sort::{
     TableSort, sort_containers, sort_images, sort_networks, sort_volumes,
+};
+use super::table_search::{
+    container_row, image_row, keys, network_row, volume_row,
 };
 use crate::i18n::Key;
 
@@ -63,8 +67,6 @@ impl ResourceKind {
 pub(crate) struct Place {
     engine: EngineAddress,
     resource: ResourceKind,
-    /// The Compose project the containers are limited to.
-    compose_project: Option<String>,
 }
 
 impl Place {
@@ -78,29 +80,9 @@ impl Place {
         self.resource
     }
 
-    /// The Compose project the containers are limited to; `None` shows all
-    /// of them.
-    pub(crate) fn compose_project(&self) -> Option<&str> {
-        self.compose_project.as_deref()
-    }
-
     /// The `resource` list of the engine at `engine`.
     pub(crate) fn new(engine: EngineAddress, resource: ResourceKind) -> Self {
-        Self {
-            engine,
-            resource,
-            compose_project: None,
-        }
-    }
-
-    /// The containers of the engine at `engine` that belong to the Compose
-    /// project `project`.
-    pub(crate) fn compose(engine: EngineAddress, project: &str) -> Self {
-        Self {
-            engine,
-            resource: ResourceKind::Containers,
-            compose_project: Some(project.to_string()),
-        }
+        Self { engine, resource }
     }
 }
 
@@ -136,63 +118,77 @@ pub(crate) enum LoadedList {
     Networks(Result<Vec<Network>, String>),
 }
 
-/// Return the containers whose name contains `filter` and, when `project`
-/// is set, that belong to that Compose project, ordered by `sort`.
+/// Return the containers that pass `search`, ordered by `sort`. Ages are
+/// counted up to `now` (Unix seconds).
 pub(crate) fn shown_containers<'a>(
     containers: &'a [Container],
-    filter: &str,
-    project: Option<&str>,
+    search: &TagSearch,
+    now: i64,
     sort: TableSort,
 ) -> Vec<&'a Container> {
-    let mut shown = filtered(containers, filter, container_name);
-    if let Some(project) = project {
-        shown.retain(|container| container.compose_project() == Some(project));
-    }
+    let keys = keys(ResourceKind::Containers);
+
+    let mut shown: Vec<&Container> = containers
+        .iter()
+        .filter(|item| search.passes(keys, &container_row(item, now)))
+        .collect();
     sort_containers(&mut shown, sort);
 
     shown
 }
 
-/// Return the images whose name contains `filter`, ordered by `sort`.
+/// Return the images that pass `search`, ordered by `sort`.
 pub(crate) fn shown_images<'a>(
     images: &'a [Image],
-    filter: &str,
+    search: &TagSearch,
+    now: i64,
     sort: TableSort,
 ) -> Vec<&'a Image> {
-    let mut shown = filtered(images, filter, image_name);
+    let keys = keys(ResourceKind::Images);
+
+    let mut shown: Vec<&Image> = images
+        .iter()
+        .filter(|item| search.passes(keys, &image_row(item, now)))
+        .collect();
     sort_images(&mut shown, sort);
 
     shown
 }
 
-/// Return the volumes whose name contains `filter`, ordered by `sort`.
+/// Return the volumes that pass `search`, ordered by `sort`.
 pub(crate) fn shown_volumes<'a>(
     volumes: &'a [Volume],
-    filter: &str,
+    search: &TagSearch,
+    now: i64,
     sort: TableSort,
 ) -> Vec<&'a Volume> {
-    let mut shown = filtered(volumes, filter, volume_name);
+    let keys = keys(ResourceKind::Volumes);
+
+    let mut shown: Vec<&Volume> = volumes
+        .iter()
+        .filter(|item| search.passes(keys, &volume_row(item, now)))
+        .collect();
     sort_volumes(&mut shown, sort);
 
     shown
 }
 
-/// Return the networks whose name contains `filter`, ordered by `sort`.
+/// Return the networks that pass `search`, ordered by `sort`.
 pub(crate) fn shown_networks<'a>(
     networks: &'a [Network],
-    filter: &str,
+    search: &TagSearch,
+    now: i64,
     sort: TableSort,
 ) -> Vec<&'a Network> {
-    let mut shown = filtered(networks, filter, network_name);
+    let keys = keys(ResourceKind::Networks);
+
+    let mut shown: Vec<&Network> = networks
+        .iter()
+        .filter(|item| search.passes(keys, &network_row(item, now)))
+        .collect();
     sort_networks(&mut shown, sort);
 
     shown
-}
-
-/// The name a row is filtered by and shown under: the container, volume or
-/// network name, or the first tag of an image.
-pub(crate) fn container_name(container: &Container) -> &str {
-    container.name()
 }
 
 /// The first tag of an image, or `<none>:<none>` for a dangling one, as
@@ -204,74 +200,149 @@ pub(crate) fn image_name(image: &Image) -> &str {
         .map_or(DANGLING_IMAGE_NAME, String::as_str)
 }
 
-/// The name of a volume; volumes have no separate id.
-pub(crate) fn volume_name(volume: &Volume) -> &str {
-    volume.name()
-}
-
-/// The name of a network.
-pub(crate) fn network_name(network: &Network) -> &str {
-    network.name()
-}
-
-/// Return the items whose name contains `filter`, ignoring case, in their
-/// order. An empty filter keeps every item.
-pub(crate) fn filtered<'a, T>(
-    items: &'a [T],
-    filter: &str,
-    name_of: fn(&T) -> &str,
-) -> Vec<&'a T> {
-    let needle = filter.trim().to_lowercase();
-
-    items
-        .iter()
-        .filter(|item| name_of(item).to_lowercase().contains(&needle))
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use otty_docker::{EngineKind, fixtures};
+    use otty_ui_kit::components::tag_search::{TagSchema, TagSearchAction};
 
     use super::*;
     use crate::widgets::docker::sort::TableSorts;
 
-    #[test]
-    fn the_filter_matches_part_of_the_name_ignoring_case() {
-        let resources = fixtures::resources(EngineKind::Docker);
+    const NOW: i64 = 1_793_557_960;
 
-        let rows = filtered(resources.containers(), " EXIT ", container_name);
+    /// A search with `tags` and `text` typed in the field.
+    fn search(tags: &[(&'static str, &str)], text: &str) -> TagSearch {
+        let schema = TagSchema::new(&["name"], Vec::new());
+        let mut search = TagSearch::default();
+        for (key, value) in tags {
+            add_tag(&mut search, key, value);
+        }
+        let _ = search
+            .perform(TagSearchAction::InputChanged(text.to_string()), &schema);
 
-        let names: Vec<&str> = rows.iter().map(|c| c.name()).collect();
-        assert_eq!(names, vec!["otty-fx-exit3", "otty-fx-exit0"]);
+        search
     }
 
-    #[test]
-    fn containers_are_limited_to_a_compose_project_and_the_filter() {
+    /// Adds `key:value` as Enter does: several tags of one key stay.
+    fn add_tag(search: &mut TagSearch, key: &'static str, value: &str) {
+        let schema =
+            TagSchema::new(Box::leak(vec![key].into_boxed_slice()), Vec::new());
+
+        for action in [
+            TagSearchAction::InputChanged(format!("{key}:{value}")),
+            TagSearchAction::Apply,
+        ] {
+            let _ = search.perform(action, &schema);
+        }
+    }
+
+    fn container_names(search: &TagSearch) -> Vec<String> {
         let resources = fixtures::resources(EngineKind::Docker);
-        let containers = resources.containers();
         let sort = TableSorts::default().get(ResourceKind::Containers);
 
-        let all = shown_containers(containers, "", None, sort);
-        let project = shown_containers(containers, "", Some("otty-fx"), sort);
-        let other = shown_containers(containers, "", Some("nope"), sort);
-        let no_match =
-            shown_containers(containers, "exit", Some("otty-fx"), sort);
-
-        assert_eq!(all.len(), containers.len());
-        let names: Vec<&str> = project.iter().map(|c| c.name()).collect();
-        assert_eq!(names, vec!["otty-fx-web-1"]);
-        assert!(other.is_empty());
-        assert!(no_match.is_empty());
+        shown_containers(resources.containers(), search, NOW, sort)
+            .iter()
+            .map(|container| container.name().to_string())
+            .collect()
     }
 
     #[test]
-    fn an_empty_filter_keeps_every_row() {
+    fn plain_text_matches_part_of_the_name_ignoring_case() {
+        assert_eq!(
+            container_names(&search(&[], " EXIT ")),
+            vec!["otty-fx-exit0", "otty-fx-exit3"]
+        );
+    }
+
+    #[test]
+    fn plain_text_that_looks_like_a_tag_is_still_a_name_filter() {
+        assert!(container_names(&search(&[], "redis:7")).is_empty());
+    }
+
+    #[test]
+    fn an_empty_search_keeps_every_row() {
         let resources = fixtures::resources(EngineKind::Docker);
 
-        let rows = filtered(resources.networks(), "", network_name);
+        assert_eq!(
+            container_names(&search(&[], "")).len(),
+            resources.containers().len()
+        );
+    }
 
-        assert_eq!(rows.len(), resources.networks().len());
+    #[test]
+    fn a_compose_tag_limits_the_containers_to_the_project() {
+        assert_eq!(
+            container_names(&search(&[("compose", "otty-fx")], "")),
+            vec!["otty-fx-web-1"]
+        );
+        assert!(
+            container_names(&search(&[("compose", "nope")], "")).is_empty()
+        );
+    }
+
+    #[test]
+    fn tags_of_different_keys_must_all_match() {
+        let found = container_names(&search(
+            &[("status", "running"), ("ports", "18080")],
+            "",
+        ));
+
+        assert_eq!(found, vec!["otty-fx-running"]);
+    }
+
+    #[test]
+    fn tags_of_one_key_match_if_any_does() {
+        let found = container_names(&search(
+            &[("name", "exit3"), ("name", "paused")],
+            "",
+        ));
+
+        assert_eq!(found, vec!["otty-fx-paused", "otty-fx-exit3"]);
+    }
+
+    #[test]
+    fn tags_and_the_name_text_must_both_match() {
+        assert!(
+            container_names(&search(&[("compose", "otty-fx")], "exit"))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_tag_on_ports_matches_any_port_of_the_container() {
+        assert_eq!(
+            container_names(&search(&[("ports", "18080:80")], "")),
+            vec!["otty-fx-running"]
+        );
+    }
+
+    #[test]
+    fn each_list_is_filtered_by_its_own_keys_and_names() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let sorts = TableSorts::default();
+
+        let images = shown_images(
+            resources.images(),
+            &search(&[("repository", "busybox")], ""),
+            NOW,
+            sorts.get(ResourceKind::Images),
+        );
+        let volumes = shown_volumes(
+            resources.volumes(),
+            &search(&[], "fx-data"),
+            NOW,
+            sorts.get(ResourceKind::Volumes),
+        );
+        let networks = shown_networks(
+            resources.networks(),
+            &search(&[("driver", "null")], ""),
+            NOW,
+            sorts.get(ResourceKind::Networks),
+        );
+
+        assert_eq!(images.len(), 1);
+        assert_eq!(volumes[0].name(), "otty-fx-data");
+        assert_eq!(networks.len(), 1);
     }
 
     #[test]

@@ -89,18 +89,22 @@ impl SearchRow {
         }
     }
 
-    /// Adds one value of `key`.
+    /// Adds one value of `key`. A blank cell has no value.
     pub fn value(
         mut self,
         key: &'static str,
         value: impl Into<String>,
     ) -> Self {
-        self.values.push((key, value.into()));
+        let value = value.into();
+        if !value.trim().is_empty() {
+            self.values.push((key, value));
+        }
+
         self
     }
 
     /// The values of `key`.
-    fn values_of<'a>(
+    pub fn values_of<'a>(
         &'a self,
         key: &'a str,
     ) -> impl Iterator<Item = &'a str> + 'a {
@@ -1248,6 +1252,16 @@ mod tests {
         assert_eq!(search.input(), "x");
         assert_eq!(change, TagSearchChange::Filter);
         assert_eq!(again, TagSearchChange::Nothing);
+    }
+
+    #[test]
+    fn a_blank_cell_has_no_value() {
+        let row = SearchRow::new("web")
+            .value("compose", "  ")
+            .value("ports", "");
+
+        assert_eq!(row.values_of("compose").count(), 0);
+        assert_eq!(row.values_of("ports").count(), 0);
     }
 
     // Tags from outside and duplicates.

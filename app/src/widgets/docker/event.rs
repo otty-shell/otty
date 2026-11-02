@@ -4,6 +4,7 @@ use otty_docker::{
     Container, Discovery, EngineAddress, EngineInfo, ImageDefaults,
     PullProgress, RunRequest,
 };
+use otty_ui_kit::components::tag_search::TagSearchAction;
 
 use super::actions::{ActionRequest, RowAction};
 use super::forms::FormField;
@@ -29,11 +30,8 @@ pub(crate) enum DockerIntent {
     },
     /// A tree row was pressed: show this list of this engine.
     Open(Place),
-    /// The clear button of the "compose: <name>" chip was pressed: show all
-    /// containers again.
-    ClearComposeProject,
     /// The Compose link of the row at this position of the shown (filtered)
-    /// containers table was pressed: show only that project's containers.
+    /// containers table was pressed: add the `compose` tag of that project.
     OpenComposeProject(usize),
     /// A port link of the container at this position of the shown (filtered)
     /// containers table was pressed: open the page of that link in the
@@ -45,8 +43,8 @@ pub(crate) enum DockerIntent {
     SortBy(usize),
     /// The row at this position of the shown (filtered) table was pressed.
     SelectRow(usize),
-    /// The name filter above the table changed.
-    FilterChanged(String),
+    /// The user did something in the tag search of the open table.
+    TagSearch(TagSearchAction),
     /// Load every list of every engine again (the Refresh button).
     Refresh,
     /// Search for engines again (the Check again button).
@@ -56,8 +54,8 @@ pub(crate) enum DockerIntent {
     /// Open this page in the browser (the Install and How to fix buttons).
     OpenLink(String),
     /// A link in the inspector Overview was pressed: open the page of a
-    /// published port, show the named item selected in its list, or show
-    /// the containers of a Compose project.
+    /// published port, show the named item selected in its list, or add the
+    /// `compose` tag of a Compose project.
     FollowLink(LinkTarget),
     // Inspector tabs.
     /// An inspector tab was pressed.
