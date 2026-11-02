@@ -485,4 +485,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 39 — Bug: Inspect controls layout · Opus
 - [x] 40 — Bug: resize never scrolls, scrollbar never resizes · Opus
 - [x] 41 — Bug: narrow panel text never squeezes · Sonnet
-- [ ] 42 — Copy icon under the switches when narrow · Sonnet
+- [x] 42 — Copy icon under the switches when narrow · Sonnet
