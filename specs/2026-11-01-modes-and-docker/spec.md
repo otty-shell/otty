@@ -374,13 +374,17 @@ none of those are in scope (see Out of Scope).
       - no key yet: the matching keys in column order, then matching names;
       - after `key:`: the values of that column, from the rows the other
         filters leave.
-      The first suggestion is highlighted. ↑ ↓ move, Esc closes, a click
-      picks. An empty focused field shows the keys.
-    - **Enter or Tab applies the highlighted suggestion:** a name fills the
-      field and filters; a key puts `key:` in the field and shows its values;
-      a value adds the tag and clears the field. With no suggestion, Enter
-      after `key:text` adds that tag; otherwise it does nothing. Backspace in
-      an empty field removes the last tag.
+      Above them, the first row is the typed text itself (not for an empty
+      field or a bare `key:`, and only once if it equals a suggestion). It is
+      highlighted first (owner report, 2026-11-03). ↑ ↓ move, Esc closes, a
+      click picks. An empty focused field shows the keys.
+    - **Enter applies the highlighted row:** the typed text stays in the field
+      as a name filter, or `key:text` becomes a tag that matches by substring;
+      a name fills the field and filters; a key puts `key:` in the field and
+      shows its values; a value adds the tag and clears the field. **Tab
+      completes to the first real suggestion**, like a shell, so `sta` Tab,
+      `run` Tab gives the tag `status:Running`. Backspace in an empty field
+      removes the last tag.
     - **Removing:** every tag has a clear cross, and the tags row ends with a
       "Clear all" button that removes all tags of this table.
     - **Compose is a tag:** the Compose link adds `compose:<name>`, replacing
@@ -478,6 +482,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 45 | Docker tables use tag search; compose becomes a tag; tags kept per table (Decision 21) | C | Opus | 44 |
 | 46 | Fuzzy suggestions with `frizbee` (dependency approved by the owner, 2026-11-02) | C | Sonnet | 45 |
 | 47 | Bug: after a suggestion is applied the cursor goes to the end of the field | C | Sonnet | 46 |
+| 48 | Bug: the text you typed is the first suggestion (Decision 21) | C | Sonnet | 47 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -532,3 +537,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 45 — Docker tables use tag search · Opus
 - [x] 46 — Fuzzy suggestions with `frizbee` · Sonnet
 - [x] 47 — Bug: search cursor after a suggestion · Sonnet
+- [ ] 48 — Bug: typed text is the first suggestion · Sonnet
