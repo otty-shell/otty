@@ -1,6 +1,6 @@
 # 47 — After a suggestion is applied the cursor goes to the end of the field
 
-Status: ready-for-agent
+Status: resolved
 Type: bug
 Class: C
 Model: Sonnet 5.5 (claude-sonnet-5-5)
@@ -38,3 +38,30 @@ llvm-cov` with the merge base before the commit.
   `status:r`, not `rstatus:`. The same after a click on a suggestion, and after
   applying a name.
 - Typing in the middle of a text keeps the cursor where it is.
+
+## Answer
+
+Fixed in the kit, so every widget using `TagSearchField` gets it with no code of
+its own. `iced` 0.14 allows it: `text_input::State::move_cursor_to_end` is
+public, and `InputKeys` already owns the input's widget state.
+
+- `InputKeys::follow_text(text)` (opt-in, `input_keys.rs`). The wrapper
+  remembers the text the app gave at the last rebuild. In `diff`, if the text
+  changed and the input did not get a key since the last rebuild, the text was
+  replaced from outside, so the cursor goes to the end. A key press or input
+  method event in the focused input marks the change as its own edit; a mouse
+  press or a bound key (Enter, Tab, arrows) clears that mark. So typing,
+  pasting and Left/Right never move the cursor, and an edit in the middle stays.
+- `TagSearchField` calls `follow_text(search.input())`. `TokenField` and
+  `CommandPalette` do not, so they are unchanged.
+- Focus: a press on a suggestion is already captured by the list, so the input
+  keeps focus. A new test covers it with typing after the click.
+
+Tests (`tag_search_field.rs`) run the real flow: a small harness keeps the
+widget state between events, as `iced` does between frames, and feeds every
+message back to the `TagSearch`. They failed first (`startus:`, `webx-1`). Cases:
+key by Enter, by Tab and by click then `r` gives `status:r`; a name by Enter and
+by click then `x` gives `web-1x`; typing in the middle (`abdc`); ↑ and ↓ keep the
+cursor; a value by click leaves the field empty and focused.
+
+Also added tag search steps 25 to 33 to `regression-checklist.md`.

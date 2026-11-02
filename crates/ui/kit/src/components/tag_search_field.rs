@@ -166,7 +166,7 @@ impl<'a, Message: Clone + 'a> From<TagSearchField<'a, Message>>
             input = input.id(id);
         }
 
-        let mut keys = InputKeys::new(input);
+        let mut keys = InputKeys::new(input).follow_text(value.search.input());
         for (key, message) in bindings {
             if let Some(message) = message {
                 keys = keys.on_key(key, message);
@@ -276,7 +276,8 @@ fn row_view<'a, Message: Clone + 'a>(
 mod tests {
     use iced::keyboard::key::Named;
     use iced::widget::{Space, button, column, container, text};
-    use iced::{Length, Point};
+    use iced::{Event, Font, Length, Point, Size, mouse};
+    use iced_test::core::clipboard;
     use iced_test::{Simulator, simulator};
 
     use super::*;
@@ -371,6 +372,195 @@ mod tests {
                 *message != Message::Search(TagSearchAction::Focused)
             })
             .collect()
+    }
+
+    /// The field in a running app: the search lives in the test, every
+    /// message goes to it, and the widget state is kept between events, as
+    /// `iced` keeps it between frames.
+    struct Flow {
+        search: TagSearch,
+        schema: TagSchema,
+        renderer: iced_test::renderer::Renderer,
+        cache: Option<iced_test::runtime::user_interface::Cache>,
+        cursor: mouse::Cursor,
+    }
+
+    impl Flow {
+        fn new() -> Self {
+            use iced_test::core::renderer::Headless;
+
+            let renderer = iced_test::futures::futures::executor::block_on(
+                iced_test::renderer::Renderer::new(
+                    Font::with_name("Fira Sans"),
+                    Pixels(16.0),
+                    None,
+                ),
+            )
+            .expect("headless renderer");
+
+            Self {
+                search: TagSearch::default(),
+                schema: schema(),
+                renderer,
+                cache: None,
+                cursor: mouse::Cursor::Unavailable,
+            }
+        }
+
+        /// Sends `events` to a rebuilt view and applies the messages.
+        fn send(&mut self, events: impl IntoIterator<Item = Event>) {
+            let events: Vec<Event> = events.into_iter().collect();
+            let mut messages = Vec::new();
+
+            let mut ui = iced_test::runtime::UserInterface::build(
+                view(&self.search, &self.schema),
+                Size::new(400.0, 400.0),
+                self.cache.take().unwrap_or_default(),
+                &mut self.renderer,
+            );
+            let _ = ui.update(
+                &events,
+                self.cursor,
+                &mut self.renderer,
+                &mut clipboard::Null,
+                &mut messages,
+            );
+            self.cache = Some(ui.into_cache());
+
+            for message in messages {
+                if let Message::Search(action) = message {
+                    let _ = self.search.perform(action, &self.schema);
+                }
+            }
+        }
+
+        /// Presses the right end of the input, where a click puts the cursor
+        /// at the end of the text.
+        fn click_input(&mut self) {
+            self.cursor = mouse::Cursor::Available(Point::new(290.0, 15.0));
+            self.send(simulator::click());
+        }
+
+        fn click_text(&mut self, content: &str) {
+            let search = self.search.clone();
+            let schema = self.schema.clone();
+            let mut ui = simulator(view(&search, &schema));
+            let point = ui.find(content).expect("text should show").bounds();
+
+            self.cursor = mouse::Cursor::Available(point.center());
+            self.send(simulator::click());
+        }
+
+        fn type_text(&mut self, content: &str) {
+            self.send(simulator::typewrite(content));
+        }
+
+        fn tap(&mut self, key: Named) {
+            self.send(simulator::tap_key(key, None));
+        }
+
+        fn input(&self) -> &str {
+            self.search.input()
+        }
+    }
+
+    #[test]
+    fn typing_after_a_key_applied_by_enter_goes_after_the_colon() {
+        let mut flow = Flow::new();
+
+        flow.click_input();
+        flow.type_text("sta");
+        flow.tap(Named::Enter);
+        flow.type_text("r");
+
+        assert_eq!(flow.input(), "status:r");
+    }
+
+    #[test]
+    fn typing_after_a_key_applied_by_tab_goes_after_the_colon() {
+        let mut flow = Flow::new();
+
+        flow.click_input();
+        flow.type_text("sta");
+        flow.tap(Named::Tab);
+        flow.type_text("r");
+
+        assert_eq!(flow.input(), "status:r");
+    }
+
+    #[test]
+    fn typing_after_a_key_picked_by_a_click_goes_after_the_colon() {
+        let mut flow = Flow::new();
+
+        flow.click_input();
+        flow.type_text("sta");
+        flow.click_text("tus");
+        flow.type_text("r");
+
+        assert_eq!(flow.input(), "status:r");
+    }
+
+    #[test]
+    fn typing_after_a_name_applied_goes_after_the_name() {
+        let mut flow = Flow::new();
+
+        flow.click_input();
+        flow.type_text("web");
+        flow.tap(Named::Enter);
+        flow.type_text("x");
+
+        assert_eq!(flow.input(), "web-1x");
+    }
+
+    #[test]
+    fn typing_after_a_name_picked_by_a_click_goes_after_the_name() {
+        let mut flow = Flow::new();
+
+        flow.click_input();
+        flow.type_text("web");
+        flow.click_text("-1");
+        flow.type_text("x");
+
+        assert_eq!(flow.input(), "web-1x");
+    }
+
+    #[test]
+    fn typing_in_the_middle_of_the_text_keeps_the_cursor_there() {
+        let mut flow = Flow::new();
+
+        flow.click_input();
+        flow.type_text("ac");
+        flow.tap(Named::ArrowLeft);
+        flow.type_text("b");
+        flow.type_text("d");
+
+        assert_eq!(flow.input(), "abdc");
+    }
+
+    #[test]
+    fn arrows_of_the_list_do_not_move_the_cursor() {
+        let mut flow = Flow::new();
+
+        flow.click_input();
+        flow.type_text("s");
+        flow.tap(Named::ArrowDown);
+        flow.tap(Named::ArrowUp);
+        flow.type_text("t");
+
+        assert_eq!(flow.input(), "st");
+    }
+
+    #[test]
+    fn a_value_applied_by_a_click_leaves_the_field_empty_and_focused() {
+        let mut flow = Flow::new();
+
+        flow.click_input();
+        flow.type_text("status:");
+        flow.click_text("Exited");
+        flow.type_text("s");
+
+        assert_eq!(flow.input(), "s");
+        assert_eq!(flow.search.tags().len(), 1);
     }
 
     #[test]

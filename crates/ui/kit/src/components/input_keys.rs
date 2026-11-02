@@ -2,7 +2,8 @@
 //!
 //! `iced` 0.14 text inputs send nothing for Backspace on an empty value, for
 //! ↑ and ↓, they only drop focus on Esc, and they do not say when they get
-//! the focus. [`TokenField`], [`CommandPalette`] and [`TagSearchField`] wrap
+//! the focus, and they leave the cursor in place when the app replaces the
+//! text (see [`InputKeys::follow_text`]). [`TokenField`], [`CommandPalette`] and [`TagSearchField`] wrap
 //! their input in [`InputKeys`] to turn those into messages.
 //!
 //! [`TokenField`]: super::token_field::TokenField
@@ -26,6 +27,7 @@ pub(super) struct InputKeys<'a, Message> {
     content: Element<'a, Message>,
     bindings: Vec<(Named, Message)>,
     on_focus: Option<Message>,
+    follow_text: Option<String>,
 }
 
 impl<'a, Message> InputKeys<'a, Message> {
@@ -35,7 +37,18 @@ impl<'a, Message> InputKeys<'a, Message> {
             content: input.into(),
             bindings: Vec::new(),
             on_focus: None,
+            follow_text: None,
         }
+    }
+
+    /// Moves the cursor to the end of the text when the app replaces `text`
+    /// from outside the input (a suggestion applied, a field cleared). `iced`
+    /// 0.14 leaves the cursor where it was, so the next letter would land
+    /// before the text. Typing, pasting and moving the cursor by keys never
+    /// move it, so an edit in the middle of the text stays there.
+    pub(super) fn follow_text(mut self, text: &str) -> Self {
+        self.follow_text = Some(text.to_owned());
+        self
     }
 
     /// Sends `message` when `key` is pressed in the focused input.
@@ -127,6 +140,18 @@ impl<Message: Clone> Widget<Message, Theme, Renderer>
 
     fn diff(&self, tree: &mut Tree) {
         tree.diff_children(std::slice::from_ref(&self.content));
+
+        let Some(text) = &self.follow_text else {
+            return;
+        };
+        let state = tree.state.downcast_mut::<State>();
+        let replaced_outside = state.text != *text && !state.input_edited;
+        state.text.clone_from(text);
+        state.input_edited = false;
+
+        if replaced_outside {
+            input_state_mut(tree).move_cursor_to_end();
+        }
     }
 
     fn operate(
@@ -158,10 +183,26 @@ impl<Message: Clone> Widget<Message, Theme, Renderer>
         if input_is_focused(tree)
             && let Some(message) = self.bound_message(event)
         {
+            tree.state.downcast_mut::<State>().input_edited = false;
             shell.publish(message.clone());
             shell.capture_event();
 
             return;
+        }
+
+        let is_focused = input_is_focused(tree);
+        let state = tree.state.downcast_mut::<State>();
+        match event {
+            Event::Keyboard(keyboard::Event::KeyPressed { .. })
+            | Event::InputMethod(_)
+                if is_focused =>
+            {
+                state.input_edited = true;
+            },
+            Event::Mouse(mouse::Event::ButtonPressed(_)) => {
+                state.input_edited = false;
+            },
+            _ => {},
         }
 
         self.content.as_widget_mut().update(
@@ -229,10 +270,25 @@ impl<'a, Message: Clone + 'a> From<InputKeys<'a, Message>>
     }
 }
 
-/// Whether the wrapped input had the focus after the last event.
+/// What the wrapper remembers between events.
 #[derive(Default)]
 struct State {
+    /// Whether the wrapped input had the focus after the last event.
     was_focused: bool,
+    /// The text the app gave the input at the last rebuild.
+    text: String,
+    /// Whether the input got a key since the last rebuild, so a new text is
+    /// its own edit and not a replacement from outside.
+    input_edited: bool,
+}
+
+/// The state of the text input wrapped by the [`InputKeys`] of `tree`.
+fn input_state_mut(
+    tree: &mut Tree,
+) -> &mut text_input::State<<Renderer as text::Renderer>::Paragraph> {
+    tree.children[0]
+        .state
+        .downcast_mut::<text_input::State<<Renderer as text::Renderer>::Paragraph>>()
 }
 
 /// Whether the text input wrapped by the [`InputKeys`] of `tree` has the

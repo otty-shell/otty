@@ -164,9 +164,48 @@ Setup before the first walk:
     let go on the line.
     Expected: the selection follows to the end and ends there; no resize starts.
 
+## Tag search
+
+Use the search field above a Docker table, with a few containers (names,
+statuses) in the list.
+
+25. Click the field, type `sta` and press Enter. Then type `r`.
+    Expected: the field shows `status:` after Enter, with the cursor after the
+    colon and the values listed; the next letter gives `status:r`, not
+    `rstatus:`. Repeat with Tab, and with a click on the `status` suggestion
+    instead of Enter. The field keeps focus after the click.
+26. Type `status:`, pick `Running` with the arrows and Enter, then repeat with a
+    click on a value.
+    Expected: a `status:Running` tag appears and the field is empty and still
+    focused. Type a name such as `web`, press Enter, then type `x`.
+    Expected: the name fills the field with the cursor at its end (`...x`
+    after the name) and the list closes.
+27. Type two letters, press Left, type a third letter.
+    Expected: the letter lands between the two; the cursor does not jump to
+    the end. Up and Down do not move the cursor either.
+28. Add tags, switch to another list (for example Images) and back.
+    Expected: the tags you added are still there for each list.
+29. Remove one tag with its cross, then press Clear all. Press Backspace in
+    an empty field.
+    Expected: the cross removes only its tag; Clear all removes all; Backspace
+    removes the last tag.
+30. Use the Compose link next to the search, if the list has one.
+    Expected: it opens the Compose view and the search field still works after
+    you come back.
+31. Type a word with a typo, such as `stauts`.
+    Expected: the suggestions still list the close matches (`status`).
+32. Open the suggestions with the list below the field.
+    Expected: the list floats over the tags row and the table, not pushing
+    them down; a click outside closes it and also reaches what is there.
+33. With a list of more than eight suggestions, press Down past the eighth,
+    then Tab, then Esc, then use the mouse wheel on the list.
+    Expected: the list scrolls to keep the highlighted row in view; Tab
+    applies the highlighted row; Esc closes the list; the wheel scrolls it
+    without changing the highlighted row.
+
 ## Both themes
 
-25. Walk steps 1, 3, 5, 12 and 20 in OTTY Light as well.
+34. Walk steps 1, 3, 5, 12, 20 and 25 in OTTY Light as well.
     Expected: every text, badge dot and icon is easy to read on its surface;
     the selected row, hovered row and the row "..." menu all keep clear
     contrast.
