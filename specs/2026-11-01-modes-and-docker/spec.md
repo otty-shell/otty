@@ -537,4 +537,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 45 — Docker tables use tag search · Opus
 - [x] 46 — Fuzzy suggestions with `frizbee` · Sonnet
 - [x] 47 — Bug: search cursor after a suggestion · Sonnet
-- [ ] 48 — Bug: typed text is the first suggestion · Sonnet
+- [x] 48 — Bug: typed text is the first suggestion · Sonnet
