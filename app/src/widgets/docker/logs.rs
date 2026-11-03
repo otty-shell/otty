@@ -18,8 +18,8 @@ const CHANNEL_SIZE: usize = 100;
 const BATCH_LINES: usize = LOG_TAIL;
 
 /// Follow the logs of `target`; nothing when no logs are followed. The
-/// subscription is keyed by the target, so another container or engine
-/// stops this stream and starts a new one.
+/// subscription is keyed by the target, so another container or engine, or
+/// the container coming back, stops this stream and starts a new one.
 pub(super) fn subscription(
     target: Option<&LogTarget>,
 ) -> Subscription<DockerEvent> {
@@ -30,8 +30,10 @@ pub(super) fn subscription(
 }
 
 /// Connect, ask for the last [`LOG_TAIL`] lines and every new one, and send
-/// them in batches. The stream ends when the container stops or the engine
-/// fails; a failure is sent once.
+/// them in batches; after a comeback, of the latest run only. The stream ends
+/// when the container stops or the engine fails; a failure is sent once. It
+/// is not started again by itself: the engine's start event does that (see
+/// `InspectorState::restart_logs`), so a stopped container costs nothing.
 fn follow(target: &LogTarget) -> BoxStream<'static, DockerEvent> {
     let target = target.clone();
 
@@ -45,7 +47,12 @@ fn follow(target: &LogTarget) -> BoxStream<'static, DockerEvent> {
                     return;
                 },
             };
-            let mut lines = engine.follow_logs(target.container_id(), LOG_TAIL);
+            let id = target.container_id();
+            let mut lines = if target.reads_latest_run_only() {
+                engine.follow_latest_run_logs(id, LOG_TAIL)
+            } else {
+                engine.follow_logs(id, LOG_TAIL)
+            };
 
             while let Some(first) = lines.next().await {
                 let (batch, error) = ready_lines(first, &mut lines);

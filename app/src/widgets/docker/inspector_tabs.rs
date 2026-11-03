@@ -130,8 +130,13 @@ fn inspect_content<'a>(
     match inspect.load() {
         InspectLoad::Loaded(loaded) => {
             let shows_empty = inspector.shows_empty();
+            let shown_container = match row {
+                SelectedRow::Container(container) => Some(*container),
+                _ => None,
+            };
             let links = InspectLinks {
                 resource: row.resource(),
+                shown_container,
                 containers: engine.containers().items(),
                 images: engine.images().items(),
                 volumes: engine.volumes().items(),
@@ -378,6 +383,11 @@ mod tests {
     fn the_links_of_the_inspect_tree_point_into_the_loaded_lists() {
         let resources = fixtures::resources(EngineKind::Docker);
         let image_id = resources.containers()[0].image_id();
+        let image_row = resources
+            .images()
+            .iter()
+            .find(|image| image.id() == image_id)
+            .expect("the image of the container");
         let state = with_inspect(&format!(
             "{{ \"Image\": \"{image_id}\", \"Mounts\": [{{ \"Name\": \
              \"otty-fx-data\" }}] }}"
@@ -394,7 +404,7 @@ mod tests {
                         image_id,
                         LinkTarget::Item(
                             ResourceKind::Images,
-                            image_id.to_string()
+                            image_row.row_key().to_string()
                         )
                     )]
                 )]

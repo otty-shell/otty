@@ -7,8 +7,9 @@ use otty_docker::{COMPOSE_PROJECT_LABEL, Container, Image, Network, Volume};
 use serde_json::Value;
 
 use super::links::{
-    LinkTarget, compose_target, container_id_target, image_target,
-    named_container_target, network_target, port_url, volume_target,
+    LinkTarget, compose_target, container_id_target, container_image_target,
+    image_target, named_container_target, network_target, port_url,
+    volume_target,
 };
 use super::types::ResourceKind;
 
@@ -19,6 +20,9 @@ pub(super) const LIST_ITEM: &str = "[]";
 /// item and the engine's lists.
 pub(crate) struct InspectLinks<'a> {
     pub(crate) resource: ResourceKind,
+    /// The container the answer is about, when it is one; its image links go
+    /// to the row of the tag it was run from.
+    pub(crate) shown_container: Option<&'a Container>,
     pub(crate) containers: &'a [Container],
     pub(crate) images: &'a [Image],
     pub(crate) volumes: &'a [Volume],
@@ -94,7 +98,10 @@ impl InspectLinks<'_> {
         parent: &Value,
     ) -> Option<LinkTarget> {
         match path {
-            ["Image"] | ["Config", "Image"] => image_target(text, self.images),
+            ["Image"] | ["Config", "Image"] => self
+                .shown_container
+                .and_then(|shown| container_image_target(shown, self.images))
+                .or_else(|| image_target(text, self.images)),
             ["HostConfig", "NetworkMode"] => {
                 network_target(None, text, self.networks)
             },
@@ -116,6 +123,7 @@ impl InspectLinks<'static> {
     pub(crate) fn without_lists(resource: ResourceKind) -> Self {
         Self {
             resource,
+            shown_container: None,
             containers: &[],
             images: &[],
             volumes: &[],
@@ -158,6 +166,7 @@ mod tests {
     ) -> InspectLinks<'_> {
         InspectLinks {
             resource,
+            shown_container: None,
             containers: resources.containers(),
             images: resources.images(),
             volumes: resources.volumes(),
@@ -207,8 +216,17 @@ mod tests {
         resources
             .images()
             .iter()
-            .find(|image| image.tags() == ["busybox:1.37"])
+            .find(|image| image.reference() == Some("busybox:1.37"))
             .map(|image| image.id().to_string())
+            .expect("busybox")
+    }
+
+    fn busybox_key(resources: &Resources) -> String {
+        resources
+            .images()
+            .iter()
+            .find(|image| image.reference() == Some("busybox:1.37"))
+            .map(|image| image.row_key().to_string())
             .expect("busybox")
     }
 
@@ -246,7 +264,7 @@ mod tests {
                 0,
                 "Image",
                 &busybox,
-                item(ResourceKind::Images, &busybox)
+                item(ResourceKind::Images, &busybox_key(&resources))
             )]
         );
         assert_eq!(gone.general, vec![DataRow::new(0, "Image", "sha256:gone")]);
@@ -264,7 +282,7 @@ mod tests {
         let by_id = tree(ResourceKind::Containers, &by_id);
         let gone = tree(ResourceKind::Containers, &gone);
 
-        let target = item(ResourceKind::Images, &busybox);
+        let target = item(ResourceKind::Images, &busybox_key(&resources));
         assert_eq!(
             section(&by_tag, "Config"),
             [linked(0, "Image", "busybox:1.37", target.clone())]
@@ -276,6 +294,81 @@ mod tests {
         assert_eq!(
             section(&gone, "Config"),
             [DataRow::new(0, "Image", "busybox:9.99")]
+        );
+    }
+
+    /// The tree of an inspect answer about a container run from `image`, an
+    /// image with the tags `app:1` and `app:2`, and that second row's key.
+    fn tree_of_a_container_run_from(
+        image: &str,
+        value: &Value,
+    ) -> (InspectTree, String, String) {
+        let images =
+            fixtures::image_rows("sha256:app", &["app:1", "app:2"], &[], &[]);
+        let container =
+            fixtures::container_of_image("web", "running", image, "sha256:app");
+        let links = InspectLinks {
+            resource: ResourceKind::Containers,
+            shown_container: Some(&container),
+            containers: &[],
+            images: &images,
+            volumes: &[],
+            networks: &[],
+        };
+        let tree = inspect_tree(value, false, &links).expect("an object");
+
+        (
+            tree,
+            images[0].row_key().to_string(),
+            images[1].row_key().to_string(),
+        )
+    }
+
+    #[test]
+    fn the_image_id_of_a_container_links_to_the_row_it_was_run_from() {
+        let value = json!({ "Image": "sha256:app" });
+
+        let (tree, _, second) = tree_of_a_container_run_from("app:2", &value);
+
+        assert_eq!(
+            tree.general,
+            vec![linked(
+                0,
+                "Image",
+                "sha256:app",
+                item(ResourceKind::Images, &second)
+            )]
+        );
+    }
+
+    #[test]
+    fn the_config_image_of_a_container_links_to_its_row_or_the_first_of_the_id()
+    {
+        let run_from_second = json!({ "Config": { "Image": "app:2" } });
+        let tag_gone = json!({ "Config": { "Image": "app:gone" } });
+
+        let (tree, _, second) =
+            tree_of_a_container_run_from("app:2", &run_from_second);
+        let (gone, first, _) =
+            tree_of_a_container_run_from("app:gone", &tag_gone);
+
+        assert_eq!(
+            section(&tree, "Config"),
+            [linked(
+                0,
+                "Image",
+                "app:2",
+                item(ResourceKind::Images, &second)
+            )]
+        );
+        assert_eq!(
+            section(&gone, "Config"),
+            [linked(
+                0,
+                "Image",
+                "app:gone",
+                item(ResourceKind::Images, &first)
+            )]
         );
     }
 

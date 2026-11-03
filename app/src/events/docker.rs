@@ -275,8 +275,8 @@ async fn run_action(request: ActionRequest) -> Result<(), DockerError> {
             engine.remove_container(id, *force).await
         },
         EngineAction::PruneContainers => engine.prune_containers().await,
-        EngineAction::RemoveImage { id, force } => {
-            engine.remove_image(id, *force).await
+        EngineAction::RemoveImage { reference, force } => {
+            engine.remove_image(reference, *force).await
         },
         EngineAction::PruneImages => engine.prune_images().await,
         EngineAction::CreateVolume { name, driver } => {
@@ -774,6 +774,15 @@ mod tests {
 
     #[test]
     fn the_shell_effect_opens_one_command_tab() {
+        const SHELL_ARGS: [&str; 7] = [
+            "--host",
+            "unix:///var/run/docker.sock",
+            "exec",
+            "-it",
+            "--",
+            "abc123",
+            "sh",
+        ];
         let (mut app, _) = App::new();
 
         let events = collect_outputs(handle(
@@ -781,9 +790,7 @@ mod tests {
             DockerEvent::Effect(DockerEffect::OpenShell {
                 title: String::from("shell web-1"),
                 program: String::from("/opt/homebrew/bin/docker"),
-                args: ["exec", "-it", "abc123", "sh"]
-                    .map(String::from)
-                    .to_vec(),
+                args: SHELL_ARGS.map(String::from).to_vec(),
             }),
         ));
 
@@ -804,6 +811,6 @@ mod tests {
             panic!("expected a local session");
         };
         assert_eq!(options.program(), "/opt/homebrew/bin/docker");
-        assert_eq!(options.args(), ["exec", "-it", "abc123", "sh"]);
+        assert_eq!(options.args(), SHELL_ARGS);
     }
 }

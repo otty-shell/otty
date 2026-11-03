@@ -76,6 +76,7 @@ mod tests {
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
     use crate::theme::ThemeManager;
+    use crate::widgets::modes::types::Mode;
     use crate::widgets::palette::PaletteEffect;
     use crate::widgets::palette::event::PaletteEvent;
     use crate::widgets::palette::reducer::{
@@ -102,6 +103,7 @@ mod tests {
             launches: Vec::new(),
             can_split_pane: true,
             pinned_modes: Vec::new(),
+            active_mode: Mode::Terminal,
         }
     }
 

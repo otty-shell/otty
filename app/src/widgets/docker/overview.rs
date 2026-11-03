@@ -14,7 +14,7 @@ use super::format::{
     NO_VALUE, date_time_text, port_text, short_id, shown_ports, size_text,
 };
 use super::links::{
-    LinkTarget, compose_target, container_target, image_target,
+    LinkTarget, compose_target, container_image_target, container_target,
     named_container_target, network_target, port_url, volume_target,
 };
 use crate::i18n::{self, Key};
@@ -50,7 +50,7 @@ pub(crate) fn container_fields(
     volumes: &[Volume],
     networks: &[Network],
 ) -> Vec<Field> {
-    let image = image_target(container.image_id(), images);
+    let image = container_image_target(container, images);
     let mounts = container
         .mounts()
         .iter()
@@ -293,6 +293,15 @@ mod tests {
         fixtures::resources(EngineKind::Podman)
     }
 
+    fn busybox_key(resources: &Resources) -> String {
+        resources
+            .images()
+            .iter()
+            .find(|image| image.reference() == Some("busybox:1.37"))
+            .map(|image| image.row_key().to_string())
+            .expect("busybox")
+    }
+
     fn container<'a>(resources: &'a Resources, name: &str) -> &'a Container {
         resources
             .containers()
@@ -417,7 +426,7 @@ mod tests {
             value_of(&fields, Key::DockerColumnImage),
             vec![link(
                 "busybox:1.37",
-                item(ResourceKind::Images, web.image_id())
+                item(ResourceKind::Images, &busybox_key(&resources))
             )]
         );
         assert_eq!(
@@ -516,12 +525,34 @@ mod tests {
     }
 
     #[test]
+    fn a_container_links_to_the_row_of_the_tag_it_was_run_from() {
+        let web = fixtures::container_of_image(
+            "web",
+            "running",
+            "app:2",
+            "sha256:app",
+        );
+        let images =
+            fixtures::image_rows("sha256:app", &["app:1", "app:2"], &[], &[]);
+
+        let fields = container_fields(&web, &images, &[], &[]);
+
+        assert_eq!(
+            value_of(&fields, Key::DockerColumnImage),
+            vec![link(
+                "app:2",
+                item(ResourceKind::Images, images[1].row_key())
+            )]
+        );
+    }
+
+    #[test]
     fn an_image_shows_its_size_and_the_containers_that_use_it() {
         let resources = docker();
         let busybox = resources
             .images()
             .iter()
-            .find(|image| image.tags() == ["busybox:1.37"])
+            .find(|image| image.reference() == Some("busybox:1.37"))
             .expect("busybox");
 
         let fields = image_fields(busybox, resources.containers());
@@ -547,7 +578,7 @@ mod tests {
         let busybox = resources
             .images()
             .iter()
-            .find(|image| image.tags() == ["busybox:1.37"])
+            .find(|image| image.reference() == Some("busybox:1.37"))
             .expect("busybox");
         let created = container(&resources, "otty-fx-created");
         let exit0 = container(&resources, "otty-fx-exit0");

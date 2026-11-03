@@ -99,9 +99,17 @@ none of those are in scope (see Out of Scope).
    | Right panel | Files (today) | Inspector of the selected item |
    | Status bar | today's items | engine name and version, item counts |
 
-   Terminal tabs keep running while another mode is shown. When the left
-   panel is hidden (panel toggle, focus mode) the switcher is hidden too;
-   shortcuts and the command palette still switch modes.
+   Terminal tabs keep running while another mode is shown. So a command that
+   acts on the active tab does nothing while that tab is hidden (owner
+   decision, 2026-11-03): outside Terminal mode, Close session (shortcut and
+   palette) and the palette's Split pane do nothing, and the palette does not
+   list those two. The palette's New folder follows the same rule (owner
+   decision, 2026-11-03): its name field lives in the Launches panel, which
+   only Terminal mode shows, so outside Terminal mode it is not listed and a
+   press from a list opened earlier does nothing. A command that opens or
+   activates a tab still switches to Terminal mode. When the left panel is
+   hidden (panel toggle, focus mode) the switcher is hidden too; shortcuts and
+   the command palette still switch modes.
 6. **Shortcuts follow the keymap rules** (no keys taken from the shell):
 
    | Action | Linux | macOS |
@@ -163,6 +171,7 @@ none of those are in scope (see Out of Scope).
    | Docker not running | `docker` is on `PATH`, no Docker socket answers | "Docker is installed but not running", command `sudo systemctl start docker` (macOS note: open Docker Desktop), **Copy**, **Check again**, **How to fix** (https://docs.docker.com/engine/daemon/start/) |
    | Podman API off | `podman` is on `PATH`, no Podman socket answers | "Podman is installed but its API service is off", command `systemctl --user enable --now podman.socket` (macOS note: `podman machine start`), **Copy**, **Check again**, **How to fix** (https://docs.podman.io/en/latest/markdown/podman-system-service.1.html) |
    | No permission | The socket exists, connecting fails with permission denied | "OTTY has no access to the Docker socket", command `sudo usermod -aG docker $USER` with the note to log out and back in and that the docker group has root-level access, **Copy**, **Check again**, **How to fix** (https://docs.docker.com/engine/install/linux-postinstall/) |
+   | No permission, Podman socket | A Podman socket exists (found in the Podman step of Decision 8, or `$DOCKER_HOST` with `podman` in the socket's file name), connecting fails with permission denied. The docker group has nothing to do with it | "OTTY has no access to the Podman socket", command `systemctl --user enable --now podman.socket`, which turns on the user's own socket at `$XDG_RUNTIME_DIR/podman/podman.sock`, the first Podman place Decision 8 looks at, with the note that it shows the user's own containers, not root's (macOS note: `podman machine start`), **Copy**, **Check again**, **How to fix** (https://docs.podman.io/en/latest/markdown/podman-system-service.1.html) |
 
    Under every card a line lists what OTTY looked for (`$DOCKER_HOST`, the
    sockets, `docker` and `podman` on `PATH`). Links open in the default
@@ -176,9 +185,22 @@ none of those are in scope (see Out of Scope).
     | Resource | Columns |
     |---|---|
     | Containers | Name, Status (badge), Image, Ports, Age |
-    | Images | Repository:Tag, ID (12 chars), Size, Used by (containers), Age |
+    | Images | Repository, Tag, ID (12 chars), Size, Used by (containers), Age |
     | Volumes | Name, Driver, Used by, Age |
     | Networks | Name, Driver, Scope, Subnet, Containers, Age |
+
+    **Image rows** (owner decision, 2026-11-03). The Images table has one row
+    per `repository:tag`, as the `REPOSITORY` and `TAG` columns of `docker
+    images` print them. The rows of one image share its ID, size and "Used by".
+    An image with no name is one row `<none>` `<none>`. An image known only by
+    its digest is one row per repository, with the tag `<none>`. A digest in a
+    repository that has a tag gets no row. A row is identified by the image id
+    and its name, so selection, the row menu, sorting and a reload follow that
+    row. The count of the Images tree row is the number of rows. The status bar
+    counts rows too and adds up the size of each image once. Inspect goes by
+    image id; the inspector title names the row. A link from a container
+    selects the row of the name it was run from (a bare name means `latest`),
+    else the first row of its image.
 
     Above the table: the resource title, the engine chip, a name filter field,
     the resource's create button (Run container, Pull image, Create volume,
@@ -186,12 +208,32 @@ none of those are in scope (see Out of Scope).
     shows it. Status badges use the status tones: running → ok, paused and
     restarting → warn, exited with a non-zero code and dead → error, created
     and exited (0) → neutral.
+
+    Engine roots work like folders (owner decision, 2026-11-03), so with
+    Docker and Podman on, both can stay open and the user never switches
+    between them:
+    - Every engine is open by default, also one found later.
+    - Pressing a root only opens or closes that engine, on its own. The table
+      on the right, the Run form and the inspector do not change, and nothing
+      is selected or loaded. To change the table, press a list row inside an
+      engine.
+    - Closing the engine whose table is shown leaves that table on screen. No
+      tree row is highlighted while that engine is closed.
+    - Anything else that goes to a list of a closed engine opens that engine,
+      so the shown list is visible: a link in the inspector or the table, a
+      finished Run, or a search that moves the place because its engine is
+      gone. A port link goes to no list and opens nothing.
+    - A closed engine still loads its lists and follows its events; closing
+      only hides the rows.
+    - Which engines are closed is kept in memory: it survives a mode switch, a
+      Refresh and an engine going away and coming back, and it resets when OTTY
+      restarts. It is not saved.
 11. **Actions.**
 
     | Resource | Actions |
     |---|---|
     | Container | Run (form, Decision 18), Start, Stop, Restart, Pause / Unpause, Remove (confirm; "Also stop it" when running), Logs, Shell; Prune stopped containers (confirm) |
-    | Image | Run (opens the Run form with this image), Pull (dialog: name and tag, progress line), Remove (confirm; "Force" when containers use it); Prune dangling images (confirm) |
+    | Image | Run (opens the Run form with this image), Pull (dialog: name and tag, progress line), Remove (confirm; takes away only this row's name; see "Removing an image row" below); Prune dangling images (confirm) |
     | Volume | Create (dialog: name, driver `local`), Remove (confirm); Prune unused volumes (confirm; anonymous volumes only, with an "Also remove named volumes" switch, off by default, like `docker volume prune` and `-a`; owner approved 2026-11-01) |
     | Network | Create (dialog: name, driver `bridge`), Remove (confirm); Prune unused networks (confirm) |
 
@@ -201,6 +243,30 @@ none of those are in scope (see Out of Scope).
     container uses, and the built-in networks `bridge`, `host`, `none`. Every destructive action asks first with the
     kit dialog. A failed action shows a kit `Notice` above the table with the
     engine's message; the table stays as it was.
+
+    **Removing an image row** (owner decision, 2026-11-03; read from real runs
+    of Docker 29 with its containerd image store and Podman 5, 2026-11-03). A
+    row with a tag goes by its reference. A row with no tag goes by image id,
+    unless the image has other names: then a digest row goes by its digest.
+    "Running" also means paused and restarting; "stopped" also means created.
+
+    | The row | Who uses the image | Without Force | Force switch | With Force |
+    |---|---|---|---|---|
+    | Not the image's last name | anyone, on either engine | only this name goes | none | not sent |
+    | Last name | nobody, on either engine | the image goes | none | not sent |
+    | Last name, tagged, Docker | stopped or running containers | refused | on | only the tag goes; the image stays as `<none>` and the containers stay |
+    | Last name, no tag, Docker | stopped containers | refused | on | the image goes; the containers stay and can still start |
+    | Last name, no tag, Docker | a running container | refused | none, it cannot help | not sent |
+    | Last name, Podman | stopped containers | refused | off | the image goes **and so do those containers** |
+    | Last name, Podman | a running container | refused | none: it would delete the stopped containers and then still fail | not sent |
+
+    The switch column gives its first state. It starts off on Podman (owner
+    decision, 2026-11-03) because Force there also deletes the stopped
+    containers, and one confirm must not do that; Docker's Force deletes no
+    container, so it starts on.
+
+    The dialog says what goes for the switch as it stands. Where the engine
+    will refuse, it says so, and the refusal still reaches the notice.
 12. **Inspector tabs.** Overview (key-value list: image, ports, mounts,
     networks, compose project, created, command for containers; matching
     fields for the other resources), Logs (containers only: last 500 lines,
@@ -214,9 +280,30 @@ none of those are in scope (see Out of Scope).
     on adds them and jumps to the bottom. Scrolling up turns Follow off, and
     scrolling back to the bottom turns it on, where iced makes the scroll
     position visible to the app.
+
+    When a container whose logs are open comes back (owner decision,
+    2026-11-03), the log view is cleared once and shows only the lines of the
+    new run: no separator and no old lines. It does not matter how it came
+    back: OTTY's Restart or Start, `docker restart` or stop and start in a
+    terminal, or a restart policy. The signal is the engine's `start` event of
+    that container, which comes once per run on Docker and on Podman. The
+    container list cannot tell, because it can say running before and after a
+    fast restart; the end of the log stream cannot tell either, because
+    Podman's journald stream goes on across a restart. Engines keep the lines
+    of earlier runs, so the new stream reads lines with their times and drops
+    those older than the middle of the gap between the end of the last run
+    (`FinishedAt`) and the new start (`StartedAt`). Follow keeps its state. A
+    container that stays stopped keeps its lines and nothing asks the engine
+    again. Opening the tab or selecting the container anew starts with the
+    last 500 lines as usual, and those can include earlier runs.
 13. **Shell opens a terminal session.** "Shell" opens a new terminal tab that
-    runs `docker exec -it <id> sh` (or `podman exec …` for a Podman engine)
-    and switches to Terminal mode. The tab is grouped under "this computer".
+    runs `docker --host <address> exec -it -- <id> sh` (or
+    `podman --url <address> exec -it -- <id> sh` for a Podman engine) and
+    switches to Terminal mode. `<address>` is the chosen engine's
+    (`unix:///path` or `tcp://host:port`): without it the CLI goes to its own
+    default engine, which may be another one (Colima, Docker Desktop, rootful
+    Podman). `--` keeps an id from being read as a flag. The tab is grouped
+    under "this computer".
     If the matching CLI is not on `PATH`, the button is disabled with a hint.
     No in-app exec over the API: the terminal widget works with a PTY, and the
     CLI already handles TTY sizing and signals.
@@ -370,10 +457,11 @@ none of those are in scope (see Out of Scope).
       written as its header in the interface language: you write what you see
       (owner request, 2026-11-03). `Имя:web-1` in Russian, `Name:web-1` in
       English. Case does not matter; a header with a `:` gives the part before
-      it (`Repository:Tag` gives `Repository`); a wide `：` counts as `:`. Each
+      it; a wide `：` counts as `:`. Each
       key also has a stable internal name (`name`, `status`, `image`,
-      `compose`, `ports`, `age`, `repository`, `id`, `size`, `used-by`,
-      `driver`, `scope`, `subnet`, `containers`) that is never typed or shown.
+      `compose`, `ports`, `age`, `repository`, `image-tag`, `id`, `size`,
+      `used-by`, `driver`, `scope`, `subnet`, `containers`) that is never typed
+      or shown.
       Text before the first colon counts as a key only if it is the shown name
       of a column of this table; otherwise the whole text is a name filter (so
       `redis:7` stays plain text).
@@ -418,7 +506,7 @@ a `Class:` line; review checks the diff against it.
 - [x] AC2: The All modes menu lists Pinned (with "N of 4") and Other modes; Pin and Unpin change the tabs at once; Terminal has no Unpin; with 4 pinned, Pin is disabled with the hint; picking an unpinned mode shows it as a temporary outlined tab that goes away when another mode is chosen.
 - [x] AC3: Pinned modes survive a restart (`modes.json`); a missing or broken file gives the defaults; OTTY starts in Terminal mode.
 - [x] AC4: The shortcuts in Decision 6 work with and without a focused terminal; Ctrl 1–5 and Ctrl M without Shift still reach the shell (keymap unit test plus a manual `cat -v` check). The palette switches modes.
-- [x] AC5: With Docker running, Docker mode shows a "Docker <version>" root with Containers, Compose projects, Images, Volumes, Networks and their counts; with Podman (`podman.socket` on) a "Podman <version>" root; with both, two roots. Lists match `docker ps -a`, `docker images`, `docker volume ls`, `docker network ls` (and the `podman` equivalents).
+- [x] AC5: With Docker running, Docker mode shows a "Docker <version>" root with Containers, Compose projects, Images, Volumes, Networks and their counts; with Podman (`podman.socket` on) a "Podman <version>" root; with both, two roots. Lists match `docker ps -a`, `docker images`, `docker volume ls`, `docker network ls` (and the `podman` equivalents); the Images table and the count of its tree row have one row per `repository:tag`, as the `REPOSITORY` and `TAG` columns of `docker images` print them (Decision 10; `the_image_rows_match_the_command_line` in `crates/docker/tests/live_engine.rs` compares them on a real engine).
 - [x] AC6: Each case in Decision 9 shows its text and buttons; the install and docs buttons open the browser; Copy command puts the command on the clipboard; Check again finds an engine started meanwhile without a restart.
 - [x] AC7: Every action in Decision 11 works on Docker and on Podman; destructive actions ask first; an engine error shows a Notice and leaves the table as it was (reducer tests for each action's effect; mapping tests in `otty-docker`).
 - [x] AC8: The inspector shows Overview, Logs (follows new lines, stops on tab or selection change) and Inspect for the selected row.

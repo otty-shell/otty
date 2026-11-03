@@ -746,6 +746,57 @@ mod tests {
     }
 
     #[test]
+    fn a_run_on_a_closed_engine_opens_it_with_the_new_container_shown() {
+        let mut state = state_on(
+            &[EngineKind::Docker, EngineKind::Podman],
+            ResourceKind::Containers,
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ToggleEngine(podman().address().clone()),
+        );
+        let _ = reduce(&mut state, DockerIntent::OpenCreate);
+        let _ = type_in(&mut state, RunEdit::Image(String::from("nginx")));
+        let _ = reduce(
+            &mut state,
+            DockerIntent::RunEngineChosen(podman().address().clone()),
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ImageDefaultsLoaded {
+                engine: podman().address().clone(),
+                reference: String::from("nginx"),
+                result: Ok(Some(fixtures::image_defaults())),
+            },
+        );
+        let _ = reduce(&mut state, DockerIntent::RunSubmitted);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::RunFinished {
+                engine: podman().address().clone(),
+                result: Ok(String::from("4f1c2b9a8e7d")),
+            },
+        );
+
+        assert_eq!(state.place().map(Place::engine), Some(podman().address()));
+        assert!(!state.is_engine_closed(podman().address()));
+    }
+
+    #[test]
+    fn a_press_on_an_engine_root_keeps_the_form_on_screen() {
+        let mut state = form_with("nginx:9", None);
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::ToggleEngine(docker().address().clone()),
+        ));
+
+        assert!(state.run_form().is_some());
+        assert!(effects.is_empty());
+    }
+
+    #[test]
     fn an_engine_error_keeps_every_field_and_shows_a_notice() {
         let mut state =
             form_with("nginx:1.27", Some(fixtures::image_defaults()));

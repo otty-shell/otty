@@ -34,13 +34,14 @@ pub(crate) struct TreeRowViewModel {
     pub(crate) depth: u16,
     /// An engine root: it has a caret and a local target dot.
     pub(crate) is_engine: bool,
-    /// The engine root shows its lists (its place is open).
+    /// The engine root shows its lists (the user did not close it).
     pub(crate) is_open: bool,
     /// What the row shows on its right.
     pub(crate) note: TreeNote,
-    /// The row of the open list.
+    /// The row of the list the main area shows.
     pub(crate) is_selected: bool,
-    /// What a press on the row opens.
+    /// On a list row, the list a press shows. On an engine root, only its
+    /// engine counts: a press opens or closes that engine.
     pub(crate) place: Place,
 }
 
@@ -118,14 +119,16 @@ struct Shown<'a> {
 }
 
 /// The rows of the engine tree, top to bottom: each engine, and the four
-/// lists of the engine whose place is open.
+/// lists of each engine that is not closed. An engine opens and closes on its
+/// own, whichever list the main area shows; while the engine of the shown
+/// list is closed, no row is highlighted.
 pub(crate) fn tree_rows(state: &DockerState) -> Vec<TreeRowViewModel> {
     let open = state.place();
     let mut rows = Vec::new();
 
     for engine in state.engines() {
         let address = engine.info().address();
-        let is_open = open.is_some_and(|place| place.engine() == address);
+        let is_open = !state.is_engine_closed(address);
 
         rows.push(TreeRowViewModel {
             label: engine_label(engine.info()),
@@ -196,7 +199,7 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
                 shown,
                 engine.images(),
                 shown_images(items, search, clock, sort),
-                Image::id,
+                Image::row_key,
                 |_| true,
                 |image| image_cells(image, now),
             )
@@ -250,7 +253,7 @@ pub(crate) fn inspector(state: &DockerState) -> Option<InspectorViewModel> {
             (container.name(), container_status(container))
         },
         ResourceKind::Images => {
-            let image = engine.images().selected(Image::id)?;
+            let image = engine.images().selected(Image::row_key)?;
             (image_name(image), image_status(image))
         },
         ResourceKind::Volumes => {
@@ -401,7 +404,7 @@ fn table<'a, T>(
 
 #[cfg(test)]
 mod tests {
-    use otty_docker::{Container, EngineKind, fixtures};
+    use otty_docker::{Container, EngineAddress, EngineKind, fixtures};
     use otty_ui_kit::components::tag_search::TagSearchAction;
 
     use super::*;
@@ -540,12 +543,217 @@ mod tests {
         assert_eq!(vm.inspector, None);
     }
 
+    /// The labels of the tree rows, top to bottom.
+    fn labels(state: &DockerState) -> Vec<String> {
+        tree_rows(state).into_iter().map(|row| row.label).collect()
+    }
+
+    /// The labels of the highlighted tree rows with the engine of each.
+    fn highlighted(state: &DockerState) -> Vec<(String, EngineAddress)> {
+        tree_rows(state)
+            .into_iter()
+            .filter(|row| row.is_selected)
+            .map(|row| (row.label, row.place.engine().clone()))
+            .collect()
+    }
+
+    fn press_root(state: &mut DockerState, info: &EngineInfo) {
+        let _ =
+            reduce(state, DockerIntent::ToggleEngine(info.address().clone()));
+    }
+
+    /// The labels of an open engine: its root and its four lists.
+    fn open_labels(root: &str) -> Vec<String> {
+        [
+            root,
+            i18n::t(Key::DockerContainers),
+            i18n::t(Key::DockerImages),
+            i18n::t(Key::DockerVolumes),
+            i18n::t(Key::DockerNetworks),
+        ]
+        .map(str::to_string)
+        .to_vec()
+    }
+
     #[test]
-    fn the_tree_shows_each_engine_and_the_counts_of_the_open_one() {
+    fn every_engine_is_open_by_default() {
+        let state = found(&[EngineKind::Docker, EngineKind::Podman]);
+
+        let roots: Vec<bool> = tree_rows(&state)
+            .iter()
+            .filter(|row| row.is_engine)
+            .map(|row| row.is_open)
+            .collect();
+
+        assert_eq!(roots, vec![true, true]);
+        assert_eq!(
+            labels(&state),
+            [open_labels("Docker 29.9.1"), open_labels("Podman 5.8.8")]
+                .concat()
+        );
+    }
+
+    #[test]
+    fn an_engine_found_later_is_open_and_a_closed_one_stays_closed() {
+        let mut state = found(&[EngineKind::Docker]);
+        press_root(&mut state, &docker());
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+                EngineKind::Podman,
+            ])),
+        );
+
+        assert_eq!(
+            labels(&state),
+            [
+                vec![String::from("Docker 29.9.1")],
+                open_labels("Podman 5.8.8")
+            ]
+            .concat()
+        );
+    }
+
+    #[test]
+    fn a_root_press_hides_or_shows_the_lists_of_that_engine_only() {
+        let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
+
+        press_root(&mut state, &podman());
+        let podman_closed = labels(&state);
+        let root = tree_rows(&state)
+            .into_iter()
+            .find(|row| row.label == "Podman 5.8.8")
+            .expect("the root stays");
+        press_root(&mut state, &docker());
+        let both_closed = labels(&state);
+        press_root(&mut state, &podman());
+        let docker_closed = labels(&state);
+        press_root(&mut state, &docker());
+
+        assert_eq!(
+            podman_closed,
+            [
+                open_labels("Docker 29.9.1"),
+                vec![String::from("Podman 5.8.8")]
+            ]
+            .concat()
+        );
+        assert!(!root.is_open);
+        assert_eq!(both_closed, vec!["Docker 29.9.1", "Podman 5.8.8"]);
+        assert_eq!(
+            docker_closed,
+            [
+                vec![String::from("Docker 29.9.1")],
+                open_labels("Podman 5.8.8")
+            ]
+            .concat()
+        );
+        assert_eq!(
+            labels(&state),
+            [open_labels("Docker 29.9.1"), open_labels("Podman 5.8.8")]
+                .concat()
+        );
+    }
+
+    #[test]
+    fn each_open_engine_shows_the_counts_of_its_own_lists() {
+        let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        let mut podman_lists = lists(EngineKind::Podman);
+        podman_lists.images = podman_lists.images.map(|mut images| {
+            images.truncate(1);
+            images
+        });
+        podman_lists.volumes = Err(DockerError::new("no"));
+        load(&mut state, &podman(), podman_lists);
+
+        let tree = tree_rows(&state);
+
+        assert_eq!(tree[2].note, TreeNote::Count(3));
+        assert_eq!(tree[3].note, TreeNote::Count(2));
+        assert_eq!(tree[7].note, TreeNote::Count(1));
+        assert_eq!(tree[8].note, TreeNote::Failed);
+    }
+
+    #[test]
+    fn only_the_shown_list_is_highlighted_among_the_engines() {
+        let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::Open(Place::new(
+                podman().address().clone(),
+                ResourceKind::Images,
+            )),
+        );
+
+        assert_eq!(
+            highlighted(&state),
+            vec![(
+                i18n::t(Key::DockerImages).to_string(),
+                podman().address().clone()
+            )]
+        );
+    }
+
+    #[test]
+    fn closing_the_shown_engine_keeps_its_table_and_highlights_no_row() {
+        let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        let before = build(&state);
+        let rows_before = table(&before).rows.clone();
+        let inspector_before = before.inspector.clone();
+
+        press_root(&mut state, &docker());
+
+        let vm = build(&state);
+        assert_eq!(table(&vm).resource, ResourceKind::Containers);
+        assert_eq!(table(&vm).rows, rows_before);
+        assert_eq!(vm.inspector, inspector_before);
+        assert_eq!(highlighted(&state), Vec::new());
+    }
+
+    #[test]
+    fn opening_the_shown_engine_again_highlights_its_list() {
+        let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
+
+        press_root(&mut state, &docker());
+        press_root(&mut state, &docker());
+
+        assert_eq!(
+            highlighted(&state),
+            vec![(
+                i18n::t(Key::DockerContainers).to_string(),
+                docker().address().clone()
+            )]
+        );
+    }
+
+    #[test]
+    fn closing_another_engine_keeps_the_highlight_of_the_shown_list() {
+        let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
+
+        press_root(&mut state, &podman());
+
+        assert_eq!(
+            highlighted(&state),
+            vec![(
+                i18n::t(Key::DockerContainers).to_string(),
+                docker().address().clone()
+            )]
+        );
+    }
+
+    #[test]
+    fn the_tree_shows_every_engine_with_its_lists_and_the_loaded_counts() {
         let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
         load(&mut state, &docker(), lists(EngineKind::Docker));
         let docker_at =
             |resource| Place::new(docker().address().clone(), resource);
+        let podman_at =
+            |resource| Place::new(podman().address().clone(), resource);
 
         let vm = build(&state);
 
@@ -593,17 +801,43 @@ mod tests {
                 ),
                 TreeRowViewModel {
                     is_engine: true,
+                    is_open: true,
                     ..tree_row(
                         "Podman 5.8.8",
                         0,
                         TreeNote::Nothing,
                         false,
-                        Place::new(
-                            podman().address().clone(),
-                            ResourceKind::Containers
-                        )
+                        podman_at(ResourceKind::Containers)
                     )
                 },
+                tree_row(
+                    i18n::t(Key::DockerContainers),
+                    1,
+                    TreeNote::Nothing,
+                    false,
+                    podman_at(ResourceKind::Containers)
+                ),
+                tree_row(
+                    i18n::t(Key::DockerImages),
+                    1,
+                    TreeNote::Nothing,
+                    false,
+                    podman_at(ResourceKind::Images)
+                ),
+                tree_row(
+                    i18n::t(Key::DockerVolumes),
+                    1,
+                    TreeNote::Nothing,
+                    false,
+                    podman_at(ResourceKind::Volumes)
+                ),
+                tree_row(
+                    i18n::t(Key::DockerNetworks),
+                    1,
+                    TreeNote::Nothing,
+                    false,
+                    podman_at(ResourceKind::Networks)
+                ),
             ]
         );
     }
@@ -783,7 +1017,8 @@ mod tests {
         load(&mut state, &docker(), lists(EngineKind::Docker));
         // (list, typed text, expected first value)
         let cases = [
-            (ResourceKind::Images, "repository:busy", "busybox:1.37"),
+            (ResourceKind::Images, "repository:busy", "busybox"),
+            (ResourceKind::Images, "tag:1.3", "1.37"),
             (ResourceKind::Volumes, "name:otty-fx", "otty-fx-data"),
             (ResourceKind::Networks, "name:bri", "bridge"),
             (ResourceKind::Containers, "ports:18080", "18080:80/tcp"),
@@ -1048,6 +1283,99 @@ mod tests {
             Some(i18n::t(Key::DockerNoContainers).to_string())
         );
         assert_eq!(vm.inspector, None);
+    }
+
+    /// Docker with one image of two tags, its images open.
+    fn two_tags_of_one_image() -> DockerState {
+        let mut state = found(&[EngineKind::Docker]);
+        let mut loaded = lists(EngineKind::Docker);
+        loaded.images = Ok(fixtures::image_rows(
+            "sha256:app",
+            &["app:1", "app:2"],
+            &[],
+            &[],
+        ));
+        load(&mut state, &docker(), loaded);
+        open(&mut state, ResourceKind::Images);
+        state
+    }
+
+    fn reload_images(state: &mut DockerState, names: &[&str]) {
+        let mut loaded = lists(EngineKind::Docker);
+        loaded.images = Ok(fixtures::image_rows("sha256:app", names, &[], &[]));
+        load(state, &docker(), loaded);
+    }
+
+    #[test]
+    fn the_tree_counts_the_rows_of_the_images_table() {
+        let state = two_tags_of_one_image();
+
+        let vm = build(&state);
+
+        assert_eq!(vm.tree[2].note, TreeNote::Count(2));
+        assert_eq!(table(&vm).rows.len(), 2);
+    }
+
+    #[test]
+    fn only_the_pressed_tag_of_an_image_is_selected() {
+        let mut state = two_tags_of_one_image();
+
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        let vm = build(&state);
+        assert_eq!(table(&vm).selected, Some(1));
+        assert_eq!(table(&vm).rows[1][1], TableCell::muted_mono("2"));
+    }
+
+    #[test]
+    fn the_inspector_names_the_selected_tag() {
+        let mut state = two_tags_of_one_image();
+
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        assert_eq!(
+            build(&state).inspector.map(|inspector| inspector.title),
+            Some(String::from("app:2"))
+        );
+    }
+
+    #[test]
+    fn a_sort_keeps_the_selected_tag_selected() {
+        let mut state = two_tags_of_one_image();
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        let _ = reduce(&mut state, DockerIntent::SortBy(0));
+        let vm = build(&state);
+
+        assert_eq!(table(&vm).sort.column(), 0);
+        let selected = table(&vm).selected.expect("a selected row");
+        assert_eq!(table(&vm).rows[selected][1], TableCell::muted_mono("2"));
+    }
+
+    #[test]
+    fn a_reload_keeps_the_same_tag_selected() {
+        let mut state = two_tags_of_one_image();
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        reload_images(&mut state, &["app:1", "app:2", "app:3"]);
+
+        assert_eq!(
+            build(&state).inspector.map(|inspector| inspector.title),
+            Some(String::from("app:2"))
+        );
+    }
+
+    #[test]
+    fn a_reload_without_the_selected_tag_selects_as_for_any_removed_row() {
+        let mut state = two_tags_of_one_image();
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        reload_images(&mut state, &["app:1"]);
+
+        assert_eq!(
+            build(&state).inspector.map(|inspector| inspector.title),
+            Some(String::from("app:1"))
+        );
     }
 
     #[test]

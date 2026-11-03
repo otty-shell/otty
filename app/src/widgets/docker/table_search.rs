@@ -12,7 +12,7 @@ use super::resource_rows::{columns_in, container_badge};
 use super::sort::{
     TableSort, sort_containers, sort_images, sort_networks, sort_volumes,
 };
-use super::types::{ResourceKind, image_name};
+use super::types::{ResourceKind, image_name, image_repository, image_tag};
 use crate::i18n::{self, Locale};
 
 /// The internal name of the Compose project key; the Compose link adds a tag
@@ -22,8 +22,12 @@ pub(crate) const COMPOSE_KEY: &str = "compose";
 /// The internal key names of the containers table, in column order.
 const CONTAINER_KEYS: &[&str] =
     &["name", "status", "image", COMPOSE_KEY, "ports", "age"];
+/// The internal key of the images table's Tag column, not to be confused with
+/// the tags of the search itself.
+const IMAGE_TAG_KEY: &str = "image-tag";
 /// The internal key names of the images table, in column order.
-const IMAGE_KEYS: &[&str] = &["repository", "id", "size", "used-by", "age"];
+const IMAGE_KEYS: &[&str] =
+    &["repository", IMAGE_TAG_KEY, "id", "size", "used-by", "age"];
 /// The internal key names of the volumes table, in column order.
 const VOLUME_KEYS: &[&str] = &["name", "driver", "used-by", "age"];
 /// The internal key names of the networks table, in column order.
@@ -103,10 +107,12 @@ pub(crate) fn container_row(container: &Container, now: i64) -> SearchRow {
     with_age(row, now, container.created())
 }
 
-/// An image as the search sees it: the texts of its cells.
+/// An image as the search sees it: the texts of its cells. Typed text finds
+/// the whole reference, so `app:1` works as it does in `docker images`.
 pub(crate) fn image_row(image: &Image, now: i64) -> SearchRow {
     let row = SearchRow::new(image_name(image))
-        .value("repository", image_name(image))
+        .value("repository", image_repository(image))
+        .value(IMAGE_TAG_KEY, image_tag(image))
         .value("id", short_id(image.id()))
         .value("size", size_text(image.size()))
         .value("used-by", format!("{}", image.containers()));
@@ -286,7 +292,7 @@ mod tests {
             );
             assert_eq!(
                 names(locale, ResourceKind::Images),
-                ["repository", "id", "size", "used-by", "age"]
+                ["repository", "image-tag", "id", "size", "used-by", "age"]
             );
             assert_eq!(
                 names(locale, ResourceKind::Volumes),
@@ -348,7 +354,7 @@ mod tests {
             (
                 Locale::En,
                 ResourceKind::Images,
-                &["Repository", "ID", "Size", "Used by", "Age"],
+                &["Repository", "Tag", "ID", "Size", "Used by", "Age"],
             ),
             (
                 Locale::Ru,
@@ -358,7 +364,14 @@ mod tests {
             (
                 Locale::Ru,
                 ResourceKind::Images,
-                &["Репозиторий", "ID", "Размер", "Используется", "Возраст"],
+                &[
+                    "Репозиторий",
+                    "Тег",
+                    "ID",
+                    "Размер",
+                    "Используется",
+                    "Возраст",
+                ],
             ),
             (
                 Locale::Ru,
@@ -380,7 +393,7 @@ mod tests {
             (
                 Locale::ZhCn,
                 ResourceKind::Images,
-                &["仓库", "ID", "大小", "使用者", "时间"],
+                &["仓库", "标签", "ID", "大小", "使用者", "时间"],
             ),
         ];
 
@@ -515,6 +528,20 @@ mod tests {
             "otty-fx-data"
         );
         assert_eq!(network_row(&resources.networks()[0], NOW).name(), "bridge");
+    }
+
+    #[test]
+    fn an_image_row_is_named_by_its_reference_and_keeps_its_parts_apart() {
+        let rows = fixtures::image_rows("sha256:app", &["reg/app:1"], &[], &[]);
+
+        let row = image_row(&rows[0], NOW);
+
+        assert_eq!(row.name(), "reg/app:1");
+        assert_eq!(
+            row.values_of("repository").collect::<Vec<_>>(),
+            vec!["reg/app"]
+        );
+        assert_eq!(row.values_of("image-tag").collect::<Vec<_>>(), vec!["1"]);
     }
 
     #[test]

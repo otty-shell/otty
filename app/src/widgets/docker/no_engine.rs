@@ -15,6 +15,11 @@ const DOCKER_START_URL: &str = "https://docs.docker.com/engine/daemon/start/";
 /// Page that explains the Podman API service.
 const PODMAN_SERVICE_URL: &str =
     "https://docs.podman.io/en/latest/markdown/podman-system-service.1.html";
+/// Turns on the user's own Podman socket, which the engine search looks for:
+/// the `podman.socket` user unit listens on
+/// `$XDG_RUNTIME_DIR/podman/podman.sock`.
+const PODMAN_SOCKET_COMMAND: &str =
+    "systemctl --user enable --now podman.socket";
 /// Page that explains the docker group.
 const DOCKER_GROUP_URL: &str =
     "https://docs.docker.com/engine/install/linux-postinstall/";
@@ -30,6 +35,8 @@ pub(crate) enum NoEngineCase {
     PodmanApiOff,
     /// A socket exists but this user may not connect to it.
     NoPermission,
+    /// A Podman socket exists but this user may not connect to it.
+    PodmanNoPermission,
 }
 
 /// A command to run in a terminal, with the text around it.
@@ -76,6 +83,10 @@ pub(crate) fn no_engine(discovery: &Discovery) -> Option<NoEngineViewModel> {
         Diagnosis::NoPermission(candidate) => {
             (NoEngineCase::NoPermission, candidate.address().to_string())
         },
+        Diagnosis::PodmanNoPermission(candidate) => (
+            NoEngineCase::PodmanNoPermission,
+            candidate.address().to_string(),
+        ),
         Diagnosis::DockerNotRunning => {
             (NoEngineCase::DockerNotRunning, String::new())
         },
@@ -101,7 +112,8 @@ pub(crate) fn no_engine(discovery: &Discovery) -> Option<NoEngineViewModel> {
 }
 
 /// Build the card of `case`. `socket` is the denied socket (used by
-/// `NoPermission`); `places` are the sockets OTTY tried.
+/// `NoPermission` and `PodmanNoPermission`); `places` are the sockets OTTY
+/// tried.
 pub(crate) fn view_model(
     case: NoEngineCase,
     socket: &str,
@@ -159,7 +171,7 @@ pub(crate) fn view_model(
             status_text: i18n::t(Key::DockerStatusPodmanOff).to_string(),
             command: Some(CommandViewModel {
                 label: i18n::t(Key::DockerRunInTerminal),
-                text: "systemctl --user enable --now podman.socket",
+                text: PODMAN_SOCKET_COMMAND,
                 hint: i18n::t(Key::DockerPodmanOffHint),
             }),
             installs: Vec::new(),
@@ -181,12 +193,27 @@ pub(crate) fn view_model(
             fix_url: Some(DOCKER_GROUP_URL),
             looked_for,
         },
+        NoEngineCase::PodmanNoPermission => NoEngineViewModel {
+            case,
+            title: i18n::t(Key::DockerPodmanNoAccessTitle),
+            description: i18n::docker_podman_no_access_text(socket),
+            panel_text: i18n::t(Key::DockerPanelPodmanNoAccess),
+            status_text: i18n::docker_status_no_access(socket),
+            command: Some(CommandViewModel {
+                label: i18n::t(Key::DockerPodmanNoAccessLabel),
+                text: PODMAN_SOCKET_COMMAND,
+                hint: i18n::t(Key::DockerPodmanNoAccessHint),
+            }),
+            installs: Vec::new(),
+            fix_url: Some(PODMAN_SERVICE_URL),
+            looked_for,
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use otty_docker::{EngineKind, fixtures};
+    use otty_docker::{CandidateSource, EngineKind, fixtures};
 
     use super::*;
 
@@ -298,6 +325,75 @@ mod tests {
     }
 
     #[test]
+    fn podman_no_permission_names_the_socket_and_starts_the_users_own() {
+        let socket = "/run/podman/podman.sock";
+
+        let vm =
+            view_model(NoEngineCase::PodmanNoPermission, socket, &places());
+
+        assert_eq!(vm.title, i18n::t(Key::DockerPodmanNoAccessTitle));
+        assert_eq!(vm.description, i18n::docker_podman_no_access_text(socket));
+        assert!(vm.description.contains(socket));
+        assert_eq!(vm.panel_text, i18n::t(Key::DockerPanelPodmanNoAccess));
+        assert_eq!(vm.status_text, i18n::docker_status_no_access(socket));
+        assert_eq!(
+            vm.command,
+            Some(CommandViewModel {
+                label: i18n::t(Key::DockerPodmanNoAccessLabel),
+                text: "systemctl --user enable --now podman.socket",
+                hint: i18n::t(Key::DockerPodmanNoAccessHint),
+            })
+        );
+        assert_eq!(
+            vm.fix_url,
+            Some(
+                "https://docs.podman.io/en/latest/markdown/podman-system-service.1.html"
+            )
+        );
+    }
+
+    #[test]
+    fn a_denied_podman_socket_shows_the_podman_card_with_its_path() {
+        let socket = "/run/podman/podman.sock";
+        let discovery =
+            fixtures::denied_discovery(socket, CandidateSource::Podman);
+
+        let vm = no_engine(&discovery).expect("a card is shown");
+
+        assert_eq!(vm.case, NoEngineCase::PodmanNoPermission);
+        assert!(vm.description.contains(socket));
+    }
+
+    #[test]
+    fn a_denied_docker_socket_shows_the_docker_card_with_its_path() {
+        let socket = "/var/run/docker.sock";
+        let discovery =
+            fixtures::denied_discovery(socket, CandidateSource::Docker);
+
+        let vm = no_engine(&discovery).expect("a card is shown");
+
+        assert_eq!(vm.case, NoEngineCase::NoPermission);
+        assert!(vm.description.contains(socket));
+    }
+
+    #[test]
+    fn the_podman_card_never_advises_the_docker_group() {
+        let vm = view_model(
+            NoEngineCase::PodmanNoPermission,
+            "/run/podman/podman.sock",
+            &places(),
+        );
+
+        let command = vm.command.expect("the card has a command");
+
+        assert!(!command.text.contains("usermod"));
+        assert!(!command.text.contains("docker"));
+        assert!(!vm.description.contains("docker"));
+        assert!(!command.label.contains("docker"));
+        assert!(!command.hint.contains("docker"));
+    }
+
+    #[test]
     fn the_looked_for_line_lists_every_place_and_the_command_search() {
         let vm = view_model(NoEngineCase::NotInstalled, "", &places());
 
@@ -328,6 +424,10 @@ mod tests {
             (NoEngineCase::PodmanApiOff, "podman socket is off"),
             (
                 NoEngineCase::NoPermission,
+                "permission denied on /var/run/docker.sock",
+            ),
+            (
+                NoEngineCase::PodmanNoPermission,
                 "permission denied on /var/run/docker.sock",
             ),
         ];

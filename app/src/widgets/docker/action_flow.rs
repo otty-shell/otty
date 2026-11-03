@@ -4,12 +4,12 @@
 
 use iced::{Point, Task};
 use otty_docker::{
-    Container, ContainerState, EngineAddress, EngineInfo, Image, Network,
-    Volume,
+    Container, ContainerState, EngineAddress, EngineInfo, EngineKind, Image,
+    Network, Volume,
 };
 
 use super::actions::{
-    ActionRequest, Confirm, EngineAction, REMOVE_ONLY, RowAction,
+    ActionRequest, Confirm, EngineAction, ImageRemoval, REMOVE_ONLY, RowAction,
     container_actions, failure_text, image_actions, needs_stop,
     network_remove_hint, volume_remove_hint,
 };
@@ -26,8 +26,10 @@ use crate::i18n::{self, Key};
 struct TargetItem {
     engine: EngineInfo,
     resource: ResourceKind,
+    /// What the engine call names: the row's id, or the name or id that
+    /// removes an image row.
     id: String,
-    /// The name the table shows (the first tag of an image).
+    /// The name the row goes by: an image row's reference.
     name: String,
     offered: &'static [RowAction],
     /// Remove is offered but the engine would refuse it.
@@ -35,6 +37,8 @@ struct TargetItem {
     /// The first state of the remove dialog's switch ("Stop it first",
     /// "Force"); `None` without a switch.
     remove_switch: Option<bool>,
+    /// What the removal of an image row does; `None` on other lists.
+    image_removal: Option<ImageRemoval>,
 }
 
 /// Run `action` on the row of the open row menu, or else on the selected
@@ -71,7 +75,11 @@ pub(super) fn act(
                 remove_call(item.resource, item.id),
                 item.name,
             );
-            state.open_confirm(Confirm::new(request, item.remove_switch, 0));
+            let confirm = Confirm::new(request, item.remove_switch, 0);
+            state.open_confirm(match item.image_removal {
+                Some(removal) => confirm.with_image_removal(removal),
+                None => confirm,
+            });
             return Task::none();
         },
         RowAction::PullAgain => {
@@ -227,8 +235,8 @@ pub(super) fn run(
 }
 
 /// Open a terminal tab with a shell in the selected container, run by the
-/// engine's own command line tool. Does nothing when the search did not find
-/// that tool.
+/// engine's own command line tool on that engine's address. Does nothing when
+/// the search did not find that tool.
 fn open_shell(state: &DockerState, item: &TargetItem) -> Task<DockerEvent> {
     let Some(program) = state.cli_path(item.engine.kind()) else {
         return Task::none();
@@ -237,10 +245,28 @@ fn open_shell(state: &DockerState, item: &TargetItem) -> Task<DockerEvent> {
     effect(DockerEffect::OpenShell {
         title: i18n::docker_named(Key::TplDockerShellTabTitle, &item.name),
         program: program.to_string_lossy().into_owned(),
-        args: ["exec", "-it", item.id.as_str(), "sh"]
-            .map(String::from)
-            .to_vec(),
+        args: shell_args(item.engine.kind(), item.engine.address(), &item.id),
     })
+}
+
+/// The arguments of the command that opens a shell in container `id`. Without
+/// the address the command would go to its own default engine, which may not
+/// be the chosen one (Colima, Docker Desktop, rootful Podman); `--` keeps an
+/// id from being read as a flag.
+fn shell_args(
+    kind: EngineKind,
+    address: &EngineAddress,
+    id: &str,
+) -> Vec<String> {
+    let host_flag = match kind {
+        EngineKind::Docker => "--host",
+        EngineKind::Podman => "--url",
+    };
+    let host = address.host_url();
+
+    [host_flag, host.as_str(), "exec", "-it", "--", id, "sh"]
+        .map(String::from)
+        .to_vec()
 }
 
 /// The row with `id` in the open list.
@@ -261,18 +287,29 @@ fn target_item(state: &DockerState, id: &str) -> Option<TargetItem> {
                 offered: container_actions(container.state()),
                 is_remove_blocked: false,
                 remove_switch: needs_stop(container.state()).then_some(true),
+                image_removal: None,
             }
         },
         ResourceKind::Images => {
-            let image = engine.images().find(id, Image::id)?;
+            let image = engine.images().find(id, Image::row_key)?;
+            let removal = ImageRemoval::of(
+                info.kind(),
+                image,
+                has_running_user(image, engine.containers().items()),
+            );
             TargetItem {
                 engine: info,
                 resource,
-                id: image.id().to_string(),
+                id: image.remove_target().to_string(),
                 name: image_name(image).to_string(),
                 offered: image_actions(image),
                 is_remove_blocked: false,
-                remove_switch: (image.containers() > 0).then_some(true),
+                // On by default, as ticket 12 set it, except where Force
+                // also deletes containers: one confirm must not do that.
+                remove_switch: removal
+                    .offers_force()
+                    .then_some(removal != ImageRemoval::ForceDeletesContainers),
+                image_removal: Some(removal),
             }
         },
         ResourceKind::Volumes => {
@@ -285,6 +322,7 @@ fn target_item(state: &DockerState, id: &str) -> Option<TargetItem> {
                 offered: REMOVE_ONLY,
                 is_remove_blocked: volume_remove_hint(volume).is_some(),
                 remove_switch: None,
+                image_removal: None,
             }
         },
         ResourceKind::Networks => {
@@ -297,11 +335,19 @@ fn target_item(state: &DockerState, id: &str) -> Option<TargetItem> {
                 offered: REMOVE_ONLY,
                 is_remove_blocked: network_remove_hint(network).is_some(),
                 remove_switch: None,
+                image_removal: None,
             }
         },
     };
 
     Some(item)
+}
+
+/// Whether a running, paused or restarting container uses `image`.
+fn has_running_user(image: &Image, containers: &[Container]) -> bool {
+    containers.iter().any(|container| {
+        container.image_id() == image.id() && needs_stop(container.state())
+    })
 }
 
 /// The remove call of a row of `resource` with this id (not forced; the
@@ -311,7 +357,10 @@ fn remove_call(resource: ResourceKind, id: String) -> EngineAction {
         ResourceKind::Containers => {
             EngineAction::RemoveContainer { id, force: false }
         },
-        ResourceKind::Images => EngineAction::RemoveImage { id, force: false },
+        ResourceKind::Images => EngineAction::RemoveImage {
+            reference: id,
+            force: false,
+        },
         ResourceKind::Volumes => EngineAction::RemoveVolume(id),
         ResourceKind::Networks => EngineAction::RemoveNetwork(id),
     }
@@ -357,6 +406,8 @@ fn effect(effect: DockerEffect) -> Task<DockerEvent> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use iced::Point;
     use otty_docker::{Container, EngineInfo, EngineKind, fixtures};
 
@@ -1010,15 +1061,6 @@ mod tests {
         let _ = reduce(state, DockerIntent::SelectRow(position));
     }
 
-    fn image_id(name: &str) -> String {
-        fixtures::resources(EngineKind::Docker)
-            .images()
-            .iter()
-            .find(|image| image_name(image) == name)
-            .map(|image| image.id().to_string())
-            .expect("fixture image")
-    }
-
     #[test]
     fn removing_an_image_a_container_uses_offers_force_on() {
         let mut state = loaded_state();
@@ -1033,12 +1075,362 @@ mod tests {
             effects,
             vec![run(
                 EngineAction::RemoveImage {
-                    id: image_id("busybox:1.37"),
+                    reference: String::from("busybox:1.37"),
                     force: true,
                 },
                 "busybox:1.37"
             )]
         );
+    }
+
+    const APP_ID: &str = "sha256:app";
+
+    /// `kind` with its images open, listing the rows of an image with the id
+    /// [`APP_ID`], `names` and `digests`, used by a container in each of
+    /// `user_states` (for example `exited`).
+    fn image_state(
+        kind: EngineKind,
+        names: &[&str],
+        digests: &[&str],
+        user_states: &[&str],
+    ) -> DockerState {
+        let info = fixtures::engine(kind);
+        let resources = fixtures::resources(kind);
+        let users: Vec<Container> = user_states
+            .iter()
+            .enumerate()
+            .map(|(index, state)| {
+                fixtures::container_of_image(
+                    &format!("user-{index}"),
+                    state,
+                    "app:1",
+                    APP_ID,
+                )
+            })
+            .collect();
+        let images = fixtures::image_rows(APP_ID, names, digests, &users);
+
+        let mut state = DockerState::default();
+        let _ = reduce(&mut state, DockerIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[kind])),
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: info.address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(users),
+                    images: Ok(images),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            },
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::Open(Place::new(
+                info.address().clone(),
+                ResourceKind::Images,
+            )),
+        );
+
+        state
+    }
+
+    /// Select the row at `index` of the shown images and press Remove;
+    /// returns the switch of the dialog and the call a confirm then makes.
+    fn remove_row(
+        state: &mut DockerState,
+        index: usize,
+    ) -> (Option<bool>, EngineAction) {
+        let _ = reduce(state, DockerIntent::SelectRow(index));
+        let _ = reduce(state, DockerIntent::Act(RowAction::Remove));
+        let switch = state.confirm().and_then(Confirm::switch);
+        let call = state
+            .take_confirm()
+            .expect("the remove dialog")
+            .into_request()
+            .action()
+            .clone();
+
+        (switch, call)
+    }
+
+    fn remove_call_of(reference: &str, force: bool) -> EngineAction {
+        EngineAction::RemoveImage {
+            reference: reference.to_string(),
+            force,
+        }
+    }
+
+    #[test]
+    fn removing_one_of_several_tags_names_it_and_has_no_switch() {
+        for kind in [EngineKind::Docker, EngineKind::Podman] {
+            for users in [&[][..], &["exited"][..], &["running"][..]] {
+                let mut state =
+                    image_state(kind, &["app:1", "app:2"], &[], users);
+
+                let removed = remove_row(&mut state, 1);
+
+                assert_eq!(
+                    removed,
+                    (None, remove_call_of("app:2", false)),
+                    "{kind:?} {users:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn removing_the_last_tag_of_an_unused_image_names_it_and_has_no_switch() {
+        for kind in [EngineKind::Docker, EngineKind::Podman] {
+            let mut state = image_state(kind, &["app:1"], &[], &[]);
+
+            let removed = remove_row(&mut state, 0);
+
+            assert_eq!(removed, (None, remove_call_of("app:1", false)));
+        }
+    }
+
+    #[test]
+    fn removing_an_untagged_unused_image_goes_by_id_with_no_switch() {
+        for kind in [EngineKind::Docker, EngineKind::Podman] {
+            let mut state = image_state(kind, &[], &[], &[]);
+
+            let removed = remove_row(&mut state, 0);
+
+            assert_eq!(removed, (None, remove_call_of(APP_ID, false)));
+        }
+    }
+
+    #[test]
+    fn the_last_tag_of_a_used_image_on_docker_can_be_forced() {
+        for users in [&["exited"][..], &["created"][..], &["running"][..]] {
+            let mut state =
+                image_state(EngineKind::Docker, &["app:1"], &[], users);
+
+            let removed = remove_row(&mut state, 0);
+
+            assert_eq!(
+                removed,
+                (Some(true), remove_call_of("app:1", true)),
+                "{users:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_untagged_image_stopped_containers_use_on_docker_can_be_forced() {
+        let mut state = image_state(EngineKind::Docker, &[], &[], &["exited"]);
+
+        let removed = remove_row(&mut state, 0);
+
+        assert_eq!(removed, (Some(true), remove_call_of(APP_ID, true)));
+    }
+
+    #[test]
+    fn an_untagged_image_a_running_container_uses_on_docker_is_not_forced() {
+        for user in ["running", "paused", "restarting"] {
+            let mut state = image_state(EngineKind::Docker, &[], &[], &[user]);
+
+            let removed = remove_row(&mut state, 0);
+
+            assert_eq!(
+                removed,
+                (None, remove_call_of(APP_ID, false)),
+                "{user}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_image_only_stopped_containers_use_on_podman_starts_with_force_off() {
+        // Force would delete those containers too, so one confirm must not.
+        let mut tagged =
+            image_state(EngineKind::Podman, &["app:1"], &[], &["exited"]);
+        let mut untagged =
+            image_state(EngineKind::Podman, &[], &[], &["exited"]);
+
+        assert_eq!(
+            remove_row(&mut tagged, 0),
+            (Some(false), remove_call_of("app:1", false))
+        );
+        assert_eq!(
+            remove_row(&mut untagged, 0),
+            (Some(false), remove_call_of(APP_ID, false))
+        );
+    }
+
+    #[test]
+    fn turning_force_on_on_podman_forces_the_removal() {
+        let mut state =
+            image_state(EngineKind::Podman, &["app:1"], &[], &["exited"]);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(0));
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+
+        let _ = reduce(&mut state, DockerIntent::ConfirmSwitchToggled(true));
+        let effects =
+            effects(reduce(&mut state, DockerIntent::ConfirmAccepted));
+
+        assert_eq!(
+            effects,
+            vec![DockerEffect::RunAction(ActionRequest::new(
+                fixtures::engine(EngineKind::Podman),
+                remove_call_of("app:1", true),
+                String::from("app:1"),
+            ))]
+        );
+    }
+
+    #[test]
+    fn a_podman_refusal_of_a_removal_left_without_force_reaches_the_notice() {
+        let mut state =
+            image_state(EngineKind::Podman, &["app:1"], &[], &["exited"]);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(0));
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+        let request = ActionRequest::new(
+            fixtures::engine(EngineKind::Podman),
+            remove_call_of("app:1", false),
+            String::from("app:1"),
+        );
+
+        let started =
+            effects(reduce(&mut state, DockerIntent::ConfirmAccepted));
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ActionFinished {
+                request: request.clone(),
+                result: Err(DockerError::new("image is in use")),
+            },
+        );
+
+        assert_eq!(started, vec![DockerEffect::RunAction(request.clone())]);
+        assert_eq!(
+            state.notice(),
+            Some(failure_text(&request, "image is in use").as_str())
+        );
+    }
+
+    #[test]
+    fn a_container_that_runs_on_podman_keeps_force_away_from_its_stopped_ones()
+    {
+        // Force would delete the stopped container and then fail anyway.
+        let mut state = image_state(
+            EngineKind::Podman,
+            &["app:1"],
+            &[],
+            &["exited", "running"],
+        );
+
+        let removed = remove_row(&mut state, 0);
+
+        assert_eq!(removed, (None, remove_call_of("app:1", false)));
+    }
+
+    #[test]
+    fn a_digest_row_beside_a_tag_goes_by_its_digest_and_an_only_one_by_id() {
+        let mut beside = image_state(
+            EngineKind::Docker,
+            &["app:1"],
+            &["reg/app@sha256:aa"],
+            &[],
+        );
+        let mut only =
+            image_state(EngineKind::Docker, &[], &["reg/app@sha256:aa"], &[]);
+
+        assert_eq!(
+            remove_row(&mut beside, 1),
+            (None, remove_call_of("reg/app@sha256:aa", false))
+        );
+        assert_eq!(
+            remove_row(&mut only, 0),
+            (None, remove_call_of(APP_ID, false))
+        );
+    }
+
+    #[test]
+    fn the_row_menu_of_a_tag_acts_on_that_tag() {
+        let mut state =
+            image_state(EngineKind::Docker, &["app:1", "app:2"], &[], &[]);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::RowMenuPressed {
+                index: 1,
+                position: Point::ORIGIN,
+            },
+        );
+
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+
+        let confirm = state.confirm().expect("the remove dialog");
+        assert_eq!(confirm.request().name(), "app:2");
+        assert_eq!(confirm.request().action(), &remove_call_of("app:2", false));
+    }
+
+    #[test]
+    fn removing_a_tag_blocks_only_that_row() {
+        let mut state =
+            image_state(EngineKind::Docker, &["app:1", "app:2"], &[], &[]);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(0));
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+        let _ = reduce(&mut state, DockerIntent::ConfirmAccepted);
+
+        let again = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+        let _ = collect_outputs(again);
+        assert!(state.confirm().is_none());
+
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+        assert!(state.confirm().is_some());
+    }
+
+    #[test]
+    fn a_refused_tag_removal_reaches_the_notice_and_names_the_tag() {
+        let mut state = image_state(EngineKind::Docker, &["app:1"], &[], &[]);
+        let (_, call) = remove_row(&mut state, 0);
+        let request = ActionRequest::new(
+            fixtures::engine(EngineKind::Docker),
+            call,
+            String::from("app:1"),
+        );
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ActionFinished {
+                request: request.clone(),
+                result: Err(DockerError::new("must be forced")),
+            },
+        );
+
+        let notice = state.notice().expect("a notice");
+        assert_eq!(notice, failure_text(&request, "must be forced"));
+        assert!(notice.contains("app:1"), "{notice}");
+    }
+
+    #[test]
+    fn run_on_a_tag_opens_the_form_with_that_tag() {
+        let mut state =
+            image_state(EngineKind::Docker, &["app:1", "app:2"], &[], &[]);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Run));
+
+        assert_eq!(state.run_form().map(|form| form.image()), Some("app:2"));
+    }
+
+    #[test]
+    fn pull_again_on_a_tag_opens_the_dialog_with_that_tag() {
+        let mut state =
+            image_state(EngineKind::Docker, &["app:1", "app:2"], &[], &[]);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::PullAgain));
+
+        let form = state.form().expect("the pull dialog");
+        assert_eq!(form.value(FormField::Name), "app");
+        assert_eq!(form.value(FormField::Tag), "2");
     }
 
     #[test]
@@ -1055,7 +1447,7 @@ mod tests {
             effects,
             vec![run(
                 EngineAction::RemoveImage {
-                    id: image_id("otty-fx-img:1"),
+                    reference: String::from("otty-fx-img:1"),
                     force: false,
                 },
                 "otty-fx-img:1"
@@ -1311,12 +1703,30 @@ mod tests {
             .expect("fixture container")
     }
 
-    fn shell(program: &str, id: &str) -> DockerEffect {
+    fn shell(
+        program: &str,
+        flag: &str,
+        socket: &str,
+        id: &str,
+    ) -> DockerEffect {
+        let host = format!("unix://{socket}");
+
         DockerEffect::OpenShell {
             title: String::from("shell otty-fx-running"),
             program: program.to_string(),
-            args: ["exec", "-it", id, "sh"].map(String::from).to_vec(),
+            args: [flag, host.as_str(), "exec", "-it", "--", id, "sh"]
+                .map(String::from)
+                .to_vec(),
         }
+    }
+
+    fn podman_shell(program: &str) -> DockerEffect {
+        shell(
+            program,
+            "--url",
+            fixtures::PODMAN_SOCKET,
+            &podman_container_id(),
+        )
     }
 
     #[test]
@@ -1327,7 +1737,10 @@ mod tests {
         let effects =
             effects(reduce(&mut state, DockerIntent::Act(RowAction::Shell)));
 
-        assert_eq!(effects, vec![shell(DOCKER_CLI, &id)]);
+        assert_eq!(
+            effects,
+            vec![shell(DOCKER_CLI, "--host", fixtures::DOCKER_SOCKET, &id)]
+        );
     }
 
     #[test]
@@ -1337,10 +1750,7 @@ mod tests {
         let effects =
             effects(reduce(&mut state, DockerIntent::Act(RowAction::Shell)));
 
-        assert_eq!(
-            effects,
-            vec![shell("/opt/podman/bin/podman", &podman_container_id())]
-        );
+        assert_eq!(effects, vec![podman_shell("/opt/podman/bin/podman")]);
     }
 
     #[test]
@@ -1352,10 +1762,68 @@ mod tests {
         let effects =
             effects(reduce(&mut state, DockerIntent::Act(RowAction::Shell)));
 
+        assert_eq!(effects, vec![podman_shell("/usr/bin/docker")]);
+    }
+
+    #[test]
+    fn shell_args_name_a_docker_compatible_socket_that_is_not_the_default() {
+        let colima = EngineAddress::Unix(PathBuf::from(
+            "/home/ann/.colima/default/docker.sock",
+        ));
+
+        let args = shell_args(EngineKind::Docker, &colima, "abc123");
+
         assert_eq!(
-            effects,
-            vec![shell("/usr/bin/docker", &podman_container_id())]
+            args,
+            [
+                "--host",
+                "unix:///home/ann/.colima/default/docker.sock",
+                "exec",
+                "-it",
+                "--",
+                "abc123",
+                "sh",
+            ]
         );
+    }
+
+    #[test]
+    fn shell_args_name_the_rootful_podman_socket() {
+        let rootful =
+            EngineAddress::Unix(PathBuf::from("/run/podman/podman.sock"));
+
+        let args = shell_args(EngineKind::Podman, &rootful, "abc123");
+
+        assert_eq!(
+            args,
+            [
+                "--url",
+                "unix:///run/podman/podman.sock",
+                "exec",
+                "-it",
+                "--",
+                "abc123",
+                "sh",
+            ]
+        );
+    }
+
+    #[test]
+    fn shell_args_name_a_tcp_engine() {
+        let tcp = EngineAddress::Tcp(String::from("localhost:2375"));
+
+        let args = shell_args(EngineKind::Docker, &tcp, "abc123");
+
+        assert_eq!(args[..2], ["--host", "tcp://localhost:2375"]);
+    }
+
+    #[test]
+    fn shell_args_never_read_an_id_as_a_flag() {
+        let tcp = EngineAddress::Tcp(String::from("localhost:2375"));
+
+        let args = shell_args(EngineKind::Docker, &tcp, "--privileged");
+
+        assert_eq!(args[4..], ["--", "--privileged", "sh"]);
     }
 
     #[test]

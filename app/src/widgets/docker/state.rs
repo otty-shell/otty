@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use iced::Point;
@@ -40,7 +41,13 @@ pub(crate) struct DockerState {
     /// found before stay shown and can open a Run form.
     is_selinux_enabled: bool,
     engines: Vec<EngineState>,
+    /// The list the main area shows. Its engine may be closed in the tree:
+    /// closing an engine does not change what the main area shows.
     place: Option<Place>,
+    /// The engines closed in the tree. Every engine is open by default,
+    /// also one found later, so the closed ones are kept. Lives as long as
+    /// the app runs; not saved to disk.
+    closed_engines: HashSet<EngineAddress>,
     /// See [`Self::age_clock`].
     age_clock: i64,
     /// The kept sort of each table; not saved to disk.
@@ -88,6 +95,11 @@ impl DockerState {
     /// Return the list the main area shows; `None` without engines.
     pub(crate) fn place(&self) -> Option<&Place> {
         self.place.as_ref()
+    }
+
+    /// Return whether the tree hides the lists of the engine at `address`.
+    pub(crate) fn is_engine_closed(&self, address: &EngineAddress) -> bool {
+        self.closed_engines.contains(address)
     }
 
     /// Return the full path of the command line tool of `kind`, when the
@@ -212,7 +224,7 @@ impl DockerState {
                 engine.containers.selected(Container::id)?,
             ),
             ResourceKind::Images => {
-                SelectedRow::Image(engine.images.selected(Image::id)?)
+                SelectedRow::Image(engine.images.selected(Image::row_key)?)
             },
             ResourceKind::Volumes => {
                 SelectedRow::Volume(engine.volumes.selected(Volume::name)?)
@@ -235,12 +247,14 @@ impl DockerState {
         self.row_menu.as_ref().map(|menu| menu.position)
     }
 
-    /// Return the id of the row the open row menu is for.
+    /// Return the id of the row the open row menu is for; an image row goes by
+    /// its row key.
     pub(crate) fn row_menu_target(&self) -> Option<&str> {
         self.row_menu.as_ref().map(|menu| menu.target.as_str())
     }
 
-    /// Return the id of the selected row of the open list.
+    /// Return the id of the selected row of the open list; an image row goes
+    /// by its row key.
     pub(crate) fn selected_id(&self) -> Option<&str> {
         let place = self.place.as_ref()?;
         let engine = self.open_engine()?;
@@ -326,7 +340,8 @@ impl DockerState {
     /// Take the search result: keep the lists of engines found again, add
     /// new engines, drop engines that are gone. The open place stays when
     /// its engine is still there, else it moves to the first engine's
-    /// containers.
+    /// containers, and that engine opens in the tree. An engine the user
+    /// closed stays closed otherwise, also when it goes away and comes back.
     pub(super) fn finish_search(&mut self, discovery: Discovery) {
         let reached = match discovery.diagnosis() {
             Diagnosis::Engines(infos) => infos.clone(),
@@ -362,6 +377,9 @@ impl DockerState {
                     ResourceKind::Containers,
                 )
             });
+            if let Some(place) = &self.place {
+                self.closed_engines.remove(place.engine());
+            }
         }
 
         self.is_selinux_enabled = discovery.is_selinux_enabled();
@@ -406,9 +424,13 @@ impl DockerState {
         true
     }
 
-    /// Show `place`. Opening another place forgets the text in the search
-    /// field, keeps the tags of each table and goes back to the Overview tab.
+    /// Show `place`. Its engine opens in the tree, so a link or a finished
+    /// Run that lands on a closed engine shows the list it went to. Opening
+    /// another place forgets the text in the search field, keeps the tags of
+    /// each table and goes back to the Overview tab.
     pub(super) fn open(&mut self, place: Place) {
+        self.closed_engines.remove(place.engine());
+
         if self.place.as_ref() == Some(&place) {
             return;
         }
@@ -419,6 +441,14 @@ impl DockerState {
         self.place = Some(place);
         self.inspector.select_tab(InspectorTab::Overview);
         self.notice = None;
+    }
+
+    /// Close the engine at `address` in the tree, or open it when it is
+    /// closed. The main area keeps showing what it shows.
+    pub(super) fn toggle_engine(&mut self, address: EngineAddress) {
+        if !self.closed_engines.remove(&address) {
+            self.closed_engines.insert(address);
+        }
     }
 
     /// Remember that `request` runs, so its buttons are disabled.
@@ -503,7 +533,8 @@ impl DockerState {
     }
 
     /// Show the `resource` list of `engine` and select the item with `id` in
-    /// it: a container, image or network id, or a volume name. The text in the
+    /// it: a container or network id, an image row key, or a volume name. The
+    /// text in the
     /// field goes away, and so do the table's tags when they would hide the
     /// item. A new container is selected before the reload that brings it
     /// into the list, so a tag cannot be checked against it; the tags go away
@@ -633,7 +664,7 @@ impl DockerState {
             ResourceKind::Images => {
                 shown_images(engine.images.items(), search, now, sort)
                     .get(index)
-                    .map(|image| image.id())
+                    .map(|image| image.row_key())
             },
             ResourceKind::Volumes => {
                 shown_volumes(engine.volumes.items(), search, now, sort)
@@ -714,7 +745,7 @@ impl DockerState {
                 .map(|container| container_row(container, now)),
             ResourceKind::Images => engine
                 .images
-                .find(id, Image::id)
+                .find(id, Image::row_key)
                 .map(|image| image_row(image, now)),
             ResourceKind::Volumes => engine
                 .volumes
@@ -754,7 +785,7 @@ impl DockerState {
                 let item = &engine.images.items()[engine_index];
                 shown_images(engine.images.items(), search, now, sort)
                     .iter()
-                    .position(|shown| shown.id() == item.id())
+                    .position(|shown| shown.row_key() == item.row_key())
                     .expect("the item is shown")
             },
             ResourceKind::Volumes => {
@@ -786,8 +817,8 @@ impl DockerState {
 struct RowMenu {
     /// Window coordinates.
     position: Point,
-    /// The row's id in the open list: container, image or network id, or
-    /// volume name.
+    /// The row's id in the open list: container or network id, image row key,
+    /// or volume name.
     target: String,
 }
 
@@ -852,7 +883,7 @@ impl EngineState {
     /// Take each list of one load on its own.
     fn apply_lists(&mut self, lists: LoadedLists) {
         self.containers.apply(lists.containers, Container::id);
-        self.images.apply(lists.images, Image::id);
+        self.images.apply(lists.images, Image::row_key);
         self.volumes.apply(lists.volumes, Volume::name);
         self.networks.apply(lists.networks, Network::id);
     }
@@ -863,7 +894,9 @@ impl EngineState {
             LoadedList::Containers(result) => {
                 self.containers.apply(result, Container::id);
             },
-            LoadedList::Images(result) => self.images.apply(result, Image::id),
+            LoadedList::Images(result) => {
+                self.images.apply(result, Image::row_key);
+            },
             LoadedList::Volumes(result) => {
                 self.volumes.apply(result, Volume::name);
             },
@@ -973,7 +1006,8 @@ impl SelectedRow<'_> {
         }
     }
 
-    /// Return the row's id: container, image or network id, or volume name.
+    /// Return what inspects the row: container, image or network id, or volume
+    /// name. The rows of one image share their inspect answer.
     pub(crate) fn id(&self) -> &str {
         match self {
             Self::Container(container) => container.id(),

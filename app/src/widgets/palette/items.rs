@@ -9,8 +9,10 @@ use crate::widgets::modes::types::Mode;
 
 /// Build every palette entry: open sessions, then launches, then the app
 /// actions. Split pane is listed only when there is a focused pane to
-/// split, Close session only when a tab is active. Every mode can be
-/// switched to, pinned or not.
+/// split, Close session only when a tab is active, and both only in Terminal
+/// mode: elsewhere the tab is hidden and they do nothing. New folder is listed
+/// only in Terminal mode too, because its name field lives in the Launches
+/// panel. Every mode can be switched to, pinned or not.
 pub(super) fn palette_items(
     ctx: &PaletteCtx<'_>,
 ) -> Vec<PaletteItem<PaletteTarget>> {
@@ -79,6 +81,7 @@ fn launch_items(
 
 /// The app actions, each with its shortcut when it has one.
 fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
+    let is_terminal_mode = ctx.active_mode == Mode::Terminal;
     let has_active_session =
         ctx.sessions.iter().any(|session| session.is_active);
 
@@ -89,21 +92,23 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
             Some(AppShortcut::NewTerminal),
         ),
         (PaletteTarget::NewLaunch, Key::PaletteNewLaunch, None),
-        (PaletteTarget::NewFolder, Key::PaletteNewFolder, None),
-        (
-            PaletteTarget::Settings,
-            Key::SettingsTabTitle,
-            Some(AppShortcut::Settings),
-        ),
     ];
-    if ctx.can_split_pane {
+    if is_terminal_mode {
+        actions.push((PaletteTarget::NewFolder, Key::PaletteNewFolder, None));
+    }
+    actions.push((
+        PaletteTarget::Settings,
+        Key::SettingsTabTitle,
+        Some(AppShortcut::Settings),
+    ));
+    if is_terminal_mode && ctx.can_split_pane {
         actions.push((
             PaletteTarget::SplitPane,
             Key::PaletteSplitPane,
             Some(AppShortcut::SplitPane),
         ));
     }
-    if has_active_session {
+    if is_terminal_mode && has_active_session {
         actions.push((
             PaletteTarget::CloseSession,
             Key::CloseSession,
@@ -201,6 +206,7 @@ mod tests {
             launches: Vec::new(),
             can_split_pane: false,
             pinned_modes: vec![Mode::Terminal, Mode::Docker],
+            active_mode: Mode::Terminal,
         }
     }
 
@@ -429,6 +435,40 @@ mod tests {
 
         assert!(targets.contains(&PaletteTarget::CloseSession));
         assert!(!targets.contains(&PaletteTarget::SplitPane));
+    }
+
+    #[test]
+    fn outside_terminal_mode_split_pane_close_session_and_new_folder_are_left_out()
+     {
+        let ctx = PaletteCtx {
+            sessions: vec![session(
+                1,
+                "zsh",
+                "fedora",
+                TargetKind::Local,
+                true,
+            )],
+            can_split_pane: true,
+            active_mode: Mode::Docker,
+            ..empty_ctx()
+        };
+
+        let items = palette_items(&ctx);
+
+        assert_eq!(
+            targets(&items),
+            vec![
+                PaletteTarget::Session { tab_id: 1 },
+                PaletteTarget::NewTerminal,
+                PaletteTarget::NewLaunch,
+                PaletteTarget::Settings,
+                PaletteTarget::ToggleLeftPanel,
+                PaletteTarget::ToggleFilesPanel,
+                PaletteTarget::ToggleFocusMode,
+                PaletteTarget::SwitchMode(Mode::Terminal),
+                PaletteTarget::SwitchMode(Mode::Docker),
+            ]
+        );
     }
 
     #[test]

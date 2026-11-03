@@ -21,6 +21,27 @@ pub enum EngineAddress {
     Tcp(String),
 }
 
+impl EngineAddress {
+    /// The address in the form the `docker` and `podman` commands take:
+    /// `unix:///path` or `tcp://host:port`. The plain path of
+    /// [`fmt::Display`] does not work there: `docker` reads it as a tcp host.
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use otty_docker::EngineAddress;
+    ///
+    /// let address = EngineAddress::Unix(PathBuf::from("/run/docker.sock"));
+    /// assert_eq!(address.host_url(), "unix:///run/docker.sock");
+    /// ```
+    pub fn host_url(&self) -> String {
+        match self {
+            Self::Unix(path) => format!("unix://{}", path.display()),
+            Self::Tcp(host) => format!("tcp://{host}"),
+        }
+    }
+}
+
 impl fmt::Display for EngineAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -46,5 +67,24 @@ mod tests {
         let address = EngineAddress::Tcp(String::from("localhost:2375"));
 
         assert_eq!(address.to_string(), "tcp://localhost:2375");
+    }
+
+    #[test]
+    fn unix_host_url_has_the_scheme_a_plain_path_lacks() {
+        let address = EngineAddress::Unix(PathBuf::from(
+            "/home/ann/.colima/default/docker.sock",
+        ));
+
+        assert_eq!(
+            address.host_url(),
+            "unix:///home/ann/.colima/default/docker.sock"
+        );
+    }
+
+    #[test]
+    fn tcp_host_url_keeps_the_scheme() {
+        let address = EngineAddress::Tcp(String::from("localhost:2375"));
+
+        assert_eq!(address.host_url(), "tcp://localhost:2375");
     }
 }

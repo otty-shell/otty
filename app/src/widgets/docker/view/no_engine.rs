@@ -207,6 +207,10 @@ mod tests {
                 NoEngineCase::NoPermission,
                 "https://docs.docker.com/engine/install/linux-postinstall/",
             ),
+            (
+                NoEngineCase::PodmanNoPermission,
+                "https://docs.podman.io/en/latest/markdown/podman-system-service.1.html",
+            ),
         ];
 
         for (case, url) in cases {
@@ -228,6 +232,10 @@ mod tests {
                 "systemctl --user enable --now podman.socket",
             ),
             (NoEngineCase::NoPermission, "sudo usermod -aG docker $USER"),
+            (
+                NoEngineCase::PodmanNoPermission,
+                "systemctl --user enable --now podman.socket",
+            ),
         ];
 
         for (case, command) in cases {
@@ -247,6 +255,7 @@ mod tests {
             NoEngineCase::DockerNotRunning,
             NoEngineCase::PodmanApiOff,
             NoEngineCase::NoPermission,
+            NoEngineCase::PodmanNoPermission,
         ] {
             let sent = intents(case, i18n::t(Key::DockerCheckAgain));
 

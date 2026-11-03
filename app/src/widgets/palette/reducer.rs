@@ -22,6 +22,10 @@ pub(crate) struct PaletteCtx<'a> {
     /// Terminal and the pinned modes, in switcher order: the mode at
     /// position N has mode shortcut N.
     pub(crate) pinned_modes: Vec<Mode>,
+    /// The mode on screen. The commands that act on the active tab, and New
+    /// folder, are listed only in Terminal mode, where the tab and the
+    /// Launches panel show.
+    pub(crate) active_mode: Mode,
 }
 
 /// One open tab the palette can switch to.
@@ -145,6 +149,7 @@ mod tests {
     use iced_test::runtime::task::into_stream;
 
     use super::*;
+    use crate::i18n::{self, Key};
     use crate::testing::task_outputs::collect_outputs;
 
     fn ctx_with_sessions(titles: &[&'static str]) -> PaletteCtx<'static> {
@@ -169,6 +174,7 @@ mod tests {
             }],
             can_split_pane: true,
             pinned_modes: Vec::new(),
+            active_mode: Mode::Terminal,
         }
     }
 
@@ -176,10 +182,44 @@ mod tests {
         ctx_with_sessions(&["zsh", "htop"])
     }
 
+    /// The same entries as [`ctx`] while Docker mode is on screen.
+    fn docker_ctx() -> PaletteCtx<'static> {
+        PaletteCtx {
+            active_mode: Mode::Docker,
+            ..ctx()
+        }
+    }
+
     fn open_state() -> PaletteState {
         let mut state = PaletteState::default();
         let _ = reduce(&mut state, PaletteIntent::Open, &ctx());
         state
+    }
+
+    fn open_docker_state() -> PaletteState {
+        let mut state = PaletteState::default();
+        let _ = reduce(&mut state, PaletteIntent::Open, &docker_ctx());
+        state
+    }
+
+    fn act_in_docker(
+        state: &mut PaletteState,
+        action: PaletteAction,
+    ) -> Vec<PaletteEvent> {
+        collect_outputs(reduce(
+            state,
+            PaletteIntent::Action(action),
+            &docker_ctx(),
+        ))
+    }
+
+    fn listed_targets(state: &PaletteState) -> Vec<PaletteTarget> {
+        state
+            .list()
+            .expect("palette should be open")
+            .matches()
+            .map(|(item, _)| item.key().clone())
+            .collect()
     }
 
     fn act(
@@ -334,6 +374,101 @@ mod tests {
             );
             assert!(!state.is_open(), "entry {index} should close it");
         }
+    }
+
+    #[test]
+    fn in_docker_mode_a_click_runs_the_entry_shown_at_that_place() {
+        let cases = [
+            (5, PaletteTarget::Settings),
+            (6, PaletteTarget::ToggleLeftPanel),
+            (7, PaletteTarget::ToggleFilesPanel),
+            (8, PaletteTarget::ToggleFocusMode),
+        ];
+
+        for (index, expected) in cases {
+            let mut state = open_docker_state();
+            assert_eq!(listed_targets(&state)[index], expected);
+
+            let events =
+                act_in_docker(&mut state, PaletteAction::RunItem(index));
+
+            assert_eq!(
+                effects(events),
+                vec![PaletteEffect::Run(expected.clone())],
+                "entry {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn in_docker_mode_arrows_and_enter_run_the_entry_they_reach() {
+        let mut state = open_docker_state();
+
+        for _ in 0..6 {
+            let _ = act_in_docker(&mut state, PaletteAction::MoveDown);
+        }
+        let events = act_in_docker(&mut state, PaletteAction::RunActive);
+
+        assert_eq!(
+            effects(events),
+            vec![PaletteEffect::Run(PaletteTarget::ToggleLeftPanel)]
+        );
+    }
+
+    #[test]
+    fn in_docker_mode_typing_the_name_of_a_hidden_command_finds_nothing() {
+        for key in [
+            Key::PaletteSplitPane,
+            Key::CloseSession,
+            Key::PaletteNewFolder,
+        ] {
+            let mut state = open_docker_state();
+
+            let _ = act_in_docker(
+                &mut state,
+                PaletteAction::QueryChanged(i18n::t(key).to_owned()),
+            );
+            let events = act_in_docker(&mut state, PaletteAction::RunActive);
+
+            assert_eq!(state.list().map(|list| list.match_count()), Some(0));
+            assert!(events.is_empty());
+            assert!(state.is_open());
+        }
+    }
+
+    #[test]
+    fn in_docker_mode_a_filtered_entry_runs_from_its_place_in_the_matches() {
+        let mut state = open_docker_state();
+
+        let _ = act_in_docker(
+            &mut state,
+            PaletteAction::QueryChanged(
+                i18n::t(Key::WindowFocusMode).to_owned(),
+            ),
+        );
+        let events = act_in_docker(&mut state, PaletteAction::RunItem(0));
+
+        assert_eq!(
+            effects(events),
+            vec![PaletteEffect::Run(PaletteTarget::ToggleFocusMode)]
+        );
+    }
+
+    #[test]
+    fn typing_lists_the_commands_of_the_mode_on_screen_now() {
+        let mut state = open_state();
+        assert!(listed_targets(&state).contains(&PaletteTarget::SplitPane));
+        assert!(listed_targets(&state).contains(&PaletteTarget::NewFolder));
+
+        let _ = act_in_docker(
+            &mut state,
+            PaletteAction::QueryChanged(String::new()),
+        );
+
+        let listed = listed_targets(&state);
+        assert!(!listed.contains(&PaletteTarget::SplitPane));
+        assert!(!listed.contains(&PaletteTarget::CloseSession));
+        assert!(!listed.contains(&PaletteTarget::NewFolder));
     }
 
     #[test]

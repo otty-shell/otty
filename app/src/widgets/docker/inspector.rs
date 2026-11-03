@@ -67,12 +67,15 @@ impl fmt::Display for InspectorTab {
     }
 }
 
-/// The container whose logs are followed, and its engine. It keys the logs
-/// subscription: another container or engine is another subscription.
+/// One logs stream: the container whose logs are followed, its engine and
+/// how many times the container came back while they were open. It keys the
+/// logs subscription: another container, engine or comeback is another
+/// subscription, and iced stops the old stream and starts the new one.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct LogTarget {
     engine: EngineInfo,
     container_id: String,
+    comebacks: u32,
 }
 
 impl LogTarget {
@@ -86,12 +89,35 @@ impl LogTarget {
         &self.container_id
     }
 
+    /// Whether the logs are for the same container on the same engine, from
+    /// any stream.
+    pub(crate) fn is_same_container(&self, other: &Self) -> bool {
+        self.engine == other.engine && self.container_id == other.container_id
+    }
+
+    /// Whether the stream reads only the lines of the latest run: the
+    /// container came back while its logs were open.
+    pub(crate) fn reads_latest_run_only(&self) -> bool {
+        self.comebacks > 0
+    }
+
     /// The container `container_id` on `engine`.
     pub(crate) fn new(engine: EngineInfo, container_id: &str) -> Self {
         Self {
             engine,
             container_id: container_id.to_string(),
+            comebacks: 0,
         }
+    }
+
+    /// Whether this is the container `container_id` on the engine at
+    /// `address`.
+    fn is_container(
+        &self,
+        address: &EngineAddress,
+        container_id: &str,
+    ) -> bool {
+        self.engine.address() == address && self.container_id == container_id
     }
 }
 
@@ -158,6 +184,17 @@ impl ContainerLogs {
             lines: LogViewState::new().max_lines(MAX_LOG_LINES),
             error: None,
         }
+    }
+
+    /// The container came back: forget the lines, waiting ones too, and the
+    /// old stream's error, and ask for a new stream. Follow stays as it is.
+    fn start_over(&mut self) {
+        let is_following = self.lines.is_following();
+
+        self.target.comebacks = self.target.comebacks.saturating_add(1);
+        self.lines = LogViewState::new().max_lines(MAX_LOG_LINES);
+        self.lines.set_following(is_following);
+        self.error = None;
     }
 }
 
@@ -311,15 +348,31 @@ impl InspectorState {
         self.tab = tab;
     }
 
-    /// Follow the logs of `target`, or of nothing. Logs of another target
-    /// are dropped; the same target keeps its lines.
+    /// Follow the logs of `target`, or of nothing. Logs of another container
+    /// are dropped; the same container keeps its lines and its stream.
     pub(super) fn follow_logs(&mut self, target: Option<LogTarget>) {
-        let followed = self.logs.as_ref().map(ContainerLogs::target);
-        if followed == target.as_ref() {
+        if let (Some(logs), Some(target)) = (&self.logs, &target)
+            && logs.target.is_same_container(target)
+        {
             return;
         }
 
         self.logs = target.map(ContainerLogs::new);
+    }
+
+    /// The container `container_id` on the engine at `engine` was started or
+    /// restarted: when its logs are followed, they start over with a new
+    /// stream. Spec Decision 12: the view is cleared, no old lines are kept.
+    pub(super) fn restart_logs(
+        &mut self,
+        engine: &EngineAddress,
+        container_id: &str,
+    ) {
+        if let Some(logs) = self.logs.as_mut()
+            && logs.target.is_container(engine, container_id)
+        {
+            logs.start_over();
+        }
     }
 
     /// Add lines of `target`. Returns `false` when its logs are no longer

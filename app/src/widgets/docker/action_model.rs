@@ -5,8 +5,8 @@ use iced::Point;
 use otty_docker::{Container, EngineKind, Image, Network, Volume};
 
 use super::actions::{
-    EngineAction, REMOVE_ONLY, RowAction, container_actions, image_actions,
-    network_remove_hint, volume_remove_hint,
+    Confirm, EngineAction, ImageRemoval, REMOVE_ONLY, RowAction,
+    container_actions, image_actions, network_remove_hint, volume_remove_hint,
 };
 use super::state::DockerState;
 use super::types::ResourceKind;
@@ -94,12 +94,15 @@ pub(crate) fn confirm_dialog(state: &DockerState) -> Option<ConfirmViewModel> {
             Some(Key::DockerStopItFirst),
             Key::DockerActionRemove,
         ),
-        EngineAction::RemoveImage { .. } => (
-            i18n::docker_named(Key::TplDockerRemoveImageTitle, request.name()),
-            i18n::t(Key::DockerRemoveImageText).to_string(),
-            Some(Key::DockerForceRemoveImage),
-            Key::DockerActionRemove,
-        ),
+        EngineAction::RemoveImage { .. } => {
+            let (title_key, text_key) = image_remove_texts(confirm);
+            (
+                i18n::docker_named(title_key, request.name()),
+                i18n::t(text_key).to_string(),
+                Some(Key::DockerForceRemoveImage),
+                Key::DockerActionRemove,
+            )
+        },
         EngineAction::RemoveVolume(_) => (
             i18n::docker_named(Key::TplDockerRemoveVolumeTitle, request.name()),
             i18n::t(Key::DockerRemoveVolumeText).to_string(),
@@ -186,6 +189,32 @@ pub(crate) fn can_create(state: &DockerState) -> bool {
     state.open_engine().is_some() && state.place().is_some()
 }
 
+/// The title and text of an image remove dialog: what goes away with the
+/// switch as it is now.
+fn image_remove_texts(confirm: &Confirm) -> (Key, Key) {
+    let removal = confirm.image_removal().unwrap_or(ImageRemoval::WholeImage);
+
+    let title = match removal {
+        ImageRemoval::OnlyThisTag | ImageRemoval::ForceUntags => {
+            Key::TplDockerRemoveTagTitle
+        },
+        _ => Key::TplDockerRemoveImageTitle,
+    };
+    let text = match removal {
+        ImageRemoval::OnlyThisTag => Key::DockerRemoveTagText,
+        ImageRemoval::WholeImage => Key::DockerRemoveImageText,
+        ImageRemoval::Refused => Key::DockerRemoveImageRefusedText,
+        _ if confirm.switch() != Some(true) => {
+            Key::DockerRemoveImageNeedsForceText
+        },
+        ImageRemoval::ForceUntags => Key::DockerForceUntagsImageText,
+        ImageRemoval::ForceKeepsContainers => Key::DockerForceDeletesImageText,
+        _ => Key::DockerForceDeletesContainersText,
+    };
+
+    (title, text)
+}
+
 /// The action buttons of the row with `id` in the open list and the hint
 /// under them, by the rules of [`action_buttons`]; `None` when the row is
 /// not in the loaded list.
@@ -193,25 +222,28 @@ fn row_actions(state: &DockerState, id: &str) -> Option<ActionsViewModel> {
     let place = state.place()?;
     let engine = state.open_engine()?;
 
-    let (offered, remove_hint) = match place.resource() {
+    // What a running action on this row names: the id, but an image row goes
+    // by what removes only that row.
+    let (offered, remove_hint, action_target) = match place.resource() {
         ResourceKind::Containers => {
             let container = engine.containers().find(id, Container::id)?;
-            (container_actions(container.state()), None)
+            (container_actions(container.state()), None, id)
         },
         ResourceKind::Images => {
-            let image = engine.images().find(id, Image::id)?;
-            (image_actions(image), None)
+            let image = engine.images().find(id, Image::row_key)?;
+            (image_actions(image), None, image.remove_target())
         },
         ResourceKind::Volumes => {
             let volume = engine.volumes().find(id, Volume::name)?;
-            (REMOVE_ONLY, volume_remove_hint(volume))
+            (REMOVE_ONLY, volume_remove_hint(volume), id)
         },
         ResourceKind::Networks => {
             let network = engine.networks().find(id, Network::id)?;
-            (REMOVE_ONLY, network_remove_hint(network))
+            (REMOVE_ONLY, network_remove_hint(network), id)
         },
     };
-    let is_busy = state.is_busy(place.engine(), place.resource(), Some(id));
+    let is_busy =
+        state.is_busy(place.engine(), place.resource(), Some(action_target));
     let shell_hint = shell_hint(state, engine.info().kind(), offered);
 
     let buttons = offered
@@ -272,7 +304,7 @@ fn prune_texts(
 #[cfg(test)]
 mod tests {
     use iced::Point;
-    use otty_docker::{EngineInfo, EngineKind, fixtures};
+    use otty_docker::{Container, EngineInfo, EngineKind, fixtures};
 
     use super::*;
     use crate::widgets::docker::actions::RowAction;
@@ -686,10 +718,10 @@ mod tests {
             image,
             ConfirmViewModel {
                 title: i18n::docker_named(
-                    Key::TplDockerRemoveImageTitle,
+                    Key::TplDockerRemoveTagTitle,
                     "busybox:1.37"
                 ),
-                text: i18n::t(Key::DockerRemoveImageText).to_string(),
+                text: i18n::t(Key::DockerForceUntagsImageText).to_string(),
                 switch: Some((i18n::t(Key::DockerForceRemoveImage), true)),
                 confirm_label: i18n::t(Key::DockerActionRemove),
             }
@@ -705,6 +737,210 @@ mod tests {
             i18n::docker_named(Key::TplDockerRemoveNetworkTitle, "otty-fx-net")
         );
         assert_eq!(network.text, i18n::t(Key::DockerRemoveNetworkText));
+    }
+
+    /// `kind` with its images open, listing an image with `names` and a
+    /// container in each of `user_states`, the row at `index` selected and its
+    /// remove dialog open.
+    fn image_remove_dialog(
+        kind: EngineKind,
+        names: &[&str],
+        user_states: &[&str],
+        index: usize,
+    ) -> DockerState {
+        let info = fixtures::engine(kind);
+        let resources = fixtures::resources(kind);
+        let users: Vec<Container> = user_states
+            .iter()
+            .enumerate()
+            .map(|(number, state)| {
+                fixtures::container_of_image(
+                    &format!("user-{number}"),
+                    state,
+                    "app:1",
+                    "sha256:app",
+                )
+            })
+            .collect();
+        let images = fixtures::image_rows("sha256:app", names, &[], &users);
+
+        let mut state = DockerState::default();
+        let _ = reduce(&mut state, DockerIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[kind])),
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: info.address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(users),
+                    images: Ok(images),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            },
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::Open(Place::new(
+                info.address().clone(),
+                ResourceKind::Images,
+            )),
+        );
+        let _ = reduce(&mut state, DockerIntent::SelectRow(index));
+        let _ = reduce(&mut state, DockerIntent::Act(RowAction::Remove));
+
+        state
+    }
+
+    fn dialog_text(state: &DockerState) -> String {
+        confirm_dialog(state).expect("the remove dialog").text
+    }
+
+    #[test]
+    fn a_tag_with_siblings_says_only_it_goes_on_any_engine() {
+        for kind in [EngineKind::Docker, EngineKind::Podman] {
+            let state =
+                image_remove_dialog(kind, &["app:1", "app:2"], &["running"], 1);
+
+            let dialog = confirm_dialog(&state).expect("the remove dialog");
+
+            assert_eq!(
+                dialog.title,
+                i18n::docker_named(Key::TplDockerRemoveTagTitle, "app:2")
+            );
+            assert_eq!(dialog.text, i18n::t(Key::DockerRemoveTagText));
+            assert_eq!(dialog.switch, None);
+        }
+    }
+
+    #[test]
+    fn the_last_tag_of_an_unused_image_says_the_image_goes() {
+        for kind in [EngineKind::Docker, EngineKind::Podman] {
+            let state = image_remove_dialog(kind, &["app:1"], &[], 0);
+
+            let dialog = confirm_dialog(&state).expect("the remove dialog");
+
+            assert_eq!(
+                dialog.title,
+                i18n::docker_named(Key::TplDockerRemoveImageTitle, "app:1")
+            );
+            assert_eq!(dialog.text, i18n::t(Key::DockerRemoveImageText));
+            assert_eq!(dialog.switch, None);
+        }
+    }
+
+    #[test]
+    fn force_on_docker_says_the_image_stays_without_a_tag() {
+        let state =
+            image_remove_dialog(EngineKind::Docker, &["app:1"], &["exited"], 0);
+
+        let dialog = confirm_dialog(&state).expect("the remove dialog");
+
+        assert_eq!(dialog.text, i18n::t(Key::DockerForceUntagsImageText));
+        assert_eq!(
+            dialog.switch,
+            Some((i18n::t(Key::DockerForceRemoveImage), true))
+        );
+    }
+
+    #[test]
+    fn force_on_docker_without_a_tag_says_the_containers_stay() {
+        let state =
+            image_remove_dialog(EngineKind::Docker, &[], &["exited"], 0);
+
+        assert_eq!(
+            dialog_text(&state),
+            i18n::t(Key::DockerForceDeletesImageText)
+        );
+    }
+
+    #[test]
+    fn on_podman_force_starts_off_and_the_dialog_says_the_engine_refuses() {
+        for names in [&["app:1"][..], &[][..]] {
+            let state =
+                image_remove_dialog(EngineKind::Podman, names, &["exited"], 0);
+
+            let dialog = confirm_dialog(&state).expect("the remove dialog");
+
+            assert_eq!(
+                dialog.text,
+                i18n::t(Key::DockerRemoveImageNeedsForceText)
+            );
+            assert_eq!(
+                dialog.switch,
+                Some((i18n::t(Key::DockerForceRemoveImage), false))
+            );
+        }
+    }
+
+    #[test]
+    fn force_on_podman_says_the_containers_go_too() {
+        let mut state =
+            image_remove_dialog(EngineKind::Podman, &["app:1"], &["exited"], 0);
+
+        let _ = reduce(&mut state, DockerIntent::ConfirmSwitchToggled(true));
+
+        assert_eq!(
+            dialog_text(&state),
+            i18n::t(Key::DockerForceDeletesContainersText)
+        );
+    }
+
+    #[test]
+    fn with_force_off_the_dialog_says_the_engine_refuses() {
+        for kind in [EngineKind::Docker, EngineKind::Podman] {
+            let mut state =
+                image_remove_dialog(kind, &["app:1"], &["exited"], 0);
+
+            let _ =
+                reduce(&mut state, DockerIntent::ConfirmSwitchToggled(false));
+
+            assert_eq!(
+                dialog_text(&state),
+                i18n::t(Key::DockerRemoveImageNeedsForceText)
+            );
+        }
+    }
+
+    #[test]
+    fn when_force_cannot_help_the_dialog_says_stop_it_first() {
+        let cases = [
+            (EngineKind::Docker, &[][..]),
+            (EngineKind::Podman, &["app:1"][..]),
+            (EngineKind::Podman, &[][..]),
+        ];
+
+        for (kind, names) in cases {
+            let state = image_remove_dialog(kind, names, &["running"], 0);
+
+            let dialog = confirm_dialog(&state).expect("the remove dialog");
+
+            assert_eq!(dialog.text, i18n::t(Key::DockerRemoveImageRefusedText));
+            assert_eq!(dialog.switch, None);
+        }
+    }
+
+    #[test]
+    fn the_buttons_of_a_tag_are_disabled_only_while_that_tag_goes() {
+        let mut state = image_remove_dialog(
+            EngineKind::Docker,
+            &["app:1", "app:2"],
+            &[],
+            0,
+        );
+        let _ = reduce(&mut state, DockerIntent::ConfirmAccepted);
+        let enabled = |state: &DockerState| {
+            buttons_of(state).0.iter().all(|button| button.is_enabled)
+        };
+
+        let removed_row = enabled(&state);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        assert!(!removed_row);
+        assert!(enabled(&state));
     }
 
     #[test]

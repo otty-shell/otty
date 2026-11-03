@@ -1,6 +1,8 @@
 //! What the Docker mode status bar says: the engine, the counts of the open
 //! list, the other engines found, or why there is no engine (spec Decision 5).
 
+use std::collections::HashSet;
+
 use otty_docker::{Container, ContainerState, Image};
 
 use super::format::size_text;
@@ -97,7 +99,7 @@ fn counts(engine: &EngineState, resource: ResourceKind) -> String {
                 Key::TplDockerStatusImages,
                 images.len(),
             );
-            let bytes: u64 = images.iter().map(Image::size).sum();
+            let bytes = images_size(images);
 
             format!("{total}{PART_SEPARATOR}{}", size_text(bytes))
         }),
@@ -116,6 +118,17 @@ fn counts(engine: &EngineState, resource: ResourceKind) -> String {
             )
         }),
     }
+}
+
+/// The bytes of `images` on disk; the rows of one image count once.
+fn images_size(images: &[Image]) -> u64 {
+    let mut counted = HashSet::new();
+
+    images
+        .iter()
+        .filter(|image| counted.insert(image.id()))
+        .map(Image::size)
+        .sum()
 }
 
 /// The text of a list in each load state; `loaded` gives it for the items.
@@ -222,6 +235,32 @@ mod tests {
         assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
         assert_eq!(vm.info, format!("{total} containers, {running} running"));
         assert_eq!(vm.also_found, None);
+    }
+
+    #[test]
+    fn images_count_every_row_and_the_size_of_each_image_once() {
+        let mut state = loaded(&[EngineKind::Docker]);
+        let two_tags =
+            fixtures::image_rows("sha256:app", &["app:1", "app:2"], &[], &[]);
+        let bytes = two_tags[0].size();
+        let resources = fixtures::resources(EngineKind::Docker);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: fixtures::engine(EngineKind::Docker).address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(resources.containers().to_vec()),
+                    images: Ok(two_tags),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            },
+        );
+        open(&mut state, ResourceKind::Images);
+
+        let vm = status_bar(&state);
+
+        assert_eq!(vm.info, format!("2 images, {}", size_text(bytes)));
     }
 
     #[test]

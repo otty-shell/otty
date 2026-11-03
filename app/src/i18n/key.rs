@@ -254,6 +254,14 @@ pub(crate) enum Key {
     DockerNoAccessLabel,
     /// Hint under the command: log out again; the group has root rights.
     DockerNoAccessHint,
+    /// Title of the card when OTTY may not use a Podman socket.
+    DockerPodmanNoAccessTitle,
+    /// Text of the Podman no access card. Placeholder: `{socket}`.
+    TplDockerPodmanNoAccessText,
+    /// Label above the command that turns on the user's own Podman socket.
+    DockerPodmanNoAccessLabel,
+    /// Hint under that command: whose containers it shows, and macOS.
+    DockerPodmanNoAccessHint,
     /// Left panel text when no engine is installed.
     DockerPanelNotInstalled,
     /// Left panel text when Docker is not running.
@@ -262,6 +270,8 @@ pub(crate) enum Key {
     DockerPanelPodmanOff,
     /// Left panel text when OTTY may not use the Docker socket.
     DockerPanelNoAccess,
+    /// Left panel text when OTTY may not use a Podman socket.
+    DockerPanelPodmanNoAccess,
     /// Right panel text when no row is selected.
     DockerNothingToInspect,
     /// Line under the no engine cards. Placeholder: `{places}`.
@@ -278,8 +288,10 @@ pub(crate) enum Key {
     DockerColumnPorts,
     /// Table column: how long ago the item was created.
     DockerColumnAge,
-    /// Table column: the repository and tag of an image.
-    DockerColumnRepositoryTag,
+    /// Table column: the repository of an image.
+    DockerColumnRepository,
+    /// Table column: the tag of an image.
+    DockerColumnTag,
     /// Table column: the short ID of an image.
     DockerColumnId,
     /// Table column: the size of an image.
@@ -437,6 +449,20 @@ pub(crate) enum Key {
     DockerRemoveImageText,
     /// Switch in the remove image dialog when a container uses the image.
     DockerForceRemoveImage,
+    /// Title of the dialog that removes only a tag. Placeholder: `{name}`.
+    TplDockerRemoveTagTitle,
+    /// Remove dialog text: the image has other tags, so only this one goes.
+    DockerRemoveTagText,
+    /// Remove dialog text, Force on: a container keeps the image, the tag goes.
+    DockerForceUntagsImageText,
+    /// Remove dialog text, Force on: the image goes, its containers stay.
+    DockerForceDeletesImageText,
+    /// Remove dialog text, Force on: the image and its containers go.
+    DockerForceDeletesContainersText,
+    /// Remove dialog text, Force off: the engine will refuse.
+    DockerRemoveImageNeedsForceText,
+    /// Remove dialog text: the engine refuses, and Force would not help.
+    DockerRemoveImageRefusedText,
     /// Switch in the prune volumes dialog: remove named unused volumes too.
     DockerAlsoRemoveNamedVolumes,
     /// Title of the prune dangling images dialog.
@@ -884,7 +910,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 411] = [
+    pub(super) const ALL: [Self; 424] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -995,10 +1021,15 @@ impl Key {
         Self::TplDockerNoAccessText,
         Self::DockerNoAccessLabel,
         Self::DockerNoAccessHint,
+        Self::DockerPodmanNoAccessTitle,
+        Self::TplDockerPodmanNoAccessText,
+        Self::DockerPodmanNoAccessLabel,
+        Self::DockerPodmanNoAccessHint,
         Self::DockerPanelNotInstalled,
         Self::DockerPanelStopped,
         Self::DockerPanelPodmanOff,
         Self::DockerPanelNoAccess,
+        Self::DockerPanelPodmanNoAccess,
         Self::DockerNothingToInspect,
         Self::TplDockerLookedFor,
         Self::DockerLookedForCommands,
@@ -1007,7 +1038,8 @@ impl Key {
         Self::DockerColumnImage,
         Self::DockerColumnPorts,
         Self::DockerColumnAge,
-        Self::DockerColumnRepositoryTag,
+        Self::DockerColumnRepository,
+        Self::DockerColumnTag,
         Self::DockerColumnId,
         Self::DockerColumnSize,
         Self::DockerColumnUsedBy,
@@ -1085,6 +1117,13 @@ impl Key {
         Self::TplDockerRemoveImageTitle,
         Self::DockerRemoveImageText,
         Self::DockerForceRemoveImage,
+        Self::TplDockerRemoveTagTitle,
+        Self::DockerRemoveTagText,
+        Self::DockerForceUntagsImageText,
+        Self::DockerForceDeletesImageText,
+        Self::DockerForceDeletesContainersText,
+        Self::DockerRemoveImageNeedsForceText,
+        Self::DockerRemoveImageRefusedText,
         Self::DockerAlsoRemoveNamedVolumes,
         Self::DockerPruneImagesTitle,
         Self::TplDockerPruneImagesText,

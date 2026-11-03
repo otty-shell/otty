@@ -1,5 +1,6 @@
 //! What the engine search means for the user (spec Decision 9).
 
+use crate::address::EngineAddress;
 use crate::candidates::{CandidateSource, SocketCandidate};
 use crate::cli::CliPresence;
 use crate::engine::EngineInfo;
@@ -12,6 +13,9 @@ pub enum Diagnosis {
     Engines(Vec<EngineInfo>),
     /// A socket is there, but this user may not connect to it.
     NoPermission(SocketCandidate),
+    /// A Podman socket is there, but this user may not connect to it. The
+    /// docker group does not help here; the user's own socket does.
+    PodmanNoPermission(SocketCandidate),
     /// Docker is installed (Docker's `docker` command found, or a Docker
     /// socket that does not answer) but no Docker socket answers.
     DockerNotRunning,
@@ -43,7 +47,12 @@ pub(crate) fn diagnose(probes: &[Probe], cli: CliPresence) -> Diagnosis {
         .iter()
         .find(|probe| *probe.outcome() == ProbeOutcome::PermissionDenied);
     if let Some(probe) = denied {
-        return Diagnosis::NoPermission(probe.candidate().clone());
+        let candidate = probe.candidate().clone();
+
+        if is_podman_socket(&candidate) {
+            return Diagnosis::PodmanNoPermission(candidate);
+        }
+        return Diagnosis::NoPermission(candidate);
     }
 
     if cli.docker() || has_silent_socket(probes, CandidateSource::Docker) {
@@ -55,6 +64,22 @@ pub(crate) fn diagnose(probes: &[Probe], cli: CliPresence) -> Diagnosis {
     }
 
     Diagnosis::NotInstalled
+}
+
+/// The socket belongs to Podman. A socket that refuses the connection cannot
+/// be asked who serves it, so `$DOCKER_HOST` is told by the socket's own file
+/// name.
+fn is_podman_socket(candidate: &SocketCandidate) -> bool {
+    match candidate.source() {
+        CandidateSource::Podman => true,
+        CandidateSource::Docker => false,
+        CandidateSource::DockerHost => match candidate.address() {
+            EngineAddress::Unix(path) => path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().contains("podman")),
+            EngineAddress::Tcp(_) => false,
+        },
+    }
 }
 
 /// A socket of this source is there but no engine answers on it, which
@@ -73,7 +98,9 @@ mod tests {
     use bollard::models::SystemVersion;
 
     use super::*;
-    use crate::address::EngineAddress;
+
+    /// Rootful Podman's socket, which a normal user may not open.
+    const PODMAN_SYSTEM: &str = "/run/podman/podman.sock";
 
     fn candidate(path: &str, source: CandidateSource) -> SocketCandidate {
         SocketCandidate::new(EngineAddress::Unix(PathBuf::from(path)), source)
@@ -257,6 +284,83 @@ mod tests {
         let diagnosis = diagnose(&probes, CliPresence::new(false, false));
 
         assert_eq!(diagnosis, Diagnosis::NoPermission(host));
+    }
+
+    #[test]
+    fn denied_podman_socket_is_podman_no_permission() {
+        let rootful = candidate(PODMAN_SYSTEM, CandidateSource::Podman);
+        let probes = vec![
+            probe(docker_socket(), ProbeOutcome::Missing),
+            probe(podman_socket(), ProbeOutcome::Missing),
+            probe(rootful.clone(), ProbeOutcome::PermissionDenied),
+        ];
+
+        let diagnosis = diagnose(&probes, CliPresence::new(false, true));
+
+        assert_eq!(diagnosis, Diagnosis::PodmanNoPermission(rootful));
+    }
+
+    #[test]
+    fn denied_docker_host_at_a_podman_socket_is_podman_no_permission() {
+        let host = candidate(PODMAN_SYSTEM, CandidateSource::DockerHost);
+        let probes = vec![probe(host.clone(), ProbeOutcome::PermissionDenied)];
+
+        let diagnosis = diagnose(&probes, CliPresence::new(false, true));
+
+        assert_eq!(diagnosis, Diagnosis::PodmanNoPermission(host));
+    }
+
+    #[test]
+    fn denied_docker_host_in_a_podman_folder_stays_no_permission() {
+        // Only the socket's own name counts: this one is called docker.
+        let host = candidate(
+            "/srv/podman-old/docker.sock",
+            CandidateSource::DockerHost,
+        );
+        let probes = vec![probe(host.clone(), ProbeOutcome::PermissionDenied)];
+
+        let diagnosis = diagnose(&probes, CliPresence::new(false, false));
+
+        assert_eq!(diagnosis, Diagnosis::NoPermission(host));
+    }
+
+    #[test]
+    fn denied_tcp_docker_host_stays_no_permission() {
+        let host = SocketCandidate::new(
+            EngineAddress::Tcp(String::from("podman.local:2375")),
+            CandidateSource::DockerHost,
+        );
+        let probes = vec![probe(host.clone(), ProbeOutcome::PermissionDenied)];
+
+        let diagnosis = diagnose(&probes, CliPresence::new(false, false));
+
+        assert_eq!(diagnosis, Diagnosis::NoPermission(host));
+    }
+
+    #[test]
+    fn first_denied_socket_decides_between_docker_and_podman() {
+        let rootful = candidate(PODMAN_SYSTEM, CandidateSource::Podman);
+        let probes = vec![
+            probe(docker_socket(), ProbeOutcome::PermissionDenied),
+            probe(rootful, ProbeOutcome::PermissionDenied),
+        ];
+
+        let diagnosis = diagnose(&probes, CliPresence::new(true, true));
+
+        assert_eq!(diagnosis, Diagnosis::NoPermission(docker_socket()));
+    }
+
+    #[test]
+    fn denied_podman_socket_comes_before_docker_not_running() {
+        let rootful = candidate(PODMAN_SYSTEM, CandidateSource::Podman);
+        let probes = vec![
+            probe(docker_socket(), refused()),
+            probe(rootful.clone(), ProbeOutcome::PermissionDenied),
+        ];
+
+        let diagnosis = diagnose(&probes, CliPresence::new(true, true));
+
+        assert_eq!(diagnosis, Diagnosis::PodmanNoPermission(rootful));
     }
 
     #[test]

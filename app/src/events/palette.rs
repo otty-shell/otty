@@ -6,6 +6,7 @@ use iced::Task;
 use iced::widget::pane_grid;
 
 use super::AppEvent;
+use super::tabs::close_active_tab;
 use crate::app::App;
 use crate::widgets::modes::types::Mode;
 use crate::widgets::modes::{ModesEvent, ModesIntent};
@@ -35,12 +36,15 @@ pub(crate) fn handle(app: &mut App, event: PaletteEvent) -> Task<AppEvent> {
 /// Build what the palette lists from the tabs and launches view models:
 /// sessions keep the machine grouping of the Sessions panel, launches
 /// keep tree order. `pinned_modes` is Terminal and the pinned modes in
-/// switcher order, for the mode shortcut labels.
+/// switcher order, for the mode shortcut labels. `active_mode` is the mode
+/// on screen, which decides whether the commands of the active tab and New
+/// folder show.
 pub(crate) fn palette_ctx<'a>(
     tabs: &TabsViewModel<'a>,
     launches: Vec<LaunchViewModel<'a>>,
     can_split_pane: bool,
     pinned_modes: Vec<Mode>,
+    active_mode: Mode,
 ) -> PaletteCtx<'a> {
     let sessions = tabs
         .groups
@@ -69,6 +73,7 @@ pub(crate) fn palette_ctx<'a>(
         launches,
         can_split_pane,
         pinned_modes,
+        active_mode,
     }
 }
 
@@ -86,6 +91,7 @@ fn handle_intent(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
         app.widgets.quick_launch.vm().launches(),
         focused_pane(app).is_some(),
         pinned_modes,
+        app.widgets.modes.active(),
     );
 
     app.widgets
@@ -122,29 +128,10 @@ fn run_target(app: &App, target: PaletteTarget) -> Task<AppEvent> {
         PaletteTarget::NewLaunch => {
             quick_launch_intent(QuickLaunchIntent::HeaderCreateCommand)
         },
-        // The folder name field lives in the Launches section, so show the
-        // section first; the field then gets keyboard focus on screen.
-        PaletteTarget::NewFolder => Task::done(AppEvent::Sidebar(
-            SidebarEvent::Intent(SidebarIntent::RevealLaunches),
-        ))
-        .chain(quick_launch_intent(QuickLaunchIntent::HeaderCreateFolder)),
+        PaletteTarget::NewFolder => start_new_folder(app),
         PaletteTarget::Settings => tabs_intent(TabsIntent::OpenSettingsTab),
-        PaletteTarget::SplitPane => match focused_pane(app) {
-            Some((tab_id, pane)) => Task::done(AppEvent::TerminalWorkspace(
-                TerminalWorkspaceEvent::Intent(
-                    TerminalWorkspaceIntent::SplitPane {
-                        tab_id,
-                        pane,
-                        axis: pane_grid::Axis::Vertical,
-                    },
-                ),
-            )),
-            None => Task::none(),
-        },
-        PaletteTarget::CloseSession => match app.widgets.tabs.active_tab_id() {
-            Some(tab_id) => tabs_intent(TabsIntent::CloseTab { tab_id }),
-            None => Task::none(),
-        },
+        PaletteTarget::SplitPane => split_focused_pane(app),
+        PaletteTarget::CloseSession => close_active_tab(app),
         PaletteTarget::ToggleLeftPanel => {
             toggle_panel(SidebarIntent::ToggleLeft)
         },
@@ -169,6 +156,45 @@ fn switch_mode(mode: Mode) -> Task<AppEvent> {
     match mode {
         Mode::Terminal => Task::batch(vec![select, focus_active_terminal()]),
         _ => select,
+    }
+}
+
+/// Start a new launch folder. Its name field lives in the Launches section,
+/// so show the section first; the field then gets keyboard focus on screen.
+/// Outside Terminal mode that panel is hidden, so this does nothing. The
+/// palette does not list the command there; this covers a press on a list
+/// opened before a mode switch.
+fn start_new_folder(app: &App) -> Task<AppEvent> {
+    if app.widgets.modes.active() != Mode::Terminal {
+        return Task::none();
+    }
+
+    Task::done(AppEvent::Sidebar(SidebarEvent::Intent(
+        SidebarIntent::RevealLaunches,
+    )))
+    .chain(quick_launch_intent(QuickLaunchIntent::HeaderCreateFolder))
+}
+
+/// Split the focused pane to the right. Terminal tabs keep running while
+/// another mode is shown (spec Decision 5), so outside Terminal mode, where
+/// the pane is hidden, this does nothing. The palette does not list the
+/// command there; this covers a press on a list opened before a mode switch.
+fn split_focused_pane(app: &App) -> Task<AppEvent> {
+    if app.widgets.modes.active() != Mode::Terminal {
+        return Task::none();
+    }
+
+    match focused_pane(app) {
+        Some((tab_id, pane)) => Task::done(AppEvent::TerminalWorkspace(
+            TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SplitPane {
+                    tab_id,
+                    pane,
+                    axis: pane_grid::Axis::Vertical,
+                },
+            ),
+        )),
+        None => Task::none(),
     }
 }
 
@@ -329,6 +355,7 @@ mod tests {
             launches,
             true,
             vec![Mode::Terminal, Mode::Docker],
+            Mode::Docker,
         );
 
         assert_eq!(
@@ -374,6 +401,7 @@ mod tests {
         );
         assert!(ctx.can_split_pane);
         assert_eq!(ctx.pinned_modes, vec![Mode::Terminal, Mode::Docker]);
+        assert_eq!(ctx.active_mode, Mode::Docker);
     }
 
     #[test]
@@ -532,6 +560,16 @@ mod tests {
     }
 
     #[test]
+    fn new_folder_outside_terminal_mode_leaves_the_hidden_launches_alone() {
+        let (mut app, _) = App::new();
+        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+
+        let events = run(&mut app, PaletteTarget::NewFolder);
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
     fn settings_opens_the_settings_tab() {
         let (mut app, _) = App::new();
 
@@ -609,6 +647,29 @@ mod tests {
     }
 
     #[test]
+    fn close_session_outside_terminal_mode_keeps_the_hidden_tab() {
+        let (mut app, _) = App::new();
+        app.widgets.modes = ModesWidget::new();
+        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
+        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+
+        let events = run(&mut app, PaletteTarget::CloseSession);
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn split_pane_outside_terminal_mode_leaves_the_hidden_tab_alone() {
+        let (mut app, _) = App::new();
+        let _ = open_shell_tab(&mut app);
+        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+
+        let events = run(&mut app, PaletteTarget::SplitPane);
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
     fn panel_toggles_run_the_sidebar_toggles_and_give_the_terminal_focus() {
         let cases = [
             (PaletteTarget::ToggleLeftPanel, SidebarIntent::ToggleLeft),
@@ -665,5 +726,39 @@ mod tests {
                 .matches()
                 .any(|(item, _)| *item.key() == PaletteTarget::SplitPane)
         );
+    }
+
+    #[test]
+    fn outside_terminal_mode_the_palette_hides_the_commands_of_the_hidden_tab()
+    {
+        let (mut app, _) = App::new();
+        let tab_id = open_shell_tab(&mut app);
+        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+
+        let _ = handle(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
+
+        let vm = app.widgets.palette.vm().expect("palette should be open");
+        let targets: Vec<&PaletteTarget> =
+            vm.list.matches().map(|(item, _)| item.key()).collect();
+        assert!(!targets.contains(&&PaletteTarget::SplitPane));
+        assert!(!targets.contains(&&PaletteTarget::CloseSession));
+        assert!(!targets.contains(&&PaletteTarget::NewFolder));
+        assert!(targets.contains(&&PaletteTarget::Session { tab_id }));
+    }
+
+    #[test]
+    fn a_mode_switch_while_the_palette_is_open_leaves_a_stale_press_harmless() {
+        let (mut app, _) = App::new();
+        let _ = open_shell_tab(&mut app);
+        let _ = handle(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
+        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+
+        let split = run(&mut app, PaletteTarget::SplitPane);
+        let close = run(&mut app, PaletteTarget::CloseSession);
+        let new_folder = run(&mut app, PaletteTarget::NewFolder);
+
+        assert!(split.is_empty());
+        assert!(close.is_empty());
+        assert!(new_folder.is_empty());
     }
 }

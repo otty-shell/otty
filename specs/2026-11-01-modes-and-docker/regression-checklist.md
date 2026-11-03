@@ -31,10 +31,16 @@ Setup before the first walk:
    Expected: the same items, names and counts; running containers say
    "Running"; the left panel counts match.
 2. Start the Podman API (see Setup) and press Refresh.
-   Expected: a second engine "Podman x.y" shows in the tree with its own lists;
-   they match `podman ps -a`, `podman images`, `podman volume ls`,
-   `podman network ls`. The status bar says "Podman ... also found" when
-   the other engine is not the open one.
+   Expected: a second engine "Podman x.y" shows in the tree, open, with its own
+   lists next to Docker's; they match `podman ps -a`, `podman images`,
+   `podman volume ls`, `podman network ls`, and the counts of both engines
+   change when you change something from the command line. The status bar says
+   "Podman ... also found" when the table shows a list of the other engine.
+
+   Press the Podman root, then the Docker root.
+   Expected: each opens and closes on its own, and the table does not change.
+   With the engine of the shown table closed, the table stays and no row is
+   highlighted; an image link in the inspector opens that engine again.
 
 ## Actions on `otty-fx-*` objects
 
@@ -48,7 +54,25 @@ Setup before the first walk:
    `otty-fx-n`, Remove it. Prune each list (it asks first; the volume prune
    shows its "named volumes too" switch).
    Expected: matches `docker images`, `docker volume ls`, `docker network ls`
-   afterwards. A used image or volume cannot be removed and says why.
+   afterwards. A used volume cannot be removed and says why.
+4a. Image tags. Use throwaway names: `docker tag <an image of yours> otty-fx-a:1`
+   and `docker tag <the same image> otty-fx-a:2`.
+   Expected: two rows `otty-fx-a` with the tags `1` and `2`, the same ID, size
+   and "Used by"; the tree count and `docker images` agree. Selecting one
+   highlights only that row and the inspector title names it. `Tag:2` in the
+   search keeps that row. Remove on `otty-fx-a:1` says only the tag goes, has no
+   Force switch and leaves your image and the other tag; remove `otty-fx-a:2`
+   the same way.
+4b. Force. Build a throwaway image, run a container from it, stop the container
+   and press Remove on the image's only tag.
+   Expected on Docker: Force is on, and the dialog says the tag goes and the
+   image stays without one. Turn Force off: the dialog says the engine refuses,
+   and pressing Remove shows the engine's message in a notice. Expected on
+   Podman: Force is off, and the dialog says the engine refuses; pressing Remove
+   shows the engine's message in a notice and the container stays. Turn Force
+   on: the dialog says the stopped container goes too. With
+   the container running on Podman: no switch, and the dialog says to stop it
+   first.
 
 ## Run form
 

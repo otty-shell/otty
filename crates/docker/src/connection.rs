@@ -82,7 +82,8 @@ impl Resources {
         &self.containers
     }
 
-    /// Every top-level image, dangling ones included.
+    /// Every top-level image, one row per `repository:tag` as `docker images`
+    /// shows them, dangling ones included.
     pub fn images(&self) -> &[Image] {
         &self.images
     }
@@ -110,7 +111,7 @@ impl Resources {
 
         let images = image_list
             .iter()
-            .map(|image| Image::from_summary(image, &containers))
+            .flat_map(|image| Image::rows_from_summary(image, &containers))
             .collect();
         let volumes = volume_list
             .iter()
@@ -216,8 +217,8 @@ impl Engine {
         Ok(list.iter().map(Container::from_summary).collect())
     }
 
-    /// Every top-level image. "Used by" counts come from `containers`, the
-    /// container list the caller already has.
+    /// Every top-level image, one row per `repository:tag`. "Used by" counts
+    /// come from `containers`, the container list the caller already has.
     pub async fn images(
         &self,
         containers: &[Container],
@@ -226,7 +227,7 @@ impl Engine {
 
         Ok(list
             .iter()
-            .map(|image| Image::from_summary(image, containers))
+            .flat_map(|image| Image::rows_from_summary(image, containers))
             .collect())
     }
 
@@ -503,7 +504,7 @@ mod tests {
         let busybox = resources
             .images()
             .iter()
-            .find(|image| image.tags() == ["busybox:1.37"])
+            .find(|image| image.reference() == Some("busybox:1.37"))
             .expect("busybox");
         assert_eq!(busybox.containers(), 6);
         assert_eq!(engine.client.client_version(), version(1, 53));

@@ -23,6 +23,8 @@ const CONTAINER_USE_ACTIONS: [&str; 8] = [
 /// Network actions that attach or detach a container: what changes is the
 /// container's network list, and "used by" of networks follows from it.
 const NETWORK_ATTACH_ACTIONS: [&str; 2] = ["connect", "disconnect"];
+/// The container action of a new run: a start or a restart.
+const CONTAINER_START_ACTION: &str = "start";
 /// Volume actions of a container starting or stopping, which already
 /// reloads the container list (and with it "used by" of volumes).
 const VOLUME_MOUNT_ACTIONS: [&str; 2] = ["mount", "unmount"];
@@ -81,6 +83,25 @@ impl ListKind {
     }
 }
 
+/// What one engine event tells the watch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EngineChange {
+    /// The list to reload.
+    pub(crate) list: ListKind,
+    /// The id of the container this event started, for a `start` event.
+    pub(crate) started_container: Option<String>,
+}
+
+impl EngineChange {
+    /// What `message` changes; `None` for events that change no list.
+    pub(crate) fn from_event(message: &EventMessage) -> Option<Self> {
+        Some(Self {
+            list: ListKind::from_event(message)?,
+            started_container: started_container(message),
+        })
+    }
+}
+
 /// The `filters` of the `/events` request: only the four object types OTTY
 /// lists. Other types (and Podman's `pod` events, which bollard cannot read)
 /// never reach OTTY.
@@ -88,6 +109,19 @@ pub(crate) fn event_filters() -> HashMap<String, Vec<String>> {
     let types = WATCHED_TYPES.iter().map(|kind| kind.to_string()).collect();
 
     HashMap::from([(String::from("type"), types)])
+}
+
+/// The id of the container a `start` event started. Docker and Podman both
+/// send one `start` per run, also for a restart.
+fn started_container(message: &EventMessage) -> Option<String> {
+    let is_container = message.typ == Some(EventMessageTypeEnum::CONTAINER);
+    if !is_container
+        || message.action.as_deref() != Some(CONTAINER_START_ACTION)
+    {
+        return None;
+    }
+
+    message.actor.as_ref()?.id.clone()
 }
 
 #[cfg(test)]
@@ -193,6 +227,62 @@ mod tests {
         let message = parse(r#"{"Type":"image"}"#);
 
         assert_eq!(ListKind::from_event(&message), Some(ListKind::Images));
+    }
+
+    #[test]
+    fn a_container_start_names_the_container() {
+        let docker = parse(
+            r#"{"Type":"container","Action":"start","Actor":{"ID":"c178aa0f"},"time":1793727983}"#,
+        );
+
+        let change = EngineChange::from_event(&docker).expect("a change");
+
+        assert_eq!(change.list, ListKind::Containers);
+        assert_eq!(change.started_container.as_deref(), Some("c178aa0f"));
+    }
+
+    /// `docker restart` sends kill, die, stop, start, restart and `podman
+    /// restart` sends restart, die, init, start: exactly one start, so one
+    /// restart clears the logs once.
+    #[test]
+    fn only_the_start_of_a_restart_names_the_container() {
+        let actions = [
+            "kill", "die", "stop", "restart", "init", "cleanup", "create",
+            "pause", "unpause",
+        ];
+
+        for action in actions {
+            let message = parse(&format!(
+                r#"{{"Type":"container","Action":"{action}","Actor":{{"ID":"c1"}}}}"#
+            ));
+
+            let change = EngineChange::from_event(&message).expect("a change");
+
+            assert_eq!(change.started_container, None, "{action}");
+        }
+    }
+
+    #[test]
+    fn a_start_of_something_else_names_no_container() {
+        let message =
+            parse(r#"{"Type":"network","Action":"start","Actor":{"ID":"n1"}}"#);
+
+        let change = EngineChange::from_event(&message).expect("a change");
+
+        assert_eq!(change.started_container, None);
+    }
+
+    #[test]
+    fn a_start_without_an_id_names_no_container() {
+        let change = EngineChange::from_event(&event("container", "start"))
+            .expect("a change");
+
+        assert_eq!(change.started_container, None);
+    }
+
+    #[test]
+    fn events_that_change_no_list_are_no_change() {
+        assert_eq!(EngineChange::from_event(&event("volume", "mount")), None);
     }
 
     #[test]

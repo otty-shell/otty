@@ -172,3 +172,50 @@ warnings that were there before).
   engine and container.
 - 16: an event reload that keeps the selected container keeps its logs; one
   that removes it stops them.
+
+## Comments
+
+### Logs after a restart (2026-11-03, spec Decision 12)
+
+The logs went silent after a restart: the stream had ended, and the
+subscription key (engine and container id) did not change, so iced never
+started another stream. Reproduced on Docker before the fix.
+
+Owner's decision: when the container comes back, clear the view and start
+again from the new run. No separator, no old lines.
+
+What changed:
+
+- `otty-docker`: `WatchEvent::ContainerStarted(id)` for every `start` event of
+  a container, never held back by the 500 ms reload gap. `WatchEvent` is no
+  longer `Copy`.
+- `otty-docker`: `Engine::follow_latest_run_logs(id, tail)` reads the
+  container's `StartedAt` and `FinishedAt`, asks for lines with their times
+  and drops those older than the middle of that gap. `since` alone is not
+  enough: through bollard it takes whole seconds, and it brought back the old
+  run's last lines after a fast restart.
+- App: `DockerIntent::ContainerStarted` (a background intent in
+  `is_docker_background`). When it names the followed container,
+  `InspectorState::restart_logs` clears the lines and the old stream's error
+  and counts one more comeback in `LogTarget`. The count is part of the
+  subscription key, so iced drops the old stream and starts a new one. Late
+  lines of the old stream carry the old key and are dropped. Follow keeps its
+  state.
+
+Seen on Docker 29.9.1 and Podman 5.8.8 (`k8s-file` and `journald` log
+drivers), each log driver over `restart`, a restart through the API, stop and
+start, and a crash loop with a restart policy:
+
+- One `start` event per run on both engines.
+- The stream ends on a restart, except Podman with `journald`, where it goes
+  on with the new run's lines. Podman with `k8s-file` can deliver a few new
+  lines before it ends.
+- Both engines keep the old runs' lines in `/logs`.
+- Line times against the run times: an old line can be stamped just after
+  `FinishedAt` (Podman), a new line about 2 ms after `StartedAt` (Podman) and
+  about 90 ms after it (Docker). The gap between the two was 60 to 100 ms for
+  a restart, so its middle divides the runs.
+
+Not covered: a start that happens while the events stream is broken (for
+example the engine itself restarting) is missed, so the logs stay silent until
+the next start or until the tab or selection changes.

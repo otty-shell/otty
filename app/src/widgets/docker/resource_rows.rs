@@ -13,7 +13,7 @@ use super::format::{NO_VALUE, age_text, ports_text, short_id, size_text};
 use super::links::LinkTarget;
 use super::overview::{Piece, ports_value};
 use super::sort::is_sortable;
-use super::types::{ResourceKind, image_name};
+use super::types::{ResourceKind, image_repository, image_tag};
 use crate::i18n::{self, Key, Locale};
 
 /// Position of the Ports column of the containers table; its cell holds
@@ -51,7 +51,9 @@ pub(super) fn columns_in(
             column(Key::DockerColumnAge, 1, 52),
         ],
         ResourceKind::Images => vec![
-            column(Key::DockerColumnRepositoryTag, 4, 140),
+            column(Key::DockerColumnRepository, 4, 140),
+            // `latest`, or `<none>` for an image without a tag.
+            column(Key::DockerColumnTag, 2, 72),
             // A short ID of 12 characters.
             column(Key::DockerColumnId, 2, 118),
             number(Key::DockerColumnSize, 76),
@@ -142,11 +144,12 @@ pub(crate) fn port_urls(ports: &[PortMapping]) -> Vec<String> {
         .collect()
 }
 
-/// The cells of an image row: repository and tag, short ID, size, how many
+/// The cells of an image row: repository, tag, short ID, size, how many
 /// containers use it, age.
 pub(crate) fn image_cells(image: &Image, now: i64) -> Vec<TableCell> {
     vec![
-        TableCell::mono(image_name(image)),
+        TableCell::mono(image_repository(image)),
+        TableCell::muted_mono(image_tag(image)),
         TableCell::muted_mono(short_id(image.id())),
         TableCell::number(size_text(image.size())),
         TableCell::number(format!("{}", image.containers())),
@@ -328,12 +331,16 @@ mod tests {
     }
 
     #[test]
-    fn images_have_tag_id_size_used_by_and_age_with_numbers_on_the_right() {
+    fn images_have_repository_tag_id_size_used_by_and_age_with_numbers_on_the_right()
+     {
         assert_eq!(
             titles(ResourceKind::Images),
             vec![
-                TableColumn::new(i18n::t(Key::DockerColumnRepositoryTag), 4)
+                TableColumn::new(i18n::t(Key::DockerColumnRepository), 4)
                     .min_width(140)
+                    .sortable(true),
+                TableColumn::new(i18n::t(Key::DockerColumnTag), 2)
+                    .min_width(72)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnId), 2)
                     .min_width(118)
@@ -573,20 +580,62 @@ mod tests {
     }
 
     #[test]
-    fn an_image_row_shows_tag_short_id_size_users_and_age() {
+    fn an_image_row_shows_repository_tag_short_id_size_users_and_age() {
         let resources = fixtures::resources(EngineKind::Docker);
         let busybox = &resources.images()[2];
 
         assert_eq!(
             image_cells(busybox, NOW),
             vec![
-                TableCell::mono("busybox:1.37"),
+                TableCell::mono("busybox"),
+                TableCell::muted_mono("1.37"),
                 TableCell::muted_mono(short_id(busybox.id())),
                 TableCell::number("6.69 MB"),
                 TableCell::number(busybox.containers().to_string()),
                 TableCell::muted(age_text(NOW, Some(busybox.created()))),
             ]
         );
+    }
+
+    #[test]
+    fn a_row_without_a_name_shows_none_in_both_columns() {
+        let dangling = fixtures::image_rows("sha256:app", &[], &[], &[]);
+
+        let cells = image_cells(&dangling[0], NOW);
+
+        assert_eq!(cells[0], TableCell::mono("<none>"));
+        assert_eq!(cells[1], TableCell::muted_mono("<none>"));
+    }
+
+    #[test]
+    fn a_row_known_only_by_its_digest_shows_the_repository_and_no_tag() {
+        let row = fixtures::image_rows(
+            "sha256:app",
+            &[],
+            &["reg/app@sha256:aa"],
+            &[],
+        );
+
+        let cells = image_cells(&row[0], NOW);
+
+        assert_eq!(cells[0], TableCell::mono("reg/app"));
+        assert_eq!(cells[1], TableCell::muted_mono("<none>"));
+    }
+
+    #[test]
+    fn the_rows_of_one_image_show_the_same_id_size_and_users() {
+        let user =
+            fixtures::container_of_image("web", "exited", "a:1", "sha256:app");
+        let rows =
+            fixtures::image_rows("sha256:app", &["a:1", "a:2"], &[], &[user]);
+
+        let first = image_cells(&rows[0], NOW);
+        let second = image_cells(&rows[1], NOW);
+
+        assert_eq!(first[1], TableCell::muted_mono("1"));
+        assert_eq!(second[1], TableCell::muted_mono("2"));
+        assert_eq!(first[2..], second[2..]);
+        assert_eq!(first[4], TableCell::number("1"));
     }
 
     #[test]

@@ -172,3 +172,30 @@ ten catalogs.
   active mode is not drawn until ticket 06, so for now only a log or a
   debugger shows it); also try it on an AZERTY layout, and Cmd 2 on macOS.
   On GNOME, check that IBus does not take Ctrl Shift with a digit.
+
+### Palette commands of a hidden tab (2026-11-03)
+
+Spec Decision 5 now says what the palette does with a hidden tab.
+
+- `PaletteCtx` gains `active_mode`. Outside Terminal mode `palette_items`
+  leaves out Split pane, Close session and New folder, so the list has no entry
+  that does nothing.
+- `PaletteTarget::SplitPane` and `PaletteTarget::NewFolder` do nothing outside
+  Terminal mode, like `close_active_tab`. All three guards stay: a mode shortcut
+  can switch the mode while the palette is open, and the open list keeps its
+  entries until the next keystroke rebuilds it.
+- Clicks and Enter go by the place among the matches of the list on screen, so
+  hiding entries moves nothing out of step. Tests in `palette/reducer.rs` run
+  clicks, arrows and filtering in Docker mode.
+
+"New folder" in Docker mode used to show nothing: it set up the name field in
+the Launches panel, which is not on screen, and left the Launches section
+unfolded, and a closed left panel or focus mode opened or left. The owner
+approved hiding it, so it is now hidden and guarded as above.
+
+Read but left as they are:
+
+- The panel toggles, Launch and dismiss send `FocusActive` in Docker mode too.
+  The hidden terminal is not on screen, so this only clears keyboard focus,
+  which the palette input already held. No visible effect of its own. Docker
+  mode does not get back the field that had focus before the palette opened.

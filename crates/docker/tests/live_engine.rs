@@ -5,10 +5,11 @@
 //! For a Podman service on another socket, set
 //! `DOCKER_HOST=unix:///path/to/podman.sock`.
 
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
-use otty_docker::{Diagnosis, Engine, WatchEvent, discover};
+use otty_docker::{Diagnosis, Engine, EngineKind, WatchEvent, discover};
 
 #[tokio::test]
 #[ignore = "needs a running Docker or Podman engine"]
@@ -85,4 +86,57 @@ async fn watching_a_live_engine_sees_its_changes() {
     }
 
     assert!(!changes.is_empty(), "no change seen in 20 s");
+}
+
+/// Compares the image rows of each reached engine with what its command line
+/// prints in the `REPOSITORY` and `TAG` columns. Reads only.
+#[tokio::test]
+#[ignore = "needs a running Docker or Podman engine and its command line tool"]
+async fn the_image_rows_match_the_command_line() {
+    let discovery = discover().await;
+    let Diagnosis::Engines(engines) = discovery.diagnosis() else {
+        panic!("no engine reached: {:?}", discovery.diagnosis());
+    };
+
+    for info in engines {
+        let engine = Engine::connect(info).expect("connect");
+        let program = match info.kind() {
+            EngineKind::Docker => "docker",
+            EngineKind::Podman => "podman",
+        };
+
+        let output = Command::new(program)
+            .args(["images", "--format", "{{.Repository}} {{.Tag}} {{.ID}}"])
+            .output()
+            .expect("the command line tool");
+        let mut printed: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::to_string)
+            .collect();
+        printed.sort();
+
+        let resources = engine.resources().await.expect("list resources");
+        let mut rows: Vec<String> = resources
+            .images()
+            .iter()
+            .map(|image| {
+                let repository = image.repository().unwrap_or("<none>");
+                let tag = image.tag().unwrap_or("<none>");
+                let id = image.id().trim_start_matches("sha256:");
+
+                format!("{repository} {tag} {}", &id[..12])
+            })
+            .collect();
+        rows.sort();
+
+        let missing: Vec<&String> =
+            printed.iter().filter(|row| !rows.contains(row)).collect();
+        let extra: Vec<&String> =
+            rows.iter().filter(|row| !printed.contains(row)).collect();
+        println!(
+            "{program}: {} rows, missing {missing:?}, extra {extra:?}",
+            rows.len()
+        );
+        assert_eq!(rows, printed, "{program}");
+    }
 }

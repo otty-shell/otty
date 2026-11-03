@@ -29,6 +29,7 @@ use crate::connection::Resources;
 use crate::container::Container;
 use crate::discovery::Discovery;
 use crate::engine::{EngineInfo, EngineKind};
+use crate::image::Image;
 use crate::image_defaults::ImageDefaults;
 use crate::probe::{Probe, ProbeOutcome};
 use crate::pull::PullProgress;
@@ -86,6 +87,15 @@ pub fn discovery_with_cli(
     build_discovery(kinds, docker_path, podman_path, false)
 }
 
+/// A search where the only socket, at `socket`, refused this user.
+pub fn denied_discovery(socket: &str, source: CandidateSource) -> Discovery {
+    let address = EngineAddress::Unix(PathBuf::from(socket));
+    let candidate = SocketCandidate::new(address, source);
+    let probes = vec![Probe::new(candidate, ProbeOutcome::PermissionDenied)];
+
+    Discovery::new(probes, CliPresence::new(false, false), false)
+}
+
 /// The four captured lists of `kind`, mapped as [`crate::Engine::resources`]
 /// maps them.
 pub fn resources(kind: EngineKind) -> Resources {
@@ -123,6 +133,51 @@ pub fn container_with_ports(
     .expect("the container summary should parse");
 
     Container::from_summary(&summary)
+}
+
+/// A container named `name` in `state` (for example `exited`), run from the
+/// image `image` whose id is `image_id`, as the engine would send it.
+pub fn container_of_image(
+    name: &str,
+    state: &str,
+    image: &str,
+    image_id: &str,
+) -> Container {
+    let summary: ContainerSummary = serde_json::from_value(serde_json::json!({
+        "Id": format!("{name}-id"),
+        "Names": [format!("/{name}")],
+        "State": state,
+        "Image": image,
+        "ImageID": image_id,
+    }))
+    .expect("the container summary should parse");
+
+    Container::from_summary(&summary)
+}
+
+/// The rows of one image with the id `id`, whose names are `repo_tags` and
+/// `repo_digests`, as the engine would send them; `containers` are the
+/// engine's containers.
+pub fn image_rows(
+    id: &str,
+    repo_tags: &[&str],
+    repo_digests: &[&str],
+    containers: &[Container],
+) -> Vec<Image> {
+    let summary: ImageSummary = serde_json::from_value(serde_json::json!({
+        "Id": id,
+        "ParentId": "",
+        "RepoTags": repo_tags,
+        "RepoDigests": repo_digests,
+        "Created": 1_793_557_837,
+        "Size": 6_688_167,
+        "SharedSize": -1,
+        "Labels": null,
+        "Containers": -1,
+    }))
+    .expect("the image summary should parse");
+
+    Image::rows_from_summary(&summary, containers)
 }
 
 /// What `nginx:1.27` sets on its own: ports 80 and 443, the nginx command,
@@ -282,6 +337,18 @@ mod tests {
             ])
         );
         assert_eq!(none.diagnosis(), &Diagnosis::NotInstalled);
+    }
+
+    #[test]
+    fn a_denied_discovery_is_diagnosed_from_its_source() {
+        let docker = denied_discovery(DOCKER_SOCKET, CandidateSource::Docker);
+        let podman = denied_discovery(PODMAN_SOCKET, CandidateSource::Podman);
+
+        assert!(matches!(docker.diagnosis(), Diagnosis::NoPermission(_)));
+        assert!(matches!(
+            podman.diagnosis(),
+            Diagnosis::PodmanNoPermission(_)
+        ));
     }
 
     #[test]

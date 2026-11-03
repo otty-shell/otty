@@ -96,6 +96,7 @@ impl Fixture {
             QuickLaunchTreeViewModel::idle(&launches, &fx_launching).launches(),
             true,
             vec![Mode::Terminal, Mode::Docker],
+            Mode::Terminal,
         );
         let _ = palette.reduce(PaletteIntent::Open, &ctx);
         drop(ctx);

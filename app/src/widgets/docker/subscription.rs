@@ -47,6 +47,10 @@ fn watch_intent(engine: &EngineAddress, event: WatchEvent) -> DockerIntent {
             engine: engine.clone(),
             resource: resource_of(list),
         },
+        WatchEvent::ContainerStarted(id) => DockerIntent::ContainerStarted {
+            engine: engine.clone(),
+            id,
+        },
         WatchEvent::Reconnected => {
             DockerIntent::EngineReconnected(engine.clone())
         },
@@ -190,6 +194,24 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn a_started_container_names_its_engine_and_id() {
+        let engine = fixtures::engine(EngineKind::Docker).address().clone();
+
+        let intent = watch_intent(
+            &engine,
+            WatchEvent::ContainerStarted(String::from("c178")),
+        );
+
+        assert_eq!(
+            intent,
+            DockerIntent::ContainerStarted {
+                engine,
+                id: String::from("c178"),
+            }
+        );
     }
 
     #[test]

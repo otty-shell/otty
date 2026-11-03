@@ -12,6 +12,8 @@ use crate::i18n::Key;
 
 /// How `docker images` names an image without a tag.
 const DANGLING_IMAGE_NAME: &str = "<none>:<none>";
+/// How `docker images` shows a repository or a tag an image does not have.
+const NO_IMAGE_PART: &str = "<none>";
 
 /// What the main area of Docker mode lists (spec Decision 10).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,13 +194,20 @@ pub(crate) fn shown_networks<'a>(
     shown
 }
 
-/// The first tag of an image, or `<none>:<none>` for a dangling one, as
-/// `docker images` shows it.
+/// The name of an image row: its reference, or `<none>:<none>` for a dangling
+/// image, as `docker images` shows it.
 pub(crate) fn image_name(image: &Image) -> &str {
-    image
-        .tags()
-        .first()
-        .map_or(DANGLING_IMAGE_NAME, String::as_str)
+    image.reference().unwrap_or(DANGLING_IMAGE_NAME)
+}
+
+/// The repository of an image row as `docker images` shows it.
+pub(crate) fn image_repository(image: &Image) -> &str {
+    image.repository().unwrap_or(NO_IMAGE_PART)
+}
+
+/// The tag of an image row as `docker images` shows it.
+pub(crate) fn image_tag(image: &Image) -> &str {
+    image.tag().unwrap_or(NO_IMAGE_PART)
 }
 
 #[cfg(test)]
@@ -349,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn an_image_is_named_by_its_first_tag_or_none() {
+    fn an_image_is_named_by_its_reference_or_none() {
         let resources = fixtures::resources(EngineKind::Docker);
 
         let names: Vec<&str> =
@@ -359,6 +368,41 @@ mod tests {
             names,
             vec!["<none>:<none>", "otty-fx-img:1", "busybox:1.37"]
         );
+    }
+
+    #[test]
+    fn a_tag_on_the_image_tag_key_keeps_the_rows_with_that_tag() {
+        let images = fixtures::image_rows(
+            "sha256:app",
+            &["a:1", "a:2", "b:1"],
+            &[],
+            &[],
+        );
+        let sort = TableSorts::default().get(ResourceKind::Images);
+
+        let shown = shown_images(
+            &images,
+            &search(&[("image-tag", "1")], ""),
+            NOW,
+            sort,
+        );
+
+        let names: Vec<&str> =
+            shown.iter().map(|row| image_name(row)).collect();
+        assert_eq!(names, vec!["a:1", "b:1"]);
+    }
+
+    #[test]
+    fn plain_text_finds_an_image_by_repository_and_tag_together() {
+        let images =
+            fixtures::image_rows("sha256:app", &["a:1", "a:2"], &[], &[]);
+        let sort = TableSorts::default().get(ResourceKind::Images);
+
+        let shown = shown_images(&images, &search(&[], "a:2"), NOW, sort);
+
+        let names: Vec<&str> =
+            shown.iter().map(|row| image_name(row)).collect();
+        assert_eq!(names, vec!["a:2"]);
     }
 
     #[test]

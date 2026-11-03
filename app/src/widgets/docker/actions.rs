@@ -4,7 +4,8 @@
 //! asks for.
 
 use otty_docker::{
-    ContainerState, EngineAddress, EngineInfo, Image, Network, Volume,
+    ContainerState, EngineAddress, EngineInfo, EngineKind, Image, Network,
+    Volume,
 };
 
 use super::types::ResourceKind;
@@ -71,10 +72,10 @@ pub(crate) enum EngineAction {
     },
     /// Remove every stopped container.
     PruneContainers,
-    /// Remove the image with this id; `force` removes one a stopped
-    /// container uses.
+    /// Remove this image name or id; `force` goes past a container that uses
+    /// the image, see [`ImageRemoval`].
     RemoveImage {
-        id: String,
+        reference: String,
         force: bool,
     },
     /// Remove every dangling image no container uses.
@@ -128,7 +129,7 @@ impl EngineAction {
             | Self::PauseContainer(id)
             | Self::UnpauseContainer(id)
             | Self::RemoveContainer { id, .. }
-            | Self::RemoveImage { id, .. }
+            | Self::RemoveImage { reference: id, .. }
             | Self::RemoveVolume(id)
             | Self::RemoveNetwork(id) => Some(id),
             _ => None,
@@ -164,13 +165,72 @@ impl EngineAction {
             Self::RemoveContainer { id, .. } => {
                 Self::RemoveContainer { id, force: is_on }
             },
-            Self::RemoveImage { id, .. } => {
-                Self::RemoveImage { id, force: is_on }
+            Self::RemoveImage { reference, .. } => Self::RemoveImage {
+                reference,
+                force: is_on,
             },
             Self::PruneVolumes { .. } => Self::PruneVolumes {
                 include_named: is_on,
             },
             other => other,
+        }
+    }
+}
+
+/// What a confirmed Remove of an image row does (spec Decision 11). The engines
+/// were asked on real runs of Docker 29 and Podman 5; they differ once a
+/// container uses the image and this row is its last name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ImageRemoval {
+    /// The image keeps other names, so only this one goes.
+    OnlyThisTag,
+    /// The last name of an image no container uses: the image goes.
+    WholeImage,
+    /// Docker, last tag, a container uses the image: Force takes the tag away
+    /// and the image stays without one.
+    ForceUntags,
+    /// Docker, no tag, only stopped containers use the image: Force deletes
+    /// the image and they stay.
+    ForceKeepsContainers,
+    /// Podman, only stopped containers use the image: Force deletes the image
+    /// and them, so its switch starts off.
+    ForceDeletesContainers,
+    /// A running container uses the image and Force would not help.
+    Refused,
+}
+
+impl ImageRemoval {
+    /// Whether the dialog offers the Force switch: the engine refuses without
+    /// it and does something with it. Podman with a running container gets no
+    /// switch: Force would delete its stopped containers and then fail anyway.
+    pub(crate) fn offers_force(self) -> bool {
+        matches!(
+            self,
+            Self::ForceUntags
+                | Self::ForceKeepsContainers
+                | Self::ForceDeletesContainers
+        )
+    }
+
+    /// What removing `image` does on an engine of `kind`; `has_running_user`
+    /// says whether a running, paused or restarting container uses it.
+    pub(crate) fn of(
+        kind: EngineKind,
+        image: &Image,
+        has_running_user: bool,
+    ) -> Self {
+        if image.has_other_names() {
+            return Self::OnlyThisTag;
+        }
+        if image.containers() == 0 {
+            return Self::WholeImage;
+        }
+
+        match kind {
+            EngineKind::Docker if image.tag().is_some() => Self::ForceUntags,
+            _ if has_running_user => Self::Refused,
+            EngineKind::Docker => Self::ForceKeepsContainers,
+            EngineKind::Podman => Self::ForceDeletesContainers,
         }
     }
 }
@@ -237,6 +297,8 @@ pub(crate) struct Confirm {
     count: usize,
     /// How many rows it deletes with the switch on, when that differs.
     count_if_on: usize,
+    /// What the removal of an image row does; `None` for other actions.
+    image_removal: Option<ImageRemoval>,
 }
 
 impl Confirm {
@@ -259,6 +321,11 @@ impl Confirm {
         }
     }
 
+    /// What the removal of an image row does; `None` for other actions.
+    pub(crate) fn image_removal(&self) -> Option<ImageRemoval> {
+        self.image_removal
+    }
+
     /// Ask to confirm `request`, with a switch in its first state, or
     /// none.
     pub(crate) fn new(
@@ -271,7 +338,14 @@ impl Confirm {
             switch,
             count,
             count_if_on: count,
+            image_removal: None,
         }
+    }
+
+    /// Say what the removal of an image row does, for the text of the dialog.
+    pub(crate) fn with_image_removal(mut self, removal: ImageRemoval) -> Self {
+        self.image_removal = Some(removal);
+        self
     }
 
     /// Set how many rows the prune deletes with the switch on.
@@ -326,11 +400,13 @@ pub(crate) fn needs_stop(state: ContainerState) -> bool {
     )
 }
 
-/// The actions an image offers: Pull again needs a tag, so a dangling
-/// image can only be removed. Run joins them with ticket 14.
+/// The actions an image row offers: Run needs a name and Pull again needs a
+/// tag, so a dangling image can only be removed.
 pub(crate) fn image_actions(image: &Image) -> &'static [RowAction] {
     if image.is_dangling() {
         &[RowAction::Remove]
+    } else if image.tag().is_none() {
+        &[RowAction::Run, RowAction::Remove]
     } else {
         &[RowAction::Run, RowAction::PullAgain, RowAction::Remove]
     }
@@ -412,6 +488,135 @@ mod tests {
         assert_eq!(offered(ContainerState::Dead), vec![Remove]);
         assert_eq!(offered(ContainerState::Unknown), vec![Remove]);
         assert!(offered(ContainerState::Removing).is_empty());
+    }
+
+    /// One row of an image with these names, `containers` of them using it.
+    fn image_row(
+        names: &[&str],
+        digests: &[&str],
+        containers: usize,
+        row: usize,
+    ) -> Image {
+        let users: Vec<_> = (0..containers)
+            .map(|index| {
+                fixtures::container_of_image(
+                    &format!("user-{index}"),
+                    "exited",
+                    "app:1",
+                    "sha256:app",
+                )
+            })
+            .collect();
+
+        fixtures::image_rows("sha256:app", names, digests, &users)[row].clone()
+    }
+
+    #[test]
+    fn removing_a_name_that_is_not_the_last_is_only_that_name_on_any_engine() {
+        for kind in [EngineKind::Docker, EngineKind::Podman] {
+            for containers in [0, 1] {
+                for has_running_user in [false, containers > 0] {
+                    let tag = image_row(&["a:1", "a:2"], &[], containers, 0);
+                    let digest =
+                        image_row(&["a:1"], &["reg/a@sha256:1"], containers, 1);
+
+                    for row in [tag, digest] {
+                        let removal =
+                            ImageRemoval::of(kind, &row, has_running_user);
+
+                        assert_eq!(removal, ImageRemoval::OnlyThisTag);
+                        assert!(!removal.offers_force());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_last_name_of_an_unused_image_takes_the_image_on_any_engine() {
+        for kind in [EngineKind::Docker, EngineKind::Podman] {
+            for (names, digests) in [
+                (&["a:1"][..], &[][..]),
+                (&[][..], &[][..]),
+                (&[][..], &["reg/a@sha256:1"][..]),
+            ] {
+                let row = image_row(names, digests, 0, 0);
+
+                let removal = ImageRemoval::of(kind, &row, false);
+
+                assert_eq!(removal, ImageRemoval::WholeImage);
+                assert!(!removal.offers_force());
+            }
+        }
+    }
+
+    #[test]
+    fn on_docker_force_leaves_a_used_image_without_its_last_tag() {
+        let row = image_row(&["a:1"], &[], 1, 0);
+
+        for has_running_user in [false, true] {
+            let removal =
+                ImageRemoval::of(EngineKind::Docker, &row, has_running_user);
+
+            assert_eq!(removal, ImageRemoval::ForceUntags);
+            assert!(removal.offers_force());
+        }
+    }
+
+    #[test]
+    fn on_docker_force_deletes_an_untagged_image_stopped_containers_use() {
+        for digests in [&[][..], &["reg/a@sha256:1"][..]] {
+            let row = image_row(&[], digests, 1, 0);
+
+            let removal = ImageRemoval::of(EngineKind::Docker, &row, false);
+
+            assert_eq!(removal, ImageRemoval::ForceKeepsContainers);
+            assert!(removal.offers_force());
+        }
+    }
+
+    #[test]
+    fn on_docker_force_does_not_help_an_untagged_image_a_running_container_uses()
+     {
+        for digests in [&[][..], &["reg/a@sha256:1"][..]] {
+            let row = image_row(&[], digests, 1, 0);
+
+            let removal = ImageRemoval::of(EngineKind::Docker, &row, true);
+
+            assert_eq!(removal, ImageRemoval::Refused);
+            assert!(!removal.offers_force());
+        }
+    }
+
+    #[test]
+    fn on_podman_force_also_deletes_the_stopped_containers() {
+        for names in [&["a:1"][..], &[][..]] {
+            let row = image_row(names, &[], 1, 0);
+
+            let removal = ImageRemoval::of(EngineKind::Podman, &row, false);
+
+            assert_eq!(removal, ImageRemoval::ForceDeletesContainers);
+            assert!(removal.offers_force());
+        }
+    }
+
+    #[test]
+    fn on_podman_force_is_never_offered_while_a_container_runs() {
+        for names in [&["a:1"][..], &[][..]] {
+            let row = image_row(names, &[], 1, 0);
+
+            let removal = ImageRemoval::of(EngineKind::Podman, &row, true);
+
+            assert_eq!(removal, ImageRemoval::Refused);
+            assert!(!removal.offers_force());
+        }
+    }
+
+    #[test]
+    fn an_image_known_only_by_its_digest_cannot_be_pulled_again() {
+        let row = image_row(&[], &["reg/a@sha256:1"], 0, 0);
+
+        assert_eq!(image_actions(&row), &[RowAction::Run, RowAction::Remove]);
     }
 
     #[test]
@@ -567,7 +772,7 @@ mod tests {
             },
             EngineAction::PruneContainers,
             EngineAction::RemoveImage {
-                id: id(),
+                reference: id(),
                 force: false,
             },
             EngineAction::PruneImages,
@@ -601,7 +806,7 @@ mod tests {
         let cases = [
             (
                 EngineAction::RemoveImage {
-                    id: id(),
+                    reference: id(),
                     force: true,
                 },
                 ResourceKind::Images,
@@ -653,7 +858,7 @@ mod tests {
     #[test]
     fn the_force_switch_forces_an_image_removal() {
         let remove = request(EngineAction::RemoveImage {
-            id: String::from("sha256:a"),
+            reference: String::from("sha256:a"),
             force: false,
         });
 
@@ -662,7 +867,7 @@ mod tests {
         assert_eq!(
             forced.action(),
             &EngineAction::RemoveImage {
-                id: String::from("sha256:a"),
+                reference: String::from("sha256:a"),
                 force: true,
             }
         );

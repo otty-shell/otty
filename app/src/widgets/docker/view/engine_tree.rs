@@ -23,8 +23,8 @@ pub(crate) struct EngineTreeProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the engine tree. A press on a row opens its list; a press on an
-/// engine root opens that engine's containers.
+/// Render the engine tree. A press on a list row shows that list in the main
+/// area; a press on an engine root only opens or closes that engine.
 pub(crate) fn view(props: EngineTreeProps<'_>) -> Element<'_, DockerIntent> {
     let palette = props.theme.theme.ui();
 
@@ -67,10 +67,16 @@ fn tree_row<'a>(
     vm: TreeRowViewModel,
     palette: &UiPalette,
 ) -> Element<'a, DockerIntent> {
+    let press = if vm.is_engine {
+        DockerIntent::ToggleEngine(vm.place.engine().clone())
+    } else {
+        DockerIntent::Open(vm.place)
+    };
+
     let mut row = TreeRow::new(vm.label, palette)
         .depth(vm.depth)
         .selected(vm.is_selected)
-        .on_press(DockerIntent::Open(vm.place));
+        .on_press(press);
     if vm.is_engine {
         row = row.caret(vm.is_open).dot(TargetKind::Local);
     }
@@ -153,6 +159,36 @@ mod tests {
         assert_eq!(
             intents,
             vec![DockerIntent::Open(place(ResourceKind::Images))]
+        );
+    }
+
+    #[test]
+    fn a_press_on_an_engine_root_only_opens_or_closes_it() {
+        let themes = ThemeManager::new();
+        let podman = fixtures::engine(EngineKind::Podman);
+        let rows = vec![TreeRowViewModel {
+            depth: 0,
+            is_engine: true,
+            is_open: true,
+            ..row(
+                "Podman 5.8.8",
+                TreeNote::Nothing,
+                Place::new(podman.address().clone(), ResourceKind::Containers),
+            )
+        }];
+        let mut ui = simulator(view(EngineTreeProps {
+            rows,
+            note: None,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click("Podman 5.8.8")
+            .expect("the root should be visible");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(
+            intents,
+            vec![DockerIntent::ToggleEngine(podman.address().clone())]
         );
     }
 

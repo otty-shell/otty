@@ -11,17 +11,20 @@ use futures_util::stream::{self, BoxStream, Stream, StreamExt, TryStreamExt};
 
 use crate::connection::{Engine, EngineError};
 use crate::debounce::ReloadDebounce;
-use crate::events::{ListKind, event_filters};
+use crate::events::{EngineChange, ListKind, event_filters};
 
 /// More doublings than this pass every sensible longest delay; the cap
 /// keeps the shift in range.
 const MAX_DOUBLINGS: u32 = 16;
 
 /// What watching an engine tells the app.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WatchEvent {
     /// This list changed: reload it. Comes at most once per 500 ms per list.
     Changed(ListKind),
+    /// The container with this full id was started or restarted. Never held
+    /// back: each start is one event, however fast the restarts come.
+    ContainerStarted(String),
     /// The events stream broke and is open again. Changes in between were
     /// missed, so every list should be reloaded.
     Reconnected,
@@ -57,13 +60,13 @@ struct Watch {
     timing: WatchTiming,
     /// The open events stream; `None` before the first open and after it
     /// broke.
-    events: Option<BoxStream<'static, Result<ListKind, EngineError>>>,
+    events: Option<BoxStream<'static, Result<EngineChange, EngineError>>>,
     /// How many times in a row the stream broke or the engine did not
     /// answer; an event that comes through sets it back to zero.
     failures: u32,
     debounce: ReloadDebounce,
-    /// Waiting reloads that came due and are still to be sent.
-    due: VecDeque<ListKind>,
+    /// Events that are ready and still to be sent.
+    due: VecDeque<WatchEvent>,
 }
 
 impl Watch {
@@ -81,8 +84,8 @@ impl Watch {
     /// Wait for the next thing to tell the app.
     async fn next_event(&mut self) -> WatchEvent {
         loop {
-            if let Some(list) = self.due.pop_front() {
-                return WatchEvent::Changed(list);
+            if let Some(event) = self.due.pop_front() {
+                return event;
             }
 
             let Some(events) = self.events.as_mut() else {
@@ -100,7 +103,10 @@ impl Watch {
                         Ok(item) => item,
                         Err(_) => {
                             let now = Instant::now();
-                            self.due.extend(self.debounce.take_due(now));
+                            let due = self.debounce.take_due(now);
+                            self.due.extend(
+                                due.into_iter().map(WatchEvent::Changed),
+                            );
                             continue;
                         },
                     }
@@ -109,10 +115,13 @@ impl Watch {
             };
 
             match item {
-                Some(Ok(list)) => {
+                Some(Ok(change)) => {
                     self.failures = 0;
-                    if self.debounce.change(list, Instant::now()) {
-                        return WatchEvent::Changed(list);
+                    if let Some(id) = change.started_container {
+                        self.due.push_back(WatchEvent::ContainerStarted(id));
+                    }
+                    if self.debounce.change(change.list, Instant::now()) {
+                        self.due.push_back(WatchEvent::Changed(change.list));
                     }
                 },
                 Some(Err(err)) => {
@@ -178,11 +187,11 @@ impl Engine {
         watch_stream(self.clone(), WatchTiming::DEFAULT)
     }
 
-    /// The lists the engine's events change, as they come. Ends when the
-    /// engine closes the stream; an error item means it broke.
+    /// What the engine's events change, as they come. Ends when the engine
+    /// closes the stream; an error item means it broke.
     pub(crate) fn changes(
         &self,
-    ) -> BoxStream<'static, Result<ListKind, EngineError>> {
+    ) -> BoxStream<'static, Result<EngineChange, EngineError>> {
         let options = EventsOptions {
             filters: Some(event_filters()),
             ..EventsOptions::default()
@@ -192,7 +201,7 @@ impl Engine {
             .events(Some(options))
             .map_err(EngineError::from)
             .try_filter_map(|message| {
-                future::ready(Ok(ListKind::from_event(&message)))
+                future::ready(Ok(EngineChange::from_event(&message)))
             })
             .boxed()
     }
@@ -380,7 +389,7 @@ mod tests {
 
         let changes: Vec<ListKind> = engine(&path)
             .changes()
-            .map(|change| change.expect("a change"))
+            .map(|change| change.expect("a change").list)
             .collect()
             .await;
 
@@ -431,20 +440,56 @@ mod tests {
             wait,
         );
 
-        let events = take_timed(watch_stream(engine(&path), FAST), 3).await;
+        let events = take_timed(watch_stream(engine(&path), FAST), 4).await;
 
         let kinds: Vec<WatchEvent> =
-            events.iter().map(|(event, _)| *event).collect();
+            events.iter().map(|(event, _)| event.clone()).collect();
         assert_eq!(
             kinds,
             vec![
+                WatchEvent::ContainerStarted(String::from("c1")),
                 WatchEvent::Changed(ListKind::Containers),
                 WatchEvent::Changed(ListKind::Images),
                 WatchEvent::Changed(ListKind::Containers),
             ]
         );
-        let waited = events[2].1.duration_since(events[0].1);
+        let waited = events[3].1.duration_since(events[1].1);
         assert!(waited >= FAST.gap - Duration::from_millis(5), "{waited:?}");
+    }
+
+    /// A fast restart sends start events closer together than the reload gap:
+    /// the list reload waits, each start still comes at once.
+    #[tokio::test]
+    async fn every_container_start_comes_through_inside_the_gap() {
+        let dir = TempDir::new();
+        let path = dir.path().join("engine.sock");
+        let listener = UnixListener::bind(&path).expect("bind test socket");
+        let (_hold, wait) = mpsc::channel();
+        let _lines = serve(
+            listener,
+            vec![Answer::EventsThenWait(&[
+                CONTAINER_START,
+                CONTAINER_DIE,
+                CONTAINER_START,
+            ])],
+            wait,
+        );
+
+        let events = take_timed(watch_stream(engine(&path), FAST), 4).await;
+
+        let kinds: Vec<WatchEvent> =
+            events.iter().map(|(event, _)| event.clone()).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                WatchEvent::ContainerStarted(String::from("c1")),
+                WatchEvent::Changed(ListKind::Containers),
+                WatchEvent::ContainerStarted(String::from("c1")),
+                WatchEvent::Changed(ListKind::Containers),
+            ]
+        );
+        let second_start = events[2].1.duration_since(events[0].1);
+        assert!(second_start < FAST.gap, "{second_start:?}");
     }
 
     #[tokio::test]
@@ -463,13 +508,14 @@ mod tests {
             wait,
         );
 
-        let events = take_timed(watch_stream(engine(&path), FAST), 3).await;
+        let events = take_timed(watch_stream(engine(&path), FAST), 4).await;
 
         let kinds: Vec<WatchEvent> =
-            events.iter().map(|(event, _)| *event).collect();
+            events.iter().map(|(event, _)| event.clone()).collect();
         assert_eq!(
             kinds,
             vec![
+                WatchEvent::ContainerStarted(String::from("c1")),
                 WatchEvent::Changed(ListKind::Containers),
                 WatchEvent::Reconnected,
                 WatchEvent::Changed(ListKind::Images),

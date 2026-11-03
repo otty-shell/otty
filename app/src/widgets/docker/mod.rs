@@ -293,6 +293,47 @@ mod tests {
         assert_eq!(subscriptions(&widget), second);
     }
 
+    /// A finished stream keeps its place in iced as long as its key stays,
+    /// so only a new key can start the logs again after a restart.
+    #[test]
+    fn the_logs_subscription_is_replaced_when_the_container_starts_again() {
+        let mut widget = loaded();
+        let docker = fixtures::engine(EngineKind::Docker);
+        let resources = fixtures::resources(EngineKind::Docker);
+        let _ =
+            widget.reduce(DockerIntent::SelectInspectorTab(InspectorTab::Logs));
+        let selected = widget
+            .state
+            .inspector()
+            .logs()
+            .expect("followed logs")
+            .target()
+            .container_id()
+            .to_string();
+        let first = subscriptions(&widget);
+        let other = resources
+            .containers()
+            .iter()
+            .map(|container| container.id())
+            .find(|id| *id != selected)
+            .expect("another container");
+
+        let _ = widget.reduce(DockerIntent::ContainerStarted {
+            engine: docker.address().clone(),
+            id: other.to_string(),
+        });
+        let after_other = subscriptions(&widget);
+        let _ = widget.reduce(DockerIntent::ContainerStarted {
+            engine: docker.address().clone(),
+            id: selected,
+        });
+        let after_own = subscriptions(&widget);
+
+        assert_eq!(after_other, first);
+        assert_eq!(after_own.len(), 1);
+        assert_ne!(after_own, first);
+    }
+
     #[test]
     fn the_logs_subscription_stops_when_docker_mode_is_left() {
         let mut widget = loaded();

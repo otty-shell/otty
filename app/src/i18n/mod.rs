@@ -275,6 +275,15 @@ pub(crate) fn docker_no_access_text(socket: &str) -> String {
     )
 }
 
+/// Build the text of the Podman no access card for the denied `socket`.
+pub(crate) fn docker_podman_no_access_text(socket: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerPodmanNoAccessText,
+        &[("socket", socket)],
+    )
+}
+
 /// Build the line under the no engine cards from the `places` OTTY tried.
 pub(crate) fn docker_looked_for(places: &str) -> String {
     fill_in(
@@ -984,6 +993,7 @@ mod tests {
             (Key::TplDockerRemoveContainerTitle, ("name", "web-1")),
             (Key::TplDockerPruneContainersText, ("count", "3")),
             (Key::TplDockerRemoveImageTitle, ("name", "nginx:1.27")),
+            (Key::TplDockerRemoveTagTitle, ("name", "nginx:1.27")),
             (Key::TplDockerRemoveVolumeTitle, ("name", "pgdata")),
             (Key::TplDockerRemoveNetworkTitle, ("name", "web_default")),
             (Key::TplDockerPruneImagesText, ("count", "3")),

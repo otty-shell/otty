@@ -59,7 +59,8 @@ views → intents). This ticket changes `app/src/view.rs`.
   row `i` of the shown, filtered table.
 - `model.rs`: three builders, one per slot, so each slot builds only what it
   shows: `tree_rows` (engine roots "Docker 29.9.1" with the local dot and
-  "this computer"; the open engine's four lists, Containers with "N running",
+  "this computer"; the open engine's four lists (since 2026-11-03 the lists
+  of every engine that is not closed, see Comments), Containers with "N running",
   the others with a count, nothing while loading, "failed" in the failed
   tone), `main_area` (`Searching`, `NoEngine` or `Table` with columns, rows,
   selected position, empty message and error) and `inspector` (title and
@@ -172,3 +173,30 @@ not run in this session.
   `model::tree_rows`, the filter in `model::main_area` (`table`) and the
   chip in `header_row`.
 - 18: replace `view/status_bar.rs`; `engine_label` and `size_text` exist.
+
+## Comments
+
+### Engines open and close like folders (2026-11-03, spec Decision 10)
+
+With Docker and Podman on, pressing the Podman root hid Docker: `tree_rows`
+took "open" from the place, so only the engine of the shown table was ever
+open, and a press on a root also changed the table. The owner wants engines to
+work like folders.
+
+- `DockerState` keeps the closed engines (`closed_engines`), not the open ones,
+  so every engine starts open, also one found later. Memory only: it survives a
+  mode switch and resets when OTTY restarts.
+- A press on a root sends the new `DockerIntent::ToggleEngine(address)`. It
+  changes nothing on the right and loads nothing. A press on a list row still
+  sends `Open(place)`.
+- Closing the engine of the shown table leaves the table. No row is highlighted
+  then.
+- `DockerState::open` removes the engine of the place from the closed set, and
+  so does `finish_search` when it moves the place. These are the only two
+  places that set the place: inspector and table links and a finished Run all
+  go through `open`.
+- Lists of every engine load at Enter and on Refresh and follow `ListChanged`
+  already (nothing there depended on the shown engine), and a closed engine
+  keeps loading too. Tests now cover this for the engine that is not shown.
+
+The "open engine's four lists" in the Answer above describes the old behaviour.

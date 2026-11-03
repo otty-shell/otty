@@ -17,12 +17,13 @@ use crate::engine::{EngineInfo, EngineKind};
 const PRUNE_ALL_VOLUMES_SINCE: (usize, usize) = (1, 42);
 
 impl Engine {
-    /// Remove an image by id. The engine refuses an image a container uses
-    /// unless `force` is set; it always refuses one a running container
-    /// uses.
+    /// Remove `reference`, an image name or id. A name that is not the image's
+    /// last goes alone. The engine refuses the last name of an image a
+    /// container uses unless `force` is set; `force` then does different
+    /// things per engine (spec Decision 11).
     pub async fn remove_image(
         &self,
-        id: &str,
+        reference: &str,
         force: bool,
     ) -> Result<(), EngineError> {
         let options = RemoveImageOptions {
@@ -30,7 +31,9 @@ impl Engine {
             ..RemoveImageOptions::default()
         };
 
-        self.client.remove_image(id, Some(options), None).await?;
+        self.client
+            .remove_image(reference, Some(options), None)
+            .await?;
 
         Ok(())
     }
@@ -224,6 +227,27 @@ mod tests {
             assert_eq!(method, "DELETE");
             assert!(path.ends_with("/images/sha256:abc"), "{path}");
             assert_eq!(requests[0].line.contains("force=true"), force);
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_image_can_name_a_tag_or_a_digest() {
+        for reference in ["reg:5000/team/app:v2", "reg/app@sha256:aa"] {
+            let fake = FakeEngine::start(answer(
+                "200 OK",
+                r#"[{"Untagged":"reference"}]"#,
+            ));
+
+            engine(&fake)
+                .remove_image(reference, false)
+                .await
+                .expect("tag removed");
+
+            let requests = fake.requests();
+            let (method, path) = method_and_path(&requests[0].line);
+            assert_eq!(method, "DELETE");
+            let wanted = format!("/images/{reference}");
+            assert!(path.ends_with(&wanted), "{path}");
         }
     }
 

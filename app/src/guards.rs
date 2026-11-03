@@ -307,6 +307,7 @@ fn is_docker_background(event: &DockerEvent) -> bool {
                 | DockerIntent::LogsFailed { .. }
                 | DockerIntent::InspectLoaded { .. }
                 | DockerIntent::ListChanged { .. }
+                | DockerIntent::ContainerStarted { .. }
                 | DockerIntent::EngineReconnected(_)
                 | DockerIntent::EngineUnreachable(_)
                 | DockerIntent::ListLoaded { .. }
@@ -468,6 +469,10 @@ mod tests {
                 engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
                 resource: ResourceKind::Containers,
             }),
+            docker(DockerIntent::ContainerStarted {
+                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
+                id: String::from("850b"),
+            }),
             docker(DockerIntent::EngineReconnected(
                 otty_docker::EngineAddress::Tcp(String::from("h:1")),
             )),
@@ -544,6 +549,9 @@ mod tests {
             }),
         ];
         let clicks = [
+            docker(DockerIntent::ToggleEngine(
+                otty_docker::EngineAddress::Tcp(String::from("h:1")),
+            )),
             docker(DockerIntent::Refresh),
             docker(DockerIntent::SelectRow(0)),
             docker(DockerIntent::SelectInspectorTab(InspectorTab::Logs)),

@@ -14,14 +14,16 @@ use super::types::ResourceKind;
 const LOCAL_HOSTS: [&str; 3] = ["0.0.0.0", "::", "127.0.0.1"];
 /// The protocol a browser can open.
 const BROWSER_PROTOCOL: &str = "tcp";
+/// How a reference with the tag a bare name means ends.
+const LATEST_SUFFIX: &str = ":latest";
 
 /// Where a link leads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LinkTarget {
     /// A page opened in the browser: a published port.
     Url(String),
-    /// The item with this id (container, image or network id, or volume
-    /// name) in this list of the open engine.
+    /// The item with this id (container or network id, image row key, or
+    /// volume name) in this list of the open engine.
     Item(ResourceKind, String),
     /// The containers of this Compose project.
     ComposeProject(String),
@@ -56,18 +58,33 @@ pub(crate) fn port_url(
     Some(format!("http://{host}:{port}"))
 }
 
-/// The listed image that `reference`, an image id or a tag, names.
+/// The listed image row that `reference`, an image id or a name, names. An id
+/// leads to the first row of its image.
 pub(crate) fn image_target(
     reference: &str,
     images: &[Image],
 ) -> Option<LinkTarget> {
     images
         .iter()
-        .find(|image| {
-            image.id() == reference
-                || image.tags().iter().any(|tag| tag == reference)
-        })
-        .map(|image| LinkTarget::Item(ResourceKind::Images, image.id().into()))
+        .find(|image| image.id() == reference || is_named(image, reference))
+        .map(image_row_target)
+}
+
+/// The image row of `container`: the row of its image with the name it was run
+/// from, else the first row of its image. The image id decides, because a tag
+/// can have moved on to a newer image since the container was made.
+pub(crate) fn container_image_target(
+    container: &Container,
+    images: &[Image],
+) -> Option<LinkTarget> {
+    let is_its_image = |image: &&Image| image.id() == container.image_id();
+
+    images
+        .iter()
+        .filter(is_its_image)
+        .find(|image| is_named(image, container.image()))
+        .or_else(|| images.iter().find(is_its_image))
+        .map(image_row_target)
 }
 
 /// The listed volume called `name`.
@@ -139,6 +156,21 @@ pub(crate) fn compose_target(
         .then(|| LinkTarget::ComposeProject(project.to_string()))
 }
 
+/// The link to the row `image`.
+fn image_row_target(image: &Image) -> LinkTarget {
+    LinkTarget::Item(ResourceKind::Images, image.row_key().into())
+}
+
+/// Whether `name` is the name of the row `image`; a name without a tag means
+/// `latest`.
+fn is_named(image: &Image, name: &str) -> bool {
+    let Some(reference) = image.reference() else {
+        return false;
+    };
+
+    reference == name || reference.strip_suffix(LATEST_SUFFIX) == Some(name)
+}
+
 #[cfg(test)]
 mod tests {
     use otty_docker::{EngineKind, Resources, fixtures};
@@ -185,19 +217,127 @@ mod tests {
     }
 
     #[test]
-    fn an_image_is_named_by_its_id_or_by_one_of_its_tags() {
+    fn an_image_is_named_by_its_id_or_by_the_reference_of_a_row() {
         let resources = docker();
         let busybox = resources
             .images()
             .iter()
-            .find(|image| image.tags() == ["busybox:1.37"])
+            .find(|image| image.reference() == Some("busybox:1.37"))
             .expect("busybox");
-        let target = Some(item(ResourceKind::Images, busybox.id()));
+        let target = Some(item(ResourceKind::Images, busybox.row_key()));
 
         assert_eq!(image_target(busybox.id(), resources.images()), target);
         assert_eq!(image_target("busybox:1.37", resources.images()), target);
         assert_eq!(image_target("busybox:9.99", resources.images()), None);
         assert_eq!(image_target("busybox:1.37", &[]), None);
+    }
+
+    fn row_key_of(images: &[Image], reference: &str) -> LinkTarget {
+        let row = images
+            .iter()
+            .find(|image| image.reference() == Some(reference))
+            .expect("the row");
+
+        item(ResourceKind::Images, row.row_key())
+    }
+
+    #[test]
+    fn a_bare_name_links_to_its_latest_tag() {
+        let images = fixtures::image_rows(
+            "sha256:app",
+            &["app:1", "app:latest"],
+            &[],
+            &[],
+        );
+
+        assert_eq!(
+            image_target("app", &images),
+            Some(row_key_of(&images, "app:latest"))
+        );
+    }
+
+    #[test]
+    fn a_container_links_to_the_tag_it_was_run_from() {
+        let images =
+            fixtures::image_rows("sha256:app", &["app:1", "app:2"], &[], &[]);
+        let container = fixtures::container_of_image(
+            "web",
+            "running",
+            "app:2",
+            "sha256:app",
+        );
+
+        assert_eq!(
+            container_image_target(&container, &images),
+            Some(row_key_of(&images, "app:2"))
+        );
+    }
+
+    #[test]
+    fn a_container_run_from_a_bare_name_links_to_its_latest_tag() {
+        let images = fixtures::image_rows(
+            "sha256:app",
+            &["app:1", "app:latest"],
+            &[],
+            &[],
+        );
+        let container =
+            fixtures::container_of_image("web", "running", "app", "sha256:app");
+
+        assert_eq!(
+            container_image_target(&container, &images),
+            Some(row_key_of(&images, "app:latest"))
+        );
+    }
+
+    #[test]
+    fn a_container_whose_tag_is_gone_links_to_the_first_row_of_its_image() {
+        let images =
+            fixtures::image_rows("sha256:app", &["app:1", "app:2"], &[], &[]);
+        let container = fixtures::container_of_image(
+            "web",
+            "running",
+            "app:gone",
+            "sha256:app",
+        );
+
+        assert_eq!(
+            container_image_target(&container, &images),
+            Some(row_key_of(&images, "app:1"))
+        );
+    }
+
+    #[test]
+    fn a_tag_that_moved_to_another_image_does_not_catch_the_container() {
+        let mut images =
+            fixtures::image_rows("sha256:new", &["app:1"], &[], &[]);
+        images.extend(fixtures::image_rows("sha256:old", &[], &[], &[]));
+        let container = fixtures::container_of_image(
+            "web",
+            "running",
+            "app:1",
+            "sha256:old",
+        );
+
+        let dangling = images[1].row_key().to_string();
+
+        assert_eq!(
+            container_image_target(&container, &images),
+            Some(item(ResourceKind::Images, &dangling))
+        );
+    }
+
+    #[test]
+    fn a_container_whose_image_is_not_listed_has_no_link() {
+        let images = fixtures::image_rows("sha256:app", &["app:1"], &[], &[]);
+        let container = fixtures::container_of_image(
+            "web",
+            "running",
+            "app:1",
+            "sha256:gone",
+        );
+
+        assert_eq!(container_image_target(&container, &images), None);
     }
 
     #[test]

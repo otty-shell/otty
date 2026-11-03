@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 
 use otty_docker::{Container, ContainerState, Image, Network, Volume};
 
-use super::types::{ResourceKind, image_name};
+use super::types::{ResourceKind, image_name, image_repository, image_tag};
 
 // Column positions. Column 0 is the name in every table, so the name
 // sort is the fallback arm of each `sort_*` function.
@@ -19,10 +19,11 @@ const CONTAINER_PORTS: usize = 4;
 const CONTAINER_AGE: usize = 5;
 
 /// Column positions in the images table.
-const IMAGE_ID: usize = 1;
-const IMAGE_SIZE: usize = 2;
-const IMAGE_USED_BY: usize = 3;
-const IMAGE_AGE: usize = 4;
+const IMAGE_TAG: usize = 1;
+const IMAGE_ID: usize = 2;
+const IMAGE_SIZE: usize = 3;
+const IMAGE_USED_BY: usize = 4;
+const IMAGE_AGE: usize = 5;
 
 /// Column positions in the volumes table.
 const VOLUME_DRIVER: usize = 1;
@@ -196,15 +197,17 @@ pub(crate) fn sort_containers(rows: &mut [&Container], sort: TableSort) {
     });
 }
 
-/// Order the shown images by `sort`; ties are ordered by name.
+/// Order the shown images by `sort`; ties are ordered by name, which puts the
+/// tags of one repository in order.
 pub(crate) fn sort_images(rows: &mut [&Image], sort: TableSort) {
     rows.sort_by(|a, b| {
         let primary = match sort.column {
+            IMAGE_TAG => image_tag(a).cmp(image_tag(b)),
             IMAGE_ID => a.id().cmp(b.id()),
             IMAGE_SIZE => a.size().cmp(&b.size()),
             IMAGE_USED_BY => a.containers().cmp(&b.containers()),
             IMAGE_AGE => a.created().cmp(&b.created()),
-            _ => image_name(a).cmp(image_name(b)),
+            _ => image_repository(a).cmp(image_repository(b)),
         };
 
         sort.order
@@ -433,12 +436,61 @@ mod tests {
                 });
             };
 
-            check(IMAGE_NAME, &|i| image_name(i).to_string());
+            check(IMAGE_NAME, &|i| image_repository(i).to_string());
+            check(IMAGE_TAG, &|i| image_tag(i).to_string());
             check(IMAGE_ID, &|i| i.id().to_string());
             check(IMAGE_SIZE, &|i| format!("{:020}", i.size()));
             check(IMAGE_USED_BY, &|i| format!("{:020}", i.containers()));
             check(IMAGE_AGE, &|i| format!("{:020}", i.created()));
         }
+    }
+
+    fn image_order(names: &[&str], sort: TableSort) -> Vec<String> {
+        let images = fixtures::image_rows("sha256:app", names, &[], &[]);
+        let mut rows: Vec<&Image> = images.iter().collect();
+
+        sort_images(&mut rows, sort);
+
+        rows.iter().map(|row| image_name(row).to_string()).collect()
+    }
+
+    #[test]
+    fn images_of_one_repository_are_ordered_by_tag_by_default() {
+        let sort = TableSorts::default().get(ResourceKind::Images);
+
+        assert_eq!(
+            image_order(&["b:1", "a:2", "a:1"], sort),
+            vec!["a:1", "a:2", "b:1"]
+        );
+    }
+
+    #[test]
+    fn the_repository_column_orders_by_the_repository_alone() {
+        let sort = sort_of(IMAGE_NAME, SortOrder::Ascending);
+
+        // `a-b:1` sorts before `a:1` as text, but `a` comes before `a-b`.
+        assert_eq!(image_order(&["a-b:1", "a:1"], sort), vec!["a:1", "a-b:1"]);
+    }
+
+    #[test]
+    fn the_tag_column_orders_by_tag_then_by_name() {
+        let sort = sort_of(IMAGE_TAG, SortOrder::Ascending);
+
+        assert_eq!(
+            image_order(&["b:1", "a:2", "a:1"], sort),
+            vec!["a:1", "b:1", "a:2"]
+        );
+    }
+
+    #[test]
+    fn a_new_tag_column_starts_a_to_z() {
+        let sorts =
+            TableSorts::default().pressed(ResourceKind::Images, IMAGE_TAG);
+
+        assert_eq!(
+            sorts.get(ResourceKind::Images),
+            sort_of(IMAGE_TAG, SortOrder::Ascending)
+        );
     }
 
     #[test]

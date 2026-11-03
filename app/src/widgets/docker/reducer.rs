@@ -54,6 +54,10 @@ fn reduce_intent(
             state.open(place);
             closed
         },
+        DockerIntent::ToggleEngine(engine) => {
+            state.toggle_engine(engine);
+            Task::none()
+        },
         DockerIntent::OpenComposeProject(index) => {
             let _ = state.open_compose_project_of_row(index);
             Task::none()
@@ -143,6 +147,10 @@ fn reduce_intent(
         },
         DockerIntent::ListChanged { engine, resource } => {
             reload_changed_list(state, &engine, resource)
+        },
+        DockerIntent::ContainerStarted { engine, id } => {
+            state.inspector_mut().restart_logs(&engine, &id);
+            Task::none()
         },
         DockerIntent::EngineReconnected(engine) => {
             match active_engine_info(state, &engine) {
@@ -672,7 +680,7 @@ mod tests {
         );
         assert_eq!(
             engine.images().selected_id(),
-            Some(engine.images().items()[0].id())
+            Some(engine.images().items()[0].row_key())
         );
         assert_eq!(
             engine.volumes().selected_id(),
@@ -894,14 +902,14 @@ mod tests {
         let mut state = loaded_state();
         open(&mut state, ResourceKind::Images);
 
-        let _ = reduce(&mut state, DockerIntent::SortBy(2));
+        let _ = reduce(&mut state, DockerIntent::SortBy(3));
         let first = state.sort(ResourceKind::Images);
-        let _ = reduce(&mut state, DockerIntent::SortBy(2));
+        let _ = reduce(&mut state, DockerIntent::SortBy(3));
         let second = state.sort(ResourceKind::Images);
 
-        assert_eq!(first.column(), 2);
+        assert_eq!(first.column(), 3);
         assert_eq!(first.order(), SortOrder::Descending);
-        assert_eq!(second.column(), 2);
+        assert_eq!(second.column(), 3);
         assert_eq!(second.order(), SortOrder::Ascending);
     }
 
@@ -982,8 +990,19 @@ mod tests {
             .images()
             .items()
             .iter()
-            .find(|image| image.tags() == ["busybox:1.37"])
+            .find(|image| image.reference() == Some("busybox:1.37"))
             .map(|image| image.id().to_string())
+            .expect("busybox image")
+    }
+
+    fn busybox_key(state: &DockerState) -> String {
+        let engine = state.open_engine().expect("docker engine");
+        engine
+            .images()
+            .items()
+            .iter()
+            .find(|image| image.reference() == Some("busybox:1.37"))
+            .map(|image| image.row_key().to_string())
             .expect("busybox image")
     }
 
@@ -1020,7 +1039,8 @@ mod tests {
     fn a_link_in_the_inspect_tree_opens_its_item_through_follow_link() {
         let mut state = loaded_state();
         let busybox = busybox_id(&state);
-        let target = LinkTarget::Item(ResourceKind::Images, busybox.clone());
+        let key = busybox_key(&state);
+        let target = LinkTarget::Item(ResourceKind::Images, key.clone());
 
         let tree = inspected_tree(
             &mut state,
@@ -1044,7 +1064,7 @@ mod tests {
                 ResourceKind::Images
             ))
         );
-        assert_eq!(state.selected_id(), Some(busybox.as_str()));
+        assert_eq!(state.selected_id(), Some(key.as_str()));
         assert_eq!(state.inspector().tab(), InspectorTab::Overview);
     }
 
@@ -1113,6 +1133,7 @@ mod tests {
     fn an_image_link_shows_the_images_list_with_that_image_selected() {
         let mut state = loaded_state();
         let busybox = busybox_id(&state);
+        let key = busybox_key(&state);
         open(&mut state, ResourceKind::Images);
         type_text(&mut state, "no such image");
         let _ = reduce(&mut state, DockerIntent::SortBy(2));
@@ -1124,7 +1145,7 @@ mod tests {
 
         let effects = follow(
             &mut state,
-            LinkTarget::Item(ResourceKind::Images, busybox.clone()),
+            LinkTarget::Item(ResourceKind::Images, key.clone()),
         );
 
         assert!(effects.is_empty(), "{effects:?}");
@@ -1136,7 +1157,7 @@ mod tests {
             ))
         );
         assert_eq!(input_of(&state, ResourceKind::Images), "");
-        assert_eq!(state.selected_id(), Some(busybox.as_str()));
+        assert_eq!(state.selected_id(), Some(key.as_str()));
         assert_eq!(state.inspector().tab(), InspectorTab::Overview);
         let (_, row) = state.selected_row().expect("the image is selected");
         assert_eq!(row.id(), busybox);
@@ -1151,10 +1172,10 @@ mod tests {
             .position(|image| image.id() == busybox)
             .expect("listed image");
         let position = state.shown_position(engine_index);
-        assert_eq!(state.shown_row_id(position), Some(busybox.clone()));
+        assert_eq!(state.shown_row_id(position), Some(key.clone()));
         // A later sort keeps the same image selected.
         let _ = reduce(&mut state, DockerIntent::SortBy(0));
-        assert_eq!(state.selected_id(), Some(busybox.as_str()));
+        assert_eq!(state.selected_id(), Some(key.as_str()));
     }
 
     #[test]
@@ -1306,7 +1327,7 @@ mod tests {
             engine.containers().items().get(1)
         );
         assert_eq!(
-            engine.images().selected(Image::id),
+            engine.images().selected(Image::row_key),
             engine.images().items().get(1)
         );
         assert_eq!(
@@ -1808,6 +1829,290 @@ mod tests {
         assert_eq!(log_line_count(&state), 0);
         let logs = state.inspector().logs().expect("followed logs");
         assert_eq!(logs.error(), None);
+    }
+
+    /// A start event of the container at `index` of the fixture Docker engine.
+    fn container_started(state: &mut DockerState, index: usize) {
+        let _ = reduce(
+            state,
+            DockerIntent::ContainerStarted {
+                engine: docker().address().clone(),
+                id: container_id(index),
+            },
+        );
+    }
+
+    /// The target of the followed logs.
+    fn followed_target(state: &DockerState) -> LogTarget {
+        state
+            .inspector()
+            .logs()
+            .expect("followed logs")
+            .target()
+            .clone()
+    }
+
+    #[test]
+    fn a_started_container_clears_its_logs_and_asks_for_a_new_stream() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["old one", "old two"]);
+        let old_stream = followed_target(&state);
+
+        container_started(&mut state, 0);
+
+        assert_eq!(log_view(&state).text(), "");
+        let new_stream = followed_target(&state);
+        assert_ne!(new_stream, old_stream);
+        assert!(new_stream.is_same_container(&old_stream));
+        assert!(new_stream.reads_latest_run_only());
+        assert!(!old_stream.reads_latest_run_only());
+    }
+
+    #[test]
+    fn each_start_is_one_new_stream() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+
+        container_started(&mut state, 0);
+        let first = followed_target(&state);
+        container_started(&mut state, 0);
+        let second = followed_target(&state);
+
+        assert_ne!(first, second);
+    }
+
+    /// The old stream can still deliver lines after the start event: Podman's
+    /// keeps going across a restart. They must not show twice.
+    #[test]
+    fn late_lines_of_the_old_stream_are_dropped_and_new_lines_show_once() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["old"]);
+        let old_stream = followed_target(&state);
+
+        container_started(&mut state, 0);
+        let new_stream = followed_target(&state);
+        for (target, line) in [(old_stream, "fresh"), (new_stream, "fresh")] {
+            let _ = reduce(
+                &mut state,
+                DockerIntent::LogLines {
+                    target,
+                    lines: vec![line.to_string()],
+                },
+            );
+        }
+
+        assert_eq!(log_view(&state).text(), "fresh");
+    }
+
+    #[test]
+    fn a_late_error_of_the_old_stream_is_not_shown() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        let old_stream = followed_target(&state);
+
+        container_started(&mut state, 0);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::LogsFailed {
+                target: old_stream,
+                error: DockerError::new("stream broke"),
+            },
+        );
+
+        let logs = state.inspector().logs().expect("followed logs");
+        assert_eq!(logs.error(), None);
+    }
+
+    #[test]
+    fn a_started_container_forgets_the_error_of_its_old_stream() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::LogsFailed {
+                target: log_target(0),
+                error: DockerError::new("stream broke"),
+            },
+        );
+
+        container_started(&mut state, 0);
+
+        let logs = state.inspector().logs().expect("followed logs");
+        assert_eq!(logs.error(), None);
+    }
+
+    #[test]
+    fn a_start_keeps_follow_off_and_forgets_the_waiting_lines() {
+        let mut state = logs_without_follow();
+        push_lines(&mut state, 0, &["waiting"]);
+
+        container_started(&mut state, 0);
+
+        let view = log_view(&state);
+        assert!(!view.is_following());
+        assert_eq!(view.pending_count(), 0);
+        assert_eq!(view.text(), "");
+
+        let stream = followed_target(&state);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::LogLines {
+                target: stream,
+                lines: vec![String::from("fresh")],
+            },
+        );
+        assert_eq!(log_view(&state).pending_count(), 1);
+        set_follow(&mut state, true);
+        assert_eq!(log_view(&state).text(), "fresh");
+    }
+
+    #[test]
+    fn a_start_keeps_follow_on_and_the_line_cap() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+
+        container_started(&mut state, 0);
+        let stream = followed_target(&state);
+        let lines: Vec<String> = (0..MAX_LOG_LINES + 1)
+            .map(|n| format!("line {n}"))
+            .collect();
+        let _ = reduce(
+            &mut state,
+            DockerIntent::LogLines {
+                target: stream,
+                lines,
+            },
+        );
+
+        assert!(log_view(&state).is_following());
+        assert_eq!(log_view(&state).line_count(), MAX_LOG_LINES);
+    }
+
+    /// The list reload that follows the start event must not undo it.
+    #[test]
+    fn a_list_reload_after_a_start_keeps_the_new_stream() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        container_started(&mut state, 0);
+        let stream = followed_target(&state);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::LogLines {
+                target: stream.clone(),
+                lines: vec![String::from("fresh")],
+            },
+        );
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListLoaded {
+                engine: docker().address().clone(),
+                list: LoadedList::Containers(
+                    lists(EngineKind::Docker).containers,
+                ),
+            },
+        );
+
+        assert_eq!(followed_target(&state), stream);
+        assert_eq!(log_view(&state).text(), "fresh");
+    }
+
+    #[test]
+    fn the_start_of_another_container_changes_nothing() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["kept"]);
+        let stream = followed_target(&state);
+
+        container_started(&mut state, 1);
+
+        assert_eq!(followed_target(&state), stream);
+        assert_eq!(log_view(&state).text(), "kept");
+    }
+
+    #[test]
+    fn the_start_of_a_container_with_the_same_id_elsewhere_changes_nothing() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["kept"]);
+        let stream = followed_target(&state);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ContainerStarted {
+                engine: podman().address().clone(),
+                id: container_id(0),
+            },
+        );
+
+        assert_eq!(followed_target(&state), stream);
+        assert_eq!(log_view(&state).text(), "kept");
+    }
+
+    #[test]
+    fn a_start_without_followed_logs_starts_no_logs() {
+        let mut state = loaded_state();
+
+        container_started(&mut state, 0);
+
+        assert_eq!(followed(&state), None);
+    }
+
+    /// Without a start event nothing asks for a new stream, so a container
+    /// that stays stopped keeps its lines and the engine is left alone.
+    #[test]
+    fn a_stopped_container_keeps_its_lines_and_its_stream_key() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["last words"]);
+        let stream = followed_target(&state);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListChanged {
+                engine: docker().address().clone(),
+                resource: ResourceKind::Containers,
+            },
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListLoaded {
+                engine: docker().address().clone(),
+                list: LoadedList::Containers(
+                    lists(EngineKind::Docker).containers,
+                ),
+            },
+        );
+
+        assert_eq!(followed_target(&state), stream);
+        assert_eq!(log_view(&state).text(), "last words");
+    }
+
+    #[test]
+    fn logs_opened_again_after_a_start_begin_with_the_last_lines_again() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        container_started(&mut state, 0);
+
+        let _ = select_tab(&mut state, InspectorTab::Overview);
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+
+        assert!(!followed_target(&state).reads_latest_run_only());
+    }
+
+    #[test]
+    fn another_selection_after_a_start_begins_with_the_last_lines() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        container_started(&mut state, 0);
+
+        let position = state.shown_position(1);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
+
+        assert_eq!(followed(&state), Some(container_id(1)));
+        assert!(!followed_target(&state).reads_latest_run_only());
     }
 
     #[test]
@@ -2692,7 +2997,7 @@ mod tests {
     #[test]
     fn a_link_to_a_hidden_item_removes_the_tags_of_the_target_table() {
         let mut state = loaded_state();
-        let busybox = busybox_id(&state);
+        let busybox = busybox_key(&state);
         open(&mut state, ResourceKind::Images);
         add_tag(&mut state, "Repository:otty-fx-img");
         open(&mut state, ResourceKind::Containers);
@@ -2714,7 +3019,7 @@ mod tests {
     #[test]
     fn a_link_to_a_visible_item_keeps_the_tags_of_the_target_table() {
         let mut state = loaded_state();
-        let busybox = busybox_id(&state);
+        let busybox = busybox_key(&state);
         open(&mut state, ResourceKind::Images);
         add_tag(&mut state, "Repository:busybox");
         open(&mut state, ResourceKind::Containers);
@@ -2841,6 +3146,275 @@ mod tests {
             vec![DockerEffect::OpenUrl(String::from(
                 "http://localhost:18081"
             ))]
+        );
+    }
+
+    // Engines open and close like folders.
+
+    fn press_root(
+        state: &mut DockerState,
+        engine: &EngineInfo,
+    ) -> Vec<DockerEffect> {
+        effects(reduce(
+            state,
+            DockerIntent::ToggleEngine(engine.address().clone()),
+        ))
+    }
+
+    fn find_engines(state: &mut DockerState, kinds: &[EngineKind]) {
+        let _ = reduce(
+            state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(kinds)),
+        );
+    }
+
+    #[test]
+    fn a_press_on_an_engine_root_leaves_the_right_side_as_it_is() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "compose:otty-fx");
+        type_text(&mut state, "web");
+        let _ = reduce(&mut state, DockerIntent::SelectRow(0));
+        let _ = select_tab(&mut state, InspectorTab::Inspect);
+        state.set_notice(String::from("the engine said no"));
+        let place = state.place().cloned();
+        let selected = selected_container(&state).map(str::to_string);
+
+        for engine in [podman(), docker(), docker(), podman()] {
+            let effects = press_root(&mut state, &engine);
+
+            assert_eq!(effects, Vec::new(), "{engine:?}");
+            assert_eq!(state.place().cloned(), place);
+            assert_eq!(
+                selected_container(&state).map(str::to_string),
+                selected
+            );
+            assert_eq!(input_of(&state, ResourceKind::Containers), "web");
+            assert_eq!(
+                tags_of(&state, ResourceKind::Containers),
+                vec!["Compose:otty-fx"]
+            );
+            assert_eq!(state.inspector().tab(), InspectorTab::Inspect);
+            assert_eq!(state.notice(), Some("the engine said no"));
+        }
+    }
+
+    #[test]
+    fn a_press_on_a_root_tells_which_engines_are_closed() {
+        let mut state = loaded_state();
+
+        let _ = press_root(&mut state, &podman());
+        let podman_closed = state.is_engine_closed(podman().address());
+        let docker_closed = state.is_engine_closed(docker().address());
+        let _ = press_root(&mut state, &podman());
+
+        assert!(podman_closed);
+        assert!(!docker_closed);
+        assert!(!state.is_engine_closed(podman().address()));
+    }
+
+    #[test]
+    fn closed_engines_stay_closed_across_a_mode_switch_and_a_refresh() {
+        let mut state = loaded_state();
+        let _ = press_root(&mut state, &docker());
+        let _ = press_root(&mut state, &podman());
+
+        let _ = reduce(&mut state, DockerIntent::Leave);
+        let _ = reduce(&mut state, DockerIntent::Enter);
+        find_engines(&mut state, &[EngineKind::Docker, EngineKind::Podman]);
+        let _ = reduce(&mut state, DockerIntent::Refresh);
+
+        assert!(state.is_engine_closed(docker().address()));
+        assert!(state.is_engine_closed(podman().address()));
+        assert_eq!(state.place().map(Place::engine), Some(docker().address()));
+    }
+
+    #[test]
+    fn a_closed_engine_that_goes_away_and_comes_back_is_still_closed() {
+        let mut state = loaded_state();
+        let _ = press_root(&mut state, &podman());
+
+        find_engines(&mut state, &[EngineKind::Docker]);
+        find_engines(&mut state, &[EngineKind::Docker, EngineKind::Podman]);
+
+        assert!(state.is_engine_closed(podman().address()));
+    }
+
+    #[test]
+    fn a_search_that_moves_the_place_opens_the_engine_it_moves_to() {
+        let mut state = loaded_state();
+        let _ = press_root(&mut state, &podman());
+
+        find_engines(&mut state, &[EngineKind::Podman]);
+
+        assert_eq!(state.place().map(Place::engine), Some(podman().address()));
+        assert!(!state.is_engine_closed(podman().address()));
+    }
+
+    #[test]
+    fn a_closed_engine_found_again_after_no_engine_opens_with_its_place() {
+        let mut state = loaded_state();
+        let _ = press_root(&mut state, &docker());
+
+        find_engines(&mut state, &[]);
+        find_engines(&mut state, &[EngineKind::Docker]);
+
+        assert_eq!(state.place().map(Place::engine), Some(docker().address()));
+        assert!(!state.is_engine_closed(docker().address()));
+    }
+
+    #[test]
+    fn an_item_link_opens_the_closed_engine_of_the_list_it_shows() {
+        let mut state = loaded_state();
+        let busybox = busybox_key(&state);
+        let _ = press_root(&mut state, &docker());
+        let _ = press_root(&mut state, &podman());
+
+        let _ =
+            follow(&mut state, LinkTarget::Item(ResourceKind::Images, busybox));
+
+        assert_eq!(
+            state.place().map(Place::resource),
+            Some(ResourceKind::Images)
+        );
+        assert!(!state.is_engine_closed(docker().address()));
+        assert!(state.is_engine_closed(podman().address()));
+    }
+
+    #[test]
+    fn a_compose_link_opens_the_closed_engine_on_the_list_already_shown() {
+        let mut state = loaded_state();
+        let _ = press_root(&mut state, &docker());
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
+
+        assert!(!state.is_engine_closed(docker().address()));
+    }
+
+    #[test]
+    fn a_compose_link_of_a_table_row_opens_the_closed_engine() {
+        let mut state = loaded_state();
+        let row = row_of(&state, "otty-fx-web-1");
+        let _ = press_root(&mut state, &docker());
+
+        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(row));
+
+        assert!(!state.is_engine_closed(docker().address()));
+    }
+
+    #[test]
+    fn a_port_link_goes_to_no_list_and_leaves_the_engine_closed() {
+        let mut state = loaded_state();
+        let _ = press_root(&mut state, &docker());
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::Url(String::from("http://localhost:18081")),
+        );
+
+        assert!(state.is_engine_closed(docker().address()));
+    }
+
+    #[test]
+    fn an_event_of_the_engine_not_shown_reloads_that_engines_list() {
+        let mut state = loaded_state();
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: podman().address().clone(),
+                lists: lists(EngineKind::Podman),
+            },
+        );
+        let podman_containers = fixtures::resources(EngineKind::Podman)
+            .containers()
+            .to_vec();
+
+        let effects = effects(reduce(
+            &mut state,
+            DockerIntent::ListChanged {
+                engine: podman().address().clone(),
+                resource: ResourceKind::Images,
+            },
+        ));
+
+        assert_eq!(
+            effects,
+            vec![DockerEffect::LoadList {
+                info: podman(),
+                resource: ResourceKind::Images,
+                containers: podman_containers,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_reloaded_list_of_the_engine_not_shown_updates_that_engine_only() {
+        let mut state = loaded_state();
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: podman().address().clone(),
+                lists: lists(EngineKind::Podman),
+            },
+        );
+        let docker_images = state
+            .engine(docker().address())
+            .expect("docker engine")
+            .images()
+            .items()
+            .len();
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListLoaded {
+                engine: podman().address().clone(),
+                list: LoadedList::Images(Ok(Vec::new())),
+            },
+        );
+
+        let engine = state.engine(podman().address()).expect("podman engine");
+        assert!(engine.images().items().is_empty());
+        assert_eq!(
+            state
+                .engine(docker().address())
+                .expect("docker engine")
+                .images()
+                .items()
+                .len(),
+            docker_images
+        );
+    }
+
+    #[test]
+    fn a_closed_engine_keeps_its_lists_live() {
+        let mut state = loaded_state();
+        let _ = press_root(&mut state, &podman());
+
+        let refreshed = effects(reduce(&mut state, DockerIntent::Refresh));
+        let changed = effects(reduce(
+            &mut state,
+            DockerIntent::ListChanged {
+                engine: podman().address().clone(),
+                resource: ResourceKind::Containers,
+            },
+        ));
+
+        assert_eq!(
+            refreshed,
+            vec![
+                DockerEffect::LoadLists(docker()),
+                DockerEffect::LoadLists(podman())
+            ]
+        );
+        assert_eq!(
+            changed,
+            vec![DockerEffect::LoadList {
+                info: podman(),
+                resource: ResourceKind::Containers,
+                containers: Vec::new(),
+            }]
         );
     }
 

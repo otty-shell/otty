@@ -167,3 +167,54 @@ commits: `docker-view` (`b48bd2f`) 84.36% → ticket 11 84.82% → ticket 12
   Containers create button in `action_model::can_create` and
   `form_flow::open`; add Run to `image_actions`.
 
+## Comments
+
+### 2026-11-03: one row per tag; removal rules from real engines
+
+Owner decision: the Images table has one row per `repository:tag` with the tag
+in its own column, and Remove takes away only that row's name. This replaces
+"An image is removed by id; an image with several tags then needs Force" above,
+and "Force when a stopped container uses it" in What. The rules are in spec
+Decision 10 (rows) and Decision 11 ("Removing an image row").
+
+The old rule was wrong in both directions. With no containers, an image with
+several tags was refused and the dialog offered no way past it. With a
+container, Force on by default took every tag while the dialog named one.
+
+Real `DELETE /v1.53/images/{name}` calls on Docker 29.9.1 (containerd image
+store) and Podman 5.8.8, on throwaway images:
+
+- Not the last name: only that name goes, whatever containers do, on both.
+- Last name and no container: the image goes, on both.
+- Last tag, a stopped or running container: refused on both. With Force, Docker
+  takes the tag away and keeps the image and the container; Podman deletes the
+  stopped container too, and refuses when a container runs.
+- Podman, one stopped and one running container, Force: the stopped container
+  is deleted and then the call fails. So Podman gets no switch while a container
+  runs.
+- No tag, by id: stopped is refused and Force deletes the image (Docker keeps the
+  container, and it can still start; Podman deletes it); running is refused even
+  with Force.
+- By id with several names: refused on both; Force takes all of them. OTTY no
+  longer does this.
+
+The Force switch kept the default this ticket set, on, until the owner changed
+it for Podman (see "Force starts off on Podman" below).
+
+`Prune dangling` still counts images with no name that no container uses. The
+engines' `dangling=true` list filter leaves out an image known only by its digest
+(checked with the list call, no prune was run), so such a row is not counted.
+
+### 2026-11-03: Force starts off on Podman
+
+Owner decision, recorded in spec Decision 11. The switch in the image remove
+dialog starts off on Podman and stays on on Docker. Force on Podman also deletes
+the stopped containers that use the image, so one confirm would delete them.
+Docker's Force deletes no container.
+
+With the switch left off on Podman, the dialog says the engine refuses unless
+Force is on, a confirm sends the call without Force, and the refusal reaches the
+notice. Turning it on makes the dialog say the containers go too. The dialog
+texts did not change. Nothing else changed: the "Stop it first" switch of a
+container's remove dialog still starts on, because it only removes the container
+the dialog names.

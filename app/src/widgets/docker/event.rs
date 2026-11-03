@@ -31,8 +31,11 @@ pub(crate) enum DockerIntent {
         engine: EngineAddress,
         lists: LoadedLists,
     },
-    /// A tree row was pressed: show this list of this engine.
+    /// A list row of the tree was pressed: show this list of this engine.
     Open(Place),
+    /// An engine root of the tree was pressed: open or close it. What the
+    /// main area shows does not change.
+    ToggleEngine(EngineAddress),
     /// The Compose link of the row at this position of the shown (filtered)
     /// containers table was pressed: add the `compose` tag of that project.
     OpenComposeProject(usize),
@@ -99,6 +102,8 @@ pub(crate) enum DockerIntent {
         engine: EngineAddress,
         resource: ResourceKind,
     },
+    /// This container of this engine was started or restarted.
+    ContainerStarted { engine: EngineAddress, id: String },
     /// The events stream of this engine broke and is open again; changes in
     /// between were missed.
     EngineReconnected(EngineAddress),
@@ -199,7 +204,9 @@ pub(crate) enum DockerEffect {
     /// Put this text on the clipboard.
     CopyToClipboard(String),
     /// Open a terminal tab named `title` running `program` with `args`
-    /// (`docker exec -it <id> sh`), then show Terminal mode.
+    /// (`docker --host <address> exec -it -- <id> sh`, or
+    /// `podman --url <address> exec -it -- <id> sh`), so the shell opens on
+    /// the chosen engine, then show Terminal mode.
     OpenShell {
         title: String,
         program: String,

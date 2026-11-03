@@ -8,6 +8,7 @@
 use iced::{Task, keyboard};
 
 use super::AppEvent;
+use super::tabs::close_active_tab;
 use crate::app::App;
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
 use crate::widgets::modes::{ModesEvent, ModesIntent};
@@ -32,10 +33,7 @@ pub(crate) fn handle(app: &App, shortcut: AppShortcut) -> Task<AppEvent> {
     match shortcut {
         AppShortcut::Settings => tabs_intent(TabsIntent::OpenSettingsTab),
         AppShortcut::NewTerminal => tabs_intent(TabsIntent::OpenTerminalTab),
-        AppShortcut::CloseSession => match app.widgets.tabs.active_tab_id() {
-            Some(tab_id) => tabs_intent(TabsIntent::CloseTab { tab_id }),
-            None => Task::none(),
-        },
+        AppShortcut::CloseSession => close_active_tab(app),
         // Split pane acts on the pane that has keyboard focus, so only the
         // terminal binding runs it (in the terminal workspace reducer). With
         // no terminal focused there is no pane to split.
@@ -276,6 +274,17 @@ mod tests {
     #[test]
     fn close_session_shortcut_without_tabs_does_nothing() {
         let (app, _) = App::new();
+
+        let events = collect_outputs(handle(&app, AppShortcut::CloseSession));
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn close_session_shortcut_outside_terminal_mode_keeps_the_hidden_tab() {
+        let mut app = first_start_app();
+        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
+        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
 
         let events = collect_outputs(handle(&app, AppShortcut::CloseSession));
 
