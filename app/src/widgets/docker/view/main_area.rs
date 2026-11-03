@@ -811,7 +811,7 @@ mod tests {
     }
 
     #[test]
-    fn typing_a_key_and_a_value_with_enter_gives_a_tag_and_fewer_rows() {
+    fn typing_a_key_and_a_value_with_tab_gives_a_tag_and_fewer_rows() {
         let mut state = loaded_state();
         let before = row_count(&state);
         let search = |state: &DockerState| {
@@ -820,7 +820,7 @@ mod tests {
 
         type_in_field(&mut state, "sta");
         assert_eq!(row_count(&state), 0, "plain text filters by name");
-        tap_in_field(&mut state, Named::Enter);
+        tap_in_field(&mut state, Named::Tab);
         assert_eq!(search(&state).input(), "status:");
         assert_eq!(
             row_count(&state),
@@ -829,7 +829,7 @@ mod tests {
         );
 
         type_in_field(&mut state, "run");
-        tap_in_field(&mut state, Named::Enter);
+        tap_in_field(&mut state, Named::Tab);
 
         let labels: Vec<String> =
             search(&state).tags().iter().map(Tag::label).collect();
@@ -840,6 +840,39 @@ mod tests {
         assert_eq!(search(&state).input(), "");
         assert_eq!(row_count(&state), 2);
         assert!(before > 2);
+    }
+
+    #[test]
+    fn enter_on_a_typed_key_and_text_adds_that_text_as_a_tag() {
+        let mut state = loaded_state();
+        let before = row_count(&state);
+
+        type_in_field(&mut state, "status:ru");
+        tap_in_field(&mut state, Named::Enter);
+
+        let search = state.table_search(ResourceKind::Containers);
+        let labels: Vec<String> =
+            search.tags().iter().map(Tag::label).collect();
+        assert_eq!(labels, vec!["status:ru"]);
+        assert_eq!(search.input(), "");
+        assert_eq!(row_count(&state), 2, "only the running containers");
+        assert!(before > 2);
+    }
+
+    #[test]
+    fn enter_on_plain_text_filters_by_name_keeps_the_text_and_closes_the_list()
+    {
+        let mut state = loaded_state();
+        let before = row_count(&state);
+
+        type_in_field(&mut state, "otty");
+        tap_in_field(&mut state, Named::Enter);
+
+        let search = state.table_search(ResourceKind::Containers);
+        assert_eq!(search.input(), "otty");
+        assert!(search.tags().is_empty());
+        assert!(!search.is_open());
+        assert_eq!(row_count(&state), before, "every fixture name has otty");
     }
 
     #[test]
@@ -886,6 +919,8 @@ mod tests {
     fn a_row_press_after_filtering_hits_the_row_that_is_shown() {
         let mut state = loaded_state();
         type_in_field(&mut state, "status:ex");
+        // The first row is the typed text; the second is the first value.
+        tap_in_field(&mut state, Named::ArrowDown);
         tap_in_field(&mut state, Named::ArrowDown);
         tap_in_field(&mut state, Named::Enter);
         tap_in_field(&mut state, Named::Escape);

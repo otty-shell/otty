@@ -384,6 +384,7 @@ mod tests {
         assert_eq!(
             names,
             vec![
+                "otty-fx", // the typed text comes first
                 "otty-fx-running",
                 "otty-fx-web-1",
                 "otty-fx-paused",

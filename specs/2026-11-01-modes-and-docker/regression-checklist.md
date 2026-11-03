@@ -169,17 +169,29 @@ Setup before the first walk:
 Use the search field above a Docker table, with a few containers (names,
 statuses) in the list.
 
-25. Click the field, type `sta` and press Enter. Then type `r`.
-    Expected: the field shows `status:` after Enter, with the cursor after the
-    colon and the values listed; the next letter gives `status:r`, not
-    `rstatus:`. Repeat with Tab, and with a click on the `status` suggestion
-    instead of Enter. The field keeps focus after the click.
-26. Type `status:`, pick `Running` with the arrows and Enter, then repeat with a
-    click on a value.
-    Expected: a `status:Running` tag appears and the field is empty and still
-    focused. Type a name such as `web`, press Enter, then type `x`.
-    Expected: the name fills the field with the cursor at its end (`...x`
-    after the name) and the list closes.
+25. Click the field, type `sta`.
+    Expected: the first row is `sta` itself, drawn muted (not a real
+    suggestion), then the matching keys, then the matching names. Press Tab,
+    then type `r`.
+    Expected: Tab completes to the first real suggestion, so the field shows
+    `status:` with the cursor after the colon and the values listed; the next
+    letter gives `status:r`, not `rstatus:`. Repeat with ↓ then Enter, and with
+    a click on the `status` suggestion. The field keeps focus after the click.
+    With an empty field, or with only `status:` typed, there is no muted row
+    and the first real suggestion is highlighted.
+26. Type `status:ru`.
+    Expected: the first row is `status:ru` itself, then the matching values.
+    Press Enter.
+    Expected: a `status:ru` tag appears, the field is empty and still focused,
+    and the table keeps every row whose status contains `ru`. Then type
+    `status:ru` and press Tab, or press ↓ then Enter, or click a value.
+    Expected: a `status:Running` tag appears. Type a name such as `web` and
+    press Enter.
+    Expected: the text `web` stays in the field, the table is filtered by
+    name and the list closes. Type `redis:7` or `foo:bar` and press Enter.
+    Expected: the same, as a name filter. Type `web`, press Tab, then type `x`.
+    Expected: Tab completes to the first real name; the cursor is after it
+    (`...x` after the name).
 27. Type two letters, press Left, type a third letter.
     Expected: the letter lands between the two; the cursor does not jump to
     the end. Up and Down do not move the cursor either.
@@ -201,7 +213,8 @@ statuses) in the list.
 33. With a list of more than eight suggestions, press Down past the eighth,
     then Tab, then Esc, then use the mouse wheel on the list.
     Expected: the list scrolls to keep the highlighted row in view; Tab
-    applies the highlighted row; Esc closes the list; the wheel scrolls it
+    applies the highlighted real row (Tab on the muted typed-text row applies
+    the first real row below it); Esc closes the list; the wheel scrolls it
     without changing the highlighted row.
 
 ## Both themes

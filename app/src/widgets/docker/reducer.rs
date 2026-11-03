@@ -2395,7 +2395,7 @@ mod tests {
         open(&mut state, ResourceKind::Volumes);
 
         type_text(&mut state, "dr");
-        search_does(&mut state, TagSearchAction::Apply);
+        search_does(&mut state, TagSearchAction::Complete);
 
         assert_eq!(input_of(&state, ResourceKind::Volumes), "driver:");
         assert_eq!(input_of(&state, ResourceKind::Containers), "");

@@ -139,7 +139,7 @@ impl<'a, Message: Clone + 'a> From<TagSearchField<'a, Message>>
             (Named::ArrowUp, send(TagSearchAction::MoveUp)),
             (Named::ArrowDown, send(TagSearchAction::MoveDown)),
             (Named::Enter, send(TagSearchAction::Apply)),
-            (Named::Tab, send(TagSearchAction::Apply)),
+            (Named::Tab, send(TagSearchAction::Complete)),
         ];
         if is_open {
             bindings.push((Named::Escape, send(TagSearchAction::Close)));
@@ -224,15 +224,17 @@ fn list_view<'a, Message: Clone + 'a>(
 
 /// Builds one suggestion row: the matched part in `text-strong` bold, as in
 /// the command palette. A key is in the accent color and ends with `:`, so it
-/// reads differently from a name or a value.
+/// reads differently from a name or a value. The typed text is muted.
 fn row_view<'a, Message: Clone + 'a>(
     suggestion: &Suggestion,
     on_press: Option<Message>,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
     let is_key = suggestion.kind() == SuggestionKind::Key;
+    let is_typed = suggestion.kind() == SuggestionKind::Typed;
     let strong = palette.text_strong();
     let accent = palette.accent();
+    let muted = palette.text_muted();
 
     let piece = |content: &str| {
         text(content.to_owned())
@@ -249,6 +251,10 @@ fn row_view<'a, Message: Clone + 'a>(
             part.font(fonts::MONO_BOLD).color(strong)
         } else if is_key {
             part.color(accent)
+        } else if is_typed {
+            // The text as typed has no match marks: muted, so it reads as
+            // "search for exactly this" and not as a suggestion.
+            part.color(muted)
         } else {
             part
         });
@@ -470,6 +476,7 @@ mod tests {
 
         flow.click_input();
         flow.type_text("sta");
+        flow.tap(Named::ArrowDown);
         flow.tap(Named::Enter);
         flow.type_text("r");
 
@@ -506,10 +513,35 @@ mod tests {
 
         flow.click_input();
         flow.type_text("web");
-        flow.tap(Named::Enter);
+        flow.tap(Named::Tab);
         flow.type_text("x");
 
         assert_eq!(flow.input(), "web-1x");
+    }
+
+    #[test]
+    fn enter_on_the_typed_text_keeps_it_and_typing_goes_on_after_it() {
+        let mut flow = Flow::new();
+
+        flow.click_input();
+        flow.type_text("web");
+        flow.tap(Named::Enter);
+        flow.type_text("x");
+
+        assert_eq!(flow.input(), "webx");
+        assert!(flow.search.tags().is_empty());
+    }
+
+    #[test]
+    fn the_typed_text_is_listed_first_and_drawn_muted() {
+        let search = typed("status:ru");
+        let schema = schema();
+        let mut ui = simulator(view(&search, &schema));
+
+        let typed_row = ui.find("status:ru").expect("typed row").bounds();
+        let value = ui.find("nning").map(|found| found.bounds());
+
+        assert!(value.is_ok_and(|value| typed_row.y < value.y));
     }
 
     #[test]
@@ -588,7 +620,7 @@ mod tests {
             (Named::ArrowDown, TagSearchAction::MoveDown),
             (Named::ArrowUp, TagSearchAction::MoveUp),
             (Named::Enter, TagSearchAction::Apply),
-            (Named::Tab, TagSearchAction::Apply),
+            (Named::Tab, TagSearchAction::Complete),
             (Named::Escape, TagSearchAction::Close),
         ];
 
@@ -602,11 +634,14 @@ mod tests {
     }
 
     #[test]
-    fn enter_and_tab_with_no_suggestion_still_send_apply() {
-        for key in [Named::Enter, Named::Tab] {
+    fn enter_and_tab_with_a_closed_list_still_send_their_actions() {
+        for (key, action) in [
+            (Named::Enter, TagSearchAction::Apply),
+            (Named::Tab, TagSearchAction::Complete),
+        ] {
             assert_eq!(
                 tap_in_input(&closed("status:x"), key),
-                vec![Message::Search(TagSearchAction::Apply)],
+                vec![Message::Search(action)],
                 "key {key:?}"
             );
         }
