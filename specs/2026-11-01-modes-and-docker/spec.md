@@ -362,11 +362,16 @@ none of those are in scope (see Out of Scope).
       there are no tags. The compose chip next to the title goes away.
     - **Plain text** in the field filters by name, as today.
     - **Tags are `key:value`.** The key is a column of the table on screen,
-      with a stable English name in any interface language (`name`, `status`,
-      `image`, `compose`, `ports`, `age`, `repository`, `id`, `size`,
-      `used-by`, `driver`, `scope`, `subnet`, `containers`). Text before the
-      first `:` counts as a key only if it is one of these; otherwise the
-      whole text is a name filter (so `redis:7` stays plain text).
+      written as its header in the interface language: you write what you see
+      (owner request, 2026-11-03). `Имя:web-1` in Russian, `Name:web-1` in
+      English. Case does not matter; a header with a `:` gives the part before
+      it (`Repository:Tag` gives `Repository`); a wide `：` counts as `:`. Each
+      key also has a stable internal name (`name`, `status`, `image`,
+      `compose`, `ports`, `age`, `repository`, `id`, `size`, `used-by`,
+      `driver`, `scope`, `subnet`, `containers`) that is never typed or shown.
+      Text before the first colon counts as a key only if it is the shown name
+      of a column of this table; otherwise the whole text is a name filter (so
+      `redis:7` stays plain text).
     - **Matching:** case-insensitive substring on the text shown in the cell;
       a cell with several values (ports) matches if any does. Different keys
       must all match; several tags with one key match if any does.
@@ -383,7 +388,7 @@ none of those are in scope (see Out of Scope).
       a name fills the field and filters; a key puts `key:` in the field and
       shows its values; a value adds the tag and clears the field. **Tab
       completes to the first real suggestion**, like a shell, so `sta` Tab,
-      `run` Tab gives the tag `status:Running`. Backspace in an empty field
+      `run` Tab gives the tag `Status:Running`. Backspace in an empty field
       removes the last tag.
     - **Removing:** every tag has a clear cross, and the tags row ends with a
       "Clear all" button that removes all tags of this table.
@@ -483,6 +488,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 46 | Fuzzy suggestions with `frizbee` (dependency approved by the owner, 2026-11-02) | C | Sonnet | 45 |
 | 47 | Bug: after a suggestion is applied the cursor goes to the end of the field | C | Sonnet | 46 |
 | 48 | Bug: the text you typed is the first suggestion (Decision 21) | C | Sonnet | 47 |
+| 49 | Search keys are written in the interface language (Decision 21) | C | Opus | 48 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -538,3 +544,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 46 — Fuzzy suggestions with `frizbee` · Sonnet
 - [x] 47 — Bug: search cursor after a suggestion · Sonnet
 - [x] 48 — Bug: typed text is the first suggestion · Sonnet
+- [ ] 49 — Search keys in the interface language · Opus
