@@ -60,3 +60,7 @@ tabs at the exact width stay tabs and 8 px less turns into a select).
 Coverage (lines, `cargo llvm-cov --workspace --all-features`): 86.82%
 (65614 lines, 8648 missed) on `9c6531e` -> 86.85% (65774 lines, 8648
 missed).
+
+## Comments
+
+A row press now reveals the right panel through `DockerEffect::RevealInspector` and `SidebarIntent::RevealRight`: only a press that selected a row does it, it leaves focus mode, and the panel comes back at the width it had before.

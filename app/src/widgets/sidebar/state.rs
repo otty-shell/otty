@@ -205,6 +205,26 @@ impl SidebarState {
         true
     }
 
+    /// Make the right panel visible: leave focus mode and bring a closed
+    /// panel back at the width it had (a left panel too wide for it shrinks,
+    /// so the main area keeps its minimum share). A panel already shown stays
+    /// as it is. Returns whether the main area changed size.
+    pub(super) fn reveal_right(&mut self) -> bool {
+        if self.is_right_open() {
+            return false;
+        }
+
+        self.focus_mode = false;
+        self.focus_note = None;
+        if !self.right.is_open() {
+            self.right.reopen();
+            self.left.shrink_to(max_ratio_beside(self.right_ratio()));
+        }
+
+        self.sync_panes();
+        true
+    }
+
     /// Remember the cursor position over the workspace.
     pub(super) fn update_cursor(&mut self, position: Point) {
         self.cursor = position;

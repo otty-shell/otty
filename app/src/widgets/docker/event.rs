@@ -246,6 +246,9 @@ pub(crate) enum DockerEffect {
     WaitForTypingPause(PathBuf),
     /// Give the disk time to answer, then send `FolderAnswerLate`.
     WaitForLateAnswer(PathBuf),
+    /// A row press selected a row: make the right panel visible, so the
+    /// inspector shows it.
+    RevealInspector,
 }
 
 /// Docker event stream routed through the app update loop.

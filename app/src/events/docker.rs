@@ -23,7 +23,7 @@ use crate::widgets::docker::errors::DockerError;
 use crate::widgets::docker::inspector::InspectTarget;
 use crate::widgets::docker::types::{LoadedList, LoadedLists, ResourceKind};
 use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
-use crate::widgets::sidebar::SidebarIntent;
+use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::types::TabMachine;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
@@ -39,23 +39,7 @@ const FOLDER_ANSWER_LIMIT: Duration = Duration::from_secs(3);
 pub(crate) fn handle(app: &mut App, event: DockerEvent) -> Task<AppEvent> {
     match event {
         DockerEvent::Intent(intent) => {
-            // A press on a table row shows it in the inspector, so a closed
-            // right panel opens. The row "⋯" button and the right click
-            // send other intents and leave the panel as it is.
-            let is_row_press = matches!(intent, DockerIntent::SelectRow(_));
-            let docker_task =
-                app.widgets.docker.reduce(intent).map(AppEvent::Docker);
-            if !is_row_press || app.widgets.sidebar.vm().is_right_open {
-                return docker_task;
-            }
-
-            let open_panel = app
-                .widgets
-                .sidebar
-                .reduce(SidebarIntent::ToggleRight)
-                .map(AppEvent::Sidebar);
-
-            Task::batch([docker_task, open_panel])
+            app.widgets.docker.reduce(intent).map(AppEvent::Docker)
         },
         DockerEvent::Effect(DockerEffect::StartPull { engine, image, tag }) => {
             let (task, handle) =
@@ -200,6 +184,9 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
             FOLDER_ANSWER_LIMIT,
             DockerIntent::FolderAnswerLate(path),
         ),
+        DockerEffect::RevealInspector => Task::done(AppEvent::Sidebar(
+            SidebarEvent::Intent(SidebarIntent::RevealRight),
+        )),
         DockerEffect::StartPull { .. }
         | DockerEffect::CancelPull
         | DockerEffect::OpenShell { .. } => Task::none(),
@@ -466,51 +453,180 @@ mod tests {
         app
     }
 
+    /// An app with the fixture lists of one engine loaded and the right panel
+    /// closed.
+    fn app_with_rows_and_closed_right_panel() -> App {
+        let mut app = app_with_closed_right_panel();
+        let resources = fixtures::resources(EngineKind::Docker);
+        let docker = &mut app.widgets.docker;
+
+        let _ = docker.reduce(DockerIntent::Enter);
+        let _ = docker.reduce(DockerIntent::DiscoveryFinished(
+            fixtures::discovery(&[EngineKind::Docker]),
+        ));
+        let _ = docker.reduce(DockerIntent::ListsLoaded {
+            engine: fixtures::engine(EngineKind::Docker).address().clone(),
+            lists: LoadedLists {
+                containers: Ok(resources.containers().to_vec()),
+                images: Ok(resources.images().to_vec()),
+                volumes: Ok(resources.volumes().to_vec()),
+                networks: Ok(resources.networks().to_vec()),
+            },
+        });
+
+        app
+    }
+
+    /// Route `event` and the events its tasks produce, as the iced runtime
+    /// does. Only for events that end in `Task::done`: see `collect_outputs`.
+    fn route_to_the_end(app: &mut App, event: AppEvent) {
+        for next in collect_outputs(crate::events::handle(app, event)) {
+            route_to_the_end(app, next);
+        }
+    }
+
+    /// Press the row at `row` of the shown table, to the end of what follows.
+    fn press_row(app: &mut App, row: usize) {
+        route_to_the_end(
+            app,
+            AppEvent::Docker(DockerEvent::Intent(DockerIntent::SelectRow(row))),
+        );
+    }
+
     #[test]
     fn pressing_a_row_opens_the_closed_right_panel() {
-        let mut app = app_with_closed_right_panel();
+        let mut app = app_with_rows_and_closed_right_panel();
 
-        let _ =
-            handle(&mut app, DockerEvent::Intent(DockerIntent::SelectRow(0)));
+        press_row(&mut app, 0);
 
         assert!(app.widgets.sidebar.vm().is_right_open);
     }
 
     #[test]
     fn pressing_a_row_with_the_right_panel_open_leaves_it_open() {
-        let mut app = app_with_closed_right_panel();
+        let mut app = app_with_rows_and_closed_right_panel();
         let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
         assert!(app.widgets.sidebar.vm().is_right_open);
 
-        for _ in 0..2 {
-            let _ = handle(
-                &mut app,
-                DockerEvent::Intent(DockerIntent::SelectRow(0)),
-            );
-        }
+        press_row(&mut app, 0);
+        press_row(&mut app, 0);
 
         assert!(app.widgets.sidebar.vm().is_right_open);
     }
 
     #[test]
+    fn pressing_the_selected_row_again_opens_the_closed_right_panel() {
+        let mut app = app_with_rows_and_closed_right_panel();
+        press_row(&mut app, 0);
+        let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
+        assert!(!app.widgets.sidebar.vm().is_right_open);
+
+        press_row(&mut app, 0);
+
+        assert!(app.widgets.sidebar.vm().is_right_open);
+    }
+
+    #[test]
+    fn a_press_that_selects_no_row_leaves_the_right_panel_closed() {
+        let mut no_rows = app_with_closed_right_panel();
+        let mut past_the_last_row = app_with_rows_and_closed_right_panel();
+
+        press_row(&mut no_rows, 0);
+        press_row(&mut past_the_last_row, usize::MAX);
+
+        assert!(!no_rows.widgets.sidebar.vm().is_right_open);
+        assert!(!past_the_last_row.widgets.sidebar.vm().is_right_open);
+    }
+
+    #[test]
+    fn pressing_a_row_leaves_focus_mode_with_the_right_panel_visible() {
+        let mut app = app_with_rows_and_closed_right_panel();
+        let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleFocusMode);
+        assert!(app.widgets.sidebar.vm().is_focus_mode);
+
+        press_row(&mut app, 0);
+
+        let sidebar = app.widgets.sidebar.vm();
+        assert!(!sidebar.is_focus_mode);
+        assert!(sidebar.is_right_open);
+        assert!(app.widgets.sidebar.right_ratio() > 0.0);
+    }
+
+    #[test]
+    fn a_row_press_changes_the_sidebar_only_through_the_effect() {
+        let mut app = app_with_rows_and_closed_right_panel();
+
+        let sent = collect_outputs(handle(
+            &mut app,
+            DockerEvent::Intent(DockerIntent::SelectRow(0)),
+        ));
+
+        assert!(!app.widgets.sidebar.vm().is_right_open);
+        assert!(matches!(
+            sent.as_slice(),
+            [AppEvent::Docker(DockerEvent::Effect(
+                DockerEffect::RevealInspector
+            ))]
+        ));
+    }
+
+    #[test]
+    fn the_reveal_effect_sends_the_sidebar_intent() {
+        let (mut app, _) = App::new();
+
+        let sent = collect_outputs(handle(
+            &mut app,
+            DockerEvent::Effect(DockerEffect::RevealInspector),
+        ));
+
+        assert!(matches!(
+            sent.as_slice(),
+            [AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::RevealRight
+            ))]
+        ));
+    }
+
+    /// The reduced intents are not routed on: a port link would open a real
+    /// browser page.
+    #[test]
     fn the_row_menu_button_the_right_click_and_a_port_link_leave_the_panel_closed()
      {
-        let mut app = app_with_closed_right_panel();
+        let mut app = app_with_rows_and_closed_right_panel();
+        let rows = fixtures::resources(EngineKind::Docker).containers().len();
+        let mut sent = Vec::new();
 
-        for intent in [
-            DockerIntent::OpenPortLink { row: 0, link: 0 },
-            DockerIntent::RowMenuPressed {
-                index: 0,
-                position: iced::Point::ORIGIN,
-            },
-            DockerIntent::OpenRowMenu {
-                index: 0,
-                position: iced::Point::ORIGIN,
-            },
-        ] {
-            let _ = handle(&mut app, DockerEvent::Intent(intent));
-            assert!(!app.widgets.sidebar.vm().is_right_open);
+        for row in 0..rows {
+            for intent in [
+                DockerIntent::OpenPortLink { row, link: 0 },
+                DockerIntent::RowMenuPressed {
+                    index: row,
+                    position: iced::Point::ORIGIN,
+                },
+                DockerIntent::OpenRowMenu {
+                    index: row,
+                    position: iced::Point::ORIGIN,
+                },
+            ] {
+                sent.extend(collect_outputs(handle(
+                    &mut app,
+                    DockerEvent::Intent(intent),
+                )));
+                assert!(!app.widgets.sidebar.vm().is_right_open);
+            }
         }
+
+        // The rows were real: the port links found their pages.
+        assert!(sent.iter().any(|event| matches!(
+            event,
+            AppEvent::Docker(DockerEvent::Effect(DockerEffect::OpenUrl(_)))
+        )));
+        assert!(!sent.iter().any(|event| matches!(
+            event,
+            AppEvent::Docker(DockerEvent::Effect(
+                DockerEffect::RevealInspector
+            )) | AppEvent::Sidebar(_)
+        )));
     }
 
     #[test]

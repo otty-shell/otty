@@ -28,6 +28,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 E::WorkspaceCursorMoved { .. } => Allow,
                 // Frames come on their own while the focus mode note fades.
                 E::FocusNoteFrame(_) => Allow,
+                // Follows a row press that already passed this guard; a menu
+                // opened since then stays and the panel still opens.
+                E::RevealRight => Allow,
                 _ => Dismiss,
             }
         },
@@ -204,7 +207,9 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             use crate::widgets::sidebar::SidebarIntent as E;
             !matches!(
                 event,
-                E::WorkspaceCursorMoved { .. } | E::FocusNoteFrame(_)
+                E::WorkspaceCursorMoved { .. }
+                    | E::FocusNoteFrame(_)
+                    | E::RevealRight
             )
         },
         AppEvent::TerminalWorkspace(
@@ -511,6 +516,9 @@ mod tests {
             AppEvent::Docker(DockerEvent::Effect(
                 DockerEffect::WaitForLateAnswer(PathBuf::from("/srv/site")),
             )),
+            AppEvent::Docker(DockerEvent::Effect(
+                DockerEffect::RevealInspector,
+            )),
         ];
         let address = otty_docker::EngineAddress::Tcp(String::from("h:1"));
         let log_target = LogTarget::new(
@@ -638,6 +646,24 @@ mod tests {
         ));
 
         assert!(!inline_edit_guard(&event));
+    }
+
+    #[test]
+    fn revealing_the_right_panel_passes_open_menus_and_inline_edits() {
+        let event =
+            AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::RevealRight));
+
+        assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
+        assert!(!inline_edit_guard(&event));
+    }
+
+    #[test]
+    fn the_right_panel_button_still_closes_menus_and_inline_edits() {
+        let event =
+            AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::ToggleRight));
+
+        assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
+        assert!(inline_edit_guard(&event));
     }
 
     #[test]

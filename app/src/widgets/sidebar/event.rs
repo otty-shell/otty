@@ -16,6 +16,9 @@ pub(crate) enum SidebarIntent {
     /// Make the Launches section visible: leave focus mode, show the left
     /// panel and open the section. Parts already shown stay as they are.
     RevealLaunches,
+    /// Make the right panel visible at the width it had: leave focus mode and
+    /// show the panel. A panel already shown stays as it is.
+    RevealRight,
     /// Open a header menu at the cursor, closing the other one.
     HeaderMenuOpen(HeaderMenu),
     /// Close the open header menu.

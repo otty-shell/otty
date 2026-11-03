@@ -69,8 +69,11 @@ fn reduce_intent(
             Task::none()
         },
         DockerIntent::SelectRow(index) => {
-            let _ = state.select_shown_row(index);
-            Task::none()
+            if state.select_shown_row(index) {
+                effect(DockerEffect::RevealInspector)
+            } else {
+                Task::none()
+            }
         },
         DockerIntent::TagSearch(action) => {
             state.perform_search(action);
@@ -714,6 +717,77 @@ mod tests {
         };
 
         state.shown_position(index)
+    }
+
+    #[test]
+    fn selecting_a_row_asks_to_reveal_the_inspector() {
+        let mut state = loaded_state();
+
+        let sent = effects(reduce(&mut state, DockerIntent::SelectRow(1)));
+
+        assert_eq!(sent, vec![DockerEffect::RevealInspector]);
+    }
+
+    #[test]
+    fn pressing_the_selected_row_again_still_asks_to_reveal_the_inspector() {
+        let mut state = loaded_state();
+        let _ = reduce(&mut state, DockerIntent::SelectRow(1));
+
+        let sent = effects(reduce(&mut state, DockerIntent::SelectRow(1)));
+
+        assert_eq!(sent, vec![DockerEffect::RevealInspector]);
+    }
+
+    #[test]
+    fn a_press_that_selects_no_row_asks_for_nothing() {
+        let mut no_lists = DockerState::default();
+        let mut past_the_last_row = loaded_state();
+        let before = selected_container(&past_the_last_row).map(str::to_string);
+
+        let without_a_table =
+            effects(reduce(&mut no_lists, DockerIntent::SelectRow(0)));
+        let without_that_row = effects(reduce(
+            &mut past_the_last_row,
+            DockerIntent::SelectRow(usize::MAX),
+        ));
+
+        assert!(without_a_table.is_empty());
+        assert!(without_that_row.is_empty());
+        assert_eq!(
+            selected_container(&past_the_last_row).map(str::to_string),
+            before
+        );
+    }
+
+    #[test]
+    fn the_row_menu_button_the_right_click_and_a_port_link_do_not_reveal_the_inspector()
+     {
+        let mut state = loaded_state();
+        let row = row_of(&state, "otty-fx-running");
+        let position = iced::Point::ORIGIN;
+
+        let button = effects(reduce(
+            &mut state,
+            DockerIntent::RowMenuPressed {
+                index: row,
+                position,
+            },
+        ));
+        let right_click = effects(reduce(
+            &mut state,
+            DockerIntent::OpenRowMenu {
+                index: row,
+                position,
+            },
+        ));
+        let port_link = effects(reduce(
+            &mut state,
+            DockerIntent::OpenPortLink { row, link: 0 },
+        ));
+
+        assert!(button.is_empty());
+        assert!(right_click.is_empty());
+        assert!(matches!(port_link.as_slice(), [DockerEffect::OpenUrl(_)]));
     }
 
     #[test]
@@ -1785,11 +1859,13 @@ mod tests {
         let same =
             effects(reduce(&mut state, DockerIntent::SelectRow(position)));
 
-        assert_eq!(
-            other,
-            vec![inspect_of(ResourceKind::Containers, &container_id(1))]
+        assert!(
+            other.contains(&inspect_of(
+                ResourceKind::Containers,
+                &container_id(1)
+            ))
         );
-        assert!(same.is_empty());
+        assert_eq!(same, vec![DockerEffect::RevealInspector]);
     }
 
     #[test]
@@ -1801,7 +1877,7 @@ mod tests {
             effects(reduce(&mut state, DockerIntent::SelectRow(position)));
         let opened = select_tab(&mut state, InspectorTab::Inspect);
 
-        assert!(on_overview.is_empty());
+        assert_eq!(on_overview, vec![DockerEffect::RevealInspector]);
         assert_eq!(
             opened,
             vec![inspect_of(ResourceKind::Containers, &container_id(1))]

@@ -137,6 +137,7 @@ mod tests {
     use crate::i18n;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::docker::run_form::RunEdit;
+    use crate::widgets::docker::types::LoadedLists;
     use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::types::Mode;
@@ -407,5 +408,113 @@ mod tests {
                 DockerEffect::CheckFolder(path)
             ))] if path.as_path() == Path::new(FOLDER)
         ));
+    }
+
+    /// Run `event` and the events its tasks produce through `update`, as the
+    /// iced runtime does. Only for events that end in `Task::done`.
+    fn update_to_the_end(app: &mut App, event: AppEvent) {
+        for next in collect_outputs(update(app, event)) {
+            update_to_the_end(app, next);
+        }
+    }
+
+    /// The fixture lists of one engine are loaded and the right panel is
+    /// closed.
+    fn load_rows_and_close_right_panel(app: &mut App) {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let docker = &mut app.widgets.docker;
+
+        let _ = docker.reduce(DockerIntent::Enter);
+        let _ = docker.reduce(DockerIntent::DiscoveryFinished(
+            fixtures::discovery(&[EngineKind::Docker]),
+        ));
+        let _ = docker.reduce(DockerIntent::ListsLoaded {
+            engine: fixtures::engine(EngineKind::Docker).address().clone(),
+            lists: LoadedLists {
+                containers: Ok(resources.containers().to_vec()),
+                images: Ok(resources.images().to_vec()),
+                volumes: Ok(resources.volumes().to_vec()),
+                networks: Ok(resources.networks().to_vec()),
+            },
+        });
+
+        if app.widgets.sidebar.vm().is_right_open {
+            let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
+        }
+    }
+
+    fn start_inline_edit(app: &mut App) {
+        let _ = update(
+            app,
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::HeaderCreateFolder,
+            )),
+        );
+        assert!(app.widgets.quick_launch.has_inline_edit());
+    }
+
+    #[test]
+    fn a_row_press_under_an_open_menu_only_closes_the_menu() {
+        let mut app = app_with_open_modes_menu();
+        load_rows_and_close_right_panel(&mut app);
+
+        update_to_the_end(&mut app, docker_intent(DockerIntent::SelectRow(1)));
+
+        assert!(!app.widgets.modes.is_menu_open());
+        assert!(!app.widgets.sidebar.vm().is_right_open);
+    }
+
+    #[test]
+    fn a_row_press_during_an_inline_edit_cancels_it_and_opens_the_right_panel()
+    {
+        let (mut app, _) = App::new();
+        load_rows_and_close_right_panel(&mut app);
+        start_inline_edit(&mut app);
+
+        update_to_the_end(&mut app, docker_intent(DockerIntent::SelectRow(1)));
+
+        assert!(!app.widgets.quick_launch.has_inline_edit());
+        assert!(app.widgets.sidebar.vm().is_right_open);
+    }
+
+    #[test]
+    fn a_menu_opened_right_after_a_row_press_stays_and_the_panel_still_opens() {
+        let (mut app, _) = App::new();
+        app.widgets.modes = ModesWidget::new();
+        load_rows_and_close_right_panel(&mut app);
+
+        let follow_ups = collect_outputs(update(
+            &mut app,
+            docker_intent(DockerIntent::SelectRow(1)),
+        ));
+        let _ = update(
+            &mut app,
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::ToggleMenu)),
+        );
+        for event in follow_ups {
+            update_to_the_end(&mut app, event);
+        }
+
+        assert!(app.widgets.modes.is_menu_open());
+        assert!(app.widgets.sidebar.vm().is_right_open);
+    }
+
+    #[test]
+    fn an_inline_edit_started_right_after_a_row_press_stays_and_the_panel_still_opens()
+     {
+        let (mut app, _) = App::new();
+        load_rows_and_close_right_panel(&mut app);
+
+        let follow_ups = collect_outputs(update(
+            &mut app,
+            docker_intent(DockerIntent::SelectRow(1)),
+        ));
+        start_inline_edit(&mut app);
+        for event in follow_ups {
+            update_to_the_end(&mut app, event);
+        }
+
+        assert!(app.widgets.quick_launch.has_inline_edit());
+        assert!(app.widgets.sidebar.vm().is_right_open);
     }
 }

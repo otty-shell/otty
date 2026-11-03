@@ -45,6 +45,13 @@ impl SidePanel {
         self.open = true;
     }
 
+    /// Open the panel at the width it had when it closed, where
+    /// [`SidePanel::open`] goes back to the minimum width. The caller makes
+    /// room for it by shrinking the other panel.
+    pub(super) fn reopen(&mut self) {
+        self.open = true;
+    }
+
     /// Narrow the panel to at most `max_ratio`, so a panel opening beside it
     /// fits. A panel already narrower keeps its width.
     pub(super) fn shrink_to(&mut self, max_ratio: f32) {
@@ -114,6 +121,28 @@ mod tests {
         assert_eq!(panel.width_ratio(), 0.0);
         panel.open();
 
+        assert_eq!(panel.width_ratio(), SIDE_PANEL_MIN_RATIO);
+    }
+
+    #[test]
+    fn wide_panel_reopens_at_its_width() {
+        let mut panel = SidePanel::new(true);
+        assert!(panel.drag_to(0.5, MAX_RATIO));
+
+        panel.close();
+        panel.reopen();
+
+        assert!(panel.is_open());
+        assert_eq!(panel.width_ratio(), 0.5);
+    }
+
+    #[test]
+    fn new_closed_panel_reopens_at_the_minimum_width() {
+        let mut panel = SidePanel::new(false);
+
+        panel.reopen();
+
+        assert!(panel.is_open());
         assert_eq!(panel.width_ratio(), SIDE_PANEL_MIN_RATIO);
     }
 
