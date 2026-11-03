@@ -32,6 +32,7 @@ pub struct UiPalette {
     surface_selected: Color,
     surface_error: Color,
     surface_danger: Color,
+    surface_danger_hover: Color,
     line: Color,
     text_strong: Color,
     text_body: Color,
@@ -112,6 +113,14 @@ impl UiPalette {
     /// [`Self::text_danger`].
     pub const fn surface_danger(&self) -> Color {
         self.surface_danger
+    }
+
+    /// `surface-danger-hover`: hovered or pressed danger button (Remove,
+    /// Delete). Plainly lighter than every surface a danger button sits on.
+    /// The icon and text on it are [`Self::status_error`] (idle) and
+    /// [`Self::text_danger`] (hovered).
+    pub const fn surface_danger_hover(&self) -> Color {
+        self.surface_danger_hover
     }
 
     /// `line`: 1px dividers between panes, blocks, table rows and under the
@@ -257,6 +266,7 @@ impl UiPalette {
             surface_selected: fade(self.surface_selected),
             surface_error: fade(self.surface_error),
             surface_danger: fade(self.surface_danger),
+            surface_danger_hover: fade(self.surface_danger_hover),
             line: fade(self.line),
             text_strong: fade(self.text_strong),
             text_body: fade(self.text_body),
@@ -295,6 +305,7 @@ impl UiPalette {
             surface_selected: color!(0x1f2940),
             surface_error: color!(0x1e1a24),
             surface_danger: color!(0x2a1e26),
+            surface_danger_hover: color!(0x4a2a33),
             line: color!(0x232530),
             text_strong: color!(0xeceff4),
             text_body: color!(0xc0c5ce),
@@ -343,6 +354,7 @@ impl UiPalette {
             surface_selected: color!(0xd6e4f5),
             surface_error: color!(0xfbedee),
             surface_danger: color!(0xfbe7e9),
+            surface_danger_hover: color!(0xf0bcc2),
             line: color!(0xd5d9e2),
             text_strong: color!(0x11141c),
             text_body: color!(0x2a2f3a),
@@ -393,7 +405,7 @@ mod tests {
     const NON_TEXT_MIN: f32 = 3.0;
 
     /// Hex values of `tokens.json` for OTTY Dark, aliases resolved.
-    const OTTY_DARK_HEX: [(&str, &str); 29] = [
+    const OTTY_DARK_HEX: [(&str, &str); 30] = [
         ("surface-chrome", "#0f1115"),
         ("surface-panel", "#111319"),
         ("surface-canvas", "#161822"),
@@ -404,6 +416,7 @@ mod tests {
         ("surface-selected", "#1f2940"),
         ("surface-error", "#1e1a24"),
         ("surface-danger", "#2a1e26"),
+        ("surface-danger-hover", "#4a2a33"),
         ("line", "#232530"),
         ("text-strong", "#eceff4"),
         ("text-body", "#c0c5ce"),
@@ -426,7 +439,7 @@ mod tests {
     ];
 
     /// Hex values of `tokens.json` for OTTY Light, aliases resolved.
-    const OTTY_LIGHT_HEX: [(&str, &str); 29] = [
+    const OTTY_LIGHT_HEX: [(&str, &str); 30] = [
         ("surface-chrome", "#e9ebf0"),
         ("surface-panel", "#eff1f5"),
         ("surface-canvas", "#fafbfc"),
@@ -437,6 +450,7 @@ mod tests {
         ("surface-selected", "#d6e4f5"),
         ("surface-error", "#fbedee"),
         ("surface-danger", "#fbe7e9"),
+        ("surface-danger-hover", "#f0bcc2"),
         ("line", "#d5d9e2"),
         ("text-strong", "#11141c"),
         ("text-body", "#2a2f3a"),
@@ -459,7 +473,7 @@ mod tests {
     ];
 
     /// Every color token of the palette, named as in `tokens.json`.
-    fn color_tokens(palette: &UiPalette) -> [(&'static str, Color); 29] {
+    fn color_tokens(palette: &UiPalette) -> [(&'static str, Color); 30] {
         [
             ("surface-chrome", palette.surface_chrome()),
             ("surface-panel", palette.surface_panel()),
@@ -471,6 +485,7 @@ mod tests {
             ("surface-selected", palette.surface_selected()),
             ("surface-error", palette.surface_error()),
             ("surface-danger", palette.surface_danger()),
+            ("surface-danger-hover", palette.surface_danger_hover()),
             ("line", palette.line()),
             ("text-strong", palette.text_strong()),
             ("text-body", palette.text_body()),
@@ -494,7 +509,7 @@ mod tests {
     }
 
     /// Every `surface-*` token of the palette.
-    fn surfaces(palette: &UiPalette) -> [(&'static str, Color); 10] {
+    fn surfaces(palette: &UiPalette) -> [(&'static str, Color); 11] {
         [
             ("surface-chrome", palette.surface_chrome()),
             ("surface-panel", palette.surface_panel()),
@@ -506,6 +521,7 @@ mod tests {
             ("surface-selected", palette.surface_selected()),
             ("surface-error", palette.surface_error()),
             ("surface-danger", palette.surface_danger()),
+            ("surface-danger-hover", palette.surface_danger_hover()),
         ]
     }
 

@@ -12,6 +12,7 @@ use iced::widget::{
 use iced::{Alignment, Color, Element, Font, Length, Padding, Point};
 
 use super::ellipsis_text::EllipsisText;
+use super::icon_hover::IconHover;
 use super::status_badge::{StatusBadge, StatusTone, TEXT_SIZE};
 use super::table_body::{MenuPress, RightPress, TableBody};
 use super::table_sideways::{SidewaysOffset, SidewaysScroll};
@@ -888,18 +889,15 @@ fn menu_button<'a, Message: 'a>(
     let idle = palette.text_muted();
     let hover = palette.text_strong();
 
-    let dots = svg(glyph::dots()).width(MENU_ICON).height(MENU_ICON).style(
-        move |_, status| svg::Style {
-            color: Some(match status {
-                svg::Status::Hovered => hover,
-                _ => idle,
-            }),
-        },
-    );
+    let pointer = IconHover::new();
+    let dots = svg(glyph::dots())
+        .width(MENU_ICON)
+        .height(MENU_ICON)
+        .style(pointer.icon_style(idle, hover));
     let button = container(dots).center(size::CONTROL_SM);
 
     tooltip(
-        button,
+        pointer.watch(button),
         icon_button::tooltip_hint(label.to_owned(), palette),
         tooltip::Position::Bottom,
     )
@@ -1052,7 +1050,23 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
+    use crate::components::icon_hover::check::assert_icon_lights_up;
     use crate::contrast::contrast_ratio;
+
+    #[test]
+    fn given_pointer_on_row_menu_button_corner_then_dots_are_lit_like_over_them()
+     {
+        let view = || menu_button("Actions", &UiPalette::otty_dark());
+
+        assert_icon_lights_up(
+            "table-row-menu",
+            view,
+            iced::Rectangle::new(
+                Point::ORIGIN,
+                iced::Size::new(size::CONTROL_SM, size::CONTROL_SM),
+            ),
+        );
+    }
 
     /// WCAG 2.1 AA minimum for normal text.
     const TEXT_MIN: f32 = 4.5;

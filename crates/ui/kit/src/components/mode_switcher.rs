@@ -3,6 +3,7 @@
 use iced::widget::{button, container, row, svg, tooltip};
 use iced::{Border, Color, Element, Length};
 
+use super::icon_hover::IconHover;
 use super::{glyph, icon_button};
 use crate::palette::UiPalette;
 use crate::{radius, size, spacing};
@@ -233,16 +234,11 @@ fn tab_view<'a, Message: Clone + 'a>(
 ) -> Element<'a, Message> {
     let idle = tab_icon_color(palette, look.tone);
     let hover = palette.text_strong();
-    let icon =
-        svg(icon)
-            .width(ICON_SIZE)
-            .height(ICON_SIZE)
-            .style(move |_, status| svg::Style {
-                color: Some(match status {
-                    svg::Status::Hovered => hover,
-                    _ => idle,
-                }),
-            });
+    let pointer = IconHover::new();
+    let icon = svg(icon)
+        .width(ICON_SIZE)
+        .height(ICON_SIZE)
+        .style(pointer.icon_style(idle, hover));
 
     let colors = palette.clone();
     let control = button(
@@ -258,7 +254,7 @@ fn tab_view<'a, Message: Clone + 'a>(
     .style(move |_, _| tab_button_style(&colors, look));
 
     tooltip(
-        control,
+        pointer.watch(control),
         icon_button::tooltip_hint(hint, palette),
         tooltip::Position::Bottom,
     )
@@ -302,6 +298,34 @@ mod tests {
     use iced_test::{Simulator, simulator};
 
     use super::*;
+    use crate::components::icon_hover::check::assert_icon_lights_up;
+
+    #[test]
+    fn given_pointer_on_tab_corner_then_icon_is_lit_like_over_the_icon() {
+        let view = || {
+            let look = TabLook {
+                tone: TabTone::Idle,
+                is_temporary: false,
+            };
+
+            tab_view(
+                glyph::plus(),
+                "Terminal".to_owned(),
+                look,
+                Some(()),
+                &UiPalette::otty_dark(),
+            )
+        };
+
+        assert_icon_lights_up(
+            "mode-tab",
+            view,
+            iced::Rectangle::new(
+                iced::Point::ORIGIN,
+                iced::Size::new(size::MODE_TAB_WIDTH, size::MODE_TAB_HEIGHT),
+            ),
+        );
+    }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {

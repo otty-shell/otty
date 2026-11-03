@@ -5,6 +5,7 @@ use iced::{Alignment, Border, Element, Length, Padding};
 
 use super::glyph;
 use super::icon_button::tooltip_hint;
+use super::icon_hover::IconHover;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing};
 
@@ -142,15 +143,11 @@ fn dismiss_button<'a, Message: Clone + 'a>(
     let hover = palette.text_strong();
     let hover_background = palette.surface_hover();
 
+    let pointer = IconHover::new();
     let cross = svg(glyph::cross())
         .width(CROSS_SIZE)
         .height(CROSS_SIZE)
-        .style(move |_, status| svg::Style {
-            color: Some(match status {
-                svg::Status::Hovered => hover,
-                _ => idle,
-            }),
-        });
+        .style(pointer.icon_style(idle, hover));
 
     let control = button(container(cross).center(Length::Fill))
         .width(DISMISS_SIZE)
@@ -174,7 +171,7 @@ fn dismiss_button<'a, Message: Clone + 'a>(
         });
 
     tooltip(
-        control,
+        pointer.watch(control),
         tooltip_hint(label, palette),
         tooltip::Position::Bottom,
     )
@@ -188,7 +185,24 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
+    use crate::components::icon_hover::check::assert_icon_lights_up;
     use crate::contrast::contrast_ratio;
+
+    #[test]
+    fn given_pointer_on_dismiss_corner_then_cross_is_lit_like_over_the_icon() {
+        let view = || {
+            dismiss_button((), "Dismiss".to_owned(), &UiPalette::otty_dark())
+        };
+
+        assert_icon_lights_up(
+            "notice-dismiss",
+            view,
+            iced::Rectangle::new(
+                Point::ORIGIN,
+                iced::Size::new(DISMISS_SIZE, DISMISS_SIZE),
+            ),
+        );
+    }
 
     /// WCAG 2.1 AA minimum for normal text.
     const TEXT_MIN: f32 = 4.5;

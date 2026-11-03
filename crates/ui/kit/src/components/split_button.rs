@@ -5,6 +5,7 @@ use iced::{Alignment, Border, Element, Length};
 
 use super::glyph;
 use super::icon_button::{IconButton, IconButtonSize, IconTone, tooltip_hint};
+use super::icon_hover::IconHover;
 use crate::palette::UiPalette;
 use crate::{radius, size, spacing};
 
@@ -108,17 +109,13 @@ impl<'a, Message: Clone + 'a> From<SplitButton<Message>>
         let muted = palette.text_muted();
         let strong = palette.text_strong();
         let raised = palette.surface_raised();
+        let pointer = IconHover::new();
         let chevron = button(
             container(
                 svg(glyph::caret(true))
                     .width(CHEVRON_SIZE)
                     .height(CHEVRON_SIZE)
-                    .style(move |_, status| svg::Style {
-                        color: Some(match status {
-                            svg::Status::Hovered => strong,
-                            _ => muted,
-                        }),
-                    }),
+                    .style(pointer.icon_style(muted, strong)),
             )
             .width(Length::Fill)
             .height(Length::Fill)
@@ -141,7 +138,7 @@ impl<'a, Message: Clone + 'a> From<SplitButton<Message>>
             ..button::Style::default()
         });
         let chevron = tooltip(
-            chevron,
+            pointer.watch(chevron),
             tooltip_hint(value.menu_label, &palette),
             tooltip::Position::Bottom,
         )
@@ -166,6 +163,32 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
+    use crate::components::icon_hover::check::assert_icon_lights_up;
+
+    #[test]
+    fn given_pointer_on_chevron_corner_then_chevron_is_lit_like_over_the_icon()
+    {
+        let view = || {
+            SplitButton::new(
+                glyph::plus(),
+                "New",
+                "More",
+                &UiPalette::otty_dark(),
+            )
+            .on_press(())
+            .on_menu(())
+            .into()
+        };
+
+        assert_icon_lights_up(
+            "split-chevron",
+            view,
+            iced::Rectangle::new(
+                iced::Point::new(size::CONTROL_SM, 0.0),
+                iced::Size::new(size::SPLIT_CHEVRON, size::CONTROL_SM),
+            ),
+        );
+    }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {

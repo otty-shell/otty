@@ -1339,7 +1339,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section(
-            "IconButton (hover for tooltip; md, accent, sm, danger, disabled danger, disabled)",
+            "IconButton (hover the edge of a button: the icon lights up; md, accent, sm, danger, disabled danger, disabled)",
             icon_buttons.into(),
             p,
         ),

@@ -18,6 +18,7 @@ use iced::{
     Vector, keyboard, mouse,
 };
 
+use super::icon_hover::IconHover;
 use super::{glyph, icon_button};
 use crate::palette::UiPalette;
 use crate::{radius, size, spacing};
@@ -46,16 +47,13 @@ impl<'a, Message: 'a> OverflowMenu<'a, Message> {
         let idle = palette.text_muted();
         let hover = palette.text_strong();
 
-        let dots = svg(glyph::dots()).width(ICON_SIZE).height(ICON_SIZE).style(
-            move |_, status| svg::Style {
-                color: Some(match status {
-                    svg::Status::Hovered => hover,
-                    _ => idle,
-                }),
-            },
-        );
+        let pointer = IconHover::new();
+        let dots = svg(glyph::dots())
+            .width(ICON_SIZE)
+            .height(ICON_SIZE)
+            .style(pointer.icon_style(idle, hover));
         let button = tooltip(
-            container(dots).center(size::CONTROL_MD),
+            pointer.watch(container(dots).center(size::CONTROL_MD)),
             icon_button::tooltip_hint(label, palette),
             tooltip::Position::Bottom,
         )
@@ -401,6 +399,28 @@ fn menu_position(anchor: Rectangle, menu: Size, bounds: Size) -> Point {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::icon_hover::check::assert_icon_lights_up;
+
+    #[test]
+    fn given_pointer_on_dots_button_corner_then_dots_are_lit_like_over_them() {
+        let view = || {
+            OverflowMenu::new(
+                "More".to_owned(),
+                iced::widget::text("Item"),
+                &UiPalette::otty_dark(),
+            )
+            .into()
+        };
+
+        assert_icon_lights_up(
+            "overflow-dots",
+            view,
+            Rectangle::new(
+                Point::ORIGIN,
+                Size::new(size::CONTROL_MD, size::CONTROL_MD),
+            ),
+        );
+    }
 
     const WINDOW: Size = Size::new(800.0, 600.0);
     const MENU: Size = Size::new(240.0, 100.0);

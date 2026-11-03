@@ -4,6 +4,7 @@ use iced::widget::{button, container, svg, text, tooltip};
 use iced::{Border, Color, Element, Length, Padding};
 
 use super::faded;
+use super::icon_hover::IconHover;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
@@ -31,7 +32,7 @@ pub enum IconTone {
     Default,
     /// `accent`; only for the New session plus.
     Accent,
-    /// `status-error`, on `surface-danger` while hovered; for destructive
+    /// `status-error`, on `surface-danger-hover` while hovered; for destructive
     /// actions such as Remove.
     Danger,
 }
@@ -144,14 +145,11 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
         let has_hover_background = value.has_hover_background;
         let palette = value.palette.clone();
 
-        let icon = svg(value.icon).width(ICON_SIZE).height(ICON_SIZE).style(
-            move |_, status| svg::Style {
-                color: Some(match status {
-                    svg::Status::Hovered => hover,
-                    _ => idle,
-                }),
-            },
-        );
+        let pointer = IconHover::new();
+        let icon = svg(value.icon)
+            .width(ICON_SIZE)
+            .height(ICON_SIZE)
+            .style(pointer.icon_style(idle, hover));
 
         let control = button(
             container(icon)
@@ -168,7 +166,7 @@ impl<'a, Message: Clone + 'a> From<IconButton<Message>>
         });
 
         let hint = tooltip_hint(value.label, &value.palette);
-        tooltip(control, hint, tooltip::Position::Bottom)
+        tooltip(pointer.watch(control), hint, tooltip::Position::Bottom)
             .gap(spacing::SPACE_1)
             .into()
     }
@@ -225,7 +223,7 @@ fn icon_color(
 }
 
 /// Style of the button: a background while hovered or pressed, unless
-/// `has_hover_background` is off: `surface-danger` for the danger tone,
+/// `has_hover_background` is off: `surface-danger-hover` for the danger tone,
 /// `surface-raised` otherwise.
 fn button_style(
     palette: &UiPalette,
@@ -236,7 +234,7 @@ fn button_style(
     let is_active =
         matches!(status, button::Status::Hovered | button::Status::Pressed);
     let background = (has_hover_background && is_active).then(|| match tone {
-        IconTone::Danger => palette.surface_danger().into(),
+        IconTone::Danger => palette.surface_danger_hover().into(),
         _ => palette.surface_raised().into(),
     });
 
@@ -254,6 +252,39 @@ fn button_style(
 mod tests {
     use super::*;
     use crate::components::glyph;
+    use crate::components::icon_hover::check::assert_icon_lights_up;
+
+    #[test]
+    fn given_pointer_on_button_corner_then_icon_is_lit_like_over_the_icon() {
+        for (name, tone, edge) in [
+            ("default", IconTone::Default, IconButtonSize::Medium),
+            ("accent", IconTone::Accent, IconButtonSize::Small),
+            ("danger", IconTone::Danger, IconButtonSize::Medium),
+        ] {
+            let side = match edge {
+                IconButtonSize::Medium => size::CONTROL_MD,
+                IconButtonSize::Small => size::CONTROL_SM,
+            };
+            let view = move || {
+                let palette = UiPalette::otty_dark();
+
+                IconButton::new(glyph::plus(), "Add", &palette)
+                    .tone(tone)
+                    .size(edge)
+                    .on_press(())
+                    .into()
+            };
+
+            assert_icon_lights_up(
+                &format!("icon-button-{name}"),
+                view,
+                iced::Rectangle::new(
+                    iced::Point::ORIGIN,
+                    iced::Size::new(side, side),
+                ),
+            );
+        }
+    }
 
     #[test]
     fn given_default_button_when_hovered_or_pressed_then_background_is_raised()
@@ -294,9 +325,10 @@ mod tests {
     }
 
     #[test]
-    fn given_danger_button_when_hovered_or_pressed_then_background_is_danger() {
+    fn given_danger_button_when_hovered_or_pressed_then_background_is_danger_hover()
+     {
         let palette = UiPalette::otty_light();
-        let danger = Some(palette.surface_danger().into());
+        let danger = Some(palette.surface_danger_hover().into());
         let style =
             |status| button_style(&palette, IconTone::Danger, true, status);
 
@@ -337,20 +369,54 @@ mod tests {
 
     /// The danger icon is a mark (3:1) on the surfaces an inspector and a
     /// table sit on, and on its own hover background; the hovered icon
-    /// (`text-danger`) is checked with the notice text on `surface-danger`.
+    /// (`text-danger`) is text-grade (4.5:1) on that background.
     #[test]
     fn given_each_theme_when_danger_icon_drawn_then_it_reaches_3() {
         for palette in [UiPalette::otty_dark(), UiPalette::otty_light()] {
             let idle = icon_color(&palette, IconTone::Danger, true, false);
+            let hovered = icon_color(&palette, IconTone::Danger, true, true);
+            let hover_background = palette.surface_danger_hover();
 
             for surface in [
                 palette.surface_canvas(),
                 palette.surface_panel(),
-                palette.surface_danger(),
+                palette.surface_raised(),
+                hover_background,
             ] {
                 let ratio = crate::contrast::contrast_ratio(idle, surface);
 
                 assert!(ratio >= 3.0, "danger icon on {surface:?}: {ratio:.2}");
+            }
+
+            let ratio =
+                crate::contrast::contrast_ratio(hovered, hover_background);
+            assert!(ratio >= 4.5, "hovered danger icon: {ratio:.2}");
+        }
+    }
+
+    /// The hovered background must stand out from the surfaces a danger
+    /// button sits on, and by more than `surface-danger` does.
+    #[test]
+    fn given_each_theme_when_danger_hovered_then_background_stands_out() {
+        for palette in [UiPalette::otty_dark(), UiPalette::otty_light()] {
+            let hover = palette.surface_danger_hover();
+
+            for surface in [
+                palette.surface_panel(),
+                palette.surface_canvas(),
+                palette.surface_raised(),
+            ] {
+                let ratio = crate::contrast::contrast_ratio(hover, surface);
+                let old = crate::contrast::contrast_ratio(
+                    palette.surface_danger(),
+                    surface,
+                );
+
+                assert!(ratio >= 1.3, "hover on {surface:?}: {ratio:.2}");
+                assert!(
+                    ratio > old,
+                    "hover {ratio:.2} vs surface-danger {old:.2}"
+                );
             }
         }
     }

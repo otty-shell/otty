@@ -4,6 +4,7 @@ use iced::widget::text::Wrapping;
 use iced::widget::{Space, button, column, container, row, svg, text, tooltip};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
+use super::icon_hover::IconHover;
 use super::{faded, glyph, icon_button, kbd, menu};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing};
@@ -371,15 +372,11 @@ fn pin_view<'a, Message: Clone + 'a>(
     } else {
         idle
     };
+    let pointer = IconHover::new();
     let icon = svg(glyph::pin(is_pinned))
         .width(PIN_ICON_SIZE)
         .height(PIN_ICON_SIZE)
-        .style(move |_, status| svg::Style {
-            color: Some(match status {
-                svg::Status::Hovered => hover,
-                _ => idle,
-            }),
-        });
+        .style(pointer.icon_style(idle, hover));
 
     let raised = palette.surface_raised();
     let control = button(
@@ -407,7 +404,7 @@ fn pin_view<'a, Message: Clone + 'a>(
     });
 
     tooltip(
-        control,
+        pointer.watch(control),
         icon_button::tooltip_hint(hint, palette),
         tooltip::Position::Bottom,
     )
@@ -433,6 +430,28 @@ mod tests {
     use iced_test::{Simulator, simulator};
 
     use super::*;
+    use crate::components::icon_hover::check::assert_icon_lights_up;
+
+    #[test]
+    fn given_pointer_on_pin_corner_then_pin_is_lit_like_over_the_icon() {
+        let view = || {
+            let pin = ModePin::Unpinned {
+                label: "Pin".to_owned(),
+                on_press: (),
+            };
+
+            pin_view(pin, &UiPalette::otty_dark())
+        };
+
+        assert_icon_lights_up(
+            "mode-pin",
+            view,
+            iced::Rectangle::new(
+                Point::ORIGIN,
+                iced::Size::new(size::CONTROL_SM, size::CONTROL_SM),
+            ),
+        );
+    }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
