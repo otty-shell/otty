@@ -177,7 +177,7 @@ impl<'a, Message: Clone + 'a> From<Chip<Message>> for Element<'a, Message> {
 }
 
 /// Draws a chip whose label wraps: at least [`HEIGHT`] high, at most
-/// `max_width` wide, with the cross aligned with the first line.
+/// `max_width` wide, with the cross in the middle of its height.
 fn wrapped_chip<'a, Message: Clone + 'a>(
     label: &str,
     is_mono: bool,
@@ -207,7 +207,9 @@ fn wrapped_chip<'a, Message: Clone + 'a>(
         .max_width(label_width.max(0.0))
         .padding(Padding::from([(HEIGHT - style.line_height()) / 2.0, 0.0]));
 
-    let mut content = row![text].spacing(spacing::SPACE_2);
+    let mut content = row![text]
+        .spacing(spacing::SPACE_2)
+        .align_y(Alignment::Center);
     if let Some((label, message)) = on_clear {
         content = content.push(
             IconButton::new(glyph::cross(), label, palette)

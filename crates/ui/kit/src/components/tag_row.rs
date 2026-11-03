@@ -304,16 +304,34 @@ mod tests {
         let mut ui = simulator(view(&tags, 200.0));
         let text = ui.find(LONG_LABEL).expect("long chip").bounds();
 
-        // The cross is aligned with the first line of the text.
+        // The cross sits in the middle of the chip's height.
         ui.point_at(Point::new(
             text.x + text.width + spacing::SPACE_2 + 12.0,
-            text.y + 12.0,
+            text.y + text.height / 2.0,
         ));
         let _ = ui.simulate(simulator::click());
 
         let messages: Vec<TagSearchAction> = ui.into_messages().collect();
         assert_eq!(messages, vec![TagSearchAction::RemoveTag(1)]);
         assert!(text.x + text.width + spacing::SPACE_2 + 24.0 <= 200.5);
+    }
+
+    #[test]
+    fn the_cross_of_a_long_tag_is_not_at_the_first_line() {
+        let tags = long_tags();
+        let mut ui = simulator(view(&tags, 200.0));
+        let text = ui.find(LONG_LABEL).expect("long chip").bounds();
+        assert!(text.height > 30.0, "chip should be tall: {text:?}");
+
+        // Next to the first line of a tall chip there is no cross.
+        ui.point_at(Point::new(
+            text.x + text.width + spacing::SPACE_2 + 12.0,
+            text.y + 1.0,
+        ));
+        let _ = ui.simulate(simulator::click());
+
+        let messages: Vec<TagSearchAction> = ui.into_messages().collect();
+        assert!(messages.is_empty());
     }
 
     #[test]

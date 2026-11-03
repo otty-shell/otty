@@ -17,7 +17,8 @@ cut. It must wrap instead, and the chip must grow in height to hold every line:
   `:` or `.` first, between letters only as a last resort);
 - a chip is never wider than the tags row; short tags stay one line and keep today's
   look;
-- the clear cross stays visible, aligned with the first line, and keeps working;
+- the clear cross stays visible, in the middle of the chip's height (owner request,
+  2026-11-03), and keeps working;
 - other chips in the row and "Clear all" stay in their wrapping flow, and the table
   moves down by the height the row takes.
 
