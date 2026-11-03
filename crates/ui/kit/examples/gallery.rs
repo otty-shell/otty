@@ -56,7 +56,7 @@ use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::components::tag_row::TagRow;
 use otty_ui_kit::components::tag_search::{
-    SearchRow, TagKey, TagSchema, TagSearch, TagSearchAction,
+    SearchRow, Tag, TagKey, TagSchema, TagSearch, TagSearchAction,
 };
 use otty_ui_kit::components::tag_search_field::TagSearchField;
 use otty_ui_kit::components::target_dot::{TargetKind, target_dot};
@@ -1837,6 +1837,13 @@ fn data_parts<'a>(
         .iter()
         .filter(|row| search.passes(schema.keys(), row))
         .count();
+    let long_tags = [
+        Tag::new("status", "Running"),
+        Tag::new(
+            "image",
+            "registry.example.com/team/very-long-image-name/with/many/parts:1.2.3",
+        ),
+    ];
     let tag_bar = Toolbar::new("More actions", p)
         .field(160.0, 320.0, move || {
             TagSearchField::new(search, suggestions.clone(), &tag_field_palette)
@@ -1857,6 +1864,16 @@ fn data_parts<'a>(
                 .on_action(Message::TagSearch)
         )
         .width(640),
+        label(
+            "A long tag wraps and its chip grows (240 wide):".to_owned(),
+            p
+        ),
+        container(
+            TagRow::new(&long_tags, schema.keys(), p)
+                .remove_label("Remove this tag")
+                .clear_all_label("Clear all")
+        )
+        .width(240),
         label(format!("{passing} of 12 rows pass"), p),
     ]
     .spacing(spacing::SPACE_3);

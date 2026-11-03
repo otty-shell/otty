@@ -2,8 +2,8 @@
 //!
 //! [`TagSearch`]: super::tag_search::TagSearch
 
-use iced::widget::{Space, row};
-use iced::{Alignment, Element};
+use iced::widget::{Space, responsive, row};
+use iced::{Alignment, Element, Length};
 
 use super::button::{Button, ButtonKind, ButtonSize};
 use super::chip::Chip;
@@ -89,32 +89,43 @@ impl<'a, Message: Clone + 'a> From<TagRow<'a, Message>>
             return Space::new().into();
         }
 
-        let palette = value.palette;
-        let send = |action: TagSearchAction| {
-            value.on_action.as_ref().map(|on_action| on_action(action))
-        };
+        // A chip's preferred width is its whole text, so the row's width is
+        // handed to each chip, which wraps its text to fit. `responsive`
+        // fills the height by default; shrinking keeps the row as tall as
+        // its lines.
+        responsive(move |available| {
+            let palette = &value.palette;
+            let send = |action: TagSearchAction| {
+                value.on_action.as_ref().map(|on_action| on_action(action))
+            };
 
-        let mut line =
-            row![].spacing(spacing::SPACE_2).align_y(Alignment::Center);
-        for (index, label) in value.labels.iter().enumerate() {
-            let mut chip = Chip::new(label.as_str(), &palette).mono(true);
-            if let Some(message) = send(TagSearchAction::RemoveTag(index)) {
-                chip = chip.on_clear(value.remove_label.as_str(), message);
+            let mut line =
+                row![].spacing(spacing::SPACE_2).align_y(Alignment::Center);
+            for (index, label) in value.labels.iter().enumerate() {
+                let mut chip = Chip::new(label.as_str(), palette)
+                    .mono(true)
+                    .wrap_within(available.width);
+                if let Some(message) = send(TagSearchAction::RemoveTag(index)) {
+                    chip = chip.on_clear(value.remove_label.as_str(), message);
+                }
+                line = line.push(chip);
             }
-            line = line.push(chip);
-        }
 
-        let mut clear_all = Button::new(value.clear_all_label, &palette)
-            .kind(ButtonKind::Ghost)
-            .size(ButtonSize::Small);
-        if let Some(message) = send(TagSearchAction::ClearTags) {
-            clear_all = clear_all.on_press(message);
-        }
+            let mut clear_all =
+                Button::new(value.clear_all_label.as_str(), palette)
+                    .kind(ButtonKind::Ghost)
+                    .size(ButtonSize::Small);
+            if let Some(message) = send(TagSearchAction::ClearTags) {
+                clear_all = clear_all.on_press(message);
+            }
 
-        line.push(clear_all)
-            .wrap()
-            .vertical_spacing(spacing::SPACE_2)
-            .into()
+            line.push(clear_all)
+                .wrap()
+                .vertical_spacing(spacing::SPACE_2)
+                .into()
+        })
+        .height(Length::Shrink)
+        .into()
     }
 }
 
@@ -125,7 +136,7 @@ mod tests {
     use iced_test::{Simulator, simulator};
 
     use super::*;
-    use crate::spacing;
+    use crate::{size, spacing, typography};
 
     const CLEAR_ALL: &str = "Clear all";
 
@@ -229,6 +240,80 @@ mod tests {
 
         assert!(second.y > first.y, "second chip on a new line");
         assert!(below.y >= second.y + second.height);
+    }
+
+    const LONG_VALUE: &str =
+        "registry.example.com/team/very-long-image-name/with/many/parts:1.2.3";
+    const LONG_LABEL: &str = "Image:registry.example.com/team/very-long-image-name/with/many/parts:1.2.3";
+
+    fn long_tags() -> Vec<Tag> {
+        vec![Tag::new("status", "Running"), Tag::new("image", LONG_VALUE)]
+    }
+
+    #[test]
+    fn a_long_tag_wraps_and_its_chip_grows_inside_the_row() {
+        let tags = long_tags();
+        let mut ui = simulator(view(&tags, 200.0));
+
+        let short = ui.find("Status:Running").expect("chip").bounds();
+        let long = ui.find(LONG_LABEL).expect("long chip").bounds();
+        let below = ui.find("below").expect("marker").bounds();
+
+        assert!(
+            long.height > typography::SMALL.line_height() * 1.5,
+            "text should take several lines: {long:?}"
+        );
+        // The text, a gap, the 24px cross and the chip padding fit the row.
+        let chip_right =
+            long.x + long.width + spacing::SPACE_2 + 24.0 + spacing::SPACE_3;
+        assert!(
+            chip_right <= 200.5,
+            "chip is wider than the row: {chip_right}"
+        );
+        assert!(long.x >= 0.0);
+        assert!(
+            below.y >= long.y + long.height,
+            "the content below moves down"
+        );
+        assert!(
+            (short.height - typography::SMALL.line_height()).abs() < 0.5,
+            "a short tag stays one line: {short:?}"
+        );
+    }
+
+    #[test]
+    fn a_row_of_short_tags_is_one_line_as_tall_as_the_clear_all_button() {
+        let tags = vec![Tag::new("status", "Running")];
+        let mut ui = simulator(view(&tags, 900.0));
+
+        let tag = ui.find("Status:Running").expect("chip").bounds();
+        let below = ui.find("below").expect("marker").bounds();
+
+        assert!(
+            (below.y - size::CONTROL_MD).abs() < 0.5,
+            "one line of {} px: {}",
+            size::CONTROL_MD,
+            below.y
+        );
+        assert!((tag.height - typography::SMALL.line_height()).abs() < 0.5);
+    }
+
+    #[test]
+    fn the_cross_of_a_long_tag_works_and_does_not_overlap_the_text() {
+        let tags = long_tags();
+        let mut ui = simulator(view(&tags, 200.0));
+        let text = ui.find(LONG_LABEL).expect("long chip").bounds();
+
+        // The cross is aligned with the first line of the text.
+        ui.point_at(Point::new(
+            text.x + text.width + spacing::SPACE_2 + 12.0,
+            text.y + 12.0,
+        ));
+        let _ = ui.simulate(simulator::click());
+
+        let messages: Vec<TagSearchAction> = ui.into_messages().collect();
+        assert_eq!(messages, vec![TagSearchAction::RemoveTag(1)]);
+        assert!(text.x + text.width + spacing::SPACE_2 + 24.0 <= 200.5);
     }
 
     #[test]

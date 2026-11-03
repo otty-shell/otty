@@ -49,6 +49,8 @@ pub(super) struct WrappedText<Message> {
     font: Font,
     color: Color,
     link_color: Color,
+    /// Whether the width follows the text instead of filling the space.
+    fits_text: bool,
 }
 
 impl<Message> WrappedText<Message> {
@@ -70,6 +72,23 @@ impl<Message> WrappedText<Message> {
             font,
             color,
             link_color,
+            fits_text: false,
+        }
+    }
+
+    /// Makes the width follow the widest line, up to the space given, so a
+    /// short text stays short and a long one wraps at the space's edge.
+    pub(super) fn fit_text(mut self) -> Self {
+        self.fits_text = true;
+        self
+    }
+
+    /// Returns the width rule of this text.
+    fn width(&self) -> Length {
+        if self.fits_text {
+            Length::Shrink
+        } else {
+            Length::Fill
         }
     }
 
@@ -135,7 +154,7 @@ impl<Message> WrappedText<Message> {
 impl<Message: Clone> Widget<Message, Theme, Renderer> for WrappedText<Message> {
     fn size(&self) -> Size<Length> {
         Size {
-            width: Length::Fill,
+            width: self.width(),
             height: Length::Shrink,
         }
     }
@@ -177,7 +196,7 @@ impl<Message: Clone> Widget<Message, Theme, Renderer> for WrappedText<Message> {
         }
 
         layout::Node::new(limits.resolve(
-            Length::Fill,
+            self.width(),
             Length::Shrink,
             state.paragraph.min_bounds(),
         ))

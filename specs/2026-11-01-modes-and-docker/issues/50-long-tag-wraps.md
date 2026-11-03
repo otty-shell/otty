@@ -1,6 +1,6 @@
 # 50 — A long tag wraps and its chip grows
 
-Status: ready-for-agent
+Status: resolved
 Type: bug
 Class: A
 Model: Sonnet 5.5 (claude-sonnet-5-5)
@@ -32,3 +32,20 @@ and compare `cargo llvm-cov` with the merge base before the commit.
   than the row, with the text fully inside and not cut; a short tag stays one line
   tall; the cross of the long tag still emits its message and does not overlap the
   text; other `Chip` uses keep their height.
+
+## Answer
+
+A chip can now wrap its label, and `TagRow` uses it.
+
+- `Chip::wrap_within(max_width)` (new, off by default, so other chips do not
+  change): the label is drawn with `WrappedText` (breaks after a space, `/`, `-`,
+  `:` or `.` first), the chip is at least 24px high, grows with the lines, and is
+  never wider than `max_width`. The cross stays at the top, aligned with the first
+  line, and keeps its message. `WrappedText` got a private `fit_text()` so its
+  width follows the text up to the space given (a short tag stays short).
+- `TagRow` is wrapped in `responsive` (with `.height(Length::Shrink)`, as in
+  `key_value_list.rs`) and gives each chip the row width. This is needed because
+  iced's wrapping row measures a child by its preferred width, which for a chip is
+  its whole text.
+- Gallery: a second `TagRow` with a long tag at 240 wide (both themes).
+- A row of short tags is as tall as before (the 28px "Clear all" button).
