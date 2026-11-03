@@ -1,6 +1,6 @@
 # 20 — Update the design system and the canvas to what was built
 
-Status: ready-for-human
+Status: resolved
 Type: task
 Class: —
 Model: Opus 5.5 (claude-opus-5-5), owner review
@@ -22,9 +22,12 @@ All new text goes through `i18n` in the ten locales (spec Decision 17). Tests fi
 
 ## Answer
 
-The canvas is published. The design system update is prepared but not published: it waits for the owner's review. This ticket stays `ready-for-human` until the owner approves both.
+The owner approved publishing on 2026-11-03. Both are published:
 
-### Canvas
+- Design system: https://claude.ai/artifact/7zMwx63cZnNmTUeTL1FQF3, version 14 (id `1793707694-285e`).
+- Canvas: https://claude.ai/artifact/5QkFQQUDrqMuqVSFyBZCh6, version 44 (id `1793707933-4418`), with design system version 14 installed.
+
+### Canvas, first sync
 
 Published to https://claude.ai/artifact/5QkFQQUDrqMuqVSFyBZCh6 as version 40 (id `1793620693-0e3a`). The owner had made no hand edits since the last version (the file hashes matched).
 
@@ -49,16 +52,32 @@ Not drawn or not matched:
 
 ### Design system
 
-The update waits in `scratchpad/ds-update/project/` of the session, in the design system's own layout. It has 13 new cards, 7 extended cards, notes on 2 more, the bundle, stylesheet and types, the brand book, 9 size tokens and 16 icons. The live design system is unchanged, at version `1793541467-b234`. **It needs the owner's review before publishing.**
+The earlier draft was lost when the scratchpad was cleaned, so the update was rebuilt from the kit code and tickets 24 to 51. Version 13 (`1793707544-3c99`) holds the update; version 14 only makes `TagRow` chips mono, as in the kit.
 
-`scratchpad/ds-update/SUMMARY.md` was not written, because the session's tools blocked that report file; the summary went to the owner in the session's report instead.
+- New cards: `ModeSwitcher`, `ModeMenu`, `StatusBadge`, `Notice`, `KeyValueList`, `InspectorHeader`, `InspectorTabs`, `LogView`, `CommandBox`, `ProgressBar`, `MappingField`, `Toolbar`, `DataTree`, `TagSearchField`, `TagRow`. `Split` had no card, so it is new too.
+- Extended cards: `DataTable`, `IconButton`, `Inspector`, `Chip`, `ActionTile`, `KeyValueField`, `TreeRow`, `SessionGroup`, `SessionRow`, `PanelSection`, `Switch`, `Button`, and the danger item of the `Menu` component.
+- `RailButton` and the `rail` and `rail-button` tokens stay, marked "not in the app", because older canvas screens use them.
+- `README.md` has Modes, Docker mode, Formats, Wrapping and Tag search sections, the Decision 6 shortcuts, and the link and danger colors.
+- `tokens.json`: `surface-danger-hover` (dark `#4a2a33`, light `#f0bcc2`, as in `palette.rs`), `table-header`, `table-row`, `mode-tab-width`, `mode-tab-height`, `mode-icon-tile`, `mode-menu`, `key-value-key`, `key-value-stack-below`, `inspector-tab`; `split-grab` is now 4.
+- 17 icons uploaded to the Icons group: `mode-terminal`, `mode-docker`, `more`, `plus`, `pull`, `prune`, `refresh`, `start`, `stop`, `restart`, `pause`, `resume`, `shell`, `trash`, `copy`, `external-link`, `notice-error`.
 
-For the owner to decide:
+### Canvas, second sync
 
-1. Publish the update as it is, or ask for changes.
-2. Keep `RailButton` and the `rail` tokens, marked as not in the app, or remove them. The update keeps them because older canvas screens use them.
-3. Upload the 16 new icons into the Icons group. The update assumes yes.
-4. Install the new design system copy on the canvas afterwards, as a separate change. Until then the Docker boards draw the new parts with `project/docker-mode.css`.
+The new design system copy was installed first, as its own change (versions 42 and 43). Version 44 then changed `DockerMode`, `project/docker-mode.css` and `project/otty-theme.css`; the other Docker boards import `DockerMode` and follow it.
+
+- Tag search: title row; search field and icon buttons; the tags row with crosses and "Clear all", only with tags; then the table. No compose chip: the Compose link sets a `Compose` tag. Keys read as column headers (`Status:Running`).
+- New tweaks on `DockerMode`: `search` opens the list with the typed text as the first row (`typed`, `values`), and `tags` shows the tags row (`some`, `long`). `long` adds one sample container, so its long tag wraps and rows stay in the table.
+- Narrow inspector: Inspect switches stacked with the copy icon on its own row at the left under them, one-line labels. Everything fits at the `320` width of the `inspector` tweak, on one row.
+- Inspect tree links by the ticket 37 rules, the copy icon, and `surface-danger-hover` on danger controls.
+
+Not matched:
+
+- The cards and the board match suggestions by substring; the app ranks them with a fuzzy match (ticket 46).
+- `Toolbar` and `InspectorTabs` in the bundle take a prop for the narrow look; the kit measures the width. `KeyValueList` and `DataTree` stack by width in the cards too.
+- The boards draw with the design system's stylesheet classes and do not mount its components, as before.
+- The stylesheet rules for one-line chips and for notes that give way also reach older canvas screens, which link the same copy.
+- The icons `folder.svg` and `folder-opened.svg` in the Icons group are no longer in `assets/svg/`. They stay. Icons older than this feature that the group lacks (`focus-mode`, `panel-left`, `panel-right`, `search`, `folder-closed`) were not added.
+- Neither result was rendered, following the artifact's rule.
 
 ### Found on the way
 

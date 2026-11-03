@@ -409,20 +409,20 @@ a `Class:` line; review checks the diff against it.
 
 ## Acceptance Criteria
 
-- [ ] AC1: The left panel starts with the switcher: Terminal tab, the pinned tabs, "⋯". Clicking a tab switches the left panel, main area, right panel and status bar to that mode; the terminal tabs keep running and are back as they were when Terminal mode returns.
-- [ ] AC2: The All modes menu lists Pinned (with "N of 4") and Other modes; Pin and Unpin change the tabs at once; Terminal has no Unpin; with 4 pinned, Pin is disabled with the hint; picking an unpinned mode shows it as a temporary outlined tab that goes away when another mode is chosen.
-- [ ] AC3: Pinned modes survive a restart (`modes.json`); a missing or broken file gives the defaults; OTTY starts in Terminal mode.
-- [ ] AC4: The shortcuts in Decision 6 work with and without a focused terminal; Ctrl 1–5 and Ctrl M without Shift still reach the shell (keymap unit test plus a manual `cat -v` check). The palette switches modes.
-- [ ] AC5: With Docker running, Docker mode shows a "Docker <version>" root with Containers, Compose projects, Images, Volumes, Networks and their counts; with Podman (`podman.socket` on) a "Podman <version>" root; with both, two roots. Lists match `docker ps -a`, `docker images`, `docker volume ls`, `docker network ls` (and the `podman` equivalents).
-- [ ] AC6: Each case in Decision 9 shows its text and buttons; the install and docs buttons open the browser; Copy command puts the command on the clipboard; Check again finds an engine started meanwhile without a restart.
-- [ ] AC7: Every action in Decision 11 works on Docker and on Podman; destructive actions ask first; an engine error shows a Notice and leaves the table as it was (reducer tests for each action's effect; mapping tests in `otty-docker`).
-- [ ] AC8: The inspector shows Overview, Logs (follows new lines, stops on tab or selection change) and Inspect for the selected row.
-- [ ] AC8a: Run container starts a container with the image, name, command, ports, environment, volumes, network, restart policy and auto remove from the form (checked with `docker inspect` / `podman inspect`); a missing image is pulled first when the switch is on; each check in Decision 18 blocks Run with its message; an engine error keeps the form as typed (reducer tests for the checks and for the mapping of the form to the create request).
-- [ ] AC9: Shell opens a terminal tab inside the container with the engine's own CLI and switches to Terminal mode; without the CLI the button is disabled with a hint.
-- [ ] AC10: Starting, stopping or removing a container from another terminal updates the table within a second without Refresh; nothing talks to the engine while Terminal mode is active (event subscription test on the mode).
-- [ ] AC11: Every component in Decision 15 is in `otty-ui-kit`, shown in `cargo run -p otty-ui-kit --example gallery` in both themes, with at least one `iced_test` interaction test.
+- [x] AC1: The left panel starts with the switcher: Terminal tab, the pinned tabs, "⋯". Clicking a tab switches the left panel, main area, right panel and status bar to that mode; the terminal tabs keep running and are back as they were when Terminal mode returns.
+- [x] AC2: The All modes menu lists Pinned (with "N of 4") and Other modes; Pin and Unpin change the tabs at once; Terminal has no Unpin; with 4 pinned, Pin is disabled with the hint; picking an unpinned mode shows it as a temporary outlined tab that goes away when another mode is chosen.
+- [x] AC3: Pinned modes survive a restart (`modes.json`); a missing or broken file gives the defaults; OTTY starts in Terminal mode.
+- [x] AC4: The shortcuts in Decision 6 work with and without a focused terminal; Ctrl 1–5 and Ctrl M without Shift still reach the shell (keymap unit test plus a manual `cat -v` check). The palette switches modes.
+- [x] AC5: With Docker running, Docker mode shows a "Docker <version>" root with Containers, Compose projects, Images, Volumes, Networks and their counts; with Podman (`podman.socket` on) a "Podman <version>" root; with both, two roots. Lists match `docker ps -a`, `docker images`, `docker volume ls`, `docker network ls` (and the `podman` equivalents).
+- [x] AC6: Each case in Decision 9 shows its text and buttons; the install and docs buttons open the browser; Copy command puts the command on the clipboard; Check again finds an engine started meanwhile without a restart.
+- [x] AC7: Every action in Decision 11 works on Docker and on Podman; destructive actions ask first; an engine error shows a Notice and leaves the table as it was (reducer tests for each action's effect; mapping tests in `otty-docker`).
+- [x] AC8: The inspector shows Overview, Logs (follows new lines, stops on tab or selection change) and Inspect for the selected row.
+- [x] AC8a: Run container starts a container with the image, name, command, ports, environment, volumes, network, restart policy and auto remove from the form (checked with `docker inspect` / `podman inspect`); a missing image is pulled first when the switch is on; each check in Decision 18 blocks Run with its message; an engine error keeps the form as typed (reducer tests for the checks and for the mapping of the form to the create request).
+- [x] AC9: Shell opens a terminal tab inside the container with the engine's own CLI and switches to Terminal mode; without the CLI the button is disabled with a hint.
+- [x] AC10: Starting, stopping or removing a container from another terminal updates the table within a second without Refresh; nothing talks to the engine while Terminal mode is active (event subscription test on the mode).
+- [x] AC11: Every component in Decision 15 is in `otty-ui-kit`, shown in `cargo run -p otty-ui-kit --example gallery` in both themes, with at least one `iced_test` interaction test.
 - [ ] AC12: Screenshots of Terminal mode with the switcher, the open All modes menu, each Docker table, the inspector tabs and each Decision 9 case, in OTTY Dark and OTTY Light, are attached to the PR.
-- [ ] AC13: `cargo +nightly fmt --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features` and `cargo deny check` pass; line coverage from `cargo llvm-cov --workspace --all-features` is strictly greater than on the merge base.
+- [x] AC13: `cargo +nightly fmt --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features` and `cargo deny check` pass; line coverage from `cargo llvm-cov --workspace --all-features` is strictly greater than on the merge base.
 
 ## Out of Scope
 
@@ -519,7 +519,7 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 17 — Compose projects · Sonnet
 - [x] 18 — Status bar per mode · Sonnet
 - [x] 19 — OTTY Light pass and screenshots · Sonnet
-- [ ] 20 — Design system and canvas sync · Opus, owner review
+- [x] 20 — Design system and canvas sync · Opus, owner review
 - [x] 21 — Discovery additions: sockets, CLI folders, `podman-docker` · Opus
 - [x] 22 — Logs Follow toggle · Opus
 - [x] 23 — Volume prune keeps named volumes by default · Sonnet

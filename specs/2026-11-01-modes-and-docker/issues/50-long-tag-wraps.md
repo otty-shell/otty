@@ -50,3 +50,5 @@ A chip can now wrap its label, and `TagRow` uses it.
   its whole text.
 - Gallery: a second `TagRow` with a long tag at 240 wide (both themes).
 - A row of short tags is as tall as before (the 28px "Clear all" button).
+
+Later change: commit `2112103` centred the cross in the chip's height, at the owner's request. Where this answer says otherwise, that commit wins.
