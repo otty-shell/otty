@@ -1,10 +1,11 @@
 //! `TagSearch`: the model of a search field that filters a table by plain
 //! text and by `key:value` tags.
 //!
-//! The model knows nothing about what the table lists: a widget supplies a
-//! [`TagSchema`] (its keys in column order and one [`SearchRow`] per row), and
-//! forwards each [`TagSearchAction`] to [`TagSearch::perform`]. The views over
-//! this model are `TagSearchField` and `TagRow`.
+//! The model knows nothing about what the table lists or about languages: a
+//! widget supplies a [`TagSchema`] (its [`TagKey`]s in column order and one
+//! [`SearchRow`] per row), and forwards each [`TagSearchAction`] to
+//! [`TagSearch::perform`]. The views over this model are `TagSearchField` and
+//! `TagRow`.
 
 use std::ops::Range;
 
@@ -12,17 +13,73 @@ use super::palette_list::FoldedText;
 
 /// A query of this many letters or fewer allows no typo when ranking.
 const SHORT_QUERY_LETTERS: usize = 3;
+/// What ends a key: a colon, or the wide colon that Chinese and Japanese input
+/// often produces.
+const KEY_ENDS: [char; 2] = [':', '：'];
 
-/// One `key:value` filter of a [`TagSearch`].
+/// One key of a table: a stable internal name, which the code uses and the
+/// user never types or sees, and the name the user reads and types.
 ///
 /// # Example
 ///
 /// ```
-/// use otty_ui_kit::components::tag_search::Tag;
+/// use otty_ui_kit::components::tag_search::TagKey;
+///
+/// let key = TagKey::new("repository", "Repository:Tag");
+///
+/// assert_eq!(key.name(), "repository");
+/// assert_eq!(key.shown(), "Repository");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagKey {
+    name: &'static str,
+    shown: String,
+}
+
+impl TagKey {
+    /// The internal name, which rows and tags use.
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+
+    /// The name the user reads and types.
+    pub fn shown(&self) -> &str {
+        &self.shown
+    }
+
+    /// Creates a key shown as `header`, up to its first colon of either kind:
+    /// a colon ends a key, so no shown name can hold one.
+    pub fn new(name: &'static str, header: &str) -> Self {
+        let shown = header
+            .split_once(KEY_ENDS)
+            .map_or(header, |(before, _)| before);
+
+        Self {
+            name,
+            shown: shown.trim().to_owned(),
+        }
+    }
+}
+
+/// One `key:value` filter of a [`TagSearch`]. It stores the internal name of
+/// its key, so it shows the current name of the key whatever the language was
+/// when it was added.
+///
+/// # Example
+///
+/// ```
+/// use otty_ui_kit::components::tag_search::{Tag, TagKey};
 ///
 /// let tag = Tag::new("status", "running");
 ///
-/// assert_eq!(tag.label(), "status:running");
+/// assert_eq!(
+///     tag.label(&[TagKey::new("status", "Status")]),
+///     "Status:running"
+/// );
+/// assert_eq!(
+///     tag.label(&[TagKey::new("status", "Статус")]),
+///     "Статус:running"
+/// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tag {
@@ -31,7 +88,7 @@ pub struct Tag {
 }
 
 impl Tag {
-    /// The key: a name of the [`TagSchema`].
+    /// The internal name of the key: a [`TagKey::name`] of the schema.
     pub fn key(&self) -> &'static str {
         self.key
     }
@@ -41,14 +98,20 @@ impl Tag {
         &self.value
     }
 
-    /// The tag as the user reads it: `key:value`.
-    pub fn label(&self) -> String {
+    /// The tag as the user reads it: the shown name of its key in `keys`,
+    /// `:` and the value. A key that `keys` does not have reads its internal
+    /// name.
+    pub fn label(&self, keys: &[TagKey]) -> String {
         let Self { key, value } = self;
+        let shown = keys
+            .iter()
+            .find(|one| one.name == *key)
+            .map_or(*key, TagKey::shown);
 
-        format!("{key}:{value}")
+        format!("{shown}:{value}")
     }
 
-    /// Creates a tag.
+    /// Creates a tag of the key with the internal name `key`.
     pub fn new(key: &'static str, value: impl Into<String>) -> Self {
         Self {
             key,
@@ -130,27 +193,25 @@ impl SearchRow {
 /// # Example
 ///
 /// ```
-/// use otty_ui_kit::components::tag_search::{SearchRow, TagSchema};
-///
-/// const KEYS: &[&str] = &["name", "status"];
+/// use otty_ui_kit::components::tag_search::{SearchRow, TagKey, TagSchema};
 ///
 /// let schema = TagSchema::new(
-///     KEYS,
+///     vec![TagKey::new("name", "Name"), TagKey::new("status", "Status")],
 ///     vec![SearchRow::new("web-1").value("name", "web-1")],
 /// );
 ///
-/// assert_eq!(schema.keys(), KEYS);
+/// assert_eq!(schema.keys()[1].shown(), "Status");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TagSchema {
-    keys: &'static [&'static str],
+    keys: Vec<TagKey>,
     rows: Vec<SearchRow>,
 }
 
 impl TagSchema {
     /// The keys in column order.
-    pub fn keys(&self) -> &'static [&'static str] {
-        self.keys
+    pub fn keys(&self) -> &[TagKey] {
+        &self.keys
     }
 
     /// The rows of the table.
@@ -159,7 +220,7 @@ impl TagSchema {
     }
 
     /// Creates a schema.
-    pub fn new(keys: &'static [&'static str], rows: Vec<SearchRow>) -> Self {
+    pub fn new(keys: Vec<TagKey>, rows: Vec<SearchRow>) -> Self {
         Self { keys, rows }
     }
 }
@@ -253,39 +314,41 @@ pub enum TagSearchChange {
 /// The state of one search: the typed text, the tags, the highlighted
 /// suggestion and whether the suggestions are open.
 ///
-/// Text before the first `:` is a key only if the schema has it, so `redis:7`
-/// stays plain text and `ports:8080:80/tcp` has the value `8080:80/tcp`. A row
-/// passes when it has a matching value for every key that has tags (several
-/// tags of one key match if any does) and its name contains the plain text;
-/// all of it is a substring match that ignores case.
+/// Text before the first `:` (or wide `：`) is a key only if it is the shown
+/// name of a key of the schema, so `redis:7` stays plain text and
+/// `Ports:8080:80/tcp` has the value `8080:80/tcp`. A row passes when it has a
+/// matching value for every key that has tags (several tags of one key match
+/// if any does) and its name contains the plain text; all of it is a substring
+/// match that ignores case.
 ///
 /// # Example
 ///
 /// ```
 /// use otty_ui_kit::components::tag_search::{
-///     SearchRow, TagSchema, TagSearch, TagSearchAction,
+///     SearchRow, TagKey, TagSchema, TagSearch, TagSearchAction,
 /// };
 ///
-/// const KEYS: &[&str] = &["name", "status"];
-///
+/// let keys =
+///     vec![TagKey::new("name", "Name"), TagKey::new("status", "Status")];
 /// let web = SearchRow::new("web-1").value("status", "Running");
 /// let db = SearchRow::new("db-1").value("status", "Exited");
-/// let schema = TagSchema::new(KEYS, vec![web.clone(), db.clone()]);
+/// let schema = TagSchema::new(keys.clone(), vec![web.clone(), db.clone()]);
 /// let mut search = TagSearch::default();
 ///
 /// for action in [
 ///     TagSearchAction::InputChanged("sta".to_owned()),
 ///     TagSearchAction::Complete,
-///     TagSearchAction::InputChanged("status:run".to_owned()),
+///     TagSearchAction::InputChanged("Status:run".to_owned()),
 ///     TagSearchAction::Complete,
 /// ] {
 ///     search.perform(action, &schema);
 /// }
 ///
-/// assert_eq!(search.tags()[0].label(), "status:Running");
+/// assert_eq!(search.tags()[0].key(), "status");
+/// assert_eq!(search.tags()[0].label(&keys), "Status:Running");
 /// assert_eq!(search.input(), "");
-/// assert!(search.passes(KEYS, &web));
-/// assert!(!search.passes(KEYS, &db));
+/// assert!(search.passes(&keys, &web));
+/// assert!(!search.passes(&keys, &db));
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TagSearch {
@@ -313,7 +376,7 @@ impl TagSearch {
 
     /// The text rows are filtered by name with: the trimmed field, or nothing
     /// while the field holds `key:value`.
-    pub fn name_text(&self, keys: &[&'static str]) -> &str {
+    pub fn name_text(&self, keys: &[TagKey]) -> &str {
         match parse(&self.input, keys) {
             ParsedInput::Plain(text) => text,
             ParsedInput::Tag { .. } => "",
@@ -321,7 +384,7 @@ impl TagSearch {
     }
 
     /// Whether `row` passes the tags and the name text.
-    pub fn passes(&self, keys: &[&'static str], row: &SearchRow) -> bool {
+    pub fn passes(&self, keys: &[TagKey], row: &SearchRow) -> bool {
         self.passes_tags(row)
             && contains_folded(row.name(), self.name_text(keys))
     }
@@ -337,24 +400,25 @@ impl TagSearch {
     /// except for an empty field, a bare `key:`, or text that equals another
     /// entry, ignoring case.
     ///
-    /// With no key yet: the matching keys in column order, then the matching
-    /// names of the rows the tags leave (an empty field shows only the keys).
-    /// After `key:`: the values of that key, from the rows the tags of other
-    /// keys leave, without the values that already are tags.
+    /// With no key yet: the keys whose shown name matches, in column order,
+    /// then the matching names of the rows the tags leave (an empty field
+    /// shows only the keys). After `key:`: the values of that key, from the
+    /// rows the tags of other keys leave, without the values that already are
+    /// tags.
     pub fn suggestions(&self, schema: &TagSchema) -> Vec<Suggestion> {
         if !self.is_open {
             return Vec::new();
         }
 
-        let mut found = match parse(&self.input, schema.keys) {
+        let mut found = match parse(&self.input, &schema.keys) {
             ParsedInput::Plain(text) => {
                 self.key_and_name_suggestions(text, schema)
             },
             ParsedInput::Tag { key, text } => {
-                self.value_suggestions(key, text, schema)
+                self.value_suggestions(key.name(), text, schema)
             },
         };
-        if let Some(typed) = self.typed_suggestion(&found, schema.keys) {
+        if let Some(typed) = self.typed_suggestion(&found, &schema.keys) {
             found.insert(0, typed);
         }
 
@@ -389,11 +453,12 @@ impl TagSearch {
             TagSearchAction::ClearTags => self.tags.clear(),
         }
 
-        self.change_since(&before, schema.keys)
+        self.change_since(&before, &schema.keys)
     }
 
-    /// Adds the tag `key:value`, replacing the other tags of `key`. Use it for
-    /// a link that filters from outside the field.
+    /// Adds the tag `key:value` by the internal name of the key, replacing the
+    /// other tags of `key`. Use it for a link that filters from outside the
+    /// field.
     pub fn set_tag(
         &mut self,
         key: &'static str,
@@ -434,11 +499,15 @@ impl TagSearch {
     fn typed_suggestion(
         &self,
         others: &[Suggestion],
-        keys: &[&'static str],
+        keys: &[TagKey],
     ) -> Option<Suggestion> {
         let (shown, compared) = match parse(&self.input, keys) {
             ParsedInput::Plain(text) => (text.to_owned(), text),
-            ParsedInput::Tag { key, text } => (format!("{key}:{text}"), text),
+            ParsedInput::Tag { key, text } => {
+                let key = key.shown();
+
+                (format!("{key}:{text}"), text)
+            },
         };
         if compared.is_empty() {
             return None;
@@ -466,10 +535,12 @@ impl TagSearch {
         text: &str,
         schema: &TagSchema,
     ) -> Vec<Suggestion> {
-        let mut keys = rank(text, schema.keys);
+        let shown_keys: Vec<&str> =
+            schema.keys.iter().map(TagKey::shown).collect();
+        let mut keys = rank(text, &shown_keys);
         keys.sort_by_key(|key| key.index);
 
-        let mut found = suggestions_of(SuggestionKind::Key, keys, schema.keys);
+        let mut found = suggestions_of(SuggestionKind::Key, keys, &shown_keys);
         if text.is_empty() {
             return found;
         }
@@ -571,8 +642,8 @@ impl TagSearch {
         let found = self.suggestions(schema);
 
         match found.iter().find(|entry| entry.is_highlighted) {
-            Some(entry) => self.apply_suggestion(entry, schema.keys),
-            None => self.add_typed_tag(schema.keys),
+            Some(entry) => self.apply_suggestion(entry, &schema.keys),
+            None => self.add_typed_tag(&schema.keys),
         }
     }
 
@@ -589,7 +660,7 @@ impl TagSearch {
             .find(|entry| entry.kind != SuggestionKind::Typed);
 
         match highlighted.or(first_real) {
-            Some(entry) => self.apply_suggestion(entry, schema.keys),
+            Some(entry) => self.apply_suggestion(entry, &schema.keys),
             None => self.apply(schema),
         }
     }
@@ -597,13 +668,13 @@ impl TagSearch {
     /// Applies the suggestion at `index`, if it is still listed.
     fn pick(&mut self, index: usize, schema: &TagSchema) {
         if let Some(entry) = self.suggestions(schema).get(index) {
-            self.apply_suggestion(entry, schema.keys);
+            self.apply_suggestion(entry, &schema.keys);
         }
     }
 
     /// A key goes in the field and shows its values; a name fills the field
     /// and closes the list; a value becomes a tag and clears the field.
-    fn apply_suggestion(&mut self, entry: &Suggestion, keys: &[&'static str]) {
+    fn apply_suggestion(&mut self, entry: &Suggestion, keys: &[TagKey]) {
         self.highlighted = 0;
 
         match entry.kind {
@@ -620,7 +691,7 @@ impl TagSearch {
                 if let ParsedInput::Tag { key, text } = parse(&self.input, keys)
                 {
                     let value = text.to_owned();
-                    self.add_tag(key, &value);
+                    self.add_tag(key.name(), &value);
                     self.input.clear();
                 } else {
                     self.is_open = false;
@@ -628,7 +699,7 @@ impl TagSearch {
             },
             SuggestionKind::Value => {
                 if let ParsedInput::Tag { key, .. } = parse(&self.input, keys) {
-                    self.add_tag(key, &entry.text);
+                    self.add_tag(key.name(), &entry.text);
                 }
                 self.input.clear();
             },
@@ -637,7 +708,7 @@ impl TagSearch {
 
     /// Adds the field's `key:text` as a tag and clears the field. Anything
     /// else in the field stays there.
-    fn add_typed_tag(&mut self, keys: &[&'static str]) {
+    fn add_typed_tag(&mut self, keys: &[TagKey]) {
         let ParsedInput::Tag { key, text } = parse(&self.input, keys) else {
             return;
         };
@@ -646,7 +717,7 @@ impl TagSearch {
         }
 
         let value = text.to_owned();
-        self.add_tag(key, &value);
+        self.add_tag(key.name(), &value);
 
         self.input.clear();
         self.highlighted = 0;
@@ -674,11 +745,7 @@ impl TagSearch {
     }
 
     /// What changed since `before`.
-    fn change_since(
-        &self,
-        before: &Self,
-        keys: &[&'static str],
-    ) -> TagSearchChange {
+    fn change_since(&self, before: &Self, keys: &[TagKey]) -> TagSearchChange {
         if self.tags != before.tags
             || self.name_text(keys) != before.name_text(keys)
         {
@@ -692,11 +759,14 @@ impl TagSearch {
 }
 
 /// What the text in the field means.
-enum ParsedInput<'a> {
+enum ParsedInput<'text, 'keys> {
     /// A filter by name.
-    Plain(&'a str),
-    /// A key of the schema, and the text typed after its `:`.
-    Tag { key: &'static str, text: &'a str },
+    Plain(&'text str),
+    /// A key of the schema, and the text typed after its colon.
+    Tag {
+        key: &'keys TagKey,
+        text: &'text str,
+    },
 }
 
 /// A move of the highlight.
@@ -713,14 +783,18 @@ struct Ranked {
     ranges: Vec<Range<usize>>,
 }
 
-/// Reads `input`: text before the first `:` is a key only if `keys` has it,
-/// in any case; the key takes the spelling of `keys`.
-fn parse<'a>(input: &'a str, keys: &[&'static str]) -> ParsedInput<'a> {
-    if let Some((prefix, text)) = input.split_once(':') {
-        let prefix = prefix.trim();
+/// Reads `input`: text before the first colon of either kind is a key only if
+/// it is the shown name of one of `keys`, in any case. Upper case is compared
+/// because it also joins `Größe` and `GRÖSSE`, which lower case keeps apart.
+fn parse<'text, 'keys>(
+    input: &'text str,
+    keys: &'keys [TagKey],
+) -> ParsedInput<'text, 'keys> {
+    if let Some((prefix, text)) = input.split_once(KEY_ENDS) {
+        let prefix = prefix.trim().to_uppercase();
 
         if let Some(key) =
-            keys.iter().find(|key| key.eq_ignore_ascii_case(prefix))
+            keys.iter().find(|key| key.shown.to_uppercase() == prefix)
         {
             return ParsedInput::Tag {
                 key,
@@ -823,7 +897,14 @@ fn contains_folded(text: &str, needle: &str) -> bool {
 mod tests {
     use super::*;
 
-    const KEYS: &[&str] = &["name", "status", "image", "ports", "compose"];
+    /// Keys whose shown name is their internal name, for the rules that do
+    /// not depend on the language.
+    fn keys() -> Vec<TagKey> {
+        ["name", "status", "image", "ports", "compose"]
+            .into_iter()
+            .map(|name| TagKey::new(name, name))
+            .collect()
+    }
 
     fn row(name: &str, status: &str, ports: &[&str]) -> SearchRow {
         let mut row = SearchRow::new(name)
@@ -839,7 +920,7 @@ mod tests {
     /// Three rows: two running, one exited; `web-1` has two ports.
     fn schema() -> TagSchema {
         TagSchema::new(
-            KEYS,
+            keys(),
             vec![
                 row("web-1", "Running", &["8080:80/tcp", "8443:443/tcp"]),
                 row("db-1", "Exited (3)", &["5432/tcp"]),
@@ -869,7 +950,7 @@ mod tests {
     }
 
     fn labels(search: &TagSearch) -> Vec<String> {
-        search.tags().iter().map(Tag::label).collect()
+        search.tags().iter().map(|tag| tag.label(&keys())).collect()
     }
 
     // Parsing.
@@ -891,7 +972,7 @@ mod tests {
         ];
 
         for (text, expected) in cases {
-            assert_eq!(typed(text).name_text(KEYS), expected, "{text:?}");
+            assert_eq!(typed(text).name_text(&keys()), expected, "{text:?}");
         }
     }
 
@@ -1011,7 +1092,7 @@ mod tests {
             let change = apply(&mut search);
 
             assert_eq!(search.input(), text, "{text:?}");
-            assert_eq!(search.name_text(KEYS), text, "{text:?}");
+            assert_eq!(search.name_text(&keys()), text, "{text:?}");
             assert!(!search.is_open(), "{text:?}");
             assert!(search.tags().is_empty(), "{text:?}");
             assert_eq!(change, TagSearchChange::Suggestions, "{text:?}");
@@ -1027,8 +1108,8 @@ mod tests {
         assert_eq!(labels(&search), vec!["status:ru"]);
         assert_eq!(search.input(), "");
         assert_eq!(change, TagSearchChange::Filter);
-        assert!(search.passes(KEYS, &row("web-1", "Running", &[])));
-        assert!(!search.passes(KEYS, &row("db-1", "Exited", &[])));
+        assert!(search.passes(&keys(), &row("web-1", "Running", &[])));
+        assert!(!search.passes(&keys(), &row("db-1", "Exited", &[])));
     }
 
     #[test]
@@ -1088,7 +1169,10 @@ mod tests {
 
         assert_eq!(change, TagSearchChange::Suggestions);
         assert!(search.is_open());
-        assert_eq!(texts(&search), KEYS);
+        assert_eq!(
+            texts(&search),
+            ["name", "status", "image", "ports", "compose"]
+        );
         assert!(
             search
                 .suggestions(&schema())
@@ -1122,7 +1206,7 @@ mod tests {
     #[test]
     fn names_starting_with_the_text_come_first_then_the_given_order() {
         let schema = TagSchema::new(
-            KEYS,
+            keys(),
             vec![
                 row("my-web", "Running", &[]),
                 row("your-web", "Running", &[]),
@@ -1155,7 +1239,7 @@ mod tests {
         assert_eq!(texts(&typed("status:")), vec!["Running", "Exited (3)"]);
 
         let schema = TagSchema::new(
-            KEYS,
+            keys(),
             vec![row("<none>", "A", &[]), row("<none>", "B", &[])],
         );
         let mut search = TagSearch::default();
@@ -1217,7 +1301,7 @@ mod tests {
 
     #[test]
     fn the_matched_part_ignores_case_and_is_a_byte_range_of_the_shown_text() {
-        let schema = TagSchema::new(KEYS, vec![row("Сервер", "A", &[])]);
+        let schema = TagSchema::new(keys(), vec![row("Сервер", "A", &[])]);
         let mut search = TagSearch::default();
         let _ = search
             .perform(TagSearchAction::InputChanged("вер".to_owned()), &schema);
@@ -1366,7 +1450,8 @@ mod tests {
     fn a_list_that_shrank_keeps_a_highlighted_suggestion() {
         let mut search = typed("status:");
         let _ = search.perform(TagSearchAction::MoveDown, &schema());
-        let smaller = TagSchema::new(KEYS, vec![row("web-1", "Running", &[])]);
+        let smaller =
+            TagSchema::new(keys(), vec![row("web-1", "Running", &[])]);
 
         let found = search.suggestions(&smaller);
 
@@ -1447,7 +1532,10 @@ mod tests {
         let _ = apply(&mut search);
 
         assert!(search.is_open());
-        assert_eq!(texts(&search), KEYS);
+        assert_eq!(
+            texts(&search),
+            ["name", "status", "image", "ports", "compose"]
+        );
     }
 
     #[test]
@@ -1458,7 +1546,7 @@ mod tests {
         let change = apply(&mut search);
 
         assert_eq!(search.input(), "web-1");
-        assert_eq!(search.name_text(KEYS), "web-1");
+        assert_eq!(search.name_text(&keys()), "web-1");
         assert!(!search.is_open());
         assert!(search.tags().is_empty());
         assert_eq!(change, TagSearchChange::Filter);
@@ -1660,22 +1748,22 @@ mod tests {
     fn with_no_tags_and_no_text_every_row_passes() {
         let search = TagSearch::default();
 
-        assert!(search.passes(KEYS, &row("web-1", "Running", &[])));
+        assert!(search.passes(&keys(), &row("web-1", "Running", &[])));
     }
 
     #[test]
     fn plain_text_matches_part_of_the_name_ignoring_case() {
         let search = typed(" WEB ");
 
-        assert!(search.passes(KEYS, &row("my-web-1", "Running", &[])));
-        assert!(!search.passes(KEYS, &row("db-1", "Running", &[])));
+        assert!(search.passes(&keys(), &row("my-web-1", "Running", &[])));
+        assert!(!search.passes(&keys(), &row("db-1", "Running", &[])));
     }
 
     #[test]
     fn a_half_typed_tag_filters_nothing() {
         let search = typed("status:zzz");
 
-        assert!(search.passes(KEYS, &row("db-1", "Running", &[])));
+        assert!(search.passes(&keys(), &row("db-1", "Running", &[])));
     }
 
     #[test]
@@ -1683,8 +1771,8 @@ mod tests {
         let mut search = TagSearch::default();
         let _ = search.set_tag("status", "RUN");
 
-        assert!(search.passes(KEYS, &row("web-1", "Running", &[])));
-        assert!(!search.passes(KEYS, &row("run", "Exited", &[])));
+        assert!(search.passes(&keys(), &row("web-1", "Running", &[])));
+        assert!(!search.passes(&keys(), &row("run", "Exited", &[])));
     }
 
     #[test]
@@ -1692,7 +1780,7 @@ mod tests {
         let mut search = TagSearch::default();
         let _ = search.set_tag("compose", "web");
 
-        assert!(!search.passes(KEYS, &row("web", "Running", &[])));
+        assert!(!search.passes(&keys(), &row("web", "Running", &[])));
     }
 
     #[test]
@@ -1701,10 +1789,12 @@ mod tests {
         let _ = search.set_tag("ports", "8443");
 
         assert!(search.passes(
-            KEYS,
+            &keys(),
             &row("web", "Running", &["8080:80/tcp", "8443:443/tcp"])
         ));
-        assert!(!search.passes(KEYS, &row("web", "Running", &["8080:80/tcp"])));
+        assert!(
+            !search.passes(&keys(), &row("web", "Running", &["8080:80/tcp"]))
+        );
     }
 
     #[test]
@@ -1713,9 +1803,9 @@ mod tests {
         let _ = search.set_tag("status", "running");
         let _ = search.set_tag("ports", "8080");
 
-        assert!(search.passes(KEYS, &row("a", "Running", &["8080:80/tcp"])));
-        assert!(!search.passes(KEYS, &row("b", "Exited", &["8080:80/tcp"])));
-        assert!(!search.passes(KEYS, &row("c", "Running", &["443/tcp"])));
+        assert!(search.passes(&keys(), &row("a", "Running", &["8080:80/tcp"])));
+        assert!(!search.passes(&keys(), &row("b", "Exited", &["8080:80/tcp"])));
+        assert!(!search.passes(&keys(), &row("c", "Running", &["443/tcp"])));
     }
 
     #[test]
@@ -1731,9 +1821,9 @@ mod tests {
         let _ = apply(&mut search);
 
         assert_eq!(search.tags().len(), 2);
-        assert!(search.passes(KEYS, &row("a", "Running", &[])));
-        assert!(search.passes(KEYS, &row("b", "Exited", &[])));
-        assert!(!search.passes(KEYS, &row("c", "Paused", &[])));
+        assert!(search.passes(&keys(), &row("a", "Running", &[])));
+        assert!(search.passes(&keys(), &row("b", "Exited", &[])));
+        assert!(!search.passes(&keys(), &row("c", "Paused", &[])));
     }
 
     #[test]
@@ -1741,9 +1831,9 @@ mod tests {
         let mut search = typed("web");
         let _ = search.set_tag("status", "running");
 
-        assert!(search.passes(KEYS, &row("web-1", "Running", &[])));
-        assert!(!search.passes(KEYS, &row("db-1", "Running", &[])));
-        assert!(!search.passes(KEYS, &row("web-2", "Exited", &[])));
+        assert!(search.passes(&keys(), &row("web-1", "Running", &[])));
+        assert!(!search.passes(&keys(), &row("db-1", "Running", &[])));
+        assert!(!search.passes(&keys(), &row("web-2", "Exited", &[])));
     }
 
     #[test]
@@ -1775,5 +1865,388 @@ mod tests {
         assert_eq!(plain, TagSearchChange::Filter);
         assert_eq!(same_name_text, TagSearchChange::Suggestions);
         assert_eq!(half_tag, TagSearchChange::Suggestions);
+    }
+
+    // Shown names: a key is written as its column header.
+
+    /// The keys of a table in Russian.
+    fn russian_keys() -> Vec<TagKey> {
+        vec![
+            TagKey::new("name", "Имя"),
+            TagKey::new("status", "Состояние"),
+            TagKey::new("ports", "Порты"),
+            TagKey::new("compose", "Проект"),
+        ]
+    }
+
+    /// The same keys in English.
+    fn english_keys() -> Vec<TagKey> {
+        vec![
+            TagKey::new("name", "Name"),
+            TagKey::new("status", "Status"),
+            TagKey::new("ports", "Ports"),
+            TagKey::new("compose", "Compose"),
+        ]
+    }
+
+    /// Rows as a Russian table shows them.
+    fn russian_schema() -> TagSchema {
+        TagSchema::new(
+            russian_keys(),
+            vec![
+                row("web-1", "Работает", &["8080:80/tcp"]),
+                row("db-1", "Остановлен (3)", &[]),
+            ],
+        )
+    }
+
+    /// A search over `schema` with `text` typed.
+    fn typed_in(schema: &TagSchema, text: &str) -> TagSearch {
+        let mut search = TagSearch::default();
+        let _ = search
+            .perform(TagSearchAction::InputChanged(text.to_owned()), schema);
+
+        search
+    }
+
+    fn shown_in(
+        search: &TagSearch,
+        schema: &TagSchema,
+    ) -> Vec<(SuggestionKind, String)> {
+        search
+            .suggestions(schema)
+            .iter()
+            .map(|found| (found.kind(), found.text().to_owned()))
+            .collect()
+    }
+
+    /// Types `text`, closes the list and presses Enter, so the text itself
+    /// is what becomes a tag.
+    fn tag_typed_in(schema: &TagSchema, text: &str) -> TagSearch {
+        let mut search = typed_in(schema, text);
+        let _ = search.perform(TagSearchAction::Close, schema);
+        let _ = search.perform(TagSearchAction::Apply, schema);
+
+        search
+    }
+
+    #[test]
+    fn a_shown_name_ends_at_the_first_colon_of_either_kind() {
+        // (column header, shown name)
+        let cases = [
+            ("Status", "Status"),
+            ("Repository:Tag", "Repository"),
+            ("Репозиторий:тег", "Репозиторий"),
+            ("仓库：标签", "仓库"),
+            ("Used by", "Used by"),
+            ("Genutzt von", "Genutzt von"),
+            ("  Used by : x", "Used by"),
+        ];
+
+        for (header, shown) in cases {
+            let key = TagKey::new("key", header);
+
+            assert_eq!(key.shown(), shown, "{header:?}");
+            assert_eq!(key.name(), "key", "{header:?}");
+        }
+    }
+
+    #[test]
+    fn a_shown_name_is_recognized_in_any_case_in_any_alphabet() {
+        let schema = TagSchema::new(
+            vec![
+                TagKey::new("name", "Имя"),
+                TagKey::new("status", "Состояние"),
+                TagKey::new("size", "Größe"),
+                TagKey::new("state", "État"),
+            ],
+            Vec::new(),
+        );
+        // (typed key, its internal name)
+        let cases = [
+            ("Имя", "name"),
+            ("имя", "name"),
+            ("ИМЯ", "name"),
+            (" иМя ", "name"),
+            ("СОСТОЯНИЕ", "status"),
+            ("Größe", "size"),
+            ("GRÖSSE", "size"),
+            ("größe", "size"),
+            ("état", "state"),
+            ("ÉTAT", "state"),
+        ];
+
+        for (key, name) in cases {
+            let text = format!("{key}:x");
+
+            let search = tag_typed_in(&schema, &text);
+
+            assert_eq!(search.input(), "", "{text:?}");
+            assert_eq!(search.tags()[0].key(), name, "{text:?}");
+            assert_eq!(search.tags()[0].value(), "x", "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_shown_name_with_a_space_stays_whole() {
+        let schema = TagSchema::new(
+            vec![TagKey::new("used-by", "Used by"), TagKey::new("age", "Age")],
+            vec![SearchRow::new("data").value("used-by", "db-1")],
+        );
+
+        for text in ["Used by:db-1", "used BY : db-1"] {
+            let search = tag_typed_in(&schema, text);
+
+            assert_eq!(search.tags()[0].key(), "used-by", "{text:?}");
+            assert_eq!(search.tags()[0].value(), "db-1", "{text:?}");
+        }
+        assert_eq!(
+            typed_in(&schema, "Used:db-1").name_text(schema.keys()),
+            "Used:db-1"
+        );
+
+        let mut search = typed_in(&schema, "used");
+        let _ = search.perform(TagSearchAction::Complete, &schema);
+        assert_eq!(search.input(), "Used by:");
+    }
+
+    #[test]
+    fn the_internal_name_is_not_a_key_when_it_differs_from_the_shown_name() {
+        let schema = russian_schema();
+
+        for text in ["status:x", "STATUS:x", "name:web", "compose:x"] {
+            let mut search = typed_in(&schema, text);
+
+            assert_eq!(search.name_text(schema.keys()), text, "{text:?}");
+            assert_eq!(
+                shown_in(&search, &schema),
+                vec![(SuggestionKind::Typed, text.to_owned())],
+                "{text:?}"
+            );
+
+            let _ = search.perform(TagSearchAction::Apply, &schema);
+
+            assert!(search.tags().is_empty(), "{text:?}");
+            assert_eq!(search.input(), text, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn the_internal_name_is_not_suggested_when_it_differs() {
+        let schema = russian_schema();
+
+        for text in ["stat", "compose", "ports"] {
+            assert!(
+                shown_in(&typed_in(&schema, text), &schema)
+                    .iter()
+                    .all(|(kind, _)| *kind != SuggestionKind::Key),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_wide_colon_counts_as_a_colon() {
+        let schema = TagSchema::new(
+            vec![TagKey::new("status", "状态"), TagKey::new("name", "Имя")],
+            Vec::new(),
+        );
+        // (typed text, internal name, value)
+        let cases = [
+            ("状态：运行中", "status", "运行中"),
+            ("状态:运行中", "status", "运行中"),
+            ("Имя：web", "name", "web"),
+            (" имя ： web ", "name", "web"),
+        ];
+
+        for (text, name, value) in cases {
+            let search = tag_typed_in(&schema, text);
+
+            assert_eq!(search.tags()[0].key(), name, "{text:?}");
+            assert_eq!(search.tags()[0].value(), value, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn text_before_a_colon_that_is_no_shown_name_stays_plain_text() {
+        let schema = russian_schema();
+
+        for text in ["redis:7", "redis：7", "foo:bar", ":x", "：x"] {
+            let search = typed_in(&schema, text);
+
+            assert_eq!(search.name_text(schema.keys()), text, "{text:?}");
+            assert_eq!(
+                shown_in(&search, &schema)[0],
+                (SuggestionKind::Typed, text.to_owned()),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_value_with_colons_of_either_kind_stays_whole() {
+        let schema = russian_schema();
+        // (typed text, value)
+        let cases = [
+            ("Порты:8080:80/tcp", "8080:80/tcp"),
+            ("Порты：8080:80/tcp", "8080:80/tcp"),
+            ("Порты:8080：80/tcp", "8080：80/tcp"),
+        ];
+
+        for (text, value) in cases {
+            let search = tag_typed_in(&schema, text);
+
+            assert_eq!(search.tags()[0].key(), "ports", "{text:?}");
+            assert_eq!(search.tags()[0].value(), value, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn suggestions_show_the_shown_names_in_column_order() {
+        let schema = russian_schema();
+        let mut search = TagSearch::default();
+
+        let _ = search.perform(TagSearchAction::Focused, &schema);
+
+        let found: Vec<String> = shown_in(&search, &schema)
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect();
+        assert_eq!(found, ["Имя", "Состояние", "Порты", "Проект"]);
+    }
+
+    #[test]
+    fn typing_part_of_a_shown_name_suggests_it_in_any_case() {
+        let schema = russian_schema();
+
+        for text in ["Сост", "сост", "СОСТ"] {
+            assert_eq!(
+                shown_in(&typed_in(&schema, text), &schema),
+                vec![
+                    (SuggestionKind::Typed, text.to_owned()),
+                    (SuggestionKind::Key, "Состояние".to_owned()),
+                ],
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_typed_row_takes_the_shown_spelling_of_the_key() {
+        let schema = russian_schema();
+
+        for text in [" СОСТОЯНИЕ : zzz ", "состояние：zzz"] {
+            assert_eq!(
+                shown_in(&typed_in(&schema, text), &schema),
+                vec![(SuggestionKind::Typed, "Состояние:zzz".to_owned())],
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_shown_name_typed_whole_in_another_case_has_no_second_row() {
+        let schema = russian_schema();
+
+        assert_eq!(
+            shown_in(&typed_in(&schema, "СОСТОЯНИЕ"), &schema),
+            vec![(SuggestionKind::Key, "Состояние".to_owned())]
+        );
+    }
+
+    #[test]
+    fn applying_a_key_writes_its_shown_name_in_the_field() {
+        let schema = russian_schema();
+        let mut search = typed_in(&schema, "сост");
+
+        let _ = search.perform(TagSearchAction::Complete, &schema);
+
+        assert_eq!(search.input(), "Состояние:");
+        assert_eq!(search.name_text(schema.keys()), "");
+        assert_eq!(
+            shown_in(&search, &schema),
+            vec![
+                (SuggestionKind::Value, "Работает".to_owned()),
+                (SuggestionKind::Value, "Остановлен (3)".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_tag_stores_the_internal_name_and_shows_the_shown_name() {
+        let schema = russian_schema();
+        let mut search = typed_in(&schema, "Сост");
+
+        let _ = search.perform(TagSearchAction::Complete, &schema);
+        let _ = search.perform(
+            TagSearchAction::InputChanged("Состояние:раб".to_owned()),
+            &schema,
+        );
+        let _ = search.perform(TagSearchAction::Complete, &schema);
+
+        let tag = &search.tags()[0];
+        assert_eq!(tag.key(), "status");
+        assert_eq!(tag.value(), "Работает");
+        assert_eq!(tag.label(schema.keys()), "Состояние:Работает");
+        assert_eq!(search.input(), "");
+    }
+
+    #[test]
+    fn a_tag_key_shows_the_name_of_the_keys_it_is_given() {
+        let schema = russian_schema();
+        let search = tag_typed_in(&schema, "Состояние:Работает");
+        let tag = &search.tags()[0];
+
+        assert_eq!(tag.label(&russian_keys()), "Состояние:Работает");
+        assert_eq!(tag.label(&english_keys()), "Status:Работает");
+    }
+
+    #[test]
+    fn a_tag_of_a_key_that_is_not_given_reads_its_internal_name() {
+        let tag = Tag::new("status", "Running");
+
+        assert_eq!(tag.label(&[]), "status:Running");
+    }
+
+    #[test]
+    fn tags_filter_by_the_internal_name_in_any_language() {
+        let schema = russian_schema();
+        let search = tag_typed_in(&schema, "состояние:работ");
+        let web = &schema.rows()[0];
+        let db = &schema.rows()[1];
+
+        assert!(search.passes(&russian_keys(), web));
+        assert!(!search.passes(&russian_keys(), db));
+        assert!(search.passes(&english_keys(), web));
+    }
+
+    #[test]
+    fn values_of_a_key_come_by_the_internal_name_of_the_typed_key() {
+        let schema = russian_schema();
+
+        assert_eq!(
+            shown_in(&typed_in(&schema, "ПОРТЫ:"), &schema),
+            vec![(SuggestionKind::Value, "8080:80/tcp".to_owned())]
+        );
+    }
+
+    #[test]
+    fn a_link_replaces_a_typed_tag_by_the_internal_name() {
+        let schema = russian_schema();
+        let mut search = tag_typed_in(&schema, "проект:shop");
+
+        let change = search.set_tag("compose", "web");
+
+        assert_eq!(change, TagSearchChange::Filter);
+        assert_eq!(search.tags().len(), 1);
+        assert_eq!(search.tags()[0].label(schema.keys()), "Проект:web");
+    }
+
+    #[test]
+    fn text_typed_in_one_language_is_a_name_filter_in_another() {
+        let search = typed_in(&russian_schema(), "Имя:web");
+
+        assert_eq!(search.name_text(&russian_keys()), "");
+        assert_eq!(search.name_text(&english_keys()), "Имя:web");
     }
 }

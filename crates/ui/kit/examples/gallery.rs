@@ -56,7 +56,7 @@ use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::components::tag_row::TagRow;
 use otty_ui_kit::components::tag_search::{
-    SearchRow, TagSchema, TagSearch, TagSearchAction,
+    SearchRow, TagKey, TagSchema, TagSearch, TagSearchAction,
 };
 use otty_ui_kit::components::tag_search_field::TagSearchField;
 use otty_ui_kit::components::target_dot::{TargetKind, target_dot};
@@ -68,9 +68,6 @@ use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::components::{divider, scrollbar};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
-
-/// Keys of the tag search, in the order of its imagined columns.
-const TAG_KEYS: &[&str] = &["name", "status", "image", "ports"];
 
 /// Plus icon used by the icon buttons.
 const PLUS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>"#;
@@ -453,7 +450,14 @@ fn tag_schema() -> TagSchema {
         })
         .collect();
 
-    TagSchema::new(TAG_KEYS, rows)
+    let keys = vec![
+        TagKey::new("name", "Name"),
+        TagKey::new("status", "Status"),
+        TagKey::new("image", "Image"),
+        TagKey::new("ports", "Ports"),
+    ];
+
+    TagSchema::new(keys, rows)
 }
 
 /// A tree as the Inspect tab of a container shows it.
@@ -1847,7 +1851,7 @@ fn data_parts<'a>(
     let tag_search_parts = column![
         container(tag_bar).width(640),
         container(
-            TagRow::new(search.tags(), p)
+            TagRow::new(search.tags(), schema.keys(), p)
                 .remove_label("Remove this tag")
                 .clear_all_label("Clear all")
                 .on_action(Message::TagSearch)

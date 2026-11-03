@@ -3,7 +3,7 @@ use otty_docker::{
 };
 use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::status_badge::StatusTone;
-use otty_ui_kit::components::tag_search::{Suggestion, TagSearch};
+use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
 
 use super::action_model::{PruneViewModel, can_create, prune_button};
 use super::actions::container_actions;
@@ -14,6 +14,7 @@ use super::resource_rows::{
 };
 use super::sort::TableSort;
 use super::state::{DockerState, EngineState, ListLoad, ResourceList, Search};
+use super::table_search::keys;
 use super::types::{
     Place, ResourceKind, image_name, shown_containers, shown_images,
     shown_networks, shown_volumes,
@@ -73,6 +74,9 @@ pub(crate) struct TableViewModel<'a> {
     pub(crate) resource: ResourceKind,
     /// The tag search of this table: the field's text and the tags.
     pub(crate) search: &'a TagSearch,
+    /// The keys of this table in the interface language; the tags read their
+    /// shown names here.
+    pub(crate) keys: Vec<TagKey>,
     /// What the open suggestion list shows; empty while it is closed.
     pub(crate) suggestions: Vec<Suggestion>,
     /// The column the table is sorted by and the way.
@@ -380,6 +384,7 @@ fn table<'a, T>(
     TableViewModel {
         resource: shown.resource,
         search: shown.search,
+        keys: keys(shown.resource),
         suggestions: shown.suggestions,
         sort: shown.sort,
         columns: columns(shown.resource),
@@ -744,8 +749,27 @@ mod tests {
             open(&mut state, resource);
             search_does(&mut state, TagSearchAction::Focused);
 
+            let shown: Vec<String> =
+                crate::widgets::docker::table_search::keys(resource)
+                    .iter()
+                    .map(|key| key.shown().to_string())
+                    .collect();
+            assert_eq!(suggested(&state), shown, "{resource:?}");
+        }
+    }
+
+    #[test]
+    fn the_table_gives_the_keys_of_its_columns_to_the_tags_row() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+
+        for resource in ResourceKind::ALL {
+            open(&mut state, resource);
+
+            let vm = build(&state);
+
             assert_eq!(
-                suggested(&state),
+                table(&vm).keys,
                 crate::widgets::docker::table_search::keys(resource),
                 "{resource:?}"
             );

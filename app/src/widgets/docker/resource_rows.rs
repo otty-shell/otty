@@ -14,7 +14,7 @@ use super::links::LinkTarget;
 use super::overview::{Piece, ports_value};
 use super::sort::is_sortable;
 use super::types::{ResourceKind, image_name};
-use crate::i18n::{self, Key};
+use crate::i18n::{self, Key, Locale};
 
 /// Position of the Ports column of the containers table; its cell holds
 /// the port links.
@@ -25,8 +25,16 @@ pub(crate) const PORTS_COLUMN: usize = 4;
 /// typical value readable (side padding included); on a narrow window the
 /// table scrolls sideways instead of going below the minimums.
 pub(crate) fn columns(resource: ResourceKind) -> Vec<TableColumn> {
+    columns_in(i18n::current_locale(), resource)
+}
+
+/// The table columns of `resource`, with the titles in `locale`.
+pub(super) fn columns_in(
+    locale: Locale,
+    resource: ResourceKind,
+) -> Vec<TableColumn> {
     let column = |key: Key, share: u16, min: u16| {
-        TableColumn::new(i18n::t(key), share).min_width(min)
+        TableColumn::new(i18n::text_in(locale, key), share).min_width(min)
     };
     let number =
         |key: Key, min: u16| column(key, 1, min).align(ColumnAlign::End);

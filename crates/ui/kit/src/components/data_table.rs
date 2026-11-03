@@ -101,6 +101,11 @@ pub struct TableColumn {
 }
 
 impl TableColumn {
+    /// The text of the column header.
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
     /// Creates a left-aligned column that is not sortable and has no minimum
     /// width. `share` is its part of the table width: a column with share 2
     /// is twice as wide as one with share 1.

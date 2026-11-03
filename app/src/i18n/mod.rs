@@ -604,7 +604,7 @@ fn modes_pinned_note_in(locale: Locale, count: usize, limit: usize) -> String {
 ///
 /// Falls back to English when a key is absent, so a partial catalog degrades
 /// to readable text instead of blank UI.
-fn text_in(locale: Locale, key: Key) -> &'static str {
+pub(crate) fn text_in(locale: Locale, key: Key) -> &'static str {
     if let Some(value) = catalog(locale).strings.get(&key) {
         return value.as_str();
     }

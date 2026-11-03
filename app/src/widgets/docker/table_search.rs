@@ -3,26 +3,30 @@
 //! live in the kit; this module only supplies keys and values.
 
 use otty_docker::{Container, Image, Network, Volume};
-use otty_ui_kit::components::tag_search::{SearchRow, TagSchema, TagSearch};
+use otty_ui_kit::components::tag_search::{
+    SearchRow, TagKey, TagSchema, TagSearch,
+};
 
 use super::format::{age_text, port_text, short_id, shown_ports, size_text};
-use super::resource_rows::container_badge;
+use super::resource_rows::{columns_in, container_badge};
 use super::sort::{
     TableSort, sort_containers, sort_images, sort_networks, sort_volumes,
 };
 use super::types::{ResourceKind, image_name};
+use crate::i18n::{self, Locale};
 
-/// The key of the Compose project; the Compose link adds a tag with it.
+/// The internal name of the Compose project key; the Compose link adds a tag
+/// with it.
 pub(crate) const COMPOSE_KEY: &str = "compose";
 
-/// The keys of the containers table, in column order.
+/// The internal key names of the containers table, in column order.
 const CONTAINER_KEYS: &[&str] =
     &["name", "status", "image", COMPOSE_KEY, "ports", "age"];
-/// The keys of the images table, in column order.
+/// The internal key names of the images table, in column order.
 const IMAGE_KEYS: &[&str] = &["repository", "id", "size", "used-by", "age"];
-/// The keys of the volumes table, in column order.
+/// The internal key names of the volumes table, in column order.
 const VOLUME_KEYS: &[&str] = &["name", "driver", "used-by", "age"];
-/// The keys of the networks table, in column order.
+/// The internal key names of the networks table, in column order.
 const NETWORK_KEYS: &[&str] =
     &["name", "driver", "scope", "subnet", "containers", "age"];
 
@@ -57,14 +61,27 @@ impl TableSearches {
     }
 }
 
-/// The keys of the `resource` table, in column order.
-pub(crate) fn keys(resource: ResourceKind) -> &'static [&'static str] {
-    match resource {
+/// The keys of the `resource` table in column order, shown in the interface
+/// language.
+pub(crate) fn keys(resource: ResourceKind) -> Vec<TagKey> {
+    keys_in(i18n::current_locale(), resource)
+}
+
+/// The keys of the `resource` table in column order, shown in `locale`. A
+/// shown name comes from the title of its column, so the two cannot differ.
+pub(super) fn keys_in(locale: Locale, resource: ResourceKind) -> Vec<TagKey> {
+    let names = match resource {
         ResourceKind::Containers => CONTAINER_KEYS,
         ResourceKind::Images => IMAGE_KEYS,
         ResourceKind::Volumes => VOLUME_KEYS,
         ResourceKind::Networks => NETWORK_KEYS,
-    }
+    };
+
+    names
+        .iter()
+        .zip(columns_in(locale, resource))
+        .map(|(name, column)| TagKey::new(name, column.title()))
+        .collect()
 }
 
 /// A container as the search sees it: the texts of its cells, each port its
@@ -135,7 +152,7 @@ pub(crate) fn containers_schema(
     sort_containers(&mut items, sort);
 
     let rows = items.iter().map(|item| container_row(item, now)).collect();
-    TagSchema::new(CONTAINER_KEYS, rows)
+    TagSchema::new(keys(ResourceKind::Containers), rows)
 }
 
 /// The schema of the images table, like [`containers_schema`].
@@ -148,7 +165,7 @@ pub(crate) fn images_schema(
     sort_images(&mut items, sort);
 
     let rows = items.iter().map(|item| image_row(item, now)).collect();
-    TagSchema::new(IMAGE_KEYS, rows)
+    TagSchema::new(keys(ResourceKind::Images), rows)
 }
 
 /// The schema of the volumes table, like [`containers_schema`].
@@ -161,7 +178,7 @@ pub(crate) fn volumes_schema(
     sort_volumes(&mut items, sort);
 
     let rows = items.iter().map(|item| volume_row(item, now)).collect();
-    TagSchema::new(VOLUME_KEYS, rows)
+    TagSchema::new(keys(ResourceKind::Volumes), rows)
 }
 
 /// The schema of the networks table, like [`containers_schema`].
@@ -174,7 +191,7 @@ pub(crate) fn networks_schema(
     sort_networks(&mut items, sort);
 
     let rows = items.iter().map(|item| network_row(item, now)).collect();
-    TagSchema::new(NETWORK_KEYS, rows)
+    TagSchema::new(keys(ResourceKind::Networks), rows)
 }
 
 /// Adds the age of `created` to `row`; an unknown time shows no value.
@@ -190,9 +207,10 @@ fn with_age(row: SearchRow, now: i64, created: Option<i64>) -> SearchRow {
 mod tests {
     use otty_docker::{EngineKind, Resources, fixtures};
     use otty_ui_kit::components::data_table::{CellPart, TableCell};
-    use otty_ui_kit::components::tag_search::TagSearchAction;
+    use otty_ui_kit::components::tag_search::{TagKey, TagSearchAction};
 
     use super::*;
+    use crate::i18n::{Key, Locale, text_in};
     use crate::widgets::docker::format::NO_VALUE;
     use crate::widgets::docker::resource_rows::{
         columns, container_cells, image_cells, network_cells, volume_cells,
@@ -237,34 +255,48 @@ mod tests {
         assert_eq!(keys.len(), cells.len());
 
         for (key, cell) in keys.iter().zip(cells) {
+            let name = key.name();
             let shown = shown_text(cell);
-            let values: Vec<&str> = row.values_of(key).collect();
+            let values: Vec<&str> = row.values_of(name).collect();
             if shown.is_empty() || shown == NO_VALUE {
-                assert!(values.is_empty(), "{key}: {values:?}");
+                assert!(values.is_empty(), "{name}: {values:?}");
             } else {
-                assert_eq!(values.join(", "), shown, "{key}");
+                assert_eq!(values.join(", "), shown, "{name}");
             }
         }
     }
 
+    fn shown_names(locale: Locale, resource: ResourceKind) -> Vec<String> {
+        keys_in(locale, resource)
+            .iter()
+            .map(|key| key.shown().to_string())
+            .collect()
+    }
+
     #[test]
-    fn each_table_has_its_keys_in_column_order() {
-        assert_eq!(
-            keys(ResourceKind::Containers),
-            ["name", "status", "image", "compose", "ports", "age"]
-        );
-        assert_eq!(
-            keys(ResourceKind::Images),
-            ["repository", "id", "size", "used-by", "age"]
-        );
-        assert_eq!(
-            keys(ResourceKind::Volumes),
-            ["name", "driver", "used-by", "age"]
-        );
-        assert_eq!(
-            keys(ResourceKind::Networks),
-            ["name", "driver", "scope", "subnet", "containers", "age"]
-        );
+    fn each_table_keeps_its_internal_names_in_column_order_in_every_locale() {
+        let names = |locale, resource| -> Vec<&'static str> {
+            keys_in(locale, resource).iter().map(TagKey::name).collect()
+        };
+
+        for locale in Locale::ALL {
+            assert_eq!(
+                names(locale, ResourceKind::Containers),
+                ["name", "status", "image", "compose", "ports", "age"]
+            );
+            assert_eq!(
+                names(locale, ResourceKind::Images),
+                ["repository", "id", "size", "used-by", "age"]
+            );
+            assert_eq!(
+                names(locale, ResourceKind::Volumes),
+                ["name", "driver", "used-by", "age"]
+            );
+            assert_eq!(
+                names(locale, ResourceKind::Networks),
+                ["name", "driver", "scope", "subnet", "containers", "age"]
+            );
+        }
     }
 
     #[test]
@@ -272,6 +304,154 @@ mod tests {
         for resource in ResourceKind::ALL {
             assert_eq!(keys(resource).len(), columns(resource).len());
         }
+    }
+
+    #[test]
+    fn in_every_locale_and_table_the_shown_names_can_be_typed() {
+        for locale in Locale::ALL {
+            for resource in ResourceKind::ALL {
+                let tag = locale.tag();
+                let shown = shown_names(locale, resource);
+
+                for name in &shown {
+                    assert!(
+                        !name.trim().is_empty(),
+                        "{tag} {resource:?}: blank"
+                    );
+                    assert!(
+                        !name.contains([':', '：']),
+                        "{tag} {resource:?}: {name} has a colon"
+                    );
+                }
+
+                let mut unique: Vec<String> =
+                    shown.iter().map(|name| name.to_uppercase()).collect();
+                unique.sort_unstable();
+                unique.dedup();
+                assert_eq!(
+                    unique.len(),
+                    shown.len(),
+                    "{tag} {resource:?} repeats a name: {shown:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_shown_names_are_the_column_headers_up_to_the_colon() {
+        let cases: [(Locale, ResourceKind, &[&str]); 7] = [
+            (
+                Locale::En,
+                ResourceKind::Containers,
+                &["Name", "Status", "Image", "Compose", "Ports", "Age"],
+            ),
+            (
+                Locale::En,
+                ResourceKind::Images,
+                &["Repository", "ID", "Size", "Used by", "Age"],
+            ),
+            (
+                Locale::Ru,
+                ResourceKind::Containers,
+                &["Имя", "Состояние", "Образ", "Compose", "Порты", "Возраст"],
+            ),
+            (
+                Locale::Ru,
+                ResourceKind::Images,
+                &["Репозиторий", "ID", "Размер", "Используется", "Возраст"],
+            ),
+            (
+                Locale::Ru,
+                ResourceKind::Networks,
+                &[
+                    "Имя",
+                    "Драйвер",
+                    "Область",
+                    "Подсеть",
+                    "Контейнеры",
+                    "Возраст",
+                ],
+            ),
+            (
+                Locale::De,
+                ResourceKind::Volumes,
+                &["Name", "Treiber", "Genutzt von", "Alter"],
+            ),
+            (
+                Locale::ZhCn,
+                ResourceKind::Images,
+                &["仓库", "ID", "大小", "使用者", "时间"],
+            ),
+        ];
+
+        for (locale, resource, expected) in cases {
+            assert_eq!(
+                shown_names(locale, resource),
+                expected,
+                "{} {resource:?}",
+                locale.tag()
+            );
+        }
+    }
+
+    #[test]
+    fn the_keys_follow_the_interface_language() {
+        for resource in ResourceKind::ALL {
+            assert_eq!(
+                keys(resource),
+                keys_in(crate::i18n::current_locale(), resource)
+            );
+        }
+    }
+
+    /// A Russian containers table with one running container, its status as
+    /// the Russian cell shows it.
+    fn russian_containers() -> TagSchema {
+        TagSchema::new(
+            keys_in(Locale::Ru, ResourceKind::Containers),
+            vec![
+                SearchRow::new("web-1").value(
+                    "status",
+                    text_in(Locale::Ru, Key::DockerStateRunning),
+                ),
+            ],
+        )
+    }
+
+    #[test]
+    fn in_russian_tab_completes_the_header_then_the_text_of_the_cell() {
+        let schema = russian_containers();
+        let mut search = TagSearch::default();
+
+        let _ = search.perform(
+            TagSearchAction::InputChanged(String::from("Сост")),
+            &schema,
+        );
+        let _ = search.perform(TagSearchAction::Complete, &schema);
+        assert_eq!(search.input(), "Состояние:");
+
+        let _ = search.perform(
+            TagSearchAction::InputChanged(String::from("Состояние:раб")),
+            &schema,
+        );
+        let _ = search.perform(TagSearchAction::Complete, &schema);
+
+        assert_eq!(search.input(), "");
+        assert_eq!(search.tags()[0].key(), "status");
+        assert_eq!(search.tags()[0].label(schema.keys()), "Состояние:Работает");
+    }
+
+    #[test]
+    fn in_russian_an_english_key_is_a_name_filter() {
+        let schema = russian_containers();
+        let mut search = TagSearch::default();
+
+        let _ = search.perform(
+            TagSearchAction::InputChanged(String::from("status:x")),
+            &schema,
+        );
+
+        assert_eq!(search.name_text(schema.keys()), "status:x");
     }
 
     #[test]

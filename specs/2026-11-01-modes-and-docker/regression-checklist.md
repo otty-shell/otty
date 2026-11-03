@@ -174,18 +174,19 @@ statuses) in the list.
     suggestion), then the matching keys, then the matching names. Press Tab,
     then type `r`.
     Expected: Tab completes to the first real suggestion, so the field shows
-    `status:` with the cursor after the colon and the values listed; the next
-    letter gives `status:r`, not `rstatus:`. Repeat with ↓ then Enter, and with
-    a click on the `status` suggestion. The field keeps focus after the click.
-    With an empty field, or with only `status:` typed, there is no muted row
+    `Status:` with the cursor after the colon and the values listed; the next
+    letter gives `Status:r`, not `rStatus:`. Repeat with ↓ then Enter, and with
+    a click on the `Status` suggestion. The field keeps focus after the click.
+    With an empty field, or with only `Status:` typed, there is no muted row
     and the first real suggestion is highlighted.
-26. Type `status:ru`.
-    Expected: the first row is `status:ru` itself, then the matching values.
+26. Type `Status:ru`.
+    Expected: the first row is `Status:ru` itself, then the matching values.
     Press Enter.
-    Expected: a `status:ru` tag appears, the field is empty and still focused,
+    Expected: a `Status:ru` tag appears, the field is empty and still focused,
     and the table keeps every row whose status contains `ru`. Then type
-    `status:ru` and press Tab, or press ↓ then Enter, or click a value.
-    Expected: a `status:Running` tag appears. Type a name such as `web` and
+    `status:ru` (the case of the key does not matter) and press Tab, or press
+    ↓ then Enter, or click a value.
+    Expected: a `Status:Running` tag appears. Type a name such as `web` and
     press Enter.
     Expected: the text `web` stays in the field, the table is filtered by
     name and the list closes. Type `redis:7` or `foo:bar` and press Enter.
@@ -203,10 +204,10 @@ statuses) in the list.
     removes the last tag.
 30. In the Containers table press a project name in the Compose column, then
     press another project's name.
-    Expected: the first press adds the tag `compose:<name>` and filters the
+    Expected: the first press adds the tag `Compose:<name>` and filters the
     table; the second replaces that tag. The row is not selected by the press.
 31. Type a word with a typo, such as `stauts`.
-    Expected: the suggestions still list the close matches (`status`).
+    Expected: the suggestions still list the close matches (`Status`).
 32. Open the suggestions with the list below the field.
     Expected: the list floats over the tags row and the table, not pushing
     them down; a click outside closes it and also reaches what is there.
@@ -216,10 +217,28 @@ statuses) in the list.
     applies the highlighted real row (Tab on the muted typed-text row applies
     the first real row below it); Esc closes the list; the wheel scrolls it
     without changing the highlighted row.
+34. Switch the interface to Russian in Settings. In the Containers table focus
+    the search field.
+    Expected: the list shows the column headers (`Имя`, `Состояние`, `Образ`,
+    `Compose`, `Порты`, `Возраст`). Type `Сост`, press Tab.
+    Expected: the field shows `Состояние:`. Type `раб`, press Tab.
+    Expected: a tag `Состояние:Работает` appears and only running containers
+    stay. Type `имя:otty` and press Enter, then type `status:x`.
+    Expected: `имя:otty` gives the tag `Имя:otty`; `status:x` is not a key, so
+    the whole text filters by name and no row matches. Clear the field and type
+    `Состояние：раб` with a wide colon.
+    Expected: the first row reads `Состояние:раб`. In the Images table `Реп`
+    then Tab gives `Репозиторий:`.
+35. With the tag `Состояние:Работает` still there, switch the interface back to
+    English.
+    Expected: the tag reads `Status:Работает` and, as the owner accepted, matches
+    no row until it is removed, because the cell now says `Running`. A press on
+    a project name in the Compose column still adds and replaces the `Compose`
+    tag in both languages.
 
 ## Both themes
 
-34. Walk steps 1, 3, 5, 12, 20 and 25 in OTTY Light as well.
+36. Walk steps 1, 3, 5, 12, 20 and 25 in OTTY Light as well.
     Expected: every text, badge dot and icon is easy to read on its surface;
     the selected row, hovered row and the row "..." menu all keep clear
     contrast.

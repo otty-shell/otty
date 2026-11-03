@@ -7,7 +7,7 @@ use iced::{Alignment, Element};
 
 use super::button::{Button, ButtonKind, ButtonSize};
 use super::chip::Chip;
-use super::tag_search::{Tag, TagSearchAction};
+use super::tag_search::{Tag, TagKey, TagSearchAction};
 use crate::palette::UiPalette;
 use crate::spacing;
 
@@ -21,7 +21,7 @@ use crate::spacing;
 /// ```
 /// use iced::Element;
 /// use otty_ui_kit::components::tag_row::TagRow;
-/// use otty_ui_kit::components::tag_search::{Tag, TagSearchAction};
+/// use otty_ui_kit::components::tag_search::{Tag, TagKey, TagSearchAction};
 /// use otty_ui_kit::palette::UiPalette;
 ///
 /// #[derive(Clone)]
@@ -31,14 +31,15 @@ use crate::spacing;
 ///
 /// let palette = UiPalette::otty_dark();
 /// let tags = [Tag::new("status", "Running")];
-/// let row: Element<'_, Message> = TagRow::new(&tags, &palette)
+/// let keys = [TagKey::new("status", "Status")];
+/// let row: Element<'_, Message> = TagRow::new(&tags, &keys, &palette)
 ///     .remove_label("Remove this tag")
 ///     .clear_all_label("Clear all")
 ///     .on_action(Message::Search)
 ///     .into();
 /// ```
 pub struct TagRow<'a, Message> {
-    tags: &'a [Tag],
+    labels: Vec<String>,
     palette: UiPalette,
     remove_label: String,
     clear_all_label: String,
@@ -46,10 +47,11 @@ pub struct TagRow<'a, Message> {
 }
 
 impl<'a, Message> TagRow<'a, Message> {
-    /// Creates a row that shows `tags`.
-    pub fn new(tags: &'a [Tag], palette: &UiPalette) -> Self {
+    /// Creates a row that shows `tags`, each with the shown name of its key
+    /// in `keys`.
+    pub fn new(tags: &[Tag], keys: &[TagKey], palette: &UiPalette) -> Self {
         Self {
-            tags,
+            labels: tags.iter().map(|tag| tag.label(keys)).collect(),
             palette: palette.clone(),
             remove_label: String::new(),
             clear_all_label: String::new(),
@@ -83,7 +85,7 @@ impl<'a, Message: Clone + 'a> From<TagRow<'a, Message>>
     for Element<'a, Message>
 {
     fn from(value: TagRow<'a, Message>) -> Self {
-        if value.tags.is_empty() {
+        if value.labels.is_empty() {
             return Space::new().into();
         }
 
@@ -94,8 +96,8 @@ impl<'a, Message: Clone + 'a> From<TagRow<'a, Message>>
 
         let mut line =
             row![].spacing(spacing::SPACE_2).align_y(Alignment::Center);
-        for (index, tag) in value.tags.iter().enumerate() {
-            let mut chip = Chip::new(tag.label(), &palette).mono(true);
+        for (index, label) in value.labels.iter().enumerate() {
+            let mut chip = Chip::new(label.as_str(), &palette).mono(true);
             if let Some(message) = send(TagSearchAction::RemoveTag(index)) {
                 chip = chip.on_clear(value.remove_label.as_str(), message);
             }
@@ -127,6 +129,14 @@ mod tests {
 
     const CLEAR_ALL: &str = "Clear all";
 
+    fn keys() -> Vec<TagKey> {
+        vec![
+            TagKey::new("status", "Status"),
+            TagKey::new("compose", "Compose"),
+            TagKey::new("image", "Image"),
+        ]
+    }
+
     fn tags() -> Vec<Tag> {
         vec![
             Tag::new("status", "Running"),
@@ -136,10 +146,18 @@ mod tests {
     }
 
     fn view<'a>(tags: &'a [Tag], width: f32) -> Element<'a, TagSearchAction> {
+        view_with(tags, &keys(), width)
+    }
+
+    fn view_with<'a>(
+        tags: &'a [Tag],
+        keys: &[TagKey],
+        width: f32,
+    ) -> Element<'a, TagSearchAction> {
         let palette = UiPalette::otty_dark();
 
         container(column![
-            TagRow::new(tags, &palette)
+            TagRow::new(tags, keys, &palette)
                 .remove_label("Remove")
                 .clear_all_label(CLEAR_ALL)
                 .on_action(|action| action),
@@ -176,8 +194,8 @@ mod tests {
         let tags = tags();
         let mut ui = simulator(view(&tags, 900.0));
 
-        let first = ui.find("status:Running").expect("chip").bounds();
-        let last = ui.find("image:busybox").expect("chip").bounds();
+        let first = ui.find("Status:Running").expect("chip").bounds();
+        let last = ui.find("Image:busybox").expect("chip").bounds();
         let clear = ui.find(CLEAR_ALL).expect("button").bounds();
 
         assert!(first.x < last.x);
@@ -185,12 +203,28 @@ mod tests {
     }
 
     #[test]
+    fn a_tag_shows_the_shown_name_of_its_key_and_never_the_internal_name() {
+        let tags = tags();
+        let russian = vec![
+            TagKey::new("status", "Состояние"),
+            TagKey::new("compose", "Compose"),
+            TagKey::new("image", "Образ"),
+        ];
+        let mut ui = simulator(view_with(&tags, &russian, 900.0));
+
+        assert!(ui.find("Состояние:Running").is_ok());
+        assert!(ui.find("Образ:busybox").is_ok());
+        assert!(ui.find("Status:Running").is_err());
+        assert!(ui.find("status:Running").is_err());
+    }
+
+    #[test]
     fn chips_wrap_at_a_narrow_width() {
         let tags = tags();
         let mut ui = simulator(view(&tags, 200.0));
 
-        let first = ui.find("status:Running").expect("chip").bounds();
-        let second = ui.find("compose:otty-site").expect("chip").bounds();
+        let first = ui.find("Status:Running").expect("chip").bounds();
+        let second = ui.find("Compose:otty-site").expect("chip").bounds();
         let below = ui.find("below").expect("marker").bounds();
 
         assert!(second.y > first.y, "second chip on a new line");
@@ -202,7 +236,7 @@ mod tests {
         let tags = tags();
         let mut ui = simulator(view(&tags, 900.0));
 
-        click_cross(&mut ui, "compose:otty-site");
+        click_cross(&mut ui, "Compose:otty-site");
 
         let messages: Vec<TagSearchAction> = ui.into_messages().collect();
         assert_eq!(messages, vec![TagSearchAction::RemoveTag(1)]);
@@ -223,13 +257,14 @@ mod tests {
     fn without_a_handler_nothing_is_sent() {
         let tags = tags();
         let palette = UiPalette::otty_dark();
-        let row: Element<'_, TagSearchAction> = TagRow::new(&tags, &palette)
-            .clear_all_label(CLEAR_ALL)
-            .into();
+        let row: Element<'_, TagSearchAction> =
+            TagRow::new(&tags, &keys(), &palette)
+                .clear_all_label(CLEAR_ALL)
+                .into();
         let mut ui = simulator(row);
 
         ui.click(CLEAR_ALL).expect("button should show");
-        click_cross(&mut ui, "status:Running");
+        click_cross(&mut ui, "Status:Running");
 
         assert_eq!(ui.into_messages().count(), 0);
     }

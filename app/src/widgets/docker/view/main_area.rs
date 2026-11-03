@@ -147,7 +147,7 @@ fn header<'a>(
         .padding(Padding::from([spacing::SPACE_4, spacing::SPACE_5]));
     if !vm.search.tags().is_empty() {
         header = header.push(
-            TagRow::new(vm.search.tags(), palette)
+            TagRow::new(vm.search.tags(), &vm.keys, palette)
                 .remove_label(i18n::t(Key::DockerTagRemove))
                 .clear_all_label(i18n::t(Key::DockerTagsClearAll))
                 .on_action(DockerIntent::TagSearch),
@@ -267,10 +267,11 @@ mod tests {
     };
     use otty_ui_kit::components::status_badge::StatusTone;
     use otty_ui_kit::components::tag_search::{
-        Suggestion, Tag, TagSearch, TagSearchAction,
+        Suggestion, TagSearch, TagSearchAction,
     };
 
     use super::*;
+    use crate::i18n::Locale;
     use crate::theme::ThemeManager;
     use crate::widgets::docker::action_model::PruneViewModel;
     use crate::widgets::docker::model;
@@ -280,6 +281,7 @@ mod tests {
     use crate::widgets::docker::reducer::reduce;
     use crate::widgets::docker::sort::TableSorts;
     use crate::widgets::docker::state::DockerState;
+    use crate::widgets::docker::table_search::{keys, keys_in};
     use crate::widgets::docker::types::{LoadedLists, ResourceKind};
 
     const NOW: i64 = 1_793_557_960;
@@ -292,6 +294,7 @@ mod tests {
         MainViewModel::Table(TableViewModel {
             resource: ResourceKind::Containers,
             search: &EMPTY_SEARCH,
+            keys: keys(ResourceKind::Containers),
             suggestions: Vec::new(),
             sort: TableSorts::default().get(ResourceKind::Containers),
             columns: vec![
@@ -506,7 +509,7 @@ mod tests {
             .expect("field should show")
             .bounds();
         let tag = ui
-            .find("compose:otty-site")
+            .find("Compose:otty-site")
             .expect("tag should show")
             .bounds();
         let table = ui.find("Name").expect("header should show").bounds();
@@ -675,7 +678,7 @@ mod tests {
         });
         let mut ui =
             simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
-        let tag = ui.find("status:Running").expect("tag should show").bounds();
+        let tag = ui.find("Status:Running").expect("tag should show").bounds();
 
         // The cross sits one gap right of the chip label.
         click_at(
@@ -696,6 +699,23 @@ mod tests {
                 DockerIntent::TagSearch(TagSearchAction::ClearTags),
             ]
         );
+    }
+
+    #[test]
+    fn a_tag_shows_the_header_of_the_keys_the_model_gives() {
+        let themes = ThemeManager::new();
+        let search = tagged(&[("status", "Running")]);
+        let vm = with(|table| TableViewModel {
+            search: &search,
+            keys: keys_in(Locale::Ru, ResourceKind::Containers),
+            ..table
+        });
+        let mut ui =
+            simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
+
+        assert!(ui.find("Состояние:Running").is_ok());
+        assert!(ui.find("Status:Running").is_err());
+        assert!(ui.find("status:Running").is_err());
     }
 
     #[test]
@@ -802,6 +822,13 @@ mod tests {
         });
     }
 
+    /// The tags of the containers table as the user reads them.
+    fn tag_labels(search: &TagSearch) -> Vec<String> {
+        let keys = keys(ResourceKind::Containers);
+
+        search.tags().iter().map(|tag| tag.label(&keys)).collect()
+    }
+
     /// The rows the main area of `state` shows.
     fn row_count(state: &DockerState) -> usize {
         match model::main_area(state, NOW) {
@@ -821,7 +848,7 @@ mod tests {
         type_in_field(&mut state, "sta");
         assert_eq!(row_count(&state), 0, "plain text filters by name");
         tap_in_field(&mut state, Named::Tab);
-        assert_eq!(search(&state).input(), "status:");
+        assert_eq!(search(&state).input(), "Status:");
         assert_eq!(
             row_count(&state),
             before,
@@ -831,11 +858,10 @@ mod tests {
         type_in_field(&mut state, "run");
         tap_in_field(&mut state, Named::Tab);
 
-        let labels: Vec<String> =
-            search(&state).tags().iter().map(Tag::label).collect();
+        let labels = tag_labels(&search(&state));
         assert_eq!(
             labels,
-            vec![format!("status:{}", i18n::t(Key::DockerStateRunning))]
+            vec![format!("Status:{}", i18n::t(Key::DockerStateRunning))]
         );
         assert_eq!(search(&state).input(), "");
         assert_eq!(row_count(&state), 2);
@@ -847,13 +873,11 @@ mod tests {
         let mut state = loaded_state();
         let before = row_count(&state);
 
-        type_in_field(&mut state, "status:ru");
+        type_in_field(&mut state, "Status:ru");
         tap_in_field(&mut state, Named::Enter);
 
         let search = state.table_search(ResourceKind::Containers);
-        let labels: Vec<String> =
-            search.tags().iter().map(Tag::label).collect();
-        assert_eq!(labels, vec!["status:ru"]);
+        assert_eq!(tag_labels(search), vec!["Status:ru"]);
         assert_eq!(search.input(), "");
         assert_eq!(row_count(&state), 2, "only the running containers");
         assert!(before > 2);
@@ -891,7 +915,7 @@ mod tests {
             table.suggestions.iter().map(Suggestion::text).collect();
         assert_eq!(
             keys,
-            ["name", "status", "image", "compose", "ports", "age"]
+            ["Name", "Status", "Image", "Compose", "Ports", "Age"]
         );
     }
 

@@ -130,7 +130,7 @@ pub(crate) fn shown_containers<'a>(
 
     let mut shown: Vec<&Container> = containers
         .iter()
-        .filter(|item| search.passes(keys, &container_row(item, now)))
+        .filter(|item| search.passes(&keys, &container_row(item, now)))
         .collect();
     sort_containers(&mut shown, sort);
 
@@ -148,7 +148,7 @@ pub(crate) fn shown_images<'a>(
 
     let mut shown: Vec<&Image> = images
         .iter()
-        .filter(|item| search.passes(keys, &image_row(item, now)))
+        .filter(|item| search.passes(&keys, &image_row(item, now)))
         .collect();
     sort_images(&mut shown, sort);
 
@@ -166,7 +166,7 @@ pub(crate) fn shown_volumes<'a>(
 
     let mut shown: Vec<&Volume> = volumes
         .iter()
-        .filter(|item| search.passes(keys, &volume_row(item, now)))
+        .filter(|item| search.passes(&keys, &volume_row(item, now)))
         .collect();
     sort_volumes(&mut shown, sort);
 
@@ -184,7 +184,7 @@ pub(crate) fn shown_networks<'a>(
 
     let mut shown: Vec<&Network> = networks
         .iter()
-        .filter(|item| search.passes(keys, &network_row(item, now)))
+        .filter(|item| search.passes(&keys, &network_row(item, now)))
         .collect();
     sort_networks(&mut shown, sort);
 
@@ -203,7 +203,9 @@ pub(crate) fn image_name(image: &Image) -> &str {
 #[cfg(test)]
 mod tests {
     use otty_docker::{EngineKind, fixtures};
-    use otty_ui_kit::components::tag_search::{TagSchema, TagSearchAction};
+    use otty_ui_kit::components::tag_search::{
+        TagKey, TagSchema, TagSearchAction,
+    };
 
     use super::*;
     use crate::widgets::docker::sort::TableSorts;
@@ -212,7 +214,8 @@ mod tests {
 
     /// A search with `tags` and `text` typed in the field.
     fn search(tags: &[(&'static str, &str)], text: &str) -> TagSearch {
-        let schema = TagSchema::new(&["name"], Vec::new());
+        let schema =
+            TagSchema::new(vec![TagKey::new("name", "name")], Vec::new());
         let mut search = TagSearch::default();
         for (key, value) in tags {
             add_tag(&mut search, key, value);
@@ -225,8 +228,7 @@ mod tests {
 
     /// Adds `key:value` as Enter does: several tags of one key stay.
     fn add_tag(search: &mut TagSearch, key: &'static str, value: &str) {
-        let schema =
-            TagSchema::new(Box::leak(vec![key].into_boxed_slice()), Vec::new());
+        let schema = TagSchema::new(vec![TagKey::new(key, key)], Vec::new());
 
         for action in [
             TagSearchAction::InputChanged(format!("{key}:{value}")),

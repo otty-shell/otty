@@ -395,9 +395,10 @@ mod tests {
     use otty_ui_kit::components::data_tree::DataRow;
     use otty_ui_kit::components::key_value_list::ValuePart;
     use otty_ui_kit::components::log_view::LogViewState;
-    use otty_ui_kit::components::tag_search::{Tag, TagSearchAction};
+    use otty_ui_kit::components::tag_search::TagSearchAction;
 
     use super::*;
+    use crate::i18n::Locale;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::docker::inspect_tree::InspectTree;
     use crate::widgets::docker::inspector::{
@@ -408,6 +409,7 @@ mod tests {
     };
     use crate::widgets::docker::sort::SortOrder;
     use crate::widgets::docker::state::{ListLoad, Search};
+    use crate::widgets::docker::table_search::{COMPOSE_KEY, keys, keys_in};
     use crate::widgets::docker::types::{
         LoadedList, LoadedLists, Place, ResourceKind,
     };
@@ -774,7 +776,7 @@ mod tests {
 
         assert_eq!(
             tags_of(&state, ResourceKind::Containers),
-            vec!["compose:otty-fx"]
+            vec!["Compose:otty-fx"]
         );
     }
 
@@ -984,7 +986,7 @@ mod tests {
         assert!(effects.is_empty(), "{effects:?}");
         assert_eq!(
             tags_of(&state, ResourceKind::Containers),
-            vec!["compose:otty-fx"]
+            vec!["Compose:otty-fx"]
         );
     }
 
@@ -2363,11 +2365,13 @@ mod tests {
     }
 
     fn tags_of(state: &DockerState, resource: ResourceKind) -> Vec<String> {
+        let keys = keys(resource);
+
         state
             .table_search(resource)
             .tags()
             .iter()
-            .map(Tag::label)
+            .map(|tag| tag.label(&keys))
             .collect()
     }
 
@@ -2397,7 +2401,7 @@ mod tests {
         type_text(&mut state, "dr");
         search_does(&mut state, TagSearchAction::Complete);
 
-        assert_eq!(input_of(&state, ResourceKind::Volumes), "driver:");
+        assert_eq!(input_of(&state, ResourceKind::Volumes), "Driver:");
         assert_eq!(input_of(&state, ResourceKind::Containers), "");
     }
 
@@ -2413,20 +2417,20 @@ mod tests {
     #[test]
     fn tags_per_table_survive_switching_lists_and_back() {
         let mut state = loaded_state();
-        add_tag(&mut state, "status:running");
+        add_tag(&mut state, "Status:running");
         open(&mut state, ResourceKind::Images);
-        add_tag(&mut state, "repository:busybox");
+        add_tag(&mut state, "Repository:busybox");
 
         open(&mut state, ResourceKind::Containers);
         let containers = tags_of(&state, ResourceKind::Containers);
         let images = tags_of(&state, ResourceKind::Images);
         open(&mut state, ResourceKind::Images);
 
-        assert_eq!(containers, vec!["status:running"]);
-        assert_eq!(images, vec!["repository:busybox"]);
+        assert_eq!(containers, vec!["Status:running"]);
+        assert_eq!(images, vec!["Repository:busybox"]);
         assert_eq!(
             tags_of(&state, ResourceKind::Images),
-            vec!["repository:busybox"]
+            vec!["Repository:busybox"]
         );
     }
 
@@ -2457,32 +2461,65 @@ mod tests {
     fn clear_all_removes_the_tags_of_this_table_only() {
         let mut state = loaded_state();
         open(&mut state, ResourceKind::Images);
-        add_tag(&mut state, "repository:busybox");
+        add_tag(&mut state, "Repository:busybox");
         open(&mut state, ResourceKind::Containers);
-        add_tag(&mut state, "status:running");
-        add_tag(&mut state, "image:busybox");
+        add_tag(&mut state, "Status:running");
+        add_tag(&mut state, "Image:busybox");
 
         search_does(&mut state, TagSearchAction::ClearTags);
 
         assert!(tags_of(&state, ResourceKind::Containers).is_empty());
         assert_eq!(
             tags_of(&state, ResourceKind::Images),
-            vec!["repository:busybox"]
+            vec!["Repository:busybox"]
         );
     }
 
     #[test]
     fn a_single_cross_removes_that_tag() {
         let mut state = loaded_state();
-        add_tag(&mut state, "status:running");
-        add_tag(&mut state, "image:busybox");
+        add_tag(&mut state, "Status:running");
+        add_tag(&mut state, "Image:busybox");
 
         search_does(&mut state, TagSearchAction::RemoveTag(0));
 
         assert_eq!(
             tags_of(&state, ResourceKind::Containers),
-            vec!["image:busybox"]
+            vec!["Image:busybox"]
         );
+    }
+
+    #[test]
+    fn a_tag_key_shows_the_header_of_the_language_it_is_read_in() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "Status:running");
+        let _ = reduce(&mut state, DockerIntent::OpenComposeProject(0));
+
+        let tags = state.table_search(ResourceKind::Containers).tags();
+        let in_english = keys_in(Locale::En, ResourceKind::Containers);
+        let in_russian = keys_in(Locale::Ru, ResourceKind::Containers);
+        let in_chinese = keys_in(Locale::ZhCn, ResourceKind::Containers);
+
+        assert_eq!(tags[0].key(), "status");
+        assert_eq!(tags[0].label(&in_english), "Status:running");
+        assert_eq!(tags[0].label(&in_russian), "Состояние:running");
+        assert_eq!(tags[0].label(&in_chinese), "状态:running");
+    }
+
+    #[test]
+    fn a_compose_link_replaces_the_compose_tag_by_its_internal_name() {
+        let mut state = loaded_state();
+        add_tag(&mut state, "Compose:other");
+
+        let _ = follow(
+            &mut state,
+            LinkTarget::ComposeProject(String::from("otty-fx")),
+        );
+
+        let tags = state.table_search(ResourceKind::Containers).tags();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].key(), COMPOSE_KEY);
+        assert_eq!(tags[0].value(), "otty-fx");
     }
 
     #[test]
@@ -2494,7 +2531,7 @@ mod tests {
 
         assert_eq!(
             tags_of(&state, ResourceKind::Containers),
-            vec!["compose:otty-fx"]
+            vec!["Compose:otty-fx"]
         );
         assert_eq!(shown_containers(&state), vec!["otty-fx-web-1"]);
     }
@@ -2502,9 +2539,9 @@ mod tests {
     #[test]
     fn a_compose_link_replaces_another_compose_tag_and_keeps_other_keys() {
         let mut state = loaded_state();
-        add_tag(&mut state, "status:running");
-        add_tag(&mut state, "compose:other");
-        add_tag(&mut state, "compose:another");
+        add_tag(&mut state, "Status:running");
+        add_tag(&mut state, "Compose:other");
+        add_tag(&mut state, "Compose:another");
 
         let _ = follow(
             &mut state,
@@ -2513,7 +2550,7 @@ mod tests {
 
         assert_eq!(
             tags_of(&state, ResourceKind::Containers),
-            vec!["status:running", "compose:otty-fx"]
+            vec!["Status:running", "Compose:otty-fx"]
         );
     }
 
@@ -2530,13 +2567,13 @@ mod tests {
     #[test]
     fn a_compose_link_row_is_looked_up_among_the_tagged_rows() {
         let mut state = loaded_state();
-        add_tag(&mut state, "name:web");
+        add_tag(&mut state, "Name:web");
 
         let _ = reduce(&mut state, DockerIntent::OpenComposeProject(0));
 
         assert_eq!(
             tags_of(&state, ResourceKind::Containers),
-            vec!["name:web", "compose:otty-fx"]
+            vec!["Name:web", "Compose:otty-fx"]
         );
     }
 
@@ -2556,7 +2593,7 @@ mod tests {
         );
         assert_eq!(
             tags_of(&state, ResourceKind::Containers),
-            vec!["compose:otty-fx"]
+            vec!["Compose:otty-fx"]
         );
         assert!(tags_of(&state, ResourceKind::Volumes).is_empty());
     }
@@ -2566,9 +2603,9 @@ mod tests {
         let mut state = loaded_state();
         let busybox = busybox_id(&state);
         open(&mut state, ResourceKind::Images);
-        add_tag(&mut state, "repository:otty-fx-img");
+        add_tag(&mut state, "Repository:otty-fx-img");
         open(&mut state, ResourceKind::Containers);
-        add_tag(&mut state, "status:running");
+        add_tag(&mut state, "Status:running");
 
         let _ = follow(
             &mut state,
@@ -2578,7 +2615,7 @@ mod tests {
         assert!(tags_of(&state, ResourceKind::Images).is_empty());
         assert_eq!(
             tags_of(&state, ResourceKind::Containers),
-            vec!["status:running"]
+            vec!["Status:running"]
         );
         assert_eq!(state.selected_id(), Some(busybox.as_str()));
     }
@@ -2588,7 +2625,7 @@ mod tests {
         let mut state = loaded_state();
         let busybox = busybox_id(&state);
         open(&mut state, ResourceKind::Images);
-        add_tag(&mut state, "repository:busybox");
+        add_tag(&mut state, "Repository:busybox");
         open(&mut state, ResourceKind::Containers);
 
         let _ = follow(
@@ -2598,7 +2635,7 @@ mod tests {
 
         assert_eq!(
             tags_of(&state, ResourceKind::Images),
-            vec!["repository:busybox"]
+            vec!["Repository:busybox"]
         );
         assert_eq!(state.selected_id(), Some(busybox.as_str()));
     }
@@ -2610,17 +2647,17 @@ mod tests {
         let cases = [
             (
                 ResourceKind::Volumes,
-                "name:otty-fx-data",
+                "Name:otty-fx-data",
                 resources.volumes()[1].name().to_string(),
             ),
             (
                 ResourceKind::Networks,
-                "name:bridge",
+                "Name:bridge",
                 resources.networks()[0].id().to_string(),
             ),
             (
                 ResourceKind::Containers,
-                "name:otty-fx-web-1",
+                "Name:otty-fx-web-1",
                 resources.containers()[0].id().to_string(),
             ),
         ];
@@ -2653,7 +2690,7 @@ mod tests {
     #[test]
     fn a_link_to_an_item_not_loaded_yet_removes_the_tags() {
         let mut state = loaded_state();
-        add_tag(&mut state, "status:running");
+        add_tag(&mut state, "Status:running");
 
         let _ = follow(
             &mut state,
@@ -2666,7 +2703,7 @@ mod tests {
     #[test]
     fn a_row_press_selects_that_row_among_the_tagged_rows() {
         let mut state = loaded_state();
-        add_tag(&mut state, "status:running");
+        add_tag(&mut state, "Status:running");
 
         let names = shown_containers(&state);
         assert_eq!(names.len(), 2, "two running containers: {names:?}");
@@ -2681,7 +2718,7 @@ mod tests {
     #[test]
     fn the_row_menu_opens_for_that_row_among_the_tagged_rows() {
         let mut state = loaded_state();
-        add_tag(&mut state, "name:exit3");
+        add_tag(&mut state, "Name:exit3");
 
         let _ = reduce(
             &mut state,
@@ -2701,7 +2738,7 @@ mod tests {
     #[test]
     fn a_port_link_is_looked_up_among_the_tagged_rows() {
         let mut state = loaded_state();
-        add_tag(&mut state, "ports:18081");
+        add_tag(&mut state, "Ports:18081");
 
         let sent = effects(reduce(
             &mut state,
@@ -2725,7 +2762,7 @@ mod tests {
         let created = resources.containers()[0].created();
         let age = crate::widgets::docker::format::age_text(NOW, created);
         state.set_age_clock(NOW);
-        add_tag(&mut state, &format!("age:{age}"));
+        add_tag(&mut state, &format!("Age:{age}"));
 
         let at_now = shown_containers(&state).len();
         state.set_age_clock(MUCH_LATER);

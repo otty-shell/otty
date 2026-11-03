@@ -49,7 +49,7 @@ const KEY_END: &str = ":";
 /// ```
 /// use iced::Element;
 /// use otty_ui_kit::components::tag_search::{
-///     SearchRow, TagSchema, TagSearch, TagSearchAction,
+///     SearchRow, TagKey, TagSchema, TagSearch, TagSearchAction,
 /// };
 /// use otty_ui_kit::components::tag_search_field::TagSearchField;
 /// use otty_ui_kit::palette::UiPalette;
@@ -60,7 +60,10 @@ const KEY_END: &str = ":";
 /// }
 ///
 /// let palette = UiPalette::otty_dark();
-/// let schema = TagSchema::new(&["name"], vec![SearchRow::new("web-1")]);
+/// let schema = TagSchema::new(
+///     vec![TagKey::new("name", "Name")],
+///     vec![SearchRow::new("web-1")],
+/// );
 /// let search = TagSearch::default();
 /// let field: Element<'_, Message> =
 ///     TagSearchField::new(&search, search.suggestions(&schema), &palette)
@@ -288,11 +291,10 @@ mod tests {
 
     use super::*;
     use crate::components::glyph;
-    use crate::components::tag_search::{SearchRow, TagSchema};
+    use crate::components::tag_search::{SearchRow, TagKey, TagSchema};
     use crate::components::toolbar::{Toolbar, ToolbarItem};
     use crate::size;
 
-    const KEYS: &[&str] = &["name", "status"];
     const INPUT: &str = "tag-search-test-input";
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,9 +303,14 @@ mod tests {
         Under,
     }
 
+    /// Keys whose shown name is their internal name.
+    fn keys() -> Vec<TagKey> {
+        vec![TagKey::new("name", "name"), TagKey::new("status", "status")]
+    }
+
     fn schema() -> TagSchema {
         TagSchema::new(
-            KEYS,
+            keys(),
             vec![
                 SearchRow::new("web-1")
                     .value("name", "web-1")
@@ -505,6 +512,55 @@ mod tests {
         flow.type_text("r");
 
         assert_eq!(flow.input(), "status:r");
+    }
+
+    /// Keys and rows as a Russian table shows them.
+    fn russian_schema() -> TagSchema {
+        TagSchema::new(
+            vec![
+                TagKey::new("name", "Имя"),
+                TagKey::new("status", "Состояние"),
+            ],
+            vec![
+                SearchRow::new("web-1")
+                    .value("name", "web-1")
+                    .value("status", "Работает"),
+            ],
+        )
+    }
+
+    #[test]
+    fn typing_after_a_shown_name_applied_goes_after_its_colon() {
+        let mut flow = Flow::new();
+        flow.schema = russian_schema();
+
+        flow.click_input();
+        flow.type_text("Сост");
+        flow.tap(Named::Tab);
+        flow.type_text("раб");
+
+        assert_eq!(flow.input(), "Состояние:раб");
+
+        flow.tap(Named::Tab);
+
+        assert_eq!(flow.input(), "");
+        assert_eq!(
+            flow.search.tags()[0].label(flow.schema.keys()),
+            "Состояние:Работает"
+        );
+    }
+
+    #[test]
+    fn the_list_shows_the_shown_names_and_never_the_internal_names() {
+        let schema = russian_schema();
+        let mut search = TagSearch::default();
+        let _ = search.perform(TagSearchAction::Focused, &schema);
+        let mut ui = simulator(view(&search, &schema));
+
+        assert!(ui.find("Имя").is_ok());
+        assert!(ui.find("Состояние").is_ok());
+        assert!(ui.find("name").is_err());
+        assert!(ui.find("status").is_err());
     }
 
     #[test]
@@ -832,7 +888,7 @@ mod tests {
                     .value("status", format!("value-{index:02}"))
             })
             .collect();
-        let schema = TagSchema::new(KEYS, rows);
+        let schema = TagSchema::new(keys(), rows);
         let mut search = TagSearch::default();
         let _ = search.perform(
             TagSearchAction::InputChanged("status:".to_owned()),
