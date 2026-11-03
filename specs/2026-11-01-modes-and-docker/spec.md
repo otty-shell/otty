@@ -392,6 +392,8 @@ none of those are in scope (see Out of Scope).
       removes the last tag.
     - **Removing:** every tag has a clear cross, and the tags row ends with a
       "Clear all" button that removes all tags of this table.
+      A long tag wraps and its chip grows in height; it is never cut (owner
+      report, 2026-11-03).
     - **Compose is a tag:** the Compose link adds `compose:<name>`, replacing
       another `compose` tag.
     - **Kept per table:** each list keeps its own tags while OTTY runs, like
@@ -489,6 +491,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 47 | Bug: after a suggestion is applied the cursor goes to the end of the field | C | Sonnet | 46 |
 | 48 | Bug: the text you typed is the first suggestion (Decision 21) | C | Sonnet | 47 |
 | 49 | Search keys are written in the interface language (Decision 21) | C | Opus | 48 |
+| 50 | Bug: a long tag wraps and its chip grows (Decision 21) | A | Sonnet | 49 |
 
 Order: (01, 02, 03, 04, 07 in parallel) → (05, 06, 08) → (09, 10) → (11, 12, 13, 16, 17, 18) → (14, 15) → 19 → 20. App tickets that touch `app/src/view.rs` run one at a time. One subagent and one commit per ticket; each commit leaves the app working.
 
@@ -545,3 +548,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 47 — Bug: search cursor after a suggestion · Sonnet
 - [x] 48 — Bug: typed text is the first suggestion · Sonnet
 - [x] 49 — Search keys in the interface language · Opus
+- [ ] 50 — Bug: a long tag wraps · Sonnet
