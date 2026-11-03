@@ -548,4 +548,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 47 — Bug: search cursor after a suggestion · Sonnet
 - [x] 48 — Bug: typed text is the first suggestion · Sonnet
 - [x] 49 — Search keys in the interface language · Opus
-- [ ] 50 — Bug: a long tag wraps · Sonnet
+- [x] 50 — Bug: a long tag wraps · Sonnet
