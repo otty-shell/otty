@@ -22,6 +22,7 @@ mod engine;
 mod events;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
+mod host_folder;
 mod image;
 mod image_defaults;
 mod inspect;
@@ -49,6 +50,7 @@ pub use crate::diagnosis::Diagnosis;
 pub use crate::discovery::{Discovery, discover};
 pub use crate::engine::{EngineInfo, EngineKind};
 pub use crate::events::ListKind;
+pub use crate::host_folder::host_folder_exists;
 pub use crate::image::Image;
 pub use crate::image_defaults::ImageDefaults;
 pub use crate::network::Network;
@@ -58,6 +60,5 @@ pub use crate::run::{
     MountSource, PortProtocol, PublishedPort, RestartPolicy, RunRequest,
     VolumeMount,
 };
-pub use crate::selinux::is_selinux_enabled;
 pub use crate::volume::Volume;
 pub use crate::watch::WatchEvent;

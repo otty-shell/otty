@@ -406,6 +406,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::{self, Key};
+    use crate::widgets::docker::errors::DockerError;
     use crate::widgets::docker::event::DockerIntent;
     use crate::widgets::docker::reducer::reduce;
     use crate::widgets::docker::resource_rows;
@@ -828,7 +829,7 @@ mod tests {
     fn a_loading_list_has_no_count_and_a_failed_one_says_so() {
         let mut state = found(&[EngineKind::Docker]);
         let mut partial = lists(EngineKind::Docker);
-        partial.volumes = Err(String::from("no"));
+        partial.volumes = Err(DockerError::new("no"));
         load(&mut state, &docker(), partial);
         let loading = found(&[EngineKind::Docker]);
 
@@ -1053,7 +1054,7 @@ mod tests {
     fn a_failed_list_shows_the_engine_message_and_no_rows() {
         let mut state = found(&[EngineKind::Docker]);
         let mut failed = lists(EngineKind::Docker);
-        failed.containers = Err(String::from("engine said no"));
+        failed.containers = Err(DockerError::new("engine said no"));
         load(&mut state, &docker(), failed);
 
         let vm = build(&state);

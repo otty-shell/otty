@@ -4,12 +4,13 @@
 //! on, creates and starts the container, then shows it selected in the
 //! Containers table. An engine error keeps the form as typed.
 
+use std::path::{Path, PathBuf};
+
 use iced::Task;
-use otty_docker::{
-    EngineAddress, EngineInfo, ImageDefaults, PullProgress, is_selinux_enabled,
-};
+use otty_docker::{EngineAddress, EngineInfo, ImageDefaults, PullProgress};
 
 use super::action_flow::reload;
+use super::errors::DockerError;
 use super::event::{DockerEffect, DockerEvent};
 use super::forms::split_reference;
 use super::run_checks::check;
@@ -33,14 +34,16 @@ pub(super) fn open(
         .map(default_network)
         .unwrap_or_default();
 
-    let mut form = RunForm::new(engine, image, &network, is_selinux_enabled());
+    let mut form =
+        RunForm::new(engine, image, &network, state.is_selinux_enabled());
     let lookup = lookup(&mut form);
 
     state.open_run_form(form);
     lookup
 }
 
-/// Take one edit of the form; a changed image is looked up again.
+/// Take one edit of the form; a changed image is looked up again and a
+/// volume source that is a folder is asked about on disk.
 pub(super) fn edit(
     state: &mut DockerState,
     edit: RunEdit,
@@ -49,13 +52,20 @@ pub(super) fn edit(
         return Task::none();
     };
     let before = form.reference().to_string();
+    let source_row = match &edit {
+        RunEdit::VolumeSource(index, _) => Some(*index),
+        _ => None,
+    };
 
     form.apply(edit);
 
+    let folder_check = source_row
+        .and_then(|index| form.start_folder_check(index))
+        .map_or_else(Task::none, check_folder);
     if form.reference() == before {
-        return Task::none();
+        return folder_check;
     }
-    lookup(form)
+    Task::batch([lookup(form), folder_check])
 }
 
 /// Run on another engine: its default network, and the image looked up
@@ -85,7 +95,7 @@ pub(super) fn defaults_loaded(
     state: &mut DockerState,
     engine: &EngineAddress,
     reference: &str,
-    result: Result<Option<ImageDefaults>, String>,
+    result: Result<Option<ImageDefaults>, DockerError>,
 ) -> Task<DockerEvent> {
     let is_taken = state
         .run_form_mut()
@@ -97,11 +107,39 @@ pub(super) fn defaults_loaded(
     Task::none()
 }
 
-/// Whether Run can be pressed: nothing runs, every check passes and the
-/// engine has answered about the image.
+/// Take the disk's answer about a folder of the form.
+pub(super) fn folder_checked(
+    state: &mut DockerState,
+    path: &Path,
+    exists: bool,
+) -> Task<DockerEvent> {
+    let is_taken = state
+        .run_form_mut()
+        .is_some_and(|form| form.finish_folder_check(path, exists));
+    if !is_taken {
+        let path = path.display();
+        log::debug!("docker folder check of {path} no longer asked");
+    }
+
+    Task::none()
+}
+
+/// Ask again about each folder of the form that has no question out, so a
+/// folder created or removed elsewhere shows by itself.
+pub(super) fn recheck_folders(state: &mut DockerState) -> Task<DockerEvent> {
+    let Some(form) = state.run_form_mut() else {
+        return Task::none();
+    };
+
+    Task::batch(form.start_folder_rechecks().into_iter().map(check_folder))
+}
+
+/// Whether Run can be pressed: nothing runs, every check passes and both
+/// the engine about the image and the disk about the folders have answered.
 pub(crate) fn can_run(form: &RunForm) -> bool {
     form.is_editing()
         && form.lookup() != &ImageLookup::Loading
+        && form.are_folders_answered()
         && check(form).is_empty()
 }
 
@@ -149,7 +187,7 @@ pub(super) fn pull_progressed(state: &mut DockerState, progress: PullProgress) {
 /// engine's message and keep the form.
 pub(super) fn finish_pull(
     state: &mut DockerState,
-    result: Result<(), String>,
+    result: Result<(), DockerError>,
 ) -> Task<DockerEvent> {
     let Some(form) = state.run_form_mut() else {
         return Task::none();
@@ -157,11 +195,11 @@ pub(super) fn finish_pull(
 
     match result {
         Ok(()) => start_run(form),
-        Err(message) => {
+        Err(err) => {
             let notice = i18n::docker_action_failed(
                 Key::TplDockerPullFailed,
                 form.reference(),
-                &message,
+                &err.to_string(),
             );
             form.fail(notice);
             Task::none()
@@ -176,7 +214,7 @@ pub(super) fn finish_pull(
 pub(super) fn finish(
     state: &mut DockerState,
     engine: &EngineAddress,
-    result: Result<String, String>,
+    result: Result<String, DockerError>,
 ) -> Task<DockerEvent> {
     let is_running = state.run_form().is_some_and(|form| {
         form.phase() == &RunPhase::Starting && form.engine().address() == engine
@@ -192,7 +230,7 @@ pub(super) fn finish(
             state.show_item(engine, ResourceKind::Containers, id);
             reload(state, engine)
         },
-        Err(message) => {
+        Err(err) => {
             if let Some(form) = state.run_form_mut() {
                 let name = match form.name().trim() {
                     "" => form.reference().to_string(),
@@ -201,7 +239,7 @@ pub(super) fn finish(
                 let notice = i18n::docker_action_failed(
                     Key::TplDockerRunFailed,
                     &name,
-                    &message,
+                    &err.to_string(),
                 );
                 form.fail(notice);
             }
@@ -253,6 +291,11 @@ fn lookup(form: &mut RunForm) -> Task<DockerEvent> {
     }))
 }
 
+/// Ask the disk whether `path` exists.
+fn check_folder(path: PathBuf) -> Task<DockerEvent> {
+    Task::done(DockerEvent::Effect(DockerEffect::CheckFolder(path)))
+}
+
 /// Create and start the container of the typed form.
 fn start_run(form: &mut RunForm) -> Task<DockerEvent> {
     let run = DockerEffect::RunContainer {
@@ -267,8 +310,8 @@ fn start_run(form: &mut RunForm) -> Task<DockerEvent> {
 #[cfg(test)]
 mod tests {
     use otty_docker::{
-        EngineKind, MountSource, PortProtocol, PublishedPort, RestartPolicy,
-        RunRequest, VolumeMount, fixtures,
+        Discovery, EngineKind, MountSource, PortProtocol, PublishedPort,
+        RestartPolicy, RunRequest, VolumeMount, fixtures,
     };
     use otty_ui_kit::components::tag_search::TagSearchAction;
 
@@ -310,12 +353,18 @@ mod tests {
     /// Docker mode active with the fixture engines of `kinds` loaded and
     /// `resource` of the first one open.
     fn state_on(kinds: &[EngineKind], resource: ResourceKind) -> DockerState {
+        state_after(fixtures::discovery(kinds), kinds, resource)
+    }
+
+    /// Like [`state_on`], after this engine search.
+    fn state_after(
+        discovery: Discovery,
+        kinds: &[EngineKind],
+        resource: ResourceKind,
+    ) -> DockerState {
         let mut state = DockerState::default();
         let _ = reduce(&mut state, DockerIntent::Enter);
-        let _ = reduce(
-            &mut state,
-            DockerIntent::DiscoveryFinished(fixtures::discovery(kinds)),
-        );
+        let _ = reduce(&mut state, DockerIntent::DiscoveryFinished(discovery));
         for kind in kinds {
             let _ = reduce(
                 &mut state,
@@ -568,7 +617,9 @@ mod tests {
 
         let effects = effects(reduce(
             &mut state,
-            DockerIntent::PullFinished(Err(String::from("manifest unknown"))),
+            DockerIntent::PullFinished(Err(DockerError::new(
+                "manifest unknown",
+            ))),
         ));
 
         assert!(effects.is_empty(), "{effects:?}");
@@ -646,7 +697,7 @@ mod tests {
             &mut state,
             DockerIntent::RunFinished {
                 engine: docker().address().clone(),
-                result: Err(String::from("port is already allocated")),
+                result: Err(DockerError::new("port is already allocated")),
             },
         ));
 
@@ -681,7 +732,7 @@ mod tests {
             &mut state,
             DockerIntent::RunFinished {
                 engine: docker().address().clone(),
-                result: Err(String::from("boom")),
+                result: Err(DockerError::new("boom")),
             },
         );
 
@@ -817,7 +868,7 @@ mod tests {
             DockerIntent::ImageDefaultsLoaded {
                 engine: docker().address().clone(),
                 reference: String::from("nginx"),
-                result: Err(String::from("store is locked")),
+                result: Err(DockerError::new("store is locked")),
             },
         );
 
@@ -826,5 +877,275 @@ mod tests {
             &ImageLookup::Failed(String::from("store is locked"))
         );
         assert!(can_run(run_form(&state)));
+    }
+
+    /// The effect that asks about the folder `path`.
+    fn asks_about(path: &str) -> DockerEffect {
+        DockerEffect::CheckFolder(PathBuf::from(path))
+    }
+
+    /// Add a volume row to `/data` with `source` typed last; the effects of
+    /// typing it.
+    fn add_volume(state: &mut DockerState, source: &str) -> Vec<DockerEffect> {
+        let index = run_form(state).volumes().len();
+        let _ = type_in(state, RunEdit::AddVolume);
+        let _ =
+            type_in(state, RunEdit::VolumeTarget(index, String::from("/data")));
+
+        type_in(state, RunEdit::VolumeSource(index, source.to_string()))
+    }
+
+    fn answer(state: &mut DockerState, path: &str, exists: bool) {
+        let effects = effects(reduce(
+            state,
+            DockerIntent::FolderChecked {
+                path: PathBuf::from(path),
+                exists,
+            },
+        ));
+
+        assert!(effects.is_empty(), "{effects:?}");
+    }
+
+    fn recheck(state: &mut DockerState) -> Vec<DockerEffect> {
+        effects(reduce(state, DockerIntent::RecheckFolders))
+    }
+
+    fn ready_form() -> DockerState {
+        form_with("nginx:1.27", Some(fixtures::image_defaults()))
+    }
+
+    #[test]
+    fn typing_a_folder_asks_about_it_once() {
+        let mut state = ready_form();
+
+        let typed = add_volume(&mut state, "/srv/site");
+        let retyped = type_in(
+            &mut state,
+            RunEdit::VolumeSource(0, String::from(" /srv/site ")),
+        );
+        let target =
+            type_in(&mut state, RunEdit::VolumeTarget(0, String::from("/d")));
+
+        assert_eq!(typed, vec![asks_about("/srv/site")]);
+        assert!(retyped.is_empty(), "{retyped:?}");
+        assert!(target.is_empty(), "{target:?}");
+    }
+
+    #[test]
+    fn typing_a_named_volume_or_nothing_asks_nothing() {
+        let mut state = ready_form();
+
+        let named = add_volume(&mut state, "otty-fx-cache");
+        let blank =
+            type_in(&mut state, RunEdit::VolumeSource(0, String::from("   ")));
+
+        assert!(named.is_empty(), "{named:?}");
+        assert!(blank.is_empty(), "{blank:?}");
+    }
+
+    #[test]
+    fn each_new_text_of_a_folder_is_asked_about() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv");
+
+        let next = type_in(
+            &mut state,
+            RunEdit::VolumeSource(0, String::from("/srv/site")),
+        );
+
+        assert_eq!(next, vec![asks_about("/srv/site")]);
+    }
+
+    #[test]
+    fn run_stays_disabled_until_the_folder_is_answered() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/site");
+
+        let pressed = effects(reduce(&mut state, DockerIntent::RunSubmitted));
+
+        assert!(pressed.is_empty(), "{pressed:?}");
+        assert!(!can_run(run_form(&state)));
+        assert!(check(run_form(&state)).is_empty());
+
+        answer(&mut state, "/srv/site", true);
+
+        assert!(can_run(run_form(&state)));
+    }
+
+    #[test]
+    fn a_missing_answer_shows_the_problem_and_an_existing_answer_clears_it() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/site");
+
+        answer(&mut state, "/srv/site", false);
+
+        assert_eq!(
+            check(run_form(&state)).volume(0).map(|p| p.message()),
+            Some(Key::DockerRunErrSourceMissing)
+        );
+        assert!(!can_run(run_form(&state)));
+
+        answer(&mut state, "/srv/site", true);
+
+        assert!(check(run_form(&state)).is_empty());
+        assert!(can_run(run_form(&state)));
+    }
+
+    #[test]
+    fn the_error_does_not_flicker_while_the_next_folder_is_asked() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/sit");
+        answer(&mut state, "/srv/sit", false);
+
+        let _ = type_in(
+            &mut state,
+            RunEdit::VolumeSource(0, String::from("/srv/site")),
+        );
+
+        assert_eq!(
+            check(run_form(&state)).volume(0).map(|p| p.message()),
+            Some(Key::DockerRunErrSourceMissing)
+        );
+        assert!(!can_run(run_form(&state)));
+    }
+
+    #[test]
+    fn an_answer_about_a_folder_no_row_has_is_dropped() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/old");
+        let _ = type_in(
+            &mut state,
+            RunEdit::VolumeSource(0, String::from("/srv/new")),
+        );
+
+        answer(&mut state, "/srv/old", false);
+
+        assert!(check(run_form(&state)).is_empty());
+        assert!(!can_run(run_form(&state)), "/srv/new has no answer yet");
+
+        let _ = type_in(&mut state, RunEdit::RemoveVolume(0));
+        answer(&mut state, "/srv/new", false);
+
+        assert!(check(run_form(&state)).is_empty());
+        assert!(can_run(run_form(&state)));
+    }
+
+    #[test]
+    fn an_answer_without_a_form_is_dropped() {
+        let mut state = state_on(&[EngineKind::Docker], ResourceKind::Images);
+
+        answer(&mut state, "/srv/site", true);
+
+        assert!(state.run_form().is_none());
+    }
+
+    #[test]
+    fn rows_with_the_same_folder_share_one_question_and_its_answer() {
+        let mut state = ready_form();
+
+        let first = add_volume(&mut state, "/srv/site");
+        let second = add_volume(&mut state, "/srv/site");
+        answer(&mut state, "/srv/site", false);
+
+        assert_eq!(first, vec![asks_about("/srv/site")]);
+        assert!(second.is_empty(), "{second:?}");
+        let problems = check(run_form(&state));
+        assert!(problems.volume(0).is_some());
+        assert!(problems.volume(1).is_some());
+    }
+
+    #[test]
+    fn the_recheck_asks_once_per_folder_that_is_not_in_flight() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/answered");
+        let _ = add_volume(&mut state, "/srv/answered");
+        answer(&mut state, "/srv/answered", true);
+        let _ = add_volume(&mut state, "/srv/in-flight");
+        let _ = add_volume(&mut state, "otty-fx-cache");
+
+        let first = recheck(&mut state);
+        let second = recheck(&mut state);
+
+        assert_eq!(first, vec![asks_about("/srv/answered")]);
+        assert!(second.is_empty(), "a hung folder piles up: {second:?}");
+    }
+
+    #[test]
+    fn the_recheck_does_not_disable_run() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/site");
+        answer(&mut state, "/srv/site", true);
+
+        let asked = recheck(&mut state);
+
+        assert_eq!(asked, vec![asks_about("/srv/site")]);
+        assert!(can_run(run_form(&state)));
+        let pressed = effects(reduce(&mut state, DockerIntent::RunSubmitted));
+        assert!(matches!(
+            pressed.as_slice(),
+            [DockerEffect::RunContainer { .. }]
+        ));
+    }
+
+    #[test]
+    fn a_folder_created_elsewhere_clears_its_error_on_the_recheck() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/site");
+        answer(&mut state, "/srv/site", false);
+        assert!(!can_run(run_form(&state)));
+
+        let asked = recheck(&mut state);
+        answer(&mut state, "/srv/site", true);
+
+        assert_eq!(asked, vec![asks_about("/srv/site")]);
+        assert!(check(run_form(&state)).is_empty());
+        assert!(can_run(run_form(&state)));
+    }
+
+    #[test]
+    fn the_recheck_asks_nothing_without_a_form() {
+        let mut state = state_on(&[EngineKind::Docker], ResourceKind::Images);
+
+        assert!(recheck(&mut state).is_empty());
+    }
+
+    #[test]
+    fn the_form_uses_the_selinux_fact_of_the_search() {
+        let kinds = [EngineKind::Docker];
+        let mut with_selinux = state_after(
+            fixtures::discovery_with_selinux(&kinds),
+            &kinds,
+            ResourceKind::Containers,
+        );
+        let mut without = state_after(
+            fixtures::discovery(&kinds),
+            &kinds,
+            ResourceKind::Containers,
+        );
+
+        for state in [&mut with_selinux, &mut without] {
+            let _ = reduce(state, DockerIntent::OpenCreate);
+            let _ = add_volume(state, "/srv/site");
+        }
+
+        assert!(run_form(&with_selinux).offers_relabel(0));
+        assert!(!run_form(&without).offers_relabel(0));
+    }
+
+    #[test]
+    fn a_form_opened_during_a_later_search_keeps_the_selinux_fact() {
+        let kinds = [EngineKind::Docker];
+        let mut state = state_after(
+            fixtures::discovery_with_selinux(&kinds),
+            &kinds,
+            ResourceKind::Containers,
+        );
+
+        let _ = reduce(&mut state, DockerIntent::CheckAgain);
+        let _ = reduce(&mut state, DockerIntent::OpenCreate);
+        let _ = add_volume(&mut state, "/srv/site");
+
+        assert!(run_form(&state).offers_relabel(0));
     }
 }

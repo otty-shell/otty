@@ -9,6 +9,7 @@ use crate::candidates::{DiscoveryEnv, drop_same_sockets, socket_candidates};
 use crate::cli::{CliPresence, command_dirs};
 use crate::diagnosis::{Diagnosis, diagnose};
 use crate::probe::{Probe, probe};
+use crate::selinux;
 
 /// How long one candidate may take to connect and answer `/version`.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -22,6 +23,7 @@ pub struct Discovery {
     probes: Vec<Probe>,
     cli: CliPresence,
     diagnosis: Diagnosis,
+    is_selinux_enabled: bool,
 }
 
 impl Discovery {
@@ -41,14 +43,25 @@ impl Discovery {
         &self.diagnosis
     }
 
+    /// Whether SELinux is enabled on this computer, which decides if a
+    /// folder mounted into a container can need the `z` option.
+    pub fn is_selinux_enabled(&self) -> bool {
+        self.is_selinux_enabled
+    }
+
     /// Diagnose the given search results.
-    pub(crate) fn new(probes: Vec<Probe>, cli: CliPresence) -> Self {
+    pub(crate) fn new(
+        probes: Vec<Probe>,
+        cli: CliPresence,
+        is_selinux_enabled: bool,
+    ) -> Self {
         let diagnosis = diagnose(&probes, cli.clone());
 
         Self {
             probes,
             cli,
             diagnosis,
+            is_selinux_enabled,
         }
     }
 }
@@ -58,8 +71,9 @@ impl Discovery {
 /// Tries every candidate at once, each with a short time limit and no
 /// retries, while it looks for the `docker` and `podman` commands (and asks
 /// a found `docker` for its version, to spot Podman's `podman-docker`), so
-/// the whole search takes about two seconds at most. Never fails: an
-/// unreachable engine is part of the result.
+/// the whole search takes about two seconds at most. Also reads whether
+/// SELinux is enabled. Never fails: an unreachable engine is part of the
+/// result.
 ///
 /// Needs a tokio runtime.
 ///
@@ -101,11 +115,27 @@ pub async fn discover() -> Discovery {
         log::debug!("docker discovery: {address}: {outcome:?}");
     }
 
-    Discovery::new(probes, cli)
+    Discovery::new(probes, cli, selinux::is_selinux_enabled())
 }
 
 /// Follow links so the same socket is tried once; a missing path stays as
 /// it is.
 fn resolve_socket_path(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_discovery_carries_the_selinux_fact() {
+        let on =
+            Discovery::new(Vec::new(), CliPresence::new(false, false), true);
+        let off =
+            Discovery::new(Vec::new(), CliPresence::new(false, false), false);
+
+        assert!(on.is_selinux_enabled());
+        assert!(!off.is_selinux_enabled());
+    }
 }

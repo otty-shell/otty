@@ -10,6 +10,7 @@ use otty_docker::{EngineAddress, EngineInfo};
 use otty_ui_kit::components::log_view::LogViewState;
 use serde_json::Value;
 
+use super::errors::DockerError;
 use super::inspect_tree::first_section_title;
 use super::types::ResourceKind;
 use crate::i18n::{self, Key};
@@ -341,13 +342,13 @@ impl InspectorState {
     pub(super) fn fail_logs(
         &mut self,
         target: &LogTarget,
-        message: String,
+        error: DockerError,
     ) -> bool {
         let Some(logs) = self.followed_logs(target) else {
             return false;
         };
 
-        logs.error = Some(message);
+        logs.error = Some(error.to_string());
         true
     }
 
@@ -391,7 +392,7 @@ impl InspectorState {
     pub(super) fn finish_inspect(
         &mut self,
         target: &InspectTarget,
-        result: Result<String, String>,
+        result: Result<String, DockerError>,
     ) -> bool {
         let Some(inspect) = self
             .inspect
@@ -405,7 +406,7 @@ impl InspectorState {
             Ok(json) => {
                 InspectLoad::Loaded(LoadedInspect::new(&json, self.shows_empty))
             },
-            Err(message) => InspectLoad::Failed(message),
+            Err(err) => InspectLoad::Failed(err.to_string()),
         };
         true
     }

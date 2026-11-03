@@ -1,12 +1,13 @@
 //! Routes the Docker widget: reduces its intents and runs its effects. The
-//! engine search and the list loads run here, off the reducer, through
-//! `Task::perform`; their results come back as intents.
+//! engine search, the list loads and the folder checks run here, off the
+//! reducer, through `Task::perform`; their results come back as intents.
 
 use iced::Task;
 use iced::futures::future::join3;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use otty_docker::{
     Container, Engine, EngineInfo, ImageDefaults, RunRequest, discover,
+    host_folder_exists,
 };
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
@@ -15,6 +16,7 @@ use crate::app::App;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::{self, terminal_settings_for_session};
 use crate::widgets::docker::actions::{ActionRequest, EngineAction};
+use crate::widgets::docker::errors::DockerError;
 use crate::widgets::docker::inspector::InspectTarget;
 use crate::widgets::docker::types::{LoadedList, LoadedLists, ResourceKind};
 use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
@@ -166,6 +168,19 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
                 })
             })
         },
+        DockerEffect::CheckFolder(path) => {
+            let asked = path.clone();
+
+            Task::perform(
+                async move { host_folder_exists(&path).await },
+                move |exists| {
+                    intent(DockerIntent::FolderChecked {
+                        path: asked,
+                        exists,
+                    })
+                },
+            )
+        },
         DockerEffect::StartPull { .. }
         | DockerEffect::CancelPull
         | DockerEffect::OpenShell { .. } => Task::none(),
@@ -177,26 +192,20 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
 async fn load_image_defaults(
     info: EngineInfo,
     reference: String,
-) -> Result<Option<ImageDefaults>, String> {
-    let engine = Engine::connect(&info).map_err(|err| err.message())?;
+) -> Result<Option<ImageDefaults>, DockerError> {
+    let engine = Engine::connect(&info)?;
 
-    engine
-        .image_defaults(&reference)
-        .await
-        .map_err(|err| err.message())
+    Ok(engine.image_defaults(&reference).await?)
 }
 
 /// Create and start a container; its id, or the engine's message.
 async fn run_container(
     info: EngineInfo,
     request: RunRequest,
-) -> Result<String, String> {
-    let engine = Engine::connect(&info).map_err(|err| err.message())?;
+) -> Result<String, DockerError> {
+    let engine = Engine::connect(&info)?;
 
-    engine
-        .run_container(&request)
-        .await
-        .map_err(|err| err.message())
+    Ok(engine.run_container(&request).await?)
 }
 
 /// The intents of one pull: a `PullProgressed` per line of the engine,
@@ -212,7 +221,7 @@ fn pull_updates(
             Ok(engine) => engine,
             Err(err) => {
                 let _ = output
-                    .send(DockerIntent::PullFinished(Err(err.message())))
+                    .send(DockerIntent::PullFinished(Err(err.into())))
                     .await;
                 return;
             },
@@ -224,7 +233,7 @@ fn pull_updates(
                 Ok(progress) => DockerIntent::PullProgressed(progress),
                 Err(err) => {
                     let _ = output
-                        .send(DockerIntent::PullFinished(Err(err.message())))
+                        .send(DockerIntent::PullFinished(Err(err.into())))
                         .await;
                     return;
                 },
@@ -238,9 +247,8 @@ fn pull_updates(
 
 /// Make the engine call of one action. The error is the engine's own
 /// message, for the notice.
-async fn run_action(request: ActionRequest) -> Result<(), String> {
-    let engine =
-        Engine::connect(request.engine()).map_err(|err| err.message())?;
+async fn run_action(request: ActionRequest) -> Result<(), DockerError> {
+    let engine = Engine::connect(request.engine())?;
 
     let result = match request.action() {
         EngineAction::StartContainer(id) => engine.start_container(id).await,
@@ -274,7 +282,7 @@ async fn run_action(request: ActionRequest) -> Result<(), String> {
         EngineAction::PruneNetworks => engine.prune_networks().await,
     };
 
-    result.map_err(|err| err.message())
+    Ok(result?)
 }
 
 /// Load the four lists of one engine. The containers come first, because
@@ -284,10 +292,10 @@ async fn run_action(request: ActionRequest) -> Result<(), String> {
 async fn load_lists(info: EngineInfo) -> LoadedLists {
     let engine = match Engine::connect(&info) {
         Ok(engine) => engine,
-        Err(err) => return LoadedLists::failed(&format!("{err}")),
+        Err(err) => return LoadedLists::failed(&DockerError::from(err)),
     };
 
-    let containers = engine.containers().await.map_err(|err| format!("{err}"));
+    let containers = engine.containers().await.map_err(DockerError::from);
 
     let users = containers.as_deref().unwrap_or_default();
     let (images, volumes, networks) = join3(
@@ -298,9 +306,9 @@ async fn load_lists(info: EngineInfo) -> LoadedLists {
     .await;
 
     LoadedLists {
-        images: images.map_err(|err| format!("{err}")),
-        volumes: volumes.map_err(|err| format!("{err}")),
-        networks: networks.map_err(|err| format!("{err}")),
+        images: images.map_err(DockerError::from),
+        volumes: volumes.map_err(DockerError::from),
+        networks: networks.map_err(DockerError::from),
         containers,
     }
 }
@@ -309,8 +317,8 @@ async fn load_lists(info: EngineInfo) -> LoadedLists {
 async fn load_inspect(
     info: EngineInfo,
     target: InspectTarget,
-) -> Result<String, String> {
-    let engine = Engine::connect(&info).map_err(|err| format!("{err}"))?;
+) -> Result<String, DockerError> {
+    let engine = Engine::connect(&info)?;
 
     let id = target.id();
     let json = match target.resource() {
@@ -320,7 +328,7 @@ async fn load_inspect(
         ResourceKind::Networks => engine.inspect_network(id).await,
     };
 
-    json.map_err(|err| format!("{err}"))
+    Ok(json?)
 }
 
 /// Load one list of one engine again, after an engine event. "Used by" of
@@ -332,41 +340,35 @@ async fn load_list(
 ) -> LoadedList {
     let engine = match Engine::connect(&info) {
         Ok(engine) => engine,
-        Err(err) => return failed_list(resource, format!("{err}")),
+        Err(err) => return failed_list(resource, DockerError::from(err)),
     };
 
     match resource {
         ResourceKind::Containers => LoadedList::Containers(
-            engine.containers().await.map_err(|err| format!("{err}")),
+            engine.containers().await.map_err(DockerError::from),
         ),
         ResourceKind::Images => LoadedList::Images(
-            engine
-                .images(&containers)
-                .await
-                .map_err(|err| format!("{err}")),
+            engine.images(&containers).await.map_err(DockerError::from),
         ),
         ResourceKind::Volumes => LoadedList::Volumes(
-            engine
-                .volumes(&containers)
-                .await
-                .map_err(|err| format!("{err}")),
+            engine.volumes(&containers).await.map_err(DockerError::from),
         ),
         ResourceKind::Networks => LoadedList::Networks(
             engine
                 .networks(&containers)
                 .await
-                .map_err(|err| format!("{err}")),
+                .map_err(DockerError::from),
         ),
     }
 }
 
-/// `resource` failed to load with `message`.
-fn failed_list(resource: ResourceKind, message: String) -> LoadedList {
+/// `resource` failed to load with `error`.
+fn failed_list(resource: ResourceKind, error: DockerError) -> LoadedList {
     match resource {
-        ResourceKind::Containers => LoadedList::Containers(Err(message)),
-        ResourceKind::Images => LoadedList::Images(Err(message)),
-        ResourceKind::Volumes => LoadedList::Volumes(Err(message)),
-        ResourceKind::Networks => LoadedList::Networks(Err(message)),
+        ResourceKind::Containers => LoadedList::Containers(Err(error)),
+        ResourceKind::Images => LoadedList::Images(Err(error)),
+        ResourceKind::Volumes => LoadedList::Volumes(Err(error)),
+        ResourceKind::Networks => LoadedList::Networks(Err(error)),
     }
 }
 
@@ -521,6 +523,15 @@ mod tests {
 
         assert_eq!(lookup.units(), 1);
         assert_eq!(run.units(), 1);
+    }
+
+    #[test]
+    fn checking_a_folder_runs_one_task() {
+        let check = handle_effect(DockerEffect::CheckFolder(
+            std::path::PathBuf::from("/srv/site"),
+        ));
+
+        assert_eq!(check.units(), 1);
     }
 
     #[test]

@@ -135,6 +135,7 @@ mod tests {
     use otty_docker::{EngineInfo, EngineKind, fixtures};
 
     use super::*;
+    use crate::widgets::docker::errors::DockerError;
     use crate::widgets::docker::event::DockerIntent;
     use crate::widgets::docker::reducer::reduce;
     use crate::widgets::docker::types::{LoadedLists, Place};
@@ -312,7 +313,7 @@ mod tests {
             DockerIntent::ListsLoaded {
                 engine: docker().address().clone(),
                 lists: LoadedLists {
-                    containers: Err(String::from("boom")),
+                    containers: Err(DockerError::new("boom")),
                     images: Ok(Vec::new()),
                     volumes: Ok(Vec::new()),
                     networks: Ok(Vec::new()),

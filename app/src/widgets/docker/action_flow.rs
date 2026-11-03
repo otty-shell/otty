@@ -13,6 +13,7 @@ use super::actions::{
     container_actions, failure_text, image_actions, needs_stop,
     network_remove_hint, volume_remove_hint,
 };
+use super::errors::DockerError;
 use super::event::{DockerEffect, DockerEvent};
 use super::forms::{Form, split_reference};
 use super::run_flow;
@@ -90,23 +91,6 @@ pub(super) fn act(
     };
 
     run(state, ActionRequest::new(item.engine, call, item.name))
-}
-
-/// Open a terminal tab with a shell in the selected container, run by the
-/// engine's own command line tool. Does nothing when the search did not find
-/// that tool.
-fn open_shell(state: &DockerState, item: &TargetItem) -> Task<DockerEvent> {
-    let Some(program) = state.cli_path(item.engine.kind()) else {
-        return Task::none();
-    };
-
-    effect(DockerEffect::OpenShell {
-        title: i18n::docker_named(Key::TplDockerShellTabTitle, &item.name),
-        program: program.to_string_lossy().into_owned(),
-        args: ["exec", "-it", item.id.as_str(), "sh"]
-            .map(String::from)
-            .to_vec(),
-    })
 }
 
 /// Select the row at `index` of the shown table and open its menu at
@@ -204,12 +188,12 @@ pub(super) fn accept(state: &mut DockerState) -> Task<DockerEvent> {
 pub(super) fn finish(
     state: &mut DockerState,
     request: &ActionRequest,
-    result: Result<(), String>,
+    result: Result<(), DockerError>,
 ) -> Task<DockerEvent> {
     state.finish_action(request);
 
-    if let Err(message) = result {
-        state.set_notice(failure_text(request, &message));
+    if let Err(err) = result {
+        state.set_notice(failure_text(request, &err.to_string()));
         return Task::none();
     }
 
@@ -240,6 +224,23 @@ pub(super) fn run(
     state.start_action(request.clone());
 
     effect(DockerEffect::RunAction(request))
+}
+
+/// Open a terminal tab with a shell in the selected container, run by the
+/// engine's own command line tool. Does nothing when the search did not find
+/// that tool.
+fn open_shell(state: &DockerState, item: &TargetItem) -> Task<DockerEvent> {
+    let Some(program) = state.cli_path(item.engine.kind()) else {
+        return Task::none();
+    };
+
+    effect(DockerEffect::OpenShell {
+        title: i18n::docker_named(Key::TplDockerShellTabTitle, &item.name),
+        program: program.to_string_lossy().into_owned(),
+        args: ["exec", "-it", item.id.as_str(), "sh"]
+            .map(String::from)
+            .to_vec(),
+    })
 }
 
 /// The row with `id` in the open list.
@@ -676,7 +677,7 @@ mod tests {
             &mut state,
             DockerIntent::ActionFinished {
                 request: request.clone(),
-                result: Err(String::from("it is restarting")),
+                result: Err(DockerError::new("it is restarting")),
             },
         ));
 
@@ -701,7 +702,7 @@ mod tests {
                     EngineAction::PruneContainers,
                     String::new(),
                 ),
-                result: Err(String::from("busy")),
+                result: Err(DockerError::new("busy")),
             },
         );
 
@@ -721,7 +722,7 @@ mod tests {
                     EngineAction::PruneContainers,
                     String::new(),
                 ),
-                result: Err(String::from("busy")),
+                result: Err(DockerError::new("busy")),
             },
         );
 

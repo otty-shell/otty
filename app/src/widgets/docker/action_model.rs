@@ -67,74 +67,6 @@ pub(crate) fn action_buttons(state: &DockerState) -> Option<ActionsViewModel> {
     row_actions(state, state.selected_id()?)
 }
 
-/// The action buttons of the row with `id` in the open list and the hint
-/// under them, by the rules of [`action_buttons`]; `None` when the row is
-/// not in the loaded list.
-fn row_actions(state: &DockerState, id: &str) -> Option<ActionsViewModel> {
-    let place = state.place()?;
-    let engine = state.open_engine()?;
-
-    let (offered, remove_hint) = match place.resource() {
-        ResourceKind::Containers => {
-            let container = engine.containers().find(id, Container::id)?;
-            (container_actions(container.state()), None)
-        },
-        ResourceKind::Images => {
-            let image = engine.images().find(id, Image::id)?;
-            (image_actions(image), None)
-        },
-        ResourceKind::Volumes => {
-            let volume = engine.volumes().find(id, Volume::name)?;
-            (REMOVE_ONLY, volume_remove_hint(volume))
-        },
-        ResourceKind::Networks => {
-            let network = engine.networks().find(id, Network::id)?;
-            (REMOVE_ONLY, network_remove_hint(network))
-        },
-    };
-    let is_busy = state.is_busy(place.engine(), place.resource(), Some(id));
-    let shell_hint = shell_hint(state, engine.info().kind(), offered);
-
-    let buttons = offered
-        .iter()
-        .map(|&action| {
-            let is_blocked = (action == RowAction::Remove
-                && remove_hint.is_some())
-                || (action == RowAction::Shell && shell_hint.is_some());
-            ActionButton {
-                action,
-                label: i18n::t(action.label_key()),
-                is_danger: action.is_danger(),
-                is_enabled: !is_busy && !is_blocked,
-            }
-        })
-        .collect();
-
-    Some(ActionsViewModel {
-        buttons,
-        hint: shell_hint.or(remove_hint),
-    })
-}
-
-/// Why Shell is disabled: the search did not find the engine's command line
-/// tool. `None` when the row offers no Shell or the tool was found.
-fn shell_hint(
-    state: &DockerState,
-    kind: EngineKind,
-    offered: &[RowAction],
-) -> Option<String> {
-    if !offered.contains(&RowAction::Shell) || state.cli_path(kind).is_some() {
-        return None;
-    }
-
-    let key = match kind {
-        EngineKind::Docker => Key::DockerShellNeedsDocker,
-        EngineKind::Podman => Key::DockerShellNeedsPodman,
-    };
-
-    Some(i18n::t(key).to_string())
-}
-
 /// The open row menu with the actions of its row (the selected row after a
 /// right press, any row after a press on its "⋯" button).
 pub(crate) fn row_menu(state: &DockerState) -> Option<RowMenuViewModel> {
@@ -252,6 +184,74 @@ pub(crate) fn prune_button(state: &DockerState) -> Option<PruneViewModel> {
 /// image, Create volume and Create network need an open engine.
 pub(crate) fn can_create(state: &DockerState) -> bool {
     state.open_engine().is_some() && state.place().is_some()
+}
+
+/// The action buttons of the row with `id` in the open list and the hint
+/// under them, by the rules of [`action_buttons`]; `None` when the row is
+/// not in the loaded list.
+fn row_actions(state: &DockerState, id: &str) -> Option<ActionsViewModel> {
+    let place = state.place()?;
+    let engine = state.open_engine()?;
+
+    let (offered, remove_hint) = match place.resource() {
+        ResourceKind::Containers => {
+            let container = engine.containers().find(id, Container::id)?;
+            (container_actions(container.state()), None)
+        },
+        ResourceKind::Images => {
+            let image = engine.images().find(id, Image::id)?;
+            (image_actions(image), None)
+        },
+        ResourceKind::Volumes => {
+            let volume = engine.volumes().find(id, Volume::name)?;
+            (REMOVE_ONLY, volume_remove_hint(volume))
+        },
+        ResourceKind::Networks => {
+            let network = engine.networks().find(id, Network::id)?;
+            (REMOVE_ONLY, network_remove_hint(network))
+        },
+    };
+    let is_busy = state.is_busy(place.engine(), place.resource(), Some(id));
+    let shell_hint = shell_hint(state, engine.info().kind(), offered);
+
+    let buttons = offered
+        .iter()
+        .map(|&action| {
+            let is_blocked = (action == RowAction::Remove
+                && remove_hint.is_some())
+                || (action == RowAction::Shell && shell_hint.is_some());
+            ActionButton {
+                action,
+                label: i18n::t(action.label_key()),
+                is_danger: action.is_danger(),
+                is_enabled: !is_busy && !is_blocked,
+            }
+        })
+        .collect();
+
+    Some(ActionsViewModel {
+        buttons,
+        hint: shell_hint.or(remove_hint),
+    })
+}
+
+/// Why Shell is disabled: the search did not find the engine's command line
+/// tool. `None` when the row offers no Shell or the tool was found.
+fn shell_hint(
+    state: &DockerState,
+    kind: EngineKind,
+    offered: &[RowAction],
+) -> Option<String> {
+    if !offered.contains(&RowAction::Shell) || state.cli_path(kind).is_some() {
+        return None;
+    }
+
+    let key = match kind {
+        EngineKind::Docker => Key::DockerShellNeedsDocker,
+        EngineKind::Podman => Key::DockerShellNeedsPodman,
+    };
+
+    Some(i18n::t(key).to_string())
 }
 
 /// The title, text, switch and action of a prune dialog that deletes

@@ -453,6 +453,7 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key};
     use crate::theme::{AppTheme, BuiltinTheme};
+    use crate::widgets::docker::errors::DockerError;
     use crate::widgets::docker::reducer::reduce;
     use crate::widgets::docker::run_form::RunEdit;
     use crate::widgets::docker::run_model::run_form;
@@ -759,7 +760,7 @@ mod tests {
             &mut state,
             DockerIntent::RunFinished {
                 engine: fixtures::engine(EngineKind::Docker).address().clone(),
-                result: Err(String::from("port is already allocated")),
+                result: Err(DockerError::new("port is already allocated")),
             },
         );
         let theme = AppTheme::new(BuiltinTheme::OttyDark);

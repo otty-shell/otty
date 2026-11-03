@@ -71,6 +71,11 @@ pub fn discovery(kinds: &[EngineKind]) -> Discovery {
     discovery_with_cli(kinds, None, None)
 }
 
+/// Like [`discovery`], on a computer with SELinux enabled.
+pub fn discovery_with_selinux(kinds: &[EngineKind]) -> Discovery {
+    build_discovery(kinds, None, None, true)
+}
+
 /// Like [`discovery`], with the `docker` and `podman` commands found at
 /// these paths (`None`: not installed).
 pub fn discovery_with_cli(
@@ -78,28 +83,7 @@ pub fn discovery_with_cli(
     docker_path: Option<&str>,
     podman_path: Option<&str>,
 ) -> Discovery {
-    let probes = kinds
-        .iter()
-        .map(|kind| {
-            let info = engine(*kind);
-            let source = match kind {
-                EngineKind::Docker => CandidateSource::Docker,
-                EngineKind::Podman => CandidateSource::Podman,
-            };
-            let candidate =
-                SocketCandidate::new(info.address().clone(), source);
-
-            Probe::new(candidate, ProbeOutcome::Reached(info))
-        })
-        .collect();
-
-    let cli = CliPresence::new(docker_path.is_some(), podman_path.is_some())
-        .with_paths(
-            docker_path.map(PathBuf::from),
-            podman_path.map(PathBuf::from),
-        );
-
-    Discovery::new(probes, cli)
+    build_discovery(kinds, docker_path, podman_path, false)
 }
 
 /// The four captured lists of `kind`, mapped as [`crate::Engine::resources`]
@@ -166,6 +150,37 @@ pub fn pull_progress() -> PullProgress {
     }
 
     progress
+}
+
+/// A search that reached the fixture engines of `kinds`.
+fn build_discovery(
+    kinds: &[EngineKind],
+    docker_path: Option<&str>,
+    podman_path: Option<&str>,
+    is_selinux_enabled: bool,
+) -> Discovery {
+    let probes = kinds
+        .iter()
+        .map(|kind| {
+            let info = engine(*kind);
+            let source = match kind {
+                EngineKind::Docker => CandidateSource::Docker,
+                EngineKind::Podman => CandidateSource::Podman,
+            };
+            let candidate =
+                SocketCandidate::new(info.address().clone(), source);
+
+            Probe::new(candidate, ProbeOutcome::Reached(info))
+        })
+        .collect();
+
+    let cli = CliPresence::new(docker_path.is_some(), podman_path.is_some())
+        .with_paths(
+            docker_path.map(PathBuf::from),
+            podman_path.map(PathBuf::from),
+        );
+
+    Discovery::new(probes, cli, is_selinux_enabled)
 }
 
 /// Map the captured lists of `kind`; without `with_containers` the
@@ -267,5 +282,21 @@ mod tests {
             ])
         );
         assert_eq!(none.diagnosis(), &Diagnosis::NotInstalled);
+    }
+
+    #[test]
+    fn a_discovery_has_selinux_off_unless_asked_for() {
+        let plain = discovery(&[EngineKind::Docker]);
+        let with_cli = discovery_with_cli(
+            &[EngineKind::Docker],
+            Some("/bin/docker"),
+            None,
+        );
+        let selinux = discovery_with_selinux(&[EngineKind::Docker]);
+
+        assert!(!plain.is_selinux_enabled());
+        assert!(!with_cli.is_selinux_enabled());
+        assert!(selinux.is_selinux_enabled());
+        assert_eq!(selinux.diagnosis(), plain.diagnosis());
     }
 }

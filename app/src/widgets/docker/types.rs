@@ -1,6 +1,7 @@
 use otty_docker::{Container, EngineAddress, Image, Network, Volume};
 use otty_ui_kit::components::tag_search::TagSearch;
 
+use super::errors::DockerError;
 use super::sort::{
     TableSort, sort_containers, sort_images, sort_networks, sort_volumes,
 };
@@ -90,21 +91,21 @@ impl Place {
 /// succeeds or fails on its own; the error is the engine's message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LoadedLists {
-    pub(crate) containers: Result<Vec<Container>, String>,
-    pub(crate) images: Result<Vec<Image>, String>,
-    pub(crate) volumes: Result<Vec<Volume>, String>,
-    pub(crate) networks: Result<Vec<Network>, String>,
+    pub(crate) containers: Result<Vec<Container>, DockerError>,
+    pub(crate) images: Result<Vec<Image>, DockerError>,
+    pub(crate) volumes: Result<Vec<Volume>, DockerError>,
+    pub(crate) networks: Result<Vec<Network>, DockerError>,
 }
 
 impl LoadedLists {
-    /// Every list failed with the same `message`, for example when the
+    /// Every list failed with the same `error`, for example when the
     /// connection could not be made.
-    pub(crate) fn failed(message: &str) -> Self {
+    pub(crate) fn failed(error: &DockerError) -> Self {
         Self {
-            containers: Err(message.to_string()),
-            images: Err(message.to_string()),
-            volumes: Err(message.to_string()),
-            networks: Err(message.to_string()),
+            containers: Err(error.clone()),
+            images: Err(error.clone()),
+            volumes: Err(error.clone()),
+            networks: Err(error.clone()),
         }
     }
 }
@@ -112,10 +113,10 @@ impl LoadedLists {
 /// One list of an engine as a reload returned it, or the engine's message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LoadedList {
-    Containers(Result<Vec<Container>, String>),
-    Images(Result<Vec<Image>, String>),
-    Volumes(Result<Vec<Volume>, String>),
-    Networks(Result<Vec<Network>, String>),
+    Containers(Result<Vec<Container>, DockerError>),
+    Images(Result<Vec<Image>, DockerError>),
+    Volumes(Result<Vec<Volume>, DockerError>),
+    Networks(Result<Vec<Network>, DockerError>),
 }
 
 /// Return the containers that pass `search`, ordered by `sort`. Ages are
@@ -362,11 +363,11 @@ mod tests {
 
     #[test]
     fn a_failed_load_fails_every_list_with_the_message() {
-        let lists = LoadedLists::failed("refused");
+        let lists = LoadedLists::failed(&DockerError::new("refused"));
 
-        assert_eq!(lists.containers, Err(String::from("refused")));
-        assert_eq!(lists.images, Err(String::from("refused")));
-        assert_eq!(lists.volumes, Err(String::from("refused")));
-        assert_eq!(lists.networks, Err(String::from("refused")));
+        assert_eq!(lists.containers, Err(DockerError::new("refused")));
+        assert_eq!(lists.images, Err(DockerError::new("refused")));
+        assert_eq!(lists.volumes, Err(DockerError::new("refused")));
+        assert_eq!(lists.networks, Err(DockerError::new("refused")));
     }
 }

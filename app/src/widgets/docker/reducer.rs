@@ -92,8 +92,8 @@ fn reduce_intent(
             }
             Task::none()
         },
-        DockerIntent::LogsFailed { target, message } => {
-            if !state.inspector_mut().fail_logs(&target, message) {
+        DockerIntent::LogsFailed { target, error } => {
+            if !state.inspector_mut().fail_logs(&target, error) {
                 log::debug!("docker log error of an unfollowed container");
             }
             Task::none()
@@ -221,6 +221,10 @@ fn reduce_intent(
             reference,
             result,
         } => run_flow::defaults_loaded(state, &engine, &reference, result),
+        DockerIntent::FolderChecked { path, exists } => {
+            run_flow::folder_checked(state, &path, exists)
+        },
+        DockerIntent::RecheckFolders => run_flow::recheck_folders(state),
     }
 }
 
@@ -400,6 +404,7 @@ mod tests {
     use super::*;
     use crate::i18n::Locale;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::docker::errors::DockerError;
     use crate::widgets::docker::inspect_tree::InspectTree;
     use crate::widgets::docker::inspector::{
         InspectLoad, InspectTarget, InspectorTab, LogTarget, MAX_LOG_LINES,
@@ -1291,7 +1296,7 @@ mod tests {
     fn a_failed_list_shows_its_error_and_keeps_the_other_lists() {
         let mut state = loaded_state();
         let mut reloaded = lists(EngineKind::Docker);
-        reloaded.images = Err(String::from("engine said no"));
+        reloaded.images = Err(DockerError::new("engine said no"));
 
         let _ = reduce(
             &mut state,
@@ -1712,7 +1717,7 @@ mod tests {
             &mut state,
             DockerIntent::LogsFailed {
                 target: log_target(1),
-                message: String::from("gone"),
+                error: DockerError::new("gone"),
             },
         );
 
@@ -1731,7 +1736,7 @@ mod tests {
             &mut state,
             DockerIntent::LogsFailed {
                 target: log_target(0),
-                message: String::from("No such container"),
+                error: DockerError::new("No such container"),
             },
         );
 
@@ -1841,7 +1846,7 @@ mod tests {
             &mut state,
             DockerIntent::InspectLoaded {
                 target: container_inspect(1),
-                result: Err(String::from("late")),
+                result: Err(DockerError::new("late")),
             },
         );
 
@@ -1862,7 +1867,7 @@ mod tests {
             &mut state,
             DockerIntent::InspectLoaded {
                 target: container_inspect(0),
-                result: Err(String::from("No such container")),
+                result: Err(DockerError::new("No such container")),
             },
         );
 
@@ -2216,7 +2221,7 @@ mod tests {
             &mut state,
             DockerIntent::ListLoaded {
                 engine: docker().address().clone(),
-                list: LoadedList::Containers(Err(String::from(
+                list: LoadedList::Containers(Err(DockerError::new(
                     "unknown variant `unknown`",
                 ))),
             },

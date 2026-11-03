@@ -122,8 +122,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // The All modes menu is one of the menus: its rows, pin toggles and
         // dismiss layer send these, and a switch reports its change.
         AppEvent::Modes(_) => Allow,
-        // Engine results and mode changes arrive on their own; a click in
-        // the Docker views closes the menus like any other click.
+        // Engine results, folder checks and mode changes arrive on their
+        // own; a click in the Docker views closes the menus like any other
+        // click.
         AppEvent::Docker(event) if is_docker_background(event) => Allow,
         AppEvent::Keyboard(_) => Ignore,
         AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Intent(_))
@@ -287,7 +288,7 @@ pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
 }
 
 /// Return `true` for a Docker event the user did not cause by a click: a
-/// mode change, an engine result or an effect.
+/// mode change, an engine result, a folder check or its timer, or an effect.
 fn is_docker_background(event: &DockerEvent) -> bool {
     match event {
         DockerEvent::Intent(intent) => matches!(
@@ -308,6 +309,8 @@ fn is_docker_background(event: &DockerEvent) -> bool {
                 | DockerIntent::PullFinished(_)
                 | DockerIntent::RunFinished { .. }
                 | DockerIntent::ImageDefaultsLoaded { .. }
+                | DockerIntent::FolderChecked { .. }
+                | DockerIntent::RecheckFolders
         ),
         DockerEvent::Effect(_) => true,
     }
@@ -330,6 +333,7 @@ mod tests {
     use crate::widgets::docker::actions::{
         ActionRequest, EngineAction, RowAction,
     };
+    use crate::widgets::docker::errors::DockerError;
     use crate::widgets::docker::inspector::{
         InspectTarget, InspectorTab, LogTarget,
     };
@@ -449,7 +453,7 @@ mod tests {
             docker(DockerIntent::Leave),
             docker(DockerIntent::ListsLoaded {
                 engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
-                lists: LoadedLists::failed("x"),
+                lists: LoadedLists::failed(&DockerError::new("x")),
             }),
             AppEvent::Docker(DockerEvent::Effect(DockerEffect::Discover)),
             docker(DockerIntent::ListChanged {
@@ -464,7 +468,7 @@ mod tests {
             )),
             docker(DockerIntent::ListLoaded {
                 engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
-                list: LoadedList::Images(Err(String::from("x"))),
+                list: LoadedList::Images(Err(DockerError::new("x"))),
             }),
             docker(DockerIntent::ActionFinished {
                 request: ActionRequest::new(
@@ -489,6 +493,11 @@ mod tests {
                 reference: String::from("nginx"),
                 result: Ok(None),
             }),
+            docker(DockerIntent::FolderChecked {
+                path: PathBuf::from("/srv/site"),
+                exists: true,
+            }),
+            docker(DockerIntent::RecheckFolders),
         ];
         let address = otty_docker::EngineAddress::Tcp(String::from("h:1"));
         let log_target = LogTarget::new(
@@ -502,7 +511,7 @@ mod tests {
             }),
             docker(DockerIntent::LogsFailed {
                 target: log_target,
-                message: String::from("x"),
+                error: DockerError::new("x"),
             }),
             docker(DockerIntent::InspectLoaded {
                 target: InspectTarget::new(

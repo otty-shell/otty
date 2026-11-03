@@ -56,6 +56,16 @@ pub(crate) struct InspectorProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
+/// How the Inspect controls share the width of the panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlsLayout {
+    /// The switches and the icon on one row.
+    OneRow,
+    /// Each switch on its own row, the icon on a row of its own under them,
+    /// at the left edge.
+    Stacked,
+}
+
 /// Render the header of the selected row (its name, status line, action
 /// buttons and the hint under them), the tabs and the open tab. With
 /// nothing selected the panel says there is nothing to inspect.
@@ -228,16 +238,6 @@ fn inspect_body<'a>(
         .spacing(spacing::SPACE_3)
         .height(Length::Fill)
         .into()
-}
-
-/// How the Inspect controls share the width of the panel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ControlsLayout {
-    /// The switches and the icon on one row.
-    OneRow,
-    /// Each switch on its own row, the icon on a row of its own under them,
-    /// at the left edge.
-    Stacked,
 }
 
 /// Picks the layout of the Inspect controls for `available` width, from the

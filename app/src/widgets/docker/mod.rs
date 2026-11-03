@@ -1,6 +1,7 @@
 pub(crate) mod action_flow;
 pub(crate) mod action_model;
 pub(crate) mod actions;
+pub(crate) mod errors;
 pub(crate) mod event;
 pub(crate) mod form_flow;
 pub(crate) mod form_model;
@@ -119,11 +120,15 @@ impl DockerWidget {
         inspector_tabs::inspector_tabs(&self.state)
     }
 
-    /// The Docker mode subscriptions: the engine events watch and the
-    /// followed logs. Nothing runs in another mode (spec Decisions 12 and
-    /// 14).
+    /// The Docker mode subscriptions: the engine events watch, the followed
+    /// logs and the timer of the Run form's folders. Nothing runs in another
+    /// mode (spec Decisions 12 and 14).
     pub(crate) fn subscription(&self) -> Subscription<DockerEvent> {
-        Subscription::batch([self.engine_watch(), self.followed_logs()])
+        Subscription::batch([
+            self.engine_watch(),
+            self.followed_logs(),
+            subscription::folder_recheck(&self.state),
+        ])
     }
 
     /// Watch the events of every reached engine while Docker mode is
@@ -201,6 +206,7 @@ mod tests {
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::docker::inspector::InspectorTab;
+    use crate::widgets::docker::run_form::RunEdit;
     use crate::widgets::docker::types::LoadedLists;
 
     /// Docker mode active with the fixture Docker engine and its lists.
@@ -325,6 +331,23 @@ mod tests {
 
         let _ =
             widget.reduce(DockerIntent::SelectInspectorTab(InspectorTab::Logs));
+        assert_eq!(widget.subscription().units(), 2);
+
+        let _ = widget.reduce(DockerIntent::Leave);
+        assert_eq!(widget.subscription().units(), 0);
+    }
+
+    #[test]
+    fn a_folder_row_adds_the_folder_timer_to_docker_mode() {
+        let mut widget = loaded();
+        let _ = widget.reduce(DockerIntent::OpenCreate);
+        for edit in [
+            RunEdit::AddVolume,
+            RunEdit::VolumeSource(0, String::from("/srv/site")),
+        ] {
+            let _ = widget.reduce(DockerIntent::RunEdited(edit));
+        }
+
         assert_eq!(widget.subscription().units(), 2);
 
         let _ = widget.reduce(DockerIntent::Leave);

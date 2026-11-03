@@ -7,6 +7,7 @@ use iced::futures::stream::BoxStream;
 use iced::futures::{FutureExt, SinkExt, StreamExt};
 use otty_docker::{Engine, EngineError};
 
+use super::errors::DockerError;
 use super::event::{DockerEvent, DockerIntent};
 use super::inspector::{LOG_TAIL, LogTarget};
 
@@ -40,7 +41,7 @@ fn follow(target: &LogTarget) -> BoxStream<'static, DockerEvent> {
             let engine = match Engine::connect(target.engine()) {
                 Ok(engine) => engine,
                 Err(err) => {
-                    let _ = output.send(failed(&target, &err)).await;
+                    let _ = output.send(failed(&target, err)).await;
                     return;
                 },
             };
@@ -59,7 +60,7 @@ fn follow(target: &LogTarget) -> BoxStream<'static, DockerEvent> {
                     }
                 }
                 if let Some(err) = error {
-                    let _ = output.send(failed(&target, &err)).await;
+                    let _ = output.send(failed(&target, err)).await;
                     return;
                 }
             }
@@ -90,10 +91,10 @@ fn ready_lines(
     (batch, None)
 }
 
-fn failed(target: &LogTarget, err: &EngineError) -> DockerEvent {
+fn failed(target: &LogTarget, err: EngineError) -> DockerEvent {
     intent(DockerIntent::LogsFailed {
         target: target.clone(),
-        message: format!("{err}"),
+        error: DockerError::from(err),
     })
 }
 

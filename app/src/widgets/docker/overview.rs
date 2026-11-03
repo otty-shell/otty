@@ -149,6 +149,22 @@ pub(crate) fn network_fields(
     ])
 }
 
+/// The ports as `docker ps` shows them, each published TCP port a link to
+/// its page. The containers table builds its Ports cell from the same
+/// pieces.
+pub(crate) fn ports_value(ports: &[PortMapping]) -> Vec<Piece> {
+    let shown = shown_ports(ports)
+        .into_iter()
+        .map(|port| {
+            let url =
+                port_url(port.host_ip(), port.host_port(), port.protocol());
+            vec![piece(&port_text(port), url.map(LinkTarget::Url))]
+        })
+        .collect();
+
+    joined(shown)
+}
+
 /// The fields that have a value, with their labels translated.
 fn present(fields: Vec<(Key, Vec<Piece>)>) -> Vec<Field> {
     fields
@@ -185,22 +201,6 @@ fn joined(values: Vec<Vec<Piece>>) -> Vec<Piece> {
     }
 
     pieces
-}
-
-/// The ports as `docker ps` shows them, each published TCP port a link to
-/// its page. The containers table builds its Ports cell from the same
-/// pieces.
-pub(crate) fn ports_value(ports: &[PortMapping]) -> Vec<Piece> {
-    let shown = shown_ports(ports)
-        .into_iter()
-        .map(|port| {
-            let url =
-                port_url(port.host_ip(), port.host_port(), port.protocol());
-            vec![piece(&port_text(port), url.map(LinkTarget::Url))]
-        })
-        .collect();
-
-    joined(shown)
 }
 
 /// A mount as "source → destination": the volume name (a link when the

@@ -127,13 +127,20 @@ fn close_modes_menu(app: &mut App) -> Task<AppEvent> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::{Path, PathBuf};
+
     use iced::keyboard::key::{Code, Named, NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
+    use otty_docker::{EngineKind, fixtures};
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::docker::run_form::RunEdit;
+    use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::types::Mode;
+
+    const FOLDER: &str = "/srv/site";
 
     fn app_with_open_modes_menu() -> App {
         let (mut app, _) = App::new();
@@ -267,5 +274,79 @@ mod tests {
 
         assert!(!app.widgets.modes.is_menu_open());
         assert_eq!(app.widgets.sidebar.vm().is_left_open, was_left_open);
+    }
+
+    /// The All modes menu is open and the Run form has a folder row with a
+    /// question out about [`FOLDER`].
+    fn app_with_modes_menu_over_a_folder_row() -> App {
+        let mut app = app_with_open_modes_menu();
+        let docker = &mut app.widgets.docker;
+
+        let _ = docker.reduce(DockerIntent::Enter);
+        let _ = docker.reduce(DockerIntent::DiscoveryFinished(
+            fixtures::discovery(&[EngineKind::Docker]),
+        ));
+        let _ = docker.reduce(DockerIntent::OpenCreate);
+        let _ = docker.reduce(DockerIntent::RunEdited(RunEdit::AddVolume));
+        let _ = docker.reduce(DockerIntent::RunEdited(RunEdit::VolumeSource(
+            0,
+            FOLDER.to_string(),
+        )));
+
+        app
+    }
+
+    fn docker_intent(intent: DockerIntent) -> AppEvent {
+        AppEvent::Docker(DockerEvent::Intent(intent))
+    }
+
+    #[test]
+    fn the_folder_timer_leaves_the_modes_menu_open() {
+        let mut app = app_with_modes_menu_over_a_folder_row();
+
+        let _ = update(&mut app, docker_intent(DockerIntent::RecheckFolders));
+
+        assert!(app.widgets.modes.is_menu_open());
+    }
+
+    #[test]
+    fn a_folder_answer_under_an_open_menu_reaches_the_form() {
+        let mut app = app_with_modes_menu_over_a_folder_row();
+
+        let _ = update(
+            &mut app,
+            docker_intent(DockerIntent::FolderChecked {
+                path: PathBuf::from(FOLDER),
+                exists: false,
+            }),
+        );
+
+        assert!(app.widgets.modes.is_menu_open());
+        let form = app.widgets.docker.run_form_vm().expect("form");
+        assert!(form.volumes[0].problem.is_some());
+    }
+
+    #[test]
+    fn a_folder_answered_under_an_open_menu_is_asked_about_again() {
+        let mut app = app_with_modes_menu_over_a_folder_row();
+        let _ = update(
+            &mut app,
+            docker_intent(DockerIntent::FolderChecked {
+                path: PathBuf::from(FOLDER),
+                exists: true,
+            }),
+        );
+
+        let asked = collect_outputs(update(
+            &mut app,
+            docker_intent(DockerIntent::RecheckFolders),
+        ));
+
+        assert!(matches!(
+            asked.as_slice(),
+            [AppEvent::Docker(DockerEvent::Effect(
+                DockerEffect::CheckFolder(path)
+            ))] if path.as_path() == Path::new(FOLDER)
+        ));
     }
 }

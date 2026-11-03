@@ -9,13 +9,9 @@ const ENFORCE_FILE: &str = "/sys/fs/selinux/enforce";
 
 /// Whether SELinux is enabled on this computer: `/sys/fs/selinux/enforce`
 /// exists and can be read. Permissive mode counts as enabled, because the
-/// files still carry labels. Read it once per form, not on every redraw.
-///
-/// ```
-/// // Depends on the computer; only checks that the call returns.
-/// let _ = otty_docker::is_selinux_enabled();
-/// ```
-pub fn is_selinux_enabled() -> bool {
+/// files still carry labels. Read once per engine search, as part of
+/// [`crate::Discovery`].
+pub(crate) fn is_selinux_enabled() -> bool {
     let contents = fs::read_to_string(ENFORCE_FILE).ok();
 
     is_enabled_from(contents.as_deref())

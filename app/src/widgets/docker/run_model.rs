@@ -435,6 +435,7 @@ mod tests {
     use otty_docker::{EngineKind, fixtures};
 
     use super::*;
+    use crate::widgets::docker::errors::DockerError;
     use crate::widgets::docker::event::DockerIntent;
     use crate::widgets::docker::reducer::reduce;
     use crate::widgets::docker::run_form::RunEdit;
@@ -454,7 +455,7 @@ mod tests {
     /// the engine's answer `found`.
     fn state_with(
         kinds: &[EngineKind],
-        found: Option<Result<Option<otty_docker::ImageDefaults>, String>>,
+        found: Option<Result<Option<otty_docker::ImageDefaults>, DockerError>>,
     ) -> DockerState {
         let docker = fixtures::engine(kinds[0]);
         let mut state = DockerState::default();
@@ -536,6 +537,38 @@ mod tests {
             );
             assert!(!vm.volumes[0].is_relabeled, "off by default");
         }
+    }
+
+    #[test]
+    fn a_folder_being_asked_about_disables_run_without_a_message() {
+        let state = with_volume_row("/srv/site", false);
+
+        let vm = run_form(&state).expect("form");
+
+        assert!(!vm.can_run);
+        assert_eq!(vm.volumes[0].problem, None);
+        assert!(!vm.volumes[0].is_source_invalid);
+    }
+
+    #[test]
+    fn a_folder_answered_missing_shows_its_message_under_the_row() {
+        let mut state = with_volume_row("/srv/site", false);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::FolderChecked {
+                path: std::path::PathBuf::from("/srv/site"),
+                exists: false,
+            },
+        );
+
+        let vm = run_form(&state).expect("form");
+        assert!(!vm.can_run);
+        assert_eq!(
+            vm.volumes[0].problem,
+            Some(i18n::t(Key::DockerRunErrSourceMissing))
+        );
+        assert!(vm.volumes[0].is_source_invalid);
     }
 
     #[test]
@@ -791,7 +824,7 @@ mod tests {
         let missing = state_with(&[EngineKind::Docker], Some(Ok(None)));
         let failed = state_with(
             &[EngineKind::Docker],
-            Some(Err(String::from("store is locked"))),
+            Some(Err(DockerError::new("store is locked"))),
         );
         let checking = state_with(&[EngineKind::Docker], None);
         let mut empty = here();

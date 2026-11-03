@@ -162,6 +162,7 @@ mod tests {
     use otty_ui_kit::components::key_value_list::ValuePart;
 
     use super::*;
+    use crate::widgets::docker::errors::DockerError;
     use crate::widgets::docker::event::DockerIntent;
     use crate::widgets::docker::inspector::{InspectTarget, LogTarget};
     use crate::widgets::docker::links::LinkTarget;
@@ -299,7 +300,7 @@ mod tests {
             &mut state,
             DockerIntent::LogsFailed {
                 target,
-                message: String::from("stream closed"),
+                error: DockerError::new("stream closed"),
             },
         );
 
@@ -530,7 +531,7 @@ mod tests {
                     ResourceKind::Containers,
                     resources.containers()[0].id(),
                 ),
-                result: Err(String::from("engine said no")),
+                result: Err(DockerError::new("engine said no")),
             },
         );
 

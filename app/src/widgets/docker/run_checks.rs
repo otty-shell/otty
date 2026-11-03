@@ -1,6 +1,7 @@
 //! The checks before Run (spec Decision 18): the image is not empty, ports
 //! are 1–65535, paths in the container are absolute and a folder source
 //! exists. Each problem is shown under its field and keeps Run disabled.
+//! Pure: whether a folder exists is the answer kept in the form.
 
 use super::run_form::{PortRow, RunForm, VolumeRow, parse_port};
 use crate::i18n::Key;
@@ -71,7 +72,8 @@ impl RunProblems {
     }
 }
 
-/// Check the typed form. A folder source is looked up on disk.
+/// Check the typed form. Whether a folder exists comes from the last answer
+/// of the disk kept in the form; no answer yet is no problem.
 pub(crate) fn check(form: &RunForm) -> RunProblems {
     let image = form
         .reference()
@@ -107,7 +109,8 @@ fn port_problem(row: &PortRow) -> Option<RowProblem> {
 }
 
 /// A blank row is fine. The path in the container must start with `/`;
-/// the source is required, and a folder must exist.
+/// the source is required, and the last answer about a folder must not say
+/// it is missing.
 fn volume_problem(row: &VolumeRow) -> Option<RowProblem> {
     if row.is_blank() {
         return None;
@@ -127,8 +130,7 @@ fn volume_problem(row: &VolumeRow) -> Option<RowProblem> {
             false,
         ));
     }
-    let is_missing_folder = row.host_path().is_some_and(|path| !path.exists());
-    if is_missing_folder {
+    if row.is_folder_missing() {
         return Some(RowProblem::new(
             Key::DockerRunErrSourceMissing,
             true,
@@ -141,6 +143,8 @@ fn volume_problem(row: &VolumeRow) -> Option<RowProblem> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use otty_docker::{EngineKind, fixtures};
 
     use super::*;
@@ -175,15 +179,24 @@ mod tests {
         ]
     }
 
+    /// A form with one row from the folder `source`, and the answer `exists`
+    /// about that folder.
+    fn answered_form(source: &str, exists: bool) -> RunForm {
+        let mut form = form(volume(source, "/data"));
+        assert!(form.finish_folder_check(Path::new(source), exists));
+        form
+    }
+
     #[test]
     fn a_filled_form_has_no_problems() {
-        let temp = std::env::temp_dir();
         let mut edits = port("8081", "80");
-        edits.extend(volume(&temp.display().to_string(), "/data"));
+        edits.extend(volume("/srv/otty-fx-site", "/data"));
         edits.push(RunEdit::AddPort);
         edits.push(RunEdit::AddVolume);
+        let mut form = form(edits);
+        assert!(form.finish_folder_check(Path::new("/srv/otty-fx-site"), true));
 
-        let problems = check(&form(edits));
+        let problems = check(&form);
 
         assert!(problems.is_empty(), "{problems:?}");
     }
@@ -261,14 +274,51 @@ mod tests {
     }
 
     #[test]
-    fn a_folder_source_must_exist() {
-        let problems =
-            check(&form(volume("/nonexistent/otty-fx-missing", "/data")));
+    fn a_folder_the_answer_calls_missing_is_a_problem() {
+        // `/` is on every disk: only the answer may decide.
+        let problems = check(&answered_form("/", false));
 
         assert_eq!(
             problems.volume(0),
             Some(RowProblem::new(Key::DockerRunErrSourceMissing, true, false))
         );
+    }
+
+    #[test]
+    fn a_folder_the_answer_says_exists_has_no_problem() {
+        let problems = check(&answered_form("/nonexistent/otty-fx", true));
+
+        assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[test]
+    fn a_folder_without_an_answer_has_no_problem_yet() {
+        let problems = check(&form(volume("/nonexistent/otty-fx", "/data")));
+
+        assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[test]
+    fn the_missing_answer_stays_while_the_folder_text_changes() {
+        let mut form = answered_form("/srv/otty-fx", false);
+
+        form.apply(RunEdit::VolumeSource(0, String::from("/srv/otty-fx-2")));
+
+        assert_eq!(
+            check(&form).volume(0),
+            Some(RowProblem::new(Key::DockerRunErrSourceMissing, true, false))
+        );
+    }
+
+    #[test]
+    fn a_named_volume_forgets_the_answer_about_a_folder() {
+        let mut form = answered_form("/srv/otty-fx", false);
+
+        form.apply(RunEdit::VolumeSource(0, String::from("otty-fx-cache")));
+        assert!(check(&form).is_empty());
+
+        form.apply(RunEdit::VolumeSource(0, String::from("/srv/other")));
+        assert!(check(&form).is_empty());
     }
 
     #[test]

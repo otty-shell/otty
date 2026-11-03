@@ -7,6 +7,7 @@ use iced::Task;
 
 use super::action_flow::{reload, run};
 use super::actions::ActionRequest;
+use super::errors::DockerError;
 use super::event::{DockerEffect, DockerEvent};
 use super::forms::{Form, FormField, FormKind};
 use super::run_flow;
@@ -87,7 +88,7 @@ pub(super) fn cancel(state: &mut DockerState) -> Task<DockerEvent> {
 /// running pull (cancelled meanwhile) is dropped.
 pub(super) fn finish_pull(
     state: &mut DockerState,
-    result: Result<(), String>,
+    result: Result<(), DockerError>,
 ) -> Task<DockerEvent> {
     if !state.form().is_some_and(Form::is_pulling) {
         return Task::none();
@@ -98,11 +99,11 @@ pub(super) fn finish_pull(
 
     match result {
         Ok(()) => reload(state, form.engine().address()),
-        Err(message) => {
+        Err(err) => {
             state.set_notice(i18n::docker_action_failed(
                 Key::TplDockerPullFailed,
                 &form.reference(),
-                &message,
+                &err.to_string(),
             ));
             Task::none()
         },
@@ -290,7 +291,9 @@ mod tests {
 
         let effects = effects(reduce(
             &mut state,
-            DockerIntent::PullFinished(Err(String::from("manifest unknown"))),
+            DockerIntent::PullFinished(Err(DockerError::new(
+                "manifest unknown",
+            ))),
         ));
 
         assert!(effects.is_empty());

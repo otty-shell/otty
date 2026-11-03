@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use iced::Point;
 use iced::widget::text_editor::Action;
 use otty_docker::{
@@ -7,6 +9,7 @@ use otty_docker::{
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
 use super::actions::{ActionRequest, RowAction};
+use super::errors::DockerError;
 use super::forms::FormField;
 use super::inspector::{InspectTarget, InspectorTab, LogTarget};
 use super::links::LinkTarget;
@@ -66,7 +69,10 @@ pub(crate) enum DockerIntent {
         lines: Vec<String>,
     },
     /// The followed logs could not be read; the engine's message.
-    LogsFailed { target: LogTarget, message: String },
+    LogsFailed {
+        target: LogTarget,
+        error: DockerError,
+    },
     /// Selection or scroll in the log view.
     LogAction(Action),
     /// The Follow switch of the logs was turned on or off.
@@ -74,7 +80,7 @@ pub(crate) enum DockerIntent {
     /// The inspect JSON of a row arrived, or the engine's message.
     InspectLoaded {
         target: InspectTarget,
-        result: Result<String, String>,
+        result: Result<String, DockerError>,
     },
     /// Selection or scroll in the inspect view.
     InspectAction(Action),
@@ -128,7 +134,7 @@ pub(crate) enum DockerIntent {
     /// The engine finished an action; the error is the engine's message.
     ActionFinished {
         request: ActionRequest,
-        result: Result<(), String>,
+        result: Result<(), DockerError>,
     },
     /// The cross of the action notice was pressed.
     DismissNotice,
@@ -144,7 +150,7 @@ pub(crate) enum DockerIntent {
     /// The running pull got further.
     PullProgressed(PullProgress),
     /// The pull ended; the error is the engine's message.
-    PullFinished(Result<(), String>),
+    PullFinished(Result<(), DockerError>),
     // Run container form.
     /// A field of the Run form changed.
     RunEdited(RunEdit),
@@ -160,19 +166,24 @@ pub(crate) enum DockerIntent {
     /// message.
     RunFinished {
         engine: EngineAddress,
-        result: Result<String, String>,
+        result: Result<String, DockerError>,
     },
     /// What the image `reference` sets on its own (`None`: not on this
     /// computer), or the engine's message.
     ImageDefaultsLoaded {
         engine: EngineAddress,
         reference: String,
-        result: Result<Option<ImageDefaults>, String>,
+        result: Result<Option<ImageDefaults>, DockerError>,
     },
+    /// The disk answered whether this folder of the Run form exists.
+    FolderChecked { path: PathBuf, exists: bool },
+    /// Ask the disk again about the folders of the Run form, so a folder
+    /// created elsewhere clears its error by itself.
+    RecheckFolders,
 }
 
 /// Effect events produced by the Docker reducer. The app runs them off the
-/// reducer, because they talk to the engines.
+/// reducer, because they talk to the engines or the disk.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DockerEffect {
     /// Search for the local engines (`otty_docker::discover`).
@@ -223,6 +234,8 @@ pub(crate) enum DockerEffect {
         engine: EngineInfo,
         request: RunRequest,
     },
+    /// Ask the disk whether this folder of the Run form exists.
+    CheckFolder(PathBuf),
 }
 
 /// Docker event stream routed through the app update loop.

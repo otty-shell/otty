@@ -1,14 +1,17 @@
 //! The Run container form (spec Decision 18): what the user typed, the
 //! rule that auto remove forces Restart to No, what is known about the
-//! image and how far a run is. Pure: `run_flow.rs` asks the engine.
+//! image and the typed folders and how far a run is. Pure: `run_flow.rs`
+//! asks the engine and the disk.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use otty_docker::{
     EngineAddress, EngineInfo, ImageDefaults, MountSource, PortProtocol,
     PublishedPort, PullProgress, RestartPolicy, RunRequest, VolumeMount,
 };
 use otty_ui_kit::components::token_field::TokenList;
+
+use super::errors::DockerError;
 
 /// The restart choices in the order the form shows them.
 pub(crate) const RESTART_CHOICES: [RestartPolicy; 4] = [
@@ -48,14 +51,27 @@ impl PortRow {
     }
 }
 
+/// What the disk last said about a folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FolderAnswer {
+    path: PathBuf,
+    exists: bool,
+}
+
 /// One volume row as typed: source → path in the container, read-only,
-/// and the SELinux relabel switch.
+/// the SELinux relabel switch and what the disk said about a folder source.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct VolumeRow {
     source: String,
     target: String,
     is_read_only: bool,
     is_relabeled: bool,
+    /// The last answer. It stays while the next text of the folder is asked
+    /// about, so the error does not flicker during typing.
+    folder_answer: Option<FolderAnswer>,
+    /// The folder a question is out about; never another folder than the
+    /// one typed.
+    asked_folder: Option<PathBuf>,
 }
 
 impl VolumeRow {
@@ -86,10 +102,46 @@ impl VolumeRow {
         self.source.trim().is_empty() && self.target.trim().is_empty()
     }
 
+    /// Whether the source is a folder and the last answer, maybe about the
+    /// previous text, said it is missing.
+    pub(crate) fn is_folder_missing(&self) -> bool {
+        self.host_path().is_some()
+            && self
+                .folder_answer
+                .as_ref()
+                .is_some_and(|answer| !answer.exists)
+    }
+
+    /// Whether the disk has answered about the typed folder. A row without
+    /// a folder has nothing to wait for.
+    fn is_folder_answered(&self) -> bool {
+        let Some(path) = self.host_path() else {
+            return true;
+        };
+
+        self.folder_answer
+            .as_ref()
+            .is_some_and(|answer| answer.path == path)
+    }
+
     /// The folder on this computer when the source is one (it starts with
     /// `/` or `~`); `None` for a volume name.
     pub(crate) fn host_path(&self) -> Option<PathBuf> {
         host_path(self.source.trim())
+    }
+
+    /// Take a new source. A question about another folder no longer counts
+    /// for this row, and a source that is not a folder forgets the answer.
+    fn set_source(&mut self, source: String) {
+        self.source = source;
+
+        let path = self.host_path();
+        if self.asked_folder != path {
+            self.asked_folder = None;
+        }
+        if path.is_none() {
+            self.folder_answer = None;
+        }
     }
 }
 
@@ -165,7 +217,7 @@ pub(crate) struct RunForm {
     network: String,
     restart: RestartPolicy,
     is_auto_remove: bool,
-    /// Whether SELinux is enabled, read once when the form opens.
+    /// Whether SELinux is enabled, as the engine search found.
     is_selinux_enabled: bool,
     /// The image reference the lookup is about.
     lookup_reference: String,
@@ -259,6 +311,16 @@ impl RunForm {
     /// and the pull switch is on.
     pub(crate) fn needs_pull(&self) -> bool {
         self.lookup == ImageLookup::Missing && self.pulls_missing
+    }
+
+    /// Whether a volume row has a folder as its source.
+    pub(crate) fn has_folder_rows(&self) -> bool {
+        self.volumes.iter().any(|row| row.host_path().is_some())
+    }
+
+    /// Whether the disk has answered about the typed folder of every row.
+    pub(crate) fn are_folders_answered(&self) -> bool {
+        self.volumes.iter().all(VolumeRow::is_folder_answered)
     }
 
     /// Whether the volume row at `index` shows the SELinux switch: the
@@ -367,7 +429,7 @@ impl RunForm {
             RunEdit::RemoveEnv(index) => remove_at(&mut self.env, index),
             RunEdit::VolumeSource(index, source) => {
                 if let Some(row) = self.volumes.get_mut(index) {
-                    row.source = source;
+                    row.set_source(source);
                 }
             },
             RunEdit::VolumeTarget(index, target) => {
@@ -423,7 +485,7 @@ impl RunForm {
         &mut self,
         engine: &EngineAddress,
         reference: &str,
-        result: Result<Option<ImageDefaults>, String>,
+        result: Result<Option<ImageDefaults>, DockerError>,
     ) -> bool {
         let is_asked = self.engine.address() == engine
             && self.lookup_reference == reference
@@ -435,9 +497,68 @@ impl RunForm {
         self.lookup = match result {
             Ok(Some(defaults)) => ImageLookup::Here(defaults),
             Ok(None) => ImageLookup::Missing,
-            Err(message) => ImageLookup::Failed(message),
+            Err(err) => ImageLookup::Failed(err.to_string()),
         };
         true
+    }
+
+    /// Start asking about the folder of the row at `index`. Returns the
+    /// folder to ask the disk about, or `None` when the source is not a
+    /// folder, a question about it is out or a run goes on.
+    pub(crate) fn start_folder_check(
+        &mut self,
+        index: usize,
+    ) -> Option<PathBuf> {
+        if !self.is_editing() {
+            return None;
+        }
+
+        let path = self.volumes.get(index)?.host_path()?;
+        self.mark_folder_asked(&path).then_some(path)
+    }
+
+    /// Start asking again about the folders of all rows. Returns each folder
+    /// to ask the disk about once, without those a question is out about.
+    /// What is known about a folder stays until the answer comes.
+    pub(crate) fn start_folder_rechecks(&mut self) -> Vec<PathBuf> {
+        if !self.is_editing() {
+            return Vec::new();
+        }
+
+        let folders: Vec<PathBuf> = self
+            .volumes
+            .iter()
+            .filter_map(VolumeRow::host_path)
+            .collect();
+        folders
+            .into_iter()
+            .filter(|path| self.mark_folder_asked(path))
+            .collect()
+    }
+
+    /// Take the disk's answer about `path` for every row with that folder.
+    /// An answer about a folder no row has is dropped (returns `false`).
+    pub(crate) fn finish_folder_check(
+        &mut self,
+        path: &Path,
+        exists: bool,
+    ) -> bool {
+        let mut is_taken = false;
+
+        for row in &mut self.volumes {
+            if row.host_path().as_deref() != Some(path) {
+                continue;
+            }
+
+            row.asked_folder = None;
+            row.folder_answer = Some(FolderAnswer {
+                path: path.to_path_buf(),
+                exists,
+            });
+            is_taken = true;
+        }
+
+        is_taken
     }
 
     /// The image is pulled first.
@@ -532,6 +653,23 @@ impl RunForm {
         request
             .with_restart(self.restart)
             .with_auto_remove(self.is_auto_remove)
+    }
+
+    /// Note that a question about `path` is out for every row with that
+    /// folder. Returns `false` when one already was, so none is sent again.
+    fn mark_folder_asked(&mut self, path: &Path) -> bool {
+        let is_new = !self
+            .volumes
+            .iter()
+            .any(|row| row.asked_folder.as_deref() == Some(path));
+
+        for row in &mut self.volumes {
+            if row.host_path().as_deref() == Some(path) {
+                row.asked_folder = Some(path.to_path_buf());
+            }
+        }
+
+        is_new
     }
 }
 
@@ -661,6 +799,63 @@ mod tests {
         assert!(!named.volumes()[0].is_relabeled());
         assert!(!no_selinux.volumes()[0].is_relabeled());
         assert!(!untouched.volumes()[0].is_relabeled());
+    }
+
+    #[test]
+    fn folder_rows_are_rows_with_a_folder_source() {
+        let mut form = form();
+        assert!(!form.has_folder_rows());
+
+        edit(
+            &mut form,
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(0, String::from("otty-data")),
+            ],
+        );
+        assert!(!form.has_folder_rows());
+
+        form.apply(RunEdit::VolumeSource(0, String::from("~/site")));
+        assert!(form.has_folder_rows());
+    }
+
+    #[test]
+    fn an_answer_stays_with_its_row_when_another_row_is_removed() {
+        let mut form = form();
+        edit(
+            &mut form,
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(1, String::from("/srv/site")),
+            ],
+        );
+        assert_eq!(
+            form.start_folder_check(1),
+            Some(PathBuf::from("/srv/site"))
+        );
+        assert!(form.finish_folder_check(Path::new("/srv/site"), false));
+
+        form.apply(RunEdit::RemoveVolume(0));
+
+        assert!(form.volumes()[0].is_folder_missing());
+        assert!(form.are_folders_answered());
+    }
+
+    #[test]
+    fn no_folder_is_asked_about_while_a_run_goes_on() {
+        let mut form = form();
+        edit(
+            &mut form,
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(0, String::from("/srv/site")),
+            ],
+        );
+        form.start_run();
+
+        assert_eq!(form.start_folder_check(0), None);
+        assert!(form.start_folder_rechecks().is_empty());
     }
 
     #[test]
@@ -950,7 +1145,7 @@ mod tests {
         let _ = form.finish_lookup(
             docker.address(),
             "nginx:1.27",
-            Err(String::from("store is locked")),
+            Err(DockerError::new("store is locked")),
         );
 
         assert_eq!(

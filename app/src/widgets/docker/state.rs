@@ -10,6 +10,7 @@ use otty_ui_kit::components::tag_search::{
 };
 
 use super::actions::{ActionRequest, Confirm};
+use super::errors::DockerError;
 use super::forms::Form;
 use super::inspector::{
     InspectTarget, InspectorState, InspectorTab, LogTarget,
@@ -34,6 +35,10 @@ use super::types::{
 pub(crate) struct DockerState {
     is_active: bool,
     search: Search,
+    /// Whether SELinux is enabled, from the last finished search. Kept apart
+    /// from `search` because a new search forgets its result while engines
+    /// found before stay shown and can open a Run form.
+    is_selinux_enabled: bool,
     engines: Vec<EngineState>,
     place: Option<Place>,
     /// See [`Self::age_clock`].
@@ -68,6 +73,11 @@ impl DockerState {
     /// Return how far the engine search is.
     pub(crate) fn search(&self) -> &Search {
         &self.search
+    }
+
+    /// Return whether the last finished search found SELinux enabled.
+    pub(crate) fn is_selinux_enabled(&self) -> bool {
+        self.is_selinux_enabled
     }
 
     /// Return the reached engines, in search order.
@@ -354,6 +364,7 @@ impl DockerState {
             });
         }
 
+        self.is_selinux_enabled = discovery.is_selinux_enabled();
         self.search = Search::Done(discovery);
     }
 
@@ -912,11 +923,15 @@ impl<T> ResourceList<T> {
     /// Take a load result. A loaded list keeps the selected id when it is
     /// still there and selects the first row otherwise; a failed list keeps
     /// the id, so the row is selected again once it loads.
-    fn apply(&mut self, result: Result<Vec<T>, String>, id_of: fn(&T) -> &str) {
+    fn apply(
+        &mut self,
+        result: Result<Vec<T>, DockerError>,
+        id_of: fn(&T) -> &str,
+    ) {
         let items = match result {
             Ok(items) => items,
-            Err(message) => {
-                self.load = ListLoad::Failed(message);
+            Err(err) => {
+                self.load = ListLoad::Failed(err.to_string());
                 return;
             },
         };
@@ -1035,7 +1050,7 @@ mod tests {
         let mut list = ResourceList::new();
         list.apply(Ok(vec!["a"]), |item| item);
 
-        list.apply(Err(String::from("engine gone")), |item| item);
+        list.apply(Err(DockerError::new("engine gone")), |item| item);
 
         assert_eq!(list.load(), &ListLoad::Failed(String::from("engine gone")));
         assert!(list.items().is_empty());
