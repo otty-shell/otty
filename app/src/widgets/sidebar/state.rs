@@ -4,7 +4,7 @@ use iced::Point;
 use iced::widget::pane_grid;
 
 use super::focus_note::FocusNote;
-use super::side_panel::SidePanel;
+use super::side_panel::{SIDE_PANEL_MIN_RATIO, SidePanel};
 use super::types::{HeaderMenu, OpenHeaderMenu, SidebarPane};
 
 /// Smallest share of the window width the main area keeps when a side
@@ -114,16 +114,14 @@ impl SidebarState {
 
     /// Show the left panel if it is hidden, hide it if it is shown. In focus
     /// mode the panel is hidden, so this leaves focus mode and shows it.
-    /// The panel shows at the minimum width; a right panel too wide for it
-    /// shrinks so the main area keeps its minimum share.
+    /// The panel shows at the width it had (see [`reopen_beside`]).
     pub(super) fn toggle_left(&mut self) {
         let show = !self.is_left_open();
 
         self.focus_mode = false;
         self.focus_note = None;
         if show {
-            self.left.open();
-            self.right.shrink_to(max_ratio_beside(self.left_ratio()));
+            reopen_beside(&mut self.left, &mut self.right);
         } else {
             self.left.close();
         }
@@ -133,16 +131,14 @@ impl SidebarState {
 
     /// Show the right panel if it is hidden, hide it if it is shown. In
     /// focus mode the panel is hidden, so this leaves focus mode and shows
-    /// it. The panel shows at the minimum width; a left panel too wide for
-    /// it shrinks so the main area keeps its minimum share.
+    /// it. The panel shows at the width it had (see [`reopen_beside`]).
     pub(super) fn toggle_right(&mut self) {
         let show = !self.is_right_open();
 
         self.focus_mode = false;
         self.focus_note = None;
         if show {
-            self.right.open();
-            self.left.shrink_to(max_ratio_beside(self.right_ratio()));
+            reopen_beside(&mut self.right, &mut self.left);
         } else {
             self.right.close();
         }
@@ -182,11 +178,10 @@ impl SidebarState {
         self.launches_open = !self.launches_open;
     }
 
-    /// Make the Launches section visible: leave focus mode, show the left
-    /// panel at the minimum width if it is closed (a right panel too wide
-    /// for it shrinks, like with the panel button), and open the section.
-    /// Parts already shown stay as they are. Returns whether the main area
-    /// changed size.
+    /// Make the Launches section visible: leave focus mode, bring a closed
+    /// left panel back at the width it had (see [`reopen_beside`]), and open
+    /// the section. Parts already shown stay as they are. Returns whether the
+    /// main area changed size.
     pub(super) fn reveal_launches(&mut self) -> bool {
         self.launches_open = true;
 
@@ -197,8 +192,7 @@ impl SidebarState {
         self.focus_mode = false;
         self.focus_note = None;
         if !self.left.is_open() {
-            self.left.open();
-            self.right.shrink_to(max_ratio_beside(self.left_ratio()));
+            reopen_beside(&mut self.left, &mut self.right);
         }
 
         self.sync_panes();
@@ -206,9 +200,9 @@ impl SidebarState {
     }
 
     /// Make the right panel visible: leave focus mode and bring a closed
-    /// panel back at the width it had (a left panel too wide for it shrinks,
-    /// so the main area keeps its minimum share). A panel already shown stays
-    /// as it is. Returns whether the main area changed size.
+    /// panel back at the width it had (see [`reopen_beside`]). A panel
+    /// already shown stays as it is. Returns whether the main area changed
+    /// size.
     pub(super) fn reveal_right(&mut self) -> bool {
         if self.is_right_open() {
             return false;
@@ -217,8 +211,7 @@ impl SidebarState {
         self.focus_mode = false;
         self.focus_note = None;
         if !self.right.is_open() {
-            self.right.reopen();
-            self.left.shrink_to(max_ratio_beside(self.right_ratio()));
+            reopen_beside(&mut self.right, &mut self.left);
         }
 
         self.sync_panes();
@@ -333,6 +326,19 @@ impl Default for SidebarState {
         state.sync_panes();
 
         state
+    }
+}
+
+/// Open `panel` at the width it had. An `other` panel that is open gives way
+/// so the main area keeps its minimum share, but both stay at least at the
+/// minimum width, so `panel` may come back narrower than it was. A closed
+/// `other` panel takes no room and keeps its own width.
+fn reopen_beside(panel: &mut SidePanel, other: &mut SidePanel) {
+    panel.reopen();
+
+    if other.is_open() {
+        panel.shrink_to(max_ratio_beside(SIDE_PANEL_MIN_RATIO));
+        other.shrink_to(max_ratio_beside(panel.width_ratio()));
     }
 }
 

@@ -46,6 +46,11 @@ Setup before the first walk:
    Expected: the panel follows the drag; both panels together never leave the
    main area less than 20%; dragging almost closed collapses the panel;
    dragging the right handle opens the panel and does not resize the window.
+   Then drag a panel wider, close it with its toggle and open it again, by the
+   toggle, the shortcut and the palette.
+   Expected: it comes back at the same width each time, and so does the other
+   panel. Close it again, then run "New folder" from the palette (left panel)
+   or press a Docker row (right panel): also the same width.
 5. Resize the window, toggle full screen and minimize from the title bar;
    double click empty title bar space; drag the window by empty title bar
    space.

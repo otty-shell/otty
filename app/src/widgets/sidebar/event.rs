@@ -3,9 +3,11 @@ use super::types::HeaderMenu;
 /// Intent events handled by the sidebar presentation layer.
 #[derive(Debug, Clone)]
 pub(crate) enum SidebarIntent {
-    /// Show or hide the left panel (leaves focus mode first).
+    /// Show or hide the left panel (leaves focus mode first). It shows at the
+    /// width it had.
     ToggleLeft,
-    /// Show or hide the right panel (leaves focus mode first).
+    /// Show or hide the right panel (leaves focus mode first). It shows at
+    /// the width it had.
     ToggleRight,
     /// Enter or leave focus mode.
     ToggleFocusMode,
@@ -14,7 +16,8 @@ pub(crate) enum SidebarIntent {
     /// Open or close the Launches section of the left panel.
     ToggleLaunches,
     /// Make the Launches section visible: leave focus mode, show the left
-    /// panel and open the section. Parts already shown stay as they are.
+    /// panel at the width it had and open the section. Parts already shown
+    /// stay as they are.
     RevealLaunches,
     /// Make the right panel visible at the width it had: leave focus mode and
     /// show the panel. A panel already shown stays as it is.

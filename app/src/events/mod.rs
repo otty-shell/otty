@@ -101,10 +101,12 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
 mod tests {
     use iced::keyboard::key::{NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location};
+    use iced::widget::pane_grid;
 
     use super::*;
     use crate::shortcuts::{AppShortcut, Platform};
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::sidebar::SidebarIntent;
 
     #[test]
     fn keyboard_event_runs_the_app_shortcut_it_stands_for() {
@@ -129,5 +131,41 @@ mod tests {
                 TabsIntent::OpenSettingsTab
             ))]
         ));
+    }
+
+    /// Panel widths are shares of the window, so a smaller window keeps them,
+    /// for a panel that is closed as for one hidden by focus mode.
+    #[test]
+    fn smaller_window_keeps_the_share_panels_come_back_at() {
+        let (mut app, _) = App::new();
+        let pane_grid::Node::Split { id: split, .. } =
+            app.widgets.sidebar.panes().layout()
+        else {
+            panic!("sidebar should split the left panel from the rest");
+        };
+        let resize = pane_grid::ResizeEvent {
+            split: *split,
+            ratio: 0.3,
+        };
+        let _wider = app.widgets.sidebar.reduce(SidebarIntent::Resized(resize));
+        let _close = app.widgets.sidebar.reduce(SidebarIntent::ToggleLeft);
+
+        let smaller = iced::Size::new(400.0, 300.0);
+        let _resized = handle(
+            &mut app,
+            AppEvent::Window(iced::window::Event::Resized(smaller)),
+        );
+        let _open = app.widgets.sidebar.reduce(SidebarIntent::ToggleLeft);
+
+        assert_eq!(app.widgets.sidebar.left_ratio(), 0.3);
+
+        let _enter = app.widgets.sidebar.reduce(SidebarIntent::ToggleFocusMode);
+        let _resized = handle(
+            &mut app,
+            AppEvent::Window(iced::window::Event::Resized(smaller)),
+        );
+        let _leave = app.widgets.sidebar.reduce(SidebarIntent::ToggleFocusMode);
+
+        assert_eq!(app.widgets.sidebar.left_ratio(), 0.3);
     }
 }

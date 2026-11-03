@@ -29,12 +29,21 @@ Spec: [../spec.md](../spec.md)
   (`SIDE_PANEL_MIN_RATIO`, set by the owner); a drag below that stops at it,
   and a drag below half of it closes the panel. A closed panel dragged open
   starts at the minimum width.
-- The panel buttons (and their shortcuts) always open a panel at the minimum
-  width; they no longer bring back the last dragged width. Focus mode still
-  restores the widths it hid. The left panel still starts at 20% when the
+- The panel buttons (and their shortcuts) open a panel at the width it had,
+  like focus mode, which restores the widths it hid. A panel never resized has
+  the minimum width. (This first said the buttons always open a panel at the
+  minimum width; see Comments.) The left panel still starts at 20% when the
   app opens.
 
 Not verified: the look in the running app. Local launches of other programs
 (htop) do not report a folder, so Files keeps the last one.
 
 ## Comments
+
+- 2026-11-04: rule changed at the owner's request. `SidebarIntent::ToggleLeft`
+  and `ToggleRight`, which the buttons, shortcuts and palette all use, now
+  bring a closed panel back at the width it had. So do `RevealRight` and
+  `RevealLaunches`. If the other panel is open, it gives way, and both stay at
+  least at the minimum width, so a very wide panel may come back narrower. A
+  closed panel dragged open still starts at the minimum width and follows the
+  pointer, which replaces the old width.

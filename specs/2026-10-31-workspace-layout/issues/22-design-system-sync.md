@@ -24,8 +24,9 @@ today's code. It must also cover:
   chip on one line, cut at the right edge in a narrow pane; StatusBar shows
   machine + short folder path (`~/…/ottyrun/otty`) + counts, no program;
   Files shows the dot + folder name, no "follows <program>" line.
-- Ticket 24: side panels are at least 16% of the window wide; the panel
-  buttons open a panel at that width.
+- Ticket 24: side panels are at least 16% of the window wide. (This also said
+  the panel buttons open a panel at that width; they now open it at the width
+  it had, see ticket 24's Comments.)
 - Sessions and Launches share the left panel height (`panel_height`): open
   sections take their content height, and split the free height when they
   do not fit; each scrolls inside its share.

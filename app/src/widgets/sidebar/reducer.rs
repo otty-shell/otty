@@ -202,8 +202,9 @@ mod tests {
     }
 
     #[test]
-    fn toggle_left_hides_the_panel_and_shows_it_again_at_the_minimum_width() {
+    fn toggle_left_hides_the_panel_and_shows_it_again_at_the_width_it_had() {
         let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.3);
 
         let hide = reduce(&mut widget, SidebarIntent::ToggleLeft);
 
@@ -214,13 +215,15 @@ mod tests {
         let show = reduce(&mut widget, SidebarIntent::ToggleLeft);
 
         assert!(widget.vm().is_left_open);
-        assert_eq!(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert_eq!(widget.left_ratio(), 0.3);
         assert!(has_effect(&show, is_sync_grid));
     }
 
     #[test]
-    fn toggle_right_hides_the_panel_and_shows_it_again_at_the_minimum_width() {
+    fn toggle_right_hides_the_panel_and_shows_it_again_at_the_width_it_had() {
         let mut widget = SidebarWidget::new();
+        let _wider_right = drag_right_split_to(&mut widget, 0.5);
+        let wide = widget.right_ratio();
 
         let hide = reduce(&mut widget, SidebarIntent::ToggleRight);
 
@@ -232,8 +235,158 @@ mod tests {
         let show = reduce(&mut widget, SidebarIntent::ToggleRight);
 
         assert!(widget.vm().is_right_open);
-        assert_eq!(widget.right_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert_eq!(widget.right_ratio(), wide);
+        assert_near(right_split_ratio(&widget), 0.5);
         assert!(has_effect(&show, is_sync_grid));
+    }
+
+    #[test]
+    fn toggling_one_panel_leaves_the_width_of_the_other_alone() {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.3);
+        let _wider_right = drag_right_split_to(&mut widget, 0.5);
+        let wide_right = widget.right_ratio();
+
+        let _close_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        assert_eq!(widget.right_ratio(), wide_right);
+        let _open_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        assert_eq!(widget.left_ratio(), 0.3);
+        assert_eq!(widget.right_ratio(), wide_right);
+
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+        assert_eq!(widget.left_ratio(), 0.3);
+        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+
+        assert_eq!(widget.left_ratio(), 0.3);
+        assert_eq!(widget.right_ratio(), wide_right);
+    }
+
+    #[test]
+    fn toggle_shows_a_never_resized_panel_at_the_starting_width() {
+        let mut widget = SidebarWidget::new();
+
+        let _close_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+        let _open_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+
+        assert_eq!(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert_eq!(widget.right_ratio(), SIDE_PANEL_MIN_RATIO);
+    }
+
+    /// Showing the other panel while this one is closed must not eat into the
+    /// width this one comes back at.
+    #[test]
+    fn a_closed_panel_keeps_its_width_while_the_other_one_opens() {
+        let mut widget = SidebarWidget::new();
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+        let _wide_left = drag_left_to(&mut widget, 0.7);
+        let _close_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+        let _open_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        assert_eq!(widget.left_ratio(), 0.7);
+    }
+
+    /// The panel that opens keeps its width and the other one gives way, but
+    /// neither goes below the minimum width.
+    #[test]
+    fn toggle_shows_a_wide_panel_beside_a_wide_panel_with_both_usable() {
+        let mut widget = SidebarWidget::new();
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+        let _wide_left = drag_left_to(&mut widget, 0.7);
+        let _close_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+        let _widest_right = drag_right_split_to(&mut widget, 0.0);
+        assert_near(widget.right_ratio(), 0.8);
+
+        let _open_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        assert_near(widget.left_ratio(), 0.8 - SIDE_PANEL_MIN_RATIO);
+        assert_near(widget.right_ratio(), SIDE_PANEL_MIN_RATIO);
+    }
+
+    #[test]
+    fn toggle_shows_a_panel_closed_by_a_quick_drag_at_its_last_width() {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.5);
+
+        let _shut = drag_left_to(&mut widget, 0.01);
+        assert!(!widget.vm().is_left_open);
+        let _open = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        assert_eq!(widget.left_ratio(), 0.5);
+    }
+
+    #[test]
+    fn toggle_shows_a_panel_closed_by_a_slow_drag_at_the_minimum_width() {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.5);
+        let _narrow = drag_left_to(&mut widget, 0.1);
+
+        let _shut = drag_left_to(&mut widget, 0.01);
+        let _open = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        assert_eq!(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
+    }
+
+    #[test]
+    fn toggle_shows_a_never_resized_panel_dragged_shut_at_the_minimum_width() {
+        let mut widget = SidebarWidget::new();
+
+        let _shut = drag_right_split_to(&mut widget, 0.99);
+        assert!(!widget.vm().is_right_open);
+        let _open = reduce(&mut widget, SidebarIntent::ToggleRight);
+
+        assert_eq!(widget.right_ratio(), SIDE_PANEL_MIN_RATIO);
+    }
+
+    #[test]
+    fn dragging_a_closed_panel_a_little_keeps_the_width_it_comes_back_at() {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.3);
+        let _close = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        let _little = drag_left_to(&mut widget, 0.02);
+        let _open = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        assert_eq!(widget.left_ratio(), 0.3);
+    }
+
+    /// A drag sets a new width, so the width from before is gone. The panel
+    /// does not jump away from the pointer to the old width.
+    #[test]
+    fn dragging_a_closed_panel_open_replaces_the_width_it_comes_back_at() {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.5);
+        let _close = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        let _opened = drag_left_to(&mut widget, 0.3);
+        assert_eq!(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
+        let _followed = drag_left_to(&mut widget, 0.3);
+        let _close = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        let _open = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        assert_eq!(widget.left_ratio(), 0.3);
+    }
+
+    #[test]
+    fn dragging_a_closed_panel_open_keeps_the_width_of_the_other_closed_panel()
+    {
+        let mut widget = SidebarWidget::new();
+        let _close_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        let _wide_right = drag_right_split_to(&mut widget, 0.3);
+        assert_near(widget.right_ratio(), 0.7);
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+
+        let _left_dragged_open = drag_left_to(&mut widget, 0.3);
+        let _close_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        let _open_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+
+        assert_near(widget.right_ratio(), 0.7);
     }
 
     #[test]
@@ -286,6 +439,47 @@ mod tests {
         assert!(vm.is_left_open);
         assert!(vm.is_right_open);
         assert!(has_effect(&events, is_sync_grid));
+    }
+
+    #[test]
+    fn toggle_in_focus_mode_brings_both_panels_back_at_their_widths() {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.3);
+        let _wider_right = drag_right_split_to(&mut widget, 0.5);
+        let wide_right = widget.right_ratio();
+        let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
+
+        let _events = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        assert_eq!(widget.left_ratio(), 0.3);
+        assert_eq!(widget.right_ratio(), wide_right);
+    }
+
+    #[test]
+    fn toggle_in_focus_mode_brings_a_panel_closed_before_back_at_its_width() {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.3);
+        let _close_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
+
+        let _events = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        assert!(!widget.vm().is_focus_mode);
+        assert_eq!(widget.left_ratio(), 0.3);
+    }
+
+    #[test]
+    fn panel_closed_before_focus_mode_keeps_its_width_after_it() {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.3);
+        let _close_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
+        let _leave = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
+        assert!(!widget.vm().is_left_open);
+        let _open = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        assert_eq!(widget.left_ratio(), 0.3);
     }
 
     #[test]
@@ -526,6 +720,32 @@ mod tests {
     }
 
     #[test]
+    fn reveal_launches_brings_a_wider_closed_left_panel_back_at_its_width() {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.3);
+        let _close = reduce(&mut widget, SidebarIntent::ToggleLeft);
+
+        let _events = reduce(&mut widget, SidebarIntent::RevealLaunches);
+
+        assert!(widget.vm().is_left_open);
+        assert_eq!(widget.left_ratio(), 0.3);
+    }
+
+    #[test]
+    fn reveal_launches_in_focus_mode_brings_a_wider_closed_left_panel_back_at_its_width()
+     {
+        let mut widget = SidebarWidget::new();
+        let _wider_left = drag_left_to(&mut widget, 0.3);
+        let _close = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        let _enter = reduce(&mut widget, SidebarIntent::ToggleFocusMode);
+
+        let _events = reduce(&mut widget, SidebarIntent::RevealLaunches);
+
+        assert!(!widget.vm().is_focus_mode);
+        assert_eq!(widget.left_ratio(), 0.3);
+    }
+
+    #[test]
     fn reveal_launches_leaves_focus_mode_and_restores_the_panels() {
         let mut widget = SidebarWidget::new();
         let _wider_left = drag_left_to(&mut widget, 0.3);
@@ -703,9 +923,10 @@ mod tests {
     }
 
     #[test]
-    fn toggle_right_still_shows_a_wider_panel_at_the_minimum_width() {
+    fn toggle_right_shows_a_wider_panel_at_its_width() {
         let mut closed = SidebarWidget::new();
         let _wider_right = drag_right_split_to(&mut closed, 0.5);
+        let wide = closed.right_ratio();
         let _close = reduce(&mut closed, SidebarIntent::ToggleRight);
         let mut in_focus = SidebarWidget::new();
         let _wider_right = drag_right_split_to(&mut in_focus, 0.5);
@@ -714,8 +935,25 @@ mod tests {
         let _events = reduce(&mut closed, SidebarIntent::ToggleRight);
         let _events = reduce(&mut in_focus, SidebarIntent::ToggleRight);
 
-        assert_eq!(closed.right_ratio(), SIDE_PANEL_MIN_RATIO);
-        assert_eq!(in_focus.right_ratio(), SIDE_PANEL_MIN_RATIO);
+        assert_eq!(closed.right_ratio(), wide);
+        assert_eq!(in_focus.right_ratio(), wide);
+    }
+
+    /// Reveal and toggle share the rule: both panels stay usable.
+    #[test]
+    fn reveal_right_at_a_width_beside_an_open_left_panel_leaves_it_the_minimum()
+    {
+        let mut widget = SidebarWidget::new();
+        let _close_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        let _widest_right = drag_right_split_to(&mut widget, 0.0);
+        let _close_right = reduce(&mut widget, SidebarIntent::ToggleRight);
+        let _open_left = reduce(&mut widget, SidebarIntent::ToggleLeft);
+        let _wider_left = drag_left_to(&mut widget, 0.3);
+
+        let _events = reduce(&mut widget, SidebarIntent::RevealRight);
+
+        assert_near(widget.right_ratio(), 0.8 - SIDE_PANEL_MIN_RATIO);
+        assert_near(widget.left_ratio(), SIDE_PANEL_MIN_RATIO);
     }
 
     /// Both panels come back as they were before focus mode.
