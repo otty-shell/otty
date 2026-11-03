@@ -288,7 +288,8 @@ pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
 }
 
 /// Return `true` for a Docker event the user did not cause by a click: a
-/// mode change, an engine result, a folder check or its timer, or an effect.
+/// mode change, an engine result, a folder check or one of its timers, or an
+/// effect.
 fn is_docker_background(event: &DockerEvent) -> bool {
     match event {
         DockerEvent::Intent(intent) => matches!(
@@ -311,6 +312,8 @@ fn is_docker_background(event: &DockerEvent) -> bool {
                 | DockerIntent::ImageDefaultsLoaded { .. }
                 | DockerIntent::FolderChecked { .. }
                 | DockerIntent::RecheckFolders
+                | DockerIntent::FolderTypingPaused(_)
+                | DockerIntent::FolderAnswerLate(_)
         ),
         DockerEvent::Effect(_) => true,
     }
@@ -498,6 +501,16 @@ mod tests {
                 exists: true,
             }),
             docker(DockerIntent::RecheckFolders),
+            docker(DockerIntent::FolderTypingPaused(PathBuf::from(
+                "/srv/site",
+            ))),
+            docker(DockerIntent::FolderAnswerLate(PathBuf::from("/srv/site"))),
+            AppEvent::Docker(DockerEvent::Effect(
+                DockerEffect::WaitForTypingPause(PathBuf::from("/srv/site")),
+            )),
+            AppEvent::Docker(DockerEvent::Effect(
+                DockerEffect::WaitForLateAnswer(PathBuf::from("/srv/site")),
+            )),
         ];
         let address = otty_docker::EngineAddress::Tcp(String::from("h:1"));
         let log_target = LogTarget::new(

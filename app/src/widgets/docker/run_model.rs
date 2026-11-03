@@ -208,10 +208,12 @@ pub(crate) fn run_form(state: &DockerState) -> Option<RunFormViewModel<'_>> {
     };
     let footer_hint = if !form.is_editing() {
         String::new()
-    } else if !problems.is_empty() {
+    } else if problems.has_fixable_problem() {
         i18n::t(Key::DockerRunFixFields).to_string()
     } else if form.lookup() == &ImageLookup::Loading {
         i18n::t(Key::DockerRunCheckingImage).to_string()
+    } else if !form.are_folders_answered() {
+        i18n::t(Key::DockerRunWaitingForFolder).to_string()
     } else {
         i18n::docker_filled(Key::TplDockerRunReady, "engine", &engine.label)
     };
@@ -569,6 +571,79 @@ mod tests {
             Some(i18n::t(Key::DockerRunErrSourceMissing))
         );
         assert!(vm.volumes[0].is_source_invalid);
+    }
+
+    #[test]
+    fn a_folder_that_does_not_answer_shows_its_hint_under_the_row() {
+        let mut state = with_volume_row("/srv/site", false);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::FolderTypingPaused(std::path::PathBuf::from(
+                "/srv/site",
+            )),
+        );
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::FolderAnswerLate(std::path::PathBuf::from(
+                "/srv/site",
+            )),
+        );
+
+        let vm = run_form(&state).expect("form");
+        assert!(!vm.can_run);
+        assert_eq!(
+            vm.volumes[0].problem,
+            Some(i18n::t(Key::DockerRunErrSourceNotAnswering))
+        );
+        assert!(vm.volumes[0].is_source_invalid);
+        assert_eq!(vm.footer_hint, i18n::t(Key::DockerRunWaitingForFolder));
+    }
+
+    #[test]
+    fn the_footer_says_it_waits_while_a_folder_has_no_answer() {
+        let mut state = with_volume_row("/srv/site", false);
+
+        let vm = run_form(&state).expect("form");
+        assert!(!vm.can_run);
+        assert_eq!(vm.footer_hint, i18n::t(Key::DockerRunWaitingForFolder));
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::FolderChecked {
+                path: std::path::PathBuf::from("/srv/site"),
+                exists: true,
+            },
+        );
+
+        let vm = run_form(&state).expect("form");
+        assert!(vm.can_run);
+        assert_eq!(
+            vm.footer_hint,
+            "Starts in the background on Docker 29.9.1."
+        );
+    }
+
+    #[test]
+    fn the_footer_asks_to_fix_fields_when_a_silent_folder_is_not_the_only_problem()
+     {
+        let mut state = with_volume_row("/srv/site", false);
+        for intent in [
+            DockerIntent::FolderTypingPaused(std::path::PathBuf::from(
+                "/srv/site",
+            )),
+            DockerIntent::FolderAnswerLate(std::path::PathBuf::from(
+                "/srv/site",
+            )),
+        ] {
+            let _ = reduce(&mut state, intent);
+        }
+
+        edit(&mut state, RunEdit::AddPort);
+        edit(&mut state, RunEdit::PortContainer(0, String::from("web")));
+
+        let vm = run_form(&state).expect("form");
+        assert_eq!(vm.footer_hint, i18n::t(Key::DockerRunFixFields));
     }
 
     #[test]

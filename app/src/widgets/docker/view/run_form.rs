@@ -644,6 +644,35 @@ mod tests {
         state
     }
 
+    #[test]
+    fn a_folder_that_does_not_answer_shows_the_hint_and_run_waits() {
+        let mut state = with_volume_row("/srv/site", false);
+        for intent in [
+            DockerIntent::FolderTypingPaused(std::path::PathBuf::from(
+                "/srv/site",
+            )),
+            DockerIntent::FolderAnswerLate(std::path::PathBuf::from(
+                "/srv/site",
+            )),
+        ] {
+            let _ = reduce(&mut state, intent);
+        }
+
+        let messages = press(&state, i18n::t(Key::DockerActionRun));
+
+        assert!(messages.is_empty(), "{messages:?}");
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let mut ui = tall(view(RunFormProps {
+            vm: run_form(&state).expect("form"),
+            theme: ThemeProps::new(&theme),
+        }));
+        assert!(
+            ui.find(i18n::t(Key::DockerRunErrSourceNotAnswering))
+                .is_ok()
+        );
+        assert!(ui.find(i18n::t(Key::DockerRunWaitingForFolder)).is_ok());
+    }
+
     fn shows_relabel(state: &DockerState) -> bool {
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
         let mut ui = tall(view(RunFormProps {

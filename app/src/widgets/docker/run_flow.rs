@@ -43,7 +43,8 @@ pub(super) fn open(
 }
 
 /// Take one edit of the form; a changed image is looked up again and a
-/// volume source that is a folder is asked about on disk.
+/// volume source that is a folder waits for a pause in typing before it is
+/// asked about on disk, or joins a question that is already out.
 pub(super) fn edit(
     state: &mut DockerState,
     edit: RunEdit,
@@ -59,13 +60,12 @@ pub(super) fn edit(
 
     form.apply(edit);
 
-    let folder_check = source_row
-        .and_then(|index| form.start_folder_check(index))
-        .map_or_else(Task::none, check_folder);
+    let folder_wait = source_row
+        .map_or_else(Task::none, |index| wait_for_folder(form, index));
     if form.reference() == before {
-        return folder_check;
+        return folder_wait;
     }
-    Task::batch([lookup(form), folder_check])
+    Task::batch([lookup(form), folder_wait])
 }
 
 /// Run on another engine: its default network, and the image looked up
@@ -131,7 +131,41 @@ pub(super) fn recheck_folders(state: &mut DockerState) -> Task<DockerEvent> {
         return Task::none();
     };
 
-    Task::batch(form.start_folder_rechecks().into_iter().map(check_folder))
+    let folders = form.start_folder_rechecks();
+    Task::batch(folders.into_iter().map(|path| ask_folder(form, path)))
+}
+
+/// Typing stopped on `path`: ask the disk about it, unless the text moved on,
+/// the disk already answered or a question is out.
+pub(super) fn folder_typing_paused(
+    state: &mut DockerState,
+    path: &Path,
+) -> Task<DockerEvent> {
+    let Some(form) = state.run_form_mut() else {
+        return Task::none();
+    };
+    if !form.start_folder_check(path) {
+        return Task::none();
+    }
+
+    ask_folder(form, path.to_path_buf())
+}
+
+/// The time for an answer about `path` is over: rows still waiting for it say
+/// the folder is not answering. Run stays disabled until the answer comes.
+pub(super) fn folder_answer_late(
+    state: &mut DockerState,
+    path: &Path,
+) -> Task<DockerEvent> {
+    let is_marked = state
+        .run_form_mut()
+        .is_some_and(|form| form.mark_folder_slow(path));
+    if !is_marked {
+        let path = path.display();
+        log::debug!("docker folder {path} no longer waits for an answer");
+    }
+
+    Task::none()
 }
 
 /// Whether Run can be pressed: nothing runs, every check passes and both
@@ -291,9 +325,36 @@ fn lookup(form: &mut RunForm) -> Task<DockerEvent> {
     }))
 }
 
-/// Ask the disk whether `path` exists.
-fn check_folder(path: PathBuf) -> Task<DockerEvent> {
-    Task::done(DockerEvent::Effect(DockerEffect::CheckFolder(path)))
+/// What the row at `index` waits for now that its source was typed: a pause in
+/// typing, or the answer to a question another row already has out.
+fn wait_for_folder(form: &mut RunForm, index: usize) -> Task<DockerEvent> {
+    if let Some(path) = form.start_typing_wait(index) {
+        return effect(DockerEffect::WaitForTypingPause(path));
+    }
+
+    form.join_folder_question(index)
+        .map_or_else(Task::none, |path| {
+            effect(DockerEffect::WaitForLateAnswer(path))
+        })
+}
+
+/// Ask the disk whether `path` exists. A folder with no answer yet also gets
+/// a time limit; asking again about an answered one needs none, because it
+/// keeps its answer and Run until the new answer comes.
+fn ask_folder(form: &RunForm, path: PathBuf) -> Task<DockerEvent> {
+    if !form.is_folder_unanswered(&path) {
+        return effect(DockerEffect::CheckFolder(path));
+    }
+
+    Task::batch([
+        effect(DockerEffect::WaitForLateAnswer(path.clone())),
+        effect(DockerEffect::CheckFolder(path)),
+    ])
+}
+
+/// Hand `effect` to the app.
+fn effect(effect: DockerEffect) -> Task<DockerEvent> {
+    Task::done(DockerEvent::Effect(effect))
 }
 
 /// Create and start the container of the typed form.
@@ -884,6 +945,16 @@ mod tests {
         DockerEffect::CheckFolder(PathBuf::from(path))
     }
 
+    /// The effect that waits for a pause in typing `path`.
+    fn waits_for_typing(path: &str) -> DockerEffect {
+        DockerEffect::WaitForTypingPause(PathBuf::from(path))
+    }
+
+    /// The effect that gives the disk time to answer about `path`.
+    fn waits_for_answer(path: &str) -> DockerEffect {
+        DockerEffect::WaitForLateAnswer(PathBuf::from(path))
+    }
+
     /// Add a volume row to `/data` with `source` typed last; the effects of
     /// typing it.
     fn add_volume(state: &mut DockerState, source: &str) -> Vec<DockerEffect> {
@@ -911,15 +982,53 @@ mod tests {
         effects(reduce(state, DockerIntent::RecheckFolders))
     }
 
+    /// Typing stopped on `path`; the effects of that.
+    fn pause_typing(state: &mut DockerState, path: &str) -> Vec<DockerEffect> {
+        effects(reduce(
+            state,
+            DockerIntent::FolderTypingPaused(PathBuf::from(path)),
+        ))
+    }
+
+    /// The time for an answer about `path` is over.
+    fn answer_is_late(state: &mut DockerState, path: &str) {
+        let effects = effects(reduce(
+            state,
+            DockerIntent::FolderAnswerLate(PathBuf::from(path)),
+        ));
+
+        assert!(effects.is_empty(), "{effects:?}");
+    }
+
+    /// A form with a row from `path` and a question about it out, with no
+    /// answer yet.
+    fn asked_form(path: &str) -> DockerState {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, path);
+        let _ = pause_typing(&mut state, path);
+        state
+    }
+
     fn ready_form() -> DockerState {
         form_with("nginx:1.27", Some(fixtures::image_defaults()))
     }
 
     #[test]
-    fn typing_a_folder_asks_about_it_once() {
+    fn typing_a_folder_sends_the_wait_and_not_the_question() {
         let mut state = ready_form();
 
         let typed = add_volume(&mut state, "/srv/site");
+
+        assert_eq!(typed, vec![waits_for_typing("/srv/site")]);
+    }
+
+    #[test]
+    fn a_pause_for_the_typed_folder_asks_once_and_not_again_while_in_flight() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/site");
+
+        let paused = pause_typing(&mut state, "/srv/site");
+        let paused_again = pause_typing(&mut state, "/srv/site");
         let retyped = type_in(
             &mut state,
             RunEdit::VolumeSource(0, String::from(" /srv/site ")),
@@ -927,13 +1036,75 @@ mod tests {
         let target =
             type_in(&mut state, RunEdit::VolumeTarget(0, String::from("/d")));
 
-        assert_eq!(typed, vec![asks_about("/srv/site")]);
+        assert_eq!(paused.len(), 2, "{paused:?}");
+        assert!(paused.contains(&asks_about("/srv/site")), "{paused:?}");
+        assert!(
+            paused.contains(&waits_for_answer("/srv/site")),
+            "{paused:?}"
+        );
+        assert!(paused_again.is_empty(), "{paused_again:?}");
         assert!(retyped.is_empty(), "{retyped:?}");
         assert!(target.is_empty(), "{target:?}");
     }
 
     #[test]
-    fn typing_a_named_volume_or_nothing_asks_nothing() {
+    fn a_pause_for_a_folder_the_text_has_left_is_dropped() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/sit");
+        let _ = type_in(
+            &mut state,
+            RunEdit::VolumeSource(0, String::from("/srv/site")),
+        );
+
+        let paused = pause_typing(&mut state, "/srv/sit");
+
+        assert!(paused.is_empty(), "{paused:?}");
+    }
+
+    #[test]
+    fn a_typed_path_costs_one_question_not_one_per_character() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/s");
+        for text in ["/sr", "/srv"] {
+            let ticked = recheck(&mut state);
+            let _ =
+                type_in(&mut state, RunEdit::VolumeSource(0, text.to_string()));
+
+            assert!(ticked.is_empty(), "the timer asked: {ticked:?}");
+        }
+        let ticked = recheck(&mut state);
+        assert!(ticked.is_empty(), "the timer asked: {ticked:?}");
+
+        let questions: Vec<DockerEffect> = ["/s", "/sr", "/srv"]
+            .into_iter()
+            .flat_map(|text| pause_typing(&mut state, text))
+            .filter(|effect| matches!(effect, DockerEffect::CheckFolder(_)))
+            .collect();
+
+        assert_eq!(questions, vec![asks_about("/srv")]);
+    }
+
+    #[test]
+    fn a_pause_without_a_form_asks_nothing() {
+        let mut state = state_on(&[EngineKind::Docker], ResourceKind::Images);
+
+        let paused = pause_typing(&mut state, "/srv/site");
+
+        assert!(paused.is_empty(), "{paused:?}");
+    }
+
+    #[test]
+    fn a_pause_for_a_folder_with_an_answer_asks_nothing() {
+        let mut state = asked_form("/srv/site");
+        answer(&mut state, "/srv/site", true);
+
+        let paused = pause_typing(&mut state, "/srv/site");
+
+        assert!(paused.is_empty(), "{paused:?}");
+    }
+
+    #[test]
+    fn typing_a_named_volume_or_nothing_sends_nothing() {
         let mut state = ready_form();
 
         let named = add_volume(&mut state, "otty-fx-cache");
@@ -945,7 +1116,7 @@ mod tests {
     }
 
     #[test]
-    fn each_new_text_of_a_folder_is_asked_about() {
+    fn each_new_text_of_a_folder_waits_for_its_own_pause() {
         let mut state = ready_form();
         let _ = add_volume(&mut state, "/srv");
 
@@ -954,7 +1125,7 @@ mod tests {
             RunEdit::VolumeSource(0, String::from("/srv/site")),
         );
 
-        assert_eq!(next, vec![asks_about("/srv/site")]);
+        assert_eq!(next, vec![waits_for_typing("/srv/site")]);
     }
 
     #[test]
@@ -1044,11 +1215,13 @@ mod tests {
     fn rows_with_the_same_folder_share_one_question_and_its_answer() {
         let mut state = ready_form();
 
-        let first = add_volume(&mut state, "/srv/site");
-        let second = add_volume(&mut state, "/srv/site");
+        let _ = add_volume(&mut state, "/srv/site");
+        let _ = add_volume(&mut state, "/srv/site");
+        let first = pause_typing(&mut state, "/srv/site");
+        let second = pause_typing(&mut state, "/srv/site");
         answer(&mut state, "/srv/site", false);
 
-        assert_eq!(first, vec![asks_about("/srv/site")]);
+        assert!(first.contains(&asks_about("/srv/site")), "{first:?}");
         assert!(second.is_empty(), "{second:?}");
         let problems = check(run_form(&state));
         assert!(problems.volume(0).is_some());
@@ -1062,6 +1235,7 @@ mod tests {
         let _ = add_volume(&mut state, "/srv/answered");
         answer(&mut state, "/srv/answered", true);
         let _ = add_volume(&mut state, "/srv/in-flight");
+        let _ = pause_typing(&mut state, "/srv/in-flight");
         let _ = add_volume(&mut state, "otty-fx-cache");
 
         let first = recheck(&mut state);
@@ -1108,6 +1282,332 @@ mod tests {
         let mut state = state_on(&[EngineKind::Docker], ResourceKind::Images);
 
         assert!(recheck(&mut state).is_empty());
+    }
+
+    #[test]
+    fn a_pause_lost_on_its_way_is_made_up_by_the_recheck() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/site");
+
+        let first_tick = recheck(&mut state);
+        let second_tick = recheck(&mut state);
+        let third_tick = recheck(&mut state);
+
+        assert!(first_tick.is_empty(), "the pause may still come");
+        assert_eq!(second_tick.len(), 2, "{second_tick:?}");
+        assert!(second_tick.contains(&asks_about("/srv/site")));
+        assert!(second_tick.contains(&waits_for_answer("/srv/site")));
+        assert!(third_tick.is_empty(), "{third_tick:?}");
+    }
+
+    #[test]
+    fn a_pause_that_comes_after_a_tick_still_asks() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/site");
+        let _ = recheck(&mut state);
+
+        let paused = pause_typing(&mut state, "/srv/site");
+
+        assert!(paused.contains(&asks_about("/srv/site")), "{paused:?}");
+    }
+
+    #[test]
+    fn a_tick_during_typing_skips_only_the_row_being_typed() {
+        let mut state = asked_form("/srv/answered");
+        answer(&mut state, "/srv/answered", true);
+        let _ = add_volume(&mut state, "/srv/typ");
+
+        let ticked = recheck(&mut state);
+
+        assert_eq!(ticked, vec![asks_about("/srv/answered")]);
+    }
+
+    #[test]
+    fn a_second_row_joining_a_hung_recheck_gets_the_hint_in_time() {
+        let mut state = asked_form("/srv/site");
+        answer(&mut state, "/srv/site", true);
+        let asked = recheck(&mut state);
+        assert_eq!(asked, vec![asks_about("/srv/site")]);
+
+        let joined = add_volume(&mut state, "/srv/site");
+        let retyped = type_in(
+            &mut state,
+            RunEdit::VolumeSource(1, String::from(" /srv/site ")),
+        );
+        let ticked = recheck(&mut state);
+
+        assert_eq!(joined, vec![waits_for_answer("/srv/site")]);
+        assert!(retyped.is_empty(), "{retyped:?}");
+        assert!(ticked.is_empty(), "a hung folder piles up: {ticked:?}");
+        assert!(!can_run(run_form(&state)));
+
+        answer_is_late(&mut state, "/srv/site");
+
+        assert_eq!(row_message(&state, 0), None);
+        assert_eq!(
+            row_message(&state, 1),
+            Some(Key::DockerRunErrSourceNotAnswering)
+        );
+
+        answer(&mut state, "/srv/site", true);
+
+        assert_eq!(row_message(&state, 1), None);
+        assert!(can_run(run_form(&state)));
+    }
+
+    #[test]
+    fn an_old_time_limit_shows_nothing_before_the_new_question_goes_out() {
+        let mut state = asked_form("/srv/site");
+        for text in ["/srv/other", "/srv/site"] {
+            let _ =
+                type_in(&mut state, RunEdit::VolumeSource(0, text.to_string()));
+        }
+
+        answer_is_late(&mut state, "/srv/site");
+
+        assert_eq!(row_message(&state, 0), None);
+
+        let paused = pause_typing(&mut state, "/srv/site");
+        answer_is_late(&mut state, "/srv/site");
+
+        assert!(
+            paused.contains(&waits_for_answer("/srv/site")),
+            "{paused:?}"
+        );
+        assert_eq!(
+            row_message(&state, 0),
+            Some(Key::DockerRunErrSourceNotAnswering)
+        );
+    }
+
+    #[test]
+    fn an_old_time_limit_shows_nothing_in_a_reopened_form() {
+        let mut state = asked_form("/srv/site");
+        let _ = reduce(&mut state, DockerIntent::RunCancelled);
+        let _ = reduce(&mut state, DockerIntent::OpenCreate);
+        let _ = add_volume(&mut state, "/srv/site");
+
+        answer_is_late(&mut state, "/srv/site");
+
+        assert_eq!(row_message(&state, 0), None);
+    }
+
+    /// The key of the problem shown under the volume row at `index`.
+    fn row_message(state: &DockerState, index: usize) -> Option<Key> {
+        check(run_form(state)).volume(index).map(|p| p.message())
+    }
+
+    #[test]
+    fn a_folder_with_no_answer_in_time_shows_the_hint_and_run_stays_disabled() {
+        let mut state = asked_form("/srv/site");
+        assert_eq!(row_message(&state, 0), None);
+
+        answer_is_late(&mut state, "/srv/site");
+
+        assert_eq!(
+            row_message(&state, 0),
+            Some(Key::DockerRunErrSourceNotAnswering)
+        );
+        assert!(!can_run(run_form(&state)));
+        let pressed = effects(reduce(&mut state, DockerIntent::RunSubmitted));
+        assert!(pressed.is_empty(), "{pressed:?}");
+    }
+
+    #[test]
+    fn a_late_answer_about_a_folder_the_text_has_left_shows_nothing() {
+        let mut state = asked_form("/srv/old");
+        let _ = type_in(
+            &mut state,
+            RunEdit::VolumeSource(0, String::from("/srv/new")),
+        );
+
+        answer_is_late(&mut state, "/srv/old");
+
+        assert_eq!(row_message(&state, 0), None);
+        assert!(!can_run(run_form(&state)), "/srv/new has no answer yet");
+    }
+
+    #[test]
+    fn a_late_answer_after_the_answer_shows_nothing() {
+        let mut state = asked_form("/srv/site");
+        answer(&mut state, "/srv/site", true);
+
+        answer_is_late(&mut state, "/srv/site");
+
+        assert_eq!(row_message(&state, 0), None);
+        assert!(can_run(run_form(&state)));
+    }
+
+    #[test]
+    fn a_late_answer_without_a_form_is_dropped() {
+        let mut state = state_on(&[EngineKind::Docker], ResourceKind::Images);
+
+        answer_is_late(&mut state, "/srv/site");
+
+        assert!(state.run_form().is_none());
+    }
+
+    #[test]
+    fn the_answer_clears_the_hint() {
+        let mut state = asked_form("/srv/site");
+        answer_is_late(&mut state, "/srv/site");
+
+        answer(&mut state, "/srv/site", true);
+
+        assert_eq!(row_message(&state, 0), None);
+        assert!(can_run(run_form(&state)));
+    }
+
+    #[test]
+    fn a_missing_answer_replaces_the_hint() {
+        let mut state = asked_form("/srv/site");
+        answer_is_late(&mut state, "/srv/site");
+
+        answer(&mut state, "/srv/site", false);
+
+        assert_eq!(
+            row_message(&state, 0),
+            Some(Key::DockerRunErrSourceMissing)
+        );
+    }
+
+    #[test]
+    fn changing_the_text_clears_the_hint_and_waits_again() {
+        let mut state = asked_form("/srv/site");
+        answer_is_late(&mut state, "/srv/site");
+
+        let typed = type_in(
+            &mut state,
+            RunEdit::VolumeSource(0, String::from("/srv/other")),
+        );
+
+        assert_eq!(row_message(&state, 0), None);
+        assert_eq!(typed, vec![waits_for_typing("/srv/other")]);
+        assert!(!can_run(run_form(&state)));
+    }
+
+    #[test]
+    fn blanks_around_the_same_folder_keep_the_hint() {
+        let mut state = asked_form("/srv/site");
+        answer_is_late(&mut state, "/srv/site");
+
+        let _ = type_in(
+            &mut state,
+            RunEdit::VolumeSource(0, String::from(" /srv/site ")),
+        );
+
+        assert_eq!(
+            row_message(&state, 0),
+            Some(Key::DockerRunErrSourceNotAnswering)
+        );
+    }
+
+    #[test]
+    fn the_hint_goes_before_a_missing_answer_about_earlier_text() {
+        let mut state = asked_form("/srv/sit");
+        answer(&mut state, "/srv/sit", false);
+        let _ = type_in(
+            &mut state,
+            RunEdit::VolumeSource(0, String::from("/srv/site")),
+        );
+        let _ = pause_typing(&mut state, "/srv/site");
+        assert_eq!(
+            row_message(&state, 0),
+            Some(Key::DockerRunErrSourceMissing)
+        );
+
+        answer_is_late(&mut state, "/srv/site");
+
+        assert_eq!(
+            row_message(&state, 0),
+            Some(Key::DockerRunErrSourceNotAnswering)
+        );
+        assert!(!can_run(run_form(&state)));
+    }
+
+    #[test]
+    fn a_hung_folder_is_not_asked_about_again_while_the_hint_shows() {
+        let mut state = asked_form("/srv/site");
+        answer_is_late(&mut state, "/srv/site");
+
+        // The first tick also spends the mark of the typing wait, so only the
+        // question in flight can keep the second one quiet.
+        let first_tick = recheck(&mut state);
+        let second_tick = recheck(&mut state);
+
+        assert!(first_tick.is_empty(), "{first_tick:?}");
+        assert!(second_tick.is_empty(), "{second_tick:?}");
+    }
+
+    #[test]
+    fn the_recheck_of_an_answered_folder_sends_no_wait_and_shows_no_hint() {
+        let mut state = asked_form("/srv/site");
+        answer(&mut state, "/srv/site", true);
+
+        let asked = recheck(&mut state);
+        answer_is_late(&mut state, "/srv/site");
+
+        assert_eq!(asked, vec![asks_about("/srv/site")]);
+        assert_eq!(row_message(&state, 0), None);
+        assert!(can_run(run_form(&state)));
+    }
+
+    #[test]
+    fn entering_docker_mode_asks_again_about_the_folders_of_the_open_form() {
+        let mut state = asked_form("/srv/site");
+        answer(&mut state, "/srv/site", true);
+        let _ = reduce(&mut state, DockerIntent::Leave);
+
+        let entered = effects(reduce(&mut state, DockerIntent::Enter));
+
+        assert_eq!(entered.len(), 2, "{entered:?}");
+        assert!(entered.contains(&DockerEffect::Discover), "{entered:?}");
+        assert!(entered.contains(&asks_about("/srv/site")), "{entered:?}");
+    }
+
+    #[test]
+    fn entering_docker_mode_skips_a_folder_that_is_in_flight() {
+        let mut state = asked_form("/srv/site");
+        // This tick spends the mark of the typing wait, so only the question
+        // in flight can keep Enter from asking.
+        let _ = recheck(&mut state);
+        let _ = reduce(&mut state, DockerIntent::Leave);
+
+        let entered = effects(reduce(&mut state, DockerIntent::Enter));
+
+        assert_eq!(entered, vec![DockerEffect::Discover]);
+    }
+
+    #[test]
+    fn entering_docker_mode_leaves_a_folder_being_typed_to_its_pause() {
+        let mut state = ready_form();
+        let _ = add_volume(&mut state, "/srv/site");
+        let _ = reduce(&mut state, DockerIntent::Leave);
+
+        let entered = effects(reduce(&mut state, DockerIntent::Enter));
+
+        assert_eq!(entered, vec![DockerEffect::Discover]);
+    }
+
+    #[test]
+    fn entering_docker_mode_without_a_form_asks_about_no_folder() {
+        let mut state = state_on(&[EngineKind::Docker], ResourceKind::Images);
+        let _ = reduce(&mut state, DockerIntent::Leave);
+
+        let entered = effects(reduce(&mut state, DockerIntent::Enter));
+
+        assert_eq!(entered, vec![DockerEffect::Discover]);
+    }
+
+    #[test]
+    fn the_form_with_its_answers_stays_while_another_mode_is_active() {
+        let mut state = asked_form("/srv/site");
+        answer(&mut state, "/srv/site", true);
+
+        let _ = reduce(&mut state, DockerIntent::Leave);
+
+        assert!(state.run_form().is_some());
+        assert!(can_run(run_form(&state)));
     }
 
     #[test]

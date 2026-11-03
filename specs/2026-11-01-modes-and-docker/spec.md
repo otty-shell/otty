@@ -280,6 +280,11 @@ none of those are in scope (see Out of Scope).
     field as typed. Containers that need a terminal (`-it`) are started
     detached; the user opens them with Shell.
 
+    A typed folder is asked about on disk after a 300 ms pause in typing, and
+    Run stays disabled until the disk answers. With no answer after 3 seconds
+    the row says the folder is not answering (a network drive may be
+    unavailable), and Run stays disabled: it is never enabled after a timeout.
+
 19. **Owner review, round 1** (2026-11-01). Where this list and an earlier
     decision or a screen disagree, this list wins.
     - **No Compose projects in the tree.** The tree under an engine root is

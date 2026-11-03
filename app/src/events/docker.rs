@@ -1,13 +1,16 @@
 //! Routes the Docker widget: reduces its intents and runs its effects. The
 //! engine search, the list loads and the folder checks run here, off the
-//! reducer, through `Task::perform`; their results come back as intents.
+//! reducer, through `Task::perform`; their results come back as intents. So
+//! do the two waits around a folder check.
+
+use std::time::Duration;
 
 use iced::Task;
 use iced::futures::future::join3;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use otty_docker::{
     Container, Engine, EngineInfo, ImageDefaults, RunRequest, discover,
-    host_folder_exists,
+    host_folder_exists, wait_for,
 };
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
@@ -23,6 +26,14 @@ use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
 use crate::widgets::sidebar::SidebarIntent;
 use crate::widgets::tabs::types::TabMachine;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
+
+/// How long typing must stop before a typed folder is asked about, so a typed
+/// path costs one question and not one per character.
+const FOLDER_TYPING_PAUSE: Duration = Duration::from_millis(300);
+
+/// How long the disk has to answer before the row says the folder is not
+/// answering.
+const FOLDER_ANSWER_LIMIT: Duration = Duration::from_secs(3);
 
 /// Route a Docker event: reduce its intents and run its effects.
 pub(crate) fn handle(app: &mut App, event: DockerEvent) -> Task<AppEvent> {
@@ -181,10 +192,23 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
                 },
             )
         },
+        DockerEffect::WaitForTypingPause(path) => folder_wait(
+            FOLDER_TYPING_PAUSE,
+            DockerIntent::FolderTypingPaused(path),
+        ),
+        DockerEffect::WaitForLateAnswer(path) => folder_wait(
+            FOLDER_ANSWER_LIMIT,
+            DockerIntent::FolderAnswerLate(path),
+        ),
         DockerEffect::StartPull { .. }
         | DockerEffect::CancelPull
         | DockerEffect::OpenShell { .. } => Task::none(),
     }
+}
+
+/// Send `next` after `delay`, without holding a thread.
+fn folder_wait(delay: Duration, next: DockerIntent) -> Task<AppEvent> {
+    Task::perform(wait_for(delay), move |()| intent(next))
 }
 
 /// Ask the engine what an image sets on its own; `None` when the image is
@@ -378,11 +402,40 @@ fn intent(intent: DockerIntent) -> AppEvent {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+    use std::time::Instant;
+
+    use iced::futures::StreamExt;
+    use iced_test::runtime::Action;
+    use iced_test::runtime::task::into_stream;
     use otty_docker::{EngineKind, fixtures};
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::docker::actions::{ActionRequest, EngineAction};
+
+    /// Run a waiting task on the runtime the app runs on. Returns the intents
+    /// it sent and how long it took.
+    fn run_waiting_task(task: Task<AppEvent>) -> (Vec<DockerIntent>, Duration) {
+        let runtime = iced::executor::Default::new().expect("a tokio runtime");
+        let stream = into_stream(task).expect("a task");
+
+        let started = Instant::now();
+        let actions: Vec<Action<AppEvent>> = runtime.block_on(stream.collect());
+        let took = started.elapsed();
+
+        let intents = actions
+            .into_iter()
+            .filter_map(|action| match action {
+                Action::Output(AppEvent::Docker(DockerEvent::Intent(
+                    intent,
+                ))) => Some(intent),
+                _ => None,
+            })
+            .collect();
+
+        (intents, took)
+    }
 
     #[test]
     fn an_intent_is_reduced_by_the_widget_and_its_effect_comes_back() {
@@ -532,6 +585,44 @@ mod tests {
         ));
 
         assert_eq!(check.units(), 1);
+    }
+
+    #[test]
+    fn the_folder_waits_run_one_task_each() {
+        let typing = handle_effect(DockerEffect::WaitForTypingPause(
+            PathBuf::from("/srv/site"),
+        ));
+        let late = handle_effect(DockerEffect::WaitForLateAnswer(
+            PathBuf::from("/srv/site"),
+        ));
+
+        assert_eq!(typing.units(), 1);
+        assert_eq!(late.units(), 1);
+    }
+
+    #[test]
+    fn the_typing_wait_sends_the_pause_after_its_time() {
+        let path = PathBuf::from("/srv/site");
+
+        let (intents, took) = run_waiting_task(handle_effect(
+            DockerEffect::WaitForTypingPause(path.clone()),
+        ));
+
+        assert_eq!(intents, vec![DockerIntent::FolderTypingPaused(path)]);
+        assert!(took >= FOLDER_TYPING_PAUSE, "{took:?}");
+        assert!(took < FOLDER_ANSWER_LIMIT, "{took:?}");
+    }
+
+    #[test]
+    fn a_folder_wait_sends_its_intent_after_the_delay() {
+        let next = DockerIntent::FolderAnswerLate(PathBuf::from("/srv/site"));
+        let delay = Duration::from_millis(5);
+
+        let (intents, took) =
+            run_waiting_task(folder_wait(delay, next.clone()));
+
+        assert_eq!(intents, vec![next]);
+        assert!(took >= delay, "{took:?}");
     }
 
     #[test]

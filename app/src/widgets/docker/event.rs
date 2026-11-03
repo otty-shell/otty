@@ -20,7 +20,7 @@ use super::types::{LoadedList, LoadedLists, Place, ResourceKind};
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DockerIntent {
     /// Docker mode became active: search for engines, then load their
-    /// lists.
+    /// lists, and ask again about the folders of an open Run form.
     Enter,
     /// Another mode became active: start no more engine work.
     Leave,
@@ -180,6 +180,12 @@ pub(crate) enum DockerIntent {
     /// Ask the disk again about the folders of the Run form, so a folder
     /// created elsewhere clears its error by itself.
     RecheckFolders,
+    /// Typing a volume source stopped for a moment on this folder: ask the
+    /// disk about it if the row still has it and nobody asked yet.
+    FolderTypingPaused(PathBuf),
+    /// A question about this folder went out a while ago: its row says the
+    /// folder is not answering if the answer has not come yet.
+    FolderAnswerLate(PathBuf),
 }
 
 /// Effect events produced by the Docker reducer. The app runs them off the
@@ -236,6 +242,10 @@ pub(crate) enum DockerEffect {
     },
     /// Ask the disk whether this folder of the Run form exists.
     CheckFolder(PathBuf),
+    /// Wait for a pause in typing, then send `FolderTypingPaused`.
+    WaitForTypingPause(PathBuf),
+    /// Give the disk time to answer, then send `FolderAnswerLate`.
+    WaitForLateAnswer(PathBuf),
 }
 
 /// Docker event stream routed through the app update loop.

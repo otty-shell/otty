@@ -1,7 +1,7 @@
 //! The checks before Run (spec Decision 18): the image is not empty, ports
 //! are 1–65535, paths in the container are absolute and a folder source
-//! exists. Each problem is shown under its field and keeps Run disabled.
-//! Pure: whether a folder exists is the answer kept in the form.
+//! exists and answers. Each problem is shown under its field and keeps Run
+//! disabled. Pure: whether a folder exists is the answer kept in the form.
 
 use super::run_form::{PortRow, RunForm, VolumeRow, parse_port};
 use crate::i18n::Key;
@@ -64,6 +64,16 @@ impl RunProblems {
         self.volumes.get(index).copied().flatten()
     }
 
+    /// Whether the user can fix something. A folder that does not answer is
+    /// not such a thing: only the disk can end it.
+    pub(crate) fn has_fixable_problem(&self) -> bool {
+        self.image.is_some()
+            || self.ports.iter().any(Option::is_some)
+            || self.volumes.iter().flatten().any(|problem| {
+                problem.message != Key::DockerRunErrSourceNotAnswering
+            })
+    }
+
     /// Whether nothing is wrong.
     pub(crate) fn is_empty(&self) -> bool {
         self.image.is_none()
@@ -108,14 +118,22 @@ fn port_problem(row: &PortRow) -> Option<RowProblem> {
     ))
 }
 
-/// A blank row is fine. The path in the container must start with `/`;
-/// the source is required, and the last answer about a folder must not say
-/// it is missing.
+/// A blank row is fine. The disk must answer about a folder in time; this goes
+/// first, because the user cannot work it out alone and a missing answer may
+/// be about earlier text. The path in the container must start with `/`, the
+/// source is required, and the last answer must not say a folder is missing.
 fn volume_problem(row: &VolumeRow) -> Option<RowProblem> {
     if row.is_blank() {
         return None;
     }
 
+    if row.is_folder_slow() {
+        return Some(RowProblem::new(
+            Key::DockerRunErrSourceNotAnswering,
+            true,
+            false,
+        ));
+    }
     if !row.target().trim().starts_with('/') {
         return Some(RowProblem::new(
             Key::DockerRunErrContainerPath,
@@ -307,6 +325,74 @@ mod tests {
         assert_eq!(
             check(&form).volume(0),
             Some(RowProblem::new(Key::DockerRunErrSourceMissing, true, false))
+        );
+    }
+
+    #[test]
+    fn a_folder_that_does_not_answer_is_a_problem_of_the_source() {
+        let mut form = form(volume("/srv/otty-fx", "/data"));
+        assert!(form.start_folder_check(Path::new("/srv/otty-fx")));
+
+        assert!(form.mark_folder_slow(Path::new("/srv/otty-fx")));
+
+        assert_eq!(
+            check(&form).volume(0),
+            Some(RowProblem::new(
+                Key::DockerRunErrSourceNotAnswering,
+                true,
+                false
+            ))
+        );
+    }
+
+    #[test]
+    fn the_hint_about_a_silent_folder_goes_before_an_older_missing_answer() {
+        let mut form = answered_form("/srv/otty-fx", false);
+        form.apply(RunEdit::VolumeSource(0, String::from("/srv/otty-fx-2")));
+        assert!(form.start_folder_check(Path::new("/srv/otty-fx-2")));
+
+        assert!(form.mark_folder_slow(Path::new("/srv/otty-fx-2")));
+
+        assert_eq!(
+            check(&form).volume(0).map(|problem| problem.message()),
+            Some(Key::DockerRunErrSourceNotAnswering)
+        );
+    }
+
+    #[test]
+    fn the_hint_about_a_silent_folder_goes_before_a_wrong_container_path() {
+        let folder = Path::new("/srv/otty-fx");
+        let mut form = form(volume("/srv/otty-fx", ""));
+        assert!(form.start_folder_check(folder));
+
+        assert!(form.mark_folder_slow(folder));
+
+        assert_eq!(
+            check(&form).volume(0),
+            Some(RowProblem::new(
+                Key::DockerRunErrSourceNotAnswering,
+                true,
+                false
+            ))
+        );
+
+        assert!(form.finish_folder_check(folder, true));
+
+        assert_eq!(
+            check(&form).volume(0).map(|problem| problem.message()),
+            Some(Key::DockerRunErrContainerPath)
+        );
+    }
+
+    #[test]
+    fn the_container_path_error_still_goes_before_a_missing_folder() {
+        let mut form = answered_form("/srv/otty-fx", false);
+
+        form.apply(RunEdit::VolumeTarget(0, String::from("cache")));
+
+        assert_eq!(
+            check(&form).volume(0).map(|problem| problem.message()),
+            Some(Key::DockerRunErrContainerPath)
         );
     }
 

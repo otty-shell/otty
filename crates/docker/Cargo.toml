@@ -21,9 +21,9 @@ log = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 # `process` runs `docker --version` with a time limit (the `podman-docker`
-# check) and `fs` asks whether a folder exists off the UI thread; the workspace
-# already builds tokio, so no new crate.
-tokio = { version = "1.47", features = ["fs", "net", "process", "time"] }
+# check) and `sync` brings back the answer of a folder check from its own
+# thread; the workspace already builds tokio, so no new crate.
+tokio = { version = "1.47", features = ["net", "process", "sync", "time"] }
 
 [features]
 # `otty_docker::fixtures`: values mapped from the captured engine answers in

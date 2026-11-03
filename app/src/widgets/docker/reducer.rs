@@ -29,7 +29,11 @@ fn reduce_intent(
         DockerIntent::Enter => {
             state.set_active(true);
             state.start_search();
-            effect(DockerEffect::Discover)
+
+            // The timer did not run in the other mode, so the open form asks
+            // about its folders now rather than in up to 2 seconds.
+            let folders = run_flow::recheck_folders(state);
+            Task::batch([effect(DockerEffect::Discover), folders])
         },
         DockerIntent::Leave => {
             state.set_active(false);
@@ -225,6 +229,12 @@ fn reduce_intent(
             run_flow::folder_checked(state, &path, exists)
         },
         DockerIntent::RecheckFolders => run_flow::recheck_folders(state),
+        DockerIntent::FolderTypingPaused(path) => {
+            run_flow::folder_typing_paused(state, &path)
+        },
+        DockerIntent::FolderAnswerLate(path) => {
+            run_flow::folder_answer_late(state, &path)
+        },
     }
 }
 

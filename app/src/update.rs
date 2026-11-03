@@ -134,6 +134,7 @@ mod tests {
     use otty_docker::{EngineKind, fixtures};
 
     use super::*;
+    use crate::i18n;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::docker::run_form::RunEdit;
     use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
@@ -276,8 +277,8 @@ mod tests {
         assert_eq!(app.widgets.sidebar.vm().is_left_open, was_left_open);
     }
 
-    /// The All modes menu is open and the Run form has a folder row with a
-    /// question out about [`FOLDER`].
+    /// The All modes menu is open and the Run form has a filled row from the
+    /// folder [`FOLDER`], with no question out yet.
     fn app_with_modes_menu_over_a_folder_row() -> App {
         let mut app = app_with_open_modes_menu();
         let docker = &mut app.widgets.docker;
@@ -292,12 +293,23 @@ mod tests {
             0,
             FOLDER.to_string(),
         )));
+        let _ = docker.reduce(DockerIntent::RunEdited(RunEdit::VolumeTarget(
+            0,
+            String::from("/data"),
+        )));
 
         app
     }
 
     fn docker_intent(intent: DockerIntent) -> AppEvent {
         AppEvent::Docker(DockerEvent::Intent(intent))
+    }
+
+    /// The message under the first volume row of the Run form.
+    fn row_problem(app: &App) -> Option<&'static str> {
+        let form = app.widgets.docker.run_form_vm().expect("form");
+
+        form.volumes[0].problem
     }
 
     #[test]
@@ -322,8 +334,55 @@ mod tests {
         );
 
         assert!(app.widgets.modes.is_menu_open());
-        let form = app.widgets.docker.run_form_vm().expect("form");
-        assert!(form.volumes[0].problem.is_some());
+        assert_eq!(
+            row_problem(&app),
+            Some(i18n::t(i18n::Key::DockerRunErrSourceMissing))
+        );
+    }
+
+    #[test]
+    fn a_typing_pause_under_an_open_menu_still_asks_about_the_folder() {
+        let mut app = app_with_modes_menu_over_a_folder_row();
+
+        let asked = collect_outputs(update(
+            &mut app,
+            docker_intent(DockerIntent::FolderTypingPaused(PathBuf::from(
+                FOLDER,
+            ))),
+        ));
+
+        assert!(app.widgets.modes.is_menu_open());
+        assert!(asked.iter().any(|event| matches!(
+            event,
+            AppEvent::Docker(DockerEvent::Effect(
+                DockerEffect::CheckFolder(path)
+            )) if path.as_path() == Path::new(FOLDER)
+        )));
+    }
+
+    #[test]
+    fn a_late_answer_under_an_open_menu_still_shows_the_hint() {
+        let mut app = app_with_modes_menu_over_a_folder_row();
+        let _ = update(
+            &mut app,
+            docker_intent(DockerIntent::FolderTypingPaused(PathBuf::from(
+                FOLDER,
+            ))),
+        );
+        assert_eq!(row_problem(&app), None);
+
+        let _ = update(
+            &mut app,
+            docker_intent(DockerIntent::FolderAnswerLate(PathBuf::from(
+                FOLDER,
+            ))),
+        );
+
+        assert!(app.widgets.modes.is_menu_open());
+        assert_eq!(
+            row_problem(&app),
+            Some(i18n::t(i18n::Key::DockerRunErrSourceNotAnswering))
+        );
     }
 
     #[test]

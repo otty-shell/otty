@@ -72,6 +72,13 @@ pub(crate) struct VolumeRow {
     /// The folder a question is out about; never another folder than the
     /// one typed.
     asked_folder: Option<PathBuf>,
+    /// The folder the disk took too long to answer about; never another
+    /// folder than the one typed.
+    slow_folder: Option<PathBuf>,
+    /// Whether the last edit of the source waits for a pause in typing. The
+    /// timer skips such a row once, so it never asks about half-typed text,
+    /// and asks the next time if the pause got lost.
+    is_typing_pause_due: bool,
 }
 
 impl VolumeRow {
@@ -112,6 +119,12 @@ impl VolumeRow {
                 .is_some_and(|answer| !answer.exists)
     }
 
+    /// Whether the disk took too long to answer about the typed folder and
+    /// still has not answered.
+    pub(crate) fn is_folder_slow(&self) -> bool {
+        self.slow_folder.is_some()
+    }
+
     /// Whether the disk has answered about the typed folder. A row without
     /// a folder has nothing to wait for.
     fn is_folder_answered(&self) -> bool {
@@ -130,14 +143,18 @@ impl VolumeRow {
         host_path(self.source.trim())
     }
 
-    /// Take a new source. A question about another folder no longer counts
-    /// for this row, and a source that is not a folder forgets the answer.
+    /// Take a new source. A question about another folder and silence about
+    /// it no longer count for this row, and a source that is not a folder
+    /// forgets the answer.
     fn set_source(&mut self, source: String) {
         self.source = source;
 
         let path = self.host_path();
         if self.asked_folder != path {
             self.asked_folder = None;
+        }
+        if self.slow_folder != path {
+            self.slow_folder = None;
         }
         if path.is_none() {
             self.folder_answer = None;
@@ -323,6 +340,15 @@ impl RunForm {
         self.volumes.iter().all(VolumeRow::is_folder_answered)
     }
 
+    /// Whether a row with the folder `path` has no answer about it yet. An
+    /// answered folder that is only asked about again does not count.
+    pub(crate) fn is_folder_unanswered(&self, path: &Path) -> bool {
+        self.volumes.iter().any(|row| {
+            row.host_path().as_deref() == Some(path)
+                && !row.is_folder_answered()
+        })
+    }
+
     /// Whether the volume row at `index` shows the SELinux switch: the
     /// computer has SELinux and the row's source is a folder on it. A named
     /// volume never does.
@@ -502,10 +528,26 @@ impl RunForm {
         true
     }
 
-    /// Start asking about the folder of the row at `index`. Returns the
-    /// folder to ask the disk about, or `None` when the source is not a
-    /// folder, a question about it is out or a run goes on.
-    pub(crate) fn start_folder_check(
+    /// The source of the row at `index` was typed. Returns the folder that
+    /// must now wait for a pause in typing, if it still needs a question.
+    pub(crate) fn start_typing_wait(
+        &mut self,
+        index: usize,
+    ) -> Option<PathBuf> {
+        let path = self.folder_to_ask(index);
+
+        if let Some(row) = self.volumes.get_mut(index) {
+            row.is_typing_pause_due = path.is_some();
+        }
+
+        path
+    }
+
+    /// The source of the row at `index` was typed and a question about that
+    /// folder is already out for another row, maybe a re-check that keeps no
+    /// time limit. Returns the folder when this row joins that question and
+    /// so needs a time limit of its own.
+    pub(crate) fn join_folder_question(
         &mut self,
         index: usize,
     ) -> Option<PathBuf> {
@@ -514,22 +556,45 @@ impl RunForm {
         }
 
         let path = self.volumes.get(index)?.host_path()?;
-        self.mark_folder_asked(&path).then_some(path)
+        let is_asked = self.is_folder_asked(&path);
+        let row = self.volumes.get_mut(index)?;
+        if !is_asked || row.asked_folder.is_some() || row.is_folder_answered() {
+            return None;
+        }
+
+        row.asked_folder = Some(path.clone());
+        Some(path)
+    }
+
+    /// Start asking about `path` once typing stopped on it. Returns `true`
+    /// when the question must go out: a row still has this folder without an
+    /// answer, no question about it is out and no run goes on.
+    pub(crate) fn start_folder_check(&mut self, path: &Path) -> bool {
+        if !self.is_editing() || !self.is_folder_unanswered(path) {
+            return false;
+        }
+
+        self.mark_folder_asked(path)
     }
 
     /// Start asking again about the folders of all rows. Returns each folder
-    /// to ask the disk about once, without those a question is out about.
-    /// What is known about a folder stays until the answer comes.
+    /// to ask the disk about once, without those a question is out about and
+    /// those still waiting for a pause in typing. Such a row is skipped only
+    /// this time. What is known about a folder stays until the answer comes.
     pub(crate) fn start_folder_rechecks(&mut self) -> Vec<PathBuf> {
         if !self.is_editing() {
             return Vec::new();
         }
 
-        let folders: Vec<PathBuf> = self
-            .volumes
-            .iter()
-            .filter_map(VolumeRow::host_path)
-            .collect();
+        let mut folders = Vec::new();
+        for row in &mut self.volumes {
+            if row.is_typing_pause_due {
+                row.is_typing_pause_due = false;
+                continue;
+            }
+            folders.extend(row.host_path());
+        }
+
         folders
             .into_iter()
             .filter(|path| self.mark_folder_asked(path))
@@ -551,6 +616,8 @@ impl RunForm {
             }
 
             row.asked_folder = None;
+            row.slow_folder = None;
+            row.is_typing_pause_due = false;
             row.folder_answer = Some(FolderAnswer {
                 path: path.to_path_buf(),
                 exists,
@@ -559,6 +626,31 @@ impl RunForm {
         }
 
         is_taken
+    }
+
+    /// The time for an answer about `path` is over: mark each row that has
+    /// this folder and still no answer. Returns `false` when no row is marked,
+    /// because no question is out (the time limit is older than the text or
+    /// the form) or the answer came.
+    pub(crate) fn mark_folder_slow(&mut self, path: &Path) -> bool {
+        if !self.is_folder_asked(path) {
+            return false;
+        }
+
+        let mut is_marked = false;
+
+        for row in &mut self.volumes {
+            if row.host_path().as_deref() != Some(path)
+                || row.is_folder_answered()
+            {
+                continue;
+            }
+
+            row.slow_folder = Some(path.to_path_buf());
+            is_marked = true;
+        }
+
+        is_marked
     }
 
     /// The image is pulled first.
@@ -655,13 +747,34 @@ impl RunForm {
             .with_auto_remove(self.is_auto_remove)
     }
 
+    /// The folder of the row at `index` when it still needs a question: not
+    /// when the source is not a folder, has an answer or a question out, or a
+    /// run goes on.
+    fn folder_to_ask(&self, index: usize) -> Option<PathBuf> {
+        if !self.is_editing() {
+            return None;
+        }
+
+        let row = self.volumes.get(index)?;
+        let path = row.host_path()?;
+        if row.is_folder_answered() || self.is_folder_asked(&path) {
+            return None;
+        }
+
+        Some(path)
+    }
+
+    /// Whether a question about `path` is out for a row.
+    fn is_folder_asked(&self, path: &Path) -> bool {
+        self.volumes
+            .iter()
+            .any(|row| row.asked_folder.as_deref() == Some(path))
+    }
+
     /// Note that a question about `path` is out for every row with that
     /// folder. Returns `false` when one already was, so none is sent again.
     fn mark_folder_asked(&mut self, path: &Path) -> bool {
-        let is_new = !self
-            .volumes
-            .iter()
-            .any(|row| row.asked_folder.as_deref() == Some(path));
+        let is_new = !self.is_folder_asked(path);
 
         for row in &mut self.volumes {
             if row.host_path().as_deref() == Some(path) {
@@ -830,10 +943,8 @@ mod tests {
                 RunEdit::VolumeSource(1, String::from("/srv/site")),
             ],
         );
-        assert_eq!(
-            form.start_folder_check(1),
-            Some(PathBuf::from("/srv/site"))
-        );
+        assert_eq!(form.folder_to_ask(1), Some(PathBuf::from("/srv/site")));
+        assert!(form.start_folder_check(Path::new("/srv/site")));
         assert!(form.finish_folder_check(Path::new("/srv/site"), false));
 
         form.apply(RunEdit::RemoveVolume(0));
@@ -854,8 +965,76 @@ mod tests {
         );
         form.start_run();
 
-        assert_eq!(form.start_folder_check(0), None);
+        assert_eq!(form.folder_to_ask(0), None);
+        assert!(!form.start_folder_check(Path::new("/srv/site")));
         assert!(form.start_folder_rechecks().is_empty());
+    }
+
+    #[test]
+    fn a_folder_is_to_be_asked_about_until_it_is_asked_or_answered() {
+        let mut form = form();
+        edit(
+            &mut form,
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(0, String::from("/srv/site")),
+            ],
+        );
+        let site = Path::new("/srv/site");
+        assert_eq!(form.folder_to_ask(0), Some(PathBuf::from(site)));
+        assert!(form.is_folder_unanswered(site));
+
+        assert!(form.start_folder_check(site));
+        assert_eq!(form.folder_to_ask(0), None);
+        assert!(form.is_folder_unanswered(site));
+
+        assert!(form.finish_folder_check(site, true));
+        assert_eq!(form.folder_to_ask(0), None);
+        assert!(!form.is_folder_unanswered(site));
+    }
+
+    #[test]
+    fn only_rows_still_without_an_answer_are_marked_slow() {
+        let mut form = form();
+        edit(
+            &mut form,
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(0, String::from("/srv/site")),
+            ],
+        );
+        let site = Path::new("/srv/site");
+        assert!(form.finish_folder_check(site, true));
+        edit(
+            &mut form,
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(1, String::from("/srv/site")),
+            ],
+        );
+        assert!(form.start_folder_check(site));
+
+        assert!(form.mark_folder_slow(site));
+
+        assert!(!form.volumes()[0].is_folder_slow());
+        assert!(form.volumes()[1].is_folder_slow());
+        assert!(!form.mark_folder_slow(Path::new("/srv/other")));
+    }
+
+    #[test]
+    fn a_folder_nobody_is_asking_about_is_not_marked_slow() {
+        let mut form = form();
+        edit(
+            &mut form,
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(0, String::from("/srv/site")),
+            ],
+        );
+
+        assert!(!form.mark_folder_slow(Path::new("/srv/site")));
+
+        assert!(!form.volumes()[0].is_folder_slow());
     }
 
     #[test]

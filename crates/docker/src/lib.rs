@@ -50,7 +50,7 @@ pub use crate::diagnosis::Diagnosis;
 pub use crate::discovery::{Discovery, discover};
 pub use crate::engine::{EngineInfo, EngineKind};
 pub use crate::events::ListKind;
-pub use crate::host_folder::host_folder_exists;
+pub use crate::host_folder::{host_folder_exists, wait_for};
 pub use crate::image::Image;
 pub use crate::image_defaults::ImageDefaults;
 pub use crate::network::Network;

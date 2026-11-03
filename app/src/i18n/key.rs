@@ -615,12 +615,16 @@ pub(crate) enum Key {
     DockerRunErrSourceRequired,
     /// Error: a host folder does not exist.
     DockerRunErrSourceMissing,
+    /// Hint: the disk has not answered about a host folder for a while.
+    DockerRunErrSourceNotAnswering,
     /// Footer hint of a ready form. Placeholder: `{engine}`.
     TplDockerRunReady,
     /// Footer hint while some fields have errors.
     DockerRunFixFields,
     /// Footer hint and image status while the image is looked up.
     DockerRunCheckingImage,
+    /// Footer hint while the disk has not answered about a folder source.
+    DockerRunWaitingForFolder,
     /// Label of the action button while the run goes on.
     DockerRunStarting,
     /// Notice of a failed run. Placeholders: `{name}`, `{error}`.
@@ -880,7 +884,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 409] = [
+    pub(super) const ALL: [Self; 411] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1168,9 +1172,11 @@ impl Key {
         Self::DockerRunErrContainerPath,
         Self::DockerRunErrSourceRequired,
         Self::DockerRunErrSourceMissing,
+        Self::DockerRunErrSourceNotAnswering,
         Self::TplDockerRunReady,
         Self::DockerRunFixFields,
         Self::DockerRunCheckingImage,
+        Self::DockerRunWaitingForFolder,
         Self::DockerRunStarting,
         Self::TplDockerRunFailed,
         Self::DockerRunPanelHint,
