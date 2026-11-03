@@ -544,4 +544,4 @@ Tickets live in `issues/`. Each ticket names the model that runs it on its `Mode
 - [x] 46 — Fuzzy suggestions with `frizbee` · Sonnet
 - [x] 47 — Bug: search cursor after a suggestion · Sonnet
 - [x] 48 — Bug: typed text is the first suggestion · Sonnet
-- [ ] 49 — Search keys in the interface language · Opus
+- [x] 49 — Search keys in the interface language · Opus
