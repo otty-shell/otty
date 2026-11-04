@@ -49,6 +49,10 @@ fn reduce_intent(
             state.close_search_suggestions();
             Task::none()
         },
+        DockerIntent::RightPanelHidden(is_hidden) => {
+            state.set_right_panel_hidden(is_hidden);
+            Task::none()
+        },
         DockerIntent::DiscoveryFinished(discovery) => {
             state.finish_search(discovery);
             load_every_engine(state)
@@ -287,10 +291,11 @@ fn reduce_intent(
 }
 
 /// Make the inspector match the state after an intent: follow the logs of
-/// the selected container only while the Logs tab is open in active Docker
-/// mode, and load the inspect JSON once per selection when the Inspect tab
-/// is open. A tab, selection or mode change stops the old logs; a selection
-/// change forgets the old JSON and its open sections.
+/// the selected container only while the Logs tab is on screen in active
+/// Docker mode, and load the inspect JSON once per selection when the Inspect
+/// tab is on screen. A tab, selection or mode change stops the old logs, and so
+/// does hiding the inspector; a selection change forgets the old JSON and its
+/// open sections.
 fn sync_inspector(state: &mut DockerState) -> Task<DockerEvent> {
     let log_target = state.wanted_log_target();
     state.inspector_mut().follow_logs(log_target);
@@ -1776,6 +1781,148 @@ mod tests {
         assert_eq!(followed(&state), Some(container_id(0)));
     }
 
+    fn hide_right_panel(
+        state: &mut DockerState,
+        is_hidden: bool,
+    ) -> Vec<DockerEffect> {
+        effects(reduce(state, DockerIntent::RightPanelHidden(is_hidden)))
+    }
+
+    #[test]
+    fn the_logs_stop_while_the_run_form_is_open_and_start_fresh_when_it_closes()
+    {
+        let mut state = logs_without_follow();
+
+        let _ = reduce(&mut state, DockerIntent::OpenCreate);
+        let while_open = followed(&state);
+        let tab_while_open = state.inspector().tab();
+        push_lines(&mut state, 0, &["late line of the old stream"]);
+        let _ = reduce(&mut state, DockerIntent::RunCancelled);
+
+        assert_eq!(while_open, None);
+        assert_eq!(tab_while_open, InspectorTab::Logs);
+        assert_eq!(followed(&state), Some(container_id(0)));
+        assert_eq!(log_line_count(&state), 0);
+        assert!(log_view(&state).is_following());
+        assert_eq!(followed_target(&state), log_target(0));
+    }
+
+    #[test]
+    fn the_logs_stop_while_the_right_panel_is_hidden_and_start_fresh_when_shown()
+     {
+        let mut state = logs_without_follow();
+
+        let _ = hide_right_panel(&mut state, true);
+        let while_hidden = followed(&state);
+        let tab_while_hidden = state.inspector().tab();
+        push_lines(&mut state, 0, &["late line of the old stream"]);
+        let _ = hide_right_panel(&mut state, false);
+
+        assert_eq!(while_hidden, None);
+        assert_eq!(tab_while_hidden, InspectorTab::Logs);
+        assert_eq!(followed(&state), Some(container_id(0)));
+        assert_eq!(log_line_count(&state), 0);
+        assert!(log_view(&state).is_following());
+        assert_eq!(followed_target(&state), log_target(0));
+    }
+
+    #[test]
+    fn selecting_the_logs_tab_while_the_right_panel_is_hidden_starts_no_logs() {
+        let mut state = loaded_state();
+        let _ = hide_right_panel(&mut state, true);
+
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        let while_hidden = followed(&state);
+        let tab_while_hidden = state.inspector().tab();
+        let _ = hide_right_panel(&mut state, false);
+
+        assert_eq!(while_hidden, None);
+        assert_eq!(tab_while_hidden, InspectorTab::Logs);
+        assert_eq!(followed(&state), Some(container_id(0)));
+    }
+
+    #[test]
+    fn logs_need_the_panel_shown_and_the_form_closed_at_once() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        let _ = hide_right_panel(&mut state, true);
+        let _ = reduce(&mut state, DockerIntent::OpenCreate);
+
+        let _ = hide_right_panel(&mut state, false);
+        let form_still_open = followed(&state);
+        let _ = hide_right_panel(&mut state, true);
+        let _ = reduce(&mut state, DockerIntent::RunCancelled);
+        let panel_still_hidden = followed(&state);
+        let _ = hide_right_panel(&mut state, false);
+
+        assert_eq!(form_still_open, None);
+        assert_eq!(panel_still_hidden, None);
+        assert_eq!(followed(&state), Some(container_id(0)));
+    }
+
+    #[test]
+    fn a_new_mode_does_not_bring_the_logs_back_while_the_right_panel_is_hidden()
+    {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        let _ = reduce(&mut state, DockerIntent::Leave);
+        let _ = hide_right_panel(&mut state, true);
+
+        let _ = reduce(&mut state, DockerIntent::Enter);
+        let after_enter = followed(&state);
+        let _ = hide_right_panel(&mut state, false);
+
+        assert_eq!(after_enter, None);
+        assert_eq!(followed(&state), Some(container_id(0)));
+    }
+
+    #[test]
+    fn the_inspect_json_waits_for_the_right_panel_and_loads_once() {
+        let mut state = loaded_state();
+        let _ = hide_right_panel(&mut state, true);
+
+        let while_hidden = select_tab(&mut state, InspectorTab::Inspect);
+        let on_show = hide_right_panel(&mut state, false);
+        let _ = hide_right_panel(&mut state, true);
+        let on_second_show = hide_right_panel(&mut state, false);
+
+        assert!(while_hidden.is_empty());
+        assert_eq!(
+            on_show,
+            [inspect_of(ResourceKind::Containers, &container_id(0))]
+        );
+        assert!(on_second_show.is_empty());
+    }
+
+    #[test]
+    fn the_inspect_json_waits_for_the_run_form_to_close() {
+        let mut state = loaded_state();
+        let _ = reduce(&mut state, DockerIntent::OpenCreate);
+
+        let while_open = select_tab(&mut state, InspectorTab::Inspect);
+        let on_close = effects(reduce(&mut state, DockerIntent::RunCancelled));
+
+        assert!(while_open.is_empty());
+        assert_eq!(
+            on_close,
+            [inspect_of(ResourceKind::Containers, &container_id(0))]
+        );
+    }
+
+    #[test]
+    fn pressing_the_selected_row_keeps_its_logs_and_their_stream() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        push_lines(&mut state, 0, &["one"]);
+        let stream = followed_target(&state);
+
+        let position = state.shown_position(0);
+        let _ = reduce(&mut state, DockerIntent::SelectRow(position));
+
+        assert_eq!(followed_target(&state), stream);
+        assert_eq!(log_line_count(&state), 1);
+    }
+
     #[test]
     fn a_reload_that_keeps_the_container_keeps_its_lines() {
         let mut state = loaded_state();
@@ -1859,9 +2006,10 @@ mod tests {
 
         let logs = state.inspector().logs().expect("followed logs");
         assert_eq!(MAX_LOG_LINES, 5000);
-        assert_eq!(logs.lines().line_count(), MAX_LOG_LINES);
+        assert!(logs.lines().line_count() <= MAX_LOG_LINES);
+        assert_eq!(logs.lines().line_count(), 4000);
         let text = logs.lines().text();
-        assert!(text.starts_with("line 100\n"), "{}", &text[..20]);
+        assert!(text.starts_with("line 1100\n"), "{}", &text[..20]);
         assert!(text.ends_with("line 5099"));
     }
 
@@ -1952,9 +2100,10 @@ mod tests {
 
         assert_eq!(waiting, MAX_LOG_LINES);
         let lines = log_view(&state);
-        assert_eq!(lines.line_count(), MAX_LOG_LINES);
+        assert!(lines.line_count() <= MAX_LOG_LINES);
+        assert_eq!(lines.line_count(), 4000);
         let text = lines.text();
-        assert!(text.starts_with("line 100\n"), "{}", &text[..20]);
+        assert!(text.starts_with("line 1100\n"), "{}", &text[..20]);
         assert!(text.ends_with("line 5099"));
     }
 
@@ -1981,6 +2130,22 @@ mod tests {
         }
     }
 
+    /// The bytes the logs count against their limit, shown and waiting lines
+    /// together, where `pushed` are the lines pushed last, which the waiting
+    /// ones are the newest of.
+    fn kept_log_bytes(state: &DockerState, pushed: &[String]) -> usize {
+        let lines = log_view(state);
+        let shown = lines.text().len() + 1;
+        let waiting: usize = pushed
+            .iter()
+            .rev()
+            .take(lines.pending_count())
+            .map(|line| line.len() + 1)
+            .sum();
+
+        shown + waiting
+    }
+
     #[test]
     fn at_most_16_mib_of_log_text_is_kept_and_the_newest_stays() {
         let mut state = loaded_state();
@@ -1992,10 +2157,67 @@ mod tests {
         assert_eq!(MAX_LOG_TEXT_BYTES, 16 * 1024 * 1024);
         let text = log_view(&state).text();
         assert!(text.len() <= MAX_LOG_TEXT_BYTES, "{}", text.len());
-        assert!(text.len() > MAX_LOG_TEXT_BYTES - 2 * MAX_LOG_LINE_BYTES);
+        assert!(
+            text.len() > MAX_LOG_TEXT_BYTES / 5 * 4 - 2 * MAX_LOG_LINE_BYTES
+        );
         assert!(!text.starts_with("00000"), "the oldest go first");
         let newest = lines.last().expect("lines");
         assert!(text.ends_with(newest.as_str()));
+    }
+
+    /// Pushes `lines` in batches of `batch_size`, checks both limits and the
+    /// newest line after each batch, and returns how many batches shrank the
+    /// log.
+    fn push_and_count_trims(
+        state: &mut DockerState,
+        lines: &[String],
+        batch_size: usize,
+    ) -> usize {
+        let mut trims = 0;
+
+        for batch in lines.chunks(batch_size) {
+            let before = log_view(state).line_count();
+
+            push_batches(state, batch);
+
+            let text = log_view(state).text();
+            let newest = batch.last().expect("batch");
+            assert!(log_view(state).line_count() <= MAX_LOG_LINES);
+            assert!(text.len() <= MAX_LOG_TEXT_BYTES, "{}", text.len());
+            assert!(text.ends_with(newest.as_str()));
+            if log_view(state).line_count() < before {
+                trims += 1;
+            }
+        }
+
+        trims
+    }
+
+    #[test]
+    fn a_full_log_of_short_lines_keeps_its_cap_and_trims_rarely() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        let lines: Vec<String> =
+            (0..15_000).map(|n| format!("line {n}")).collect();
+
+        let trims = push_and_count_trims(&mut state, &lines, 50);
+
+        // Of 300 batches of 50: the first trim comes at 5050 lines and leaves
+        // 4000, so the next one comes 21 batches later.
+        assert_eq!(trims, 10);
+    }
+
+    #[test]
+    fn a_full_log_of_long_lines_keeps_its_cap_and_trims_rarely() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        let lines = [longest_log_lines(), longest_log_lines()].concat();
+
+        let trims = push_and_count_trims(&mut state, &lines, 25);
+
+        // Of 23 batches of 25: 255 of these lines fit, the first trim comes at
+        // 275 and leaves 204, so the next one comes 3 batches later.
+        assert_eq!(trims, 5);
     }
 
     #[test]
@@ -2007,8 +2229,10 @@ mod tests {
 
         let waiting = log_view(&state).pending_count();
         assert!(waiting < lines.len());
-        assert!(waiting * MAX_LOG_LINE_BYTES <= MAX_LOG_TEXT_BYTES);
         assert_eq!(log_view(&state).text(), "one\ntwo");
+        let kept = kept_log_bytes(&state, &lines);
+        assert!(kept <= MAX_LOG_TEXT_BYTES, "{kept}");
+        assert!(kept > MAX_LOG_TEXT_BYTES - 2 * MAX_LOG_LINE_BYTES, "{kept}");
 
         set_follow(&mut state, true);
 
@@ -2016,6 +2240,99 @@ mod tests {
         assert!(text.len() <= MAX_LOG_TEXT_BYTES, "{}", text.len());
         let newest = lines.last().expect("lines");
         assert!(text.ends_with(newest.as_str()));
+    }
+
+    /// Nearly 16 MiB shown and the user scrolls up, so Follow is off.
+    fn full_log_scrolled_up(state: &mut DockerState) {
+        push_batches(state, &longest_log_lines()[..255]);
+
+        let _ = reduce(
+            state,
+            DockerIntent::LogAction(Action::Scroll { lines: -2 }),
+        );
+    }
+
+    /// Lines of the longest kind that can be told from those of
+    /// [`longest_log_lines`], enough to go over the whole byte limit.
+    fn arriving_log_lines() -> Vec<String> {
+        longest_log_lines()
+            .into_iter()
+            .map(|line| format!("new{line}")[..MAX_LOG_LINE_BYTES].to_string())
+            .collect()
+    }
+
+    /// The input of the 32 MiB bug: 16 MiB shown, the user scrolls up, 16 MiB
+    /// more arrives. Only the newest line can wait, the text being read stays,
+    /// and Follow brings back the old text, then the line that says output was
+    /// skipped, then the newest line.
+    #[test]
+    fn a_full_log_with_follow_off_keeps_its_text_and_only_the_newest_line_waits()
+     {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        full_log_scrolled_up(&mut state);
+        let shown = log_view(&state).text();
+        assert!(shown.len() > MAX_LOG_TEXT_BYTES - MAX_LOG_LINE_BYTES);
+        let arriving = arriving_log_lines();
+
+        for batch in arriving.chunks(50) {
+            let _ = reduce(
+                &mut state,
+                DockerIntent::LogLines {
+                    target: log_target(0),
+                    lines: batch.to_vec(),
+                    position: None,
+                },
+            );
+            assert!(
+                kept_log_bytes(&state, &arriving)
+                    <= MAX_LOG_TEXT_BYTES + MAX_LOG_LINE_BYTES + 1
+            );
+        }
+
+        assert_eq!(log_view(&state).pending_count(), 1);
+        assert_eq!(log_view(&state).text(), shown);
+
+        set_follow(&mut state, true);
+
+        let text = log_view(&state).text();
+        let newest = arriving.last().expect("lines");
+        let skipped = i18n::t(Key::DockerLogsSkippedOutput);
+        assert!(text.ends_with(&format!("\n{skipped}\n{newest}")));
+        assert_eq!(text.matches(skipped).count(), 1);
+        assert_eq!(text.matches("new").count(), 1);
+        assert!(
+            text.len() <= MAX_LOG_TEXT_BYTES / 5 * 4 + 1,
+            "{}",
+            text.len()
+        );
+        assert_eq!(log_view(&state).pending_count(), 0);
+    }
+
+    #[test]
+    fn dropped_waiting_lines_are_forgotten_when_the_container_restarts() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        full_log_scrolled_up(&mut state);
+        push_batches(&mut state, &arriving_log_lines());
+        assert_eq!(log_view(&state).pending_count(), 1);
+
+        container_started(&mut state, 0);
+        lines_arrived(&mut state, &["after the restart"], None);
+        set_follow(&mut state, true);
+
+        assert_eq!(log_view(&state).text(), "after the restart");
+    }
+
+    #[test]
+    fn no_lines_dropped_means_no_skipped_output_line() {
+        let mut state = logs_without_follow();
+
+        push_lines(&mut state, 0, &["three"]);
+        set_follow(&mut state, true);
+
+        let skipped = i18n::t(Key::DockerLogsSkippedOutput);
+        assert!(!log_view(&state).text().contains(skipped));
     }
 
     #[test]
@@ -3651,6 +3968,41 @@ mod tests {
         set_follow(&mut state, true);
 
         assert_eq!(log_view(&state).text(), "one\ntwo\nwaiting\nmissed");
+    }
+
+    /// The line that says output was skipped exists only in the view: the new
+    /// stream still goes on from the last line that arrived.
+    #[test]
+    fn the_skipped_output_line_leaves_the_log_position_alone() {
+        let mut state = open_logs_with_two_lines();
+        full_log_scrolled_up(&mut state);
+        let last = fixtures::log_position(RUN_STARTED + 6, 1);
+        let arriving = arriving_log_lines();
+
+        for batch in arriving.chunks(50) {
+            let target = followed_target(&state);
+            let _ = reduce(
+                &mut state,
+                DockerIntent::LogLines {
+                    target,
+                    lines: batch.to_vec(),
+                    position: Some(last),
+                },
+            );
+        }
+        run_checked(&mut state, Ok(fixtures::container_run(RUN_STARTED, true)));
+        assert_eq!(followed_target(&state).read(), LogRead::After(last));
+        set_follow(&mut state, true);
+
+        let text = log_view(&state).text();
+        let skipped = i18n::t(Key::DockerLogsSkippedOutput);
+        assert_eq!(text.matches(skipped).count(), 1);
+        assert_eq!(followed_target(&state).read(), LogRead::After(last));
+
+        run_checked(&mut state, Ok(fixtures::container_run(RUN_STARTED, true)));
+
+        assert_eq!(followed_target(&state).read(), LogRead::After(last));
+        assert_eq!(log_view(&state).text(), text);
     }
 
     #[test]

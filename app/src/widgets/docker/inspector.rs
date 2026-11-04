@@ -20,7 +20,8 @@ pub(crate) const LOG_TAIL: usize = 500;
 /// The most log lines kept; older lines are dropped.
 pub(crate) const MAX_LOG_LINES: usize = 5000;
 /// The most log text kept, in bytes; older lines are dropped. It holds for the
-/// shown lines and for the lines waiting while Follow is off, each on its own.
+/// shown lines and the lines waiting while Follow is off together, plus at most
+/// the newest waiting line, which is always kept.
 pub(crate) const MAX_LOG_TEXT_BYTES: usize = 16 * 1024 * 1024;
 
 /// The tabs of a container.
@@ -365,7 +366,7 @@ pub(crate) enum InspectLoad {
     /// Asked for, not here yet.
     Loading,
     /// The answer: the JSON and its tree.
-    Loaded(LoadedInspect),
+    Loaded(Box<LoadedInspect>),
     /// The engine's message.
     Failed(String),
 }
@@ -571,7 +572,8 @@ impl InspectorState {
 
     /// Turn Follow of the followed logs on or off. Off, new lines wait; on,
     /// they are added and the view goes to the bottom. New logs start with
-    /// Follow on, so a tab, selection or mode change resets it.
+    /// Follow on, so a tab, selection or mode change resets it, and so does
+    /// hiding the inspector.
     pub(super) fn set_log_following(&mut self, is_following: bool) {
         if let Some(logs) = self.logs.as_mut() {
             logs.lines.set_following(is_following);
@@ -613,7 +615,8 @@ impl InspectorState {
 
         inspect.load = match result {
             Ok(json) => {
-                InspectLoad::Loaded(LoadedInspect::new(&json, self.shows_empty))
+                let loaded = LoadedInspect::new(&json, self.shows_empty);
+                InspectLoad::Loaded(Box::new(loaded))
             },
             Err(err) => InspectLoad::Failed(err.to_string()),
         };
@@ -700,7 +703,7 @@ impl InspectorState {
     /// The loaded inspect answer, if any.
     fn loaded_inspect_mut(&mut self) -> Option<&mut LoadedInspect> {
         match self.inspect.as_mut()?.load {
-            InspectLoad::Loaded(ref mut loaded) => Some(loaded),
+            InspectLoad::Loaded(ref mut loaded) => Some(&mut **loaded),
             _ => None,
         }
     }
@@ -744,13 +747,16 @@ fn logs_after_reconnect(
     LogsAfterReconnect::GoOn
 }
 
-/// The JSON as read-only lines, shown from its first line.
+/// A log view with no lines yet, held to [`MAX_LOG_LINES`] and
+/// [`MAX_LOG_TEXT_BYTES`], that says where output was skipped.
 fn empty_log_lines() -> LogViewState {
     LogViewState::new()
         .max_lines(MAX_LOG_LINES)
         .max_bytes(MAX_LOG_TEXT_BYTES)
+        .skipped_output_line(i18n::t(Key::DockerLogsSkippedOutput))
 }
 
+/// The JSON as read-only lines, shown from its first line.
 fn json_view(json: &str) -> LogViewState {
     let mut view = LogViewState::new();
     view.push_lines(json.lines());

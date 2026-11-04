@@ -118,6 +118,14 @@ pub fn all_bytes() -> [&'static [u8]; 5] {
 /// Drop this once cosmic-text accepts a variable font for any weight on its
 /// axis. A font that is not variable, or has no CJK, is not touched, so a
 /// computer without such a font gains no entry, whatever its system.
+///
+/// # Example
+///
+/// Not run: it changes the font system that the whole process shares.
+///
+/// ```no_run
+/// otty_ui_kit::fonts::register_variable_cjk_faces();
+/// ```
 pub fn register_variable_cjk_faces() {
     let mut system = font_system().write().expect("Write font system");
 
@@ -131,6 +139,14 @@ pub fn register_variable_cjk_faces() {
 /// cosmic-text fixes its language when it is created, so this builds a new one
 /// around the same font database. All text is shaped again on the next layout,
 /// the terminal's too, so a change of language needs no restart.
+///
+/// # Example
+///
+/// Not run: it changes the font system that the whole process shares.
+///
+/// ```no_run
+/// otty_ui_kit::fonts::set_text_locale("ko");
+/// ```
 pub fn set_text_locale(locale: &str) {
     let mut system = font_system().write().expect("Write font system");
     let raw = system.raw();

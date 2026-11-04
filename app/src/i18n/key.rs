@@ -576,6 +576,8 @@ pub(crate) enum Key {
     DockerLogsHint,
     /// Label of the switch that keeps the logs at the newest line.
     DockerLogsFollow,
+    /// Line in the logs where lines were dropped while they waited for Follow.
+    DockerLogsSkippedOutput,
     /// Count of one log line waiting while Follow is off.
     DockerLogsOneNewLine,
     /// Count of log lines waiting while Follow is off. Placeholder: `{count}`.
@@ -949,7 +951,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 442] = [
+    pub(super) const ALL: [Self; 443] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1217,6 +1219,7 @@ impl Key {
         Self::DockerTabInspect,
         Self::DockerLogsHint,
         Self::DockerLogsFollow,
+        Self::DockerLogsSkippedOutput,
         Self::DockerLogsOneNewLine,
         Self::TplDockerLogsNewLines,
         Self::TplDockerLogsFailed,

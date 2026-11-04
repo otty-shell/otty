@@ -33,6 +33,9 @@ pub(crate) enum DockerIntent {
     Enter,
     /// Another mode became active: start no more engine work.
     Leave,
+    /// The right panel went off the screen or came back. Only the app's update
+    /// path sends this; see `update` in `update.rs`.
+    RightPanelHidden(bool),
     /// The engine search finished.
     DiscoveryFinished(Discovery),
     /// The timer of the no-engine card ticked: look for engines behind the

@@ -293,14 +293,15 @@ pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
 }
 
 /// Return `true` for a Docker event the user did not cause by a click: a
-/// mode change, an engine result, a folder check or one of its timers, or an
-/// effect.
+/// mode change, the right panel going or coming back, an engine result, a
+/// folder check or one of its timers, or an effect.
 fn is_docker_background(event: &DockerEvent) -> bool {
     match event {
         DockerEvent::Intent(intent) => matches!(
             intent,
             DockerIntent::Enter
                 | DockerIntent::Leave
+                | DockerIntent::RightPanelHidden(_)
                 | DockerIntent::DiscoveryFinished(_)
                 | DockerIntent::EngineSearchTick
                 | DockerIntent::BackgroundSearchFinished(_)
@@ -526,6 +527,7 @@ mod tests {
                 "/srv/site",
             ))),
             docker(DockerIntent::FolderAnswerLate(PathBuf::from("/srv/site"))),
+            docker(DockerIntent::RightPanelHidden(true)),
             AppEvent::Docker(DockerEvent::Effect(
                 DockerEffect::WaitForTypingPause(PathBuf::from("/srv/site")),
             )),

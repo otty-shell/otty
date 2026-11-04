@@ -1343,6 +1343,22 @@ mod tests {
     }
 
     #[test]
+    fn the_skipped_output_line_is_one_translated_line_in_every_locale() {
+        let english = text_in(Locale::En, Key::DockerLogsSkippedOutput);
+
+        assert_eq!(english, "… some output was skipped");
+        for locale in Locale::ALL {
+            let text = text_in(locale, Key::DockerLogsSkippedOutput);
+
+            assert!(text.starts_with('…'), "{}: {text}", locale.tag());
+            assert!(!text.contains('\n'), "{}: {text}", locale.tag());
+            if locale != Locale::En {
+                assert_ne!(text, english, "{}", locale.tag());
+            }
+        }
+    }
+
+    #[test]
     fn given_pinned_count_and_limit_when_building_the_pinned_note_then_both_show()
      {
         assert_eq!(modes_pinned_note_in(Locale::En, 1, 4), "1 of 4");

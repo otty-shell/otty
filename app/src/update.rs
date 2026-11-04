@@ -7,6 +7,7 @@ use crate::guards::{
     is_header_menu_choice, is_terminal_input,
 };
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
+use crate::widgets::docker::{DockerEvent, DockerIntent};
 use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
@@ -14,7 +15,17 @@ use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
+/// Handle `event`, then tell the Docker widget when the event changed whether
+/// the right panel is on screen. The sidebar alone knows that, and many paths
+/// change it, so it is read here, after every event, instead of by each path.
 pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
+    let task = route(app, event);
+    let right_panel = tell_docker_about_right_panel(app);
+
+    Task::batch([task, right_panel])
+}
+
+fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     // Keys typed while the command palette is open belong to the palette,
     // even if a terminal still had keyboard focus.
     if app.widgets.palette.is_open() && is_terminal_input(&event) {
@@ -69,6 +80,21 @@ pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         pre_dispatch_tasks.push(dispatch_task);
         Task::batch(pre_dispatch_tasks)
     }
+}
+
+/// Send the Docker widget the state of the right panel, if it changed.
+fn tell_docker_about_right_panel(app: &mut App) -> Task<AppEvent> {
+    let is_hidden = !app.widgets.sidebar.vm().is_right_open;
+    if app.widgets.docker.is_right_panel_hidden() == is_hidden {
+        return Task::none();
+    }
+
+    events::handle(
+        app,
+        AppEvent::Docker(DockerEvent::Intent(DockerIntent::RightPanelHidden(
+            is_hidden,
+        ))),
+    )
 }
 
 fn is_mode_shortcut(event: &AppEvent) -> bool {
@@ -131,14 +157,19 @@ mod tests {
 
     use iced::keyboard::key::{Code, Named, NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
+    use iced::widget::pane_grid;
     use otty_docker::{EngineKind, fixtures};
+    use otty_ui_kit::components::log_view::LogViewState;
 
     use super::*;
     use crate::i18n;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
+    use crate::widgets::docker::DockerEffect;
+    use crate::widgets::docker::inspector::{InspectorTab, LogTarget};
+    use crate::widgets::docker::inspector_tabs::TabContent;
     use crate::widgets::docker::run_form::RunEdit;
     use crate::widgets::docker::types::LoadedLists;
-    use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::types::Mode;
 
@@ -451,6 +482,238 @@ mod tests {
             )),
         );
         assert!(app.widgets.quick_launch.has_inline_edit());
+    }
+
+    /// The fixture lists are loaded and the Logs tab of the first container is
+    /// open, on an app where nothing hides the right panel.
+    fn app_with_open_logs() -> App {
+        let (mut app, _) = App::new();
+        load_rows_and_close_right_panel(&mut app);
+        let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
+        update_to_the_end(
+            &mut app,
+            docker_intent(DockerIntent::SelectInspectorTab(InspectorTab::Logs)),
+        );
+        assert!(app.widgets.sidebar.vm().is_right_open);
+        assert!(is_reading_logs(&app));
+
+        app
+    }
+
+    fn sidebar_intent(intent: SidebarIntent) -> AppEvent {
+        AppEvent::Sidebar(SidebarEvent::Intent(intent))
+    }
+
+    /// Whether a logs stream runs: the engine watch is one subscription, the
+    /// logs the other.
+    fn is_reading_logs(app: &App) -> bool {
+        app.widgets.docker.subscription().units() == 2
+    }
+
+    /// How many lines the open logs show.
+    fn log_lines(app: &App) -> usize {
+        app.widgets
+            .docker
+            .inspector_tabs_vm()
+            .and_then(|tabs| match tabs.content {
+                TabContent::Logs { lines, .. } => lines,
+                _ => None,
+            })
+            .map_or(0, LogViewState::line_count)
+    }
+
+    /// One line of the first fixture container comes in.
+    fn push_a_log_line(app: &mut App) {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let target = LogTarget::new(
+            fixtures::engine(EngineKind::Docker),
+            resources.containers()[0].id(),
+        );
+
+        update_to_the_end(
+            app,
+            docker_intent(DockerIntent::LogLines {
+                target,
+                lines: vec![String::from("ready")],
+                position: None,
+            }),
+        );
+    }
+
+    /// Run `event` and what follows from it. Returns whether logs were read
+    /// after each update, in order.
+    fn logs_after_each_update(app: &mut App, event: AppEvent) -> Vec<bool> {
+        let follow_ups = collect_outputs(update(app, event));
+        let mut reading = vec![is_reading_logs(app)];
+
+        for next in follow_ups {
+            reading.extend(logs_after_each_update(app, next));
+        }
+
+        reading
+    }
+
+    /// The right panel goes away by `hide`: the stream stops and the lines go.
+    /// It comes back by `show`: one new stream starts with an empty view.
+    fn assert_logs_follow_the_panel(hide: AppEvent, show: AppEvent) {
+        let mut app = app_with_open_logs();
+        push_a_log_line(&mut app);
+        assert_eq!(log_lines(&app), 1);
+
+        update_to_the_end(&mut app, hide);
+
+        assert!(!app.widgets.sidebar.vm().is_right_open);
+        assert!(!is_reading_logs(&app));
+
+        update_to_the_end(&mut app, show);
+
+        assert!(app.widgets.sidebar.vm().is_right_open);
+        assert!(is_reading_logs(&app));
+        assert_eq!(log_lines(&app), 0);
+    }
+
+    #[test]
+    fn a_panel_toggle_stops_the_logs_and_starts_them_again() {
+        assert_logs_follow_the_panel(
+            sidebar_intent(SidebarIntent::ToggleRight),
+            sidebar_intent(SidebarIntent::ToggleRight),
+        );
+    }
+
+    #[test]
+    fn the_files_panel_shortcut_stops_the_logs_and_starts_them_again() {
+        assert_logs_follow_the_panel(
+            shortcut_press(AppShortcut::FilesPanel),
+            shortcut_press(AppShortcut::FilesPanel),
+        );
+    }
+
+    #[test]
+    fn the_action_bar_button_stops_the_logs_and_starts_them_again() {
+        let press = || {
+            AppEvent::Chrome(ChromeEvent::Intent(
+                ChromeIntent::ToggleFilesPanel,
+            ))
+        };
+
+        assert_logs_follow_the_panel(press(), press());
+    }
+
+    #[test]
+    fn focus_mode_stops_the_logs_and_leaving_it_starts_them_again() {
+        assert_logs_follow_the_panel(
+            sidebar_intent(SidebarIntent::ToggleFocusMode),
+            sidebar_intent(SidebarIntent::ToggleFocusMode),
+        );
+    }
+
+    #[test]
+    fn the_focus_mode_shortcut_stops_the_logs_and_starts_them_again() {
+        assert_logs_follow_the_panel(
+            shortcut_press(AppShortcut::FocusMode),
+            shortcut_press(AppShortcut::FocusMode),
+        );
+    }
+
+    #[test]
+    fn the_left_panel_toggle_leaving_focus_mode_starts_the_logs_again() {
+        assert_logs_follow_the_panel(
+            sidebar_intent(SidebarIntent::ToggleFocusMode),
+            sidebar_intent(SidebarIntent::ToggleLeft),
+        );
+    }
+
+    #[test]
+    fn revealing_the_launches_leaving_focus_mode_starts_the_logs_again() {
+        assert_logs_follow_the_panel(
+            sidebar_intent(SidebarIntent::ToggleFocusMode),
+            sidebar_intent(SidebarIntent::RevealLaunches),
+        );
+    }
+
+    #[test]
+    fn revealing_the_right_panel_starts_the_logs_again() {
+        assert_logs_follow_the_panel(
+            sidebar_intent(SidebarIntent::ToggleRight),
+            sidebar_intent(SidebarIntent::RevealRight),
+        );
+    }
+
+    /// A drag of the edge of the right panel to `ratio` of the area right of
+    /// the left panel.
+    fn right_edge_drag(app: &App, ratio: f32) -> AppEvent {
+        let pane_grid::Node::Split { b, .. } =
+            app.widgets.sidebar.panes().layout()
+        else {
+            panic!("sidebar should split the left panel from the rest");
+        };
+        let pane_grid::Node::Split { id: split, .. } = b.as_ref() else {
+            panic!("sidebar should split the main area from the right panel");
+        };
+
+        sidebar_intent(SidebarIntent::Resized(pane_grid::ResizeEvent {
+            split: *split,
+            ratio,
+        }))
+    }
+
+    #[test]
+    fn dragging_the_panel_shut_and_open_stops_and_starts_the_logs() {
+        let app = app_with_open_logs();
+
+        assert_logs_follow_the_panel(
+            right_edge_drag(&app, 1.0),
+            right_edge_drag(&app, 0.7),
+        );
+    }
+
+    #[test]
+    fn a_panel_closed_in_another_mode_keeps_the_logs_off_on_return() {
+        let mut app = app_with_open_logs();
+        update_to_the_end(&mut app, docker_intent(DockerIntent::Leave));
+        update_to_the_end(&mut app, sidebar_intent(SidebarIntent::ToggleRight));
+
+        let _ = update(&mut app, docker_intent(DockerIntent::Enter));
+        let after_enter = is_reading_logs(&app);
+        update_to_the_end(&mut app, sidebar_intent(SidebarIntent::ToggleRight));
+
+        assert!(!after_enter);
+        assert!(is_reading_logs(&app));
+    }
+
+    /// The row press selects the row first and the panel opens two updates
+    /// later: the stream starts once, at the end, and never stops again.
+    #[test]
+    fn a_row_press_that_opens_the_panel_on_the_logs_tab_starts_one_stream() {
+        let mut app = app_with_open_logs();
+        update_to_the_end(&mut app, sidebar_intent(SidebarIntent::ToggleRight));
+
+        let reading = logs_after_each_update(
+            &mut app,
+            docker_intent(DockerIntent::SelectRow(1)),
+        );
+
+        let starts = reading.windows(2).filter(|step| !step[0] && step[1]);
+        let stops = reading.windows(2).filter(|step| step[0] && !step[1]);
+        assert!(app.widgets.sidebar.vm().is_right_open);
+        assert_eq!(starts.count(), 1, "{reading:?}");
+        assert_eq!(stops.count(), 0, "{reading:?}");
+        assert_eq!(reading.last(), Some(&true), "{reading:?}");
+    }
+
+    #[test]
+    fn an_update_that_leaves_the_panel_alone_sends_docker_nothing_new() {
+        let mut app = app_with_open_logs();
+        push_a_log_line(&mut app);
+
+        let follow_ups =
+            collect_outputs(update(&mut app, AppEvent::SyncTerminalGridSizes));
+
+        assert_eq!(log_lines(&app), 1);
+        assert!(!follow_ups.iter().any(|event| matches!(
+            event,
+            AppEvent::Docker(DockerEvent::Intent(_))
+        )));
     }
 
     #[test]

@@ -35,6 +35,9 @@ use super::types::{
 #[derive(Debug, Default)]
 pub(crate) struct DockerState {
     is_active: bool,
+    /// The right panel, where the inspector lives, is off the screen: closed,
+    /// or hidden by focus mode. It starts shown, like the sidebar's.
+    is_right_panel_hidden: bool,
     search: Search,
     /// A search behind the no-engine card is on its way. It leaves `search` as
     /// it is, so the card stays on screen with its buttons.
@@ -87,6 +90,11 @@ impl DockerState {
     /// Return whether Docker mode is the active mode.
     pub(crate) fn is_active(&self) -> bool {
         self.is_active
+    }
+
+    /// Return whether the right panel is off the screen.
+    pub(crate) fn is_right_panel_hidden(&self) -> bool {
+        self.is_right_panel_hidden
     }
 
     /// Return how far the engine search is.
@@ -186,10 +194,18 @@ impl DockerState {
         &self.inspector
     }
 
-    /// Return the container whose logs should be followed now: Docker mode
-    /// is active, the Logs tab is open and a container is selected.
+    /// Return whether the inspector is on screen, as far as the mode, the right
+    /// panel and the Run form go: the form shows the image panel in its place.
+    fn is_inspector_on_screen(&self) -> bool {
+        self.is_active && !self.is_right_panel_hidden && self.run_form.is_none()
+    }
+
+    /// Return the container whose logs should be followed now: the Logs tab is
+    /// on screen and a container is selected.
     pub(crate) fn wanted_log_target(&self) -> Option<LogTarget> {
-        if !self.is_active || self.inspector.tab() != InspectorTab::Logs {
+        if !self.is_inspector_on_screen()
+            || self.inspector.tab() != InspectorTab::Logs
+        {
             return None;
         }
 
@@ -202,12 +218,13 @@ impl DockerState {
     }
 
     /// Return the row whose inspect JSON should be shown now, with its
-    /// engine: Docker mode is active, the Inspect tab is open and a row is
-    /// selected.
+    /// engine: the Inspect tab is on screen and a row is selected.
     pub(crate) fn wanted_inspect_target(
         &self,
     ) -> Option<(EngineInfo, InspectTarget)> {
-        if !self.is_active || self.inspector.tab() != InspectorTab::Inspect {
+        if !self.is_inspector_on_screen()
+            || self.inspector.tab() != InspectorTab::Inspect
+        {
             return None;
         }
 
@@ -367,6 +384,11 @@ impl DockerState {
     /// Mark Docker mode as active or not.
     pub(super) fn set_active(&mut self, is_active: bool) {
         self.is_active = is_active;
+    }
+
+    /// Note whether the right panel is off the screen.
+    pub(super) fn set_right_panel_hidden(&mut self, is_hidden: bool) {
+        self.is_right_panel_hidden = is_hidden;
     }
 
     /// Start a new engine search. Engines found before stay shown until it

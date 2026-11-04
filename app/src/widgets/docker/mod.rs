@@ -57,6 +57,11 @@ impl DockerWidget {
         self.state.is_active()
     }
 
+    /// Return whether the widget counts the right panel as off the screen.
+    pub(crate) fn is_right_panel_hidden(&self) -> bool {
+        self.state.is_right_panel_hidden()
+    }
+
     /// Create the widget before any engine search.
     pub(crate) fn new() -> Self {
         Self {
@@ -142,8 +147,8 @@ impl DockerWidget {
         subscription::subscription(&self.state)
     }
 
-    /// Follow the logs of the selected container while the Logs tab is open
-    /// in Docker mode; nothing otherwise.
+    /// Follow the logs of the selected container while the Logs tab is on
+    /// screen in Docker mode; nothing otherwise.
     fn followed_logs(&self) -> Subscription<DockerEvent> {
         let target = self.state.inspector().logs().map(|logs| logs.target());
 
@@ -344,6 +349,34 @@ mod tests {
         let _ = widget.reduce(DockerIntent::Leave);
 
         assert!(subscriptions(&widget).is_empty());
+    }
+
+    #[test]
+    fn the_logs_subscription_stops_while_the_run_form_is_open() {
+        let mut widget = loaded();
+        let _ =
+            widget.reduce(DockerIntent::SelectInspectorTab(InspectorTab::Logs));
+
+        let _ = widget.reduce(DockerIntent::OpenCreate);
+        let while_open = subscriptions(&widget);
+        let _ = widget.reduce(DockerIntent::RunCancelled);
+
+        assert!(while_open.is_empty());
+        assert_eq!(subscriptions(&widget).len(), 1);
+    }
+
+    #[test]
+    fn the_logs_subscription_stops_while_the_right_panel_is_hidden() {
+        let mut widget = loaded();
+        let _ =
+            widget.reduce(DockerIntent::SelectInspectorTab(InspectorTab::Logs));
+
+        let _ = widget.reduce(DockerIntent::RightPanelHidden(true));
+        let while_hidden = subscriptions(&widget);
+        let _ = widget.reduce(DockerIntent::RightPanelHidden(false));
+
+        assert!(while_hidden.is_empty());
+        assert_eq!(subscriptions(&widget).len(), 1);
     }
 
     fn found(widget: &mut DockerWidget) {

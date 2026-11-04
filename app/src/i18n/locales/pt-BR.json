@@ -274,6 +274,7 @@
     "docker_tab_inspect": "Inspecionar",
     "docker_logs_hint": "Últimas 500 linhas; as novas aparecem conforme chegam.",
     "docker_logs_follow": "Acompanhar",
+    "docker_logs_skipped_output": "… parte da saída foi omitida",
     "docker_logs_one_new_line": "1 linha nova",
     "tpl_docker_logs_new_lines": "{count} linhas novas",
     "tpl_docker_logs_failed": "Não foi possível ler os logs: {error}",
