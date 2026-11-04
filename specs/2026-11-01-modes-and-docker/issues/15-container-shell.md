@@ -33,3 +33,13 @@ Shell is the first button of a running container (inspector and row menu). Tests
 Tests: CLI paths (install folder, wrapper as Podman, `podman` preferred); reducer effects for Docker, Podman, the wrapper, a Docker CLI ignored for Podman, missing CLI, stopped container; view model enabled and disabled with hint; the handler opens the tab and then switches to Terminal mode.
 
 Deviations: the tab uses `ExitBehavior::Close`; no live engine check was run. Manual check: Shell on a running container opens a working `sh` in Terminal mode; Shell is disabled with a hint when the CLI is missing.
+
+## Comments
+
+### Shell goes to the chosen engine (2026-11-04, spec Decision 13)
+
+Shell now runs `docker --host <address> exec -it -- <id> sh`, or `podman --url <address> exec -it -- <id> sh` for a Podman engine (`shell_args` in `app/src/widgets/docker/action_flow.rs`, changed in `f81890c`). Without the address the command went to its own default engine, which may be another one (Colima, Docker Desktop, rootful Podman); `--` keeps an id from being read as a flag.
+
+The `docker exec -it <id> sh` in What and the args `exec -it <id> sh` in the Answer above describe the old command.
+
+The tests check these arguments. No run on a real engine is recorded for the old or the new command; that is step 9 of `regression-checklist.md`.

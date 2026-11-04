@@ -2,6 +2,7 @@ use iced::Task;
 use otty_docker::{Discovery, EngineAddress, EngineInfo};
 
 use super::event::{DockerEffect, DockerEvent, DockerIntent};
+use super::inspector_tabs::refresh_inspect_tree;
 use super::links::LinkTarget;
 use super::state::{DockerState, Search};
 use super::types::{LoadedList, ResourceKind};
@@ -298,6 +299,7 @@ fn sync_inspector(state: &mut DockerState) -> Task<DockerEvent> {
     state
         .inspector_mut()
         .forget_inspect_unless(selected.as_ref());
+    refresh_inspect_tree(state);
 
     let Some((engine, target)) = state.wanted_inspect_target() else {
         return Task::none();
@@ -506,7 +508,7 @@ mod tests {
     use iced::widget::text_editor::Action;
     use otty_docker::{
         Container, ContainerRun, EngineInfo, EngineKind, Image, LogPosition,
-        Network, Volume, fixtures,
+        MAX_LOG_LINE_BYTES, Network, Volume, fixtures,
     };
     use otty_ui_kit::components::data_tree::DataRow;
     use otty_ui_kit::components::key_value_list::ValuePart;
@@ -520,7 +522,7 @@ mod tests {
     use crate::widgets::docker::inspect_tree::InspectTree;
     use crate::widgets::docker::inspector::{
         InspectLoad, InspectTarget, InspectorTab, LogRead, LogTarget,
-        MAX_LOG_LINES,
+        MAX_LOG_LINES, MAX_LOG_TEXT_BYTES,
     };
     use crate::widgets::docker::inspector_tabs::{
         InspectContent, TabContent, inspector_tabs,
@@ -1954,6 +1956,99 @@ mod tests {
         let text = lines.text();
         assert!(text.starts_with("line 100\n"), "{}", &text[..20]);
         assert!(text.ends_with("line 5099"));
+    }
+
+    /// Lines of the longest kind, enough for more than the whole byte limit,
+    /// each starting with its number.
+    fn longest_log_lines() -> Vec<String> {
+        let count = MAX_LOG_TEXT_BYTES / MAX_LOG_LINE_BYTES + 20;
+
+        (0..count)
+            .map(|n| format!("{n:05}{}", "x".repeat(MAX_LOG_LINE_BYTES - 5)))
+            .collect()
+    }
+
+    fn push_batches(state: &mut DockerState, lines: &[String]) {
+        for batch in lines.chunks(50) {
+            let _ = reduce(
+                state,
+                DockerIntent::LogLines {
+                    target: log_target(0),
+                    lines: batch.to_vec(),
+                    position: None,
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn at_most_16_mib_of_log_text_is_kept_and_the_newest_stays() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        let lines = longest_log_lines();
+
+        push_batches(&mut state, &lines);
+
+        assert_eq!(MAX_LOG_TEXT_BYTES, 16 * 1024 * 1024);
+        let text = log_view(&state).text();
+        assert!(text.len() <= MAX_LOG_TEXT_BYTES, "{}", text.len());
+        assert!(text.len() > MAX_LOG_TEXT_BYTES - 2 * MAX_LOG_LINE_BYTES);
+        assert!(!text.starts_with("00000"), "the oldest go first");
+        let newest = lines.last().expect("lines");
+        assert!(text.ends_with(newest.as_str()));
+    }
+
+    #[test]
+    fn the_16_mib_cap_holds_for_the_lines_that_wait_while_follow_is_off() {
+        let mut state = logs_without_follow();
+        let lines = longest_log_lines();
+
+        push_batches(&mut state, &lines);
+
+        let waiting = log_view(&state).pending_count();
+        assert!(waiting < lines.len());
+        assert!(waiting * MAX_LOG_LINE_BYTES <= MAX_LOG_TEXT_BYTES);
+        assert_eq!(log_view(&state).text(), "one\ntwo");
+
+        set_follow(&mut state, true);
+
+        let text = log_view(&state).text();
+        assert!(text.len() <= MAX_LOG_TEXT_BYTES, "{}", text.len());
+        let newest = lines.last().expect("lines");
+        assert!(text.ends_with(newest.as_str()));
+    }
+
+    #[test]
+    fn logs_that_start_over_keep_the_byte_limit() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ContainerStarted {
+                engine: docker().address().clone(),
+                id: container_id(0),
+            },
+        );
+        let target = state
+            .inspector()
+            .logs()
+            .expect("followed logs")
+            .target()
+            .clone();
+
+        for batch in longest_log_lines().chunks(50) {
+            let _ = reduce(
+                &mut state,
+                DockerIntent::LogLines {
+                    target: target.clone(),
+                    lines: batch.to_vec(),
+                    position: None,
+                },
+            );
+        }
+
+        let text = log_view(&state).text();
+        assert!(text.len() <= MAX_LOG_TEXT_BYTES, "{}", text.len());
     }
 
     #[test]

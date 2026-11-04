@@ -87,6 +87,37 @@ pub(crate) fn inspector_tabs(
     })
 }
 
+/// Build the inspect tree again when what it comes from has changed: the
+/// answer, the engine's lists (its links point into them) or the Show empty
+/// switch. The reducer calls this after every intent; the view only reads the
+/// result.
+pub(super) fn refresh_inspect_tree(state: &mut DockerState) {
+    let lists_version = state.lists_version();
+    let Some(value) = state.inspector().answer_of_old_tree(lists_version)
+    else {
+        return;
+    };
+    let Some((engine, row)) = state.selected_row() else {
+        return;
+    };
+
+    let shown_container = match row {
+        SelectedRow::Container(container) => Some(container),
+        _ => None,
+    };
+    let links = InspectLinks {
+        resource: row.resource(),
+        shown_container,
+        containers: engine.containers().items(),
+        images: engine.images().items(),
+        volumes: engine.volumes().items(),
+        networks: engine.networks().items(),
+    };
+    let rows = inspect_tree(value, state.inspector().shows_empty(), &links);
+
+    state.inspector_mut().keep_inspect_tree(rows, lists_version);
+}
+
 /// The Overview fields of `row`; their links point into the engine's
 /// lists, and an image counts its users in the engine's containers.
 fn overview_fields(engine: &EngineState, row: &SelectedRow<'_>) -> Vec<Field> {
@@ -105,8 +136,7 @@ fn overview_fields(engine: &EngineState, row: &SelectedRow<'_>) -> Vec<Field> {
     }
 }
 
-/// The inspect JSON of `row`; loading until it is the one that arrived. The
-/// links of its tree point into the engine's lists.
+/// The inspect JSON of `row`; loading until it is the one that arrived.
 fn inspect_content<'a>(
     state: &'a DockerState,
     engine: &EngineState,
@@ -129,30 +159,17 @@ fn inspect_content<'a>(
 
     match inspect.load() {
         InspectLoad::Loaded(loaded) => {
-            let shows_empty = inspector.shows_empty();
-            let shown_container = match row {
-                SelectedRow::Container(container) => Some(*container),
-                _ => None,
-            };
-            let links = InspectLinks {
-                resource: row.resource(),
-                shown_container,
-                containers: engine.containers().items(),
-                images: engine.images().items(),
-                volumes: engine.volumes().items(),
-                networks: engine.networks().items(),
-            };
             let tree = if inspector.is_raw_json() {
                 None
             } else {
-                inspect_tree(loaded.value(), shows_empty, &links)
+                loaded.tree().cloned()
             };
 
             InspectContent::Loaded(InspectLoadedViewModel {
                 json: loaded.json(),
                 tree,
                 open_sections: loaded.open_sections(),
-                shows_empty,
+                shows_empty: inspector.shows_empty(),
             })
         },
         InspectLoad::Failed(message) => InspectContent::Failed(message),
@@ -162,7 +179,7 @@ fn inspect_content<'a>(
 
 #[cfg(test)]
 mod tests {
-    use otty_docker::{EngineInfo, EngineKind, fixtures};
+    use otty_docker::{EngineInfo, EngineKind, Image, fixtures};
     use otty_ui_kit::components::data_tree::DataRow;
     use otty_ui_kit::components::key_value_list::ValuePart;
 
@@ -173,7 +190,9 @@ mod tests {
     use crate::widgets::docker::links::LinkTarget;
     use crate::widgets::docker::overview;
     use crate::widgets::docker::reducer::reduce;
-    use crate::widgets::docker::types::{LoadedLists, Place, ResourceKind};
+    use crate::widgets::docker::types::{
+        LoadedList, LoadedLists, Place, ResourceKind,
+    };
 
     fn docker() -> EngineInfo {
         fixtures::engine(EngineKind::Docker)
@@ -492,6 +511,163 @@ mod tests {
             assert!(loaded.tree.is_none());
             assert_eq!(loaded.json.text(), "{ \"Id\": \"850b\" }");
         });
+    }
+
+    /// The lists of Docker with `images` in place of its images.
+    fn lists_with_images(images: Vec<Image>) -> LoadedLists {
+        let resources = fixtures::resources(EngineKind::Docker);
+
+        LoadedLists {
+            containers: Ok(resources.containers().to_vec()),
+            images: Ok(images),
+            volumes: Ok(resources.volumes().to_vec()),
+            networks: Ok(resources.networks().to_vec()),
+        }
+    }
+
+    /// The Inspect tab of the first container, whose answer names its image,
+    /// and whether that image is a link now.
+    fn with_image_link() -> DockerState {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let image_id = resources.containers()[0].image_id();
+
+        with_inspect(&format!("{{ \"Image\": \"{image_id}\" }}"))
+    }
+
+    fn image_is_a_link(state: &DockerState) -> bool {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let image_id = resources.containers()[0].image_id();
+        let mut is_link = false;
+
+        check_loaded(state, |loaded| {
+            let tree = loaded.tree.expect("the tree");
+            is_link = tree.general
+                != vec![DataRow::new(0, "Image", image_id.to_string())];
+        });
+
+        is_link
+    }
+
+    /// A row whose lists changed must not keep a link to what is gone.
+    #[test]
+    fn the_links_of_the_tree_go_when_the_lists_no_longer_have_their_target() {
+        let mut state = with_image_link();
+        assert!(image_is_a_link(&state));
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: docker().address().clone(),
+                lists: lists_with_images(Vec::new()),
+            },
+        );
+
+        assert!(!image_is_a_link(&state));
+    }
+
+    #[test]
+    fn the_links_of_the_tree_come_when_one_reloaded_list_has_their_target() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let mut state = loaded();
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: docker().address().clone(),
+                lists: lists_with_images(Vec::new()),
+            },
+        );
+        let image_id = resources.containers()[0].image_id();
+        select_tab(&mut state, InspectorTab::Inspect);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::InspectLoaded {
+                target: InspectTarget::new(
+                    docker().address().clone(),
+                    ResourceKind::Containers,
+                    resources.containers()[0].id(),
+                ),
+                result: Ok(format!("{{ \"Image\": \"{image_id}\" }}")),
+            },
+        );
+        assert!(!image_is_a_link(&state));
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListLoaded {
+                engine: docker().address().clone(),
+                list: LoadedList::Images(Ok(resources.images().to_vec())),
+            },
+        );
+
+        assert!(image_is_a_link(&state));
+    }
+
+    #[test]
+    fn the_tree_changes_with_the_show_empty_switch_after_the_raw_json_switch() {
+        let mut state = with_inspect("{ \"Id\": \"850b\", \"Name\": \"\" }");
+
+        let _ = reduce(&mut state, DockerIntent::InspectRawJsonToggled(true));
+        let _ = reduce(&mut state, DockerIntent::InspectShowEmptyToggled(true));
+        check_loaded(&state, |loaded| assert!(loaded.tree.is_none()));
+        let _ = reduce(&mut state, DockerIntent::InspectRawJsonToggled(false));
+
+        check_loaded(&state, |loaded| {
+            let tree = loaded.tree.expect("the tree");
+            assert_eq!(tree.general.len(), 2);
+        });
+    }
+
+    #[test]
+    fn the_tree_is_up_to_date_when_its_tab_opens_again() {
+        let mut state = with_image_link();
+        select_tab(&mut state, InspectorTab::Overview);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: docker().address().clone(),
+                lists: lists_with_images(Vec::new()),
+            },
+        );
+        select_tab(&mut state, InspectorTab::Inspect);
+
+        assert!(!image_is_a_link(&state));
+    }
+
+    /// Where the kept rows of the tree live in memory: another place means the
+    /// tree was built again.
+    fn kept_rows_address(state: &DockerState) -> *const DataRow<LinkTarget> {
+        let inspect = state.inspector().inspect().expect("an inspect answer");
+        let InspectLoad::Loaded(loaded) = inspect.load() else {
+            panic!("expected the loaded inspect");
+        };
+
+        loaded.tree().expect("the tree").general.as_ptr()
+    }
+
+    #[test]
+    fn the_tree_is_not_built_again_for_what_does_not_change_it() {
+        let mut state = with_image_link();
+        let kept = kept_rows_address(&state);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::InspectSectionToggled(String::from("State")),
+        );
+        let _ = inspector_tabs(&state);
+        let _ = reduce(&mut state, DockerIntent::CopyInspectJson);
+
+        assert_eq!(kept_rows_address(&state), kept);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: docker().address().clone(),
+                lists: lists_with_images(Vec::new()),
+            },
+        );
+
+        assert_ne!(kept_rows_address(&state), kept);
     }
 
     #[test]

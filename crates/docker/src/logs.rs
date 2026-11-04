@@ -1,11 +1,11 @@
 //! Following a container's logs for the inspector's Logs tab (spec
 //! Decision 12).
 //!
-//! bollard splits the engine's answer into stdout and stderr frames (or
-//! plain lines for a container with a terminal); they are kept in the order
-//! they came and cut into lines here. bollard's 30 s request limit covers
-//! only the wait for the answer to start, not the stream after it, so one
-//! client serves both the lists and a long follow.
+//! The engine's answer holds stdout and stderr frames (or plain text for a
+//! container with a terminal); they are kept in the order they came and cut
+//! into lines here (`log_answer.rs`). bollard's 30 s request limit covers only
+//! the wait for the answer to start, not the stream after it, so one client
+//! serves both the lists and a long follow.
 //!
 //! Both engines keep the lines of earlier runs of a container. On a restart
 //! Docker ends the stream; Podman ends it or, with its journald log driver,
@@ -14,31 +14,55 @@
 //!
 //! Every line is read with its time. That tells where a stream stands, so a
 //! later stream can go on from there after a broken connection.
+//!
+//! A run longer than [`MAX_LOG_LINE_BYTES`] is shown as several lines, and
+//! each of them has a position of its own (see [`LogPosition`]).
 
-use bollard::container::LogOutput;
+use std::str;
+
 use bollard::models::ContainerState;
-use bollard::query_parameters::{InspectContainerOptions, LogsOptionsBuilder};
+use bollard::query_parameters::InspectContainerOptions;
 use futures_util::stream::{self, BoxStream, StreamExt, TryStreamExt};
 
 use crate::connection::{Engine, EngineError};
+use crate::log_answer::{
+    AnswerLine, LogAnswer, MAX_LOG_LINE_BYTES, MAX_WAITING_CHAR_BYTES,
+    OutputKind,
+};
 use crate::timestamp::{NANOS_PER_SECOND, unix_nanos};
 
 /// Where a line stands in a container's log: the engine's time of the line
 /// and, because the engines can give several lines one time (Podman's
 /// `k8s-file` gives one time to everything written at once), which line of
-/// that time it is. A newer position sorts after an older one. A stream can
-/// go on from here without repeating or losing a line.
+/// that time it is. What follows that line without a time of its own, such as
+/// the pieces of a long line, counts on as `piece`. A newer position sorts
+/// after an older one. A stream can go on from here without repeating or
+/// losing a line, because a later stream cuts the same text in the same places.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LogPosition {
     time: i64,
     nth_at_time: u32,
+    piece: u32,
 }
 
 impl LogPosition {
     /// The `nth_at_time`-th line (from 1) with the time `time` (nanoseconds
     /// since the Unix epoch).
     pub(crate) fn new(time: i64, nth_at_time: u32) -> Self {
-        Self { time, nth_at_time }
+        Self {
+            time,
+            nth_at_time,
+            piece: 0,
+        }
+    }
+
+    /// The position right after this one, for a line without a time of its
+    /// own.
+    fn next_piece(self) -> Self {
+        Self {
+            piece: self.piece.saturating_add(1),
+            ..self
+        }
     }
 }
 
@@ -59,6 +83,11 @@ impl LogLine {
     /// had a time.
     pub fn position(&self) -> Option<LogPosition> {
         self.position
+    }
+
+    /// A line with `text` that ends at `position`.
+    pub(crate) fn new(text: String, position: Option<LogPosition>) -> Self {
+        Self { text, position }
     }
 
     /// The text, taken out of the line.
@@ -122,8 +151,14 @@ struct LineReader {
     cutoff: Option<i64>,
     /// Lines up to here are on screen already.
     after: Option<LogPosition>,
-    /// The position of the last line with a time.
+    /// The position of the last line read.
     last: Option<LogPosition>,
+    /// The line that was cut is of an earlier run, so its pieces are too.
+    drops_pieces: bool,
+    /// The start of a character at the end of the last open stdout line.
+    waiting_stdout: Vec<u8>,
+    /// The same for stderr: the two outputs come mixed.
+    waiting_stderr: Vec<u8>,
 }
 
 impl LineReader {
@@ -143,37 +178,90 @@ impl LineReader {
         }
     }
 
-    /// The line to show for `line`; `None` when it must be dropped.
-    fn read(&mut self, line: &str) -> Option<LogLine> {
-        let parts = line
-            .split_once(' ')
-            .and_then(|(time, text)| Some((unix_nanos(time)?, text)));
-        let Some((time, text)) = parts else {
-            return (!self.is_before_after()).then(|| LogLine {
-                text: line.to_string(),
-                position: self.last,
-            });
-        };
+    /// The lines to show for `line`, which still has its time: none when it
+    /// must be dropped, several when its text is too long for one.
+    fn read_line(&mut self, line: AnswerLine) -> Vec<LogLine> {
+        let (kind, is_continuation, is_open) =
+            (line.kind(), line.is_continuation(), line.is_open());
+        let mut bytes = line.into_bytes();
 
-        if self.cutoff.is_some_and(|cutoff| time < cutoff) {
-            return None;
+        if is_continuation && self.drops_pieces {
+            return Vec::new();
         }
 
-        let position = next_position(self.last, time);
-        self.last = Some(position);
+        let time = if is_continuation {
+            None
+        } else {
+            take_time(&mut bytes)
+        };
+        self.drops_pieces =
+            time.is_some_and(|time| self.cutoff.is_some_and(|cut| time < cut));
+        if self.drops_pieces {
+            return Vec::new();
+        }
 
-        let is_seen = self.after.is_some_and(|after| position <= after);
-        (!is_seen).then(|| LogLine {
-            text: text.to_string(),
-            position: Some(position),
+        let text = self.text_of(bytes, kind, is_open);
+        let mut position = match time {
+            Some(time) => Some(next_position(self.last, time)),
+            None => self.last.map(LogPosition::next_piece),
+        };
+
+        let mut lines = Vec::new();
+        for piece in pieces_of(text) {
+            if position.is_some() {
+                self.last = position;
+            }
+            if !self.is_seen(position) {
+                lines.push(LogLine::new(piece, position));
+            }
+            position = position.map(LogPosition::next_piece);
+        }
+
+        lines
+    }
+
+    /// The text of `bytes`, with the start of a character that waited for them
+    /// in front. An open line may end in the start of a character; that waits
+    /// for the next line of `kind`.
+    fn text_of(
+        &mut self,
+        mut bytes: Vec<u8>,
+        kind: OutputKind,
+        is_open: bool,
+    ) -> String {
+        let waiting = match kind {
+            OutputKind::Stdout => &mut self.waiting_stdout,
+            OutputKind::Stderr => &mut self.waiting_stderr,
+        };
+
+        if !waiting.is_empty() {
+            waiting.append(&mut bytes);
+            bytes = std::mem::take(waiting);
+        }
+        if is_open {
+            let text_end = bytes.len() - unfinished_char_len(&bytes);
+            *waiting = bytes.split_off(text_end);
+        }
+
+        String::from_utf8(bytes).unwrap_or_else(|err| {
+            String::from_utf8_lossy(err.as_bytes()).into_owned()
         })
     }
 
-    /// Whether the lines read so far have not reached `after` yet, so a line
-    /// without a time belongs to what is on screen already.
-    fn is_before_after(&self) -> bool {
-        self.after
-            .is_some_and(|after| self.last.is_none_or(|last| last < after))
+    /// Whether a line at `position` is on screen already. A line without a
+    /// position comes before the first time, so ahead of any position.
+    fn is_seen(&self, position: Option<LogPosition>) -> bool {
+        self.after.is_some_and(|after| {
+            position.is_none_or(|position| position <= after)
+        })
+    }
+}
+
+#[cfg(test)]
+impl LineReader {
+    /// What `read_line` shows first for one whole line.
+    fn read(&mut self, line: &str) -> Option<LogLine> {
+        self.read_line(AnswerLine::whole(line)).into_iter().next()
     }
 }
 
@@ -204,8 +292,8 @@ impl Engine {
 
     /// Like [`Self::follow_logs`], for a container that just came back: only
     /// the lines of its latest `run`. The engine keeps the lines of earlier
-    /// runs and bollard can ask it for lines since a whole second only, which
-    /// still holds the old run's last lines after a fast restart. So the
+    /// runs and it is asked for lines since a whole second only, which still
+    /// holds the old run's last lines after a fast restart. So the
     /// lines are read with their times and the older ones are dropped here.
     ///
     /// ```no_run
@@ -230,8 +318,8 @@ impl Engine {
     }
 
     /// Like [`Self::follow_logs`], going on after a broken connection: only
-    /// the lines after `after`, at most the last `tail` of them. bollard can
-    /// ask for lines since a whole second only, so the lines of that second
+    /// the lines after `after`, at most the last `tail` of them. The engine is
+    /// asked for lines since a whole second only, so the lines of that second
     /// come again and are dropped here by their exact position.
     ///
     /// ```no_run
@@ -263,6 +351,14 @@ impl Engine {
 
     /// Follow the lines from `since` (nanoseconds since the Unix epoch) with
     /// their times, through `reader`.
+    ///
+    /// bollard's `logs` call cannot be used: for a container with a terminal
+    /// it holds the text until a line break comes, without any limit, and it
+    /// holds a whole frame however long. No public call of bollard takes a
+    /// logs request and gives the bytes as they come. `export_container` gives
+    /// the bytes of `/containers/{name}/export`, so the name here makes that
+    /// the logs request and leaves `/export` to the fragment after `#`, which
+    /// is never sent. `the_engine_sees_a_plain_logs_request` checks this.
     fn read_lines(
         &self,
         id: &str,
@@ -270,50 +366,33 @@ impl Engine {
         since: Option<i64>,
         mut reader: LineReader,
     ) -> BoxStream<'static, Result<LogLine, EngineError>> {
-        let mut options = LogsOptionsBuilder::new()
-            .follow(true)
-            .stdout(true)
-            .stderr(true)
-            .timestamps(true)
-            .tail(&tail.to_string());
-        if let Some(since) = since.and_then(whole_second_before) {
-            options = options.since(since);
-        }
+        let since = since
+            .and_then(whole_second_before)
+            .map_or_else(String::new, |since| format!("&since={since}"));
+        let request = format!(
+            "{id}/logs?follow=true&stdout=true&stderr=true&timestamps=true&tail={tail}{since}#"
+        );
+        let mut answer = LogAnswer::default();
 
         self.client()
-            .logs(id, Some(options.build()))
+            .export_container(&request)
             .map_err(EngineError::from)
-            .map_ok(move |output| {
-                let lines = output_lines(&output)
-                    .iter()
-                    .filter_map(|line| reader.read(line))
+            .map_ok(Some)
+            .chain(stream::once(async { Ok(None) }))
+            .map_ok(move |chunk| {
+                let answer_lines = match chunk {
+                    Some(chunk) => answer.read(&chunk),
+                    None => answer.finish(),
+                };
+                let lines = answer_lines
+                    .into_iter()
+                    .flat_map(|line| reader.read_line(line))
                     .collect::<Vec<_>>();
                 stream::iter(lines).map(Ok)
             })
             .try_flatten()
             .boxed()
     }
-}
-
-/// The lines of one piece of output, without their line breaks. Input the
-/// container read (stdin) is not output and gives no lines.
-fn output_lines(output: &LogOutput) -> Vec<String> {
-    let message = match output {
-        LogOutput::StdOut { message }
-        | LogOutput::StdErr { message }
-        | LogOutput::Console { message } => message,
-        _ => return Vec::new(),
-    };
-
-    let text = String::from_utf8_lossy(message);
-    if text.is_empty() {
-        return Vec::new();
-    }
-
-    let text = text.strip_suffix('\n').unwrap_or(&text);
-    text.split('\n')
-        .map(|line| line.strip_suffix('\r').unwrap_or(line).to_string())
-        .collect()
 }
 
 /// The moment (nanoseconds since the Unix epoch) that divides the latest run's
@@ -339,11 +418,11 @@ fn run_cutoff(
 }
 
 /// The position of a line with the time `time` after a line at `last`. It
-/// never goes back, so a line stamped before the one ahead of it keeps the
-/// position of that one.
+/// never goes back, so a line stamped before the one ahead of it goes right
+/// after that one.
 fn next_position(last: Option<LogPosition>, time: i64) -> LogPosition {
     match last {
-        Some(last) if time < last.time => last,
+        Some(last) if time < last.time => last.next_piece(),
         Some(last) if time == last.time => {
             LogPosition::new(time, last.nth_at_time.saturating_add(1))
         },
@@ -351,10 +430,56 @@ fn next_position(last: Option<LogPosition>, time: i64) -> LogPosition {
     }
 }
 
-/// `nanos` as the whole second at or before it, which is all the engine's
-/// `since` takes through bollard; `None` when it does not fit.
+/// `nanos` as the whole second at or before it, for the engine's `since`;
+/// `None` when it does not fit.
 fn whole_second_before(nanos: i64) -> Option<i32> {
     i32::try_from(nanos.div_euclid(NANOS_PER_SECOND)).ok()
+}
+
+/// Take the time at the start of `bytes` and the space after it; `None`, with
+/// `bytes` as they were, when they do not start with a time.
+fn take_time(bytes: &mut Vec<u8>) -> Option<i64> {
+    let end = bytes.iter().position(|byte| *byte == b' ')?;
+    let time = unix_nanos(str::from_utf8(&bytes[..end]).ok()?)?;
+
+    bytes.drain(..=end);
+    Some(time)
+}
+
+/// How many bytes at the end of `bytes` are the start of a character whose
+/// rest has not come yet.
+fn unfinished_char_len(bytes: &[u8]) -> usize {
+    let is_later_byte_of_char = |byte: &u8| *byte & 0b1100_0000 == 0b1000_0000;
+    let Some(later_bytes) = bytes
+        .iter()
+        .rev()
+        .take(MAX_WAITING_CHAR_BYTES)
+        .position(|byte| !is_later_byte_of_char(byte))
+    else {
+        return 0;
+    };
+    let char_start = bytes.len() - later_bytes - 1;
+
+    match str::from_utf8(&bytes[char_start..]) {
+        Err(err) if err.error_len().is_none() => bytes.len() - char_start,
+        _ => 0,
+    }
+}
+
+/// `text` as pieces of at most [`MAX_LOG_LINE_BYTES`], cut between characters.
+/// Text can be longer than what was cut before it was read: each bad byte
+/// becomes a replacement character of three bytes.
+fn pieces_of(mut text: String) -> Vec<String> {
+    let mut pieces = Vec::with_capacity(1);
+
+    while text.len() > MAX_LOG_LINE_BYTES {
+        let rest = text.split_off(text.floor_char_boundary(MAX_LOG_LINE_BYTES));
+        pieces.push(text);
+        text = rest;
+    }
+    pieces.push(text);
+
+    pieces
 }
 
 #[cfg(test)]
@@ -365,7 +490,6 @@ mod tests {
     use std::thread::JoinHandle;
 
     use bollard::models::SystemVersion;
-    use futures_util::TryStreamExt;
 
     use super::*;
     use crate::address::EngineAddress;
@@ -391,10 +515,15 @@ mod tests {
     /// One frame of the multiplexed log format: kind, three zero bytes, the
     /// big-endian length, then the text.
     fn frame(kind: u8, text: &str) -> Vec<u8> {
+        frame_bytes(kind, text.as_bytes())
+    }
+
+    /// Like [`frame`], for text that may not be valid UTF-8.
+    fn frame_bytes(kind: u8, text: &[u8]) -> Vec<u8> {
         let length = u32::try_from(text.len()).expect("short text");
         let mut frame = vec![kind, 0, 0, 0];
         frame.extend_from_slice(&length.to_be_bytes());
-        frame.extend_from_slice(text.as_bytes());
+        frame.extend_from_slice(text);
         frame
     }
 
@@ -467,6 +596,26 @@ mod tests {
             .filter_map(|line| reader.read(line))
             .map(LogLine::into_text)
             .collect()
+    }
+
+    /// What `reader` shows of a whole answer in `chunks`.
+    fn read_answer(reader: &mut LineReader, chunks: &[&[u8]]) -> Vec<LogLine> {
+        let mut answer = LogAnswer::default();
+        let mut lines = Vec::new();
+        for chunk in chunks {
+            for line in answer.read(chunk) {
+                lines.extend(reader.read_line(line));
+            }
+        }
+        for line in answer.finish() {
+            lines.extend(reader.read_line(line));
+        }
+        lines
+    }
+
+    /// All the text of `lines`, as one run.
+    fn joined(lines: &[LogLine]) -> String {
+        lines.iter().map(LogLine::text).collect()
     }
 
     /// The texts of log lines.
@@ -602,16 +751,18 @@ mod tests {
     }
 
     #[test]
-    fn a_line_without_a_time_stays_at_the_last_position() {
+    fn a_line_without_a_time_goes_right_after_the_last_position() {
         let mut reader = LineReader::default();
 
         let before = reader.read("no time yet").expect("a line");
         let timed = reader.read("2026-11-04T01:05:09Z timed").expect("a line");
         let after = reader.read("no time again").expect("a line");
+        let next = reader.read("2026-11-04T01:05:09Z next").expect("a line");
 
         assert_eq!(before.position(), None);
         assert!(timed.position().is_some());
-        assert_eq!(after.position(), timed.position());
+        assert!(after.position() > timed.position());
+        assert!(next.position() > after.position());
     }
 
     /// stdout and stderr are copied apart, so one can be stamped a little
@@ -626,7 +777,260 @@ mod tests {
 
         assert_eq!(older.text(), "older");
         assert!(newer.position().is_some());
-        assert_eq!(older.position(), newer.position());
+        assert!(older.position() > newer.position());
+    }
+
+    /// The stream broke after the newer line. The older line behind it was not
+    /// on screen yet, so it comes on the next stream.
+    #[test]
+    fn a_line_with_an_older_time_is_not_lost_when_the_stream_goes_on() {
+        let mut reader = LineReader::default();
+        let newer = reader.read("2026-11-04T01:05:09Z newer").expect("line");
+        let position = newer.position().expect("a position");
+
+        let mut next = LineReader::after(position);
+        let lines = shown(
+            &mut next,
+            &["2026-11-04T01:05:09Z newer", "2026-11-04T01:05:08Z older"],
+        );
+
+        assert_eq!(lines, ["older"]);
+    }
+
+    /// Text that is sure to be cut, and a line after it with the same time.
+    fn long_answer(text: &str) -> Vec<u8> {
+        let mut body = format!("{SHARED_TIME} {text}\n").into_bytes();
+        body.extend(format!("{SHARED_TIME} next\n").into_bytes());
+        frame_bytes(STDOUT, &body)
+    }
+
+    #[test]
+    fn a_long_line_becomes_several_that_keep_all_of_its_text() {
+        let text = "x".repeat(3 * MAX_LOG_LINE_BYTES + 10);
+
+        let lines =
+            read_answer(&mut LineReader::default(), &[&long_answer(&text)]);
+
+        assert_eq!(lines.len(), 5);
+        assert!(
+            lines
+                .iter()
+                .all(|line| line.text().len() <= MAX_LOG_LINE_BYTES)
+        );
+        assert_eq!(lines[4].text(), "next");
+        assert_eq!(joined(&lines[..4]), text);
+    }
+
+    #[test]
+    fn a_long_line_is_never_cut_inside_a_character() {
+        for prefix in ["", "a", "ab", "abc"] {
+            let text = format!("{prefix}{}", "語😀é".repeat(30_000));
+
+            let lines =
+                read_answer(&mut LineReader::default(), &[&long_answer(&text)]);
+
+            assert!(lines.len() > 2);
+            assert!(
+                lines
+                    .iter()
+                    .all(|line| line.text().len() <= MAX_LOG_LINE_BYTES)
+            );
+            assert!(!lines.iter().any(|line| line.text().contains('\u{FFFD}')));
+            assert_eq!(joined(&lines[..lines.len() - 1]), text);
+        }
+    }
+
+    /// Docker cuts a long line by bytes into frames, each with its own time.
+    #[test]
+    fn a_character_across_two_frames_stays_whole() {
+        let text = "語";
+        let (start, end) = text.as_bytes().split_at(2);
+        let mut first = format!("{SHARED_TIME} before ").into_bytes();
+        first.extend_from_slice(start);
+        let mut second = format!("{SHARED_TIME} ").into_bytes();
+        second.extend_from_slice(end);
+        second.extend_from_slice(b" after\n");
+        let mut body = frame_bytes(STDOUT, &first);
+        body.extend(frame_bytes(STDOUT, &second));
+
+        let lines = read_answer(&mut LineReader::default(), &[&body]);
+
+        assert_eq!(texts(&lines), ["before ", "語 after"]);
+    }
+
+    #[test]
+    fn a_character_across_two_frames_waits_past_the_other_output() {
+        let (start, end) = "é".as_bytes().split_at(1);
+        let mut first = format!("{SHARED_TIME} out ").into_bytes();
+        first.extend_from_slice(start);
+        let mut last = format!("{SHARED_TIME} ").into_bytes();
+        last.extend_from_slice(end);
+        last.push(b'\n');
+        let mut body = frame_bytes(STDOUT, &first);
+        body.extend(frame_bytes(
+            STDERR,
+            format!("{SHARED_TIME} err\n").as_bytes(),
+        ));
+        body.extend(frame_bytes(STDOUT, &last));
+
+        let lines = read_answer(&mut LineReader::default(), &[&body]);
+
+        assert_eq!(texts(&lines), ["out ", "err", "é"]);
+    }
+
+    #[test]
+    fn a_character_cut_by_the_chunks_of_the_answer_stays_whole() {
+        let body =
+            frame_bytes(STDOUT, format!("{SHARED_TIME} 語語\n").as_bytes());
+        let chunks: Vec<&[u8]> = body.chunks(1).collect();
+
+        let lines = read_answer(&mut LineReader::default(), &chunks);
+
+        assert_eq!(texts(&lines), ["語語"]);
+    }
+
+    #[test]
+    fn broken_text_is_shown_as_replacement_and_a_broken_end_does_not_wait() {
+        let mut bytes = format!("{SHARED_TIME} bad ").into_bytes();
+        bytes.extend_from_slice(&[0xFF, b'x', 0xE8, 0xAA]);
+        bytes.push(b'\n');
+        bytes.extend_from_slice(format!("{SHARED_TIME} next\n").as_bytes());
+
+        let lines = read_answer(
+            &mut LineReader::default(),
+            &[&frame_bytes(STDOUT, &bytes)],
+        );
+
+        assert_eq!(texts(&lines), ["bad \u{FFFD}x\u{FFFD}", "next"]);
+    }
+
+    /// One bad byte becomes a three-byte replacement, so what the engine sent
+    /// can grow when it is read as text.
+    #[test]
+    fn a_long_run_of_broken_bytes_still_fits_the_line_limit() {
+        let bytes = vec![0xFF_u8; MAX_LOG_LINE_BYTES];
+
+        let lines = read_answer(
+            &mut LineReader::default(),
+            &[&frame_bytes(STDOUT, &bytes)],
+        );
+
+        assert!(lines.len() >= 3);
+        assert!(
+            lines
+                .iter()
+                .all(|line| line.text().len() <= MAX_LOG_LINE_BYTES)
+        );
+        assert_eq!(
+            lines
+                .iter()
+                .map(|line| line.text().chars().count())
+                .sum::<usize>(),
+            bytes.len()
+        );
+    }
+
+    #[test]
+    fn the_pieces_of_a_long_line_each_have_a_later_position() {
+        let text = "x".repeat(3 * MAX_LOG_LINE_BYTES);
+
+        let lines =
+            read_answer(&mut LineReader::default(), &[&long_answer(&text)]);
+
+        let positions: Vec<LogPosition> = lines
+            .iter()
+            .map(|line| line.position().expect("a position"))
+            .collect();
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+        assert_eq!(positions[0], LogPosition::new(SHARED_NANOS, 1));
+        assert_eq!(
+            positions[positions.len() - 1],
+            LogPosition::new(SHARED_NANOS, 2)
+        );
+    }
+
+    /// A stream can break after any piece. The next stream reads the whole line
+    /// again, so what it shows must be exactly what was still missing.
+    #[test]
+    fn going_on_after_any_piece_neither_loses_nor_repeats_text() {
+        let text = "語".repeat(70_000);
+        let body = long_answer(&text);
+        let lines = read_answer(&mut LineReader::default(), &[&body]);
+        assert!(lines.len() > 3);
+
+        for (index, line) in lines.iter().enumerate() {
+            let position = line.position().expect("a position");
+
+            let rest = read_answer(&mut LineReader::after(position), &[&body]);
+
+            assert_eq!(rest, lines[index + 1..], "after piece {index}");
+        }
+    }
+
+    /// A stream of a terminal that never sends a line break has no later time
+    /// to go on from, only its pieces.
+    #[test]
+    fn going_on_inside_a_run_without_a_line_break_gives_only_the_rest() {
+        let mut body = format!("{SHARED_TIME} ").into_bytes();
+        body.extend(vec![b'x'; 3 * MAX_LOG_LINE_BYTES]);
+        let lines = read_answer(&mut LineReader::default(), &[&body]);
+        assert!(lines.len() > 2);
+        let position = lines[1].position().expect("a position");
+
+        let rest = read_answer(&mut LineReader::after(position), &[&body]);
+
+        assert_eq!(rest, lines[2..]);
+    }
+
+    /// The pieces after the first have no time of their own, but they are of
+    /// the older run too.
+    #[test]
+    fn the_pieces_of_a_line_of_an_older_run_are_dropped_with_it() {
+        let cutoff = Some(SHARED_NANOS + 1);
+        let old = format!("{SHARED_TIME} {}\n", "x".repeat(200_000));
+        let mut body = frame_bytes(STDOUT, old.as_bytes());
+        body.extend(frame_bytes(STDOUT, b"2026-11-04T00:05:09Z new\n"));
+
+        let lines = read_answer(&mut LineReader::of_run(cutoff), &[&body]);
+
+        assert_eq!(texts(&lines), ["new"]);
+    }
+
+    /// A piece can start with what looks like a time, and it is still text.
+    #[test]
+    fn a_piece_that_starts_like_a_time_keeps_its_text() {
+        let piece_room = "x".repeat(
+            MAX_LOG_LINE_BYTES - MAX_WAITING_CHAR_BYTES - SHARED_TIME.len() - 1,
+        );
+        let text = format!("{piece_room}2026-11-04T00:05:09Z rest");
+        let line = format!("{SHARED_TIME} {text}\n");
+
+        let lines = read_answer(
+            &mut LineReader::default(),
+            &[&frame_bytes(STDOUT, line.as_bytes())],
+        );
+
+        assert_eq!(texts(&lines)[1], "2026-11-04T00:05:09Z rest");
+    }
+
+    #[test]
+    fn a_stream_without_a_line_break_gives_bounded_lines_and_keeps_the_newest()
+    {
+        let mut reader = LineReader::default();
+        let mut answer = LogAnswer::default();
+        let chunk = vec![b'x'; 64 * 1024];
+        let mut last = String::new();
+
+        for _ in 0..500 {
+            for line in answer.read(&chunk) {
+                for shown in reader.read_line(line) {
+                    assert!(shown.text().len() <= MAX_LOG_LINE_BYTES);
+                    last = shown.into_text();
+                }
+            }
+        }
+
+        assert!(!last.is_empty());
     }
 
     #[test]
@@ -1019,6 +1423,130 @@ mod tests {
         );
         let line = server.join().expect("server thread");
         assert!(line.contains("tail=10"), "{line}");
+    }
+
+    /// bollard's own logs call waits for a line break in plain text without
+    /// any limit, so the request is made another way. To the engine it must
+    /// still be the plain logs request.
+    #[tokio::test]
+    async fn the_engine_sees_a_plain_logs_request() {
+        let dir = TempDir::new();
+        let path = dir.path().join("engine.sock");
+        let listener = UnixListener::bind(&path).expect("bind test socket");
+        let server = serve_logs(
+            listener,
+            "application/vnd.docker.raw-stream",
+            Vec::new(),
+        );
+
+        let lines: Vec<LogLine> = engine_at(&path)
+            .follow_logs_after("c178", LogPosition::new(SHARED_NANOS, 2), 5000)
+            .try_collect()
+            .await
+            .expect("log lines");
+
+        assert!(lines.is_empty());
+        let line = server.join().expect("server thread");
+        assert_eq!(
+            line,
+            "GET /containers/c178/logs?follow=true&stdout=true&stderr=true&timestamps=true&tail=5000&since=1793750708 HTTP/1.1"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_terminal_stream_without_a_line_break_comes_in_bounded_lines() {
+        let dir = TempDir::new();
+        let path = dir.path().join("engine.sock");
+        let listener = UnixListener::bind(&path).expect("bind test socket");
+        let text = "語".repeat(100_000);
+        let body = format!("{SHARED_TIME} {text}").into_bytes();
+        let server =
+            serve_logs(listener, "application/vnd.docker.raw-stream", body);
+
+        let lines: Vec<LogLine> = engine_at(&path)
+            .follow_logs("b93d6f0a", 10)
+            .try_collect()
+            .await
+            .expect("log lines");
+
+        server.join().expect("server thread");
+        assert!(lines.len() > 4);
+        assert!(
+            lines
+                .iter()
+                .all(|line| line.text().len() <= MAX_LOG_LINE_BYTES)
+        );
+        assert_eq!(joined(&lines), text);
+    }
+
+    /// The first lines come while the engine still holds the stream open and
+    /// no line break has come: nothing here waits for one.
+    #[tokio::test]
+    async fn a_terminal_stream_gives_lines_before_any_line_break_comes() {
+        let dir = TempDir::new();
+        let path = dir.path().join("engine.sock");
+        let listener = UnixListener::bind(&path).expect("bind test socket");
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let server = std::thread::spawn(move || {
+            let mut stream =
+                listener.incoming().flatten().next().expect("a client");
+            read_request_line(&mut stream).expect("a request");
+            let body = format!("{SHARED_TIME} {}", "x".repeat(200_000));
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.docker.raw-stream\r\nTransfer-Encoding: chunked\r\n\r\n";
+            let size = body.len();
+            stream.write_all(head.as_bytes()).expect("the head");
+            stream
+                .write_all(format!("{size:x}\r\n{body}\r\n").as_bytes())
+                .expect("a chunk");
+            let _ = released.recv();
+            let _ = stream.write_all(b"0\r\n\r\n");
+        });
+
+        let mut lines = engine_at(&path).follow_logs("b93d6f0a", 10);
+        let wait = std::time::Duration::from_secs(10);
+        let first = tokio::time::timeout(wait, lines.next()).await;
+
+        release.send(()).expect("the server waits");
+        server.join().expect("server thread");
+        let line = first
+            .expect("a line before the stream ended")
+            .expect("a line")
+            .expect("no error");
+        assert!(line.text().starts_with("xxx"));
+        assert!(line.text().len() <= MAX_LOG_LINE_BYTES);
+    }
+
+    /// The whole way of a broken connection: the first stream stops after a
+    /// piece of a long line, the next one goes on from that piece's position.
+    #[tokio::test]
+    async fn a_new_stream_goes_on_after_a_piece_of_a_long_line() {
+        let dir = TempDir::new();
+        let text = "x".repeat(3 * MAX_LOG_LINE_BYTES);
+        let body = long_answer(&text);
+        let kind = "application/vnd.docker.multiplexed-stream";
+
+        let first_path = dir.path().join("first.sock");
+        let listener = UnixListener::bind(&first_path).expect("bind");
+        let server = serve_logs(listener, kind, body.clone());
+        let lines: Vec<LogLine> = engine_at(&first_path)
+            .follow_logs("c178", 500)
+            .try_collect()
+            .await
+            .expect("log lines");
+        server.join().expect("server thread");
+        let position = lines[1].position().expect("a position");
+
+        let next_path = dir.path().join("next.sock");
+        let listener = UnixListener::bind(&next_path).expect("bind");
+        let server = serve_logs(listener, kind, body);
+        let rest: Vec<LogLine> = engine_at(&next_path)
+            .follow_logs_after("c178", position, 5000)
+            .try_collect()
+            .await
+            .expect("log lines");
+        server.join().expect("server thread");
+
+        assert_eq!(rest, lines[2..]);
     }
 
     #[tokio::test]

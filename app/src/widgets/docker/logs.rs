@@ -16,6 +16,9 @@ const CHANNEL_SIZE: usize = 100;
 /// The most lines sent in one message; the first answer brings up to
 /// [`LOG_TAIL`] lines at once.
 const BATCH_LINES: usize = LOG_TAIL;
+/// A message is full once its lines hold this much text: up to
+/// [`CHANNEL_SIZE`] messages can wait here, and as many again in iced.
+const BATCH_BYTES: usize = 128 * 1024;
 
 /// The lines of one message and what ended them.
 #[derive(Debug, Default)]
@@ -108,19 +111,21 @@ fn follow(target: &LogTarget) -> BoxStream<'static, DockerEvent> {
     ))
 }
 
-/// `first` and the lines that are already waiting, up to [`BATCH_LINES`],
-/// where they end and the error that came instead of a line.
+/// `first` and the lines that are already waiting, up to [`BATCH_LINES`] and
+/// [`BATCH_BYTES`], where they end and the error that came instead of a line.
 fn ready_lines(
     first: Result<LogLine, EngineError>,
     lines: &mut BoxStream<'static, Result<LogLine, EngineError>>,
 ) -> LineBatch {
     let mut batch = LineBatch::default();
+    let mut bytes = 0;
     let mut next = Some(first);
 
     while let Some(item) = next {
         match item {
             Ok(line) => {
                 batch.position = line.position();
+                bytes += line.text().len();
                 batch.lines.push(line.into_text());
             },
             Err(err) => {
@@ -128,7 +133,7 @@ fn ready_lines(
                 return batch;
             },
         }
-        if batch.lines.len() == BATCH_LINES {
+        if batch.lines.len() == BATCH_LINES || bytes >= BATCH_BYTES {
             break;
         }
         next = lines.next().now_or_never().flatten();
@@ -159,7 +164,7 @@ mod tests {
     use iced::Executor;
     use iced::futures::executor::block_on;
     use iced::futures::stream;
-    use otty_docker::fixtures;
+    use otty_docker::{MAX_LOG_LINE_BYTES, fixtures};
 
     use super::*;
 
@@ -388,6 +393,87 @@ mod tests {
             DockerIntent::LogsFailed { error, .. }
                 if error.to_string().contains("No such container")
         ));
+    }
+
+    /// `count` lines of `bytes` bytes each that are already waiting.
+    fn waiting_lines(
+        count: usize,
+        bytes: usize,
+    ) -> BoxStream<'static, Result<LogLine, EngineError>> {
+        let lines: Vec<Result<LogLine, EngineError>> = (0..count)
+            .map(|_| Ok(fixtures::log_line(&"x".repeat(bytes), None)))
+            .collect();
+
+        stream::iter(lines).boxed()
+    }
+
+    #[test]
+    fn a_batch_stops_at_its_line_limit() {
+        let mut rest = waiting_lines(BATCH_LINES + 10, 1);
+        let first = Ok(fixtures::log_line("first", None));
+
+        let batch = ready_lines(first, &mut rest);
+
+        assert_eq!(batch.lines.len(), BATCH_LINES);
+    }
+
+    /// Up to 100 messages can wait for the app, so one message must not hold
+    /// [`BATCH_LINES`] lines of the longest kind.
+    #[test]
+    fn a_batch_of_long_lines_stops_at_its_byte_limit() {
+        let mut rest = waiting_lines(BATCH_LINES, MAX_LOG_LINE_BYTES);
+        let first = Ok(fixtures::log_line("first", None));
+
+        let batch = ready_lines(first, &mut rest);
+
+        let bytes: usize = batch.lines.iter().map(String::len).sum();
+        assert!(bytes >= BATCH_BYTES, "{bytes}");
+        assert!(bytes < BATCH_BYTES + MAX_LOG_LINE_BYTES, "{bytes}");
+    }
+
+    #[test]
+    fn what_a_batch_left_comes_in_the_next_one_in_order() {
+        let lines: Vec<Result<LogLine, EngineError>> = (0..6)
+            .map(|n| {
+                let text = format!("{n}{}", "x".repeat(MAX_LOG_LINE_BYTES - 1));
+                Ok(fixtures::log_line(&text, None))
+            })
+            .collect();
+        let mut rest: BoxStream<'static, Result<LogLine, EngineError>> =
+            stream::iter(lines).boxed();
+
+        let mut firsts = Vec::new();
+        while let Some(first) = block_on(rest.next()) {
+            let batch = ready_lines(first, &mut rest);
+            firsts.extend(batch.lines.iter().map(|line| line[..1].to_string()));
+        }
+
+        assert_eq!(firsts, ["0", "1", "2", "3", "4", "5"]);
+    }
+
+    /// The whole way to the app: one long run comes as lines that fit the limit
+    /// and lose nothing, and each message says where it ends.
+    #[test]
+    fn a_long_run_reaches_the_app_in_lines_that_fit_the_limit() {
+        let socket = TestSocket::new();
+        let text = "語".repeat(150_000);
+        let line: &'static str =
+            format!("2026-11-03T17:46:22.049Z {text}").leak();
+        let lines: &'static [&'static str] = vec![line].leak();
+        let server = serve(&socket, Some(RUN), lines);
+
+        let intents = followed_intents(&target_at(&socket, LogRead::LastLines));
+
+        server.join().expect("the server");
+        let shown = lines_of(&intents);
+        assert!(shown.len() > 1);
+        assert!(shown.iter().all(|line| line.len() <= MAX_LOG_LINE_BYTES));
+        assert_eq!(shown.concat(), text);
+        let is_position_told = intents.iter().all(|intent| match intent {
+            DockerIntent::LogLines { position, .. } => position.is_some(),
+            _ => true,
+        });
+        assert!(is_position_told, "{intents:?}");
     }
 
     #[test]

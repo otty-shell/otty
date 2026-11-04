@@ -11,7 +11,7 @@ use otty_ui_kit::components::log_view::LogViewState;
 use serde_json::Value;
 
 use super::errors::DockerError;
-use super::inspect_tree::first_section_title;
+use super::inspect_tree::{InspectTree, first_section_title};
 use super::types::ResourceKind;
 use crate::i18n::{self, Key};
 
@@ -19,6 +19,9 @@ use crate::i18n::{self, Key};
 pub(crate) const LOG_TAIL: usize = 500;
 /// The most log lines kept; older lines are dropped.
 pub(crate) const MAX_LOG_LINES: usize = 5000;
+/// The most log text kept, in bytes; older lines are dropped. It holds for the
+/// shown lines and for the lines waiting while Follow is off, each on its own.
+pub(crate) const MAX_LOG_TEXT_BYTES: usize = 16 * 1024 * 1024;
 
 /// The tabs of a container.
 const CONTAINER_TABS: [InspectorTab; 3] = [
@@ -208,7 +211,7 @@ impl ContainerLogs {
         &self.target
     }
 
-    /// The lines, at most [`MAX_LOG_LINES`].
+    /// The lines, at most [`MAX_LOG_LINES`] and [`MAX_LOG_TEXT_BYTES`].
     pub(crate) fn lines(&self) -> &LogViewState {
         &self.lines
     }
@@ -222,7 +225,7 @@ impl ContainerLogs {
     fn new(target: LogTarget) -> Self {
         Self {
             target,
-            lines: LogViewState::new().max_lines(MAX_LOG_LINES),
+            lines: empty_log_lines(),
             error: None,
             shown_run: None,
             position: None,
@@ -236,7 +239,7 @@ impl ContainerLogs {
         let is_following = self.lines.is_following();
 
         self.target.next_stream(LogRead::LatestRun);
-        self.lines = LogViewState::new().max_lines(MAX_LOG_LINES);
+        self.lines = empty_log_lines();
         self.lines.set_following(is_following);
         self.error = None;
         self.shown_run = None;
@@ -299,11 +302,22 @@ enum LogsAfterReconnect {
     Keep,
 }
 
+/// The rows of an inspect tree and what they were built from.
+struct KeptTree {
+    rows: Option<InspectTree>,
+    lists_version: u64,
+    shows_empty: bool,
+}
+
 /// The inspect answer of one row and how its tree is open.
 pub(crate) struct LoadedInspect {
     json: LogViewState,
     value: Value,
     open_sections: BTreeSet<String>,
+    /// Built when the answer, the lists or the Show empty switch change, not on
+    /// every rebuild of the view: it walks the answer and checks its values
+    /// against the lists.
+    tree: Option<KeptTree>,
 }
 
 impl LoadedInspect {
@@ -312,14 +326,15 @@ impl LoadedInspect {
         &self.json
     }
 
-    /// The parsed JSON; `Null` when the answer does not parse.
-    pub(crate) fn value(&self) -> &Value {
-        &self.value
-    }
-
     /// The titles of the open sections of the tree.
     pub(crate) fn open_sections(&self) -> &BTreeSet<String> {
         &self.open_sections
+    }
+
+    /// The rows of the tree; `None` when the answer is not a JSON object, or
+    /// while the tree has not been built because nothing shows it.
+    pub(crate) fn tree(&self) -> Option<&InspectTree> {
+        self.tree.as_ref()?.rows.as_ref()
     }
 
     /// The answer `json`, with the first shown section of its tree open.
@@ -333,6 +348,7 @@ impl LoadedInspect {
             json: json_view(json),
             value,
             open_sections: first_section.into_iter().collect(),
+            tree: None,
         }
     }
 
@@ -619,6 +635,44 @@ impl InspectorState {
         }
     }
 
+    /// The loaded answer whose tree is on screen and was not built from the
+    /// lists at `lists_version` with the current Show empty switch.
+    pub(super) fn answer_of_old_tree(
+        &self,
+        lists_version: u64,
+    ) -> Option<&Value> {
+        if self.tab != InspectorTab::Inspect || self.is_raw_json {
+            return None;
+        }
+        let InspectLoad::Loaded(loaded) = self.inspect.as_ref()?.load() else {
+            return None;
+        };
+
+        let is_current = loaded.tree.as_ref().is_some_and(|tree| {
+            tree.lists_version == lists_version
+                && tree.shows_empty == self.shows_empty
+        });
+        (!is_current).then_some(&loaded.value)
+    }
+
+    /// Keep `rows` as the tree of the loaded answer, built from the lists at
+    /// `lists_version` with the current Show empty switch.
+    pub(super) fn keep_inspect_tree(
+        &mut self,
+        rows: Option<InspectTree>,
+        lists_version: u64,
+    ) {
+        let shows_empty = self.shows_empty;
+
+        if let Some(loaded) = self.loaded_inspect_mut() {
+            loaded.tree = Some(KeptTree {
+                rows,
+                lists_version,
+                shows_empty,
+            });
+        }
+    }
+
     /// Apply a selection or scroll action of the inspect view.
     pub(super) fn perform_inspect_action(&mut self, action: Action) {
         if let Some(loaded) = self.loaded_inspect_mut() {
@@ -691,6 +745,12 @@ fn logs_after_reconnect(
 }
 
 /// The JSON as read-only lines, shown from its first line.
+fn empty_log_lines() -> LogViewState {
+    LogViewState::new()
+        .max_lines(MAX_LOG_LINES)
+        .max_bytes(MAX_LOG_TEXT_BYTES)
+}
+
 fn json_view(json: &str) -> LogViewState {
     let mut view = LogViewState::new();
     view.push_lines(json.lines());

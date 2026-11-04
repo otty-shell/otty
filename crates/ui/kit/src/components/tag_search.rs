@@ -383,6 +383,18 @@ impl TagSearch {
         }
     }
 
+    /// Whether any row can fail [`Self::passes`]. Without tags and name text
+    /// every row passes, so the rows need not be built to ask.
+    ///
+    /// ```
+    /// use otty_ui_kit::components::tag_search::TagSearch;
+    ///
+    /// assert!(!TagSearch::default().filters_rows(&[]));
+    /// ```
+    pub fn filters_rows(&self, keys: &[TagKey]) -> bool {
+        !self.tags.is_empty() || !self.name_text(keys).is_empty()
+    }
+
     /// Whether `row` passes the tags and the name text.
     pub fn passes(&self, keys: &[TagKey], row: &SearchRow) -> bool {
         self.passes_tags(row)
@@ -1773,6 +1785,22 @@ mod tests {
     }
 
     // Matching.
+
+    #[test]
+    fn a_search_with_no_tags_and_no_text_filters_no_rows() {
+        assert!(!TagSearch::default().filters_rows(&keys()));
+        assert!(!typed("   ").filters_rows(&keys()));
+        assert!(!typed("status:").filters_rows(&keys()));
+    }
+
+    #[test]
+    fn a_search_with_text_or_a_tag_filters_rows() {
+        let mut tagged = TagSearch::default();
+        let _ = tagged.set_tag("compose", "web");
+
+        assert!(typed("web").filters_rows(&keys()));
+        assert!(tagged.filters_rows(&keys()));
+    }
 
     #[test]
     fn with_no_tags_and_no_text_every_row_passes() {

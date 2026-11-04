@@ -27,14 +27,19 @@ const SELECTION_OPACITY: f32 = 0.35;
 /// does not move; they are added when following is switched on again.
 /// Scrolling up stops following, so the user can read while lines arrive.
 ///
-/// With [`LogViewState::max_lines`] the oldest lines are dropped once there
-/// are more, so a long-running log does not grow without end.
+/// With [`LogViewState::max_lines`] and [`LogViewState::max_bytes`] the oldest
+/// lines are dropped once there are more, so a long-running log does not grow
+/// without end. Each limit holds for the shown lines and for the held-back
+/// lines on their own, so a log that does not follow can hold twice as much.
 pub struct LogViewState {
     content: Content,
     pending: Vec<String>,
     is_following: bool,
     has_lines: bool,
     max_lines: Option<usize>,
+    max_bytes: Option<usize>,
+    shown_bytes: usize,
+    pending_bytes: usize,
 }
 
 impl LogViewState {
@@ -46,6 +51,9 @@ impl LogViewState {
             is_following: true,
             has_lines: false,
             max_lines: None,
+            max_bytes: None,
+            shown_bytes: 0,
+            pending_bytes: 0,
         }
     }
 
@@ -62,6 +70,23 @@ impl LogViewState {
     /// ```
     pub fn max_lines(mut self, max: usize) -> Self {
         self.max_lines = Some(max);
+        self
+    }
+
+    /// Keeps at most `max` bytes of text, each line break counted: the oldest
+    /// shown and held-back lines are dropped first. The newest line always
+    /// stays, whatever its length.
+    ///
+    /// ```
+    /// use otty_ui_kit::components::log_view::LogViewState;
+    ///
+    /// let mut state = LogViewState::new().max_bytes(10);
+    /// state.push_lines(["one", "two", "three"]);
+    ///
+    /// assert_eq!(state.text(), "two\nthree");
+    /// ```
+    pub fn max_bytes(mut self, max: usize) -> Self {
+        self.max_bytes = Some(max);
         self
     }
 
@@ -96,13 +121,12 @@ impl LogViewState {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.pending.extend(lines.into_iter().map(Into::into));
-        if let Some(max) = self.line_limit()
-            && self.pending.len() > max
-        {
-            let dropped = self.pending.len() - max;
-            self.pending.drain(..dropped);
+        for line in lines {
+            let line = line.into();
+            self.pending_bytes += line_bytes(&line);
+            self.pending.push(line);
         }
+        self.drop_oldest_pending();
 
         if self.is_following {
             self.show_pending();
@@ -135,9 +159,41 @@ impl LogViewState {
         self.content.perform(action);
     }
 
-    /// The most lines kept, at least one; `None` keeps every line.
-    fn line_limit(&self) -> Option<usize> {
-        self.max_lines.map(|max| max.max(1))
+    /// Drops the oldest held-back lines that are over the limits.
+    fn drop_oldest_pending(&mut self) {
+        let first = self.first_kept_line(&self.pending);
+
+        for line in self.pending.drain(..first) {
+            self.pending_bytes -= line_bytes(&line);
+        }
+    }
+
+    /// The index in `lines` of the first line that fits the limits, counted
+    /// from the newest. The newest line always fits.
+    fn first_kept_line(&self, lines: &[String]) -> usize {
+        let max_lines = self.max_lines.unwrap_or(usize::MAX);
+        let max_bytes = self.max_bytes.unwrap_or(usize::MAX);
+
+        let mut kept = 0;
+        let mut bytes = 0;
+        for line in lines.iter().rev() {
+            bytes += line_bytes(line);
+            if kept > 0 && (kept >= max_lines || bytes > max_bytes) {
+                break;
+            }
+            kept += 1;
+        }
+
+        lines.len() - kept
+    }
+
+    /// Whether the shown and the held-back lines together are over a limit.
+    fn is_over_limits(&self) -> bool {
+        let lines = self.line_count() + self.pending.len();
+        let bytes = self.shown_bytes + self.pending_bytes;
+
+        self.max_lines.is_some_and(|max| lines > max.max(1))
+            || self.max_bytes.is_some_and(|max| bytes > max)
     }
 
     /// Adds the held-back lines at the end and moves the cursor there, which
@@ -147,20 +203,21 @@ impl LogViewState {
             return;
         }
 
-        let total = self.line_count() + self.pending.len();
-        if let Some(max) = self.line_limit()
-            && total > max
-        {
-            self.keep_last_lines(max);
+        if self.is_over_limits() {
+            self.keep_last_lines();
             return;
         }
 
-        let mut text = self.pending.join("\n");
-        if self.has_lines {
-            text.insert(0, '\n');
+        let mut text = String::with_capacity(self.pending_bytes);
+        for line in self.pending.drain(..) {
+            if self.has_lines {
+                text.push('\n');
+            }
+            text.push_str(&line);
+            self.has_lines = true;
         }
-        self.pending.clear();
-        self.has_lines = true;
+        self.shown_bytes += self.pending_bytes;
+        self.pending_bytes = 0;
 
         self.content.perform(Action::Move(Motion::DocumentEnd));
         self.content
@@ -176,10 +233,13 @@ impl LogViewState {
         self.content.perform(Action::Move(Motion::DocumentEnd));
     }
 
-    /// Replaces the text with the last `max` of the shown and held-back
-    /// lines and moves the cursor to the end. `text_editor` cannot delete
-    /// whole lines from the top without a layout, so the text is rebuilt.
-    fn keep_last_lines(&mut self, max: usize) {
+    /// Replaces the text with the newest of the shown and held-back lines
+    /// that fit the limits and moves the cursor to the end. `text_editor`
+    /// cannot delete whole lines from the top without a layout, so the text
+    /// is rebuilt. It is pasted, because `Content::with_text` lays out every
+    /// line at once, which takes seconds for a full log: a paste lays out only
+    /// what is on screen.
+    fn keep_last_lines(&mut self) {
         let mut lines: Vec<String> = if self.has_lines {
             self.content
                 .lines()
@@ -190,10 +250,15 @@ impl LogViewState {
         };
         lines.append(&mut self.pending);
 
-        let first = lines.len().saturating_sub(max);
-        self.content = Content::with_text(&lines[first..].join("\n"));
+        let kept = &lines[self.first_kept_line(&lines)..];
+        let text = kept.join("\n");
+        self.shown_bytes = kept.iter().map(|line| line_bytes(line)).sum();
+        self.pending_bytes = 0;
         self.has_lines = true;
 
+        self.content = Content::new();
+        self.content
+            .perform(Action::Edit(Edit::Paste(Arc::new(text))));
         self.content.perform(Action::Move(Motion::DocumentEnd));
     }
 }
@@ -299,6 +364,11 @@ impl<'a, Message: 'a> From<LogView<'a, Message>> for Element<'a, Message> {
     }
 }
 
+/// What a line counts for against the byte limit: its text and a line break.
+fn line_bytes(line: &str) -> usize {
+    line.len() + 1
+}
+
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
@@ -356,6 +426,107 @@ mod tests {
         assert_eq!(state.text(), "three\nfour\nfive");
         assert_eq!(state.line_count(), 3);
         assert_eq!(state.content.cursor().position.line, 2);
+    }
+
+    /// Lines of `bytes` bytes each, every line starting with its number so a
+    /// test can tell which ones stayed.
+    fn long_lines(count: usize, bytes: usize) -> Vec<String> {
+        (0..count)
+            .map(|number| format!("{number:04}{}", "x".repeat(bytes - 4)))
+            .collect()
+    }
+
+    #[test]
+    fn given_byte_limit_when_text_grows_past_it_then_the_oldest_lines_go() {
+        let mut state = LogViewState::new().max_bytes(100);
+
+        state.push_lines(long_lines(5, 29));
+        state.push_lines(long_lines(1, 29));
+
+        assert_eq!(state.line_count(), 3);
+        assert!(state.text().len() <= 100, "{}", state.text().len());
+        assert!(state.text().starts_with("0003"), "{}", state.text());
+        assert!(state.text().ends_with('x'));
+        assert_eq!(state.content.cursor().position.line, 2);
+    }
+
+    #[test]
+    fn given_byte_limit_when_lines_fit_then_all_of_them_stay() {
+        let mut state = LogViewState::new().max_bytes(100);
+
+        state.push_lines(long_lines(1, 29));
+        state.push_lines(long_lines(2, 29));
+
+        assert_eq!(state.line_count(), 3);
+    }
+
+    #[test]
+    fn given_byte_limit_when_a_later_small_batch_overflows_then_it_still_holds()
+    {
+        let mut state = LogViewState::new().max_bytes(100);
+
+        for _ in 0..40 {
+            state.push_lines(["ten bytes."]);
+        }
+
+        assert!(state.text().len() <= 100, "{}", state.text().len());
+        assert_eq!(state.line_count(), 9);
+    }
+
+    #[test]
+    fn given_byte_limit_when_not_following_then_held_back_lines_are_capped() {
+        let mut state = LogViewState::new().max_bytes(100);
+        state.push_lines(["first line of twenty"]);
+        state.set_following(false);
+
+        state.push_lines(long_lines(5, 29));
+
+        assert_eq!(state.text(), "first line of twenty");
+        assert_eq!(state.pending_count(), 3);
+        state.set_following(true);
+        assert!(state.text().starts_with("0002"), "{}", state.text());
+        assert!(state.text().len() <= 100, "{}", state.text().len());
+        assert_eq!(state.pending_count(), 0);
+    }
+
+    #[test]
+    fn given_byte_limit_when_one_line_is_longer_then_the_newest_line_stays() {
+        let mut state = LogViewState::new().max_bytes(10);
+
+        state.push_lines(["old", "much longer than ten bytes"]);
+
+        assert_eq!(state.text(), "much longer than ten bytes");
+        assert_eq!(state.line_count(), 1);
+    }
+
+    #[test]
+    fn given_both_limits_when_lines_arrive_then_the_tighter_one_counts() {
+        let mut by_lines = LogViewState::new().max_lines(2).max_bytes(1000);
+        let mut by_bytes = LogViewState::new().max_lines(100).max_bytes(40);
+
+        by_lines.push_lines(long_lines(4, 9));
+        by_bytes.push_lines(long_lines(4, 9));
+
+        assert_eq!(by_lines.line_count(), 2);
+        assert!(by_lines.text().starts_with("0002"));
+        assert_eq!(by_bytes.line_count(), 4);
+        by_bytes.push_lines(long_lines(1, 9));
+        assert_eq!(by_bytes.line_count(), 4);
+    }
+
+    #[test]
+    fn given_shown_lines_when_more_are_added_then_their_bytes_are_counted_once()
+    {
+        let mut state = LogViewState::new().max_bytes(100);
+        state.push_lines(long_lines(3, 29));
+        state.set_following(false);
+        state.push_lines(long_lines(1, 29));
+
+        state.set_following(true);
+        state.push_lines(long_lines(1, 29));
+
+        assert_eq!(state.line_count(), 3);
+        assert!(state.text().len() <= 100, "{}", state.text().len());
     }
 
     #[test]

@@ -101,7 +101,9 @@ Setup before the first walk:
 9. Select a running `otty-fx-*` container, press Shell in the inspector; then
    the same from the row "..." menu.
    Expected: OTTY switches to Terminal mode with a new tab running
-   `docker exec -it <id> sh`; exiting the shell closes it normally.
+   `docker --host <address> exec -it -- <id> sh`, where `<address>` is the
+   address of that container's engine; exiting the shell closes it normally.
+   On Podman the tab runs `podman --url <address> exec -it -- <id> sh`.
 
 ## Live updates
 

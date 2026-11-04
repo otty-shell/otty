@@ -158,9 +158,13 @@ pub(crate) fn is_sortable(resource: ResourceKind, column: usize) -> bool {
     }
 }
 
-/// Order the shown containers by `sort`; ties are ordered by name. The Ports
-/// column compares the text of its cell, which is built for each comparison.
+/// Order the shown containers by `sort`; ties are ordered by name.
 pub(crate) fn sort_containers(rows: &mut [&Container], sort: TableSort) {
+    if sort.column == CONTAINER_PORTS {
+        sort_containers_by_ports(rows, sort.order);
+        return;
+    }
+
     rows.sort_by(|a, b| {
         let primary = match sort.column {
             CONTAINER_STATUS => {
@@ -169,9 +173,6 @@ pub(crate) fn sort_containers(rows: &mut [&Container], sort: TableSort) {
             CONTAINER_IMAGE => compare_text(a.image(), b.image()),
             CONTAINER_COMPOSE => {
                 compare_optional_text(a.compose_project(), b.compose_project())
-            },
-            CONTAINER_PORTS => {
-                compare_text(&ports_text(a.ports()), &ports_text(b.ports()))
             },
             CONTAINER_AGE => a.created().cmp(&b.created()),
             _ => compare_text(a.name(), b.name()),
@@ -259,6 +260,25 @@ fn natural_order(resource: ResourceKind, column: usize) -> SortOrder {
         SortOrder::Descending
     } else {
         SortOrder::Ascending
+    }
+}
+
+/// Order the shown containers by the text of their Ports cell, which is built
+/// once for each row before the sort; ties are ordered by name.
+fn sort_containers_by_ports(rows: &mut [&Container], order: SortOrder) {
+    let mut keyed: Vec<(String, &Container)> = rows
+        .iter()
+        .map(|container| (ports_text(container.ports()), *container))
+        .collect();
+
+    keyed.sort_by(|(a_ports, a), (b_ports, b)| {
+        order
+            .apply(compare_text(a_ports, b_ports))
+            .then_with(|| compare_text(a.name(), b.name()))
+    });
+
+    for (row, (_, container)) in rows.iter_mut().zip(keyed) {
+        *row = container;
     }
 }
 
@@ -754,6 +774,25 @@ mod tests {
                 ["alpha", "Beta", "zeta"],
                 "{order:?}"
             );
+        }
+    }
+
+    /// Rows the sort cannot tell apart keep the order they came in.
+    #[test]
+    fn rows_with_the_same_ports_and_name_keep_their_order() {
+        let ports: &[(Option<&str>, Option<u16>, u16, &str)] =
+            &[(Some("0.0.0.0"), Some(80), 80, "tcp")];
+        let containers: Vec<Container> = (0..4)
+            .map(|_| fixtures::container_named_with_ports("same", ports))
+            .collect();
+
+        for order in both() {
+            let mut rows: Vec<&Container> = containers.iter().collect();
+            sort_containers(&mut rows, sort_of(CONTAINER_PORTS, order));
+
+            for (row, container) in rows.iter().zip(&containers) {
+                assert!(std::ptr::eq(*row, container), "{order:?}");
+            }
         }
     }
 

@@ -131,10 +131,13 @@ pub(crate) fn shown_containers<'a>(
     sort: TableSort,
 ) -> Vec<&'a Container> {
     let keys = keys(ResourceKind::Containers);
+    let filters_rows = search.filters_rows(&keys);
 
     let mut shown: Vec<&Container> = containers
         .iter()
-        .filter(|item| search.passes(&keys, &container_row(item, now)))
+        .filter(|item| {
+            !filters_rows || search.passes(&keys, &container_row(item, now))
+        })
         .collect();
     sort_containers(&mut shown, sort);
 
@@ -149,10 +152,13 @@ pub(crate) fn shown_images<'a>(
     sort: TableSort,
 ) -> Vec<&'a Image> {
     let keys = keys(ResourceKind::Images);
+    let filters_rows = search.filters_rows(&keys);
 
     let mut shown: Vec<&Image> = images
         .iter()
-        .filter(|item| search.passes(&keys, &image_row(item, now)))
+        .filter(|item| {
+            !filters_rows || search.passes(&keys, &image_row(item, now))
+        })
         .collect();
     sort_images(&mut shown, sort);
 
@@ -167,10 +173,13 @@ pub(crate) fn shown_volumes<'a>(
     sort: TableSort,
 ) -> Vec<&'a Volume> {
     let keys = keys(ResourceKind::Volumes);
+    let filters_rows = search.filters_rows(&keys);
 
     let mut shown: Vec<&Volume> = volumes
         .iter()
-        .filter(|item| search.passes(&keys, &volume_row(item, now)))
+        .filter(|item| {
+            !filters_rows || search.passes(&keys, &volume_row(item, now))
+        })
         .collect();
     sort_volumes(&mut shown, sort);
 
@@ -185,10 +194,13 @@ pub(crate) fn shown_networks<'a>(
     sort: TableSort,
 ) -> Vec<&'a Network> {
     let keys = keys(ResourceKind::Networks);
+    let filters_rows = search.filters_rows(&keys);
 
     let mut shown: Vec<&Network> = networks
         .iter()
-        .filter(|item| search.passes(&keys, &network_row(item, now)))
+        .filter(|item| {
+            !filters_rows || search.passes(&keys, &network_row(item, now))
+        })
         .collect();
     sort_networks(&mut shown, sort);
 

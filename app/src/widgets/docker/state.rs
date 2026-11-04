@@ -47,6 +47,9 @@ pub(crate) struct DockerState {
     /// for the same reason.
     home_folder: Option<PathBuf>,
     engines: Vec<EngineState>,
+    /// Goes up whenever a list of any engine may have changed; what is built
+    /// from the lists compares it to know when to build again.
+    lists_version: u64,
     /// The list the main area shows. Its engine may be closed in the tree:
     /// closing an engine does not change what the main area shows.
     place: Option<Place>,
@@ -99,6 +102,11 @@ impl DockerState {
     /// Return the home folder the last finished search found.
     pub(crate) fn home_folder(&self) -> Option<&Path> {
         self.home_folder.as_deref()
+    }
+
+    /// Return the version of the engines' lists; see the field.
+    pub(crate) fn lists_version(&self) -> u64 {
+        self.lists_version
     }
 
     /// Return the reached engines, in search order.
@@ -385,6 +393,7 @@ impl DockerState {
         };
         let shown_row = self.selected_id().map(str::to_string);
 
+        self.lists_version += 1;
         let mut previous = std::mem::take(&mut self.engines);
         self.engines = reached
             .into_iter()
@@ -432,6 +441,7 @@ impl DockerState {
         };
 
         engine.apply_lists(lists);
+        self.lists_version += 1;
         true
     }
 
@@ -451,6 +461,7 @@ impl DockerState {
         };
 
         engine.apply_list(list);
+        self.lists_version += 1;
         true
     }
 

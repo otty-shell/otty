@@ -31,7 +31,7 @@ use crate::discovery::Discovery;
 use crate::engine::{EngineInfo, EngineKind};
 use crate::image::Image;
 use crate::image_defaults::ImageDefaults;
-use crate::logs::{ContainerRun, LogPosition};
+use crate::logs::{ContainerRun, LogLine, LogPosition};
 use crate::probe::{Probe, ProbeOutcome};
 use crate::pull::PullProgress;
 use crate::volume::Volume;
@@ -443,6 +443,11 @@ pub fn container_run(started_at: i64, is_running: bool) -> ContainerRun {
 /// seconds after the Unix epoch.
 pub fn log_position(time: i64, nth: u32) -> LogPosition {
     LogPosition::new(time * 1_000_000_000, nth)
+}
+
+/// A log line with `text` that ends at `position`.
+pub fn log_line(text: &str, position: Option<LogPosition>) -> LogLine {
+    LogLine::new(text.to_string(), position)
 }
 
 /// A search that reached the fixture engines of `kinds`.

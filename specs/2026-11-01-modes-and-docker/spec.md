@@ -427,7 +427,12 @@ none of those are in scope (see Out of Scope).
 16. **New dependencies.** `bollard = "0.21.1"` (default features: unix socket
     and http; no ssl, no ssh) and `futures-util` (already in the tree through
     bollard and iced) to read bollard's streams, both only in `otty-docker`
-    (owner approved, 2026-11-01). `cargo deny check` must stay clean.
+    (owner approved, 2026-11-01). `otty-docker` also uses crates the workspace
+    already builds, so these add no new crate: `tokio` (features `net`,
+    `process`, `sync`, `time`: socket checks, `docker --version` with a time
+    limit, timers), `serde_json` (pretty-prints inspect answers, reads the
+    captured engine answers in tests), `log` and `thiserror`. `cargo deny
+    check` must stay clean.
 17. **All new text is translated** in the ten locales of `app/src/i18n/locales`.
 18. **Run container is a form in the main area** (owner request, 2026-11-01),
     laid out like the launch editor. It opens from "Run container" above the
@@ -630,13 +635,13 @@ a `Class:` line; review checks the diff against it.
 - [x] AC2: The All modes menu lists Pinned (with "N of 4") and Other modes; Pin and Unpin change the tabs at once; Terminal has no Unpin; with 4 pinned, Pin is disabled with the hint; picking an unpinned mode shows it as a temporary outlined tab that goes away when another mode is chosen.
 - [x] AC3: Pinned modes survive a restart (`modes.json`); a missing or broken file gives the defaults; OTTY starts in Terminal mode.
 - [x] AC4: The shortcuts in Decision 6 work with and without a focused terminal; Ctrl 1–5 and Ctrl M without Shift still reach the shell (keymap unit test plus a manual `cat -v` check). The palette switches modes.
-- [x] AC5: With Docker running, Docker mode shows a "Docker <version>" root with Containers, Compose projects, Images, Volumes, Networks and their counts; with Podman (`podman.socket` on) a "Podman <version>" root; with both, two roots. Lists match `docker ps -a`, `docker images`, `docker volume ls`, `docker network ls` (and the `podman` equivalents); the Images table and the count of its tree row have one row per `repository:tag`, as the `REPOSITORY` and `TAG` columns of `docker images` print them (Decision 10; `the_image_rows_match_the_command_line` in `crates/docker/tests/live_engine.rs` compares them on a real engine).
+- [ ] AC5: With Docker running, Docker mode shows a "Docker <version>" root with Containers ("N running"), Images, Volumes, Networks and their counts; Compose projects are not in the tree, the Containers table has a Compose column instead (Decision 19); with Podman (`podman.socket` on) a "Podman <version>" root; with both, two roots. Lists match `docker ps -a`, `docker images`, `docker volume ls`, `docker network ls` (and the `podman` equivalents); the Images table and the count of its tree row have one row per `repository:tag`, as the `REPOSITORY` and `TAG` columns of `docker images` print them (Decision 10; `the_image_rows_match_the_command_line` in `crates/docker/tests/live_engine.rs` compares them on a real engine). Waiting: no recorded run of the app on a real engine, and no recorded run of that test. Only the crate's listing is recorded on real engines (tickets 07, 08, 21); checklist steps 1, 2 and 4a are not walked yet.
 - [x] AC6: Each case in Decision 9 shows its text and buttons; the install and docs buttons open the browser; Copy command puts the command on the clipboard, on each command of a card with two; Check again finds an engine started meanwhile without a restart, and OTTY finds it by itself within about 5 seconds while the card shows, with no flicker of the card.
-- [x] AC7: Every action in Decision 11 works on Docker and on Podman; destructive actions ask first; an engine error shows a Notice and leaves the table as it was (reducer tests for each action's effect; mapping tests in `otty-docker`).
+- [ ] AC7: Every action in Decision 11 works on Docker and on Podman; destructive actions ask first; an engine error shows a Notice and leaves the table as it was (reducer tests for each action's effect; mapping tests in `otty-docker`). Waiting: the tests use a fake engine, and no recorded run of these actions on a real engine (only image removal calls made by hand, ticket 12); checklist steps 3, 4, 4a and 4b are not walked yet.
 - [x] AC8: The inspector shows Overview, Logs (follows new lines, stops on tab or selection change) and Inspect for the selected row.
-- [x] AC8a: Run container starts a container with the image, name, command, ports, environment, volumes, network, restart policy and auto remove from the form (checked with `docker inspect` / `podman inspect`); a missing image is pulled first when the switch is on; each check in Decision 18 blocks Run with its message; an engine error keeps the form as typed (reducer tests for the checks and for the mapping of the form to the create request).
-- [x] AC9: Shell opens a terminal tab inside the container with the engine's own CLI and switches to Terminal mode; without the CLI the button is disabled with a hint.
-- [x] AC10: Starting, stopping or removing a container from another terminal updates the table within a second without Refresh; nothing talks to the engine while Terminal mode is active (event subscription test on the mode).
+- [ ] AC8a: Run container starts a container with the image, name, command, ports, environment, volumes, network, restart policy and auto remove from the form (checked with `docker inspect` / `podman inspect`); a missing image is pulled first when the switch is on; each check in Decision 18 blocks Run with its message; an engine error keeps the form as typed (reducer tests for the checks and for the mapping of the form to the create request). Waiting: the tests use a fake engine, and no recorded `docker inspect` / `podman inspect` run (ticket 14 says it is still to do); checklist steps 5 to 8 are not walked yet.
+- [ ] AC9: Shell opens a terminal tab inside the container with the engine's own CLI and switches to Terminal mode; without the CLI the button is disabled with a hint. Waiting: tests check the command and the disabled button, and no recorded run on a real engine (ticket 15); checklist step 9 is not walked yet.
+- [ ] AC10: Starting, stopping or removing a container from another terminal updates the table within a second without Refresh; nothing talks to the engine while Terminal mode is active (event subscription test on the mode). Waiting: no recorded run of the table on a real engine. Ticket 16 records only the crate's event watch on real Docker, not the app and not Podman; checklist steps 10 and 11 are not walked yet.
 - [x] AC11: Every component in Decision 15 is in `otty-ui-kit`, shown in `cargo run -p otty-ui-kit --example gallery` in both themes, with at least one `iced_test` interaction test.
 - [ ] AC12: Screenshots of Terminal mode with the switcher, the open All modes menu, each Docker table, the inspector tabs and each Decision 9 case, in OTTY Dark and OTTY Light, are attached to the PR.
 - [x] AC13: `cargo +nightly fmt --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features` and `cargo deny check` pass; line coverage from `cargo llvm-cov --workspace --all-features` is strictly greater than on the merge base.
@@ -652,7 +657,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 - CPU and memory columns (they need a stats call per container).
 - Running a container attached to a terminal (`run -it`), resource limits, health checks and labels in the Run form; building images, `docker compose up/down`, connecting containers to networks, editing containers.
 - Search, drag to reorder and the grip in the All modes menu.
-- Multi-select and column sorting in tables.
+- Multi-select in tables.
 - Windows (not a supported platform).
 
 ## Tickets
