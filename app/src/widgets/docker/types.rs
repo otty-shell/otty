@@ -16,7 +16,7 @@ const DANGLING_IMAGE_NAME: &str = "<none>:<none>";
 const NO_IMAGE_PART: &str = "<none>";
 
 /// What the main area of Docker mode lists (spec Decision 10).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ResourceKind {
     Containers,
     Images,
@@ -64,9 +64,10 @@ impl ResourceKind {
     }
 }
 
-/// The open place of Docker mode: which engine and which of its lists the
-/// main area shows.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A page of Docker mode: one list of one engine, such as the containers of
+/// Docker or the images of Podman. Each page has its own search and sort
+/// (spec Decision 21).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Place {
     engine: EngineAddress,
     resource: ResourceKind,
@@ -218,7 +219,6 @@ mod tests {
     };
 
     use super::*;
-    use crate::widgets::docker::sort::TableSorts;
 
     const NOW: i64 = 1_793_557_960;
 
@@ -250,7 +250,7 @@ mod tests {
 
     fn container_names(search: &TagSearch) -> Vec<String> {
         let resources = fixtures::resources(EngineKind::Docker);
-        let sort = TableSorts::default().get(ResourceKind::Containers);
+        let sort = TableSort::default_for(ResourceKind::Containers);
 
         shown_containers(resources.containers(), search, NOW, sort)
             .iter()
@@ -331,25 +331,24 @@ mod tests {
     #[test]
     fn each_list_is_filtered_by_its_own_keys_and_names() {
         let resources = fixtures::resources(EngineKind::Docker);
-        let sorts = TableSorts::default();
 
         let images = shown_images(
             resources.images(),
             &search(&[("repository", "busybox")], ""),
             NOW,
-            sorts.get(ResourceKind::Images),
+            TableSort::default_for(ResourceKind::Images),
         );
         let volumes = shown_volumes(
             resources.volumes(),
             &search(&[], "fx-data"),
             NOW,
-            sorts.get(ResourceKind::Volumes),
+            TableSort::default_for(ResourceKind::Volumes),
         );
         let networks = shown_networks(
             resources.networks(),
             &search(&[("driver", "null")], ""),
             NOW,
-            sorts.get(ResourceKind::Networks),
+            TableSort::default_for(ResourceKind::Networks),
         );
 
         assert_eq!(images.len(), 1);
@@ -378,7 +377,7 @@ mod tests {
             &[],
             &[],
         );
-        let sort = TableSorts::default().get(ResourceKind::Images);
+        let sort = TableSort::default_for(ResourceKind::Images);
 
         let shown = shown_images(
             &images,
@@ -396,7 +395,7 @@ mod tests {
     fn plain_text_finds_an_image_by_repository_and_tag_together() {
         let images =
             fixtures::image_rows("sha256:app", &["a:1", "a:2"], &[], &[]);
-        let sort = TableSorts::default().get(ResourceKind::Images);
+        let sort = TableSort::default_for(ResourceKind::Images);
 
         let shown = shown_images(&images, &search(&[], "a:2"), NOW, sort);
 

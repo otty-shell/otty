@@ -1,6 +1,7 @@
 //! Watches the events of every reached engine while Docker mode is active
 //! (spec Decision 14) and turns them into Docker intents. Also asks again
-//! about the folders of the Run form while it has any.
+//! about the folders of the Run form while it has any, and looks for engines
+//! while the no-engine card shows (spec Decision 9).
 
 use std::time::Duration;
 
@@ -15,6 +16,9 @@ use super::types::ResourceKind;
 
 /// How often the folders of the Run form are asked about again.
 const FOLDER_RECHECK_PERIOD: Duration = Duration::from_secs(2);
+
+/// How often the engines are looked for while the no-engine card shows.
+const ENGINE_SEARCH_PERIOD: Duration = Duration::from_secs(5);
 
 /// One events watch per reached engine; the widget asks for it only while
 /// Docker mode is active. The watch of an engine is keyed by what the engine
@@ -38,6 +42,20 @@ pub(super) fn folder_recheck(state: &DockerState) -> Subscription<DockerEvent> {
 
     iced::time::every(FOLDER_RECHECK_PERIOD)
         .map(|_| DockerEvent::Intent(DockerIntent::RecheckFolders))
+}
+
+/// A timer that looks for engines while the no-engine card is on screen in
+/// active Docker mode, so an engine that starts takes over by itself. It stops
+/// as soon as the card goes.
+pub(super) fn engine_search_timer(
+    state: &DockerState,
+) -> Subscription<DockerEvent> {
+    if !state.is_active() || !state.shows_no_engine_card() {
+        return Subscription::none();
+    }
+
+    iced::time::every(ENGINE_SEARCH_PERIOD)
+        .map(|_| DockerEvent::Intent(DockerIntent::EngineSearchTick))
 }
 
 /// The intent an event of the engine at `engine` asks for.
@@ -171,6 +189,85 @@ mod tests {
 
         assert!(state.run_form().is_some());
         assert_eq!(folder_recheck(&state).units(), 0);
+    }
+
+    #[test]
+    fn the_engine_timer_runs_while_the_card_shows() {
+        let state = found(&[]);
+
+        assert_eq!(engine_search_timer(&state).units(), 1);
+    }
+
+    #[test]
+    fn the_engine_timer_runs_for_every_card() {
+        for discovery in [
+            fixtures::discovery_with_cli(&[], Some("/bin/docker"), None),
+            fixtures::discovery_with_cli(&[], None, Some("/bin/podman")),
+            fixtures::discovery_with_cli(
+                &[],
+                Some("/bin/docker"),
+                Some("/bin/podman"),
+            ),
+            fixtures::denied_discovery(
+                fixtures::DOCKER_SOCKET,
+                otty_docker::CandidateSource::Docker,
+            ),
+        ] {
+            let mut state = found(&[]);
+
+            let _ =
+                reduce(&mut state, DockerIntent::DiscoveryFinished(discovery));
+
+            assert_eq!(engine_search_timer(&state).units(), 1);
+        }
+    }
+
+    #[test]
+    fn the_engine_timer_does_not_run_while_engines_are_shown() {
+        let state = found(&[EngineKind::Docker]);
+
+        assert_eq!(engine_search_timer(&state).units(), 0);
+    }
+
+    #[test]
+    fn the_engine_timer_does_not_run_before_the_first_search_finishes() {
+        let mut state = DockerState::default();
+        let _ = reduce(&mut state, DockerIntent::Enter);
+
+        assert_eq!(engine_search_timer(&state).units(), 0);
+    }
+
+    #[test]
+    fn the_engine_timer_stops_when_docker_mode_is_left() {
+        let mut state = found(&[]);
+
+        let _ = reduce(&mut state, DockerIntent::Leave);
+
+        assert_eq!(engine_search_timer(&state).units(), 0);
+    }
+
+    #[test]
+    fn the_engine_timer_stops_as_soon_as_the_card_goes() {
+        let mut state = found(&[]);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::BackgroundSearchFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ])),
+        );
+
+        assert_eq!(engine_search_timer(&state).units(), 0);
+    }
+
+    /// While Check again runs, the card is replaced by "searching".
+    #[test]
+    fn the_engine_timer_waits_while_check_again_runs() {
+        let mut state = found(&[]);
+
+        let _ = reduce(&mut state, DockerIntent::CheckAgain);
+
+        assert_eq!(engine_search_timer(&state).units(), 0);
     }
 
     #[test]

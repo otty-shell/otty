@@ -146,6 +146,7 @@ fn list_counts<T>(
 #[cfg(test)]
 mod tests {
     use otty_docker::{EngineInfo, EngineKind, fixtures};
+    use otty_ui_kit::components::tag_search::TagSearchAction;
 
     use super::*;
     use crate::widgets::docker::errors::DockerError;
@@ -195,6 +196,21 @@ mod tests {
     fn open(state: &mut DockerState, resource: ResourceKind) {
         let place = Place::new(docker().address().clone(), resource);
         let _ = reduce(state, DockerIntent::Open(place));
+    }
+
+    #[test]
+    fn the_counts_are_of_the_whole_list_whatever_the_page_filters() {
+        let mut state = loaded(&[EngineKind::Docker]);
+        let whole_list = status_bar(&state).info;
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::TagSearch(TagSearchAction::InputChanged(
+                String::from("no such name"),
+            )),
+        );
+
+        assert_eq!(status_bar(&state).info, whole_list);
     }
 
     #[test]

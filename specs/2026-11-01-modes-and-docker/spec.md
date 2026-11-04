@@ -168,15 +168,34 @@ none of those are in scope (see Out of Scope).
    | Case | How it is detected | Text and buttons |
    |---|---|---|
    | Nothing installed | No socket answers and neither `docker` nor `podman` is on `PATH` | "Docker or Podman is not installed". Buttons: **Install Docker** (https://docs.docker.com/get-started/get-docker/), **Install Podman** (https://podman.io/docs/installation), **Check again** |
-   | Docker not running | `docker` is on `PATH`, no Docker socket answers | "Docker is installed but not running", command `sudo systemctl start docker` (macOS note: open Docker Desktop), **Copy**, **Check again**, **How to fix** (https://docs.docker.com/engine/daemon/start/) |
-   | Podman API off | `podman` is on `PATH`, no Podman socket answers | "Podman is installed but its API service is off", command `systemctl --user enable --now podman.socket` (macOS note: `podman machine start`), **Copy**, **Check again**, **How to fix** (https://docs.podman.io/en/latest/markdown/podman-system-service.1.html) |
+   | Docker not running | `docker` is on `PATH`, no Docker socket answers, Podman is not installed | "Docker is installed but not running", command `sudo systemctl start docker` (macOS note: open Docker Desktop), **Copy**, **Check again**, **How to fix** (https://docs.docker.com/engine/daemon/start/) |
+   | Podman API off | `podman` is on `PATH`, no Podman socket answers, Docker is not installed | "Podman is installed but its API service is off", command `systemctl --user enable --now podman.socket` (macOS note: `podman machine start`), **Copy**, **Check again**, **How to fix** (https://docs.podman.io/en/latest/markdown/podman-system-service.1.html) |
+   | Docker and Podman both off | Both of the two rows above hold (owner decision, 2026-11-04): each engine counts as installed by its command or by a socket of its own that does not answer, and a `docker` command that is really Podman counts as Podman | "Docker and Podman are installed, but neither is answering". Both commands, each under a label that names its engine and with its own macOS note, each with **Copy**. **Check again**, **How to fix Docker** and **How to fix Podman** (the two pages above) |
    | No permission | The socket exists, connecting fails with permission denied | "OTTY has no access to the Docker socket", command `sudo usermod -aG docker $USER` with the note to log out and back in and that the docker group has root-level access, **Copy**, **Check again**, **How to fix** (https://docs.docker.com/engine/install/linux-postinstall/) |
    | No permission, Podman socket | A Podman socket exists (found in the Podman step of Decision 8, or `$DOCKER_HOST` with `podman` in the socket's file name), connecting fails with permission denied. The docker group has nothing to do with it | "OTTY has no access to the Podman socket", command `systemctl --user enable --now podman.socket`, which turns on the user's own socket at `$XDG_RUNTIME_DIR/podman/podman.sock`, the first Podman place Decision 8 looks at, with the note that it shows the user's own containers, not root's (macOS note: `podman machine start`), **Copy**, **Check again**, **How to fix** (https://docs.podman.io/en/latest/markdown/podman-system-service.1.html) |
+   | No permission, Podman off | The Docker socket refuses as in "No permission", and Podman counts as installed as in "Docker and Podman both off" (owner decision, 2026-11-04). When a Podman socket refuses too, the first denied socket decides alone | "OTTY has no access to Docker, and Podman is off", the text naming the socket and that Podman is installed but off. The docker group command with its note, then the Podman command with its macOS note, each under its label with **Copy**. **Check again**, **How to fix Docker** (the docker group page) and **How to fix Podman** |
+   | No permission on Podman, Docker off | A Podman socket refuses as in the row above it, and Docker counts as installed as in "Docker and Podman both off"; a `docker` command that is really Podman does not count, so that case stays on "No permission, Podman socket" (owner decision, 2026-11-04) | "OTTY has no access to Podman, and Docker is not running", the text naming the socket and that Docker is installed but not running. The Podman command with its note, then `sudo systemctl start docker` with its macOS note, each under its label with **Copy**. **Check again**, **How to fix Podman** and **How to fix Docker** (the Docker start page) |
 
    Under every card a line lists what OTTY looked for (`$DOCKER_HOST`, the
    sockets, `docker` and `podman` on `PATH`). Links open in the default
    browser with `xdg-open` (Linux) or `open` (macOS) through
    `std::process::Command`; no new crate. Copy uses the iced clipboard.
+
+   The only engine stopping leads to the same card (owner decision,
+   2026-11-04): the engine stops answering, OTTY searches again, and when that
+   search finds nothing the card of its case replaces the table and the tree
+   has no rows. An open Run form waits as typed behind the card and comes back
+   with an engine; its row menu and its notice go away. The engine comes back
+   by Check again, by entering Docker mode again, or by itself (next paragraph).
+
+   While the card is on screen in active Docker mode, OTTY runs the engine
+   search again every 5 seconds behind the card (owner decision, 2026-11-04). The
+   card stays and its buttons work: a repeat with the same answer changes
+   nothing, another answer changes the card, and an engine takes over as after
+   any search. A tick is skipped while such a search is on its way, so a slow one
+   cannot stack, and the timer stops as soon as the card goes or the mode is left.
+   Check again still shows "searching" until its own search answers; a repeat
+   that finishes meanwhile is dropped, so the answer is from after the press.
 10. **Resources and columns.** The left tree under each engine root has
     Containers (with "N running"), Compose projects (one child per
     `com.docker.compose.project` label, which filters the containers table),
@@ -221,13 +240,19 @@ none of those are in scope (see Out of Scope).
       tree row is highlighted while that engine is closed.
     - Anything else that goes to a list of a closed engine opens that engine,
       so the shown list is visible: a link in the inspector or the table, a
-      finished Run, or a search that moves the place because its engine is
-      gone. A port link goes to no list and opens nothing.
+      finished Run, or a search that moves the place from an engine that is
+      gone to another engine that is still there. A port link goes to no list
+      and opens nothing.
+    - An engine the user closed stays closed when it comes back while the
+      no-engine card shows (owner decision, 2026-11-04). The table on the right
+      shows its containers and its tree row stays closed, so no row is
+      highlighted until the user opens it.
     - A closed engine still loads its lists and follows its events; closing
       only hides the rows.
     - Which engines are closed is kept in memory: it survives a mode switch, a
       Refresh and an engine going away and coming back, and it resets when OTTY
-      restarts. It is not saved.
+      restarts. It is not saved. The one thing that clears it for an engine
+      that comes back is a press, a link or a Run that goes to one of its lists.
 11. **Actions.**
 
     | Resource | Actions |
@@ -296,6 +321,50 @@ none of those are in scope (see Out of Scope).
     container that stays stopped keeps its lines and nothing asks the engine
     again. Opening the tab or selecting the container anew starts with the
     last 500 lines as usual, and those can include earlier runs.
+
+    A `start` event is missed while the engine's events stream is broken, so
+    when that stream opens again (owner decision, 2026-11-04) OTTY asks inspect
+    about the container whose logs are open on that engine and compares its
+    `StartedAt` with the run the stream read when it opened:
+
+    - **Another `StartedAt`:** it was restarted in the gap, so the view is
+      cleared and shows only the new run, as for a `start` event. This holds
+      also when that run has ended by now.
+    - **The same `StartedAt`, running:** the lines stay, waiting ones too, and
+      a new stream adds the lines of the gap. Line times alone cannot place
+      the new stream: `since` takes whole seconds, and Podman's `k8s-file`
+      gives one exact time to all lines written at once. So OTTY goes by the
+      time of the last line received and how many lines came with that time.
+      The old stream may still be alive, because only the events stream may
+      have broken: it is dropped, and what it had not delivered comes through
+      the new stream, so no line shows twice or goes missing. At most the last
+      5000 lines of the gap are read, which is all the view keeps.
+    - **The same `StartedAt`, stopped (owner decision, 2026-11-04):** the lines
+      stay and no stream starts. The message of the broken stream goes, because
+      the container simply ended, and a late failure of that stream does not
+      bring it back. Lines written between the break and the stop are not added;
+      opening the tab again reads them.
+    - **No answer (removed, or the engine went away again):** the lines stay and
+      no stream starts. The message of the broken stream stays, because nothing
+      is known about the container.
+
+    Each reconnect asks once and starts at most one stream; nothing else asks
+    again. Follow keeps its meaning: with Follow off the new lines wait with
+    the counter. An answer that comes after the user moved to another row, tab
+    or mode, or after a `start` event started another stream, is ignored. Other
+    engines' reconnects and reconnects with no logs open only reload the lists.
+
+    When the only engine is gone for good (Decision 9), the card replaces the
+    table and the logs stop. When it comes back (owner decision, 2026-11-04) the
+    page and the row the user had come back with it, for any list: the page at
+    once, the row when its list loads. A row gone meanwhile falls back to the
+    first row, like any missing selection. The Logs tab stays open and starts
+    with that row's last 500 lines. Opening another page before the lists load
+    wins, and this lives in memory only. When another engine answers first, or
+    two engines exist and the shown one goes away, the view moves to the other
+    engine and stays there when the first comes back; that engine's lists load
+    anew, with their first rows. An engine that the search still finds keeps its
+    logs and goes through the reconnect above.
 13. **Shell opens a terminal session.** "Shell" opens a new terminal tab that
     runs `docker --host <address> exec -it -- <id> sh` (or
     `podman --url <address> exec -it -- <id> sh` for a Podman engine) and
@@ -372,6 +441,11 @@ none of those are in scope (see Out of Scope).
     the row says the folder is not answering (a network drive may be
     unavailable), and Run stays disabled: it is never enabled after a timeout.
 
+    A source of `~` or `~/…` stands for the home folder, read during the engine
+    search. When the computer does not say where the home folder is, the row
+    asks for the full path and Run stays disabled: such a source is never read
+    as a folder on the root or as a volume name.
+
 19. **Owner review, round 1** (2026-11-01). Where this list and an earlier
     decision or a screen disagree, this list wins.
     - **No Compose projects in the tree.** The tree under an engine root is
@@ -386,7 +460,9 @@ none of those are in scope (see Out of Scope).
       sizes and counts by number (first press: largest first), status by
       state (running, restarting, paused, created, exited, dead). Default
       order: containers running first, then by name; images, volumes and
-      networks by name. The chosen sort is kept per table while OTTY runs.
+      networks by name. Rows with an equal value follow the name, also ignoring
+      case. Two texts that differ only in case keep a fixed order, so rows do
+      not jump between rebuilds. The chosen sort is kept per page (Decision 21).
     - **No "this computer"** in Docker mode: engine roots in the tree show
       "Docker 29.9.1" only, and the header above the table has no engine
       chip (the version is already in the tree and the status bar).
@@ -489,10 +565,26 @@ none of those are in scope (see Out of Scope).
       report, 2026-11-03).
     - **Compose is a tag:** the Compose link adds `compose:<name>`, replacing
       another `compose` tag.
-    - **Kept per table:** each list keeps its own tags while OTTY runs, like
-      its sort (not saved to disk). The text in the field is not kept. A link
-      to an item that the target table's tags would hide removes those tags,
-      so the item is shown.
+    - **One search and one sort per page** (owner decision, 2026-11-04). A page
+      is one list of one engine: the containers of Docker, the images of Podman.
+      Each page has its own tags, its own typed text and its own sort column
+      and direction; nothing on one page filters or orders another. The
+      suggestions come from that page's rows, and positions in a filtered table
+      are read on the page that drew it.
+      - A page keeps its tags, text and sort when the user goes to another page
+        and back (the text since owner decision, 2026-11-04). The suggestion list
+        closes when the page changes and when the user leaves Docker mode; the
+        text stays and filters as before.
+      - A page keeps its tags, text and sort when its engine goes away and comes
+        back, so a brief outage does not wipe a filter. The list closes then too.
+      - All of this lives in memory and resets when OTTY restarts. Not saved to
+        disk.
+      - A link to an item clears the text of the page it lands on and removes
+        the tags that would hide the item, so the item is shown. The Compose
+        link clears that text too, and adds its tag on the Containers page of
+        the engine it was pressed on, and only there. The page a link leaves
+        keeps its text.
+22. **The mode is called Containers** (owner request, 2026-11-04): the dock, the All modes menu, the palette and the status bar say Containers where they name the mode, translated in every locale; "Docker" and "Podman" still name the engines (tree roots, cards, status bar), and `Mode::Docker`, `widgets/docker` and the intents keep their names.
 
 ## Ticket classes
 
@@ -507,7 +599,7 @@ a `Class:` line; review checks the diff against it.
 - [x] AC3: Pinned modes survive a restart (`modes.json`); a missing or broken file gives the defaults; OTTY starts in Terminal mode.
 - [x] AC4: The shortcuts in Decision 6 work with and without a focused terminal; Ctrl 1–5 and Ctrl M without Shift still reach the shell (keymap unit test plus a manual `cat -v` check). The palette switches modes.
 - [x] AC5: With Docker running, Docker mode shows a "Docker <version>" root with Containers, Compose projects, Images, Volumes, Networks and their counts; with Podman (`podman.socket` on) a "Podman <version>" root; with both, two roots. Lists match `docker ps -a`, `docker images`, `docker volume ls`, `docker network ls` (and the `podman` equivalents); the Images table and the count of its tree row have one row per `repository:tag`, as the `REPOSITORY` and `TAG` columns of `docker images` print them (Decision 10; `the_image_rows_match_the_command_line` in `crates/docker/tests/live_engine.rs` compares them on a real engine).
-- [x] AC6: Each case in Decision 9 shows its text and buttons; the install and docs buttons open the browser; Copy command puts the command on the clipboard; Check again finds an engine started meanwhile without a restart.
+- [x] AC6: Each case in Decision 9 shows its text and buttons; the install and docs buttons open the browser; Copy command puts the command on the clipboard, on each command of a card with two; Check again finds an engine started meanwhile without a restart, and OTTY finds it by itself within about 5 seconds while the card shows, with no flicker of the card.
 - [x] AC7: Every action in Decision 11 works on Docker and on Podman; destructive actions ask first; an engine error shows a Notice and leaves the table as it was (reducer tests for each action's effect; mapping tests in `otty-docker`).
 - [x] AC8: The inspector shows Overview, Logs (follows new lines, stops on tab or selection change) and Inspect for the selected row.
 - [x] AC8a: Run container starts a container with the image, name, command, ports, environment, volumes, network, restart policy and auto remove from the form (checked with `docker inspect` / `podman inspect`); a missing image is pulled first when the switch is on; each check in Decision 18 blocks Run with its message; an engine error keeps the form as typed (reducer tests for the checks and for the mapping of the form to the create request).
@@ -579,7 +671,7 @@ Shown on the screens or easy to imagine, but each needs its own spec.
 | 42 | Narrow Inspect: the copy icon sits on the left under the switches | A | Sonnet | 41 |
 | 43 | Kit: tag search model (parsing, suggestions, matching) (Decision 21) | C | Opus | 42 |
 | 44 | Kit: `TagSearchField` and `TagRow` views (Decision 21) | A | Opus | 43 |
-| 45 | Docker tables use tag search; compose becomes a tag; tags kept per table (Decision 21) | C | Opus | 44 |
+| 45 | Docker tables use tag search; compose becomes a tag; tags kept per page (per table until 2026-11-04) (Decision 21) | C | Opus | 44 |
 | 46 | Fuzzy suggestions with `frizbee` (dependency approved by the owner, 2026-11-02) | C | Sonnet | 45 |
 | 47 | Bug: after a suggestion is applied the cursor goes to the end of the field | C | Sonnet | 46 |
 | 48 | Bug: the text you typed is the first suggestion (Decision 21) | C | Sonnet | 47 |

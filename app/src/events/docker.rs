@@ -9,8 +9,8 @@ use iced::Task;
 use iced::futures::future::join3;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use otty_docker::{
-    Container, Engine, EngineInfo, ImageDefaults, RunRequest, discover,
-    host_folder_exists, wait_for,
+    Container, ContainerRun, Engine, EngineInfo, ImageDefaults, RunRequest,
+    discover, host_folder_exists, wait_for,
 };
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
@@ -20,7 +20,7 @@ use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::{self, terminal_settings_for_session};
 use crate::widgets::docker::actions::{ActionRequest, EngineAction};
 use crate::widgets::docker::errors::DockerError;
-use crate::widgets::docker::inspector::InspectTarget;
+use crate::widgets::docker::inspector::{InspectTarget, LogTarget};
 use crate::widgets::docker::types::{LoadedList, LoadedLists, ResourceKind};
 use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
@@ -94,6 +94,11 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
         DockerEffect::Discover => Task::perform(discover(), |discovery| {
             intent(DockerIntent::DiscoveryFinished(discovery))
         }),
+        DockerEffect::DiscoverInBackground => {
+            Task::perform(discover(), |discovery| {
+                intent(DockerIntent::BackgroundSearchFinished(discovery))
+            })
+        },
         DockerEffect::CopyToClipboard(text) => iced::clipboard::write(text),
         DockerEffect::OpenUrl(url) => {
             services::open_url(&url);
@@ -105,6 +110,16 @@ fn handle_effect(effect: DockerEffect) -> Task<AppEvent> {
             Task::perform(load_inspect(engine, target), move |result| {
                 intent(DockerIntent::InspectLoaded {
                     target: shown.clone(),
+                    result,
+                })
+            })
+        },
+        DockerEffect::CheckLogRun(target) => {
+            let asked = target.clone();
+
+            Task::perform(load_log_run(target), move |result| {
+                intent(DockerIntent::LogRunChecked {
+                    target: asked.clone(),
                     result,
                 })
             })
@@ -340,6 +355,14 @@ async fn load_inspect(
     };
 
     Ok(json?)
+}
+
+/// What became of the container of the logs `target`; the error is the
+/// engine's message.
+async fn load_log_run(target: LogTarget) -> Result<ContainerRun, DockerError> {
+    let engine = Engine::connect(target.engine())?;
+
+    Ok(engine.container_run(target.container_id()).await?)
 }
 
 /// Load one list of one engine again, after an engine event. "Used by" of
@@ -632,11 +655,13 @@ mod tests {
     #[test]
     fn each_effect_runs_one_engine_task() {
         let search = handle_effect(DockerEffect::Discover);
+        let background = handle_effect(DockerEffect::DiscoverInBackground);
         let load = handle_effect(DockerEffect::LoadLists(fixtures::engine(
             EngineKind::Docker,
         )));
 
         assert_eq!(search.units(), 1);
+        assert_eq!(background.units(), 1);
         assert_eq!(load.units(), 1);
     }
 
@@ -655,6 +680,18 @@ mod tests {
         });
 
         assert_eq!(inspect.units(), 1);
+    }
+
+    #[test]
+    fn checking_the_run_of_open_logs_runs_one_engine_task() {
+        let docker = fixtures::engine(EngineKind::Docker);
+
+        let check = handle_effect(DockerEffect::CheckLogRun(LogTarget::new(
+            docker,
+            "850b6438a531",
+        )));
+
+        assert_eq!(check.units(), 1);
     }
 
     #[test]

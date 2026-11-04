@@ -133,6 +133,72 @@ Setup before the first walk:
     After each case start the service and press Check again.
     Expected: the engine appears and the lists load. The "OTTY looked for"
     line lists the sockets tried.
+15e. With both commands installed, stop Docker and Podman
+    (`sudo systemctl stop docker docker.socket`,
+    `systemctl --user stop podman.socket podman.service`) and open the mode.
+    Expected: card "Docker and Podman are installed, but neither is answering"
+    with both commands, each under its own label with its macOS note. Each Copy
+    puts its own command on the clipboard, and How to fix Docker and How to fix
+    Podman open their own pages. All of it fits in a window at its smallest
+    size, in English and in German. With only one command on `PATH`: only that
+    command, as steps 12 and 13.
+15i. With a user outside the `docker` group and Podman installed, stop Podman
+    (`systemctl --user stop podman.socket podman.service`) and open the mode.
+    Expected: card "OTTY has no access to Docker, and Podman is off" naming the
+    socket, with the docker group command and the Podman command, each under its
+    own label with its note. Each Copy puts its own command on the clipboard, How
+    to fix Docker opens the docker group page and How to fix Podman the Podman
+    page. The left panel says "No access to Docker, and Podman is off." and the
+    status bar names the socket and says the Podman socket is off. Run the Podman
+    command and press nothing.
+    Expected: within about 7 seconds the Podman table replaces the card. With
+    Podman removed or hidden from `PATH`: only the docker group card, as step 14.
+    Mirror, if you have a Podman socket you may not open
+    (`/run/podman/podman.sock`) and Docker installed and stopped, and your own
+    Podman socket off: card "OTTY has no access to Podman, and Docker is not
+    running" with the Podman command first and `sudo systemctl start docker`. With
+    a `docker` command that is really Podman (`podman-docker`): the Podman card
+    only, with no word of Docker. Check that the card fits a window at its smallest
+    size, in English and in German: the "looked for" line may touch the bottom edge.
+15f. With a card on screen, start an engine from a terminal and press nothing.
+    Expected: within about 7 seconds the table replaces the card. Stop it again.
+    Expected: the card comes back, and it does not blink or turn into "searching"
+    while you watch it for 20 seconds. Press Copy, and How to fix, while it shows:
+    they work as always. Press Check again: "searching" shows until that search
+    answers.
+15g. With Docker as the only engine, open Images, select the second row, stop
+    Docker and start it again (Check again, or wait).
+    Expected: Images is open and that row is selected. Do the same with a row of
+    Containers on the Logs tab.
+    Expected: that container is selected and its last lines show. On Podman as
+    the only engine, select a throwaway `otty-fx-*` container, stop
+    `podman.socket` and `podman.service`, run `podman rm -f` on it and start the
+    socket.
+    Expected: the first row is selected.
+15h. With Docker and Podman on, show a Docker list, stop Docker and start it
+    again.
+    Expected: the view moves to Podman and stays there when Docker comes back.
+
+15a. With Docker as the only engine and its list on screen, stop it from a
+    terminal: `sudo systemctl stop docker docker.socket`.
+    Expected: within a few seconds the card "Docker is installed but not
+    running" replaces the table, the tree has no rows and the status bar says
+    so. Start it again and press Check again.
+    Expected: the engine shows open in the tree with its table on the right.
+    Do the same with Podman as the only engine
+    (`systemctl --user stop podman.socket`): the Podman card and its command.
+15b. Press the engine root so it is closed, stop the engine and wait for the
+    card. Start it again and press Check again.
+    Expected: the table shows its containers, the tree root stays closed and no
+    row is highlighted. Pressing the root opens it.
+15c. With Docker and Podman on, close the Podman root, show a Docker list and
+    stop Docker.
+    Expected: the table moves to Podman's containers and the Podman root opens,
+    so you can see whose list it is.
+15d. Open the Run form and type an image, then stop the only engine.
+    Expected: the card replaces the form. Start the engine and press Check
+    again.
+    Expected: the form is back as you typed it.
 
 ## Copy, links, Settings
 
@@ -163,6 +229,25 @@ Setup before the first walk:
     Expected: the last lines show and new ones follow. Turn Follow off:
     lines stop moving and "N new lines" counts up; select some text and
     copy it. Turn Follow on: the waiting lines appear and the view follows.
+20a. Logs across a broken connection. On Podman, with `podman.socket` running
+    and the logs of a ticking `otty-fx-*` container open, stop and start only
+    the service; the socket stays, so the search still finds the engine:
+    `systemctl --user stop podman.service; sleep 3; systemctl --user start podman.service`.
+    Expected: within a few seconds the lines go on. Nothing is cleared, the
+    lines of the gap are there and no line shows twice (compare with
+    `podman logs`). The same with Follow off.
+    Expected: the view stays and the counter grows by the lines of the gap;
+    turning Follow on adds them in order.
+    Stop the service, run `podman restart <name>`, start the service.
+    Expected: the view is cleared once and shows only the new run.
+    Stop the service, run `podman stop <name>`, start the service.
+    Expected: the lines stay and nothing new comes; no error stays under them,
+    also none that shows up a little later, and the logs do not reload over and
+    over.
+    With Podman as the only engine, stop the socket as well, then start it
+    and press Check again.
+    Expected: the card while it is away; afterwards the same row is selected
+    and the open Logs tab shows its last lines.
 21. Inspect tab on a container, an image, a volume and a network.
     Expected: General first, then State, Config and the others as sections;
     sections open and close; Show empty adds empty values; Raw JSON shows
@@ -220,8 +305,15 @@ statuses) in the list.
 27. Type two letters, press Left, type a third letter.
     Expected: the letter lands between the two; the cursor does not jump to
     the end. Up and Down do not move the cursor either.
-28. Add tags, switch to another list (for example Images) and back.
-    Expected: the tags you added are still there for each list.
+28. Add tags, type some text, switch to another list (for example Images) and
+    back.
+    Expected: the tags and the text are still there for each list and the table
+    is filtered by them. The suggestion list is closed on the way back and opens
+    when you click the field.
+28b. Type in a Docker search so its list opens, then switch to Terminal mode
+    (a click on the switcher, or its shortcut) and back to Docker.
+    Expected: the text and the tags are still there, and the list is closed until
+    you click the field.
 29. Remove one tag with its cross, then press Clear all. Press Backspace in
     an empty field.
     Expected: the cross removes only its tag; Clear all removes all; Backspace
@@ -259,6 +351,51 @@ statuses) in the list.
     no row until it is removed, because the cell now says `Running`. A press on
     a project name in the Compose column still adds and replaces the `Compose`
     tag in both languages.
+
+35a. With Docker and Podman on, add a tag and press a column header on Docker's
+    Containers, then open Podman's Containers.
+    Expected: no tag there and its own sort. Add another tag and sort there, go
+    to Docker's Images and to Podman's Images, then back to both Containers
+    pages.
+    Expected: each page has the tags, typed text and sort it had. Suggestions on
+    a page list only that page's rows. A press on a project name adds the
+    `Compose` tag on that engine's page only.
+35b. With a tag, typed text and a sort on Docker's Containers, stop Docker and
+    start it again (`Check again` if the card shows).
+    Expected: the tag, the text and the sort are still there, and the suggestion
+    list is closed even if it was open when Docker stopped. Restart OTTY.
+    Expected: they are gone.
+35c. Create names that differ in case: `docker volume create otty-fx-Beta`,
+    `docker volume create otty-fx-alpha`, `docker volume create otty-fx-Gamma`.
+    In Volumes sort by Name.
+    Expected: `otty-fx-alpha`, `otty-fx-Beta`, `otty-fx-Gamma`, and the reverse
+    on a second press. Do the same with image tags in the Tag column: `<none>`
+    comes after tags that start with a digit and before tags that start with a
+    letter.
+
+35d. Look at the mode's name.
+    Expected: the switcher tooltip, the All modes menu and the palette ("Switch to
+    Containers mode") say Containers, also in Russian and in Japanese, and so does
+    the status bar while no engine is shown. The tree root, the cards and the
+    status bar next to a table still say Docker or Podman. The icon has not
+    changed.
+
+35e. Create containers with ports:
+    `docker run -d --name otty-fx-p80 -p 18000:80 nginx:alpine`,
+    `docker run -d --name otty-fx-p9 -p 9000:80 -p 19000:81 nginx:alpine`, and
+    keep `otty-fx-web` from the setup, which has no ports. In Containers press
+    the Ports header.
+    Expected: the arrow shows on Ports, pointing up, and the rows read
+    `18000:80/tcp`, then the two ports of `otty-fx-p9` in the order its cell
+    shows them, then the rows that show `—`, by name. This is text order, so
+    `18000` comes before `9000`. A second press reverses it, with the `—` rows
+    first and still by name among themselves.
+    Press a port link in a sorted row.
+    Expected: that row's port opens in the browser and the row is not selected.
+    Narrow the window until the table scrolls sideways.
+    Expected: the Ports header can still be pressed and the column keeps enough
+    room for one port. Remove the containers with
+    `docker rm -f otty-fx-p80 otty-fx-p9`.
 
 ## Both themes
 

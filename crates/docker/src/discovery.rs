@@ -24,6 +24,7 @@ pub struct Discovery {
     cli: CliPresence,
     diagnosis: Diagnosis,
     is_selinux_enabled: bool,
+    home_folder: Option<PathBuf>,
 }
 
 impl Discovery {
@@ -49,11 +50,33 @@ impl Discovery {
         self.is_selinux_enabled
     }
 
+    /// The home folder of this user, which `~` in a folder path stands for.
+    /// `None` when `$HOME` is not set or is empty.
+    ///
+    /// ```
+    /// # #[cfg(feature = "fixtures")]
+    /// # {
+    /// use std::path::Path;
+    ///
+    /// use otty_docker::{EngineKind, fixtures};
+    ///
+    /// let known = fixtures::discovery(&[EngineKind::Docker]);
+    /// let unknown = fixtures::discovery_without_home(&[EngineKind::Docker]);
+    ///
+    /// assert_eq!(known.home_folder(), Some(Path::new(fixtures::HOME_FOLDER)));
+    /// assert_eq!(unknown.home_folder(), None);
+    /// # }
+    /// ```
+    pub fn home_folder(&self) -> Option<&Path> {
+        self.home_folder.as_deref()
+    }
+
     /// Diagnose the given search results.
     pub(crate) fn new(
         probes: Vec<Probe>,
         cli: CliPresence,
         is_selinux_enabled: bool,
+        home_folder: Option<PathBuf>,
     ) -> Self {
         let diagnosis = diagnose(&probes, cli.clone());
 
@@ -62,6 +85,7 @@ impl Discovery {
             cli,
             diagnosis,
             is_selinux_enabled,
+            home_folder,
         }
     }
 }
@@ -72,8 +96,8 @@ impl Discovery {
 /// retries, while it looks for the `docker` and `podman` commands (and asks
 /// a found `docker` for its version, to spot Podman's `podman-docker`), so
 /// the whole search takes about two seconds at most. Also reads whether
-/// SELinux is enabled. Never fails: an unreachable engine is part of the
-/// result.
+/// SELinux is enabled and where the home folder is. Never fails: an unreachable
+/// engine is part of the result.
 ///
 /// Needs a tokio runtime.
 ///
@@ -115,7 +139,7 @@ pub async fn discover() -> Discovery {
         log::debug!("docker discovery: {address}: {outcome:?}");
     }
 
-    Discovery::new(probes, cli, selinux::is_selinux_enabled())
+    Discovery::new(probes, cli, selinux::is_selinux_enabled(), env.home)
 }
 
 /// Follow links so the same socket is tried once; a missing path stays as
@@ -128,14 +152,27 @@ fn resolve_socket_path(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    fn discovery(is_selinux_enabled: bool, home: Option<PathBuf>) -> Discovery {
+        Discovery::new(
+            Vec::new(),
+            CliPresence::new(false, false),
+            is_selinux_enabled,
+            home,
+        )
+    }
+
     #[test]
     fn a_discovery_carries_the_selinux_fact() {
-        let on =
-            Discovery::new(Vec::new(), CliPresence::new(false, false), true);
-        let off =
-            Discovery::new(Vec::new(), CliPresence::new(false, false), false);
+        assert!(discovery(true, None).is_selinux_enabled());
+        assert!(!discovery(false, None).is_selinux_enabled());
+    }
 
-        assert!(on.is_selinux_enabled());
-        assert!(!off.is_selinux_enabled());
+    #[test]
+    fn a_discovery_carries_the_home_folder_when_it_is_known() {
+        let known = discovery(false, Some(PathBuf::from("/home/ann")));
+        let unknown = discovery(false, None);
+
+        assert_eq!(known.home_folder(), Some(Path::new("/home/ann")));
+        assert_eq!(unknown.home_folder(), None);
     }
 }

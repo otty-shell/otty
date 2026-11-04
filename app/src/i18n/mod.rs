@@ -284,6 +284,24 @@ pub(crate) fn docker_podman_no_access_text(socket: &str) -> String {
     )
 }
 
+/// Build the text of the card for a denied Docker `socket` with Podman off.
+pub(crate) fn docker_no_access_podman_off_text(socket: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerNoAccessPodmanOffText,
+        &[("socket", socket)],
+    )
+}
+
+/// Build the text of the card for a denied Podman `socket` with Docker off.
+pub(crate) fn docker_podman_no_access_docker_off_text(socket: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerPodmanNoAccessDockerOffText,
+        &[("socket", socket)],
+    )
+}
+
 /// Build the line under the no engine cards from the `places` OTTY tried.
 pub(crate) fn docker_looked_for(places: &str) -> String {
     fill_in(
@@ -298,6 +316,26 @@ pub(crate) fn docker_status_no_access(socket: &str) -> String {
     fill_in(
         current_locale(),
         Key::TplDockerStatusNoAccess,
+        &[("socket", socket)],
+    )
+}
+
+/// Build the status bar text for a denied Docker `socket` with Podman off.
+pub(crate) fn docker_status_no_access_podman_off(socket: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerStatusNoAccessPodmanOff,
+        &[("socket", socket)],
+    )
+}
+
+/// Build the status bar text for a denied Podman `socket` with Docker off.
+pub(crate) fn docker_status_podman_no_access_docker_off(
+    socket: &str,
+) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplDockerStatusPodmanNoAccessDockerOff,
         &[("socket", socket)],
     )
 }
@@ -804,6 +842,98 @@ mod tests {
         assert_eq!(text_in(Locale::En, Key::SectionAppearance), "Appearance");
     }
 
+    /// The mode is named after its first list, in the words the tree uses.
+    #[test]
+    fn the_containers_mode_has_the_name_of_the_containers_list() {
+        assert_eq!(text_in(Locale::En, Key::ModeDocker), "Containers");
+
+        for locale in Locale::ALL {
+            assert_eq!(
+                text_in(locale, Key::ModeDocker),
+                text_in(locale, Key::DockerContainers),
+                "{}",
+                locale.tag()
+            );
+        }
+    }
+
+    #[test]
+    fn the_texts_that_name_the_mode_use_its_new_name_in_every_locale() {
+        for locale in Locale::ALL {
+            let tag = locale.tag();
+            let name = text_in(locale, Key::ModeDocker);
+
+            for key in [Key::DockerStatusMode, Key::PaletteSwitchToDockerMode] {
+                let text = text_in(locale, key);
+
+                assert!(text.contains(name), "{tag} {key:?}: {text}");
+                assert!(!text.contains("Docker"), "{tag} {key:?}: {text}");
+            }
+
+            let about = text_in(locale, Key::DockerNotInstalledText);
+            assert!(about.contains(name), "{tag}: {about}");
+        }
+    }
+
+    /// "Docker" and "Podman" still name the engines.
+    #[test]
+    fn the_texts_that_name_an_engine_keep_its_brand_in_every_locale() {
+        for locale in Locale::ALL {
+            let tag = locale.tag();
+
+            for key in [
+                Key::DockerSearching,
+                Key::DockerNotInstalledTitle,
+                Key::DockerNotInstalledText,
+                Key::DockerInstallDocker,
+                Key::DockerStoppedTitle,
+                Key::DockerStoppedText,
+                Key::DockerNoAccessTitle,
+                Key::DockerPanelStopped,
+                Key::DockerPanelNoAccess,
+                Key::DockerBothOffTitle,
+                Key::DockerPanelBothOff,
+                Key::DockerStatusStopped,
+                Key::DockerStatusBothOff,
+            ] {
+                let text = text_in(locale, key).to_lowercase();
+
+                assert!(text.contains("docker"), "{tag} {key:?}: {text}");
+            }
+        }
+    }
+
+    /// The card of a denied socket with the other engine off speaks of both
+    /// engines, or it reads as if only one were there. The status bar text
+    /// names the socket by its path, so there it names the other engine.
+    #[test]
+    fn the_texts_of_a_denied_socket_with_the_other_off_name_both_engines() {
+        for locale in Locale::ALL {
+            let tag = locale.tag();
+
+            for key in [
+                Key::DockerNoAccessPodmanOffTitle,
+                Key::TplDockerNoAccessPodmanOffText,
+                Key::DockerPanelNoAccessPodmanOff,
+                Key::DockerPodmanNoAccessDockerOffTitle,
+                Key::TplDockerPodmanNoAccessDockerOffText,
+                Key::DockerPanelPodmanNoAccessDockerOff,
+            ] {
+                let text = text_in(locale, key).to_lowercase();
+
+                assert!(text.contains("docker"), "{tag} {key:?}: {text}");
+                assert!(text.contains("podman"), "{tag} {key:?}: {text}");
+            }
+
+            let podman_off =
+                text_in(locale, Key::TplDockerStatusNoAccessPodmanOff);
+            let docker_off =
+                text_in(locale, Key::TplDockerStatusPodmanNoAccessDockerOff);
+            assert!(podman_off.to_lowercase().contains("podman"), "{tag}");
+            assert!(docker_off.to_lowercase().contains("docker"), "{tag}");
+        }
+    }
+
     /// A dialog switch stays on one line, so its label has to fit whole: it
     /// says what a removal will force. The Chinese, Japanese and Korean labels
     /// are short, and a test machine may have no font to measure them with.
@@ -985,6 +1115,22 @@ mod tests {
             (Key::TplDockerListFailed, ("error", "boom")),
             (Key::TplDockerUsedBy, ("names", "db-1")),
             (Key::TplDockerStatusNoAccess, ("socket", "/run/docker.sock")),
+            (
+                Key::TplDockerNoAccessPodmanOffText,
+                ("socket", "/run/docker.sock"),
+            ),
+            (
+                Key::TplDockerPodmanNoAccessDockerOffText,
+                ("socket", "/run/podman.sock"),
+            ),
+            (
+                Key::TplDockerStatusNoAccessPodmanOff,
+                ("socket", "/run/docker.sock"),
+            ),
+            (
+                Key::TplDockerStatusPodmanNoAccessDockerOff,
+                ("socket", "/run/podman.sock"),
+            ),
             (Key::TplDockerStatusContainers, ("count", "7")),
             (Key::TplDockerStatusImages, ("count", "7")),
             (Key::TplDockerStatusVolumes, ("count", "7")),

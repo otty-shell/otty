@@ -15,11 +15,11 @@
 //! assert!(!resources.containers().is_empty());
 //! ```
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use bollard::models::{
     ContainerSummary, CreateImageInfo, ImageInspect, ImageSummary, Network,
-    SystemVersion, VolumeListResponse,
+    SystemVersion, Volume as EngineVolume, VolumeListResponse,
 };
 
 use crate::address::EngineAddress;
@@ -31,8 +31,10 @@ use crate::discovery::Discovery;
 use crate::engine::{EngineInfo, EngineKind};
 use crate::image::Image;
 use crate::image_defaults::ImageDefaults;
+use crate::logs::{ContainerRun, LogPosition};
 use crate::probe::{Probe, ProbeOutcome};
 use crate::pull::PullProgress;
+use crate::volume::Volume;
 
 /// The fixtures are part of the crate, so one that does not parse is a
 /// build defect.
@@ -42,6 +44,21 @@ const BROKEN_FIXTURE: &str = "captured fixture should parse";
 pub const DOCKER_SOCKET: &str = "/var/run/docker.sock";
 /// Where the fixture Podman engine listens.
 pub const PODMAN_SOCKET: &str = "/run/user/1000/podman/podman.sock";
+/// The home folder a fixture search finds, whatever this computer has.
+///
+/// ```
+/// use std::path::Path;
+///
+/// use otty_docker::{EngineKind, fixtures};
+///
+/// let discovery = fixtures::discovery(&[EngineKind::Docker]);
+///
+/// assert_eq!(
+///     discovery.home_folder(),
+///     Some(Path::new(fixtures::HOME_FOLDER))
+/// );
+/// ```
+pub const HOME_FOLDER: &str = "/home/ann";
 
 /// The engine that sent the captured `/version` answer of `kind`.
 pub fn engine(kind: EngineKind) -> EngineInfo {
@@ -65,6 +82,17 @@ pub fn engine(kind: EngineKind) -> EngineInfo {
     )
 }
 
+/// The Podman fixture engine at the socket `path`, for a test that answers
+/// on that socket itself.
+pub fn engine_at(path: &Path) -> EngineInfo {
+    let version: SystemVersion = serde_json::from_str(include_str!(
+        "../tests/fixtures/podman-version.json"
+    ))
+    .expect(BROKEN_FIXTURE);
+
+    EngineInfo::from_version(&version, EngineAddress::Unix(path.to_path_buf()))
+}
+
 /// A search that reached the fixture engines of `kinds`, in that order.
 /// With no kinds nothing answered and no command line tool is on `PATH`,
 /// so the diagnosis is [`crate::Diagnosis::NotInstalled`].
@@ -74,7 +102,21 @@ pub fn discovery(kinds: &[EngineKind]) -> Discovery {
 
 /// Like [`discovery`], on a computer with SELinux enabled.
 pub fn discovery_with_selinux(kinds: &[EngineKind]) -> Discovery {
-    build_discovery(kinds, None, None, true)
+    build_discovery(kinds, None, None, true, Some(HOME_FOLDER))
+}
+
+/// Like [`discovery`], on a computer that does not say where the home folder
+/// is.
+///
+/// ```
+/// use otty_docker::{EngineKind, fixtures};
+///
+/// let discovery = fixtures::discovery_without_home(&[EngineKind::Docker]);
+///
+/// assert_eq!(discovery.home_folder(), None);
+/// ```
+pub fn discovery_without_home(kinds: &[EngineKind]) -> Discovery {
+    build_discovery(kinds, None, None, false, None)
 }
 
 /// Like [`discovery`], with the `docker` and `podman` commands found at
@@ -84,16 +126,62 @@ pub fn discovery_with_cli(
     docker_path: Option<&str>,
     podman_path: Option<&str>,
 ) -> Discovery {
-    build_discovery(kinds, docker_path, podman_path, false)
+    build_discovery(kinds, docker_path, podman_path, false, Some(HOME_FOLDER))
 }
 
 /// A search where the only socket, at `socket`, refused this user.
+///
+/// ```
+/// use otty_docker::{CandidateSource, Diagnosis, fixtures};
+///
+/// let discovery = fixtures::denied_discovery(
+///     fixtures::DOCKER_SOCKET,
+///     CandidateSource::Docker,
+/// );
+///
+/// assert!(matches!(discovery.diagnosis(), Diagnosis::NoPermission(_)));
+/// ```
 pub fn denied_discovery(socket: &str, source: CandidateSource) -> Discovery {
+    denied_discovery_with_cli(socket, source, None, None)
+}
+
+/// Like [`denied_discovery`], with the `docker` and `podman` commands found at
+/// these paths (`None`: not installed).
+///
+/// ```
+/// use otty_docker::{CandidateSource, Diagnosis, EngineKind, fixtures};
+///
+/// let discovery = fixtures::denied_discovery_with_cli(
+///     fixtures::PODMAN_SOCKET,
+///     CandidateSource::Podman,
+///     Some("/usr/bin/docker"),
+///     None,
+/// );
+///
+/// assert!(matches!(
+///     discovery.diagnosis(),
+///     Diagnosis::NoPermissionAndOtherOff {
+///         denied_engine: EngineKind::Podman,
+///         ..
+///     }
+/// ));
+/// ```
+pub fn denied_discovery_with_cli(
+    socket: &str,
+    source: CandidateSource,
+    docker_path: Option<&str>,
+    podman_path: Option<&str>,
+) -> Discovery {
     let address = EngineAddress::Unix(PathBuf::from(socket));
     let candidate = SocketCandidate::new(address, source);
     let probes = vec![Probe::new(candidate, ProbeOutcome::PermissionDenied)];
+    let cli = CliPresence::new(docker_path.is_some(), podman_path.is_some())
+        .with_paths(
+            docker_path.map(PathBuf::from),
+            podman_path.map(PathBuf::from),
+        );
 
-    Discovery::new(probes, CliPresence::new(false, false), false)
+    Discovery::new(probes, cli, false, Some(PathBuf::from(HOME_FOLDER)))
 }
 
 /// The four captured lists of `kind`, mapped as [`crate::Engine::resources`]
@@ -114,6 +202,27 @@ pub fn idle_resources(kind: EngineKind) -> Resources {
 pub fn container_with_ports(
     ports: &[(Option<&str>, Option<u16>, u16, &str)],
 ) -> Container {
+    container_named_with_ports("web", ports)
+}
+
+/// A container named `name` that lists `ports`, as
+/// [`container_with_ports`] describes them.
+///
+/// ```
+/// use otty_docker::fixtures;
+///
+/// let container = fixtures::container_named_with_ports(
+///     "db",
+///     &[(Some("0.0.0.0"), Some(5432), 5432, "tcp")],
+/// );
+///
+/// assert_eq!(container.name(), "db");
+/// assert_eq!(container.ports().len(), 1);
+/// ```
+pub fn container_named_with_ports(
+    name: &str,
+    ports: &[(Option<&str>, Option<u16>, u16, &str)],
+) -> Container {
     let ports: Vec<serde_json::Value> = ports
         .iter()
         .map(|(ip, public, private, protocol)| {
@@ -126,8 +235,8 @@ pub fn container_with_ports(
         })
         .collect();
     let summary: ContainerSummary = serde_json::from_value(serde_json::json!({
-        "Id": "web-id",
-        "Names": ["/web"],
+        "Id": format!("{name}-id"),
+        "Names": [format!("/{name}")],
         "Ports": ports,
     }))
     .expect("the container summary should parse");
@@ -137,6 +246,17 @@ pub fn container_with_ports(
 
 /// A container named `name` in `state` (for example `exited`), run from the
 /// image `image` whose id is `image_id`, as the engine would send it.
+///
+/// ```
+/// use otty_docker::fixtures;
+///
+/// let container =
+///     fixtures::container_of_image("web", "exited", "app:1", "sha256:one");
+///
+/// assert_eq!(container.name(), "web");
+/// assert_eq!(container.image(), "app:1");
+/// assert_eq!(container.image_id(), "sha256:one");
+/// ```
 pub fn container_of_image(
     name: &str,
     state: &str,
@@ -155,9 +275,116 @@ pub fn container_of_image(
     Container::from_summary(&summary)
 }
 
+/// A container named `name` in the Compose project `project`, as the engine
+/// would send it.
+///
+/// ```
+/// use otty_docker::fixtures;
+///
+/// let container = fixtures::container_in_project("web", "shop");
+///
+/// assert_eq!(container.compose_project(), Some("shop"));
+/// ```
+pub fn container_in_project(name: &str, project: &str) -> Container {
+    let summary: ContainerSummary = serde_json::from_value(serde_json::json!({
+        "Id": format!("{name}-id"),
+        "Names": [format!("/{name}")],
+        "Labels": { "com.docker.compose.project": project },
+    }))
+    .expect("the container summary should parse");
+
+    Container::from_summary(&summary)
+}
+
+/// A volume named `name` with the driver `driver`, mounted by the containers
+/// named `used_by`, as the engine would send it.
+///
+/// ```
+/// use otty_docker::fixtures;
+///
+/// let volume = fixtures::volume_named("data", "local", &["web"]);
+///
+/// assert_eq!(volume.driver(), "local");
+/// assert_eq!(volume.containers(), ["web"]);
+/// ```
+pub fn volume_named(name: &str, driver: &str, used_by: &[&str]) -> Volume {
+    let volume: EngineVolume = serde_json::from_value(serde_json::json!({
+        "Name": name,
+        "Driver": driver,
+        "Mountpoint": format!("/volumes/{name}"),
+        "Labels": {},
+        "Scope": "local",
+        "Options": {},
+    }))
+    .expect("the volume should parse");
+    let containers: Vec<Container> = used_by
+        .iter()
+        .map(|user| {
+            let summary: ContainerSummary =
+                serde_json::from_value(serde_json::json!({
+                    "Id": format!("{user}-id"),
+                    "Names": [format!("/{user}")],
+                    "Mounts": [{ "Type": "volume", "Name": name }],
+                }))
+                .expect("the container summary should parse");
+
+            Container::from_summary(&summary)
+        })
+        .collect();
+
+    Volume::from_volume(&volume, &containers)
+}
+
+/// A network named `name` with the driver `driver`, the scope `scope` and the
+/// address range `subnet`, as the engine would send it.
+///
+/// ```
+/// use otty_docker::fixtures;
+///
+/// let network =
+///     fixtures::network_named("back", "bridge", "local", Some("10.0.0.0/8"));
+///
+/// assert_eq!(network.scope(), "local");
+/// assert_eq!(network.subnet(), Some("10.0.0.0/8"));
+/// ```
+pub fn network_named(
+    name: &str,
+    driver: &str,
+    scope: &str,
+    subnet: Option<&str>,
+) -> crate::network::Network {
+    let config: Vec<serde_json::Value> = subnet
+        .iter()
+        .map(|subnet| serde_json::json!({ "Subnet": subnet }))
+        .collect();
+    let network: Network = serde_json::from_value(serde_json::json!({
+        "Id": format!("{name}-id"),
+        "Name": name,
+        "Driver": driver,
+        "Scope": scope,
+        "IPAM": { "Config": config },
+    }))
+    .expect("the network should parse");
+
+    crate::network::Network::from_network(&network, &[])
+}
+
 /// The rows of one image with the id `id`, whose names are `repo_tags` and
 /// `repo_digests`, as the engine would send them; `containers` are the
 /// engine's containers.
+///
+/// ```
+/// use otty_docker::fixtures;
+///
+/// let user =
+///     fixtures::container_of_image("web", "exited", "app:1", "sha256:one");
+/// let rows =
+///     fixtures::image_rows("sha256:one", &["app:1", "app:2"], &[], &[user]);
+///
+/// assert_eq!(rows.len(), 2);
+/// assert_eq!(rows[1].reference(), Some("app:2"));
+/// assert_eq!(rows[1].containers(), 1);
+/// ```
 pub fn image_rows(
     id: &str,
     repo_tags: &[&str],
@@ -207,12 +434,24 @@ pub fn pull_progress() -> PullProgress {
     progress
 }
 
+/// A run of a container started `started_at` seconds after the Unix epoch.
+pub fn container_run(started_at: i64, is_running: bool) -> ContainerRun {
+    ContainerRun::new(Some(started_at * 1_000_000_000), None, is_running)
+}
+
+/// The position of the `nth` line (from 1) that has the time `time`, in
+/// seconds after the Unix epoch.
+pub fn log_position(time: i64, nth: u32) -> LogPosition {
+    LogPosition::new(time * 1_000_000_000, nth)
+}
+
 /// A search that reached the fixture engines of `kinds`.
 fn build_discovery(
     kinds: &[EngineKind],
     docker_path: Option<&str>,
     podman_path: Option<&str>,
     is_selinux_enabled: bool,
+    home_folder: Option<&str>,
 ) -> Discovery {
     let probes = kinds
         .iter()
@@ -235,7 +474,12 @@ fn build_discovery(
             podman_path.map(PathBuf::from),
         );
 
-    Discovery::new(probes, cli, is_selinux_enabled)
+    Discovery::new(
+        probes,
+        cli,
+        is_selinux_enabled,
+        home_folder.map(PathBuf::from),
+    )
 }
 
 /// Map the captured lists of `kind`; without `with_containers` the
@@ -278,6 +522,8 @@ fn load_resources(kind: EngineKind, with_containers: bool) -> Resources {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::diagnosis::Diagnosis;
 
@@ -349,6 +595,26 @@ mod tests {
             podman.diagnosis(),
             Diagnosis::PodmanNoPermission(_)
         ));
+    }
+
+    #[test]
+    fn a_discovery_knows_the_fixture_home_unless_asked_not_to() {
+        let home = Some(Path::new(HOME_FOLDER));
+        let kinds = [EngineKind::Docker];
+
+        assert_eq!(discovery(&kinds).home_folder(), home);
+        assert_eq!(discovery_with_selinux(&kinds).home_folder(), home);
+        assert_eq!(discovery_with_cli(&kinds, None, None).home_folder(), home);
+        assert_eq!(
+            denied_discovery(DOCKER_SOCKET, CandidateSource::Docker)
+                .home_folder(),
+            home
+        );
+        assert_eq!(discovery_without_home(&kinds).home_folder(), None);
+        assert_eq!(
+            discovery_without_home(&kinds).diagnosis(),
+            discovery(&kinds).diagnosis()
+        );
     }
 
     #[test]

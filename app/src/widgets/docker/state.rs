@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use iced::Point;
 use otty_docker::{
@@ -29,17 +29,23 @@ use super::types::{
 };
 
 /// Runtime state of Docker mode: the engines and their lists, the open
-/// place, the selected row of each list, the tag search of each table and the
-/// actions: the ones that run, the open confirmation, the row menu and the
-/// notice of the last failure.
+/// place, the selected row of each list, the tag search and sort of each page
+/// and the actions: the ones that run, the open confirmation, the row menu and
+/// the notice of the last failure.
 #[derive(Debug, Default)]
 pub(crate) struct DockerState {
     is_active: bool,
     search: Search,
+    /// A search behind the no-engine card is on its way. It leaves `search` as
+    /// it is, so the card stays on screen with its buttons.
+    is_background_search_running: bool,
     /// Whether SELinux is enabled, from the last finished search. Kept apart
     /// from `search` because a new search forgets its result while engines
     /// found before stay shown and can open a Run form.
     is_selinux_enabled: bool,
+    /// The home folder, from the last finished search; kept apart from `search`
+    /// for the same reason.
+    home_folder: Option<PathBuf>,
     engines: Vec<EngineState>,
     /// The list the main area shows. Its engine may be closed in the tree:
     /// closing an engine does not change what the main area shows.
@@ -50,9 +56,9 @@ pub(crate) struct DockerState {
     closed_engines: HashSet<EngineAddress>,
     /// See [`Self::age_clock`].
     age_clock: i64,
-    /// The kept sort of each table; not saved to disk.
+    /// The kept sort of each page; not saved to disk.
     sorts: TableSorts,
-    /// The kept tag search of each table; not saved to disk.
+    /// The kept tag search of each page; not saved to disk.
     searches: TableSearches,
     inspector: InspectorState,
     running: Vec<ActionRequest>,
@@ -64,6 +70,9 @@ pub(crate) struct DockerState {
     form: Option<Form>,
     /// The open Run container form; it replaces the table.
     run_form: Option<RunForm>,
+    /// What the main area showed when the last engine went away; it comes back
+    /// with that engine. Not saved to disk.
+    lost_view: Option<LostView>,
 }
 
 impl DockerState {
@@ -85,6 +94,11 @@ impl DockerState {
     /// Return whether the last finished search found SELinux enabled.
     pub(crate) fn is_selinux_enabled(&self) -> bool {
         self.is_selinux_enabled
+    }
+
+    /// Return the home folder the last finished search found.
+    pub(crate) fn home_folder(&self) -> Option<&Path> {
+        self.home_folder.as_deref()
     }
 
     /// Return the reached engines, in search order.
@@ -115,14 +129,14 @@ impl DockerState {
         }
     }
 
-    /// Return how the `resource` table is sorted.
-    pub(crate) fn sort(&self, resource: ResourceKind) -> TableSort {
-        self.sorts.get(resource)
+    /// Return how the table of the page `place` is sorted.
+    pub(crate) fn sort(&self, place: &Place) -> TableSort {
+        self.sorts.get(place)
     }
 
-    /// Return the tag search of the `resource` table.
-    pub(crate) fn table_search(&self, resource: ResourceKind) -> &TagSearch {
-        self.searches.get(resource)
+    /// Return the tag search of the table of the page `place`.
+    pub(crate) fn table_search(&self, place: &Place) -> &TagSearch {
+        self.searches.get(place)
     }
 
     /// Return the time (Unix seconds) the tag search counts ages with. It
@@ -139,7 +153,7 @@ impl DockerState {
         let place = self.place.as_ref()?;
         let engine = self.open_engine()?;
         let now = self.age_clock;
-        let sort = self.sorts.get(place.resource());
+        let sort = self.sorts.get(place);
 
         let schema = match place.resource() {
             ResourceKind::Containers => {
@@ -291,6 +305,22 @@ impl DockerState {
             .any(|request| request.acts_on(address, resource, target))
     }
 
+    /// Return whether the no-engine card is what the main area shows: the last
+    /// search finished without an engine.
+    pub(crate) fn shows_no_engine_card(&self) -> bool {
+        let Search::Done(discovery) = &self.search else {
+            return false;
+        };
+
+        self.open_engine().is_none()
+            && !matches!(discovery.diagnosis(), Diagnosis::Engines(_))
+    }
+
+    /// Return whether a search behind the no-engine card is on its way.
+    pub(crate) fn is_background_search_running(&self) -> bool {
+        self.is_background_search_running
+    }
+
     /// Return the engine of the open place.
     pub(crate) fn open_engine(&self) -> Option<&EngineState> {
         let place = self.place.as_ref()?;
@@ -337,16 +367,23 @@ impl DockerState {
         self.search = Search::Searching;
     }
 
+    /// Remember whether a search behind the no-engine card is on its way.
+    pub(super) fn set_background_search_running(&mut self, is_running: bool) {
+        self.is_background_search_running = is_running;
+    }
+
     /// Take the search result: keep the lists of engines found again, add
     /// new engines, drop engines that are gone. The open place stays when
-    /// its engine is still there, else it moves to the first engine's
-    /// containers, and that engine opens in the tree. An engine the user
-    /// closed stays closed otherwise, also when it goes away and comes back.
+    /// its engine is still there; see [`Self::leave_lost_place`] for when it
+    /// is not. Each page keeps its search and sort. An engine the user closed
+    /// stays closed, also when it comes back while the no-engine page shows:
+    /// the table shows its list and its tree row stays closed.
     pub(super) fn finish_search(&mut self, discovery: Discovery) {
         let reached = match discovery.diagnosis() {
             Diagnosis::Engines(infos) => infos.clone(),
             _ => Vec::new(),
         };
+        let shown_row = self.selected_id().map(str::to_string);
 
         let mut previous = std::mem::take(&mut self.engines);
         self.engines = reached
@@ -371,18 +408,11 @@ impl DockerState {
             .as_ref()
             .is_some_and(|place| self.engine(place.engine()).is_some());
         if !place_is_kept {
-            self.place = self.engines.first().map(|engine| {
-                Place::new(
-                    engine.info.address().clone(),
-                    ResourceKind::Containers,
-                )
-            });
-            if let Some(place) = &self.place {
-                self.closed_engines.remove(place.engine());
-            }
+            self.leave_lost_place(shown_row);
         }
 
         self.is_selinux_enabled = discovery.is_selinux_enabled();
+        self.home_folder = discovery.home_folder().map(Path::to_path_buf);
         self.search = Search::Done(discovery);
     }
 
@@ -426,17 +456,19 @@ impl DockerState {
 
     /// Show `place`. Its engine opens in the tree, so a link or a finished
     /// Run that lands on a closed engine shows the list it went to. Opening
-    /// another place forgets the text in the search field, keeps the tags of
-    /// each table and goes back to the Overview tab.
+    /// another place keeps the search and the sort of each page, closes the
+    /// suggestions of the page left and goes back to the Overview tab. It also
+    /// wins over a page waiting to come back with its engine.
     pub(super) fn open(&mut self, place: Place) {
         self.closed_engines.remove(place.engine());
+        self.lost_view = None;
 
         if self.place.as_ref() == Some(&place) {
             return;
         }
 
         if let Some(left) = self.place.as_ref() {
-            self.searches.get_mut(left.resource()).clear_input();
+            self.searches.get_mut(left).close_suggestions();
         }
         self.place = Some(place);
         self.inspector.select_tab(InspectorTab::Overview);
@@ -534,44 +566,38 @@ impl DockerState {
 
     /// Show the `resource` list of `engine` and select the item with `id` in
     /// it: a container or network id, an image row key, or a volume name. The
-    /// text in the
-    /// field goes away, and so do the table's tags when they would hide the
-    /// item. A new container is selected before the reload that brings it
-    /// into the list, so a tag cannot be checked against it; the tags go away
-    /// then too.
+    /// text in the field of that page goes away, and so do its tags when they
+    /// would hide the item. A new container is selected before the reload that
+    /// brings it into the list, so a tag cannot be checked against it; the tags
+    /// go away then too.
     pub(super) fn show_item(
         &mut self,
         engine: &EngineAddress,
         resource: ResourceKind,
         id: String,
     ) {
-        self.open(Place::new(engine.clone(), resource));
+        let place = Place::new(engine.clone(), resource);
+        self.open(place.clone());
 
-        let passes = self.item_passes_tags(engine, resource, &id);
-        let search = self.searches.get_mut(resource);
+        let passes = self.item_passes_tags(&place, &id);
+        let search = self.searches.get_mut(&place);
         search.clear_input();
         if !passes {
             let _ = search.clear_tags();
         }
 
-        let Some(engine) = self
+        if let Some(engine) = self
             .engines
             .iter_mut()
             .find(|state| state.info.address() == engine)
-        else {
-            return;
-        };
-        match resource {
-            ResourceKind::Containers => engine.containers.select(id),
-            ResourceKind::Images => engine.images.select(id),
-            ResourceKind::Volumes => engine.volumes.select(id),
-            ResourceKind::Networks => engine.networks.select(id),
+        {
+            engine.select(resource, id);
         }
     }
 
     /// Show the containers of the open engine with the tag
-    /// `compose:<project>`, replacing another `compose` tag. The text in the
-    /// field goes away, so the project shows.
+    /// `compose:<project>`, replacing another `compose` tag on that page only.
+    /// The text in the field goes away, so the project shows.
     pub(super) fn open_compose_project(&mut self, project: &str) {
         let Some(place) = self.place.as_ref() else {
             return;
@@ -579,9 +605,9 @@ impl DockerState {
 
         let containers =
             Place::new(place.engine().clone(), ResourceKind::Containers);
-        self.open(containers);
+        self.open(containers.clone());
 
-        let search = self.searches.get_mut(ResourceKind::Containers);
+        let search = self.searches.get_mut(&containers);
         search.clear_input();
         let _ = search.set_tag(COMPOSE_KEY, project);
     }
@@ -623,7 +649,7 @@ impl DockerState {
             return;
         };
 
-        self.sorts = self.sorts.pressed(place.resource(), column);
+        self.sorts.press(place, column);
     }
 
     /// Do what the user did in the tag search of the open table.
@@ -635,10 +661,16 @@ impl DockerState {
             return;
         };
 
-        let _ = self
-            .searches
-            .get_mut(place.resource())
-            .perform(action, &schema);
+        let _ = self.searches.get_mut(place).perform(action, &schema);
+    }
+
+    /// Close the suggestions of the open table's search; its text and tags
+    /// stay. No other page can have them open: going to another page closes
+    /// them.
+    pub(super) fn close_search_suggestions(&mut self) {
+        if let Some(place) = self.place.as_ref() {
+            self.searches.get_mut(place).close_suggestions();
+        }
     }
 
     /// Set the time the tag search counts ages with; see [`Self::age_clock`].
@@ -651,9 +683,9 @@ impl DockerState {
     pub(super) fn shown_row_id(&self, index: usize) -> Option<String> {
         let place = self.place.as_ref()?;
         let engine = self.open_engine()?;
-        let search = self.searches.get(place.resource());
+        let search = self.searches.get(place);
         let now = self.age_clock;
-        let sort = self.sorts.get(place.resource());
+        let sort = self.sorts.get(place);
 
         let id = match place.resource() {
             ResourceKind::Containers => {
@@ -698,13 +730,61 @@ impl DockerState {
             return false;
         };
 
-        match place.resource() {
-            ResourceKind::Containers => engine.containers.select(id),
-            ResourceKind::Images => engine.images.select(id),
-            ResourceKind::Volumes => engine.volumes.select(id),
-            ResourceKind::Networks => engine.networks.select(id),
-        }
+        engine.select(place.resource(), id);
         true
+    }
+
+    /// The engine of the open place is gone, so the row menu and the notice of
+    /// the old list go away and its suggestions close.
+    ///
+    /// When no engine is left, the place and `shown_row` wait in
+    /// [`Self::lost_view`] for their engine: they come back with it, the row as
+    /// the selection its new list starts with, so a row gone meanwhile falls
+    /// back as any missing selection does. When another engine answers without
+    /// that one, the view moves on to the first engine's containers and does
+    /// not jump back later. Only a place that moves from a lost engine to
+    /// another engine opens that engine in the tree, so the user can see whose
+    /// list is on screen.
+    fn leave_lost_place(&mut self, shown_row: Option<String>) {
+        let left = self.place.take();
+        self.row_menu = None;
+        self.notice = None;
+        if let Some(left) = &left {
+            self.searches.get_mut(left).close_suggestions();
+        }
+
+        if self.engines.is_empty() {
+            if let Some(place) = left {
+                self.lost_view = Some(LostView {
+                    place,
+                    row: shown_row,
+                });
+            }
+            return;
+        }
+
+        let lost_view = self.lost_view.take();
+        if let Some(view) = lost_view
+            && let Some(engine) = self
+                .engines
+                .iter_mut()
+                .find(|engine| engine.info.address() == view.place.engine())
+        {
+            if let Some(row) = view.row {
+                engine.select(view.place.resource(), row);
+            }
+            self.place = Some(view.place);
+            return;
+        }
+
+        self.place = self.engines.first().map(|engine| {
+            Place::new(engine.info.address().clone(), ResourceKind::Containers)
+        });
+        if left.is_some()
+            && let Some(place) = &self.place
+        {
+            self.closed_engines.remove(place.engine());
+        }
     }
 
     /// Return the container at `index` of the shown, filtered containers
@@ -717,28 +797,23 @@ impl DockerState {
 
         let shown = shown_containers(
             engine.containers.items(),
-            self.searches.get(ResourceKind::Containers),
+            self.searches.get(place),
             self.age_clock,
-            self.sorts.get(ResourceKind::Containers),
+            self.sorts.get(place),
         );
 
         shown.get(index).copied()
     }
 
-    /// Return whether the tags of the `resource` table let the item with `id`
-    /// of the engine at `address` through; `false` when it is not listed.
-    fn item_passes_tags(
-        &self,
-        address: &EngineAddress,
-        resource: ResourceKind,
-        id: &str,
-    ) -> bool {
-        let Some(engine) = self.engine(address) else {
+    /// Return whether the tags of the page `place` let the item with `id`
+    /// through; `false` when it is not listed.
+    fn item_passes_tags(&self, place: &Place, id: &str) -> bool {
+        let Some(engine) = self.engine(place.engine()) else {
             return false;
         };
         let now = self.age_clock;
 
-        let row = match resource {
+        let row = match place.resource() {
             ResourceKind::Containers => engine
                 .containers
                 .find(id, Container::id)
@@ -757,7 +832,7 @@ impl DockerState {
                 .map(|network| network_row(network, now)),
         };
 
-        row.is_some_and(|row| self.searches.get(resource).passes_tags(&row))
+        row.is_some_and(|row| self.searches.get(place).passes_tags(&row))
     }
 }
 
@@ -769,9 +844,9 @@ impl DockerState {
     pub(crate) fn shown_position(&self, engine_index: usize) -> usize {
         let place = self.place().expect("an open place");
         let engine = self.open_engine().expect("an open engine");
-        let search = self.searches.get(place.resource());
+        let search = self.searches.get(place);
         let now = self.age_clock;
-        let sort = self.sorts.get(place.resource());
+        let sort = self.sorts.get(place);
 
         match place.resource() {
             ResourceKind::Containers => {
@@ -820,6 +895,15 @@ struct RowMenu {
     /// The row's id in the open list: container or network id, image row key,
     /// or volume name.
     target: String,
+}
+
+/// What the main area showed when the last engine went away.
+#[derive(Debug)]
+struct LostView {
+    place: Place,
+    /// The selected row's id in the list of `place`; an image row goes by its
+    /// row key.
+    row: Option<String>,
 }
 
 /// How far the engine search is.
@@ -877,6 +961,16 @@ impl EngineState {
             images: ResourceList::new(),
             volumes: ResourceList::new(),
             networks: ResourceList::new(),
+        }
+    }
+
+    /// Select the row with `id` in the `resource` list.
+    fn select(&mut self, resource: ResourceKind, id: String) {
+        match resource {
+            ResourceKind::Containers => self.containers.select(id),
+            ResourceKind::Images => self.images.select(id),
+            ResourceKind::Volumes => self.volumes.select(id),
+            ResourceKind::Networks => self.networks.select(id),
         }
     }
 

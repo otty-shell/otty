@@ -302,9 +302,13 @@ fn is_docker_background(event: &DockerEvent) -> bool {
             DockerIntent::Enter
                 | DockerIntent::Leave
                 | DockerIntent::DiscoveryFinished(_)
+                | DockerIntent::EngineSearchTick
+                | DockerIntent::BackgroundSearchFinished(_)
                 | DockerIntent::ListsLoaded { .. }
                 | DockerIntent::LogLines { .. }
                 | DockerIntent::LogsFailed { .. }
+                | DockerIntent::LogRunRead { .. }
+                | DockerIntent::LogRunChecked { .. }
                 | DockerIntent::InspectLoaded { .. }
                 | DockerIntent::ListChanged { .. }
                 | DockerIntent::ContainerStarted { .. }
@@ -465,6 +469,13 @@ mod tests {
                 lists: LoadedLists::failed(&DockerError::new("x")),
             }),
             AppEvent::Docker(DockerEvent::Effect(DockerEffect::Discover)),
+            docker(DockerIntent::EngineSearchTick),
+            docker(DockerIntent::BackgroundSearchFinished(
+                otty_docker::fixtures::discovery(&[]),
+            )),
+            AppEvent::Docker(DockerEvent::Effect(
+                DockerEffect::DiscoverInBackground,
+            )),
             docker(DockerIntent::ListChanged {
                 engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
                 resource: ResourceKind::Containers,
@@ -534,6 +545,15 @@ mod tests {
             docker(DockerIntent::LogLines {
                 target: log_target.clone(),
                 lines: vec![String::from("ready")],
+                position: None,
+            }),
+            docker(DockerIntent::LogRunRead {
+                target: log_target.clone(),
+                run: otty_docker::fixtures::container_run(1, true),
+            }),
+            docker(DockerIntent::LogRunChecked {
+                target: log_target.clone(),
+                result: Err(DockerError::new("x")),
             }),
             docker(DockerIntent::LogsFailed {
                 target: log_target,

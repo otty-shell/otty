@@ -814,8 +814,8 @@ mod tests {
 
         let events: Vec<AppEvent> = ui.into_messages().collect();
         assert!(events.iter().any(|event| matches!(
-            event,
-            AppEvent::Docker(DockerEvent::Intent(DockerIntent::SelectRow(5)))
+            page_intent(event),
+            Some(DockerIntent::SelectRow(5))
         )));
     }
 
@@ -1103,6 +1103,17 @@ mod tests {
         app
     }
 
+    /// What the page on screen sent in `event`.
+    fn page_intent(event: &AppEvent) -> Option<&DockerIntent> {
+        match event {
+            AppEvent::Docker(DockerEvent::Intent(DockerIntent::FromPage {
+                intent,
+                ..
+            })) => Some(intent),
+            _ => None,
+        }
+    }
+
     /// Presses the first container row's "⋯" button in the window and
     /// returns the row's vertical center, the x of the press and the
     /// intents it sent.
@@ -1123,10 +1134,8 @@ mod tests {
                 .into_messages()
                 .filter(|event| {
                     matches!(
-                        event,
-                        AppEvent::Docker(DockerEvent::Intent(
-                            DockerIntent::RowMenuPressed { .. }
-                        ))
+                        page_intent(event),
+                        Some(DockerIntent::RowMenuPressed { .. })
                     )
                 })
                 .collect();
@@ -1145,13 +1154,13 @@ mod tests {
 
         let (row_center, clicked_x, events) = press_first_row_menu(&app);
 
-        let [
-            AppEvent::Docker(DockerEvent::Intent(
-                DockerIntent::RowMenuPressed { position, .. },
-            )),
-        ] = events.as_slice()
-        else {
+        let [event] = events.as_slice() else {
             panic!("one row menu intent expected");
+        };
+        let Some(DockerIntent::RowMenuPressed { position, .. }) =
+            page_intent(event)
+        else {
+            panic!("a row menu intent expected");
         };
         assert!(
             (position.y - (row_center + size::CONTROL_SM / 2.0)).abs() < 1.0,

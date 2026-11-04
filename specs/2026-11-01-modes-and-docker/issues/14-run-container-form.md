@@ -89,7 +89,8 @@ tests, 12 view model tests, 12 view tests), then the code.
   counts, `~` and absolute sources are folders), `parse_port`.
 - `run_checks.rs`: `check(form)` → `RunProblems` (image required; host
   port empty or 1–65535; container port 1–65535; container path starts
-  with `/`; a source is required; a folder source must exist).
+  with `/`; a source is required; `~` needs a known home folder; a folder
+  source must exist).
 - `run_flow.rs`: open from `OpenCreate` on Containers and from
   `RowAction::Run` (image name filled, looked up at once); an image change
   emits `LoadImageDefaults`; engine change sets its default network

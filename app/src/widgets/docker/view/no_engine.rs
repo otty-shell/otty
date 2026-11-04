@@ -35,7 +35,7 @@ pub(crate) fn view<'a>(
     for link in &vm.installs {
         body = body.push(install_tile(link, palette));
     }
-    if let Some(command) = &vm.command {
+    for command in &vm.commands {
         body = body.push(command_block(command, palette));
     }
     body = body.push(buttons(&vm, palette));
@@ -87,13 +87,13 @@ fn command_block<'a>(
     .into()
 }
 
-/// Check again, and How to fix when the case has a page for it.
+/// Check again, and How to fix for each page the case has. The row wraps, so
+/// long translations of two pages stay inside the card.
 fn buttons<'a>(
     vm: &NoEngineViewModel,
     palette: &UiPalette,
 ) -> Element<'a, DockerIntent> {
-    let has_command = vm.command.is_some();
-    let kind = if has_command {
+    let kind = if !vm.commands.is_empty() {
         ButtonKind::Primary
     } else {
         ButtonKind::Secondary
@@ -105,15 +105,15 @@ fn buttons<'a>(
             .on_press(DockerIntent::CheckAgain)
     ]
     .spacing(spacing::SPACE_3);
-    if let Some(url) = vm.fix_url {
+    for fix in &vm.fixes {
         buttons = buttons.push(
-            Button::new(i18n::t(Key::DockerHowToFix), palette)
+            Button::new(fix.label, palette)
                 .kind(ButtonKind::Ghost)
-                .on_press(DockerIntent::OpenLink(url.to_string())),
+                .on_press(DockerIntent::OpenLink(fix.url.to_string())),
         );
     }
 
-    buttons.into()
+    buttons.wrap().vertical_spacing(spacing::SPACE_2).into()
 }
 
 /// The muted line under a rule: what OTTY looked for.
@@ -148,6 +148,7 @@ fn small_text<'a>(
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
+    use otty_docker::EngineKind;
 
     use super::*;
     use crate::theme::ThemeManager;
@@ -254,12 +255,169 @@ mod tests {
             NoEngineCase::NotInstalled,
             NoEngineCase::DockerNotRunning,
             NoEngineCase::PodmanApiOff,
+            NoEngineCase::DockerAndPodmanOff,
             NoEngineCase::NoPermission,
             NoEngineCase::PodmanNoPermission,
+            NoEngineCase::NoPermissionAndOtherOff(EngineKind::Docker),
+            NoEngineCase::NoPermissionAndOtherOff(EngineKind::Podman),
         ] {
             let sent = intents(case, i18n::t(Key::DockerCheckAgain));
 
             assert_eq!(sent, vec![DockerIntent::CheckAgain]);
+        }
+    }
+
+    /// A press on the button called `label` of the card of both engines.
+    fn both_off_intents(label: &str) -> Vec<DockerIntent> {
+        let themes = ThemeManager::new();
+        let vm = view_model(NoEngineCase::DockerAndPodmanOff, "", &[]);
+        let mut ui = simulator(view(vm, themes.current().ui()));
+
+        ui.click(label).expect("the button should be visible");
+
+        ui.into_messages().collect()
+    }
+
+    #[test]
+    fn both_engines_off_shows_both_commands_and_their_notes() {
+        let themes = ThemeManager::new();
+        let vm = view_model(NoEngineCase::DockerAndPodmanOff, "", &[]);
+        let texts: Vec<&str> = vm
+            .commands
+            .iter()
+            .flat_map(|command| [command.label, command.text, command.hint])
+            .collect();
+        assert_eq!(texts.len(), 6);
+        let mut ui = simulator(view(vm, themes.current().ui()));
+
+        for text in texts {
+            ui.find(text).expect("the text should show");
+        }
+    }
+
+    /// The card has two Copy buttons with one label, so each block is pressed
+    /// on its own.
+    #[test]
+    fn each_command_of_both_engines_off_copies_itself() {
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+        let vm = view_model(NoEngineCase::DockerAndPodmanOff, "", &[]);
+        assert_eq!(vm.commands.len(), 2);
+
+        for (command, expected) in vm.commands.iter().zip([
+            "sudo systemctl start docker",
+            "systemctl --user enable --now podman.socket",
+        ]) {
+            let mut ui = simulator(command_block(command, palette));
+
+            ui.click(i18n::t(Key::DockerCopy))
+                .expect("the button should be visible");
+
+            let sent: Vec<DockerIntent> = ui.into_messages().collect();
+            assert_eq!(
+                sent,
+                vec![DockerIntent::CopyCommand(String::from(expected))]
+            );
+        }
+    }
+
+    #[test]
+    fn each_how_to_fix_of_both_engines_off_opens_its_own_page() {
+        let docker = both_off_intents(i18n::t(Key::DockerHowToFixDocker));
+        let podman = both_off_intents(i18n::t(Key::DockerHowToFixPodman));
+
+        assert_eq!(
+            docker,
+            vec![DockerIntent::OpenLink(String::from(
+                "https://docs.docker.com/engine/daemon/start/"
+            ))]
+        );
+        assert_eq!(
+            podman,
+            vec![DockerIntent::OpenLink(String::from(
+                "https://docs.podman.io/en/latest/markdown/podman-system-service.1.html"
+            ))]
+        );
+    }
+
+    /// What each card of a denied socket with the other engine off copies and
+    /// opens, in the order of its command blocks.
+    fn denied_and_other_off_cards()
+    -> [(EngineKind, [&'static str; 2], [&'static str; 2]); 2] {
+        let podman_page = "https://docs.podman.io/en/latest/markdown/podman-system-service.1.html";
+        let podman_command = "systemctl --user enable --now podman.socket";
+
+        [
+            (
+                EngineKind::Docker,
+                ["sudo usermod -aG docker $USER", podman_command],
+                [
+                    "https://docs.docker.com/engine/install/linux-postinstall/",
+                    podman_page,
+                ],
+            ),
+            (
+                EngineKind::Podman,
+                [podman_command, "sudo systemctl start docker"],
+                [podman_page, "https://docs.docker.com/engine/daemon/start/"],
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_denied_socket_with_the_other_off_shows_both_blocks_and_copies_each() {
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+
+        for (engine, commands, _) in denied_and_other_off_cards() {
+            let vm = view_model(
+                NoEngineCase::NoPermissionAndOtherOff(engine),
+                "/some.sock",
+                &[],
+            );
+            assert_eq!(vm.commands.len(), 2);
+
+            let mut card = simulator(view(vm.clone(), palette));
+            card.find(vm.title).expect("the title should show");
+            card.find(vm.description.as_str())
+                .expect("the text should show");
+            for command in &vm.commands {
+                for text in [command.label, command.text, command.hint] {
+                    card.find(text).expect("the text should show");
+                }
+            }
+
+            for (command, expected) in vm.commands.iter().zip(commands) {
+                let mut block = simulator(command_block(command, palette));
+
+                block
+                    .click(i18n::t(Key::DockerCopy))
+                    .expect("the button should be visible");
+
+                let sent: Vec<DockerIntent> = block.into_messages().collect();
+                assert_eq!(
+                    sent,
+                    vec![DockerIntent::CopyCommand(String::from(expected))]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_denied_socket_with_the_other_off_opens_a_page_for_each_engine() {
+        for (engine, _, pages) in denied_and_other_off_cards() {
+            let case = NoEngineCase::NoPermissionAndOtherOff(engine);
+            let labels = view_model(case, "/some.sock", &[]).fixes;
+            assert_eq!(labels.len(), 2);
+
+            for (fix, page) in labels.iter().zip(pages) {
+                let sent = intents(case, fix.label);
+
+                assert_eq!(
+                    sent,
+                    vec![DockerIntent::OpenLink(String::from(page))]
+                );
+            }
         }
     }
 

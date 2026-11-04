@@ -322,7 +322,8 @@ mod tests {
                     .min_width(80)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnPorts), 2)
-                    .min_width(130),
+                    .min_width(130)
+                    .sortable(true),
                 TableColumn::new(i18n::t(Key::DockerColumnAge), 1)
                     .min_width(52)
                     .sortable(true),
@@ -526,6 +527,25 @@ mod tests {
             urls_of(ports),
             vec!["http://localhost:8080", "http://localhost:5432"]
         );
+    }
+
+    #[test]
+    fn the_text_the_ports_column_sorts_by_is_the_text_of_the_linked_cell() {
+        let ports: Ports = &[
+            (Some("0.0.0.0"), Some(8080), 80, "tcp"),
+            (Some("::"), Some(8080), 80, "tcp"),
+            (Some("0.0.0.0"), Some(5353), 53, "udp"),
+            (None, None, 443, "tcp"),
+        ];
+        let container = fixtures::container_with_ports(ports);
+
+        let cell: String = ports_value(container.ports())
+            .iter()
+            .map(Piece::text)
+            .collect();
+
+        assert_eq!(cell, "8080:80/tcp, 5353:53/udp, 443/tcp");
+        assert_eq!(ports_text(container.ports()), cell);
     }
 
     #[test]

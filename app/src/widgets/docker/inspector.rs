@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use iced::widget::text_editor::{Action, Motion};
-use otty_docker::{EngineAddress, EngineInfo};
+use otty_docker::{ContainerRun, EngineAddress, EngineInfo, LogPosition};
 use otty_ui_kit::components::log_view::LogViewState;
 use serde_json::Value;
 
@@ -67,15 +67,29 @@ impl fmt::Display for InspectorTab {
     }
 }
 
-/// One logs stream: the container whose logs are followed, its engine and
-/// how many times the container came back while they were open. It keys the
-/// logs subscription: another container, engine or comeback is another
-/// subscription, and iced stops the old stream and starts the new one.
+/// Which lines a logs stream reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum LogRead {
+    /// The last lines, as when the logs open.
+    LastLines,
+    /// The lines of the latest run: the container came back while its logs
+    /// were open.
+    LatestRun,
+    /// The lines after this position: the engine reconnected and the lines
+    /// up to here are on screen.
+    After(LogPosition),
+}
+
+/// One logs stream: the container whose logs are followed, its engine, which
+/// lines it reads and how many streams came before it while the logs were
+/// open. It keys the logs subscription: any change is another subscription,
+/// and iced stops the old stream and starts the new one.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct LogTarget {
     engine: EngineInfo,
     container_id: String,
-    comebacks: u32,
+    read: LogRead,
+    stream_number: u32,
 }
 
 impl LogTarget {
@@ -89,16 +103,20 @@ impl LogTarget {
         &self.container_id
     }
 
+    /// Which lines the stream reads.
+    pub(crate) fn read(&self) -> LogRead {
+        self.read
+    }
+
     /// Whether the logs are for the same container on the same engine, from
     /// any stream.
     pub(crate) fn is_same_container(&self, other: &Self) -> bool {
         self.engine == other.engine && self.container_id == other.container_id
     }
 
-    /// Whether the stream reads only the lines of the latest run: the
-    /// container came back while its logs were open.
-    pub(crate) fn reads_latest_run_only(&self) -> bool {
-        self.comebacks > 0
+    /// Whether the container runs on the engine at `address`.
+    pub(crate) fn is_on_engine(&self, address: &EngineAddress) -> bool {
+        self.engine.address() == address
     }
 
     /// The container `container_id` on `engine`.
@@ -106,7 +124,8 @@ impl LogTarget {
         Self {
             engine,
             container_id: container_id.to_string(),
-            comebacks: 0,
+            read: LogRead::LastLines,
+            stream_number: 0,
         }
     }
 
@@ -117,7 +136,22 @@ impl LogTarget {
         address: &EngineAddress,
         container_id: &str,
     ) -> bool {
-        self.engine.address() == address && self.container_id == container_id
+        self.is_on_engine(address) && self.container_id == container_id
+    }
+
+    /// The next stream of the same container, reading `read`.
+    fn next_stream(&mut self, read: LogRead) {
+        self.read = read;
+        self.stream_number = self.stream_number.saturating_add(1);
+    }
+}
+
+#[cfg(test)]
+impl LogTarget {
+    /// The same container, reading `read`.
+    pub(crate) fn reading(mut self, read: LogRead) -> Self {
+        self.read = read;
+        self
     }
 }
 
@@ -159,6 +193,13 @@ pub(crate) struct ContainerLogs {
     target: LogTarget,
     lines: LogViewState,
     error: Option<String>,
+    /// The run the lines belong to; `None` until the stream has read it.
+    shown_run: Option<ContainerRun>,
+    /// Where the lines received so far end, waiting ones too.
+    position: Option<LogPosition>,
+    /// A reconnect found that the run of these lines ended, so what the old
+    /// stream still reports says nothing: the container simply ended.
+    has_ended: bool,
 }
 
 impl ContainerLogs {
@@ -183,6 +224,9 @@ impl ContainerLogs {
             target,
             lines: LogViewState::new().max_lines(MAX_LOG_LINES),
             error: None,
+            shown_run: None,
+            position: None,
+            has_ended: false,
         }
     }
 
@@ -191,10 +235,42 @@ impl ContainerLogs {
     fn start_over(&mut self) {
         let is_following = self.lines.is_following();
 
-        self.target.comebacks = self.target.comebacks.saturating_add(1);
+        self.target.next_stream(LogRead::LatestRun);
         self.lines = LogViewState::new().max_lines(MAX_LOG_LINES);
         self.lines.set_following(is_following);
         self.error = None;
+        self.shown_run = None;
+        self.position = None;
+        self.has_ended = false;
+    }
+
+    /// The engine reconnected and the same run goes on: keep the lines, waiting
+    /// ones too, and ask for a new stream that goes on after them. Without a
+    /// line to go on from, the new stream reads what the old one was to read.
+    /// The old stream may still be alive: iced drops it, and its late lines
+    /// carry the old key.
+    fn go_on(&mut self) {
+        let read = match self.position {
+            Some(position) => LogRead::After(position),
+            None => self.target.read,
+        };
+
+        self.target.next_stream(read);
+        self.error = None;
+        self.has_ended = false;
+    }
+
+    /// The same run ended while the engine was away: keep the lines, start no
+    /// stream and forget the old stream's error. That stream keeps its key, so
+    /// a failure it still sends has to be told apart from a real one.
+    fn end(&mut self) {
+        self.error = None;
+        self.has_ended = true;
+    }
+
+    /// Whether lines are here, on screen or waiting.
+    fn has_lines(&self) -> bool {
+        self.lines.line_count() > 0 || self.lines.pending_count() > 0
     }
 }
 
@@ -207,6 +283,20 @@ impl fmt::Debug for ContainerLogs {
             .field("error", &self.error)
             .finish()
     }
+}
+
+/// What the open logs do once their engine has reconnected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogsAfterReconnect {
+    /// Another run started in the gap: clear the view and read that run.
+    StartOver,
+    /// The same run goes on: keep the lines and add those missed.
+    GoOn,
+    /// The same run ended in the gap: keep the lines, ask nothing more, and the
+    /// message of the old stream goes, because the container simply ended.
+    Ended,
+    /// Nothing to read: keep the lines and ask the engine nothing more.
+    Keep,
 }
 
 /// The inspect answer of one row and how its tree is open.
@@ -375,23 +465,70 @@ impl InspectorState {
         }
     }
 
-    /// Add lines of `target`. Returns `false` when its logs are no longer
-    /// followed.
+    /// Add lines of `target`, which end at `position`. Returns `false` when
+    /// its logs are no longer followed.
     pub(super) fn push_log_lines(
         &mut self,
         target: &LogTarget,
         lines: Vec<String>,
+        position: Option<LogPosition>,
     ) -> bool {
         let Some(logs) = self.followed_logs(target) else {
             return false;
         };
 
         logs.lines.push_lines(lines);
+        if position.is_some() {
+            logs.position = position;
+        }
+        true
+    }
+
+    /// Remember which run the stream of `target` reads. Returns `false` when
+    /// its logs are no longer followed.
+    pub(super) fn set_log_run(
+        &mut self,
+        target: &LogTarget,
+        run: ContainerRun,
+    ) -> bool {
+        let Some(logs) = self.followed_logs(target) else {
+            return false;
+        };
+
+        logs.shown_run = Some(run);
+        true
+    }
+
+    /// The engine of `target` reconnected and inspect told `run_now`, or
+    /// nothing when it failed. Spec Decision 12: see
+    /// [`logs_after_reconnect`]. Returns `false` when the answer is late: the
+    /// logs moved to another container or stream meanwhile.
+    pub(super) fn settle_logs_after_reconnect(
+        &mut self,
+        target: &LogTarget,
+        run_now: Option<ContainerRun>,
+    ) -> bool {
+        let Some(logs) = self.followed_logs(target) else {
+            return false;
+        };
+
+        let has_lines_without_position =
+            logs.position.is_none() && logs.has_lines();
+        match logs_after_reconnect(
+            logs.shown_run,
+            run_now,
+            has_lines_without_position,
+        ) {
+            LogsAfterReconnect::StartOver => logs.start_over(),
+            LogsAfterReconnect::GoOn => logs.go_on(),
+            LogsAfterReconnect::Ended => logs.end(),
+            LogsAfterReconnect::Keep => {},
+        }
         true
     }
 
     /// Show that the logs of `target` could not be read. Returns `false`
-    /// when its logs are no longer followed.
+    /// when its logs are no longer followed or their run has ended.
     pub(super) fn fail_logs(
         &mut self,
         target: &LogTarget,
@@ -400,6 +537,9 @@ impl InspectorState {
         let Some(logs) = self.followed_logs(target) else {
             return false;
         };
+        if logs.has_ended {
+            return false;
+        }
 
         logs.error = Some(error.to_string());
         true
@@ -520,6 +660,36 @@ impl InspectorState {
     }
 }
 
+/// What the open logs do after a reconnect, from the run they show (`None`
+/// until their stream has read it), the run inspect tells now (`None` when it
+/// failed: the container is gone or the engine went away again, so nothing is
+/// known about it) and whether lines are here that cannot be told apart from
+/// new ones.
+fn logs_after_reconnect(
+    shown_run: Option<ContainerRun>,
+    run_now: Option<ContainerRun>,
+    has_lines_without_position: bool,
+) -> LogsAfterReconnect {
+    let Some(run_now) = run_now else {
+        return LogsAfterReconnect::Keep;
+    };
+    let Some(shown_run) = shown_run else {
+        return LogsAfterReconnect::GoOn;
+    };
+
+    if !shown_run.is_same_run(&run_now) {
+        return LogsAfterReconnect::StartOver;
+    }
+    if !run_now.is_running() {
+        return LogsAfterReconnect::Ended;
+    }
+    if has_lines_without_position {
+        return LogsAfterReconnect::Keep;
+    }
+
+    LogsAfterReconnect::GoOn
+}
+
 /// The JSON as read-only lines, shown from its first line.
 fn json_view(json: &str) -> LogViewState {
     let mut view = LogViewState::new();
@@ -527,4 +697,116 @@ fn json_view(json: &str) -> LogViewState {
 
     view.perform(Action::Move(Motion::DocumentStart));
     view
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_docker::fixtures;
+
+    use super::*;
+
+    const STARTED: i64 = 1_793_750_700;
+    const STARTED_AGAIN: i64 = 1_793_750_800;
+
+    #[test]
+    fn another_start_time_starts_over() {
+        let shown = fixtures::container_run(STARTED, true);
+        let now = fixtures::container_run(STARTED_AGAIN, true);
+
+        let decision = logs_after_reconnect(Some(shown), Some(now), false);
+
+        assert_eq!(decision, LogsAfterReconnect::StartOver);
+    }
+
+    /// While events were down the container ran again and stopped: the live
+    /// app would show that run, once, and the stream ends with the container.
+    #[test]
+    fn another_start_time_of_a_stopped_container_starts_over_too() {
+        let shown = fixtures::container_run(STARTED, true);
+        let now = fixtures::container_run(STARTED_AGAIN, false);
+
+        let decision = logs_after_reconnect(Some(shown), Some(now), false);
+
+        assert_eq!(decision, LogsAfterReconnect::StartOver);
+    }
+
+    #[test]
+    fn the_same_run_still_running_goes_on() {
+        let run = fixtures::container_run(STARTED, true);
+
+        let decision = logs_after_reconnect(Some(run), Some(run), false);
+
+        assert_eq!(decision, LogsAfterReconnect::GoOn);
+    }
+
+    #[test]
+    fn the_same_run_stopped_has_ended() {
+        let shown = fixtures::container_run(STARTED, true);
+        let now = fixtures::container_run(STARTED, false);
+
+        let decision = logs_after_reconnect(Some(shown), Some(now), false);
+
+        assert_eq!(decision, LogsAfterReconnect::Ended);
+    }
+
+    /// Whether the lines can be told apart does not matter once the run ended.
+    #[test]
+    fn the_same_run_stopped_with_lines_without_a_position_has_ended_too() {
+        let shown = fixtures::container_run(STARTED, true);
+        let now = fixtures::container_run(STARTED, false);
+
+        let decision = logs_after_reconnect(Some(shown), Some(now), true);
+
+        assert_eq!(decision, LogsAfterReconnect::Ended);
+    }
+
+    #[test]
+    fn no_answer_keeps_the_lines_whatever_is_shown() {
+        let run = fixtures::container_run(STARTED, true);
+
+        assert_eq!(
+            logs_after_reconnect(Some(run), None, false),
+            LogsAfterReconnect::Keep
+        );
+        assert_eq!(
+            logs_after_reconnect(None, None, false),
+            LogsAfterReconnect::Keep
+        );
+    }
+
+    /// The stream could not even read its run (the engine was away), so
+    /// nothing is on screen: read now, also for a stopped container, whose
+    /// stream ends by itself.
+    #[test]
+    fn a_stream_that_never_read_its_run_reads_again() {
+        for is_running in [true, false] {
+            let now = fixtures::container_run(STARTED, is_running);
+
+            let decision = logs_after_reconnect(None, Some(now), false);
+
+            assert_eq!(decision, LogsAfterReconnect::GoOn);
+        }
+    }
+
+    /// Lines without a time cannot be told from new ones, and repeating them
+    /// is worse than waiting for the next start.
+    #[test]
+    fn lines_without_a_position_are_not_read_again() {
+        let run = fixtures::container_run(STARTED, true);
+
+        let decision = logs_after_reconnect(Some(run), Some(run), true);
+
+        assert_eq!(decision, LogsAfterReconnect::Keep);
+    }
+
+    /// A restart is told apart before the lines matter: they go anyway.
+    #[test]
+    fn lines_without_a_position_do_not_hold_back_a_restart() {
+        let shown = fixtures::container_run(STARTED, true);
+        let now = fixtures::container_run(STARTED_AGAIN, true);
+
+        let decision = logs_after_reconnect(Some(shown), Some(now), true);
+
+        assert_eq!(decision, LogsAfterReconnect::StartOver);
+    }
 }

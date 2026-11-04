@@ -4,6 +4,8 @@ use bollard::models::{
     ContainerSummary, ContainerSummaryStateEnum, PortSummaryTypeEnum,
 };
 
+use crate::text_order::compare_text;
+
 /// The label Docker Compose, `podman compose` and `podman-compose` put on
 /// every service container; its value is the project name.
 pub const COMPOSE_PROJECT_LABEL: &str = "com.docker.compose.project";
@@ -340,7 +342,7 @@ fn map_networks(summary: &ContainerSummary) -> Vec<ContainerNetwork> {
                 .filter(|address| !address.is_empty()),
         })
         .collect();
-    networks.sort_by(|left, right| left.name.cmp(&right.name));
+    networks.sort_by(|left, right| compare_text(&left.name, &right.name));
 
     networks
 }
@@ -559,6 +561,21 @@ mod tests {
             .collect();
 
         assert_eq!(names, ["alpha", "zeta"]);
+    }
+
+    #[test]
+    fn networks_are_listed_a_to_z_whatever_the_case() {
+        let container = Container::from_summary(&summary(
+            r#"{"NetworkSettings":{"Networks":{"Zed":{"NetworkID":"z"},"beta":{"NetworkID":"b"},"Alpha":{"NetworkID":"a"}}}}"#,
+        ));
+
+        let names: Vec<&str> = container
+            .networks()
+            .iter()
+            .map(ContainerNetwork::name)
+            .collect();
+
+        assert_eq!(names, ["Alpha", "beta", "Zed"]);
     }
 
     #[test]

@@ -1,7 +1,8 @@
 //! The checks before Run (spec Decision 18): the image is not empty, ports
-//! are 1–65535, paths in the container are absolute and a folder source
-//! exists and answers. Each problem is shown under its field and keeps Run
-//! disabled. Pure: whether a folder exists is the answer kept in the form.
+//! are 1–65535, paths in the container are absolute, a folder source exists
+//! and answers, and `~` has a known home folder to stand for. Each problem is
+//! shown under its field and keeps Run disabled. Pure: whether a folder exists
+//! is the answer kept in the form.
 
 use super::run_form::{PortRow, RunForm, VolumeRow, parse_port};
 use crate::i18n::Key;
@@ -121,7 +122,8 @@ fn port_problem(row: &PortRow) -> Option<RowProblem> {
 /// A blank row is fine. The disk must answer about a folder in time; this goes
 /// first, because the user cannot work it out alone and a missing answer may
 /// be about earlier text. The path in the container must start with `/`, the
-/// source is required, and the last answer must not say a folder is missing.
+/// source is required, `~` needs a known home folder, and the last answer must
+/// not say a folder is missing.
 fn volume_problem(row: &VolumeRow) -> Option<RowProblem> {
     if row.is_blank() {
         return None;
@@ -148,6 +150,13 @@ fn volume_problem(row: &VolumeRow) -> Option<RowProblem> {
             false,
         ));
     }
+    if row.is_home_unknown() {
+        return Some(RowProblem::new(
+            Key::DockerRunErrSourceHomeUnknown,
+            true,
+            false,
+        ));
+    }
     if row.is_folder_missing() {
         return Some(RowProblem::new(
             Key::DockerRunErrSourceMissing,
@@ -168,17 +177,22 @@ mod tests {
     use super::*;
     use crate::widgets::docker::run_form::RunEdit;
 
-    fn form(edits: Vec<RunEdit>) -> RunForm {
+    fn form_at_home(home: Option<&Path>, edits: Vec<RunEdit>) -> RunForm {
         let mut form = RunForm::new(
             fixtures::engine(EngineKind::Docker),
             "nginx:1.27",
             "bridge",
             false,
+            home,
         );
         for edit in edits {
             form.apply(edit);
         }
         form
+    }
+
+    fn form(edits: Vec<RunEdit>) -> RunForm {
+        form_at_home(Some(Path::new("/home/ann")), edits)
     }
 
     fn port(host: &str, container: &str) -> Vec<RunEdit> {
@@ -389,6 +403,52 @@ mod tests {
         let mut form = answered_form("/srv/otty-fx", false);
 
         form.apply(RunEdit::VolumeTarget(0, String::from("cache")));
+
+        assert_eq!(
+            check(&form).volume(0).map(|problem| problem.message()),
+            Some(Key::DockerRunErrContainerPath)
+        );
+    }
+
+    #[test]
+    fn a_home_source_without_a_home_folder_is_a_problem_of_the_source() {
+        for source in ["~", "~/", "~/site", " ~/site "] {
+            let form = form_at_home(None, volume(source, "/data"));
+
+            let problems = check(&form);
+
+            assert_eq!(
+                problems.volume(0),
+                Some(RowProblem::new(
+                    Key::DockerRunErrSourceHomeUnknown,
+                    true,
+                    false
+                )),
+                "{source:?}"
+            );
+            assert!(problems.has_fixable_problem(), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn a_home_source_with_a_home_folder_has_no_problem_yet() {
+        let problems = check(&form(volume("~/site", "/data")));
+
+        assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[test]
+    fn other_sources_do_not_need_a_home_folder() {
+        for source in ["/srv/site", "otty-data", "~other"] {
+            let form = form_at_home(None, volume(source, "/data"));
+
+            assert!(check(&form).is_empty(), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn the_container_path_error_goes_before_the_unknown_home_folder() {
+        let form = form_at_home(None, volume("~/site", "cache"));
 
         assert_eq!(
             check(&form).volume(0).map(|problem| problem.message()),

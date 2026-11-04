@@ -34,8 +34,13 @@ pub(super) fn open(
         .map(default_network)
         .unwrap_or_default();
 
-    let mut form =
-        RunForm::new(engine, image, &network, state.is_selinux_enabled());
+    let mut form = RunForm::new(
+        engine,
+        image,
+        &network,
+        state.is_selinux_enabled(),
+        state.home_folder(),
+    );
     let lookup = lookup(&mut form);
 
     state.open_run_form(form);
@@ -737,7 +742,7 @@ mod tests {
         let place = state.place().expect("a place");
         assert_eq!(place.resource(), ResourceKind::Containers);
         assert_eq!(place.engine(), docker().address());
-        assert_eq!(state.table_search(ResourceKind::Containers).input(), "");
+        assert_eq!(state.table_search(place).input(), "");
         let selected = state
             .engine(docker().address())
             .and_then(|engine| engine.containers().selected_id());
@@ -1682,6 +1687,115 @@ mod tests {
 
         assert!(run_form(&with_selinux).offers_relabel(0));
         assert!(!run_form(&without).offers_relabel(0));
+    }
+
+    /// Open the Run form after `discovery` and add a row from `~/site`.
+    fn form_with_home_source(discovery: Discovery) -> DockerState {
+        let kinds = [EngineKind::Docker];
+        let mut state =
+            state_after(discovery, &kinds, ResourceKind::Containers);
+
+        let _ = reduce(&mut state, DockerIntent::OpenCreate);
+        let _ = type_in(&mut state, RunEdit::Image(String::from("nginx:1.27")));
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ImageDefaultsLoaded {
+                engine: docker().address().clone(),
+                reference: String::from("nginx:1.27"),
+                result: Ok(Some(fixtures::image_defaults())),
+            },
+        );
+        let _ = add_volume(&mut state, "~/site");
+
+        state
+    }
+
+    #[test]
+    fn the_form_uses_the_home_folder_of_the_search() {
+        let state =
+            form_with_home_source(fixtures::discovery(&[EngineKind::Docker]));
+
+        assert_eq!(
+            run_form(&state).volumes()[0].host_path(),
+            Some(Path::new(fixtures::HOME_FOLDER).join("site"))
+        );
+    }
+
+    #[test]
+    fn a_form_opened_during_a_later_search_keeps_the_home_folder() {
+        let kinds = [EngineKind::Docker];
+        let mut state = state_on(&kinds, ResourceKind::Containers);
+
+        let _ = reduce(&mut state, DockerIntent::CheckAgain);
+        let _ = reduce(&mut state, DockerIntent::OpenCreate);
+        let _ = add_volume(&mut state, "~/site");
+
+        assert_eq!(
+            run_form(&state).volumes()[0].host_path(),
+            Some(Path::new(fixtures::HOME_FOLDER).join("site"))
+        );
+    }
+
+    #[test]
+    fn a_later_search_without_a_home_folder_forgets_the_old_one() {
+        let kinds = [EngineKind::Docker];
+        let mut state = state_on(&kinds, ResourceKind::Containers);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery_without_home(
+                &kinds,
+            )),
+        );
+
+        assert_eq!(state.home_folder(), None);
+    }
+
+    #[test]
+    fn a_home_source_without_a_home_folder_asks_the_disk_nothing() {
+        let kinds = [EngineKind::Docker];
+        let mut state = state_after(
+            fixtures::discovery_without_home(&kinds),
+            &kinds,
+            ResourceKind::Containers,
+        );
+        let _ = reduce(&mut state, DockerIntent::OpenCreate);
+
+        let typed = add_volume(&mut state, "~/site");
+        let rechecked = recheck(&mut state);
+
+        assert!(typed.is_empty(), "{typed:?}");
+        assert!(rechecked.is_empty(), "{rechecked:?}");
+    }
+
+    #[test]
+    fn a_home_source_without_a_home_folder_never_runs() {
+        let mut state =
+            form_with_home_source(fixtures::discovery_without_home(&[
+                EngineKind::Docker,
+            ]));
+
+        let pressed = effects(reduce(&mut state, DockerIntent::RunSubmitted));
+
+        assert!(!can_run(run_form(&state)));
+        assert!(pressed.is_empty(), "{pressed:?}");
+        assert_eq!(run_form(&state).phase(), &RunPhase::Editing);
+    }
+
+    #[test]
+    fn a_full_path_clears_the_problem_of_a_home_source() {
+        let mut state =
+            form_with_home_source(fixtures::discovery_without_home(&[
+                EngineKind::Docker,
+            ]));
+
+        let _ = type_in(
+            &mut state,
+            RunEdit::VolumeSource(0, String::from("/srv/site")),
+        );
+        answer(&mut state, "/srv/site", true);
+
+        assert!(can_run(run_form(&state)));
     }
 
     #[test]

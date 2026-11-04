@@ -232,6 +232,10 @@ pub(crate) enum Key {
     DockerCopy,
     /// Button that opens the documentation of the fix.
     DockerHowToFix,
+    /// Button that opens how to fix Docker, when Docker and Podman are both off.
+    DockerHowToFixDocker,
+    /// Button that opens how to fix Podman, when Docker and Podman are both off.
+    DockerHowToFixPodman,
     /// Label above a command to run in a terminal.
     DockerRunInTerminal,
     /// Title of the card when Docker is installed but not running.
@@ -246,6 +250,15 @@ pub(crate) enum Key {
     DockerPodmanOffText,
     /// Hint under the command that turns on Podman, for macOS.
     DockerPodmanOffHint,
+    /// Title of the card when Docker and Podman are installed and neither
+    /// answers.
+    DockerBothOffTitle,
+    /// Description of the card when Docker and Podman are both off.
+    DockerBothOffText,
+    /// Label over the Docker command when Docker and Podman are both off.
+    DockerBothOffDockerLabel,
+    /// Label over the Podman command when Docker and Podman are both off.
+    DockerBothOffPodmanLabel,
     /// Title of the card when OTTY may not use the Docker socket.
     DockerNoAccessTitle,
     /// Text of the no access card. Placeholder: `{socket}`.
@@ -262,16 +275,30 @@ pub(crate) enum Key {
     DockerPodmanNoAccessLabel,
     /// Hint under that command: whose containers it shows, and macOS.
     DockerPodmanNoAccessHint,
+    /// Title of the card when the Docker socket is denied and Podman is off.
+    DockerNoAccessPodmanOffTitle,
+    /// Text of that card. Placeholder: `{socket}`.
+    TplDockerNoAccessPodmanOffText,
+    /// Title of the card when a Podman socket is denied and Docker is off.
+    DockerPodmanNoAccessDockerOffTitle,
+    /// Text of that card. Placeholder: `{socket}`.
+    TplDockerPodmanNoAccessDockerOffText,
     /// Left panel text when no engine is installed.
     DockerPanelNotInstalled,
     /// Left panel text when Docker is not running.
     DockerPanelStopped,
     /// Left panel text when the Podman API service is off.
     DockerPanelPodmanOff,
+    /// Left panel text when Docker and Podman are both off.
+    DockerPanelBothOff,
     /// Left panel text when OTTY may not use the Docker socket.
     DockerPanelNoAccess,
     /// Left panel text when OTTY may not use a Podman socket.
     DockerPanelPodmanNoAccess,
+    /// Left panel text when the Docker socket is denied and Podman is off.
+    DockerPanelNoAccessPodmanOff,
+    /// Left panel text when a Podman socket is denied and Docker is off.
+    DockerPanelPodmanNoAccessDockerOff,
     /// Right panel text when no row is selected.
     DockerNothingToInspect,
     /// Line under the no engine cards. Placeholder: `{places}`.
@@ -367,8 +394,16 @@ pub(crate) enum Key {
     DockerStatusStopped,
     /// Status bar text when the Podman socket is off.
     DockerStatusPodmanOff,
+    /// Status bar text when Docker and Podman are both off.
+    DockerStatusBothOff,
     /// Status bar text when the socket is denied. Placeholder: `{socket}`.
     TplDockerStatusNoAccess,
+    /// Status bar text when the Docker socket is denied and Podman is off.
+    /// Placeholder: `{socket}`.
+    TplDockerStatusNoAccessPodmanOff,
+    /// Status bar text when a Podman socket is denied and Docker is off.
+    /// Placeholder: `{socket}`.
+    TplDockerStatusPodmanNoAccessDockerOff,
     /// Status bar count of one container.
     DockerStatusOneContainer,
     /// Status bar count of containers. Placeholder: `{count}`.
@@ -643,6 +678,8 @@ pub(crate) enum Key {
     DockerRunErrSourceMissing,
     /// Hint: the disk has not answered about a host folder for a while.
     DockerRunErrSourceNotAnswering,
+    /// Error: a source uses `~` and the home folder is not known.
+    DockerRunErrSourceHomeUnknown,
     /// Footer hint of a ready form. Placeholder: `{engine}`.
     TplDockerRunReady,
     /// Footer hint while some fields have errors.
@@ -910,7 +947,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 424] = [
+    pub(super) const ALL: [Self; 441] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1010,6 +1047,8 @@ impl Key {
         Self::DockerCheckAgain,
         Self::DockerCopy,
         Self::DockerHowToFix,
+        Self::DockerHowToFixDocker,
+        Self::DockerHowToFixPodman,
         Self::DockerRunInTerminal,
         Self::DockerStoppedTitle,
         Self::DockerStoppedText,
@@ -1017,6 +1056,10 @@ impl Key {
         Self::DockerPodmanOffTitle,
         Self::DockerPodmanOffText,
         Self::DockerPodmanOffHint,
+        Self::DockerBothOffTitle,
+        Self::DockerBothOffText,
+        Self::DockerBothOffDockerLabel,
+        Self::DockerBothOffPodmanLabel,
         Self::DockerNoAccessTitle,
         Self::TplDockerNoAccessText,
         Self::DockerNoAccessLabel,
@@ -1025,11 +1068,18 @@ impl Key {
         Self::TplDockerPodmanNoAccessText,
         Self::DockerPodmanNoAccessLabel,
         Self::DockerPodmanNoAccessHint,
+        Self::DockerNoAccessPodmanOffTitle,
+        Self::TplDockerNoAccessPodmanOffText,
+        Self::DockerPodmanNoAccessDockerOffTitle,
+        Self::TplDockerPodmanNoAccessDockerOffText,
         Self::DockerPanelNotInstalled,
         Self::DockerPanelStopped,
         Self::DockerPanelPodmanOff,
+        Self::DockerPanelBothOff,
         Self::DockerPanelNoAccess,
         Self::DockerPanelPodmanNoAccess,
+        Self::DockerPanelNoAccessPodmanOff,
+        Self::DockerPanelPodmanNoAccessDockerOff,
         Self::DockerNothingToInspect,
         Self::TplDockerLookedFor,
         Self::DockerLookedForCommands,
@@ -1076,7 +1126,10 @@ impl Key {
         Self::DockerStatusNoEngine,
         Self::DockerStatusStopped,
         Self::DockerStatusPodmanOff,
+        Self::DockerStatusBothOff,
         Self::TplDockerStatusNoAccess,
+        Self::TplDockerStatusNoAccessPodmanOff,
+        Self::TplDockerStatusPodmanNoAccessDockerOff,
         Self::DockerStatusOneContainer,
         Self::TplDockerStatusContainers,
         Self::DockerStatusOneImage,
@@ -1212,6 +1265,7 @@ impl Key {
         Self::DockerRunErrSourceRequired,
         Self::DockerRunErrSourceMissing,
         Self::DockerRunErrSourceNotAnswering,
+        Self::DockerRunErrSourceHomeUnknown,
         Self::TplDockerRunReady,
         Self::DockerRunFixFields,
         Self::DockerRunCheckingImage,

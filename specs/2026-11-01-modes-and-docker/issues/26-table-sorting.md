@@ -47,8 +47,9 @@ then the code. No new text, so no i18n change.
 - Header press (`TableSorts::pressed`): the same column reverses; a new
   column starts in its natural way: text (and Status) ascending; Age,
   Size and the counts (images "Used by", networks "Containers") descending
-  (newest / largest first). The Ports column is the only column that cannot
-  be sorted (`is_sortable`; `columns()` marks the rest `.sortable(true)`).
+  (newest / largest first). Every column can be sorted (`is_sortable`;
+  `columns()` marks them all `.sortable(true)`). The Ports column could not be
+  at first; see "Ports sorts as text" under Comments.
 - `DockerState` keeps `sorts: TableSorts` (memory only), `sort(resource)`
   and `sort_by(column)`; new intent `SortBy(column)` sorts the open table.
   The selection is the item id, so it stays on the same item; only its
@@ -68,3 +69,42 @@ then the code. No new text, so no i18n change.
 
 Coverage (lines, `cargo llvm-cov --workspace --all-features`): 86.43%
 (63784 lines, 8658 missed) to 86.56% (64453 lines, 8665 missed).
+
+## Comments
+
+### One sort per page, text ignores case (2026-11-04, spec Decisions 19 and 21)
+
+The sort was kept per resource, so a sort on Docker's Containers also ordered
+Podman's. `TableSorts` is now a map from `Place` to `TableSort`, apart from the
+engines, so a page keeps its sort while its engine is away. A page nobody sorted
+has no entry and gets its default.
+
+Decision 19 always said case-insensitive, but every text column used plain `cmp`,
+so capitals came first. All text columns and the name tie-break now go through
+`otty_docker::compare_text` (`crates/docker/src/text_order.rs`), and so do the
+names listed inside one cell: the users of a volume, a network and an image, and
+the networks of a container. It compares iterators of lowered chars, so nothing is
+allocated per comparison, and falls back to plain `cmp` so names that differ only
+in case keep a fixed order. Numeric, size and date columns are unchanged. In the
+Tag and Repository columns `<none>` comes after text that starts with a digit and
+before text that starts with a letter, ascending.
+
+### Ports sorts as text (2026-11-04, spec Decision 19, owner decision)
+
+Decision 19 says every table can be sorted by pressing a column header, but the
+Ports column was left out. It is now on, sorted simply as text: `sort_containers`
+calls `compare_text` on `ports_text`, the function the cell itself uses, so several
+ports are compared as the cell joins them (`8080:80/tcp, 5432:5432/tcp`) and a port
+Docker lists once per address family counts once. There is no numeric order, so
+`10000:80/tcp` comes before `80:80/tcp`. The first press is ascending and rows that
+read the same follow the name, like the other text columns.
+
+There is no special rule for containers without ports either. Their cell shows the
+dash `—`, which comes after the digits, so they come last ascending and first
+descending. This differs from Compose and Subnet, whose rows with no value come
+first because those columns compare the value and not the shown dash.
+
+`ports_text` allocates, and `sort_containers` has no step that could build a key
+once per row, so the text is built for each comparison. For 148 rows that is about
+1,080 comparisons, so about 2,160 calls, and about 1.1 ms per sort in a debug build
+against 0.6 ms for the Image column. Only a table sorted by Ports pays this.

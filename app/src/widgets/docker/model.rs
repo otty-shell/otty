@@ -72,8 +72,10 @@ pub(crate) enum MainViewModel<'a> {
 /// The header row and the table of the open list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TableViewModel<'a> {
+    /// The page this table belongs to; what the table sends carries it.
+    pub(crate) page: &'a Place,
     pub(crate) resource: ResourceKind,
-    /// The tag search of this table: the field's text and the tags.
+    /// The tag search of this page: the field's text and the tags.
     pub(crate) search: &'a TagSearch,
     /// The keys of this table in the interface language; the tags read their
     /// shown names here.
@@ -112,6 +114,7 @@ pub(crate) struct InspectorViewModel {
 
 /// What every table of the main area needs besides its list.
 struct Shown<'a> {
+    page: &'a Place,
     resource: ResourceKind,
     search: &'a TagSearch,
     suggestions: Vec<Suggestion>,
@@ -171,10 +174,11 @@ pub(crate) fn main_area(state: &DockerState, now: i64) -> MainViewModel<'_> {
             .map_or(MainViewModel::Searching, MainViewModel::NoEngine);
     };
 
-    let search = state.table_search(place.resource());
-    let sort = state.sort(place.resource());
+    let search = state.table_search(place);
+    let sort = state.sort(place);
     let clock = state.age_clock();
     let shown = Shown {
+        page: place,
         resource: place.resource(),
         search,
         suggestions: suggestions(state, search),
@@ -385,6 +389,7 @@ fn table<'a, T>(
     };
 
     TableViewModel {
+        page: shown.page,
         resource: shown.resource,
         search: shown.search,
         keys: keys(shown.resource),
@@ -404,15 +409,27 @@ fn table<'a, T>(
 
 #[cfg(test)]
 mod tests {
-    use otty_docker::{Container, EngineAddress, EngineKind, fixtures};
+    use otty_docker::{
+        CandidateSource, Container, Discovery, EngineAddress, EngineKind,
+        fixtures,
+    };
+    use otty_ui_kit::components::data_table::CellPart;
     use otty_ui_kit::components::tag_search::TagSearchAction;
 
     use super::*;
     use crate::i18n::{self, Key};
+    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::docker::errors::DockerError;
-    use crate::widgets::docker::event::DockerIntent;
+    use crate::widgets::docker::event::{
+        DockerEffect, DockerEvent, DockerIntent,
+    };
+    use crate::widgets::docker::format::NO_VALUE;
+    use crate::widgets::docker::no_engine::NoEngineCase;
     use crate::widgets::docker::reducer::reduce;
-    use crate::widgets::docker::resource_rows;
+    use crate::widgets::docker::resource_rows::{self, PORTS_COLUMN};
+    use crate::widgets::docker::run_form::RunEdit;
+    use crate::widgets::docker::run_model::{image_panel, run_form};
+    use crate::widgets::docker::status::status_bar;
     use crate::widgets::docker::types::LoadedLists;
 
     const NOW: i64 = 1_793_557_960;
@@ -499,6 +516,403 @@ mod tests {
             is_selected,
             place,
         }
+    }
+
+    // From losing the only engine to the card that says what to do.
+
+    const DOCKER_PATH: &str = "/usr/bin/docker";
+    const PODMAN_PATH: &str = "/usr/bin/podman";
+
+    /// What a search says after the only engine stopped, and the card it must
+    /// show: the case, the commands, and how many install buttons.
+    fn lost_engine_cases()
+    -> [(Discovery, NoEngineCase, &'static [&'static str], usize); 6] {
+        [
+            (
+                fixtures::discovery_with_cli(&[], Some(DOCKER_PATH), None),
+                NoEngineCase::DockerNotRunning,
+                &["sudo systemctl start docker"],
+                0,
+            ),
+            (
+                fixtures::discovery_with_cli(&[], None, Some(PODMAN_PATH)),
+                NoEngineCase::PodmanApiOff,
+                &["systemctl --user enable --now podman.socket"],
+                0,
+            ),
+            (
+                fixtures::discovery_with_cli(
+                    &[],
+                    Some(DOCKER_PATH),
+                    Some(PODMAN_PATH),
+                ),
+                NoEngineCase::DockerAndPodmanOff,
+                &[
+                    "sudo systemctl start docker",
+                    "systemctl --user enable --now podman.socket",
+                ],
+                0,
+            ),
+            (
+                fixtures::denied_discovery_with_cli(
+                    fixtures::DOCKER_SOCKET,
+                    CandidateSource::Docker,
+                    None,
+                    Some(PODMAN_PATH),
+                ),
+                NoEngineCase::NoPermissionAndOtherOff(EngineKind::Docker),
+                &[
+                    "sudo usermod -aG docker $USER",
+                    "systemctl --user enable --now podman.socket",
+                ],
+                0,
+            ),
+            (
+                fixtures::denied_discovery_with_cli(
+                    fixtures::PODMAN_SOCKET,
+                    CandidateSource::Podman,
+                    Some(DOCKER_PATH),
+                    None,
+                ),
+                NoEngineCase::NoPermissionAndOtherOff(EngineKind::Podman),
+                &[
+                    "systemctl --user enable --now podman.socket",
+                    "sudo systemctl start docker",
+                ],
+                0,
+            ),
+            (fixtures::discovery(&[]), NoEngineCase::NotInstalled, &[], 2),
+        ]
+    }
+
+    /// The engine of `kind` is the only one and its lists are loaded.
+    fn only_engine(kind: EngineKind) -> DockerState {
+        let mut state = found(&[kind]);
+        load(&mut state, &fixtures::engine(kind), lists(kind));
+
+        state
+    }
+
+    /// The only engine stops answering and the search that follows says
+    /// `found`, as the app does it.
+    fn lose_engine(
+        state: &mut DockerState,
+        kind: EngineKind,
+        found: Discovery,
+    ) {
+        let info = fixtures::engine(kind);
+        let sent = collect_outputs(reduce(
+            state,
+            DockerIntent::EngineUnreachable(info.address().clone()),
+        ));
+        let asks_for_a_search = sent.iter().any(|event| {
+            matches!(event, DockerEvent::Effect(DockerEffect::Discover))
+        });
+        assert!(asks_for_a_search, "a lost engine starts a search");
+
+        let _ = reduce(state, DockerIntent::DiscoveryFinished(found));
+    }
+
+    /// Checks that everything says what `case` says and nothing of the engine
+    /// is left.
+    fn assert_only_the_card(
+        state: &DockerState,
+        case: NoEngineCase,
+        commands: &[&str],
+        installs: usize,
+    ) {
+        let vm = build(state);
+        let MainViewModel::NoEngine(card) = &vm.main else {
+            panic!("expected the no engine card, got {:?}", vm.main);
+        };
+
+        assert_eq!(card.case, case);
+        let shown: Vec<&str> =
+            card.commands.iter().map(|command| command.text).collect();
+        assert_eq!(shown, commands);
+        assert_eq!(card.installs.len(), installs);
+        assert!(vm.tree.is_empty(), "stale rows: {:?}", vm.tree);
+        assert_eq!(vm.inspector, None);
+        assert_eq!(panel_note(state), Some(card.panel_text));
+        assert_eq!(state.place(), None);
+
+        let bar = status_bar(state);
+        assert_eq!(bar.engine, None);
+        assert_eq!(bar.info, card.status_text);
+        assert_eq!(bar.also_found, None);
+    }
+
+    #[test]
+    fn losing_the_only_engine_shows_the_card_of_the_search() {
+        for kind in [EngineKind::Docker, EngineKind::Podman] {
+            for (found, case, commands, installs) in lost_engine_cases() {
+                let mut state = only_engine(kind);
+
+                lose_engine(&mut state, kind, found);
+
+                assert_only_the_card(&state, case, commands, installs);
+            }
+        }
+    }
+
+    #[test]
+    fn losing_the_only_engine_while_it_is_closed_shows_the_same_card() {
+        for (found, case, commands, installs) in lost_engine_cases() {
+            let mut state = only_engine(EngineKind::Docker);
+            press_root(&mut state, &docker());
+
+            lose_engine(&mut state, EngineKind::Docker, found);
+
+            assert_only_the_card(&state, case, commands, installs);
+            assert!(state.is_engine_closed(docker().address()));
+        }
+    }
+
+    #[test]
+    fn the_table_stays_until_the_search_after_a_lost_engine_finishes() {
+        let mut state = only_engine(EngineKind::Docker);
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::EngineUnreachable(docker().address().clone()),
+        );
+
+        assert!(matches!(build(&state).main, MainViewModel::Table(_)));
+        assert!(!tree_rows(&state).is_empty());
+    }
+
+    #[test]
+    fn losing_one_of_two_engines_shows_no_card_and_no_row_of_the_lost_one() {
+        let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        load(&mut state, &podman(), lists(EngineKind::Podman));
+
+        lose_engine(
+            &mut state,
+            EngineKind::Docker,
+            fixtures::discovery(&[EngineKind::Podman]),
+        );
+
+        let vm = build(&state);
+        assert!(matches!(vm.main, MainViewModel::Table(_)));
+        assert_eq!(labels(&state), open_labels("Podman 5.8.8"));
+        assert_eq!(panel_note(&state), None);
+    }
+
+    #[test]
+    fn the_card_replaces_an_open_run_form_and_the_form_waits_for_the_engine() {
+        for (found, case, commands, installs) in lost_engine_cases() {
+            let mut state = only_engine(EngineKind::Docker);
+            let _ = reduce(&mut state, DockerIntent::OpenCreate);
+            let _ = reduce(
+                &mut state,
+                DockerIntent::RunEdited(RunEdit::Image(String::from("nginx"))),
+            );
+
+            lose_engine(&mut state, EngineKind::Docker, found);
+
+            assert_eq!(run_form(&state).map(|_| ()), None, "{case:?}");
+            assert_eq!(image_panel(&state).map(|_| ()), None, "{case:?}");
+            assert_only_the_card(&state, case, commands, installs);
+
+            let _ = reduce(
+                &mut state,
+                DockerIntent::DiscoveryFinished(fixtures::discovery(&[
+                    EngineKind::Docker,
+                ])),
+            );
+
+            let form = state.run_form().expect("the form was kept");
+            assert_eq!(form.reference(), "nginx");
+            assert!(run_form(&state).is_some(), "{case:?}");
+        }
+    }
+
+    #[test]
+    fn a_closed_engine_that_comes_back_shows_its_table_under_a_closed_root() {
+        let mut state = only_engine(EngineKind::Docker);
+        press_root(&mut state, &docker());
+        lose_engine(
+            &mut state,
+            EngineKind::Docker,
+            fixtures::discovery_with_cli(&[], Some(DOCKER_PATH), None),
+        );
+
+        let _ = reduce(&mut state, DockerIntent::CheckAgain);
+        assert_eq!(build(&state).main, MainViewModel::Searching);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ])),
+        );
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+
+        let vm = build(&state);
+        assert_eq!(table(&vm).rows.len(), 6);
+        assert_eq!(labels(&state), vec![String::from("Docker 29.9.1")]);
+        assert!(!vm.tree[0].is_open);
+        assert!(highlighted(&state).is_empty());
+        assert_eq!(panel_note(&state), None);
+    }
+
+    #[test]
+    fn an_open_engine_that_comes_back_shows_its_table_under_an_open_root() {
+        let mut state = only_engine(EngineKind::Docker);
+        lose_engine(
+            &mut state,
+            EngineKind::Docker,
+            fixtures::discovery_with_cli(&[], Some(DOCKER_PATH), None),
+        );
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ])),
+        );
+
+        assert_eq!(labels(&state), open_labels("Docker 29.9.1"));
+        assert_eq!(highlighted(&state).len(), 1);
+    }
+
+    // One search and sort per page.
+
+    /// Docker and Podman with one container each, named after its engine.
+    fn one_named_container_each() -> DockerState {
+        let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
+        for (info, name) in
+            [(docker(), "only-docker"), (podman(), "only-podman")]
+        {
+            let lists = LoadedLists {
+                containers: Ok(vec![fixtures::container_of_image(
+                    name,
+                    "running",
+                    &format!("{name}-image"),
+                    "sha256:a",
+                )]),
+                ..lists(EngineKind::Docker)
+            };
+            load(&mut state, &info, lists);
+        }
+
+        state
+    }
+
+    fn podman_containers() -> Place {
+        Place::new(podman().address().clone(), ResourceKind::Containers)
+    }
+
+    fn suggestion_texts(state: &DockerState) -> Vec<String> {
+        let MainViewModel::Table(table) = main_area(state, NOW) else {
+            panic!("expected a table");
+        };
+
+        table
+            .suggestions
+            .iter()
+            .map(|found| found.text().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn the_names_suggested_come_from_the_rows_of_the_open_page() {
+        let mut state = one_named_container_each();
+
+        search_does(
+            &mut state,
+            TagSearchAction::InputChanged(String::from("only")),
+        );
+
+        let found = suggestion_texts(&state);
+        assert!(found.contains(&String::from("only-docker")), "{found:?}");
+        assert!(!found.contains(&String::from("only-podman")), "{found:?}");
+    }
+
+    #[test]
+    fn the_values_suggested_come_from_the_rows_of_the_open_page() {
+        let mut state = one_named_container_each();
+        let _ = reduce(&mut state, DockerIntent::Open(podman_containers()));
+
+        search_does(
+            &mut state,
+            TagSearchAction::InputChanged(String::from("Image:")),
+        );
+
+        assert_eq!(suggestion_texts(&state), ["only-podman-image"]);
+    }
+
+    #[test]
+    fn the_suggestions_of_a_page_ignore_the_tags_of_another_page() {
+        let mut state = one_named_container_each();
+        search_does(
+            &mut state,
+            TagSearchAction::InputChanged(String::from("Name:only-docker")),
+        );
+        search_does(&mut state, TagSearchAction::Close);
+        search_does(&mut state, TagSearchAction::Apply);
+        let _ = reduce(&mut state, DockerIntent::Open(podman_containers()));
+
+        search_does(
+            &mut state,
+            TagSearchAction::InputChanged(String::from("only")),
+        );
+
+        let found = suggestion_texts(&state);
+        assert!(found.contains(&String::from("only-podman")), "{found:?}");
+    }
+
+    #[test]
+    fn the_no_match_message_belongs_to_the_page_that_filters() {
+        let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        load(&mut state, &podman(), lists(EngineKind::Podman));
+        search_does(
+            &mut state,
+            TagSearchAction::InputChanged(String::from("Name:no-such-name")),
+        );
+        search_does(&mut state, TagSearchAction::Close);
+        search_does(&mut state, TagSearchAction::Apply);
+
+        {
+            let vm = build(&state);
+            assert_eq!(
+                table(&vm).empty_message.as_deref(),
+                Some(i18n::t(Key::DockerNothingMatches))
+            );
+        }
+
+        let _ = reduce(&mut state, DockerIntent::Open(podman_containers()));
+
+        let vm = build(&state);
+        assert_eq!(table(&vm).empty_message, None);
+        assert_eq!(table(&vm).rows.len(), 6);
+    }
+
+    #[test]
+    fn the_selected_row_is_found_among_the_rows_of_the_open_page() {
+        let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        load(&mut state, &podman(), lists(EngineKind::Podman));
+        search_does(
+            &mut state,
+            TagSearchAction::InputChanged(String::from("Name:no-such-name")),
+        );
+        search_does(&mut state, TagSearchAction::Close);
+        search_does(&mut state, TagSearchAction::Apply);
+        let _ = reduce(&mut state, DockerIntent::Open(podman_containers()));
+
+        let vm = build(&state);
+        assert!(table(&vm).selected.is_some());
+    }
+
+    #[test]
+    fn the_table_says_which_page_it_belongs_to() {
+        let mut state = found(&[EngineKind::Docker, EngineKind::Podman]);
+        let _ = reduce(&mut state, DockerIntent::Open(podman_containers()));
+
+        let vm = build(&state);
+        assert_eq!(table(&vm).page, &podman_containers());
     }
 
     #[test]
@@ -1108,7 +1522,9 @@ mod tests {
         let vm = build(&state);
         let table = table(&vm);
 
-        assert_eq!(table.sort, state.sort(ResourceKind::Containers));
+        let page =
+            Place::new(docker().address().clone(), ResourceKind::Containers);
+        assert_eq!(table.sort, state.sort(&page));
         assert_eq!(table.sort.column(), 1);
         let running = i18n::t(Key::DockerStateRunning);
         let first_status = &table.rows[0][1];
@@ -1153,6 +1569,36 @@ mod tests {
         let table = table(&vm);
         assert_eq!(table.selected, Some(3));
         assert_eq!(table.rows[3][0], expected);
+    }
+
+    #[test]
+    fn the_cells_of_the_ports_column_follow_a_sort_by_it() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+
+        let _ = reduce(&mut state, DockerIntent::SortBy(PORTS_COLUMN));
+        let vm = build(&state);
+        let table = table(&vm);
+
+        assert_eq!(table.sort.column(), PORTS_COLUMN);
+        let ports: Vec<&TableCell> = table
+            .rows
+            .iter()
+            .map(|cells| &cells[PORTS_COLUMN])
+            .collect();
+        let linked = |text: &str| TableCell::parts(vec![CellPart::link(text)]);
+        let no_ports = TableCell::muted_mono(NO_VALUE);
+        assert_eq!(
+            ports,
+            [
+                &linked("18080:80/tcp"),
+                &linked("18081:8080/tcp"),
+                &no_ports,
+                &no_ports,
+                &no_ports,
+                &no_ports,
+            ]
+        );
     }
 
     #[test]

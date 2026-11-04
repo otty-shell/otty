@@ -3,7 +3,7 @@
 use crate::address::EngineAddress;
 use crate::candidates::{CandidateSource, SocketCandidate};
 use crate::cli::CliPresence;
-use crate::engine::EngineInfo;
+use crate::engine::{EngineInfo, EngineKind};
 use crate::probe::{Probe, ProbeOutcome};
 
 /// The answer to "can OTTY reach an engine, and if not, why".
@@ -15,7 +15,55 @@ pub enum Diagnosis {
     NoPermission(SocketCandidate),
     /// A Podman socket is there, but this user may not connect to it. The
     /// docker group does not help here; the user's own socket does.
+    ///
+    /// ```
+    /// # #[cfg(feature = "fixtures")]
+    /// # {
+    /// use otty_docker::{CandidateSource, Diagnosis, fixtures};
+    ///
+    /// let discovery = fixtures::denied_discovery(
+    ///     fixtures::PODMAN_SOCKET,
+    ///     CandidateSource::Podman,
+    /// );
+    ///
+    /// assert!(matches!(
+    ///     discovery.diagnosis(),
+    ///     Diagnosis::PodmanNoPermission(_)
+    /// ));
+    /// # }
+    /// ```
     PodmanNoPermission(SocketCandidate),
+    /// One engine refused this user and the other is installed but off, each
+    /// as the cases around it tell it. OTTY cannot know which one the user
+    /// wants. When both refused, the first denied socket decides alone.
+    ///
+    /// ```
+    /// # #[cfg(feature = "fixtures")]
+    /// # {
+    /// use otty_docker::{CandidateSource, Diagnosis, EngineKind, fixtures};
+    ///
+    /// let discovery = fixtures::denied_discovery_with_cli(
+    ///     fixtures::DOCKER_SOCKET,
+    ///     CandidateSource::Docker,
+    ///     None,
+    ///     Some("/usr/bin/podman"),
+    /// );
+    ///
+    /// assert!(matches!(
+    ///     discovery.diagnosis(),
+    ///     Diagnosis::NoPermissionAndOtherOff {
+    ///         denied_engine: EngineKind::Docker,
+    ///         ..
+    ///     }
+    /// ));
+    /// # }
+    /// ```
+    NoPermissionAndOtherOff {
+        /// The socket that refused this user.
+        socket: SocketCandidate,
+        /// The engine that socket belongs to.
+        denied_engine: EngineKind,
+    },
     /// Docker is installed (Docker's `docker` command found, or a Docker
     /// socket that does not answer) but no Docker socket answers.
     DockerNotRunning,
@@ -23,14 +71,33 @@ pub enum Diagnosis {
     /// really Podman, or a Podman socket that does not answer) but its API
     /// service does not answer.
     PodmanApiOff,
+    /// Docker and Podman are both installed, each as the two cases above tell
+    /// it, and neither answers. OTTY cannot know which one the user wants.
+    ///
+    /// ```
+    /// # #[cfg(feature = "fixtures")]
+    /// # {
+    /// use otty_docker::{Diagnosis, fixtures};
+    ///
+    /// let discovery = fixtures::discovery_with_cli(
+    ///     &[],
+    ///     Some("/usr/bin/docker"),
+    ///     Some("/usr/bin/podman"),
+    /// );
+    ///
+    /// assert_eq!(discovery.diagnosis(), &Diagnosis::DockerAndPodmanOff);
+    /// # }
+    /// ```
+    DockerAndPodmanOff,
     /// No engine answered and neither `docker` nor `podman` was found.
     NotInstalled,
 }
 
 /// Decide what the search results mean.
 ///
-/// Reached engines win. Without them the first matching case wins, in this
-/// order: no permission, Docker not running, Podman API off, not installed.
+/// Reached engines win. Without them a denied socket comes first, with the
+/// other engine when it is installed and off, then which of Docker and Podman
+/// are installed: both, Docker only, Podman only or none.
 pub(crate) fn diagnose(probes: &[Probe], cli: CliPresence) -> Diagnosis {
     let engines: Vec<EngineInfo> = probes
         .iter()
@@ -43,27 +110,46 @@ pub(crate) fn diagnose(probes: &[Probe], cli: CliPresence) -> Diagnosis {
         return Diagnosis::Engines(engines);
     }
 
-    let denied = probes
+    let has_docker =
+        cli.docker() || has_silent_socket(probes, CandidateSource::Docker);
+    let has_podman =
+        cli.podman() || has_silent_socket(probes, CandidateSource::Podman);
+
+    let denied: Vec<&SocketCandidate> = probes
         .iter()
-        .find(|probe| *probe.outcome() == ProbeOutcome::PermissionDenied);
-    if let Some(probe) = denied {
-        let candidate = probe.candidate().clone();
+        .filter(|probe| *probe.outcome() == ProbeOutcome::PermissionDenied)
+        .map(Probe::candidate)
+        .collect();
+    if let Some(first) = denied.first() {
+        let is_podman = is_podman_socket(first);
+        let other_refused = denied
+            .iter()
+            .any(|candidate| is_podman_socket(candidate) != is_podman);
+        let other_installed = if is_podman { has_docker } else { has_podman };
+        let socket = (*first).clone();
 
-        if is_podman_socket(&candidate) {
-            return Diagnosis::PodmanNoPermission(candidate);
+        if other_installed && !other_refused {
+            return Diagnosis::NoPermissionAndOtherOff {
+                socket,
+                denied_engine: if is_podman {
+                    EngineKind::Podman
+                } else {
+                    EngineKind::Docker
+                },
+            };
         }
-        return Diagnosis::NoPermission(candidate);
+        if is_podman {
+            return Diagnosis::PodmanNoPermission(socket);
+        }
+        return Diagnosis::NoPermission(socket);
     }
 
-    if cli.docker() || has_silent_socket(probes, CandidateSource::Docker) {
-        return Diagnosis::DockerNotRunning;
+    match (has_docker, has_podman) {
+        (true, true) => Diagnosis::DockerAndPodmanOff,
+        (true, false) => Diagnosis::DockerNotRunning,
+        (false, true) => Diagnosis::PodmanApiOff,
+        (false, false) => Diagnosis::NotInstalled,
     }
-
-    if cli.podman() || has_silent_socket(probes, CandidateSource::Podman) {
-        return Diagnosis::PodmanApiOff;
-    }
-
-    Diagnosis::NotInstalled
 }
 
 /// The socket belongs to Podman. A socket that refuses the connection cannot
@@ -254,23 +340,182 @@ mod tests {
     }
 
     #[test]
-    fn both_tools_without_answer_reports_docker_first() {
+    fn both_tools_without_answer_names_both_engines() {
         let diagnosis =
             diagnose(&nothing_answers(), CliPresence::new(true, true));
 
-        assert_eq!(diagnosis, Diagnosis::DockerNotRunning);
+        assert_eq!(diagnosis, Diagnosis::DockerAndPodmanOff);
     }
 
     #[test]
-    fn denied_socket_is_no_permission_before_not_running() {
+    fn a_tool_and_the_stale_socket_of_the_other_engine_name_both_engines() {
+        let docker_tool = vec![
+            probe(docker_socket(), ProbeOutcome::Missing),
+            probe(podman_socket(), refused()),
+        ];
+        let podman_tool = vec![
+            probe(docker_socket(), refused()),
+            probe(podman_socket(), ProbeOutcome::Missing),
+        ];
+
+        assert_eq!(
+            diagnose(&docker_tool, CliPresence::new(true, false)),
+            Diagnosis::DockerAndPodmanOff
+        );
+        assert_eq!(
+            diagnose(&podman_tool, CliPresence::new(false, true)),
+            Diagnosis::DockerAndPodmanOff
+        );
+    }
+
+    #[test]
+    fn stale_sockets_of_both_engines_name_both_engines() {
         let probes = vec![
+            probe(docker_socket(), refused()),
+            probe(podman_socket(), refused()),
+        ];
+
+        let diagnosis = diagnose(&probes, CliPresence::new(false, false));
+
+        assert_eq!(diagnosis, Diagnosis::DockerAndPodmanOff);
+    }
+
+    #[test]
+    fn a_docker_command_that_is_really_podman_does_not_name_docker() {
+        let docker_is_podman = true;
+        let cli = CliPresence::from_lookup(true, docker_is_podman, true);
+
+        let diagnosis = diagnose(&nothing_answers(), cli);
+
+        assert_eq!(diagnosis, Diagnosis::PodmanApiOff);
+    }
+
+    /// The card for `socket`, denied, with the other engine off.
+    fn denied_and_other_off(
+        socket: SocketCandidate,
+        denied_engine: EngineKind,
+    ) -> Diagnosis {
+        Diagnosis::NoPermissionAndOtherOff {
+            socket,
+            denied_engine,
+        }
+    }
+
+    #[test]
+    fn a_denied_docker_socket_with_podman_off_names_both_engines() {
+        let tool = vec![
+            probe(docker_socket(), ProbeOutcome::PermissionDenied),
+            probe(podman_socket(), ProbeOutcome::Missing),
+        ];
+        let stale_socket = vec![
             probe(docker_socket(), ProbeOutcome::PermissionDenied),
             probe(podman_socket(), refused()),
+        ];
+        let expected =
+            denied_and_other_off(docker_socket(), EngineKind::Docker);
+
+        assert_eq!(diagnose(&tool, CliPresence::new(true, true)), expected);
+        assert_eq!(diagnose(&tool, CliPresence::new(false, true)), expected);
+        assert_eq!(
+            diagnose(&stale_socket, CliPresence::new(false, false)),
+            expected
+        );
+    }
+
+    #[test]
+    fn a_denied_docker_socket_without_podman_keeps_the_docker_card() {
+        let probes = vec![
+            probe(docker_socket(), ProbeOutcome::PermissionDenied),
+            probe(podman_socket(), ProbeOutcome::Missing),
+        ];
+
+        let diagnosis = diagnose(&probes, CliPresence::new(true, false));
+
+        assert_eq!(diagnosis, Diagnosis::NoPermission(docker_socket()));
+    }
+
+    #[test]
+    fn a_denied_podman_socket_with_docker_off_names_both_engines() {
+        let rootful = candidate(PODMAN_SYSTEM, CandidateSource::Podman);
+        let tool = vec![
+            probe(docker_socket(), ProbeOutcome::Missing),
+            probe(rootful.clone(), ProbeOutcome::PermissionDenied),
+        ];
+        let stale_socket = vec![
+            probe(docker_socket(), refused()),
+            probe(rootful.clone(), ProbeOutcome::PermissionDenied),
+        ];
+        let expected = denied_and_other_off(rootful, EngineKind::Podman);
+
+        assert_eq!(diagnose(&tool, CliPresence::new(true, true)), expected);
+        assert_eq!(diagnose(&tool, CliPresence::new(true, false)), expected);
+        assert_eq!(
+            diagnose(&stale_socket, CliPresence::new(false, false)),
+            expected
+        );
+    }
+
+    #[test]
+    fn a_denied_podman_socket_with_a_fake_docker_command_does_not_name_docker()
+    {
+        let rootful = candidate(PODMAN_SYSTEM, CandidateSource::Podman);
+        let probes = vec![
+            probe(docker_socket(), ProbeOutcome::Missing),
+            probe(rootful.clone(), ProbeOutcome::PermissionDenied),
+        ];
+        let docker_is_podman = true;
+
+        for podman in [true, false] {
+            let cli = CliPresence::from_lookup(true, docker_is_podman, podman);
+
+            let diagnosis = diagnose(&probes, cli);
+
+            assert_eq!(
+                diagnosis,
+                Diagnosis::PodmanNoPermission(rootful.clone())
+            );
+        }
+    }
+
+    #[test]
+    fn a_docker_command_that_is_really_podman_counts_as_podman_off() {
+        let probes = vec![
+            probe(docker_socket(), ProbeOutcome::PermissionDenied),
+            probe(podman_socket(), ProbeOutcome::Missing),
+        ];
+        let docker_is_podman = true;
+        let cli = CliPresence::from_lookup(true, docker_is_podman, false);
+
+        let diagnosis = diagnose(&probes, cli);
+
+        assert_eq!(
+            diagnosis,
+            denied_and_other_off(docker_socket(), EngineKind::Docker)
+        );
+    }
+
+    #[test]
+    fn two_denied_sockets_of_one_engine_still_offer_the_other_engine() {
+        let host = candidate("/srv/docker.sock", CandidateSource::DockerHost);
+        let probes = vec![
+            probe(host.clone(), ProbeOutcome::PermissionDenied),
+            probe(docker_socket(), ProbeOutcome::PermissionDenied),
+            probe(podman_socket(), ProbeOutcome::Missing),
         ];
 
         let diagnosis = diagnose(&probes, CliPresence::new(true, true));
 
-        assert_eq!(diagnosis, Diagnosis::NoPermission(docker_socket()));
+        assert_eq!(diagnosis, denied_and_other_off(host, EngineKind::Docker));
+    }
+
+    #[test]
+    fn a_denied_docker_host_with_podman_off_names_both_engines() {
+        let host = candidate("/srv/docker.sock", CandidateSource::DockerHost);
+        let probes = vec![probe(host.clone(), ProbeOutcome::PermissionDenied)];
+
+        let diagnosis = diagnose(&probes, CliPresence::new(false, true));
+
+        assert_eq!(diagnosis, denied_and_other_off(host, EngineKind::Docker));
     }
 
     #[test]
@@ -351,14 +596,14 @@ mod tests {
     }
 
     #[test]
-    fn denied_podman_socket_comes_before_docker_not_running() {
+    fn when_both_engines_refuse_the_first_denied_socket_decides_alone() {
         let rootful = candidate(PODMAN_SYSTEM, CandidateSource::Podman);
-        let probes = vec![
-            probe(docker_socket(), refused()),
+        let podman_first = vec![
             probe(rootful.clone(), ProbeOutcome::PermissionDenied),
+            probe(docker_socket(), ProbeOutcome::PermissionDenied),
         ];
 
-        let diagnosis = diagnose(&probes, CliPresence::new(true, true));
+        let diagnosis = diagnose(&podman_first, CliPresence::new(true, true));
 
         assert_eq!(diagnosis, Diagnosis::PodmanNoPermission(rootful));
     }

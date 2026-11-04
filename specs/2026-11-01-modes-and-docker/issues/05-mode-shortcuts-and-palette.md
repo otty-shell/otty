@@ -115,6 +115,15 @@ ten catalogs.
 
 ## Comments
 
+### The mode is called Containers (2026-11-04, spec Decision 22)
+
+Owner request: in the mode dock, Docker becomes Containers. Changed where the text
+names the mode: `mode_docker`, `docker_status_mode`, `palette_switch_to_docker_mode`
+and the first words of `docker_not_installed_text`, in all ten locales, with the
+word each locale already uses for the Containers list. "Docker" stays wherever it
+names the engine. Internal names (`Mode::Docker`, `widgets/docker`, intents, key
+names) and the icon are unchanged. The text above keeps the old name.
+
 ### Research: matching digits by physical key on both routes
 
 - **What iced reports.** iced 0.14 (`iced_winit` `conversion.rs`) builds each

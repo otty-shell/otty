@@ -86,13 +86,21 @@ impl ListKind {
 /// What one engine event tells the watch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EngineChange {
-    /// The list to reload.
-    pub(crate) list: ListKind,
-    /// The id of the container this event started, for a `start` event.
-    pub(crate) started_container: Option<String>,
+    list: ListKind,
+    started_container: Option<String>,
 }
 
 impl EngineChange {
+    /// The list to reload.
+    pub(crate) fn list(&self) -> ListKind {
+        self.list
+    }
+
+    /// The id of the container this event started, for a `start` event.
+    pub(crate) fn started_container(&self) -> Option<&str> {
+        self.started_container.as_deref()
+    }
+
     /// What `message` changes; `None` for events that change no list.
     pub(crate) fn from_event(message: &EventMessage) -> Option<Self> {
         Some(Self {
@@ -237,8 +245,8 @@ mod tests {
 
         let change = EngineChange::from_event(&docker).expect("a change");
 
-        assert_eq!(change.list, ListKind::Containers);
-        assert_eq!(change.started_container.as_deref(), Some("c178aa0f"));
+        assert_eq!(change.list(), ListKind::Containers);
+        assert_eq!(change.started_container(), Some("c178aa0f"));
     }
 
     /// `docker restart` sends kill, die, stop, start, restart and `podman
@@ -258,7 +266,7 @@ mod tests {
 
             let change = EngineChange::from_event(&message).expect("a change");
 
-            assert_eq!(change.started_container, None, "{action}");
+            assert_eq!(change.started_container(), None, "{action}");
         }
     }
 
@@ -269,7 +277,7 @@ mod tests {
 
         let change = EngineChange::from_event(&message).expect("a change");
 
-        assert_eq!(change.started_container, None);
+        assert_eq!(change.started_container(), None);
     }
 
     #[test]
@@ -277,7 +285,7 @@ mod tests {
         let change = EngineChange::from_event(&event("container", "start"))
             .expect("a change");
 
-        assert_eq!(change.started_container, None);
+        assert_eq!(change.started_container(), None);
     }
 
     #[test]

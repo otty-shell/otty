@@ -42,7 +42,7 @@ use status::StatusViewModel;
 
 /// Docker widget: the engines found on this computer, their containers,
 /// images, volumes and networks, the open list, the selected rows and the
-/// tag search of each table (spec Decisions 5, 8, 10 and 21). It asks for
+/// tag search of each page (spec Decisions 5, 8, 10 and 21). It asks for
 /// engine work only while Docker mode is active.
 pub(crate) struct DockerWidget {
     state: DockerState,
@@ -121,13 +121,14 @@ impl DockerWidget {
     }
 
     /// The Docker mode subscriptions: the engine events watch, the followed
-    /// logs and the timer of the Run form's folders. Nothing runs in another
-    /// mode (spec Decisions 12 and 14).
+    /// logs, the timer of the Run form's folders and the timer of the no-engine
+    /// card. Nothing runs in another mode (spec Decisions 9, 12 and 14).
     pub(crate) fn subscription(&self) -> Subscription<DockerEvent> {
         Subscription::batch([
             self.engine_watch(),
             self.followed_logs(),
             subscription::folder_recheck(&self.state),
+            subscription::engine_search_timer(&self.state),
         ])
     }
 
@@ -373,6 +374,19 @@ mod tests {
         let _ =
             widget.reduce(DockerIntent::SelectInspectorTab(InspectorTab::Logs));
         assert_eq!(widget.subscription().units(), 2);
+
+        let _ = widget.reduce(DockerIntent::Leave);
+        assert_eq!(widget.subscription().units(), 0);
+    }
+
+    #[test]
+    fn the_no_engine_card_adds_its_timer_to_docker_mode() {
+        let mut widget = DockerWidget::new();
+        let _ = widget.reduce(DockerIntent::Enter);
+        let _ = widget
+            .reduce(DockerIntent::DiscoveryFinished(fixtures::discovery(&[])));
+
+        assert_eq!(widget.subscription().units(), 1);
 
         let _ = widget.reduce(DockerIntent::Leave);
         assert_eq!(widget.subscription().units(), 0);

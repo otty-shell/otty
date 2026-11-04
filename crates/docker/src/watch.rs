@@ -24,6 +24,17 @@ pub enum WatchEvent {
     Changed(ListKind),
     /// The container with this full id was started or restarted. Never held
     /// back: each start is one event, however fast the restarts come.
+    ///
+    /// ```
+    /// use otty_docker::WatchEvent;
+    ///
+    /// let event = WatchEvent::ContainerStarted(String::from("c178aa0f"));
+    ///
+    /// assert!(matches!(
+    ///     event,
+    ///     WatchEvent::ContainerStarted(id) if id == "c178aa0f"
+    /// ));
+    /// ```
     ContainerStarted(String),
     /// The events stream broke and is open again. Changes in between were
     /// missed, so every list should be reloaded.
@@ -117,11 +128,13 @@ impl Watch {
             match item {
                 Some(Ok(change)) => {
                     self.failures = 0;
-                    if let Some(id) = change.started_container {
-                        self.due.push_back(WatchEvent::ContainerStarted(id));
+                    if let Some(id) = change.started_container() {
+                        self.due.push_back(WatchEvent::ContainerStarted(
+                            id.to_string(),
+                        ));
                     }
-                    if self.debounce.change(change.list, Instant::now()) {
-                        self.due.push_back(WatchEvent::Changed(change.list));
+                    if self.debounce.change(change.list(), Instant::now()) {
+                        self.due.push_back(WatchEvent::Changed(change.list()));
                     }
                 },
                 Some(Err(err)) => {
@@ -389,7 +402,7 @@ mod tests {
 
         let changes: Vec<ListKind> = engine(&path)
             .changes()
-            .map(|change| change.expect("a change").list)
+            .map(|change| change.expect("a change").list())
             .collect()
             .await;
 

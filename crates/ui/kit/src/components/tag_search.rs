@@ -482,6 +482,14 @@ impl TagSearch {
         self.is_open = false;
     }
 
+    /// Closes the suggestions and keeps the text and the tags. Use it when the
+    /// field goes off screen with its text kept: the list opens again from its
+    /// first row once the field gets the focus.
+    pub fn close_suggestions(&mut self) {
+        self.highlighted = 0;
+        self.is_open = false;
+    }
+
     /// Removes every tag.
     pub fn clear_tags(&mut self) -> TagSearchChange {
         if self.tags.is_empty() {
@@ -1151,6 +1159,28 @@ mod tests {
         let _ = complete(&mut tag);
         assert_eq!(labels(&tag), vec!["status:zzz"]);
         assert_eq!(tag.input(), "");
+    }
+
+    #[test]
+    fn closing_the_suggestions_keeps_the_text_and_the_tags() {
+        let mut search = typed("status:running");
+        let _ = apply(&mut search);
+        let _ = search.perform(
+            TagSearchAction::InputChanged(String::from("web")),
+            &schema(),
+        );
+        let _ = search.perform(TagSearchAction::MoveDown, &schema());
+        assert!(search.is_open());
+
+        search.close_suggestions();
+
+        assert!(!search.is_open());
+        assert_eq!(search.input(), "web");
+        assert_eq!(labels(&search), vec!["status:Running"]);
+
+        let _ = search.perform(TagSearchAction::Focused, &schema());
+
+        assert!(search.suggestions(&schema())[0].is_highlighted());
     }
 
     #[test]

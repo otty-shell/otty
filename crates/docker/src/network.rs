@@ -3,6 +3,7 @@
 use bollard::models::Network as EngineNetwork;
 
 use crate::container::{Container, ContainerNetwork};
+use crate::text_order::compare_text;
 use crate::timestamp::unix_seconds;
 
 /// Networks every engine has and refuses to remove. Podman's API shows its
@@ -95,7 +96,7 @@ impl Network {
             })
             .map(|container| container.name().to_owned())
             .collect();
-        users.sort();
+        users.sort_by(|a, b| compare_text(a, b));
 
         Self {
             built_in: BUILT_IN_NETWORKS.contains(&name.as_str()),
@@ -244,6 +245,27 @@ mod tests {
         let networks = networks(PODMAN_NETWORKS, PODMAN_CONTAINERS);
 
         assert_eq!(named(&networks, "otty-fx-net").containers(), engine_names);
+    }
+
+    #[test]
+    fn users_are_listed_a_to_z_whatever_the_case() {
+        let summaries: Vec<bollard::models::ContainerSummary> = serde_json::from_str(
+            r#"[
+                {"Names":["/Zed"],"NetworkSettings":{"Networks":{"shared":{"NetworkID":"net"}}}},
+                {"Names":["/beta"],"NetworkSettings":{"Networks":{"shared":{"NetworkID":"net"}}}},
+                {"Names":["/Alpha"],"NetworkSettings":{"Networks":{"shared":{"NetworkID":"net"}}}}
+            ]"#,
+        )
+        .expect("container list");
+        let containers: Vec<Container> =
+            summaries.iter().map(Container::from_summary).collect();
+        let network: EngineNetwork =
+            serde_json::from_str(r#"{"Id":"net","Name":"shared"}"#)
+                .expect("network");
+
+        let network = Network::from_network(&network, &containers);
+
+        assert_eq!(network.containers(), ["Alpha", "beta", "Zed"]);
     }
 
     #[test]

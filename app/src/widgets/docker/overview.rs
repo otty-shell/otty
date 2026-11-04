@@ -7,7 +7,7 @@
 
 use otty_docker::{
     Container, ContainerNetwork, Image, Mount, MountKind, Network, PortMapping,
-    Volume,
+    Volume, compare_text,
 };
 
 use super::format::{
@@ -93,7 +93,7 @@ pub(crate) fn image_fields(
         .iter()
         .filter(|container| container.image_id() == image.id())
         .collect();
-    users.sort_unstable_by_key(|container| container.name());
+    users.sort_unstable_by(|a, b| compare_text(a.name(), b.name()));
     let users = users
         .into_iter()
         .map(|container| vec![container_link(container)])
@@ -599,6 +599,29 @@ mod tests {
                     item(ResourceKind::Containers, exit0.id())
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn an_image_lists_its_users_a_to_z_whatever_the_case() {
+        let users: Vec<Container> = ["Zed", "beta", "Alpha"]
+            .into_iter()
+            .map(|name| {
+                fixtures::container_of_image(
+                    name,
+                    "running",
+                    "app:1",
+                    "sha256:app",
+                )
+            })
+            .collect();
+        let rows = fixtures::image_rows("sha256:app", &["app:1"], &[], &users);
+
+        let fields = image_fields(&rows[0], &users);
+
+        assert_eq!(
+            texts(&fields)[2],
+            field(Key::DockerColumnUsedBy, "Alpha, beta, Zed")
         );
     }
 

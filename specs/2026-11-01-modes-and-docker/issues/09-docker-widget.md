@@ -200,3 +200,16 @@ work like folders.
   keeps loading too. Tests now cover this for the engine that is not shown.
 
 The "open engine's four lists" in the Answer above describes the old behaviour.
+
+### A closed engine stays closed when it comes back (2026-11-04, spec Decision 10)
+
+Owner decision. `finish_search` removed the engine from `closed_engines` whenever
+the place moved, so an engine the user closed opened again after the no-engine
+card. Now the engine opens only when the place moves from a lost engine to another
+engine that is still there, so the user can see whose list is on screen. From an
+empty place (the card, or the first search) the closed state is kept: the table
+shows the containers and the tree row stays closed. The test
+`a_closed_engine_found_again_after_no_engine_opens_with_its_place` was changed on
+purpose to `a_closed_engine_found_again_after_no_engine_stays_closed_and_is_shown`.
+The Comments above saying `finish_search` opens the engine when it moves the place
+describe the old rule.

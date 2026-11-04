@@ -88,3 +88,38 @@ visible items. Pure tests cover the schema per resource, several ports, and AND
 and OR over the fixtures. `iced_test` runs the full flow over the real reducer:
 `sta` Enter, `run` Enter gives the tag, a cleared field and fewer rows; a row press
 after filtering hits the right row.
+
+## Comments
+
+### One search per page (2026-11-04, spec Decision 21)
+
+Owner decision: search and sort belong to one page, not one resource. `TableSearches`
+is now a map from `Place` to `TagSearch`, apart from the engines, so a page keeps
+its search while its engine is away. `state.table_search` and `state.sort` take a
+`Place`. Every reader goes through the open place, so the rows and the search of a
+position come from one page.
+
+A press and a search that moves the place can arrive in one update, and the press
+was drawn on the page left. So everything the table view sends is wrapped in
+`DockerIntent::FromPage`, and the reducer drops it when that page is no longer open.
+
+The text in the field still goes away when the user opens another page, as Decision
+21 said; an engine going away does not clear it. Suggestions were already built from
+the rows of the open engine and now also use only that page's tags.
+
+### The typed text stays with its page (2026-11-04, spec Decision 21)
+
+Owner decision, which replaces the last paragraph above: a page keeps its text too.
+`DockerState::open` no longer clears it, and the kit's `TagSearch::close_suggestions`
+closes the list of the page left, on opening another page and when the place is lost
+with its engine. That also fixes the list that stayed open across an outage. Links
+still clear the text of the page they land on, because they must show their item; the
+page they leave keeps its text.
+
+### The list closes when the mode changes (2026-11-04, spec Decision 21)
+
+A list open when the user switched modes was still open on return, unfocused, until
+a click. `DockerIntent::Leave` now closes the list of the page on screen. That covers
+every page: a list only opens on the page on screen, and each way off a page closes
+it (`open`, `leave_lost_place`), so no other page can hold one open. The text and the
+tags stay.

@@ -299,6 +299,7 @@ mod tests {
             DockerIntent::LogLines {
                 target: target.clone(),
                 lines: vec![String::from("ready")],
+                position: None,
             },
         );
         let _ = reduce(

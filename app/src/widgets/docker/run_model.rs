@@ -121,8 +121,10 @@ pub(crate) struct ImagePanelViewModel {
     pub(crate) error: Option<String>,
 }
 
-/// The open Run form; `None` when none is open.
+/// The open Run form; `None` when none is open, or while no engine is there:
+/// the form waits, as typed, behind the no-engine card.
 pub(crate) fn run_form(state: &DockerState) -> Option<RunFormViewModel<'_>> {
+    state.place()?;
     let form = state.run_form()?;
     let problems = check(form);
     let defaults = match form.lookup() {
@@ -261,8 +263,9 @@ pub(crate) fn run_form(state: &DockerState) -> Option<RunFormViewModel<'_>> {
     })
 }
 
-/// The image panel of the open Run form; `None` when none is open.
+/// The image panel of the Run form shown now; `None` when none is shown.
 pub(crate) fn image_panel(state: &DockerState) -> Option<ImagePanelViewModel> {
+    state.place()?;
     let form = state.run_form()?;
 
     let title = match form.reference() {
@@ -539,6 +542,54 @@ mod tests {
             );
             assert!(!vm.volumes[0].is_relabeled, "off by default");
         }
+    }
+
+    #[test]
+    fn a_home_source_without_a_home_folder_shows_its_message_under_the_row() {
+        let kinds = [EngineKind::Docker];
+        let docker = fixtures::engine(EngineKind::Docker);
+        let mut state = DockerState::default();
+        let _ = reduce(&mut state, DockerIntent::Enter);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery_without_home(
+                &kinds,
+            )),
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ListsLoaded {
+                engine: docker.address().clone(),
+                lists: lists(EngineKind::Docker),
+            },
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::Open(Place::new(
+                docker.address().clone(),
+                ResourceKind::Containers,
+            )),
+        );
+        let _ = reduce(&mut state, DockerIntent::OpenCreate);
+        for edit in [
+            RunEdit::Image(String::from("nginx:1.27")),
+            RunEdit::AddVolume,
+            RunEdit::VolumeSource(0, String::from("~/site")),
+            RunEdit::VolumeTarget(0, String::from("/data")),
+        ] {
+            let _ = reduce(&mut state, DockerIntent::RunEdited(edit));
+        }
+
+        let vm = run_form(&state).expect("form");
+
+        assert!(!vm.can_run);
+        assert_eq!(
+            vm.volumes[0].problem,
+            Some(i18n::t(Key::DockerRunErrSourceHomeUnknown))
+        );
+        assert!(vm.volumes[0].is_source_invalid);
+        assert!(!vm.volumes[0].is_target_invalid);
+        assert_eq!(vm.footer_hint, i18n::t(Key::DockerRunFixFields));
     }
 
     #[test]

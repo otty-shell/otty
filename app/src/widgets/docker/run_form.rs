@@ -58,11 +58,26 @@ struct FolderAnswer {
     exists: bool,
 }
 
+/// What a typed volume source names.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+enum SourceKind {
+    /// A volume of the engine, or nothing typed yet.
+    #[default]
+    VolumeName,
+    /// A folder on this computer.
+    Folder(PathBuf),
+    /// A folder under the home folder (`~`, `~/…`), but the home folder is not
+    /// known, so it names no folder yet. It is not a volume name either.
+    UnknownHomeFolder,
+}
+
 /// One volume row as typed: source → path in the container, read-only,
 /// the SELinux relabel switch and what the disk said about a folder source.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct VolumeRow {
     source: String,
+    /// What the source names, read when it was typed.
+    source_kind: SourceKind,
     target: String,
     is_read_only: bool,
     is_relabeled: bool,
@@ -125,6 +140,11 @@ impl VolumeRow {
         self.slow_folder.is_some()
     }
 
+    /// Whether the source uses `~` and the home folder is not known.
+    pub(crate) fn is_home_unknown(&self) -> bool {
+        self.source_kind == SourceKind::UnknownHomeFolder
+    }
+
     /// Whether the disk has answered about the typed folder. A row without
     /// a folder has nothing to wait for.
     fn is_folder_answered(&self) -> bool {
@@ -138,15 +158,20 @@ impl VolumeRow {
     }
 
     /// The folder on this computer when the source is one (it starts with
-    /// `/` or `~`); `None` for a volume name.
+    /// `/` or `~`); `None` for a volume name and for a source under a home
+    /// folder that is not known.
     pub(crate) fn host_path(&self) -> Option<PathBuf> {
-        host_path(self.source.trim())
+        match &self.source_kind {
+            SourceKind::Folder(path) => Some(path.clone()),
+            _ => None,
+        }
     }
 
-    /// Take a new source. A question about another folder and silence about
-    /// it no longer count for this row, and a source that is not a folder
-    /// forgets the answer.
-    fn set_source(&mut self, source: String) {
+    /// Take a new source; `home_folder` is what `~` stands for. A question
+    /// about another folder and silence about it no longer count for this row,
+    /// and a source that is not a folder forgets the answer.
+    fn set_source(&mut self, source: String, home_folder: Option<&Path>) {
+        self.source_kind = source_kind(source.trim(), home_folder);
         self.source = source;
 
         let path = self.host_path();
@@ -158,6 +183,22 @@ impl VolumeRow {
         }
         if path.is_none() {
             self.folder_answer = None;
+        }
+    }
+
+    /// What the create request mounts. A source under an unknown home folder
+    /// stays as typed: the checks keep Run from sending it, and if it ever got
+    /// out, the engine would refuse it instead of using a wrong folder or
+    /// creating a volume.
+    fn mount_source(&self) -> MountSource {
+        let typed = self.source.trim();
+
+        match &self.source_kind {
+            SourceKind::Folder(path) => MountSource::HostPath(path.clone()),
+            SourceKind::UnknownHomeFolder => {
+                MountSource::HostPath(PathBuf::from(typed))
+            },
+            SourceKind::VolumeName => MountSource::Volume(typed.to_string()),
         }
     }
 }
@@ -236,6 +277,8 @@ pub(crate) struct RunForm {
     is_auto_remove: bool,
     /// Whether SELinux is enabled, as the engine search found.
     is_selinux_enabled: bool,
+    /// The home folder, as the engine search found; `~` stands for it.
+    home_folder: Option<PathBuf>,
     /// The image reference the lookup is about.
     lookup_reference: String,
     lookup: ImageLookup,
@@ -362,12 +405,13 @@ impl RunForm {
 
     /// A new form on `engine` with `image` typed and `network` chosen; the
     /// pull switch is on, Restart is No. `is_selinux_enabled` says whether
-    /// a folder volume can be relabeled.
+    /// a folder volume can be relabeled; `home_folder` is what `~` stands for.
     pub(crate) fn new(
         engine: EngineInfo,
         image: &str,
         network: &str,
         is_selinux_enabled: bool,
+        home_folder: Option<&Path>,
     ) -> Self {
         Self {
             engine,
@@ -382,6 +426,7 @@ impl RunForm {
             restart: RestartPolicy::No,
             is_auto_remove: false,
             is_selinux_enabled,
+            home_folder: home_folder.map(Path::to_path_buf),
             lookup_reference: String::new(),
             lookup: ImageLookup::NotAsked,
             phase: RunPhase::Editing,
@@ -455,7 +500,7 @@ impl RunForm {
             RunEdit::RemoveEnv(index) => remove_at(&mut self.env, index),
             RunEdit::VolumeSource(index, source) => {
                 if let Some(row) = self.volumes.get_mut(index) {
-                    row.set_source(source);
+                    row.set_source(source, self.home_folder.as_deref());
                 }
             },
             RunEdit::VolumeTarget(index, target) => {
@@ -727,14 +772,14 @@ impl RunForm {
             .enumerate()
             .filter(|(_, row)| !row.is_blank())
         {
-            let source = match row.host_path() {
-                Some(path) => MountSource::HostPath(path),
-                None => MountSource::Volume(row.source.trim().to_string()),
-            };
             let is_relabeled = row.is_relabeled && self.offers_relabel(index);
             request = request.with_volume(
-                VolumeMount::new(source, row.target.trim(), row.is_read_only)
-                    .with_relabel(is_relabeled),
+                VolumeMount::new(
+                    row.mount_source(),
+                    row.target.trim(),
+                    row.is_read_only,
+                )
+                .with_relabel(is_relabeled),
             );
         }
         let network = self.network.trim();
@@ -800,20 +845,32 @@ pub(crate) fn parse_port(text: &str) -> Option<u16> {
     text.trim().parse::<u16>().ok().filter(|port| *port > 0)
 }
 
-/// The folder on this computer that `source` names: an absolute path, or
-/// one under the home folder (`~`, `~/…`). `None` for a volume name.
-fn host_path(source: &str) -> Option<PathBuf> {
+/// What `source` names: an absolute path or one under the home folder (`~`,
+/// `~/…`) is a folder, anything else a volume name. A home folder that is not
+/// absolute counts as not known: `~` would become a relative text, which the
+/// engine reads as a volume name.
+fn source_kind(source: &str, home_folder: Option<&Path>) -> SourceKind {
     if source.starts_with('/') {
-        return Some(PathBuf::from(source));
+        return SourceKind::Folder(PathBuf::from(source));
     }
 
-    let rest = source.strip_prefix('~')?;
+    let Some(rest) = source.strip_prefix('~') else {
+        return SourceKind::VolumeName;
+    };
     if !rest.is_empty() && !rest.starts_with('/') {
-        return None;
+        return SourceKind::VolumeName;
     }
-    let home = std::env::var("HOME").unwrap_or_default();
 
-    Some(PathBuf::from(format!("{home}{rest}")))
+    let Some(home) = home_folder.filter(|home| home.is_absolute()) else {
+        return SourceKind::UnknownHomeFolder;
+    };
+    // All leading slashes go: `join` with an absolute path would drop `home`.
+    let rest = rest.trim_start_matches('/');
+    if rest.is_empty() {
+        return SourceKind::Folder(home.to_path_buf());
+    }
+
+    SourceKind::Folder(home.join(rest))
 }
 
 /// Remove the item at `index`; nothing past the end.
@@ -833,12 +890,50 @@ mod tests {
         fixtures::engine(EngineKind::Docker)
     }
 
+    /// What `~` stands for in these tests, whatever this computer has.
+    const HOME: &str = "/home/ann";
+
+    fn form_at_home(home: Option<&str>) -> RunForm {
+        RunForm::new(
+            docker(),
+            "nginx:1.27",
+            "bridge",
+            false,
+            home.map(Path::new),
+        )
+    }
+
     fn form() -> RunForm {
-        RunForm::new(docker(), "nginx:1.27", "bridge", false)
+        form_at_home(Some(HOME))
     }
 
     fn selinux_form() -> RunForm {
-        RunForm::new(docker(), "nginx:1.27", "bridge", true)
+        RunForm::new(
+            docker(),
+            "nginx:1.27",
+            "bridge",
+            true,
+            Some(Path::new(HOME)),
+        )
+    }
+
+    /// A form on the home folder `home` with one row from `source` to `/data`.
+    fn row_form(home: Option<&str>, source: &str) -> RunForm {
+        let mut form = form_at_home(home);
+        edit(
+            &mut form,
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(0, source.to_string()),
+                RunEdit::VolumeTarget(0, String::from("/data")),
+            ],
+        );
+        form
+    }
+
+    /// The folder that `source` names with the home folder `home`.
+    fn folder_of(home: Option<&str>, source: &str) -> Option<PathBuf> {
+        row_form(home, source).volumes()[0].host_path()
     }
 
     fn edit(form: &mut RunForm, edits: Vec<RunEdit>) {
@@ -1150,7 +1245,6 @@ mod tests {
     #[test]
     fn the_form_maps_to_the_create_request() {
         let mut form = form();
-        let home = std::env::var("HOME").unwrap_or_default();
         edit(
             &mut form,
             vec![
@@ -1206,7 +1300,7 @@ mod tests {
                 false,
             ))
             .with_volume(VolumeMount::new(
-                MountSource::HostPath(PathBuf::from(format!("{home}/site"))),
+                MountSource::HostPath(PathBuf::from("/home/ann/site")),
                 "/site",
                 false,
             ))
@@ -1361,15 +1455,166 @@ mod tests {
 
     #[test]
     fn a_source_with_a_slash_or_tilde_is_a_folder() {
-        let home = std::env::var("HOME").unwrap_or_default();
+        let home = Some(HOME);
 
-        assert_eq!(host_path("/srv/site"), Some(PathBuf::from("/srv/site")));
-        assert_eq!(host_path("~"), Some(PathBuf::from(&home)));
         assert_eq!(
-            host_path("~/site"),
-            Some(PathBuf::from(format!("{home}/site")))
+            folder_of(home, "/srv/site"),
+            Some(PathBuf::from("/srv/site"))
         );
-        assert_eq!(host_path("otty-fx-cache"), None);
-        assert_eq!(host_path("~other/site"), None);
+        assert_eq!(folder_of(home, "~"), Some(PathBuf::from("/home/ann")));
+        assert_eq!(folder_of(home, "~/"), Some(PathBuf::from("/home/ann")));
+        assert_eq!(
+            folder_of(home, "~/site"),
+            Some(PathBuf::from("/home/ann/site"))
+        );
+        assert_eq!(
+            folder_of(home, " ~/site "),
+            Some(PathBuf::from("/home/ann/site"))
+        );
+        assert_eq!(folder_of(home, "otty-fx-cache"), None);
+        assert_eq!(folder_of(home, "~other/site"), None);
+    }
+
+    /// `Path::join` throws away what it joins to when given an absolute path.
+    #[test]
+    fn a_doubled_slash_after_the_tilde_stays_under_the_home_folder() {
+        assert_eq!(
+            folder_of(Some(HOME), "~//etc"),
+            Some(PathBuf::from("/home/ann/etc"))
+        );
+    }
+
+    #[test]
+    fn the_home_folder_itself_goes_out_without_a_trailing_slash() {
+        for source in ["~", "~/"] {
+            let folder = folder_of(Some(HOME), source).expect("a folder");
+
+            assert_eq!(folder.display().to_string(), HOME, "{source}");
+        }
+    }
+
+    #[test]
+    fn a_home_folder_ending_in_a_slash_gives_a_clean_path() {
+        let folder = folder_of(Some("/home/ann/"), "~/site").expect("a folder");
+
+        assert_eq!(folder.display().to_string(), "/home/ann/site");
+    }
+
+    #[test]
+    fn without_a_home_folder_a_tilde_source_names_no_folder() {
+        for source in ["~", "~/", "~/site", " ~/site "] {
+            let form = row_form(None, source);
+            let row = &form.volumes()[0];
+
+            assert_eq!(row.host_path(), None, "{source:?}");
+            assert!(row.is_home_unknown(), "{source:?}");
+        }
+    }
+
+    /// `HOME=site` would turn `~` into `site`, which the engine reads as a
+    /// volume name.
+    #[test]
+    fn a_home_folder_that_is_not_absolute_counts_as_unknown() {
+        for source in ["~", "~/site"] {
+            let form = row_form(Some("relative/ann"), source);
+            let row = &form.volumes()[0];
+
+            assert_eq!(row.host_path(), None, "{source:?}");
+            assert!(row.is_home_unknown(), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn without_a_home_folder_other_sources_mean_what_they_said() {
+        let folder = row_form(None, "/srv/site");
+        let named = row_form(None, "otty-data");
+        let other_user = row_form(None, "~other");
+
+        assert_eq!(
+            folder.volumes()[0].host_path(),
+            Some(PathBuf::from("/srv/site"))
+        );
+        for form in [&folder, &named, &other_user] {
+            assert!(!form.volumes()[0].is_home_unknown());
+        }
+    }
+
+    #[test]
+    fn with_a_home_folder_a_tilde_source_is_not_unknown() {
+        assert!(!row_form(Some(HOME), "~/site").volumes()[0].is_home_unknown());
+    }
+
+    /// The checks keep Run from getting here, but should one ever slip, the
+    /// engine gets the text as typed: not `/site` on the root, and not a named
+    /// volume that the engine would make up.
+    #[test]
+    fn without_a_home_folder_the_request_keeps_the_source_as_typed() {
+        for (source, typed) in [("~/site", "~/site"), (" ~ ", "~")] {
+            let request = row_form(None, source).request();
+
+            assert_eq!(
+                request.volumes()[0].source(),
+                &MountSource::HostPath(PathBuf::from(typed)),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tilde_source_without_a_home_folder_asks_the_disk_nothing() {
+        let mut form = row_form(None, "~/site");
+
+        assert!(!form.has_folder_rows());
+        assert!(form.are_folders_answered());
+        assert_eq!(form.folder_to_ask(0), None);
+        assert_eq!(form.start_typing_wait(0), None);
+        assert!(form.start_folder_rechecks().is_empty());
+    }
+
+    #[test]
+    fn a_tilde_source_without_a_home_folder_offers_no_relabel_switch() {
+        let mut form =
+            RunForm::new(docker(), "nginx:1.27", "bridge", true, None);
+        edit(
+            &mut form,
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(0, String::from("~/site")),
+            ],
+        );
+
+        assert!(!form.offers_relabel(0));
+    }
+
+    #[test]
+    fn typing_a_tilde_without_a_home_folder_forgets_the_old_folder() {
+        let site = Path::new("/srv/site");
+        let mut form = row_form(None, "/srv/site");
+        assert!(form.finish_folder_check(site, false));
+        assert!(form.volumes()[0].is_folder_missing());
+
+        form.apply(RunEdit::VolumeSource(0, String::from("~/site")));
+
+        assert!(!form.volumes()[0].is_folder_missing());
+        assert!(!form.finish_folder_check(site, false));
+    }
+
+    #[test]
+    fn the_home_folder_stays_with_the_form_on_another_engine() {
+        let mut form = form_at_home(Some(HOME));
+
+        form.set_engine(fixtures::engine(EngineKind::Podman), "podman");
+        edit(
+            &mut form,
+            vec![
+                RunEdit::AddVolume,
+                RunEdit::VolumeSource(0, String::from("~/site")),
+            ],
+        );
+
+        assert_eq!(
+            form.volumes()[0].host_path(),
+            Some(PathBuf::from("/home/ann/site"))
+        );
     }
 }

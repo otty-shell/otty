@@ -34,12 +34,40 @@ impl Image {
 
     /// The repository of this row, for example `busybox` (Docker) or
     /// `docker.io/library/busybox` (Podman). `None` for a dangling image.
+    ///
+    /// ```
+    /// # #[cfg(feature = "fixtures")]
+    /// # {
+    /// use otty_docker::fixtures;
+    ///
+    /// let rows = fixtures::image_rows("sha256:one", &["busybox:1.37"], &[], &[]);
+    /// let dangling = fixtures::image_rows("sha256:two", &[], &[], &[]);
+    ///
+    /// assert_eq!(rows[0].repository(), Some("busybox"));
+    /// assert_eq!(dangling[0].repository(), None);
+    /// # }
+    /// ```
     pub fn repository(&self) -> Option<&str> {
         self.repository.as_deref()
     }
 
     /// The tag of this row, for example `1.37`. `None` for a dangling image
     /// and for one known only by its digest.
+    ///
+    /// ```
+    /// # #[cfg(feature = "fixtures")]
+    /// # {
+    /// use otty_docker::fixtures;
+    ///
+    /// let tagged =
+    ///     fixtures::image_rows("sha256:one", &["busybox:1.37"], &[], &[]);
+    /// let digest_only =
+    ///     fixtures::image_rows("sha256:two", &[], &["reg/app@sha256:aa"], &[]);
+    ///
+    /// assert_eq!(tagged[0].tag(), Some("1.37"));
+    /// assert_eq!(digest_only[0].tag(), None);
+    /// # }
+    /// ```
     pub fn tag(&self) -> Option<&str> {
         self.tag.as_deref()
     }
@@ -47,18 +75,62 @@ impl Image {
     /// The name this row stands for: `repository:tag`, or
     /// `repository@sha256:…` for an image known only by its digest. `None`
     /// for a dangling image.
+    ///
+    /// ```
+    /// # #[cfg(feature = "fixtures")]
+    /// # {
+    /// use otty_docker::fixtures;
+    ///
+    /// let tagged =
+    ///     fixtures::image_rows("sha256:one", &["busybox:1.37"], &[], &[]);
+    /// let digest_only =
+    ///     fixtures::image_rows("sha256:two", &[], &["reg/app@sha256:aa"], &[]);
+    /// let dangling = fixtures::image_rows("sha256:three", &[], &[], &[]);
+    ///
+    /// assert_eq!(tagged[0].reference(), Some("busybox:1.37"));
+    /// assert_eq!(digest_only[0].reference(), Some("reg/app@sha256:aa"));
+    /// assert_eq!(dangling[0].reference(), None);
+    /// # }
+    /// ```
     pub fn reference(&self) -> Option<&str> {
         self.reference.as_deref()
     }
 
     /// What tells this row from every other row of the list, also from the
     /// other rows of its image.
+    ///
+    /// ```
+    /// # #[cfg(feature = "fixtures")]
+    /// # {
+    /// use otty_docker::fixtures;
+    ///
+    /// let rows =
+    ///     fixtures::image_rows("sha256:one", &["app:1", "app:2"], &[], &[]);
+    ///
+    /// assert_eq!(rows[0].id(), rows[1].id());
+    /// assert_ne!(rows[0].row_key(), rows[1].row_key());
+    /// # }
+    /// ```
     pub fn row_key(&self) -> &str {
         &self.row_key
     }
 
     /// Whether the image keeps another name once this row's name goes. Then
     /// a remove takes away only this name.
+    ///
+    /// ```
+    /// # #[cfg(feature = "fixtures")]
+    /// # {
+    /// use otty_docker::fixtures;
+    ///
+    /// let two_tags =
+    ///     fixtures::image_rows("sha256:one", &["app:1", "app:2"], &[], &[]);
+    /// let one_tag = fixtures::image_rows("sha256:two", &["app:1"], &[], &[]);
+    ///
+    /// assert!(two_tags[0].has_other_names());
+    /// assert!(!one_tag[0].has_other_names());
+    /// # }
+    /// ```
     pub fn has_other_names(&self) -> bool {
         self.has_other_names
     }
@@ -66,6 +138,19 @@ impl Image {
     /// What a remove call of this row names, so only this row goes: its
     /// reference when it has a tag or the image has other names, else the
     /// image id.
+    ///
+    /// ```
+    /// # #[cfg(feature = "fixtures")]
+    /// # {
+    /// use otty_docker::fixtures;
+    ///
+    /// let tagged = fixtures::image_rows("sha256:one", &["app:1"], &[], &[]);
+    /// let dangling = fixtures::image_rows("sha256:two", &[], &[], &[]);
+    ///
+    /// assert_eq!(tagged[0].remove_target(), "app:1");
+    /// assert_eq!(dangling[0].remove_target(), "sha256:two");
+    /// # }
+    /// ```
     pub fn remove_target(&self) -> &str {
         match self.reference.as_deref() {
             Some(reference) if self.tag.is_some() || self.has_other_names => {

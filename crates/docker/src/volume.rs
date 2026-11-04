@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use bollard::models::Volume as EngineVolume;
 
 use crate::container::{COMPOSE_PROJECT_LABEL, Container, MountKind};
+use crate::text_order::compare_text;
 use crate::timestamp::unix_seconds;
 
 /// The label Docker (23 and newer) puts on volumes it made for a
@@ -94,7 +95,7 @@ impl Volume {
             .filter(|container| mounts_volume(container, &volume.name))
             .map(|container| container.name().to_owned())
             .collect();
-        users.sort();
+        users.sort_by(|a, b| compare_text(a, b));
 
         Self {
             name: volume.name.clone(),
@@ -253,6 +254,28 @@ mod tests {
         let volume = Volume::from_volume(&volume, &containers);
 
         assert_eq!(volume.containers(), ["alpha", "zeta"]);
+    }
+
+    #[test]
+    fn users_are_listed_a_to_z_whatever_the_case() {
+        let summaries: Vec<bollard::models::ContainerSummary> = serde_json::from_str(
+            r#"[
+                {"Names":["/Zed"],"Mounts":[{"Type":"volume","Name":"shared"}]},
+                {"Names":["/beta"],"Mounts":[{"Type":"volume","Name":"shared"}]},
+                {"Names":["/Alpha"],"Mounts":[{"Type":"volume","Name":"shared"}]}
+            ]"#,
+        )
+        .expect("container list");
+        let containers: Vec<Container> =
+            summaries.iter().map(Container::from_summary).collect();
+        let volume: EngineVolume = serde_json::from_str(
+            r#"{"Name":"shared","Driver":"local","Mountpoint":"","Labels":{},"Scope":"local","Options":{}}"#,
+        )
+        .expect("volume");
+
+        let volume = Volume::from_volume(&volume, &containers);
+
+        assert_eq!(volume.containers(), ["Alpha", "beta", "Zed"]);
     }
 
     #[test]

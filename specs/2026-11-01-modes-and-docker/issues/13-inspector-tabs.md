@@ -175,6 +175,29 @@ warnings that were there before).
 
 ## Comments
 
+### A stopped container takes the old error with it (2026-11-04, spec Decision 12)
+
+Seen on real Podman: the container stopped during a gap, the lines stayed and
+"error reading a body from connection" stayed under them. Owner decision: the
+container simply ended, so the message goes. `LogsAfterReconnect::Ended` is the new
+answer for the same run, not running. No new stream starts then, so the old stream
+keeps its key and a late `LogsFailed` would still match; `ContainerLogs::has_ended`
+drops it. A failed inspect still answers `Keep` with the message, because nothing is
+known, and so does a running container whose lines have no time to go on from. A
+start or a stream that goes on clears `has_ended`.
+
+### The row comes back with its engine (2026-11-04, spec Decision 12)
+
+Owner report: after the only engine came back, the first row was selected while the
+Logs tab stayed open, so its 500 lines looked like the earlier container's.
+`DockerState::lost_view` keeps the place and the selected id when no engine is left.
+When that engine is found again the place comes back at once and the id goes in as
+the new list's selection, so `ResourceList::apply` does the rest: kept when the row
+is there, first row when it is not, kept across a failed load. Opening any page drops
+`lost_view`, and so does another engine answering first, so nothing jumps back later.
+With two engines the view moves when the shown one goes and no `lost_view` is made,
+so that engine's return moves nothing; its lists start with their first rows.
+
 ### Logs after a restart (2026-11-03, spec Decision 12)
 
 The logs went silent after a restart: the stream had ended, and the
@@ -216,6 +239,44 @@ start, and a crash loop with a restart policy:
   about 90 ms after it (Docker). The gap between the two was 60 to 100 ms for
   a restart, so its middle divides the runs.
 
-Not covered: a start that happens while the events stream is broken (for
-example the engine itself restarting) is missed, so the logs stay silent until
-the next start or until the tab or selection changes.
+### Logs after a reconnect (2026-11-04, spec Decision 12)
+
+A start during a break of the events stream was missed, so the logs stayed
+stale until the next start or a tab or row change. That gap is closed.
+
+What changed:
+
+- `otty-docker`: every log stream asks for line times. `LogLine` carries a
+  `LogPosition`: the exact time of the line and which line of that time it is.
+  `Engine::follow_logs_after(id, position, tail)` reads from that whole second
+  and drops what it has already given. `Engine::container_run(id)` tells
+  `StartedAt`, the cutoff and whether the container runs;
+  `follow_latest_run_logs` now takes that run.
+- App: a new stream sends `DockerIntent::LogRunRead` with its run ahead of its
+  lines. `LogLines` carries where the lines end. `EngineReconnected` also gives
+  `DockerEffect::CheckLogRun` when logs are open on that engine, and the answer
+  `LogRunChecked` goes through the pure `logs_after_reconnect`: start over, go
+  on, or keep. Both intents are in `is_docker_background`.
+- `LogTarget` holds `LogRead` (last lines, latest run, or after a position) and
+  a stream number instead of the comeback count. A second reconnect from the
+  same position needs the number: with the same key iced would keep the dead
+  stream.
+
+Seen on Podman 5.8.8 (`k8s-file` and `journald`) through a private API socket,
+stopping and starting that service: lines go on with no repeat and no hole,
+also with Follow off and when no connection really broke; a restart in the gap
+shows only the new run; a stop or a removal in the gap keeps the lines and
+starts nothing. `k8s-file` gave one exact time to the three lines of one
+`printf`, which is why the position counts lines. Not seen on Docker, and not
+in the running app.
+
+Rejected:
+
+- Clearing on every reconnect: a connection drop must not wipe the logs.
+- Comparing the last line's time with `StartedAt`, with no run kept: a quiet
+  run still shows lines of the run before, so a drop would clear them.
+- Going by time only, `>` or `>=`: with lines of one time it loses or repeats.
+- Asking the events stream for `since` the break: the engines keep a limited
+  past, and it says nothing about the lines missed.
+- Keeping a surviving stream and starting a new one only if the old one had
+  ended: replacing it is one path for both cases and cannot repeat.

@@ -46,7 +46,16 @@ pub(crate) fn view(props: MainAreaProps<'_>) -> Element<'_, DockerIntent> {
     let palette = props.theme.theme.ui();
 
     match props.vm {
-        MainViewModel::Table(table) => table_view(table, palette),
+        MainViewModel::Table(table) => {
+            let page = table.page.clone();
+
+            table_view(table, palette).map(move |intent| {
+                DockerIntent::FromPage {
+                    page: page.clone(),
+                    intent: Box::new(intent),
+                }
+            })
+        },
         MainViewModel::Searching => {
             card(i18n::t(Key::DockerSearching), palette)
         },
@@ -274,29 +283,51 @@ mod tests {
     use crate::i18n::Locale;
     use crate::theme::ThemeManager;
     use crate::widgets::docker::action_model::PruneViewModel;
-    use crate::widgets::docker::model;
     use crate::widgets::docker::no_engine::{
         self as no_engine_vm, NoEngineCase,
     };
     use crate::widgets::docker::reducer::reduce;
-    use crate::widgets::docker::sort::TableSorts;
+    use crate::widgets::docker::sort::{TableSort, TableSorts};
     use crate::widgets::docker::state::DockerState;
     use crate::widgets::docker::table_search::{keys, keys_in};
-    use crate::widgets::docker::types::{LoadedLists, ResourceKind};
+    use crate::widgets::docker::types::{LoadedLists, Place, ResourceKind};
+    use crate::widgets::docker::{model, resource_rows};
 
     const NOW: i64 = 1_793_557_960;
 
     /// A search with nothing typed and no tags.
     static EMPTY_SEARCH: std::sync::LazyLock<TagSearch> =
         std::sync::LazyLock::new(TagSearch::default);
+    /// The page the tables of these tests belong to.
+    static PAGE: std::sync::LazyLock<Place> =
+        std::sync::LazyLock::new(containers_page);
+
+    /// The containers page of the fixture Docker engine.
+    fn containers_page() -> Place {
+        Place::new(
+            fixtures::engine(EngineKind::Docker).address().clone(),
+            ResourceKind::Containers,
+        )
+    }
+
+    /// What the main area sent, without the page each table intent carries.
+    fn sent(ui: iced_test::Simulator<'_, DockerIntent>) -> Vec<DockerIntent> {
+        ui.into_messages()
+            .map(|intent| match intent {
+                DockerIntent::FromPage { intent, .. } => *intent,
+                other => other,
+            })
+            .collect()
+    }
 
     fn table<'a>(rows: Vec<Vec<TableCell>>) -> MainViewModel<'a> {
         MainViewModel::Table(TableViewModel {
+            page: &PAGE,
             resource: ResourceKind::Containers,
             search: &EMPTY_SEARCH,
             keys: keys(ResourceKind::Containers),
             suggestions: Vec::new(),
-            sort: TableSorts::default().get(ResourceKind::Containers),
+            sort: TableSort::default_for(ResourceKind::Containers),
             columns: vec![
                 TableColumn::new("Name", 3).sortable(true),
                 TableColumn::new("Status", 2).sortable(true),
@@ -347,7 +378,7 @@ mod tests {
 
         ui.click("db-1").expect("second row should be visible");
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(intents, vec![DockerIntent::SelectRow(1)]);
     }
 
@@ -361,7 +392,7 @@ mod tests {
 
         ui.click("Name").expect("title should be visible");
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(intents, vec![DockerIntent::SortBy(0)]);
     }
 
@@ -386,7 +417,7 @@ mod tests {
 
         ui.click("otty-site").expect("link should be visible");
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(intents, vec![DockerIntent::OpenComposeProject(0)]);
     }
 
@@ -419,13 +450,68 @@ mod tests {
         let mut second = simulator(make());
         second.click("5432/tcp").expect("link should be visible");
 
-        let first: Vec<DockerIntent> = first.into_messages().collect();
-        let second: Vec<DockerIntent> = second.into_messages().collect();
+        let first = sent(first);
+        let second = sent(second);
         assert_eq!(first, vec![DockerIntent::OpenPortLink { row: 0, link: 0 }]);
         assert_eq!(
             second,
             vec![DockerIntent::OpenPortLink { row: 0, link: 1 }]
         );
+    }
+
+    #[test]
+    fn the_ports_title_sorts_and_a_port_link_under_it_still_opens_its_port() {
+        let themes = ThemeManager::new();
+        let ports = TableCell::parts(vec![CellPart::link("8080:80/tcp")]);
+        let mut row = vec![TableCell::mono("web-1"); PORTS_COLUMN];
+        row.push(ports);
+        row.push(TableCell::muted("1 d"));
+        let make = |sort: TableSort, width: f32| {
+            let row = row.clone();
+            area(
+                with(move |mut table| {
+                    table.columns = resource_rows::columns_in(
+                        Locale::En,
+                        ResourceKind::Containers,
+                    );
+                    table.rows = vec![row];
+                    table.sort = sort;
+                    table
+                }),
+                width,
+                ThemeProps::new(themes.current()),
+            )
+        };
+        let mut sorts = TableSorts::default();
+        sorts.press(&PAGE, PORTS_COLUMN);
+        let by_ports = sorts.get(&PAGE);
+        let by_status = TableSort::default_for(ResourceKind::Containers);
+        // The narrowest area that still shows the column without scrolling
+        // sideways: only the minimums and the row menu fit.
+        let narrow = 572.0 + ROW_MENU_COLUMN;
+
+        for (sort, width) in [
+            (by_status, WIDE),
+            (by_status, narrow),
+            (by_ports, WIDE),
+            (by_ports, narrow),
+        ] {
+            let mut title = simulator(make(sort, width));
+            title.click("Ports").expect("title should be visible");
+            assert_eq!(
+                sent(title),
+                vec![DockerIntent::SortBy(PORTS_COLUMN)],
+                "{sort:?} at {width}"
+            );
+
+            let mut link = simulator(make(sort, width));
+            link.click("8080:80/tcp").expect("link should be visible");
+            assert_eq!(
+                sent(link),
+                vec![DockerIntent::OpenPortLink { row: 0, link: 0 }],
+                "{sort:?} at {width}"
+            );
+        }
     }
 
     /// Width of a wide main area in the tests.
@@ -549,7 +635,7 @@ mod tests {
         let create = toolbar_button(&mut ui, WIDE, 2);
         click_at(&mut ui, create);
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert!(intents.is_empty(), "the create button is disabled");
     }
 
@@ -565,7 +651,7 @@ mod tests {
         let refresh = toolbar_button(&mut ui, WIDE, 0);
         click_at(&mut ui, refresh);
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(intents, vec![DockerIntent::Refresh]);
     }
 
@@ -587,7 +673,7 @@ mod tests {
         ui.click(i18n::t(Key::DockerRefresh))
             .expect("refresh should be in the menu");
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(intents, vec![DockerIntent::Prune, DockerIntent::Refresh]);
     }
 
@@ -608,7 +694,7 @@ mod tests {
             .expect("field should be visible");
         let _ = ui.typewrite("w");
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(
             intents,
             vec![
@@ -637,7 +723,7 @@ mod tests {
             iced::Point::new(WIDE - ROW_MENU_COLUMN / 2.0, row_center),
         );
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert!(
             matches!(
                 intents.as_slice(),
@@ -664,7 +750,7 @@ mod tests {
             iced::Point::new(WIDE - ROW_MENU_COLUMN / 2.0, row_center),
         );
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(intents, vec![DockerIntent::SelectRow(1)]);
     }
 
@@ -691,7 +777,7 @@ mod tests {
         ui.click(i18n::t(Key::DockerTagsClearAll))
             .expect("clear all should show");
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(
             intents,
             vec![
@@ -741,7 +827,7 @@ mod tests {
             .expect("field should be visible");
         let _ = ui.typewrite("w");
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(
             intents,
             vec![
@@ -842,7 +928,7 @@ mod tests {
         let mut state = loaded_state();
         let before = row_count(&state);
         let search = |state: &DockerState| {
-            state.table_search(ResourceKind::Containers).clone()
+            state.table_search(&containers_page()).clone()
         };
 
         type_in_field(&mut state, "sta");
@@ -876,7 +962,7 @@ mod tests {
         type_in_field(&mut state, "Status:ru");
         tap_in_field(&mut state, Named::Enter);
 
-        let search = state.table_search(ResourceKind::Containers);
+        let search = state.table_search(&containers_page());
         assert_eq!(tag_labels(search), vec!["Status:ru"]);
         assert_eq!(search.input(), "");
         assert_eq!(row_count(&state), 2, "only the running containers");
@@ -892,7 +978,7 @@ mod tests {
         type_in_field(&mut state, "otty");
         tap_in_field(&mut state, Named::Enter);
 
-        let search = state.table_search(ResourceKind::Containers);
+        let search = state.table_search(&containers_page());
         assert_eq!(search.input(), "otty");
         assert!(search.tags().is_empty());
         assert!(!search.is_open());
@@ -929,14 +1015,81 @@ mod tests {
             ui.click(i18n::t(Key::DockerStatePaused))
                 .expect("value should be listed");
         });
-        let tags = state.table_search(ResourceKind::Containers).tags().len();
+        let tags = state.table_search(&containers_page()).tags().len();
 
         in_frame(&mut state, |ui| {
             click_at(ui, iced::Point::new(WIDE - 2.0, 590.0));
         });
 
         assert_eq!(tags, 1);
-        assert!(!state.table_search(ResourceKind::Containers).is_open());
+        assert!(!state.table_search(&containers_page()).is_open());
+    }
+
+    #[test]
+    fn what_a_table_sends_says_which_page_it_came_from() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(MainAreaProps {
+            vm: table(rows()),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click("db-1").expect("second row should be visible");
+
+        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(
+            intents,
+            vec![DockerIntent::FromPage {
+                page: containers_page(),
+                intent: Box::new(DockerIntent::SelectRow(1)),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_press_drawn_on_a_page_a_lost_engine_left_selects_nothing() {
+        let podman = fixtures::engine(EngineKind::Podman);
+        let resources = fixtures::resources(EngineKind::Podman);
+        let mut state = loaded_state();
+        for intent in [
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+                EngineKind::Podman,
+            ])),
+            DockerIntent::ListsLoaded {
+                engine: podman.address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(resources.containers().to_vec()),
+                    images: Ok(resources.images().to_vec()),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            },
+        ] {
+            let _ = reduce(&mut state, intent);
+        }
+        let themes = ThemeManager::new();
+        let late: Vec<DockerIntent> = {
+            let vm = model::main_area(&state, NOW);
+            let mut ui =
+                simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
+            ui.click("otty-fx-exit3").expect("the row should be shown");
+            ui.into_messages().collect()
+        };
+
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Podman,
+            ])),
+        );
+        let selected = state.selected_id().map(str::to_string);
+        assert_eq!(late.len(), 1);
+        for intent in late {
+            let _ = reduce(&mut state, intent);
+        }
+
+        assert_eq!(state.place().map(Place::engine), Some(podman.address()));
+        assert_eq!(state.selected_id().map(str::to_string), selected);
     }
 
     #[test]
@@ -1022,7 +1175,7 @@ mod tests {
         ui.click(i18n::t(Key::DockerCheckAgain))
             .expect("check again should be visible");
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(intents, vec![DockerIntent::CheckAgain]);
     }
 
@@ -1040,7 +1193,7 @@ mod tests {
         let create = toolbar_button(&mut ui, WIDE, 2);
         click_at(&mut ui, create);
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(intents, vec![DockerIntent::OpenCreate]);
     }
 
@@ -1056,7 +1209,7 @@ mod tests {
         let prune = toolbar_button(&mut ui, WIDE, 1);
         click_at(&mut ui, prune);
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(intents, vec![DockerIntent::Prune]);
     }
 
@@ -1076,7 +1229,7 @@ mod tests {
         let prune = toolbar_button(&mut ui, WIDE, 1);
         click_at(&mut ui, prune);
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert!(intents.is_empty());
     }
 
@@ -1104,7 +1257,7 @@ mod tests {
         ));
         let _ = ui.simulate(iced_test::simulator::click());
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(intents, vec![DockerIntent::DismissNotice]);
     }
 
@@ -1129,7 +1282,7 @@ mod tests {
             )),
         ]);
 
-        let intents: Vec<DockerIntent> = ui.into_messages().collect();
+        let intents = sent(ui);
         assert_eq!(
             intents,
             vec![DockerIntent::OpenRowMenu {

@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use iced::Point;
 use iced::widget::text_editor::Action;
 use otty_docker::{
-    Container, Discovery, EngineAddress, EngineInfo, ImageDefaults,
-    PullProgress, RunRequest,
+    Container, ContainerRun, Discovery, EngineAddress, EngineInfo,
+    ImageDefaults, LogPosition, PullProgress, RunRequest,
 };
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
@@ -19,6 +19,15 @@ use super::types::{LoadedList, LoadedLists, Place, ResourceKind};
 /// Intent events handled by the Docker widget.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DockerIntent {
+    /// What the open page sent: a press on a row, a header or a link, the
+    /// search field and the header buttons. A position in a filtered table
+    /// only means something on the page that drew it, and a search can move
+    /// the place in the same update as a press, so `intent` is taken only
+    /// while `page` is still open.
+    FromPage {
+        page: Place,
+        intent: Box<DockerIntent>,
+    },
     /// Docker mode became active: search for engines, then load their
     /// lists, and ask again about the folders of an open Run form.
     Enter,
@@ -26,6 +35,11 @@ pub(crate) enum DockerIntent {
     Leave,
     /// The engine search finished.
     DiscoveryFinished(Discovery),
+    /// The timer of the no-engine card ticked: look for engines behind the
+    /// card, unless a search is on its way.
+    EngineSearchTick,
+    /// The search behind the no-engine card finished.
+    BackgroundSearchFinished(Discovery),
     /// One load of an engine's four lists finished.
     ListsLoaded {
         engine: EngineAddress,
@@ -66,10 +80,23 @@ pub(crate) enum DockerIntent {
     // Inspector tabs.
     /// An inspector tab was pressed.
     SelectInspectorTab(InspectorTab),
-    /// New lines of the followed logs arrived.
+    /// New lines of the followed logs arrived; `position` is where they end,
+    /// when they have a time.
     LogLines {
         target: LogTarget,
         lines: Vec<String>,
+        position: Option<LogPosition>,
+    },
+    /// The stream of the followed logs read which run it follows.
+    LogRunRead {
+        target: LogTarget,
+        run: ContainerRun,
+    },
+    /// What became of the container of the followed logs, asked after its
+    /// engine reconnected, or the engine's message.
+    LogRunChecked {
+        target: LogTarget,
+        result: Result<ContainerRun, DockerError>,
     },
     /// The followed logs could not be read; the engine's message.
     LogsFailed {
@@ -199,6 +226,9 @@ pub(crate) enum DockerIntent {
 pub(crate) enum DockerEffect {
     /// Search for the local engines (`otty_docker::discover`).
     Discover,
+    /// The same search behind the no-engine card, which stays on screen; its
+    /// result comes as [`DockerIntent::BackgroundSearchFinished`].
+    DiscoverInBackground,
     /// Load the four lists of this engine.
     LoadLists(EngineInfo),
     /// Put this text on the clipboard.
@@ -219,6 +249,9 @@ pub(crate) enum DockerEffect {
         engine: EngineInfo,
         target: InspectTarget,
     },
+    /// Ask what became of the container of these logs, after its engine
+    /// reconnected.
+    CheckLogRun(LogTarget),
     /// Load one list of this engine again. "Used by" of images, volumes and
     /// networks is read from `containers`; a container load does not use
     /// it.

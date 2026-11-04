@@ -34,6 +34,7 @@ mod run;
 mod selinux;
 #[cfg(test)]
 mod test_support;
+mod text_order;
 mod timestamp;
 mod volume;
 mod watch;
@@ -53,6 +54,7 @@ pub use crate::events::ListKind;
 pub use crate::host_folder::{host_folder_exists, wait_for};
 pub use crate::image::Image;
 pub use crate::image_defaults::ImageDefaults;
+pub use crate::logs::{ContainerRun, LogLine, LogPosition};
 pub use crate::network::Network;
 pub use crate::probe::{Probe, ProbeOutcome};
 pub use crate::pull::PullProgress;
@@ -60,5 +62,6 @@ pub use crate::run::{
     MountSource, PortProtocol, PublishedPort, RestartPolicy, RunRequest,
     VolumeMount,
 };
+pub use crate::text_order::compare_text;
 pub use crate::volume::Volume;
 pub use crate::watch::WatchEvent;

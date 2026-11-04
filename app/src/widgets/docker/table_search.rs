@@ -1,6 +1,9 @@
 //! What the tag search of each Docker table knows (spec Decision 21): the keys
-//! in column order and the text of each row's cells. The rules of the search
-//! live in the kit; this module only supplies keys and values.
+//! in column order and the text of each row's cells, and the kept search of
+//! each page. The rules of the search live in the kit; this module only
+//! supplies keys and values.
+
+use std::collections::HashMap;
 
 use otty_docker::{Container, Image, Network, Volume};
 use otty_ui_kit::components::tag_search::{
@@ -12,7 +15,9 @@ use super::resource_rows::{columns_in, container_badge};
 use super::sort::{
     TableSort, sort_containers, sort_images, sort_networks, sort_volumes,
 };
-use super::types::{ResourceKind, image_name, image_repository, image_tag};
+use super::types::{
+    Place, ResourceKind, image_name, image_repository, image_tag,
+};
 use crate::i18n::{self, Locale};
 
 /// The internal name of the Compose project key; the Compose link adds a tag
@@ -34,34 +39,25 @@ const VOLUME_KEYS: &[&str] = &["name", "driver", "used-by", "age"];
 const NETWORK_KEYS: &[&str] =
     &["name", "driver", "scope", "subnet", "containers", "age"];
 
-/// The kept search of each table: its tags live as long as OTTY runs.
+/// The kept search of each page (spec Decision 21). It lives as long as OTTY
+/// runs: apart from the engines, so a page keeps its search while its engine
+/// is away.
 #[derive(Debug, Default)]
 pub(crate) struct TableSearches {
-    containers: TagSearch,
-    images: TagSearch,
-    volumes: TagSearch,
-    networks: TagSearch,
+    pages: HashMap<Place, TagSearch>,
+    /// What a page shows until someone searches in it.
+    untouched: TagSearch,
 }
 
 impl TableSearches {
-    /// The search of the `resource` table.
-    pub(crate) fn get(&self, resource: ResourceKind) -> &TagSearch {
-        match resource {
-            ResourceKind::Containers => &self.containers,
-            ResourceKind::Images => &self.images,
-            ResourceKind::Volumes => &self.volumes,
-            ResourceKind::Networks => &self.networks,
-        }
+    /// The search of the page `place`.
+    pub(crate) fn get(&self, place: &Place) -> &TagSearch {
+        self.pages.get(place).unwrap_or(&self.untouched)
     }
 
-    /// The search of the `resource` table, to change it.
-    pub(crate) fn get_mut(&mut self, resource: ResourceKind) -> &mut TagSearch {
-        match resource {
-            ResourceKind::Containers => &mut self.containers,
-            ResourceKind::Images => &mut self.images,
-            ResourceKind::Volumes => &mut self.volumes,
-            ResourceKind::Networks => &mut self.networks,
-        }
+    /// The search of the page `place`, to change it.
+    pub(crate) fn get_mut(&mut self, place: &Place) -> &mut TagSearch {
+        self.pages.entry(place.clone()).or_default()
     }
 }
 
@@ -221,7 +217,6 @@ mod tests {
     use crate::widgets::docker::resource_rows::{
         columns, container_cells, image_cells, network_cells, volume_cells,
     };
-    use crate::widgets::docker::sort::TableSorts;
 
     const NOW: i64 = 1_793_557_960;
 
@@ -574,7 +569,7 @@ mod tests {
     #[test]
     fn the_schema_lists_the_rows_in_the_order_of_the_table() {
         let resources = docker();
-        let sort = TableSorts::default().get(ResourceKind::Containers);
+        let sort = TableSort::default_for(ResourceKind::Containers);
 
         let schema = containers_schema(resources.containers(), NOW, sort);
         let mut search = TagSearch::default();
