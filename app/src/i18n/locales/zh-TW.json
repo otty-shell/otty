@@ -197,7 +197,6 @@
     "tpl_docker_status_volumes": "{count} 個磁碟區",
     "docker_status_one_network": "1 個網路",
     "tpl_docker_status_networks": "{count} 個網路",
-    "tpl_docker_status_also_found": "也找到 {engine}",
     "docker_action_start": "啟動",
     "docker_action_stop": "停止",
     "docker_action_restart": "重新啟動",

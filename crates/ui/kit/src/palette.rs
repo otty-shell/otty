@@ -29,6 +29,7 @@ pub struct UiPalette {
     surface_raised: Color,
     surface_overlay: Color,
     surface_hover: Color,
+    scrollbar_idle: Color,
     surface_selected: Color,
     surface_error: Color,
     surface_danger: Color,
@@ -96,6 +97,13 @@ impl UiPalette {
     /// selected segment.
     pub const fn surface_hover(&self) -> Color {
         self.surface_hover
+    }
+
+    /// The scroller of a thin scrollbar while the pointer is not on it. In OTTY
+    /// Dark it is `surface-hover`. In OTTY Light that color can hardly be seen
+    /// on the surfaces a bar sits on, so it has its own value of about 2:1.
+    pub const fn scrollbar_idle(&self) -> Color {
+        self.scrollbar_idle
     }
 
     /// `surface-selected`: selected row in a list, tree or table. Text on it
@@ -263,6 +271,7 @@ impl UiPalette {
             surface_raised: fade(self.surface_raised),
             surface_overlay: fade(self.surface_overlay),
             surface_hover: fade(self.surface_hover),
+            scrollbar_idle: fade(self.scrollbar_idle),
             surface_selected: fade(self.surface_selected),
             surface_error: fade(self.surface_error),
             surface_danger: fade(self.surface_danger),
@@ -302,6 +311,7 @@ impl UiPalette {
             surface_raised: color!(0x1c1f2b),
             surface_overlay: color!(0x232530),
             surface_hover: color!(0x2e3140),
+            scrollbar_idle: color!(0x2e3140),
             surface_selected: color!(0x1f2940),
             surface_error: color!(0x1e1a24),
             surface_danger: color!(0x2a1e26),
@@ -351,6 +361,7 @@ impl UiPalette {
             surface_raised: color!(0xe4e7ee),
             surface_overlay: color!(0xffffff),
             surface_hover: color!(0xe0e4eb),
+            scrollbar_idle: color!(0xa8aeba),
             surface_selected: color!(0xd6e4f5),
             surface_error: color!(0xfbedee),
             surface_danger: color!(0xfbe7e9),
@@ -862,5 +873,58 @@ mod tests {
                 NON_TEXT_MIN,
             );
         }
+    }
+
+    /// A bar sits on the page, tables and forms (`surface-canvas`), on trees
+    /// and panels (`surface-panel`), and on a command box (`surface-chrome`).
+    #[test]
+    fn given_otty_light_when_a_bar_is_idle_then_it_is_about_2_to_1() {
+        let palette = UiPalette::otty_light();
+
+        for (name, surface) in [
+            ("surface-canvas", palette.surface_canvas()),
+            ("surface-panel", palette.surface_panel()),
+            ("surface-chrome", palette.surface_chrome()),
+        ] {
+            let ratio = contrast_ratio(palette.scrollbar_idle(), surface);
+
+            assert!(
+                (1.8..=2.2).contains(&ratio),
+                "on {name} the idle bar is {ratio:.2}:1"
+            );
+        }
+    }
+
+    #[test]
+    fn given_otty_light_when_a_bar_is_hovered_then_it_is_stronger_than_idle() {
+        let palette = UiPalette::otty_light();
+
+        for surface in [palette.surface_canvas(), palette.surface_chrome()] {
+            let idle = contrast_ratio(palette.scrollbar_idle(), surface);
+            let hovered = contrast_ratio(palette.text_faint(), surface);
+
+            assert!(hovered >= idle * 1.5, "{hovered:.2}:1 and {idle:.2}:1");
+        }
+    }
+
+    #[test]
+    fn given_otty_dark_when_a_bar_is_idle_then_it_stays_surface_hover() {
+        let palette = UiPalette::otty_dark();
+
+        assert_eq!(palette.scrollbar_idle(), palette.surface_hover());
+        assert_eq!(
+            palette.scrollbar_idle().into_rgba8(),
+            [0x2e, 0x31, 0x40, 255]
+        );
+    }
+
+    #[test]
+    fn given_opacity_when_palette_faded_then_the_idle_bar_fades() {
+        let palette = UiPalette::otty_light();
+
+        assert_eq!(
+            palette.with_opacity(0.5).scrollbar_idle(),
+            palette.scrollbar_idle().scale_alpha(0.5)
+        );
     }
 }

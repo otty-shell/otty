@@ -1,5 +1,5 @@
-//! What the Docker mode status bar says: the engine, the counts of the open
-//! list, the other engines found, or why there is no engine (spec Decision 5).
+//! What the Docker mode status bar says: the engine and the counts of the open
+//! list, or why there is no engine (spec Decision 5).
 
 use std::collections::HashSet;
 
@@ -24,8 +24,6 @@ pub(crate) struct StatusViewModel {
     pub(crate) engine: Option<String>,
     /// The counts of the open list, or the reason there is no engine.
     pub(crate) info: String,
-    /// The other engines that answered, e.g. "Podman 5.8.8 also found".
-    pub(crate) also_found: Option<String>,
 }
 
 /// Build the status bar texts for the current state.
@@ -36,23 +34,7 @@ pub(crate) fn status_bar(state: &DockerState) -> StatusViewModel {
             None => i18n::t(Key::DockerStatusSearching).to_string(),
         };
 
-        return StatusViewModel {
-            engine: None,
-            info,
-            also_found: None,
-        };
-    };
-
-    let others: Vec<String> = state
-        .engines()
-        .iter()
-        .filter(|engine| engine.info().address() != open.info().address())
-        .map(|engine| engine_label(engine.info()))
-        .collect();
-    let also_found = if others.is_empty() {
-        None
-    } else {
-        Some(i18n::docker_status_also_found(&others.join(PART_SEPARATOR)))
+        return StatusViewModel { engine: None, info };
     };
 
     // The Run form replaces the table, so the counts of the table would
@@ -66,7 +48,6 @@ pub(crate) fn status_bar(state: &DockerState) -> StatusViewModel {
     StatusViewModel {
         engine: Some(engine_label(open.info())),
         info,
-        also_found,
     }
 }
 
@@ -145,14 +126,17 @@ fn list_counts<T>(
 
 #[cfg(test)]
 mod tests {
+    use iced_test::simulator;
     use otty_docker::{EngineInfo, EngineKind, fixtures};
     use otty_ui_kit::components::tag_search::TagSearchAction;
 
     use super::*;
+    use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::docker::errors::DockerError;
     use crate::widgets::docker::event::DockerIntent;
     use crate::widgets::docker::reducer::reduce;
     use crate::widgets::docker::types::{LoadedLists, Place};
+    use crate::widgets::docker::view::status_bar::view as status_bar_view;
 
     fn docker() -> EngineInfo {
         fixtures::engine(EngineKind::Docker)
@@ -221,7 +205,6 @@ mod tests {
 
         assert_eq!(vm.engine, None);
         assert_eq!(vm.info, "Looking for engines…");
-        assert_eq!(vm.also_found, None);
     }
 
     #[test]
@@ -250,7 +233,6 @@ mod tests {
 
         assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
         assert_eq!(vm.info, format!("{total} containers, {running} running"));
-        assert_eq!(vm.also_found, None);
     }
 
     #[test]
@@ -340,14 +322,24 @@ mod tests {
         assert_eq!(networks, "1 network");
     }
 
+    /// Every engine shows in the tree, so the bar speaks only of the open one.
     #[test]
-    fn with_two_engines_the_other_one_is_also_found() {
+    fn with_two_engines_the_bar_names_only_the_open_one() {
+        let themes = ThemeManager::new();
         let state = loaded(&[EngineKind::Docker, EngineKind::Podman]);
 
         let vm = status_bar(&state);
+        let mut ui = simulator(status_bar_view(
+            &vm,
+            0,
+            "0.4.0",
+            (),
+            ThemeProps::new(themes.current()),
+        ));
 
-        assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
-        assert_eq!(vm.also_found.as_deref(), Some("Podman 5.8.8 also found"));
+        ui.find("Docker 29.9.1").expect("the open engine");
+        assert!(ui.find("Podman 5.8.8").is_err());
+        assert!(!vm.info.contains("Podman"), "{}", vm.info);
     }
 
     #[test]
@@ -389,6 +381,5 @@ mod tests {
 
         assert_eq!(vm.engine, None);
         assert_eq!(vm.info, "no engine found");
-        assert_eq!(vm.also_found, None);
     }
 }

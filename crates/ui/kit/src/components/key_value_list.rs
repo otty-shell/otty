@@ -195,6 +195,7 @@ mod tests {
 
     use super::*;
     use crate::contrast::contrast_ratio;
+    use crate::test_support::TempDir;
 
     /// WCAG 2.1 contrast for normal text.
     const TEXT_MIN: f32 = 4.5;
@@ -525,9 +526,8 @@ mod tests {
 
     #[test]
     fn given_a_link_when_the_pointer_is_over_it_then_it_is_underlined() {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-key-value-list-{}", std::process::id()))
-            .join("link-hovered");
+        let folder = TempDir::new("key-value-list");
+        let reference = folder.path().join("link-hovered");
         let palette = UiPalette::otty_dark();
         let mut ui = simulator(linked_list(&palette));
         let link = ui.find("otty-fx-data").expect("volume link").bounds();

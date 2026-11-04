@@ -340,15 +340,6 @@ pub(crate) fn docker_status_podman_no_access_docker_off(
     )
 }
 
-/// Build the status bar note that another engine answered too.
-pub(crate) fn docker_status_also_found(engine: &str) -> String {
-    fill_in(
-        current_locale(),
-        Key::TplDockerStatusAlsoFound,
-        &[("engine", engine)],
-    )
-}
-
 /// Build a status bar count: `one` for a single item, else `many` with the
 /// count, e.g. "1 image" or "7 images".
 pub(crate) fn docker_status_count(one: Key, many: Key, count: usize) -> String {
@@ -1135,7 +1126,6 @@ mod tests {
             (Key::TplDockerStatusImages, ("count", "7")),
             (Key::TplDockerStatusVolumes, ("count", "7")),
             (Key::TplDockerStatusNetworks, ("count", "7")),
-            (Key::TplDockerStatusAlsoFound, ("engine", "Podman 5.2")),
             (Key::TplDockerRemoveContainerTitle, ("name", "web-1")),
             (Key::TplDockerPruneContainersText, ("count", "3")),
             (Key::TplDockerRemoveImageTitle, ("name", "nginx:1.27")),

@@ -255,6 +255,7 @@ mod tests {
 
     use super::*;
     use crate::components::glyph;
+    use crate::test_support::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -411,9 +412,8 @@ mod tests {
 
     #[test]
     fn given_wide_toolbar_when_a_button_hovered_then_its_label_shows() {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-toolbar-{}", std::process::id()))
-            .join("tooltip");
+        let folder = TempDir::new("toolbar");
+        let reference = folder.path().join("tooltip");
 
         assert!(hovered_button_matches("Prune", &reference));
         assert!(!hovered_button_matches("Prune unused", &reference));

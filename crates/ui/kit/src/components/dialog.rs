@@ -1,14 +1,22 @@
 //! `Dialog`: a modal card centered over a dimmed window.
 
-use iced::widget::{Space, column, container, opaque, row, text};
+use iced::widget::{Space, column, container, opaque, row, scrollable, text};
 use iced::{Element, Length, alignment};
 
+use super::scrollbar;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
+
+/// Room around the card inside the area that scrolls, so that the scrolling
+/// does not cut the card's shadow (`0 14px 34px`: the blur reaches 34 + 14 px
+/// below it).
+const SHADOW_ROOM: f32 = 48.0;
 
 /// Modal dialog: a title, an optional body and a row of actions, `space-5`
 /// apart, on a `surface_overlay` card `size::DIALOG` wide. The card sits in
 /// the middle of a full-window `scrim`. Clicks never reach the UI behind it.
+/// In a window too small for it, the card keeps its width and scrolls both
+/// ways.
 ///
 /// # Example
 ///
@@ -95,6 +103,9 @@ impl<'a, Message: 'a> From<Dialog<'a, Message>> for Element<'a, Message> {
             });
 
         let scrim = palette.scrim();
+        let card = scrollable(container(card).padding(SHADOW_ROOM))
+            .direction(scrollbar::both())
+            .style(scrollbar::style(&palette));
 
         // `opaque` keeps clicks from reaching the UI behind the dialog.
         opaque(
@@ -108,5 +119,79 @@ impl<'a, Message: 'a> From<Dialog<'a, Message>> for Element<'a, Message> {
                     ..Default::default()
                 }),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::widget::button;
+    use iced::{Event, Point, mouse};
+    use iced_test::Simulator;
+
+    use super::*;
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum Message {
+        Deleted,
+    }
+
+    fn dialog() -> Element<'static, Message> {
+        let palette = UiPalette::otty_dark();
+
+        Dialog::new("Delete session", &palette)
+            .body(text("body").width(Length::Fill))
+            .action(button(text("Delete")).on_press(Message::Deleted))
+            .into()
+    }
+
+    fn in_window(width: f32, height: f32) -> Simulator<'static, Message> {
+        Simulator::with_size(
+            iced::Settings::default(),
+            (width, height),
+            dialog(),
+        )
+    }
+
+    #[test]
+    fn given_a_window_with_room_when_laid_out_then_the_card_is_in_the_middle() {
+        let (width, height) = (1024.0, 768.0);
+        let mut ui = in_window(width, height);
+
+        let body = ui.find("body").expect("body should exist").bounds();
+        let title = ui.find("Delete session").expect("title should exist");
+        let action = ui.find("Delete").expect("action should exist").bounds();
+
+        let top = title.bounds().y - spacing::SPACE_5;
+        let bottom = action.y + action.height + spacing::SPACE_5;
+        assert_eq!(body.width, size::DIALOG - 2.0 * spacing::SPACE_5);
+        assert_eq!(
+            body.x,
+            (width - size::DIALOG) / 2.0 + spacing::SPACE_5,
+            "the card should be centered sideways"
+        );
+        assert!(
+            ((top + bottom) / 2.0 - height / 2.0).abs() < 8.0,
+            "the card should be centered: {top} to {bottom}"
+        );
+    }
+
+    #[test]
+    fn given_a_window_smaller_than_the_dialog_when_scrolled_then_it_keeps_its_width_and_its_action_can_be_pressed()
+     {
+        let mut ui = in_window(260.0, 80.0);
+
+        let body = ui.find("body").expect("body should exist").bounds();
+        ui.point_at(Point::new(100.0, 40.0));
+        let _ = ui.simulate([Event::Mouse(mouse::Event::WheelScrolled {
+            delta: mouse::ScrollDelta::Pixels {
+                x: -10_000.0,
+                y: -10_000.0,
+            },
+        })]);
+        ui.click("Delete").expect("the action should be in reach");
+
+        let pressed: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(body.width, size::DIALOG - 2.0 * spacing::SPACE_5);
+        assert_eq!(pressed, vec![Message::Deleted]);
     }
 }

@@ -18,7 +18,7 @@ use super::super::no_engine::{
 use crate::i18n::{self, Key};
 use crate::icons;
 
-/// Render the card of one no-engine case, centered in the main area.
+/// Render the card of one no-engine case: its icon, texts, blocks and buttons.
 pub(crate) fn view<'a>(
     vm: NoEngineViewModel,
     palette: &UiPalette,
@@ -41,14 +41,8 @@ pub(crate) fn view<'a>(
     body = body.push(buttons(&vm, palette));
     body = body.push(looked_for(vm.looked_for.clone(), palette));
 
-    let card = EmptyCard::new(vm.title, vm.description.as_str(), icon, palette)
-        .action(body);
-
-    container(card)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
+    EmptyCard::new(vm.title, vm.description.as_str(), icon, palette)
+        .action(body)
         .into()
 }
 
@@ -74,9 +68,13 @@ fn command_block<'a>(
     command: &CommandViewModel,
     palette: &UiPalette,
 ) -> Element<'a, DockerIntent> {
-    let command_box =
-        CommandBox::new(command.text, i18n::t(Key::DockerCopy), palette)
-            .on_copy(DockerIntent::CopyCommand(command.text.to_string()));
+    let command_box = CommandBox::new(
+        command.text,
+        svg::Handle::from_memory(icons::COPY),
+        i18n::t(Key::DockerCopy),
+        palette,
+    )
+    .on_copy(DockerIntent::CopyCommand(command.text.to_string()));
 
     column![
         small_text(command.label, palette),
@@ -147,18 +145,168 @@ fn small_text<'a>(
 
 #[cfg(test)]
 mod tests {
-    use iced_test::simulator;
+    use iced::widget::column;
+    use iced::{Point, Size, Theme, mouse};
+    use iced_test::selector::Candidate;
+    use iced_test::{Simulator, simulator};
     use otty_docker::EngineKind;
+    use otty_ui_kit::components::screen_area::ScreenArea;
+    use otty_ui_kit::size;
 
     use super::*;
+    use crate::testing::temp_dir::TempDir;
     use crate::theme::ThemeManager;
     use crate::widgets::docker::no_engine::{NoEngineCase, view_model};
+
+    /// The card in the area it has in the app.
+    fn page<'a>(
+        vm: NoEngineViewModel,
+        palette: &UiPalette,
+    ) -> Element<'a, DockerIntent> {
+        ScreenArea::new(0, view(vm, palette), palette).into()
+    }
+
+    /// Every card with a command, with the commands it copies.
+    const CARDS_WITH_COMMANDS: [(NoEngineCase, &[&str]); 6] = [
+        (
+            NoEngineCase::DockerNotRunning,
+            &["sudo systemctl start docker"],
+        ),
+        (
+            NoEngineCase::PodmanApiOff,
+            &["systemctl --user enable --now podman.socket"],
+        ),
+        (
+            NoEngineCase::NoPermission,
+            &["sudo usermod -aG docker $USER"],
+        ),
+        (
+            NoEngineCase::PodmanNoPermission,
+            &["systemctl --user enable --now podman.socket"],
+        ),
+        (
+            NoEngineCase::DockerAndPodmanOff,
+            &[
+                "sudo systemctl start docker",
+                "systemctl --user enable --now podman.socket",
+            ],
+        ),
+        (
+            NoEngineCase::NoPermissionAndOtherOff(EngineKind::Docker),
+            &[
+                "sudo usermod -aG docker $USER",
+                "systemctl --user enable --now podman.socket",
+            ],
+        ),
+    ];
+    /// Every case of the card.
+    const ALL_CASES: [NoEngineCase; 8] = [
+        NoEngineCase::NotInstalled,
+        NoEngineCase::DockerNotRunning,
+        NoEngineCase::PodmanApiOff,
+        NoEngineCase::DockerAndPodmanOff,
+        NoEngineCase::NoPermission,
+        NoEngineCase::PodmanNoPermission,
+        NoEngineCase::NoPermissionAndOtherOff(EngineKind::Docker),
+        NoEngineCase::NoPermissionAndOtherOff(EngineKind::Podman),
+    ];
+    /// How far the middle of a copy icon is from the right edge of its box:
+    /// the padding of the box and half of the icon button.
+    const ICON_INSET: f32 = 6.0 + size::CONTROL_SM / 2.0;
+    /// The width of the simulator's default window.
+    const DEFAULT_WINDOW_WIDTH: f32 = 1024.0;
+    /// The right edge of a card at its full width in the default window.
+    const CARD_RIGHT: f32 =
+        (DEFAULT_WINDOW_WIDTH + otty_ui_kit::size::EMPTY_CARD) / 2.0;
+    /// A main area too narrow for the card: both panels dragged wide can leave
+    /// this or less.
+    const NARROW_MAIN: Size = Size::new(278.0, 900.0);
+    /// A main area narrow and low enough that every card overflows both ways.
+    const SMALL_MAIN: Size = Size::new(278.0, 200.0);
+    /// The padding, gap and icon of a command box beside its text.
+    const BOX_AROUND_COMMAND: f32 = 50.0;
+    /// Far enough to reach the end of any card.
+    const FAR: f32 = -10_000.0;
+    /// The empty space on each side of a card in an area narrower than the
+    /// minimum of a screen: the card is centered in that minimum.
+    const CARD_MARGIN: f32 = (size::SCREEN_MIN - size::EMPTY_CARD) / 2.0;
+    /// A command longer than a card, which no card has today.
+    const TOO_LONG: &str = "systemctl --user enable --now podman.socket \
+                            --and --some --more --words --that --do --not --fit";
+
+    /// Moves the pointer to the copy icon on the line of `command`, whose box
+    /// ends at `right`, and presses it.
+    fn press_copy_icon(
+        ui: &mut Simulator<'_, DockerIntent>,
+        command: &str,
+        right: f32,
+    ) {
+        let line = ui.find(command).expect("the command should show");
+        let position = Point::new(right - ICON_INSET, line.bounds().center_y());
+
+        ui.point_at(position);
+        let _ = ui.simulate([iced::Event::Mouse(mouse::Event::CursorMoved {
+            position,
+        })]);
+        let _ = ui.simulate(simulator::click());
+    }
+
+    /// Scrolls under `pointer`, after a frame as in the running app: a scroller
+    /// that has never been drawn takes the first wheel for itself. As in the
+    /// tables, a negative number scrolls right or down.
+    fn wheel_at(
+        ui: &mut Simulator<'_, DockerIntent>,
+        pointer: Point,
+        x: f32,
+        y: f32,
+    ) {
+        ui.point_at(pointer);
+        let _ = ui.simulate([iced::Event::Window(
+            iced::window::Event::RedrawRequested(iced::time::Instant::now()),
+        )]);
+        let _ =
+            ui.simulate([iced::Event::Mouse(mouse::Event::WheelScrolled {
+                delta: mouse::ScrollDelta::Pixels { x, y },
+            })]);
+    }
+
+    /// How far a scroller is scrolled and how wide and high its content is
+    /// against what shows: the area when `of_area`, otherwise the command.
+    fn scroller(
+        ui: &mut Simulator<'_, DockerIntent>,
+        of_area: bool,
+    ) -> (Point, Size, Size) {
+        ui.find(|candidate: Candidate<'_>| match candidate {
+            Candidate::Scrollable {
+                bounds,
+                content_bounds,
+                translation,
+                ..
+            } if (bounds.height == size::CONTROL_SM) != of_area => Some((
+                Point::new(translation.x, translation.y),
+                content_bounds.size(),
+                bounds.size(),
+            )),
+            _ => None,
+        })
+        .expect("the scroller should exist")
+    }
+
+    /// A card whose first command is `command`, whatever its length.
+    fn card_with_command(command: &'static str) -> NoEngineViewModel {
+        let mut vm = view_model(NoEngineCase::DockerNotRunning, "", &[]);
+        if let Some(first) = vm.commands.first_mut() {
+            first.text = command;
+        }
+
+        vm
+    }
 
     fn intents(case: NoEngineCase, click: &str) -> Vec<DockerIntent> {
         let themes = ThemeManager::new();
         let palette = themes.current().ui();
         let places = [String::from("/var/run/docker.sock")];
-        let mut ui = simulator(view(
+        let mut ui = simulator(page(
             view_model(case, "/var/run/docker.sock", &places),
             palette,
         ));
@@ -240,13 +388,484 @@ mod tests {
         ];
 
         for (case, command) in cases {
-            let sent = intents(case, i18n::t(Key::DockerCopy));
+            let themes = ThemeManager::new();
+            let places = [String::from("/var/run/docker.sock")];
+            let mut ui = simulator(page(
+                view_model(case, "/var/run/docker.sock", &places),
+                themes.current().ui(),
+            ));
 
+            press_copy_icon(&mut ui, command, CARD_RIGHT);
+
+            let sent: Vec<DockerIntent> = ui.into_messages().collect();
             assert_eq!(
                 sent,
                 vec![DockerIntent::CopyCommand(String::from(command))]
             );
         }
+    }
+
+    #[test]
+    fn no_card_shows_the_word_copy_because_it_is_a_tooltip() {
+        let themes = ThemeManager::new();
+
+        for (case, _) in CARDS_WITH_COMMANDS {
+            let vm = view_model(case, "/some.sock", &[]);
+            let mut ui = simulator(page(vm, themes.current().ui()));
+
+            assert!(ui.find(i18n::t(Key::DockerCopy)).is_err(), "{case:?}");
+        }
+    }
+
+    /// Draws `block` with the pointer on its copy icon and checks it against
+    /// the picture saved in `reference`. iced draws tooltips as overlays that
+    /// widget queries do not reach, so the text is checked on the drawing.
+    fn hovered_block_matches(
+        block: Element<'_, DockerIntent>,
+        reference: &std::path::Path,
+    ) -> bool {
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            Size::new(420.0, 200.0),
+            block,
+        );
+        let line = ui
+            .find("sudo systemctl start docker")
+            .expect("the command should show");
+        let position = Point::new(420.0 - ICON_INSET, line.bounds().center_y());
+
+        ui.point_at(position);
+        let _ = ui.simulate([iced::Event::Mouse(mouse::Event::CursorMoved {
+            position,
+        })]);
+
+        ui.snapshot(&Theme::Dark)
+            .expect("the block should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    #[test]
+    fn a_hovered_copy_icon_shows_the_copy_text_as_its_tooltip() {
+        let folder = TempDir::new("docker-copy");
+        let reference = folder.path().join("tooltip");
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+        let vm = view_model(NoEngineCase::DockerNotRunning, "", &[]);
+        let command = vm.commands.first().expect("the card has a command");
+        let block_with_label =
+            |label: &'static str| -> Element<'_, DockerIntent> {
+                column![
+                    small_text(command.label, palette),
+                    CommandBox::new(
+                        command.text,
+                        svg::Handle::from_memory(icons::COPY),
+                        label,
+                        palette,
+                    )
+                    .on_copy(DockerIntent::CopyCommand(
+                        command.text.to_string()
+                    )),
+                    small_text(command.hint, palette),
+                ]
+                .spacing(spacing::SPACE_2)
+                .into()
+            };
+
+        assert!(hovered_block_matches(
+            command_block(command, palette),
+            &reference
+        ));
+        assert!(hovered_block_matches(
+            block_with_label(i18n::t(Key::DockerCopy)),
+            &reference
+        ));
+        assert!(!hovered_block_matches(
+            block_with_label("Another text"),
+            &reference
+        ));
+    }
+
+    /// In a narrow area the card keeps its minimum and the area scrolls, and
+    /// each command still copies itself, from an icon scrolled into view.
+    #[test]
+    fn in_a_narrow_main_area_each_icon_copies_its_own_command() {
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+
+        for (case, commands) in CARDS_WITH_COMMANDS {
+            for command in commands {
+                let vm = view_model(case, "/some.sock", &[]);
+                let mut ui = Simulator::with_size(
+                    iced::Settings::default(),
+                    NARROW_MAIN,
+                    page(vm, palette),
+                );
+
+                wheel_at(&mut ui, Point::new(100.0, 100.0), FAR, 0.0);
+                press_copy_icon(
+                    &mut ui,
+                    command,
+                    NARROW_MAIN.width - CARD_MARGIN,
+                );
+
+                let sent: Vec<DockerIntent> = ui.into_messages().collect();
+                assert_eq!(
+                    sent,
+                    vec![DockerIntent::CopyCommand(command.to_string())],
+                    "{case:?}"
+                );
+            }
+        }
+    }
+
+    /// The height between a label and its note is the same for every command
+    /// and width: a line of text in the box, its padding and two gaps.
+    #[test]
+    fn a_command_block_has_one_height_on_every_card_and_width() {
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+        let expected = 36.0 + 2.0 * spacing::SPACE_2;
+
+        for width in [640.0, NARROW_MAIN.width, 200.0] {
+            for (case, _) in CARDS_WITH_COMMANDS {
+                let vm = view_model(case, "/some.sock", &[]);
+
+                for command in &vm.commands {
+                    let mut ui = Simulator::with_size(
+                        iced::Settings::default(),
+                        Size::new(width, 900.0),
+                        command_block(command, palette),
+                    );
+
+                    let label = ui.find(command.label).expect("label").bounds();
+                    let hint = ui.find(command.hint).expect("hint").bounds();
+
+                    assert_eq!(
+                        hint.y - (label.y + label.height),
+                        expected,
+                        "{} at {width}",
+                        command.text
+                    );
+                }
+            }
+        }
+    }
+
+    /// The exact command is in the widget tree on one line, not shortened, so
+    /// it can be read by scrolling.
+    #[test]
+    fn a_command_wider_than_its_box_stays_whole_on_one_line() {
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+
+        for (case, commands) in CARDS_WITH_COMMANDS {
+            let vm = view_model(case, "/some.sock", &[]);
+
+            for (block, command) in vm.commands.iter().zip(commands) {
+                let mut ui = Simulator::with_size(
+                    iced::Settings::default(),
+                    NARROW_MAIN,
+                    command_block(block, palette),
+                );
+
+                let line = ui.find(*command).expect("the exact text").bounds();
+
+                assert!(line.height < 20.0, "{command} wrapped");
+            }
+        }
+    }
+
+    /// A card holds each command with no scrolling of its own. The area is what
+    /// scrolls. The fonts of the kit are not loaded here: that
+    /// would change what other tests draw halfway through their comparisons.
+    #[test]
+    fn the_card_shows_every_command_whole() {
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+
+        for (case, commands) in CARDS_WITH_COMMANDS {
+            let mut ui = Simulator::with_size(
+                iced::Settings::default(),
+                SMALL_MAIN,
+                page(view_model(case, "/some.sock", &[]), palette),
+            );
+
+            for command in commands {
+                let line = ui.find(*command).expect("the exact text").bounds();
+
+                assert!(
+                    line.width <= size::EMPTY_CARD - BOX_AROUND_COMMAND,
+                    "{command} is {} wide",
+                    line.width
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn in_a_small_area_every_button_of_every_card_can_be_reached() {
+        for case in ALL_CASES {
+            let themes = ThemeManager::new();
+            let vm = view_model(case, "/some.sock", &[]);
+            let installs: Vec<&str> =
+                vm.installs.iter().map(|link| link.label).collect();
+            let fixes: Vec<&str> =
+                vm.fixes.iter().map(|fix| fix.label).collect();
+            let labels = installs
+                .into_iter()
+                .chain([i18n::t(Key::DockerCheckAgain)])
+                .chain(fixes);
+
+            for label in labels {
+                let mut ui = Simulator::with_size(
+                    iced::Settings::default(),
+                    SMALL_MAIN,
+                    page(vm.clone(), themes.current().ui()),
+                );
+
+                scroll_into_view(&mut ui, label);
+                ui.click(label).expect("the button should be in reach");
+
+                let sent: Vec<DockerIntent> = ui.into_messages().collect();
+                assert_eq!(sent.len(), 1, "{case:?}: {label}");
+            }
+        }
+    }
+
+    /// Scrolls until `label` shows clear of the bars of [`SMALL_MAIN`]: down
+    /// in small steps, from the left end of the area and then from its right
+    /// end, since a card does not show whole either way.
+    fn scroll_into_view(ui: &mut Simulator<'_, DockerIntent>, label: &str) {
+        let pointer = Point::new(10.0, 10.0);
+        let clear_height = SMALL_MAIN.height - 4.0;
+        let clear_width = SMALL_MAIN.width - 4.0;
+
+        for sideways in [0.0, FAR] {
+            wheel_at(ui, pointer, sideways, -FAR);
+
+            for _ in 0..60 {
+                let shown = ui.find(label).expect("the text").visible_bounds();
+
+                if shown.is_some_and(|shown| {
+                    shown.y + shown.height <= clear_height
+                        && shown.center_x() <= clear_width
+                }) {
+                    return;
+                }
+
+                wheel_at(ui, pointer, 0.0, -20.0);
+            }
+        }
+
+        panic!("{label} did not come into view");
+    }
+
+    /// The last thing on a card is the "looked for" line. It must come into
+    /// view in the far corner of the area, on every card.
+    #[test]
+    fn in_a_small_area_the_end_of_every_card_can_be_reached() {
+        let themes = ThemeManager::new();
+
+        for case in ALL_CASES {
+            let vm = view_model(case, "/some.sock", &[]);
+            let looked_for = vm.looked_for.clone();
+            let mut ui = Simulator::with_size(
+                iced::Settings::default(),
+                SMALL_MAIN,
+                page(vm, themes.current().ui()),
+            );
+
+            wheel_at(&mut ui, Point::new(10.0, 10.0), FAR, FAR);
+            let line = ui.find(looked_for.as_str()).expect("the line");
+
+            let shown = line.visible_bounds().expect("it should be in view");
+            assert!(shown.y + shown.height <= SMALL_MAIN.height, "{case:?}");
+            assert!(shown.x >= 0.0, "{case:?}");
+        }
+    }
+
+    /// With room for it no card scrolls, whichever the case.
+    #[test]
+    fn in_a_large_area_no_card_scrolls() {
+        let themes = ThemeManager::new();
+
+        for case in ALL_CASES {
+            let vm = view_model(case, "/some.sock", &[]);
+            let mut ui = Simulator::with_size(
+                iced::Settings::default(),
+                Size::new(DEFAULT_WINDOW_WIDTH, 1000.0),
+                page(vm, themes.current().ui()),
+            );
+
+            let (_, content, showing) = scroller(&mut ui, true);
+            wheel_at(&mut ui, Point::new(10.0, 10.0), FAR, FAR);
+            let (offset, _, _) = scroller(&mut ui, true);
+
+            assert_eq!(content, showing, "{case:?}");
+            assert_eq!(offset, Point::ORIGIN, "{case:?}");
+        }
+    }
+
+    /// The card's drawing with room for it must not change: it is the old
+    /// layout, a card in a centered container, in every case.
+    #[test]
+    fn with_room_every_card_draws_as_in_a_centered_container() {
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+        let folder = TempDir::new("no-engine-card");
+
+        for (index, case) in ALL_CASES.into_iter().enumerate() {
+            let reference = folder.path().join(format!("case-{index}"));
+            let vm = view_model(case, "/some.sock", &[]);
+            let plain = container(view(vm.clone(), palette))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill);
+
+            let plain_matches = Simulator::with_size(
+                iced::Settings::default(),
+                Size::new(900.0, 800.0),
+                plain,
+            )
+            .snapshot(&Theme::Dark)
+            .expect("the card should draw")
+            .matches_hash(&reference)
+            .expect("reference should be readable");
+            let page_matches = Simulator::with_size(
+                iced::Settings::default(),
+                Size::new(900.0, 800.0),
+                page(vm, palette),
+            )
+            .snapshot(&Theme::Dark)
+            .expect("the card should draw")
+            .matches_hash(&reference)
+            .expect("reference should be readable");
+
+            assert!(plain_matches);
+            assert!(page_matches, "{case:?}");
+        }
+    }
+
+    /// A card with [`TOO_LONG`] in an area small enough to scroll both ways,
+    /// and a point over the command.
+    fn card_with_a_too_long_command<'a>(
+        palette: &UiPalette,
+    ) -> (Simulator<'a, DockerIntent>, Point) {
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            Size::new(SMALL_MAIN.width, 280.0),
+            page(card_with_command(TOO_LONG), palette),
+        );
+        let line = ui.find(TOO_LONG).expect("the command").bounds();
+        assert!(line.center_y() < 270.0, "it should show: {line:?}");
+
+        (ui, Point::new(line.x + 10.0, line.center_y()))
+    }
+
+    #[test]
+    fn a_sideways_wheel_over_a_command_too_long_for_the_card_moves_the_command()
+    {
+        let themes = ThemeManager::new();
+        let (mut ui, over_command) =
+            card_with_a_too_long_command(themes.current().ui());
+
+        wheel_at(&mut ui, over_command, -20.0, 0.0);
+        let (command, _, _) = scroller(&mut ui, false);
+        let (area, _, _) = scroller(&mut ui, true);
+
+        assert_eq!(command.x, 20.0);
+        assert_eq!(area, Point::ORIGIN);
+    }
+
+    /// The command can not move any further, so the next wheel goes on to the
+    /// area. Within one gesture the wheel stays with the scroller it started
+    /// on, as everywhere in iced.
+    #[test]
+    fn at_the_end_of_a_command_the_next_sideways_wheel_moves_the_area() {
+        let themes = ThemeManager::new();
+        let (mut ui, over_command) =
+            card_with_a_too_long_command(themes.current().ui());
+
+        wheel_at(&mut ui, over_command, FAR, 0.0);
+        let (command, _, _) = scroller(&mut ui, false);
+        let _ = ui.simulate([iced::Event::Mouse(
+            mouse::Event::ButtonReleased(mouse::Button::Left),
+        )]);
+        wheel_at(&mut ui, over_command, -20.0, 0.0);
+        let (command_after, _, _) = scroller(&mut ui, false);
+        let (area, _, _) = scroller(&mut ui, true);
+
+        assert!(command.x > 0.0);
+        assert_eq!(command_after, command);
+        assert_eq!(area, Point::new(20.0, 0.0));
+    }
+
+    /// A box of one line has no use for a plain wheel, so it scrolls the area.
+    #[test]
+    fn a_plain_wheel_over_a_command_moves_the_area() {
+        let themes = ThemeManager::new();
+        let (mut ui, over_command) =
+            card_with_a_too_long_command(themes.current().ui());
+
+        wheel_at(&mut ui, over_command, 0.0, -10.0);
+        let (command, _, _) = scroller(&mut ui, false);
+        let (area, _, _) = scroller(&mut ui, true);
+
+        assert_eq!(command, Point::ORIGIN);
+        assert_eq!(area, Point::new(0.0, 10.0));
+    }
+
+    /// A press on the box's own bar scrolls the command and not the area.
+    #[test]
+    fn the_bar_of_a_command_too_long_for_the_card_moves_only_the_command() {
+        let themes = ThemeManager::new();
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            Size::new(size::SCREEN_MIN, 900.0),
+            page(card_with_command(TOO_LONG), themes.current().ui()),
+        );
+        let line = ui.find(TOO_LONG).expect("the command").bounds();
+        let bar_y = line.center_y() + size::CONTROL_SM / 2.0 - 2.0;
+
+        for (index, x) in [20.0, 120.0].into_iter().enumerate() {
+            let position = Point::new(line.x + x, bar_y);
+            ui.point_at(position);
+            let _ =
+                ui.simulate([iced::Event::Mouse(mouse::Event::CursorMoved {
+                    position,
+                })]);
+            if index == 0 {
+                let _ = ui.simulate([iced::Event::Mouse(
+                    mouse::Event::ButtonPressed(mouse::Button::Left),
+                )]);
+            }
+        }
+
+        let (command, _, _) = scroller(&mut ui, false);
+        let (area, _, _) = scroller(&mut ui, true);
+        assert!(command.x > 0.0, "the command should move");
+        assert_eq!(area, Point::ORIGIN);
+    }
+
+    #[test]
+    fn a_scrolled_command_inside_a_scrolled_area_still_copies_itself() {
+        let themes = ThemeManager::new();
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            Size::new(300.0, 900.0),
+            page(card_with_command(TOO_LONG), themes.current().ui()),
+        );
+        let line = ui.find(TOO_LONG).expect("the command").bounds();
+        let over_command = Point::new(line.x + 10.0, line.center_y());
+
+        wheel_at(&mut ui, over_command, -20.0, 0.0);
+        wheel_at(&mut ui, Point::new(50.0, 5.0), FAR, 0.0);
+        press_copy_icon(&mut ui, TOO_LONG, 300.0 - CARD_MARGIN);
+
+        let sent: Vec<DockerIntent> = ui.into_messages().collect();
+        assert_eq!(sent, vec![DockerIntent::CopyCommand(TOO_LONG.to_string())]);
     }
 
     #[test]
@@ -271,7 +890,7 @@ mod tests {
     fn both_off_intents(label: &str) -> Vec<DockerIntent> {
         let themes = ThemeManager::new();
         let vm = view_model(NoEngineCase::DockerAndPodmanOff, "", &[]);
-        let mut ui = simulator(view(vm, themes.current().ui()));
+        let mut ui = simulator(page(vm, themes.current().ui()));
 
         ui.click(label).expect("the button should be visible");
 
@@ -288,15 +907,14 @@ mod tests {
             .flat_map(|command| [command.label, command.text, command.hint])
             .collect();
         assert_eq!(texts.len(), 6);
-        let mut ui = simulator(view(vm, themes.current().ui()));
+        let mut ui = simulator(page(vm, themes.current().ui()));
 
         for text in texts {
             ui.find(text).expect("the text should show");
         }
     }
 
-    /// The card has two Copy buttons with one label, so each block is pressed
-    /// on its own.
+    /// The card has two copy icons, so each block is pressed on its own.
     #[test]
     fn each_command_of_both_engines_off_copies_itself() {
         let themes = ThemeManager::new();
@@ -310,8 +928,7 @@ mod tests {
         ]) {
             let mut ui = simulator(command_block(command, palette));
 
-            ui.click(i18n::t(Key::DockerCopy))
-                .expect("the button should be visible");
+            press_copy_icon(&mut ui, expected, DEFAULT_WINDOW_WIDTH);
 
             let sent: Vec<DockerIntent> = ui.into_messages().collect();
             assert_eq!(
@@ -377,7 +994,7 @@ mod tests {
             );
             assert_eq!(vm.commands.len(), 2);
 
-            let mut card = simulator(view(vm.clone(), palette));
+            let mut card = simulator(page(vm.clone(), palette));
             card.find(vm.title).expect("the title should show");
             card.find(vm.description.as_str())
                 .expect("the text should show");
@@ -390,9 +1007,7 @@ mod tests {
             for (command, expected) in vm.commands.iter().zip(commands) {
                 let mut block = simulator(command_block(command, palette));
 
-                block
-                    .click(i18n::t(Key::DockerCopy))
-                    .expect("the button should be visible");
+                press_copy_icon(&mut block, expected, DEFAULT_WINDOW_WIDTH);
 
                 let sent: Vec<DockerIntent> = block.into_messages().collect();
                 assert_eq!(
@@ -431,7 +1046,7 @@ mod tests {
         );
         let title = vm.title;
         let looked_for = vm.looked_for.clone();
-        let mut ui = simulator(view(vm, themes.current().ui()));
+        let mut ui = simulator(page(vm, themes.current().ui()));
 
         ui.find(title).expect("title should show");
         ui.find(looked_for.as_str())

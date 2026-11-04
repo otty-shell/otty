@@ -1052,6 +1052,7 @@ mod tests {
     use super::*;
     use crate::components::icon_hover::check::assert_icon_lights_up;
     use crate::contrast::contrast_ratio;
+    use crate::test_support::TempDir;
 
     #[test]
     fn given_pointer_on_row_menu_button_corner_then_dots_are_lit_like_over_them()
@@ -1443,9 +1444,8 @@ mod tests {
 
     #[test]
     fn given_sorted_column_when_drawn_then_an_arrow_shows_its_direction() {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-data-table-{}", std::process::id()))
-            .join("sorted-ascending");
+        let folder = TempDir::new("data-table");
+        let reference = folder.path().join("sorted-ascending");
         let ascending = Some((0, SortDirection::Ascending));
 
         assert!(sorted_table_matches(ascending, &reference));
@@ -1568,9 +1568,8 @@ mod tests {
 
     #[test]
     fn given_link_cell_when_pointer_over_it_then_it_is_underlined() {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-data-table-{}", std::process::id()))
-            .join("row-hovered");
+        let folder = TempDir::new("data-table");
+        let reference = folder.path().join("row-hovered");
         let row_y = BODY_TOP + size::TABLE_ROW / 2.0;
         let compose = (WIDTH - MENU_COLUMN_WIDTH) / 2.0;
         // Both points light the row; only the first is off the link.
@@ -1689,9 +1688,8 @@ mod tests {
     #[test]
     fn given_row_menu_when_its_button_hovered_then_the_tooltip_shows_its_label()
     {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-data-table-{}", std::process::id()))
-            .join("menu-tooltip");
+        let folder = TempDir::new("data-table");
+        let reference = folder.path().join("menu-tooltip");
 
         assert!(hovered_menu_button_matches("More actions", &reference));
         assert!(!hovered_menu_button_matches("Row actions", &reference));

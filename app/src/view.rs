@@ -1,6 +1,7 @@
 use iced::widget::{Space, column, container, mouse_area, pane_grid, text};
 use iced::{Element, Length, Theme, alignment};
 use otty_ui_kit::components::divider;
+use otty_ui_kit::components::screen_area::ScreenArea;
 use otty_ui_kit::spacing;
 
 use super::{App, AppEvent};
@@ -12,6 +13,8 @@ use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, status_bar};
+use crate::widgets::docker::model::MainViewModel;
+use crate::widgets::docker::no_engine::NoEngineCase;
 use crate::widgets::docker::view::{
     confirm_dialog as docker_confirm, engine_tree, form_dialog as docker_form,
     inspector as docker_inspector, main_area as docker_main,
@@ -46,6 +49,53 @@ use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
+/// Which screen fills the main area. Each value is one screen to the user: a
+/// change of value starts at the top left, and the same value built again keeps
+/// its place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScreenId {
+    /// The start card: no tab is open.
+    StartCard,
+    /// The content of a tab: Settings, a launch editor, an error tab.
+    Tab(u64),
+    /// The Run container form.
+    RunForm,
+    /// The card while the engine search runs.
+    Searching,
+    /// The no-engine card of one diagnosis.
+    NoEngine(NoEngineCase),
+}
+
+/// What fills the main area. A function that chooses it has to say which of the
+/// two it is, so a new screen can not miss the rule of [`ScreenArea`]: anything
+/// that is not a terminal or a table is a [`MainContent::Screen`].
+enum MainContent<'a> {
+    /// A screen. It keeps a minimum width and scrolls when there is too little
+    /// room.
+    Screen {
+        id: ScreenId,
+        content: Element<'a, AppEvent, Theme, iced::Renderer>,
+    },
+    /// The panes of a terminal or the table of a Docker list. They scroll on
+    /// their own and fill a height they are given: a table's sticky header and
+    /// its rows can not work in an outer scroller, where the height has no end.
+    ScrollsOnItsOwn(Element<'a, AppEvent, Theme, iced::Renderer>),
+}
+
+impl<'a> MainContent<'a> {
+    fn into_element(
+        self,
+        theme_props: ThemeProps<'a>,
+    ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+        match self {
+            Self::Screen { id, content } => {
+                ScreenArea::new(id, content, theme_props.theme.ui()).into()
+            },
+            Self::ScrollsOnItsOwn(content) => content,
+        }
+    }
+}
+
 /// Render the root application view.
 pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     let theme = app.theme_manager.current();
@@ -65,10 +115,10 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
                 view_left_panel(app, sidebar_vm, theme_props)
             },
             (SidebarPane::Main, Mode::Terminal) => {
-                view_tab_content(app, theme_props)
+                view_tab_content(app, theme_props).into_element(theme_props)
             },
             (SidebarPane::Main, Mode::Docker) => {
-                view_docker_main(app, theme_props)
+                view_docker_main(app, theme_props).into_element(theme_props)
             },
             (SidebarPane::Right, Mode::Terminal) => {
                 view_right_panel(app, theme_props)
@@ -384,23 +434,40 @@ fn view_docker_tree<'a>(
 }
 
 /// Docker mode main area: the Run container form while it is open, else
-/// the open list of an engine.
+/// the open list of an engine or a card while there is none.
 fn view_docker_main<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let main = match app.widgets.docker.run_form_vm() {
-        Some(vm) => docker_run_form::view(docker_run_form::RunFormProps {
-            vm,
-            theme: theme_props,
-        }),
-        None => docker_main::view(docker_main::MainAreaProps {
-            vm: app.widgets.docker.main_vm(docker_format::unix_now()),
-            theme: theme_props,
-        }),
-    };
+) -> MainContent<'a> {
+    let to_app_event = |intent| AppEvent::Docker(DockerEvent::Intent(intent));
 
-    main.map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
+    if let Some(vm) = app.widgets.docker.run_form_vm() {
+        return MainContent::Screen {
+            id: ScreenId::RunForm,
+            content: docker_run_form::view(docker_run_form::RunFormProps {
+                vm,
+                theme: theme_props,
+            })
+            .map(to_app_event),
+        };
+    }
+
+    let vm = app.widgets.docker.main_vm(docker_format::unix_now());
+    let id = match &vm {
+        MainViewModel::Table(_) => None,
+        MainViewModel::Searching => Some(ScreenId::Searching),
+        MainViewModel::NoEngine(card) => Some(ScreenId::NoEngine(card.case)),
+    };
+    let content = docker_main::view(docker_main::MainAreaProps {
+        vm,
+        theme: theme_props,
+    })
+    .map(to_app_event);
+
+    match id {
+        Some(id) => MainContent::Screen { id, content },
+        None => MainContent::ScrollsOnItsOwn(content),
+    }
 }
 
 /// Docker mode right panel content: what the image sets while the Run
@@ -477,22 +544,24 @@ fn view_right_panel<'a>(
 fn view_tab_content<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> MainContent<'a> {
     let active_tab_id = app.widgets.tabs.active_tab_id();
     let active_tab_content = app.widgets.tabs.active_tab_content();
 
-    match (active_tab_id, active_tab_content) {
+    let (id, content) = match (active_tab_id, active_tab_content) {
         (Some(tab_id), Some(TabContent::Terminal)) => {
-            view_terminal_tab(app, tab_id, theme_props)
+            return view_terminal_tab(app, tab_id, theme_props);
         },
-        (Some(_tab_id), Some(TabContent::Settings)) => {
+        (Some(tab_id), Some(TabContent::Settings)) => (
+            ScreenId::Tab(tab_id),
             settings_form::view(settings_form::SettingsFormProps {
                 vm: app.widgets.settings.vm(),
                 theme: theme_props,
             })
-            .map(|event| AppEvent::Settings(SettingsEvent::Intent(event)))
-        },
-        (Some(tab_id), Some(TabContent::QuickLaunchWizard)) => {
+            .map(|event| AppEvent::Settings(SettingsEvent::Intent(event))),
+        ),
+        (Some(tab_id), Some(TabContent::QuickLaunchWizard)) => (
+            ScreenId::Tab(tab_id),
             match app.widgets.quick_launch.wizard_editor(tab_id) {
                 Some(editor) => {
                     wizard_form::view(wizard_form::WizardFormProps {
@@ -507,9 +576,10 @@ fn view_tab_content<'a>(
                 None => missing_tab_state(i18n::t(
                     Key::QuickLaunchEditorNotInitialized,
                 )),
-            }
-        },
-        (Some(tab_id), Some(TabContent::QuickLaunchError)) => {
+            },
+        ),
+        (Some(tab_id), Some(TabContent::QuickLaunchError)) => (
+            ScreenId::Tab(tab_id),
             match app.widgets.quick_launch.error_tab(tab_id) {
                 Some(error) => error_tab::view(error_tab::ErrorTabProps {
                     error,
@@ -521,29 +591,39 @@ fn view_tab_content<'a>(
                 None => missing_tab_state(i18n::t(
                     Key::QuickLaunchErrorPayloadMissing,
                 )),
-            }
-        },
-        _ => empty_state::view(empty_state::EmptyStateProps {
-            theme: theme_props,
-            on_new_terminal: AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenTerminalTab,
-            )),
-            on_new_launch: AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                QuickLaunchIntent::HeaderCreateCommand,
-            )),
-        }),
-    }
+            },
+        ),
+        _ => (
+            ScreenId::StartCard,
+            empty_state::view(empty_state::EmptyStateProps {
+                theme: theme_props,
+                on_new_terminal: AppEvent::Tabs(TabsEvent::Intent(
+                    TabsIntent::OpenTerminalTab,
+                )),
+                on_new_launch: AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                    QuickLaunchIntent::HeaderCreateCommand,
+                )),
+            }),
+        ),
+    };
+
+    MainContent::Screen { id, content }
 }
 
 /// Render the pane grid of a terminal tab. Every pane header names the
-/// machine the tab runs on.
+/// machine the tab runs on. A tab whose state is missing has no terminal, so
+/// the line about that is a screen like any other.
 fn view_terminal_tab<'a>(
     app: &'a App,
     tab_id: u64,
     theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
+) -> MainContent<'a> {
+    let missing = || MainContent::Screen {
+        id: ScreenId::Tab(tab_id),
+        content: missing_tab_state(i18n::t(Key::TerminalTabNotInitialized)),
+    };
     let Some(machine) = app.widgets.tabs.active_tab_machine() else {
-        return missing_tab_state(i18n::t(Key::TerminalTabNotInitialized));
+        return missing();
     };
 
     let vm = app.widgets.terminal_workspace.vm(
@@ -553,14 +633,16 @@ fn view_terminal_tab<'a>(
     );
 
     match vm.tab {
-        Some(tab_vm) => terminal_pane_grid::view(
-            tab_vm,
-            theme_props.theme.ui(),
-        )
-        .map(|event| {
-            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(event))
-        }),
-        None => missing_tab_state(i18n::t(Key::TerminalTabNotInitialized)),
+        Some(tab_vm) => MainContent::ScrollsOnItsOwn(
+            terminal_pane_grid::view(tab_vm, theme_props.theme.ui()).map(
+                |event| {
+                    AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                        event,
+                    ))
+                },
+            ),
+        ),
+        None => missing(),
     }
 }
 
@@ -743,6 +825,7 @@ mod tests {
     use super::*;
     use crate::widgets::docker::DockerIntent;
     use crate::widgets::modes::ModesWidget;
+    use crate::widgets::tabs::TabsCtx;
 
     fn app_in(mode: Mode) -> App {
         let (mut app, _) = App::new();
@@ -1058,6 +1141,1238 @@ mod tests {
 
         assert!(resized, "the panel should resize");
         assert_eq!(scrolled, 0.0, "the table should not scroll");
+    }
+
+    #[test]
+    fn dragging_the_panel_split_across_a_narrow_run_form_does_not_scroll_it() {
+        // Narrow and short, so the form overflows both ways under its bars.
+        const WINDOW: iced::Size = iced::Size::new(800.0, 250.0);
+
+        let mut app = docker_app_with_lists();
+        app.state.window_size = WINDOW;
+        let engine =
+            otty_docker::fixtures::engine(otty_docker::EngineKind::Docker);
+        let _ = app.widgets.docker.reduce(DockerIntent::Open(
+            crate::widgets::docker::types::Place::new(
+                engine.address().clone(),
+                crate::widgets::docker::types::ResourceKind::Containers,
+            ),
+        ));
+        let _ = app.widgets.docker.reduce(DockerIntent::OpenCreate);
+        let line = app
+            .widgets
+            .sidebar
+            .panes()
+            .layout()
+            .split_regions(size::LINE, 0.0, WINDOW)
+            .values()
+            .map(|(axis, region, ratio)| {
+                axis.split_line_bounds(*region, *ratio, size::LINE).x
+            })
+            .fold(0.0, f32::max);
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            WINDOW,
+            view(&app),
+        );
+        let title = i18n::t(Key::DockerRunContainer);
+        let before = ui.find(title).expect("the form should show");
+
+        let y = 150.0;
+        for (index, x) in [line + 0.5, line - 100.0, line - 200.0, line - 2.0]
+            .into_iter()
+            .enumerate()
+        {
+            let position = Point::new(x, y);
+            ui.point_at(position);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::CursorMoved { position },
+            )]);
+            if index == 0 {
+                let _ = ui.simulate([iced::Event::Mouse(
+                    iced::mouse::Event::ButtonPressed(
+                        iced::mouse::Button::Left,
+                    ),
+                )]);
+            }
+        }
+        let after = ui.find(title).expect("the form should show");
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left),
+        )]);
+        ui.point_at(Point::new(line - 100.0, y));
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::WheelScrolled {
+                delta: iced::mouse::ScrollDelta::Pixels { x: -10.0, y: 0.0 },
+            },
+        )]);
+        let wheeled = ui.find(title).expect("the form should show");
+
+        let resized = ui.into_messages().any(|event| {
+            matches!(
+                event,
+                AppEvent::Sidebar(SidebarEvent::Intent(
+                    SidebarIntent::Resized(_)
+                ))
+            )
+        });
+        assert!(resized, "the panel should resize");
+        assert_eq!(before.visible_bounds(), after.visible_bounds());
+        assert_ne!(
+            before.visible_bounds(),
+            wheeled.visible_bounds(),
+            "the form should be able to scroll sideways"
+        );
+    }
+
+    /// A window where the main area between the panels at their smallest is
+    /// too narrow and too low for the no-engine card. Panels dragged wide do
+    /// the same in a larger window.
+    const SMALL_WINDOW: iced::Size = iced::Size::new(400.0, 250.0);
+
+    /// A no-engine card with these Docker and Podman commands found.
+    fn app_with_card(discovery: otty_docker::Discovery) -> App {
+        let mut app = app_in(Mode::Docker);
+        app.state.window_size = SMALL_WINDOW;
+        let _ = app.widgets.docker.reduce(DockerIntent::Enter);
+        let _ = app
+            .widgets
+            .docker
+            .reduce(DockerIntent::DiscoveryFinished(discovery));
+
+        app
+    }
+
+    /// The search that finds a refused Podman socket and nothing else.
+    fn denied_podman_search() -> otty_docker::Discovery {
+        use otty_docker::{CandidateSource, fixtures};
+
+        fixtures::denied_discovery_with_cli(
+            fixtures::PODMAN_SOCKET,
+            CandidateSource::Podman,
+            None,
+            Some("/usr/bin/podman"),
+        )
+    }
+
+    /// The scroller of the main area: where it is and how far it is scrolled.
+    /// It is the only one whose content has the minimum width of a screen, and
+    /// the tests that use this one need a page that overflows it both ways.
+    fn card_area_scroller(
+        ui: &mut iced_test::Simulator<'_, AppEvent>,
+    ) -> (iced::Rectangle, iced::Vector) {
+        use iced_test::selector::Candidate;
+
+        ui.find(|candidate: Candidate<'_>| match candidate {
+            Candidate::Scrollable {
+                bounds,
+                content_bounds,
+                translation,
+                ..
+            } if content_bounds.width == size::SCREEN_MIN
+                && content_bounds.height > bounds.height =>
+            {
+                Some((bounds, translation))
+            },
+            _ => None,
+        })
+        .expect("the card should overflow the main area both ways")
+    }
+
+    /// The scroller of the command on the card: where it is, how far it is
+    /// scrolled sideways and whether the command is wider than it. Only a
+    /// command block has a scroller of one control's height.
+    fn command_scroller(
+        ui: &mut iced_test::Simulator<'_, AppEvent>,
+    ) -> (iced::Rectangle, f32, bool) {
+        use iced_test::selector::Candidate;
+
+        ui.find(|candidate: Candidate<'_>| match candidate {
+            Candidate::Scrollable {
+                bounds,
+                content_bounds,
+                translation,
+                ..
+            } if bounds.height == size::CONTROL_SM => Some((
+                bounds,
+                translation.x,
+                content_bounds.width > bounds.width,
+            )),
+            _ => None,
+        })
+        .expect("the card should have a command")
+    }
+
+    /// Presses at the first point, moves along the others and stays pressed.
+    fn press_and_move(
+        ui: &mut iced_test::Simulator<'_, AppEvent>,
+        points: &[Point],
+    ) {
+        for (index, position) in points.iter().enumerate() {
+            ui.point_at(*position);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::CursorMoved {
+                    position: *position,
+                },
+            )]);
+            if index == 0 {
+                let _ = ui.simulate([iced::Event::Mouse(
+                    iced::mouse::Event::ButtonPressed(
+                        iced::mouse::Button::Left,
+                    ),
+                )]);
+            }
+        }
+    }
+
+    fn sent_a_panel_resize(ui: iced_test::Simulator<'_, AppEvent>) -> bool {
+        ui.into_messages().any(|event| {
+            matches!(
+                event,
+                AppEvent::Sidebar(SidebarEvent::Intent(
+                    SidebarIntent::Resized(_)
+                ))
+            )
+        })
+    }
+
+    /// The panel split at the right of the main area.
+    fn right_panel_split(app: &App, window: iced::Size) -> f32 {
+        app.widgets
+            .sidebar
+            .panes()
+            .layout()
+            .split_regions(size::LINE, 0.0, window)
+            .values()
+            .map(|(axis, region, ratio)| {
+                axis.split_line_bounds(*region, *ratio, size::LINE).x
+            })
+            .fold(0.0, f32::max)
+    }
+
+    /// Dragging a panel edge over the card moves the panel and scrolls
+    /// nothing (ticket 40), over the command and over the bars of the area.
+    #[test]
+    fn dragging_the_panel_split_across_the_card_does_not_scroll_it() {
+        let app = app_with_card(denied_podman_search());
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            SMALL_WINDOW,
+            view(&app),
+        );
+        let (area, offset) = card_area_scroller(&mut ui);
+        let (scroller, command_offset, _) = command_scroller(&mut ui);
+        let line = right_panel_split(&app, SMALL_WINDOW);
+        let inside = area.x + area.width - 10.0;
+        let text_y = scroller.center_y().min(area.y + area.height - 20.0);
+        let bar_y = area.y + area.height - 2.0;
+
+        press_and_move(
+            &mut ui,
+            &[
+                Point::new(line + 0.5, text_y),
+                Point::new(inside, text_y),
+                Point::new(area.x + area.width - 2.0, area.y + 40.0),
+                Point::new(area.x + area.width - 2.0, area.y + 120.0),
+                Point::new(inside, bar_y),
+                Point::new(area.x + 10.0, bar_y),
+            ],
+        );
+
+        let (_, offset_after) = card_area_scroller(&mut ui);
+        let (_, command_after, _) = command_scroller(&mut ui);
+        assert_eq!(offset_after, offset, "the area should not scroll");
+        assert_eq!(command_after, command_offset);
+        assert!(sent_a_panel_resize(ui), "the panel should resize");
+    }
+
+    #[test]
+    fn dragging_a_bar_of_the_card_area_only_scrolls_it() {
+        let app = app_with_card(denied_podman_search());
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            SMALL_WINDOW,
+            view(&app),
+        );
+        let (area, _) = card_area_scroller(&mut ui);
+        let x = area.x + area.width - 2.0;
+
+        press_and_move(
+            &mut ui,
+            &[Point::new(x, area.y + 10.0), Point::new(x, area.y + 40.0)],
+        );
+
+        let (_, offset) = card_area_scroller(&mut ui);
+        assert!(offset.y > 0.0, "the area should scroll down");
+        assert!(!sent_a_panel_resize(ui), "the panel should not resize");
+    }
+
+    /// Neither split's grab zone reaches the part of a command bar that shows,
+    /// even with the card wider than the main area, before it is scrolled: the
+    /// padding of the box keeps it away.
+    #[test]
+    fn the_grab_zones_of_the_panel_splits_stay_off_a_command_bar() {
+        // Enough room to see the command beside the empty side of the screen.
+        const WINDOW: iced::Size = iced::Size::new(800.0, 320.0);
+
+        let app = app_with_card(denied_podman_search());
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            WINDOW,
+            view(&app),
+        );
+        let (area, _) = card_area_scroller(&mut ui);
+        let (scroller, _, _) = command_scroller(&mut ui);
+        let shown = scroller
+            .intersection(&area)
+            .expect("the command should show");
+        let lines: Vec<f32> = app
+            .widgets
+            .sidebar
+            .panes()
+            .layout()
+            .split_regions(size::LINE, 0.0, WINDOW)
+            .values()
+            .map(|(axis, region, ratio)| {
+                axis.split_line_bounds(*region, *ratio, size::LINE).x
+            })
+            .collect();
+
+        assert_eq!(lines.len(), 2);
+        for line in lines {
+            let zone_end = line + size::LINE + size::SPLIT_GRAB;
+
+            assert!(
+                zone_end <= shown.x || line >= shown.x + shown.width,
+                "the zone at {line} reaches the bar {shown:?}"
+            );
+        }
+    }
+
+    /// The area's bar on the right stays clear of the right panel's grab zone:
+    /// the zone starts at the split, on the panel's side.
+    #[test]
+    fn the_grab_zone_of_the_right_panel_stays_off_the_bar_of_the_card_area() {
+        let app = app_with_card(denied_podman_search());
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            SMALL_WINDOW,
+            view(&app),
+        );
+        let (area, _) = card_area_scroller(&mut ui);
+        let line = right_panel_split(&app, SMALL_WINDOW);
+        let x = area.x + area.width - 2.0;
+
+        assert!(
+            x < line,
+            "the bar at {x} should be left of the split {line}"
+        );
+        press_and_move(
+            &mut ui,
+            &[Point::new(x, area.y + 10.0), Point::new(x, area.y + 40.0)],
+        );
+
+        assert!(!sent_a_panel_resize(ui));
+    }
+
+    /// One frame of the app after another, as the running app builds them: the
+    /// widget state carries over from one to the next.
+    struct Frames {
+        renderer: iced::Renderer,
+        cache: Option<iced_test::runtime::user_interface::Cache>,
+    }
+
+    impl Frames {
+        fn new() -> Self {
+            use iced_test::core::renderer::Headless;
+
+            let renderer =
+                iced_test::runtime::futures::futures::executor::block_on(
+                    <iced::Renderer as Headless>::new(
+                        iced::Font::DEFAULT,
+                        iced::Pixels(16.0),
+                        None,
+                    ),
+                )
+                .expect("a headless renderer");
+
+            Self {
+                renderer,
+                cache: Some(
+                    iced_test::runtime::user_interface::Cache::default(),
+                ),
+            }
+        }
+
+        /// Builds a frame of `app`, gives it the wheel at `pointer` if any, and
+        /// returns how far the scroller of the screen is scrolled.
+        fn frame(
+            &mut self,
+            app: &App,
+            wheel: Option<(Point, iced::Vector)>,
+        ) -> iced::Vector {
+            use iced::advanced::widget::{Operation, operation};
+            use iced_test::runtime::user_interface::UserInterface;
+            use iced_test::selector::{Candidate, Selector};
+
+            let mut ui = UserInterface::build(
+                view(app),
+                SMALL_WINDOW,
+                self.cache.take().expect("the frames keep their cache"),
+                &mut self.renderer,
+            );
+            if let Some((pointer, delta)) = wheel {
+                let mut messages = Vec::new();
+                let _ = ui.update(
+                    &[iced::Event::Mouse(iced::mouse::Event::WheelScrolled {
+                        delta: iced::mouse::ScrollDelta::Pixels {
+                            x: delta.x,
+                            y: delta.y,
+                        },
+                    })],
+                    iced::mouse::Cursor::Available(pointer),
+                    &mut self.renderer,
+                    &mut iced::advanced::clipboard::Null,
+                    &mut messages,
+                );
+            }
+
+            let mut find = (|candidate: Candidate<'_>| match candidate {
+                Candidate::Scrollable {
+                    content_bounds,
+                    translation,
+                    ..
+                } if content_bounds.width == size::SCREEN_MIN => {
+                    Some(translation)
+                },
+                _ => None,
+            })
+            .find();
+            ui.operate(&self.renderer, &mut operation::black_box(&mut find));
+            let offset = match find.finish() {
+                operation::Outcome::Some(Some(offset)) => offset,
+                _ => panic!("the screen should have its scroller"),
+            };
+
+            self.cache = Some(ui.into_cache());
+
+            offset
+        }
+    }
+
+    /// The search every 5 seconds builds the view again; the card must stay
+    /// where the user scrolled it (spec Decision 9).
+    #[test]
+    fn the_background_search_leaves_the_scrolled_card_where_it_is() {
+        let mut app = app_with_card(denied_podman_search());
+        let mut frames = Frames::new();
+        let scrolled = iced::Vector::new(-30.0, -50.0);
+
+        let start = frames.frame(&app, None);
+        let (main_x, main_y) = (200.0, 150.0);
+        let after_wheel =
+            frames.frame(&app, Some((Point::new(main_x, main_y), scrolled)));
+        let _ = app.widgets.docker.reduce(DockerIntent::EngineSearchTick);
+        let during_search = frames.frame(&app, None);
+        let _ =
+            app.widgets
+                .docker
+                .reduce(DockerIntent::BackgroundSearchFinished(
+                    denied_podman_search(),
+                ));
+        let after_search = frames.frame(&app, None);
+
+        assert_eq!(start, iced::Vector::new(0.0, 0.0));
+        assert_eq!(after_wheel, iced::Vector::new(30.0, 50.0));
+        assert_eq!(during_search, after_wheel);
+        assert_eq!(after_search, after_wheel);
+    }
+
+    /// Terminal mode with no tab open: the start card in a [`SMALL_WINDOW`].
+    fn app_with_start_card() -> App {
+        let mut app = app_in(Mode::Terminal);
+        app.state.window_size = SMALL_WINDOW;
+
+        app
+    }
+
+    /// A wheel in the main area of a [`SMALL_WINDOW`] that moves a page 30 px
+    /// right and 50 px down.
+    fn scroll_main_area() -> Option<(Point, iced::Vector)> {
+        Some((Point::new(200.0, 150.0), iced::Vector::new(-30.0, -50.0)))
+    }
+
+    /// Both panel splits, dragged over the start card and over its bars, move
+    /// the panel and scroll nothing (ticket 40).
+    #[test]
+    fn dragging_a_panel_split_across_the_start_card_does_not_scroll_it() {
+        let app = app_with_start_card();
+        let right = right_panel_split(&app, SMALL_WINDOW);
+        let left = app
+            .widgets
+            .sidebar
+            .panes()
+            .layout()
+            .split_regions(size::LINE, 0.0, SMALL_WINDOW)
+            .values()
+            .map(|(axis, region, ratio)| {
+                axis.split_line_bounds(*region, *ratio, size::LINE).x
+            })
+            .fold(f32::MAX, f32::min);
+
+        for split in [left, right] {
+            let mut ui = iced_test::Simulator::with_size(
+                iced::Settings::default(),
+                SMALL_WINDOW,
+                view(&app),
+            );
+            let (area, offset) = card_area_scroller(&mut ui);
+            let (right_end, bottom) =
+                (area.x + area.width - 2.0, area.y + area.height - 2.0);
+
+            press_and_move(
+                &mut ui,
+                &[
+                    Point::new(split + 0.5, area.center_y()),
+                    area.center(),
+                    Point::new(right_end, area.y + 40.0),
+                    Point::new(right_end, area.y + 120.0),
+                    Point::new(area.center_x(), bottom),
+                    Point::new(area.x + 10.0, bottom),
+                ],
+            );
+
+            let (_, after) = card_area_scroller(&mut ui);
+            assert_eq!(after, offset, "the card should not scroll");
+            assert!(sent_a_panel_resize(ui), "the panel should resize");
+        }
+    }
+
+    #[test]
+    fn dragging_a_bar_of_the_start_card_only_scrolls_it() {
+        let app = app_with_start_card();
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            SMALL_WINDOW,
+            view(&app),
+        );
+        let (area, _) = card_area_scroller(&mut ui);
+        let right_end = area.x + area.width - 2.0;
+        let bottom = area.y + area.height - 2.0;
+
+        press_and_move(
+            &mut ui,
+            &[
+                Point::new(right_end, area.y + 10.0),
+                Point::new(right_end, area.y + 40.0),
+            ],
+        );
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left),
+        )]);
+        press_and_move(
+            &mut ui,
+            &[
+                Point::new(area.x + 20.0, bottom),
+                Point::new(area.x + 60.0, bottom),
+            ],
+        );
+
+        let (_, offset) = card_area_scroller(&mut ui);
+        assert!(offset.y > 0.0, "the card should scroll down");
+        assert!(offset.x > 0.0, "the card should scroll sideways");
+        assert!(!sent_a_panel_resize(ui), "the panel should not resize");
+    }
+
+    /// In the real window, between the panels, each tile comes into view inside
+    /// the main area and does what it says.
+    #[test]
+    fn in_a_small_window_each_tile_of_the_start_card_can_be_pressed() {
+        let app = app_with_start_card();
+
+        for (key, is_expected) in [
+            (
+                Key::EmptyNewTerminal,
+                (|event: &AppEvent| {
+                    matches!(
+                        event,
+                        AppEvent::Tabs(TabsEvent::Intent(
+                            TabsIntent::OpenTerminalTab
+                        ))
+                    )
+                }) as fn(&AppEvent) -> bool,
+            ),
+            (Key::EmptyNewLaunch, |event: &AppEvent| {
+                matches!(
+                    event,
+                    AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                        QuickLaunchIntent::HeaderCreateCommand
+                    ))
+                )
+            }),
+        ] {
+            let mut ui = iced_test::Simulator::with_size(
+                iced::Settings::default(),
+                SMALL_WINDOW,
+                view(&app),
+            );
+            let (area, _) = card_area_scroller(&mut ui);
+
+            ui.point_at(area.center());
+            let _ =
+                ui.simulate([iced::Event::Window(
+                    iced::window::Event::RedrawRequested(
+                        iced::time::Instant::now(),
+                    ),
+                )]);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::WheelScrolled {
+                    delta: iced::mouse::ScrollDelta::Pixels {
+                        x: 0.0,
+                        y: -10_000.0,
+                    },
+                },
+            )]);
+            let label = i18n::t(key);
+            let shown = ui
+                .find(label)
+                .expect("the tile should exist")
+                .visible_bounds()
+                .expect("the tile should come into view");
+            assert!(area.contains(shown.center()), "{label}: {shown:?}");
+
+            ui.click(label).expect("the tile should be in reach");
+
+            let pressed = ui.into_messages().filter(is_expected).count();
+            assert_eq!(pressed, 1, "{label}");
+        }
+    }
+
+    /// iced keeps the state of a scroller for the next page of the same shape,
+    /// and a form page has the shape of a card's. A form opened from a scrolled
+    /// card must start at its top, and so must the card when the form closes.
+    #[test]
+    fn the_start_card_and_a_form_do_not_share_their_scrolling() {
+        let mut app = app_with_start_card();
+        let mut frames = Frames::new();
+        let tabs_ctx = TabsCtx { shell_name: "sh" };
+
+        let _ = frames.frame(&app, None);
+        let card_scrolled = frames.frame(&app, scroll_main_area());
+
+        let _ = app
+            .widgets
+            .tabs
+            .reduce(TabsIntent::OpenSettingsTab, &tabs_ctx);
+        let form_opened = frames.frame(&app, None);
+        let form_scrolled = frames.frame(&app, scroll_main_area());
+
+        let tab_id = app.widgets.tabs.active_tab_id().expect("the form's tab");
+        let _ = app
+            .widgets
+            .tabs
+            .reduce(TabsIntent::CloseTab { tab_id }, &tabs_ctx);
+        let card_again = frames.frame(&app, None);
+
+        assert!(card_scrolled.x > 0.0 && card_scrolled.y > 0.0);
+        assert_eq!(form_opened, iced::Vector::new(0.0, 0.0));
+        assert_eq!(form_scrolled, iced::Vector::new(30.0, 50.0));
+        assert_eq!(card_again, iced::Vector::new(0.0, 0.0));
+    }
+
+    /// The main area of the two modes is one place to iced: changing mode must
+    /// not carry the scrolling of one card over to the other.
+    #[test]
+    fn the_start_card_and_the_no_engine_card_do_not_share_their_scrolling() {
+        let mut app = app_with_card(denied_podman_search());
+        let mut frames = Frames::new();
+        let select = |app: &mut App, mode: Mode| {
+            let _ = app.widgets.modes.reduce(ModesIntent::Select(mode));
+        };
+
+        let _ = frames.frame(&app, None);
+        let no_engine_scrolled = frames.frame(&app, scroll_main_area());
+        select(&mut app, Mode::Terminal);
+        let start_opened = frames.frame(&app, None);
+        let start_scrolled = frames.frame(&app, scroll_main_area());
+        select(&mut app, Mode::Docker);
+        let no_engine_again = frames.frame(&app, None);
+
+        assert_eq!(no_engine_scrolled, iced::Vector::new(30.0, 50.0));
+        assert_eq!(start_opened, iced::Vector::new(0.0, 0.0));
+        assert!(start_scrolled.x > 0.0 && start_scrolled.y > 0.0);
+        assert_eq!(no_engine_again, iced::Vector::new(0.0, 0.0));
+    }
+
+    /// Check again shows the searching card for a moment, and the card that
+    /// comes back starts again at its top (spec Decision 9).
+    #[test]
+    fn check_again_starts_the_card_again_at_its_top() {
+        let mut app = app_with_card(denied_podman_search());
+        let mut frames = Frames::new();
+
+        let _ = frames.frame(&app, None);
+        let scrolled = frames.frame(&app, scroll_main_area());
+        let _ = app.widgets.docker.reduce(DockerIntent::CheckAgain);
+        let searching = frames.frame(&app, None);
+        let _ = app
+            .widgets
+            .docker
+            .reduce(DockerIntent::DiscoveryFinished(denied_podman_search()));
+        let after_search = frames.frame(&app, None);
+
+        assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
+        assert_eq!(searching, iced::Vector::new(0.0, 0.0));
+        assert_eq!(after_search, iced::Vector::new(0.0, 0.0));
+    }
+
+    /// Changes the quick launch widget as the running app does.
+    fn reduce_quick_launch(app: &mut App, intent: QuickLaunchIntent) {
+        let settings = app.terminal_settings.clone();
+        let ctx = crate::widgets::quick_launch::QuickLaunchCtx {
+            terminal_settings: &settings,
+            sidebar_cursor: Point::ORIGIN,
+            sidebar_is_resizing: false,
+        };
+
+        let _ = app.widgets.quick_launch.reduce(intent, &ctx);
+    }
+
+    /// Opens Settings as a tab and returns its id.
+    fn open_settings(app: &mut App) -> u64 {
+        let _ = app
+            .widgets
+            .tabs
+            .reduce(TabsIntent::OpenSettingsTab, &TabsCtx { shell_name: "sh" });
+
+        app.widgets.tabs.active_tab_id().expect("the form's tab")
+    }
+
+    /// Opens a launch editor as a tab, its state in place, and returns its id.
+    fn open_launch_editor(app: &mut App) -> u64 {
+        let _ = app.widgets.tabs.reduce(
+            TabsIntent::OpenWizardTab {
+                title: String::from("New launch"),
+                init: crate::domain::quick_launch::WizardTabInit::Create {
+                    parent_path: Vec::new(),
+                },
+            },
+            &TabsCtx { shell_name: "sh" },
+        );
+        let tab_id = app.widgets.tabs.active_tab_id().expect("the form's tab");
+        reduce_quick_launch(
+            app,
+            QuickLaunchIntent::WizardInitializeCreate {
+                tab_id,
+                parent_path: Vec::new(),
+            },
+        );
+
+        tab_id
+    }
+
+    /// Opens the error tab of a launch, its state in place.
+    fn open_error_tab(app: &mut App) -> u64 {
+        let (title, message) = (String::from("Failed"), String::from("Why"));
+        let _ = app.widgets.tabs.reduce(
+            TabsIntent::OpenErrorTab {
+                title: title.clone(),
+                message: message.clone(),
+            },
+            &TabsCtx { shell_name: "sh" },
+        );
+        let tab_id = app.widgets.tabs.active_tab_id().expect("the tab");
+        reduce_quick_launch(
+            app,
+            QuickLaunchIntent::OpenErrorTab {
+                tab_id,
+                title,
+                message,
+            },
+        );
+
+        tab_id
+    }
+
+    fn activate_tab(app: &mut App, tab_id: u64) {
+        let _ = app.widgets.tabs.reduce(
+            TabsIntent::ActivateTab { tab_id },
+            &TabsCtx { shell_name: "sh" },
+        );
+    }
+
+    /// The Run form over the lists of the fixture Docker engine, in a window
+    /// too small for it.
+    fn app_with_run_form() -> App {
+        let mut app = docker_app_with_lists();
+        app.state.window_size = SMALL_WINDOW;
+        let engine =
+            otty_docker::fixtures::engine(otty_docker::EngineKind::Docker);
+        let _ = app.widgets.docker.reduce(DockerIntent::Open(
+            crate::widgets::docker::types::Place::new(
+                engine.address().clone(),
+                crate::widgets::docker::types::ResourceKind::Containers,
+            ),
+        ));
+        let _ = app.widgets.docker.reduce(DockerIntent::OpenCreate);
+
+        app
+    }
+
+    /// A change to the app between two frames.
+    type AppChange = Box<dyn Fn(&mut App)>;
+
+    /// The offset of a page that was just scrolled once and is built again
+    /// after each of `changes`, which must all leave the same screen on show.
+    fn offsets_through_rebuilds(
+        app: &mut App,
+        changes: Vec<AppChange>,
+    ) -> Vec<iced::Vector> {
+        let mut frames = Frames::new();
+
+        let _ = frames.frame(app, None);
+        let mut offsets = vec![frames.frame(app, scroll_main_area())];
+        for change in changes {
+            change(app);
+            offsets.push(frames.frame(app, None));
+        }
+
+        offsets
+    }
+
+    /// `app` is scrolled, then `leave` puts another screen on show. That screen
+    /// must open at its top left, and it can be scrolled on its own. The first
+    /// screen, shown again by `back`, starts at its top left too.
+    fn assert_each_screen_starts_at_its_top(
+        mut app: App,
+        leave: impl Fn(&mut App),
+        back: impl Fn(&mut App),
+    ) {
+        let mut frames = Frames::new();
+        let top = iced::Vector::new(0.0, 0.0);
+
+        let _ = frames.frame(&app, None);
+        let first_scrolled = frames.frame(&app, scroll_main_area());
+        leave(&mut app);
+        let second_opened = frames.frame(&app, None);
+        let second_scrolled = frames.frame(&app, scroll_main_area());
+        back(&mut app);
+        let first_again = frames.frame(&app, None);
+
+        assert!(first_scrolled.x > 0.0 && first_scrolled.y > 0.0);
+        assert_eq!(second_opened, top);
+        assert!(second_scrolled.x > 0.0 && second_scrolled.y > 0.0);
+        assert_eq!(first_again, top);
+    }
+
+    #[test]
+    fn two_launch_editors_do_not_share_their_scrolling() {
+        let mut app = app_with_start_card();
+        let first = open_launch_editor(&mut app);
+
+        assert_each_screen_starts_at_its_top(
+            app,
+            |app| {
+                let _ = open_launch_editor(app);
+            },
+            move |app| activate_tab(app, first),
+        );
+    }
+
+    #[test]
+    fn settings_and_a_launch_editor_do_not_share_their_scrolling() {
+        let mut app = app_with_start_card();
+        let settings = open_settings(&mut app);
+
+        assert_each_screen_starts_at_its_top(
+            app,
+            |app| {
+                let _ = open_launch_editor(app);
+            },
+            move |app| activate_tab(app, settings),
+        );
+    }
+
+    #[test]
+    fn settings_and_the_no_engine_card_do_not_share_their_scrolling() {
+        let mut app = app_with_card(denied_podman_search());
+        let _ = open_settings(&mut app);
+        let select = |app: &mut App, mode: Mode| {
+            let _ = app.widgets.modes.reduce(ModesIntent::Select(mode));
+        };
+
+        assert_each_screen_starts_at_its_top(
+            app,
+            move |app| select(app, Mode::Terminal),
+            move |app| select(app, Mode::Docker),
+        );
+    }
+
+    #[test]
+    fn a_launch_editor_and_the_error_tab_do_not_share_their_scrolling() {
+        let mut app = app_with_start_card();
+        let editor = open_launch_editor(&mut app);
+        let error = open_error_tab(&mut app);
+        activate_tab(&mut app, editor);
+        let mut frames = Frames::new();
+
+        let _ = frames.frame(&app, None);
+        let scrolled = frames.frame(&app, scroll_main_area());
+        activate_tab(&mut app, error);
+        let error_opened = frames.frame(&app, None);
+
+        assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
+        assert_eq!(error_opened, iced::Vector::new(0.0, 0.0));
+    }
+
+    /// The Run form that waits through an outage comes back at its top, with
+    /// what was typed; the card it gave way to starts at its top as well.
+    #[test]
+    fn the_run_form_and_the_card_of_an_outage_do_not_share_their_scrolling() {
+        use otty_docker::{EngineKind, fixtures};
+
+        let mut app = app_with_run_form();
+        let _ = app.widgets.docker.reduce(DockerIntent::RunEdited(
+            crate::widgets::docker::run_form::RunEdit::Image(String::from(
+                "kept:1",
+            )),
+        ));
+
+        assert_each_screen_starts_at_its_top(
+            app,
+            |app| {
+                let engine = fixtures::engine(EngineKind::Docker);
+                let _ = app.widgets.docker.reduce(
+                    DockerIntent::EngineUnreachable(engine.address().clone()),
+                );
+                let _ = app.widgets.docker.reduce(
+                    DockerIntent::DiscoveryFinished(denied_podman_search()),
+                );
+            },
+            |app| {
+                let _ =
+                    app.widgets.docker.reduce(DockerIntent::DiscoveryFinished(
+                        fixtures::discovery(&[EngineKind::Docker]),
+                    ));
+                assert_eq!(
+                    app.widgets
+                        .docker
+                        .run_form_vm()
+                        .map(|form| form.image.to_string()),
+                    Some(String::from("kept:1")),
+                );
+            },
+        );
+    }
+
+    /// A search that gets another answer shows another card: a new screen.
+    #[test]
+    fn another_answer_of_the_background_search_starts_the_new_card_at_its_top()
+    {
+        use otty_docker::fixtures;
+
+        let mut app = app_with_card(denied_podman_search());
+        let mut frames = Frames::new();
+
+        let _ = frames.frame(&app, None);
+        let scrolled = frames.frame(&app, scroll_main_area());
+        let _ = app.widgets.docker.reduce(DockerIntent::EngineSearchTick);
+        let _ =
+            app.widgets
+                .docker
+                .reduce(DockerIntent::BackgroundSearchFinished(
+                    fixtures::discovery_with_cli(
+                        &[],
+                        Some("/usr/bin/docker"),
+                        None,
+                    ),
+                ));
+        let new_card = frames.frame(&app, None);
+
+        assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
+        assert_eq!(new_card, iced::Vector::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn settings_built_again_keep_their_scrolling() {
+        use crate::widgets::settings::SettingsIntent;
+
+        let mut app = app_with_start_card();
+        let _ = open_settings(&mut app);
+
+        let offsets = offsets_through_rebuilds(
+            &mut app,
+            vec![
+                Box::new(|app| {
+                    let _ = app.widgets.settings.reduce(
+                        SettingsIntent::ShellChanged(String::from("/bin/z")),
+                    );
+                }),
+                Box::new(|app| {
+                    let _ = app
+                        .widgets
+                        .settings
+                        .reduce(SettingsIntent::EqualizePanesToggled(false));
+                }),
+            ],
+        );
+
+        assert_eq!(offsets[0], iced::Vector::new(30.0, 50.0));
+        assert!(offsets.iter().all(|offset| *offset == offsets[0]));
+    }
+
+    #[test]
+    fn a_launch_editor_built_again_keeps_its_scrolling() {
+        let mut app = app_with_start_card();
+        let tab_id = open_launch_editor(&mut app);
+
+        let offsets = offsets_through_rebuilds(
+            &mut app,
+            vec![
+                Box::new(move |app| {
+                    reduce_quick_launch(
+                        app,
+                        QuickLaunchIntent::WizardUpdateTitle {
+                            tab_id,
+                            value: String::from("t"),
+                        },
+                    );
+                }),
+                // Saving an empty launch brings the validation messages.
+                Box::new(move |app| {
+                    reduce_quick_launch(
+                        app,
+                        QuickLaunchIntent::WizardSave { tab_id },
+                    );
+                }),
+            ],
+        );
+
+        assert_eq!(offsets[0], iced::Vector::new(30.0, 50.0));
+        assert!(offsets.iter().all(|offset| *offset == offsets[0]));
+    }
+
+    #[test]
+    fn the_run_form_built_again_keeps_its_scrolling() {
+        use crate::widgets::docker::run_form::RunEdit;
+
+        let mut app = app_with_run_form();
+        let edit = |edit: RunEdit| -> AppChange {
+            Box::new(move |app| {
+                let _ = app
+                    .widgets
+                    .docker
+                    .reduce(DockerIntent::RunEdited(edit.clone()));
+            })
+        };
+
+        let offsets = offsets_through_rebuilds(
+            &mut app,
+            vec![
+                edit(RunEdit::Image(String::from("nginx:1"))),
+                edit(RunEdit::AddPort),
+                edit(RunEdit::PortHost(0, String::from("not a port"))),
+            ],
+        );
+
+        assert_eq!(offsets[0], iced::Vector::new(30.0, 50.0));
+        assert!(offsets.iter().all(|offset| *offset == offsets[0]));
+    }
+
+    /// How many scrollers in `app` have content of the minimum width of a
+    /// screen.
+    fn screen_scrollers(app: &App) -> usize {
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            SMALL_WINDOW,
+            view(app),
+        );
+        let mut found = 0;
+
+        let _ = ui.find(|candidate: iced_test::selector::Candidate<'_>| {
+            if let iced_test::selector::Candidate::Scrollable {
+                content_bounds,
+                ..
+            } = candidate
+                && content_bounds.width == size::SCREEN_MIN
+            {
+                found += 1;
+            }
+            None::<()>
+        });
+
+        found
+    }
+
+    /// Every way the main area can be filled, whatever the screen, keeps one
+    /// minimum: nothing here knows about it. The terminal and the tables have
+    /// their own tests below.
+    #[test]
+    fn every_screen_of_the_main_area_keeps_the_one_minimum() {
+        use otty_docker::fixtures;
+
+        let settings = {
+            let mut app = app_with_start_card();
+            let _ = open_settings(&mut app);
+            app
+        };
+        let launch_editor = {
+            let mut app = app_with_start_card();
+            let _ = open_launch_editor(&mut app);
+            app
+        };
+        // A tab whose state is missing shows a line about it, in a screen too.
+        let missing_editor = {
+            let mut app = app_with_start_card();
+            let _ = app.widgets.tabs.reduce(
+                TabsIntent::OpenWizardTab {
+                    title: String::from("New launch"),
+                    init: crate::domain::quick_launch::WizardTabInit::Create {
+                        parent_path: Vec::new(),
+                    },
+                },
+                &TabsCtx { shell_name: "sh" },
+            );
+            app
+        };
+        let error_tab = {
+            let mut app = app_with_start_card();
+            let _ = open_error_tab(&mut app);
+            app
+        };
+        let searching = {
+            let mut app = app_in(Mode::Docker);
+            app.state.window_size = SMALL_WINDOW;
+            let _ = app.widgets.docker.reduce(DockerIntent::Enter);
+            app
+        };
+        let missing_error = {
+            let mut app = app_with_start_card();
+            let _ = app.widgets.tabs.reduce(
+                TabsIntent::OpenErrorTab {
+                    title: String::from("Failed"),
+                    message: String::from("Why"),
+                },
+                &TabsCtx { shell_name: "sh" },
+            );
+            app
+        };
+        let missing_terminal = {
+            let mut app = app_with_start_card();
+            let _ = app.widgets.tabs.reduce(
+                TabsIntent::OpenTerminalTab,
+                &TabsCtx { shell_name: "sh" },
+            );
+            app
+        };
+        let no_tiles = app_with_card(fixtures::discovery_with_cli(
+            &[],
+            Some("/usr/bin/docker"),
+            Some("/usr/bin/podman"),
+        ));
+
+        for (name, app) in [
+            ("start card", app_with_start_card()),
+            ("settings", settings),
+            ("launch editor", launch_editor),
+            ("missing editor", missing_editor),
+            ("error tab", error_tab),
+            ("missing error", missing_error),
+            ("missing terminal", missing_terminal),
+            ("searching card", searching),
+            ("no-engine card", no_tiles),
+            ("run form", app_with_run_form()),
+        ] {
+            assert_eq!(screen_scrollers(&app), 1, "{name}");
+        }
+    }
+
+    /// The header of a table screen stays where it is and only the table
+    /// scrolls, however narrow the area: its sticky header and its rows could
+    /// not work in an outer scroller, where the height has no end.
+    #[test]
+    fn a_table_screen_stays_out_of_the_scrolling_of_a_screen() {
+        const WINDOW: iced::Size = iced::Size::new(400.0, 300.0);
+        const ROW: &str = "otty-fx-web-1";
+
+        let mut app = docker_app_with_lists();
+        app.state.window_size = WINDOW;
+        let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleLeft);
+        let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            WINDOW,
+            view(&app),
+        );
+        let title = i18n::t(Key::DockerContainers);
+
+        let title_before = ui.find(title).expect("the title").visible_bounds();
+        let row_before = ui.find(ROW).expect("the row").visible_bounds();
+        let row_y = row_before.expect("the row should show").center_y();
+        ui.point_at(Point::new(200.0, row_y));
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::WheelScrolled {
+                delta: iced::mouse::ScrollDelta::Pixels { x: 0.0, y: -10.0 },
+            },
+        )]);
+        let title_after = ui.find(title).expect("the title").visible_bounds();
+        let row_after = ui.find(ROW).expect("the row").visible_bounds();
+
+        assert!(title_before.is_some(), "the title should show");
+        assert_eq!(title_before, title_after);
+        assert_ne!(row_before, row_after, "the table should scroll");
+        assert_eq!(screen_scrollers(&app), 0);
+    }
+
+    /// The panes of a terminal fill the height they get and scroll on their
+    /// own. This opens a real shell, as the tests of the terminal workspace do.
+    #[test]
+    fn a_terminal_tab_stays_out_of_the_scrolling_of_a_screen() {
+        use otty_ui_term::settings::{
+            LocalSessionOptions, SessionKind, Settings,
+        };
+
+        use crate::widgets::terminal_workspace::types::TerminalKind;
+        use crate::widgets::terminal_workspace::{
+            TerminalWorkspaceCtx, TerminalWorkspaceIntent,
+        };
+
+        let mut app = app_with_start_card();
+        let _ = app
+            .widgets
+            .tabs
+            .reduce(TabsIntent::OpenTerminalTab, &TabsCtx { shell_name: "sh" });
+        let tab_id = app.widgets.tabs.active_tab_id().expect("the tab");
+        let mut settings = Settings::default();
+        settings.backend = settings.backend.clone().with_session(
+            SessionKind::from_local_options(
+                LocalSessionOptions::default().with_program("/bin/sh"),
+            ),
+        );
+        let _ = app.widgets.terminal_workspace.reduce(
+            TerminalWorkspaceIntent::OpenTab {
+                tab_id,
+                default_title: String::from("sh"),
+                settings: Box::new(settings),
+                kind: TerminalKind::Shell,
+                sync_explorer: false,
+            },
+            &TerminalWorkspaceCtx {
+                active_tab_id: None,
+                pane_grid_size: SMALL_WINDOW,
+                screen_size: SMALL_WINDOW,
+                sidebar_cursor: Point::ORIGIN,
+                equalize_panes: true,
+            },
+        );
+
+        let content = view_tab_content(
+            &app,
+            ThemeProps::new(app.theme_manager.current()),
+        );
+
+        assert!(matches!(content, MainContent::ScrollsOnItsOwn(_)));
+        assert_eq!(screen_scrollers(&app), 0);
     }
 
     #[test]

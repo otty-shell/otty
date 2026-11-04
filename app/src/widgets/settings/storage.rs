@@ -112,13 +112,13 @@ fn write_atomic(path: &Path, payload: &[u8]) -> Result<(), std::io::Error> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
         SettingsData, SettingsLoadStatus, load_settings_from_path,
         save_settings_to_path, settings_path,
     };
     use crate::i18n::Locale;
+    use crate::testing::temp_dir::TempDir;
     use crate::theme::BuiltinTheme;
     use crate::widgets::settings::types::LanguageSetting;
 
@@ -133,8 +133,8 @@ mod tests {
 
     #[test]
     fn given_valid_settings_when_save_and_load_then_round_trip_matches() {
-        let root = test_temp_dir("round_trip");
-        let path = root.join("settings.json");
+        let root = TempDir::new("settings-round-trip");
+        let path = root.path().join("settings.json");
         let mut settings = SettingsData::default();
         settings.set_terminal_shell(String::from("/bin/zsh"));
         settings.set_terminal_editor(String::from("vim"));
@@ -149,15 +149,12 @@ mod tests {
 
         assert!(matches!(loaded_status, SettingsLoadStatus::Loaded));
         assert_eq!(loaded_settings, settings);
-
-        fs::remove_dir_all(&root)
-            .expect("temporary directory should be removed");
     }
 
     #[test]
     fn given_invalid_json_when_load_then_returns_default_with_invalid_status() {
-        let root = test_temp_dir("invalid_json");
-        let path = root.join("settings.json");
+        let root = TempDir::new("settings-invalid-json");
+        let path = root.path().join("settings.json");
         fs::write(&path, "{ this is not valid json")
             .expect("invalid test payload should be written");
 
@@ -172,15 +169,12 @@ mod tests {
             },
             other => panic!("expected invalid status, got {other:?}"),
         }
-
-        fs::remove_dir_all(&root)
-            .expect("temporary directory should be removed");
     }
 
     #[test]
     fn given_missing_file_when_load_then_returns_default_with_missing_status() {
-        let root = test_temp_dir("missing_file");
-        let path = root.join("nonexistent.json");
+        let root = TempDir::new("settings-missing-file");
+        let path = root.path().join("nonexistent.json");
 
         let loaded = load_settings_from_path(&path)
             .expect("loading missing settings should not fail");
@@ -188,16 +182,13 @@ mod tests {
 
         assert_eq!(loaded_settings, SettingsData::default());
         assert!(matches!(loaded_status, SettingsLoadStatus::Missing));
-
-        fs::remove_dir_all(&root)
-            .expect("temporary directory should be removed");
     }
 
     #[test]
     fn given_old_palette_file_when_loaded_and_saved_then_theme_name_replaces_palette()
      {
-        let root = test_temp_dir("old_palette");
-        let path = root.join("settings.json");
+        let root = TempDir::new("settings-old-palette");
+        let path = root.path().join("settings.json");
         let old_payload = serde_json::json!({
             "terminal": { "shell": "/bin/zsh" },
             "theme": { "palette": ["#282A36", "#F8F8F2"] }
@@ -218,23 +209,5 @@ mod tests {
         assert_eq!(loaded_settings.theme(), BuiltinTheme::OttyDark);
         assert_eq!(loaded_settings.terminal_shell(), "/bin/zsh");
         assert_eq!(saved["theme"], serde_json::json!({ "name": "otty-dark" }));
-
-        fs::remove_dir_all(&root)
-            .expect("temporary directory should be removed");
-    }
-
-    fn test_temp_dir(test_name: &str) -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be monotonic")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "otty-settings-{test_name}-{stamp}-{}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&dir)
-            .expect("temporary directory should be created");
-        dir
     }
 }

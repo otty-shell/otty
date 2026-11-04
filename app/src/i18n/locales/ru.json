@@ -197,7 +197,6 @@
     "tpl_docker_status_volumes": "Томов: {count}",
     "docker_status_one_network": "1 сеть",
     "tpl_docker_status_networks": "Сетей: {count}",
-    "tpl_docker_status_also_found": "{engine} тоже найден",
     "docker_action_start": "Запустить",
     "docker_action_stop": "Остановить",
     "docker_action_restart": "Перезапустить",

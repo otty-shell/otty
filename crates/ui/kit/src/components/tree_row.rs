@@ -267,6 +267,7 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
+    use crate::test_support::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -297,9 +298,8 @@ mod tests {
 
     #[test]
     fn given_count_tone_when_row_drawn_then_count_takes_the_tone_color() {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-tree-row-{}", std::process::id()))
-            .join("count-tone");
+        let folder = TempDir::new("tree-row");
+        let reference = folder.path().join("count-tone");
 
         assert!(drawn_row_matches(None, &reference));
         assert!(drawn_row_matches(Some(SessionTone::Muted), &reference));

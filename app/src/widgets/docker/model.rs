@@ -639,7 +639,6 @@ mod tests {
         let bar = status_bar(state);
         assert_eq!(bar.engine, None);
         assert_eq!(bar.info, card.status_text);
-        assert_eq!(bar.also_found, None);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use iced::widget::{Space, column, container, row, text};
+use iced::widget::{column, container, row, text};
 use iced::{Element, Length, Theme};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::form_page::FormPage;
@@ -366,10 +366,7 @@ fn footer<'a>(tab_id: u64, palette: &UiPalette) -> WizardElement<'a> {
         .kind(ButtonKind::Primary)
         .on_press(QuickLaunchIntent::WizardSave { tab_id });
 
-    row![Space::new().width(Length::Fill), cancel, save]
-        .spacing(spacing::SPACE_3)
-        .width(Length::Fill)
-        .into()
+    row![cancel, save].spacing(spacing::SPACE_3).into()
 }
 
 fn exit_choice(value: ExitBehavior) -> Choice<ExitBehavior> {
@@ -413,9 +410,13 @@ fn unassigned_error(editor: &WizardEditorState) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use iced_test::simulator;
+    use iced::{Event, Point, mouse};
+    use iced_test::selector::Candidate;
+    use iced_test::{Simulator, simulator};
+    use otty_ui_kit::components::screen_area::ScreenArea;
+    use otty_ui_kit::{size, spacing};
 
-    use super::{WizardFormProps, view};
+    use super::{WizardElement, WizardFormProps, view};
     use crate::i18n::{self, Key};
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::quick_launch::event::QuickLaunchIntent;
@@ -423,13 +424,22 @@ mod tests {
     use crate::widgets::quick_launch::types::QuickLaunchType;
 
     const TAB_ID: u64 = 7;
+    /// Height of the kit's footer bar (`.form-foot`).
+    const BAR_HEIGHT: f32 = 60.0;
+
+    /// The form in the area it has in the app.
+    fn page(props: WizardFormProps<'_>) -> WizardElement<'_> {
+        let palette = props.theme.theme.ui();
+
+        ScreenArea::new(0, view(props), palette).into()
+    }
 
     fn messages_after_click(
         editor: &WizardEditorState,
         label: &str,
     ) -> Vec<QuickLaunchIntent> {
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(WizardFormProps {
+        let mut ui = simulator(page(WizardFormProps {
             tab_id: TAB_ID,
             editor,
             theme: ThemeProps::new(themes.current()),
@@ -438,6 +448,195 @@ mod tests {
         ui.click(label).expect("label should be visible");
 
         ui.into_messages().collect()
+    }
+
+    /// Draws `editor` in a window of the given size.
+    fn in_window<'a>(
+        editor: &'a WizardEditorState,
+        themes: &'a ThemeManager,
+        width: f32,
+        height: f32,
+    ) -> Simulator<'a, QuickLaunchIntent> {
+        Simulator::with_size(
+            iced::Settings::default(),
+            (width, height),
+            page(WizardFormProps {
+                tab_id: TAB_ID,
+                editor,
+                theme: ThemeProps::new(themes.current()),
+            }),
+        )
+    }
+
+    /// Scrolls the form as far as `x` and `y` go.
+    fn wheel(ui: &mut Simulator<'_, QuickLaunchIntent>, x: f32, y: f32) {
+        ui.point_at(Point::new(100.0, 100.0));
+        let _ = ui.simulate([Event::Mouse(mouse::Event::WheelScrolled {
+            delta: mouse::ScrollDelta::Pixels { x, y },
+        })]);
+    }
+
+    /// How many scrollers the page has.
+    fn scroller_count(ui: &mut Simulator<'_, QuickLaunchIntent>) -> usize {
+        let mut count = 0;
+
+        let _ = ui.find(|candidate: Candidate<'_>| {
+            if matches!(candidate, Candidate::Scrollable { .. }) {
+                count += 1;
+            }
+            None::<()>
+        });
+
+        count
+    }
+
+    /// The editor of a new launch of the given type.
+    fn editor_of(command_type: QuickLaunchType) -> WizardEditorState {
+        let mut editor = WizardEditorState::new(Vec::new());
+        editor.set_command_type(command_type);
+
+        editor
+    }
+
+    #[test]
+    fn given_either_launch_type_in_a_small_window_then_the_page_has_one_scroller()
+     {
+        for command_type in [QuickLaunchType::Custom, QuickLaunchType::Ssh] {
+            let editor = editor_of(command_type);
+            let themes = ThemeManager::new();
+            let mut ui = in_window(&editor, &themes, 300.0, 300.0);
+
+            assert_eq!(scroller_count(&mut ui), 1);
+        }
+    }
+
+    #[test]
+    fn given_either_launch_type_in_a_tall_window_then_cancel_and_save_sit_at_the_bottom_right()
+     {
+        let (width, height) = (1024.0, 1400.0);
+        for command_type in [QuickLaunchType::Custom, QuickLaunchType::Ssh] {
+            let editor = editor_of(command_type);
+            let themes = ThemeManager::new();
+            let mut ui = in_window(&editor, &themes, width, height);
+
+            let save =
+                ui.find(i18n::t(Key::ButtonSave)).expect("Save").bounds();
+            let cancel = ui
+                .find(i18n::t(Key::ButtonCancel))
+                .expect("Cancel")
+                .bounds();
+
+            let form_right = (width + size::FORM) / 2.0;
+            assert!(save.y > height - BAR_HEIGHT && save.y < height);
+            assert_eq!(cancel.y, save.y);
+            assert!(cancel.x + cancel.width < save.x, "Cancel, then Save");
+            assert!(save.x + save.width <= form_right);
+            assert!(save.x + save.width > form_right - 20.0);
+        }
+    }
+
+    #[test]
+    fn given_a_low_window_then_save_comes_after_the_fields_and_is_reached_by_scrolling()
+     {
+        let editor = WizardEditorState::new(Vec::new());
+        let themes = ThemeManager::new();
+        let mut ui = in_window(&editor, &themes, 1024.0, 300.0);
+        let save = i18n::t(Key::ButtonSave);
+
+        let hidden = ui.find(save).expect("Save should exist");
+        wheel(&mut ui, 0.0, -10_000.0);
+        ui.click(save).expect("Save should be in reach");
+        let messages: Vec<QuickLaunchIntent> = ui.into_messages().collect();
+
+        assert_eq!(hidden.visible_bounds(), None);
+        assert!(matches!(
+            messages.as_slice(),
+            [QuickLaunchIntent::WizardSave { tab_id: TAB_ID }]
+        ));
+    }
+
+    #[test]
+    fn given_a_small_window_then_the_form_keeps_its_width_and_save_is_in_reach()
+    {
+        let editor = WizardEditorState::new(Vec::new());
+        let themes = ThemeManager::new();
+        let mut ui = in_window(&editor, &themes, 300.0, 300.0);
+        let save = i18n::t(Key::ButtonSave);
+
+        let found = ui.find(save).expect("Save should exist");
+        wheel(&mut ui, -10_000.0, -10_000.0);
+        ui.click(save).expect("Save should be in reach");
+        let messages: Vec<QuickLaunchIntent> = ui.into_messages().collect();
+
+        let edge = found.bounds().x + found.bounds().width;
+        let form_right = size::SCREEN_MIN - spacing::SPACE_7;
+        assert!(
+            edge <= form_right && edge > form_right - 20.0,
+            "Save ends at {edge}"
+        );
+        assert_eq!(found.visible_bounds(), None);
+        assert!(matches!(
+            messages.as_slice(),
+            [QuickLaunchIntent::WizardSave { tab_id: TAB_ID }]
+        ));
+    }
+
+    #[test]
+    fn given_a_normal_window_then_the_form_is_as_wide_as_before() {
+        let editor = WizardEditorState::new(Vec::new());
+        let themes = ThemeManager::new();
+        let mut ui = in_window(&editor, &themes, 1024.0, 1400.0);
+
+        let title = ui.find(i18n::t(Key::WizardTitleNew)).expect("title");
+
+        assert_eq!(title.bounds().x, (1024.0 - size::FORM) / 2.0);
+    }
+
+    #[test]
+    fn given_a_small_window_when_a_field_is_scrolled_to_then_typing_reaches_it()
+    {
+        let editor = WizardEditorState::new(Vec::new());
+        let themes = ThemeManager::new();
+        let mut ui = in_window(&editor, &themes, 300.0, 300.0);
+
+        wheel(&mut ui, -20.0, -20.0);
+        let label = ui
+            .find(i18n::t(Key::FieldTitle))
+            .expect("the title label should exist")
+            .visible_bounds()
+            .expect("the title label should be in view");
+        ui.point_at(Point::new(label.x + 40.0, label.y + label.height + 16.0));
+        let _ = ui.simulate(iced_test::simulator::click());
+        let _ = ui.typewrite("c");
+
+        let messages: Vec<QuickLaunchIntent> = ui.into_messages().collect();
+        assert!(
+            matches!(
+                messages.as_slice(),
+                [QuickLaunchIntent::WizardUpdateTitle { tab_id: TAB_ID, value }]
+                    if value == "c"
+            ),
+            "{messages:?}"
+        );
+    }
+
+    #[test]
+    fn given_a_small_window_then_a_field_error_pushes_the_next_field_down() {
+        let mut editor = WizardEditorState::new(Vec::new());
+        editor.set_error(i18n::t(Key::ErrTitleRequired).to_string());
+        let themes = ThemeManager::new();
+        let mut ui = in_window(&editor, &themes, 300.0, 1400.0);
+
+        let error = ui
+            .find(i18n::t(Key::ErrTitleRequired))
+            .expect("the error should show")
+            .bounds();
+        let next = ui
+            .find(i18n::t(Key::FieldType))
+            .expect("the next field should show")
+            .bounds();
+
+        assert!(error.y + error.height <= next.y, "{error:?} over {next:?}");
     }
 
     #[test]
@@ -484,7 +683,7 @@ mod tests {
     fn given_new_launch_when_shown_then_title_and_subtitle_are_visible() {
         let editor = WizardEditorState::new(Vec::new());
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(WizardFormProps {
+        let mut ui = simulator(page(WizardFormProps {
             tab_id: TAB_ID,
             editor: &editor,
             theme: ThemeProps::new(themes.current()),

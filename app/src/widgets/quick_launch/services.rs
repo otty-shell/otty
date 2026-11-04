@@ -516,6 +516,7 @@ mod tests {
 
     use super::*;
     use crate::domain::exit_behavior::ExitBehavior;
+    use crate::testing::temp_dir::TempDir;
     use crate::widgets::quick_launch::types::{CustomCommand, SshCommand};
 
     #[test]
@@ -661,11 +662,10 @@ mod tests {
     #[test]
     fn given_plain_zsh_launch_when_session_built_then_shell_integration_is_added()
      {
-        let dir = std::env::temp_dir()
-            .join(format!("otty-launch-zsh-{}", std::process::id()));
+        let folder = TempDir::new("launch-zsh");
+        let dir = folder.path();
 
-        let options =
-            custom_session(&custom_command("/usr/bin/zsh", &[]), &dir);
+        let options = custom_session(&custom_command("/usr/bin/zsh", &[]), dir);
 
         assert_eq!(options.program(), "/usr/bin/zsh");
         assert_eq!(
@@ -673,7 +673,6 @@ mod tests {
             Some(&dir.to_string_lossy().to_string()),
         );
         assert_eq!(options.working_directory(), &Some(PathBuf::from("/tmp")));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

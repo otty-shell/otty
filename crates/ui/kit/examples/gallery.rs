@@ -44,6 +44,7 @@ use otty_ui_kit::components::palette_list::{PaletteItem, PaletteList};
 use otty_ui_kit::components::pane_header::PaneHeader;
 use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::progress_bar::ProgressBar;
+use otty_ui_kit::components::screen_area::ScreenArea;
 use otty_ui_kit::components::segmented::{segmented, segmented_with_disabled};
 use otty_ui_kit::components::select::select;
 use otty_ui_kit::components::session_group::SessionGroup;
@@ -840,6 +841,38 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     )
     .add_label("Add volume");
     let mappings = column![ports, volumes].spacing(spacing::SPACE_6);
+    let narrow_page = FormPage::new(p)
+        .section(
+            row![
+                text("Run container").width(Length::Fill),
+                Button::new("Far action", p).on_press(Message::Clicked),
+            ]
+            .align_y(iced::Alignment::Center),
+        )
+        .section(FormSection::new("Image", p).field(
+            TextField::new("Image", "nginx:1.27", p).on_input(Message::Path),
+        ))
+        .section(
+            FormSection::new("Command", p).field(
+                TextField::new("Command", "", p).on_input(Message::Path),
+            ),
+        )
+        .footer(
+            row![
+                text("A hint beside the buttons. It scrolls with the form.")
+                    .size(typography::SMALL.size())
+                    .color(palette.text_muted())
+                    .width(Length::Fill),
+                Button::new("Cancel", p)
+                    .kind(ButtonKind::Ghost)
+                    .on_press(Message::Clicked),
+                Button::new("Run", p)
+                    .kind(ButtonKind::Primary)
+                    .on_press(Message::Clicked),
+            ]
+            .spacing(spacing::SPACE_3)
+            .align_y(iced::Alignment::Center),
+        );
     let footer_page = FormPage::new(p)
         .section(FormSection::new("Image", p).field(
             TextField::new("Image", "nginx:1.27", p).on_input(Message::Path),
@@ -849,7 +882,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 TextField::new("Command", "", p).on_input(Message::Path),
             ),
         )
-        .footer_bar(
+        .footer(
             row![
                 text("Starts in the background on Docker 27.3.")
                     .size(typography::SMALL.size())
@@ -1181,8 +1214,23 @@ fn view(state: &Gallery) -> Element<'_, Message> {
     .spacing(spacing::SPACE_6);
 
     let command_box = column![
-        CommandBox::new("sudo systemctl start docker", "Copy", p)
+        CommandBox::new(
+            "sudo systemctl start docker",
+            svg::Handle::from_memory(COPY_ICON),
+            "Copy",
+            p,
+        )
+        .on_copy(Message::Clicked),
+        container(
+            CommandBox::new(
+                "systemctl --user enable --now podman.socket",
+                svg::Handle::from_memory(COPY_ICON),
+                "Copy",
+                p,
+            )
             .on_copy(Message::Clicked),
+        )
+        .width(240),
         ActionTile::new(
             svg::Handle::from_memory(PLUS_ICON),
             "Install Docker",
@@ -1454,8 +1502,10 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         section("SettingRow", settings.into(), p),
         section("FormSection", form.into(), p),
         section(
-            "FormPage (scrolls; sections, footer)",
-            container(page).height(280).into(),
+            "FormPage in a ScreenArea (sections, footer; the area scrolls)",
+            container(ScreenArea::new("page", page, p))
+                .height(280)
+                .into(),
             p,
         ),
         section(
@@ -1464,8 +1514,18 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             p,
         ),
         section(
-            "FormPage with a footer bar (stays under the scrolling sections)",
-            container(footer_page).height(260).into(),
+            "FormPage with a footer bar in a ScreenArea (the bar comes after the sections)",
+            container(ScreenArea::new("footer", footer_page, p))
+                .height(260)
+                .into(),
+            p,
+        ),
+        section(
+            "ScreenArea narrower than the minimum of a screen (320 wide, minimum 592): scrolls both ways, fields and bar together",
+            container(ScreenArea::new("narrow", narrow_page, p))
+                .width(320)
+                .height(240)
+                .into(),
             p,
         ),
     ];

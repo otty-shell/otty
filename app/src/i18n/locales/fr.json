@@ -197,7 +197,6 @@
     "tpl_docker_status_volumes": "{count} volumes",
     "docker_status_one_network": "1 réseau",
     "tpl_docker_status_networks": "{count} réseaux",
-    "tpl_docker_status_also_found": "{engine} également trouvé",
     "docker_action_start": "Démarrer",
     "docker_action_stop": "Arrêter",
     "docker_action_restart": "Redémarrer",

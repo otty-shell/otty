@@ -45,6 +45,15 @@ pub const TREE_INDENT: f32 = 8.0;
 pub const LOGO: f32 = 20.0;
 /// Maximum width of a form page.
 pub const FORM: f32 = 720.0;
+/// Smallest width of a screen of the main area, side padding included. In less
+/// room `ScreenArea` keeps this width and scrolls sideways. There is one number
+/// for all screens, set by the one that needs the most, the Run container form:
+/// 520 px of content and `space-7` side padding on each side. The widest row of
+/// that form that can not give way is Restart, 367 px in Russian. At this width
+/// a volume row leaves its two inputs 156 px each, the longest SELinux switch
+/// (316 px in Russian) leaves its hint 196 px, and the footer keeps its hint
+/// beside Cancel and Run on one or two lines.
+pub const SCREEN_MIN: f32 = 520.0 + 2.0 * crate::spacing::SPACE_7;
 /// Width of the 1px `line` rule between panes, panels and under the title bar.
 pub const LINE: f32 = 1.0;
 /// Width of the invisible zone beside a split line that the pointer can drag:

@@ -267,6 +267,7 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
+    use crate::test_support::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -347,15 +348,10 @@ mod tests {
             .expect("reference should be readable")
     }
 
-    fn reference_path(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir()
-            .join(format!("otty-session-row-{}", std::process::id()))
-            .join(name)
-    }
-
     #[test]
     fn given_selected_row_without_hover_then_close_cross_is_not_drawn() {
-        let reference = reference_path("hovered");
+        let folder = TempDir::new("session-row");
+        let reference = folder.path().join("hovered");
 
         assert!(drawn_row_matches(true, true, &reference));
         assert!(!drawn_row_matches(true, false, &reference));
@@ -364,7 +360,8 @@ mod tests {
 
     #[test]
     fn given_row_when_pointer_over_it_then_close_cross_is_drawn() {
-        let reference = reference_path("with-close");
+        let folder = TempDir::new("session-row");
+        let reference = folder.path().join("with-close");
 
         assert!(drawn_row_matches(true, true, &reference));
         assert!(!drawn_row_matches(false, true, &reference));
@@ -373,7 +370,8 @@ mod tests {
     #[test]
     fn given_close_label_when_cross_hovered_then_the_tooltip_shows_that_label()
     {
-        let reference = reference_path("close-label");
+        let folder = TempDir::new("session-row");
+        let reference = folder.path().join("close-label");
 
         assert!(hovered_cross_matches("Close session", &reference));
         assert!(!hovered_cross_matches("Fermer la session", &reference));
@@ -382,7 +380,8 @@ mod tests {
 
     #[test]
     fn given_row_without_close_then_hover_draws_no_cross() {
-        let reference = reference_path("no-close");
+        let folder = TempDir::new("session-row");
+        let reference = folder.path().join("no-close");
 
         assert!(drawn_row_matches(false, true, &reference));
         assert!(drawn_row_matches(false, false, &reference));

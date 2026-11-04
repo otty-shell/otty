@@ -1,8 +1,8 @@
 //! The Run container form in the main area (spec Decision 18): Image,
 //! Command, Ports, Environment, Volumes and Options sections, the engine's
-//! notice on top, and a footer with the pull line, Cancel and Run.
+//! notice on top, and a footer with the pull line or a hint, Cancel and Run.
 
-use iced::widget::{column, row, svg, text};
+use iced::widget::{column, container, row, svg, text};
 use iced::{Alignment, Element, Length};
 use otty_docker::PortProtocol;
 use otty_ui_kit::components::button::{Button, ButtonKind};
@@ -33,8 +33,11 @@ use crate::theme::ThemeProps;
 const PROTOCOLS: [PortProtocol; 2] = [PortProtocol::Tcp, PortProtocol::Udp];
 /// Width of the protocol control column (`width: 108px`).
 const PROTOCOL_WIDTH: f32 = 108.0;
-/// Width of the read-only switch column (`width: 104px`).
-const READ_ONLY_WIDTH: f32 = 120.0;
+/// Width of the read-only switch column: room for the switch with its label on
+/// one line in the kit's fonts. The longest label is Portuguese, 139.4 px, then
+/// French and Russian. Korean is not counted, since Hangul falls back to a wider
+/// font for now (Decision 23).
+const READ_ONLY_WIDTH: f32 = 140.0;
 /// Label size of a field without a kit label (`font-size: 12.5px`).
 const LABEL_SIZE: f32 = 12.5;
 
@@ -72,7 +75,7 @@ pub(crate) fn view(props: RunFormProps<'_>) -> RunElement<'_> {
         .section(env_section(&vm, palette))
         .section(volumes_section(&vm, palette))
         .section(options_section(&vm, palette))
-        .footer_bar(footer(&vm, palette))
+        .footer(footer(&vm, palette))
         .into()
 }
 
@@ -397,7 +400,7 @@ fn options_section<'a>(
         .into()
 }
 
-/// The pull line, the hint, Cancel and Run.
+/// The pull line or the hint, Cancel and Run.
 fn footer<'a>(
     vm: &RunFormViewModel<'a>,
     palette: &UiPalette,
@@ -409,18 +412,25 @@ fn footer<'a>(
     if vm.can_run {
         run = run.on_press(DockerIntent::RunSubmitted);
     }
-    let hint = text(vm.footer_hint.clone())
-        .size(typography::SMALL.size())
-        .font(fonts::UI)
-        .color(palette.text_muted())
-        .width(Length::Fill);
 
-    let mut line = row![].spacing(spacing::SPACE_3).align_y(Alignment::Center);
-    if let Some(progress) = vm.progress.clone() {
-        line = line.push(pull_line(progress, palette));
-    }
+    // `Fill`, so that the row gives Cancel and Run their room first and the
+    // text wraps in what is left.
+    let status: RunElement<'a> = match vm.progress.clone() {
+        Some(progress) => container(pull_line(progress, palette))
+            .width(Length::Fill)
+            .into(),
+        None => text(vm.footer_hint.clone())
+            .size(typography::SMALL.size())
+            .font(fonts::UI)
+            .color(palette.text_muted())
+            .width(Length::Fill)
+            .into(),
+    };
 
-    line.push(hint).push(cancel).push(run).into()
+    row![status, cancel, run]
+        .spacing(spacing::SPACE_3)
+        .align_y(Alignment::Center)
+        .into()
 }
 
 /// A control under a label, for the kit parts without a label of their own.
@@ -449,6 +459,8 @@ fn edit(edit: RunEdit) -> DockerIntent {
 mod tests {
     use iced_test::simulator;
     use otty_docker::{EngineKind, fixtures};
+    use otty_ui_kit::components::screen_area::ScreenArea;
+    use otty_ui_kit::size;
 
     use super::*;
     use crate::i18n::{self, Key};
@@ -459,6 +471,13 @@ mod tests {
     use crate::widgets::docker::run_model::run_form;
     use crate::widgets::docker::state::DockerState;
     use crate::widgets::docker::types::{LoadedLists, Place, ResourceKind};
+
+    /// The form in the area it has in the app.
+    fn page(props: RunFormProps<'_>) -> RunElement<'_> {
+        let palette = props.theme.theme.ui();
+
+        ScreenArea::new(0, view(props), palette).into()
+    }
 
     /// Docker mode with the Run form open, `nginx:1.27` typed and the
     /// engine's answer `found`, then `edits`.
@@ -534,7 +553,7 @@ mod tests {
     fn press(state: &DockerState, label: &str) -> Vec<DockerIntent> {
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
         let vm = run_form(state).expect("form");
-        let mut ui = tall(view(RunFormProps {
+        let mut ui = tall(page(RunFormProps {
             vm,
             theme: ThemeProps::new(&theme),
         }));
@@ -550,7 +569,7 @@ mod tests {
         for builtin in [BuiltinTheme::OttyDark, BuiltinTheme::OttyLight] {
             let theme = AppTheme::new(builtin);
             let vm = run_form(&state).expect("form");
-            let mut ui = simulator(view(RunFormProps {
+            let mut ui = simulator(page(RunFormProps {
                 vm,
                 theme: ThemeProps::new(&theme),
             }));
@@ -596,7 +615,7 @@ mod tests {
 
         assert!(messages.is_empty(), "{messages:?}");
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
-        let mut ui = simulator(view(RunFormProps {
+        let mut ui = simulator(page(RunFormProps {
             vm: run_form(&state).expect("form"),
             theme: ThemeProps::new(&theme),
         }));
@@ -617,7 +636,7 @@ mod tests {
             state(Some(fixtures::image_defaults()), vec![RunEdit::AddPort]);
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
         let vm = run_form(&state).expect("form");
-        let mut ui = tall(view(RunFormProps {
+        let mut ui = tall(page(RunFormProps {
             vm,
             theme: ThemeProps::new(&theme),
         }));
@@ -662,7 +681,7 @@ mod tests {
 
         assert!(messages.is_empty(), "{messages:?}");
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
-        let mut ui = tall(view(RunFormProps {
+        let mut ui = tall(page(RunFormProps {
             vm: run_form(&state).expect("form"),
             theme: ThemeProps::new(&theme),
         }));
@@ -675,7 +694,7 @@ mod tests {
 
     fn shows_relabel(state: &DockerState) -> bool {
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
-        let mut ui = tall(view(RunFormProps {
+        let mut ui = tall(page(RunFormProps {
             vm: run_form(state).expect("form"),
             theme: ThemeProps::new(&theme),
         }));
@@ -770,7 +789,7 @@ mod tests {
             DockerIntent::PullProgressed(fixtures::pull_progress()),
         );
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
-        let mut ui = simulator(view(RunFormProps {
+        let mut ui = tall(page(RunFormProps {
             vm: run_form(&state).expect("form"),
             theme: ThemeProps::new(&theme),
         }));
@@ -793,7 +812,7 @@ mod tests {
             },
         );
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
-        let mut ui = simulator(view(RunFormProps {
+        let mut ui = simulator(page(RunFormProps {
             vm: run_form(&state).expect("form"),
             theme: ThemeProps::new(&theme),
         }));
@@ -806,11 +825,515 @@ mod tests {
         assert!(ui.find(notice.as_str()).is_ok());
     }
 
+    /// Draws the form in a window of the given size.
+    fn in_window<'a>(
+        state: &'a DockerState,
+        theme: &'a AppTheme,
+        width: f32,
+        height: f32,
+    ) -> iced_test::Simulator<'a, DockerIntent> {
+        iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            (width, height),
+            page(RunFormProps {
+                vm: run_form(state).expect("form"),
+                theme: ThemeProps::new(theme),
+            }),
+        )
+    }
+
+    /// Scrolls under `pointer` as far as `x` and `y` go.
+    fn wheel(
+        ui: &mut iced_test::Simulator<'_, DockerIntent>,
+        pointer: iced::Point,
+        x: f32,
+        y: f32,
+    ) {
+        ui.point_at(pointer);
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::WheelScrolled {
+                delta: iced::mouse::ScrollDelta::Pixels { x, y },
+            },
+        )]);
+    }
+
+    /// How many scrollers the page has.
+    fn scroller_count(
+        ui: &mut iced_test::Simulator<'_, DockerIntent>,
+    ) -> usize {
+        let mut count = 0;
+
+        let _ = ui.find(|candidate: iced_test::selector::Candidate<'_>| {
+            if matches!(
+                candidate,
+                iced_test::selector::Candidate::Scrollable { .. }
+            ) {
+                count += 1;
+            }
+            None::<()>
+        });
+
+        count
+    }
+
+    #[test]
+    fn in_a_small_window_the_page_has_one_scroller() {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let state = ready();
+        let mut ui = in_window(&state, &theme, 300.0, 400.0);
+
+        assert_eq!(scroller_count(&mut ui), 1);
+    }
+
+    #[test]
+    fn in_a_small_window_run_and_cancel_are_reached_by_scrolling_with_the_form()
+    {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let state = ready();
+        let run = i18n::t(Key::DockerActionRun);
+        let mut ui = in_window(&state, &theme, 300.0, 400.0);
+
+        let found = ui.find(run).expect("Run should exist");
+        wheel(
+            &mut ui,
+            iced::Point::new(100.0, 100.0),
+            -10_000.0,
+            -10_000.0,
+        );
+        ui.click(i18n::t(Key::ButtonCancel))
+            .expect("Cancel should be in reach");
+        ui.click(run).expect("Run should be in reach");
+        let messages: Vec<DockerIntent> = ui.into_messages().collect();
+
+        let edge = found.bounds().x + found.bounds().width;
+        let form_right = size::SCREEN_MIN - spacing::SPACE_7;
+        assert_eq!(found.visible_bounds(), None);
+        assert!(
+            edge <= form_right && edge > form_right - 20.0,
+            "the buttons should keep the form's width: Run ends at {edge}"
+        );
+        assert_eq!(
+            messages,
+            vec![DockerIntent::RunCancelled, DockerIntent::RunSubmitted]
+        );
+    }
+
+    #[test]
+    fn in_a_narrow_tall_window_the_hint_and_the_fields_scroll_sideways_together()
+     {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let state = ready();
+        let hint = run_form(&state).expect("form").footer_hint;
+        let title = i18n::t(Key::DockerRunContainer);
+        let height = 2400.0;
+        let mut ui = in_window(&state, &theme, 300.0, height);
+        let start = ui.find(hint.as_str()).expect("the hint").bounds();
+        let title_start = ui.find(title).expect("the title").bounds();
+
+        wheel(&mut ui, iced::Point::new(100.0, 100.0), -20.0, 0.0);
+        let shown = ui
+            .find(hint.as_str())
+            .expect("the hint should exist")
+            .visible_bounds()
+            .expect("the hint should be in view");
+        let title_shown = ui
+            .find(title)
+            .expect("the title should exist")
+            .visible_bounds()
+            .expect("the title should be in view");
+
+        assert_eq!(start.x, spacing::SPACE_7);
+        assert_eq!(shown.x, start.x - 20.0);
+        assert_eq!(title_shown.x, title_start.x - 20.0);
+        assert!(
+            shown.y > height - 60.0,
+            "the bar is at the bottom: {shown:?}"
+        );
+    }
+
+    /// Run takes the labels and hints of `locale` and is drawn at the form's
+    /// smallest width, in a window with room for its height.
+    fn assert_the_footer_fits(
+        locale: i18n::Locale,
+        hint: &str,
+        run_label: &'static str,
+    ) {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let state = ready();
+        let mut vm = run_form(&state).expect("form");
+        vm.footer_hint = hint.to_string();
+        vm.run_label = run_label;
+        let width = size::SCREEN_MIN;
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            (width, 2400.0),
+            page(RunFormProps {
+                vm,
+                theme: ThemeProps::new(&theme),
+            }),
+        );
+
+        let hint = ui.find(hint).expect("the hint should exist");
+        let cancel = ui.find(i18n::t(Key::ButtonCancel)).expect("Cancel");
+        let run = ui.find(run_label).expect("Run").bounds();
+
+        let (hint, cancel) = (hint.bounds(), cancel.bounds());
+        assert_eq!(hint.x, spacing::SPACE_7, "{locale:?}");
+        assert!(hint.x + hint.width <= cancel.x, "{locale:?}: {hint:?}");
+        assert!(cancel.x + cancel.width <= run.x, "{locale:?}: {cancel:?}");
+        assert!(run.x + run.width <= width - spacing::SPACE_7, "{locale:?}");
+        assert!(
+            (hint.center_y() - run.center_y()).abs() < 1.0,
+            "{locale:?}: {hint:?} beside {run:?}"
+        );
+    }
+
+    #[test]
+    fn at_the_smallest_width_every_hint_stays_left_of_the_buttons_in_every_locale()
+     {
+        for locale in i18n::Locale::ALL {
+            let run = i18n::text_in(locale, Key::DockerActionRun);
+            let ready = i18n::text_in(locale, Key::TplDockerRunReady)
+                .replace("{engine}", "Docker 29.9.1");
+
+            assert_the_footer_fits(locale, &ready, run);
+            for key in [
+                Key::DockerRunFixFields,
+                Key::DockerRunCheckingImage,
+                Key::DockerRunWaitingForFolder,
+            ] {
+                assert_the_footer_fits(locale, i18n::text_in(locale, key), run);
+            }
+        }
+    }
+
+    #[test]
+    fn at_the_smallest_width_a_long_pull_line_wraps_and_keeps_the_buttons() {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let mut state = state(None, Vec::new());
+        let long = "ghcr.io/some-organisation/a-rather-long-image-name:1.2.3";
+        let _ = reduce(
+            &mut state,
+            DockerIntent::RunEdited(RunEdit::Image(long.to_string())),
+        );
+        let _ = reduce(
+            &mut state,
+            DockerIntent::ImageDefaultsLoaded {
+                engine: fixtures::engine(EngineKind::Docker).address().clone(),
+                reference: long.to_string(),
+                result: Ok(None),
+            },
+        );
+        let _ = reduce(&mut state, DockerIntent::RunSubmitted);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::PullProgressed(fixtures::pull_progress()),
+        );
+        let width = size::SCREEN_MIN;
+        let mut ui = in_window(&state, &theme, width, 2400.0);
+
+        let line = i18n::docker_pulling(long);
+        let line = ui.find(line.as_str()).expect("the pull line").bounds();
+        let cancel = ui.find(i18n::t(Key::ButtonCancel)).expect("Cancel");
+        let run = ui.find(i18n::t(Key::DockerRunStarting)).expect("Run");
+        ui.click(i18n::t(Key::ButtonCancel))
+            .expect("Cancel should be in reach");
+        let messages: Vec<DockerIntent> = ui.into_messages().collect();
+
+        let (cancel, run) = (cancel.bounds(), run.bounds());
+        assert!(line.x + line.width <= cancel.x, "{line:?} and {cancel:?}");
+        assert!(cancel.width > 30.0, "Cancel keeps its size: {cancel:?}");
+        assert!(run.width > 30.0, "Run keeps its size: {run:?}");
+        assert!(run.x + run.width <= width - spacing::SPACE_7);
+        assert_eq!(messages, vec![DockerIntent::RunCancelled]);
+    }
+
+    #[test]
+    fn at_a_normal_width_the_pull_line_stays_on_one_line() {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let mut state = state(None, Vec::new());
+        let _ = reduce(&mut state, DockerIntent::RunSubmitted);
+        let _ = reduce(
+            &mut state,
+            DockerIntent::PullProgressed(fixtures::pull_progress()),
+        );
+        let progress = run_form(&state)
+            .expect("form")
+            .progress
+            .expect("a pull is running");
+        let amount = progress.amount.expect("the pull has an amount");
+        let mut ui = in_window(&state, &theme, 1024.0, 2400.0);
+
+        let line = ui.find(progress.text.as_str()).expect("the line").bounds();
+        let amount = ui.find(amount.as_str()).expect("the amount").bounds();
+
+        assert_eq!(line.x, (1024.0 - size::FORM) / 2.0);
+        assert!((line.center_y() - amount.center_y()).abs() < 1.0);
+    }
+
+    #[test]
+    fn in_a_low_window_run_comes_after_the_fields_and_is_reached_by_scrolling()
+    {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let state = ready();
+        let run = i18n::t(Key::DockerActionRun);
+        let mut ui = in_window(&state, &theme, 1024.0, 400.0);
+
+        let hidden = ui.find(run).expect("Run should exist");
+        let last = ui
+            .find(i18n::t(Key::DockerRunAutoRemove))
+            .expect("the last field should exist")
+            .bounds();
+        wheel(&mut ui, iced::Point::new(100.0, 100.0), 0.0, -10_000.0);
+        ui.click(run).expect("Run should be in reach");
+        let messages: Vec<DockerIntent> = ui.into_messages().collect();
+
+        assert_eq!(hidden.visible_bounds(), None);
+        assert!(hidden.bounds().y > last.y + last.height);
+        assert_eq!(messages, vec![DockerIntent::RunSubmitted]);
+    }
+
+    #[test]
+    fn in_a_small_window_the_far_controls_are_reached_by_scrolling() {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let state = ready();
+        let always = i18n::t(Key::DockerRestartAlways);
+        let mut ui = in_window(&state, &theme, 300.0, 400.0);
+
+        let hidden = ui.find(always).expect("the choice should exist");
+        wheel(
+            &mut ui,
+            iced::Point::new(100.0, 100.0),
+            -10_000.0,
+            -10_000.0,
+        );
+        ui.click(always).expect("the choice should be in reach");
+        let messages: Vec<DockerIntent> = ui.into_messages().collect();
+
+        assert_eq!(hidden.visible_bounds(), None);
+        assert_eq!(
+            messages,
+            vec![edit(RunEdit::Restart(otty_docker::RestartPolicy::Always))]
+        );
+    }
+
+    #[test]
+    fn in_a_small_window_typing_still_reaches_the_image() {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let state = ready();
+        let mut ui = in_window(&state, &theme, 300.0, 400.0);
+
+        wheel(&mut ui, iced::Point::new(100.0, 100.0), -20.0, -20.0);
+        ui.click("nginx:1.27")
+            .expect("the image should be in reach");
+        let _ = ui.typewrite("x");
+
+        let messages: Vec<DockerIntent> = ui.into_messages().collect();
+        assert!(
+            matches!(
+                messages.as_slice(),
+                [DockerIntent::RunEdited(RunEdit::Image(_))]
+            ),
+            "{messages:?}"
+        );
+    }
+
+    #[test]
+    fn in_a_tall_wide_window_the_bar_is_at_the_bottom_and_lines_up_with_the_fields()
+     {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let state = ready();
+        let (width, height) = (1400.0, 2400.0);
+        let run = i18n::t(Key::DockerActionRun);
+        let hint = run_form(&state).expect("form").footer_hint;
+        let mut ui = in_window(&state, &theme, width, height);
+
+        let edge = ui.find(run).expect("Run should exist").bounds();
+        let title = ui
+            .find(i18n::t(Key::DockerRunContainer))
+            .expect("the title should exist")
+            .bounds();
+        let shown = ui
+            .find(hint.as_str())
+            .expect("the hint should exist")
+            .visible_bounds()
+            .expect("the hint should be in view");
+
+        let form_right = (width + size::FORM) / 2.0;
+        let right = edge.x + edge.width;
+        assert!(right <= form_right && right > form_right - 20.0, "{right}");
+        assert!(edge.y > height - 60.0, "{edge:?}");
+        assert_eq!(shown.x, title.x);
+        assert_eq!(shown.x, (width - size::FORM) / 2.0);
+    }
+
+    /// The smallest width the source and target inputs of a volume row may
+    /// have: about 16 characters of the mono font inside their padding.
+    const VOLUME_INPUT_MIN: f32 = 150.0;
+
+    #[test]
+    fn at_the_smallest_width_the_inputs_of_a_volume_row_stay_usable_and_the_row_fits()
+     {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let state = with_volume_row("otty-data", false);
+        let width = size::SCREEN_MIN;
+        let mut ui = in_window(&state, &theme, width, 2400.0);
+
+        let source = ui
+            .find(i18n::t(Key::DockerRunVolumeSource))
+            .expect("the source heading")
+            .bounds();
+        let target = ui
+            .find(i18n::t(Key::DockerRunVolumeTarget))
+            .expect("the target heading")
+            .bounds();
+
+        let gap = spacing::SPACE_2;
+        let row_right = target.x
+            + target.width
+            + gap
+            + READ_ONLY_WIDTH
+            + gap
+            + size::CONTROL_MD;
+        assert_eq!(source.width, target.width);
+        assert!(source.width >= VOLUME_INPUT_MIN, "{source:?}");
+        assert_eq!(row_right, width - spacing::SPACE_7);
+    }
+
+    /// Korean is left out: Hangul falls back to a wider font for now
+    /// (Decision 23).
+    ///
+    /// Loading the kit's fonts changes how all text of a process is drawn,
+    /// which would disturb the drawing tests running beside this one. So the
+    /// test starts a copy of this test program, for this test alone, and lets
+    /// the copy measure.
+    #[test]
+    fn the_read_only_label_reads_whole_in_every_locale_but_korean() {
+        const NAME: &str =
+            "the_read_only_label_reads_whole_in_every_locale_but_korean";
+        const IN_THE_COPY: &str = "OTTY_TEST_WITH_KIT_FONTS";
+
+        if std::env::var_os(IN_THE_COPY).is_none() {
+            let program = std::env::current_exe().expect("the test program");
+            let output = std::process::Command::new(program)
+                .arg(NAME)
+                .env(IN_THE_COPY, "1")
+                .output()
+                .expect("the copy should start");
+            let said = String::from_utf8_lossy(&output.stdout);
+
+            assert!(
+                output.status.success() && said.contains("1 passed"),
+                "{said}"
+            );
+            return;
+        }
+
+        let settings = iced::Settings {
+            fonts: fonts::all_bytes()
+                .into_iter()
+                .map(std::borrow::Cow::Borrowed)
+                .collect(),
+            ..iced::Settings::default()
+        };
+        let empty: RunElement<'_> = text("").into();
+        let _ = iced_test::Simulator::with_settings(settings, empty);
+
+        let palette = UiPalette::otty_dark();
+        for locale in i18n::Locale::ALL {
+            if locale == i18n::Locale::Ko {
+                continue;
+            }
+            let label = i18n::text_in(locale, Key::DockerRunReadOnly);
+            let needed = Switch::<DockerIntent>::new(false, &palette)
+                .label(label)
+                .width();
+
+            assert!(
+                needed <= READ_ONLY_WIDTH,
+                "{locale:?}: {label} needs {needed} in {READ_ONLY_WIDTH}"
+            );
+        }
+    }
+
+    /// Presses the select under the label `label`, then the place of its second
+    /// item, as `Settings` does for its list: the items are not text a test can
+    /// find. Pressing an item works only if the list opened under its field.
+    fn press_second_item_of(
+        ui: &mut iced_test::Simulator<'_, DockerIntent>,
+        label: &str,
+    ) {
+        let label = ui
+            .find(label)
+            .expect("the label should exist")
+            .visible_bounds()
+            .expect("the label should be in view");
+        let x = label.x + 40.0;
+        let field_y = label.y + label.height + size::CONTROL_LG / 2.0;
+
+        ui.point_at(iced::Point::new(x, field_y));
+        let _ = ui.simulate(iced_test::simulator::click());
+        ui.point_at(iced::Point::new(x, field_y + 2.0 * size::CONTROL_LG));
+        let _ = ui.simulate(iced_test::simulator::click());
+    }
+
+    #[test]
+    fn in_a_scrolled_small_window_the_network_list_opens_under_its_field_and_picks()
+     {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let state = ready();
+        let label = i18n::t(Key::DockerFieldNetwork);
+        let mut ui = in_window(&state, &theme, 300.0, 400.0);
+
+        let at_rest = ui.find(label).expect("the label").bounds();
+        wheel(
+            &mut ui,
+            iced::Point::new(100.0, 100.0),
+            -20.0,
+            100.0 - at_rest.y,
+        );
+        press_second_item_of(&mut ui, label);
+        let messages: Vec<DockerIntent> = ui.into_messages().collect();
+
+        assert!(
+            matches!(
+                messages.as_slice(),
+                [DockerIntent::RunEdited(RunEdit::Network(_))]
+            ),
+            "{messages:?}"
+        );
+    }
+
+    #[test]
+    fn in_a_scrolled_small_window_the_engine_list_opens_under_its_field_and_picks()
+     {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let mut state = ready();
+        let _ = reduce(
+            &mut state,
+            DockerIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+                EngineKind::Podman,
+            ])),
+        );
+        let label = i18n::t(Key::DockerFieldEngine);
+        let mut ui = in_window(&state, &theme, 300.0, 400.0);
+
+        wheel(&mut ui, iced::Point::new(100.0, 100.0), -20.0, -80.0);
+        press_second_item_of(&mut ui, label);
+        let messages: Vec<DockerIntent> = ui.into_messages().collect();
+
+        assert!(
+            matches!(messages.as_slice(), [DockerIntent::RunEngineChosen(_)]),
+            "{messages:?}"
+        );
+    }
+
     #[test]
     fn typing_the_image_sends_the_edit() {
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
         let state = ready();
-        let mut ui = simulator(view(RunFormProps {
+        let mut ui = simulator(page(RunFormProps {
             vm: run_form(&state).expect("form"),
             theme: ThemeProps::new(&theme),
         }));

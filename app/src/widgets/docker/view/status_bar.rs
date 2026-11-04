@@ -11,8 +11,8 @@ use crate::widgets::docker::status::StatusViewModel;
 
 /// Render the Docker mode status bar. With an engine the left side shows its
 /// name and version, then the counts; without one it names the mode and
-/// gives the reason. The right side shows the other engines found, the
-/// sessions button (it sends `on_sessions`) and `OTTY <version>`.
+/// gives the reason. The right side shows the sessions button (it sends
+/// `on_sessions`) and `OTTY <version>`.
 pub(crate) fn view<'a, Message: Clone + 'a>(
     vm: &StatusViewModel,
     session_count: usize,
@@ -29,10 +29,6 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
         None => bar.left(StatusItem::text(i18n::t(Key::DockerStatusMode))),
     };
     bar = bar.left(StatusItem::text(&vm.info));
-
-    if let Some(also_found) = &vm.also_found {
-        bar = bar.right(StatusItem::text(also_found));
-    }
 
     bar.right(StatusItem::button(
         i18n::status_sessions(session_count),
@@ -54,18 +50,17 @@ mod tests {
         ShowSessions,
     }
 
-    fn vm(engine: Option<&str>, also_found: Option<&str>) -> StatusViewModel {
+    fn vm(engine: Option<&str>) -> StatusViewModel {
         StatusViewModel {
             engine: engine.map(String::from),
             info: String::from("6 containers, 3 running"),
-            also_found: also_found.map(String::from),
         }
     }
 
     #[test]
     fn with_an_engine_the_bar_shows_engine_counts_and_version() {
         let themes = ThemeManager::new();
-        let vm = vm(Some("Docker 27.3"), Some("Podman 5.2 also found"));
+        let vm = vm(Some("Docker 27.3"));
         let mut ui = simulator(view(
             &vm,
             4,
@@ -77,7 +72,6 @@ mod tests {
         for label in [
             "Docker 27.3",
             "6 containers, 3 running",
-            "Podman 5.2 also found",
             "4 sessions",
             "OTTY 0.4.0",
         ] {
@@ -89,7 +83,7 @@ mod tests {
     #[test]
     fn without_an_engine_the_bar_names_the_mode() {
         let themes = ThemeManager::new();
-        let vm = vm(None, None);
+        let vm = vm(None);
         let mut ui = simulator(view(
             &vm,
             0,
@@ -102,13 +96,12 @@ mod tests {
             .expect("mode name should be visible");
         ui.find("6 containers, 3 running")
             .expect("text should be visible");
-        assert!(ui.find("Podman 5.2 also found").is_err());
     }
 
     #[test]
     fn the_sessions_button_sends_its_message() {
         let themes = ThemeManager::new();
-        let vm = vm(Some("Docker 27.3"), None);
+        let vm = vm(Some("Docker 27.3"));
         let mut ui = simulator(view(
             &vm,
             4,

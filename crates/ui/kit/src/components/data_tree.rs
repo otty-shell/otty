@@ -353,6 +353,7 @@ mod tests {
 
     use super::*;
     use crate::size;
+    use crate::test_support::TempDir;
 
     /// Indent of one level, in the tests.
     const ONE_LEVEL: f32 = 12.0;
@@ -753,9 +754,8 @@ mod tests {
     #[test]
     fn given_a_heading_link_then_it_draws_in_the_link_color_and_underlines_under_the_pointer()
      {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-data-tree-{}", std::process::id()))
-            .join("heading");
+        let folder = TempDir::new("data-tree");
+        let reference = folder.path().join("heading");
         let heading = || DataRow::heading_link(0, "net", open("network"));
         let palette = UiPalette::otty_dark();
         let tree: Element<'_, LinkMessage> = container(

@@ -197,7 +197,6 @@
     "tpl_docker_status_volumes": "{count} 个卷",
     "docker_status_one_network": "1 个网络",
     "tpl_docker_status_networks": "{count} 个网络",
-    "tpl_docker_status_also_found": "同时找到 {engine}",
     "docker_action_start": "启动",
     "docker_action_stop": "停止",
     "docker_action_restart": "重启",

@@ -253,6 +253,7 @@ mod tests {
     use super::*;
     use crate::components::glyph;
     use crate::components::icon_hover::check::assert_icon_lights_up;
+    use crate::test_support::TempDir;
 
     #[test]
     fn given_pointer_on_button_corner_then_icon_is_lit_like_over_the_icon() {
@@ -453,9 +454,8 @@ mod tests {
 
     #[test]
     fn given_button_when_hovered_then_its_tooltip_text_shows() {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-icon-button-{}", std::process::id()))
-            .join("tooltip");
+        let folder = TempDir::new("icon-button");
+        let reference = folder.path().join("tooltip");
 
         assert!(drawn_button_matches("Prune unused", true, &reference));
         assert!(!drawn_button_matches("Remove", true, &reference));

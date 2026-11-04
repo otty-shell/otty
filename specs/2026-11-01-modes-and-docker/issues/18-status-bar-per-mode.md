@@ -11,8 +11,7 @@ Spec: [../spec.md](../spec.md)
 
 Docker mode status bar as on the boards: engine and version, the counts of
 the open resource ("6 containers, 3 running", "7 images, 3.0 GB", "4
-volumes", "5 networks"), "<other engine> also found" when there are two, and
-the sessions button. Terminal mode unchanged.
+volumes", "5 networks"), and the sessions button. Terminal mode unchanged.
 
 All new text goes through `i18n` in the ten locales (spec Decision 17). Tests first for Class C (AGENTS.md). Run fmt, clippy, tests, `cargo deny check` and compare `cargo llvm-cov` with the merge base before the commit.
 
@@ -40,3 +39,15 @@ View model (every resource, singular, one and two engines, searching, loading, f
 
 - Terminal mode's session count is plain text, not a button. In Docker mode the screens draw a button, so it is a button that switches to Terminal mode (where the sessions live). Terminal's status bar is unchanged.
 - Counts are joined with ", " in every locale.
+
+## Comments
+
+### "Also found" removed (2026-11-04)
+
+Owner request: the "<other engine> also found" note at the right of the status bar
+was useless, since every engine shows in the tree anyway. It is gone: the
+`also_found` field, `i18n::docker_status_also_found`,
+`Key::TplDockerStatusAlsoFound`, its key in the ten locales and its tests. `Key::ALL`
+is 440. The Answer above is left as it was built. With two engines the bar now
+names only the engine of the list on screen. The canvas's `DockerMode` board still
+draws "Podman 5.2 also found"; it was not edited.

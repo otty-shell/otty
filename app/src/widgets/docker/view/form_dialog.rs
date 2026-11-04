@@ -75,8 +75,8 @@ pub(crate) fn field_id(field: FormField) -> Id {
     }
 }
 
-/// "Pulling nginx:latest", the bar, and the bytes so far. The Run form
-/// shows the same line in its footer.
+/// "Pulling nginx:latest", the bar, and the bytes so far, going on to the next
+/// line when they do not fit. The Run form shows the same line in its footer.
 pub(crate) fn pull_line<'a>(
     progress: PullLineViewModel,
     palette: &UiPalette,
@@ -100,7 +100,7 @@ pub(crate) fn pull_line<'a>(
         line = line.push(muted(amount).font(fonts::MONO));
     }
 
-    line.into()
+    line.wrap().vertical_spacing(spacing::SPACE_1).into()
 }
 
 #[cfg(test)]

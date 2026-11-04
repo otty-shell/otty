@@ -53,25 +53,23 @@ pub(crate) fn read_dir_nodes(
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::testing::temp_dir::TempDir;
 
     #[test]
     fn given_directory_with_files_when_loaded_then_nodes_are_returned() {
-        let root = test_temp_dir("load_directory");
-        fs::create_dir_all(root.join("b-dir"))
+        let root = TempDir::new("explorer-load-directory");
+        fs::create_dir_all(root.path().join("b-dir"))
             .expect("folder should be created");
-        fs::write(root.join("a.txt"), "ok").expect("file should be created");
+        fs::write(root.path().join("a.txt"), "ok")
+            .expect("file should be created");
 
-        let nodes =
-            read_dir_nodes(&root.clone()).expect("directory should load");
+        let nodes = read_dir_nodes(root.path()).expect("directory should load");
 
         assert_eq!(nodes.len(), 2);
         assert!(nodes[0].is_folder());
         assert_eq!(nodes[1].name(), "a.txt");
-
-        fs::remove_dir_all(root).expect("test directory should be removed");
     }
 
     #[test]
@@ -85,19 +83,5 @@ mod tests {
             root_label(std::path::Path::new("/home/user/projects")),
             "projects"
         );
-    }
-
-    fn test_temp_dir(test_name: &str) -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be monotonic")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "otty-explorer-v3-{test_name}-{stamp}-{}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&dir).expect("test directory should be created");
-        dir
     }
 }

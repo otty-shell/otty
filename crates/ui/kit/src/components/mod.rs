@@ -46,6 +46,7 @@ pub mod pane_header;
 pub mod panel_height;
 pub mod panel_section;
 pub mod progress_bar;
+pub mod screen_area;
 pub mod scrollbar;
 pub mod segmented;
 pub mod select;

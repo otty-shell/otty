@@ -197,7 +197,6 @@
     "tpl_docker_status_volumes": "볼륨 {count}개",
     "docker_status_one_network": "네트워크 1개",
     "tpl_docker_status_networks": "네트워크 {count}개",
-    "tpl_docker_status_also_found": "{engine}도 발견됨",
     "docker_action_start": "시작",
     "docker_action_stop": "중지",
     "docker_action_restart": "다시 시작",

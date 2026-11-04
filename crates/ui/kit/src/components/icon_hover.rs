@@ -202,6 +202,8 @@ pub(super) mod check {
     use iced::widget::container;
     use iced::{Element, Event, Point, Rectangle, mouse};
 
+    use crate::test_support::TempDir;
+
     /// Where the tested control is placed in the test window.
     const ORIGIN: f32 = 40.0;
 
@@ -215,9 +217,8 @@ pub(super) mod check {
         view: impl Fn() -> Element<'static, ()>,
         control: Rectangle,
     ) {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-icon-hover-{}", std::process::id()))
-            .join(name);
+        let folder = TempDir::new("icon-hover");
+        let reference = folder.path().join(name);
         let middle = Point::new(
             ORIGIN + control.x + control.width / 2.0,
             ORIGIN + control.y + control.height / 2.0,

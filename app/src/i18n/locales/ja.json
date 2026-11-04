@@ -197,7 +197,6 @@
     "tpl_docker_status_volumes": "{count} ボリューム",
     "docker_status_one_network": "1 ネットワーク",
     "tpl_docker_status_networks": "{count} ネットワーク",
-    "tpl_docker_status_also_found": "{engine} も見つかりました",
     "docker_action_start": "開始",
     "docker_action_stop": "停止",
     "docker_action_restart": "再起動",

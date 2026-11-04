@@ -61,13 +61,43 @@ pub fn horizontal() -> Direction {
     )
 }
 
-/// Style of a thin scrollbar: square, without a track, with a
-/// `surface-hover` scroller that turns `text-faint` while the pointer is on
-/// it or drags it.
+/// Scrolling both ways, with a thin bar on the right and on the bottom edge
+/// of the content. Each bar shows only while the content overflows that way,
+/// floats over the content and takes no room from it.
+///
+/// # Example
+///
+/// ```
+/// use iced::Element;
+/// use iced::widget::{scrollable, text};
+/// use otty_ui_kit::components::scrollbar;
+/// use otty_ui_kit::palette::UiPalette;
+///
+/// let palette = UiPalette::otty_dark();
+/// let page: Element<'_, ()> = scrollable(text("A large page"))
+///     .direction(scrollbar::both())
+///     .style(scrollbar::style(&palette))
+///     .into();
+/// ```
+pub fn both() -> Direction {
+    let bar = Scrollbar::new()
+        .width(WIDTH)
+        .margin(0)
+        .scroller_width(WIDTH);
+
+    Direction::Both {
+        vertical: bar,
+        horizontal: bar,
+    }
+}
+
+/// Style of a thin scrollbar: square, without a track, with a scroller in
+/// [`UiPalette::scrollbar_idle`] that turns `text-faint` while the pointer is
+/// on it or drags it.
 pub fn style(
     palette: &UiPalette,
 ) -> impl Fn(&Theme, Status) -> Style + 'static {
-    let idle = palette.surface_hover();
+    let idle = palette.scrollbar_idle();
     let active = palette.text_faint();
 
     move |theme, status| {
@@ -111,5 +141,53 @@ fn rail(scroller: Color) -> Rail {
             background: scroller.into(),
             border: Border::default(),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::Background;
+
+    use super::*;
+
+    fn scroller_color(palette: &UiPalette, status: Status) -> Option<Color> {
+        match style(palette)(&Theme::Light, status)
+            .vertical_rail
+            .scroller
+            .background
+        {
+            Background::Color(color) => Some(color),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn given_a_bar_at_rest_then_it_has_the_idle_color_of_the_theme() {
+        let palette = UiPalette::otty_light();
+        let status = Status::Active {
+            is_horizontal_scrollbar_disabled: false,
+            is_vertical_scrollbar_disabled: false,
+        };
+
+        assert_eq!(
+            scroller_color(&palette, status),
+            Some(palette.scrollbar_idle())
+        );
+    }
+
+    #[test]
+    fn given_the_pointer_on_a_bar_then_it_turns_text_faint() {
+        let palette = UiPalette::otty_light();
+        let status = Status::Hovered {
+            is_horizontal_scrollbar_hovered: false,
+            is_vertical_scrollbar_hovered: true,
+            is_horizontal_scrollbar_disabled: false,
+            is_vertical_scrollbar_disabled: false,
+        };
+
+        assert_eq!(
+            scroller_color(&palette, status),
+            Some(palette.text_faint())
+        );
     }
 }

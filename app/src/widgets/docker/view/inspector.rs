@@ -435,6 +435,7 @@ mod tests {
     use otty_ui_kit::components::status_badge::StatusTone;
 
     use super::*;
+    use crate::testing::temp_dir::TempDir;
     use crate::theme::{BuiltinTheme, ThemeManager};
     use crate::widgets::docker::action_model::{
         ActionButton, ActionsViewModel,
@@ -1055,9 +1056,8 @@ mod tests {
 
     #[test]
     fn a_hovered_copy_icon_shows_the_copy_json_text_as_its_tooltip() {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-docker-copy-json-{}", std::process::id()))
-            .join("tooltip");
+        let folder = TempDir::new("docker-copy-json");
+        let reference = folder.path().join("tooltip");
         let palette = UiPalette::otty_dark();
         let icon_button = |label: &'static str| -> Element<'_, DockerIntent> {
             IconButton::new(
@@ -1189,9 +1189,8 @@ mod tests {
 
     #[test]
     fn raw_json_draws_the_json_text() {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-docker-raw-json-{}", std::process::id()))
-            .join("raw");
+        let folder = TempDir::new("docker-raw-json");
+        let reference = folder.path().join("raw");
 
         assert!(raw_json_matches(&["{\"Id\": \"850b\"}"], &reference));
         assert!(!raw_json_matches(&["{\"Id\": \"9c21\"}"], &reference));
@@ -1843,9 +1842,8 @@ mod tests {
 
     #[test]
     fn a_hovered_action_button_shows_its_label_as_a_tooltip() {
-        let reference = std::env::temp_dir()
-            .join(format!("otty-docker-inspector-{}", std::process::id()))
-            .join("tooltip");
+        let folder = TempDir::new("docker-inspector");
+        let reference = folder.path().join("tooltip");
 
         assert!(hovered_button_matches("Stop", &reference));
         assert!(!hovered_button_matches("Stop now", &reference));

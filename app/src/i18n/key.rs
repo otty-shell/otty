@@ -420,8 +420,6 @@ pub(crate) enum Key {
     DockerStatusOneNetwork,
     /// Status bar count of networks. Placeholder: `{count}`.
     TplDockerStatusNetworks,
-    /// Status bar note that another engine answered too. Placeholder: `{engine}`.
-    TplDockerStatusAlsoFound,
     /// Button and menu item that starts a stopped container.
     DockerActionStart,
     /// Button and menu item that stops a container.
@@ -947,7 +945,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 441] = [
+    pub(super) const ALL: [Self; 440] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1138,7 +1136,6 @@ impl Key {
         Self::TplDockerStatusVolumes,
         Self::DockerStatusOneNetwork,
         Self::TplDockerStatusNetworks,
-        Self::TplDockerStatusAlsoFound,
         Self::DockerActionStart,
         Self::DockerActionStop,
         Self::DockerActionRestart,

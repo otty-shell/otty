@@ -6,6 +6,7 @@ use iced::{Element, Length, Padding};
 use otty_ui_kit::components::inspector_header::InspectorHeader;
 use otty_ui_kit::components::key_value_list::KeyValueList;
 use otty_ui_kit::components::notice::Notice;
+use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::status_badge::StatusBadge;
 use otty_ui_kit::{fonts, typography};
 
@@ -38,7 +39,10 @@ pub(crate) fn view(props: RunPanelProps<'_>) -> Element<'_, DockerIntent> {
 
     let mut header = InspectorHeader::new(vm.title, palette);
     if let Some((status, tone)) = vm.status {
-        header = header.status(StatusBadge::new(status, tone, palette));
+        // As in the inspector: a long status goes on to the next line, so the
+        // whole text can be read at any panel width.
+        header = header
+            .status(StatusBadge::new(status, tone, palette).wrapping(true));
     }
     let style = typography::SMALL;
     let hint = text(vm.hint)
@@ -65,21 +69,28 @@ pub(crate) fn view(props: RunPanelProps<'_>) -> Element<'_, DockerIntent> {
         panel = panel.push(list);
     }
 
-    container(scrollable(panel).height(Length::Fill))
+    // The padding is inside the scroller, so the thin bar runs along the edge
+    // of the panel and never covers the text.
+    scrollable(container(panel).padding(PADDING))
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(PADDING)
+        .direction(scrollbar::vertical())
+        .style(scrollbar::style(palette))
         .into()
 }
 
 #[cfg(test)]
 mod tests {
-    use iced_test::simulator;
+    use iced_test::selector::Candidate;
+    use iced_test::{Simulator, simulator};
     use otty_ui_kit::components::status_badge::StatusTone;
 
     use super::*;
-    use crate::i18n::{self, Key};
+    use crate::i18n::{self, Key, Locale};
     use crate::theme::{AppTheme, BuiltinTheme};
+
+    /// Width of a side panel at its minimum.
+    const SIDE_PANEL_MINIMUM: f32 = 128.0;
 
     fn nginx() -> ImagePanelViewModel {
         ImagePanelViewModel {
@@ -120,6 +131,92 @@ mod tests {
                 assert!(ui.find(shown).is_ok(), "{shown} should be visible");
             }
         }
+    }
+
+    /// The bounds of the status of the panel at `width`, with the room there
+    /// is for it.
+    fn status_at(status: &str, width: f32) -> (iced::Rectangle, f32) {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let vm = ImagePanelViewModel {
+            status: Some((status.to_string(), StatusTone::Neutral)),
+            ..nginx()
+        };
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            (width, 800.0),
+            view(RunPanelProps {
+                vm,
+                theme: ThemeProps::new(&theme),
+            }),
+        );
+
+        let bounds = ui.find(status).expect("the status should show").bounds();
+
+        (bounds, width - PADDING.right - bounds.x)
+    }
+
+    #[test]
+    fn the_status_stays_whole_at_the_smallest_panel_in_every_locale() {
+        for locale in Locale::ALL {
+            let here = i18n::text_in(locale, Key::TplDockerImageHere)
+                .replace("{size}", "192 MB");
+            for status in [
+                here.as_str(),
+                i18n::text_in(locale, Key::DockerImageMissing),
+                i18n::text_in(locale, Key::DockerRunCheckingImage),
+            ] {
+                let (one_line, _) = status_at(status, 800.0);
+                let (narrow, room) = status_at(status, SIDE_PANEL_MINIMUM);
+
+                let lines = (one_line.width / room).ceil();
+                assert!(
+                    narrow.width <= room + 0.5,
+                    "{locale:?}: {status:?} is {narrow:?} in {room}"
+                );
+                assert!(
+                    narrow.height + 0.5 >= one_line.height * lines,
+                    "{locale:?}: {status:?} should take {lines} lines, is \
+                     {narrow:?}"
+                );
+            }
+        }
+    }
+
+    /// A low panel overflows, and its bar must not cover what it says: the
+    /// scroller reaches the edge of the panel and the text keeps its padding.
+    #[test]
+    fn in_a_low_panel_the_bar_stays_off_the_text() {
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        let width = SIDE_PANEL_MINIMUM;
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            (width, 100.0),
+            view(RunPanelProps {
+                vm: nginx(),
+                theme: ThemeProps::new(&theme),
+            }),
+        );
+
+        let scroller = ui
+            .find(|candidate: Candidate<'_>| match candidate {
+                Candidate::Scrollable { bounds, .. } => Some(bounds),
+                _ => None,
+            })
+            .expect("the panel should scroll");
+        let title = ui.find("nginx:1.27").expect("the title").bounds();
+
+        assert_eq!(scroller.x + scroller.width, width);
+        assert!(title.x + title.width <= width - PADDING.right + 0.5);
+    }
+
+    #[test]
+    fn a_status_that_fits_stays_on_one_line_as_before() {
+        let status = "On this computer, 192 MB";
+
+        let (wide, room) = status_at(status, 400.0);
+
+        assert!(wide.width < room);
+        assert!(wide.height < 2.0 * 14.0, "{wide:?}");
     }
 
     #[test]

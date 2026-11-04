@@ -34,8 +34,8 @@ Setup before the first walk:
    Expected: a second engine "Podman x.y" shows in the tree, open, with its own
    lists next to Docker's; they match `podman ps -a`, `podman images`,
    `podman volume ls`, `podman network ls`, and the counts of both engines
-   change when you change something from the command line. The status bar says
-   "Podman ... also found" when the table shows a list of the other engine.
+   change when you change something from the command line. The status bar
+   names only the engine of the list on screen, never the other one.
 
    Press the Podman root, then the Docker root.
    Expected: each opens and closes on its own, and the table does not change.
@@ -121,7 +121,7 @@ Setup before the first walk:
 12. `sudo systemctl stop docker docker.socket`, open Docker mode (or press
     Check again).
     Expected: card "Docker is installed but not running" with the start
-    command and Copy; the left panel and status bar say so too.
+    command and its copy icon; the left panel and status bar say so too.
 13. Stop Podman only: `systemctl --user stop podman.socket` (with no Docker).
     Expected: card for the Podman API being off with the `systemctl --user
     start podman.socket` command.
@@ -137,8 +137,8 @@ Setup before the first walk:
     (`sudo systemctl stop docker docker.socket`,
     `systemctl --user stop podman.socket podman.service`) and open the mode.
     Expected: card "Docker and Podman are installed, but neither is answering"
-    with both commands, each under its own label with its macOS note. Each Copy
-    puts its own command on the clipboard, and How to fix Docker and How to fix
+    with both commands, each under its own label with its macOS note. Each copy
+    icon puts its own command on the clipboard, and How to fix Docker and How to fix
     Podman open their own pages. All of it fits in a window at its smallest
     size, in English and in German. With only one command on `PATH`: only that
     command, as steps 12 and 13.
@@ -146,7 +146,7 @@ Setup before the first walk:
     (`systemctl --user stop podman.socket podman.service`) and open the mode.
     Expected: card "OTTY has no access to Docker, and Podman is off" naming the
     socket, with the docker group command and the Podman command, each under its
-    own label with its note. Each Copy puts its own command on the clipboard, How
+    own label with its note. Each copy icon puts its own command on the clipboard, How
     to fix Docker opens the docker group page and How to fix Podman the Podman
     page. The left panel says "No access to Docker, and Podman is off." and the
     status bar names the socket and says the Podman socket is off. Run the Podman
@@ -160,10 +160,35 @@ Setup before the first walk:
     a `docker` command that is really Podman (`podman-docker`): the Podman card
     only, with no word of Docker. Check that the card fits a window at its smallest
     size, in English and in German: the "looked for" line may touch the bottom edge.
+15j. On a card with `systemctl --user enable --now podman.socket`, in OTTY Dark
+    and OTTY Light, with the window large.
+    Expected: the card is centered both ways, 460 px wide, with no bar. Drag the
+    panel edges so the main area narrows slowly.
+    Expected: down to about 592 px there is no sideways bar and the card stays in
+    the middle. Below that the card keeps its 460 px, a thin bar shows at the
+    bottom of the area, and the card stays in the middle of those 592 px, so at the
+    narrowest it starts about 66 px in from the left. The whole command shows on one
+    line, with no bar under it. The drag itself never scrolls the card. Shift and
+    the wheel, a sideways wheel or a touchpad, or dragging the bar, scroll the
+    area; press the copy icon while scrolled and the whole command is copied. Widen
+    the area again: the bar goes away and the card centers again. In Korean, check by eye that the text reads as whole syllables
+    (see ticket 10, Comments).
+15k. On the card with two commands (15e) make the window as low as it goes, and
+    drag the panels wide.
+    Expected: while the card fits, it is centered with no bar. When it does not,
+    it starts at its top with a thin bar on the right of the area. The wheel
+    reaches Check again, each How to fix and the "looked for" line, also with the
+    pointer over a command box, and each button works. Do the same on the card
+    with the install tiles (15) and on a card with one command (12), in English,
+    German, Russian and Korean. Then, scrolled down and to the right, wait 20
+    seconds.
+    Expected: the search behind the card does not move it, nor make it blink.
+    Start an engine: the table replaces the card. Stop it: the card is back, at its
+    top. Scroll it again and press Check again: the card returns at its top.
 15f. With a card on screen, start an engine from a terminal and press nothing.
     Expected: within about 7 seconds the table replaces the card. Stop it again.
     Expected: the card comes back, and it does not blink or turn into "searching"
-    while you watch it for 20 seconds. Press Copy, and How to fix, while it shows:
+    while you watch it for 20 seconds. Press a copy icon, and How to fix, while it shows:
     they work as always. Press Check again: "searching" shows until that search
     answers.
 15g. With Docker as the only engine, open Images, select the second row, stop
@@ -202,7 +227,9 @@ Setup before the first walk:
 
 ## Copy, links, Settings
 
-16. Press Copy on a command box and paste it into a terminal.
+16. Hold the pointer on the copy icon of a command box.
+    Expected: the tooltip says Copy, in the language of the app. Press the icon
+    and paste into a terminal.
     Expected: the exact command is pasted. Install tiles and How to fix open
     the right pages in the browser.
 17. In an Overview, press a port link, the Compose name, an image link and a
@@ -272,6 +299,55 @@ Setup before the first walk:
     mouse events. Then select text in the left pane up to its last column, and
     let go on the line.
     Expected: the selection follows to the end and ends there; no resize starts.
+24a. Open Run container and add a port and a volume row. Drag the panel edges
+    until the main area is about 400 px wide, then back. Do it in English, German
+    and Russian.
+    Expected: down to about 592 px the form shrinks as before; this is the one
+    minimum of every screen (Decision 23). Below that it keeps its width, no label
+    wraps letter by letter, and thin bars show on the right and at the bottom,
+    moving nothing. The drag itself never scrolls the form. There are
+    only these two bars: the hint, Cancel and Run are part of the form, after its
+    last field, and scroll with it both ways. Shift + wheel (or a sideways swipe)
+    over the form or over the buttons scrolls it sideways, the wheel scrolls it
+    down, and each bar can be dragged. Run and Cancel work while it is scrolled,
+    and on the waiting, folder and fix-the-fields hints the text wraps beside the
+    buttons at the smallest width in German and Russian.
+    With the window large and few fields, the buttons sit at the bottom of the
+    area with a line above them. Make the area about 1400 px wide, here and in
+    Settings and the launch editor (Command and SSH).
+    Expected: the form stays centered at 720 px. The line spans the area, and the
+    buttons end at the right edge of the fields, not of the area. In Run container
+    the hint starts at the left edge of the fields. In Settings, Reset has the look
+    of Cancel: plain text, a box under the pointer, dimmer while there is nothing
+    to reset. At about 700 px the form fills the area and the buttons end at its
+    right edge, with the side padding.
+    In the volume row of Run container, in Russian, Portuguese and French at any
+    width.
+    Expected: the read-only label reads whole, with no "…". In Korean it may still
+    be cut (known font limit).
+    Add rows until the form is taller than the area:
+    the buttons move down with the form, and you scroll to reach Run. Start a pull
+    of a long image name with the area at its narrowest.
+    Expected: the pull line wraps beside Cancel and Running, and Cancel works.
+    Type in the Image field, select text in it, open the Network list and pick
+    an item while the form is scrolled.
+    Expected: everything works and the list opens under its field. Type a wrong
+    port: the message under the row wraps and pushes the next row down.
+    Scroll an input you are typing in out of view and go on typing.
+    Expected: the text goes into that input, and the view does not jump to it
+    (known limit). With the form scrolled, type in a field, add a row and type a
+    wrong port.
+    Expected: the form stays where it is. Scroll it, stop the only engine, then
+    start it again.
+    Expected: the card starts at its top, and the form comes back at its top with
+    what you typed.
+24b. Drag the right panel to its smallest while Run container is open, with an
+    image on this computer, then one that is missing, in English, German and
+    Russian, in OTTY Dark and OTTY Light.
+    Expected: the whole status under the image name can be read, on as many lines
+    as it takes, with its dot beside it. Make the window low: the thin bar runs along
+    the edge of the panel and covers no text. Widen the panel: the status is one line
+    again.
 
 ## Tag search
 
@@ -403,3 +479,9 @@ statuses) in the list.
     Expected: every text, badge dot and icon is easy to read on its surface;
     the selected row, hovered row and the row "..." menu all keep clear
     contrast.
+36a. In OTTY Light make the window small, and look at the thin bars without
+    touching them: a table on Containers, the left tree, a Run form, the no-engine
+    card, and a command box with the panels dragged wide.
+    Expected: each idle bar is plainly visible and quieter than the text. With the
+    pointer on a bar, or dragging it, the bar is clearly darker. In OTTY Dark the bars
+    look as they did.

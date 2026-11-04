@@ -188,6 +188,45 @@ Setup before the first walk:
     empty card change language at once; no restart. Walk the Settings page
     itself in Light.
 
+26a. Open Settings, then a new launch (Command and SSH), and press Save on the
+    empty launch so the field errors show. Drag the panel edges until the main
+    area is about 400 px wide. Do it in English, German and Russian. Also open an
+    SSH launch that asks for a passphrase.
+    Expected: Settings and the launch editor keep their width below about 592 px,
+    the one minimum of every screen, so between 472 and 592 px they scroll where the
+    launch editor did not before; no label wraps letter by letter. Thin bars show on the
+    right and at the bottom and move nothing; there is no other bar. Reset and Save
+    in Settings, and Cancel and Save in the launch editor, scroll with the fields
+    both ways and work. Theme, Language, inputs and switches work while the form is
+    scrolled. Wide again, the form is centered and the passphrase dialog looks as
+    before.
+    Scroll Settings, then switch to the launch editor's tab, then to a second launch
+    editor, and back.
+    Expected: each tab starts at its top left, what you typed is still there, and no
+    field has the focus. Type in a field or press Save on the empty launch while
+    scrolled: the form stays where it is.
+    Make the window large.
+    Expected: in Settings and in the launch editor the buttons sit at the bottom
+    right of the area with a line above them, in the same place as Cancel and Run in
+    Run container, with the main action last. Make the window low: the buttons come
+    after the last field and you scroll down to reach them. The Language list opens
+    and picks over them.
+
+26b. Close every session so the start card shows. Make the window large.
+    Expected: the card is centered and looks as before, with no bars.
+    Drag the panel edges until the main area is about 300 px wide and make the
+    window low. Do it in English, French and Russian.
+    Expected: the card keeps its 460 px, centered in a width of about 592 px, so it
+    starts about 66 px in from the left, and thin bars show on the right and at the
+    bottom. It scrolls both ways, New terminal and New launch can both be reached
+    and pressed, and Ctrl Shift T (Cmd T on macOS) still opens a terminal.
+    Dragging a panel edge across the card moves the panel and scrolls nothing;
+    dragging a bar scrolls and moves no panel.
+    Scroll the card, then press New launch.
+    Expected: the launch editor starts at its top. Close it: the card starts at its
+    top. Scroll the card again and switch to Docker mode with no engine: the
+    no-engine card starts at its top.
+
 ## Keyboard and input method
 
 27. In zsh, run `cat -v` in an OTTY terminal and press Ctrl B, Ctrl K, Ctrl W

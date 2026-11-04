@@ -176,6 +176,28 @@ none of those are in scope (see Out of Scope).
    | No permission, Podman off | The Docker socket refuses as in "No permission", and Podman counts as installed as in "Docker and Podman both off" (owner decision, 2026-11-04). When a Podman socket refuses too, the first denied socket decides alone | "OTTY has no access to Docker, and Podman is off", the text naming the socket and that Podman is installed but off. The docker group command with its note, then the Podman command with its macOS note, each under its label with **Copy**. **Check again**, **How to fix Docker** (the docker group page) and **How to fix Podman** |
    | No permission on Podman, Docker off | A Podman socket refuses as in the row above it, and Docker counts as installed as in "Docker and Podman both off"; a `docker` command that is really Podman does not count, so that case stays on "No permission, Podman socket" (owner decision, 2026-11-04) | "OTTY has no access to Podman, and Docker is not running", the text naming the socket and that Docker is installed but not running. The Podman command with its note, then `sudo systemctl start docker` with its macOS note, each under its label with **Copy**. **Check again**, **How to fix Podman** and **How to fix Docker** (the Docker start page) |
 
+   **Copy** in this table is the copy icon of the kit `CommandBox`, with "Copy"
+   as its translated tooltip (owner decision, 2026-11-04, as Decision 20 did for
+   Copy JSON). Each command has its own icon. A command box is one line high on
+   every card, in every locale and at every width: a command that does not fit
+   scrolls sideways under the kit's thin bar, which floats and takes no height,
+   and the icon stays in place. The command is never wrapped or shortened. A
+   command that fits has no bar. The notes under a box wrap as ordinary text.
+
+   The card is never cut off (owner request, 2026-11-04), by the rule of every
+   screen (Decision 23). While it fits it is centered both ways, looks as it
+   always did and nothing scrolls. Below 592 px the area scrolls sideways, and
+   the card keeps its 460 px. The longest command needs 372.5 px, so no command
+   box scrolls on its own on today's cards. A card taller than the area starts at its top and
+   the area scrolls down, so every button can be reached. The bars are the kit's
+   thin ones, which float and take no room, and show only while the card
+   overflows that way. Dragging a panel edge scrolls nothing. Over a command box
+   the plain wheel scrolls the area; a sideways wheel moves the command if it
+   does not fit, and at its end the next wheel moves the area. Scrolling stays
+   where it is through the search behind the card (below) while the diagnosis
+   stays the same. Another diagnosis, and Check again, which shows "searching" and
+   so replaces the card, start again at the top.
+
    Under every card a line lists what OTTY looked for (`$DOCKER_HOST`, the
    sockets, `docker` and `podman` on `PATH`). Links open in the default
    browser with `xdg-open` (Linux) or `open` (macOS) through
@@ -585,6 +607,15 @@ none of those are in scope (see Out of Scope).
         the engine it was pressed on, and only there. The page a link leaves
         keeps its text.
 22. **The mode is called Containers** (owner request, 2026-11-04): the dock, the All modes menu, the palette and the status bar say Containers where they name the mode, translated in every locale; "Docker" and "Podman" still name the engines (tree roots, cards, status bar), and `Mode::Docker`, `widgets/docker` and the intents keep their names.
+23. **A screen keeps a minimum width and scrolls** (owner decisions, 2026-11-04). One rule, set in one place, so a new screen gets it without knowing about it. Everything that fills the main area goes through one kit component, `ScreenArea`, chosen in `app/src/view.rs` (`MainContent`): Settings, the launch editor, the error tab, the start card, the Run form, the searching card, each no-engine card, and the line a tab shows when its state is missing. What is inside does not matter.
+
+    - **The rule.** With room for it a screen looks as it always did: it takes the area's width, or is centered if it is smaller, like a card. Below the minimum it keeps that width and the area scrolls sideways. A screen lower than the area gets the area's height, so a form's footer lands at the bottom and a card is centered; a taller one starts at its top and the area scrolls down. There is one scroller and the bars are the kit's thin ones, which float and take no room.
+    - **One minimum.** 592 px for every screen (`size::SCREEN_MIN`), side padding included, accepted by the owner in place of one number per screen. The Run form sets it, as the widest: 520 px of content and 36 px of padding on each side, sized for the longest locale (Russian and German; Korean is not counted, since Hangul falls back to a wider font for now). So Settings and the launch editor start scrolling earlier than they used to (552 and 472 px), and the cards too: a card no longer narrows below 460 px, and in a narrower area it stays centered in the 592 px. The read-only column of a volume row is 140 px, measured in the kit's fonts: the longest label is Portuguese at 139.4 px, then Russian at 132.8 and French at 123.5, and Korean is left out for the same reason. It leaves the source and target inputs 156 px each at the minimum, so 592 px still holds.
+    - **Exceptions.** The panes of a terminal, and table screens with the toolbar above them: a table's sticky header and its own row scrolling need a height they can fill, and in an outer scroller the height has no end.
+    - **Not in this container.** Dialogs lie above the screen and have one scroller for their card, which keeps its width in a window too small for it. Side panels wrap their text (ticket 41). A command block keeps its own sideways scroll.
+    - **Each screen has its own scrolling.** Each screen has a name (`ScreenId`): one per tab, the start card, the Run form, the searching card and one per no-engine diagnosis. Another name starts at the top left, with no field focused. The same name built again keeps its place: typing, a validation message, the search every 5 seconds. Coming back to a screen after another one starts at the top too; the area keeps no memory of screens, and what was typed stays because the app holds it.
+
+    **One scroll, one footer, the buttons at the bottom** (owner request, 2026-11-04, replaces the pinned Run bar with its own sideways scroll). A form and its buttons are one screen: each form page has one scroller, both ways, holding the fields and the buttons, and nothing else on the page scrolls them. All form pages place their buttons the same way, through the one footer slot of `FormPage`: a bar at least 60 high with a line on top. The line spans the page, and what the bar holds sits in the same centered column as the fields, at most `size::FORM` (720 px) wide with `space-7` side padding, so the buttons line up with the right edge of the form and a hint or pull line starts at its left edge (owner request, 2026-11-04). Up to 792 px the form fills the page, so there the bar's content spans the page as before. The buttons sit at the right with the main action last. It holds Reset and Save in Settings, Cancel and Save in the launch editor, and the pull line or hint, Cancel and Run in Run container, whose fields use the same column. Reset has the look of Cancel (Ghost: no box at rest, a box under the pointer); its label, state and action did not change. While a form is lower than the area, the bar sits at the bottom of the area. When the form is taller, the bar comes after the fields and scrolls with them, so on a tall form the user scrolls down to reach Run; the owner accepted this. Below the minimum width the fields and the bar scroll sideways together. A hint or a pull line wraps beside the buttons and the bar grows with it; the buttons always keep their size. Text fields, command blocks and the list of a select still scroll their own long content.
 
 ## Ticket classes
 

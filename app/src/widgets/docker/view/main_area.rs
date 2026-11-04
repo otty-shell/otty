@@ -240,8 +240,7 @@ fn create_icon(resource: ResourceKind) -> &'static [u8] {
     }
 }
 
-/// A centered card with the Docker icon and `description`, while the search
-/// runs.
+/// A card with the Docker icon and `description`, while the search runs.
 fn card<'a>(
     description: &'static str,
     palette: &UiPalette,
@@ -255,15 +254,7 @@ fn card<'a>(
             color: Some(icon_color),
         });
 
-    let card =
-        EmptyCard::new(i18n::t(Key::ModeDocker), description, icon, palette);
-
-    container(card)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
-        .into()
+    EmptyCard::new(i18n::t(Key::ModeDocker), description, icon, palette).into()
 }
 
 #[cfg(test)]
@@ -274,6 +265,7 @@ mod tests {
     use otty_ui_kit::components::data_table::{
         CellPart, TableCell, TableColumn,
     };
+    use otty_ui_kit::components::screen_area::ScreenArea;
     use otty_ui_kit::components::status_badge::StatusTone;
     use otty_ui_kit::components::tag_search::{
         Suggestion, TagSearch, TagSearchAction,
@@ -281,6 +273,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::Locale;
+    use crate::testing::temp_dir::TempDir;
     use crate::theme::ThemeManager;
     use crate::widgets::docker::action_model::PruneViewModel;
     use crate::widgets::docker::no_engine::{
@@ -1155,6 +1148,123 @@ mod tests {
 
         ui.find(i18n::t(Key::DockerSearching))
             .expect("card text should show");
+    }
+
+    /// The card that shows while the search runs, in an area of `area`.
+    fn searching_card_in<'a>(
+        themes: &'a ThemeManager,
+        area: iced::Size,
+    ) -> iced_test::Simulator<'a, DockerIntent> {
+        iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            area,
+            ScreenArea::new(
+                0,
+                view(MainAreaProps {
+                    vm: MainViewModel::Searching,
+                    theme: ThemeProps::new(themes.current()),
+                }),
+                themes.current().ui(),
+            ),
+        )
+    }
+
+    #[test]
+    fn in_a_small_area_the_searching_card_scrolls_both_ways() {
+        use iced::mouse;
+        use iced_test::selector::Candidate;
+
+        let themes = ThemeManager::new();
+        let mut ui = searching_card_in(&themes, iced::Size::new(278.0, 90.0));
+        let text = i18n::t(Key::DockerSearching);
+
+        let cut_off = ui.find(text).expect("the text").visible_bounds();
+        ui.point_at(Point::new(10.0, 10.0));
+        let _ = ui.simulate([iced::Event::Window(
+            iced::window::Event::RedrawRequested(iced::time::Instant::now()),
+        )]);
+        let wheel = |ui: &mut iced_test::Simulator<'_, DockerIntent>, x, y| {
+            let _ = ui.simulate([iced::Event::Mouse(
+                mouse::Event::WheelScrolled {
+                    delta: mouse::ScrollDelta::Pixels { x, y },
+                },
+            )]);
+        };
+        wheel(&mut ui, 0.0, -10_000.0);
+        let shown = ui.find(text).expect("the text").visible_bounds();
+        wheel(&mut ui, -10_000.0, 0.0);
+        let (offset, content) = ui
+            .find(|candidate: Candidate<'_>| match candidate {
+                Candidate::Scrollable {
+                    content_bounds,
+                    translation,
+                    ..
+                } => Some((translation, content_bounds)),
+                _ => None,
+            })
+            .expect("the area should scroll");
+
+        assert!(cut_off.is_none_or(|bounds| bounds.y + bounds.height >= 90.0));
+        assert_eq!(content.width, size::SCREEN_MIN);
+        assert_eq!(offset.x, size::SCREEN_MIN - 278.0);
+        assert!(offset.y > 0.0);
+        let shown = shown.expect("the text should come into view");
+        assert!(shown.y + shown.height <= 90.0);
+    }
+
+    /// With room for it the drawing must not change: it is the old layout, a
+    /// card in a centered container.
+    #[test]
+    fn with_room_the_searching_card_draws_as_in_a_centered_container() {
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+        let folder = TempDir::new("searching-card");
+
+        for (index, area) in [
+            iced::Size::new(900.0, 700.0),
+            iced::Size::new(901.0, 701.0),
+            iced::Size::new(size::SCREEN_MIN, 300.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let reference = folder.path().join(format!("area-{index}"));
+            let icon_color = palette.text_muted();
+            let icon = svg(svg::Handle::from_memory(icons::MODE_DOCKER))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(move |_, _| svg::Style {
+                    color: Some(icon_color),
+                });
+            let plain = container(EmptyCard::<DockerIntent>::new(
+                i18n::t(Key::ModeDocker),
+                i18n::t(Key::DockerSearching),
+                icon,
+                palette,
+            ))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill);
+
+            let plain_matches = iced_test::Simulator::with_size(
+                iced::Settings::default(),
+                area,
+                plain,
+            )
+            .snapshot(&iced::Theme::Dark)
+            .expect("the card should draw")
+            .matches_hash(&reference)
+            .expect("reference should be readable");
+            let page_matches = searching_card_in(&themes, area)
+                .snapshot(&iced::Theme::Dark)
+                .expect("the card should draw")
+                .matches_hash(&reference)
+                .expect("reference should be readable");
+
+            assert!(plain_matches);
+            assert!(page_matches, "at {area:?}");
+        }
     }
 
     #[test]
