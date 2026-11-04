@@ -167,7 +167,7 @@ mod tests {
             ui.find(AppShortcut::TerminalMode.label().as_str())
                 .expect("terminal shortcut should be visible");
             ui.find(AppShortcut::PinnedMode1.label().as_str())
-                .expect("docker shortcut should be visible");
+                .expect("containers shortcut should be visible");
         });
     }
 
@@ -183,21 +183,21 @@ mod tests {
     #[test]
     fn clicking_a_mode_name_selects_it() {
         let intents = drive(&ModesState::default(), |ui| {
-            ui.click(i18n::t(Key::ModeDocker))
-                .expect("docker row should be visible");
+            ui.click(i18n::t(Key::ModeContainers))
+                .expect("containers row should be visible");
         });
 
         assert!(matches!(
             intents.as_slice(),
-            [ModesIntent::Select(Mode::Docker)]
+            [ModesIntent::Select(Mode::Containers)]
         ));
     }
 
     #[test]
     fn an_unpinned_mode_is_listed_under_other_modes_without_the_hint() {
         let _ = drive(&ModesState::with_pinned(&[]), |ui| {
-            ui.find(i18n::t(Key::ModeDocker))
-                .expect("docker row should be visible");
+            ui.find(i18n::t(Key::ModeContainers))
+                .expect("containers row should be visible");
             assert!(ui.find(i18n::t(Key::ModesNoOtherModes)).is_err());
         });
     }
@@ -224,12 +224,12 @@ mod tests {
 
     #[test]
     fn a_pinned_mode_toggle_unpins_it() {
-        let pin = pin_toggle(&row(Mode::Docker, PinButton::Unpin));
+        let pin = pin_toggle(&row(Mode::Containers, PinButton::Unpin));
 
         assert!(matches!(
             pin,
             ModePin::Pinned {
-                on_press: ModesIntent::Unpin(Mode::Docker),
+                on_press: ModesIntent::Unpin(Mode::Containers),
                 ..
             }
         ));
@@ -237,12 +237,12 @@ mod tests {
 
     #[test]
     fn an_unpinned_mode_toggle_pins_it() {
-        let pin = pin_toggle(&row(Mode::Docker, PinButton::Pin));
+        let pin = pin_toggle(&row(Mode::Containers, PinButton::Pin));
 
         assert!(matches!(
             pin,
             ModePin::Unpinned {
-                on_press: ModesIntent::Pin(Mode::Docker),
+                on_press: ModesIntent::Pin(Mode::Containers),
                 ..
             }
         ));
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn with_every_slot_taken_the_toggle_says_why_it_is_off() {
-        let pin = pin_toggle(&row(Mode::Docker, PinButton::PinDisabled));
+        let pin = pin_toggle(&row(Mode::Containers, PinButton::PinDisabled));
 
         assert!(matches!(
             pin,

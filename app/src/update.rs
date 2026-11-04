@@ -7,7 +7,7 @@ use crate::guards::{
     is_header_menu_choice, is_terminal_input,
 };
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
-use crate::widgets::docker::{DockerEvent, DockerIntent};
+use crate::widgets::containers::{ContainersEvent, ContainersIntent};
 use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
@@ -15,12 +15,12 @@ use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
-/// Handle `event`, then tell the Docker widget when the event changed whether
+/// Handle `event`, then tell the Containers widget when the event changed whether
 /// the right panel is on screen. The sidebar alone knows that, and many paths
 /// change it, so it is read here, after every event, instead of by each path.
 pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let task = route(app, event);
-    let right_panel = tell_docker_about_right_panel(app);
+    let right_panel = tell_containers_about_right_panel(app);
 
     Task::batch([task, right_panel])
 }
@@ -82,18 +82,18 @@ fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     }
 }
 
-/// Send the Docker widget the state of the right panel, if it changed.
-fn tell_docker_about_right_panel(app: &mut App) -> Task<AppEvent> {
+/// Send the Containers widget the state of the right panel, if it changed.
+fn tell_containers_about_right_panel(app: &mut App) -> Task<AppEvent> {
     let is_hidden = !app.widgets.sidebar.vm().is_right_open;
-    if app.widgets.docker.is_right_panel_hidden() == is_hidden {
+    if app.widgets.containers.is_right_panel_hidden() == is_hidden {
         return Task::none();
     }
 
     events::handle(
         app,
-        AppEvent::Docker(DockerEvent::Intent(DockerIntent::RightPanelHidden(
-            is_hidden,
-        ))),
+        AppEvent::Containers(ContainersEvent::Intent(
+            ContainersIntent::RightPanelHidden(is_hidden),
+        )),
     )
 }
 
@@ -158,18 +158,18 @@ mod tests {
     use iced::keyboard::key::{Code, Named, NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
     use iced::widget::pane_grid;
-    use otty_docker::{EngineKind, fixtures};
+    use otty_containers::{EngineKind, fixtures};
     use otty_ui_kit::components::log_view::LogViewState;
 
     use super::*;
     use crate::i18n;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
-    use crate::widgets::docker::DockerEffect;
-    use crate::widgets::docker::inspector::{InspectorTab, LogTarget};
-    use crate::widgets::docker::inspector_tabs::TabContent;
-    use crate::widgets::docker::run_form::RunEdit;
-    use crate::widgets::docker::types::LoadedLists;
+    use crate::widgets::containers::ContainersEffect;
+    use crate::widgets::containers::inspector::{InspectorTab, LogTarget};
+    use crate::widgets::containers::inspector_tabs::TabContent;
+    use crate::widgets::containers::run_form::RunEdit;
+    use crate::widgets::containers::types::LoadedLists;
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::types::Mode;
 
@@ -241,7 +241,7 @@ mod tests {
 
         press(&mut app, AppShortcut::PinnedMode1);
 
-        assert_eq!(app.widgets.modes.active(), Mode::Docker);
+        assert_eq!(app.widgets.modes.active(), Mode::Containers);
         assert!(!app.widgets.modes.is_menu_open());
     }
 
@@ -272,7 +272,7 @@ mod tests {
         let _ = update(
             &mut app,
             AppEvent::Modes(ModesEvent::Intent(ModesIntent::Unpin(
-                Mode::Docker,
+                Mode::Containers,
             ))),
         );
 
@@ -287,11 +287,11 @@ mod tests {
         let _ = update(
             &mut app,
             AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
-                Mode::Docker,
+                Mode::Containers,
             ))),
         );
 
-        assert_eq!(app.widgets.modes.active(), Mode::Docker);
+        assert_eq!(app.widgets.modes.active(), Mode::Containers);
         assert!(!app.widgets.modes.is_menu_open());
     }
 
@@ -313,33 +313,32 @@ mod tests {
     /// folder [`FOLDER`], with no question out yet.
     fn app_with_modes_menu_over_a_folder_row() -> App {
         let mut app = app_with_open_modes_menu();
-        let docker = &mut app.widgets.docker;
+        let containers = &mut app.widgets.containers;
 
-        let _ = docker.reduce(DockerIntent::Enter);
-        let _ = docker.reduce(DockerIntent::DiscoveryFinished(
+        let _ = containers.reduce(ContainersIntent::Enter);
+        let _ = containers.reduce(ContainersIntent::DiscoveryFinished(
             fixtures::discovery(&[EngineKind::Docker]),
         ));
-        let _ = docker.reduce(DockerIntent::OpenCreate);
-        let _ = docker.reduce(DockerIntent::RunEdited(RunEdit::AddVolume));
-        let _ = docker.reduce(DockerIntent::RunEdited(RunEdit::VolumeSource(
-            0,
-            FOLDER.to_string(),
-        )));
-        let _ = docker.reduce(DockerIntent::RunEdited(RunEdit::VolumeTarget(
-            0,
-            String::from("/data"),
-        )));
+        let _ = containers.reduce(ContainersIntent::OpenCreate);
+        let _ =
+            containers.reduce(ContainersIntent::RunEdited(RunEdit::AddVolume));
+        let _ = containers.reduce(ContainersIntent::RunEdited(
+            RunEdit::VolumeSource(0, FOLDER.to_string()),
+        ));
+        let _ = containers.reduce(ContainersIntent::RunEdited(
+            RunEdit::VolumeTarget(0, String::from("/data")),
+        ));
 
         app
     }
 
-    fn docker_intent(intent: DockerIntent) -> AppEvent {
-        AppEvent::Docker(DockerEvent::Intent(intent))
+    fn containers_intent(intent: ContainersIntent) -> AppEvent {
+        AppEvent::Containers(ContainersEvent::Intent(intent))
     }
 
     /// The message under the first volume row of the Run form.
     fn row_problem(app: &App) -> Option<&'static str> {
-        let form = app.widgets.docker.run_form_vm().expect("form");
+        let form = app.widgets.containers.run_form_vm().expect("form");
 
         form.volumes[0].problem
     }
@@ -348,7 +347,10 @@ mod tests {
     fn the_folder_timer_leaves_the_modes_menu_open() {
         let mut app = app_with_modes_menu_over_a_folder_row();
 
-        let _ = update(&mut app, docker_intent(DockerIntent::RecheckFolders));
+        let _ = update(
+            &mut app,
+            containers_intent(ContainersIntent::RecheckFolders),
+        );
 
         assert!(app.widgets.modes.is_menu_open());
     }
@@ -359,7 +361,7 @@ mod tests {
 
         let _ = update(
             &mut app,
-            docker_intent(DockerIntent::FolderChecked {
+            containers_intent(ContainersIntent::FolderChecked {
                 path: PathBuf::from(FOLDER),
                 exists: false,
             }),
@@ -368,7 +370,7 @@ mod tests {
         assert!(app.widgets.modes.is_menu_open());
         assert_eq!(
             row_problem(&app),
-            Some(i18n::t(i18n::Key::DockerRunErrSourceMissing))
+            Some(i18n::t(i18n::Key::ContainersRunErrSourceMissing))
         );
     }
 
@@ -378,16 +380,16 @@ mod tests {
 
         let asked = collect_outputs(update(
             &mut app,
-            docker_intent(DockerIntent::FolderTypingPaused(PathBuf::from(
-                FOLDER,
-            ))),
+            containers_intent(ContainersIntent::FolderTypingPaused(
+                PathBuf::from(FOLDER),
+            )),
         ));
 
         assert!(app.widgets.modes.is_menu_open());
         assert!(asked.iter().any(|event| matches!(
             event,
-            AppEvent::Docker(DockerEvent::Effect(
-                DockerEffect::CheckFolder(path)
+            AppEvent::Containers(ContainersEvent::Effect(
+                ContainersEffect::CheckFolder(path)
             )) if path.as_path() == Path::new(FOLDER)
         )));
     }
@@ -397,23 +399,23 @@ mod tests {
         let mut app = app_with_modes_menu_over_a_folder_row();
         let _ = update(
             &mut app,
-            docker_intent(DockerIntent::FolderTypingPaused(PathBuf::from(
-                FOLDER,
-            ))),
+            containers_intent(ContainersIntent::FolderTypingPaused(
+                PathBuf::from(FOLDER),
+            )),
         );
         assert_eq!(row_problem(&app), None);
 
         let _ = update(
             &mut app,
-            docker_intent(DockerIntent::FolderAnswerLate(PathBuf::from(
-                FOLDER,
-            ))),
+            containers_intent(ContainersIntent::FolderAnswerLate(
+                PathBuf::from(FOLDER),
+            )),
         );
 
         assert!(app.widgets.modes.is_menu_open());
         assert_eq!(
             row_problem(&app),
-            Some(i18n::t(i18n::Key::DockerRunErrSourceNotAnswering))
+            Some(i18n::t(i18n::Key::ContainersRunErrSourceNotAnswering))
         );
     }
 
@@ -422,7 +424,7 @@ mod tests {
         let mut app = app_with_modes_menu_over_a_folder_row();
         let _ = update(
             &mut app,
-            docker_intent(DockerIntent::FolderChecked {
+            containers_intent(ContainersIntent::FolderChecked {
                 path: PathBuf::from(FOLDER),
                 exists: true,
             }),
@@ -430,13 +432,13 @@ mod tests {
 
         let asked = collect_outputs(update(
             &mut app,
-            docker_intent(DockerIntent::RecheckFolders),
+            containers_intent(ContainersIntent::RecheckFolders),
         ));
 
         assert!(matches!(
             asked.as_slice(),
-            [AppEvent::Docker(DockerEvent::Effect(
-                DockerEffect::CheckFolder(path)
+            [AppEvent::Containers(ContainersEvent::Effect(
+                ContainersEffect::CheckFolder(path)
             ))] if path.as_path() == Path::new(FOLDER)
         ));
     }
@@ -453,13 +455,13 @@ mod tests {
     /// closed.
     fn load_rows_and_close_right_panel(app: &mut App) {
         let resources = fixtures::resources(EngineKind::Docker);
-        let docker = &mut app.widgets.docker;
+        let containers = &mut app.widgets.containers;
 
-        let _ = docker.reduce(DockerIntent::Enter);
-        let _ = docker.reduce(DockerIntent::DiscoveryFinished(
+        let _ = containers.reduce(ContainersIntent::Enter);
+        let _ = containers.reduce(ContainersIntent::DiscoveryFinished(
             fixtures::discovery(&[EngineKind::Docker]),
         ));
-        let _ = docker.reduce(DockerIntent::ListsLoaded {
+        let _ = containers.reduce(ContainersIntent::ListsLoaded {
             engine: fixtures::engine(EngineKind::Docker).address().clone(),
             lists: LoadedLists {
                 containers: Ok(resources.containers().to_vec()),
@@ -492,7 +494,9 @@ mod tests {
         let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
         update_to_the_end(
             &mut app,
-            docker_intent(DockerIntent::SelectInspectorTab(InspectorTab::Logs)),
+            containers_intent(ContainersIntent::SelectInspectorTab(
+                InspectorTab::Logs,
+            )),
         );
         assert!(app.widgets.sidebar.vm().is_right_open);
         assert!(is_reading_logs(&app));
@@ -507,13 +511,13 @@ mod tests {
     /// Whether a logs stream runs: the engine watch is one subscription, the
     /// logs the other.
     fn is_reading_logs(app: &App) -> bool {
-        app.widgets.docker.subscription().units() == 2
+        app.widgets.containers.subscription().units() == 2
     }
 
     /// How many lines the open logs show.
     fn log_lines(app: &App) -> usize {
         app.widgets
-            .docker
+            .containers
             .inspector_tabs_vm()
             .and_then(|tabs| match tabs.content {
                 TabContent::Logs { lines, .. } => lines,
@@ -532,7 +536,7 @@ mod tests {
 
         update_to_the_end(
             app,
-            docker_intent(DockerIntent::LogLines {
+            containers_intent(ContainersIntent::LogLines {
                 target,
                 lines: vec![String::from("ready")],
                 position: None,
@@ -670,10 +674,10 @@ mod tests {
     #[test]
     fn a_panel_closed_in_another_mode_keeps_the_logs_off_on_return() {
         let mut app = app_with_open_logs();
-        update_to_the_end(&mut app, docker_intent(DockerIntent::Leave));
+        update_to_the_end(&mut app, containers_intent(ContainersIntent::Leave));
         update_to_the_end(&mut app, sidebar_intent(SidebarIntent::ToggleRight));
 
-        let _ = update(&mut app, docker_intent(DockerIntent::Enter));
+        let _ = update(&mut app, containers_intent(ContainersIntent::Enter));
         let after_enter = is_reading_logs(&app);
         update_to_the_end(&mut app, sidebar_intent(SidebarIntent::ToggleRight));
 
@@ -690,7 +694,7 @@ mod tests {
 
         let reading = logs_after_each_update(
             &mut app,
-            docker_intent(DockerIntent::SelectRow(1)),
+            containers_intent(ContainersIntent::SelectRow(1)),
         );
 
         let starts = reading.windows(2).filter(|step| !step[0] && step[1]);
@@ -702,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn an_update_that_leaves_the_panel_alone_sends_docker_nothing_new() {
+    fn an_update_that_leaves_the_panel_alone_sends_containers_nothing_new() {
         let mut app = app_with_open_logs();
         push_a_log_line(&mut app);
 
@@ -712,7 +716,7 @@ mod tests {
         assert_eq!(log_lines(&app), 1);
         assert!(!follow_ups.iter().any(|event| matches!(
             event,
-            AppEvent::Docker(DockerEvent::Intent(_))
+            AppEvent::Containers(ContainersEvent::Intent(_))
         )));
     }
 
@@ -721,7 +725,10 @@ mod tests {
         let mut app = app_with_open_modes_menu();
         load_rows_and_close_right_panel(&mut app);
 
-        update_to_the_end(&mut app, docker_intent(DockerIntent::SelectRow(1)));
+        update_to_the_end(
+            &mut app,
+            containers_intent(ContainersIntent::SelectRow(1)),
+        );
 
         assert!(!app.widgets.modes.is_menu_open());
         assert!(!app.widgets.sidebar.vm().is_right_open);
@@ -734,7 +741,10 @@ mod tests {
         load_rows_and_close_right_panel(&mut app);
         start_inline_edit(&mut app);
 
-        update_to_the_end(&mut app, docker_intent(DockerIntent::SelectRow(1)));
+        update_to_the_end(
+            &mut app,
+            containers_intent(ContainersIntent::SelectRow(1)),
+        );
 
         assert!(!app.widgets.quick_launch.has_inline_edit());
         assert!(app.widgets.sidebar.vm().is_right_open);
@@ -748,7 +758,7 @@ mod tests {
 
         let follow_ups = collect_outputs(update(
             &mut app,
-            docker_intent(DockerIntent::SelectRow(1)),
+            containers_intent(ContainersIntent::SelectRow(1)),
         ));
         let _ = update(
             &mut app,
@@ -770,7 +780,7 @@ mod tests {
 
         let follow_ups = collect_outputs(update(
             &mut app,
-            docker_intent(DockerIntent::SelectRow(1)),
+            containers_intent(ContainersIntent::SelectRow(1)),
         ));
         start_inline_edit(&mut app);
         for event in follow_ups {

@@ -330,7 +330,7 @@ mod tests {
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
         Terminal,
-        Docker,
+        Containers,
         More,
     }
 
@@ -342,10 +342,10 @@ mod tests {
                     .on_press(Message::Terminal),
             )
             .tab(
-                ModeTab::new(glyph::plus(), "Docker")
+                ModeTab::new(glyph::plus(), "Containers")
                     .shortcut("Ctrl Shift 2")
                     .temporary(true)
-                    .on_press(Message::Docker),
+                    .on_press(Message::Containers),
             )
             .more("All modes", false, Message::More)
     }
@@ -377,7 +377,7 @@ mod tests {
         click_at(&mut ui, tab_center(1));
 
         let messages: Vec<Message> = ui.into_messages().collect();
-        assert_eq!(messages, vec![Message::Docker]);
+        assert_eq!(messages, vec![Message::Containers]);
     }
 
     #[test]

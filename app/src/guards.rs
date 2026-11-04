@@ -1,5 +1,5 @@
 use crate::events::AppEvent;
-use crate::widgets::docker::{DockerEvent, DockerIntent};
+use crate::widgets::containers::{ContainersEvent, ContainersIntent};
 
 /// Determines how the event loop should treat an incoming event when a
 /// context menu is open.
@@ -126,9 +126,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // dismiss layer send these, and a switch reports its change.
         AppEvent::Modes(_) => Allow,
         // Engine results, folder checks and mode changes arrive on their
-        // own; a click in the Docker views closes the menus like any other
+        // own; a click in the Containers views closes the menus like any other
         // click.
-        AppEvent::Docker(event) if is_docker_background(event) => Allow,
+        AppEvent::Containers(event) if is_containers_background(event) => Allow,
         AppEvent::Keyboard(_) => Ignore,
         AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Intent(_))
         | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Intent(_)) => Allow,
@@ -266,7 +266,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             ),
         ) => false,
         AppEvent::SyncTerminalGridSizes => false,
-        AppEvent::Docker(event) if is_docker_background(event) => false,
+        AppEvent::Containers(event) if is_containers_background(event) => false,
         AppEvent::Keyboard(_) | AppEvent::Window(_) => false,
         AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Effect(_))
         | AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Effect(_))
@@ -292,41 +292,41 @@ pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
     )
 }
 
-/// Return `true` for a Docker event the user did not cause by a click: a
+/// Return `true` for a Containers event the user did not cause by a click: a
 /// mode change, the right panel going or coming back, an engine result, a
 /// folder check or one of its timers, or an effect.
-fn is_docker_background(event: &DockerEvent) -> bool {
+fn is_containers_background(event: &ContainersEvent) -> bool {
     match event {
-        DockerEvent::Intent(intent) => matches!(
+        ContainersEvent::Intent(intent) => matches!(
             intent,
-            DockerIntent::Enter
-                | DockerIntent::Leave
-                | DockerIntent::RightPanelHidden(_)
-                | DockerIntent::DiscoveryFinished(_)
-                | DockerIntent::EngineSearchTick
-                | DockerIntent::BackgroundSearchFinished(_)
-                | DockerIntent::ListsLoaded { .. }
-                | DockerIntent::LogLines { .. }
-                | DockerIntent::LogsFailed { .. }
-                | DockerIntent::LogRunRead { .. }
-                | DockerIntent::LogRunChecked { .. }
-                | DockerIntent::InspectLoaded { .. }
-                | DockerIntent::ListChanged { .. }
-                | DockerIntent::ContainerStarted { .. }
-                | DockerIntent::EngineReconnected(_)
-                | DockerIntent::EngineUnreachable(_)
-                | DockerIntent::ListLoaded { .. }
-                | DockerIntent::ActionFinished { .. }
-                | DockerIntent::PullProgressed(_)
-                | DockerIntent::PullFinished(_)
-                | DockerIntent::RunFinished { .. }
-                | DockerIntent::ImageDefaultsLoaded { .. }
-                | DockerIntent::FolderChecked { .. }
-                | DockerIntent::RecheckFolders
-                | DockerIntent::FolderTypingPaused(_)
-                | DockerIntent::FolderAnswerLate(_)
+            ContainersIntent::Enter
+                | ContainersIntent::Leave
+                | ContainersIntent::RightPanelHidden(_)
+                | ContainersIntent::DiscoveryFinished(_)
+                | ContainersIntent::EngineSearchTick
+                | ContainersIntent::BackgroundSearchFinished(_)
+                | ContainersIntent::ListsLoaded { .. }
+                | ContainersIntent::LogLines { .. }
+                | ContainersIntent::LogsFailed { .. }
+                | ContainersIntent::LogRunRead { .. }
+                | ContainersIntent::LogRunChecked { .. }
+                | ContainersIntent::InspectLoaded { .. }
+                | ContainersIntent::ListChanged { .. }
+                | ContainersIntent::ContainerStarted { .. }
+                | ContainersIntent::EngineReconnected(_)
+                | ContainersIntent::EngineUnreachable(_)
+                | ContainersIntent::ListLoaded { .. }
+                | ContainersIntent::ActionFinished { .. }
+                | ContainersIntent::PullProgressed(_)
+                | ContainersIntent::PullFinished(_)
+                | ContainersIntent::RunFinished { .. }
+                | ContainersIntent::ImageDefaultsLoaded { .. }
+                | ContainersIntent::FolderChecked { .. }
+                | ContainersIntent::RecheckFolders
+                | ContainersIntent::FolderTypingPaused(_)
+                | ContainersIntent::FolderAnswerLate(_)
         ),
-        DockerEvent::Effect(_) => true,
+        ContainersEvent::Effect(_) => true,
     }
 }
 
@@ -344,17 +344,19 @@ mod tests {
     };
     use crate::events::AppEvent;
     use crate::shortcuts::AppShortcut;
-    use crate::widgets::docker::actions::{
+    use crate::widgets::containers::actions::{
         ActionRequest, EngineAction, RowAction,
     };
-    use crate::widgets::docker::errors::DockerError;
-    use crate::widgets::docker::inspector::{
+    use crate::widgets::containers::errors::ContainersError;
+    use crate::widgets::containers::inspector::{
         InspectTarget, InspectorTab, LogTarget,
     };
-    use crate::widgets::docker::types::{
+    use crate::widgets::containers::types::{
         LoadedList, LoadedLists, ResourceKind,
     };
-    use crate::widgets::docker::{DockerEffect, DockerEvent, DockerIntent};
+    use crate::widgets::containers::{
+        ContainersEffect, ContainersEvent, ContainersIntent,
+    };
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::types::Mode;
     use crate::widgets::modes::{ModesEffect, ModesEvent, ModesIntent};
@@ -448,9 +450,11 @@ mod tests {
     fn given_menu_open_when_modes_events_arrive_then_they_are_allowed() {
         let events = [
             AppEvent::Modes(ModesEvent::Intent(ModesIntent::CloseMenu)),
-            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Pin(Mode::Docker))),
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Pin(
+                Mode::Containers,
+            ))),
             AppEvent::Modes(ModesEvent::Effect(ModesEffect::ModeChanged(
-                Mode::Docker,
+                Mode::Containers,
             ))),
         ];
 
@@ -461,107 +465,128 @@ mod tests {
 
     #[test]
     fn engine_results_pass_open_menus_and_inline_edits_but_clicks_close_them() {
-        let docker = |intent| AppEvent::Docker(DockerEvent::Intent(intent));
+        let containers =
+            |intent| AppEvent::Containers(ContainersEvent::Intent(intent));
         let background = [
-            docker(DockerIntent::Enter),
-            docker(DockerIntent::Leave),
-            docker(DockerIntent::ListsLoaded {
-                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
-                lists: LoadedLists::failed(&DockerError::new("x")),
+            containers(ContainersIntent::Enter),
+            containers(ContainersIntent::Leave),
+            containers(ContainersIntent::ListsLoaded {
+                engine: otty_containers::EngineAddress::Tcp(String::from(
+                    "h:1",
+                )),
+                lists: LoadedLists::failed(&ContainersError::new("x")),
             }),
-            AppEvent::Docker(DockerEvent::Effect(DockerEffect::Discover)),
-            docker(DockerIntent::EngineSearchTick),
-            docker(DockerIntent::BackgroundSearchFinished(
-                otty_docker::fixtures::discovery(&[]),
+            AppEvent::Containers(ContainersEvent::Effect(
+                ContainersEffect::Discover,
             )),
-            AppEvent::Docker(DockerEvent::Effect(
-                DockerEffect::DiscoverInBackground,
+            containers(ContainersIntent::EngineSearchTick),
+            containers(ContainersIntent::BackgroundSearchFinished(
+                otty_containers::fixtures::discovery(&[]),
             )),
-            docker(DockerIntent::ListChanged {
-                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
+            AppEvent::Containers(ContainersEvent::Effect(
+                ContainersEffect::DiscoverInBackground,
+            )),
+            containers(ContainersIntent::ListChanged {
+                engine: otty_containers::EngineAddress::Tcp(String::from(
+                    "h:1",
+                )),
                 resource: ResourceKind::Containers,
             }),
-            docker(DockerIntent::ContainerStarted {
-                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
+            containers(ContainersIntent::ContainerStarted {
+                engine: otty_containers::EngineAddress::Tcp(String::from(
+                    "h:1",
+                )),
                 id: String::from("850b"),
             }),
-            docker(DockerIntent::EngineReconnected(
-                otty_docker::EngineAddress::Tcp(String::from("h:1")),
+            containers(ContainersIntent::EngineReconnected(
+                otty_containers::EngineAddress::Tcp(String::from("h:1")),
             )),
-            docker(DockerIntent::EngineUnreachable(
-                otty_docker::EngineAddress::Tcp(String::from("h:1")),
+            containers(ContainersIntent::EngineUnreachable(
+                otty_containers::EngineAddress::Tcp(String::from("h:1")),
             )),
-            docker(DockerIntent::ListLoaded {
-                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
-                list: LoadedList::Images(Err(DockerError::new("x"))),
+            containers(ContainersIntent::ListLoaded {
+                engine: otty_containers::EngineAddress::Tcp(String::from(
+                    "h:1",
+                )),
+                list: LoadedList::Images(Err(ContainersError::new("x"))),
             }),
-            docker(DockerIntent::ActionFinished {
+            containers(ContainersIntent::ActionFinished {
                 request: ActionRequest::new(
-                    otty_docker::fixtures::engine(
-                        otty_docker::EngineKind::Docker,
+                    otty_containers::fixtures::engine(
+                        otty_containers::EngineKind::Docker,
                     ),
                     EngineAction::PruneContainers,
                     String::new(),
                 ),
                 result: Ok(()),
             }),
-            docker(DockerIntent::PullProgressed(
-                otty_docker::fixtures::pull_progress(),
+            containers(ContainersIntent::PullProgressed(
+                otty_containers::fixtures::pull_progress(),
             )),
-            docker(DockerIntent::PullFinished(Ok(()))),
-            docker(DockerIntent::RunFinished {
-                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
+            containers(ContainersIntent::PullFinished(Ok(()))),
+            containers(ContainersIntent::RunFinished {
+                engine: otty_containers::EngineAddress::Tcp(String::from(
+                    "h:1",
+                )),
                 result: Ok(String::from("4f1c")),
             }),
-            docker(DockerIntent::ImageDefaultsLoaded {
-                engine: otty_docker::EngineAddress::Tcp(String::from("h:1")),
+            containers(ContainersIntent::ImageDefaultsLoaded {
+                engine: otty_containers::EngineAddress::Tcp(String::from(
+                    "h:1",
+                )),
                 reference: String::from("nginx"),
                 result: Ok(None),
             }),
-            docker(DockerIntent::FolderChecked {
+            containers(ContainersIntent::FolderChecked {
                 path: PathBuf::from("/srv/site"),
                 exists: true,
             }),
-            docker(DockerIntent::RecheckFolders),
-            docker(DockerIntent::FolderTypingPaused(PathBuf::from(
+            containers(ContainersIntent::RecheckFolders),
+            containers(ContainersIntent::FolderTypingPaused(PathBuf::from(
                 "/srv/site",
             ))),
-            docker(DockerIntent::FolderAnswerLate(PathBuf::from("/srv/site"))),
-            docker(DockerIntent::RightPanelHidden(true)),
-            AppEvent::Docker(DockerEvent::Effect(
-                DockerEffect::WaitForTypingPause(PathBuf::from("/srv/site")),
+            containers(ContainersIntent::FolderAnswerLate(PathBuf::from(
+                "/srv/site",
+            ))),
+            containers(ContainersIntent::RightPanelHidden(true)),
+            AppEvent::Containers(ContainersEvent::Effect(
+                ContainersEffect::WaitForTypingPause(PathBuf::from(
+                    "/srv/site",
+                )),
             )),
-            AppEvent::Docker(DockerEvent::Effect(
-                DockerEffect::WaitForLateAnswer(PathBuf::from("/srv/site")),
+            AppEvent::Containers(ContainersEvent::Effect(
+                ContainersEffect::WaitForLateAnswer(PathBuf::from("/srv/site")),
             )),
-            AppEvent::Docker(DockerEvent::Effect(
-                DockerEffect::RevealInspector,
+            AppEvent::Containers(ContainersEvent::Effect(
+                ContainersEffect::RevealInspector,
             )),
         ];
-        let address = otty_docker::EngineAddress::Tcp(String::from("h:1"));
+        let address = otty_containers::EngineAddress::Tcp(String::from("h:1"));
         let log_target = LogTarget::new(
-            otty_docker::fixtures::engine(otty_docker::EngineKind::Docker),
+            otty_containers::fixtures::engine(
+                otty_containers::EngineKind::Docker,
+            ),
             "850b",
         );
         let engine_results = [
-            docker(DockerIntent::LogLines {
+            containers(ContainersIntent::LogLines {
                 target: log_target.clone(),
                 lines: vec![String::from("ready")],
                 position: None,
             }),
-            docker(DockerIntent::LogRunRead {
+            containers(ContainersIntent::LogRunRead {
                 target: log_target.clone(),
-                run: otty_docker::fixtures::container_run(1, true),
+                run: otty_containers::fixtures::container_run(1, true),
             }),
-            docker(DockerIntent::LogRunChecked {
+            containers(ContainersIntent::LogRunChecked {
                 target: log_target.clone(),
-                result: Err(DockerError::new("x")),
+                result: Err(ContainersError::new("x")),
             }),
-            docker(DockerIntent::LogsFailed {
+            containers(ContainersIntent::LogsFailed {
                 target: log_target,
-                error: DockerError::new("x"),
+                error: ContainersError::new("x"),
             }),
-            docker(DockerIntent::InspectLoaded {
+            containers(ContainersIntent::InspectLoaded {
                 target: InspectTarget::new(
                     address,
                     ResourceKind::Containers,
@@ -571,14 +596,16 @@ mod tests {
             }),
         ];
         let clicks = [
-            docker(DockerIntent::ToggleEngine(
-                otty_docker::EngineAddress::Tcp(String::from("h:1")),
+            containers(ContainersIntent::ToggleEngine(
+                otty_containers::EngineAddress::Tcp(String::from("h:1")),
             )),
-            docker(DockerIntent::Refresh),
-            docker(DockerIntent::SelectRow(0)),
-            docker(DockerIntent::SelectInspectorTab(InspectorTab::Logs)),
-            docker(DockerIntent::Act(RowAction::Stop)),
-            docker(DockerIntent::Prune),
+            containers(ContainersIntent::Refresh),
+            containers(ContainersIntent::SelectRow(0)),
+            containers(ContainersIntent::SelectInspectorTab(
+                InspectorTab::Logs,
+            )),
+            containers(ContainersIntent::Act(RowAction::Stop)),
+            containers(ContainersIntent::Prune),
         ];
 
         for event in background.into_iter().chain(engine_results) {

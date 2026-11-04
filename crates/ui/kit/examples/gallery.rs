@@ -76,8 +76,8 @@ const PLUS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 
 /// Terminal mode icon.
 const TERMINAL_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>"#;
 
-/// Docker mode icon.
-const DOCKER_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="18" height="9" rx="2"/><path d="M6 10V7h4v3M10 10V5h4v5M14 10V7h4v3"/></svg>"#;
+/// Containers mode icon.
+const CONTAINERS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="18" height="9" rx="2"/><path d="M6 10V7h4v3M10 10V5h4v5M14 10V7h4v3"/></svg>"#;
 
 /// Stand-in icon for modes that do not exist yet.
 const GRID_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>"#;
@@ -984,11 +984,11 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 mode_tab(TERMINAL_ICON, "Terminal", "Ctrl Shift 1")
                     .active(true)
             )
-            .tab(mode_tab(DOCKER_ICON, "Docker", "Ctrl Shift 2"))
+            .tab(mode_tab(CONTAINERS_ICON, "Containers", "Ctrl Shift 2"))
             .more("All modes (Ctrl Shift M)", false, Message::Clicked),
         ModeSwitcher::new(p)
             .tab(mode_tab(TERMINAL_ICON, "Terminal", "Ctrl Shift 1"))
-            .tab(mode_tab(DOCKER_ICON, "Docker", "Ctrl Shift 2"))
+            .tab(mode_tab(CONTAINERS_ICON, "Containers", "Ctrl Shift 2"))
             .tab(
                 mode_tab(GRID_ICON, "Grid", "Ctrl Shift 3")
                     .active(true)
@@ -1015,7 +1015,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 .note("4 of 4")
                 .row(mode_row(TERMINAL_ICON, "Terminal", "Ctrl Shift 1"))
                 .row(
-                    mode_row(DOCKER_ICON, "Docker", "Ctrl Shift 2")
+                    mode_row(CONTAINERS_ICON, "Containers", "Ctrl Shift 2")
                         .pin(pinned("Unpin")),
                 )
                 .row(
@@ -1046,7 +1046,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 .note("2 of 4")
                 .row(mode_row(TERMINAL_ICON, "Terminal", "Ctrl Shift 1"))
                 .row(
-                    mode_row(DOCKER_ICON, "Docker", "Ctrl Shift 2")
+                    mode_row(CONTAINERS_ICON, "Containers", "Ctrl Shift 2")
                         .pin(pinned("Unpin")),
                 ),
         )

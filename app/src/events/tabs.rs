@@ -515,9 +515,12 @@ mod tests {
         assert_eq!(task.units(), 1);
     }
 
-    fn docker_app() -> App {
+    fn containers_app() -> App {
         let (mut app, _) = App::new();
-        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
 
         app
     }
@@ -546,8 +549,8 @@ mod tests {
     }
 
     #[test]
-    fn opening_settings_from_docker_mode_switches_to_terminal_mode() {
-        let mut app = docker_app();
+    fn opening_settings_from_containers_mode_switches_to_terminal_mode() {
+        let mut app = containers_app();
 
         let events = route_intent(&mut app, TabsIntent::OpenSettingsTab);
 
@@ -555,9 +558,9 @@ mod tests {
     }
 
     #[test]
-    fn activating_an_open_settings_tab_from_docker_mode_switches_to_terminal_mode()
+    fn activating_an_open_settings_tab_from_containers_mode_switches_to_terminal_mode()
      {
-        let mut app = docker_app();
+        let mut app = containers_app();
         let _ = route_intent(&mut app, TabsIntent::OpenSettingsTab);
         let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
 
@@ -567,8 +570,8 @@ mod tests {
     }
 
     #[test]
-    fn opening_a_new_terminal_from_docker_mode_switches_to_terminal_mode() {
-        let mut app = docker_app();
+    fn opening_a_new_terminal_from_containers_mode_switches_to_terminal_mode() {
+        let mut app = containers_app();
 
         let events = route_intent(&mut app, TabsIntent::OpenTerminalTab);
 
@@ -576,8 +579,8 @@ mod tests {
     }
 
     #[test]
-    fn activating_a_session_from_docker_mode_switches_to_terminal_mode() {
-        let mut app = docker_app();
+    fn activating_a_session_from_containers_mode_switches_to_terminal_mode() {
+        let mut app = containers_app();
         let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
         let first_id = app.widgets.tabs.active_tab_id().expect("first tab");
         let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
@@ -591,8 +594,8 @@ mod tests {
     }
 
     #[test]
-    fn running_a_launch_from_docker_mode_switches_to_terminal_mode() {
-        let mut app = docker_app();
+    fn running_a_launch_from_containers_mode_switches_to_terminal_mode() {
+        let mut app = containers_app();
 
         let events = route_intent(&mut app, open_command_tab_intent());
 
@@ -600,8 +603,9 @@ mod tests {
     }
 
     #[test]
-    fn opening_the_launch_editor_from_docker_mode_switches_to_terminal_mode() {
-        let mut app = docker_app();
+    fn opening_the_launch_editor_from_containers_mode_switches_to_terminal_mode()
+     {
+        let mut app = containers_app();
 
         let events = route_intent(
             &mut app,
@@ -617,8 +621,8 @@ mod tests {
     }
 
     #[test]
-    fn opening_an_error_tab_from_docker_mode_switches_to_terminal_mode() {
-        let mut app = docker_app();
+    fn opening_an_error_tab_from_containers_mode_switches_to_terminal_mode() {
+        let mut app = containers_app();
 
         let events = route_intent(
             &mut app,
@@ -649,8 +653,8 @@ mod tests {
     }
 
     #[test]
-    fn closing_a_tab_from_docker_mode_does_not_switch_modes() {
-        let mut app = docker_app();
+    fn closing_a_tab_from_containers_mode_does_not_switch_modes() {
+        let mut app = containers_app();
         let _ = route_intent(&mut app, TabsIntent::OpenTerminalTab);
         let tab_id = app.widgets.tabs.active_tab_id().expect("tab");
 

@@ -182,10 +182,10 @@ mod tests {
         ctx_with_sessions(&["zsh", "htop"])
     }
 
-    /// The same entries as [`ctx`] while Docker mode is on screen.
-    fn docker_ctx() -> PaletteCtx<'static> {
+    /// The same entries as [`ctx`] while Containers mode is on screen.
+    fn containers_ctx() -> PaletteCtx<'static> {
         PaletteCtx {
-            active_mode: Mode::Docker,
+            active_mode: Mode::Containers,
             ..ctx()
         }
     }
@@ -196,20 +196,20 @@ mod tests {
         state
     }
 
-    fn open_docker_state() -> PaletteState {
+    fn open_containers_state() -> PaletteState {
         let mut state = PaletteState::default();
-        let _ = reduce(&mut state, PaletteIntent::Open, &docker_ctx());
+        let _ = reduce(&mut state, PaletteIntent::Open, &containers_ctx());
         state
     }
 
-    fn act_in_docker(
+    fn act_in_containers(
         state: &mut PaletteState,
         action: PaletteAction,
     ) -> Vec<PaletteEvent> {
         collect_outputs(reduce(
             state,
             PaletteIntent::Action(action),
-            &docker_ctx(),
+            &containers_ctx(),
         ))
     }
 
@@ -377,7 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn in_docker_mode_a_click_runs_the_entry_shown_at_that_place() {
+    fn in_containers_mode_a_click_runs_the_entry_shown_at_that_place() {
         let cases = [
             (5, PaletteTarget::Settings),
             (6, PaletteTarget::ToggleLeftPanel),
@@ -386,11 +386,11 @@ mod tests {
         ];
 
         for (index, expected) in cases {
-            let mut state = open_docker_state();
+            let mut state = open_containers_state();
             assert_eq!(listed_targets(&state)[index], expected);
 
             let events =
-                act_in_docker(&mut state, PaletteAction::RunItem(index));
+                act_in_containers(&mut state, PaletteAction::RunItem(index));
 
             assert_eq!(
                 effects(events),
@@ -401,13 +401,13 @@ mod tests {
     }
 
     #[test]
-    fn in_docker_mode_arrows_and_enter_run_the_entry_they_reach() {
-        let mut state = open_docker_state();
+    fn in_containers_mode_arrows_and_enter_run_the_entry_they_reach() {
+        let mut state = open_containers_state();
 
         for _ in 0..6 {
-            let _ = act_in_docker(&mut state, PaletteAction::MoveDown);
+            let _ = act_in_containers(&mut state, PaletteAction::MoveDown);
         }
-        let events = act_in_docker(&mut state, PaletteAction::RunActive);
+        let events = act_in_containers(&mut state, PaletteAction::RunActive);
 
         assert_eq!(
             effects(events),
@@ -416,19 +416,20 @@ mod tests {
     }
 
     #[test]
-    fn in_docker_mode_typing_the_name_of_a_hidden_command_finds_nothing() {
+    fn in_containers_mode_typing_the_name_of_a_hidden_command_finds_nothing() {
         for key in [
             Key::PaletteSplitPane,
             Key::CloseSession,
             Key::PaletteNewFolder,
         ] {
-            let mut state = open_docker_state();
+            let mut state = open_containers_state();
 
-            let _ = act_in_docker(
+            let _ = act_in_containers(
                 &mut state,
                 PaletteAction::QueryChanged(i18n::t(key).to_owned()),
             );
-            let events = act_in_docker(&mut state, PaletteAction::RunActive);
+            let events =
+                act_in_containers(&mut state, PaletteAction::RunActive);
 
             assert_eq!(state.list().map(|list| list.match_count()), Some(0));
             assert!(events.is_empty());
@@ -437,16 +438,17 @@ mod tests {
     }
 
     #[test]
-    fn in_docker_mode_a_filtered_entry_runs_from_its_place_in_the_matches() {
-        let mut state = open_docker_state();
+    fn in_containers_mode_a_filtered_entry_runs_from_its_place_in_the_matches()
+    {
+        let mut state = open_containers_state();
 
-        let _ = act_in_docker(
+        let _ = act_in_containers(
             &mut state,
             PaletteAction::QueryChanged(
                 i18n::t(Key::WindowFocusMode).to_owned(),
             ),
         );
-        let events = act_in_docker(&mut state, PaletteAction::RunItem(0));
+        let events = act_in_containers(&mut state, PaletteAction::RunItem(0));
 
         assert_eq!(
             effects(events),
@@ -460,7 +462,7 @@ mod tests {
         assert!(listed_targets(&state).contains(&PaletteTarget::SplitPane));
         assert!(listed_targets(&state).contains(&PaletteTarget::NewFolder));
 
-        let _ = act_in_docker(
+        let _ = act_in_containers(
             &mut state,
             PaletteAction::QueryChanged(String::new()),
         );

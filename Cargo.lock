@@ -3404,7 +3404,7 @@ dependencies = [
  "log",
  "nix 0.31.2",
  "notify",
- "otty-docker",
+ "otty-containers",
  "otty-libterm",
  "otty-ui-kit",
  "otty-ui-term",
@@ -3417,7 +3417,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "otty-docker"
+name = "otty-containers"
 version = "0.1.0"
 dependencies = [
  "bollard",

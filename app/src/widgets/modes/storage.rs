@@ -165,12 +165,12 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_file_gives_docker_pinned_and_terminal_active() {
+    fn a_missing_file_gives_containers_pinned_and_terminal_active() {
         let file = TempModesFile::new("missing");
 
         let state = load_state_from_path(&file.path());
 
-        assert_eq!(state.pinned(), &[Mode::Docker]);
+        assert_eq!(state.pinned(), &[Mode::Containers]);
         assert_eq!(state.active(), Mode::Terminal);
         assert!(!state.is_menu_open());
     }
@@ -179,19 +179,23 @@ mod tests {
     fn broken_json_gives_the_defaults() {
         let pinned = loaded_pinned("{ \"pinned\": [", "broken");
 
-        assert_eq!(pinned, vec![Mode::Docker]);
+        assert_eq!(pinned, vec![Mode::Containers]);
     }
 
     #[test]
     fn a_file_without_a_pinned_list_gives_the_defaults() {
-        for (index, contents) in
-            ["[]", "{}", "{\"pinned\": \"docker\"}", "{\"pinned\": [1]}"]
-                .into_iter()
-                .enumerate()
+        for (index, contents) in [
+            "[]",
+            "{}",
+            "{\"pinned\": \"containers\"}",
+            "{\"pinned\": [1]}",
+        ]
+        .into_iter()
+        .enumerate()
         {
             let pinned = loaded_pinned(contents, &format!("shape-{index}"));
 
-            assert_eq!(pinned, vec![Mode::Docker], "{contents}");
+            assert_eq!(pinned, vec![Mode::Containers], "{contents}");
         }
     }
 
@@ -205,11 +209,11 @@ mod tests {
     #[test]
     fn unknown_names_are_skipped_and_the_rest_is_kept() {
         let pinned = loaded_pinned(
-            "{\"pinned\": [\"kubernetes\", \"docker\", \"agents\"]}",
+            "{\"pinned\": [\"kubernetes\", \"containers\", \"agents\"]}",
             "unknown",
         );
 
-        assert_eq!(pinned, vec![Mode::Docker]);
+        assert_eq!(pinned, vec![Mode::Containers]);
     }
 
     #[test]
@@ -222,27 +226,44 @@ mod tests {
     #[test]
     fn terminal_and_repeated_entries_are_skipped() {
         let pinned = loaded_pinned(
-            "{\"pinned\": [\"terminal\", \"docker\", \"docker\"]}",
+            "{\"pinned\": [\"terminal\", \"containers\", \"containers\"]}",
             "repeats",
         );
 
-        assert_eq!(pinned, vec![Mode::Docker]);
+        assert_eq!(pinned, vec![Mode::Containers]);
     }
 
     #[test]
     fn more_than_four_entries_keep_at_most_four_pinned() {
         let pinned = loaded_pinned(
-            "{\"pinned\": [\"docker\", \"kubernetes\", \"agents\", \
-             \"postgres\", \"aws\", \"docker\"]}",
+            "{\"pinned\": [\"containers\", \"kubernetes\", \"agents\", \
+             \"postgres\", \"aws\", \"containers\"]}",
             "many",
         );
 
-        assert_eq!(pinned, vec![Mode::Docker]);
+        assert_eq!(pinned, vec![Mode::Containers]);
+    }
+
+    #[test]
+    fn a_file_saved_with_the_old_docker_name_keeps_containers_pinned() {
+        let pinned = loaded_pinned("{\"pinned\": [\"docker\"]}", "old-name");
+
+        assert_eq!(pinned, vec![Mode::Containers]);
+    }
+
+    #[test]
+    fn the_old_and_the_new_name_together_pin_containers_once() {
+        let pinned = loaded_pinned(
+            "{\"pinned\": [\"docker\", \"containers\"]}",
+            "both-names",
+        );
+
+        assert_eq!(pinned, vec![Mode::Containers]);
     }
 
     #[test]
     fn saved_pinned_modes_load_back() {
-        for pinned in [vec![Mode::Docker], Vec::new()] {
+        for pinned in [vec![Mode::Containers], Vec::new()] {
             let file = TempModesFile::new("round-trip");
 
             save_pinned_to_path(&file.path(), &pinned)
@@ -257,14 +278,14 @@ mod tests {
     fn the_file_lists_pinned_modes_by_name() {
         let file = TempModesFile::new("format");
 
-        save_pinned_to_path(&file.path(), &[Mode::Docker])
+        save_pinned_to_path(&file.path(), &[Mode::Containers])
             .expect("modes file should save");
         let saved: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(file.path()).expect("modes file should read"),
         )
         .expect("modes file should be JSON");
 
-        assert_eq!(saved, serde_json::json!({ "pinned": ["docker"] }));
+        assert_eq!(saved, serde_json::json!({ "pinned": ["containers"] }));
         assert!(!file.path().with_extension("json.tmp").exists());
     }
 }

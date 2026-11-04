@@ -155,12 +155,12 @@ impl<Message> ModeMenuSection<Message> {
 /// let menu: Element<'_, Message> = ModeMenu::new(&palette)
 ///     .section(
 ///         ModeMenuSection::new("Pinned").note("1 of 4").row(
-///             ModeRow::new(icon, "Docker")
+///             ModeRow::new(icon, "Containers")
 ///                 .shortcut("Ctrl Shift 2")
-///                 .on_press(Message::Open("docker"))
+///                 .on_press(Message::Open("containers"))
 ///                 .pin(ModePin::Pinned {
 ///                     label: "Unpin".to_owned(),
-///                     on_press: Message::Unpin("docker"),
+///                     on_press: Message::Unpin("containers"),
 ///                 }),
 ///         ),
 ///     )
@@ -455,10 +455,10 @@ mod tests {
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
-        OpenDocker,
+        OpenContainers,
         OpenTerminal,
-        UnpinDocker,
-        PinDocker,
+        UnpinContainers,
+        PinContainers,
     }
 
     fn terminal_row() -> ModeRow<Message> {
@@ -467,10 +467,10 @@ mod tests {
             .on_press(Message::OpenTerminal)
     }
 
-    fn docker_row(pin: ModePin<Message>) -> ModeRow<Message> {
-        ModeRow::new(glyph::plus(), "Docker")
+    fn containers_row(pin: ModePin<Message>) -> ModeRow<Message> {
+        ModeRow::new(glyph::plus(), "Containers")
             .shortcut("Ctrl Shift 2")
-            .on_press(Message::OpenDocker)
+            .on_press(Message::OpenContainers)
             .pin(pin)
     }
 
@@ -482,7 +482,7 @@ mod tests {
             ModeMenuSection::new("Pinned")
                 .note("2 of 4")
                 .row(terminal_row())
-                .row(docker_row(pin)),
+                .row(containers_row(pin)),
         )
     }
 
@@ -513,14 +513,14 @@ mod tests {
             &palette,
             ModePin::Unpinned {
                 label: "Pin".to_owned(),
-                on_press: Message::PinDocker,
+                on_press: Message::PinContainers,
             },
         ));
 
-        ui.click("Docker").expect("row name should be visible");
+        ui.click("Containers").expect("row name should be visible");
 
         let messages: Vec<Message> = ui.into_messages().collect();
-        assert_eq!(messages, vec![Message::OpenDocker]);
+        assert_eq!(messages, vec![Message::OpenContainers]);
     }
 
     #[test]
@@ -530,14 +530,14 @@ mod tests {
             &palette,
             ModePin::Pinned {
                 label: "Unpin".to_owned(),
-                on_press: Message::UnpinDocker,
+                on_press: Message::UnpinContainers,
             },
         ));
 
-        click_pin(&mut ui, "Docker");
+        click_pin(&mut ui, "Containers");
 
         let messages: Vec<Message> = ui.into_messages().collect();
-        assert_eq!(messages, vec![Message::UnpinDocker]);
+        assert_eq!(messages, vec![Message::UnpinContainers]);
     }
 
     #[test]
@@ -547,14 +547,14 @@ mod tests {
             &palette,
             ModePin::Unpinned {
                 label: "Pin".to_owned(),
-                on_press: Message::PinDocker,
+                on_press: Message::PinContainers,
             },
         ));
 
-        click_pin(&mut ui, "Docker");
+        click_pin(&mut ui, "Containers");
 
         let messages: Vec<Message> = ui.into_messages().collect();
-        assert_eq!(messages, vec![Message::PinDocker]);
+        assert_eq!(messages, vec![Message::PinContainers]);
     }
 
     #[test]
@@ -567,7 +567,7 @@ mod tests {
             },
         ));
 
-        click_pin(&mut ui, "Docker");
+        click_pin(&mut ui, "Containers");
 
         assert_eq!(ui.into_messages().count(), 0);
     }

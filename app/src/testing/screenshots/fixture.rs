@@ -95,7 +95,7 @@ impl Fixture {
             &TabsViewModel::new(&tabs, Some(TAB_ZSH), Some("fedora")),
             QuickLaunchTreeViewModel::idle(&launches, &fx_launching).launches(),
             true,
-            vec![Mode::Terminal, Mode::Docker],
+            vec![Mode::Terminal, Mode::Containers],
             Mode::Terminal,
         );
         let _ = palette.reduce(PaletteIntent::Open, &ctx);

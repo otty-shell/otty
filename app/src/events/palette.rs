@@ -354,8 +354,8 @@ mod tests {
             &tabs,
             launches,
             true,
-            vec![Mode::Terminal, Mode::Docker],
-            Mode::Docker,
+            vec![Mode::Terminal, Mode::Containers],
+            Mode::Containers,
         );
 
         assert_eq!(
@@ -400,40 +400,43 @@ mod tests {
             ]
         );
         assert!(ctx.can_split_pane);
-        assert_eq!(ctx.pinned_modes, vec![Mode::Terminal, Mode::Docker]);
-        assert_eq!(ctx.active_mode, Mode::Docker);
+        assert_eq!(ctx.pinned_modes, vec![Mode::Terminal, Mode::Containers]);
+        assert_eq!(ctx.active_mode, Mode::Containers);
     }
 
     #[test]
     fn opening_lists_the_pinned_modes_from_the_modes_widget() {
         let (mut app, _) = App::new();
         app.widgets.modes = ModesWidget::new();
-        let _ = app.widgets.modes.reduce(ModesIntent::Unpin(Mode::Docker));
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Unpin(Mode::Containers));
 
         let _ = handle(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
 
         let vm = app.widgets.palette.vm().expect("palette should be open");
-        let docker = vm
+        let containers = vm
             .list
             .matches()
             .find(|(item, _)| {
-                *item.key() == PaletteTarget::SwitchMode(Mode::Docker)
+                *item.key() == PaletteTarget::SwitchMode(Mode::Containers)
             })
             .map(|(item, _)| item.clone())
             .expect("an unpinned mode is still listed");
-        assert_eq!(docker.shortcut(), None);
+        assert_eq!(containers.shortcut(), None);
     }
 
     #[test]
     fn switching_mode_runs_the_switcher_intent() {
         let (mut app, _) = App::new();
 
-        let events = run(&mut app, PaletteTarget::SwitchMode(Mode::Docker));
+        let events = run(&mut app, PaletteTarget::SwitchMode(Mode::Containers));
 
         assert!(matches!(
             events.as_slice(),
             [AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
-                Mode::Docker
+                Mode::Containers
             )))]
         ));
     }
@@ -562,7 +565,10 @@ mod tests {
     #[test]
     fn new_folder_outside_terminal_mode_leaves_the_hidden_launches_alone() {
         let (mut app, _) = App::new();
-        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
 
         let events = run(&mut app, PaletteTarget::NewFolder);
 
@@ -651,7 +657,10 @@ mod tests {
         let (mut app, _) = App::new();
         app.widgets.modes = ModesWidget::new();
         let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
-        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
 
         let events = run(&mut app, PaletteTarget::CloseSession);
 
@@ -662,7 +671,10 @@ mod tests {
     fn split_pane_outside_terminal_mode_leaves_the_hidden_tab_alone() {
         let (mut app, _) = App::new();
         let _ = open_shell_tab(&mut app);
-        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
 
         let events = run(&mut app, PaletteTarget::SplitPane);
 
@@ -733,7 +745,10 @@ mod tests {
     {
         let (mut app, _) = App::new();
         let tab_id = open_shell_tab(&mut app);
-        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
 
         let _ = handle(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
 
@@ -751,7 +766,10 @@ mod tests {
         let (mut app, _) = App::new();
         let _ = open_shell_tab(&mut app);
         let _ = handle(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
-        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
 
         let split = run(&mut app, PaletteTarget::SplitPane);
         let close = run(&mut app, PaletteTarget::CloseSession);

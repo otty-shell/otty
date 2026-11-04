@@ -76,11 +76,11 @@ mod tests {
     }
 
     #[test]
-    fn first_start_is_terminal_with_docker_pinned_and_the_menu_closed() {
+    fn first_start_is_terminal_with_containers_pinned_and_the_menu_closed() {
         let state = ModesState::default();
 
         assert_eq!(state.active(), Mode::Terminal);
-        assert_eq!(state.pinned(), &[Mode::Docker]);
+        assert_eq!(state.pinned(), &[Mode::Containers]);
         assert_eq!(state.pin_limit(), 4);
         assert!(!state.is_menu_open());
     }
@@ -89,10 +89,11 @@ mod tests {
     fn selecting_another_mode_makes_it_active_and_reports_the_change() {
         let mut state = ModesState::default();
 
-        let effects = effects(&mut state, ModesIntent::Select(Mode::Docker));
+        let effects =
+            effects(&mut state, ModesIntent::Select(Mode::Containers));
 
-        assert_eq!(state.active(), Mode::Docker);
-        assert_eq!(effects, vec![ModesEffect::ModeChanged(Mode::Docker)]);
+        assert_eq!(state.active(), Mode::Containers);
+        assert_eq!(effects, vec![ModesEffect::ModeChanged(Mode::Containers)]);
     }
 
     #[test]
@@ -150,19 +151,22 @@ mod tests {
     fn pinning_an_unpinned_mode_adds_it_last_and_saves() {
         let mut state = ModesState::with_pinned(&[]);
 
-        let effects = effects(&mut state, ModesIntent::Pin(Mode::Docker));
+        let effects = effects(&mut state, ModesIntent::Pin(Mode::Containers));
 
-        assert_eq!(state.pinned(), &[Mode::Docker]);
-        assert_eq!(effects, vec![ModesEffect::SavePinned(vec![Mode::Docker])]);
+        assert_eq!(state.pinned(), &[Mode::Containers]);
+        assert_eq!(
+            effects,
+            vec![ModesEffect::SavePinned(vec![Mode::Containers])]
+        );
     }
 
     #[test]
     fn pinning_a_pinned_mode_changes_nothing() {
         let mut state = ModesState::default();
 
-        let effects = effects(&mut state, ModesIntent::Pin(Mode::Docker));
+        let effects = effects(&mut state, ModesIntent::Pin(Mode::Containers));
 
-        assert_eq!(state.pinned(), &[Mode::Docker]);
+        assert_eq!(state.pinned(), &[Mode::Containers]);
         assert!(effects.is_empty());
     }
 
@@ -180,7 +184,7 @@ mod tests {
     fn pinning_when_every_slot_is_taken_is_refused() {
         let mut state = ModesState::with_pin_limit(&[], 0);
 
-        let effects = effects(&mut state, ModesIntent::Pin(Mode::Docker));
+        let effects = effects(&mut state, ModesIntent::Pin(Mode::Containers));
 
         assert!(state.is_full());
         assert!(state.pinned().is_empty());
@@ -199,21 +203,21 @@ mod tests {
     fn unpinning_a_pinned_mode_removes_it_and_saves() {
         let mut state = ModesState::default();
 
-        let effects = effects(&mut state, ModesIntent::Unpin(Mode::Docker));
+        let effects = effects(&mut state, ModesIntent::Unpin(Mode::Containers));
 
         assert!(state.pinned().is_empty());
-        assert!(!state.is_pinned(Mode::Docker));
+        assert!(!state.is_pinned(Mode::Containers));
         assert_eq!(effects, vec![ModesEffect::SavePinned(Vec::new())]);
     }
 
     #[test]
     fn unpinning_the_active_mode_keeps_it_active() {
         let mut state = ModesState::default();
-        let _ = effects(&mut state, ModesIntent::Select(Mode::Docker));
+        let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
 
-        let effects = effects(&mut state, ModesIntent::Unpin(Mode::Docker));
+        let effects = effects(&mut state, ModesIntent::Unpin(Mode::Containers));
 
-        assert_eq!(state.active(), Mode::Docker);
+        assert_eq!(state.active(), Mode::Containers);
         assert_eq!(effects, vec![ModesEffect::SavePinned(Vec::new())]);
     }
 
@@ -222,11 +226,12 @@ mod tests {
         let mut state = ModesState::with_pinned(&[]);
 
         let terminal = effects(&mut state, ModesIntent::Unpin(Mode::Terminal));
-        let docker = effects(&mut state, ModesIntent::Unpin(Mode::Docker));
+        let containers =
+            effects(&mut state, ModesIntent::Unpin(Mode::Containers));
 
         assert!(state.pinned().is_empty());
         assert!(terminal.is_empty());
-        assert!(docker.is_empty());
+        assert!(containers.is_empty());
     }
 
     #[test]
@@ -234,9 +239,9 @@ mod tests {
         let mut state = ModesState::default();
         let _ = effects(&mut state, ModesIntent::ToggleMenu);
 
-        let _ = effects(&mut state, ModesIntent::Unpin(Mode::Docker));
+        let _ = effects(&mut state, ModesIntent::Unpin(Mode::Containers));
         let open_after_unpin = state.is_menu_open();
-        let _ = effects(&mut state, ModesIntent::Pin(Mode::Docker));
+        let _ = effects(&mut state, ModesIntent::Pin(Mode::Containers));
 
         assert!(open_after_unpin);
         assert!(state.is_menu_open());
@@ -247,11 +252,11 @@ mod tests {
         let mut state = ModesState::default();
         let intents = [
             ModesIntent::ToggleMenu,
-            ModesIntent::Select(Mode::Docker),
+            ModesIntent::Select(Mode::Containers),
             ModesIntent::CloseMenu,
             ModesIntent::Select(Mode::Terminal),
-            ModesIntent::Unpin(Mode::Docker),
-            ModesIntent::Pin(Mode::Docker),
+            ModesIntent::Unpin(Mode::Containers),
+            ModesIntent::Pin(Mode::Containers),
         ];
 
         let saves: Vec<ModesEffect> = intents
@@ -264,7 +269,7 @@ mod tests {
             saves,
             vec![
                 ModesEffect::SavePinned(Vec::new()),
-                ModesEffect::SavePinned(vec![Mode::Docker]),
+                ModesEffect::SavePinned(vec![Mode::Containers]),
             ]
         );
     }
@@ -273,17 +278,17 @@ mod tests {
     fn with_pinned_leaves_out_what_the_pin_rules_refuse() {
         let state = ModesState::with_pinned(&[
             Mode::Terminal,
-            Mode::Docker,
-            Mode::Docker,
+            Mode::Containers,
+            Mode::Containers,
         ]);
 
         assert_eq!(state.active(), Mode::Terminal);
-        assert_eq!(state.pinned(), &[Mode::Docker]);
+        assert_eq!(state.pinned(), &[Mode::Containers]);
     }
 
     #[test]
     fn with_pinned_stops_at_the_limit() {
-        let state = ModesState::with_pin_limit(&[Mode::Docker], 0);
+        let state = ModesState::with_pin_limit(&[Mode::Containers], 0);
 
         assert!(state.pinned().is_empty());
     }

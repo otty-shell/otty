@@ -149,8 +149,8 @@ pub(crate) enum Key {
     // Modes: the switcher and the All modes menu.
     /// Name of the Terminal mode.
     ModeTerminal,
-    /// Name of the Docker mode.
-    ModeDocker,
+    /// Name of the Containers mode.
+    ModeContainers,
     /// Tooltip of the "⋯" button that opens the All modes menu.
     ModesAllModes,
     /// Label of the menu section with Terminal and the pinned modes.
@@ -168,562 +168,562 @@ pub(crate) enum Key {
     ModesUnpinAnotherFirst,
     /// Hint in the empty Other modes section of the All modes menu.
     ModesNoOtherModes,
-    // Docker mode: engine tree, tables and inspector.
+    // Containers mode: engine tree, tables and inspector.
     /// Containers list in the engine tree and the main area title; also the
     /// Networks column with the container count.
-    DockerContainers,
+    ContainersContainers,
     /// Images list in the engine tree and the main area title.
-    DockerImages,
+    ContainersImages,
     /// Volumes list in the engine tree and the main area title.
-    DockerVolumes,
+    ContainersVolumes,
     /// Networks list in the engine tree and the main area title.
-    DockerNetworks,
+    ContainersNetworks,
     /// Create button above the containers table.
-    DockerRunContainer,
+    ContainersRunContainer,
     /// Create button above the images table.
-    DockerPullImage,
+    ContainersPullImage,
     /// Create button above the volumes table.
-    DockerCreateVolume,
+    ContainersCreateVolume,
     /// Create button above the networks table.
-    DockerCreateNetwork,
+    ContainersCreateNetwork,
     /// Tooltip of the button that loads every list again.
-    DockerRefresh,
+    ContainersRefresh,
     /// Tooltip of the "⋯" button that holds the header actions that do not
     /// fit, and of the "⋯" button at the end of a table row.
-    DockerMoreActions,
+    ContainersMoreActions,
     /// Placeholder of the tag search above the table.
-    DockerSearchPlaceholder,
+    ContainersSearchPlaceholder,
     /// Tooltip of the cross of a tag above the table.
-    DockerTagRemove,
+    ContainersTagRemove,
     /// Button at the end of the tags above the table.
-    DockerTagsClearAll,
+    ContainersTagsClearAll,
     /// Running containers next to Containers in the tree. Placeholder:
     /// `{count}`.
-    TplDockerRunning,
+    TplContainersRunning,
     /// Word next to a tree row whose list failed to load.
-    DockerListFailedShort,
+    ContainersListFailedShort,
     /// Table message while a list loads.
-    DockerLoading,
+    ContainersLoading,
     /// Message of an empty containers table.
-    DockerNoContainers,
+    ContainersNoContainers,
     /// Message of an empty images table.
-    DockerNoImages,
+    ContainersNoImages,
     /// Message of an empty volumes table.
-    DockerNoVolumes,
+    ContainersNoVolumes,
     /// Message of an empty networks table.
-    DockerNoNetworks,
+    ContainersNoNetworks,
     /// Table message when no row passes the search.
-    DockerNothingMatches,
+    ContainersNothingMatches,
     /// Notice above a table whose list failed to load. Placeholder: `{error}`.
-    TplDockerListFailed,
+    TplContainersListFailed,
     /// Main area text while OTTY looks for engines.
-    DockerSearching,
+    ContainersSearching,
     /// Title of the card when neither Docker nor Podman is installed.
-    DockerNotInstalledTitle,
+    ContainersNotInstalledTitle,
     /// Text of the card when neither Docker nor Podman is installed.
-    DockerNotInstalledText,
+    ContainersNotInstalledText,
     /// Button that opens the Docker install page.
-    DockerInstallDocker,
+    ContainersInstallDocker,
     /// Button that opens the Podman install page.
-    DockerInstallPodman,
+    ContainersInstallPodman,
     /// Button that searches for engines again.
-    DockerCheckAgain,
+    ContainersCheckAgain,
     /// Button that copies a command to the clipboard.
-    DockerCopy,
+    ContainersCopy,
     /// Button that opens the documentation of the fix.
-    DockerHowToFix,
+    ContainersHowToFix,
     /// Button that opens how to fix Docker, when Docker and Podman are both off.
-    DockerHowToFixDocker,
+    ContainersHowToFixDocker,
     /// Button that opens how to fix Podman, when Docker and Podman are both off.
-    DockerHowToFixPodman,
+    ContainersHowToFixPodman,
     /// Label above a command to run in a terminal.
-    DockerRunInTerminal,
+    ContainersRunInTerminal,
     /// Title of the card when Docker is installed but not running.
-    DockerStoppedTitle,
+    ContainersDockerStoppedTitle,
     /// Text of the card when Docker is installed but not running.
-    DockerStoppedText,
+    ContainersDockerStoppedText,
     /// Hint under the command that starts Docker, for macOS.
-    DockerStoppedHint,
+    ContainersDockerStoppedHint,
     /// Title of the card when the Podman API service is off.
-    DockerPodmanOffTitle,
+    ContainersPodmanOffTitle,
     /// Text of the card when the Podman API service is off.
-    DockerPodmanOffText,
+    ContainersPodmanOffText,
     /// Hint under the command that turns on Podman, for macOS.
-    DockerPodmanOffHint,
+    ContainersPodmanOffHint,
     /// Title of the card when Docker and Podman are installed and neither
     /// answers.
-    DockerBothOffTitle,
+    ContainersBothOffTitle,
     /// Description of the card when Docker and Podman are both off.
-    DockerBothOffText,
+    ContainersBothOffText,
     /// Label over the Docker command when Docker and Podman are both off.
-    DockerBothOffDockerLabel,
+    ContainersBothOffDockerLabel,
     /// Label over the Podman command when Docker and Podman are both off.
-    DockerBothOffPodmanLabel,
+    ContainersBothOffPodmanLabel,
     /// Title of the card when OTTY may not use the Docker socket.
-    DockerNoAccessTitle,
+    ContainersDockerNoAccessTitle,
     /// Text of the no access card. Placeholder: `{socket}`.
-    TplDockerNoAccessText,
+    TplContainersDockerNoAccessText,
     /// Label above the command that adds the user to the docker group.
-    DockerNoAccessLabel,
+    ContainersDockerNoAccessLabel,
     /// Hint under the command: log out again; the group has root rights.
-    DockerNoAccessHint,
+    ContainersDockerNoAccessHint,
     /// Title of the card when OTTY may not use a Podman socket.
-    DockerPodmanNoAccessTitle,
+    ContainersPodmanNoAccessTitle,
     /// Text of the Podman no access card. Placeholder: `{socket}`.
-    TplDockerPodmanNoAccessText,
+    TplContainersPodmanNoAccessText,
     /// Label above the command that turns on the user's own Podman socket.
-    DockerPodmanNoAccessLabel,
+    ContainersPodmanNoAccessLabel,
     /// Hint under that command: whose containers it shows, and macOS.
-    DockerPodmanNoAccessHint,
+    ContainersPodmanNoAccessHint,
     /// Title of the card when the Docker socket is denied and Podman is off.
-    DockerNoAccessPodmanOffTitle,
+    ContainersDockerNoAccessPodmanOffTitle,
     /// Text of that card. Placeholder: `{socket}`.
-    TplDockerNoAccessPodmanOffText,
+    TplContainersDockerNoAccessPodmanOffText,
     /// Title of the card when a Podman socket is denied and Docker is off.
-    DockerPodmanNoAccessDockerOffTitle,
+    ContainersPodmanNoAccessDockerOffTitle,
     /// Text of that card. Placeholder: `{socket}`.
-    TplDockerPodmanNoAccessDockerOffText,
+    TplContainersPodmanNoAccessDockerOffText,
     /// Left panel text when no engine is installed.
-    DockerPanelNotInstalled,
+    ContainersPanelNotInstalled,
     /// Left panel text when Docker is not running.
-    DockerPanelStopped,
+    ContainersPanelDockerStopped,
     /// Left panel text when the Podman API service is off.
-    DockerPanelPodmanOff,
+    ContainersPanelPodmanOff,
     /// Left panel text when Docker and Podman are both off.
-    DockerPanelBothOff,
+    ContainersPanelBothOff,
     /// Left panel text when OTTY may not use the Docker socket.
-    DockerPanelNoAccess,
+    ContainersPanelDockerNoAccess,
     /// Left panel text when OTTY may not use a Podman socket.
-    DockerPanelPodmanNoAccess,
+    ContainersPanelPodmanNoAccess,
     /// Left panel text when the Docker socket is denied and Podman is off.
-    DockerPanelNoAccessPodmanOff,
+    ContainersPanelDockerNoAccessPodmanOff,
     /// Left panel text when a Podman socket is denied and Docker is off.
-    DockerPanelPodmanNoAccessDockerOff,
+    ContainersPanelPodmanNoAccessDockerOff,
     /// Right panel text when no row is selected.
-    DockerNothingToInspect,
+    ContainersNothingToInspect,
     /// Line under the no engine cards. Placeholder: `{places}`.
-    TplDockerLookedFor,
+    TplContainersLookedFor,
     /// Line under the no engine cards when no socket was tried.
-    DockerLookedForCommands,
+    ContainersLookedForCommands,
     /// Table column: the name of a container, volume or network.
-    DockerColumnName,
+    ContainersColumnName,
     /// Table column: the state of a container.
-    DockerColumnStatus,
+    ContainersColumnStatus,
     /// Table column: the image of a container.
-    DockerColumnImage,
+    ContainersColumnImage,
     /// Table column: the ports of a container.
-    DockerColumnPorts,
+    ContainersColumnPorts,
     /// Table column: how long ago the item was created.
-    DockerColumnAge,
+    ContainersColumnAge,
     /// Table column: the repository of an image.
-    DockerColumnRepository,
+    ContainersColumnRepository,
     /// Table column: the tag of an image.
-    DockerColumnTag,
+    ContainersColumnTag,
     /// Table column: the short ID of an image.
-    DockerColumnId,
+    ContainersColumnId,
     /// Table column: the size of an image.
-    DockerColumnSize,
+    ContainersColumnSize,
     /// Table column: the containers that use an image or a volume.
-    DockerColumnUsedBy,
+    ContainersColumnUsedBy,
     /// Table column: the driver of a volume or a network.
-    DockerColumnDriver,
+    ContainersColumnDriver,
     /// Table column: the scope of a network.
-    DockerColumnScope,
+    ContainersColumnScope,
     /// Table column: the subnet of a network.
-    DockerColumnSubnet,
+    ContainersColumnSubnet,
     /// Container state badge: running.
-    DockerStateRunning,
+    ContainersStateRunning,
     /// Container state badge: paused.
-    DockerStatePaused,
+    ContainersStatePaused,
     /// Container state badge: restarting.
-    DockerStateRestarting,
+    ContainersStateRestarting,
     /// Container state badge: created, never started.
-    DockerStateCreated,
+    ContainersStateCreated,
     /// Container state badge: exited, code unknown.
-    DockerStateExited,
+    ContainersStateExited,
     /// Container state badge: exited with a code. Placeholder: `{code}`.
-    TplDockerStateExitedCode,
+    TplContainersStateExitedCode,
     /// Container state badge: dead.
-    DockerStateDead,
+    ContainersStateDead,
     /// Container state badge: being removed.
-    DockerStateRemoving,
+    ContainersStateRemoving,
     /// Container state badge: stopping.
-    DockerStateStopping,
+    ContainersStateStopping,
     /// Container state badge: a state OTTY does not know.
-    DockerStateUnknown,
+    ContainersStateUnknown,
     /// Inspector status of an image without a tag that no container uses.
-    DockerImageDangling,
+    ContainersImageDangling,
     /// Inspector status of an image one container uses.
-    DockerUsedByOneContainer,
+    ContainersUsedByOneContainer,
     /// Inspector status of an image several containers use. Placeholder:
     /// `{count}`.
-    TplDockerUsedByContainers,
+    TplContainersUsedByContainers,
     /// Inspector status of an image or volume no container uses.
-    DockerNotUsed,
+    ContainersNotUsed,
     /// Inspector status of a volume: the containers that use it. Placeholder:
     /// `{names}`.
-    TplDockerUsedBy,
+    TplContainersUsedBy,
     /// Inspector status of a network the engine creates itself.
-    DockerBuiltInNetwork,
+    ContainersBuiltInNetwork,
     /// Inspector status of a network with one container.
-    DockerOneContainerConnected,
+    ContainersOneContainerConnected,
     /// Inspector status of a network with several containers. Placeholder:
     /// `{count}`.
-    TplDockerContainersConnected,
+    TplContainersContainersConnected,
     /// Age of an item created less than a minute ago.
-    DockerAgeUnderMinute,
+    ContainersAgeUnderMinute,
     /// Age in minutes. Placeholder: `{count}`.
-    TplDockerAgeMinutes,
+    TplContainersAgeMinutes,
     /// Age in hours. Placeholder: `{count}`.
-    TplDockerAgeHours,
+    TplContainersAgeHours,
     /// Age in days. Placeholder: `{count}`.
-    TplDockerAgeDays,
+    TplContainersAgeDays,
     /// Age in weeks. Placeholder: `{count}`.
-    TplDockerAgeWeeks,
+    TplContainersAgeWeeks,
     /// Age in months. Placeholder: `{count}`.
-    TplDockerAgeMonths,
+    TplContainersAgeMonths,
     /// Age in years. Placeholder: `{count}`.
-    TplDockerAgeYears,
-    /// Name of Docker mode in the status bar while no engine is shown.
-    DockerStatusMode,
+    TplContainersAgeYears,
+    /// Name of Containers mode in the status bar while no engine is shown.
+    ContainersStatusMode,
     /// Status bar text while OTTY looks for engines.
-    DockerStatusSearching,
+    ContainersStatusSearching,
     /// Status bar text when no engine was found.
-    DockerStatusNoEngine,
+    ContainersStatusNoEngine,
     /// Status bar text when Docker is not running.
-    DockerStatusStopped,
+    ContainersStatusDockerStopped,
     /// Status bar text when the Podman socket is off.
-    DockerStatusPodmanOff,
+    ContainersStatusPodmanOff,
     /// Status bar text when Docker and Podman are both off.
-    DockerStatusBothOff,
+    ContainersStatusBothOff,
     /// Status bar text when the socket is denied. Placeholder: `{socket}`.
-    TplDockerStatusNoAccess,
+    TplContainersStatusNoAccess,
     /// Status bar text when the Docker socket is denied and Podman is off.
     /// Placeholder: `{socket}`.
-    TplDockerStatusNoAccessPodmanOff,
+    TplContainersStatusDockerNoAccessPodmanOff,
     /// Status bar text when a Podman socket is denied and Docker is off.
     /// Placeholder: `{socket}`.
-    TplDockerStatusPodmanNoAccessDockerOff,
+    TplContainersStatusPodmanNoAccessDockerOff,
     /// Status bar count of one container.
-    DockerStatusOneContainer,
+    ContainersStatusOneContainer,
     /// Status bar count of containers. Placeholder: `{count}`.
-    TplDockerStatusContainers,
+    TplContainersStatusContainers,
     /// Status bar count of one image.
-    DockerStatusOneImage,
+    ContainersStatusOneImage,
     /// Status bar count of images. Placeholder: `{count}`.
-    TplDockerStatusImages,
+    TplContainersStatusImages,
     /// Status bar count of one volume.
-    DockerStatusOneVolume,
+    ContainersStatusOneVolume,
     /// Status bar count of volumes. Placeholder: `{count}`.
-    TplDockerStatusVolumes,
+    TplContainersStatusVolumes,
     /// Status bar count of one network.
-    DockerStatusOneNetwork,
+    ContainersStatusOneNetwork,
     /// Status bar count of networks. Placeholder: `{count}`.
-    TplDockerStatusNetworks,
+    TplContainersStatusNetworks,
     /// Button and menu item that starts a stopped container.
-    DockerActionStart,
+    ContainersActionStart,
     /// Button and menu item that stops a container.
-    DockerActionStop,
+    ContainersActionStop,
     /// Button and menu item that restarts a container.
-    DockerActionRestart,
+    ContainersActionRestart,
     /// Button and menu item that pauses a running container.
-    DockerActionPause,
+    ContainersActionPause,
     /// Button and menu item that lets a paused container run again.
-    DockerActionUnpause,
+    ContainersActionUnpause,
     /// Button and menu item that opens a shell in a running container.
-    DockerActionShell,
+    ContainersActionShell,
     /// Hint under a disabled Shell button: the `docker` command is missing.
-    DockerShellNeedsDocker,
+    ContainersShellNeedsDocker,
     /// Hint under a disabled Shell button: the `podman` command is missing.
-    DockerShellNeedsPodman,
+    ContainersShellNeedsPodman,
     /// Title of the terminal tab of a container shell. Placeholder: `{name}`.
-    TplDockerShellTabTitle,
+    TplContainersShellTabTitle,
     /// Button, menu item and dialog action that removes a row.
-    DockerActionRemove,
+    ContainersActionRemove,
     /// Button above the containers table that removes every stopped container.
-    DockerPruneStopped,
+    ContainersPruneStopped,
     /// Action of a prune confirmation dialog.
-    DockerPrune,
+    ContainersPrune,
     /// Title of the remove container dialog. Placeholder: `{name}`.
-    TplDockerRemoveContainerTitle,
+    TplContainersRemoveContainerTitle,
     /// Text of the remove container dialog.
-    DockerRemoveContainerText,
+    ContainersRemoveContainerText,
     /// Switch in the remove dialog of a running container.
-    DockerStopItFirst,
+    ContainersStopItFirst,
     /// Title of the prune stopped containers dialog.
-    DockerPruneContainersTitle,
+    ContainersPruneContainersTitle,
     /// Text of the prune stopped containers dialog. Placeholder: `{count}`.
-    TplDockerPruneContainersText,
-    /// Tooltip of the cross that hides a Docker notice.
-    DockerDismiss,
+    TplContainersPruneContainersText,
+    /// Tooltip of the cross that hides a Containers notice.
+    ContainersDismiss,
     /// Notice when a container did not start. Placeholders: `{name}`, `{error}`.
-    TplDockerStartFailed,
+    TplContainersStartFailed,
     /// Notice when a container did not stop. Placeholders: `{name}`, `{error}`.
-    TplDockerStopFailed,
+    TplContainersStopFailed,
     /// Notice when a container did not restart. Placeholders: `{name}`, `{error}`.
-    TplDockerRestartFailed,
+    TplContainersRestartFailed,
     /// Notice when a container did not pause. Placeholders: `{name}`, `{error}`.
-    TplDockerPauseFailed,
+    TplContainersPauseFailed,
     /// Notice when a container did not unpause. Placeholders: `{name}`, `{error}`.
-    TplDockerUnpauseFailed,
+    TplContainersUnpauseFailed,
     /// Notice when a container was not removed. Placeholders: `{name}`, `{error}`.
-    TplDockerRemoveContainerFailed,
+    TplContainersRemoveContainerFailed,
     /// Notice when the stopped containers were not pruned. Placeholder: `{error}`.
-    TplDockerPruneContainersFailed,
+    TplContainersPruneContainersFailed,
     /// Button and menu item that pulls the selected image again.
-    DockerActionPullAgain,
+    ContainersActionPullAgain,
     /// Button above the images table that removes dangling images.
-    DockerPruneDangling,
+    ContainersPruneDangling,
     /// Button above the volumes and networks tables that removes unused ones.
-    DockerPruneUnused,
+    ContainersPruneUnused,
     /// Title of the remove image dialog. Placeholder: `{name}`.
-    TplDockerRemoveImageTitle,
+    TplContainersRemoveImageTitle,
     /// Text of the remove image dialog.
-    DockerRemoveImageText,
+    ContainersRemoveImageText,
     /// Switch in the remove image dialog when a container uses the image.
-    DockerForceRemoveImage,
+    ContainersForceRemoveImage,
     /// Title of the dialog that removes only a tag. Placeholder: `{name}`.
-    TplDockerRemoveTagTitle,
+    TplContainersRemoveTagTitle,
     /// Remove dialog text: the image has other tags, so only this one goes.
-    DockerRemoveTagText,
+    ContainersRemoveTagText,
     /// Remove dialog text, Force on: a container keeps the image, the tag goes.
-    DockerForceUntagsImageText,
+    ContainersForceUntagsImageText,
     /// Remove dialog text, Force on: the image goes, its containers stay.
-    DockerForceDeletesImageText,
+    ContainersForceDeletesImageText,
     /// Remove dialog text, Force on: the image and its containers go.
-    DockerForceDeletesContainersText,
+    ContainersForceDeletesContainersText,
     /// Remove dialog text, Force off: the engine will refuse.
-    DockerRemoveImageNeedsForceText,
+    ContainersRemoveImageNeedsForceText,
     /// Remove dialog text: the engine refuses, and Force would not help.
-    DockerRemoveImageRefusedText,
+    ContainersRemoveImageRefusedText,
     /// Switch in the prune volumes dialog: remove named unused volumes too.
-    DockerAlsoRemoveNamedVolumes,
+    ContainersAlsoRemoveNamedVolumes,
     /// Title of the prune dangling images dialog.
-    DockerPruneImagesTitle,
+    ContainersPruneImagesTitle,
     /// Text of the prune dangling images dialog. Placeholder: `{count}`.
-    TplDockerPruneImagesText,
+    TplContainersPruneImagesText,
     /// Title of the remove volume dialog. Placeholder: `{name}`.
-    TplDockerRemoveVolumeTitle,
+    TplContainersRemoveVolumeTitle,
     /// Text of the remove volume dialog.
-    DockerRemoveVolumeText,
+    ContainersRemoveVolumeText,
     /// Title of the prune unused volumes dialog.
-    DockerPruneVolumesTitle,
+    ContainersPruneVolumesTitle,
     /// Text of the prune unused volumes dialog. Placeholder: `{count}`.
-    TplDockerPruneVolumesText,
+    TplContainersPruneVolumesText,
     /// Text of the prune unused volumes dialog while named volumes stay
     /// (switch off). Placeholder: `{count}`.
-    TplDockerPruneAnonymousVolumesText,
+    TplContainersPruneAnonymousVolumesText,
     /// Title of the remove network dialog. Placeholder: `{name}`.
-    TplDockerRemoveNetworkTitle,
+    TplContainersRemoveNetworkTitle,
     /// Text of the remove network dialog.
-    DockerRemoveNetworkText,
+    ContainersRemoveNetworkText,
     /// Title of the prune unused networks dialog.
-    DockerPruneNetworksTitle,
+    ContainersPruneNetworksTitle,
     /// Text of the prune unused networks dialog. Placeholder: `{count}`.
-    TplDockerPruneNetworksText,
+    TplContainersPruneNetworksText,
     /// Hint under a disabled Remove of a volume a container uses. Placeholder: `{names}`.
-    TplDockerVolumeInUseHint,
+    TplContainersVolumeInUseHint,
     /// Hint under a disabled Remove of a built-in network.
-    DockerBuiltInNetworkHint,
+    ContainersBuiltInNetworkHint,
     /// Hint under a disabled Remove of a network containers are connected to.
-    DockerNetworkInUseHint,
+    ContainersNetworkInUseHint,
     /// Label of the image field of the pull dialog.
-    DockerFieldImage,
+    ContainersFieldImage,
     /// Label of the tag field of the pull dialog.
-    DockerFieldTag,
+    ContainersFieldTag,
     /// Label of the name field of the create volume and create network dialogs.
-    DockerFieldName,
+    ContainersFieldName,
     /// Label of the driver field of the create volume and create network dialogs.
-    DockerFieldDriver,
+    ContainersFieldDriver,
     /// Placeholder of the image field of the pull dialog.
-    DockerImagePlaceholder,
+    ContainersImagePlaceholder,
     /// Placeholder of the name field of the create volume dialog.
-    DockerVolumeNamePlaceholder,
+    ContainersVolumeNamePlaceholder,
     /// Action button of the pull dialog.
-    DockerActionPull,
+    ContainersActionPull,
     /// Action button of the create volume and create network dialogs.
-    DockerActionCreate,
+    ContainersActionCreate,
     /// Progress text of a running pull. Placeholder: `{image}`.
-    TplDockerPulling,
+    TplContainersPulling,
     /// Bytes of a running pull. Placeholders: `{done}`, `{total}`.
-    TplDockerPullAmount,
+    TplContainersPullAmount,
     /// Notice when a pull failed. Placeholders: `{name}`, `{error}`.
-    TplDockerPullFailed,
+    TplContainersPullFailed,
     /// Notice when an image was not removed. Placeholders: `{name}`, `{error}`.
-    TplDockerRemoveImageFailed,
+    TplContainersRemoveImageFailed,
     /// Notice when the dangling images were not pruned. Placeholder: `{error}`.
-    TplDockerPruneImagesFailed,
+    TplContainersPruneImagesFailed,
     /// Notice when a volume was not created. Placeholder: `{error}`.
-    TplDockerCreateVolumeFailed,
+    TplContainersCreateVolumeFailed,
     /// Notice when a volume was not removed. Placeholders: `{name}`, `{error}`.
-    TplDockerRemoveVolumeFailed,
+    TplContainersRemoveVolumeFailed,
     /// Notice when the unused volumes were not pruned. Placeholder: `{error}`.
-    TplDockerPruneVolumesFailed,
+    TplContainersPruneVolumesFailed,
     /// Notice when a network was not created. Placeholders: `{name}`, `{error}`.
-    TplDockerCreateNetworkFailed,
+    TplContainersCreateNetworkFailed,
     /// Notice when a network was not removed. Placeholders: `{name}`, `{error}`.
-    TplDockerRemoveNetworkFailed,
+    TplContainersRemoveNetworkFailed,
     /// Notice when the unused networks were not pruned. Placeholder: `{error}`.
-    TplDockerPruneNetworksFailed,
-    // Docker mode inspector tabs.
+    TplContainersPruneNetworksFailed,
+    // Containers mode inspector tabs.
     /// Inspector tab with the key facts of the selected row.
-    DockerTabOverview,
+    ContainersTabOverview,
     /// Inspector tab with the logs of the selected container.
-    DockerTabLogs,
+    ContainersTabLogs,
     /// Inspector tab with the engine's inspect JSON.
-    DockerTabInspect,
+    ContainersTabInspect,
     /// Hint above the logs of a container.
-    DockerLogsHint,
+    ContainersLogsHint,
     /// Label of the switch that keeps the logs at the newest line.
-    DockerLogsFollow,
+    ContainersLogsFollow,
     /// Line in the logs where lines were dropped while they waited for Follow.
-    DockerLogsSkippedOutput,
+    ContainersLogsSkippedOutput,
     /// Count of one log line waiting while Follow is off.
-    DockerLogsOneNewLine,
+    ContainersLogsOneNewLine,
     /// Count of log lines waiting while Follow is off. Placeholder: `{count}`.
-    TplDockerLogsNewLines,
+    TplContainersLogsNewLines,
     /// Notice when the logs could not be read. Placeholder: `{error}`.
-    TplDockerLogsFailed,
+    TplContainersLogsFailed,
     /// Notice when the inspect JSON could not be loaded. Placeholder: `{error}`.
-    TplDockerInspectFailed,
+    TplContainersInspectFailed,
     /// Title of the group of top-level values in the inspect tree.
-    DockerInspectGeneral,
+    ContainersInspectGeneral,
     /// Label of the switch that shows empty values in the inspect tree.
-    DockerInspectShowEmpty,
+    ContainersInspectShowEmpty,
     /// Label of the switch that shows the inspect JSON instead of the tree.
-    DockerInspectRawJson,
+    ContainersInspectRawJson,
     /// Button that copies the inspect JSON.
-    DockerInspectCopyJson,
+    ContainersInspectCopyJson,
 
     // Run container form (spec Decision 18).
     /// "Run" action on an image and the action button of the Run form.
-    DockerActionRun,
+    ContainersActionRun,
     /// Line under the Run form title.
-    DockerRunSubtitle,
+    ContainersRunSubtitle,
     /// Section title: network, restart and auto remove.
-    DockerRunSectionOptions,
+    ContainersRunSectionOptions,
     /// Label of the engine select.
-    DockerFieldEngine,
+    ContainersFieldEngine,
     /// Placeholder of the optional container name.
-    DockerRunNamePlaceholder,
+    ContainersRunNamePlaceholder,
     /// Switch: pull a missing image first.
-    DockerRunPullMissing,
+    ContainersRunPullMissing,
     /// Placeholder of the command word input.
-    DockerRunCommandPlaceholder,
+    ContainersRunCommandPlaceholder,
     /// Hint under the command while the image's command is not known.
-    DockerRunCommandHint,
+    ContainersRunCommandHint,
     /// Hint under the command. Placeholder: `{command}`.
-    TplDockerRunCommandHint,
+    TplContainersRunCommandHint,
     /// Column heading of the host ports.
-    DockerRunHostPort,
+    ContainersRunHostPort,
     /// Column heading of the container ports.
-    DockerRunContainerPort,
+    ContainersRunContainerPort,
     /// Button that adds a port row.
-    DockerRunAddPort,
+    ContainersRunAddPort,
     /// Tooltip of the cross of a port row.
-    DockerRunRemovePort,
+    ContainersRunRemovePort,
     /// Hint under the ports. Placeholder: `{ports}`.
-    TplDockerRunImageListens,
+    TplContainersRunImageListens,
     /// Placeholder of an environment value.
-    DockerRunEnvValue,
+    ContainersRunEnvValue,
     /// Button that adds an environment variable.
-    DockerRunAddVariable,
+    ContainersRunAddVariable,
     /// Column heading of the volume sources.
-    DockerRunVolumeSource,
+    ContainersRunVolumeSource,
     /// Column heading of the paths in the container.
-    DockerRunVolumeTarget,
+    ContainersRunVolumeTarget,
     /// Switch of a volume row.
-    DockerRunReadOnly,
+    ContainersRunReadOnly,
     /// Switch of a folder volume row on a computer with SELinux.
-    DockerRunRelabel,
+    ContainersRunRelabel,
     /// Hint beside the SELinux switch of a volume row.
-    DockerRunRelabelHint,
+    ContainersRunRelabelHint,
     /// Button that adds a volume row.
-    DockerRunAddVolume,
+    ContainersRunAddVolume,
     /// Tooltip of the cross of a volume row.
-    DockerRunRemoveVolume,
+    ContainersRunRemoveVolume,
     /// Label of the network select.
-    DockerFieldNetwork,
+    ContainersFieldNetwork,
     /// Label of the restart policy.
-    DockerFieldRestart,
+    ContainersFieldRestart,
     /// Restart policy `no`.
-    DockerRestartNo,
+    ContainersRestartNo,
     /// Restart policy `on-failure`.
-    DockerRestartOnFailure,
+    ContainersRestartOnFailure,
     /// Restart policy `unless-stopped`.
-    DockerRestartUnlessStopped,
+    ContainersRestartUnlessStopped,
     /// Restart policy `always`.
-    DockerRestartAlways,
+    ContainersRestartAlways,
     /// What the `no` policy does.
-    DockerRestartHintNo,
+    ContainersRestartHintNo,
     /// What the `on-failure` policy does.
-    DockerRestartHintOnFailure,
+    ContainersRestartHintOnFailure,
     /// What the `unless-stopped` policy does.
-    DockerRestartHintUnlessStopped,
+    ContainersRestartHintUnlessStopped,
     /// What the `always` policy does.
-    DockerRestartHintAlways,
+    ContainersRestartHintAlways,
     /// Why the restart choices are disabled while auto remove is on.
-    DockerRestartHintAutoRemove,
+    ContainersRestartHintAutoRemove,
     /// Switch: remove the container when it stops.
-    DockerRunAutoRemove,
+    ContainersRunAutoRemove,
     /// Error: the image is empty.
-    DockerRunErrImage,
+    ContainersRunErrImage,
     /// Error: a port is not 1 to 65535.
-    DockerRunErrPort,
+    ContainersRunErrPort,
     /// Error: a path in the container is not absolute.
-    DockerRunErrContainerPath,
+    ContainersRunErrContainerPath,
     /// Error: a volume row has no source.
-    DockerRunErrSourceRequired,
+    ContainersRunErrSourceRequired,
     /// Error: a host folder does not exist.
-    DockerRunErrSourceMissing,
+    ContainersRunErrSourceMissing,
     /// Hint: the disk has not answered about a host folder for a while.
-    DockerRunErrSourceNotAnswering,
+    ContainersRunErrSourceNotAnswering,
     /// Error: a source uses `~` and the home folder is not known.
-    DockerRunErrSourceHomeUnknown,
+    ContainersRunErrSourceHomeUnknown,
     /// Footer hint of a ready form. Placeholder: `{engine}`.
-    TplDockerRunReady,
+    TplContainersRunReady,
     /// Footer hint while some fields have errors.
-    DockerRunFixFields,
+    ContainersRunFixFields,
     /// Footer hint and image status while the image is looked up.
-    DockerRunCheckingImage,
+    ContainersRunCheckingImage,
     /// Footer hint while the disk has not answered about a folder source.
-    DockerRunWaitingForFolder,
+    ContainersRunWaitingForFolder,
     /// Label of the action button while the run goes on.
-    DockerRunStarting,
+    ContainersRunStarting,
     /// Notice of a failed run. Placeholders: `{name}`, `{error}`.
-    TplDockerRunFailed,
+    TplContainersRunFailed,
     /// Hint at the top of the image panel.
-    DockerRunPanelHint,
+    ContainersRunPanelHint,
     /// Image status: on this computer. Placeholder: `{size}`.
-    TplDockerImageHere,
+    TplContainersImageHere,
     /// Image status: not on this computer.
-    DockerImageMissing,
+    ContainersImageMissing,
     /// Image hint: missing, the pull switch is on.
-    DockerRunImagePulledFirst,
+    ContainersRunImagePulledFirst,
     /// Image hint: missing, the pull switch is off.
-    DockerRunImageNotPulled,
+    ContainersRunImageNotPulled,
     /// Image panel field: exposed ports.
-    DockerFieldListensOn,
+    ContainersFieldListensOn,
     /// Image panel field: the entrypoint.
-    DockerFieldEntrypoint,
+    ContainersFieldEntrypoint,
     /// Image panel field: the working directory.
-    DockerFieldWorkdir,
+    ContainersFieldWorkdir,
     /// Image panel text while no image is typed.
-    DockerRunNoImage,
+    ContainersRunNoImage,
     /// Image panel notice of a failed lookup. Placeholder: `{error}`.
-    TplDockerImageLookupFailed,
+    TplContainersImageLookupFailed,
     /// Overview field: the mounts of a container.
-    DockerFieldMounts,
+    ContainersFieldMounts,
     /// Overview field: the Compose project.
-    DockerFieldCompose,
+    ContainersFieldCompose,
     /// Overview field: the command of a container.
-    DockerFieldCommand,
+    ContainersFieldCommand,
     /// Overview field: when the item was made.
-    DockerFieldCreated,
+    ContainersFieldCreated,
     /// Overview field: where a volume keeps its data.
-    DockerFieldMountpoint,
+    ContainersFieldMountpoint,
     /// Overview field: the gateway of a network.
-    DockerFieldGateway,
+    ContainersFieldGateway,
     // Command palette and its title bar trigger.
     /// Title bar search text while no tab is open.
     TitleSearchNoSessions,
@@ -754,8 +754,8 @@ pub(crate) enum Key {
     PaletteToggleFilesPanel,
     /// Action that switches to Terminal mode.
     PaletteSwitchToTerminalMode,
-    /// Action that switches to Docker mode.
-    PaletteSwitchToDockerMode,
+    /// Action that switches to Containers mode.
+    PaletteSwitchToContainersMode,
 
     // Quick launch wizard.
     /// Title of the form that creates a launch.
@@ -1012,7 +1012,7 @@ impl Key {
         Self::StatusSessionOne,
         Self::TplStatusSessions,
         Self::ModeTerminal,
-        Self::ModeDocker,
+        Self::ModeContainers,
         Self::ModesAllModes,
         Self::ModesPinnedSection,
         Self::TplModesPinnedNote,
@@ -1021,277 +1021,277 @@ impl Key {
         Self::ModesUnpin,
         Self::ModesUnpinAnotherFirst,
         Self::ModesNoOtherModes,
-        Self::DockerContainers,
-        Self::DockerImages,
-        Self::DockerVolumes,
-        Self::DockerNetworks,
-        Self::DockerRunContainer,
-        Self::DockerPullImage,
-        Self::DockerCreateVolume,
-        Self::DockerCreateNetwork,
-        Self::DockerRefresh,
-        Self::DockerMoreActions,
-        Self::DockerSearchPlaceholder,
-        Self::DockerTagRemove,
-        Self::DockerTagsClearAll,
-        Self::TplDockerRunning,
-        Self::DockerListFailedShort,
-        Self::DockerLoading,
-        Self::DockerNoContainers,
-        Self::DockerNoImages,
-        Self::DockerNoVolumes,
-        Self::DockerNoNetworks,
-        Self::DockerNothingMatches,
-        Self::TplDockerListFailed,
-        Self::DockerSearching,
-        Self::DockerNotInstalledTitle,
-        Self::DockerNotInstalledText,
-        Self::DockerInstallDocker,
-        Self::DockerInstallPodman,
-        Self::DockerCheckAgain,
-        Self::DockerCopy,
-        Self::DockerHowToFix,
-        Self::DockerHowToFixDocker,
-        Self::DockerHowToFixPodman,
-        Self::DockerRunInTerminal,
-        Self::DockerStoppedTitle,
-        Self::DockerStoppedText,
-        Self::DockerStoppedHint,
-        Self::DockerPodmanOffTitle,
-        Self::DockerPodmanOffText,
-        Self::DockerPodmanOffHint,
-        Self::DockerBothOffTitle,
-        Self::DockerBothOffText,
-        Self::DockerBothOffDockerLabel,
-        Self::DockerBothOffPodmanLabel,
-        Self::DockerNoAccessTitle,
-        Self::TplDockerNoAccessText,
-        Self::DockerNoAccessLabel,
-        Self::DockerNoAccessHint,
-        Self::DockerPodmanNoAccessTitle,
-        Self::TplDockerPodmanNoAccessText,
-        Self::DockerPodmanNoAccessLabel,
-        Self::DockerPodmanNoAccessHint,
-        Self::DockerNoAccessPodmanOffTitle,
-        Self::TplDockerNoAccessPodmanOffText,
-        Self::DockerPodmanNoAccessDockerOffTitle,
-        Self::TplDockerPodmanNoAccessDockerOffText,
-        Self::DockerPanelNotInstalled,
-        Self::DockerPanelStopped,
-        Self::DockerPanelPodmanOff,
-        Self::DockerPanelBothOff,
-        Self::DockerPanelNoAccess,
-        Self::DockerPanelPodmanNoAccess,
-        Self::DockerPanelNoAccessPodmanOff,
-        Self::DockerPanelPodmanNoAccessDockerOff,
-        Self::DockerNothingToInspect,
-        Self::TplDockerLookedFor,
-        Self::DockerLookedForCommands,
-        Self::DockerColumnName,
-        Self::DockerColumnStatus,
-        Self::DockerColumnImage,
-        Self::DockerColumnPorts,
-        Self::DockerColumnAge,
-        Self::DockerColumnRepository,
-        Self::DockerColumnTag,
-        Self::DockerColumnId,
-        Self::DockerColumnSize,
-        Self::DockerColumnUsedBy,
-        Self::DockerColumnDriver,
-        Self::DockerColumnScope,
-        Self::DockerColumnSubnet,
-        Self::DockerStateRunning,
-        Self::DockerStatePaused,
-        Self::DockerStateRestarting,
-        Self::DockerStateCreated,
-        Self::DockerStateExited,
-        Self::TplDockerStateExitedCode,
-        Self::DockerStateDead,
-        Self::DockerStateRemoving,
-        Self::DockerStateStopping,
-        Self::DockerStateUnknown,
-        Self::DockerImageDangling,
-        Self::DockerUsedByOneContainer,
-        Self::TplDockerUsedByContainers,
-        Self::DockerNotUsed,
-        Self::TplDockerUsedBy,
-        Self::DockerBuiltInNetwork,
-        Self::DockerOneContainerConnected,
-        Self::TplDockerContainersConnected,
-        Self::DockerAgeUnderMinute,
-        Self::TplDockerAgeMinutes,
-        Self::TplDockerAgeHours,
-        Self::TplDockerAgeDays,
-        Self::TplDockerAgeWeeks,
-        Self::TplDockerAgeMonths,
-        Self::TplDockerAgeYears,
-        Self::DockerStatusMode,
-        Self::DockerStatusSearching,
-        Self::DockerStatusNoEngine,
-        Self::DockerStatusStopped,
-        Self::DockerStatusPodmanOff,
-        Self::DockerStatusBothOff,
-        Self::TplDockerStatusNoAccess,
-        Self::TplDockerStatusNoAccessPodmanOff,
-        Self::TplDockerStatusPodmanNoAccessDockerOff,
-        Self::DockerStatusOneContainer,
-        Self::TplDockerStatusContainers,
-        Self::DockerStatusOneImage,
-        Self::TplDockerStatusImages,
-        Self::DockerStatusOneVolume,
-        Self::TplDockerStatusVolumes,
-        Self::DockerStatusOneNetwork,
-        Self::TplDockerStatusNetworks,
-        Self::DockerActionStart,
-        Self::DockerActionStop,
-        Self::DockerActionRestart,
-        Self::DockerActionPause,
-        Self::DockerActionUnpause,
-        Self::DockerActionShell,
-        Self::DockerShellNeedsDocker,
-        Self::DockerShellNeedsPodman,
-        Self::TplDockerShellTabTitle,
-        Self::DockerActionRemove,
-        Self::DockerPruneStopped,
-        Self::DockerPrune,
-        Self::TplDockerRemoveContainerTitle,
-        Self::DockerRemoveContainerText,
-        Self::DockerStopItFirst,
-        Self::DockerPruneContainersTitle,
-        Self::TplDockerPruneContainersText,
-        Self::DockerDismiss,
-        Self::TplDockerStartFailed,
-        Self::TplDockerStopFailed,
-        Self::TplDockerRestartFailed,
-        Self::TplDockerPauseFailed,
-        Self::TplDockerUnpauseFailed,
-        Self::TplDockerRemoveContainerFailed,
-        Self::TplDockerPruneContainersFailed,
-        Self::DockerActionPullAgain,
-        Self::DockerPruneDangling,
-        Self::DockerPruneUnused,
-        Self::TplDockerRemoveImageTitle,
-        Self::DockerRemoveImageText,
-        Self::DockerForceRemoveImage,
-        Self::TplDockerRemoveTagTitle,
-        Self::DockerRemoveTagText,
-        Self::DockerForceUntagsImageText,
-        Self::DockerForceDeletesImageText,
-        Self::DockerForceDeletesContainersText,
-        Self::DockerRemoveImageNeedsForceText,
-        Self::DockerRemoveImageRefusedText,
-        Self::DockerAlsoRemoveNamedVolumes,
-        Self::DockerPruneImagesTitle,
-        Self::TplDockerPruneImagesText,
-        Self::TplDockerRemoveVolumeTitle,
-        Self::DockerRemoveVolumeText,
-        Self::DockerPruneVolumesTitle,
-        Self::TplDockerPruneVolumesText,
-        Self::TplDockerPruneAnonymousVolumesText,
-        Self::TplDockerRemoveNetworkTitle,
-        Self::DockerRemoveNetworkText,
-        Self::DockerPruneNetworksTitle,
-        Self::TplDockerPruneNetworksText,
-        Self::TplDockerVolumeInUseHint,
-        Self::DockerBuiltInNetworkHint,
-        Self::DockerNetworkInUseHint,
-        Self::DockerFieldImage,
-        Self::DockerFieldTag,
-        Self::DockerFieldName,
-        Self::DockerFieldDriver,
-        Self::DockerImagePlaceholder,
-        Self::DockerVolumeNamePlaceholder,
-        Self::DockerActionPull,
-        Self::DockerActionCreate,
-        Self::TplDockerPulling,
-        Self::TplDockerPullAmount,
-        Self::TplDockerPullFailed,
-        Self::TplDockerRemoveImageFailed,
-        Self::TplDockerPruneImagesFailed,
-        Self::TplDockerCreateVolumeFailed,
-        Self::TplDockerRemoveVolumeFailed,
-        Self::TplDockerPruneVolumesFailed,
-        Self::TplDockerCreateNetworkFailed,
-        Self::TplDockerRemoveNetworkFailed,
-        Self::TplDockerPruneNetworksFailed,
-        Self::DockerTabOverview,
-        Self::DockerTabLogs,
-        Self::DockerTabInspect,
-        Self::DockerLogsHint,
-        Self::DockerLogsFollow,
-        Self::DockerLogsSkippedOutput,
-        Self::DockerLogsOneNewLine,
-        Self::TplDockerLogsNewLines,
-        Self::TplDockerLogsFailed,
-        Self::TplDockerInspectFailed,
-        Self::DockerInspectGeneral,
-        Self::DockerInspectShowEmpty,
-        Self::DockerInspectRawJson,
-        Self::DockerInspectCopyJson,
-        Self::DockerActionRun,
-        Self::DockerRunSubtitle,
-        Self::DockerRunSectionOptions,
-        Self::DockerFieldEngine,
-        Self::DockerRunNamePlaceholder,
-        Self::DockerRunPullMissing,
-        Self::DockerRunCommandPlaceholder,
-        Self::DockerRunCommandHint,
-        Self::TplDockerRunCommandHint,
-        Self::DockerRunHostPort,
-        Self::DockerRunContainerPort,
-        Self::DockerRunAddPort,
-        Self::DockerRunRemovePort,
-        Self::TplDockerRunImageListens,
-        Self::DockerRunEnvValue,
-        Self::DockerRunAddVariable,
-        Self::DockerRunVolumeSource,
-        Self::DockerRunVolumeTarget,
-        Self::DockerRunReadOnly,
-        Self::DockerRunRelabel,
-        Self::DockerRunRelabelHint,
-        Self::DockerRunAddVolume,
-        Self::DockerRunRemoveVolume,
-        Self::DockerFieldNetwork,
-        Self::DockerFieldRestart,
-        Self::DockerRestartNo,
-        Self::DockerRestartOnFailure,
-        Self::DockerRestartUnlessStopped,
-        Self::DockerRestartAlways,
-        Self::DockerRestartHintNo,
-        Self::DockerRestartHintOnFailure,
-        Self::DockerRestartHintUnlessStopped,
-        Self::DockerRestartHintAlways,
-        Self::DockerRestartHintAutoRemove,
-        Self::DockerRunAutoRemove,
-        Self::DockerRunErrImage,
-        Self::DockerRunErrPort,
-        Self::DockerRunErrContainerPath,
-        Self::DockerRunErrSourceRequired,
-        Self::DockerRunErrSourceMissing,
-        Self::DockerRunErrSourceNotAnswering,
-        Self::DockerRunErrSourceHomeUnknown,
-        Self::TplDockerRunReady,
-        Self::DockerRunFixFields,
-        Self::DockerRunCheckingImage,
-        Self::DockerRunWaitingForFolder,
-        Self::DockerRunStarting,
-        Self::TplDockerRunFailed,
-        Self::DockerRunPanelHint,
-        Self::TplDockerImageHere,
-        Self::DockerImageMissing,
-        Self::DockerRunImagePulledFirst,
-        Self::DockerRunImageNotPulled,
-        Self::DockerFieldListensOn,
-        Self::DockerFieldEntrypoint,
-        Self::DockerFieldWorkdir,
-        Self::DockerRunNoImage,
-        Self::TplDockerImageLookupFailed,
-        Self::DockerFieldMounts,
-        Self::DockerFieldCompose,
-        Self::DockerFieldCommand,
-        Self::DockerFieldCreated,
-        Self::DockerFieldMountpoint,
-        Self::DockerFieldGateway,
+        Self::ContainersContainers,
+        Self::ContainersImages,
+        Self::ContainersVolumes,
+        Self::ContainersNetworks,
+        Self::ContainersRunContainer,
+        Self::ContainersPullImage,
+        Self::ContainersCreateVolume,
+        Self::ContainersCreateNetwork,
+        Self::ContainersRefresh,
+        Self::ContainersMoreActions,
+        Self::ContainersSearchPlaceholder,
+        Self::ContainersTagRemove,
+        Self::ContainersTagsClearAll,
+        Self::TplContainersRunning,
+        Self::ContainersListFailedShort,
+        Self::ContainersLoading,
+        Self::ContainersNoContainers,
+        Self::ContainersNoImages,
+        Self::ContainersNoVolumes,
+        Self::ContainersNoNetworks,
+        Self::ContainersNothingMatches,
+        Self::TplContainersListFailed,
+        Self::ContainersSearching,
+        Self::ContainersNotInstalledTitle,
+        Self::ContainersNotInstalledText,
+        Self::ContainersInstallDocker,
+        Self::ContainersInstallPodman,
+        Self::ContainersCheckAgain,
+        Self::ContainersCopy,
+        Self::ContainersHowToFix,
+        Self::ContainersHowToFixDocker,
+        Self::ContainersHowToFixPodman,
+        Self::ContainersRunInTerminal,
+        Self::ContainersDockerStoppedTitle,
+        Self::ContainersDockerStoppedText,
+        Self::ContainersDockerStoppedHint,
+        Self::ContainersPodmanOffTitle,
+        Self::ContainersPodmanOffText,
+        Self::ContainersPodmanOffHint,
+        Self::ContainersBothOffTitle,
+        Self::ContainersBothOffText,
+        Self::ContainersBothOffDockerLabel,
+        Self::ContainersBothOffPodmanLabel,
+        Self::ContainersDockerNoAccessTitle,
+        Self::TplContainersDockerNoAccessText,
+        Self::ContainersDockerNoAccessLabel,
+        Self::ContainersDockerNoAccessHint,
+        Self::ContainersPodmanNoAccessTitle,
+        Self::TplContainersPodmanNoAccessText,
+        Self::ContainersPodmanNoAccessLabel,
+        Self::ContainersPodmanNoAccessHint,
+        Self::ContainersDockerNoAccessPodmanOffTitle,
+        Self::TplContainersDockerNoAccessPodmanOffText,
+        Self::ContainersPodmanNoAccessDockerOffTitle,
+        Self::TplContainersPodmanNoAccessDockerOffText,
+        Self::ContainersPanelNotInstalled,
+        Self::ContainersPanelDockerStopped,
+        Self::ContainersPanelPodmanOff,
+        Self::ContainersPanelBothOff,
+        Self::ContainersPanelDockerNoAccess,
+        Self::ContainersPanelPodmanNoAccess,
+        Self::ContainersPanelDockerNoAccessPodmanOff,
+        Self::ContainersPanelPodmanNoAccessDockerOff,
+        Self::ContainersNothingToInspect,
+        Self::TplContainersLookedFor,
+        Self::ContainersLookedForCommands,
+        Self::ContainersColumnName,
+        Self::ContainersColumnStatus,
+        Self::ContainersColumnImage,
+        Self::ContainersColumnPorts,
+        Self::ContainersColumnAge,
+        Self::ContainersColumnRepository,
+        Self::ContainersColumnTag,
+        Self::ContainersColumnId,
+        Self::ContainersColumnSize,
+        Self::ContainersColumnUsedBy,
+        Self::ContainersColumnDriver,
+        Self::ContainersColumnScope,
+        Self::ContainersColumnSubnet,
+        Self::ContainersStateRunning,
+        Self::ContainersStatePaused,
+        Self::ContainersStateRestarting,
+        Self::ContainersStateCreated,
+        Self::ContainersStateExited,
+        Self::TplContainersStateExitedCode,
+        Self::ContainersStateDead,
+        Self::ContainersStateRemoving,
+        Self::ContainersStateStopping,
+        Self::ContainersStateUnknown,
+        Self::ContainersImageDangling,
+        Self::ContainersUsedByOneContainer,
+        Self::TplContainersUsedByContainers,
+        Self::ContainersNotUsed,
+        Self::TplContainersUsedBy,
+        Self::ContainersBuiltInNetwork,
+        Self::ContainersOneContainerConnected,
+        Self::TplContainersContainersConnected,
+        Self::ContainersAgeUnderMinute,
+        Self::TplContainersAgeMinutes,
+        Self::TplContainersAgeHours,
+        Self::TplContainersAgeDays,
+        Self::TplContainersAgeWeeks,
+        Self::TplContainersAgeMonths,
+        Self::TplContainersAgeYears,
+        Self::ContainersStatusMode,
+        Self::ContainersStatusSearching,
+        Self::ContainersStatusNoEngine,
+        Self::ContainersStatusDockerStopped,
+        Self::ContainersStatusPodmanOff,
+        Self::ContainersStatusBothOff,
+        Self::TplContainersStatusNoAccess,
+        Self::TplContainersStatusDockerNoAccessPodmanOff,
+        Self::TplContainersStatusPodmanNoAccessDockerOff,
+        Self::ContainersStatusOneContainer,
+        Self::TplContainersStatusContainers,
+        Self::ContainersStatusOneImage,
+        Self::TplContainersStatusImages,
+        Self::ContainersStatusOneVolume,
+        Self::TplContainersStatusVolumes,
+        Self::ContainersStatusOneNetwork,
+        Self::TplContainersStatusNetworks,
+        Self::ContainersActionStart,
+        Self::ContainersActionStop,
+        Self::ContainersActionRestart,
+        Self::ContainersActionPause,
+        Self::ContainersActionUnpause,
+        Self::ContainersActionShell,
+        Self::ContainersShellNeedsDocker,
+        Self::ContainersShellNeedsPodman,
+        Self::TplContainersShellTabTitle,
+        Self::ContainersActionRemove,
+        Self::ContainersPruneStopped,
+        Self::ContainersPrune,
+        Self::TplContainersRemoveContainerTitle,
+        Self::ContainersRemoveContainerText,
+        Self::ContainersStopItFirst,
+        Self::ContainersPruneContainersTitle,
+        Self::TplContainersPruneContainersText,
+        Self::ContainersDismiss,
+        Self::TplContainersStartFailed,
+        Self::TplContainersStopFailed,
+        Self::TplContainersRestartFailed,
+        Self::TplContainersPauseFailed,
+        Self::TplContainersUnpauseFailed,
+        Self::TplContainersRemoveContainerFailed,
+        Self::TplContainersPruneContainersFailed,
+        Self::ContainersActionPullAgain,
+        Self::ContainersPruneDangling,
+        Self::ContainersPruneUnused,
+        Self::TplContainersRemoveImageTitle,
+        Self::ContainersRemoveImageText,
+        Self::ContainersForceRemoveImage,
+        Self::TplContainersRemoveTagTitle,
+        Self::ContainersRemoveTagText,
+        Self::ContainersForceUntagsImageText,
+        Self::ContainersForceDeletesImageText,
+        Self::ContainersForceDeletesContainersText,
+        Self::ContainersRemoveImageNeedsForceText,
+        Self::ContainersRemoveImageRefusedText,
+        Self::ContainersAlsoRemoveNamedVolumes,
+        Self::ContainersPruneImagesTitle,
+        Self::TplContainersPruneImagesText,
+        Self::TplContainersRemoveVolumeTitle,
+        Self::ContainersRemoveVolumeText,
+        Self::ContainersPruneVolumesTitle,
+        Self::TplContainersPruneVolumesText,
+        Self::TplContainersPruneAnonymousVolumesText,
+        Self::TplContainersRemoveNetworkTitle,
+        Self::ContainersRemoveNetworkText,
+        Self::ContainersPruneNetworksTitle,
+        Self::TplContainersPruneNetworksText,
+        Self::TplContainersVolumeInUseHint,
+        Self::ContainersBuiltInNetworkHint,
+        Self::ContainersNetworkInUseHint,
+        Self::ContainersFieldImage,
+        Self::ContainersFieldTag,
+        Self::ContainersFieldName,
+        Self::ContainersFieldDriver,
+        Self::ContainersImagePlaceholder,
+        Self::ContainersVolumeNamePlaceholder,
+        Self::ContainersActionPull,
+        Self::ContainersActionCreate,
+        Self::TplContainersPulling,
+        Self::TplContainersPullAmount,
+        Self::TplContainersPullFailed,
+        Self::TplContainersRemoveImageFailed,
+        Self::TplContainersPruneImagesFailed,
+        Self::TplContainersCreateVolumeFailed,
+        Self::TplContainersRemoveVolumeFailed,
+        Self::TplContainersPruneVolumesFailed,
+        Self::TplContainersCreateNetworkFailed,
+        Self::TplContainersRemoveNetworkFailed,
+        Self::TplContainersPruneNetworksFailed,
+        Self::ContainersTabOverview,
+        Self::ContainersTabLogs,
+        Self::ContainersTabInspect,
+        Self::ContainersLogsHint,
+        Self::ContainersLogsFollow,
+        Self::ContainersLogsSkippedOutput,
+        Self::ContainersLogsOneNewLine,
+        Self::TplContainersLogsNewLines,
+        Self::TplContainersLogsFailed,
+        Self::TplContainersInspectFailed,
+        Self::ContainersInspectGeneral,
+        Self::ContainersInspectShowEmpty,
+        Self::ContainersInspectRawJson,
+        Self::ContainersInspectCopyJson,
+        Self::ContainersActionRun,
+        Self::ContainersRunSubtitle,
+        Self::ContainersRunSectionOptions,
+        Self::ContainersFieldEngine,
+        Self::ContainersRunNamePlaceholder,
+        Self::ContainersRunPullMissing,
+        Self::ContainersRunCommandPlaceholder,
+        Self::ContainersRunCommandHint,
+        Self::TplContainersRunCommandHint,
+        Self::ContainersRunHostPort,
+        Self::ContainersRunContainerPort,
+        Self::ContainersRunAddPort,
+        Self::ContainersRunRemovePort,
+        Self::TplContainersRunImageListens,
+        Self::ContainersRunEnvValue,
+        Self::ContainersRunAddVariable,
+        Self::ContainersRunVolumeSource,
+        Self::ContainersRunVolumeTarget,
+        Self::ContainersRunReadOnly,
+        Self::ContainersRunRelabel,
+        Self::ContainersRunRelabelHint,
+        Self::ContainersRunAddVolume,
+        Self::ContainersRunRemoveVolume,
+        Self::ContainersFieldNetwork,
+        Self::ContainersFieldRestart,
+        Self::ContainersRestartNo,
+        Self::ContainersRestartOnFailure,
+        Self::ContainersRestartUnlessStopped,
+        Self::ContainersRestartAlways,
+        Self::ContainersRestartHintNo,
+        Self::ContainersRestartHintOnFailure,
+        Self::ContainersRestartHintUnlessStopped,
+        Self::ContainersRestartHintAlways,
+        Self::ContainersRestartHintAutoRemove,
+        Self::ContainersRunAutoRemove,
+        Self::ContainersRunErrImage,
+        Self::ContainersRunErrPort,
+        Self::ContainersRunErrContainerPath,
+        Self::ContainersRunErrSourceRequired,
+        Self::ContainersRunErrSourceMissing,
+        Self::ContainersRunErrSourceNotAnswering,
+        Self::ContainersRunErrSourceHomeUnknown,
+        Self::TplContainersRunReady,
+        Self::ContainersRunFixFields,
+        Self::ContainersRunCheckingImage,
+        Self::ContainersRunWaitingForFolder,
+        Self::ContainersRunStarting,
+        Self::TplContainersRunFailed,
+        Self::ContainersRunPanelHint,
+        Self::TplContainersImageHere,
+        Self::ContainersImageMissing,
+        Self::ContainersRunImagePulledFirst,
+        Self::ContainersRunImageNotPulled,
+        Self::ContainersFieldListensOn,
+        Self::ContainersFieldEntrypoint,
+        Self::ContainersFieldWorkdir,
+        Self::ContainersRunNoImage,
+        Self::TplContainersImageLookupFailed,
+        Self::ContainersFieldMounts,
+        Self::ContainersFieldCompose,
+        Self::ContainersFieldCommand,
+        Self::ContainersFieldCreated,
+        Self::ContainersFieldMountpoint,
+        Self::ContainersFieldGateway,
         Self::TitleSearchNoSessions,
         Self::PalettePlaceholder,
         Self::PaletteNoMatches,
@@ -1306,7 +1306,7 @@ impl Key {
         Self::PaletteToggleLeftPanel,
         Self::PaletteToggleFilesPanel,
         Self::PaletteSwitchToTerminalMode,
-        Self::PaletteSwitchToDockerMode,
+        Self::PaletteSwitchToContainersMode,
         Self::WizardTitleNew,
         Self::WizardTitleEdit,
         Self::WizardSubtitle,

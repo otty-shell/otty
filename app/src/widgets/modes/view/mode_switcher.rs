@@ -122,14 +122,14 @@ mod tests {
 
         assert!(matches!(
             intents.as_slice(),
-            [ModesIntent::Select(Mode::Docker)]
+            [ModesIntent::Select(Mode::Containers)]
         ));
     }
 
     #[test]
     fn clicking_the_terminal_tab_selects_terminal_mode() {
         let mut state = ModesState::default();
-        state.select(Mode::Docker);
+        state.select(Mode::Containers);
 
         let intents = clicked(&state, tab_center(0));
 
@@ -149,14 +149,14 @@ mod tests {
     #[test]
     fn a_temporary_tab_comes_before_more() {
         let mut state = ModesState::with_pinned(&[]);
-        state.select(Mode::Docker);
+        state.select(Mode::Containers);
 
         let temporary = clicked(&state, tab_center(1));
         let more = clicked(&state, tab_center(2));
 
         assert!(matches!(
             temporary.as_slice(),
-            [ModesIntent::Select(Mode::Docker)]
+            [ModesIntent::Select(Mode::Containers)]
         ));
         assert!(matches!(more.as_slice(), [ModesIntent::ToggleMenu]));
     }
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn no_mode_name_is_shown_next_to_the_tabs() {
         let themes = ThemeManager::new();
-        for mode in [Mode::Terminal, Mode::Docker] {
+        for mode in [Mode::Terminal, Mode::Containers] {
             let mut state = ModesState::default();
             state.select(mode);
             let mut ui = simulator(view(ModeSwitcherProps {
@@ -185,7 +185,7 @@ mod tests {
                 theme: ThemeProps::new(themes.current()),
             }));
 
-            assert!(ui.find(i18n::t(Key::ModeDocker)).is_err());
+            assert!(ui.find(i18n::t(Key::ModeContainers)).is_err());
             assert!(ui.find(i18n::t(Key::ModeTerminal)).is_err());
         }
     }

@@ -246,7 +246,7 @@ mod tests {
         assert!(matches!(
             events.as_slice(),
             [AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
-                Mode::Docker
+                Mode::Containers
             )))]
         ));
     }

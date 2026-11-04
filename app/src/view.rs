@@ -13,15 +13,18 @@ use crate::theme::ThemeProps;
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, status_bar};
-use crate::widgets::docker::model::MainViewModel;
-use crate::widgets::docker::no_engine::NoEngineCase;
-use crate::widgets::docker::view::{
-    confirm_dialog as docker_confirm, engine_tree, form_dialog as docker_form,
-    inspector as docker_inspector, main_area as docker_main,
-    row_menu as docker_row_menu, run_form as docker_run_form,
-    run_panel as docker_run_panel, status_bar as docker_status_bar,
+use crate::widgets::containers::model::MainViewModel;
+use crate::widgets::containers::no_engine::NoEngineCase;
+use crate::widgets::containers::view::{
+    confirm_dialog as containers_confirm, engine_tree,
+    form_dialog as containers_form, inspector as containers_inspector,
+    main_area as containers_main, row_menu as containers_row_menu,
+    run_form as containers_run_form, run_panel as containers_run_panel,
+    status_bar as containers_status_bar,
 };
-use crate::widgets::docker::{DockerEvent, format as docker_format};
+use crate::widgets::containers::{
+    ContainersEvent, format as containers_format,
+};
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::modes::types::Mode;
@@ -76,7 +79,7 @@ enum MainContent<'a> {
         id: ScreenId,
         content: Element<'a, AppEvent, Theme, iced::Renderer>,
     },
-    /// The panes of a terminal or the table of a Docker list. They scroll on
+    /// The panes of a terminal or the table of a Containers list. They scroll on
     /// their own and fill a height they are given: a table's sticky header and
     /// its rows can not work in an outer scroller, where the height has no end.
     ScrollsOnItsOwn(Element<'a, AppEvent, Theme, iced::Renderer>),
@@ -117,14 +120,14 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
             (SidebarPane::Main, Mode::Terminal) => {
                 view_tab_content(app, theme_props).into_element(theme_props)
             },
-            (SidebarPane::Main, Mode::Docker) => {
-                view_docker_main(app, theme_props).into_element(theme_props)
+            (SidebarPane::Main, Mode::Containers) => {
+                view_containers_main(app, theme_props).into_element(theme_props)
             },
             (SidebarPane::Right, Mode::Terminal) => {
                 view_right_panel(app, theme_props)
             },
-            (SidebarPane::Right, Mode::Docker) => {
-                view_docker_inspector(app, theme_props)
+            (SidebarPane::Right, Mode::Containers) => {
+                view_containers_inspector(app, theme_props)
             },
         },
         on_intent: |intent| AppEvent::Sidebar(SidebarEvent::Intent(intent)),
@@ -223,7 +226,7 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         || app.widgets.quick_launch.context_menu().is_some()
         || app.widgets.quick_launch.secret_prompt().is_some()
         || app.widgets.terminal_workspace.has_any_context_menu()
-        || (mode == Mode::Docker && app.widgets.docker.has_overlay())
+        || (mode == Mode::Containers && app.widgets.containers.has_overlay())
     {
         container(Space::new())
             .width(Length::Fill)
@@ -241,8 +244,8 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
 
     let status_bar = match mode {
         Mode::Terminal => view_status_bar(app, theme_props),
-        Mode::Docker => docker_status_bar::view(
-            &app.widgets.docker.status_vm(),
+        Mode::Containers => containers_status_bar::view(
+            &app.widgets.containers.status_vm(),
             app.widgets.tabs.len(),
             env!("CARGO_PKG_VERSION"),
             AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
@@ -258,10 +261,10 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
             .height(Length::Fill)
             .into(),
     ];
-    // The Docker row menu opens at the pointer in window coordinates, so it
+    // The Containers row menu opens at the pointer in window coordinates, so it
     // and the dialogs lie over the whole window.
-    if mode == Mode::Docker {
-        root_layers.extend(view_docker_overlays(app, theme_props));
+    if mode == Mode::Containers {
+        root_layers.extend(view_containers_overlays(app, theme_props));
     }
     root_layers.push(resize_grips_layer);
 
@@ -347,7 +350,7 @@ fn view_left_panel<'a>(
         Mode::Terminal => {
             view_terminal_left_panel(app, sidebar_vm, theme_props)
         },
-        Mode::Docker => view_docker_tree(app, theme_props),
+        Mode::Containers => view_containers_tree(app, theme_props),
     };
 
     column![switcher, content]
@@ -420,45 +423,51 @@ fn view_terminal_left_panel<'a>(
     })
 }
 
-/// Docker mode left panel content: the engine tree.
-fn view_docker_tree<'a>(
+/// Containers mode left panel content: the engine tree.
+fn view_containers_tree<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     engine_tree::view(engine_tree::EngineTreeProps {
-        rows: app.widgets.docker.tree_vm(),
-        note: app.widgets.docker.tree_note(),
+        rows: app.widgets.containers.tree_vm(),
+        note: app.widgets.containers.tree_note(),
         theme: theme_props,
     })
-    .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
+    .map(|intent| AppEvent::Containers(ContainersEvent::Intent(intent)))
 }
 
-/// Docker mode main area: the Run container form while it is open, else
+/// Containers mode main area: the Run container form while it is open, else
 /// the open list of an engine or a card while there is none.
-fn view_docker_main<'a>(
+fn view_containers_main<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> MainContent<'a> {
-    let to_app_event = |intent| AppEvent::Docker(DockerEvent::Intent(intent));
+    let to_app_event =
+        |intent| AppEvent::Containers(ContainersEvent::Intent(intent));
 
-    if let Some(vm) = app.widgets.docker.run_form_vm() {
+    if let Some(vm) = app.widgets.containers.run_form_vm() {
         return MainContent::Screen {
             id: ScreenId::RunForm,
-            content: docker_run_form::view(docker_run_form::RunFormProps {
-                vm,
-                theme: theme_props,
-            })
+            content: containers_run_form::view(
+                containers_run_form::RunFormProps {
+                    vm,
+                    theme: theme_props,
+                },
+            )
             .map(to_app_event),
         };
     }
 
-    let vm = app.widgets.docker.main_vm(docker_format::unix_now());
+    let vm = app
+        .widgets
+        .containers
+        .main_vm(containers_format::unix_now());
     let id = match &vm {
         MainViewModel::Table(_) => None,
         MainViewModel::Searching => Some(ScreenId::Searching),
         MainViewModel::NoEngine(card) => Some(ScreenId::NoEngine(card.case)),
     };
-    let content = docker_main::view(docker_main::MainAreaProps {
+    let content = containers_main::view(containers_main::MainAreaProps {
         vm,
         theme: theme_props,
     })
@@ -470,51 +479,57 @@ fn view_docker_main<'a>(
     }
 }
 
-/// Docker mode right panel content: what the image sets while the Run
+/// Containers mode right panel content: what the image sets while the Run
 /// form is open, else the inspector of the selected row.
-fn view_docker_inspector<'a>(
+fn view_containers_inspector<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    if let Some(vm) = app.widgets.docker.image_panel_vm() {
-        return docker_run_panel::view(docker_run_panel::RunPanelProps {
-            vm,
-            theme: theme_props,
-        })
-        .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)));
+    if let Some(vm) = app.widgets.containers.image_panel_vm() {
+        return containers_run_panel::view(
+            containers_run_panel::RunPanelProps {
+                vm,
+                theme: theme_props,
+            },
+        )
+        .map(|intent| AppEvent::Containers(ContainersEvent::Intent(intent)));
     }
 
-    docker_inspector::view(docker_inspector::InspectorProps {
-        vm: app.widgets.docker.inspector_vm(),
-        tabs: app.widgets.docker.inspector_tabs_vm(),
-        actions: app.widgets.docker.actions_vm(),
+    containers_inspector::view(containers_inspector::InspectorProps {
+        vm: app.widgets.containers.inspector_vm(),
+        tabs: app.widgets.containers.inspector_tabs_vm(),
+        actions: app.widgets.containers.actions_vm(),
         theme: theme_props,
     })
-    .map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
+    .map(|intent| AppEvent::Containers(ContainersEvent::Intent(intent)))
 }
 
-/// Docker mode overlays: the row menu and the confirmation dialog.
-fn view_docker_overlays<'a>(
+/// Containers mode overlays: the row menu and the confirmation dialog.
+fn view_containers_overlays<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Vec<Element<'a, AppEvent, Theme, iced::Renderer>> {
     let mut layers = Vec::new();
 
-    if let Some(vm) = app.widgets.docker.row_menu_vm() {
-        layers.push(docker_row_menu::view(docker_row_menu::RowMenuProps {
-            vm,
-            area: app.state.window_size,
-            theme: theme_props,
-        }));
+    if let Some(vm) = app.widgets.containers.row_menu_vm() {
+        layers.push(containers_row_menu::view(
+            containers_row_menu::RowMenuProps {
+                vm,
+                area: app.state.window_size,
+                theme: theme_props,
+            },
+        ));
     }
-    if let Some(vm) = app.widgets.docker.confirm_vm() {
-        layers.push(docker_confirm::view(docker_confirm::ConfirmDialogProps {
-            vm,
-            theme: theme_props,
-        }));
+    if let Some(vm) = app.widgets.containers.confirm_vm() {
+        layers.push(containers_confirm::view(
+            containers_confirm::ConfirmDialogProps {
+                vm,
+                theme: theme_props,
+            },
+        ));
     }
-    if let Some(vm) = app.widgets.docker.form_vm() {
-        layers.push(docker_form::view(docker_form::FormDialogProps {
+    if let Some(vm) = app.widgets.containers.form_vm() {
+        layers.push(containers_form::view(containers_form::FormDialogProps {
             vm,
             theme: theme_props,
         }));
@@ -523,7 +538,9 @@ fn view_docker_overlays<'a>(
     layers
         .into_iter()
         .map(|layer| {
-            layer.map(|intent| AppEvent::Docker(DockerEvent::Intent(intent)))
+            layer.map(|intent| {
+                AppEvent::Containers(ContainersEvent::Intent(intent))
+            })
         })
         .collect()
 }
@@ -823,7 +840,7 @@ mod tests {
     use otty_ui_kit::size;
 
     use super::*;
-    use crate::widgets::docker::DockerIntent;
+    use crate::widgets::containers::ContainersIntent;
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::tabs::TabsCtx;
 
@@ -849,47 +866,53 @@ mod tests {
             .expect("launches should be visible");
         ui.find(i18n::t(Key::EmptyTitle))
             .expect("empty state should be visible");
-        assert!(ui.find(i18n::t(Key::DockerSearching)).is_err());
+        assert!(ui.find(i18n::t(Key::ContainersSearching)).is_err());
     }
 
     #[test]
-    fn docker_mode_swaps_the_left_panel_main_area_and_status_bar() {
-        let app = app_in(Mode::Docker);
+    fn containers_mode_swaps_the_left_panel_main_area_and_status_bar() {
+        let app = app_in(Mode::Containers);
         let mut ui = simulator(view(&app));
 
-        ui.find(i18n::t(Key::DockerSearching))
-            .expect("docker main area should be visible");
+        ui.find(i18n::t(Key::ContainersSearching))
+            .expect("containers main area should be visible");
         assert!(ui.find(i18n::t(Key::SessionsPanelTitle)).is_err());
         assert!(ui.find(i18n::t(Key::LaunchesPanelTitle)).is_err());
         assert!(ui.find(i18n::t(Key::EmptyTitle)).is_err());
     }
 
     #[test]
-    fn docker_mode_shows_the_engine_tree_the_table_and_the_inspector() {
-        use otty_docker::{EngineKind, fixtures};
+    fn containers_mode_shows_the_engine_tree_the_table_and_the_inspector() {
+        use otty_containers::{EngineKind, fixtures};
 
-        use crate::widgets::docker::DockerIntent;
-        use crate::widgets::docker::types::LoadedLists;
+        use crate::widgets::containers::ContainersIntent;
+        use crate::widgets::containers::types::LoadedLists;
 
-        let mut app = app_in(Mode::Docker);
+        let mut app = app_in(Mode::Containers);
         let docker = fixtures::engine(EngineKind::Docker);
         let resources = fixtures::resources(EngineKind::Docker);
-        let _ = app.widgets.docker.reduce(DockerIntent::Enter);
-        let _ = app.widgets.docker.reduce(DockerIntent::DiscoveryFinished(
-            fixtures::discovery(&[EngineKind::Docker]),
-        ));
-        let _ = app.widgets.docker.reduce(DockerIntent::ListsLoaded {
-            engine: docker.address().clone(),
-            lists: LoadedLists {
-                containers: Ok(resources.containers().to_vec()),
-                images: Ok(resources.images().to_vec()),
-                volumes: Ok(resources.volumes().to_vec()),
-                networks: Ok(resources.networks().to_vec()),
-            },
-        });
+        let _ = app.widgets.containers.reduce(ContainersIntent::Enter);
+        let _ =
+            app.widgets
+                .containers
+                .reduce(ContainersIntent::DiscoveryFinished(
+                    fixtures::discovery(&[EngineKind::Docker]),
+                ));
+        let _ = app
+            .widgets
+            .containers
+            .reduce(ContainersIntent::ListsLoaded {
+                engine: docker.address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(resources.containers().to_vec()),
+                    images: Ok(resources.images().to_vec()),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            });
         let mut ui = simulator(view(&app));
 
-        ui.find(i18n::t(Key::DockerImages))
+        ui.find(i18n::t(Key::ContainersImages))
             .expect("tree should list the images");
         ui.find("otty-fx-exit3")
             .expect("table should list containers");
@@ -898,71 +921,87 @@ mod tests {
         let events: Vec<AppEvent> = ui.into_messages().collect();
         assert!(events.iter().any(|event| matches!(
             page_intent(event),
-            Some(DockerIntent::SelectRow(5))
+            Some(ContainersIntent::SelectRow(5))
         )));
     }
 
     #[test]
     fn the_run_form_replaces_the_table_and_the_inspector() {
-        use otty_docker::{EngineKind, fixtures};
+        use otty_containers::{EngineKind, fixtures};
 
-        use crate::widgets::docker::DockerIntent;
-        use crate::widgets::docker::types::LoadedLists;
+        use crate::widgets::containers::ContainersIntent;
+        use crate::widgets::containers::types::LoadedLists;
 
-        let mut app = app_in(Mode::Docker);
+        let mut app = app_in(Mode::Containers);
         let docker = fixtures::engine(EngineKind::Docker);
         let resources = fixtures::resources(EngineKind::Docker);
-        let _ = app.widgets.docker.reduce(DockerIntent::Enter);
-        let _ = app.widgets.docker.reduce(DockerIntent::DiscoveryFinished(
-            fixtures::discovery(&[EngineKind::Docker]),
-        ));
-        let _ = app.widgets.docker.reduce(DockerIntent::ListsLoaded {
-            engine: docker.address().clone(),
-            lists: LoadedLists {
-                containers: Ok(resources.containers().to_vec()),
-                images: Ok(resources.images().to_vec()),
-                volumes: Ok(resources.volumes().to_vec()),
-                networks: Ok(resources.networks().to_vec()),
-            },
-        });
-        let _ = app.widgets.docker.reduce(DockerIntent::OpenCreate);
+        let _ = app.widgets.containers.reduce(ContainersIntent::Enter);
+        let _ =
+            app.widgets
+                .containers
+                .reduce(ContainersIntent::DiscoveryFinished(
+                    fixtures::discovery(&[EngineKind::Docker]),
+                ));
+        let _ = app
+            .widgets
+            .containers
+            .reduce(ContainersIntent::ListsLoaded {
+                engine: docker.address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(resources.containers().to_vec()),
+                    images: Ok(resources.images().to_vec()),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            });
+        let _ = app.widgets.containers.reduce(ContainersIntent::OpenCreate);
         let mut ui = simulator(view(&app));
 
-        ui.find(i18n::t(Key::DockerRunSubtitle))
+        ui.find(i18n::t(Key::ContainersRunSubtitle))
             .expect("main area should show the run form");
-        ui.find(i18n::t(Key::DockerRunNoImage))
+        ui.find(i18n::t(Key::ContainersRunNoImage))
             .expect("right panel should show the image panel");
         assert!(ui.find("otty-fx-exit3").is_err());
     }
 
     #[test]
-    fn docker_mode_shows_the_row_menu_and_the_remove_dialog_over_the_table() {
-        use otty_docker::{EngineKind, fixtures};
+    fn containers_mode_shows_the_row_menu_and_the_remove_dialog_over_the_table()
+    {
+        use otty_containers::{EngineKind, fixtures};
 
-        use crate::widgets::docker::DockerIntent;
-        use crate::widgets::docker::actions::RowAction;
-        use crate::widgets::docker::types::LoadedLists;
+        use crate::widgets::containers::ContainersIntent;
+        use crate::widgets::containers::actions::RowAction;
+        use crate::widgets::containers::types::LoadedLists;
 
-        let mut app = app_in(Mode::Docker);
+        let mut app = app_in(Mode::Containers);
         let docker = fixtures::engine(EngineKind::Docker);
         let resources = fixtures::resources(EngineKind::Docker);
-        let _ = app.widgets.docker.reduce(DockerIntent::Enter);
-        let _ = app.widgets.docker.reduce(DockerIntent::DiscoveryFinished(
-            fixtures::discovery(&[EngineKind::Docker]),
-        ));
-        let _ = app.widgets.docker.reduce(DockerIntent::ListsLoaded {
-            engine: docker.address().clone(),
-            lists: LoadedLists {
-                containers: Ok(resources.containers().to_vec()),
-                images: Ok(resources.images().to_vec()),
-                volumes: Ok(resources.volumes().to_vec()),
-                networks: Ok(resources.networks().to_vec()),
-            },
-        });
-        let _ = app.widgets.docker.reduce(DockerIntent::OpenRowMenu {
-            index: 5,
-            position: Point::new(400.0, 200.0),
-        });
+        let _ = app.widgets.containers.reduce(ContainersIntent::Enter);
+        let _ =
+            app.widgets
+                .containers
+                .reduce(ContainersIntent::DiscoveryFinished(
+                    fixtures::discovery(&[EngineKind::Docker]),
+                ));
+        let _ = app
+            .widgets
+            .containers
+            .reduce(ContainersIntent::ListsLoaded {
+                engine: docker.address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(resources.containers().to_vec()),
+                    images: Ok(resources.images().to_vec()),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            });
+        let _ = app
+            .widgets
+            .containers
+            .reduce(ContainersIntent::OpenRowMenu {
+                index: 5,
+                position: Point::new(400.0, 200.0),
+            });
 
         // The inspector shows a Start button too, under the menu's dismiss
         // layer; press the first menu item where the menu opened instead.
@@ -975,45 +1014,48 @@ mod tests {
         );
         let mut menu_ui = simulator(view(&app));
         menu_ui
-            .find(i18n::t(Key::DockerActionStart))
+            .find(i18n::t(Key::ContainersActionStart))
             .expect("menu item should show");
         menu_ui.point_at(first_item);
         let _ = menu_ui.simulate(iced_test::simulator::click());
         let events: Vec<AppEvent> = menu_ui.into_messages().collect();
         assert!(events.iter().any(|event| matches!(
             event,
-            AppEvent::Docker(DockerEvent::Intent(DockerIntent::Act(
-                RowAction::Start
-            )))
+            AppEvent::Containers(ContainersEvent::Intent(
+                ContainersIntent::Act(RowAction::Start)
+            ))
         )));
 
         let _ = app
             .widgets
-            .docker
-            .reduce(DockerIntent::Act(RowAction::Remove));
+            .containers
+            .reduce(ContainersIntent::Act(RowAction::Remove));
         let mut dialog_ui = simulator(view(&app));
         dialog_ui
-            .find(i18n::t(Key::DockerRemoveContainerText))
+            .find(i18n::t(Key::ContainersRemoveContainerText))
             .expect("the remove dialog should show");
         drop(dialog_ui);
-        assert!(app.widgets.docker.has_overlay());
+        assert!(app.widgets.containers.has_overlay());
 
-        let _ = app.widgets.docker.reduce(DockerIntent::ConfirmCancelled);
-        let _ = app.widgets.docker.reduce(DockerIntent::Open(
-            crate::widgets::docker::types::Place::new(
+        let _ = app
+            .widgets
+            .containers
+            .reduce(ContainersIntent::ConfirmCancelled);
+        let _ = app.widgets.containers.reduce(ContainersIntent::Open(
+            crate::widgets::containers::types::Place::new(
                 docker.address().clone(),
-                crate::widgets::docker::types::ResourceKind::Images,
+                crate::widgets::containers::types::ResourceKind::Images,
             ),
         ));
-        let _ = app.widgets.docker.reduce(DockerIntent::OpenCreate);
+        let _ = app.widgets.containers.reduce(ContainersIntent::OpenCreate);
         let mut pull_ui = simulator(view(&app));
         pull_ui
-            .find(i18n::t(Key::DockerFieldImage))
+            .find(i18n::t(Key::ContainersFieldImage))
             .expect("the pull dialog should show");
-        assert!(app.widgets.docker.has_overlay());
+        assert!(app.widgets.containers.has_overlay());
     }
 
-    /// Height of a window where the Docker table has to scroll.
+    /// Height of a window where the Containers table has to scroll.
     const SHORT_WINDOW: iced::Size = iced::Size::new(1024.0, 250.0);
 
     /// Where the line of the `main | right panel` split starts.
@@ -1089,7 +1131,7 @@ mod tests {
 
     #[test]
     fn dragging_the_panel_split_beside_the_table_bar_only_resizes() {
-        let app = docker_app_with_lists();
+        let app = containers_app_with_lists();
         let line = main_right_line(&app);
 
         let (resized, scrolled) = drag_in_short_window(
@@ -1107,7 +1149,7 @@ mod tests {
 
     #[test]
     fn dragging_the_table_bar_beside_the_panel_split_only_scrolls() {
-        let app = docker_app_with_lists();
+        let app = containers_app_with_lists();
         let line = main_right_line(&app);
         let bar = line - 2.0;
 
@@ -1126,7 +1168,7 @@ mod tests {
 
     #[test]
     fn dragging_the_panel_split_across_the_table_does_not_scroll_it() {
-        let app = docker_app_with_lists();
+        let app = containers_app_with_lists();
         let line = main_right_line(&app);
 
         let (resized, scrolled) = drag_in_short_window(
@@ -1148,17 +1190,18 @@ mod tests {
         // Narrow and short, so the form overflows both ways under its bars.
         const WINDOW: iced::Size = iced::Size::new(800.0, 250.0);
 
-        let mut app = docker_app_with_lists();
+        let mut app = containers_app_with_lists();
         app.state.window_size = WINDOW;
-        let engine =
-            otty_docker::fixtures::engine(otty_docker::EngineKind::Docker);
-        let _ = app.widgets.docker.reduce(DockerIntent::Open(
-            crate::widgets::docker::types::Place::new(
+        let engine = otty_containers::fixtures::engine(
+            otty_containers::EngineKind::Docker,
+        );
+        let _ = app.widgets.containers.reduce(ContainersIntent::Open(
+            crate::widgets::containers::types::Place::new(
                 engine.address().clone(),
-                crate::widgets::docker::types::ResourceKind::Containers,
+                crate::widgets::containers::types::ResourceKind::Containers,
             ),
         ));
-        let _ = app.widgets.docker.reduce(DockerIntent::OpenCreate);
+        let _ = app.widgets.containers.reduce(ContainersIntent::OpenCreate);
         let line = app
             .widgets
             .sidebar
@@ -1175,7 +1218,7 @@ mod tests {
             WINDOW,
             view(&app),
         );
-        let title = i18n::t(Key::DockerRunContainer);
+        let title = i18n::t(Key::ContainersRunContainer);
         let before = ui.find(title).expect("the form should show");
 
         let y = 150.0;
@@ -1231,21 +1274,21 @@ mod tests {
     const SMALL_WINDOW: iced::Size = iced::Size::new(400.0, 250.0);
 
     /// A no-engine card with these Docker and Podman commands found.
-    fn app_with_card(discovery: otty_docker::Discovery) -> App {
-        let mut app = app_in(Mode::Docker);
+    fn app_with_card(discovery: otty_containers::Discovery) -> App {
+        let mut app = app_in(Mode::Containers);
         app.state.window_size = SMALL_WINDOW;
-        let _ = app.widgets.docker.reduce(DockerIntent::Enter);
+        let _ = app.widgets.containers.reduce(ContainersIntent::Enter);
         let _ = app
             .widgets
-            .docker
-            .reduce(DockerIntent::DiscoveryFinished(discovery));
+            .containers
+            .reduce(ContainersIntent::DiscoveryFinished(discovery));
 
         app
     }
 
     /// The search that finds a refused Podman socket and nothing else.
-    fn denied_podman_search() -> otty_docker::Discovery {
-        use otty_docker::{CandidateSource, fixtures};
+    fn denied_podman_search() -> otty_containers::Discovery {
+        use otty_containers::{CandidateSource, fixtures};
 
         fixtures::denied_discovery_with_cli(
             fixtures::PODMAN_SOCKET,
@@ -1572,14 +1615,14 @@ mod tests {
         let (main_x, main_y) = (200.0, 150.0);
         let after_wheel =
             frames.frame(&app, Some((Point::new(main_x, main_y), scrolled)));
-        let _ = app.widgets.docker.reduce(DockerIntent::EngineSearchTick);
+        let _ = app
+            .widgets
+            .containers
+            .reduce(ContainersIntent::EngineSearchTick);
         let during_search = frames.frame(&app, None);
-        let _ =
-            app.widgets
-                .docker
-                .reduce(DockerIntent::BackgroundSearchFinished(
-                    denied_podman_search(),
-                ));
+        let _ = app.widgets.containers.reduce(
+            ContainersIntent::BackgroundSearchFinished(denied_podman_search()),
+        );
         let after_search = frames.frame(&app, None);
 
         assert_eq!(start, iced::Vector::new(0.0, 0.0));
@@ -1795,7 +1838,7 @@ mod tests {
         select(&mut app, Mode::Terminal);
         let start_opened = frames.frame(&app, None);
         let start_scrolled = frames.frame(&app, scroll_main_area());
-        select(&mut app, Mode::Docker);
+        select(&mut app, Mode::Containers);
         let no_engine_again = frames.frame(&app, None);
 
         assert_eq!(no_engine_scrolled, iced::Vector::new(30.0, 50.0));
@@ -1813,12 +1856,14 @@ mod tests {
 
         let _ = frames.frame(&app, None);
         let scrolled = frames.frame(&app, scroll_main_area());
-        let _ = app.widgets.docker.reduce(DockerIntent::CheckAgain);
+        let _ = app.widgets.containers.reduce(ContainersIntent::CheckAgain);
         let searching = frames.frame(&app, None);
-        let _ = app
-            .widgets
-            .docker
-            .reduce(DockerIntent::DiscoveryFinished(denied_podman_search()));
+        let _ =
+            app.widgets
+                .containers
+                .reduce(ContainersIntent::DiscoveryFinished(
+                    denied_podman_search(),
+                ));
         let after_search = frames.frame(&app, None);
 
         assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
@@ -1904,17 +1949,18 @@ mod tests {
     /// The Run form over the lists of the fixture Docker engine, in a window
     /// too small for it.
     fn app_with_run_form() -> App {
-        let mut app = docker_app_with_lists();
+        let mut app = containers_app_with_lists();
         app.state.window_size = SMALL_WINDOW;
-        let engine =
-            otty_docker::fixtures::engine(otty_docker::EngineKind::Docker);
-        let _ = app.widgets.docker.reduce(DockerIntent::Open(
-            crate::widgets::docker::types::Place::new(
+        let engine = otty_containers::fixtures::engine(
+            otty_containers::EngineKind::Docker,
+        );
+        let _ = app.widgets.containers.reduce(ContainersIntent::Open(
+            crate::widgets::containers::types::Place::new(
                 engine.address().clone(),
-                crate::widgets::docker::types::ResourceKind::Containers,
+                crate::widgets::containers::types::ResourceKind::Containers,
             ),
         ));
-        let _ = app.widgets.docker.reduce(DockerIntent::OpenCreate);
+        let _ = app.widgets.containers.reduce(ContainersIntent::OpenCreate);
 
         app
     }
@@ -2004,7 +2050,7 @@ mod tests {
         assert_each_screen_starts_at_its_top(
             app,
             move |app| select(app, Mode::Terminal),
-            move |app| select(app, Mode::Docker),
+            move |app| select(app, Mode::Containers),
         );
     }
 
@@ -2029,11 +2075,11 @@ mod tests {
     /// what was typed; the card it gave way to starts at its top as well.
     #[test]
     fn the_run_form_and_the_card_of_an_outage_do_not_share_their_scrolling() {
-        use otty_docker::{EngineKind, fixtures};
+        use otty_containers::{EngineKind, fixtures};
 
         let mut app = app_with_run_form();
-        let _ = app.widgets.docker.reduce(DockerIntent::RunEdited(
-            crate::widgets::docker::run_form::RunEdit::Image(String::from(
+        let _ = app.widgets.containers.reduce(ContainersIntent::RunEdited(
+            crate::widgets::containers::run_form::RunEdit::Image(String::from(
                 "kept:1",
             )),
         ));
@@ -2042,21 +2088,24 @@ mod tests {
             app,
             |app| {
                 let engine = fixtures::engine(EngineKind::Docker);
-                let _ = app.widgets.docker.reduce(
-                    DockerIntent::EngineUnreachable(engine.address().clone()),
+                let _ = app.widgets.containers.reduce(
+                    ContainersIntent::EngineUnreachable(
+                        engine.address().clone(),
+                    ),
                 );
-                let _ = app.widgets.docker.reduce(
-                    DockerIntent::DiscoveryFinished(denied_podman_search()),
+                let _ = app.widgets.containers.reduce(
+                    ContainersIntent::DiscoveryFinished(denied_podman_search()),
                 );
             },
             |app| {
-                let _ =
-                    app.widgets.docker.reduce(DockerIntent::DiscoveryFinished(
-                        fixtures::discovery(&[EngineKind::Docker]),
-                    ));
+                let _ = app.widgets.containers.reduce(
+                    ContainersIntent::DiscoveryFinished(fixtures::discovery(
+                        &[EngineKind::Docker],
+                    )),
+                );
                 assert_eq!(
                     app.widgets
-                        .docker
+                        .containers
                         .run_form_vm()
                         .map(|form| form.image.to_string()),
                     Some(String::from("kept:1")),
@@ -2069,24 +2118,26 @@ mod tests {
     #[test]
     fn another_answer_of_the_background_search_starts_the_new_card_at_its_top()
     {
-        use otty_docker::fixtures;
+        use otty_containers::fixtures;
 
         let mut app = app_with_card(denied_podman_search());
         let mut frames = Frames::new();
 
         let _ = frames.frame(&app, None);
         let scrolled = frames.frame(&app, scroll_main_area());
-        let _ = app.widgets.docker.reduce(DockerIntent::EngineSearchTick);
-        let _ =
-            app.widgets
-                .docker
-                .reduce(DockerIntent::BackgroundSearchFinished(
-                    fixtures::discovery_with_cli(
-                        &[],
-                        Some("/usr/bin/docker"),
-                        None,
-                    ),
-                ));
+        let _ = app
+            .widgets
+            .containers
+            .reduce(ContainersIntent::EngineSearchTick);
+        let _ = app.widgets.containers.reduce(
+            ContainersIntent::BackgroundSearchFinished(
+                fixtures::discovery_with_cli(
+                    &[],
+                    Some("/usr/bin/docker"),
+                    None,
+                ),
+            ),
+        );
         let new_card = frames.frame(&app, None);
 
         assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
@@ -2154,15 +2205,15 @@ mod tests {
 
     #[test]
     fn the_run_form_built_again_keeps_its_scrolling() {
-        use crate::widgets::docker::run_form::RunEdit;
+        use crate::widgets::containers::run_form::RunEdit;
 
         let mut app = app_with_run_form();
         let edit = |edit: RunEdit| -> AppChange {
             Box::new(move |app| {
                 let _ = app
                     .widgets
-                    .docker
-                    .reduce(DockerIntent::RunEdited(edit.clone()));
+                    .containers
+                    .reduce(ContainersIntent::RunEdited(edit.clone()));
             })
         };
 
@@ -2209,7 +2260,7 @@ mod tests {
     /// their own tests below.
     #[test]
     fn every_screen_of_the_main_area_keeps_the_one_minimum() {
-        use otty_docker::fixtures;
+        use otty_containers::fixtures;
 
         let settings = {
             let mut app = app_with_start_card();
@@ -2241,9 +2292,9 @@ mod tests {
             app
         };
         let searching = {
-            let mut app = app_in(Mode::Docker);
+            let mut app = app_in(Mode::Containers);
             app.state.window_size = SMALL_WINDOW;
-            let _ = app.widgets.docker.reduce(DockerIntent::Enter);
+            let _ = app.widgets.containers.reduce(ContainersIntent::Enter);
             app
         };
         let missing_error = {
@@ -2295,7 +2346,7 @@ mod tests {
         const WINDOW: iced::Size = iced::Size::new(400.0, 300.0);
         const ROW: &str = "otty-fx-web-1";
 
-        let mut app = docker_app_with_lists();
+        let mut app = containers_app_with_lists();
         app.state.window_size = WINDOW;
         let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleLeft);
         let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleRight);
@@ -2304,7 +2355,7 @@ mod tests {
             WINDOW,
             view(&app),
         );
-        let title = i18n::t(Key::DockerContainers);
+        let title = i18n::t(Key::ContainersContainers);
 
         let title_before = ui.find(title).expect("the title").visible_bounds();
         let row_before = ui.find(ROW).expect("the row").visible_bounds();
@@ -2377,7 +2428,7 @@ mod tests {
 
     #[test]
     fn in_focus_mode_the_panel_split_cannot_be_dragged() {
-        let mut app = docker_app_with_lists();
+        let mut app = containers_app_with_lists();
         let _ = app.widgets.sidebar.reduce(SidebarIntent::ToggleFocusMode);
         let line = main_right_line(&app);
 
@@ -2390,41 +2441,46 @@ mod tests {
         assert!(!resized, "focus mode has no drag handles");
     }
 
-    fn docker_app_with_lists() -> App {
-        use otty_docker::{EngineKind, fixtures};
+    fn containers_app_with_lists() -> App {
+        use otty_containers::{EngineKind, fixtures};
 
-        use crate::widgets::docker::DockerIntent;
-        use crate::widgets::docker::types::LoadedLists;
+        use crate::widgets::containers::ContainersIntent;
+        use crate::widgets::containers::types::LoadedLists;
 
-        let mut app = app_in(Mode::Docker);
+        let mut app = app_in(Mode::Containers);
         // The simulator draws the window at its default size.
         app.state.window_size = iced::Size::new(1024.0, 768.0);
         let docker = fixtures::engine(EngineKind::Docker);
         let resources = fixtures::resources(EngineKind::Docker);
-        let _ = app.widgets.docker.reduce(DockerIntent::Enter);
-        let _ = app.widgets.docker.reduce(DockerIntent::DiscoveryFinished(
-            fixtures::discovery(&[EngineKind::Docker]),
-        ));
-        let _ = app.widgets.docker.reduce(DockerIntent::ListsLoaded {
-            engine: docker.address().clone(),
-            lists: LoadedLists {
-                containers: Ok(resources.containers().to_vec()),
-                images: Ok(resources.images().to_vec()),
-                volumes: Ok(resources.volumes().to_vec()),
-                networks: Ok(resources.networks().to_vec()),
-            },
-        });
+        let _ = app.widgets.containers.reduce(ContainersIntent::Enter);
+        let _ =
+            app.widgets
+                .containers
+                .reduce(ContainersIntent::DiscoveryFinished(
+                    fixtures::discovery(&[EngineKind::Docker]),
+                ));
+        let _ = app
+            .widgets
+            .containers
+            .reduce(ContainersIntent::ListsLoaded {
+                engine: docker.address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(resources.containers().to_vec()),
+                    images: Ok(resources.images().to_vec()),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            });
 
         app
     }
 
     /// What the page on screen sent in `event`.
-    fn page_intent(event: &AppEvent) -> Option<&DockerIntent> {
+    fn page_intent(event: &AppEvent) -> Option<&ContainersIntent> {
         match event {
-            AppEvent::Docker(DockerEvent::Intent(DockerIntent::FromPage {
-                intent,
-                ..
-            })) => Some(intent),
+            AppEvent::Containers(ContainersEvent::Intent(
+                ContainersIntent::FromPage { intent, .. },
+            )) => Some(intent),
             _ => None,
         }
     }
@@ -2450,7 +2506,7 @@ mod tests {
                 .filter(|event| {
                     matches!(
                         page_intent(event),
-                        Some(DockerIntent::RowMenuPressed { .. })
+                        Some(ContainersIntent::RowMenuPressed { .. })
                     )
                 })
                 .collect();
@@ -2465,14 +2521,14 @@ mod tests {
 
     #[test]
     fn the_row_menu_button_reports_its_bottom_right_corner_in_the_window() {
-        let app = docker_app_with_lists();
+        let app = containers_app_with_lists();
 
         let (row_center, clicked_x, events) = press_first_row_menu(&app);
 
         let [event] = events.as_slice() else {
             panic!("one row menu intent expected");
         };
-        let Some(DockerIntent::RowMenuPressed { position, .. }) =
+        let Some(ContainersIntent::RowMenuPressed { position, .. }) =
             page_intent(event)
         else {
             panic!("a row menu intent expected");
@@ -2492,7 +2548,7 @@ mod tests {
 
     #[test]
     fn the_row_menu_opens_right_under_its_button() {
-        let mut app = docker_app_with_lists();
+        let mut app = containers_app_with_lists();
         let (row_center, clicked_x, events) = press_first_row_menu(&app);
         for event in events {
             let _ = app.update(event);
@@ -2500,7 +2556,7 @@ mod tests {
 
         let mut ui = simulator(view(&app));
         let item = ui
-            .find(i18n::t(Key::DockerActionStop))
+            .find(i18n::t(Key::ContainersActionStop))
             .expect("the menu should list Stop for a running container")
             .bounds();
 
@@ -2550,7 +2606,7 @@ mod tests {
         let mut app = app_in(Mode::Terminal);
 
         for (point, expected) in
-            [(tab(1.0), Mode::Docker), (tab(0.0), Mode::Terminal)]
+            [(tab(1.0), Mode::Containers), (tab(0.0), Mode::Terminal)]
         {
             let events = click_in_window(&app, point);
             for event in events {
@@ -2591,21 +2647,21 @@ mod tests {
         let _ = app.widgets.modes.reduce(ModesIntent::ToggleMenu);
         let mut ui = simulator(view(&app));
 
-        ui.click(i18n::t(Key::ModeDocker))
-            .expect("docker row should be visible");
+        ui.click(i18n::t(Key::ModeContainers))
+            .expect("containers row should be visible");
 
         let events: Vec<AppEvent> = ui.into_messages().collect();
         assert!(matches!(
             events.as_slice(),
             [AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
-                Mode::Docker
+                Mode::Containers
             )))]
         ));
     }
 
     #[test]
-    fn the_docker_sessions_button_switches_to_terminal_mode() {
-        let app = app_in(Mode::Docker);
+    fn the_containers_sessions_button_switches_to_terminal_mode() {
+        let app = app_in(Mode::Containers);
         let mut ui = simulator(view(&app));
 
         ui.click(i18n::status_sessions(0).as_str())

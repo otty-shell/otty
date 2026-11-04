@@ -29,9 +29,14 @@ pub(super) fn subscription(app: &App) -> Subscription<AppEvent> {
 
     subs.push(app.widgets.explorer.subscription().map(AppEvent::Explorer));
 
-    // Docker mode only: engine events keep the tables fresh, and the logs
+    // Containers mode only: engine events keep the tables fresh, and the logs
     // of the selected container follow while its Logs tab is open.
-    subs.push(app.widgets.docker.subscription().map(AppEvent::Docker));
+    subs.push(
+        app.widgets
+            .containers
+            .subscription()
+            .map(AppEvent::Containers),
+    );
 
     // Quick launch tick for launch indicators and auto-persist
     if app.widgets.quick_launch.has_active_launches()

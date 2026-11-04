@@ -268,91 +268,101 @@ pub(crate) fn with_count(key: Key, count: u64) -> String {
 
 /// Build the badge word of a container that exited with `code`, e.g.
 /// "Exited (3)".
-pub(crate) fn docker_exited(code: i64) -> String {
+pub(crate) fn containers_exited(code: i64) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerStateExitedCode,
+        Key::TplContainersStateExitedCode,
         &[("code", &format!("{code}"))],
     )
 }
 
 /// Build the text of the no access card for the denied `socket`.
-pub(crate) fn docker_no_access_text(socket: &str) -> String {
+pub(crate) fn containers_docker_no_access_text(socket: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerNoAccessText,
+        Key::TplContainersDockerNoAccessText,
         &[("socket", socket)],
     )
 }
 
 /// Build the text of the Podman no access card for the denied `socket`.
-pub(crate) fn docker_podman_no_access_text(socket: &str) -> String {
+pub(crate) fn containers_podman_no_access_text(socket: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerPodmanNoAccessText,
+        Key::TplContainersPodmanNoAccessText,
         &[("socket", socket)],
     )
 }
 
 /// Build the text of the card for a denied Docker `socket` with Podman off.
-pub(crate) fn docker_no_access_podman_off_text(socket: &str) -> String {
+pub(crate) fn containers_docker_no_access_podman_off_text(
+    socket: &str,
+) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerNoAccessPodmanOffText,
+        Key::TplContainersDockerNoAccessPodmanOffText,
         &[("socket", socket)],
     )
 }
 
 /// Build the text of the card for a denied Podman `socket` with Docker off.
-pub(crate) fn docker_podman_no_access_docker_off_text(socket: &str) -> String {
+pub(crate) fn containers_podman_no_access_docker_off_text(
+    socket: &str,
+) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerPodmanNoAccessDockerOffText,
+        Key::TplContainersPodmanNoAccessDockerOffText,
         &[("socket", socket)],
     )
 }
 
 /// Build the line under the no engine cards from the `places` OTTY tried.
-pub(crate) fn docker_looked_for(places: &str) -> String {
+pub(crate) fn containers_looked_for(places: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerLookedFor,
+        Key::TplContainersLookedFor,
         &[("places", places)],
     )
 }
 
 /// Build the status bar text for a denied `socket`.
-pub(crate) fn docker_status_no_access(socket: &str) -> String {
+pub(crate) fn containers_status_no_access(socket: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerStatusNoAccess,
+        Key::TplContainersStatusNoAccess,
         &[("socket", socket)],
     )
 }
 
 /// Build the status bar text for a denied Docker `socket` with Podman off.
-pub(crate) fn docker_status_no_access_podman_off(socket: &str) -> String {
+pub(crate) fn containers_status_docker_no_access_podman_off(
+    socket: &str,
+) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerStatusNoAccessPodmanOff,
+        Key::TplContainersStatusDockerNoAccessPodmanOff,
         &[("socket", socket)],
     )
 }
 
 /// Build the status bar text for a denied Podman `socket` with Docker off.
-pub(crate) fn docker_status_podman_no_access_docker_off(
+pub(crate) fn containers_status_podman_no_access_docker_off(
     socket: &str,
 ) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerStatusPodmanNoAccessDockerOff,
+        Key::TplContainersStatusPodmanNoAccessDockerOff,
         &[("socket", socket)],
     )
 }
 
 /// Build a status bar count: `one` for a single item, else `many` with the
 /// count, e.g. "1 image" or "7 images".
-pub(crate) fn docker_status_count(one: Key, many: Key, count: usize) -> String {
+pub(crate) fn containers_status_count(
+    one: Key,
+    many: Key,
+    count: usize,
+) -> String {
     if count == 1 {
         return t(one).to_string();
     }
@@ -361,52 +371,56 @@ pub(crate) fn docker_status_count(one: Key, many: Key, count: usize) -> String {
 }
 
 /// Build the notice shown above a table whose list failed with `error`.
-pub(crate) fn docker_list_failed(error: &str) -> String {
+pub(crate) fn containers_list_failed(error: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerListFailed,
+        Key::TplContainersListFailed,
         &[("error", error)],
     )
 }
 
 /// Build the notice shown above the logs when they could not be read.
-pub(crate) fn docker_logs_failed(error: &str) -> String {
+pub(crate) fn containers_logs_failed(error: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerLogsFailed,
+        Key::TplContainersLogsFailed,
         &[("error", error)],
     )
 }
 
 /// Build the count of log lines that wait while Follow is off, e.g.
 /// "1 new line" or "12 new lines".
-pub(crate) fn docker_logs_new_lines(count: usize) -> String {
-    docker_logs_new_lines_in(current_locale(), count)
+pub(crate) fn containers_logs_new_lines(count: usize) -> String {
+    containers_logs_new_lines_in(current_locale(), count)
 }
 
 /// Build the notice shown in the Inspect tab when the JSON did not load.
-pub(crate) fn docker_inspect_failed(error: &str) -> String {
+pub(crate) fn containers_inspect_failed(error: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerInspectFailed,
+        Key::TplContainersInspectFailed,
         &[("error", error)],
     )
 }
 
 /// Build the inspector status of a volume used by `names`.
-pub(crate) fn docker_used_by(names: &str) -> String {
-    fill_in(current_locale(), Key::TplDockerUsedBy, &[("names", names)])
+pub(crate) fn containers_used_by(names: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplContainersUsedBy,
+        &[("names", names)],
+    )
 }
 
-/// Fill the `{name}` placeholder of a Docker template, e.g. the title
+/// Fill the `{name}` placeholder of a Containers template, e.g. the title
 /// "Remove container web-1?".
-pub(crate) fn docker_named(key: Key, name: &str) -> String {
+pub(crate) fn containers_named(key: Key, name: &str) -> String {
     fill_in(current_locale(), key, &[("name", name)])
 }
 
-/// Build the notice of a failed Docker action from its template, the row
+/// Build the notice of a failed Containers action from its template, the row
 /// `name` and the engine's `error`, e.g. "Could not stop web-1: busy".
-pub(crate) fn docker_action_failed(
+pub(crate) fn containers_action_failed(
     key: Key,
     name: &str,
     error: &str,
@@ -415,17 +429,17 @@ pub(crate) fn docker_action_failed(
 }
 
 /// Build the hint under the disabled Remove of a volume used by `names`.
-pub(crate) fn docker_volume_in_use(names: &str) -> String {
+pub(crate) fn containers_volume_in_use(names: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerVolumeInUseHint,
+        Key::TplContainersVolumeInUseHint,
         &[("names", names)],
     )
 }
 
-/// Fill the one `{placeholder}` of a Docker template with `value`, e.g.
-/// "Starts in the background on Docker 29.9.1." from `TplDockerRunReady`.
-pub(crate) fn docker_filled(
+/// Fill the one `{placeholder}` of a Containers template with `value`, e.g.
+/// "Starts in the background on Docker 29.9.1." from `TplContainersRunReady`.
+pub(crate) fn containers_filled(
     key: Key,
     placeholder: &str,
     value: &str,
@@ -434,15 +448,19 @@ pub(crate) fn docker_filled(
 }
 
 /// Build the progress text of a running pull of `image`.
-pub(crate) fn docker_pulling(image: &str) -> String {
-    fill_in(current_locale(), Key::TplDockerPulling, &[("image", image)])
+pub(crate) fn containers_pulling(image: &str) -> String {
+    fill_in(
+        current_locale(),
+        Key::TplContainersPulling,
+        &[("image", image)],
+    )
 }
 
 /// Build the bytes of a running pull, e.g. "15.0 MB of 47.0 MB".
-pub(crate) fn docker_pull_amount(done: &str, total: &str) -> String {
+pub(crate) fn containers_pull_amount(done: &str, total: &str) -> String {
     fill_in(
         current_locale(),
-        Key::TplDockerPullAmount,
+        Key::TplContainersPullAmount,
         &[("done", done), ("total", total)],
     )
 }
@@ -625,14 +643,14 @@ fn process_exited_in(locale: Locale, exit_code: Option<i32>) -> String {
     )
 }
 
-fn docker_logs_new_lines_in(locale: Locale, count: usize) -> String {
+fn containers_logs_new_lines_in(locale: Locale, count: usize) -> String {
     if count == 1 {
-        return text_in(locale, Key::DockerLogsOneNewLine).to_string();
+        return text_in(locale, Key::ContainersLogsOneNewLine).to_string();
     }
 
     fill_in(
         locale,
-        Key::TplDockerLogsNewLines,
+        Key::TplContainersLogsNewLines,
         &[("count", &format!("{count}"))],
     )
 }
@@ -721,7 +739,7 @@ mod tests {
     use otty_ui_kit::{size, spacing};
 
     use super::{
-        Catalog, Key, Locale, catalog, docker_logs_new_lines_in, fill_in,
+        Catalog, Key, Locale, catalog, containers_logs_new_lines_in, fill_in,
         locale_from_system_preference, modes_pinned_note_in, process_exited_in,
         text_in, text_locale_tag,
     };
@@ -846,12 +864,12 @@ mod tests {
     /// The mode is named after its first list, in the words the tree uses.
     #[test]
     fn the_containers_mode_has_the_name_of_the_containers_list() {
-        assert_eq!(text_in(Locale::En, Key::ModeDocker), "Containers");
+        assert_eq!(text_in(Locale::En, Key::ModeContainers), "Containers");
 
         for locale in Locale::ALL {
             assert_eq!(
-                text_in(locale, Key::ModeDocker),
-                text_in(locale, Key::DockerContainers),
+                text_in(locale, Key::ModeContainers),
+                text_in(locale, Key::ContainersContainers),
                 "{}",
                 locale.tag()
             );
@@ -862,16 +880,19 @@ mod tests {
     fn the_texts_that_name_the_mode_use_its_new_name_in_every_locale() {
         for locale in Locale::ALL {
             let tag = locale.tag();
-            let name = text_in(locale, Key::ModeDocker);
+            let name = text_in(locale, Key::ModeContainers);
 
-            for key in [Key::DockerStatusMode, Key::PaletteSwitchToDockerMode] {
+            for key in [
+                Key::ContainersStatusMode,
+                Key::PaletteSwitchToContainersMode,
+            ] {
                 let text = text_in(locale, key);
 
                 assert!(text.contains(name), "{tag} {key:?}: {text}");
                 assert!(!text.contains("Docker"), "{tag} {key:?}: {text}");
             }
 
-            let about = text_in(locale, Key::DockerNotInstalledText);
+            let about = text_in(locale, Key::ContainersNotInstalledText);
             assert!(about.contains(name), "{tag}: {about}");
         }
     }
@@ -883,19 +904,19 @@ mod tests {
             let tag = locale.tag();
 
             for key in [
-                Key::DockerSearching,
-                Key::DockerNotInstalledTitle,
-                Key::DockerNotInstalledText,
-                Key::DockerInstallDocker,
-                Key::DockerStoppedTitle,
-                Key::DockerStoppedText,
-                Key::DockerNoAccessTitle,
-                Key::DockerPanelStopped,
-                Key::DockerPanelNoAccess,
-                Key::DockerBothOffTitle,
-                Key::DockerPanelBothOff,
-                Key::DockerStatusStopped,
-                Key::DockerStatusBothOff,
+                Key::ContainersSearching,
+                Key::ContainersNotInstalledTitle,
+                Key::ContainersNotInstalledText,
+                Key::ContainersInstallDocker,
+                Key::ContainersDockerStoppedTitle,
+                Key::ContainersDockerStoppedText,
+                Key::ContainersDockerNoAccessTitle,
+                Key::ContainersPanelDockerStopped,
+                Key::ContainersPanelDockerNoAccess,
+                Key::ContainersBothOffTitle,
+                Key::ContainersPanelBothOff,
+                Key::ContainersStatusDockerStopped,
+                Key::ContainersStatusBothOff,
             ] {
                 let text = text_in(locale, key).to_lowercase();
 
@@ -913,12 +934,12 @@ mod tests {
             let tag = locale.tag();
 
             for key in [
-                Key::DockerNoAccessPodmanOffTitle,
-                Key::TplDockerNoAccessPodmanOffText,
-                Key::DockerPanelNoAccessPodmanOff,
-                Key::DockerPodmanNoAccessDockerOffTitle,
-                Key::TplDockerPodmanNoAccessDockerOffText,
-                Key::DockerPanelPodmanNoAccessDockerOff,
+                Key::ContainersDockerNoAccessPodmanOffTitle,
+                Key::TplContainersDockerNoAccessPodmanOffText,
+                Key::ContainersPanelDockerNoAccessPodmanOff,
+                Key::ContainersPodmanNoAccessDockerOffTitle,
+                Key::TplContainersPodmanNoAccessDockerOffText,
+                Key::ContainersPanelPodmanNoAccessDockerOff,
             ] {
                 let text = text_in(locale, key).to_lowercase();
 
@@ -926,10 +947,14 @@ mod tests {
                 assert!(text.contains("podman"), "{tag} {key:?}: {text}");
             }
 
-            let podman_off =
-                text_in(locale, Key::TplDockerStatusNoAccessPodmanOff);
-            let docker_off =
-                text_in(locale, Key::TplDockerStatusPodmanNoAccessDockerOff);
+            let podman_off = text_in(
+                locale,
+                Key::TplContainersStatusDockerNoAccessPodmanOff,
+            );
+            let docker_off = text_in(
+                locale,
+                Key::TplContainersStatusPodmanNoAccessDockerOff,
+            );
             assert!(podman_off.to_lowercase().contains("podman"), "{tag}");
             assert!(docker_off.to_lowercase().contains("docker"), "{tag}");
         }
@@ -1020,7 +1045,9 @@ mod tests {
             Locale::PtBr,
             Locale::Ru,
         ] {
-            for key in [Key::DockerStopItFirst, Key::DockerForceRemoveImage] {
+            for key in
+                [Key::ContainersStopItFirst, Key::ContainersForceRemoveImage]
+            {
                 let label = text_in(locale, key);
                 let switch: Switch<'_, ()> =
                     Switch::new(true, &palette).label(label);
@@ -1184,7 +1211,7 @@ mod tests {
         for (locale, text) in expected {
             let filled = fill_in(
                 locale,
-                Key::TplDockerLookedFor,
+                Key::TplContainersLookedFor,
                 &[("places", "/run/docker.sock")],
             );
 
@@ -1193,52 +1220,58 @@ mod tests {
     }
 
     #[test]
-    fn docker_templates_fill_their_placeholders_in_every_locale() {
+    fn containers_templates_fill_their_placeholders_in_every_locale() {
         let fills = [
-            (Key::TplDockerRunning, ("count", "2")),
-            (Key::TplDockerAgeHours, ("count", "3")),
-            (Key::TplDockerStateExitedCode, ("code", "137")),
-            (Key::TplDockerListFailed, ("error", "boom")),
-            (Key::TplDockerUsedBy, ("names", "db-1")),
-            (Key::TplDockerStatusNoAccess, ("socket", "/run/docker.sock")),
+            (Key::TplContainersRunning, ("count", "2")),
+            (Key::TplContainersAgeHours, ("count", "3")),
+            (Key::TplContainersStateExitedCode, ("code", "137")),
+            (Key::TplContainersListFailed, ("error", "boom")),
+            (Key::TplContainersUsedBy, ("names", "db-1")),
             (
-                Key::TplDockerNoAccessPodmanOffText,
+                Key::TplContainersStatusNoAccess,
                 ("socket", "/run/docker.sock"),
             ),
             (
-                Key::TplDockerPodmanNoAccessDockerOffText,
-                ("socket", "/run/podman.sock"),
-            ),
-            (
-                Key::TplDockerStatusNoAccessPodmanOff,
+                Key::TplContainersDockerNoAccessPodmanOffText,
                 ("socket", "/run/docker.sock"),
             ),
             (
-                Key::TplDockerStatusPodmanNoAccessDockerOff,
+                Key::TplContainersPodmanNoAccessDockerOffText,
                 ("socket", "/run/podman.sock"),
             ),
-            (Key::TplDockerStatusContainers, ("count", "7")),
-            (Key::TplDockerStatusImages, ("count", "7")),
-            (Key::TplDockerStatusVolumes, ("count", "7")),
-            (Key::TplDockerStatusNetworks, ("count", "7")),
-            (Key::TplDockerRemoveContainerTitle, ("name", "web-1")),
-            (Key::TplDockerPruneContainersText, ("count", "3")),
-            (Key::TplDockerRemoveImageTitle, ("name", "nginx:1.27")),
-            (Key::TplDockerRemoveTagTitle, ("name", "nginx:1.27")),
-            (Key::TplDockerRemoveVolumeTitle, ("name", "pgdata")),
-            (Key::TplDockerRemoveNetworkTitle, ("name", "web_default")),
-            (Key::TplDockerPruneImagesText, ("count", "3")),
-            (Key::TplDockerPruneVolumesText, ("count", "3")),
-            (Key::TplDockerPruneAnonymousVolumesText, ("count", "3")),
-            (Key::TplDockerPruneNetworksText, ("count", "3")),
-            (Key::TplDockerVolumeInUseHint, ("names", "db-1")),
-            (Key::TplDockerPulling, ("image", "nginx:latest")),
-            (Key::TplDockerLogsNewLines, ("count", "12")),
-            (Key::TplDockerRunCommandHint, ("command", "nginx -g")),
-            (Key::TplDockerRunImageListens, ("ports", "80/tcp")),
-            (Key::TplDockerRunReady, ("engine", "Docker 29.9.1")),
-            (Key::TplDockerImageHere, ("size", "192.0 MB")),
-            (Key::TplDockerImageLookupFailed, ("error", "boom")),
+            (
+                Key::TplContainersStatusDockerNoAccessPodmanOff,
+                ("socket", "/run/docker.sock"),
+            ),
+            (
+                Key::TplContainersStatusPodmanNoAccessDockerOff,
+                ("socket", "/run/podman.sock"),
+            ),
+            (Key::TplContainersStatusContainers, ("count", "7")),
+            (Key::TplContainersStatusImages, ("count", "7")),
+            (Key::TplContainersStatusVolumes, ("count", "7")),
+            (Key::TplContainersStatusNetworks, ("count", "7")),
+            (Key::TplContainersRemoveContainerTitle, ("name", "web-1")),
+            (Key::TplContainersPruneContainersText, ("count", "3")),
+            (Key::TplContainersRemoveImageTitle, ("name", "nginx:1.27")),
+            (Key::TplContainersRemoveTagTitle, ("name", "nginx:1.27")),
+            (Key::TplContainersRemoveVolumeTitle, ("name", "pgdata")),
+            (
+                Key::TplContainersRemoveNetworkTitle,
+                ("name", "web_default"),
+            ),
+            (Key::TplContainersPruneImagesText, ("count", "3")),
+            (Key::TplContainersPruneVolumesText, ("count", "3")),
+            (Key::TplContainersPruneAnonymousVolumesText, ("count", "3")),
+            (Key::TplContainersPruneNetworksText, ("count", "3")),
+            (Key::TplContainersVolumeInUseHint, ("names", "db-1")),
+            (Key::TplContainersPulling, ("image", "nginx:latest")),
+            (Key::TplContainersLogsNewLines, ("count", "12")),
+            (Key::TplContainersRunCommandHint, ("command", "nginx -g")),
+            (Key::TplContainersRunImageListens, ("ports", "80/tcp")),
+            (Key::TplContainersRunReady, ("engine", "Docker 29.9.1")),
+            (Key::TplContainersImageHere, ("size", "192.0 MB")),
+            (Key::TplContainersImageLookupFailed, ("error", "boom")),
         ];
 
         for locale in Locale::ALL {
@@ -1255,7 +1288,7 @@ mod tests {
         assert_eq!(
             fill_in(
                 Locale::En,
-                Key::TplDockerStateExitedCode,
+                Key::TplContainersStateExitedCode,
                 &[("code", "3")]
             ),
             "Exited (3)"
@@ -1263,27 +1296,27 @@ mod tests {
     }
 
     #[test]
-    fn docker_action_failures_name_the_row_and_the_error_in_every_locale() {
+    fn containers_action_failures_name_the_row_and_the_error_in_every_locale() {
         let failures = [
-            Key::TplDockerStartFailed,
-            Key::TplDockerStopFailed,
-            Key::TplDockerRestartFailed,
-            Key::TplDockerPauseFailed,
-            Key::TplDockerUnpauseFailed,
-            Key::TplDockerRemoveContainerFailed,
-            Key::TplDockerPullFailed,
-            Key::TplDockerRemoveImageFailed,
-            Key::TplDockerRemoveVolumeFailed,
-            Key::TplDockerCreateNetworkFailed,
-            Key::TplDockerRemoveNetworkFailed,
-            Key::TplDockerRunFailed,
+            Key::TplContainersStartFailed,
+            Key::TplContainersStopFailed,
+            Key::TplContainersRestartFailed,
+            Key::TplContainersPauseFailed,
+            Key::TplContainersUnpauseFailed,
+            Key::TplContainersRemoveContainerFailed,
+            Key::TplContainersPullFailed,
+            Key::TplContainersRemoveImageFailed,
+            Key::TplContainersRemoveVolumeFailed,
+            Key::TplContainersCreateNetworkFailed,
+            Key::TplContainersRemoveNetworkFailed,
+            Key::TplContainersRunFailed,
         ];
         let without_name = [
-            Key::TplDockerPruneContainersFailed,
-            Key::TplDockerPruneImagesFailed,
-            Key::TplDockerCreateVolumeFailed,
-            Key::TplDockerPruneVolumesFailed,
-            Key::TplDockerPruneNetworksFailed,
+            Key::TplContainersPruneContainersFailed,
+            Key::TplContainersPruneImagesFailed,
+            Key::TplContainersCreateVolumeFailed,
+            Key::TplContainersPruneVolumesFailed,
+            Key::TplContainersPruneNetworksFailed,
         ];
 
         for locale in Locale::ALL {
@@ -1313,7 +1346,7 @@ mod tests {
             }
             let amount = fill_in(
                 locale,
-                Key::TplDockerPullAmount,
+                Key::TplContainersPullAmount,
                 &[("done", "15.0 MB"), ("total", "47.0 MB")],
             );
             assert!(
@@ -1327,7 +1360,7 @@ mod tests {
         assert_eq!(
             fill_in(
                 Locale::En,
-                Key::TplDockerStopFailed,
+                Key::TplContainersStopFailed,
                 &[("name", "web-1"), ("error", "busy")]
             ),
             "Could not stop web-1: busy"
@@ -1336,19 +1369,28 @@ mod tests {
 
     #[test]
     fn waiting_log_lines_are_counted_with_one_and_many_forms() {
-        assert_eq!(docker_logs_new_lines_in(Locale::En, 1), "1 new line");
-        assert_eq!(docker_logs_new_lines_in(Locale::En, 12), "12 new lines");
-        assert_eq!(docker_logs_new_lines_in(Locale::Ru, 1), "1 новая строка");
-        assert_eq!(docker_logs_new_lines_in(Locale::Ru, 12), "Новых строк: 12");
+        assert_eq!(containers_logs_new_lines_in(Locale::En, 1), "1 new line");
+        assert_eq!(
+            containers_logs_new_lines_in(Locale::En, 12),
+            "12 new lines"
+        );
+        assert_eq!(
+            containers_logs_new_lines_in(Locale::Ru, 1),
+            "1 новая строка"
+        );
+        assert_eq!(
+            containers_logs_new_lines_in(Locale::Ru, 12),
+            "Новых строк: 12"
+        );
     }
 
     #[test]
     fn the_skipped_output_line_is_one_translated_line_in_every_locale() {
-        let english = text_in(Locale::En, Key::DockerLogsSkippedOutput);
+        let english = text_in(Locale::En, Key::ContainersLogsSkippedOutput);
 
         assert_eq!(english, "… some output was skipped");
         for locale in Locale::ALL {
-            let text = text_in(locale, Key::DockerLogsSkippedOutput);
+            let text = text_in(locale, Key::ContainersLogsSkippedOutput);
 
             assert!(text.starts_with('…'), "{}: {text}", locale.tag());
             assert!(!text.contains('\n'), "{}: {text}", locale.tag());

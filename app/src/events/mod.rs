@@ -6,7 +6,7 @@ use iced::window::Direction;
 use crate::app::App;
 use crate::layout::screen_size_from_window;
 use crate::widgets::chrome::ChromeEvent;
-use crate::widgets::docker::DockerEvent;
+use crate::widgets::containers::ContainersEvent;
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::modes::ModesEvent;
 use crate::widgets::palette::PaletteEvent;
@@ -19,7 +19,7 @@ use crate::widgets::terminal_workspace::{
 };
 
 pub(crate) mod chrome;
-pub(crate) mod docker;
+pub(crate) mod containers;
 pub(crate) mod explorer;
 pub(crate) mod modes;
 pub(crate) mod palette;
@@ -41,7 +41,7 @@ pub(crate) enum AppEvent {
     Settings(SettingsEvent),
     Palette(PaletteEvent),
     Modes(ModesEvent),
-    Docker(DockerEvent),
+    Containers(ContainersEvent),
     IcedReady,
     SyncTerminalGridSizes,
     Keyboard(iced::keyboard::Event),
@@ -66,7 +66,7 @@ pub(crate) fn handle(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Settings(event) => settings::handle(app, event),
         AppEvent::Palette(event) => palette::handle(app, event),
         AppEvent::Modes(event) => modes::handle(app, event),
-        AppEvent::Docker(event) => docker::handle(app, event),
+        AppEvent::Containers(event) => containers::handle(app, event),
         AppEvent::SyncTerminalGridSizes => Task::done(
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::SyncPaneGridSize,

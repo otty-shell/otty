@@ -155,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn first_start_shows_terminal_then_docker_and_a_closed_menu() {
+    fn first_start_shows_terminal_then_containers_and_a_closed_menu() {
         let vm = ModesViewModel::from_state(&ModesState::default());
 
         assert_eq!(
@@ -164,12 +164,12 @@ mod tests {
                 active: Mode::Terminal,
                 tabs: vec![
                     tab(Mode::Terminal, true, false),
-                    tab(Mode::Docker, false, false),
+                    tab(Mode::Containers, false, false),
                 ],
                 is_menu_open: false,
                 pinned_rows: vec![
                     row(Mode::Terminal, true, PinButton::Hidden),
-                    row(Mode::Docker, false, PinButton::Unpin),
+                    row(Mode::Containers, false, PinButton::Unpin),
                 ],
                 other_rows: Vec::new(),
                 pinned_count: 1,
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn the_active_pinned_mode_is_its_own_tab_not_a_temporary_one() {
         let mut state = ModesState::default();
-        state.select(Mode::Docker);
+        state.select(Mode::Containers);
 
         let vm = ModesViewModel::from_state(&state);
 
@@ -189,7 +189,7 @@ mod tests {
             vm.tabs,
             vec![
                 tab(Mode::Terminal, false, false),
-                tab(Mode::Docker, true, false),
+                tab(Mode::Containers, true, false),
             ]
         );
     }
@@ -207,7 +207,7 @@ mod tests {
         );
         assert_eq!(
             vm.other_rows,
-            vec![row(Mode::Docker, false, PinButton::Pin)]
+            vec![row(Mode::Containers, false, PinButton::Pin)]
         );
         assert_eq!(vm.pinned_count, 0);
     }
@@ -215,8 +215,8 @@ mod tests {
     #[test]
     fn an_unpinned_active_mode_gets_a_temporary_tab_after_the_pinned_ones() {
         let mut state = ModesState::default();
-        state.select(Mode::Docker);
-        state.unpin(Mode::Docker);
+        state.select(Mode::Containers);
+        state.unpin(Mode::Containers);
 
         let vm = ModesViewModel::from_state(&state);
 
@@ -224,19 +224,19 @@ mod tests {
             vm.tabs,
             vec![
                 tab(Mode::Terminal, false, false),
-                tab(Mode::Docker, true, true),
+                tab(Mode::Containers, true, true),
             ]
         );
         assert_eq!(
             vm.other_rows,
-            vec![row(Mode::Docker, true, PinButton::Pin)]
+            vec![row(Mode::Containers, true, PinButton::Pin)]
         );
     }
 
     #[test]
     fn the_temporary_tab_goes_away_when_another_mode_is_chosen() {
         let mut state = ModesState::with_pinned(&[]);
-        state.select(Mode::Docker);
+        state.select(Mode::Containers);
 
         state.select(Mode::Terminal);
         let vm = ModesViewModel::from_state(&state);
@@ -252,7 +252,7 @@ mod tests {
 
         assert_eq!(
             vm.other_rows,
-            vec![row(Mode::Docker, false, PinButton::PinDisabled)]
+            vec![row(Mode::Containers, false, PinButton::PinDisabled)]
         );
         assert_eq!(vm.pinned_count, 0);
         assert_eq!(vm.pin_limit, 0);

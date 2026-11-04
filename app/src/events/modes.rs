@@ -1,6 +1,6 @@
 //! Routes the modes widget: reduces its intents and runs its effects.
 //! Saving the pinned modes and moving keyboard focus around the All modes
-//! menu happen here, off the reducer. A mode change also tells the Docker
+//! menu happen here, off the reducer. A mode change also tells the Containers
 //! widget whether it may talk to the engines (spec Decision 14).
 
 use iced::Task;
@@ -8,7 +8,7 @@ use iced::widget::{Id, operation};
 
 use super::AppEvent;
 use crate::app::App;
-use crate::widgets::docker::{DockerEvent, DockerIntent};
+use crate::widgets::containers::{ContainersEvent, ContainersIntent};
 use crate::widgets::modes::types::Mode;
 use crate::widgets::modes::{ModesEffect, ModesEvent, storage};
 use crate::widgets::terminal_workspace::{
@@ -39,14 +39,16 @@ fn handle_effect(effect: ModesEffect) -> Task<AppEvent> {
         // The root view reads the active mode when it draws. Back in
         // Terminal mode the panes get the current grid size, since the
         // window may have changed meanwhile, and the active pane its keys;
-        // the Docker widget stops asking for engine work.
+        // the Containers widget stops asking for engine work.
         ModesEffect::ModeChanged(Mode::Terminal) => Task::batch([
             Task::done(AppEvent::SyncTerminalGridSizes),
             focus_active_terminal(),
-            docker(DockerIntent::Leave),
+            containers(ContainersIntent::Leave),
         ]),
-        // Entering Docker mode searches for engines and loads their lists.
-        ModesEffect::ModeChanged(Mode::Docker) => docker(DockerIntent::Enter),
+        // Entering Containers mode searches for engines and loads their lists.
+        ModesEffect::ModeChanged(Mode::Containers) => {
+            containers(ContainersIntent::Enter)
+        },
         ModesEffect::SavePinned(pinned) => save_pinned(pinned),
     }
 }
@@ -73,8 +75,8 @@ fn focus_after_menu_change(app: &App, was_menu_open: bool) -> Task<AppEvent> {
     Task::none()
 }
 
-fn docker(intent: DockerIntent) -> Task<AppEvent> {
-    Task::done(AppEvent::Docker(DockerEvent::Intent(intent)))
+fn containers(intent: ContainersIntent) -> Task<AppEvent> {
+    Task::done(AppEvent::Containers(ContainersEvent::Intent(intent)))
 }
 
 fn focus_active_terminal() -> Task<AppEvent> {
@@ -113,16 +115,16 @@ mod tests {
 
         let events = collect_outputs(handle(
             &mut app,
-            ModesEvent::Intent(ModesIntent::Select(Mode::Docker)),
+            ModesEvent::Intent(ModesIntent::Select(Mode::Containers)),
         ));
 
         assert!(matches!(
             events.as_slice(),
             [AppEvent::Modes(ModesEvent::Effect(
-                ModesEffect::ModeChanged(Mode::Docker)
+                ModesEffect::ModeChanged(Mode::Containers)
             ))]
         ));
-        assert_eq!(app.widgets.modes.vm().active, Mode::Docker);
+        assert_eq!(app.widgets.modes.vm().active, Mode::Containers);
     }
 
     #[test]
@@ -131,7 +133,7 @@ mod tests {
 
         let events = collect_outputs(handle(
             &mut app,
-            ModesEvent::Intent(ModesIntent::Unpin(Mode::Docker)),
+            ModesEvent::Intent(ModesIntent::Unpin(Mode::Containers)),
         ));
 
         assert!(matches!(
@@ -169,54 +171,55 @@ mod tests {
         assert!(
             events
                 .iter()
-                .any(|event| is_docker(event, &DockerIntent::Leave))
+                .any(|event| is_containers(event, &ContainersIntent::Leave))
         );
         assert_eq!(events.len(), 3);
     }
 
-    fn is_docker(event: &AppEvent, expected: &DockerIntent) -> bool {
+    fn is_containers(event: &AppEvent, expected: &ContainersIntent) -> bool {
         matches!(
             event,
-            AppEvent::Docker(DockerEvent::Intent(intent)) if intent == expected
+            AppEvent::Containers(ContainersEvent::Intent(intent)) if intent == expected
         )
     }
 
     #[test]
-    fn switching_to_docker_only_starts_the_engine_search() {
+    fn switching_to_containers_only_starts_the_engine_search() {
         let mut app = app();
 
         let events = collect_outputs(handle(
             &mut app,
-            ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Docker)),
+            ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Containers)),
         ));
 
         assert_eq!(events.len(), 1);
-        assert!(is_docker(&events[0], &DockerIntent::Enter));
+        assert!(is_containers(&events[0], &ContainersIntent::Enter));
     }
 
     #[test]
     fn nothing_talks_to_the_engines_while_terminal_mode_is_active() {
         let mut app = app();
 
-        let to_docker = collect_outputs(handle(
+        let to_containers = collect_outputs(handle(
             &mut app,
-            ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Docker)),
+            ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Containers)),
         ));
         let to_terminal = collect_outputs(handle(
             &mut app,
             ModesEvent::Effect(ModesEffect::ModeChanged(Mode::Terminal)),
         ));
-        for event in to_docker.into_iter().chain(to_terminal) {
-            if let AppEvent::Docker(DockerEvent::Intent(intent)) = event {
-                let _ = app.widgets.docker.reduce(intent);
+        for event in to_containers.into_iter().chain(to_terminal) {
+            if let AppEvent::Containers(ContainersEvent::Intent(intent)) = event
+            {
+                let _ = app.widgets.containers.reduce(intent);
             }
         }
 
-        assert!(!app.widgets.docker.is_active());
+        assert!(!app.widgets.containers.is_active());
     }
 
     #[test]
-    fn switching_to_docker_and_back_keeps_the_tabs_and_the_active_tab() {
+    fn switching_to_containers_and_back_keeps_the_tabs_and_the_active_tab() {
         let mut app = app();
         let ctx = TabsCtx { shell_name: "sh" };
         let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &ctx);
@@ -224,19 +227,19 @@ mod tests {
         let tab_count = app.widgets.tabs.len();
         let active_tab = app.widgets.tabs.active_tab_id();
 
-        let to_docker = collect_outputs(handle(
+        let to_containers = collect_outputs(handle(
             &mut app,
-            ModesEvent::Intent(ModesIntent::Select(Mode::Docker)),
+            ModesEvent::Intent(ModesIntent::Select(Mode::Containers)),
         ));
-        let in_docker =
+        let in_containers =
             (app.widgets.tabs.len(), app.widgets.tabs.active_tab_id());
         let back = collect_outputs(handle(
             &mut app,
             ModesEvent::Intent(ModesIntent::Select(Mode::Terminal)),
         ));
 
-        assert_eq!(to_docker.len(), 1);
-        assert_eq!(in_docker, (tab_count, active_tab));
+        assert_eq!(to_containers.len(), 1);
+        assert_eq!(in_containers, (tab_count, active_tab));
         assert!(matches!(
             back.as_slice(),
             [AppEvent::Modes(ModesEvent::Effect(
@@ -276,11 +279,11 @@ mod tests {
     }
 
     #[test]
-    fn closing_the_menu_in_docker_mode_focuses_nothing() {
+    fn closing_the_menu_in_containers_mode_focuses_nothing() {
         let mut app = app();
         let _ = handle(
             &mut app,
-            ModesEvent::Intent(ModesIntent::Select(Mode::Docker)),
+            ModesEvent::Intent(ModesIntent::Select(Mode::Containers)),
         );
         let _ = handle(&mut app, ModesEvent::Intent(ModesIntent::ToggleMenu));
 

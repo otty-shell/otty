@@ -111,7 +111,7 @@ mod tests {
         }
     }
 
-    /// App on first start: Terminal active, Docker pinned, without reading
+    /// App on first start: Terminal active, Containers pinned, without reading
     /// `modes.json`.
     fn first_start_app() -> App {
         let (mut app, _) = App::new();
@@ -160,7 +160,7 @@ mod tests {
 
         let events = collect_outputs(handle(&app, AppShortcut::PinnedMode1));
 
-        assert_eq!(selected_mode(&events), Some(Mode::Docker));
+        assert_eq!(selected_mode(&events), Some(Mode::Containers));
     }
 
     #[test]
@@ -181,7 +181,10 @@ mod tests {
     #[test]
     fn pinned_mode_shortcut_without_pinned_modes_does_nothing() {
         let mut app = first_start_app();
-        let _ = app.widgets.modes.reduce(ModesIntent::Unpin(Mode::Docker));
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Unpin(Mode::Containers));
 
         let events = collect_outputs(handle(&app, AppShortcut::PinnedMode1));
 
@@ -190,11 +193,17 @@ mod tests {
 
     #[test]
     fn pinned_mode_shortcut_skips_the_temporary_tab() {
-        // Docker unpinned but active: its tab is temporary, not pinned
+        // Containers unpinned but active: its tab is temporary, not pinned
         // mode 1.
         let mut app = first_start_app();
-        let _ = app.widgets.modes.reduce(ModesIntent::Unpin(Mode::Docker));
-        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Unpin(Mode::Containers));
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
 
         let events = collect_outputs(handle(&app, AppShortcut::PinnedMode1));
 
@@ -221,7 +230,7 @@ mod tests {
 
         let events = collect_outputs(handle_key_event(&app, &event));
 
-        assert_eq!(selected_mode(&events), Some(Mode::Docker));
+        assert_eq!(selected_mode(&events), Some(Mode::Containers));
     }
 
     #[test]
@@ -284,7 +293,10 @@ mod tests {
     fn close_session_shortcut_outside_terminal_mode_keeps_the_hidden_tab() {
         let mut app = first_start_app();
         let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
-        let _ = app.widgets.modes.reduce(ModesIntent::Select(Mode::Docker));
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
 
         let events = collect_outputs(handle(&app, AppShortcut::CloseSession));
 

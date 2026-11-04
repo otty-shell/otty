@@ -163,7 +163,7 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
 fn switch_mode_title(mode: Mode) -> Key {
     match mode {
         Mode::Terminal => Key::PaletteSwitchToTerminalMode,
-        Mode::Docker => Key::PaletteSwitchToDockerMode,
+        Mode::Containers => Key::PaletteSwitchToContainersMode,
     }
 }
 
@@ -205,7 +205,7 @@ mod tests {
             sessions: Vec::new(),
             launches: Vec::new(),
             can_split_pane: false,
-            pinned_modes: vec![Mode::Terminal, Mode::Docker],
+            pinned_modes: vec![Mode::Terminal, Mode::Containers],
             active_mode: Mode::Terminal,
         }
     }
@@ -361,8 +361,8 @@ mod tests {
                     Some(AppShortcut::TerminalMode),
                 ),
                 action(
-                    PaletteTarget::SwitchMode(Mode::Docker),
-                    Key::PaletteSwitchToDockerMode,
+                    PaletteTarget::SwitchMode(Mode::Containers),
+                    Key::PaletteSwitchToContainersMode,
                     Some(AppShortcut::PinnedMode1),
                 ),
             ]
@@ -384,7 +384,7 @@ mod tests {
                 PaletteTarget::ToggleFilesPanel,
                 PaletteTarget::ToggleFocusMode,
                 PaletteTarget::SwitchMode(Mode::Terminal),
-                PaletteTarget::SwitchMode(Mode::Docker),
+                PaletteTarget::SwitchMode(Mode::Containers),
             ]
         );
     }
@@ -409,9 +409,9 @@ mod tests {
                 )
                 .with_shortcut(AppShortcut::TerminalMode.label()),
                 PaletteItem::new(
-                    PaletteTarget::SwitchMode(Mode::Docker),
+                    PaletteTarget::SwitchMode(Mode::Containers),
                     group,
-                    i18n::t(Key::PaletteSwitchToDockerMode),
+                    i18n::t(Key::PaletteSwitchToContainersMode),
                 ),
             ]
         );
@@ -449,7 +449,7 @@ mod tests {
                 true,
             )],
             can_split_pane: true,
-            active_mode: Mode::Docker,
+            active_mode: Mode::Containers,
             ..empty_ctx()
         };
 
@@ -466,7 +466,7 @@ mod tests {
                 PaletteTarget::ToggleFilesPanel,
                 PaletteTarget::ToggleFocusMode,
                 PaletteTarget::SwitchMode(Mode::Terminal),
-                PaletteTarget::SwitchMode(Mode::Docker),
+                PaletteTarget::SwitchMode(Mode::Containers),
             ]
         );
     }
