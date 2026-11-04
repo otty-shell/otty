@@ -382,6 +382,7 @@
     "field_identity_file": "Arquivo de chave privada",
     "field_extra_args": "Argumentos adicionais",
     "field_environment": "Variáveis de ambiente",
+    "field_optional": "opcional",
     "field_after_exit": "Ao terminar",
     "exit_behavior_close": "Fechar",
     "exit_behavior_close_on_success": "Fechar se der certo",

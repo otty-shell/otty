@@ -33,7 +33,7 @@ pub(super) const PADDING_Y: f32 = 7.0;
 /// let palette = UiPalette::otty_dark();
 /// let field: Element<'_, Message> =
 ///     TextField::new("Working directory", "~/projects", &palette)
-///         .optional(true)
+///         .optional("optional")
 ///         .hint("Defaults to the home directory.")
 ///         .action("Browse", Message::Browse)
 ///         .on_input(Message::Path)
@@ -46,7 +46,7 @@ pub struct TextField<'a, Message> {
     placeholder: String,
     hint: Option<String>,
     error: Option<String>,
-    is_optional: bool,
+    optional: Option<String>,
     width: Length,
     action: Option<(String, Message)>,
     is_secure: bool,
@@ -69,7 +69,7 @@ impl<'a, Message> TextField<'a, Message> {
             placeholder: String::new(),
             hint: None,
             error: None,
-            is_optional: false,
+            optional: None,
             width: Length::Fill,
             action: None,
             is_secure: false,
@@ -98,9 +98,10 @@ impl<'a, Message> TextField<'a, Message> {
         self
     }
 
-    /// Adds the `optional` marker to the label.
-    pub fn optional(mut self, is_optional: bool) -> Self {
-        self.is_optional = is_optional;
+    /// Marks the field as one that may stay empty: `marker` shows beside the
+    /// label, in the language of the app.
+    pub fn optional(mut self, marker: impl Into<String>) -> Self {
+        self.optional = Some(marker.into());
         self
     }
 
@@ -187,12 +188,42 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
 
         container(field_chrome::labelled(
             &value.label,
-            value.is_optional,
+            value.optional.as_deref(),
             line.into(),
             note,
             &value.palette,
         ))
         .width(value.width)
         .into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use iced_test::simulator;
+
+    use super::*;
+
+    #[test]
+    fn given_an_optional_marker_when_drawn_then_it_reads_as_given() {
+        let palette = UiPalette::otty_dark();
+        let field: Element<'_, ()> = TextField::new("Имя", "", &palette)
+            .optional("необязательно")
+            .into();
+        let mut ui = simulator(field);
+
+        assert!(ui.find("необязательно").is_ok());
+        assert!(ui.find("optional").is_err());
+    }
+
+    #[test]
+    fn given_no_optional_marker_when_drawn_then_only_the_label_shows() {
+        let palette = UiPalette::otty_dark();
+        let field: Element<'_, ()> =
+            TextField::new("Name", "", &palette).into();
+        let mut ui = simulator(field);
+
+        assert!(ui.find("Name").is_ok());
+        assert!(ui.find("optional").is_err());
     }
 }

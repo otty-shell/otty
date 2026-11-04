@@ -113,7 +113,7 @@ fn image_section<'a>(
     let mut name =
         TextField::new(i18n::t(Key::DockerFieldName), vm.name, palette)
             .placeholder(i18n::t(Key::DockerRunNamePlaceholder))
-            .optional(true);
+            .optional(i18n::t(Key::FieldOptional));
     let mut pull = Switch::new(vm.pulls_missing, palette)
         .label(i18n::t(Key::DockerRunPullMissing));
     if is_editable {
@@ -155,7 +155,7 @@ fn command_section<'a>(
     let mut command =
         TokenField::new(i18n::t(Key::DockerFieldCommand), vm.command, palette)
             .placeholder(i18n::t(Key::DockerRunCommandPlaceholder))
-            .optional(true)
+            .optional(i18n::t(Key::FieldOptional))
             .hint(vm.command_hint.clone());
     if vm.is_editable {
         command = command
@@ -464,6 +464,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::{self, Key};
+    use crate::testing::alone;
     use crate::theme::{AppTheme, BuiltinTheme};
     use crate::widgets::docker::errors::DockerError;
     use crate::widgets::docker::reducer::reduce;
@@ -1202,42 +1203,14 @@ mod tests {
 
     /// Korean is left out: Hangul falls back to a wider font for now
     /// (Decision 23).
-    ///
-    /// Loading the kit's fonts changes how all text of a process is drawn,
-    /// which would disturb the drawing tests running beside this one. So the
-    /// test starts a copy of this test program, for this test alone, and lets
-    /// the copy measure.
     #[test]
     fn the_read_only_label_reads_whole_in_every_locale_but_korean() {
-        const NAME: &str =
-            "the_read_only_label_reads_whole_in_every_locale_but_korean";
-        const IN_THE_COPY: &str = "OTTY_TEST_WITH_KIT_FONTS";
-
-        if std::env::var_os(IN_THE_COPY).is_none() {
-            let program = std::env::current_exe().expect("the test program");
-            let output = std::process::Command::new(program)
-                .arg(NAME)
-                .env(IN_THE_COPY, "1")
-                .output()
-                .expect("the copy should start");
-            let said = String::from_utf8_lossy(&output.stdout);
-
-            assert!(
-                output.status.success() && said.contains("1 passed"),
-                "{said}"
-            );
+        if !alone::is_alone(
+            "the_read_only_label_reads_whole_in_every_locale_but_korean",
+        ) {
             return;
         }
-
-        let settings = iced::Settings {
-            fonts: fonts::all_bytes()
-                .into_iter()
-                .map(std::borrow::Cow::Borrowed)
-                .collect(),
-            ..iced::Settings::default()
-        };
-        let empty: RunElement<'_> = text("").into();
-        let _ = iced_test::Simulator::with_settings(settings, empty);
+        alone::load_kit_fonts();
 
         let palette = UiPalette::otty_dark();
         for locale in i18n::Locale::ALL {
@@ -1252,6 +1225,89 @@ mod tests {
             assert!(
                 needed <= READ_ONLY_WIDTH,
                 "{locale:?}: {label} needs {needed} in {READ_ONLY_WIDTH}"
+            );
+        }
+    }
+
+    /// Text size of the kit's token input.
+    const TOKEN_INPUT_TEXT_SIZE: f32 = 12.5;
+
+    /// Korean is left out: Hangul falls back to a wider font for now
+    /// (Decision 23).
+    #[test]
+    fn the_command_placeholder_reads_whole_at_the_smallest_width_in_every_locale_but_korean()
+     {
+        if !alone::is_alone(
+            "the_command_placeholder_reads_whole_at_the_smallest_width",
+        ) {
+            return;
+        }
+        alone::load_kit_fonts();
+
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        for locale in i18n::Locale::ALL {
+            if locale == i18n::Locale::Ko {
+                continue;
+            }
+            i18n::set_locale(locale);
+            let placeholder = i18n::t(Key::DockerRunCommandPlaceholder);
+            let shown: RunElement<'_> = text(placeholder)
+                .font(fonts::MONO)
+                .size(TOKEN_INPUT_TEXT_SIZE)
+                .shaping(iced::widget::text::Shaping::Advanced)
+                .into();
+            let needed =
+                simulator(shown).find(placeholder).expect("text").bounds();
+            let state = state(
+                Some(fixtures::image_defaults()),
+                vec![RunEdit::CommandInput(String::from("typed"))],
+            );
+            let width = size::SCREEN_MIN;
+            let mut ui = in_window(&state, &theme, width, 2400.0);
+
+            let input = ui.find("typed").expect("the input").bounds();
+            let title = ui
+                .find(i18n::t(Key::DockerRunContainer))
+                .expect("the title")
+                .bounds();
+
+            assert!(
+                input.width >= needed.width,
+                "{locale:?}: {placeholder} needs {} in {}",
+                needed.width,
+                input.width
+            );
+            assert!(
+                input.x - title.x < spacing::SPACE_3,
+                "{locale:?}: the input should start its line: {input:?}"
+            );
+            assert!(
+                input.x + input.width <= width - spacing::SPACE_7,
+                "{locale:?}: the input should stay in the form: {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_optional_marker_is_in_the_language_of_the_form() {
+        if !alone::is_alone(
+            "the_optional_marker_is_in_the_language_of_the_form",
+        ) {
+            return;
+        }
+
+        let theme = AppTheme::new(BuiltinTheme::OttyDark);
+        for locale in i18n::Locale::ALL {
+            i18n::set_locale(locale);
+            let marker = i18n::t(Key::FieldOptional);
+            let state = ready();
+            let mut ui = in_window(&state, &theme, 1024.0, 2400.0);
+
+            assert!(ui.find(marker).is_ok(), "{locale:?}: {marker}");
+            assert_eq!(
+                ui.find("optional").is_ok(),
+                marker == "optional",
+                "{locale:?}"
             );
         }
     }

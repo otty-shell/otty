@@ -754,7 +754,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
 
     let fields = column![
         TextField::new("Working directory", &state.path, p)
-            .optional(true)
+            .optional("optional")
             .hint("Defaults to the home directory.")
             .action("Browse", Message::Clicked)
             .on_input(Message::Path),
@@ -788,7 +788,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
 
     let key_values =
         KeyValueField::new("Environment variables", &state.variables, p)
-            .optional(true)
+            .optional("optional")
             .hint("Passed to the program as-is.")
             .on_name(Message::VarName)
             .on_value(Message::VarValue)
@@ -923,7 +923,7 @@ fn view(state: &Gallery) -> Element<'_, Message> {
         )
         .field(
             TextField::new("Arguments", "-l", p)
-                .optional(true)
+                .optional("optional")
                 .on_input(Message::Path),
         );
 

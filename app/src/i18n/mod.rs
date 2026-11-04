@@ -956,6 +956,22 @@ mod tests {
         }
     }
 
+    /// German is the one language that spells the word as English does.
+    #[test]
+    fn given_the_optional_marker_then_each_language_has_its_own_word() {
+        for locale in Locale::ALL {
+            let is_same_word = matches!(locale, Locale::En | Locale::De);
+            let marker = text_in(locale, Key::FieldOptional);
+
+            assert_eq!(
+                marker == "optional",
+                is_same_word,
+                "{} reads {marker}",
+                locale.tag()
+            );
+        }
+    }
+
     #[test]
     fn given_templates_when_filled_then_placeholders_are_substituted() {
         assert_eq!(

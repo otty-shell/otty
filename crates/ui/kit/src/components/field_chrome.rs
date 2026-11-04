@@ -4,6 +4,7 @@
 use iced::widget::{column, row, text, text_input};
 use iced::{Border, Color, Element, Theme};
 
+use super::button::{Button, ButtonKind, ButtonSize};
 use super::faded;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing, typography};
@@ -19,13 +20,14 @@ pub(super) enum Note {
     Error(String),
 }
 
-/// Stacks the label row, `body` and the optional `note` of one field.
+/// Stacks the label row, `body` and the optional `note` of one field. The
+/// `optional` word, in the language of the app, shows beside the label.
 ///
 /// An empty `label` leaves the label row out, for fields that sit inside a
 /// row which already names them.
 pub(super) fn labelled<'a, Message: 'a>(
     label: &str,
-    is_optional: bool,
+    optional: Option<&str>,
     body: Element<'a, Message>,
     note: Option<Note>,
     palette: &UiPalette,
@@ -37,9 +39,9 @@ pub(super) fn labelled<'a, Message: 'a>(
             .color(palette.text_body())
     ]
     .spacing(spacing::SPACE_1);
-    if is_optional {
+    if let Some(marker) = optional {
         label_row = label_row.push(
-            text("optional")
+            text(marker.to_owned())
                 .size(LABEL_SIZE)
                 .font(fonts::UI)
                 .color(palette.text_muted()),
@@ -66,6 +68,23 @@ pub(super) fn labelled<'a, Message: 'a>(
     }
 
     field.into()
+}
+
+/// Builds the button under a list of rows that adds one more row. All such
+/// buttons in a form share this plain look; without a message it is disabled.
+pub(super) fn add_button<Message>(
+    label: String,
+    on_add: Option<Message>,
+    palette: &UiPalette,
+) -> Button<Message> {
+    let button = Button::new(label, palette)
+        .kind(ButtonKind::Ghost)
+        .size(ButtonSize::Small);
+
+    match on_add {
+        Some(message) => button.on_press(message),
+        None => button,
+    }
 }
 
 /// Returns the style of a boxed mono input. `invalid` colors the border

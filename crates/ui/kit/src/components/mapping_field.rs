@@ -4,7 +4,6 @@
 use iced::widget::{Space, column, container, row, text, text_input};
 use iced::{Alignment, Element, Length, Padding, Pixels};
 
-use super::button::{Button, ButtonKind, ButtonSize};
 use super::field_chrome::{self, Note, input_style};
 use super::glyph;
 use super::icon_button::IconButton;
@@ -253,17 +252,15 @@ impl<'a, Message: Clone + 'a> From<MappingField<'a, Message>>
             ));
         }
 
-        let mut add = Button::new(value.add_label, &palette)
-            .kind(ButtonKind::Ghost)
-            .size(ButtonSize::Small);
-        if let Some(message) = value.on_add {
-            add = add.on_press(message);
-        }
-        body = body.push(add);
+        body = body.push(field_chrome::add_button(
+            value.add_label,
+            value.on_add,
+            &palette,
+        ));
 
         field_chrome::labelled(
             "",
-            false,
+            None,
             body.into(),
             value.hint.map(Note::Hint),
             &palette,

@@ -4,9 +4,12 @@
 //! an empty input to remove the last token. The add and remove rules live in
 //! [`TokenList`]; [`TokenField`] only draws it and reports key presses.
 
+use iced::advanced::text::{self as core_text, Paragraph as _};
+use iced::alignment::Vertical;
 use iced::keyboard::key::Named;
+use iced::widget::text::{LineHeight, Shaping, Wrapping};
 use iced::widget::{container, row, text, text_input};
-use iced::{Alignment, Element, Length, Padding, Pixels};
+use iced::{Alignment, Element, Length, Padding, Pixels, Renderer, Size};
 
 use super::field_chrome::{self, Note};
 use super::glyph;
@@ -23,8 +26,8 @@ const TOKEN_PADDING_LEFT: f32 = spacing::SPACE_3;
 const TOKEN_TEXT_SIZE: f32 = 12.0;
 /// Input text size (`font-size: 12.5px`).
 const INPUT_TEXT_SIZE: f32 = 12.5;
-/// Input width (`min-width: 140px`); `iced` cannot grow it to the free space
-/// of a wrapped line.
+/// Smallest input width (`min-width: 140px`); `iced` cannot grow it to the
+/// free space of a wrapped line, so a longer placeholder sets the width.
 const INPUT_WIDTH: f32 = 140.0;
 /// Vertical padding of a 16px input line inside the 24px token row.
 const INPUT_PADDING_Y: f32 = 4.0;
@@ -37,6 +40,9 @@ const BOX_PADDING: Padding = Padding {
     bottom: 5.0,
     left: spacing::SPACE_2,
 };
+
+/// Paragraph type of the renderer, used to measure the placeholder.
+type Paragraph = <Renderer as core_text::Renderer>::Paragraph;
 
 /// Tokens already added and the text typed for the next one.
 ///
@@ -146,7 +152,7 @@ pub struct TokenField<'a, Message> {
     palette: UiPalette,
     placeholder: String,
     hint: Option<String>,
-    is_optional: bool,
+    optional: Option<String>,
     on_input: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_submit: Option<Message>,
     on_backspace_empty: Option<Message>,
@@ -166,7 +172,7 @@ impl<'a, Message> TokenField<'a, Message> {
             palette: palette.clone(),
             placeholder: String::new(),
             hint: None,
-            is_optional: false,
+            optional: None,
             on_input: None,
             on_submit: None,
             on_backspace_empty: None,
@@ -186,9 +192,10 @@ impl<'a, Message> TokenField<'a, Message> {
         self
     }
 
-    /// Adds the `optional` marker to the label.
-    pub fn optional(mut self, is_optional: bool) -> Self {
-        self.is_optional = is_optional;
+    /// Marks the field as one that may stay empty: `marker` shows beside the
+    /// label, in the language of the app.
+    pub fn optional(mut self, marker: impl Into<String>) -> Self {
+        self.optional = Some(marker.into());
         self
     }
 
@@ -252,7 +259,7 @@ impl<'a, Message: Clone + 'a> From<TokenField<'a, Message>>
             .size(INPUT_TEXT_SIZE)
             .line_height(Pixels(INPUT_LINE))
             .padding(Padding::from([INPUT_PADDING_Y, 0.0]))
-            .width(INPUT_WIDTH)
+            .width(input_width(&value.placeholder))
             .on_input_maybe(value.on_input)
             .on_submit_maybe(value.on_submit)
             .style(move |_, status| text_input::Style {
@@ -290,12 +297,30 @@ impl<'a, Message: Clone + 'a> From<TokenField<'a, Message>>
 
         field_chrome::labelled(
             &value.label,
-            value.is_optional,
+            value.optional.as_deref(),
             frame.into(),
             value.hint.map(Note::Hint),
             &palette,
         )
     }
+}
+
+/// Returns the width of the input: at least enough for all of `placeholder`
+/// on one line in the input's font. A line without that much room wraps.
+fn input_width(placeholder: &str) -> f32 {
+    let paragraph = Paragraph::with_text(core_text::Text {
+        content: placeholder,
+        bounds: Size::new(f32::INFINITY, f32::INFINITY),
+        size: Pixels(INPUT_TEXT_SIZE),
+        line_height: LineHeight::Absolute(Pixels(INPUT_LINE)),
+        font: fonts::MONO,
+        align_x: core_text::Alignment::Default,
+        align_y: Vertical::Top,
+        shaping: Shaping::Advanced,
+        wrapping: Wrapping::None,
+    });
+
+    INPUT_WIDTH.max(paragraph.min_bounds().width.ceil())
 }
 
 /// Builds one token chip with its cross.
@@ -425,6 +450,92 @@ mod tests {
     enum Message {
         Input(String),
         Backspace,
+    }
+
+    /// Text typed into the input, to find it by.
+    const TYPED: &str = "typed";
+    /// Longer than the smallest input in every font.
+    const LONG_PLACEHOLDER: &str = "Type a word and then press the Enter key";
+
+    /// Width of `placeholder` in the font of the input.
+    fn text_width(placeholder: &str) -> f32 {
+        let shown: Element<'_, Message> = text(placeholder.to_owned())
+            .font(fonts::MONO)
+            .size(INPUT_TEXT_SIZE)
+            .shaping(Shaping::Advanced)
+            .into();
+
+        iced_test::simulator(shown)
+            .find(placeholder)
+            .expect("the text should be visible")
+            .bounds()
+            .width
+    }
+
+    /// Bounds of the input in a field `width` wide, and of the first token.
+    fn drawn(
+        tokens: &[&str],
+        placeholder: &str,
+        width: f32,
+    ) -> (iced::Rectangle, Option<iced::Rectangle>) {
+        let palette = UiPalette::otty_dark();
+        let list = list(tokens, TYPED);
+        let field = TokenField::new("Command", &list, &palette)
+            .placeholder(placeholder)
+            .on_input(Message::Input);
+        let mut ui = iced_test::simulator(container(field).width(width));
+
+        let input = ui.find(TYPED).expect("the input").bounds();
+        let token = tokens
+            .first()
+            .map(|token| ui.find(*token).expect("the token").bounds());
+
+        (input, token)
+    }
+
+    #[test]
+    fn given_a_long_placeholder_when_drawn_then_the_input_holds_all_of_it() {
+        let (input, _) = drawn(&[], LONG_PLACEHOLDER, 600.0);
+
+        assert!(
+            input.width >= text_width(LONG_PLACEHOLDER),
+            "the input is {} wide, the text {}",
+            input.width,
+            text_width(LONG_PLACEHOLDER)
+        );
+    }
+
+    #[test]
+    fn given_a_short_placeholder_when_drawn_then_the_input_keeps_its_smallest_width()
+     {
+        let (input, _) = drawn(&[], "-A", 600.0);
+
+        assert_eq!(input.width, INPUT_WIDTH);
+    }
+
+    #[test]
+    fn given_a_token_and_no_room_beside_it_when_drawn_then_the_whole_input_moves_down()
+     {
+        let width = text_width(LONG_PLACEHOLDER) + 2.0 * spacing::SPACE_2;
+
+        let (input, token) = drawn(&["--color"], LONG_PLACEHOLDER, width);
+
+        let token = token.expect("the token");
+        assert!(input.y >= token.y + token.height, "{input:?} and {token:?}");
+        assert!(input.width >= text_width(LONG_PLACEHOLDER), "{input:?}");
+    }
+
+    #[test]
+    fn given_an_optional_marker_when_drawn_then_it_reads_as_given() {
+        let palette = UiPalette::otty_dark();
+        let list = list(&[], "");
+        let field = TokenField::new("Команда", &list, &palette)
+            .optional("необязательно")
+            .on_input(Message::Input);
+        let mut ui = iced_test::simulator(field);
+
+        assert!(ui.find("необязательно").is_ok());
+        assert!(ui.find("optional").is_err());
     }
 
     /// Clicks the field's input (found by its placeholder value), then

@@ -382,6 +382,7 @@
     "field_identity_file": "秘密鍵ファイル",
     "field_extra_args": "追加の引数",
     "field_environment": "環境変数",
+    "field_optional": "任意",
     "field_after_exit": "終了後",
     "exit_behavior_close": "閉じる",
     "exit_behavior_close_on_success": "成功時に閉じる",

@@ -792,6 +792,8 @@ pub(crate) enum Key {
     FieldExtraArgs,
     /// Environment variable list label.
     FieldEnvironment,
+    /// Word beside the label of a field that may stay empty.
+    FieldOptional,
     /// Label of the choice for what a tab does once its command exits.
     FieldAfterExit,
     /// Muted hint under the exit choice.
@@ -945,7 +947,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 440] = [
+    pub(super) const ALL: [Self; 441] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1319,6 +1321,7 @@ impl Key {
         Self::FieldIdentityFile,
         Self::FieldExtraArgs,
         Self::FieldEnvironment,
+        Self::FieldOptional,
         Self::FieldAfterExit,
         Self::ExitBehaviorClose,
         Self::ExitBehaviorCloseOnSuccess,

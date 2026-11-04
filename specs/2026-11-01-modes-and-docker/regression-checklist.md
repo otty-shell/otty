@@ -325,6 +325,12 @@ Setup before the first walk:
     width.
     Expected: the read-only label reads whole, with no "…". In Korean it may still
     be cut (known font limit).
+    With the area at its narrowest, in German and Russian, here and in the launch
+    editor (Command and SSH).
+    Expected: the placeholder of the command box reads whole, also behind a token.
+    The word beside Name and Command is in that language (German spells it
+    "optional" too). Add port, Add variable, Add volume and the launch editor's add
+    button have one plain look.
     Add rows until the form is taller than the area:
     the buttons move down with the form, and you scroll to reach Run. Start a pull
     of a long image name with the area at its narrowest.

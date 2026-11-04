@@ -188,7 +188,7 @@ fn custom_section<'a>(
         palette,
     )
     .placeholder("--flag")
-    .optional(true)
+    .optional(i18n::t(Key::FieldOptional))
     .on_input(move |value| QuickLaunchIntent::WizardArgInput { tab_id, value })
     .on_submit(QuickLaunchIntent::WizardArgSubmit { tab_id })
     .on_backspace_empty(QuickLaunchIntent::WizardArgBackspace { tab_id })
@@ -202,7 +202,7 @@ fn custom_section<'a>(
         custom.env(),
         palette,
     )
-    .optional(true)
+    .optional(i18n::t(Key::FieldOptional))
     .add_label(i18n::t(Key::ButtonAddEnv))
     .on_name(move |index, value| QuickLaunchIntent::WizardUpdateEnvKey {
         tab_id,
@@ -228,7 +228,7 @@ fn custom_section<'a>(
         palette,
     )
     .placeholder("/path/to/project")
-    .optional(true)
+    .optional(i18n::t(Key::FieldOptional))
     .on_input(move |value| {
         QuickLaunchIntent::WizardUpdateWorkingDirectory { tab_id, value }
     });
@@ -279,7 +279,7 @@ fn ssh_section<'a>(
 
     let user = TextField::new(i18n::t(Key::FieldUser), ssh.user(), palette)
         .placeholder("ubuntu")
-        .optional(true)
+        .optional(i18n::t(Key::FieldOptional))
         .on_input(move |value| QuickLaunchIntent::WizardUpdateUser {
             tab_id,
             value,
@@ -292,7 +292,7 @@ fn ssh_section<'a>(
         palette,
     )
     .placeholder("~/.ssh/id_ed25519")
-    .optional(true)
+    .optional(i18n::t(Key::FieldOptional))
     .on_input(move |value| QuickLaunchIntent::WizardUpdateIdentityFile {
         tab_id,
         value,
@@ -304,7 +304,7 @@ fn ssh_section<'a>(
         palette,
     )
     .placeholder("-A")
-    .optional(true)
+    .optional(i18n::t(Key::FieldOptional))
     .on_input(move |value| QuickLaunchIntent::WizardExtraArgInput {
         tab_id,
         value,
@@ -418,6 +418,7 @@ mod tests {
 
     use super::{WizardElement, WizardFormProps, view};
     use crate::i18n::{self, Key};
+    use crate::testing::alone;
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::quick_launch::event::QuickLaunchIntent;
     use crate::widgets::quick_launch::state::WizardEditorState;
@@ -677,6 +678,34 @@ mod tests {
                 command_type: QuickLaunchType::Ssh,
             }]
         ));
+    }
+
+    #[test]
+    fn given_any_language_when_drawn_then_the_optional_marker_is_in_that_language()
+     {
+        if !alone::is_alone(
+            "given_any_language_when_drawn_then_the_optional_marker",
+        ) {
+            return;
+        }
+
+        let themes = ThemeManager::new();
+        for locale in i18n::Locale::ALL {
+            i18n::set_locale(locale);
+            let marker = i18n::t(Key::FieldOptional);
+            for command_type in [QuickLaunchType::Custom, QuickLaunchType::Ssh]
+            {
+                let editor = editor_of(command_type);
+                let mut ui = in_window(&editor, &themes, 1024.0, 1400.0);
+
+                assert!(ui.find(marker).is_ok(), "{locale:?}: {marker}");
+                assert_eq!(
+                    ui.find("optional").is_ok(),
+                    marker == "optional",
+                    "{locale:?}"
+                );
+            }
+        }
     }
 
     #[test]

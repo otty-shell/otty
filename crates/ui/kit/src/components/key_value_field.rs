@@ -5,7 +5,6 @@ use std::rc::Rc;
 use iced::widget::{column, container, row, text_input};
 use iced::{Alignment, Element, Length, Padding, Pixels};
 
-use super::button::{Button, ButtonKind, ButtonSize};
 use super::field_chrome::{self, Note, input_style};
 use super::glyph;
 use super::icon_button::IconButton;
@@ -54,7 +53,7 @@ pub struct KeyValueField<'a, Message> {
     rows: &'a [(String, String)],
     palette: UiPalette,
     hint: Option<String>,
-    is_optional: bool,
+    optional: Option<String>,
     add_label: String,
     name_placeholder: String,
     value_placeholder: String,
@@ -77,7 +76,7 @@ impl<'a, Message> KeyValueField<'a, Message> {
             rows,
             palette: palette.clone(),
             hint: None,
-            is_optional: false,
+            optional: None,
             add_label: "Add variable".to_owned(),
             name_placeholder: "NAME".to_owned(),
             value_placeholder: "value".to_owned(),
@@ -94,9 +93,10 @@ impl<'a, Message> KeyValueField<'a, Message> {
         self
     }
 
-    /// Adds the `optional` marker to the label.
-    pub fn optional(mut self, is_optional: bool) -> Self {
-        self.is_optional = is_optional;
+    /// Marks the field as one that may stay empty: `marker` shows beside the
+    /// label, in the language of the app.
+    pub fn optional(mut self, marker: impl Into<String>) -> Self {
+        self.optional = Some(marker.into());
         self
     }
 
@@ -158,7 +158,7 @@ impl<'a, Message: Clone + 'a> From<KeyValueField<'a, Message>>
     fn from(value: KeyValueField<'a, Message>) -> Self {
         let palette = value.palette;
 
-        let mut rows = column![].spacing(spacing::SPACE_2);
+        let mut body = column![].spacing(spacing::SPACE_2);
         for (index, (name, content)) in value.rows.iter().enumerate() {
             let name_input =
                 mono_input(&value.name_placeholder, name, &palette)
@@ -182,7 +182,7 @@ impl<'a, Message: Clone + 'a> From<KeyValueField<'a, Message>>
                 cross = cross.on_press(on_remove(index));
             }
 
-            rows = rows.push(
+            body = body.push(
                 row![
                     name_input.width(Length::FillPortion(NAME_PORTION)),
                     value_input.width(Length::FillPortion(VALUE_PORTION)),
@@ -193,18 +193,15 @@ impl<'a, Message: Clone + 'a> From<KeyValueField<'a, Message>>
             );
         }
 
-        let mut add = Button::new(value.add_label, &palette)
-            .kind(ButtonKind::Secondary)
-            .size(ButtonSize::Small);
-        if let Some(message) = value.on_add {
-            add = add.on_press(message);
-        }
-        let body = column![rows, container(add).padding(Padding::ZERO)]
-            .spacing(spacing::SPACE_2);
+        body = body.push(field_chrome::add_button(
+            value.add_label,
+            value.on_add,
+            &palette,
+        ));
 
         field_chrome::labelled(
             &value.label,
-            value.is_optional,
+            value.optional.as_deref(),
             body.into(),
             value.hint.map(Note::Hint),
             &palette,
@@ -230,7 +227,94 @@ fn mono_input<'a, Message: Clone + 'a>(
 
 #[cfg(test)]
 mod tests {
+    use iced::Theme;
+    use iced_test::{Simulator, simulator};
+
+    use super::super::button::{Button, ButtonKind, ButtonSize};
+    use super::super::mapping_field::MappingField;
     use super::*;
+
+    /// Says whether `field` is drawn exactly as the drawing saved at
+    /// `reference`; the first drawing of a `reference` saves it.
+    fn matches_drawing(
+        field: Element<'_, ()>,
+        reference: &std::path::Path,
+    ) -> bool {
+        Simulator::with_size(iced::Settings::default(), (240.0, 60.0), field)
+            .snapshot(&Theme::Dark)
+            .expect("the field should draw")
+            .matches_hash(reference)
+            .expect("the reference should be readable")
+    }
+
+    #[test]
+    fn given_no_rows_when_drawn_then_the_add_button_looks_like_the_one_of_a_mapping_field()
+     {
+        for (name, palette) in [
+            ("dark", UiPalette::otty_dark()),
+            ("light", UiPalette::otty_light()),
+        ] {
+            let folder = std::env::temp_dir().join(format!(
+                "otty-kit-add-button-{}-{name}",
+                std::process::id()
+            ));
+            let reference = folder.join("button");
+            let mapping = MappingField::new("", "", &palette)
+                .add_label("Add")
+                .on_add(());
+            let key_value = KeyValueField::new("", &[], &palette)
+                .add_label("Add")
+                .on_add(());
+
+            let mapping_saved = matches_drawing(mapping.into(), &reference);
+            let same = matches_drawing(key_value.into(), &reference);
+            let _ = std::fs::remove_dir_all(&folder);
+
+            assert!(mapping_saved);
+            assert!(same, "the two add buttons differ in {name}");
+        }
+    }
+
+    #[test]
+    fn given_no_rows_when_drawn_then_the_add_button_is_a_plain_small_button() {
+        for (name, palette) in [
+            ("dark", UiPalette::otty_dark()),
+            ("light", UiPalette::otty_light()),
+        ] {
+            let folder = std::env::temp_dir().join(format!(
+                "otty-kit-plain-add-button-{}-{name}",
+                std::process::id()
+            ));
+            let reference = folder.join("button");
+            let plain = Button::new("Add", &palette)
+                .kind(ButtonKind::Ghost)
+                .size(ButtonSize::Small)
+                .on_press(());
+            let key_value = KeyValueField::new("", &[], &palette)
+                .add_label("Add")
+                .on_add(());
+
+            let plain_saved = matches_drawing(plain.into(), &reference);
+            let same = matches_drawing(key_value.into(), &reference);
+            let _ = std::fs::remove_dir_all(&folder);
+
+            assert!(plain_saved);
+            assert!(same, "the add button is not plain in {name}");
+        }
+    }
+
+    #[test]
+    fn given_an_optional_marker_when_drawn_then_it_reads_as_given() {
+        let palette = UiPalette::otty_dark();
+        let field: Element<'_, ()> =
+            KeyValueField::new("Окружение", &[], &palette)
+                .optional("необязательно")
+                .into();
+        let mut ui = simulator(field);
+
+        assert!(ui.find("необязательно").is_ok());
+        assert!(ui.find("optional").is_err());
+    }
 
     #[test]
     fn placeholders_default_to_name_and_value() {

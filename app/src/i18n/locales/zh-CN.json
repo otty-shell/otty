@@ -382,6 +382,7 @@
     "field_identity_file": "私钥文件",
     "field_extra_args": "额外参数",
     "field_environment": "环境变量",
+    "field_optional": "可选",
     "field_after_exit": "退出后",
     "exit_behavior_close": "关闭",
     "exit_behavior_close_on_success": "成功时关闭",

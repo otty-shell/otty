@@ -382,6 +382,7 @@
     "field_identity_file": "Файл закрытого ключа",
     "field_extra_args": "Дополнительные аргументы",
     "field_environment": "Переменные окружения",
+    "field_optional": "необязательно",
     "field_after_exit": "После завершения",
     "exit_behavior_close": "Закрыть",
     "exit_behavior_close_on_success": "Закрыть при успехе",

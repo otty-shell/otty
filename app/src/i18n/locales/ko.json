@@ -382,6 +382,7 @@
     "field_identity_file": "개인 키 파일",
     "field_extra_args": "추가 인수",
     "field_environment": "환경 변수",
+    "field_optional": "선택 사항",
     "field_after_exit": "종료 후",
     "exit_behavior_close": "닫기",
     "exit_behavior_close_on_success": "성공 시 닫기",

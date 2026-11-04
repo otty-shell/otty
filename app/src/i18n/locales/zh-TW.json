@@ -382,6 +382,7 @@
     "field_identity_file": "私密金鑰檔案",
     "field_extra_args": "額外參數",
     "field_environment": "環境變數",
+    "field_optional": "選填",
     "field_after_exit": "結束後",
     "exit_behavior_close": "關閉",
     "exit_behavior_close_on_success": "成功時關閉",

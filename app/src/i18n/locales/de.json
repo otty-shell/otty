@@ -382,6 +382,7 @@
     "field_identity_file": "Private-Key-Datei",
     "field_extra_args": "Zusätzliche Argumente",
     "field_environment": "Umgebungsvariablen",
+    "field_optional": "optional",
     "field_after_exit": "Nach dem Beenden",
     "exit_behavior_close": "Schließen",
     "exit_behavior_close_on_success": "Bei Erfolg schließen",
