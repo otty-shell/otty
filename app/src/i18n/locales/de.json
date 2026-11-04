@@ -397,6 +397,7 @@
     "button_remove": "Entfernen",
     "button_add": "Hinzufügen",
     "button_add_env": "Variable hinzufügen",
+    "button_remove_env": "Variable entfernen",
     "button_reset": "Zurücksetzen",
     "button_connect": "Verbinden",
 

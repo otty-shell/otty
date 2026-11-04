@@ -387,7 +387,7 @@
     "exit_behavior_close": "Close",
     "exit_behavior_close_on_success": "Close on success",
     "exit_behavior_keep_open": "Keep open",
-    "env_key_placeholder": "KEY",
+    "env_key_placeholder": "NAME",
     "env_value_placeholder": "value",
     "invalid_custom_editor_state": "Invalid custom editor state",
     "invalid_ssh_editor_state": "Invalid SSH editor state",
@@ -397,6 +397,7 @@
     "button_remove": "Remove",
     "button_add": "Add",
     "button_add_env": "Add env",
+    "button_remove_env": "Remove variable",
     "button_reset": "Reset",
     "button_connect": "Connect",
 

@@ -397,6 +397,7 @@
     "button_remove": "제거",
     "button_add": "추가",
     "button_add_env": "환경 변수 추가",
+    "button_remove_env": "환경 변수 제거",
     "button_reset": "초기화",
     "button_connect": "연결",
 

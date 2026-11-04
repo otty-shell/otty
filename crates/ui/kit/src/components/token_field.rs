@@ -12,9 +12,9 @@ use iced::widget::{container, row, text, text_input};
 use iced::{Alignment, Element, Length, Padding, Pixels, Renderer, Size};
 
 use super::field_chrome::{self, Note};
-use super::glyph;
 use super::icon_button::{IconButton, IconButtonSize};
 use super::input_keys::InputKeys;
+use super::{glyph, text_field};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing};
 
@@ -33,6 +33,11 @@ const INPUT_WIDTH: f32 = 140.0;
 const INPUT_PADDING_Y: f32 = 4.0;
 /// Line height of the input.
 const INPUT_LINE: f32 = 16.0;
+/// Room left of the input's text, so it starts where the text of a
+/// [`TextField`] does, also when it starts a line after tokens.
+///
+/// [`TextField`]: super::text_field::TextField
+const INPUT_PADDING_LEFT: f32 = text_field::PADDING_X - BOX_PADDING.left;
 /// Padding of the box (`padding: 4px 6px` plus 1px so one line is 34px).
 const BOX_PADDING: Padding = Padding {
     top: 5.0,
@@ -144,6 +149,7 @@ impl TokenList {
 ///         .on_submit(Message::Submit)
 ///         .on_backspace_empty(Message::Backspace)
 ///         .on_remove(Message::Remove)
+///         .remove_label("Remove")
 ///         .into();
 /// ```
 pub struct TokenField<'a, Message> {
@@ -153,6 +159,7 @@ pub struct TokenField<'a, Message> {
     placeholder: String,
     hint: Option<String>,
     optional: Option<String>,
+    remove_label: String,
     on_input: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_submit: Option<Message>,
     on_backspace_empty: Option<Message>,
@@ -173,6 +180,7 @@ impl<'a, Message> TokenField<'a, Message> {
             placeholder: String::new(),
             hint: None,
             optional: None,
+            remove_label: String::new(),
             on_input: None,
             on_submit: None,
             on_backspace_empty: None,
@@ -196,6 +204,12 @@ impl<'a, Message> TokenField<'a, Message> {
     /// label, in the language of the app.
     pub fn optional(mut self, marker: impl Into<String>) -> Self {
         self.optional = Some(marker.into());
+        self
+    }
+
+    /// Sets the tooltip of the cross on each token.
+    pub fn remove_label(mut self, label: impl Into<String>) -> Self {
+        self.remove_label = label.into();
         self
     }
 
@@ -242,8 +256,12 @@ impl<'a, Message: Clone + 'a> From<TokenField<'a, Message>>
         let mut line =
             row![].spacing(spacing::SPACE_2).align_y(Alignment::Center);
         for (index, token) in value.list.tokens().iter().enumerate() {
-            let mut cross = IconButton::new(glyph::cross(), "Remove", &palette)
-                .size(IconButtonSize::Small);
+            let mut cross = IconButton::new(
+                glyph::cross(),
+                value.remove_label.as_str(),
+                &palette,
+            )
+            .size(IconButtonSize::Small);
             if let Some(on_remove) = &value.on_remove {
                 cross = cross.on_press(on_remove(index));
             }
@@ -258,7 +276,12 @@ impl<'a, Message: Clone + 'a> From<TokenField<'a, Message>>
             .font(fonts::MONO)
             .size(INPUT_TEXT_SIZE)
             .line_height(Pixels(INPUT_LINE))
-            .padding(Padding::from([INPUT_PADDING_Y, 0.0]))
+            .padding(Padding {
+                top: INPUT_PADDING_Y,
+                right: 0.0,
+                bottom: INPUT_PADDING_Y,
+                left: INPUT_PADDING_LEFT,
+            })
             .width(input_width(&value.placeholder))
             .on_input_maybe(value.on_input)
             .on_submit_maybe(value.on_submit)
@@ -305,8 +328,9 @@ impl<'a, Message: Clone + 'a> From<TokenField<'a, Message>>
     }
 }
 
-/// Returns the width of the input: at least enough for all of `placeholder`
-/// on one line in the input's font. A line without that much room wraps.
+/// Returns the width of the input: at least enough for its padding and all of
+/// `placeholder` on one line in the input's font. A line without that much room
+/// wraps.
 fn input_width(placeholder: &str) -> f32 {
     let paragraph = Paragraph::with_text(core_text::Text {
         content: placeholder,
@@ -320,7 +344,9 @@ fn input_width(placeholder: &str) -> f32 {
         wrapping: Wrapping::None,
     });
 
-    INPUT_WIDTH.max(paragraph.min_bounds().width.ceil())
+    let needed = INPUT_PADDING_LEFT + paragraph.min_bounds().width;
+
+    INPUT_WIDTH.max(needed.ceil())
 }
 
 /// Builds one token chip with its cross.
@@ -329,7 +355,7 @@ fn token_view<'a, Message: Clone + 'a>(
     cross: IconButton<Message>,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
-    let background = palette.surface_hover();
+    let background = palette.surface_chip();
     let color = palette.text_strong();
 
     container(
@@ -362,6 +388,7 @@ fn token_view<'a, Message: Clone + 'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::size;
 
     fn list(tokens: &[&str], input: &str) -> TokenList {
         let mut list =
@@ -498,11 +525,131 @@ mod tests {
         let (input, _) = drawn(&[], LONG_PLACEHOLDER, 600.0);
 
         assert!(
-            input.width >= text_width(LONG_PLACEHOLDER),
+            input.width - INPUT_PADDING_LEFT >= text_width(LONG_PLACEHOLDER),
             "the input is {} wide, the text {}",
             input.width,
             text_width(LONG_PLACEHOLDER)
         );
+    }
+
+    /// Left edge of the input's text in a field that starts at the left of the
+    /// window.
+    fn text_start(input: iced::Rectangle) -> f32 {
+        input.x + INPUT_PADDING_LEFT
+    }
+
+    #[test]
+    fn given_no_tokens_when_drawn_then_the_text_starts_where_a_text_fields_does()
+     {
+        let (input, _) = drawn(&[], "-A", 600.0);
+
+        assert_eq!(text_start(input), text_field::PADDING_X);
+    }
+
+    #[test]
+    fn given_a_token_above_when_drawn_then_the_text_starts_where_a_text_fields_does()
+     {
+        let width = text_width(LONG_PLACEHOLDER) + 2.0 * text_field::PADDING_X;
+
+        let (input, token) = drawn(&["--color"], LONG_PLACEHOLDER, width);
+
+        assert!(input.y > token.expect("the token").y, "{input:?}");
+        assert_eq!(text_start(input), text_field::PADDING_X);
+    }
+
+    #[test]
+    fn given_a_token_beside_when_drawn_then_the_text_follows_it_on_its_line() {
+        let (input, token) = drawn(&["--color"], "-A", 600.0);
+        let token = token.expect("the token");
+
+        assert!(input.y < token.y + token.height, "{input:?} and {token:?}");
+        assert!(text_start(input) > token.x + token.width + spacing::SPACE_2);
+    }
+
+    #[test]
+    fn given_any_tokens_when_drawn_then_one_line_keeps_its_height() {
+        let palette = UiPalette::otty_dark();
+        let height = |tokens: &[&str]| {
+            let list = list(tokens, TYPED);
+            let field =
+                TokenField::new("", &list, &palette).on_input(Message::Input);
+            let mut ui = iced_test::simulator(container(field).width(600));
+            let input = ui.find(TYPED).expect("the input").bounds();
+
+            (input.height, input.y)
+        };
+
+        assert_eq!(height(&[]), (INPUT_LINE + 2.0 * INPUT_PADDING_Y, 5.0));
+        assert_eq!(height(&["-v"]).0, INPUT_LINE + 2.0 * INPUT_PADDING_Y);
+    }
+
+    /// Says whether a token is drawn as saved in `reference`, with the tooltip
+    /// `remove_label` and the pointer on its cross; the first call saves it.
+    /// iced draws tooltips as overlays that widget queries do not reach, so
+    /// they are checked on the drawing.
+    fn hovered_token_matches(
+        remove_label: &str,
+        reference: &std::path::Path,
+    ) -> bool {
+        let palette = UiPalette::otty_dark();
+        let list = list(&["--color"], "");
+        let field = TokenField::new("", &list, &palette)
+            .remove_label(remove_label)
+            .on_remove(|_| Message::Backspace);
+        let mut ui = iced_test::simulator(container(field).width(300));
+        let token = ui.find("--color").expect("the token").bounds();
+        let position = iced::Point::new(
+            token.x + token.width + size::CONTROL_SM / 2.0,
+            token.y + token.height / 2.0,
+        );
+        ui.point_at(position);
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::CursorMoved { position },
+        )]);
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("the field should draw")
+            .matches_hash(reference)
+            .expect("the reference should be readable")
+    }
+
+    #[test]
+    fn the_cross_of_a_token_shows_the_label_the_app_gives() {
+        let folder = crate::test_support::TempDir::new("token-cross");
+        let reference = folder.path().join("cross");
+
+        assert!(hovered_token_matches("Remove", &reference));
+        assert!(!hovered_token_matches("Entfernen", &reference));
+    }
+
+    /// Says whether a token is drawn as saved in `reference` in `palette`.
+    fn drawn_token_matches(
+        palette: &UiPalette,
+        reference: &std::path::Path,
+    ) -> bool {
+        let list = list(&["--color"], "");
+        let field = TokenField::<Message>::new("", &list, palette);
+
+        iced_test::simulator(container(field).width(300))
+            .snapshot(&iced::Theme::Dark)
+            .expect("the field should draw")
+            .matches_hash(reference)
+            .expect("the reference should be readable")
+    }
+
+    #[test]
+    fn a_token_is_drawn_in_the_chip_color_of_the_palette() {
+        let folder = crate::test_support::TempDir::new("token-chip");
+        let reference = folder.path().join("chip");
+        let palette = UiPalette::otty_light();
+
+        assert!(drawn_token_matches(&palette, &reference));
+        assert!(!drawn_token_matches(
+            &palette
+                .clone()
+                .with_surface_chip_for_test(iced::Color::BLACK),
+            &reference
+        ));
     }
 
     #[test]

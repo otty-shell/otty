@@ -172,7 +172,7 @@ Setup before the first walk:
     the wheel, a sideways wheel or a touchpad, or dragging the bar, scroll the
     area; press the copy icon while scrolled and the whole command is copied. Widen
     the area again: the bar goes away and the card centers again. In Korean, check by eye that the text reads as whole syllables
-    (see ticket 10, Comments).
+    (see step 36b).
 15k. On the card with two commands (15e) make the window as low as it goes, and
     drag the panels wide.
     Expected: while the card fits, it is centered with no bar. When it does not,
@@ -323,8 +323,7 @@ Setup before the first walk:
     right edge, with the side padding.
     In the volume row of Run container, in Russian, Portuguese and French at any
     width.
-    Expected: the read-only label reads whole, with no "…". In Korean it may still
-    be cut (known font limit).
+    Expected: the read-only label reads whole, with no "…", also in Korean.
     With the area at its narrowest, in German and Russian, here and in the launch
     editor (Command and SSH).
     Expected: the placeholder of the command box reads whole, also behind a token.
@@ -491,3 +490,21 @@ statuses) in the list.
     Expected: each idle bar is plainly visible and quieter than the text. With the
     pointer on a bar, or dragging it, the bar is clearly darker. In OTTY Dark the bars
     look as they did.
+
+## Chinese, Japanese and Korean text
+
+36b. Set the language to Korean in Settings and press Save. Look at a Run form with a
+    folder row at the narrowest width, a card with two commands, a table and the
+    left tree, in OTTY Dark and OTTY Light.
+    Expected: the text reads as whole syllables, not separate letters, and headings
+    and buttons are clearly bolder than the text under them. The read-only label
+    and the SELinux hint do not wrap letter by letter. Then run `echo 읽기` in a
+    terminal.
+    Expected: the syllables are whole and stay within their cells.
+36c. Save a launch titled `直骨令`, so the left panel shows it, and run `echo 直骨令` in
+    a terminal. In Settings switch to Japanese and Save, then to Traditional Chinese
+    and Save, without restarting the app. On these, 骨 and 令 look different in each.
+    Expected: the letters change shape with the language at once, in the panel and
+    in the terminal. In Japanese the kanji and the kana read as one font, also in
+    headings. On a computer with no CJK font these languages show boxes; that is
+    accepted.

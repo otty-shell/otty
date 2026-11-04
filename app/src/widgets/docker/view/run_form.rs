@@ -35,8 +35,7 @@ const PROTOCOLS: [PortProtocol; 2] = [PortProtocol::Tcp, PortProtocol::Udp];
 const PROTOCOL_WIDTH: f32 = 108.0;
 /// Width of the read-only switch column: room for the switch with its label on
 /// one line in the kit's fonts. The longest label is Portuguese, 139.4 px, then
-/// French and Russian. Korean is not counted, since Hangul falls back to a wider
-/// font for now (Decision 23).
+/// Russian and French.
 const READ_ONLY_WIDTH: f32 = 140.0;
 /// Label size of a field without a kit label (`font-size: 12.5px`).
 const LABEL_SIZE: f32 = 12.5;
@@ -156,6 +155,7 @@ fn command_section<'a>(
         TokenField::new(i18n::t(Key::DockerFieldCommand), vm.command, palette)
             .placeholder(i18n::t(Key::DockerRunCommandPlaceholder))
             .optional(i18n::t(Key::FieldOptional))
+            .remove_label(i18n::t(Key::ButtonRemove))
             .hint(vm.command_hint.clone());
     if vm.is_editable {
         command = command
@@ -225,7 +225,8 @@ fn port_row<'a>(
     let mut row = MappingRow::new(port.host, port.container)
         .placeholders("8080", "80")
         .invalid(port.is_host_invalid, port.is_container_invalid)
-        .control(protocol);
+        .control(protocol)
+        .remove_label(i18n::t(Key::DockerRunRemovePort));
     if let Some(problem) = port.problem {
         row = row.error(problem);
     }
@@ -233,10 +234,7 @@ fn port_row<'a>(
         row = row
             .on_source(move |value| edit(RunEdit::PortHost(index, value)))
             .on_target(move |value| edit(RunEdit::PortContainer(index, value)))
-            .on_remove(
-                edit(RunEdit::RemovePort(index)),
-                i18n::t(Key::DockerRunRemovePort),
-            );
+            .on_remove(edit(RunEdit::RemovePort(index)));
     }
     row
 }
@@ -251,7 +249,8 @@ fn env_section<'a>(
             i18n::t(Key::DockerFieldName),
             i18n::t(Key::DockerRunEnvValue),
         )
-        .add_label(i18n::t(Key::DockerRunAddVariable));
+        .add_label(i18n::t(Key::DockerRunAddVariable))
+        .remove_label(i18n::t(Key::ButtonRemoveEnv));
     if vm.is_editable {
         field = field
             .on_name(|index, value| edit(RunEdit::EnvName(index, value)))
@@ -307,7 +306,8 @@ fn volume_row<'a>(
     let mut row = MappingRow::new(volume.source, volume.target)
         .placeholders("otty-data", "/data")
         .invalid(volume.is_source_invalid, volume.is_target_invalid)
-        .control(read_only);
+        .control(read_only)
+        .remove_label(i18n::t(Key::DockerRunRemoveVolume));
     if volume.offers_relabel {
         row = row.detail(relabel_switch(index, volume, is_editable, palette));
     }
@@ -318,10 +318,7 @@ fn volume_row<'a>(
         row = row
             .on_source(move |value| edit(RunEdit::VolumeSource(index, value)))
             .on_target(move |value| edit(RunEdit::VolumeTarget(index, value)))
-            .on_remove(
-                edit(RunEdit::RemoveVolume(index)),
-                i18n::t(Key::DockerRunRemoveVolume),
-            );
+            .on_remove(edit(RunEdit::RemoveVolume(index)));
     }
     row
 }
@@ -1201,20 +1198,51 @@ mod tests {
         assert_eq!(row_right, width - spacing::SPACE_7);
     }
 
-    /// Korean is left out: Hangul falls back to a wider font for now
-    /// (Decision 23).
+    /// Says whether Korean can be measured here. A computer whose only Hangul
+    /// is a fallback font with next to no syllables breaks them into letters
+    /// three times as wide, and those widths say nothing about the form. With
+    /// no Hangul at all each syllable is one box, which fits like a syllable.
+    fn hangul_stays_whole() -> bool {
+        const SIZE: f32 = 16.0;
+
+        let syllable = "읽";
+        let shown: RunElement<'_> = text(syllable)
+            .font(fonts::UI)
+            .size(SIZE)
+            .shaping(iced::widget::text::Shaping::Advanced)
+            .into();
+        let width = simulator(shown)
+            .find(syllable)
+            .expect("the syllable")
+            .bounds()
+            .width;
+
+        width < 1.5 * SIZE
+    }
+
+    /// Takes Korean out of a test on a computer that breaks up its syllables.
+    /// Tests in `crate::fonts` check that this does not happen with a font
+    /// that has them.
+    fn can_measure(locale: i18n::Locale) -> bool {
+        if locale != i18n::Locale::Ko || hangul_stays_whole() {
+            return true;
+        }
+
+        eprintln!("skipped Korean: this computer breaks Hangul into letters");
+
+        false
+    }
+
     #[test]
-    fn the_read_only_label_reads_whole_in_every_locale_but_korean() {
-        if !alone::is_alone(
-            "the_read_only_label_reads_whole_in_every_locale_but_korean",
-        ) {
+    fn the_read_only_label_reads_whole_in_every_locale() {
+        if !alone::is_alone("the_read_only_label_reads_whole_in_every_locale") {
             return;
         }
         alone::load_kit_fonts();
 
         let palette = UiPalette::otty_dark();
         for locale in i18n::Locale::ALL {
-            if locale == i18n::Locale::Ko {
+            if !can_measure(locale) {
                 continue;
             }
             let label = i18n::text_in(locale, Key::DockerRunReadOnly);
@@ -1231,11 +1259,11 @@ mod tests {
 
     /// Text size of the kit's token input.
     const TOKEN_INPUT_TEXT_SIZE: f32 = 12.5;
+    /// Room left of the text of the kit's token input.
+    const TOKEN_INPUT_PADDING_LEFT: f32 = 5.0;
 
-    /// Korean is left out: Hangul falls back to a wider font for now
-    /// (Decision 23).
     #[test]
-    fn the_command_placeholder_reads_whole_at_the_smallest_width_in_every_locale_but_korean()
+    fn the_command_placeholder_reads_whole_at_the_smallest_width_in_every_locale()
      {
         if !alone::is_alone(
             "the_command_placeholder_reads_whole_at_the_smallest_width",
@@ -1246,7 +1274,7 @@ mod tests {
 
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
         for locale in i18n::Locale::ALL {
-            if locale == i18n::Locale::Ko {
+            if !can_measure(locale) {
                 continue;
             }
             i18n::set_locale(locale);
@@ -1272,7 +1300,7 @@ mod tests {
                 .bounds();
 
             assert!(
-                input.width >= needed.width,
+                input.width - TOKEN_INPUT_PADDING_LEFT >= needed.width,
                 "{locale:?}: {placeholder} needs {} in {}",
                 needed.width,
                 input.width

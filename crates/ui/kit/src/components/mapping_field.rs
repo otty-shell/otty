@@ -55,7 +55,7 @@ impl<'a, Message> MappingRow<'a, Message> {
             on_source: None,
             on_target: None,
             on_remove: None,
-            remove_label: "Remove".to_owned(),
+            remove_label: String::new(),
         }
     }
 
@@ -114,13 +114,15 @@ impl<'a, Message> MappingRow<'a, Message> {
         self
     }
 
-    /// Sets the message of the cross and its tooltip.
-    pub fn on_remove(
-        mut self,
-        message: Message,
-        label: impl Into<String>,
-    ) -> Self {
+    /// Sets the message of the cross.
+    pub fn on_remove(mut self, message: Message) -> Self {
         self.on_remove = Some(message);
+        self
+    }
+
+    /// Sets the tooltip of the cross, which also shows on a row that can not
+    /// be changed.
+    pub fn remove_label(mut self, label: impl Into<String>) -> Self {
         self.remove_label = label.into();
         self
     }
@@ -149,7 +151,8 @@ impl<'a, Message> MappingRow<'a, Message> {
 ///         .row(
 ///             MappingRow::new("8081", "80")
 ///                 .on_source(|value| Message::Host(0, value))
-///                 .on_remove(Message::Remove(0), "Remove port 8081"),
+///                 .on_remove(Message::Remove(0))
+///                 .remove_label("Remove port 8081"),
 ///         )
 ///         .add_label("Add port")
 ///         .on_add(Message::Add)
@@ -183,7 +186,7 @@ impl<'a, Message> MappingField<'a, Message> {
             control_width: CONTROL_WIDTH,
             separator: "→".to_owned(),
             hint: None,
-            add_label: "Add".to_owned(),
+            add_label: String::new(),
             on_add: None,
         }
     }
@@ -404,7 +407,8 @@ mod tests {
                 MappingRow::new("8081", "80")
                     .on_source(|value| Message::Source(0, value))
                     .on_target(|value| Message::Target(0, value))
-                    .on_remove(Message::Remove(0), "Remove port 8081"),
+                    .on_remove(Message::Remove(0))
+                    .remove_label("Remove port 8081"),
             )
             .row(
                 MappingRow::new("80800", "443")
@@ -412,7 +416,8 @@ mod tests {
                     .error("A port is a number from 1 to 65535.")
                     .on_source(|value| Message::Source(1, value))
                     .on_target(|value| Message::Target(1, value))
-                    .on_remove(Message::Remove(1), "Remove port 80800"),
+                    .on_remove(Message::Remove(1))
+                    .remove_label("Remove port 80800"),
             )
             .add_label("Add port")
             .on_add(Message::Add)
@@ -587,5 +592,57 @@ mod tests {
             control.x + control.width <= WIDTH - size::CONTROL_MD,
             "{control:?}"
         );
+    }
+
+    /// Text that shows comes from the app, in its language: the kit has none.
+    #[test]
+    fn no_text_of_the_kit_shows_until_the_app_gives_it() {
+        let palette = UiPalette::otty_dark();
+
+        let row = MappingRow::<'_, Message>::new("", "");
+        let field = MappingField::<'_, Message>::new("", "", &palette);
+
+        assert_eq!(row.remove_label, "");
+        assert_eq!(field.add_label, "");
+    }
+
+    /// Says whether a row that can not be changed is drawn as saved in
+    /// `reference`, with the tooltip `label` and the pointer on its cross; the
+    /// first call saves it. iced draws tooltips as overlays that widget queries
+    /// do not reach, so they are checked on the drawing.
+    fn hovered_disabled_row_matches(
+        label: &str,
+        reference: &std::path::Path,
+    ) -> bool {
+        let palette = UiPalette::otty_dark();
+        let field = MappingField::<'_, Message>::new("", "", &palette)
+            .row(MappingRow::new("8081", "80").remove_label(label));
+        let mut ui = simulator(container(field).width(WIDTH));
+        let row = ui.find("8081").expect("the source").bounds();
+        let position = Point::new(
+            WIDTH - size::CONTROL_MD / 2.0,
+            row.y + row.height / 2.0,
+        );
+        ui.point_at(position);
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::CursorMoved { position },
+        )]);
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("the field should draw")
+            .matches_hash(reference)
+            .expect("the reference should be readable")
+    }
+
+    #[test]
+    fn the_cross_of_a_row_that_can_not_change_shows_the_label_the_app_gives() {
+        let folder = crate::test_support::TempDir::new("mapping-cross");
+        let reference = folder.path().join("cross");
+
+        assert!(hovered_disabled_row_matches("Remove this port", &reference));
+        assert!(!hovered_disabled_row_matches(
+            "Diesen Port entfernen",
+            &reference
+        ));
     }
 }

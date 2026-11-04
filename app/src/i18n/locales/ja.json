@@ -397,6 +397,7 @@
     "button_remove": "削除",
     "button_add": "追加",
     "button_add_env": "環境変数を追加",
+    "button_remove_env": "環境変数を削除",
     "button_reset": "リセット",
     "button_connect": "接続",
 

@@ -49,6 +49,8 @@ fn main() -> iced::Result {
         .resizable(true)
         .subscription(App::subscription);
 
+    otty_ui_kit::fonts::register_variable_cjk_faces();
+
     otty_ui_kit::fonts::all_bytes()
         .into_iter()
         .fold(app, |app, bytes| app.font(bytes))

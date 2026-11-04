@@ -189,6 +189,7 @@ fn custom_section<'a>(
     )
     .placeholder("--flag")
     .optional(i18n::t(Key::FieldOptional))
+    .remove_label(i18n::t(Key::ButtonRemove))
     .on_input(move |value| QuickLaunchIntent::WizardArgInput { tab_id, value })
     .on_submit(QuickLaunchIntent::WizardArgSubmit { tab_id })
     .on_backspace_empty(QuickLaunchIntent::WizardArgBackspace { tab_id })
@@ -203,7 +204,12 @@ fn custom_section<'a>(
         palette,
     )
     .optional(i18n::t(Key::FieldOptional))
+    .placeholders(
+        i18n::t(Key::EnvKeyPlaceholder),
+        i18n::t(Key::EnvValuePlaceholder),
+    )
     .add_label(i18n::t(Key::ButtonAddEnv))
+    .remove_label(i18n::t(Key::ButtonRemoveEnv))
     .on_name(move |index, value| QuickLaunchIntent::WizardUpdateEnvKey {
         tab_id,
         index,
@@ -305,6 +311,7 @@ fn ssh_section<'a>(
     )
     .placeholder("-A")
     .optional(i18n::t(Key::FieldOptional))
+    .remove_label(i18n::t(Key::ButtonRemove))
     .on_input(move |value| QuickLaunchIntent::WizardExtraArgInput {
         tab_id,
         value,

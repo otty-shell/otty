@@ -12,7 +12,7 @@ use otty_ui_term::settings::{
 };
 
 use crate::events::AppEvent;
-use crate::fonts::FontsConfig;
+use crate::fonts::{FontsConfig, apply_text_locale};
 use crate::state::State;
 use crate::theme::{AppTheme, ThemeManager};
 use crate::widgets::Widgets;
@@ -53,6 +53,7 @@ impl App {
     /// Initialize the application and return the first task.
     pub(crate) fn new() -> (Self, Task<AppEvent>) {
         let settings = SettingsWidget::load();
+        apply_text_locale();
         let mut theme_manager = ThemeManager::new();
         let initial_settings = settings.settings_data().clone();
         theme_manager.set_theme(initial_settings.theme());

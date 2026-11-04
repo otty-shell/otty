@@ -824,6 +824,8 @@ pub(crate) enum Key {
     ButtonAdd,
     /// Append an environment variable entry.
     ButtonAddEnv,
+    /// Tooltip of the cross on an environment variable row.
+    ButtonRemoveEnv,
     /// Restore settings to the persisted baseline.
     ButtonReset,
     /// Connect with the secret typed in the SSH secret dialog.
@@ -947,7 +949,7 @@ pub(crate) enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 441] = [
+    pub(super) const ALL: [Self; 442] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuNewLaunch,
@@ -1335,6 +1337,7 @@ impl Key {
         Self::ButtonRemove,
         Self::ButtonAdd,
         Self::ButtonAddEnv,
+        Self::ButtonRemoveEnv,
         Self::ButtonReset,
         Self::ButtonConnect,
         Self::SecretPromptPassphraseTitle,

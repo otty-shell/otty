@@ -22,22 +22,29 @@ pub(crate) fn is_alone(name: &str) -> bool {
     let program = std::env::current_exe().expect("the test program");
     let output = std::process::Command::new(program)
         .arg(name)
+        .arg("--nocapture")
         .env(IN_THE_COPY, "1")
         .output()
         .expect("the copy should start");
     let said = String::from_utf8_lossy(&output.stdout);
+    let complained = String::from_utf8_lossy(&output.stderr);
 
     assert!(
         output.status.success() && said.contains("1 passed"),
-        "{said}"
+        "{said}{complained}"
     );
+
+    // A test that skips a language says so here.
+    eprint!("{complained}");
 
     false
 }
 
-/// Loads the kit's fonts, so text is measured and drawn as in the app. Only
-/// for a test that [`is_alone`].
+/// Loads the kit's fonts and lists the computer's variable CJK fonts, so text
+/// is measured and drawn as in the app. Only for a test that [`is_alone`].
 pub(crate) fn load_kit_fonts() {
+    fonts::register_variable_cjk_faces();
+
     let settings = iced::Settings {
         fonts: fonts::all_bytes().into_iter().map(Cow::Borrowed).collect(),
         ..iced::Settings::default()

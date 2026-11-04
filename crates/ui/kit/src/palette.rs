@@ -30,6 +30,7 @@ pub struct UiPalette {
     surface_overlay: Color,
     surface_hover: Color,
     scrollbar_idle: Color,
+    surface_chip: Color,
     surface_selected: Color,
     surface_error: Color,
     surface_danger: Color,
@@ -104,6 +105,13 @@ impl UiPalette {
     /// on the surfaces a bar sits on, so it has its own value of about 2:1.
     pub const fn scrollbar_idle(&self) -> Color {
         self.scrollbar_idle
+    }
+
+    /// A token inside its box, which is [`Self::surface_raised`]. In OTTY Dark
+    /// it is `surface-hover`. In OTTY Light that color can hardly be told from
+    /// the box, so it has its own value.
+    pub const fn surface_chip(&self) -> Color {
+        self.surface_chip
     }
 
     /// `surface-selected`: selected row in a list, tree or table. Text on it
@@ -272,6 +280,7 @@ impl UiPalette {
             surface_overlay: fade(self.surface_overlay),
             surface_hover: fade(self.surface_hover),
             scrollbar_idle: fade(self.scrollbar_idle),
+            surface_chip: fade(self.surface_chip),
             surface_selected: fade(self.surface_selected),
             surface_error: fade(self.surface_error),
             surface_danger: fade(self.surface_danger),
@@ -312,6 +321,7 @@ impl UiPalette {
             surface_overlay: color!(0x232530),
             surface_hover: color!(0x2e3140),
             scrollbar_idle: color!(0x2e3140),
+            surface_chip: color!(0x2e3140),
             surface_selected: color!(0x1f2940),
             surface_error: color!(0x1e1a24),
             surface_danger: color!(0x2a1e26),
@@ -362,6 +372,7 @@ impl UiPalette {
             surface_overlay: color!(0xffffff),
             surface_hover: color!(0xe0e4eb),
             scrollbar_idle: color!(0xa8aeba),
+            surface_chip: color!(0xbfc5d1),
             surface_selected: color!(0xd6e4f5),
             surface_error: color!(0xfbedee),
             surface_danger: color!(0xfbe7e9),
@@ -399,6 +410,16 @@ impl UiPalette {
                 blur_radius: 10.0,
             },
         }
+    }
+}
+
+#[cfg(test)]
+impl UiPalette {
+    /// The same palette with another chip color, to tell in a test where a
+    /// chip takes its color.
+    pub(crate) fn with_surface_chip_for_test(mut self, color: Color) -> Self {
+        self.surface_chip = color;
+        self
     }
 }
 
@@ -905,6 +926,61 @@ mod tests {
 
             assert!(hovered >= idle * 1.5, "{hovered:.2}:1 and {idle:.2}:1");
         }
+    }
+
+    #[test]
+    fn given_each_theme_when_a_chip_lies_in_its_box_then_it_can_be_told_from_it()
+     {
+        for (name, palette) in themes() {
+            let ratio = contrast_ratio(
+                palette.surface_chip(),
+                palette.surface_raised(),
+            );
+
+            assert!(ratio >= 1.25, "{name}: {ratio:.2}:1");
+        }
+    }
+
+    #[test]
+    fn given_each_theme_when_a_chip_holds_text_and_a_cross_then_both_are_readable()
+     {
+        for (name, palette) in themes() {
+            let chip = palette.surface_chip();
+
+            assert_contrast_at_least(
+                name,
+                ("text-strong", palette.text_strong()),
+                ("surface-chip", chip),
+                TEXT_MIN,
+            );
+            assert_contrast_at_least(
+                name,
+                ("text-muted", palette.text_muted()),
+                ("surface-chip", chip),
+                NON_TEXT_MIN,
+            );
+        }
+    }
+
+    #[test]
+    fn given_otty_dark_when_a_chip_is_drawn_then_it_stays_surface_hover() {
+        let palette = UiPalette::otty_dark();
+
+        assert_eq!(palette.surface_chip(), palette.surface_hover());
+        assert_eq!(
+            palette.surface_chip().into_rgba8(),
+            [0x2e, 0x31, 0x40, 255]
+        );
+    }
+
+    #[test]
+    fn given_opacity_when_palette_faded_then_the_chip_fades() {
+        let palette = UiPalette::otty_light();
+
+        assert_eq!(
+            palette.with_opacity(0.5).surface_chip(),
+            palette.surface_chip().scale_alpha(0.5)
+        );
     }
 
     #[test]

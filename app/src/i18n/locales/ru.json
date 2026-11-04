@@ -397,6 +397,7 @@
     "button_remove": "Убрать",
     "button_add": "Добавить",
     "button_add_env": "Добавить переменную",
+    "button_remove_env": "Убрать переменную",
     "button_reset": "Сбросить",
     "button_connect": "Подключиться",
 

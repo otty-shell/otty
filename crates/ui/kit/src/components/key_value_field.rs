@@ -42,6 +42,9 @@ const VALUE_PORTION: u16 = 3;
 /// let rows = [("RUST_LOG".to_owned(), "debug".to_owned())];
 /// let field: Element<'_, Message> =
 ///     KeyValueField::new("Environment variables", &rows, &palette)
+///         .placeholders("NAME", "value")
+///         .add_label("Add variable")
+///         .remove_label("Remove variable")
 ///         .on_name(Message::Name)
 ///         .on_value(Message::Value)
 ///         .on_remove(Message::Remove)
@@ -55,6 +58,7 @@ pub struct KeyValueField<'a, Message> {
     hint: Option<String>,
     optional: Option<String>,
     add_label: String,
+    remove_label: String,
     name_placeholder: String,
     value_placeholder: String,
     on_name: Option<Rc<dyn Fn(usize, String) -> Message + 'a>>,
@@ -64,8 +68,8 @@ pub struct KeyValueField<'a, Message> {
 }
 
 impl<'a, Message> KeyValueField<'a, Message> {
-    /// Creates a field over `rows` of `(name, value)`; the add button reads
-    /// "Add variable".
+    /// Creates a field over `rows` of `(name, value)`. Its other texts come
+    /// from the app, in its language, through the methods below.
     pub fn new(
         label: impl Into<String>,
         rows: &'a [(String, String)],
@@ -77,9 +81,10 @@ impl<'a, Message> KeyValueField<'a, Message> {
             palette: palette.clone(),
             hint: None,
             optional: None,
-            add_label: "Add variable".to_owned(),
-            name_placeholder: "NAME".to_owned(),
-            value_placeholder: "value".to_owned(),
+            add_label: String::new(),
+            remove_label: String::new(),
+            name_placeholder: String::new(),
+            value_placeholder: String::new(),
             on_name: None,
             on_value: None,
             on_remove: None,
@@ -106,8 +111,13 @@ impl<'a, Message> KeyValueField<'a, Message> {
         self
     }
 
-    /// Sets the texts shown while the name and the value inputs are empty;
-    /// `NAME` and `value` unless set.
+    /// Sets the tooltip of the cross on each row.
+    pub fn remove_label(mut self, label: impl Into<String>) -> Self {
+        self.remove_label = label.into();
+        self
+    }
+
+    /// Sets the texts shown while the name and the value inputs are empty.
     pub fn placeholders(
         mut self,
         name: impl Into<String>,
@@ -176,8 +186,11 @@ impl<'a, Message: Clone + 'a> From<KeyValueField<'a, Message>>
                             .clone()
                             .map(|on_value| move |text| on_value(index, text)),
                     );
-            let mut cross =
-                IconButton::new(glyph::cross(), "Remove variable", &palette);
+            let mut cross = IconButton::new(
+                glyph::cross(),
+                value.remove_label.as_str(),
+                &palette,
+            );
             if let Some(on_remove) = &value.on_remove {
                 cross = cross.on_press(on_remove(index));
             }
@@ -316,15 +329,73 @@ mod tests {
         assert!(ui.find("optional").is_err());
     }
 
+    /// Text that shows comes from the app, in its language: the kit has none.
     #[test]
-    fn placeholders_default_to_name_and_value() {
+    fn no_text_of_the_kit_shows_until_the_app_gives_it() {
         let palette = UiPalette::otty_dark();
 
         let field: KeyValueField<'_, ()> =
             KeyValueField::new("Environment", &[], &palette);
 
-        assert_eq!(field.name_placeholder, "NAME");
-        assert_eq!(field.value_placeholder, "value");
+        assert_eq!(field.name_placeholder, "");
+        assert_eq!(field.value_placeholder, "");
+        assert_eq!(field.add_label, "");
+    }
+
+    /// Says whether a row is drawn as saved in `reference`, with the texts the
+    /// app gives and the pointer on the cross; the first call saves it. iced
+    /// draws tooltips as overlays that widget queries do not reach, so they are
+    /// checked on the drawing.
+    fn hovered_row_matches(
+        name_placeholder: &str,
+        remove_label: &str,
+        reference: &std::path::Path,
+    ) -> bool {
+        const WIDTH: f32 = 300.0;
+
+        let palette = UiPalette::otty_dark();
+        let rows = [(String::new(), "typed".to_owned())];
+        let field = KeyValueField::new("", &rows, &palette)
+            .placeholders(name_placeholder, "")
+            .remove_label(remove_label)
+            .on_remove(|_| ());
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            (WIDTH, 120.0),
+            container(field).width(WIDTH),
+        );
+        let row = ui.find("typed").expect("the value").bounds();
+        let position = iced::Point::new(
+            WIDTH - size::CONTROL_MD / 2.0,
+            row.y + row.height / 2.0,
+        );
+        ui.point_at(position);
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::CursorMoved { position },
+        )]);
+
+        ui.snapshot(&Theme::Dark)
+            .expect("the field should draw")
+            .matches_hash(reference)
+            .expect("the reference should be readable")
+    }
+
+    #[test]
+    fn the_cross_of_a_row_shows_the_label_the_app_gives() {
+        let folder = crate::test_support::TempDir::new("key-value-cross");
+        let reference = folder.path().join("cross");
+
+        assert!(hovered_row_matches("", "Remove variable", &reference));
+        assert!(!hovered_row_matches("", "Variable entfernen", &reference));
+    }
+
+    #[test]
+    fn an_empty_name_shows_the_placeholder_the_app_gives() {
+        let folder = crate::test_support::TempDir::new("key-value-placeholder");
+        let reference = folder.path().join("placeholder");
+
+        assert!(hovered_row_matches("NAME", "", &reference));
+        assert!(!hovered_row_matches("ИМЯ", "", &reference));
     }
 
     #[test]

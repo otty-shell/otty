@@ -397,6 +397,7 @@
     "button_remove": "移除",
     "button_add": "新增",
     "button_add_env": "新增環境變數",
+    "button_remove_env": "移除環境變數",
     "button_reset": "重設",
     "button_connect": "連線",
 

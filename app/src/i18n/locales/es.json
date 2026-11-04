@@ -397,6 +397,7 @@
     "button_remove": "Quitar",
     "button_add": "Añadir",
     "button_add_env": "Añadir variable",
+    "button_remove_env": "Quitar variable",
     "button_reset": "Restablecer",
     "button_connect": "Conectar",
 

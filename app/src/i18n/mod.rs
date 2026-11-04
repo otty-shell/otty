@@ -215,6 +215,16 @@ pub(crate) fn detect_system_locale() -> Locale {
     locale_from_system_preference(preference.as_deref())
 }
 
+/// Return the language that decides the regional shapes of Han letters: the
+/// app's when it writes them itself, otherwise the computer's, whose files and
+/// names still come up in a program in English.
+pub(crate) fn text_locale_tag(app: Locale, computer: Locale) -> &'static str {
+    match app {
+        Locale::ZhCn | Locale::ZhTw | Locale::Ja | Locale::Ko => app.tag(),
+        _ => computer.tag(),
+    }
+}
+
 /// Return the translation of `key` in the active locale.
 pub(crate) fn t(key: Key) -> &'static str {
     text_in(current_locale(), key)
@@ -713,7 +723,7 @@ mod tests {
     use super::{
         Catalog, Key, Locale, catalog, docker_logs_new_lines_in, fill_in,
         locale_from_system_preference, modes_pinned_note_in, process_exited_in,
-        text_in,
+        text_in, text_locale_tag,
     };
 
     #[test]
@@ -922,6 +932,75 @@ mod tests {
                 text_in(locale, Key::TplDockerStatusPodmanNoAccessDockerOff);
             assert!(podman_off.to_lowercase().contains("podman"), "{tag}");
             assert!(docker_off.to_lowercase().contains("docker"), "{tag}");
+        }
+    }
+
+    /// The texts of the kit's form fields come from the catalog, so a language
+    /// must not show English there. German spells `NAME` the same.
+    #[test]
+    fn the_empty_env_row_and_its_cross_read_in_every_language() {
+        assert_eq!(text_in(Locale::En, Key::EnvKeyPlaceholder), "NAME");
+        assert_eq!(text_in(Locale::En, Key::EnvValuePlaceholder), "value");
+        assert_eq!(
+            text_in(Locale::En, Key::ButtonRemoveEnv),
+            "Remove variable"
+        );
+
+        for locale in Locale::ALL {
+            if locale == Locale::En {
+                continue;
+            }
+            for key in [
+                Key::EnvValuePlaceholder,
+                Key::ButtonRemoveEnv,
+                Key::ButtonRemove,
+            ] {
+                assert_ne!(
+                    text_in(locale, key),
+                    text_in(Locale::En, key),
+                    "{locale:?}: {key:?}"
+                );
+            }
+            if locale != Locale::De {
+                assert_ne!(
+                    text_in(locale, Key::EnvKeyPlaceholder),
+                    "NAME",
+                    "{locale:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_app_that_writes_han_or_hangul_gives_the_font_system_its_own_language()
+    {
+        for (locale, tag) in [
+            (Locale::Ja, "ja"),
+            (Locale::Ko, "ko"),
+            (Locale::ZhCn, "zh-CN"),
+            (Locale::ZhTw, "zh-TW"),
+        ] {
+            assert_eq!(text_locale_tag(locale, Locale::En), tag);
+            assert_eq!(text_locale_tag(locale, Locale::Ru), tag);
+        }
+    }
+
+    /// Names in Han still come up in a program in English, and on a Japanese
+    /// computer they are Japanese names.
+    #[test]
+    fn an_app_in_another_language_gives_the_font_system_the_computers_language()
+    {
+        for locale in [
+            Locale::En,
+            Locale::Fr,
+            Locale::De,
+            Locale::Es,
+            Locale::PtBr,
+            Locale::Ru,
+        ] {
+            assert_eq!(text_locale_tag(locale, Locale::Ja), "ja");
+            assert_eq!(text_locale_tag(locale, Locale::ZhTw), "zh-TW");
+            assert_eq!(text_locale_tag(locale, Locale::De), "de");
         }
     }
 

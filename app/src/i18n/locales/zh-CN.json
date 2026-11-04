@@ -397,6 +397,7 @@
     "button_remove": "移除",
     "button_add": "添加",
     "button_add_env": "添加环境变量",
+    "button_remove_env": "移除环境变量",
     "button_reset": "重置",
     "button_connect": "连接",
 

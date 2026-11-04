@@ -6,6 +6,7 @@ use otty_ui_term::settings::{
 
 use super::AppEvent;
 use crate::app::App;
+use crate::fonts::apply_text_locale;
 use crate::i18n::{self, Key};
 use crate::widgets::settings::types::SettingsData;
 use crate::widgets::settings::{SettingsEffect, SettingsEvent, SettingsIntent};
@@ -48,6 +49,7 @@ fn handle_effect(app: &mut App, effect: SettingsEffect) -> Task<AppEvent> {
 }
 
 fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
+    apply_text_locale();
     app.theme_manager.set_theme(data.theme());
     let current_theme = app.theme_manager.current();
     let terminal_palette = current_theme.terminal_palette();

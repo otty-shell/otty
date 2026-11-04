@@ -781,7 +781,8 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .on_input(Message::TokenInput)
             .on_submit(Message::TokenSubmit)
             .on_backspace_empty(Message::TokenBackspace)
-            .on_remove(Message::TokenRemove),
+            .on_remove(Message::TokenRemove)
+            .remove_label("Remove"),
         TokenField::<Message>::new("Disabled", &state.empty_tokens, p),
     ]
     .spacing(spacing::SPACE_4);
@@ -794,7 +795,9 @@ fn view(state: &Gallery) -> Element<'_, Message> {
             .on_value(Message::VarValue)
             .on_remove(Message::VarRemove)
             .on_add(Message::VarAdd)
-            .placeholders("Name", "Value");
+            .placeholders("Name", "Value")
+            .add_label("Add variable")
+            .remove_label("Remove variable");
 
     let protocol =
         |picked: &'static str| segmented(&PROTOCOLS, &picked, Message::Kind, p);
@@ -805,7 +808,8 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 .control(protocol(PROTOCOLS[0]))
                 .on_source(Message::Path)
                 .on_target(Message::Path)
-                .on_remove(Message::Clicked, "Remove port 8081"),
+                .on_remove(Message::Clicked)
+                .remove_label("Remove port 8081"),
         )
         .row(
             MappingRow::new("80800", "443")
@@ -814,7 +818,8 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 .control(protocol(PROTOCOLS[1]))
                 .on_source(Message::Path)
                 .on_target(Message::Path)
-                .on_remove(Message::Clicked, "Remove port 80800"),
+                .on_remove(Message::Clicked)
+                .remove_label("Remove port 80800"),
         )
         .add_label("Add port")
         .on_add(Message::Clicked)
@@ -837,7 +842,8 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 ]
                 .spacing(spacing::SPACE_3),
             )
-            .on_remove(Message::Clicked, "Remove this volume"),
+            .on_remove(Message::Clicked)
+            .remove_label("Remove this volume"),
     )
     .add_label("Add volume");
     let mappings = column![ports, volumes].spacing(spacing::SPACE_6);
