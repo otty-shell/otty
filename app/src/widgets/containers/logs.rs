@@ -154,6 +154,10 @@ fn intent(intent: ContainersIntent) -> ContainersEvent {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test removes the file it prepared"
+)]
 mod tests {
     use std::io::{Read, Write};
     use std::os::unix::net::{UnixListener, UnixStream};

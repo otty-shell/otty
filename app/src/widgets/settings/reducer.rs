@@ -1,8 +1,9 @@
+#![forbid(clippy::disallowed_methods)]
+
 use iced::Task;
 
 use super::event::{SettingsEffect, SettingsEvent, SettingsIntent};
 use super::state::SettingsState;
-use super::storage::{load_settings, save_settings};
 use super::types::{SettingsData, SettingsLoad, SettingsLoadStatus};
 use crate::i18n;
 
@@ -16,7 +17,9 @@ pub(crate) fn reduce(
     }
 
     match event {
-        SettingsIntent::Reload => request_reload_settings(),
+        SettingsIntent::Reload => {
+            Task::done(SettingsEvent::Effect(SettingsEffect::LoadRequested))
+        },
         SettingsIntent::ReloadLoaded(load) => {
             let settings = apply_loaded_settings(state, load);
             Task::done(SettingsEvent::Effect(SettingsEffect::ApplyTheme(
@@ -80,36 +83,16 @@ fn changes_draft(event: &SettingsIntent) -> bool {
     )
 }
 
-fn request_reload_settings() -> Task<SettingsEvent> {
-    Task::perform(async { load_settings() }, |result| match result {
-        Ok(load) => SettingsEvent::Effect(SettingsEffect::ReloadLoaded(load)),
-        Err(err) => SettingsEvent::Effect(SettingsEffect::ReloadFailed(
-            format!("{err}"),
-        )),
-    })
-}
-
+/// Start saving the draft and ask the route to write it; nothing happens when
+/// a save is already running.
 fn request_save_settings(state: &mut SettingsState) -> Task<SettingsEvent> {
     let Some(normalized) = state.begin_save() else {
         return Task::none();
     };
 
-    Task::perform(
-        async move {
-            match save_settings(&normalized) {
-                Ok(()) => Ok(normalized),
-                Err(err) => Err(format!("{err}")),
-            }
-        },
-        |result| match result {
-            Ok(settings) => {
-                SettingsEvent::Effect(SettingsEffect::SaveCompleted(settings))
-            },
-            Err(message) => {
-                SettingsEvent::Effect(SettingsEffect::SaveFailed(message))
-            },
-        },
-    )
+    Task::done(SettingsEvent::Effect(SettingsEffect::SaveRequested(
+        normalized,
+    )))
 }
 
 fn apply_loaded_settings(
@@ -130,6 +113,7 @@ fn apply_loaded_settings(
 mod tests {
     use super::*;
     use crate::i18n::Locale;
+    use crate::testing::task_outputs::collect_outputs;
     use crate::theme::BuiltinTheme;
     use crate::widgets::settings::state::SettingsState;
     use crate::widgets::settings::types::{
@@ -138,6 +122,57 @@ mod tests {
 
     fn default_state() -> SettingsState {
         SettingsState::default()
+    }
+
+    fn effects(
+        state: &mut SettingsState,
+        intent: SettingsIntent,
+    ) -> Vec<SettingsEffect> {
+        collect_outputs(reduce(state, intent))
+            .into_iter()
+            .filter_map(|event| match event {
+                SettingsEvent::Effect(effect) => Some(effect),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn reload_asks_the_route_to_read_the_settings() {
+        let mut state = default_state();
+
+        let effects = effects(&mut state, SettingsIntent::Reload);
+
+        assert!(matches!(
+            effects.as_slice(),
+            [SettingsEffect::LoadRequested]
+        ));
+    }
+
+    #[test]
+    fn save_asks_the_route_to_write_the_settings_it_started_saving() {
+        let mut state = default_state();
+        state.set_shell(format!("{}-changed", state.draft().terminal_shell()));
+
+        let effects = effects(&mut state, SettingsIntent::Save);
+
+        assert!(state.is_saving());
+        assert!(matches!(
+            effects.as_slice(),
+            [SettingsEffect::SaveRequested(settings)]
+                if settings == state.draft()
+        ));
+    }
+
+    #[test]
+    fn a_second_save_while_one_runs_asks_for_nothing() {
+        let mut state = default_state();
+        state.set_shell(format!("{}-changed", state.draft().terminal_shell()));
+        let _saved = state.begin_save().expect("save should start");
+
+        let effects = effects(&mut state, SettingsIntent::Save);
+
+        assert!(effects.is_empty());
     }
 
     #[test]

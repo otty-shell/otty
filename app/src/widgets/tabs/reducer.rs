@@ -1,3 +1,5 @@
+#![forbid(clippy::disallowed_methods)]
+
 use iced::Task;
 use otty_ui_term::settings::Settings;
 

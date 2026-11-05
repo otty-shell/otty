@@ -20,7 +20,7 @@ pub(super) fn load_quick_launches() -> Result<QuickLaunchFile, QuickLaunchError>
 }
 
 /// Save quick launches to disk atomically.
-pub(super) fn save_quick_launches(
+pub(crate) fn save_quick_launches(
     data: &QuickLaunchFile,
 ) -> Result<(), QuickLaunchError> {
     let path = quick_launches_path();

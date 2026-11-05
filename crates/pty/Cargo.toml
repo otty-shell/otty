@@ -32,3 +32,8 @@ openssl = { version = "0.10", features = ["vendored"] }
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }
 nix = { workspace = true }
+
+# The rules in the root clippy.toml are for the `app` crate; this library has its
+# own architecture.
+[lints.clippy]
+disallowed_methods = "allow"

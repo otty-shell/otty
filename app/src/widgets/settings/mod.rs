@@ -3,6 +3,7 @@ pub(crate) mod event;
 pub(crate) mod model;
 pub(crate) mod reducer;
 pub(crate) mod state;
+#[expect(clippy::disallowed_methods, reason = "this module saves the settings")]
 pub(crate) mod storage;
 pub(crate) mod types;
 pub(crate) mod view;

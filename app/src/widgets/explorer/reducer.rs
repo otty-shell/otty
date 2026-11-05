@@ -1,3 +1,5 @@
+#![forbid(clippy::disallowed_methods)]
+
 use std::path::PathBuf;
 
 use iced::Task;

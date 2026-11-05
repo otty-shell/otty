@@ -1,3 +1,5 @@
+#![forbid(clippy::disallowed_methods)]
+
 use std::collections::HashMap;
 
 use iced::widget::pane_grid;

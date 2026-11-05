@@ -3,6 +3,10 @@ pub(crate) mod event;
 pub(crate) mod model;
 mod reducer;
 mod state;
+#[expect(
+    clippy::disallowed_methods,
+    reason = "this module saves the pinned modes"
+)]
 pub(crate) mod storage;
 pub(crate) mod types;
 pub(crate) mod view;

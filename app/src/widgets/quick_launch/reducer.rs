@@ -1,3 +1,5 @@
+#![forbid(clippy::disallowed_methods)]
+
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -7,17 +9,16 @@ use iced::widget::operation;
 use super::constants::QUICK_LAUNCHES_TICK_MS;
 use super::errors::quick_launch_error_message;
 use super::event::{QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent};
-use super::services::{build_command, prepare_quick_launch_setup};
+use super::services::build_command;
 use super::state::{
     ContextMenuState, DragState, InlineEditState, QuickLaunchErrorState,
     QuickLaunchState, SecretPromptState,
 };
-use super::storage::save_quick_launches;
 use super::types::{
     ContextMenuAction, ContextMenuTarget, DropTarget, InlineEditKind,
-    LaunchInfo, NodePath, PreparedQuickLaunch, QuickLaunch, QuickLaunchFile,
-    QuickLaunchFolder, QuickLaunchNode, QuickLaunchSetupOutcome,
-    QuickLaunchWizardSaveRequest, QuickLaunchWizardSaveTarget, WizardMode,
+    LaunchInfo, NodePath, PreparedQuickLaunch, QuickLaunch, QuickLaunchFolder,
+    QuickLaunchNode, QuickLaunchSetupOutcome, QuickLaunchWizardSaveRequest,
+    QuickLaunchWizardSaveTarget, WizardMode,
 };
 use crate::i18n::{self, Key};
 
@@ -575,8 +576,6 @@ fn handle_context_menu_action(
 }
 
 fn reduce_tick(state: &mut QuickLaunchState) -> Task<QuickLaunchEvent> {
-    let mut tasks: Vec<Task<QuickLaunchEvent>> = Vec::new();
-
     if state.has_active_launches() {
         state.advance_blink_nonce();
         update_launch_indicators(state);
@@ -584,14 +583,13 @@ fn reduce_tick(state: &mut QuickLaunchState) -> Task<QuickLaunchEvent> {
 
     if state.is_dirty() && !state.is_persist_in_flight() {
         state.begin_persist();
-        tasks.push(request_persist_quick_launches(state.data().clone()));
+
+        return emit_effect(QuickLaunchEffect::PersistRequested {
+            data: state.data().clone(),
+        });
     }
 
-    if tasks.is_empty() {
-        Task::none()
-    } else {
-        Task::batch(tasks)
-    }
+    Task::none()
 }
 
 fn begin_inline_create_folder(
@@ -1047,27 +1045,6 @@ fn duplicate_title(parent: &QuickLaunchFolder, title: &str) -> String {
     }
 }
 
-fn request_persist_quick_launches(
-    data: QuickLaunchFile,
-) -> Task<QuickLaunchEvent> {
-    Task::perform(
-        async move {
-            match save_quick_launches(&data) {
-                Ok(()) => Ok(()),
-                Err(err) => Err(format!("{err}")),
-            }
-        },
-        |result| match result {
-            Ok(()) => {
-                QuickLaunchEvent::Intent(QuickLaunchIntent::PersistCompleted)
-            },
-            Err(message) => QuickLaunchEvent::Intent(
-                QuickLaunchIntent::PersistFailed(message),
-            ),
-        },
-    )
-}
-
 fn launch_quick_launch(
     state: &mut QuickLaunchState,
     terminal_settings: &otty_ui_term::settings::Settings,
@@ -1080,19 +1057,15 @@ fn launch_quick_launch(
     }
     let cancel = Arc::new(AtomicBool::new(false));
     let launch_id = state.begin_launch(path.clone(), cancel.clone());
-    Task::perform(
-        prepare_quick_launch_setup(
-            command,
-            path,
-            launch_id,
-            terminal_settings.clone(),
-            secret,
-            cancel,
-        ),
-        |outcome| {
-            QuickLaunchEvent::Intent(QuickLaunchIntent::SetupCompleted(outcome))
-        },
-    )
+
+    emit_effect(QuickLaunchEffect::LaunchSetupRequested {
+        command: Box::new(command),
+        path,
+        launch_id,
+        settings: terminal_settings.clone(),
+        secret,
+        cancel,
+    })
 }
 
 fn should_skip_launch_result(
@@ -2993,6 +2966,111 @@ mod tests {
             .launch_info(node)
             .expect("clicked command should be launching")
             .id
+    }
+
+    #[test]
+    fn a_dirty_tick_asks_the_route_to_save_the_launches() {
+        let mut state = QuickLaunchState::default();
+        state.mark_dirty();
+        let settings = Settings::default();
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            QuickLaunchIntent::Tick,
+            &ctx(&settings),
+        ));
+
+        assert!(state.is_persist_in_flight());
+        assert!(matches!(
+            events.as_slice(),
+            [QuickLaunchEvent::Effect(
+                QuickLaunchEffect::PersistRequested { .. }
+            )]
+        ));
+    }
+
+    #[test]
+    fn a_tick_during_a_save_asks_for_nothing() {
+        let mut state = QuickLaunchState::default();
+        state.mark_dirty();
+        state.begin_persist();
+        let settings = Settings::default();
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            QuickLaunchIntent::Tick,
+            &ctx(&settings),
+        ));
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn launching_a_command_asks_the_route_to_prepare_it() {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let node = path(&["Demo"]);
+        let settings = Settings::default();
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            QuickLaunchIntent::LaunchNode { path: node.clone() },
+            &ctx(&settings),
+        ));
+
+        let current_launch = launch_id(&state, &node);
+        assert!(matches!(
+            events.as_slice(),
+            [QuickLaunchEvent::Effect(
+                QuickLaunchEffect::LaunchSetupRequested {
+                    path: asked_path,
+                    launch_id: asked_launch,
+                    secret: None,
+                    ..
+                }
+            )] if asked_path == &node && *asked_launch == current_launch
+        ));
+    }
+
+    #[test]
+    fn a_submitted_secret_goes_to_the_route_with_the_new_launch() {
+        let mut state = state_with_secret_prompt();
+        let settings = Settings::default();
+        run(
+            &mut state,
+            QuickLaunchIntent::SecretPromptChanged(String::from("hunter2")),
+        );
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            QuickLaunchIntent::SecretPromptSubmit,
+            &ctx(&settings),
+        ));
+
+        assert!(matches!(
+            events.as_slice(),
+            [QuickLaunchEvent::Effect(
+                QuickLaunchEffect::LaunchSetupRequested {
+                    secret: Some(secret),
+                    ..
+                }
+            )] if secret == "hunter2"
+        ));
+    }
+
+    #[test]
+    fn a_click_on_a_launching_command_asks_for_nothing() {
+        let mut state = state_with_root(vec![command_node("Demo")]);
+        let node = path(&["Demo"]);
+        click(&mut state, &node);
+        let settings = Settings::default();
+
+        let events = collect_outputs(reduce(
+            &mut state,
+            QuickLaunchIntent::LaunchNode { path: node },
+            &ctx(&settings),
+        ));
+
+        assert!(events.is_empty());
     }
 
     #[test]

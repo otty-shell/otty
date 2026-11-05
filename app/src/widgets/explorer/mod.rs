@@ -2,6 +2,7 @@ mod errors;
 pub(crate) mod event;
 pub(crate) mod model;
 pub(crate) mod reducer;
+#[expect(clippy::disallowed_methods, reason = "this module reads folders")]
 pub(crate) mod services;
 pub(crate) mod state;
 pub(crate) mod types;

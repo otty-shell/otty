@@ -3,9 +3,14 @@ mod errors;
 pub(crate) mod event;
 pub(crate) mod model;
 pub(crate) mod reducer;
-mod services;
+#[expect(
+    clippy::disallowed_methods,
+    reason = "this module checks programs and files before a launch"
+)]
+pub(crate) mod services;
 pub(crate) mod state;
-mod storage;
+#[expect(clippy::disallowed_methods, reason = "this module saves the launches")]
+pub(crate) mod storage;
 pub(crate) mod types;
 pub(crate) mod view;
 

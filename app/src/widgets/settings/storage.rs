@@ -7,12 +7,12 @@ use super::types::{SettingsData, SettingsLoad, SettingsLoadStatus};
 use crate::i18n;
 
 /// Load settings from disk.
-pub(super) fn load_settings() -> Result<SettingsLoad, SettingsError> {
+pub(crate) fn load_settings() -> Result<SettingsLoad, SettingsError> {
     load_settings_from_path(&settings_path())
 }
 
 /// Save settings to disk.
-pub(super) fn save_settings(
+pub(crate) fn save_settings(
     settings: &SettingsData,
 ) -> Result<(), SettingsError> {
     save_settings_to_path(&settings_path(), settings)

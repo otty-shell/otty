@@ -1,6 +1,10 @@
 mod app;
 mod components;
 mod domain;
+#[expect(
+    clippy::disallowed_methods,
+    reason = "routes start the background work of widgets"
+)]
 mod events;
 mod fonts;
 mod geometry;
@@ -8,11 +12,20 @@ mod guards;
 mod i18n;
 mod icons;
 mod layout;
+#[expect(clippy::disallowed_methods, reason = "this module starts processes")]
 mod services;
+#[expect(
+    clippy::disallowed_methods,
+    reason = "this module writes the shell integration files"
+)]
 mod shell_integration;
 mod shortcuts;
 mod state;
 #[cfg(test)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "test helpers prepare files and start processes"
+)]
 mod testing;
 mod theme;
 mod widgets;

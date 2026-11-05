@@ -33,16 +33,12 @@ pub(crate) enum SettingsIntent {
 /// Effect events produced by the settings reducer, routed outward.
 #[derive(Debug, Clone)]
 pub(crate) enum SettingsEffect {
-    /// Reload completed and produced a load payload.
-    ReloadLoaded(SettingsLoad),
-    /// Reload failed.
-    ReloadFailed(String),
-    /// Save failed.
-    SaveFailed(String),
+    /// Read the settings from disk; the result comes back as an intent.
+    LoadRequested,
+    /// Write these settings to disk; the result comes back as an intent.
+    SaveRequested(SettingsData),
     /// Request the parent to apply the given settings, including the theme.
     ApplyTheme(SettingsData),
-    /// Notify the parent that a save completed.
-    SaveCompleted(SettingsData),
 }
 
 /// Settings event stream routed through the app update loop.

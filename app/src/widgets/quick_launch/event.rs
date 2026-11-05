@@ -1,8 +1,11 @@
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
 use iced::Point;
 
 use super::types::{
-    ContextMenuAction, NodePath, QuickLaunch, QuickLaunchSetupOutcome,
-    QuickLaunchType,
+    ContextMenuAction, NodePath, QuickLaunch, QuickLaunchFile,
+    QuickLaunchSetupOutcome, QuickLaunchType,
 };
 use crate::domain::exit_behavior::ExitBehavior;
 
@@ -188,6 +191,18 @@ pub(crate) enum QuickLaunchEffect {
     OpenErrorTab { title: String, message: String },
     /// Request closing a tab.
     CloseTabRequested { tab_id: u64 },
+    /// Write the launches to disk; the result comes back as an intent.
+    PersistRequested { data: QuickLaunchFile },
+    /// Prepare a launch in the background; the outcome comes back as an
+    /// intent. `cancel` stops the preparation early.
+    LaunchSetupRequested {
+        command: Box<QuickLaunch>,
+        path: NodePath,
+        launch_id: u64,
+        settings: otty_ui_term::settings::Settings,
+        secret: Option<String>,
+        cancel: Arc<AtomicBool>,
+    },
 }
 
 /// Quick launch event stream routed through the app update loop.

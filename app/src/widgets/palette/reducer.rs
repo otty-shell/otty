@@ -1,3 +1,5 @@
+#![forbid(clippy::disallowed_methods)]
+
 use iced::Task;
 use iced::widget::operation;
 use otty_ui_kit::components::command_palette::{PaletteAction, input_id};

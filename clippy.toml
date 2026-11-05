@@ -1,3 +1,34 @@
 too-many-arguments-threshold = 30
 enum-variant-name-threshold = 10
 type-complexity-threshold = 250
+
+# Rules of the `app` crate, see docs/internal/architecture.md.
+# A library in `crates/` that needs these calls turns the lint off in its Cargo.toml.
+disallowed-methods = [
+    # Background work starts in the widget's route, events/<widget>.rs.
+    { path = "iced::Task::perform", reason = "in app, background work starts in events/<widget>.rs" },
+    { path = "iced::Task::future", reason = "in app, background work starts in events/<widget>.rs" },
+    { path = "iced::Task::run", reason = "in app, background work starts in events/<widget>.rs" },
+    { path = "iced::Task::stream", reason = "in app, background work starts in events/<widget>.rs" },
+
+    # Processes run in services.rs.
+    { path = "std::process::Command::new", reason = "in app, processes run in services.rs" },
+
+    # Files are read and written in services.rs or storage.rs.
+    { path = "std::fs::read", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::read_to_string", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::write", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::read_dir", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::create_dir", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::create_dir_all", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::remove_file", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::remove_dir_all", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::rename", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::copy", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::metadata", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::File::open", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::fs::File::create", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::path::Path::exists", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::path::Path::is_dir", reason = "in app, files live in services.rs or storage.rs" },
+    { path = "std::path::Path::is_file", reason = "in app, files live in services.rs or storage.rs" },
+]
