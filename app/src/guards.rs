@@ -6,6 +6,7 @@
 use crate::events::AppEvent;
 use crate::shortcuts::{Platform, shortcut_for_key_press};
 use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
+use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
@@ -82,6 +83,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 _ => Allow,
             }
         },
+        AppEvent::Explorer(ExplorerEvent::Intent(
+            ExplorerIntent::NodeHovered { .. },
+        )) => Allow,
         AppEvent::Tabs(_) => DismissAndRun,
         // The All modes menu is one of the menus: its rows, pin toggles and
         // dismiss layer send these. Choosing a mode closes every menu.
@@ -159,6 +163,12 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
             TerminalWorkspaceIntent::Widget(_)
             | TerminalWorkspaceIntent::PaneGridCursorMoved { .. },
         )) => false,
+        AppEvent::Explorer(ExplorerEvent::Intent(
+            ExplorerIntent::NodeHovered { .. },
+        ))
+        | AppEvent::Chrome(ChromeEvent::Intent(ChromeIntent::MoveOnTitleBar)) => {
+            false
+        },
         AppEvent::Keyboard(key) => {
             shortcut_for_key_press(key, Platform::current()).is_some()
         },
@@ -198,6 +208,7 @@ mod tests {
     use crate::widgets::containers::actions::RowAction;
     use crate::widgets::containers::inspector::InspectorTab;
     use crate::widgets::containers::{ContainersEvent, ContainersIntent};
+    use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::types::Mode;
     use crate::widgets::modes::{ModesEvent, ModesIntent};
     use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
@@ -459,6 +470,51 @@ mod tests {
             AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::ToggleRight));
 
         assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
+        assert!(inline_edit_guard(&event));
+    }
+
+    #[test]
+    fn hovering_a_files_row_keeps_menus_and_inline_edits() {
+        // A row sends the path when the pointer enters it, and no path when
+        // the pointer leaves it or the whole tree.
+        let paths = [Some(vec![String::from("src")]), None];
+
+        for path in paths {
+            let event = AppEvent::Explorer(ExplorerEvent::Intent(
+                ExplorerIntent::NodeHovered { path },
+            ));
+
+            assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
+            assert!(!inline_edit_guard(&event));
+        }
+    }
+
+    #[test]
+    fn moving_over_the_title_bar_keeps_menus_and_inline_edits() {
+        let event =
+            AppEvent::Chrome(ChromeEvent::Intent(ChromeIntent::MoveOnTitleBar));
+
+        assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
+        assert!(!inline_edit_guard(&event));
+    }
+
+    #[test]
+    fn pressing_a_files_row_still_closes_menus_and_inline_edits() {
+        let event = AppEvent::Explorer(ExplorerEvent::Intent(
+            ExplorerIntent::NodePressed {
+                path: vec![String::from("src")],
+            },
+        ));
+
+        assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
+        assert!(inline_edit_guard(&event));
+    }
+
+    #[test]
+    fn pressing_the_title_bar_still_cancels_an_inline_edit() {
+        let event =
+            AppEvent::Chrome(ChromeEvent::Intent(ChromeIntent::PressTitleBar));
+
         assert!(inline_edit_guard(&event));
     }
 }

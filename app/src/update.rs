@@ -194,6 +194,7 @@ mod tests {
     use crate::widgets::containers::inspector_tabs::TabContent;
     use crate::widgets::containers::run_form::RunEdit;
     use crate::widgets::containers::types::LoadedLists;
+    use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::types::Mode;
     use crate::widgets::tabs::types::TabMachine;
@@ -909,6 +910,42 @@ mod tests {
         update_to_the_end(&mut app, key);
 
         assert!(app.widgets.quick_launch.has_inline_edit());
+    }
+
+    fn files_row_hovered() -> AppEvent {
+        AppEvent::Explorer(ExplorerEvent::Intent(ExplorerIntent::NodeHovered {
+            path: Some(vec![String::from("src")]),
+        }))
+    }
+
+    #[test]
+    fn hovering_a_files_row_during_an_inline_edit_keeps_it() {
+        let (mut app, _) = App::new();
+        start_inline_edit(&mut app);
+
+        let _ = update_input(&mut app, files_row_hovered());
+
+        assert!(app.widgets.quick_launch.has_inline_edit());
+    }
+
+    #[test]
+    fn moving_over_the_title_bar_during_an_inline_edit_keeps_it() {
+        let (mut app, _) = App::new();
+        start_inline_edit(&mut app);
+
+        let _ =
+            update_input(&mut app, chrome_intent(ChromeIntent::MoveOnTitleBar));
+
+        assert!(app.widgets.quick_launch.has_inline_edit());
+    }
+
+    #[test]
+    fn hovering_a_files_row_under_an_open_menu_keeps_the_menu() {
+        let mut app = app_with_open_modes_menu();
+
+        let _ = update_input(&mut app, files_row_hovered());
+
+        assert!(app.widgets.modes.is_menu_open());
     }
 
     #[test]
