@@ -35,6 +35,21 @@ use crate::{layout, services};
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
 pub(crate) const MIN_WINDOW_HEIGHT: f32 = 600.0;
 
+/// What iced delivers to the app: an event and where it came from.
+///
+/// Only this file marks events. Widgets and routes return plain [`AppEvent`]s,
+/// and whatever they return comes back as [`Message::Internal`].
+#[derive(Clone)]
+pub(crate) enum Message {
+    /// A press or typed text in the interface, or a key press. The input
+    /// checks in `update.rs` decide what happens to it.
+    Input(AppEvent),
+    /// An effect, a result of background work or a subscription event. It
+    /// follows from input that already passed the checks, or arrives on its
+    /// own, so nothing stops it.
+    Internal(AppEvent),
+}
+
 /// Root application state.
 pub(crate) struct App {
     pub(crate) window_size: Size,
@@ -51,7 +66,7 @@ pub(crate) struct App {
 
 impl App {
     /// Initialize the application and return the first task.
-    pub(crate) fn new() -> (Self, Task<AppEvent>) {
+    pub(crate) fn new() -> (Self, Task<Message>) {
         let settings = SettingsWidget::load();
         apply_text_locale();
         let mut theme_manager = ThemeManager::new();
@@ -101,7 +116,7 @@ impl App {
             widgets,
         };
 
-        (app, Task::done(()).map(|_: ()| AppEvent::IcedReady))
+        (app, Task::done(Message::Internal(AppEvent::IcedReady)))
     }
 
     /// Return the window title.
@@ -115,18 +130,27 @@ impl App {
     }
 
     /// Return active subscriptions.
-    pub(crate) fn subscription(&self) -> Subscription<AppEvent> {
-        subscription::subscription(self)
+    pub(crate) fn subscription(&self) -> Subscription<Message> {
+        Subscription::batch([
+            subscription::subscription(self).map(Message::Internal),
+            iced::keyboard::listen()
+                .map(|event| Message::Input(AppEvent::Keyboard(event))),
+        ])
     }
 
-    /// Handle an incoming event.
-    pub(crate) fn update(&mut self, event: AppEvent) -> Task<AppEvent> {
-        update::update(self, event)
+    /// Handle an incoming message. Everything it leads to is internal.
+    pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
+        let task = match message {
+            Message::Input(event) => update::update_input(self, event),
+            Message::Internal(event) => update::update_internal(self, event),
+        };
+
+        task.map(Message::Internal)
     }
 
     /// Render the root view.
-    pub(crate) fn view(&self) -> Element<'_, AppEvent, Theme, iced::Renderer> {
-        view::view(self)
+    pub(crate) fn view(&self) -> Element<'_, Message, Theme, iced::Renderer> {
+        view::view(self).map(Message::Input)
     }
 }
 

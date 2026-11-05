@@ -2551,7 +2551,7 @@ mod tests {
         let mut app = containers_app_with_lists();
         let (row_center, clicked_x, events) = press_first_row_menu(&app);
         for event in events {
-            let _ = app.update(event);
+            let _ = app.update(crate::app::Message::Input(event));
         }
 
         let mut ui = simulator(view(&app));
@@ -2610,13 +2610,13 @@ mod tests {
         {
             let events = click_in_window(&app, point);
             for event in events {
-                let _ = app.update(event);
+                let _ = app.update(crate::app::Message::Input(event));
             }
             assert_eq!(app.widgets.modes.active(), expected);
         }
 
         for event in click_in_window(&app, tab(2.0)) {
-            let _ = app.update(event);
+            let _ = app.update(crate::app::Message::Input(event));
         }
         assert!(app.widgets.modes.is_menu_open());
     }

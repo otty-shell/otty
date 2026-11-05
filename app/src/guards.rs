@@ -1,7 +1,19 @@
-use crate::events::AppEvent;
-use crate::widgets::containers::{ContainersEvent, ContainersIntent};
+//! What input from the user does while a menu is open or an inline edit runs.
+//! These checks only see input: what follows from it, and what arrives on its
+//! own, skips them (see `update_internal` in `update.rs`), so it can not get
+//! lost.
 
-/// Determines how the event loop should treat an incoming event when a
+use crate::events::AppEvent;
+use crate::shortcuts::{Platform, shortcut_for_key_press};
+use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
+use crate::widgets::modes::{ModesEvent, ModesIntent};
+use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
+use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
+use crate::widgets::terminal_workspace::{
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+};
+
+/// Determines how the event loop should treat input from the user when a
 /// context menu is open.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum MenuGuard {
@@ -9,55 +21,38 @@ pub(crate) enum MenuGuard {
     Allow,
     /// Silently drop the event without closing the menu.
     Ignore,
-    /// Close all context menus before dispatching.
+    /// Close all context menus; the event itself does nothing else.
     Dismiss,
+    /// Close all context menus, then dispatch the event.
+    DismissAndRun,
 }
 
-/// Classify an incoming event when at least one context menu is open.
+/// Classify input from the user when at least one context menu is open.
 pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
     use MenuGuard::*;
 
     match event {
-        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Intent(
-            event,
-        )) => {
-            use crate::widgets::sidebar::SidebarIntent as E;
+        AppEvent::Sidebar(SidebarEvent::Intent(event)) => {
+            use SidebarIntent as E;
             match event {
-                E::HeaderMenuDismiss => Allow,
+                E::HeaderMenuDismiss | E::WorkspaceCursorMoved { .. } => Allow,
                 E::HeaderMenuOpen(_) => Ignore,
-                E::WorkspaceCursorMoved { .. } => Allow,
-                // Frames come on their own while the focus mode note fades.
-                E::FocusNoteFrame(_) => Allow,
-                // Follows a row press that already passed this guard; a menu
-                // opened since then stays and the panel still opens.
-                E::RevealRight => Allow,
                 _ => Dismiss,
             }
         },
-        AppEvent::QuickLaunch(
-            crate::widgets::quick_launch::QuickLaunchEvent::Intent(event),
-        ) => {
-            use crate::widgets::quick_launch::QuickLaunchIntent as E;
+        AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event)) => {
+            use QuickLaunchIntent as E;
             match event {
                 E::ContextMenuDismiss
                 | E::ContextMenuAction(_)
                 | E::InlineEditChanged(_)
                 | E::InlineEditSubmit
-                | E::CancelInlineEdit => Allow,
-                E::CursorMoved { .. } => Allow,
-                E::Tick
-                | E::PersistCompleted
-                | E::PersistFailed(_)
-                | E::SetupCompleted(_) => Allow,
+                | E::CursorMoved { .. } => Allow,
                 _ => Ignore,
             }
         },
-        AppEvent::TerminalWorkspace(
-            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Intent(
-                event,
-            ),
-        ) => {
-            use crate::widgets::terminal_workspace::TerminalWorkspaceIntent as E;
+        AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(event)) => {
+            use TerminalWorkspaceIntent as E;
             match event {
                 E::CloseContextMenu { .. }
                 | E::CopySelection { .. }
@@ -69,69 +64,33 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 | E::ClosePane { .. }
                 | E::ContextMenuInput { .. }
                 | E::Widget(_)
-                | E::PaneGridCursorMoved { .. }
-                | E::SyncPaneGridSize => Allow,
+                | E::PaneGridCursorMoved { .. } => Allow,
                 E::OpenContextMenu { .. } | E::PaneClicked { .. } => Ignore,
                 _ => Dismiss,
             }
         },
-        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Effect(_))
-        | AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Effect(_))
-        | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Effect(_))
-        | AppEvent::QuickLaunch(
-            crate::widgets::quick_launch::QuickLaunchEvent::Effect(_),
-        )
-        | AppEvent::TerminalWorkspace(
-            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Effect(
-                _,
-            ),
-        ) => Allow,
-        AppEvent::Settings(
-            crate::widgets::settings::SettingsEvent::Effect(_),
-        )
-        | AppEvent::Settings(
-            crate::widgets::settings::SettingsEvent::Intent(
-                crate::widgets::settings::SettingsIntent::ReloadLoaded(_)
-                | crate::widgets::settings::SettingsIntent::ReloadFailed(_)
-                | crate::widgets::settings::SettingsIntent::SaveCompleted(_)
-                | crate::widgets::settings::SettingsIntent::SaveFailed(_),
-            ),
-        ) => Allow,
-        AppEvent::Explorer(
-            crate::widgets::explorer::ExplorerEvent::Effect(_),
-        )
-        | AppEvent::Explorer(
-            crate::widgets::explorer::ExplorerEvent::Intent(
-                crate::widgets::explorer::ExplorerIntent::RootLoaded { .. }
-                | crate::widgets::explorer::ExplorerIntent::FolderLoaded {
-                    ..
-                }
-                | crate::widgets::explorer::ExplorerIntent::DirectoryChanged {
-                    ..
-                }
-                | crate::widgets::explorer::ExplorerIntent::DirectoryReloaded {
-                    ..
-                }
-                | crate::widgets::explorer::ExplorerIntent::LoadFailed { .. },
-            ),
-        ) => Allow,
-        AppEvent::Explorer(
-            crate::widgets::explorer::ExplorerEvent::Intent(
-                crate::widgets::explorer::ExplorerIntent::SyncRoot { .. },
-            ),
-        ) => Allow,
-        AppEvent::Window(_) | AppEvent::ResizeWindow(_) => Allow,
-        AppEvent::SyncTerminalGridSizes => Allow,
+        // The first press on a panel button or the palette button only closes
+        // the menu; opening settings closes it and goes on.
+        AppEvent::Chrome(ChromeEvent::Intent(event)) => {
+            use ChromeIntent as E;
+            match event {
+                E::ToggleLeftPanel
+                | E::ToggleFilesPanel
+                | E::ToggleFocusMode
+                | E::OpenCommandPalette => Dismiss,
+                E::OpenSettings => DismissAndRun,
+                _ => Allow,
+            }
+        },
+        AppEvent::Tabs(_) => DismissAndRun,
         // The All modes menu is one of the menus: its rows, pin toggles and
-        // dismiss layer send these, and a switch reports its change.
+        // dismiss layer send these. Choosing a mode closes every menu.
+        AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(_))) => {
+            DismissAndRun
+        },
         AppEvent::Modes(_) => Allow,
-        // Engine results, folder checks and mode changes arrive on their
-        // own; a click in the Containers views closes the menus like any other
-        // click.
-        AppEvent::Containers(event) if is_containers_background(event) => Allow,
+        AppEvent::ResizeWindow(_) => Allow,
         AppEvent::Keyboard(_) => Ignore,
-        AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Intent(_))
-        | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Intent(_)) => Allow,
         _ => Dismiss,
     }
 }
@@ -179,98 +138,30 @@ pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
 }
 
 /// Return `true` when an active inline-edit should be cancelled before the
-/// event is dispatched.
+/// input is dispatched: anything but typing into the edit, pointer moves and
+/// terminal events. A key press cancels it only if it is an app shortcut.
 pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
     match event {
-        AppEvent::QuickLaunch(
-            crate::widgets::quick_launch::QuickLaunchEvent::Intent(event),
-        ) => {
-            use crate::widgets::quick_launch::QuickLaunchIntent as E;
+        AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event)) => {
+            use QuickLaunchIntent as E;
             !matches!(
                 event,
                 E::InlineEditChanged(_)
                     | E::InlineEditSubmit
                     | E::CursorMoved { .. }
                     | E::NodeHovered { .. }
-                    | E::SetupCompleted(_)
-                    | E::PersistCompleted
-                    | E::PersistFailed(_)
-                    | E::Tick
             )
         },
-        AppEvent::QuickLaunch(
-            crate::widgets::quick_launch::QuickLaunchEvent::Effect(_),
-        ) => false,
-        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Intent(
-            event,
-        )) => {
-            use crate::widgets::sidebar::SidebarIntent as E;
-            !matches!(
-                event,
-                E::WorkspaceCursorMoved { .. }
-                    | E::FocusNoteFrame(_)
-                    | E::RevealRight
-            )
+        AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::WorkspaceCursorMoved { .. },
+        )) => false,
+        AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+            TerminalWorkspaceIntent::Widget(_)
+            | TerminalWorkspaceIntent::PaneGridCursorMoved { .. },
+        )) => false,
+        AppEvent::Keyboard(key) => {
+            shortcut_for_key_press(key, Platform::current()).is_some()
         },
-        AppEvent::TerminalWorkspace(
-            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Intent(
-                event,
-            ),
-        ) => {
-            use crate::widgets::terminal_workspace::TerminalWorkspaceIntent as E;
-            !matches!(
-                event,
-                E::Widget(_)
-                    | E::PaneGridCursorMoved { .. }
-                    | E::SyncPaneGridSize
-            )
-        },
-        AppEvent::TerminalWorkspace(
-            crate::widgets::terminal_workspace::TerminalWorkspaceEvent::Effect(
-                _,
-            ),
-        ) => false,
-        AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Intent(event)) => {
-            use crate::widgets::tabs::TabsIntent as E;
-            matches!(event, E::ActivateTab { .. } | E::CloseTab { .. })
-        },
-        AppEvent::Settings(
-            crate::widgets::settings::SettingsEvent::Effect(_),
-        )
-        | AppEvent::Settings(
-            crate::widgets::settings::SettingsEvent::Intent(
-                crate::widgets::settings::SettingsIntent::Reload
-                | crate::widgets::settings::SettingsIntent::ReloadLoaded(_)
-                | crate::widgets::settings::SettingsIntent::ReloadFailed(_)
-                | crate::widgets::settings::SettingsIntent::SaveCompleted(_)
-                | crate::widgets::settings::SettingsIntent::SaveFailed(_),
-            ),
-        ) => false,
-        AppEvent::Explorer(
-            crate::widgets::explorer::ExplorerEvent::Effect(_),
-        )
-        | AppEvent::Explorer(
-            crate::widgets::explorer::ExplorerEvent::Intent(
-                crate::widgets::explorer::ExplorerIntent::SyncRoot { .. }
-                | crate::widgets::explorer::ExplorerIntent::RootLoaded { .. }
-                | crate::widgets::explorer::ExplorerIntent::FolderLoaded {
-                    ..
-                }
-                | crate::widgets::explorer::ExplorerIntent::DirectoryChanged {
-                    ..
-                }
-                | crate::widgets::explorer::ExplorerIntent::DirectoryReloaded {
-                    ..
-                }
-                | crate::widgets::explorer::ExplorerIntent::LoadFailed { .. },
-            ),
-        ) => false,
-        AppEvent::SyncTerminalGridSizes => false,
-        AppEvent::Containers(event) if is_containers_background(event) => false,
-        AppEvent::Keyboard(_) | AppEvent::Window(_) => false,
-        AppEvent::Sidebar(crate::widgets::sidebar::SidebarEvent::Effect(_))
-        | AppEvent::Chrome(crate::widgets::chrome::ChromeEvent::Effect(_))
-        | AppEvent::Tabs(crate::widgets::tabs::TabsEvent::Effect(_)) => false,
         _ => true,
     }
 }
@@ -292,74 +183,23 @@ pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
     )
 }
 
-/// Return `true` for a Containers event the user did not cause by a click: a
-/// mode change, the right panel going or coming back, an engine result, a
-/// folder check or one of its timers, or an effect.
-fn is_containers_background(event: &ContainersEvent) -> bool {
-    match event {
-        ContainersEvent::Intent(intent) => matches!(
-            intent,
-            ContainersIntent::Enter
-                | ContainersIntent::Leave
-                | ContainersIntent::RightPanelHidden(_)
-                | ContainersIntent::DiscoveryFinished(_)
-                | ContainersIntent::EngineSearchTick
-                | ContainersIntent::BackgroundSearchFinished(_)
-                | ContainersIntent::ListsLoaded { .. }
-                | ContainersIntent::LogLines { .. }
-                | ContainersIntent::LogsFailed { .. }
-                | ContainersIntent::LogRunRead { .. }
-                | ContainersIntent::LogRunChecked { .. }
-                | ContainersIntent::InspectLoaded { .. }
-                | ContainersIntent::ListChanged { .. }
-                | ContainersIntent::ContainerStarted { .. }
-                | ContainersIntent::EngineReconnected(_)
-                | ContainersIntent::EngineUnreachable(_)
-                | ContainersIntent::ListLoaded { .. }
-                | ContainersIntent::ActionFinished { .. }
-                | ContainersIntent::PullProgressed(_)
-                | ContainersIntent::PullFinished(_)
-                | ContainersIntent::RunFinished { .. }
-                | ContainersIntent::ImageDefaultsLoaded { .. }
-                | ContainersIntent::FolderChecked { .. }
-                | ContainersIntent::RecheckFolders
-                | ContainersIntent::FolderTypingPaused(_)
-                | ContainersIntent::FolderAnswerLate(_)
-        ),
-        ContainersEvent::Effect(_) => true,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use iced::keyboard::key::{Code, Named, NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
-    use iced::time::Instant;
 
     use super::{
         MenuGuard, context_menu_guard, inline_edit_guard, is_escape_press,
         is_header_menu_choice, is_terminal_input,
     };
     use crate::events::AppEvent;
-    use crate::shortcuts::AppShortcut;
-    use crate::widgets::containers::actions::{
-        ActionRequest, EngineAction, RowAction,
-    };
-    use crate::widgets::containers::errors::ContainersError;
-    use crate::widgets::containers::inspector::{
-        InspectTarget, InspectorTab, LogTarget,
-    };
-    use crate::widgets::containers::types::{
-        LoadedList, LoadedLists, ResourceKind,
-    };
-    use crate::widgets::containers::{
-        ContainersEffect, ContainersEvent, ContainersIntent,
-    };
-    use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
+    use crate::shortcuts::{AppShortcut, Platform};
+    use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
+    use crate::widgets::containers::actions::RowAction;
+    use crate::widgets::containers::inspector::InspectorTab;
+    use crate::widgets::containers::{ContainersEvent, ContainersIntent};
     use crate::widgets::modes::types::Mode;
-    use crate::widgets::modes::{ModesEffect, ModesEvent, ModesIntent};
+    use crate::widgets::modes::{ModesEvent, ModesIntent};
     use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
     use crate::widgets::sidebar::types::HeaderMenu;
     use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
@@ -453,9 +293,6 @@ mod tests {
             AppEvent::Modes(ModesEvent::Intent(ModesIntent::Pin(
                 Mode::Containers,
             ))),
-            AppEvent::Modes(ModesEvent::Effect(ModesEffect::ModeChanged(
-                Mode::Containers,
-            ))),
         ];
 
         for event in events {
@@ -464,137 +301,72 @@ mod tests {
     }
 
     #[test]
-    fn engine_results_pass_open_menus_and_inline_edits_but_clicks_close_them() {
+    fn choosing_a_mode_or_pressing_a_tab_closes_the_menus_and_goes_on() {
+        let events = [
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
+                Mode::Containers,
+            ))),
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::ActivateTab {
+                tab_id: 1,
+            })),
+            AppEvent::Chrome(ChromeEvent::Intent(ChromeIntent::OpenSettings)),
+        ];
+
+        for event in events {
+            assert!(matches!(
+                context_menu_guard(&event),
+                MenuGuard::DismissAndRun
+            ));
+        }
+    }
+
+    #[test]
+    fn a_panel_or_palette_button_only_closes_the_menus() {
+        let presses = [
+            ChromeIntent::ToggleLeftPanel,
+            ChromeIntent::ToggleFilesPanel,
+            ChromeIntent::ToggleFocusMode,
+            ChromeIntent::OpenCommandPalette,
+        ];
+
+        for press in presses {
+            let event = AppEvent::Chrome(ChromeEvent::Intent(press));
+
+            assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
+        }
+    }
+
+    #[test]
+    fn a_window_button_leaves_the_menus_open() {
+        let event =
+            AppEvent::Chrome(ChromeEvent::Intent(ChromeIntent::MinimizeWindow));
+
+        assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
+    }
+
+    #[test]
+    fn only_a_key_press_that_is_a_shortcut_cancels_an_inline_edit() {
+        let keys = AppShortcut::Settings.keys(Platform::current());
+        let shortcut = AppEvent::Keyboard(Event::KeyPressed {
+            key: Key::Character(keys.key().into()),
+            modified_key: Key::Character(keys.key().into()),
+            physical_key: Physical::Unidentified(NativeCode::Unidentified),
+            location: Location::Standard,
+            modifiers: keys.modifiers(),
+            text: None,
+            repeat: false,
+        });
+        let plain =
+            key_press(Key::Character("a".into()), Physical::Code(Code::KeyA));
+
+        assert!(inline_edit_guard(&shortcut));
+        assert!(!inline_edit_guard(&plain));
+    }
+
+    #[test]
+    fn a_click_in_the_containers_views_closes_menus_and_inline_edits() {
         let containers =
             |intent| AppEvent::Containers(ContainersEvent::Intent(intent));
-        let background = [
-            containers(ContainersIntent::Enter),
-            containers(ContainersIntent::Leave),
-            containers(ContainersIntent::ListsLoaded {
-                engine: otty_containers::EngineAddress::Tcp(String::from(
-                    "h:1",
-                )),
-                lists: LoadedLists::failed(&ContainersError::new("x")),
-            }),
-            AppEvent::Containers(ContainersEvent::Effect(
-                ContainersEffect::Discover,
-            )),
-            containers(ContainersIntent::EngineSearchTick),
-            containers(ContainersIntent::BackgroundSearchFinished(
-                otty_containers::fixtures::discovery(&[]),
-            )),
-            AppEvent::Containers(ContainersEvent::Effect(
-                ContainersEffect::DiscoverInBackground,
-            )),
-            containers(ContainersIntent::ListChanged {
-                engine: otty_containers::EngineAddress::Tcp(String::from(
-                    "h:1",
-                )),
-                resource: ResourceKind::Containers,
-            }),
-            containers(ContainersIntent::ContainerStarted {
-                engine: otty_containers::EngineAddress::Tcp(String::from(
-                    "h:1",
-                )),
-                id: String::from("850b"),
-            }),
-            containers(ContainersIntent::EngineReconnected(
-                otty_containers::EngineAddress::Tcp(String::from("h:1")),
-            )),
-            containers(ContainersIntent::EngineUnreachable(
-                otty_containers::EngineAddress::Tcp(String::from("h:1")),
-            )),
-            containers(ContainersIntent::ListLoaded {
-                engine: otty_containers::EngineAddress::Tcp(String::from(
-                    "h:1",
-                )),
-                list: LoadedList::Images(Err(ContainersError::new("x"))),
-            }),
-            containers(ContainersIntent::ActionFinished {
-                request: ActionRequest::new(
-                    otty_containers::fixtures::engine(
-                        otty_containers::EngineKind::Docker,
-                    ),
-                    EngineAction::PruneContainers,
-                    String::new(),
-                ),
-                result: Ok(()),
-            }),
-            containers(ContainersIntent::PullProgressed(
-                otty_containers::fixtures::pull_progress(),
-            )),
-            containers(ContainersIntent::PullFinished(Ok(()))),
-            containers(ContainersIntent::RunFinished {
-                engine: otty_containers::EngineAddress::Tcp(String::from(
-                    "h:1",
-                )),
-                result: Ok(String::from("4f1c")),
-            }),
-            containers(ContainersIntent::ImageDefaultsLoaded {
-                engine: otty_containers::EngineAddress::Tcp(String::from(
-                    "h:1",
-                )),
-                reference: String::from("nginx"),
-                result: Ok(None),
-            }),
-            containers(ContainersIntent::FolderChecked {
-                path: PathBuf::from("/srv/site"),
-                exists: true,
-            }),
-            containers(ContainersIntent::RecheckFolders),
-            containers(ContainersIntent::FolderTypingPaused(PathBuf::from(
-                "/srv/site",
-            ))),
-            containers(ContainersIntent::FolderAnswerLate(PathBuf::from(
-                "/srv/site",
-            ))),
-            containers(ContainersIntent::RightPanelHidden(true)),
-            AppEvent::Containers(ContainersEvent::Effect(
-                ContainersEffect::WaitForTypingPause(PathBuf::from(
-                    "/srv/site",
-                )),
-            )),
-            AppEvent::Containers(ContainersEvent::Effect(
-                ContainersEffect::WaitForLateAnswer(PathBuf::from("/srv/site")),
-            )),
-            AppEvent::Containers(ContainersEvent::Effect(
-                ContainersEffect::RevealInspector,
-            )),
-        ];
-        let address = otty_containers::EngineAddress::Tcp(String::from("h:1"));
-        let log_target = LogTarget::new(
-            otty_containers::fixtures::engine(
-                otty_containers::EngineKind::Docker,
-            ),
-            "850b",
-        );
-        let engine_results = [
-            containers(ContainersIntent::LogLines {
-                target: log_target.clone(),
-                lines: vec![String::from("ready")],
-                position: None,
-            }),
-            containers(ContainersIntent::LogRunRead {
-                target: log_target.clone(),
-                run: otty_containers::fixtures::container_run(1, true),
-            }),
-            containers(ContainersIntent::LogRunChecked {
-                target: log_target.clone(),
-                result: Err(ContainersError::new("x")),
-            }),
-            containers(ContainersIntent::LogsFailed {
-                target: log_target,
-                error: ContainersError::new("x"),
-            }),
-            containers(ContainersIntent::InspectLoaded {
-                target: InspectTarget::new(
-                    address,
-                    ResourceKind::Containers,
-                    "850b",
-                ),
-                result: Ok(String::from("{}")),
-            }),
-        ];
         let clicks = [
             containers(ContainersIntent::ToggleEngine(
                 otty_containers::EngineAddress::Tcp(String::from("h:1")),
@@ -608,10 +380,6 @@ mod tests {
             containers(ContainersIntent::Prune),
         ];
 
-        for event in background.into_iter().chain(engine_results) {
-            assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
-            assert!(!inline_edit_guard(&event));
-        }
         for event in clicks {
             assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
             assert!(inline_edit_guard(&event));
@@ -686,70 +454,11 @@ mod tests {
     }
 
     #[test]
-    fn given_focus_note_frame_when_context_menu_guard_runs_then_it_is_allowed()
-    {
-        let guard = context_menu_guard(&AppEvent::Sidebar(
-            SidebarEvent::Intent(SidebarIntent::FocusNoteFrame(Instant::now())),
-        ));
-
-        assert!(matches!(guard, MenuGuard::Allow));
-    }
-
-    #[test]
-    fn given_focus_note_frame_when_inline_edit_guard_runs_then_edit_is_not_cancelled()
-     {
-        let event = AppEvent::Sidebar(SidebarEvent::Intent(
-            SidebarIntent::FocusNoteFrame(Instant::now()),
-        ));
-
-        assert!(!inline_edit_guard(&event));
-    }
-
-    #[test]
-    fn revealing_the_right_panel_passes_open_menus_and_inline_edits() {
-        let event =
-            AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::RevealRight));
-
-        assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
-        assert!(!inline_edit_guard(&event));
-    }
-
-    #[test]
     fn the_right_panel_button_still_closes_menus_and_inline_edits() {
         let event =
             AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::ToggleRight));
 
         assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
         assert!(inline_edit_guard(&event));
-    }
-
-    #[test]
-    fn given_sync_terminal_grid_sizes_when_inline_edit_guard_runs_then_edit_is_not_cancelled()
-     {
-        assert!(!inline_edit_guard(&AppEvent::SyncTerminalGridSizes));
-    }
-
-    #[test]
-    fn given_explorer_directory_change_when_context_menu_guard_runs_then_event_is_allowed()
-     {
-        let guard = context_menu_guard(&AppEvent::Explorer(
-            ExplorerEvent::Intent(ExplorerIntent::DirectoryChanged {
-                directory: PathBuf::from("/tmp/project"),
-            }),
-        ));
-
-        assert!(matches!(guard, MenuGuard::Allow));
-    }
-
-    #[test]
-    fn given_explorer_directory_change_when_inline_edit_guard_runs_then_edit_is_not_cancelled()
-     {
-        let event = AppEvent::Explorer(ExplorerEvent::Intent(
-            ExplorerIntent::DirectoryChanged {
-                directory: PathBuf::from("/tmp/project"),
-            },
-        ));
-
-        assert!(!inline_edit_guard(&event));
     }
 }

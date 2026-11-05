@@ -11,9 +11,8 @@ use crate::widgets::terminal_workspace::{
 /// Build the active subscription set from current app state.
 pub(super) fn subscription(app: &App) -> Subscription<AppEvent> {
     let win_subs = window::events().map(|(_id, event)| AppEvent::Window(event));
-    let key_subs = iced::keyboard::listen().map(AppEvent::Keyboard);
 
-    let mut subs = vec![win_subs, key_subs];
+    let mut subs = vec![win_subs];
 
     // Subscribe to terminal widget events for every open terminal pane.
     for (&_tab_id, tab) in app.widgets.terminal_workspace.tabs() {

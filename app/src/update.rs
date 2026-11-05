@@ -15,11 +15,29 @@ use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
 
-/// Handle `event`, then tell the Containers widget when the event changed whether
-/// the right panel is on screen. The sidebar alone knows that, and many paths
-/// change it, so it is read here, after every event, instead of by each path.
-pub(super) fn update(app: &mut App, event: AppEvent) -> Task<AppEvent> {
+/// Handle input from the user. Open menus, the command palette and an inline
+/// edit decide first what happens to it, once, on what the user did.
+pub(super) fn update_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let task = route(app, event);
+
+    finish_update(app, task)
+}
+
+/// Handle an event that does not come from the user directly: it skips the
+/// checks of [`update_input`], so it can not get lost.
+pub(super) fn update_internal(
+    app: &mut App,
+    event: AppEvent,
+) -> Task<AppEvent> {
+    let task = events::handle(app, event);
+
+    finish_update(app, task)
+}
+
+/// Tell the Containers widget when the event changed whether the right panel
+/// is on screen. The sidebar alone knows that, and many paths change it, so it
+/// is read here, after every event, instead of by each path.
+fn finish_update(app: &mut App, task: Task<AppEvent>) -> Task<AppEvent> {
     let right_panel = tell_containers_about_right_panel(app);
 
     Task::batch([task, right_panel])
@@ -70,6 +88,9 @@ fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
             MenuGuard::Allow => {},
             MenuGuard::Ignore => return Task::none(),
             MenuGuard::Dismiss => return close_all_context_menus(app),
+            MenuGuard::DismissAndRun => {
+                pre_dispatch_tasks.push(close_all_context_menus(app));
+            },
         }
     }
 
@@ -160,8 +181,11 @@ mod tests {
     use iced::widget::pane_grid;
     use otty_containers::{EngineKind, fixtures};
     use otty_ui_kit::components::log_view::LogViewState;
+    use otty_ui_term::settings::Settings;
 
     use super::*;
+    use crate::app::Message;
+    use crate::domain::exit_behavior::ExitBehavior;
     use crate::i18n;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
@@ -172,13 +196,15 @@ mod tests {
     use crate::widgets::containers::types::LoadedLists;
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::types::Mode;
+    use crate::widgets::tabs::types::TabMachine;
+    use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
     const FOLDER: &str = "/srv/site";
 
     fn app_with_open_modes_menu() -> App {
         let (mut app, _) = App::new();
         app.widgets.modes = ModesWidget::new();
-        let _ = update(
+        let _ = update_input(
             &mut app,
             AppEvent::Modes(ModesEvent::Intent(ModesIntent::ToggleMenu)),
         );
@@ -219,10 +245,11 @@ mod tests {
     /// Press `shortcut` and run the events its tasks produce through
     /// `update` again, as the iced runtime does.
     fn press(app: &mut App, shortcut: AppShortcut) {
-        let follow_ups = collect_outputs(update(app, shortcut_press(shortcut)));
+        let follow_ups =
+            collect_outputs(update_input(app, shortcut_press(shortcut)));
 
         for event in follow_ups {
-            let _ = update(app, event);
+            let _ = update_internal(app, event);
         }
     }
 
@@ -260,7 +287,7 @@ mod tests {
         let mut app = app_with_open_modes_menu();
         assert!(app.widgets.modes.is_menu_open());
 
-        let _ = update(&mut app, escape_press());
+        let _ = update_input(&mut app, escape_press());
 
         assert!(!app.widgets.modes.is_menu_open());
     }
@@ -269,7 +296,7 @@ mod tests {
     fn pin_and_unpin_keep_the_modes_menu_open() {
         let mut app = app_with_open_modes_menu();
 
-        let _ = update(
+        let _ = update_input(
             &mut app,
             AppEvent::Modes(ModesEvent::Intent(ModesIntent::Unpin(
                 Mode::Containers,
@@ -284,7 +311,7 @@ mod tests {
     fn choosing_a_mode_in_the_menu_switches_and_closes_it() {
         let mut app = app_with_open_modes_menu();
 
-        let _ = update(
+        let _ = update_input(
             &mut app,
             AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
                 Mode::Containers,
@@ -300,7 +327,7 @@ mod tests {
         let mut app = app_with_open_modes_menu();
         let was_left_open = app.widgets.sidebar.vm().is_left_open;
 
-        let _ = update(
+        let _ = update_input(
             &mut app,
             AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::ToggleLeft)),
         );
@@ -347,7 +374,7 @@ mod tests {
     fn the_folder_timer_leaves_the_modes_menu_open() {
         let mut app = app_with_modes_menu_over_a_folder_row();
 
-        let _ = update(
+        let _ = update_internal(
             &mut app,
             containers_intent(ContainersIntent::RecheckFolders),
         );
@@ -359,7 +386,7 @@ mod tests {
     fn a_folder_answer_under_an_open_menu_reaches_the_form() {
         let mut app = app_with_modes_menu_over_a_folder_row();
 
-        let _ = update(
+        let _ = update_internal(
             &mut app,
             containers_intent(ContainersIntent::FolderChecked {
                 path: PathBuf::from(FOLDER),
@@ -378,7 +405,7 @@ mod tests {
     fn a_typing_pause_under_an_open_menu_still_asks_about_the_folder() {
         let mut app = app_with_modes_menu_over_a_folder_row();
 
-        let asked = collect_outputs(update(
+        let asked = collect_outputs(update_internal(
             &mut app,
             containers_intent(ContainersIntent::FolderTypingPaused(
                 PathBuf::from(FOLDER),
@@ -397,7 +424,7 @@ mod tests {
     #[test]
     fn a_late_answer_under_an_open_menu_still_shows_the_hint() {
         let mut app = app_with_modes_menu_over_a_folder_row();
-        let _ = update(
+        let _ = update_internal(
             &mut app,
             containers_intent(ContainersIntent::FolderTypingPaused(
                 PathBuf::from(FOLDER),
@@ -405,7 +432,7 @@ mod tests {
         );
         assert_eq!(row_problem(&app), None);
 
-        let _ = update(
+        let _ = update_internal(
             &mut app,
             containers_intent(ContainersIntent::FolderAnswerLate(
                 PathBuf::from(FOLDER),
@@ -422,7 +449,7 @@ mod tests {
     #[test]
     fn a_folder_answered_under_an_open_menu_is_asked_about_again() {
         let mut app = app_with_modes_menu_over_a_folder_row();
-        let _ = update(
+        let _ = update_internal(
             &mut app,
             containers_intent(ContainersIntent::FolderChecked {
                 path: PathBuf::from(FOLDER),
@@ -430,7 +457,7 @@ mod tests {
             }),
         );
 
-        let asked = collect_outputs(update(
+        let asked = collect_outputs(update_internal(
             &mut app,
             containers_intent(ContainersIntent::RecheckFolders),
         ));
@@ -443,11 +470,18 @@ mod tests {
         ));
     }
 
-    /// Run `event` and the events its tasks produce through `update`, as the
-    /// iced runtime does. Only for events that end in `Task::done`.
+    /// Run input from the user and the events its tasks produce, as the iced
+    /// runtime does. Only for events that end in `Task::done`.
     fn update_to_the_end(app: &mut App, event: AppEvent) {
-        for next in collect_outputs(update(app, event)) {
-            update_to_the_end(app, next);
+        for next in collect_outputs(update_input(app, event)) {
+            internal_to_the_end(app, next);
+        }
+    }
+
+    /// Run an event that does not come from the user and what follows from it.
+    fn internal_to_the_end(app: &mut App, event: AppEvent) {
+        for next in collect_outputs(update_internal(app, event)) {
+            internal_to_the_end(app, next);
         }
     }
 
@@ -477,7 +511,7 @@ mod tests {
     }
 
     fn start_inline_edit(app: &mut App) {
-        let _ = update(
+        let _ = update_input(
             app,
             AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
                 QuickLaunchIntent::HeaderCreateFolder,
@@ -534,7 +568,7 @@ mod tests {
             resources.containers()[0].id(),
         );
 
-        update_to_the_end(
+        internal_to_the_end(
             app,
             containers_intent(ContainersIntent::LogLines {
                 target,
@@ -547,11 +581,22 @@ mod tests {
     /// Run `event` and what follows from it. Returns whether logs were read
     /// after each update, in order.
     fn logs_after_each_update(app: &mut App, event: AppEvent) -> Vec<bool> {
-        let follow_ups = collect_outputs(update(app, event));
+        let follow_ups = collect_outputs(update_input(app, event));
         let mut reading = vec![is_reading_logs(app)];
 
         for next in follow_ups {
-            reading.extend(logs_after_each_update(app, next));
+            reading.extend(logs_after_each_internal(app, next));
+        }
+
+        reading
+    }
+
+    fn logs_after_each_internal(app: &mut App, event: AppEvent) -> Vec<bool> {
+        let follow_ups = collect_outputs(update_internal(app, event));
+        let mut reading = vec![is_reading_logs(app)];
+
+        for next in follow_ups {
+            reading.extend(logs_after_each_internal(app, next));
         }
 
         reading
@@ -674,10 +719,16 @@ mod tests {
     #[test]
     fn a_panel_closed_in_another_mode_keeps_the_logs_off_on_return() {
         let mut app = app_with_open_logs();
-        update_to_the_end(&mut app, containers_intent(ContainersIntent::Leave));
+        internal_to_the_end(
+            &mut app,
+            containers_intent(ContainersIntent::Leave),
+        );
         update_to_the_end(&mut app, sidebar_intent(SidebarIntent::ToggleRight));
 
-        let _ = update(&mut app, containers_intent(ContainersIntent::Enter));
+        let _ = update_internal(
+            &mut app,
+            containers_intent(ContainersIntent::Enter),
+        );
         let after_enter = is_reading_logs(&app);
         update_to_the_end(&mut app, sidebar_intent(SidebarIntent::ToggleRight));
 
@@ -710,14 +761,205 @@ mod tests {
         let mut app = app_with_open_logs();
         push_a_log_line(&mut app);
 
-        let follow_ups =
-            collect_outputs(update(&mut app, AppEvent::SyncTerminalGridSizes));
+        let follow_ups = collect_outputs(update_internal(
+            &mut app,
+            AppEvent::SyncTerminalGridSizes,
+        ));
 
         assert_eq!(log_lines(&app), 1);
         assert!(!follow_ups.iter().any(|event| matches!(
             event,
             AppEvent::Containers(ContainersEvent::Intent(_))
         )));
+    }
+
+    fn tabs_intent(intent: TabsIntent) -> AppEvent {
+        AppEvent::Tabs(TabsEvent::Intent(intent))
+    }
+
+    fn chrome_intent(intent: ChromeIntent) -> AppEvent {
+        AppEvent::Chrome(ChromeEvent::Intent(intent))
+    }
+
+    fn command_tab() -> AppEvent {
+        tabs_intent(TabsIntent::OpenCommandTab {
+            title: String::from("ssh"),
+            settings: Box::new(Settings::default()),
+            exit_behavior: ExitBehavior::Close,
+            machine: TabMachine::ThisComputer,
+        })
+    }
+
+    #[test]
+    fn a_tab_opened_under_an_open_menu_keeps_its_terminal() {
+        let mut app = app_with_open_modes_menu();
+
+        internal_to_the_end(&mut app, command_tab());
+
+        assert_eq!(app.widgets.tabs.len(), 1);
+        assert_eq!(app.widgets.terminal_workspace.tabs().count(), 1);
+        assert!(app.widgets.modes.is_menu_open());
+    }
+
+    #[test]
+    fn a_tab_closed_under_an_open_menu_lets_go_of_its_terminal() {
+        let mut app = app_with_open_modes_menu();
+        let _ = update_input(
+            &mut app,
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::CloseMenu)),
+        );
+        internal_to_the_end(&mut app, command_tab());
+        let tab_id = app.widgets.tabs.active_tab_id().expect("a tab is open");
+        let _ = update_input(
+            &mut app,
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::ToggleMenu)),
+        );
+
+        internal_to_the_end(
+            &mut app,
+            tabs_intent(TabsIntent::CloseTab { tab_id }),
+        );
+
+        assert_eq!(app.widgets.tabs.len(), 0);
+        assert_eq!(app.widgets.terminal_workspace.tabs().count(), 0);
+        assert!(app.widgets.modes.is_menu_open());
+    }
+
+    #[test]
+    fn a_panel_button_under_an_open_menu_only_closes_the_menu() {
+        let presses = [
+            ChromeIntent::ToggleLeftPanel,
+            ChromeIntent::ToggleFilesPanel,
+            ChromeIntent::ToggleFocusMode,
+        ];
+
+        for press in presses {
+            let mut app = app_with_open_modes_menu();
+            let panels = app.widgets.sidebar.vm();
+
+            update_to_the_end(&mut app, chrome_intent(press));
+
+            let after = app.widgets.sidebar.vm();
+            assert!(!app.widgets.modes.is_menu_open());
+            assert_eq!(after.is_left_open, panels.is_left_open);
+            assert_eq!(after.is_right_open, panels.is_right_open);
+        }
+    }
+
+    #[test]
+    fn the_palette_button_under_an_open_menu_only_closes_the_menu() {
+        let mut app = app_with_open_modes_menu();
+
+        update_to_the_end(
+            &mut app,
+            chrome_intent(ChromeIntent::OpenCommandPalette),
+        );
+
+        assert!(!app.widgets.modes.is_menu_open());
+        assert!(!app.widgets.palette.is_open());
+    }
+
+    #[test]
+    fn a_tab_press_under_an_open_menu_closes_it_and_switches_the_tab() {
+        let (mut app, _) = App::new();
+        app.widgets.modes = ModesWidget::new();
+        internal_to_the_end(&mut app, command_tab());
+        let first = app.widgets.tabs.active_tab_id().expect("a tab is open");
+        internal_to_the_end(&mut app, command_tab());
+        let _ = update_input(
+            &mut app,
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::ToggleMenu)),
+        );
+
+        // Only the first update: a terminal command further on needs the iced
+        // runtime, and `collect_outputs` would wait for it for ever.
+        let _ = update_input(
+            &mut app,
+            tabs_intent(TabsIntent::ActivateTab { tab_id: first }),
+        );
+
+        assert!(!app.widgets.modes.is_menu_open());
+        assert_eq!(app.widgets.tabs.active_tab_id(), Some(first));
+    }
+
+    #[test]
+    fn an_app_shortcut_during_an_inline_edit_cancels_it() {
+        let (mut app, _) = App::new();
+        start_inline_edit(&mut app);
+
+        update_to_the_end(&mut app, shortcut_press(AppShortcut::FilesPanel));
+
+        assert!(!app.widgets.quick_launch.has_inline_edit());
+    }
+
+    #[test]
+    fn a_plain_key_during_an_inline_edit_keeps_it() {
+        let (mut app, _) = App::new();
+        start_inline_edit(&mut app);
+        let key = AppEvent::Keyboard(Event::KeyPressed {
+            key: Key::Character("a".into()),
+            modified_key: Key::Character("a".into()),
+            physical_key: Physical::Code(Code::KeyA),
+            location: Location::Standard,
+            modifiers: Modifiers::empty(),
+            text: Some("a".into()),
+            repeat: false,
+        });
+
+        update_to_the_end(&mut app, key);
+
+        assert!(app.widgets.quick_launch.has_inline_edit());
+    }
+
+    #[test]
+    fn the_settings_button_under_an_open_menu_closes_it_and_opens_the_tab() {
+        let mut app = app_with_open_modes_menu();
+
+        let mut queue = collect_outputs(update_input(
+            &mut app,
+            chrome_intent(ChromeIntent::OpenSettings),
+        ));
+        while !queue.is_empty() {
+            let event = queue.remove(0);
+            // The settings widget would read the real settings file.
+            if matches!(event, AppEvent::Settings(_)) {
+                continue;
+            }
+            queue.extend(collect_outputs(update_internal(&mut app, event)));
+        }
+
+        assert!(!app.widgets.modes.is_menu_open());
+        assert_eq!(app.widgets.tabs.len(), 1);
+    }
+
+    #[test]
+    fn an_internal_event_leaves_an_inline_edit_alone() {
+        let (mut app, _) = App::new();
+        start_inline_edit(&mut app);
+
+        let _ = update_internal(
+            &mut app,
+            sidebar_intent(SidebarIntent::ToggleRight),
+        );
+
+        assert!(app.widgets.quick_launch.has_inline_edit());
+    }
+
+    #[test]
+    fn everything_a_message_leads_to_is_internal() {
+        let (mut app, _) = App::new();
+
+        let messages =
+            collect_outputs(app.update(Message::Input(chrome_intent(
+                ChromeIntent::OpenSettings,
+            ))));
+
+        assert!(!messages.is_empty());
+        assert!(
+            messages
+                .iter()
+                .all(|message| matches!(message, Message::Internal(_)))
+        );
     }
 
     #[test]
@@ -756,16 +998,16 @@ mod tests {
         app.widgets.modes = ModesWidget::new();
         load_rows_and_close_right_panel(&mut app);
 
-        let follow_ups = collect_outputs(update(
+        let follow_ups = collect_outputs(update_input(
             &mut app,
             containers_intent(ContainersIntent::SelectRow(1)),
         ));
-        let _ = update(
+        let _ = update_input(
             &mut app,
             AppEvent::Modes(ModesEvent::Intent(ModesIntent::ToggleMenu)),
         );
         for event in follow_ups {
-            update_to_the_end(&mut app, event);
+            internal_to_the_end(&mut app, event);
         }
 
         assert!(app.widgets.modes.is_menu_open());
@@ -778,13 +1020,13 @@ mod tests {
         let (mut app, _) = App::new();
         load_rows_and_close_right_panel(&mut app);
 
-        let follow_ups = collect_outputs(update(
+        let follow_ups = collect_outputs(update_input(
             &mut app,
             containers_intent(ContainersIntent::SelectRow(1)),
         ));
         start_inline_edit(&mut app);
         for event in follow_ups {
-            update_to_the_end(&mut app, event);
+            internal_to_the_end(&mut app, event);
         }
 
         assert!(app.widgets.quick_launch.has_inline_edit());
