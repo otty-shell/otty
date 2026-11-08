@@ -8,9 +8,11 @@ use super::create::event::{CreateEffect, CreateIntent};
 use super::event::{ContainersEffect, ContainersEvent, ContainersIntent};
 use super::inspector_tabs::refresh_inspect_tree;
 use super::links::LinkTarget;
+use super::run::RunOutcome;
+use super::run::event::{RunEffect, RunIntent};
 use super::state::{ContainersState, Search};
 use super::types::{LoadedList, ResourceKind};
-use super::{action_flow, create, run_flow};
+use super::{action_flow, create, run};
 
 /// Reduce a Containers intent into state changes and effects. Engine work
 /// (search, list loads, inspect) is only asked for while Containers mode is
@@ -39,6 +41,20 @@ pub(super) fn reduce_create(
     Task::batch([effects.map(create_effect), after])
 }
 
+/// Hand `intent` to the Run container form and act on what it reports in
+/// the same update.
+pub(super) fn reduce_run(
+    state: &mut ContainersState,
+    intent: RunIntent,
+) -> Task<ContainersEvent> {
+    let (run, ctx) = state.run_and_ctx();
+    let (effects, outcome) = run::reduce(run, intent, &ctx);
+    let after = outcome
+        .map_or_else(Task::none, |outcome| on_run_outcome(state, outcome));
+
+    Task::batch([effects.map(run_effect), after])
+}
+
 fn reduce_intent(
     state: &mut ContainersState,
     intent: ContainersIntent,
@@ -60,7 +76,7 @@ fn reduce_intent(
 
             // The timer did not run in the other mode, so the open form asks
             // about its folders now rather than in up to 2 seconds.
-            let folders = run_flow::recheck_folders(state);
+            let folders = reduce_run(state, RunIntent::RecheckFolders);
             Task::batch([effect(ContainersEffect::Discover), folders])
         },
         ContainersIntent::Leave => {
@@ -89,7 +105,7 @@ fn reduce_intent(
             Task::none()
         },
         ContainersIntent::Open(place) => {
-            let closed = run_flow::close(state);
+            let closed = reduce_run(state, RunIntent::Close);
             state.open(place);
             closed
         },
@@ -260,49 +276,7 @@ fn reduce_intent(
         },
         ContainersIntent::OpenCreate => open_create(state),
         ContainersIntent::Create(intent) => reduce_create(state, intent),
-        ContainersIntent::PullProgressed(progress) => {
-            if run_flow::is_pulling(state) {
-                run_flow::pull_progressed(state, progress);
-            }
-            Task::none()
-        },
-        ContainersIntent::PullFinished(result) => {
-            if run_flow::is_pulling(state) {
-                run_flow::finish_pull(state, result)
-            } else {
-                Task::none()
-            }
-        },
-        ContainersIntent::RunEdited(edit) => run_flow::edit(state, edit),
-        ContainersIntent::RunEngineChosen(engine) => {
-            run_flow::choose_engine(state, &engine)
-        },
-        ContainersIntent::RunSubmitted => run_flow::submit(state),
-        ContainersIntent::RunCancelled => run_flow::close(state),
-        ContainersIntent::RunNoticeDismissed => {
-            if let Some(form) = state.run_form_mut() {
-                form.dismiss_notice();
-            }
-            Task::none()
-        },
-        ContainersIntent::RunFinished { engine, result } => {
-            run_flow::finish(state, &engine, result)
-        },
-        ContainersIntent::ImageDefaultsLoaded {
-            engine,
-            reference,
-            result,
-        } => run_flow::defaults_loaded(state, &engine, &reference, result),
-        ContainersIntent::FolderChecked { path, exists } => {
-            run_flow::folder_checked(state, &path, exists)
-        },
-        ContainersIntent::RecheckFolders => run_flow::recheck_folders(state),
-        ContainersIntent::FolderTypingPaused(path) => {
-            run_flow::folder_typing_paused(state, &path)
-        },
-        ContainersIntent::FolderAnswerLate(path) => {
-            run_flow::folder_answer_late(state, &path)
-        },
+        ContainersIntent::Run(intent) => reduce_run(state, intent),
     }
 }
 
@@ -537,7 +511,13 @@ fn open_create(state: &mut ContainersState) -> Task<ContainersEvent> {
         },
         ResourceKind::Volumes => CreateIntent::OpenVolume(info),
         ResourceKind::Networks => CreateIntent::OpenNetwork(info),
-        ResourceKind::Containers => return run_flow::open(state, info, ""),
+        ResourceKind::Containers => {
+            let open = RunIntent::Open {
+                engine: info,
+                image: String::new(),
+            };
+            return reduce_run(state, open);
+        },
     };
 
     reduce_create(state, open)
@@ -562,12 +542,30 @@ fn on_create_outcome(
     }
 }
 
+/// Act on what the Run container form reports: a started container shows
+/// selected in the Containers table of its engine, whose lists reload.
+fn on_run_outcome(
+    state: &mut ContainersState,
+    outcome: RunOutcome,
+) -> Task<ContainersEvent> {
+    match outcome {
+        RunOutcome::Started { engine, id } => {
+            state.show_item(&engine, ResourceKind::Containers, id);
+            action_flow::reload(state, &engine)
+        },
+    }
+}
+
 fn effect(effect: ContainersEffect) -> Task<ContainersEvent> {
     Task::done(ContainersEvent::Effect(effect))
 }
 
 fn create_effect(effect: CreateEffect) -> ContainersEvent {
     ContainersEvent::Effect(ContainersEffect::Create(effect))
+}
+
+fn run_effect(effect: RunEffect) -> ContainersEvent {
+    ContainersEvent::Effect(ContainersEffect::Run(effect))
 }
 
 #[cfg(test)]
@@ -597,7 +595,7 @@ mod tests {
     use crate::widgets::containers::model::{
         MainViewModel, main_area, panel_note,
     };
-    use crate::widgets::containers::run_form::RunEdit;
+    use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::containers::sort::{SortOrder, TableSort};
     use crate::widgets::containers::state::{ListLoad, Search};
     use crate::widgets::containers::status::status_bar;
@@ -1873,7 +1871,7 @@ mod tests {
         let while_open = followed(&state);
         let tab_while_open = state.inspector().tab();
         push_lines(&mut state, 0, &["late line of the old stream"]);
-        let _ = reduce(&mut state, ContainersIntent::RunCancelled);
+        let _ = reduce(&mut state, ContainersIntent::Run(RunIntent::Close));
 
         assert_eq!(while_open, None);
         assert_eq!(tab_while_open, InspectorTab::Logs);
@@ -1927,7 +1925,7 @@ mod tests {
         let _ = hide_right_panel(&mut state, false);
         let form_still_open = followed(&state);
         let _ = hide_right_panel(&mut state, true);
-        let _ = reduce(&mut state, ContainersIntent::RunCancelled);
+        let _ = reduce(&mut state, ContainersIntent::Run(RunIntent::Close));
         let panel_still_hidden = followed(&state);
         let _ = hide_right_panel(&mut state, false);
 
@@ -1976,8 +1974,10 @@ mod tests {
         let _ = reduce(&mut state, ContainersIntent::OpenCreate);
 
         let while_open = select_tab(&mut state, InspectorTab::Inspect);
-        let on_close =
-            effects(reduce(&mut state, ContainersIntent::RunCancelled));
+        let on_close = effects(reduce(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Close),
+        ));
 
         assert!(while_open.is_empty());
         assert_eq!(
@@ -3758,7 +3758,9 @@ mod tests {
         let _ = reduce(&mut state, ContainersIntent::OpenCreate);
         let _ = reduce(
             &mut state,
-            ContainersIntent::RunEdited(RunEdit::Image(String::from("nginx"))),
+            ContainersIntent::Run(RunIntent::Edited(RunEdit::Image(
+                String::from("nginx"),
+            ))),
         );
         let _ = reduce(
             &mut state,
@@ -3771,7 +3773,7 @@ mod tests {
 
         assert!(state.shows_no_engine_card());
         assert_eq!(
-            state.run_form().map(|form| form.reference()),
+            state.run().form().map(|form| form.reference()),
             Some("nginx")
         );
 
@@ -3783,7 +3785,7 @@ mod tests {
 
         assert!(!state.shows_no_engine_card());
         assert_eq!(
-            state.run_form().map(|form| form.reference()),
+            state.run().form().map(|form| form.reference()),
             Some("nginx")
         );
     }
@@ -6218,7 +6220,7 @@ mod tests {
         let _ = reduce(&mut state, ContainersIntent::OpenCreate);
 
         assert!(!state.create().is_open());
-        assert!(state.run_form().is_some());
+        assert!(state.run().is_open());
     }
 
     #[test]
@@ -6274,5 +6276,29 @@ mod tests {
 
         assert!(effects.is_empty());
         assert_eq!(state.notice(), Some("Could not pull nginx:latest"));
+    }
+
+    #[test]
+    fn a_started_container_is_shown_selected_and_its_engine_reloaded() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+
+        let effects = effects(on_run_outcome(
+            &mut state,
+            RunOutcome::Started {
+                engine: docker().address().clone(),
+                id: String::from("4f1c2b9a8e7d"),
+            },
+        ));
+
+        assert_eq!(
+            state.place(),
+            Some(&Place::new(
+                docker().address().clone(),
+                ResourceKind::Containers
+            ))
+        );
+        assert_eq!(selected_container(&state), Some("4f1c2b9a8e7d"));
+        assert_eq!(effects, vec![ContainersEffect::LoadLists(docker())]);
     }
 }

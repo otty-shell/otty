@@ -16,7 +16,7 @@ use super::inspector::{
     InspectTarget, InspectorState, InspectorTab, LogTarget,
 };
 use super::resource_rows::port_urls;
-use super::run_form::RunForm;
+use super::run::{RunCtx, RunEngine, RunState};
 use super::sort::{TableSort, TableSorts};
 use super::table_search::{
     COMPOSE_KEY, TableSearches, container_row, containers_schema, image_row,
@@ -74,19 +74,14 @@ pub(super) struct ContainersState {
     notice: Option<String>,
     /// The create dialogs: Pull image, Create volume and Create network.
     create: CreateState,
-    /// The open Run container form; it replaces the table.
-    run_form: Option<RunForm>,
+    /// The Run container form; it replaces the table while it is open.
+    run: RunState,
     /// What the main area showed when the last engine went away; it comes back
     /// with that engine. Not saved to disk.
     lost_view: Option<LostView>,
 }
 
 impl ContainersState {
-    /// Return the open Run container form.
-    pub(crate) fn run_form(&self) -> Option<&RunForm> {
-        self.run_form.as_ref()
-    }
-
     /// Return whether Containers mode is the active mode.
     pub(crate) fn is_active(&self) -> bool {
         self.is_active
@@ -100,16 +95,6 @@ impl ContainersState {
     /// Return how far the engine search is.
     pub(crate) fn search(&self) -> &Search {
         &self.search
-    }
-
-    /// Return whether the last finished search found SELinux enabled.
-    pub(crate) fn is_selinux_enabled(&self) -> bool {
-        self.is_selinux_enabled
-    }
-
-    /// Return the home folder the last finished search found.
-    pub(crate) fn home_folder(&self) -> Option<&Path> {
-        self.home_folder.as_deref()
     }
 
     /// Return the version of the engines' lists; see the field.
@@ -197,7 +182,7 @@ impl ContainersState {
     /// Return whether the inspector is on screen, as far as the mode, the right
     /// panel and the Run form go: the form shows the image panel in its place.
     fn is_inspector_on_screen(&self) -> bool {
-        self.is_active && !self.is_right_panel_hidden && self.run_form.is_none()
+        self.is_active && !self.is_right_panel_hidden && !self.run.is_open()
     }
 
     /// Return the container whose logs should be followed now: the Logs tab is
@@ -314,6 +299,21 @@ impl ContainersState {
     /// Return the state of the create dialogs.
     pub(crate) fn create(&self) -> &CreateState {
         &self.create
+    }
+
+    /// Return the state of the Run container form.
+    pub(crate) fn run(&self) -> &RunState {
+        &self.run
+    }
+
+    /// Return what the Run container form reads from this state, for its
+    /// view models.
+    pub(crate) fn run_ctx(&self) -> RunCtx<'_> {
+        run_ctx_of(
+            &self.engines,
+            self.is_selinux_enabled,
+            self.home_folder.as_deref(),
+        )
     }
 
     /// Return whether an action runs on the row `target` (or, with `None`,
@@ -572,19 +572,16 @@ impl ContainersState {
         &mut self.create
     }
 
-    /// Show the Run container form in place of the table.
-    pub(super) fn open_run_form(&mut self, form: RunForm) {
-        self.run_form = Some(form);
-    }
+    /// Return the state of the Run container form for its reducer, with
+    /// what the form reads from this state.
+    pub(super) fn run_and_ctx(&mut self) -> (&mut RunState, RunCtx<'_>) {
+        let ctx = run_ctx_of(
+            &self.engines,
+            self.is_selinux_enabled,
+            self.home_folder.as_deref(),
+        );
 
-    /// Return the open Run container form to change it.
-    pub(super) fn run_form_mut(&mut self) -> Option<&mut RunForm> {
-        self.run_form.as_mut()
-    }
-
-    /// Close the Run container form and return it.
-    pub(super) fn take_run_form(&mut self) -> Option<RunForm> {
-        self.run_form.take()
+        (&mut self.run, ctx)
     }
 
     /// Show the `resource` list of `engine` and select the item with `id` in
@@ -1144,6 +1141,28 @@ pub(crate) enum ListLoad<T> {
     Loaded(Vec<T>),
     /// The engine could not send the list; the engine's message.
     Failed(String),
+}
+
+/// What the Run container form reads from the state: every reached engine
+/// with its networks, and the facts of the last finished search.
+fn run_ctx_of<'a>(
+    engines: &'a [EngineState],
+    is_selinux_enabled: bool,
+    home_folder: Option<&'a Path>,
+) -> RunCtx<'a> {
+    let engines = engines
+        .iter()
+        .map(|engine| RunEngine {
+            info: &engine.info,
+            networks: engine.networks.items(),
+        })
+        .collect();
+
+    RunCtx {
+        engines,
+        is_selinux_enabled,
+        home_folder,
+    }
 }
 
 #[cfg(test)]

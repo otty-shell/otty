@@ -1,58 +1,154 @@
-//! How the Run container form goes, as the reducer runs it (spec Decision
-//! 18): it opens from "Run container" and from Run on an image, asks the
-//! engine about the typed image, pulls a missing image when the switch is
-//! on, creates and starts the container, then shows it selected in the
+#![forbid(clippy::disallowed_methods)]
+//! How the Run container form goes (spec Decision 18): it opens from "Run
+//! container" and from Run on an image, asks the engine about the typed
+//! image, pulls a missing image when the switch is on, creates and starts the
+//! container, then tells the parent, which shows it selected in the
 //! Containers table. An engine error keeps the form as typed.
 
 use std::path::{Path, PathBuf};
 
 use iced::Task;
-use otty_containers::{EngineAddress, EngineInfo, ImageDefaults, PullProgress};
+use otty_containers::{EngineAddress, EngineInfo, ImageDefaults, Network};
 
-use super::action_flow::reload;
-use super::event::{ContainersEffect, ContainersEvent};
-use super::run_checks::check;
-use super::run_form::{ImageLookup, RunEdit, RunForm, RunPhase};
-use super::state::{ContainersState, EngineState};
-use super::types::{ContainersError, ResourceKind, split_reference};
+use super::super::types::{ContainersError, split_reference};
+use super::checks::can_run;
+use super::event::{RunEffect, RunIntent};
+use super::state::{RunForm, RunPhase, RunState};
+use super::types::RunEdit;
 use crate::i18n::{self, Key};
 
 /// The network a new container joins unless another one is chosen.
 const DEFAULT_NETWORK: &str = "bridge";
 
-/// Open the Run form on `engine` with `image` typed (empty from "Run
+/// What the Run form reads from the parent widget: the reached engines with
+/// their networks and the facts of the last engine search.
+#[derive(Debug)]
+pub(crate) struct RunCtx<'a> {
+    /// The reached engines, in search order.
+    pub(crate) engines: Vec<RunEngine<'a>>,
+    /// Whether SELinux is enabled, from the last finished search.
+    pub(crate) is_selinux_enabled: bool,
+    /// The home folder, from the last finished search; `~` stands for it.
+    pub(crate) home_folder: Option<&'a Path>,
+}
+
+impl<'a> RunCtx<'a> {
+    /// Return the reached engine listening at `address`.
+    pub(crate) fn engine(
+        &self,
+        address: &EngineAddress,
+    ) -> Option<&RunEngine<'a>> {
+        self.engines
+            .iter()
+            .find(|engine| engine.info.address() == address)
+    }
+}
+
+/// One reached engine as the Run form sees it.
+#[derive(Debug)]
+pub(crate) struct RunEngine<'a> {
+    /// What the engine said about itself.
+    pub(crate) info: &'a EngineInfo,
+    /// The engine's loaded networks; empty while they load or failed.
+    pub(crate) networks: &'a [Network],
+}
+
+/// What the Run form tells the parent widget, which acts on it in the same
+/// update.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RunOutcome {
+    /// The container `id` runs on `engine` and the form closed: show it
+    /// selected in the Containers table and reload the engine's lists.
+    Started { engine: EngineAddress, id: String },
+}
+
+/// Reduce an intent of the Run form: open and close it, take edits, ask the
+/// engine about the image and the disk about the folders, pull and run.
+pub(crate) fn reduce(
+    state: &mut RunState,
+    intent: RunIntent,
+    ctx: &RunCtx<'_>,
+) -> (Task<RunEffect>, Option<RunOutcome>) {
+    match intent {
+        RunIntent::Open { engine, image } => {
+            (open(state, ctx, engine, &image), None)
+        },
+        RunIntent::Close => (close(state), None),
+        RunIntent::Edited(edit) => (apply_edit(state, edit), None),
+        RunIntent::EngineChosen(address) => {
+            (choose_engine(state, ctx, &address), None)
+        },
+        RunIntent::Submitted => (submit(state), None),
+        RunIntent::RunNoticeDismissed => {
+            if let Some(form) = state.form_mut() {
+                form.dismiss_notice();
+            }
+            (Task::none(), None)
+        },
+        RunIntent::RunFinished { engine, result } => {
+            (Task::none(), finish(state, engine, result))
+        },
+        RunIntent::ImageDefaultsLoaded {
+            engine,
+            reference,
+            result,
+        } => {
+            defaults_loaded(state, &engine, &reference, result);
+            (Task::none(), None)
+        },
+        RunIntent::FolderChecked { path, exists } => {
+            folder_checked(state, &path, exists);
+            (Task::none(), None)
+        },
+        RunIntent::RecheckFolders => (recheck_folders(state), None),
+        RunIntent::FolderTypingPaused(path) => {
+            (folder_typing_paused(state, &path), None)
+        },
+        RunIntent::FolderAnswerLate(path) => {
+            folder_answer_late(state, &path);
+            (Task::none(), None)
+        },
+        RunIntent::PullProgressed(progress) => {
+            if let Some(form) = state.form_mut() {
+                let _ = form.set_progress(progress);
+            }
+            (Task::none(), None)
+        },
+        RunIntent::PullFinished(result) => (finish_pull(state, result), None),
+    }
+}
+
+/// Open the form on `engine` with `image` typed (empty from "Run
 /// container"). A typed image is looked up at once.
-pub(super) fn open(
-    state: &mut ContainersState,
+fn open(
+    state: &mut RunState,
+    ctx: &RunCtx<'_>,
     engine: EngineInfo,
     image: &str,
-) -> Task<ContainersEvent> {
-    let network = state
+) -> Task<RunEffect> {
+    let network = ctx
         .engine(engine.address())
-        .map(default_network)
+        .map(|engine| default_network(engine.networks))
         .unwrap_or_default();
 
     let mut form = RunForm::new(
         engine,
         image,
         &network,
-        state.is_selinux_enabled(),
-        state.home_folder(),
+        ctx.is_selinux_enabled,
+        ctx.home_folder,
     );
     let lookup = lookup(&mut form);
 
-    state.open_run_form(form);
+    state.open_form(form);
     lookup
 }
 
 /// Take one edit of the form; a changed image is looked up again and a
 /// volume source that is a folder waits for a pause in typing before it is
 /// asked about on disk, or joins a question that is already out.
-pub(super) fn edit(
-    state: &mut ContainersState,
-    edit: RunEdit,
-) -> Task<ContainersEvent> {
-    let Some(form) = state.run_form_mut() else {
+fn apply_edit(state: &mut RunState, edit: RunEdit) -> Task<RunEffect> {
+    let Some(form) = state.form_mut() else {
         return Task::none();
     };
     let before = form.reference().to_string();
@@ -73,16 +169,17 @@ pub(super) fn edit(
 
 /// Run on another engine: its default network, and the image looked up
 /// there.
-pub(super) fn choose_engine(
-    state: &mut ContainersState,
+fn choose_engine(
+    state: &mut RunState,
+    ctx: &RunCtx<'_>,
     address: &EngineAddress,
-) -> Task<ContainersEvent> {
-    let Some(engine) = state.engine(address) else {
+) -> Task<RunEffect> {
+    let Some(engine) = ctx.engine(address) else {
         return Task::none();
     };
-    let info = engine.info().clone();
-    let network = default_network(engine);
-    let Some(form) = state.run_form_mut() else {
+    let info = engine.info.clone();
+    let network = default_network(engine.networks);
+    let Some(form) = state.form_mut() else {
         return Task::none();
     };
     if form.engine().address() == address || !form.is_editing() {
@@ -94,45 +191,35 @@ pub(super) fn choose_engine(
 }
 
 /// Take the engine's answer about the typed image.
-pub(super) fn defaults_loaded(
-    state: &mut ContainersState,
+fn defaults_loaded(
+    state: &mut RunState,
     engine: &EngineAddress,
     reference: &str,
     result: Result<Option<ImageDefaults>, ContainersError>,
-) -> Task<ContainersEvent> {
+) {
     let is_taken = state
-        .run_form_mut()
+        .form_mut()
         .is_some_and(|form| form.finish_lookup(engine, reference, result));
     if !is_taken {
         log::debug!("containers image lookup of {reference} no longer asked");
     }
-
-    Task::none()
 }
 
 /// Take the disk's answer about a folder of the form.
-pub(super) fn folder_checked(
-    state: &mut ContainersState,
-    path: &Path,
-    exists: bool,
-) -> Task<ContainersEvent> {
+fn folder_checked(state: &mut RunState, path: &Path, exists: bool) {
     let is_taken = state
-        .run_form_mut()
+        .form_mut()
         .is_some_and(|form| form.finish_folder_check(path, exists));
     if !is_taken {
         let path = path.display();
         log::debug!("containers folder check of {path} no longer asked");
     }
-
-    Task::none()
 }
 
 /// Ask again about each folder of the form that has no question out, so a
 /// folder created or removed elsewhere shows by itself.
-pub(super) fn recheck_folders(
-    state: &mut ContainersState,
-) -> Task<ContainersEvent> {
-    let Some(form) = state.run_form_mut() else {
+fn recheck_folders(state: &mut RunState) -> Task<RunEffect> {
+    let Some(form) = state.form_mut() else {
         return Task::none();
     };
 
@@ -142,11 +229,8 @@ pub(super) fn recheck_folders(
 
 /// Typing stopped on `path`: ask the disk about it, unless the text moved on,
 /// the disk already answered or a question is out.
-pub(super) fn folder_typing_paused(
-    state: &mut ContainersState,
-    path: &Path,
-) -> Task<ContainersEvent> {
-    let Some(form) = state.run_form_mut() else {
+fn folder_typing_paused(state: &mut RunState, path: &Path) -> Task<RunEffect> {
+    let Some(form) = state.form_mut() else {
         return Task::none();
     };
     if !form.start_folder_check(path) {
@@ -158,34 +242,20 @@ pub(super) fn folder_typing_paused(
 
 /// The time for an answer about `path` is over: rows still waiting for it say
 /// the folder is not answering. Run stays disabled until the answer comes.
-pub(super) fn folder_answer_late(
-    state: &mut ContainersState,
-    path: &Path,
-) -> Task<ContainersEvent> {
+fn folder_answer_late(state: &mut RunState, path: &Path) {
     let is_marked = state
-        .run_form_mut()
+        .form_mut()
         .is_some_and(|form| form.mark_folder_slow(path));
     if !is_marked {
         let path = path.display();
         log::debug!("containers folder {path} no longer waits for an answer");
     }
-
-    Task::none()
-}
-
-/// Whether Run can be pressed: nothing runs, every check passes and both
-/// the engine about the image and the disk about the folders have answered.
-pub(crate) fn can_run(form: &RunForm) -> bool {
-    form.is_editing()
-        && form.lookup() != &ImageLookup::Loading
-        && form.are_folders_answered()
-        && check(form).is_empty()
 }
 
 /// Press Run: pull a missing image first when the switch is on, else
 /// create and start the container. Nothing happens while Run is disabled.
-pub(super) fn submit(state: &mut ContainersState) -> Task<ContainersEvent> {
-    let Some(form) = state.run_form_mut() else {
+fn submit(state: &mut RunState) -> Task<RunEffect> {
+    let Some(form) = state.form_mut() else {
         return Task::none();
     };
     if !can_run(form) {
@@ -195,43 +265,26 @@ pub(super) fn submit(state: &mut ContainersState) -> Task<ContainersEvent> {
     let engine = form.engine().clone();
     if form.needs_pull() {
         let (image, tag) = split_reference(form.reference());
-        let pull = ContainersEffect::StartPull {
+        let pull = RunEffect::StartPull {
             engine,
             image: image.to_string(),
             tag: tag.to_string(),
         };
         form.start_pull();
-        return Task::done(ContainersEvent::Effect(pull));
+        return Task::done(pull);
     }
 
     start_run(form)
 }
 
-/// Whether the Run form is pulling its image, so the pull results are
-/// its own and not the pull dialog's.
-pub(super) fn is_pulling(state: &ContainersState) -> bool {
-    state
-        .run_form()
-        .is_some_and(|form| matches!(form.phase(), RunPhase::Pulling(_)))
-}
-
-/// Take the newest progress of the form's pull.
-pub(super) fn pull_progressed(
-    state: &mut ContainersState,
-    progress: PullProgress,
-) {
-    if let Some(form) = state.run_form_mut() {
-        let _ = form.set_progress(progress);
-    }
-}
-
 /// The form's pull ended: create and start the container, or show the
-/// engine's message and keep the form.
-pub(super) fn finish_pull(
-    state: &mut ContainersState,
+/// engine's message and keep the form. A result without a pulling form
+/// (cancelled meanwhile) is dropped.
+fn finish_pull(
+    state: &mut RunState,
     result: Result<(), ContainersError>,
-) -> Task<ContainersEvent> {
-    let Some(form) = state.run_form_mut() else {
+) -> Task<RunEffect> {
+    let Some(form) = state.form_mut().filter(|form| is_pulling(form)) else {
         return Task::none();
     };
 
@@ -249,31 +302,30 @@ pub(super) fn finish_pull(
     }
 }
 
-/// The container ran or failed. Success closes the form and shows the
-/// Containers table of the engine with the new container selected;
-/// failure keeps the form with a notice. A result without a running form
-/// (cancelled meanwhile) is dropped.
-pub(super) fn finish(
-    state: &mut ContainersState,
-    engine: &EngineAddress,
+/// The container ran or failed. Success closes the form and names the new
+/// container to the parent; failure keeps the form with a notice. A result
+/// without a running form (cancelled meanwhile) is dropped.
+fn finish(
+    state: &mut RunState,
+    engine: EngineAddress,
     result: Result<String, ContainersError>,
-) -> Task<ContainersEvent> {
-    let is_running = state.run_form().is_some_and(|form| {
-        form.phase() == &RunPhase::Starting && form.engine().address() == engine
+) -> Option<RunOutcome> {
+    let is_running = state.form().is_some_and(|form| {
+        form.phase() == &RunPhase::Starting
+            && form.engine().address() == &engine
     });
     if !is_running {
         log::debug!("containers run result without a running form dropped");
-        return Task::none();
+        return None;
     }
 
     match result {
         Ok(id) => {
-            let _ = state.take_run_form();
-            state.show_item(engine, ResourceKind::Containers, id);
-            reload(state, engine)
+            let _ = state.take_form();
+            Some(RunOutcome::Started { engine, id })
         },
         Err(err) => {
-            if let Some(form) = state.run_form_mut() {
+            if let Some(form) = state.form_mut() {
                 let name = match form.name().trim() {
                     "" => form.reference().to_string(),
                     name => name.to_string(),
@@ -285,36 +337,40 @@ pub(super) fn finish(
                 );
                 form.fail(notice);
             }
-            Task::none()
+            None
         },
     }
 }
 
 /// Close the form, from Cancel or when another place opens; a running
 /// pull is stopped.
-pub(super) fn close(state: &mut ContainersState) -> Task<ContainersEvent> {
-    let Some(form) = state.take_run_form() else {
+fn close(state: &mut RunState) -> Task<RunEffect> {
+    let Some(form) = state.take_form() else {
         return Task::none();
     };
 
-    if matches!(form.phase(), RunPhase::Pulling(_)) {
-        Task::done(ContainersEvent::Effect(ContainersEffect::CancelPull))
+    if is_pulling(&form) {
+        Task::done(RunEffect::CancelPull)
     } else {
         Task::none()
     }
 }
 
-/// The network a new container on `engine` joins by default: `bridge`
-/// when the engine has it, else its first network.
-pub(crate) fn default_network(engine: &EngineState) -> String {
-    let networks = engine.networks().items();
+/// Whether the form is pulling its image.
+fn is_pulling(form: &RunForm) -> bool {
+    matches!(form.phase(), RunPhase::Pulling(_))
+}
 
+/// The network a new container joins by default on an engine with
+/// `networks`: `bridge` when the engine has it, else its first network.
+fn default_network(networks: &[Network]) -> String {
     if networks
         .iter()
         .any(|network| network.name() == DEFAULT_NETWORK)
     {
         return DEFAULT_NETWORK.to_string();
     }
+
     networks
         .first()
         .map(|network| network.name().to_string())
@@ -322,60 +378,53 @@ pub(crate) fn default_network(engine: &EngineState) -> String {
 }
 
 /// Ask the engine about the typed image, if one is typed.
-fn lookup(form: &mut RunForm) -> Task<ContainersEvent> {
+fn lookup(form: &mut RunForm) -> Task<RunEffect> {
     let Some(reference) = form.start_lookup() else {
         return Task::none();
     };
 
-    Task::done(ContainersEvent::Effect(
-        ContainersEffect::LoadImageDefaults {
-            engine: form.engine().clone(),
-            reference,
-        },
-    ))
+    Task::done(RunEffect::LoadImageDefaults {
+        engine: form.engine().clone(),
+        reference,
+    })
 }
 
 /// What the row at `index` waits for now that its source was typed: a pause in
 /// typing, or the answer to a question another row already has out.
-fn wait_for_folder(form: &mut RunForm, index: usize) -> Task<ContainersEvent> {
+fn wait_for_folder(form: &mut RunForm, index: usize) -> Task<RunEffect> {
     if let Some(path) = form.start_typing_wait(index) {
-        return effect(ContainersEffect::WaitForTypingPause(path));
+        return Task::done(RunEffect::WaitForTypingPause(path));
     }
 
     form.join_folder_question(index)
         .map_or_else(Task::none, |path| {
-            effect(ContainersEffect::WaitForLateAnswer(path))
+            Task::done(RunEffect::WaitForLateAnswer(path))
         })
 }
 
 /// Ask the disk whether `path` exists. A folder with no answer yet also gets
 /// a time limit; asking again about an answered one needs none, because it
 /// keeps its answer and Run until the new answer comes.
-fn ask_folder(form: &RunForm, path: PathBuf) -> Task<ContainersEvent> {
+fn ask_folder(form: &RunForm, path: PathBuf) -> Task<RunEffect> {
     if !form.is_folder_unanswered(&path) {
-        return effect(ContainersEffect::CheckFolder(path));
+        return Task::done(RunEffect::CheckFolder(path));
     }
 
     Task::batch([
-        effect(ContainersEffect::WaitForLateAnswer(path.clone())),
-        effect(ContainersEffect::CheckFolder(path)),
+        Task::done(RunEffect::WaitForLateAnswer(path.clone())),
+        Task::done(RunEffect::CheckFolder(path)),
     ])
 }
 
-/// Hand `effect` to the app.
-fn effect(effect: ContainersEffect) -> Task<ContainersEvent> {
-    Task::done(ContainersEvent::Effect(effect))
-}
-
 /// Create and start the container of the typed form.
-fn start_run(form: &mut RunForm) -> Task<ContainersEvent> {
-    let run = ContainersEffect::RunContainer {
+fn start_run(form: &mut RunForm) -> Task<RunEffect> {
+    let run = RunEffect::RunContainer {
         engine: form.engine().clone(),
         request: form.request(),
     };
 
     form.start_run();
-    Task::done(ContainersEvent::Effect(run))
+    Task::done(run)
 }
 
 #[cfg(test)]
@@ -390,8 +439,13 @@ mod tests {
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::containers::create::event::CreateIntent;
     use crate::widgets::containers::create::types::FormField;
-    use crate::widgets::containers::event::ContainersIntent;
-    use crate::widgets::containers::reducer::reduce;
+    use crate::widgets::containers::event::{
+        ContainersEffect, ContainersEvent, ContainersIntent,
+    };
+    use crate::widgets::containers::reducer::reduce as reduce_containers;
+    use crate::widgets::containers::run::checks::check;
+    use crate::widgets::containers::run::state::ImageLookup;
+    use crate::widgets::containers::state::ContainersState;
     use crate::widgets::containers::types::{LoadedLists, Place, ResourceKind};
 
     fn docker() -> EngineInfo {
@@ -438,11 +492,13 @@ mod tests {
         resource: ResourceKind,
     ) -> ContainersState {
         let mut state = ContainersState::default();
-        let _ = reduce(&mut state, ContainersIntent::Enter);
-        let _ =
-            reduce(&mut state, ContainersIntent::DiscoveryFinished(discovery));
+        let _ = reduce_containers(&mut state, ContainersIntent::Enter);
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::DiscoveryFinished(discovery),
+        );
         for kind in kinds {
-            let _ = reduce(
+            let _ = reduce_containers(
                 &mut state,
                 ContainersIntent::ListsLoaded {
                     engine: fixtures::engine(*kind).address().clone(),
@@ -450,7 +506,7 @@ mod tests {
                 },
             );
         }
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::Open(Place::new(
                 fixtures::engine(kinds[0]).address().clone(),
@@ -464,7 +520,10 @@ mod tests {
         state: &mut ContainersState,
         edit: RunEdit,
     ) -> Vec<ContainersEffect> {
-        effects(reduce(state, ContainersIntent::RunEdited(edit)))
+        effects(reduce_containers(
+            state,
+            ContainersIntent::Run(RunIntent::Edited(edit)),
+        ))
     }
 
     /// The Run form on Docker with `image` typed and the engine's answer
@@ -472,21 +531,210 @@ mod tests {
     fn form_with(image: &str, found: Option<ImageDefaults>) -> ContainersState {
         let mut state =
             state_on(&[EngineKind::Docker], ResourceKind::Containers);
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
         let _ = type_in(&mut state, RunEdit::Image(image.to_string()));
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::ImageDefaultsLoaded {
+            ContainersIntent::Run(RunIntent::ImageDefaultsLoaded {
                 engine: docker().address().clone(),
                 reference: image.to_string(),
                 result: Ok(found),
-            },
+            }),
         );
         state
     }
 
     fn run_form(state: &ContainersState) -> &RunForm {
-        state.run_form().expect("an open run form")
+        state.run().form().expect("an open run form")
+    }
+
+    /// Reduce `intent` in the part alone; the effects it asks for and what
+    /// it tells the parent.
+    fn reduce_part(
+        state: &mut RunState,
+        intent: RunIntent,
+        ctx: &RunCtx<'_>,
+    ) -> (Vec<RunEffect>, Option<RunOutcome>) {
+        let (effects, outcome) = reduce(state, intent, ctx);
+
+        (collect_outputs(effects), outcome)
+    }
+
+    /// What the parent hands the part: `engines` with their networks, no
+    /// SELinux and the home folder of the fixtures.
+    fn ctx_of(engines: &[(EngineInfo, Vec<Network>)]) -> RunCtx<'_> {
+        RunCtx {
+            engines: engines
+                .iter()
+                .map(|(info, networks)| RunEngine { info, networks })
+                .collect(),
+            is_selinux_enabled: false,
+            home_folder: Some(Path::new(fixtures::HOME_FOLDER)),
+        }
+    }
+
+    fn network(name: &str) -> Network {
+        fixtures::network_named(name, "bridge", "local", None)
+    }
+
+    fn open_on(engine: EngineInfo, image: &str) -> RunIntent {
+        RunIntent::Open {
+            engine,
+            image: image.to_string(),
+        }
+    }
+
+    #[test]
+    fn open_takes_the_default_network_of_its_engine_from_the_ctx() {
+        let engines = [
+            (docker(), vec![network("host"), network("bridge")]),
+            (podman(), vec![network("podman"), network("host")]),
+        ];
+        let ctx = ctx_of(&engines);
+        let mut on_docker = RunState::default();
+        let mut on_podman = RunState::default();
+        let mut on_unknown = RunState::default();
+
+        let (effects, outcome) =
+            reduce_part(&mut on_docker, open_on(docker(), ""), &ctx);
+        let _ = reduce_part(&mut on_podman, open_on(podman(), ""), &ctx);
+        let _ =
+            reduce_part(&mut on_unknown, open_on(docker(), ""), &ctx_of(&[]));
+
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(outcome, None);
+        assert_eq!(on_docker.form().map(RunForm::network), Some("bridge"));
+        assert_eq!(on_podman.form().map(RunForm::network), Some("podman"));
+        assert_eq!(on_unknown.form().map(RunForm::network), Some(""));
+    }
+
+    #[test]
+    fn open_takes_selinux_and_the_home_folder_from_the_ctx() {
+        let engines = [(docker(), vec![network("bridge")])];
+        let ctx = RunCtx {
+            is_selinux_enabled: true,
+            ..ctx_of(&engines)
+        };
+        let mut state = RunState::default();
+        let _ = reduce_part(&mut state, open_on(docker(), "nginx"), &ctx);
+
+        for edit in [
+            RunEdit::AddVolume,
+            RunEdit::VolumeSource(0, String::from("~/site")),
+        ] {
+            let _ = reduce_part(&mut state, RunIntent::Edited(edit), &ctx);
+        }
+
+        let form = state.form().expect("the form");
+        assert!(form.offers_relabel(0));
+        assert_eq!(
+            form.volumes()[0].host_path(),
+            Some(Path::new(fixtures::HOME_FOLDER).join("site"))
+        );
+    }
+
+    #[test]
+    fn choosing_another_engine_takes_its_network_from_the_ctx() {
+        let engines = [
+            (docker(), vec![network("bridge")]),
+            (podman(), vec![network("podman")]),
+        ];
+        let ctx = ctx_of(&engines);
+        let mut state = RunState::default();
+        let _ = reduce_part(&mut state, open_on(docker(), "nginx"), &ctx);
+
+        let (effects, outcome) = reduce_part(
+            &mut state,
+            RunIntent::EngineChosen(podman().address().clone()),
+            &ctx,
+        );
+
+        let form = state.form().expect("the form");
+        assert_eq!(form.engine(), &podman());
+        assert_eq!(form.network(), "podman");
+        assert_eq!(
+            effects,
+            vec![RunEffect::LoadImageDefaults {
+                engine: podman(),
+                reference: String::from("nginx"),
+            }]
+        );
+        assert_eq!(outcome, None);
+    }
+
+    #[test]
+    fn an_engine_missing_from_the_ctx_is_not_chosen() {
+        let engines = [(docker(), vec![network("bridge")])];
+        let ctx = ctx_of(&engines);
+        let mut state = RunState::default();
+        let _ = reduce_part(&mut state, open_on(docker(), "nginx"), &ctx);
+
+        let (effects, _) = reduce_part(
+            &mut state,
+            RunIntent::EngineChosen(podman().address().clone()),
+            &ctx,
+        );
+
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(state.form().map(RunForm::engine), Some(&docker()));
+    }
+
+    #[test]
+    fn a_started_container_closes_the_form_and_is_named_to_the_parent() {
+        let engines = [(docker(), vec![network("bridge")])];
+        let ctx = ctx_of(&engines);
+        let mut state = RunState::default();
+        for intent in [
+            open_on(docker(), "nginx:1.27"),
+            RunIntent::ImageDefaultsLoaded {
+                engine: docker().address().clone(),
+                reference: String::from("nginx:1.27"),
+                result: Ok(Some(fixtures::image_defaults())),
+            },
+            RunIntent::Submitted,
+        ] {
+            let _ = reduce_part(&mut state, intent, &ctx);
+        }
+
+        let (effects, outcome) = reduce_part(
+            &mut state,
+            RunIntent::RunFinished {
+                engine: docker().address().clone(),
+                result: Ok(String::from("4f1c2b9a8e7d")),
+            },
+            &ctx,
+        );
+
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(
+            outcome,
+            Some(RunOutcome::Started {
+                engine: docker().address().clone(),
+                id: String::from("4f1c2b9a8e7d"),
+            })
+        );
+        assert!(!state.is_open());
+    }
+
+    #[test]
+    fn a_pull_result_without_a_pulling_form_is_dropped() {
+        let engines = [(docker(), vec![network("bridge")])];
+        let ctx = ctx_of(&engines);
+        let mut state = RunState::default();
+        let _ = reduce_part(&mut state, open_on(docker(), "nginx:9"), &ctx);
+
+        let (progressed, _) = reduce_part(
+            &mut state,
+            RunIntent::PullProgressed(fixtures::pull_progress()),
+            &ctx,
+        );
+        let (finished, outcome) =
+            reduce_part(&mut state, RunIntent::PullFinished(Ok(())), &ctx);
+
+        assert!(progressed.is_empty(), "{progressed:?}");
+        assert!(finished.is_empty(), "{finished:?}");
+        assert_eq!(outcome, None);
+        assert_eq!(state.form().map(RunForm::phase), Some(&RunPhase::Editing));
     }
 
     #[test]
@@ -494,7 +742,10 @@ mod tests {
         let mut state =
             state_on(&[EngineKind::Docker], ResourceKind::Containers);
 
-        let effects = effects(reduce(&mut state, ContainersIntent::OpenCreate));
+        let effects = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::OpenCreate,
+        ));
 
         assert!(effects.is_empty(), "{effects:?}");
         let form = run_form(&state);
@@ -518,9 +769,12 @@ mod tests {
             })
             .expect("a tagged image");
         let position = state.shown_position(tagged);
-        let _ = reduce(&mut state, ContainersIntent::SelectRow(position));
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::SelectRow(position),
+        );
 
-        let effects = effects(reduce(
+        let effects = effects(reduce_containers(
             &mut state,
             ContainersIntent::Act(
                 crate::widgets::containers::actions::RowAction::Run,
@@ -531,10 +785,10 @@ mod tests {
         assert!(!form.image().is_empty());
         assert_eq!(
             effects,
-            vec![ContainersEffect::LoadImageDefaults {
+            vec![ContainersEffect::Run(RunEffect::LoadImageDefaults {
                 engine: docker(),
                 reference: form.image().to_string(),
-            }]
+            })]
         );
     }
 
@@ -542,25 +796,25 @@ mod tests {
     fn typing_an_image_looks_it_up_and_a_late_answer_is_dropped() {
         let mut state =
             state_on(&[EngineKind::Docker], ResourceKind::Containers);
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
 
         let first = type_in(&mut state, RunEdit::Image(String::from("ngin")));
         let second = type_in(&mut state, RunEdit::Image(String::from("nginx")));
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::ImageDefaultsLoaded {
+            ContainersIntent::Run(RunIntent::ImageDefaultsLoaded {
                 engine: docker().address().clone(),
                 reference: String::from("ngin"),
                 result: Ok(None),
-            },
+            }),
         );
 
         assert_eq!(
             first,
-            vec![ContainersEffect::LoadImageDefaults {
+            vec![ContainersEffect::Run(RunEffect::LoadImageDefaults {
                 engine: docker(),
                 reference: String::from("ngin"),
-            }]
+            })]
         );
         assert_eq!(second.len(), 1);
         assert_eq!(run_form(&state).lookup(), &ImageLookup::Loading);
@@ -586,8 +840,10 @@ mod tests {
         let _ =
             type_in(&mut state, RunEdit::PortContainer(0, String::from("80")));
 
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::RunSubmitted));
+        let effects = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Submitted),
+        ));
 
         assert!(effects.is_empty(), "{effects:?}");
         assert!(!can_run(run_form(&state)));
@@ -598,11 +854,13 @@ mod tests {
     fn run_waits_for_the_engines_answer_about_the_image() {
         let mut state =
             state_on(&[EngineKind::Docker], ResourceKind::Containers);
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
         let _ = type_in(&mut state, RunEdit::Image(String::from("nginx")));
 
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::RunSubmitted));
+        let effects = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Submitted),
+        ));
 
         assert!(effects.is_empty(), "{effects:?}");
         assert!(!can_run(run_form(&state)));
@@ -629,8 +887,10 @@ mod tests {
         let _ = type_in(&mut state, RunEdit::AutoRemove(true));
         assert!(can_run(run_form(&state)));
 
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::RunSubmitted));
+        let effects = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Submitted),
+        ));
 
         let expected = RunRequest::new("nginx:1.27")
             .with_name("otty-fx-web")
@@ -645,10 +905,10 @@ mod tests {
             .with_auto_remove(true);
         assert_eq!(
             effects,
-            vec![ContainersEffect::RunContainer {
+            vec![ContainersEffect::Run(RunEffect::RunContainer {
                 engine: docker(),
                 request: expected,
-            }]
+            })]
         );
         assert_eq!(run_form(&state).phase(), &RunPhase::Starting);
     }
@@ -657,20 +917,24 @@ mod tests {
     fn a_missing_image_is_pulled_first_with_its_progress_in_the_form() {
         let mut state = form_with("nginx:1.27-alpine", None);
 
-        let started =
-            effects(reduce(&mut state, ContainersIntent::RunSubmitted));
-        let _ = reduce(
+        let started = effects(reduce_containers(
             &mut state,
-            ContainersIntent::PullProgressed(fixtures::pull_progress()),
+            ContainersIntent::Run(RunIntent::Submitted),
+        ));
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::PullProgressed(
+                fixtures::pull_progress(),
+            )),
         );
 
         assert_eq!(
             started,
-            vec![ContainersEffect::StartPull {
+            vec![ContainersEffect::Run(RunEffect::StartPull {
                 engine: docker(),
                 image: String::from("nginx"),
                 tag: String::from("1.27-alpine"),
-            }]
+            })]
         );
         assert_eq!(
             run_form(&state).phase(),
@@ -681,14 +945,19 @@ mod tests {
     #[test]
     fn after_the_pull_the_container_is_created_and_started() {
         let mut state = form_with("nginx:1.27-alpine", None);
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
 
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::PullFinished(Ok(()))));
+        let effects = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::PullFinished(Ok(()))),
+        ));
 
         assert!(matches!(
             effects.as_slice(),
-            [ContainersEffect::RunContainer { request, .. }]
+            [ContainersEffect::Run(RunEffect::RunContainer { request, .. })]
                 if request.image() == "nginx:1.27-alpine"
         ));
         assert_eq!(run_form(&state).phase(), &RunPhase::Starting);
@@ -698,12 +967,15 @@ mod tests {
     fn a_failed_pull_keeps_the_form_with_a_notice() {
         let mut state = form_with("nginx:9", None);
         let _ = type_in(&mut state, RunEdit::Name(String::from("web")));
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
-
-        let effects = effects(reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::PullFinished(Err(ContainersError::new(
-                "manifest unknown",
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
+
+        let effects = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::PullFinished(Err(
+                ContainersError::new("manifest unknown"),
             ))),
         ));
 
@@ -729,12 +1001,14 @@ mod tests {
         let mut state = form_with("nginx:9", None);
         let _ = type_in(&mut state, RunEdit::PullMissing(false));
 
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::RunSubmitted));
+        let effects = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Submitted),
+        ));
 
         assert!(matches!(
             effects.as_slice(),
-            [ContainersEffect::RunContainer { .. }]
+            [ContainersEffect::Run(RunEffect::RunContainer { .. })]
         ));
     }
 
@@ -746,19 +1020,25 @@ mod tests {
             TagSearchAction::InputChanged(String::from("x")),
             TagSearchAction::Close,
         ] {
-            let _ = reduce(&mut state, ContainersIntent::TagSearch(action));
+            let _ = reduce_containers(
+                &mut state,
+                ContainersIntent::TagSearch(action),
+            );
         }
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
-
-        let effects = effects(reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
+
+        let effects = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::RunFinished {
                 engine: docker().address().clone(),
                 result: Ok(String::from("4f1c2b9a8e7d")),
-            },
+            }),
         ));
 
-        assert!(state.run_form().is_none());
+        assert!(!state.run().is_open());
         let place = state.place().expect("a place");
         assert_eq!(place.resource(), ResourceKind::Containers);
         assert_eq!(place.engine(), docker().address());
@@ -776,32 +1056,37 @@ mod tests {
             &[EngineKind::Docker, EngineKind::Podman],
             ResourceKind::Containers,
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::ToggleEngine(podman().address().clone()),
         );
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
         let _ = type_in(&mut state, RunEdit::Image(String::from("nginx")));
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::RunEngineChosen(podman().address().clone()),
+            ContainersIntent::Run(RunIntent::EngineChosen(
+                podman().address().clone(),
+            )),
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::ImageDefaultsLoaded {
+            ContainersIntent::Run(RunIntent::ImageDefaultsLoaded {
                 engine: podman().address().clone(),
                 reference: String::from("nginx"),
                 result: Ok(Some(fixtures::image_defaults())),
-            },
+            }),
         );
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
-
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
+
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::RunFinished {
                 engine: podman().address().clone(),
                 result: Ok(String::from("4f1c2b9a8e7d")),
-            },
+            }),
         );
 
         assert_eq!(state.place().map(Place::engine), Some(podman().address()));
@@ -812,12 +1097,12 @@ mod tests {
     fn a_press_on_an_engine_root_keeps_the_form_on_screen() {
         let mut state = form_with("nginx:9", None);
 
-        let effects = effects(reduce(
+        let effects = effects(reduce_containers(
             &mut state,
             ContainersIntent::ToggleEngine(docker().address().clone()),
         ));
 
-        assert!(state.run_form().is_some());
+        assert!(state.run().is_open());
         assert!(effects.is_empty());
     }
 
@@ -828,14 +1113,17 @@ mod tests {
         let _ = type_in(&mut state, RunEdit::Name(String::from("web")));
         let _ = type_in(&mut state, RunEdit::AddEnv);
         let _ = type_in(&mut state, RunEdit::EnvName(0, String::from("A")));
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
-
-        let effects = effects(reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
+
+        let effects = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::RunFinished {
                 engine: docker().address().clone(),
                 result: Err(ContainersError::new("port is already allocated")),
-            },
+            }),
         ));
 
         assert!(effects.is_empty(), "{effects:?}");
@@ -855,7 +1143,10 @@ mod tests {
             )
         );
 
-        let _ = reduce(&mut state, ContainersIntent::RunNoticeDismissed);
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::RunNoticeDismissed),
+        );
         assert_eq!(run_form(&state).notice(), None);
     }
 
@@ -863,14 +1154,17 @@ mod tests {
     fn a_failure_without_a_name_names_the_image() {
         let mut state =
             form_with("nginx:1.27", Some(fixtures::image_defaults()));
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
-
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
+
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::RunFinished {
                 engine: docker().address().clone(),
                 result: Err(ContainersError::new("boom")),
-            },
+            }),
         );
 
         assert_eq!(
@@ -890,12 +1184,12 @@ mod tests {
     fn a_result_without_a_running_form_is_dropped() {
         let mut state = state_on(&[EngineKind::Docker], ResourceKind::Images);
 
-        let effects = effects(reduce(
+        let effects = effects(reduce_containers(
             &mut state,
-            ContainersIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::RunFinished {
                 engine: docker().address().clone(),
                 result: Ok(String::from("4f1c")),
-            },
+            }),
         ));
 
         assert!(effects.is_empty());
@@ -908,23 +1202,30 @@ mod tests {
     #[test]
     fn cancel_closes_the_form_and_stops_a_running_pull() {
         let mut state = form_with("nginx:9", None);
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
 
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::RunCancelled));
+        let effects = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Close),
+        ));
 
-        assert!(state.run_form().is_none());
-        assert_eq!(effects, vec![ContainersEffect::CancelPull]);
+        assert!(!state.run().is_open());
+        assert_eq!(effects, vec![ContainersEffect::Run(RunEffect::CancelPull)]);
     }
 
     #[test]
     fn cancel_before_a_run_only_closes_the_form() {
         let mut state = form_with("nginx:9", None);
 
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::RunCancelled));
+        let effects = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Close),
+        ));
 
-        assert!(state.run_form().is_none());
+        assert!(!state.run().is_open());
         assert!(effects.is_empty());
     }
 
@@ -932,7 +1233,7 @@ mod tests {
     fn opening_another_list_closes_the_form() {
         let mut state = form_with("nginx:9", None);
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::Open(Place::new(
                 docker().address().clone(),
@@ -940,33 +1241,33 @@ mod tests {
             )),
         );
 
-        assert!(state.run_form().is_none());
+        assert!(!state.run().is_open());
     }
 
     #[test]
     fn the_pull_dialog_keeps_its_own_pull_results() {
         let mut state = state_on(&[EngineKind::Docker], ResourceKind::Images);
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
-        let _ = reduce(
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::Create(CreateIntent::Changed(
                 FormField::Name,
                 String::from("nginx"),
             )),
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::Create(CreateIntent::Submitted),
         );
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::Create(CreateIntent::PullProgressed(
                 fixtures::pull_progress(),
             )),
         );
 
-        assert!(state.run_form().is_none());
+        assert!(!state.run().is_open());
         assert_eq!(
             state.create().form().and_then(|form| form.progress()),
             Some(&fixtures::pull_progress())
@@ -979,13 +1280,15 @@ mod tests {
             &[EngineKind::Docker, EngineKind::Podman],
             ResourceKind::Containers,
         );
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
         let _ = type_in(&mut state, RunEdit::Image(String::from("nginx")));
         let _ = type_in(&mut state, RunEdit::Network(String::from("none")));
 
-        let effects = effects(reduce(
+        let effects = effects(reduce_containers(
             &mut state,
-            ContainersIntent::RunEngineChosen(podman().address().clone()),
+            ContainersIntent::Run(RunIntent::EngineChosen(
+                podman().address().clone(),
+            )),
         ));
 
         let form = run_form(&state);
@@ -993,10 +1296,10 @@ mod tests {
         assert_eq!(form.network(), "bridge");
         assert_eq!(
             effects,
-            vec![ContainersEffect::LoadImageDefaults {
+            vec![ContainersEffect::Run(RunEffect::LoadImageDefaults {
                 engine: podman(),
                 reference: String::from("nginx"),
-            }]
+            })]
         );
     }
 
@@ -1004,16 +1307,16 @@ mod tests {
     fn a_failed_lookup_shows_the_engines_message() {
         let mut state =
             state_on(&[EngineKind::Docker], ResourceKind::Containers);
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
         let _ = type_in(&mut state, RunEdit::Image(String::from("nginx")));
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::ImageDefaultsLoaded {
+            ContainersIntent::Run(RunIntent::ImageDefaultsLoaded {
                 engine: docker().address().clone(),
                 reference: String::from("nginx"),
                 result: Err(ContainersError::new("store is locked")),
-            },
+            }),
         );
 
         assert_eq!(
@@ -1025,17 +1328,19 @@ mod tests {
 
     /// The effect that asks about the folder `path`.
     fn asks_about(path: &str) -> ContainersEffect {
-        ContainersEffect::CheckFolder(PathBuf::from(path))
+        ContainersEffect::Run(RunEffect::CheckFolder(PathBuf::from(path)))
     }
 
     /// The effect that waits for a pause in typing `path`.
     fn waits_for_typing(path: &str) -> ContainersEffect {
-        ContainersEffect::WaitForTypingPause(PathBuf::from(path))
+        ContainersEffect::Run(RunEffect::WaitForTypingPause(PathBuf::from(
+            path,
+        )))
     }
 
     /// The effect that gives the disk time to answer about `path`.
     fn waits_for_answer(path: &str) -> ContainersEffect {
-        ContainersEffect::WaitForLateAnswer(PathBuf::from(path))
+        ContainersEffect::Run(RunEffect::WaitForLateAnswer(PathBuf::from(path)))
     }
 
     /// Add a volume row to `/data` with `source` typed last; the effects of
@@ -1053,19 +1358,22 @@ mod tests {
     }
 
     fn answer(state: &mut ContainersState, path: &str, exists: bool) {
-        let effects = effects(reduce(
+        let effects = effects(reduce_containers(
             state,
-            ContainersIntent::FolderChecked {
+            ContainersIntent::Run(RunIntent::FolderChecked {
                 path: PathBuf::from(path),
                 exists,
-            },
+            }),
         ));
 
         assert!(effects.is_empty(), "{effects:?}");
     }
 
     fn recheck(state: &mut ContainersState) -> Vec<ContainersEffect> {
-        effects(reduce(state, ContainersIntent::RecheckFolders))
+        effects(reduce_containers(
+            state,
+            ContainersIntent::Run(RunIntent::RecheckFolders),
+        ))
     }
 
     /// Typing stopped on `path`; the effects of that.
@@ -1073,17 +1381,21 @@ mod tests {
         state: &mut ContainersState,
         path: &str,
     ) -> Vec<ContainersEffect> {
-        effects(reduce(
+        effects(reduce_containers(
             state,
-            ContainersIntent::FolderTypingPaused(PathBuf::from(path)),
+            ContainersIntent::Run(RunIntent::FolderTypingPaused(
+                PathBuf::from(path),
+            )),
         ))
     }
 
     /// The time for an answer about `path` is over.
     fn answer_is_late(state: &mut ContainersState, path: &str) {
-        let effects = effects(reduce(
+        let effects = effects(reduce_containers(
             state,
-            ContainersIntent::FolderAnswerLate(PathBuf::from(path)),
+            ContainersIntent::Run(RunIntent::FolderAnswerLate(PathBuf::from(
+                path,
+            ))),
         ));
 
         assert!(effects.is_empty(), "{effects:?}");
@@ -1167,7 +1479,12 @@ mod tests {
         let questions: Vec<ContainersEffect> = ["/s", "/sr", "/srv"]
             .into_iter()
             .flat_map(|text| pause_typing(&mut state, text))
-            .filter(|effect| matches!(effect, ContainersEffect::CheckFolder(_)))
+            .filter(|effect| {
+                matches!(
+                    effect,
+                    ContainersEffect::Run(RunEffect::CheckFolder(_))
+                )
+            })
             .collect();
 
         assert_eq!(questions, vec![asks_about("/srv")]);
@@ -1222,8 +1539,10 @@ mod tests {
         let mut state = ready_form();
         let _ = add_volume(&mut state, "/srv/site");
 
-        let pressed =
-            effects(reduce(&mut state, ContainersIntent::RunSubmitted));
+        let pressed = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Submitted),
+        ));
 
         assert!(pressed.is_empty(), "{pressed:?}");
         assert!(!can_run(run_form(&state)));
@@ -1298,7 +1617,7 @@ mod tests {
 
         answer(&mut state, "/srv/site", true);
 
-        assert!(state.run_form().is_none());
+        assert!(!state.run().is_open());
     }
 
     #[test]
@@ -1345,11 +1664,13 @@ mod tests {
 
         assert_eq!(asked, vec![asks_about("/srv/site")]);
         assert!(can_run(run_form(&state)));
-        let pressed =
-            effects(reduce(&mut state, ContainersIntent::RunSubmitted));
+        let pressed = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Submitted),
+        ));
         assert!(matches!(
             pressed.as_slice(),
-            [ContainersEffect::RunContainer { .. }]
+            [ContainersEffect::Run(RunEffect::RunContainer { .. })]
         ));
     }
 
@@ -1474,8 +1795,11 @@ mod tests {
     #[test]
     fn an_old_time_limit_shows_nothing_in_a_reopened_form() {
         let mut state = asked_form("/srv/site");
-        let _ = reduce(&mut state, ContainersIntent::RunCancelled);
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Close),
+        );
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
         let _ = add_volume(&mut state, "/srv/site");
 
         answer_is_late(&mut state, "/srv/site");
@@ -1500,8 +1824,10 @@ mod tests {
             Some(Key::ContainersRunErrSourceNotAnswering)
         );
         assert!(!can_run(run_form(&state)));
-        let pressed =
-            effects(reduce(&mut state, ContainersIntent::RunSubmitted));
+        let pressed = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Submitted),
+        ));
         assert!(pressed.is_empty(), "{pressed:?}");
     }
 
@@ -1536,7 +1862,7 @@ mod tests {
 
         answer_is_late(&mut state, "/srv/site");
 
-        assert!(state.run_form().is_none());
+        assert!(!state.run().is_open());
     }
 
     #[test]
@@ -1649,9 +1975,10 @@ mod tests {
     {
         let mut state = asked_form("/srv/site");
         answer(&mut state, "/srv/site", true);
-        let _ = reduce(&mut state, ContainersIntent::Leave);
+        let _ = reduce_containers(&mut state, ContainersIntent::Leave);
 
-        let entered = effects(reduce(&mut state, ContainersIntent::Enter));
+        let entered =
+            effects(reduce_containers(&mut state, ContainersIntent::Enter));
 
         assert_eq!(entered.len(), 2, "{entered:?}");
         assert!(entered.contains(&ContainersEffect::Discover), "{entered:?}");
@@ -1664,9 +1991,10 @@ mod tests {
         // This tick spends the mark of the typing wait, so only the question
         // in flight can keep Enter from asking.
         let _ = recheck(&mut state);
-        let _ = reduce(&mut state, ContainersIntent::Leave);
+        let _ = reduce_containers(&mut state, ContainersIntent::Leave);
 
-        let entered = effects(reduce(&mut state, ContainersIntent::Enter));
+        let entered =
+            effects(reduce_containers(&mut state, ContainersIntent::Enter));
 
         assert_eq!(entered, vec![ContainersEffect::Discover]);
     }
@@ -1675,9 +2003,10 @@ mod tests {
     fn entering_containers_mode_leaves_a_folder_being_typed_to_its_pause() {
         let mut state = ready_form();
         let _ = add_volume(&mut state, "/srv/site");
-        let _ = reduce(&mut state, ContainersIntent::Leave);
+        let _ = reduce_containers(&mut state, ContainersIntent::Leave);
 
-        let entered = effects(reduce(&mut state, ContainersIntent::Enter));
+        let entered =
+            effects(reduce_containers(&mut state, ContainersIntent::Enter));
 
         assert_eq!(entered, vec![ContainersEffect::Discover]);
     }
@@ -1685,9 +2014,10 @@ mod tests {
     #[test]
     fn entering_containers_mode_without_a_form_asks_about_no_folder() {
         let mut state = state_on(&[EngineKind::Docker], ResourceKind::Images);
-        let _ = reduce(&mut state, ContainersIntent::Leave);
+        let _ = reduce_containers(&mut state, ContainersIntent::Leave);
 
-        let entered = effects(reduce(&mut state, ContainersIntent::Enter));
+        let entered =
+            effects(reduce_containers(&mut state, ContainersIntent::Enter));
 
         assert_eq!(entered, vec![ContainersEffect::Discover]);
     }
@@ -1697,9 +2027,9 @@ mod tests {
         let mut state = asked_form("/srv/site");
         answer(&mut state, "/srv/site", true);
 
-        let _ = reduce(&mut state, ContainersIntent::Leave);
+        let _ = reduce_containers(&mut state, ContainersIntent::Leave);
 
-        assert!(state.run_form().is_some());
+        assert!(state.run().is_open());
         assert!(can_run(run_form(&state)));
     }
 
@@ -1718,7 +2048,7 @@ mod tests {
         );
 
         for state in [&mut with_selinux, &mut without] {
-            let _ = reduce(state, ContainersIntent::OpenCreate);
+            let _ = reduce_containers(state, ContainersIntent::OpenCreate);
             let _ = add_volume(state, "/srv/site");
         }
 
@@ -1732,15 +2062,15 @@ mod tests {
         let mut state =
             state_after(discovery, &kinds, ResourceKind::Containers);
 
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
         let _ = type_in(&mut state, RunEdit::Image(String::from("nginx:1.27")));
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::ImageDefaultsLoaded {
+            ContainersIntent::Run(RunIntent::ImageDefaultsLoaded {
                 engine: docker().address().clone(),
                 reference: String::from("nginx:1.27"),
                 result: Ok(Some(fixtures::image_defaults())),
-            },
+            }),
         );
         let _ = add_volume(&mut state, "~/site");
 
@@ -1763,8 +2093,8 @@ mod tests {
         let kinds = [EngineKind::Docker];
         let mut state = state_on(&kinds, ResourceKind::Containers);
 
-        let _ = reduce(&mut state, ContainersIntent::CheckAgain);
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(&mut state, ContainersIntent::CheckAgain);
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
         let _ = add_volume(&mut state, "~/site");
 
         assert_eq!(
@@ -1778,14 +2108,14 @@ mod tests {
         let kinds = [EngineKind::Docker];
         let mut state = state_on(&kinds, ResourceKind::Containers);
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::DiscoveryFinished(
                 fixtures::discovery_without_home(&kinds),
             ),
         );
 
-        assert_eq!(state.home_folder(), None);
+        assert_eq!(state.run_ctx().home_folder, None);
     }
 
     #[test]
@@ -1796,7 +2126,7 @@ mod tests {
             &kinds,
             ResourceKind::Containers,
         );
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
 
         let typed = add_volume(&mut state, "~/site");
         let rechecked = recheck(&mut state);
@@ -1812,8 +2142,10 @@ mod tests {
                 EngineKind::Docker,
             ]));
 
-        let pressed =
-            effects(reduce(&mut state, ContainersIntent::RunSubmitted));
+        let pressed = effects(reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::Submitted),
+        ));
 
         assert!(!can_run(run_form(&state)));
         assert!(pressed.is_empty(), "{pressed:?}");
@@ -1845,8 +2177,8 @@ mod tests {
             ResourceKind::Containers,
         );
 
-        let _ = reduce(&mut state, ContainersIntent::CheckAgain);
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(&mut state, ContainersIntent::CheckAgain);
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
         let _ = add_volume(&mut state, "/srv/site");
 
         assert!(run_form(&state).offers_relabel(0));

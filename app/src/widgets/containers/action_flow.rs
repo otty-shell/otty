@@ -15,8 +15,8 @@ use super::actions::{
 };
 use super::create::event::CreateIntent;
 use super::event::{ContainersEffect, ContainersEvent};
-use super::reducer::reduce_create;
-use super::run_flow;
+use super::reducer::{reduce_create, reduce_run};
+use super::run::event::RunIntent;
 use super::state::ContainersState;
 use super::types::{
     ActionRequest, ContainersError, EngineAction, ResourceKind, image_name,
@@ -96,7 +96,11 @@ pub(super) fn act(
         },
         RowAction::Shell => return open_shell(state, &item),
         RowAction::Run => {
-            return run_flow::open(state, item.engine, &item.name);
+            let open = RunIntent::Open {
+                engine: item.engine,
+                image: item.name,
+            };
+            return reduce_run(state, open);
         },
         RowAction::Start => EngineAction::StartContainer(item.id),
         RowAction::Stop => EngineAction::StopContainer(item.id),
@@ -1456,7 +1460,7 @@ mod tests {
 
         let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Run));
 
-        assert_eq!(state.run_form().map(|form| form.image()), Some("app:2"));
+        assert_eq!(state.run().form().map(|form| form.image()), Some("app:2"));
     }
 
     #[test]

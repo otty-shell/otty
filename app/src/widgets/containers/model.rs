@@ -414,8 +414,11 @@ mod tests {
     use crate::widgets::containers::no_engine::NoEngineCase;
     use crate::widgets::containers::reducer::reduce;
     use crate::widgets::containers::resource_rows::{self, PORTS_COLUMN};
-    use crate::widgets::containers::run_form::RunEdit;
-    use crate::widgets::containers::run_model::{image_panel, run_form};
+    use crate::widgets::containers::run::event::RunIntent;
+    use crate::widgets::containers::run::types::RunEdit;
+    use crate::widgets::containers::run::{
+        ImagePanelViewModel, RunFormViewModel,
+    };
     use crate::widgets::containers::status::status_bar;
     use crate::widgets::containers::types::{ContainersError, LoadedLists};
 
@@ -696,15 +699,18 @@ mod tests {
             let _ = reduce(&mut state, ContainersIntent::OpenCreate);
             let _ = reduce(
                 &mut state,
-                ContainersIntent::RunEdited(RunEdit::Image(String::from(
-                    "nginx",
+                ContainersIntent::Run(RunIntent::Edited(RunEdit::Image(
+                    String::from("nginx"),
                 ))),
             );
 
             lose_engine(&mut state, EngineKind::Docker, found);
 
-            assert_eq!(run_form(&state).map(|_| ()), None, "{case:?}");
-            assert_eq!(image_panel(&state).map(|_| ()), None, "{case:?}");
+            let ctx = state.run_ctx();
+            let form = RunFormViewModel::from_state(state.run(), &ctx);
+            let panel = ImagePanelViewModel::from_state(state.run(), &ctx);
+            assert_eq!(form.map(|_| ()), None, "{case:?}");
+            assert_eq!(panel.map(|_| ()), None, "{case:?}");
             assert_only_the_card(&state, case, commands, installs);
 
             let _ = reduce(
@@ -714,9 +720,11 @@ mod tests {
                 ])),
             );
 
-            let form = state.run_form().expect("the form was kept");
+            let form = state.run().form().expect("the form was kept");
             assert_eq!(form.reference(), "nginx");
-            assert!(run_form(&state).is_some(), "{case:?}");
+            let vm =
+                RunFormViewModel::from_state(state.run(), &state.run_ctx());
+            assert!(vm.is_some(), "{case:?}");
         }
     }
 

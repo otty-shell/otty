@@ -4,7 +4,7 @@
 //! shown under its field and keeps Run disabled. Pure: whether a folder exists
 //! is the answer kept in the form.
 
-use super::run_form::{PortRow, RunForm, VolumeRow, parse_port};
+use super::state::{ImageLookup, PortRow, RunForm, VolumeRow, parse_port};
 use crate::i18n::Key;
 
 /// The problem of one port or volume row: its message and which of the
@@ -98,6 +98,15 @@ pub(crate) fn check(form: &RunForm) -> RunProblems {
     }
 }
 
+/// Whether Run can be pressed: nothing runs, every check passes and both
+/// the engine about the image and the disk about the folders have answered.
+pub(crate) fn can_run(form: &RunForm) -> bool {
+    form.is_editing()
+        && form.lookup() != &ImageLookup::Loading
+        && form.are_folders_answered()
+        && check(form).is_empty()
+}
+
 /// A blank row is fine. The host port may be empty (the engine picks
 /// one); the container port is required.
 fn port_problem(row: &PortRow) -> Option<RowProblem> {
@@ -175,7 +184,7 @@ mod tests {
     use otty_containers::{EngineKind, fixtures};
 
     use super::*;
-    use crate::widgets::containers::run_form::RunEdit;
+    use crate::widgets::containers::run::types::RunEdit;
 
     fn form_at_home(home: Option<&Path>, edits: Vec<RunEdit>) -> RunForm {
         let mut form = RunForm::new(

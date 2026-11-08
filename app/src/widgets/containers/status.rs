@@ -42,9 +42,9 @@ pub(crate) fn status_bar(state: &ContainersState) -> StatusViewModel {
     // describe something that is not on screen. It can run on another engine
     // than the open list, and it keeps its engine when that goes away; the bar
     // names what the form names.
-    if let Some(form) = state.run_form() {
+    if let Some(engine) = state.run().engine() {
         return StatusViewModel {
-            engine: Some(engine_label(form.engine())),
+            engine: Some(engine_label(engine)),
             info: i18n::t(Key::ContainersRunContainer).to_string(),
         };
     }
@@ -140,7 +140,8 @@ mod tests {
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::containers::event::ContainersIntent;
     use crate::widgets::containers::reducer::reduce;
-    use crate::widgets::containers::run_model::run_form;
+    use crate::widgets::containers::run::RunFormViewModel;
+    use crate::widgets::containers::run::event::RunIntent;
     use crate::widgets::containers::types::{
         ContainersError, LoadedLists, Place,
     };
@@ -237,7 +238,9 @@ mod tests {
         let _ = reduce(&mut state, ContainersIntent::OpenCreate);
         let _ = reduce(
             &mut state,
-            ContainersIntent::RunEngineChosen(podman().address().clone()),
+            ContainersIntent::Run(RunIntent::EngineChosen(
+                podman().address().clone(),
+            )),
         );
         state
     }
@@ -259,7 +262,9 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            ContainersIntent::RunEngineChosen(docker().address().clone()),
+            ContainersIntent::Run(RunIntent::EngineChosen(
+                docker().address().clone(),
+            )),
         );
 
         assert_eq!(status_bar(&state).engine.as_deref(), Some("Docker 29.9.1"));
@@ -269,7 +274,7 @@ mod tests {
     fn the_bar_goes_back_to_the_open_list_when_the_run_form_closes() {
         let mut state = run_form_on_podman();
 
-        let _ = reduce(&mut state, ContainersIntent::RunCancelled);
+        let _ = reduce(&mut state, ContainersIntent::Run(RunIntent::Close));
 
         let vm = status_bar(&state);
         assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
@@ -293,7 +298,8 @@ mod tests {
         assert!(state.engine(podman().address()).is_none());
         assert_eq!(vm.engine.as_deref(), Some("Podman 5.8.8"));
         assert_eq!(vm.info, "Run container");
-        let form = run_form(&state).expect("the form stays");
+        let form = RunFormViewModel::from_state(state.run(), &state.run_ctx())
+            .expect("the form stays");
         assert_eq!(vm.engine.as_ref(), Some(&form.engine.label));
     }
 
@@ -309,7 +315,7 @@ mod tests {
         );
 
         let vm = status_bar(&state);
-        assert!(state.run_form().is_some());
+        assert!(state.run().is_open());
         assert_eq!(vm.engine, None);
         assert_eq!(vm.info, "no engine found");
     }

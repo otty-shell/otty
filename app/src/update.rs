@@ -220,7 +220,8 @@ mod tests {
     use crate::widgets::containers::event::ContainersEffect;
     use crate::widgets::containers::inspector::{InspectorTab, LogTarget};
     use crate::widgets::containers::inspector_tabs::TabContent;
-    use crate::widgets::containers::run_form::RunEdit;
+    use crate::widgets::containers::run::event::{RunEffect, RunIntent};
+    use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::containers::types::LoadedLists;
     use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::ModesWidget;
@@ -376,14 +377,15 @@ mod tests {
             fixtures::discovery(&[EngineKind::Docker]),
         ));
         let _ = containers.reduce(ContainersIntent::OpenCreate);
-        let _ =
-            containers.reduce(ContainersIntent::RunEdited(RunEdit::AddVolume));
-        let _ = containers.reduce(ContainersIntent::RunEdited(
+        let _ = containers.reduce(ContainersIntent::Run(RunIntent::Edited(
+            RunEdit::AddVolume,
+        )));
+        let _ = containers.reduce(ContainersIntent::Run(RunIntent::Edited(
             RunEdit::VolumeSource(0, FOLDER.to_string()),
-        ));
-        let _ = containers.reduce(ContainersIntent::RunEdited(
+        )));
+        let _ = containers.reduce(ContainersIntent::Run(RunIntent::Edited(
             RunEdit::VolumeTarget(0, String::from("/data")),
-        ));
+        )));
 
         app
     }
@@ -405,7 +407,7 @@ mod tests {
 
         let _ = update_internal(
             &mut app,
-            containers_intent(ContainersIntent::RecheckFolders),
+            containers_intent(ContainersIntent::Run(RunIntent::RecheckFolders)),
         );
 
         assert!(app.widgets.modes.is_menu_open());
@@ -417,10 +419,12 @@ mod tests {
 
         let _ = update_internal(
             &mut app,
-            containers_intent(ContainersIntent::FolderChecked {
-                path: PathBuf::from(FOLDER),
-                exists: false,
-            }),
+            containers_intent(ContainersIntent::Run(
+                RunIntent::FolderChecked {
+                    path: PathBuf::from(FOLDER),
+                    exists: false,
+                },
+            )),
         );
 
         assert!(app.widgets.modes.is_menu_open());
@@ -436,8 +440,8 @@ mod tests {
 
         let asked = collect_outputs(update_internal(
             &mut app,
-            containers_intent(ContainersIntent::FolderTypingPaused(
-                PathBuf::from(FOLDER),
+            containers_intent(ContainersIntent::Run(
+                RunIntent::FolderTypingPaused(PathBuf::from(FOLDER)),
             )),
         ));
 
@@ -445,7 +449,7 @@ mod tests {
         assert!(asked.iter().any(|event| matches!(
             event,
             AppEvent::Containers(ContainersEvent::Effect(
-                ContainersEffect::CheckFolder(path)
+                ContainersEffect::Run(RunEffect::CheckFolder(path))
             )) if path.as_path() == Path::new(FOLDER)
         )));
     }
@@ -455,16 +459,16 @@ mod tests {
         let mut app = app_with_modes_menu_over_a_folder_row();
         let _ = update_internal(
             &mut app,
-            containers_intent(ContainersIntent::FolderTypingPaused(
-                PathBuf::from(FOLDER),
+            containers_intent(ContainersIntent::Run(
+                RunIntent::FolderTypingPaused(PathBuf::from(FOLDER)),
             )),
         );
         assert_eq!(row_problem(&app), None);
 
         let _ = update_internal(
             &mut app,
-            containers_intent(ContainersIntent::FolderAnswerLate(
-                PathBuf::from(FOLDER),
+            containers_intent(ContainersIntent::Run(
+                RunIntent::FolderAnswerLate(PathBuf::from(FOLDER)),
             )),
         );
 
@@ -480,21 +484,23 @@ mod tests {
         let mut app = app_with_modes_menu_over_a_folder_row();
         let _ = update_internal(
             &mut app,
-            containers_intent(ContainersIntent::FolderChecked {
-                path: PathBuf::from(FOLDER),
-                exists: true,
-            }),
+            containers_intent(ContainersIntent::Run(
+                RunIntent::FolderChecked {
+                    path: PathBuf::from(FOLDER),
+                    exists: true,
+                },
+            )),
         );
 
         let asked = collect_outputs(update_internal(
             &mut app,
-            containers_intent(ContainersIntent::RecheckFolders),
+            containers_intent(ContainersIntent::Run(RunIntent::RecheckFolders)),
         ));
 
         assert!(matches!(
             asked.as_slice(),
             [AppEvent::Containers(ContainersEvent::Effect(
-                ContainersEffect::CheckFolder(path)
+                ContainersEffect::Run(RunEffect::CheckFolder(path))
             ))] if path.as_path() == Path::new(FOLDER)
         ));
     }

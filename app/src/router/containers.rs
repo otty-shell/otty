@@ -23,6 +23,7 @@ use crate::widgets::containers::event::{
     ContainersEffect, ContainersEvent, ContainersIntent,
 };
 use crate::widgets::containers::inspector::{InspectTarget, LogTarget};
+use crate::widgets::containers::run::event::{RunEffect, RunIntent};
 use crate::widgets::containers::types::{
     ActionRequest, ContainersError, EngineAction, LoadedList, LoadedLists,
     ResourceKind,
@@ -59,14 +60,8 @@ pub(crate) fn route(app: &mut App, event: ContainersEvent) -> Task<AppEvent> {
         ContainersEvent::Effect(ContainersEffect::Create(effect)) => {
             create_effect(app, effect)
         },
-        ContainersEvent::Effect(ContainersEffect::StartPull {
-            engine,
-            image,
-            tag,
-        }) => start_pull(app, engine, image, tag, run_pull),
-        ContainersEvent::Effect(ContainersEffect::CancelPull) => {
-            app.widgets.containers.cancel_pull();
-            Task::none()
+        ContainersEvent::Effect(ContainersEffect::Run(effect)) => {
+            run_effect(app, effect)
         },
         ContainersEvent::Effect(ContainersEffect::OpenShell {
             title,
@@ -90,6 +85,66 @@ fn create_effect(app: &mut App, effect: CreateEffect) -> Task<AppEvent> {
     }
 }
 
+/// Run an effect of the Run container form. Its pull, its engine calls, its
+/// folder checks and the two waits around a folder check come back as
+/// intents of the form.
+fn run_effect(app: &mut App, effect: RunEffect) -> Task<AppEvent> {
+    match effect {
+        RunEffect::StartPull { engine, image, tag } => {
+            start_pull(app, engine, image, tag, run_pull)
+        },
+        RunEffect::CancelPull => {
+            app.widgets.containers.cancel_pull();
+            Task::none()
+        },
+        RunEffect::LoadImageDefaults { engine, reference } => {
+            let address = engine.address().clone();
+            let asked = reference.clone();
+
+            Task::perform(
+                load_image_defaults(engine, reference),
+                move |result| {
+                    run_intent(RunIntent::ImageDefaultsLoaded {
+                        engine: address.clone(),
+                        reference: asked.clone(),
+                        result,
+                    })
+                },
+            )
+        },
+        RunEffect::RunContainer { engine, request } => {
+            let address = engine.address().clone();
+
+            Task::perform(run_container(engine, request), move |result| {
+                run_intent(RunIntent::RunFinished {
+                    engine: address.clone(),
+                    result,
+                })
+            })
+        },
+        RunEffect::CheckFolder(path) => {
+            let asked = path.clone();
+
+            Task::perform(
+                async move { host_folder_exists(&path).await },
+                move |exists| {
+                    run_intent(RunIntent::FolderChecked {
+                        path: asked,
+                        exists,
+                    })
+                },
+            )
+        },
+        RunEffect::WaitForTypingPause(path) => folder_wait(
+            FOLDER_TYPING_PAUSE,
+            RunIntent::FolderTypingPaused(path),
+        ),
+        RunEffect::WaitForLateAnswer(path) => {
+            folder_wait(FOLDER_ANSWER_LIMIT, RunIntent::FolderAnswerLate(path))
+        },
+    }
+}
+
 /// Pull `image` at `tag` on `engine` and keep the pull's abort handle in the
 /// widget; `to_event` turns each update into the intent of the part that
 /// asked for the pull.
@@ -107,16 +162,14 @@ fn start_pull(
     task
 }
 
-/// An update of the Run form's pull, as a Containers intent.
+/// An update of the Run form's pull, as an intent of the Run form.
 fn run_pull(update: PullUpdate) -> AppEvent {
-    match update {
-        PullUpdate::Progressed(progress) => {
-            intent(ContainersIntent::PullProgressed(progress))
-        },
-        PullUpdate::Finished(result) => {
-            intent(ContainersIntent::PullFinished(result))
-        },
-    }
+    let run = match update {
+        PullUpdate::Progressed(progress) => RunIntent::PullProgressed(progress),
+        PullUpdate::Finished(result) => RunIntent::PullFinished(result),
+    };
+
+    run_intent(run)
 }
 
 /// An update of the pull dialog's pull, as an intent of the create dialogs.
@@ -158,9 +211,9 @@ fn open_shell_tab(
     )))
 }
 
-/// Run the effects that need no app state; the pull effects are run by
-/// [`route`], which keeps the pull's abort handle, and so are the effects of
-/// the create dialogs.
+/// Run the effects that need no app state; the effects of the create
+/// dialogs and of the Run form are run by [`route`], which keeps the pull's
+/// abort handle, and so is the shell tab.
 fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
     match effect {
         ContainersEffect::Discover => Task::perform(discover(), |discovery| {
@@ -225,65 +278,18 @@ fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
                 intent(ContainersIntent::ActionFinished { request, result })
             })
         },
-        ContainersEffect::LoadImageDefaults { engine, reference } => {
-            let address = engine.address().clone();
-            let asked = reference.clone();
-
-            Task::perform(
-                load_image_defaults(engine, reference),
-                move |result| {
-                    intent(ContainersIntent::ImageDefaultsLoaded {
-                        engine: address.clone(),
-                        reference: asked.clone(),
-                        result,
-                    })
-                },
-            )
-        },
-        ContainersEffect::RunContainer { engine, request } => {
-            let address = engine.address().clone();
-
-            Task::perform(run_container(engine, request), move |result| {
-                intent(ContainersIntent::RunFinished {
-                    engine: address.clone(),
-                    result,
-                })
-            })
-        },
-        ContainersEffect::CheckFolder(path) => {
-            let asked = path.clone();
-
-            Task::perform(
-                async move { host_folder_exists(&path).await },
-                move |exists| {
-                    intent(ContainersIntent::FolderChecked {
-                        path: asked,
-                        exists,
-                    })
-                },
-            )
-        },
-        ContainersEffect::WaitForTypingPause(path) => folder_wait(
-            FOLDER_TYPING_PAUSE,
-            ContainersIntent::FolderTypingPaused(path),
-        ),
-        ContainersEffect::WaitForLateAnswer(path) => folder_wait(
-            FOLDER_ANSWER_LIMIT,
-            ContainersIntent::FolderAnswerLate(path),
-        ),
         ContainersEffect::RevealInspector => Task::done(AppEvent::Sidebar(
             SidebarEvent::Intent(SidebarIntent::RevealRight),
         )),
         ContainersEffect::Create(_)
-        | ContainersEffect::StartPull { .. }
-        | ContainersEffect::CancelPull
+        | ContainersEffect::Run(_)
         | ContainersEffect::OpenShell { .. } => Task::none(),
     }
 }
 
-/// Send `next` after `delay`, without holding a thread.
-fn folder_wait(delay: Duration, next: ContainersIntent) -> Task<AppEvent> {
-    Task::perform(wait_for(delay), move |()| intent(next))
+/// Send `next` to the Run form after `delay`, without holding a thread.
+fn folder_wait(delay: Duration, next: RunIntent) -> Task<AppEvent> {
+    Task::perform(wait_for(delay), move |()| run_intent(next))
 }
 
 /// Ask the engine what an image sets on its own; `None` when the image is
@@ -488,6 +494,10 @@ fn failed_list(resource: ResourceKind, error: ContainersError) -> LoadedList {
 
 fn intent(intent: ContainersIntent) -> AppEvent {
     AppEvent::Containers(ContainersEvent::Intent(intent))
+}
+
+fn run_intent(intent: RunIntent) -> AppEvent {
+    AppEvent::Containers(ContainersEvent::Intent(ContainersIntent::Run(intent)))
 }
 
 #[cfg(test)]
@@ -804,14 +814,22 @@ mod tests {
 
     #[test]
     fn the_run_form_effects_run_one_engine_task_each() {
-        let lookup = handle_effect(ContainersEffect::LoadImageDefaults {
-            engine: fixtures::engine(EngineKind::Docker),
-            reference: String::from("nginx:1.27"),
-        });
-        let run = handle_effect(ContainersEffect::RunContainer {
-            engine: fixtures::engine(EngineKind::Docker),
-            request: otty_containers::RunRequest::new("nginx:1.27"),
-        });
+        let (mut app, _) = App::new();
+
+        let lookup = run_effect(
+            &mut app,
+            RunEffect::LoadImageDefaults {
+                engine: fixtures::engine(EngineKind::Docker),
+                reference: String::from("nginx:1.27"),
+            },
+        );
+        let run = run_effect(
+            &mut app,
+            RunEffect::RunContainer {
+                engine: fixtures::engine(EngineKind::Docker),
+                request: otty_containers::RunRequest::new("nginx:1.27"),
+            },
+        );
 
         assert_eq!(lookup.units(), 1);
         assert_eq!(run.units(), 1);
@@ -819,21 +837,28 @@ mod tests {
 
     #[test]
     fn checking_a_folder_runs_one_task() {
-        let check = handle_effect(ContainersEffect::CheckFolder(
-            std::path::PathBuf::from("/srv/site"),
-        ));
+        let (mut app, _) = App::new();
+
+        let check = run_effect(
+            &mut app,
+            RunEffect::CheckFolder(PathBuf::from("/srv/site")),
+        );
 
         assert_eq!(check.units(), 1);
     }
 
     #[test]
     fn the_folder_waits_run_one_task_each() {
-        let typing = handle_effect(ContainersEffect::WaitForTypingPause(
-            PathBuf::from("/srv/site"),
-        ));
-        let late = handle_effect(ContainersEffect::WaitForLateAnswer(
-            PathBuf::from("/srv/site"),
-        ));
+        let (mut app, _) = App::new();
+
+        let typing = run_effect(
+            &mut app,
+            RunEffect::WaitForTypingPause(PathBuf::from("/srv/site")),
+        );
+        let late = run_effect(
+            &mut app,
+            RunEffect::WaitForLateAnswer(PathBuf::from("/srv/site")),
+        );
 
         assert_eq!(typing.units(), 1);
         assert_eq!(late.units(), 1);
@@ -841,48 +866,56 @@ mod tests {
 
     #[test]
     fn the_typing_wait_sends_the_pause_after_its_time() {
+        let (mut app, _) = App::new();
         let path = PathBuf::from("/srv/site");
 
-        let (intents, took) = run_waiting_task(handle_effect(
-            ContainersEffect::WaitForTypingPause(path.clone()),
+        let (intents, took) = run_waiting_task(run_effect(
+            &mut app,
+            RunEffect::WaitForTypingPause(path.clone()),
         ));
 
-        assert_eq!(intents, vec![ContainersIntent::FolderTypingPaused(path)]);
+        assert_eq!(
+            intents,
+            vec![ContainersIntent::Run(RunIntent::FolderTypingPaused(path))]
+        );
         assert!(took >= FOLDER_TYPING_PAUSE, "{took:?}");
         assert!(took < FOLDER_ANSWER_LIMIT, "{took:?}");
     }
 
     #[test]
     fn a_folder_wait_sends_its_intent_after_the_delay() {
-        let next =
-            ContainersIntent::FolderAnswerLate(PathBuf::from("/srv/site"));
+        let next = RunIntent::FolderAnswerLate(PathBuf::from("/srv/site"));
         let delay = Duration::from_millis(5);
 
         let (intents, took) =
             run_waiting_task(folder_wait(delay, next.clone()));
 
-        assert_eq!(intents, vec![next]);
+        assert_eq!(intents, vec![ContainersIntent::Run(next)]);
         assert!(took >= delay, "{took:?}");
     }
 
     #[test]
-    fn a_pull_runs_one_task_that_cancel_aborts() {
+    fn a_run_pull_runs_one_task_that_cancel_aborts() {
         let (mut app, _) = App::new();
 
         let pull = route(
             &mut app,
-            ContainersEvent::Effect(ContainersEffect::StartPull {
-                engine: fixtures::engine(EngineKind::Docker),
-                image: String::from("nginx"),
-                tag: String::from("latest"),
-            }),
+            ContainersEvent::Effect(ContainersEffect::Run(
+                RunEffect::StartPull {
+                    engine: fixtures::engine(EngineKind::Docker),
+                    image: String::from("nginx"),
+                    tag: String::from("latest"),
+                },
+            )),
         );
         assert_eq!(pull.units(), 1);
         assert!(app.widgets.containers.has_pull_task());
 
         let cancel = route(
             &mut app,
-            ContainersEvent::Effect(ContainersEffect::CancelPull),
+            ContainersEvent::Effect(ContainersEffect::Run(
+                RunEffect::CancelPull,
+            )),
         );
 
         assert_eq!(cancel.units(), 0);
@@ -935,6 +968,28 @@ mod tests {
             failed,
             AppEvent::Containers(ContainersEvent::Intent(
                 ContainersIntent::Create(CreateIntent::PullFinished(Err(error)))
+            )) if error == ContainersError::new("manifest unknown")
+        ));
+    }
+
+    #[test]
+    fn a_run_pull_reports_to_the_run_form() {
+        let progressed =
+            run_pull(PullUpdate::Progressed(fixtures::pull_progress()));
+        let failed = run_pull(PullUpdate::Finished(Err(ContainersError::new(
+            "manifest unknown",
+        ))));
+
+        assert!(matches!(
+            progressed,
+            AppEvent::Containers(ContainersEvent::Intent(
+                ContainersIntent::Run(RunIntent::PullProgressed(progress))
+            )) if progress == fixtures::pull_progress()
+        ));
+        assert!(matches!(
+            failed,
+            AppEvent::Containers(ContainersEvent::Intent(
+                ContainersIntent::Run(RunIntent::PullFinished(Err(error)))
             )) if error == ContainersError::new("manifest unknown")
         ));
     }

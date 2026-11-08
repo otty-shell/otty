@@ -17,11 +17,13 @@ use crate::widgets::chrome::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::containers::create::view::form_dialog as containers_form;
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::containers::no_engine::NoEngineCase;
+use crate::widgets::containers::run::view::{
+    run_form as containers_run_form, run_panel as containers_run_panel,
+};
 use crate::widgets::containers::view::{
     confirm_dialog as containers_confirm, engine_tree,
     inspector as containers_inspector, main_area as containers_main,
-    row_menu as containers_row_menu, run_form as containers_run_form,
-    run_panel as containers_run_panel, status_bar as containers_status_bar,
+    row_menu as containers_row_menu, status_bar as containers_status_bar,
 };
 use crate::widgets::containers::{MainViewModel, format as containers_format};
 use crate::widgets::explorer::event::ExplorerEvent;
@@ -456,6 +458,7 @@ fn view_containers_main<'a>(
                     theme: theme_props,
                 },
             )
+            .map(ContainersIntent::Run)
             .map(to_app_event),
         };
     }
@@ -494,6 +497,7 @@ fn view_containers_inspector<'a>(
                 theme: theme_props,
             },
         )
+        .map(ContainersIntent::Run)
         .map(|intent| AppEvent::Containers(ContainersEvent::Intent(intent)));
     }
 
@@ -847,6 +851,8 @@ mod tests {
 
     use super::*;
     use crate::widgets::containers::event::ContainersIntent;
+    use crate::widgets::containers::run::event::RunIntent;
+    use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::tabs::TabsCtx;
 
@@ -2084,10 +2090,8 @@ mod tests {
         use otty_containers::{EngineKind, fixtures};
 
         let mut app = app_with_run_form();
-        let _ = app.widgets.containers.reduce(ContainersIntent::RunEdited(
-            crate::widgets::containers::run_form::RunEdit::Image(String::from(
-                "kept:1",
-            )),
+        let _ = app.widgets.containers.reduce(ContainersIntent::Run(
+            RunIntent::Edited(RunEdit::Image(String::from("kept:1"))),
         ));
 
         assert_each_screen_starts_at_its_top(
@@ -2211,15 +2215,12 @@ mod tests {
 
     #[test]
     fn the_run_form_built_again_keeps_its_scrolling() {
-        use crate::widgets::containers::run_form::RunEdit;
-
         let mut app = app_with_run_form();
         let edit = |edit: RunEdit| -> AppChange {
             Box::new(move |app| {
-                let _ = app
-                    .widgets
-                    .containers
-                    .reduce(ContainersIntent::RunEdited(edit.clone()));
+                let _ = app.widgets.containers.reduce(ContainersIntent::Run(
+                    RunIntent::Edited(edit.clone()),
+                ));
             })
         };
 

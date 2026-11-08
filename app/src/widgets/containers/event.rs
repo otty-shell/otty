@@ -1,10 +1,7 @@
-use std::path::PathBuf;
-
 use iced::Point;
 use iced::widget::text_editor::Action;
 use otty_containers::{
-    Container, ContainerRun, Discovery, EngineAddress, EngineInfo,
-    ImageDefaults, LogPosition, PullProgress, RunRequest,
+    Container, ContainerRun, Discovery, EngineAddress, EngineInfo, LogPosition,
 };
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
@@ -12,7 +9,7 @@ use super::actions::RowAction;
 use super::create::event::{CreateEffect, CreateIntent};
 use super::inspector::{InspectTarget, InspectorTab, LogTarget};
 use super::links::LinkTarget;
-use super::run_form::RunEdit;
+use super::run::event::{RunEffect, RunIntent};
 use super::types::{
     ActionRequest, ContainersError, LoadedList, LoadedLists, Place,
     ResourceKind,
@@ -180,45 +177,8 @@ pub(crate) enum ContainersIntent {
     OpenCreate,
     /// An intent of the create dialogs.
     Create(CreateIntent),
-    /// The pull of the Run form got further.
-    PullProgressed(PullProgress),
-    /// The pull of the Run form ended; the error is the engine's message.
-    PullFinished(Result<(), ContainersError>),
-    // Run container form.
-    /// A field of the Run form changed.
-    RunEdited(RunEdit),
-    /// Another engine was chosen in the Run form.
-    RunEngineChosen(EngineAddress),
-    /// Run of the Run form was pressed.
-    RunSubmitted,
-    /// Cancel of the Run form was pressed; it stops a running pull.
-    RunCancelled,
-    /// The cross of the Run form's notice was pressed.
-    RunNoticeDismissed,
-    /// The container was created and started (its id), or the engine's
-    /// message.
-    RunFinished {
-        engine: EngineAddress,
-        result: Result<String, ContainersError>,
-    },
-    /// What the image `reference` sets on its own (`None`: not on this
-    /// computer), or the engine's message.
-    ImageDefaultsLoaded {
-        engine: EngineAddress,
-        reference: String,
-        result: Result<Option<ImageDefaults>, ContainersError>,
-    },
-    /// The disk answered whether this folder of the Run form exists.
-    FolderChecked { path: PathBuf, exists: bool },
-    /// Ask the disk again about the folders of the Run form, so a folder
-    /// created elsewhere clears its error by itself.
-    RecheckFolders,
-    /// Typing a volume source stopped for a moment on this folder: ask the
-    /// disk about it if the row still has it and nobody asked yet.
-    FolderTypingPaused(PathBuf),
-    /// A question about this folder went out a while ago: its row says the
-    /// folder is not answering if the answer has not come yet.
-    FolderAnswerLate(PathBuf),
+    /// An intent of the Run container form.
+    Run(RunIntent),
 }
 
 /// Effect events produced by the Containers reducer. The app runs them off the
@@ -265,31 +225,8 @@ pub(crate) enum ContainersEffect {
     RunAction(ActionRequest),
     /// An effect of the create dialogs.
     Create(CreateEffect),
-    /// Pull `image` at `tag` on `engine` for the Run form, reporting
-    /// progress.
-    StartPull {
-        engine: EngineInfo,
-        image: String,
-        tag: String,
-    },
-    /// Stop the running pull of the Run form.
-    CancelPull,
-    /// Ask `engine` what the image `reference` sets on its own.
-    LoadImageDefaults {
-        engine: EngineInfo,
-        reference: String,
-    },
-    /// Create and start a container on `engine`.
-    RunContainer {
-        engine: EngineInfo,
-        request: RunRequest,
-    },
-    /// Ask the disk whether this folder of the Run form exists.
-    CheckFolder(PathBuf),
-    /// Wait for a pause in typing, then send `FolderTypingPaused`.
-    WaitForTypingPause(PathBuf),
-    /// Give the disk time to answer, then send `FolderAnswerLate`.
-    WaitForLateAnswer(PathBuf),
+    /// An effect of the Run container form.
+    Run(RunEffect),
     /// A row press selected a row: make the right panel visible, so the
     /// inspector shows it.
     RevealInspector,

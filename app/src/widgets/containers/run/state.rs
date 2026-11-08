@@ -1,6 +1,6 @@
 //! The Run container form (spec Decision 18): what the user typed, the
 //! rule that auto remove forces Restart to No, what is known about the
-//! image and the typed folders and how far a run is. Pure: `run_flow.rs`
+//! image and the typed folders and how far a run is. Pure: `reducer.rs`
 //! asks the engine and the disk.
 
 use std::path::{Path, PathBuf};
@@ -11,7 +11,8 @@ use otty_containers::{
 };
 use otty_ui_kit::components::token_field::TokenList;
 
-use super::types::ContainersError;
+use super::super::types::ContainersError;
+use super::types::RunEdit;
 
 /// The restart choices in the order the form shows them.
 pub(crate) const RESTART_CHOICES: [RestartPolicy; 4] = [
@@ -20,6 +21,49 @@ pub(crate) const RESTART_CHOICES: [RestartPolicy; 4] = [
     RestartPolicy::UnlessStopped,
     RestartPolicy::Always,
 ];
+
+/// The Run container form, if one is open; it replaces the table.
+#[derive(Debug, Default)]
+pub(crate) struct RunState {
+    form: Option<RunForm>,
+}
+
+impl RunState {
+    /// Return the open Run container form.
+    pub(crate) fn form(&self) -> Option<&RunForm> {
+        self.form.as_ref()
+    }
+
+    /// Return whether the Run container form is open.
+    pub(crate) fn is_open(&self) -> bool {
+        self.form.is_some()
+    }
+
+    /// Return the engine the open form runs on.
+    pub(crate) fn engine(&self) -> Option<&EngineInfo> {
+        self.form.as_ref().map(RunForm::engine)
+    }
+
+    /// Return whether the open form has a volume row from a folder.
+    pub(crate) fn has_folder_rows(&self) -> bool {
+        self.form.as_ref().is_some_and(RunForm::has_folder_rows)
+    }
+
+    /// Open a form in place of the one that was open.
+    pub(super) fn open_form(&mut self, form: RunForm) {
+        self.form = Some(form);
+    }
+
+    /// Return the open form to change it.
+    pub(super) fn form_mut(&mut self) -> Option<&mut RunForm> {
+        self.form.as_mut()
+    }
+
+    /// Close the form and return it.
+    pub(super) fn take_form(&mut self) -> Option<RunForm> {
+        self.form.take()
+    }
+}
 
 /// One port row as typed: host port → container port and the protocol.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -231,36 +275,6 @@ pub(crate) enum RunPhase {
     Starting,
 }
 
-/// One change the user made in the form.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RunEdit {
-    Image(String),
-    Name(String),
-    PullMissing(bool),
-    CommandInput(String),
-    CommandSubmit,
-    CommandBackspace,
-    CommandRemove(usize),
-    PortHost(usize, String),
-    PortContainer(usize, String),
-    PortProtocol(usize, PortProtocol),
-    AddPort,
-    RemovePort(usize),
-    EnvName(usize, String),
-    EnvValue(usize, String),
-    AddEnv,
-    RemoveEnv(usize),
-    VolumeSource(usize, String),
-    VolumeTarget(usize, String),
-    VolumeReadOnly(usize, bool),
-    VolumeRelabel(usize, bool),
-    AddVolume,
-    RemoveVolume(usize),
-    Network(String),
-    Restart(RestartPolicy),
-    AutoRemove(bool),
-}
-
 /// The open Run container form.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RunForm {
@@ -406,7 +420,7 @@ impl RunForm {
     /// A new form on `engine` with `image` typed and `network` chosen; the
     /// pull switch is on, Restart is No. `is_selinux_enabled` says whether
     /// a folder volume can be relabeled; `home_folder` is what `~` stands for.
-    pub(crate) fn new(
+    pub(super) fn new(
         engine: EngineInfo,
         image: &str,
         network: &str,
@@ -436,7 +450,7 @@ impl RunForm {
 
     /// Run on another engine, with its default `network`. What was known
     /// about the image is dropped.
-    pub(crate) fn set_engine(&mut self, engine: EngineInfo, network: &str) {
+    pub(super) fn set_engine(&mut self, engine: EngineInfo, network: &str) {
         if !self.is_editing() {
             return;
         }
@@ -450,7 +464,7 @@ impl RunForm {
     /// Take one edit. Nothing changes while a run goes on. Turning auto
     /// remove on sets Restart to No; other restart choices are ignored
     /// while it is on, because the engine refuses the pair.
-    pub(crate) fn apply(&mut self, edit: RunEdit) {
+    pub(super) fn apply(&mut self, edit: RunEdit) {
         if !self.is_editing() {
             return;
         }
@@ -537,7 +551,7 @@ impl RunForm {
 
     /// Start looking up the typed image. Returns the reference to ask the
     /// engine about, or `None` when no image is typed.
-    pub(crate) fn start_lookup(&mut self) -> Option<String> {
+    pub(super) fn start_lookup(&mut self) -> Option<String> {
         let reference = self.reference().to_string();
         self.lookup_reference.clone_from(&reference);
 
@@ -552,7 +566,7 @@ impl RunForm {
 
     /// Take the engine's answer about `reference` on `engine`. An answer
     /// about another image or engine is dropped (returns `false`).
-    pub(crate) fn finish_lookup(
+    pub(super) fn finish_lookup(
         &mut self,
         engine: &EngineAddress,
         reference: &str,
@@ -575,7 +589,7 @@ impl RunForm {
 
     /// The source of the row at `index` was typed. Returns the folder that
     /// must now wait for a pause in typing, if it still needs a question.
-    pub(crate) fn start_typing_wait(
+    pub(super) fn start_typing_wait(
         &mut self,
         index: usize,
     ) -> Option<PathBuf> {
@@ -592,7 +606,7 @@ impl RunForm {
     /// folder is already out for another row, maybe a re-check that keeps no
     /// time limit. Returns the folder when this row joins that question and
     /// so needs a time limit of its own.
-    pub(crate) fn join_folder_question(
+    pub(super) fn join_folder_question(
         &mut self,
         index: usize,
     ) -> Option<PathBuf> {
@@ -614,7 +628,7 @@ impl RunForm {
     /// Start asking about `path` once typing stopped on it. Returns `true`
     /// when the question must go out: a row still has this folder without an
     /// answer, no question about it is out and no run goes on.
-    pub(crate) fn start_folder_check(&mut self, path: &Path) -> bool {
+    pub(super) fn start_folder_check(&mut self, path: &Path) -> bool {
         if !self.is_editing() || !self.is_folder_unanswered(path) {
             return false;
         }
@@ -626,7 +640,7 @@ impl RunForm {
     /// to ask the disk about once, without those a question is out about and
     /// those still waiting for a pause in typing. Such a row is skipped only
     /// this time. What is known about a folder stays until the answer comes.
-    pub(crate) fn start_folder_rechecks(&mut self) -> Vec<PathBuf> {
+    pub(super) fn start_folder_rechecks(&mut self) -> Vec<PathBuf> {
         if !self.is_editing() {
             return Vec::new();
         }
@@ -648,7 +662,7 @@ impl RunForm {
 
     /// Take the disk's answer about `path` for every row with that folder.
     /// An answer about a folder no row has is dropped (returns `false`).
-    pub(crate) fn finish_folder_check(
+    pub(super) fn finish_folder_check(
         &mut self,
         path: &Path,
         exists: bool,
@@ -677,7 +691,7 @@ impl RunForm {
     /// this folder and still no answer. Returns `false` when no row is marked,
     /// because no question is out (the time limit is older than the text or
     /// the form) or the answer came.
-    pub(crate) fn mark_folder_slow(&mut self, path: &Path) -> bool {
+    pub(super) fn mark_folder_slow(&mut self, path: &Path) -> bool {
         if !self.is_folder_asked(path) {
             return false;
         }
@@ -699,14 +713,14 @@ impl RunForm {
     }
 
     /// The image is pulled first.
-    pub(crate) fn start_pull(&mut self) {
+    pub(super) fn start_pull(&mut self) {
         self.notice = None;
         self.phase = RunPhase::Pulling(PullProgress::default());
     }
 
     /// Take the newest progress of the pull. Returns `false` when no pull
     /// runs.
-    pub(crate) fn set_progress(&mut self, progress: PullProgress) -> bool {
+    pub(super) fn set_progress(&mut self, progress: PullProgress) -> bool {
         if !matches!(self.phase, RunPhase::Pulling(_)) {
             return false;
         }
@@ -716,26 +730,26 @@ impl RunForm {
     }
 
     /// The container is created and started.
-    pub(crate) fn start_run(&mut self) {
+    pub(super) fn start_run(&mut self) {
         self.notice = None;
         self.phase = RunPhase::Starting;
     }
 
     /// The run failed: back to editing, every field as typed, the notice
     /// says why.
-    pub(crate) fn fail(&mut self, notice: String) {
+    pub(super) fn fail(&mut self, notice: String) {
         self.phase = RunPhase::Editing;
         self.notice = Some(notice);
     }
 
     /// Hide the notice.
-    pub(crate) fn dismiss_notice(&mut self) {
+    pub(super) fn dismiss_notice(&mut self) {
         self.notice = None;
     }
 
     /// The create request of the typed form. Blank rows and environment
     /// rows without a name are left out; the word still being typed in the
-    /// command counts. Call it once `run_checks::check` found nothing.
+    /// command counts. Call it once `checks::check` found nothing.
     pub(crate) fn request(&self) -> RunRequest {
         let mut request = RunRequest::new(self.reference());
 
@@ -835,7 +849,7 @@ impl RunForm {
 impl RunForm {
     /// Pretend SELinux is on or off, whatever this computer has, so tests
     /// do not depend on the machine they run on.
-    pub(crate) fn set_selinux(&mut self, is_enabled: bool) {
+    pub(super) fn set_selinux(&mut self, is_enabled: bool) {
         self.is_selinux_enabled = is_enabled;
     }
 }

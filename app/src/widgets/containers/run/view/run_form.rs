@@ -19,11 +19,11 @@ use otty_ui_kit::components::token_field::TokenField;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
-use super::super::event::ContainersIntent;
-use super::super::run_form::RunEdit;
-use super::super::run_model::{
+use super::super::event::RunIntent;
+use super::super::model::{
     PortRowViewModel, RunFormViewModel, VolumeRowViewModel,
 };
+use super::super::types::RunEdit;
 use crate::components::pull_line::pull_line;
 use crate::i18n::{self, Key};
 use crate::icons;
@@ -40,7 +40,7 @@ const READ_ONLY_WIDTH: f32 = 140.0;
 /// Label size of a field without a kit label (`font-size: 12.5px`).
 const LABEL_SIZE: f32 = 12.5;
 
-type RunElement<'a> = Element<'a, ContainersIntent>;
+type RunElement<'a> = Element<'a, RunIntent>;
 
 /// Props for the Run container form.
 pub(crate) struct RunFormProps<'a> {
@@ -62,7 +62,7 @@ pub(crate) fn view(props: RunFormProps<'_>) -> RunElement<'_> {
                 palette,
             )
             .on_dismiss(
-                ContainersIntent::RunNoticeDismissed,
+                RunIntent::RunNoticeDismissed,
                 i18n::t(Key::ContainersDismiss),
             ),
         );
@@ -127,7 +127,7 @@ fn image_section<'a>(
         let engines = select_owned(
             vm.engines.clone(),
             Some(vm.engine.clone()),
-            |choice| ContainersIntent::RunEngineChosen(choice.address),
+            |choice| RunIntent::EngineChosen(choice.address),
             palette,
         );
         section = section.field(labelled(
@@ -208,7 +208,7 @@ fn port_row<'a>(
     port: &PortRowViewModel<'a>,
     is_editable: bool,
     palette: &UiPalette,
-) -> MappingRow<'a, ContainersIntent> {
+) -> MappingRow<'a, RunIntent> {
     let protocol = if is_editable {
         segmented(
             &PROTOCOLS,
@@ -298,7 +298,7 @@ fn volume_row<'a>(
     volume: &VolumeRowViewModel<'a>,
     is_editable: bool,
     palette: &UiPalette,
-) -> MappingRow<'a, ContainersIntent> {
+) -> MappingRow<'a, RunIntent> {
     let mut read_only = Switch::new(volume.is_read_only, palette)
         .label(i18n::t(Key::ContainersRunReadOnly));
     if is_editable {
@@ -357,7 +357,7 @@ fn options_section<'a>(
     vm: &RunFormViewModel<'a>,
     palette: &UiPalette,
 ) -> RunElement<'a> {
-    let networks: Element<'a, ContainersIntent> = select_owned(
+    let networks: Element<'a, RunIntent> = select_owned(
         vm.networks.clone(),
         (!vm.network.is_empty()).then(|| vm.network.clone()),
         |network| edit(RunEdit::Network(network)),
@@ -412,10 +412,10 @@ fn footer<'a>(
 ) -> RunElement<'a> {
     let cancel = Button::new(i18n::t(Key::ButtonCancel), palette)
         .kind(ButtonKind::Ghost)
-        .on_press(ContainersIntent::RunCancelled);
+        .on_press(RunIntent::Close);
     let mut run = Button::new(vm.run_label, palette).kind(ButtonKind::Primary);
     if vm.can_run {
-        run = run.on_press(ContainersIntent::RunSubmitted);
+        run = run.on_press(RunIntent::Submitted);
     }
 
     // `Fill`, so that the row gives Cancel and Run their room first and the
@@ -456,8 +456,8 @@ fn labelled<'a>(
 }
 
 /// Wrap a form edit.
-fn edit(edit: RunEdit) -> ContainersIntent {
-    ContainersIntent::RunEdited(edit)
+fn edit(edit: RunEdit) -> RunIntent {
+    RunIntent::Edited(edit)
 }
 
 #[cfg(test)]
@@ -471,13 +471,17 @@ mod tests {
     use crate::i18n::{self, Key};
     use crate::testing::alone;
     use crate::theme::{AppTheme, BuiltinTheme};
-    use crate::widgets::containers::reducer::reduce;
-    use crate::widgets::containers::run_form::RunEdit;
-    use crate::widgets::containers::run_model::run_form;
+    use crate::widgets::containers::event::ContainersIntent;
+    use crate::widgets::containers::reducer::reduce as reduce_containers;
     use crate::widgets::containers::state::ContainersState;
     use crate::widgets::containers::types::{
         ContainersError, LoadedLists, Place, ResourceKind,
     };
+
+    /// The Run form of `state` as the widget builds it.
+    fn run_form(state: &ContainersState) -> Option<RunFormViewModel<'_>> {
+        RunFormViewModel::from_state(state.run(), &state.run_ctx())
+    }
 
     /// The form in the area it has in the app.
     fn page(props: RunFormProps<'_>) -> RunElement<'_> {
@@ -495,14 +499,14 @@ mod tests {
         let docker = fixtures::engine(EngineKind::Docker);
         let resources = fixtures::resources(EngineKind::Docker);
         let mut state = ContainersState::default();
-        let _ = reduce(&mut state, ContainersIntent::Enter);
-        let _ = reduce(
+        let _ = reduce_containers(&mut state, ContainersIntent::Enter);
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
                 EngineKind::Docker,
             ])),
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::ListsLoaded {
                 engine: docker.address().clone(),
@@ -514,30 +518,33 @@ mod tests {
                 },
             },
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::Open(Place::new(
                 docker.address().clone(),
                 ResourceKind::Containers,
             )),
         );
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
-        let _ = reduce(
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::RunEdited(RunEdit::Image(String::from(
-                "nginx:1.27",
+            ContainersIntent::Run(RunIntent::Edited(RunEdit::Image(
+                String::from("nginx:1.27"),
             ))),
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::ImageDefaultsLoaded {
+            ContainersIntent::Run(RunIntent::ImageDefaultsLoaded {
                 engine: docker.address().clone(),
                 reference: String::from("nginx:1.27"),
                 result: Ok(found),
-            },
+            }),
         );
         for edit in edits {
-            let _ = reduce(&mut state, ContainersIntent::RunEdited(edit));
+            let _ = reduce_containers(
+                &mut state,
+                ContainersIntent::Run(RunIntent::Edited(edit)),
+            );
         }
         state
     }
@@ -549,8 +556,8 @@ mod tests {
     /// A window tall enough for the whole form, so every part can be
     /// pressed without scrolling.
     fn tall<'a>(
-        element: impl Into<Element<'a, ContainersIntent>>,
-    ) -> iced_test::Simulator<'a, ContainersIntent> {
+        element: impl Into<Element<'a, RunIntent>>,
+    ) -> iced_test::Simulator<'a, RunIntent> {
         iced_test::Simulator::with_size(
             iced::Settings::default(),
             (1024.0, 2400.0),
@@ -559,7 +566,7 @@ mod tests {
     }
 
     /// Press the text `label` in the form drawn from `state`.
-    fn press(state: &ContainersState, label: &str) -> Vec<ContainersIntent> {
+    fn press(state: &ContainersState, label: &str) -> Vec<RunIntent> {
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
         let vm = run_form(state).expect("form");
         let mut ui = tall(page(RunFormProps {
@@ -606,7 +613,7 @@ mod tests {
     fn run_sends_its_intent_when_the_form_is_ready() {
         let messages = press(&ready(), i18n::t(Key::ContainersActionRun));
 
-        assert_eq!(messages, vec![ContainersIntent::RunSubmitted]);
+        assert_eq!(messages, vec![RunIntent::Submitted]);
     }
 
     #[test]
@@ -636,7 +643,7 @@ mod tests {
     fn cancel_sends_its_intent() {
         let messages = press(&ready(), i18n::t(Key::ButtonCancel));
 
-        assert_eq!(messages, vec![ContainersIntent::RunCancelled]);
+        assert_eq!(messages, vec![RunIntent::Close]);
     }
 
     #[test]
@@ -667,8 +674,8 @@ mod tests {
                 RunEdit::VolumeTarget(0, String::from("/data")),
             ],
         );
-        state
-            .run_form_mut()
+        let (run, _) = state.run_and_ctx();
+        run.form_mut()
             .expect("the form is open")
             .set_selinux(is_selinux_enabled);
 
@@ -679,14 +686,13 @@ mod tests {
     fn a_folder_that_does_not_answer_shows_the_hint_and_run_waits() {
         let mut state = with_volume_row("/srv/site", false);
         for intent in [
-            ContainersIntent::FolderTypingPaused(std::path::PathBuf::from(
+            RunIntent::FolderTypingPaused(std::path::PathBuf::from(
                 "/srv/site",
             )),
-            ContainersIntent::FolderAnswerLate(std::path::PathBuf::from(
-                "/srv/site",
-            )),
+            RunIntent::FolderAnswerLate(std::path::PathBuf::from("/srv/site")),
         ] {
-            let _ = reduce(&mut state, intent);
+            let _ =
+                reduce_containers(&mut state, ContainersIntent::Run(intent));
         }
 
         let messages = press(&state, i18n::t(Key::ContainersActionRun));
@@ -738,7 +744,7 @@ mod tests {
 
         assert_eq!(
             messages,
-            vec![ContainersIntent::RunEdited(RunEdit::VolumeRelabel(0, true))]
+            vec![RunIntent::Edited(RunEdit::VolumeRelabel(0, true))]
         );
     }
 
@@ -759,11 +765,8 @@ mod tests {
         let port = press(&state, i18n::t(Key::ContainersRunAddPort));
         let volume = press(&state, i18n::t(Key::ContainersRunAddVolume));
 
-        assert_eq!(port, vec![ContainersIntent::RunEdited(RunEdit::AddPort)]);
-        assert_eq!(
-            volume,
-            vec![ContainersIntent::RunEdited(RunEdit::AddVolume)]
-        );
+        assert_eq!(port, vec![RunIntent::Edited(RunEdit::AddPort)]);
+        assert_eq!(volume, vec![RunIntent::Edited(RunEdit::AddVolume)]);
     }
 
     #[test]
@@ -772,7 +775,7 @@ mod tests {
 
         assert_eq!(
             messages,
-            vec![ContainersIntent::RunEdited(RunEdit::AutoRemove(true))]
+            vec![RunIntent::Edited(RunEdit::AutoRemove(true))]
         );
     }
 
@@ -789,7 +792,7 @@ mod tests {
         assert!(always.is_empty(), "{always:?}");
         assert_eq!(
             no,
-            vec![ContainersIntent::RunEdited(RunEdit::Restart(
+            vec![RunIntent::Edited(RunEdit::Restart(
                 otty_containers::RestartPolicy::No
             ))]
         );
@@ -798,10 +801,15 @@ mod tests {
     #[test]
     fn a_pull_shows_its_line_in_the_footer_and_run_waits() {
         let mut state = state(None, Vec::new());
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::PullProgressed(fixtures::pull_progress()),
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::PullProgressed(
+                fixtures::pull_progress(),
+            )),
         );
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
         let mut ui = tall(page(RunFormProps {
@@ -821,13 +829,16 @@ mod tests {
     #[test]
     fn an_engine_error_shows_on_top_and_can_be_dismissed() {
         let mut state = ready();
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::RunFinished {
                 engine: fixtures::engine(EngineKind::Docker).address().clone(),
                 result: Err(ContainersError::new("port is already allocated")),
-            },
+            }),
         );
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
         let mut ui = simulator(page(RunFormProps {
@@ -849,7 +860,7 @@ mod tests {
         theme: &'a AppTheme,
         width: f32,
         height: f32,
-    ) -> iced_test::Simulator<'a, ContainersIntent> {
+    ) -> iced_test::Simulator<'a, RunIntent> {
         iced_test::Simulator::with_size(
             iced::Settings::default(),
             (width, height),
@@ -862,7 +873,7 @@ mod tests {
 
     /// Scrolls under `pointer` as far as `x` and `y` go.
     fn wheel(
-        ui: &mut iced_test::Simulator<'_, ContainersIntent>,
+        ui: &mut iced_test::Simulator<'_, RunIntent>,
         pointer: iced::Point,
         x: f32,
         y: f32,
@@ -876,9 +887,7 @@ mod tests {
     }
 
     /// How many scrollers the page has.
-    fn scroller_count(
-        ui: &mut iced_test::Simulator<'_, ContainersIntent>,
-    ) -> usize {
+    fn scroller_count(ui: &mut iced_test::Simulator<'_, RunIntent>) -> usize {
         let mut count = 0;
 
         let _ = ui.find(|candidate: iced_test::selector::Candidate<'_>| {
@@ -921,7 +930,7 @@ mod tests {
         ui.click(i18n::t(Key::ButtonCancel))
             .expect("Cancel should be in reach");
         ui.click(run).expect("Run should be in reach");
-        let messages: Vec<ContainersIntent> = ui.into_messages().collect();
+        let messages: Vec<RunIntent> = ui.into_messages().collect();
 
         let edge = found.bounds().x + found.bounds().width;
         let form_right = size::SCREEN_MIN - spacing::SPACE_7;
@@ -930,13 +939,7 @@ mod tests {
             edge <= form_right && edge > form_right - 20.0,
             "the buttons should keep the form's width: Run ends at {edge}"
         );
-        assert_eq!(
-            messages,
-            vec![
-                ContainersIntent::RunCancelled,
-                ContainersIntent::RunSubmitted
-            ]
-        );
+        assert_eq!(messages, vec![RunIntent::Close, RunIntent::Submitted]);
     }
 
     #[test]
@@ -1033,22 +1036,29 @@ mod tests {
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
         let mut state = state(None, Vec::new());
         let long = "ghcr.io/some-organisation/a-rather-long-image-name:1.2.3";
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::RunEdited(RunEdit::Image(long.to_string())),
+            ContainersIntent::Run(RunIntent::Edited(RunEdit::Image(
+                long.to_string(),
+            ))),
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::ImageDefaultsLoaded {
+            ContainersIntent::Run(RunIntent::ImageDefaultsLoaded {
                 engine: fixtures::engine(EngineKind::Docker).address().clone(),
                 reference: long.to_string(),
                 result: Ok(None),
-            },
+            }),
         );
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::PullProgressed(fixtures::pull_progress()),
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::PullProgressed(
+                fixtures::pull_progress(),
+            )),
         );
         let width = size::SCREEN_MIN;
         let mut ui = in_window(&state, &theme, width, 2400.0);
@@ -1059,24 +1069,29 @@ mod tests {
         let run = ui.find(i18n::t(Key::ContainersRunStarting)).expect("Run");
         ui.click(i18n::t(Key::ButtonCancel))
             .expect("Cancel should be in reach");
-        let messages: Vec<ContainersIntent> = ui.into_messages().collect();
+        let messages: Vec<RunIntent> = ui.into_messages().collect();
 
         let (cancel, run) = (cancel.bounds(), run.bounds());
         assert!(line.x + line.width <= cancel.x, "{line:?} and {cancel:?}");
         assert!(cancel.width > 30.0, "Cancel keeps its size: {cancel:?}");
         assert!(run.width > 30.0, "Run keeps its size: {run:?}");
         assert!(run.x + run.width <= width - spacing::SPACE_7);
-        assert_eq!(messages, vec![ContainersIntent::RunCancelled]);
+        assert_eq!(messages, vec![RunIntent::Close]);
     }
 
     #[test]
     fn at_a_normal_width_the_pull_line_stays_on_one_line() {
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
         let mut state = state(None, Vec::new());
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::PullProgressed(fixtures::pull_progress()),
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::PullProgressed(
+                fixtures::pull_progress(),
+            )),
         );
         let progress = run_form(&state)
             .expect("form")
@@ -1107,11 +1122,11 @@ mod tests {
             .bounds();
         wheel(&mut ui, iced::Point::new(100.0, 100.0), 0.0, -10_000.0);
         ui.click(run).expect("Run should be in reach");
-        let messages: Vec<ContainersIntent> = ui.into_messages().collect();
+        let messages: Vec<RunIntent> = ui.into_messages().collect();
 
         assert_eq!(hidden.visible_bounds(), None);
         assert!(hidden.bounds().y > last.y + last.height);
-        assert_eq!(messages, vec![ContainersIntent::RunSubmitted]);
+        assert_eq!(messages, vec![RunIntent::Submitted]);
     }
 
     #[test]
@@ -1129,7 +1144,7 @@ mod tests {
             -10_000.0,
         );
         ui.click(always).expect("the choice should be in reach");
-        let messages: Vec<ContainersIntent> = ui.into_messages().collect();
+        let messages: Vec<RunIntent> = ui.into_messages().collect();
 
         assert_eq!(hidden.visible_bounds(), None);
         assert_eq!(
@@ -1151,11 +1166,11 @@ mod tests {
             .expect("the image should be in reach");
         let _ = ui.typewrite("x");
 
-        let messages: Vec<ContainersIntent> = ui.into_messages().collect();
+        let messages: Vec<RunIntent> = ui.into_messages().collect();
         assert!(
             matches!(
                 messages.as_slice(),
-                [ContainersIntent::RunEdited(RunEdit::Image(_))]
+                [RunIntent::Edited(RunEdit::Image(_))]
             ),
             "{messages:?}"
         );
@@ -1271,7 +1286,7 @@ mod tests {
                 continue;
             }
             let label = i18n::text_in(locale, Key::ContainersRunReadOnly);
-            let needed = Switch::<ContainersIntent>::new(false, &palette)
+            let needed = Switch::<RunIntent>::new(false, &palette)
                 .label(label)
                 .width();
 
@@ -1369,7 +1384,7 @@ mod tests {
     /// item, as `Settings` does for its list: the items are not text a test can
     /// find. Pressing an item works only if the list opened under its field.
     fn press_second_item_of(
-        ui: &mut iced_test::Simulator<'_, ContainersIntent>,
+        ui: &mut iced_test::Simulator<'_, RunIntent>,
         label: &str,
     ) {
         let label = ui
@@ -1402,12 +1417,12 @@ mod tests {
             100.0 - at_rest.y,
         );
         press_second_item_of(&mut ui, label);
-        let messages: Vec<ContainersIntent> = ui.into_messages().collect();
+        let messages: Vec<RunIntent> = ui.into_messages().collect();
 
         assert!(
             matches!(
                 messages.as_slice(),
-                [ContainersIntent::RunEdited(RunEdit::Network(_))]
+                [RunIntent::Edited(RunEdit::Network(_))]
             ),
             "{messages:?}"
         );
@@ -1418,7 +1433,7 @@ mod tests {
      {
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
         let mut state = ready();
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
                 EngineKind::Docker,
@@ -1430,13 +1445,10 @@ mod tests {
 
         wheel(&mut ui, iced::Point::new(100.0, 100.0), -20.0, -80.0);
         press_second_item_of(&mut ui, label);
-        let messages: Vec<ContainersIntent> = ui.into_messages().collect();
+        let messages: Vec<RunIntent> = ui.into_messages().collect();
 
         assert!(
-            matches!(
-                messages.as_slice(),
-                [ContainersIntent::RunEngineChosen(_)]
-            ),
+            matches!(messages.as_slice(), [RunIntent::EngineChosen(_)]),
             "{messages:?}"
         );
     }
@@ -1453,11 +1465,11 @@ mod tests {
         ui.click("nginx:1.27").expect("image input");
         let _ = ui.typewrite("x");
 
-        let messages: Vec<ContainersIntent> = ui.into_messages().collect();
+        let messages: Vec<RunIntent> = ui.into_messages().collect();
         assert!(
             matches!(
                 messages.as_slice(),
-                [ContainersIntent::RunEdited(RunEdit::Image(_))]
+                [RunIntent::Edited(RunEdit::Image(_))]
             ),
             "{messages:?}"
         );

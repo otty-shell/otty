@@ -10,8 +10,8 @@ use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::status_badge::StatusBadge;
 use otty_ui_kit::{fonts, typography};
 
-use super::super::event::ContainersIntent;
-use super::super::run_model::ImagePanelViewModel;
+use super::super::event::RunIntent;
+use super::super::model::ImagePanelViewModel;
 use crate::icons;
 use crate::theme::ThemeProps;
 
@@ -33,7 +33,7 @@ pub(crate) struct RunPanelProps<'a> {
 
 /// Render the image, whether it is on this computer, and its ports,
 /// command, entrypoint and working directory.
-pub(crate) fn view(props: RunPanelProps<'_>) -> Element<'_, ContainersIntent> {
+pub(crate) fn view(props: RunPanelProps<'_>) -> Element<'_, RunIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
 

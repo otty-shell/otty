@@ -12,7 +12,7 @@ use otty_containers::{
 };
 
 use super::event::{ContainersEvent, ContainersIntent};
-use super::run_form::RunForm;
+use super::run::event::RunIntent;
 use super::state::ContainersState;
 use super::types::ResourceKind;
 
@@ -40,14 +40,15 @@ pub(super) fn subscription(
 pub(super) fn folder_recheck(
     state: &ContainersState,
 ) -> Subscription<ContainersEvent> {
-    let has_folder_rows =
-        state.run_form().is_some_and(RunForm::has_folder_rows);
-    if !state.is_active() || !has_folder_rows {
+    if !state.is_active() || !state.run().has_folder_rows() {
         return Subscription::none();
     }
 
-    iced::time::every(FOLDER_RECHECK_PERIOD)
-        .map(|_| ContainersEvent::Intent(ContainersIntent::RecheckFolders))
+    iced::time::every(FOLDER_RECHECK_PERIOD).map(|_| {
+        ContainersEvent::Intent(ContainersIntent::Run(
+            RunIntent::RecheckFolders,
+        ))
+    })
 }
 
 /// A timer that looks for engines while the no-engine card is on screen in
@@ -122,7 +123,7 @@ mod tests {
 
     use super::*;
     use crate::widgets::containers::reducer::reduce;
-    use crate::widgets::containers::run_form::RunEdit;
+    use crate::widgets::containers::run::types::RunEdit;
 
     fn found(kinds: &[EngineKind]) -> ContainersState {
         let mut state = ContainersState::default();
@@ -158,7 +159,10 @@ mod tests {
             RunEdit::AddVolume,
             RunEdit::VolumeSource(0, source.to_string()),
         ] {
-            let _ = reduce(&mut state, ContainersIntent::RunEdited(edit));
+            let _ = reduce(
+                &mut state,
+                ContainersIntent::Run(RunIntent::Edited(edit)),
+            );
         }
         state
     }
@@ -174,7 +178,7 @@ mod tests {
     fn the_folder_timer_needs_an_open_form() {
         let mut state = form_with_source("/srv/site");
 
-        let _ = reduce(&mut state, ContainersIntent::RunCancelled);
+        let _ = reduce(&mut state, ContainersIntent::Run(RunIntent::Close));
 
         assert_eq!(folder_recheck(&state).units(), 0);
     }
@@ -195,7 +199,7 @@ mod tests {
 
         let _ = reduce(&mut state, ContainersIntent::Leave);
 
-        assert!(state.run_form().is_some());
+        assert!(state.run().is_open());
         assert_eq!(folder_recheck(&state).units(), 0);
     }
 

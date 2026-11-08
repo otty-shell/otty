@@ -7,11 +7,10 @@ use otty_containers::{EngineAddress, PortProtocol, RestartPolicy};
 use otty_ui_kit::components::status_badge::StatusTone;
 use otty_ui_kit::components::token_field::TokenList;
 
-use super::format::{engine_label, pull_amount, size_text};
-use super::run_checks::{RowProblem, check};
-use super::run_flow::can_run;
-use super::run_form::{ImageLookup, RESTART_CHOICES, RunForm, RunPhase};
-use super::state::ContainersState;
+use super::super::format::{engine_label, pull_amount, size_text};
+use super::checks::{RowProblem, can_run, check};
+use super::reducer::RunCtx;
+use super::state::{ImageLookup, RESTART_CHOICES, RunForm, RunPhase, RunState};
 use crate::components::pull_line::PullLineViewModel;
 use crate::i18n::{self, Key};
 
@@ -105,6 +104,159 @@ pub(crate) struct RunFormViewModel<'a> {
     pub(crate) can_run: bool,
 }
 
+impl<'a> RunFormViewModel<'a> {
+    /// Build the open Run form; `None` when none is open, or while no engine
+    /// is there: the form waits, as typed, behind the no-engine card.
+    pub(crate) fn from_state(
+        state: &'a RunState,
+        ctx: &RunCtx<'_>,
+    ) -> Option<Self> {
+        if ctx.engines.is_empty() {
+            return None;
+        }
+        let form = state.form()?;
+        let problems = check(form);
+        let defaults = match form.lookup() {
+            ImageLookup::Here(defaults) => Some(defaults),
+            _ => None,
+        };
+
+        let engine = EngineChoice {
+            address: form.engine().address().clone(),
+            label: engine_label(form.engine()),
+        };
+        let engines = if ctx.engines.len() > 1 {
+            ctx.engines
+                .iter()
+                .map(|engine| EngineChoice {
+                    address: engine.info.address().clone(),
+                    label: engine_label(engine.info),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let ports = form
+            .ports()
+            .iter()
+            .enumerate()
+            .map(|(index, row)| {
+                let problem = problems.port(index);
+                PortRowViewModel {
+                    host: row.host(),
+                    container: row.container(),
+                    protocol: row.protocol(),
+                    problem: problem.map(|problem| i18n::t(problem.message())),
+                    is_host_invalid: problem.is_some_and(|p| p.is_source()),
+                    is_container_invalid: problem
+                        .is_some_and(|p| p.is_target()),
+                }
+            })
+            .collect();
+        let volumes = form
+            .volumes()
+            .iter()
+            .enumerate()
+            .map(|(index, row)| {
+                let problem: Option<RowProblem> = problems.volume(index);
+                VolumeRowViewModel {
+                    source: row.source(),
+                    target: row.target(),
+                    is_read_only: row.is_read_only(),
+                    offers_relabel: form.offers_relabel(index),
+                    is_relabeled: row.is_relabeled(),
+                    problem: problem.map(|problem| i18n::t(problem.message())),
+                    is_source_invalid: problem.is_some_and(|p| p.is_source()),
+                    is_target_invalid: problem.is_some_and(|p| p.is_target()),
+                }
+            })
+            .collect();
+        let restarts: Vec<RestartChoice> = RESTART_CHOICES
+            .iter()
+            .map(|&policy| restart_choice(policy))
+            .collect();
+        let disabled_restarts = if form.is_auto_remove() {
+            restarts
+                .iter()
+                .copied()
+                .filter(|choice| choice.policy != RestartPolicy::No)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let restart_hint = if form.is_auto_remove() {
+            i18n::t(Key::ContainersRestartHintAutoRemove)
+        } else {
+            restart_hint(form.restart())
+        };
+        let progress = match form.phase() {
+            RunPhase::Pulling(progress) => Some(PullLineViewModel {
+                text: i18n::containers_pulling(form.reference()),
+                fraction: progress.fraction(),
+                amount: pull_amount(progress),
+            }),
+            _ => None,
+        };
+        let footer_hint = if !form.is_editing() {
+            String::new()
+        } else if problems.has_fixable_problem() {
+            i18n::t(Key::ContainersRunFixFields).to_string()
+        } else if form.lookup() == &ImageLookup::Loading {
+            i18n::t(Key::ContainersRunCheckingImage).to_string()
+        } else if !form.are_folders_answered() {
+            i18n::t(Key::ContainersRunWaitingForFolder).to_string()
+        } else {
+            i18n::containers_filled(
+                Key::TplContainersRunReady,
+                "engine",
+                &engine.label,
+            )
+        };
+        let run_label = if form.is_editing() {
+            i18n::t(Key::ContainersActionRun)
+        } else {
+            i18n::t(Key::ContainersRunStarting)
+        };
+
+        Some(Self {
+            notice: form.notice(),
+            engines,
+            engine,
+            image: form.image(),
+            image_error: problems.image().map(i18n::t),
+            image_hint: image_hint(form),
+            name: form.name(),
+            pulls_missing: form.pulls_missing(),
+            command: form.command(),
+            command_hint: command_hint(defaults.map(|d| d.command())),
+            ports,
+            ports_hint: defaults
+                .filter(|defaults| !defaults.ports().is_empty())
+                .map(|defaults| {
+                    i18n::containers_filled(
+                        Key::TplContainersRunImageListens,
+                        "ports",
+                        &defaults.ports().join(", "),
+                    )
+                }),
+            env: form.env(),
+            volumes,
+            networks: network_names(ctx, form),
+            network: form.network().to_string(),
+            restart: restart_choice(form.restart()),
+            restarts,
+            disabled_restarts,
+            restart_hint,
+            is_auto_remove: form.is_auto_remove(),
+            is_editable: form.is_editing(),
+            progress,
+            footer_hint,
+            run_label,
+            can_run: can_run(form),
+        })
+    }
+}
+
 /// What the typed image sets on its own, beside the form.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ImagePanelViewModel {
@@ -120,225 +272,83 @@ pub(crate) struct ImagePanelViewModel {
     pub(crate) error: Option<String>,
 }
 
-/// The open Run form; `None` when none is open, or while no engine is there:
-/// the form waits, as typed, behind the no-engine card.
-pub(crate) fn run_form(
-    state: &ContainersState,
-) -> Option<RunFormViewModel<'_>> {
-    state.place()?;
-    let form = state.run_form()?;
-    let problems = check(form);
-    let defaults = match form.lookup() {
-        ImageLookup::Here(defaults) => Some(defaults),
-        _ => None,
-    };
+impl ImagePanelViewModel {
+    /// Build the image panel of the open Run form; `None` when none is open,
+    /// or while no engine is there.
+    pub(crate) fn from_state(
+        state: &RunState,
+        ctx: &RunCtx<'_>,
+    ) -> Option<Self> {
+        if ctx.engines.is_empty() {
+            return None;
+        }
+        let form = state.form()?;
 
-    let engine = EngineChoice {
-        address: form.engine().address().clone(),
-        label: engine_label(form.engine()),
-    };
-    let engines = if state.engines().len() > 1 {
-        state
-            .engines()
-            .iter()
-            .map(|engine| EngineChoice {
-                address: engine.info().address().clone(),
-                label: engine_label(engine.info()),
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let ports = form
-        .ports()
-        .iter()
-        .enumerate()
-        .map(|(index, row)| {
-            let problem = problems.port(index);
-            PortRowViewModel {
-                host: row.host(),
-                container: row.container(),
-                protocol: row.protocol(),
-                problem: problem.map(|problem| i18n::t(problem.message())),
-                is_host_invalid: problem.is_some_and(|p| p.is_source()),
-                is_container_invalid: problem.is_some_and(|p| p.is_target()),
-            }
-        })
-        .collect();
-    let volumes = form
-        .volumes()
-        .iter()
-        .enumerate()
-        .map(|(index, row)| {
-            let problem: Option<RowProblem> = problems.volume(index);
-            VolumeRowViewModel {
-                source: row.source(),
-                target: row.target(),
-                is_read_only: row.is_read_only(),
-                offers_relabel: form.offers_relabel(index),
-                is_relabeled: row.is_relabeled(),
-                problem: problem.map(|problem| i18n::t(problem.message())),
-                is_source_invalid: problem.is_some_and(|p| p.is_source()),
-                is_target_invalid: problem.is_some_and(|p| p.is_target()),
-            }
-        })
-        .collect();
-    let restarts: Vec<RestartChoice> = RESTART_CHOICES
-        .iter()
-        .map(|&policy| restart_choice(policy))
-        .collect();
-    let disabled_restarts = if form.is_auto_remove() {
-        restarts
-            .iter()
-            .copied()
-            .filter(|choice| choice.policy != RestartPolicy::No)
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let restart_hint = if form.is_auto_remove() {
-        i18n::t(Key::ContainersRestartHintAutoRemove)
-    } else {
-        restart_hint(form.restart())
-    };
-    let progress = match form.phase() {
-        RunPhase::Pulling(progress) => Some(PullLineViewModel {
-            text: i18n::containers_pulling(form.reference()),
-            fraction: progress.fraction(),
-            amount: pull_amount(progress),
-        }),
-        _ => None,
-    };
-    let footer_hint = if !form.is_editing() {
-        String::new()
-    } else if problems.has_fixable_problem() {
-        i18n::t(Key::ContainersRunFixFields).to_string()
-    } else if form.lookup() == &ImageLookup::Loading {
-        i18n::t(Key::ContainersRunCheckingImage).to_string()
-    } else if !form.are_folders_answered() {
-        i18n::t(Key::ContainersRunWaitingForFolder).to_string()
-    } else {
-        i18n::containers_filled(
-            Key::TplContainersRunReady,
-            "engine",
-            &engine.label,
-        )
-    };
-    let run_label = if form.is_editing() {
-        i18n::t(Key::ContainersActionRun)
-    } else {
-        i18n::t(Key::ContainersRunStarting)
-    };
+        let title = match form.reference() {
+            "" => i18n::t(Key::ContainersRunContainer).to_string(),
+            reference => reference.to_string(),
+        };
+        let mut panel = Self {
+            title,
+            status: None,
+            fields: Vec::new(),
+            hint: i18n::t(Key::ContainersRunPanelHint),
+            error: None,
+        };
 
-    Some(RunFormViewModel {
-        notice: form.notice(),
-        engines,
-        engine,
-        image: form.image(),
-        image_error: problems.image().map(i18n::t),
-        image_hint: image_hint(form),
-        name: form.name(),
-        pulls_missing: form.pulls_missing(),
-        command: form.command(),
-        command_hint: command_hint(defaults.map(|d| d.command())),
-        ports,
-        ports_hint: defaults
-            .filter(|defaults| !defaults.ports().is_empty())
-            .map(|defaults| {
-                i18n::containers_filled(
-                    Key::TplContainersRunImageListens,
-                    "ports",
-                    &defaults.ports().join(", "),
-                )
-            }),
-        env: form.env(),
-        volumes,
-        networks: network_names(state, form),
-        network: form.network().to_string(),
-        restart: restart_choice(form.restart()),
-        restarts,
-        disabled_restarts,
-        restart_hint,
-        is_auto_remove: form.is_auto_remove(),
-        is_editable: form.is_editing(),
-        progress,
-        footer_hint,
-        run_label,
-        can_run: can_run(form),
-    })
-}
-
-/// The image panel of the Run form shown now; `None` when none is shown.
-pub(crate) fn image_panel(
-    state: &ContainersState,
-) -> Option<ImagePanelViewModel> {
-    state.place()?;
-    let form = state.run_form()?;
-
-    let title = match form.reference() {
-        "" => i18n::t(Key::ContainersRunContainer).to_string(),
-        reference => reference.to_string(),
-    };
-    let mut panel = ImagePanelViewModel {
-        title,
-        status: None,
-        fields: Vec::new(),
-        hint: i18n::t(Key::ContainersRunPanelHint),
-        error: None,
-    };
-
-    match form.lookup() {
-        ImageLookup::NotAsked => {
-            panel.hint = i18n::t(Key::ContainersRunNoImage)
-        },
-        ImageLookup::Loading => {
-            panel.status = Some((
-                i18n::t(Key::ContainersRunCheckingImage).to_string(),
-                StatusTone::Neutral,
-            ));
-        },
-        ImageLookup::Missing => {
-            panel.status = Some((
-                i18n::t(Key::ContainersImageMissing).to_string(),
-                StatusTone::Warn,
-            ));
-        },
-        ImageLookup::Failed(message) => {
-            panel.error = Some(i18n::containers_filled(
-                Key::TplContainersImageLookupFailed,
-                "error",
-                message,
-            ));
-        },
-        ImageLookup::Here(defaults) => {
-            panel.status =
-                Some((here_text(defaults.size()), StatusTone::Neutral));
-            if !defaults.ports().is_empty() {
-                panel.fields.push((
-                    i18n::t(Key::ContainersFieldListensOn),
-                    defaults.ports().join(", "),
+        match form.lookup() {
+            ImageLookup::NotAsked => {
+                panel.hint = i18n::t(Key::ContainersRunNoImage)
+            },
+            ImageLookup::Loading => {
+                panel.status = Some((
+                    i18n::t(Key::ContainersRunCheckingImage).to_string(),
+                    StatusTone::Neutral,
                 ));
-            }
-            if !defaults.command().is_empty() {
-                panel.fields.push((
-                    i18n::t(Key::ContainersFieldCommand),
-                    command_text(defaults.command()),
+            },
+            ImageLookup::Missing => {
+                panel.status = Some((
+                    i18n::t(Key::ContainersImageMissing).to_string(),
+                    StatusTone::Warn,
                 ));
-            }
-            if !defaults.entrypoint().is_empty() {
-                panel.fields.push((
-                    i18n::t(Key::ContainersFieldEntrypoint),
-                    command_text(defaults.entrypoint()),
+            },
+            ImageLookup::Failed(message) => {
+                panel.error = Some(i18n::containers_filled(
+                    Key::TplContainersImageLookupFailed,
+                    "error",
+                    message,
                 ));
-            }
-            panel.fields.push((
-                i18n::t(Key::ContainersFieldWorkdir),
-                defaults.workdir().unwrap_or("/").to_string(),
-            ));
-        },
+            },
+            ImageLookup::Here(defaults) => {
+                panel.status =
+                    Some((here_text(defaults.size()), StatusTone::Neutral));
+                if !defaults.ports().is_empty() {
+                    panel.fields.push((
+                        i18n::t(Key::ContainersFieldListensOn),
+                        defaults.ports().join(", "),
+                    ));
+                }
+                if !defaults.command().is_empty() {
+                    panel.fields.push((
+                        i18n::t(Key::ContainersFieldCommand),
+                        command_text(defaults.command()),
+                    ));
+                }
+                if !defaults.entrypoint().is_empty() {
+                    panel.fields.push((
+                        i18n::t(Key::ContainersFieldEntrypoint),
+                        command_text(defaults.entrypoint()),
+                    ));
+                }
+                panel.fields.push((
+                    i18n::t(Key::ContainersFieldWorkdir),
+                    defaults.workdir().unwrap_or("/").to_string(),
+                ));
+            },
+        }
+
+        Some(panel)
     }
-
-    Some(panel)
 }
 
 /// The line under the image field: here (with its size), checked, or
@@ -397,13 +407,12 @@ fn command_text(words: &[String]) -> String {
 }
 
 /// The networks of the form's engine; the chosen one is always offered.
-fn network_names(state: &ContainersState, form: &RunForm) -> Vec<String> {
-    let mut names: Vec<String> = state
+fn network_names(ctx: &RunCtx<'_>, form: &RunForm) -> Vec<String> {
+    let mut names: Vec<String> = ctx
         .engine(form.engine().address())
         .map(|engine| {
             engine
-                .networks()
-                .items()
+                .networks
                 .iter()
                 .map(|network| network.name().to_string())
                 .collect()
@@ -450,11 +459,23 @@ mod tests {
 
     use super::*;
     use crate::widgets::containers::event::ContainersIntent;
-    use crate::widgets::containers::reducer::reduce;
-    use crate::widgets::containers::run_form::RunEdit;
+    use crate::widgets::containers::reducer::reduce as reduce_containers;
+    use crate::widgets::containers::run::event::RunIntent;
+    use crate::widgets::containers::run::types::RunEdit;
+    use crate::widgets::containers::state::ContainersState;
     use crate::widgets::containers::types::{
         ContainersError, LoadedLists, Place, ResourceKind,
     };
+
+    /// The Run form of `state` as the widget builds it.
+    fn run_form(state: &ContainersState) -> Option<RunFormViewModel<'_>> {
+        RunFormViewModel::from_state(state.run(), &state.run_ctx())
+    }
+
+    /// The image panel of `state` as the widget builds it.
+    fn image_panel(state: &ContainersState) -> Option<ImagePanelViewModel> {
+        ImagePanelViewModel::from_state(state.run(), &state.run_ctx())
+    }
 
     fn lists(kind: EngineKind) -> LoadedLists {
         let resources = fixtures::resources(kind);
@@ -476,13 +497,13 @@ mod tests {
     ) -> ContainersState {
         let docker = fixtures::engine(kinds[0]);
         let mut state = ContainersState::default();
-        let _ = reduce(&mut state, ContainersIntent::Enter);
-        let _ = reduce(
+        let _ = reduce_containers(&mut state, ContainersIntent::Enter);
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::DiscoveryFinished(fixtures::discovery(kinds)),
         );
         for kind in kinds {
-            let _ = reduce(
+            let _ = reduce_containers(
                 &mut state,
                 ContainersIntent::ListsLoaded {
                     engine: fixtures::engine(*kind).address().clone(),
@@ -490,28 +511,28 @@ mod tests {
                 },
             );
         }
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::Open(Place::new(
                 docker.address().clone(),
                 ResourceKind::Containers,
             )),
         );
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
-        let _ = reduce(
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::RunEdited(RunEdit::Image(String::from(
-                "nginx:1.27",
+            ContainersIntent::Run(RunIntent::Edited(RunEdit::Image(
+                String::from("nginx:1.27"),
             ))),
         );
         if let Some(result) = found {
-            let _ = reduce(
+            let _ = reduce_containers(
                 &mut state,
-                ContainersIntent::ImageDefaultsLoaded {
+                ContainersIntent::Run(RunIntent::ImageDefaultsLoaded {
                     engine: docker.address().clone(),
                     reference: String::from("nginx:1.27"),
                     result,
-                },
+                }),
             );
         }
         state
@@ -529,10 +550,13 @@ mod tests {
             RunEdit::VolumeSource(0, source.to_string()),
             RunEdit::VolumeTarget(0, String::from("/data")),
         ] {
-            let _ = reduce(&mut state, ContainersIntent::RunEdited(edit));
+            let _ = reduce_containers(
+                &mut state,
+                ContainersIntent::Run(RunIntent::Edited(edit)),
+            );
         }
-        state
-            .run_form_mut()
+        let (run, _) = state.run_and_ctx();
+        run.form_mut()
             .expect("the form is open")
             .set_selinux(is_selinux_enabled);
 
@@ -566,35 +590,38 @@ mod tests {
         let kinds = [EngineKind::Docker];
         let docker = fixtures::engine(EngineKind::Docker);
         let mut state = ContainersState::default();
-        let _ = reduce(&mut state, ContainersIntent::Enter);
-        let _ = reduce(
+        let _ = reduce_containers(&mut state, ContainersIntent::Enter);
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::DiscoveryFinished(
                 fixtures::discovery_without_home(&kinds),
             ),
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::ListsLoaded {
                 engine: docker.address().clone(),
                 lists: lists(EngineKind::Docker),
             },
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::Open(Place::new(
                 docker.address().clone(),
                 ResourceKind::Containers,
             )),
         );
-        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce_containers(&mut state, ContainersIntent::OpenCreate);
         for edit in [
             RunEdit::Image(String::from("nginx:1.27")),
             RunEdit::AddVolume,
             RunEdit::VolumeSource(0, String::from("~/site")),
             RunEdit::VolumeTarget(0, String::from("/data")),
         ] {
-            let _ = reduce(&mut state, ContainersIntent::RunEdited(edit));
+            let _ = reduce_containers(
+                &mut state,
+                ContainersIntent::Run(RunIntent::Edited(edit)),
+            );
         }
 
         let vm = run_form(&state).expect("form");
@@ -624,12 +651,12 @@ mod tests {
     fn a_folder_answered_missing_shows_its_message_under_the_row() {
         let mut state = with_volume_row("/srv/site", false);
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::FolderChecked {
+            ContainersIntent::Run(RunIntent::FolderChecked {
                 path: std::path::PathBuf::from("/srv/site"),
                 exists: false,
-            },
+            }),
         );
 
         let vm = run_form(&state).expect("form");
@@ -644,17 +671,17 @@ mod tests {
     #[test]
     fn a_folder_that_does_not_answer_shows_its_hint_under_the_row() {
         let mut state = with_volume_row("/srv/site", false);
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::FolderTypingPaused(std::path::PathBuf::from(
-                "/srv/site",
+            ContainersIntent::Run(RunIntent::FolderTypingPaused(
+                std::path::PathBuf::from("/srv/site"),
             )),
         );
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::FolderAnswerLate(std::path::PathBuf::from(
-                "/srv/site",
+            ContainersIntent::Run(RunIntent::FolderAnswerLate(
+                std::path::PathBuf::from("/srv/site"),
             )),
         );
 
@@ -676,12 +703,12 @@ mod tests {
         assert!(!vm.can_run);
         assert_eq!(vm.footer_hint, i18n::t(Key::ContainersRunWaitingForFolder));
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::FolderChecked {
+            ContainersIntent::Run(RunIntent::FolderChecked {
                 path: std::path::PathBuf::from("/srv/site"),
                 exists: true,
-            },
+            }),
         );
 
         let vm = run_form(&state).expect("form");
@@ -697,14 +724,14 @@ mod tests {
      {
         let mut state = with_volume_row("/srv/site", false);
         for intent in [
-            ContainersIntent::FolderTypingPaused(std::path::PathBuf::from(
-                "/srv/site",
+            ContainersIntent::Run(RunIntent::FolderTypingPaused(
+                std::path::PathBuf::from("/srv/site"),
             )),
-            ContainersIntent::FolderAnswerLate(std::path::PathBuf::from(
-                "/srv/site",
+            ContainersIntent::Run(RunIntent::FolderAnswerLate(
+                std::path::PathBuf::from("/srv/site"),
             )),
         ] {
-            let _ = reduce(&mut state, intent);
+            let _ = reduce_containers(&mut state, intent);
         }
 
         edit(&mut state, RunEdit::AddPort);
@@ -718,15 +745,17 @@ mod tests {
     fn turning_the_relabel_switch_on_shows_in_the_row() {
         let mut state = with_volume_row("/srv/site", true);
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::RunEdited(RunEdit::VolumeRelabel(0, true)),
+            ContainersIntent::Run(RunIntent::Edited(RunEdit::VolumeRelabel(
+                0, true,
+            ))),
         );
 
         let vm = run_form(&state).expect("form");
         assert!(vm.volumes[0].is_relabeled);
         assert!(
-            state.run_form().expect("form").request().volumes()[0]
+            state.run().form().expect("form").request().volumes()[0]
                 .is_relabeled()
         );
     }
@@ -739,7 +768,10 @@ mod tests {
     }
 
     fn edit(state: &mut ContainersState, edit: RunEdit) {
-        let _ = reduce(state, ContainersIntent::RunEdited(edit));
+        let _ = reduce_containers(
+            state,
+            ContainersIntent::Run(RunIntent::Edited(edit)),
+        );
     }
 
     #[test]
@@ -890,10 +922,15 @@ mod tests {
     #[test]
     fn a_pull_shows_its_progress_in_the_footer_and_locks_the_form() {
         let mut state = state_with(&[EngineKind::Docker], Some(Ok(None)));
-        let _ = reduce(&mut state, ContainersIntent::RunSubmitted);
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
-            ContainersIntent::PullProgressed(fixtures::pull_progress()),
+            ContainersIntent::Run(RunIntent::Submitted),
+        );
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::Run(RunIntent::PullProgressed(
+                fixtures::pull_progress(),
+            )),
         );
 
         let vm = run_form(&state).expect("form");
@@ -930,6 +967,24 @@ mod tests {
 
         assert!(run_form(&state).is_none());
         assert!(image_panel(&state).is_none());
+    }
+
+    #[test]
+    fn an_open_form_has_no_view_models_while_the_ctx_has_no_engine() {
+        let state = here();
+        let no_engine = RunCtx {
+            engines: Vec::new(),
+            is_selinux_enabled: false,
+            home_folder: None,
+        };
+
+        let form = RunFormViewModel::from_state(state.run(), &no_engine);
+        let panel = ImagePanelViewModel::from_state(state.run(), &no_engine);
+
+        assert!(form.is_none());
+        assert!(panel.is_none());
+        assert!(run_form(&state).is_some());
+        assert!(image_panel(&state).is_some());
     }
 
     #[test]

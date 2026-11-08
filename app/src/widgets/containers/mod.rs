@@ -15,10 +15,7 @@ pub(crate) mod no_engine;
 mod overview;
 mod reducer;
 mod resource_rows;
-mod run_checks;
-mod run_flow;
-pub(crate) mod run_form;
-mod run_model;
+pub(crate) mod run;
 mod sort;
 mod state;
 mod status;
@@ -34,7 +31,7 @@ use iced::{Subscription, Task, task};
 use inspector_tabs::InspectorTabsViewModel;
 pub(crate) use model::MainViewModel;
 use model::{InspectorViewModel, TreeRowViewModel};
-use run_model::{ImagePanelViewModel, RunFormViewModel};
+use run::{ImagePanelViewModel, RunFormViewModel};
 use state::ContainersState;
 use status::StatusViewModel;
 
@@ -178,13 +175,13 @@ impl ContainersWidget {
 
     /// Build the Run container form, shown in place of the table.
     pub(crate) fn run_form_vm(&self) -> Option<RunFormViewModel<'_>> {
-        run_model::run_form(&self.state)
+        RunFormViewModel::from_state(self.state.run(), &self.state.run_ctx())
     }
 
     /// Build the image panel beside the Run container form, shown in place
     /// of the inspector.
     pub(crate) fn image_panel_vm(&self) -> Option<ImagePanelViewModel> {
-        run_model::image_panel(&self.state)
+        ImagePanelViewModel::from_state(self.state.run(), &self.state.run_ctx())
     }
 
     /// Return whether a row menu or a dialog covers the window.
@@ -213,7 +210,8 @@ mod tests {
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::containers::inspector::InspectorTab;
-    use crate::widgets::containers::run_form::RunEdit;
+    use crate::widgets::containers::run::event::RunIntent;
+    use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::containers::types::LoadedLists;
 
     /// Containers mode active with the fixture Docker engine and its lists.
@@ -361,7 +359,7 @@ mod tests {
 
         let _ = widget.reduce(ContainersIntent::OpenCreate);
         let while_open = subscriptions(&widget);
-        let _ = widget.reduce(ContainersIntent::RunCancelled);
+        let _ = widget.reduce(ContainersIntent::Run(RunIntent::Close));
 
         assert!(while_open.is_empty());
         assert_eq!(subscriptions(&widget).len(), 1);
@@ -438,7 +436,8 @@ mod tests {
             RunEdit::AddVolume,
             RunEdit::VolumeSource(0, String::from("/srv/site")),
         ] {
-            let _ = widget.reduce(ContainersIntent::RunEdited(edit));
+            let _ =
+                widget.reduce(ContainersIntent::Run(RunIntent::Edited(edit)));
         }
 
         assert_eq!(widget.subscription().units(), 2);
