@@ -104,6 +104,9 @@ mod tests {
 
     use super::{SidebarPanelProps, content_height, view};
     use crate::domain::exit_behavior::ExitBehavior;
+    use crate::domain::quick_launch::{
+        CommandSpec, CustomCommand, QuickLaunch,
+    };
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::quick_launch::event::QuickLaunchIntent;
     use crate::widgets::quick_launch::model::{
@@ -111,8 +114,7 @@ mod tests {
     };
     use crate::widgets::quick_launch::state::InlineEditState;
     use crate::widgets::quick_launch::types::{
-        CommandSpec, CustomCommand, InlineEditKind, LaunchInfo, QuickLaunch,
-        QuickLaunchFile, QuickLaunchNode,
+        InlineEditKind, LaunchInfo, QuickLaunchFile, QuickLaunchNode,
     };
 
     /// Width of the panel in the tests.
@@ -136,18 +138,18 @@ mod tests {
 
     fn file_with_one_launch() -> QuickLaunchFile {
         let mut file = QuickLaunchFile::default();
-        file.root.children = vec![QuickLaunchNode::Command(QuickLaunch {
-            title: String::from("build"),
-            spec: CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: String::from("make"),
-                    args: Vec::new(),
-                    env: Vec::new(),
-                    working_directory: None,
-                },
+        file.root.children = vec![QuickLaunchNode::Command(QuickLaunch::new(
+            String::from("build"),
+            CommandSpec::Custom {
+                custom: CustomCommand::new(
+                    String::from("make"),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        })];
+            ExitBehavior::Close,
+        ))];
         file
     }
 

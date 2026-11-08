@@ -94,12 +94,6 @@ impl Allowed {
 /// Every accepted place in `app/src`.
 pub const ALLOWLIST: &[Allowed] = &[
     Allowed::known(
-        Rule::SharedImportsOutside,
-        "domain/quick_launch.rs",
-        "widgets::quick_launch",
-        "the domain type still names a type of the quick_launch widget; move that type into domain/",
-    ),
-    Allowed::known(
         Rule::MissingModeScreen,
         "view/containers.rs",
         "Containers",

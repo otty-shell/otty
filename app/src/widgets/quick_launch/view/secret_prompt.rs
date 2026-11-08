@@ -62,27 +62,28 @@ mod tests {
 
     use super::*;
     use crate::domain::exit_behavior::ExitBehavior;
+    use crate::domain::quick_launch::{CommandSpec, QuickLaunch, SshCommand};
     use crate::widgets::quick_launch::state::{
         QuickLaunchState, SecretPromptState,
     };
     use crate::widgets::quick_launch::types::{
-        CommandSpec, QuickLaunch, SshCommand, SshSecretKind, SshSecretRequest,
+        SshSecretKind, SshSecretRequest,
     };
 
     fn ssh_launch() -> QuickLaunch {
-        QuickLaunch {
-            title: String::from("laptop"),
-            spec: CommandSpec::Ssh {
-                ssh: SshCommand {
-                    host: String::from("192.168.1.20"),
-                    port: 22,
-                    user: Some(String::from("ubuntu")),
-                    identity_file: None,
-                    extra_args: Vec::new(),
-                },
+        QuickLaunch::new(
+            String::from("laptop"),
+            CommandSpec::Ssh {
+                ssh: SshCommand::new(
+                    String::from("192.168.1.20"),
+                    22,
+                    Some(String::from("ubuntu")),
+                    None,
+                    Vec::new(),
+                ),
             },
-            exit_behavior: ExitBehavior::default(),
-        }
+            ExitBehavior::default(),
+        )
     }
 
     /// The state of a launch that asks for a secret of `kind` for `target`.

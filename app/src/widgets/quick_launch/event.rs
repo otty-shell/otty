@@ -4,10 +4,11 @@ use std::sync::atomic::AtomicBool;
 use iced::Point;
 
 use super::types::{
-    ContextMenuAction, NodePath, QuickLaunch, QuickLaunchFile,
-    QuickLaunchSetupOutcome, QuickLaunchType,
+    ContextMenuAction, QuickLaunchFile, QuickLaunchSetupOutcome,
+    QuickLaunchType,
 };
 use crate::domain::exit_behavior::ExitBehavior;
+use crate::domain::quick_launch::{NodePath, QuickLaunch};
 
 /// Intent events handled by the quick launch presentation layer.
 #[derive(Debug, Clone)]

@@ -6,148 +6,13 @@ use otty_ui_tree::TreeNode;
 use serde::{Deserialize, Serialize};
 
 use super::constants::SSH_DEFAULT_PORT;
-use crate::domain::exit_behavior::ExitBehavior;
-
-/// Path to a node in the quick launch tree.
-pub(crate) type NodePath = Vec<String>;
+use crate::domain::quick_launch::{NodePath, QuickLaunch};
 
 /// Quick launch command type selector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum QuickLaunchType {
     Custom,
     Ssh,
-}
-
-/// A saved quick launch command.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct QuickLaunch {
-    pub(super) title: String,
-    pub(super) spec: CommandSpec,
-    /// Files saved before this setting existed load as `Close`.
-    #[serde(default)]
-    pub(super) exit_behavior: ExitBehavior,
-}
-
-impl QuickLaunch {
-    /// Command title.
-    pub(crate) fn title(&self) -> &str {
-        &self.title
-    }
-
-    /// Command specification.
-    pub(crate) fn spec(&self) -> &CommandSpec {
-        &self.spec
-    }
-
-    /// What the command tab does once the process exits.
-    pub(crate) fn exit_behavior(&self) -> ExitBehavior {
-        self.exit_behavior
-    }
-
-    /// Whether the command connects to a remote host over SSH.
-    pub(crate) fn is_ssh(&self) -> bool {
-        matches!(self.spec, CommandSpec::Ssh { .. })
-    }
-
-    /// Host the command connects to, or `None` for a local command.
-    pub(crate) fn ssh_host(&self) -> Option<&str> {
-        match &self.spec {
-            CommandSpec::Ssh { ssh } => Some(ssh.host()),
-            _ => None,
-        }
-    }
-
-    /// `user@host` of an SSH command (just `host` without a user), or `None`
-    /// for a local command.
-    pub(crate) fn ssh_account(&self) -> Option<String> {
-        match &self.spec {
-            CommandSpec::Ssh { ssh } => Some(match ssh.user() {
-                Some(user) => format!("{user}@{}", ssh.host()),
-                None => ssh.host().to_string(),
-            }),
-            _ => None,
-        }
-    }
-}
-
-/// Command specification variant.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub(crate) enum CommandSpec {
-    Custom { custom: CustomCommand },
-    Ssh { ssh: SshCommand },
-}
-
-/// Local command specification.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct CustomCommand {
-    pub(super) program: String,
-    pub(super) args: Vec<String>,
-    pub(super) env: Vec<EnvVar>,
-    pub(super) working_directory: Option<String>,
-}
-
-impl CustomCommand {
-    pub(crate) fn program(&self) -> &str {
-        &self.program
-    }
-
-    pub(crate) fn args(&self) -> &[String] {
-        &self.args
-    }
-
-    pub(crate) fn env(&self) -> &[EnvVar] {
-        &self.env
-    }
-
-    pub(crate) fn working_directory(&self) -> Option<&str> {
-        self.working_directory.as_deref()
-    }
-}
-
-/// Environment variable key-value pair.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct EnvVar {
-    pub(super) key: String,
-    pub(super) value: String,
-}
-
-impl EnvVar {
-    pub(crate) fn key(&self) -> &str {
-        &self.key
-    }
-
-    pub(crate) fn value(&self) -> &str {
-        &self.value
-    }
-}
-
-/// SSH command specification.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SshCommand {
-    pub(super) host: String,
-    pub(super) port: u16,
-    pub(super) user: Option<String>,
-    pub(super) identity_file: Option<String>,
-    pub(super) extra_args: Vec<String>,
-}
-
-impl SshCommand {
-    pub(crate) fn host(&self) -> &str {
-        &self.host
-    }
-
-    pub(crate) fn port(&self) -> u16 {
-        self.port
-    }
-
-    pub(crate) fn user(&self) -> Option<&str> {
-        self.user.as_deref()
-    }
-
-    pub(crate) fn identity_file(&self) -> Option<&str> {
-        self.identity_file.as_deref()
-    }
 }
 
 /// Top-level persistence structure for quick launches.
@@ -360,15 +225,15 @@ impl QuickLaunchNode {
     pub(crate) fn title(&self) -> &str {
         match self {
             Self::Folder(f) => &f.title,
-            Self::Command(c) => &c.title,
+            Self::Command(c) => c.title(),
         }
     }
 
-    /// Return a mutable reference to the title.
-    pub(crate) fn title_mut(&mut self) -> &mut String {
+    /// Give this node a new title.
+    pub(crate) fn rename(&mut self, title: String) {
         match self {
-            Self::Folder(f) => &mut f.title,
-            Self::Command(c) => &mut c.title,
+            Self::Folder(f) => f.title = title,
+            Self::Command(c) => c.rename(title),
         }
     }
 }
@@ -709,108 +574,38 @@ impl WizardOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn given_saved_command_without_exit_behavior_when_loaded_then_tab_closes_on_exit()
-     {
-        let json = serde_json::json!({
-            "title": "List",
-            "spec": {
-                "type": "Custom",
-                "custom": {
-                    "program": "ls",
-                    "args": ["-la"],
-                    "env": [],
-                    "working_directory": null
-                }
-            }
-        });
-
-        let command: QuickLaunch =
-            serde_json::from_value(json).expect("should deserialize");
-
-        assert_eq!(command.exit_behavior(), ExitBehavior::Close);
-    }
-
-    #[test]
-    fn given_command_with_exit_behavior_when_round_tripped_then_choice_is_kept()
-    {
-        let command = QuickLaunch {
-            title: String::from("List"),
-            spec: CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: String::from("ls"),
-                    args: vec![String::from("-la")],
-                    env: Vec::new(),
-                    working_directory: None,
-                },
-            },
-            exit_behavior: ExitBehavior::KeepOpen,
-        };
-
-        let json = serde_json::to_value(&command).expect("should serialize");
-        let parsed: QuickLaunch =
-            serde_json::from_value(json.clone()).expect("should deserialize");
-
-        assert_eq!(json["exit_behavior"], "keep_open");
-        assert_eq!(parsed.exit_behavior(), ExitBehavior::KeepOpen);
-    }
+    use crate::domain::exit_behavior::ExitBehavior;
+    use crate::domain::quick_launch::{CommandSpec, CustomCommand, SshCommand};
 
     fn local_command(title: &str) -> QuickLaunchNode {
-        QuickLaunchNode::Command(QuickLaunch {
-            title: String::from(title),
-            spec: CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: String::from("bash"),
-                    args: Vec::new(),
-                    env: Vec::new(),
-                    working_directory: None,
-                },
+        QuickLaunchNode::Command(QuickLaunch::new(
+            String::from(title),
+            CommandSpec::Custom {
+                custom: CustomCommand::new(
+                    String::from("bash"),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        })
+            ExitBehavior::Close,
+        ))
     }
 
     fn ssh_command(title: &str) -> QuickLaunchNode {
-        QuickLaunchNode::Command(QuickLaunch {
-            title: String::from(title),
-            spec: CommandSpec::Ssh {
-                ssh: SshCommand {
-                    host: String::from("example.com"),
-                    port: 22,
-                    user: None,
-                    identity_file: None,
-                    extra_args: Vec::new(),
-                },
+        QuickLaunchNode::Command(QuickLaunch::new(
+            String::from(title),
+            CommandSpec::Ssh {
+                ssh: SshCommand::new(
+                    String::from("example.com"),
+                    22,
+                    None,
+                    None,
+                    Vec::new(),
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        })
-    }
-
-    #[test]
-    fn given_ssh_and_custom_commands_when_checked_then_only_ssh_is_ssh() {
-        let QuickLaunchNode::Command(ssh) = ssh_command("prod") else {
-            panic!("ssh_command should build a command");
-        };
-        let QuickLaunchNode::Command(local) = local_command("shell") else {
-            panic!("local_command should build a command");
-        };
-
-        assert!(ssh.is_ssh());
-        assert!(!local.is_ssh());
-    }
-
-    #[test]
-    fn given_ssh_and_custom_commands_when_host_read_then_only_ssh_has_one() {
-        let QuickLaunchNode::Command(ssh) = ssh_command("prod") else {
-            panic!("ssh_command should build a command");
-        };
-        let QuickLaunchNode::Command(local) = local_command("shell") else {
-            panic!("local_command should build a command");
-        };
-
-        assert_eq!(ssh.ssh_host(), Some("example.com"));
-        assert_eq!(local.ssh_host(), None);
+            ExitBehavior::Close,
+        ))
     }
 
     #[test]
@@ -857,18 +652,18 @@ mod tests {
         let folder = QuickLaunchFolder {
             title: String::from("Root"),
             expanded: true,
-            children: vec![QuickLaunchNode::Command(QuickLaunch {
-                title: String::from("Run"),
-                spec: CommandSpec::Custom {
-                    custom: CustomCommand {
-                        program: String::from("bash"),
-                        args: Vec::new(),
-                        env: Vec::new(),
-                        working_directory: None,
-                    },
+            children: vec![QuickLaunchNode::Command(QuickLaunch::new(
+                String::from("Run"),
+                CommandSpec::Custom {
+                    custom: CustomCommand::new(
+                        String::from("bash"),
+                        Vec::new(),
+                        Vec::new(),
+                        None,
+                    ),
                 },
-                exit_behavior: ExitBehavior::Close,
-            })],
+                ExitBehavior::Close,
+            ))],
         };
         assert!(folder.normalize_title("Run", None).is_err());
     }
@@ -878,18 +673,18 @@ mod tests {
         let folder = QuickLaunchFolder {
             title: String::from("Root"),
             expanded: true,
-            children: vec![QuickLaunchNode::Command(QuickLaunch {
-                title: String::from("Run"),
-                spec: CommandSpec::Custom {
-                    custom: CustomCommand {
-                        program: String::from("bash"),
-                        args: Vec::new(),
-                        env: Vec::new(),
-                        working_directory: None,
-                    },
+            children: vec![QuickLaunchNode::Command(QuickLaunch::new(
+                String::from("Run"),
+                CommandSpec::Custom {
+                    custom: CustomCommand::new(
+                        String::from("bash"),
+                        Vec::new(),
+                        Vec::new(),
+                        None,
+                    ),
                 },
-                exit_behavior: ExitBehavior::Close,
-            })],
+                ExitBehavior::Close,
+            ))],
         };
         assert!(folder.normalize_title("Run", Some("Run")).is_ok());
     }

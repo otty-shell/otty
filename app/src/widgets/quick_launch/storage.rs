@@ -62,9 +62,11 @@ fn quick_launches_path() -> PathBuf {
 mod tests {
     use super::*;
     use crate::domain::exit_behavior::ExitBehavior;
+    use crate::domain::quick_launch::{
+        CommandSpec, CustomCommand, QuickLaunch,
+    };
     use crate::widgets::quick_launch::types::{
-        CommandSpec, CustomCommand, QuickLaunch, QuickLaunchFolder,
-        QuickLaunchNode,
+        QuickLaunchFolder, QuickLaunchNode,
     };
 
     #[test]
@@ -105,18 +107,18 @@ mod tests {
             root: QuickLaunchFolder {
                 title: String::from("Root"),
                 expanded: true,
-                children: vec![QuickLaunchNode::Command(QuickLaunch {
-                    title: String::from("Run"),
-                    spec: CommandSpec::Custom {
-                        custom: CustomCommand {
-                            program: String::from("bash"),
-                            args: Vec::new(),
-                            env: Vec::new(),
-                            working_directory: None,
-                        },
+                children: vec![QuickLaunchNode::Command(QuickLaunch::new(
+                    String::from("Run"),
+                    CommandSpec::Custom {
+                        custom: CustomCommand::new(
+                            String::from("bash"),
+                            Vec::new(),
+                            Vec::new(),
+                            None,
+                        ),
                     },
-                    exit_behavior: ExitBehavior::Close,
-                })],
+                    ExitBehavior::Close,
+                ))],
             },
         };
         let json = serde_json::to_string(&data).expect("should serialize");

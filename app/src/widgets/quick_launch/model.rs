@@ -6,10 +6,11 @@ use iced::widget::Id;
 use super::state::{InlineEditState, QuickLaunchState};
 use super::types::{
     CommandLaunchOptions, ContextMenuTarget, DropTarget, InlineEditKind,
-    LaunchInfo, NodePath, QuickLaunch, QuickLaunchFile, QuickLaunchFolder,
-    QuickLaunchNode, QuickLaunchType, SshLaunchOptions, SshSecretKind,
+    LaunchInfo, QuickLaunchFile, QuickLaunchFolder, QuickLaunchNode,
+    QuickLaunchType, SshLaunchOptions, SshSecretKind,
 };
 use crate::domain::exit_behavior::ExitBehavior;
+use crate::domain::quick_launch::{NodePath, QuickLaunch};
 use crate::i18n::{self, Key};
 
 /// Read-only view model for the quick launch tree.
@@ -306,44 +307,43 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::domain::quick_launch::{CommandSpec, CustomCommand, SshCommand};
     use crate::widgets::quick_launch::state::{
         ContextMenuState, QuickLaunchErrorState, SecretPromptState,
     };
-    use crate::widgets::quick_launch::types::{
-        CommandSpec, CustomCommand, SshCommand, SshSecretRequest,
-    };
+    use crate::widgets::quick_launch::types::SshSecretRequest;
 
     const TAB_ID: u64 = 7;
 
     fn command(title: &str) -> QuickLaunchNode {
-        QuickLaunchNode::Command(QuickLaunch {
-            title: String::from(title),
-            spec: CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: String::from("htop"),
-                    args: Vec::new(),
-                    env: Vec::new(),
-                    working_directory: None,
-                },
+        QuickLaunchNode::Command(QuickLaunch::new(
+            String::from(title),
+            CommandSpec::Custom {
+                custom: CustomCommand::new(
+                    String::from("htop"),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        })
+            ExitBehavior::Close,
+        ))
     }
 
     fn ssh(title: &str) -> QuickLaunchNode {
-        QuickLaunchNode::Command(QuickLaunch {
-            title: String::from(title),
-            spec: CommandSpec::Ssh {
-                ssh: SshCommand {
-                    host: String::from("example.com"),
-                    port: 22,
-                    user: None,
-                    identity_file: None,
-                    extra_args: Vec::new(),
-                },
+        QuickLaunchNode::Command(QuickLaunch::new(
+            String::from(title),
+            CommandSpec::Ssh {
+                ssh: SshCommand::new(
+                    String::from("example.com"),
+                    22,
+                    None,
+                    None,
+                    Vec::new(),
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        })
+            ExitBehavior::Close,
+        ))
     }
 
     fn folder(title: &str, children: Vec<QuickLaunchNode>) -> QuickLaunchNode {
@@ -443,19 +443,19 @@ mod tests {
     }
 
     fn ssh_launch(title: &str, user: Option<&str>) -> QuickLaunch {
-        QuickLaunch {
-            title: String::from(title),
-            spec: CommandSpec::Ssh {
-                ssh: SshCommand {
-                    host: String::from("192.168.1.20"),
-                    port: 22,
-                    user: user.map(String::from),
-                    identity_file: None,
-                    extra_args: Vec::new(),
-                },
+        QuickLaunch::new(
+            String::from(title),
+            CommandSpec::Ssh {
+                ssh: SshCommand::new(
+                    String::from("192.168.1.20"),
+                    22,
+                    user.map(String::from),
+                    None,
+                    Vec::new(),
+                ),
             },
-            exit_behavior: ExitBehavior::KeepOpen,
-        }
+            ExitBehavior::KeepOpen,
+        )
     }
 
     fn state_with_menu(target: ContextMenuTarget) -> QuickLaunchState {

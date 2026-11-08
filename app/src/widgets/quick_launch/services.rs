@@ -10,8 +10,11 @@ use otty_ui_term::settings::{
 
 use super::errors::QuickLaunchError;
 use super::types::{
-    CommandSpec, NodePath, PreparedQuickLaunch, QuickLaunch,
-    QuickLaunchSetupOutcome, SshSecretKind, SshSecretRequest,
+    PreparedQuickLaunch, QuickLaunchSetupOutcome, SshSecretKind,
+    SshSecretRequest,
+};
+use crate::domain::quick_launch::{
+    CommandSpec, CustomCommand, NodePath, QuickLaunch, SshCommand,
 };
 use crate::services::terminal_settings_for_session;
 use crate::shell_integration::{shell_integration_dir, with_shell_integration};
@@ -132,7 +135,7 @@ fn probe_failure_outcome(
 }
 
 fn probe_ssh_session(
-    ssh: &super::types::SshCommand,
+    ssh: &SshCommand,
     secret: Option<&str>,
     cancel: &Arc<AtomicBool>,
 ) -> Result<(), QuickLaunchError> {
@@ -218,7 +221,7 @@ fn command_session(
 /// `integration_dir`, so the Files panel and the session row follow it like
 /// a shell tab.
 fn custom_session(
-    custom: &super::types::CustomCommand,
+    custom: &CustomCommand,
     integration_dir: &Path,
 ) -> LocalSessionOptions {
     let mut options = LocalSessionOptions::default()
@@ -248,7 +251,7 @@ fn custom_session(
 }
 
 fn ssh_session(
-    ssh: &super::types::SshCommand,
+    ssh: &SshCommand,
     secret: Option<&str>,
     cancel: &Arc<AtomicBool>,
 ) -> SSHSessionOptions {
@@ -281,7 +284,7 @@ fn ssh_session(
 }
 
 fn validate_custom_runtime(
-    custom: &super::types::CustomCommand,
+    custom: &CustomCommand,
 ) -> Result<(), QuickLaunchError> {
     let program = custom.program().trim();
     let _ = find_program_path(program)?;
@@ -304,9 +307,7 @@ fn validate_custom_runtime(
     Ok(())
 }
 
-fn validate_ssh_runtime(
-    ssh: &super::types::SshCommand,
-) -> Result<(), QuickLaunchError> {
+fn validate_ssh_runtime(ssh: &SshCommand) -> Result<(), QuickLaunchError> {
     if let Some(identity) = ssh.identity_file() {
         let identity = identity.trim();
         if !identity.is_empty() {
@@ -420,22 +421,21 @@ mod tests {
     use super::*;
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::testing::temp_dir::TempDir;
-    use crate::widgets::quick_launch::types::{CustomCommand, SshCommand};
 
     #[test]
     fn given_empty_program_when_validating_then_error_returned() {
-        let cmd = QuickLaunch {
-            title: String::from("Bad"),
-            spec: CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: String::new(),
-                    args: Vec::new(),
-                    env: Vec::new(),
-                    working_directory: None,
-                },
+        let cmd = QuickLaunch::new(
+            String::from("Bad"),
+            CommandSpec::Custom {
+                custom: CustomCommand::new(
+                    String::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        };
+            ExitBehavior::Close,
+        );
         assert!(matches!(
             validate_command(&cmd),
             Err(QuickLaunchError::ProgramRequired)
@@ -444,36 +444,30 @@ mod tests {
 
     #[test]
     fn given_valid_custom_command_when_validating_then_ok() {
-        let cmd = QuickLaunch {
-            title: String::from("Good"),
-            spec: CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: String::from("bash"),
-                    args: Vec::new(),
-                    env: Vec::new(),
-                    working_directory: None,
-                },
+        let cmd = QuickLaunch::new(
+            String::from("Good"),
+            CommandSpec::Custom {
+                custom: CustomCommand::new(
+                    String::from("bash"),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        };
+            ExitBehavior::Close,
+        );
         assert!(validate_command(&cmd).is_ok());
     }
 
     #[test]
     fn given_empty_ssh_host_when_validating_then_error_returned() {
-        let cmd = QuickLaunch {
-            title: String::from("SSH"),
-            spec: CommandSpec::Ssh {
-                ssh: SshCommand {
-                    host: String::new(),
-                    port: 22,
-                    user: None,
-                    identity_file: None,
-                    extra_args: Vec::new(),
-                },
+        let cmd = QuickLaunch::new(
+            String::from("SSH"),
+            CommandSpec::Ssh {
+                ssh: SshCommand::new(String::new(), 22, None, None, Vec::new()),
             },
-            exit_behavior: ExitBehavior::Close,
-        };
+            ExitBehavior::Close,
+        );
         assert!(matches!(
             validate_command(&cmd),
             Err(QuickLaunchError::HostRequired)
@@ -482,19 +476,19 @@ mod tests {
 
     #[test]
     fn given_zero_ssh_port_when_validating_then_positive_port_error_returned() {
-        let cmd = QuickLaunch {
-            title: String::from("SSH"),
-            spec: CommandSpec::Ssh {
-                ssh: SshCommand {
-                    host: String::from("example.com"),
-                    port: 0,
-                    user: None,
-                    identity_file: None,
-                    extra_args: Vec::new(),
-                },
+        let cmd = QuickLaunch::new(
+            String::from("SSH"),
+            CommandSpec::Ssh {
+                ssh: SshCommand::new(
+                    String::from("example.com"),
+                    0,
+                    None,
+                    None,
+                    Vec::new(),
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        };
+            ExitBehavior::Close,
+        );
 
         assert!(matches!(
             validate_command(&cmd),
@@ -504,18 +498,18 @@ mod tests {
 
     #[test]
     fn given_missing_program_when_validating_then_error_returned() {
-        let cmd = QuickLaunch {
-            title: String::from("Missing"),
-            spec: CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: String::from("otty-v3-test-bin-does-not-exist"),
-                    args: Vec::new(),
-                    env: Vec::new(),
-                    working_directory: None,
-                },
+        let cmd = QuickLaunch::new(
+            String::from("Missing"),
+            CommandSpec::Custom {
+                custom: CustomCommand::new(
+                    String::from("otty-v3-test-bin-does-not-exist"),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        };
+            ExitBehavior::Close,
+        );
 
         assert!(matches!(
             validate_command(&cmd),
@@ -525,21 +519,21 @@ mod tests {
 
     #[test]
     fn given_custom_command_when_prepared_then_settings_use_saved_program() {
-        let command = QuickLaunch {
-            title: String::from("Run htop"),
-            spec: CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: String::from("htop"),
-                    args: vec![
+        let command = QuickLaunch::new(
+            String::from("Run htop"),
+            CommandSpec::Custom {
+                custom: CustomCommand::new(
+                    String::from("htop"),
+                    vec![
                         String::from("--sort-key"),
                         String::from("PERCENT_CPU"),
                     ],
-                    env: Vec::new(),
-                    working_directory: None,
-                },
+                    Vec::new(),
+                    None,
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        };
+            ExitBehavior::Close,
+        );
 
         let cancel = Arc::new(AtomicBool::new(false));
         let session = command_session(&command, None, &cancel);
@@ -554,12 +548,12 @@ mod tests {
     }
 
     fn custom_command(program: &str, args: &[&str]) -> CustomCommand {
-        CustomCommand {
-            program: String::from(program),
-            args: args.iter().map(|arg| String::from(*arg)).collect(),
-            env: Vec::new(),
-            working_directory: Some(String::from("/tmp")),
-        }
+        CustomCommand::new(
+            String::from(program),
+            args.iter().map(|arg| String::from(*arg)).collect(),
+            Vec::new(),
+            Some(String::from("/tmp")),
+        )
     }
 
     #[test]
@@ -623,18 +617,18 @@ mod tests {
 
     #[test]
     fn given_home_variable_working_directory_when_validating_then_ok() {
-        let cmd = QuickLaunch {
-            title: String::from("Home"),
-            spec: CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: String::from("bash"),
-                    args: Vec::new(),
-                    env: Vec::new(),
-                    working_directory: Some(String::from("$HOME")),
-                },
+        let cmd = QuickLaunch::new(
+            String::from("Home"),
+            CommandSpec::Custom {
+                custom: CustomCommand::new(
+                    String::from("bash"),
+                    Vec::new(),
+                    Vec::new(),
+                    Some(String::from("$HOME")),
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        };
+            ExitBehavior::Close,
+        );
 
         assert!(validate_command(&cmd).is_ok());
     }
@@ -643,12 +637,12 @@ mod tests {
     fn given_home_relative_paths_when_building_local_session_then_paths_are_expanded()
      {
         let home = std::env::var("HOME").expect("HOME should be set in tests");
-        let custom = CustomCommand {
-            program: String::from("~/bin/tool"),
-            args: Vec::new(),
-            env: Vec::new(),
-            working_directory: Some(String::from("$HOME/project")),
-        };
+        let custom = CustomCommand::new(
+            String::from("~/bin/tool"),
+            Vec::new(),
+            Vec::new(),
+            Some(String::from("$HOME/project")),
+        );
 
         // `tool` is not a shell, so nothing is written to this folder.
         let options = custom_session(&custom, &std::env::temp_dir());
@@ -664,13 +658,13 @@ mod tests {
     fn given_home_relative_identity_file_when_building_ssh_session_then_key_path_is_expanded()
      {
         let home = std::env::var("HOME").expect("HOME should be set in tests");
-        let ssh = SshCommand {
-            host: String::from("example.com"),
-            port: 22,
-            user: Some(String::from("user")),
-            identity_file: Some(String::from("${HOME}/.ssh/id_ed25519")),
-            extra_args: Vec::new(),
-        };
+        let ssh = SshCommand::new(
+            String::from("example.com"),
+            22,
+            Some(String::from("user")),
+            Some(String::from("${HOME}/.ssh/id_ed25519")),
+            Vec::new(),
+        );
         let cancel = Arc::new(AtomicBool::new(false));
 
         let options = ssh_session(&ssh, None, &cancel);
@@ -685,23 +679,23 @@ mod tests {
     }
 
     fn ssh_command(identity_file: Option<&str>) -> SshCommand {
-        SshCommand {
-            host: String::from("example.com"),
-            port: 2222,
-            user: Some(String::from("alice")),
-            identity_file: identity_file.map(String::from),
-            extra_args: Vec::new(),
-        }
+        SshCommand::new(
+            String::from("example.com"),
+            2222,
+            Some(String::from("alice")),
+            identity_file.map(String::from),
+            Vec::new(),
+        )
     }
 
     fn ssh_command_launch(identity_file: Option<&str>) -> QuickLaunch {
-        QuickLaunch {
-            title: String::from("Server"),
-            spec: CommandSpec::Ssh {
+        QuickLaunch::new(
+            String::from("Server"),
+            CommandSpec::Ssh {
                 ssh: ssh_command(identity_file),
             },
-            exit_behavior: ExitBehavior::Close,
-        }
+            ExitBehavior::Close,
+        )
     }
 
     #[test]

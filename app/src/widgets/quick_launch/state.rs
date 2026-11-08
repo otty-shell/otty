@@ -5,12 +5,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use iced::Point;
 
 use super::types::{
-    CommandLaunchOptions, CommandSpec, ContextMenuTarget, DropTarget, EnvVar,
-    InlineEditKind, LaunchInfo, NodePath, QuickLaunch, QuickLaunchFile,
-    QuickLaunchType, SshLaunchOptions, SshSecretRequest, WizardMode,
-    WizardOptions,
+    CommandLaunchOptions, ContextMenuTarget, DropTarget, InlineEditKind,
+    LaunchInfo, QuickLaunchFile, QuickLaunchType, SshLaunchOptions,
+    SshSecretRequest, WizardMode, WizardOptions,
 };
 use crate::domain::exit_behavior::ExitBehavior;
+use crate::domain::quick_launch::{CommandSpec, NodePath, QuickLaunch};
 
 /// Core state for the quick launch tree and interactions.
 #[derive(Debug, Clone)]
@@ -543,47 +543,47 @@ impl WizardEditorState {
 
     /// Build state from an existing command.
     pub(crate) fn from_command(path: NodePath, command: &QuickLaunch) -> Self {
-        match &command.spec {
+        match command.spec() {
             CommandSpec::Custom { custom } => {
                 let mut options = CommandLaunchOptions::default();
-                options.set_program(custom.program.clone());
+                options.set_program(custom.program().to_string());
                 options.set_working_directory(
                     custom.working_directory().unwrap_or_default().to_string(),
                 );
-                options.set_args(custom.args.clone());
+                options.set_args(custom.args().to_vec());
                 options.set_envs(
                     custom
-                        .env
+                        .env()
                         .iter()
-                        .map(|EnvVar { key, value }| {
-                            (key.clone(), value.clone())
+                        .map(|env| {
+                            (env.key().to_string(), env.value().to_string())
                         })
                         .collect(),
                 );
 
                 Self {
                     mode: WizardMode::Edit { path },
-                    title: command.title.clone(),
+                    title: command.title().to_string(),
                     options: WizardOptions::Custom(options),
-                    exit_behavior: command.exit_behavior,
+                    exit_behavior: command.exit_behavior(),
                     error: None,
                 }
             },
             CommandSpec::Ssh { ssh } => {
                 let mut options = SshLaunchOptions::default();
-                options.set_host(ssh.host.clone());
-                options.set_port(ssh.port.to_string());
-                options.set_user(ssh.user.clone().unwrap_or_default());
+                options.set_host(ssh.host().to_string());
+                options.set_port(ssh.port().to_string());
+                options.set_user(ssh.user().unwrap_or_default().to_string());
                 options.set_identity_file(
-                    ssh.identity_file.clone().unwrap_or_default(),
+                    ssh.identity_file().unwrap_or_default().to_string(),
                 );
-                options.set_extra_args(ssh.extra_args.clone());
+                options.set_extra_args(ssh.extra_args().to_vec());
 
                 Self {
                     mode: WizardMode::Edit { path },
-                    title: command.title.clone(),
+                    title: command.title().to_string(),
                     options: WizardOptions::Ssh(options),
-                    exit_behavior: command.exit_behavior,
+                    exit_behavior: command.exit_behavior(),
                     error: None,
                 }
             },
@@ -792,6 +792,7 @@ impl WizardEditorState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::quick_launch::SshCommand;
     use crate::widgets::quick_launch::constants::SSH_DEFAULT_PORT;
 
     #[test]
@@ -810,19 +811,19 @@ mod tests {
 
     #[test]
     fn given_saved_command_when_editing_then_exit_behavior_is_loaded() {
-        let command = QuickLaunch {
-            title: String::from("Deploy"),
-            spec: CommandSpec::Ssh {
-                ssh: crate::widgets::quick_launch::types::SshCommand {
-                    host: String::from("example.com"),
-                    port: 22,
-                    user: None,
-                    identity_file: None,
-                    extra_args: Vec::new(),
-                },
+        let command = QuickLaunch::new(
+            String::from("Deploy"),
+            CommandSpec::Ssh {
+                ssh: SshCommand::new(
+                    String::from("example.com"),
+                    22,
+                    None,
+                    None,
+                    Vec::new(),
+                ),
             },
-            exit_behavior: ExitBehavior::CloseOnSuccess,
-        };
+            ExitBehavior::CloseOnSuccess,
+        );
 
         let editor = WizardEditorState::from_command(
             vec![String::from("Deploy")],

@@ -15,11 +15,12 @@ use super::state::{
 };
 use super::types::{
     ContextMenuAction, ContextMenuTarget, DropTarget, InlineEditKind,
-    LaunchInfo, NodePath, PreparedQuickLaunch, QuickLaunch, QuickLaunchFolder,
-    QuickLaunchNode, QuickLaunchSetupOutcome, QuickLaunchWizardSaveRequest,
+    LaunchInfo, PreparedQuickLaunch, QuickLaunchFolder, QuickLaunchNode,
+    QuickLaunchSetupOutcome, QuickLaunchWizardSaveRequest,
     QuickLaunchWizardSaveTarget, WizardMode,
 };
 use super::wizard_draft::build_command;
+use crate::domain::quick_launch::{NodePath, QuickLaunch};
 use crate::i18n::{self, Key};
 
 /// Runtime context for the quick launch reducer.
@@ -676,7 +677,7 @@ fn apply_inline_edit(state: &mut QuickLaunchState) -> Task<QuickLaunchEvent> {
                         *last = title.clone();
                     }
                     if let Some(node) = state.data_mut().node_mut(&path) {
-                        *node.title_mut() = title;
+                        node.rename(title);
                     }
                     update_launching_paths(state, &path, &renamed_path);
                     if state
@@ -719,7 +720,7 @@ fn apply_editor_save_request(
                 return Task::none();
             };
             let title =
-                match parent.normalize_title(&request.command.title, None) {
+                match parent.normalize_title(request.command.title(), None) {
                     Ok(title) => title,
                     Err(err) => {
                         set_wizard_error(state, tab_id, &format!("{err}"));
@@ -727,7 +728,7 @@ fn apply_editor_save_request(
                     },
                 };
             let mut command = request.command;
-            command.title = title;
+            command.rename(title);
             parent.children.push(QuickLaunchNode::Command(command));
         },
         QuickLaunchWizardSaveTarget::Edit { path } => {
@@ -743,7 +744,7 @@ fn apply_editor_save_request(
                 };
                 let current = path.last().map(String::as_str);
                 if let Err(err) =
-                    parent.normalize_title(&request.command.title, current)
+                    parent.normalize_title(request.command.title(), current)
                 {
                     set_wizard_error(state, tab_id, &format!("{err}"));
                     return Task::none();
@@ -1025,7 +1026,7 @@ fn duplicate_command(state: &mut QuickLaunchState, path: &[String]) {
         return;
     };
     let mut clone = command.clone();
-    clone.title = duplicate_title(parent, &command.title);
+    clone.rename(duplicate_title(parent, command.title()));
     parent.children.push(QuickLaunchNode::Command(clone));
     state.mark_dirty();
 }
@@ -1135,11 +1136,10 @@ mod tests {
     use iced::Point;
     use otty_ui_term::settings::Settings;
 
-    use super::super::types::{
-        CommandSpec, CustomCommand, SshCommand, SshSecretKind, SshSecretRequest,
-    };
+    use super::super::types::{SshSecretKind, SshSecretRequest};
     use super::*;
     use crate::domain::exit_behavior::ExitBehavior;
+    use crate::domain::quick_launch::{CommandSpec, CustomCommand, SshCommand};
     use crate::testing::task_outputs::collect_outputs;
 
     fn ctx(settings: &Settings) -> QuickLaunchCtx<'_> {
@@ -1151,18 +1151,18 @@ mod tests {
     }
 
     fn sample_command() -> QuickLaunch {
-        QuickLaunch {
-            title: String::from("Demo"),
-            spec: CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: String::from("bash"),
-                    args: Vec::new(),
-                    env: Vec::new(),
-                    working_directory: None,
-                },
+        QuickLaunch::new(
+            String::from("Demo"),
+            CommandSpec::Custom {
+                custom: CustomCommand::new(
+                    String::from("bash"),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        }
+            ExitBehavior::Close,
+        )
     }
 
     #[test]
@@ -2114,18 +2114,18 @@ mod tests {
             target: QuickLaunchWizardSaveTarget::Edit {
                 path: vec![String::from("Demo")],
             },
-            command: QuickLaunch {
-                title: String::from("Updated"),
-                spec: CommandSpec::Custom {
-                    custom: CustomCommand {
-                        program: String::from("zsh"),
-                        args: Vec::new(),
-                        env: Vec::new(),
-                        working_directory: None,
-                    },
+            command: QuickLaunch::new(
+                String::from("Updated"),
+                CommandSpec::Custom {
+                    custom: CustomCommand::new(
+                        String::from("zsh"),
+                        Vec::new(),
+                        Vec::new(),
+                        None,
+                    ),
                 },
-                exit_behavior: ExitBehavior::Close,
-            },
+                ExitBehavior::Close,
+            ),
         };
 
         let _task = apply_editor_save_request(&mut state, request);
@@ -2569,11 +2569,16 @@ mod tests {
         })
     }
 
+    /// The sample command under another title.
+    fn titled_command(title: &str) -> QuickLaunch {
+        let mut command = sample_command();
+        command.rename(String::from(title));
+
+        command
+    }
+
     fn command_node(title: &str) -> QuickLaunchNode {
-        QuickLaunchNode::Command(QuickLaunch {
-            title: String::from(title),
-            ..sample_command()
-        })
+        QuickLaunchNode::Command(titled_command(title))
     }
 
     fn state_with_root(children: Vec<QuickLaunchNode>) -> QuickLaunchState {
@@ -2934,19 +2939,19 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn ssh_command_node(title: &str) -> QuickLaunchNode {
-        QuickLaunchNode::Command(QuickLaunch {
-            title: String::from(title),
-            spec: CommandSpec::Ssh {
-                ssh: SshCommand {
-                    host: String::from("example.com"),
-                    port: 22,
-                    user: Some(String::from("alice")),
-                    identity_file: Some(String::from("~/.ssh/id_ed25519")),
-                    extra_args: Vec::new(),
-                },
+        QuickLaunchNode::Command(QuickLaunch::new(
+            String::from(title),
+            CommandSpec::Ssh {
+                ssh: SshCommand::new(
+                    String::from("example.com"),
+                    22,
+                    Some(String::from("alice")),
+                    Some(String::from("~/.ssh/id_ed25519")),
+                    Vec::new(),
+                ),
             },
-            exit_behavior: ExitBehavior::Close,
-        })
+            ExitBehavior::Close,
+        ))
     }
 
     /// Click a node the way the tree does: press, then release on it.
@@ -3192,10 +3197,7 @@ mod tests {
                 QuickLaunchSetupOutcome::SecretRequired {
                     path: node.clone(),
                     launch_id: current_launch,
-                    command: Box::new(QuickLaunch {
-                        title: String::from("Prod"),
-                        ..sample_command()
-                    }),
+                    command: Box::new(titled_command("Prod")),
                     request: request.clone(),
                 },
             ),

@@ -13,8 +13,9 @@ use otty_ui_tree::{TreeRowContext, TreeView};
 use super::super::event::QuickLaunchIntent;
 use super::super::model::{InlineEditViewModel, QuickLaunchTreeViewModel};
 use super::super::types::{
-    DropTarget, InlineEditKind, LaunchInfo, NodePath, QuickLaunchNode,
+    DropTarget, InlineEditKind, LaunchInfo, QuickLaunchNode,
 };
+use crate::domain::quick_launch::NodePath;
 use crate::i18n::{self, Key};
 use crate::icons::FOLDER_CLOSED;
 use crate::theme::ThemeProps;

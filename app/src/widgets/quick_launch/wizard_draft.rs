@@ -4,9 +4,9 @@
 use super::constants::SSH_DEFAULT_PORT;
 use super::errors::QuickLaunchWizardError;
 use super::state::WizardEditorState;
-use super::types::{
-    CommandSpec, CustomCommand, EnvVar, QuickLaunch, QuickLaunchType,
-    SshCommand,
+use super::types::QuickLaunchType;
+use crate::domain::quick_launch::{
+    CommandSpec, CustomCommand, EnvVar, QuickLaunch, SshCommand,
 };
 
 /// Build a domain quick launch command from editor draft state.
@@ -36,26 +36,23 @@ pub(super) fn build_command(
                     if key.is_empty() {
                         return None;
                     }
-                    Some(EnvVar {
-                        key: key.to_string(),
-                        value: value.clone(),
-                    })
+                    Some(EnvVar::new(key.to_string(), value.clone()))
                 })
                 .collect::<Vec<_>>();
 
             let working_directory = custom.working_directory().trim();
 
             CommandSpec::Custom {
-                custom: CustomCommand {
-                    program: program.to_string(),
-                    args: custom.args().to_vec(),
+                custom: CustomCommand::new(
+                    program.to_string(),
+                    custom.args().to_vec(),
                     env,
-                    working_directory: if working_directory.is_empty() {
+                    if working_directory.is_empty() {
                         None
                     } else {
                         Some(working_directory.to_string())
                     },
-                },
+                ),
             }
         },
         QuickLaunchType::Ssh => {
@@ -76,22 +73,22 @@ pub(super) fn build_command(
             };
 
             CommandSpec::Ssh {
-                ssh: SshCommand {
-                    host: host.to_string(),
+                ssh: SshCommand::new(
+                    host.to_string(),
                     port,
-                    user: optional_string(ssh.user()),
-                    identity_file: optional_string(ssh.identity_file()),
-                    extra_args: ssh.extra_args().to_vec(),
-                },
+                    optional_string(ssh.user()),
+                    optional_string(ssh.identity_file()),
+                    ssh.extra_args().to_vec(),
+                ),
             }
         },
     };
 
-    Ok(QuickLaunch {
-        title: title.to_string(),
+    Ok(QuickLaunch::new(
+        title.to_string(),
         spec,
-        exit_behavior: editor.exit_behavior(),
-    })
+        editor.exit_behavior(),
+    ))
 }
 
 fn optional_string(value: &str) -> Option<String> {
@@ -130,7 +127,7 @@ mod tests {
         let quick_launch =
             build_command(&editor).expect("build should succeed");
         assert_eq!(quick_launch.title(), "Build");
-        let CommandSpec::Custom { custom } = &quick_launch.spec else {
+        let CommandSpec::Custom { custom } = quick_launch.spec() else {
             panic!("expected custom command");
         };
         assert_eq!(custom.program(), "cargo");

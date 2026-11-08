@@ -122,14 +122,13 @@ mod tests {
     use otty_ui_term::settings::Settings;
 
     use super::{handle_effect, persist_finished};
+    use crate::domain::quick_launch::QuickLaunch;
     use crate::router::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::quick_launch::event::{
         QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent,
     };
-    use crate::widgets::quick_launch::types::{
-        QuickLaunch, QuickLaunchSetupOutcome,
-    };
+    use crate::widgets::quick_launch::types::QuickLaunchSetupOutcome;
     use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
     use crate::widgets::tabs::types::TabMachine;
 
