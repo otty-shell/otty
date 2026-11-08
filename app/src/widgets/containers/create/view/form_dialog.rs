@@ -31,7 +31,8 @@ pub(crate) fn view(props: FormDialogProps<'_>) -> Element<'_, CreateIntent> {
     let mut body = column![].spacing(spacing::SPACE_4);
     for field in vm.fields {
         let mut input = TextField::new(field.label, field.value, palette)
-            .id(field_id(field.field));
+            .id(field_id(field.field))
+            .on_escape(CreateIntent::Cancelled);
         if !field.placeholder.is_empty() {
             input = input.placeholder(field.placeholder);
         }
@@ -123,6 +124,24 @@ mod tests {
             intents,
             vec![CreateIntent::Changed(FormField::Name, String::from("n"))]
         );
+    }
+
+    /// Scenario 6: Esc in a focused field means Cancel. Without it the
+    /// field would only lose its focus and the dialog would stay.
+    #[test]
+    fn esc_in_a_create_field_cancels_the_dialog() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(FormDialogProps {
+            vm: pull_dialog(false),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.click(field_id(FormField::Tag))
+            .expect("tag field should show");
+        ui.tap_key(iced::keyboard::key::Named::Escape);
+
+        let intents: Vec<CreateIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![CreateIntent::Cancelled]);
     }
 
     #[test]

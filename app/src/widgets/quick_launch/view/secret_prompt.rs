@@ -37,7 +37,8 @@ fn dialog<'a>(
         .id(vm.input_id.clone())
         .secure(true)
         .on_input(QuickLaunchIntent::SecretPromptChanged)
-        .on_submit(QuickLaunchIntent::SecretPromptSubmit);
+        .on_submit(QuickLaunchIntent::SecretPromptSubmit)
+        .on_escape(QuickLaunchIntent::SecretPromptCancel);
     if let Some(error) = vm.error {
         input = input.error(error);
     }
@@ -177,6 +178,26 @@ mod tests {
         assert!(matches!(
             messages.as_slice(),
             [QuickLaunchIntent::SecretPromptSubmit]
+        ));
+    }
+
+    /// Scenario 6: Esc in the focused field means Cancel. Without it the
+    /// field would only lose its focus and the prompt would stay.
+    #[test]
+    fn esc_in_the_secret_field_cancels() {
+        let prompt = prompt(SshSecretKind::Password, "u@h:22", false);
+        let palette = UiPalette::otty_dark();
+        let vm = vm(&prompt);
+        let input_id = vm.input_id.clone();
+        let mut ui = simulator(dialog(vm, &palette));
+
+        ui.click(input_id).expect("the field should show");
+        ui.tap_key(iced::keyboard::key::Named::Escape);
+
+        let messages: Vec<QuickLaunchIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            messages.as_slice(),
+            [QuickLaunchIntent::SecretPromptCancel]
         ));
     }
 

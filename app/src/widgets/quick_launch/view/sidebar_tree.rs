@@ -1,8 +1,10 @@
+use iced::keyboard::key::Named;
 use iced::widget::{
     Space, column, container, mouse_area, row, scrollable, svg, text,
     text_input,
 };
 use iced::{Color, Element, Length, alignment};
+use otty_ui_kit::components::input_keys::InputKeys;
 use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::components::tree_row::TreeRow;
@@ -206,6 +208,9 @@ fn render_inline_edit<'a>(
         .on_submit(QuickLaunchIntent::InlineEditSubmit)
         .size(typography::BODY.size())
         .id(edit.id.clone());
+    // Esc cancels the edit; a plain text input would only lose its focus.
+    let input = InputKeys::new(input)
+        .on_key(Named::Escape, QuickLaunchIntent::CancelInlineEdit);
 
     let mut col = column![
         row![Space::new().width(Length::Fixed(indent)), input]
@@ -234,4 +239,45 @@ fn render_inline_edit<'a>(
     }
 
     container(col).width(Length::Fill).padding(0.0).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::Color;
+    use iced::keyboard::key::Named;
+    use iced::widget::Id;
+    use iced_test::simulator;
+
+    use super::render_inline_edit;
+    use crate::widgets::quick_launch::event::QuickLaunchIntent;
+    use crate::widgets::quick_launch::model::InlineEditViewModel;
+    use crate::widgets::quick_launch::state::InlineEditState;
+    use crate::widgets::quick_launch::types::InlineEditKind;
+
+    /// Scenario 5: Esc in the name field cancels the edit. Without it the
+    /// field would only lose its focus, the edit would stay and Enter would
+    /// do nothing.
+    #[test]
+    fn esc_in_the_inline_edit_cancels_it() {
+        let edit = InlineEditState {
+            kind: InlineEditKind::CreateFolder {
+                parent_path: Vec::new(),
+            },
+            value: String::from("notes"),
+            error: None,
+            id: Id::new("inline_edit"),
+        };
+        let vm = InlineEditViewModel::from_state(&edit);
+        let mut ui = simulator(render_inline_edit(vm, 0, Color::BLACK));
+
+        ui.click(Id::new("inline_edit"))
+            .expect("the name field should show");
+        ui.tap_key(Named::Escape);
+
+        let intents: Vec<QuickLaunchIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            intents.as_slice(),
+            [QuickLaunchIntent::CancelInlineEdit]
+        ));
+    }
 }
