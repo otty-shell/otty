@@ -11,10 +11,9 @@ use otty_ui_kit::{size, spacing, typography};
 use otty_ui_tree::{TreeRowContext, TreeView};
 
 use super::super::event::QuickLaunchIntent;
-use super::super::state::InlineEditState;
+use super::super::model::{InlineEditViewModel, QuickLaunchTreeViewModel};
 use super::super::types::{
-    DropTarget, InlineEditKind, LaunchInfo, NodePath, QuickLaunchFile,
-    QuickLaunchNode,
+    DropTarget, InlineEditKind, LaunchInfo, NodePath, QuickLaunchNode,
 };
 use crate::i18n::{self, Key};
 use crate::icons::FOLDER_CLOSED;
@@ -23,12 +22,7 @@ use crate::theme::ThemeProps;
 /// Props for the quick launch tree view.
 #[derive(Debug, Clone)]
 pub(crate) struct SidebarTreeProps<'a> {
-    pub(crate) data: &'a QuickLaunchFile,
-    pub(crate) selected_path: Option<&'a NodePath>,
-    pub(crate) hovered_path: Option<&'a NodePath>,
-    pub(crate) inline_edit: Option<&'a InlineEditState>,
-    pub(crate) launching: &'a std::collections::HashMap<NodePath, LaunchInfo>,
-    pub(crate) drop_target: Option<&'a DropTarget>,
+    pub(crate) vm: QuickLaunchTreeViewModel<'a>,
     pub(crate) theme: ThemeProps<'a>,
 }
 
@@ -41,16 +35,16 @@ pub(crate) fn view(
     let drop_background = ui.surface_selected();
     let scroll_style = scrollbar::style(&ui);
 
-    let launching = props.launching;
-    let drop_target = props.drop_target;
-    let inline_edit = props.inline_edit;
+    let launching = props.vm.launching;
+    let drop_target = props.vm.drop_target;
+    let inline_edit = props.vm.inline_edit;
 
     let tree_view =
-        TreeView::new(props.data.root().children(), move |context| {
+        TreeView::new(props.vm.data.root().children(), move |context| {
             render_entry(context, launching, drop_target, &ui)
         })
-        .selected_row(props.selected_path)
-        .hovered_row(props.hovered_path)
+        .selected_row(props.vm.selected_path)
+        .hovered_row(props.vm.hovered_path)
         .on_press(|path| QuickLaunchIntent::NodePressed { path })
         .on_release(|path| QuickLaunchIntent::NodeReleased { path })
         .on_right_press(|path| QuickLaunchIntent::NodeRightClicked { path })
@@ -145,13 +139,13 @@ fn is_drop_target(drop_target: Option<&DropTarget>, path: &[String]) -> bool {
 }
 
 fn inline_edit_root<'a>(
-    inline_edit: Option<&'a InlineEditState>,
+    inline_edit: Option<InlineEditViewModel<'a>>,
     error_color: Color,
 ) -> Option<Element<'a, QuickLaunchIntent>> {
     let edit = inline_edit?;
     if matches!(
         edit.kind,
-        InlineEditKind::CreateFolder { ref parent_path }
+        InlineEditKind::CreateFolder { parent_path }
             if parent_path.is_empty()
     ) {
         return Some(render_inline_edit(edit, 0, error_color));
@@ -160,13 +154,13 @@ fn inline_edit_root<'a>(
 }
 
 fn inline_edit_after<'a>(
-    inline_edit: Option<&'a InlineEditState>,
+    inline_edit: Option<InlineEditViewModel<'a>>,
     context: &TreeRowContext<'a, QuickLaunchNode>,
     error_color: Color,
 ) -> Option<Element<'a, QuickLaunchIntent>> {
     let edit = inline_edit?;
 
-    match &edit.kind {
+    match edit.kind {
         InlineEditKind::CreateFolder { parent_path }
             if parent_path == &context.entry.path =>
         {
@@ -184,11 +178,11 @@ fn inline_edit_after<'a>(
 }
 
 fn is_rename_edit(
-    inline_edit: Option<&InlineEditState>,
+    inline_edit: Option<InlineEditViewModel<'_>>,
     context: &TreeRowContext<'_, QuickLaunchNode>,
 ) -> bool {
     matches!(inline_edit, Some(edit)
-        if matches!(&edit.kind, InlineEditKind::Rename { path } if path == &context.entry.path))
+        if matches!(edit.kind, InlineEditKind::Rename { path } if path == &context.entry.path))
 }
 
 fn is_prefix(prefix: &[String], path: &[String]) -> bool {
@@ -200,13 +194,13 @@ fn is_prefix(prefix: &[String], path: &[String]) -> bool {
 }
 
 fn render_inline_edit<'a>(
-    edit: &'a InlineEditState,
+    edit: InlineEditViewModel<'a>,
     depth: usize,
     error_color: Color,
 ) -> Element<'a, QuickLaunchIntent> {
     let indent = depth as f32 * size::TREE_INDENT;
 
-    let input = text_input("", &edit.value)
+    let input = text_input("", edit.value)
         .on_input(QuickLaunchIntent::InlineEditChanged)
         .on_submit(QuickLaunchIntent::InlineEditSubmit)
         .size(typography::BODY.size())
@@ -222,9 +216,9 @@ fn render_inline_edit<'a>(
     .width(Length::Fill)
     .height(Length::Shrink);
 
-    if let Some(error) = &edit.error {
+    if let Some(error) = edit.error {
         col = col.push(
-            container(text(error.as_str()).size(typography::CAPTION.size()))
+            container(text(error).size(typography::CAPTION.size()))
                 .padding(iced::Padding {
                     top: 0.0,
                     right: 0.0,

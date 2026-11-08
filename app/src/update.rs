@@ -158,7 +158,7 @@ fn is_mode_shortcut(event: &AppEvent) -> bool {
 
 fn any_context_menu_open(app: &App) -> bool {
     if app.widgets.sidebar.has_header_menu_open()
-        || app.widgets.quick_launch.context_menu().is_some()
+        || app.widgets.quick_launch.has_context_menu()
         || app.widgets.modes.is_menu_open()
     {
         return true;

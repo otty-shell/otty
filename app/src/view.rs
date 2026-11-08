@@ -173,13 +173,12 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     }
 
     // Quick launch context menu overlay
-    if let Some(menu) = app.widgets.quick_launch.context_menu() {
+    if let Some(vm) = app.widgets.quick_launch.context_menu_vm() {
         layers.push(
             ql_context_menu::view(ql_context_menu::ContextMenuProps {
-                menu,
+                vm,
                 theme: theme_props,
                 area_size: app.state.screen_size,
-                launching: app.widgets.quick_launch.launching(),
             })
             .map(|event| {
                 AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
@@ -204,10 +203,10 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     }
 
     // SSH secret dialog stays on top of every other overlay.
-    if let Some(prompt) = app.widgets.quick_launch.secret_prompt() {
+    if let Some(vm) = app.widgets.quick_launch.secret_prompt_vm() {
         layers.push(
             secret_prompt::view(secret_prompt::SecretPromptProps {
-                prompt,
+                vm,
                 theme: theme_props,
             })
             .map(|event| {
@@ -229,8 +228,8 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     #[cfg(not(target_os = "macos"))]
     let resize_grips_layer = if app.widgets.sidebar.has_header_menu_open()
         || app.widgets.modes.is_menu_open()
-        || app.widgets.quick_launch.context_menu().is_some()
-        || app.widgets.quick_launch.secret_prompt().is_some()
+        || app.widgets.quick_launch.has_context_menu()
+        || app.widgets.quick_launch.has_secret_prompt()
         || app.widgets.terminal_workspace.has_any_context_menu()
         || (mode == Mode::Containers && app.widgets.containers.has_overlay())
     {
@@ -589,17 +588,15 @@ fn view_tab_content<'a>(
         ),
         (Some(tab_id), Some(TabContent::QuickLaunchWizard)) => (
             ScreenId::Tab(tab_id),
-            match app.widgets.quick_launch.wizard_editor(tab_id) {
-                Some(editor) => {
-                    wizard_form::view(wizard_form::WizardFormProps {
-                        tab_id,
-                        editor,
-                        theme: theme_props,
-                    })
-                    .map(|event| {
-                        AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
-                    })
-                },
+            match app.widgets.quick_launch.wizard_vm(tab_id) {
+                Some(vm) => wizard_form::view(wizard_form::WizardFormProps {
+                    tab_id,
+                    vm,
+                    theme: theme_props,
+                })
+                .map(|event| {
+                    AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
+                }),
                 None => missing_tab_state(i18n::t(
                     Key::QuickLaunchEditorNotInitialized,
                 )),
@@ -607,9 +604,9 @@ fn view_tab_content<'a>(
         ),
         (Some(tab_id), Some(TabContent::QuickLaunchError)) => (
             ScreenId::Tab(tab_id),
-            match app.widgets.quick_launch.error_tab(tab_id) {
-                Some(error) => error_tab::view(error_tab::ErrorTabProps {
-                    error,
+            match app.widgets.quick_launch.error_tab_vm(tab_id) {
+                Some(vm) => error_tab::view(error_tab::ErrorTabProps {
+                    vm,
                     theme: theme_props,
                 })
                 .map(|event| {

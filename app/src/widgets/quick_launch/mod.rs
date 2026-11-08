@@ -14,8 +14,6 @@ pub(crate) mod storage;
 pub(crate) mod types;
 pub(crate) mod view;
 
-use std::collections::HashMap;
-
 pub(crate) use constants::QUICK_LAUNCHES_TICK_MS;
 use event::{QuickLaunchEvent, QuickLaunchIntent};
 use iced::Task;
@@ -58,20 +56,21 @@ impl QuickLaunchWidget {
         self.vm().top_level_launches()
     }
 
-    /// Return error tab state for a given tab id.
-    pub(crate) fn error_tab(
+    /// Return what the error tab `tab_id` shows, if it is an error tab.
+    pub(crate) fn error_tab_vm(
         &self,
         tab_id: u64,
-    ) -> Option<&state::QuickLaunchErrorState> {
-        self.state.error_tab(tab_id)
+    ) -> Option<model::ErrorTabViewModel<'_>> {
+        model::ErrorTabViewModel::from_state(&self.state, tab_id)
     }
 
-    /// Return wizard editor state for a given tab id.
-    pub(crate) fn wizard_editor(
+    /// Return what the launch editor in tab `tab_id` shows, if the tab has
+    /// one.
+    pub(crate) fn wizard_vm(
         &self,
         tab_id: u64,
-    ) -> Option<&state::WizardEditorState> {
-        self.state.wizard().editor(tab_id)
+    ) -> Option<model::WizardFormViewModel<'_>> {
+        model::WizardFormViewModel::from_state(&self.state, tab_id)
     }
 
     /// Return whether any launch is currently in progress.
@@ -79,21 +78,28 @@ impl QuickLaunchWidget {
         self.state.has_active_launches()
     }
 
-    /// Return the context menu state, if any.
-    pub(crate) fn context_menu(&self) -> Option<&state::ContextMenuState> {
-        self.state.context_menu()
+    /// Return whether the context menu of the tree is open.
+    pub(crate) fn has_context_menu(&self) -> bool {
+        self.state.context_menu().is_some()
+    }
+
+    /// Return the open context menu of the tree, if any.
+    pub(crate) fn context_menu_vm(
+        &self,
+    ) -> Option<model::ContextMenuViewModel> {
+        model::ContextMenuViewModel::from_state(&self.state)
+    }
+
+    /// Return whether the SSH secret dialog is open.
+    pub(crate) fn has_secret_prompt(&self) -> bool {
+        self.state.secret_prompt().is_some()
     }
 
     /// Return the open SSH secret dialog, if any.
-    pub(crate) fn secret_prompt(&self) -> Option<&state::SecretPromptState> {
-        self.state.secret_prompt()
-    }
-
-    /// Return the launching map.
-    pub(crate) fn launching(
+    pub(crate) fn secret_prompt_vm(
         &self,
-    ) -> &HashMap<types::NodePath, types::LaunchInfo> {
-        self.state.launching()
+    ) -> Option<model::SecretPromptViewModel<'_>> {
+        model::SecretPromptViewModel::from_state(&self.state)
     }
 
     /// Return whether there are unsaved changes that need persisting.

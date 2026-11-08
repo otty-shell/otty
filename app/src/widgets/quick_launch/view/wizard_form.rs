@@ -14,7 +14,7 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::QuickLaunchIntent;
-use super::super::state::WizardEditorState;
+use super::super::model::WizardFormViewModel;
 use super::super::types::QuickLaunchType;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::i18n::{self, Key};
@@ -41,19 +41,19 @@ impl<T> fmt::Display for Choice<T> {
 /// Props for the quick launch wizard form.
 pub(crate) struct WizardFormProps<'a> {
     pub(crate) tab_id: u64,
-    pub(crate) editor: &'a WizardEditorState,
+    pub(crate) vm: WizardFormViewModel<'a>,
     pub(crate) theme: ThemeProps<'a>,
 }
 
 /// Render the quick launch wizard form.
 pub(crate) fn view(props: WizardFormProps<'_>) -> WizardElement<'_> {
     let tab_id = props.tab_id;
-    let editor = props.editor;
+    let vm = props.vm;
     let palette = props.theme.theme.ui();
 
-    let command_section = match editor.command_type() {
-        QuickLaunchType::Custom => custom_section(tab_id, editor, palette),
-        QuickLaunchType::Ssh => ssh_section(tab_id, editor, palette),
+    let command_section = match vm.command_type {
+        QuickLaunchType::Custom => custom_section(tab_id, vm, palette),
+        QuickLaunchType::Ssh => ssh_section(tab_id, vm, palette),
     };
     let Some(command_section) = command_section else {
         return container(text(i18n::t(Key::InvalidCustomEditorState)))
@@ -63,12 +63,12 @@ pub(crate) fn view(props: WizardFormProps<'_>) -> WizardElement<'_> {
     };
 
     let mut page = FormPage::new(palette)
-        .section(heading(editor, palette))
-        .section(general_section(tab_id, editor, palette))
+        .section(heading(vm, palette))
+        .section(general_section(tab_id, vm, palette))
         .section(command_section)
-        .section(exit_section(tab_id, editor, palette));
+        .section(exit_section(tab_id, vm, palette));
 
-    if let Some(error) = unassigned_error(editor) {
+    if let Some(error) = unassigned_error(vm) {
         page = page.section(
             text(error)
                 .size(typography::SMALL.size())
@@ -81,10 +81,10 @@ pub(crate) fn view(props: WizardFormProps<'_>) -> WizardElement<'_> {
 }
 
 fn heading<'a>(
-    editor: &WizardEditorState,
+    vm: WizardFormViewModel<'_>,
     palette: &UiPalette,
 ) -> WizardElement<'a> {
-    let title = if editor.is_create_mode() {
+    let title = if vm.is_create_mode {
         i18n::t(Key::WizardTitleNew)
     } else {
         i18n::t(Key::WizardTitleEdit)
@@ -106,18 +106,17 @@ fn heading<'a>(
 
 fn general_section<'a>(
     tab_id: u64,
-    editor: &'a WizardEditorState,
+    vm: WizardFormViewModel<'a>,
     palette: &UiPalette,
 ) -> WizardElement<'a> {
-    let title =
-        TextField::new(i18n::t(Key::FieldTitle), editor.title(), palette)
-            .placeholder("codex: review")
-            .on_input(move |value| QuickLaunchIntent::WizardUpdateTitle {
-                tab_id,
-                value,
-            });
+    let title = TextField::new(i18n::t(Key::FieldTitle), vm.title, palette)
+        .placeholder("codex: review")
+        .on_input(move |value| QuickLaunchIntent::WizardUpdateTitle {
+            tab_id,
+            value,
+        });
 
-    let command_type: WizardElement<'a> = if editor.is_create_mode() {
+    let command_type: WizardElement<'a> = if vm.is_create_mode {
         let options = [
             Choice {
                 value: QuickLaunchType::Custom,
@@ -129,8 +128,8 @@ fn general_section<'a>(
             },
         ];
         let selected = Choice {
-            value: editor.command_type(),
-            label: type_label(editor.command_type()),
+            value: vm.command_type,
+            label: type_label(vm.command_type),
         };
 
         segmented(
@@ -143,14 +142,14 @@ fn general_section<'a>(
             palette,
         )
     } else {
-        text(type_label(editor.command_type()))
+        text(type_label(vm.command_type))
             .size(typography::BODY.size())
             .font(fonts::UI)
             .color(palette.text_body())
             .into()
     };
 
-    let title = match field_error(editor, Key::ErrTitleRequired) {
+    let title = match field_error(vm, Key::ErrTitleRequired) {
         Some(error) => title.error(error),
         None => title,
     };
@@ -165,10 +164,10 @@ fn general_section<'a>(
 
 fn custom_section<'a>(
     tab_id: u64,
-    editor: &'a WizardEditorState,
+    vm: WizardFormViewModel<'a>,
     palette: &UiPalette,
 ) -> Option<WizardElement<'a>> {
-    let custom = editor.custom()?;
+    let custom = vm.custom?;
 
     let program =
         TextField::new(i18n::t(Key::FieldProgram), custom.program(), palette)
@@ -177,7 +176,7 @@ fn custom_section<'a>(
                 tab_id,
                 value,
             });
-    let program = match field_error(editor, Key::ErrProgramRequired) {
+    let program = match field_error(vm, Key::ErrProgramRequired) {
         Some(error) => program.error(error),
         None => program,
     };
@@ -251,10 +250,10 @@ fn custom_section<'a>(
 
 fn ssh_section<'a>(
     tab_id: u64,
-    editor: &'a WizardEditorState,
+    vm: WizardFormViewModel<'a>,
     palette: &UiPalette,
 ) -> Option<WizardElement<'a>> {
-    let ssh = editor.ssh()?;
+    let ssh = vm.ssh?;
 
     let host = TextField::new(i18n::t(Key::FieldHost), ssh.host(), palette)
         .placeholder("example.com")
@@ -262,7 +261,7 @@ fn ssh_section<'a>(
             tab_id,
             value,
         });
-    let host = match field_error(editor, Key::ErrHostRequired) {
+    let host = match field_error(vm, Key::ErrHostRequired) {
         Some(error) => host.error(error),
         None => host,
     };
@@ -274,7 +273,7 @@ fn ssh_section<'a>(
             tab_id,
             value,
         });
-    let port = match field_error(editor, Key::ErrInvalidPort) {
+    let port = match field_error(vm, Key::ErrInvalidPort) {
         Some(error) => port.error(error),
         None => port,
     };
@@ -335,7 +334,7 @@ fn ssh_section<'a>(
 
 fn exit_section<'a>(
     tab_id: u64,
-    editor: &WizardEditorState,
+    vm: WizardFormViewModel<'_>,
     palette: &UiPalette,
 ) -> WizardElement<'a> {
     let options = [
@@ -343,7 +342,7 @@ fn exit_section<'a>(
         exit_choice(ExitBehavior::CloseOnSuccess),
         exit_choice(ExitBehavior::KeepOpen),
     ];
-    let selected = exit_choice(editor.exit_behavior());
+    let selected = exit_choice(vm.exit_behavior);
 
     let control = segmented(
         &options,
@@ -403,15 +402,14 @@ const FIELD_ERRORS: [Key; 4] = [
     Key::ErrInvalidPort,
 ];
 
-/// Returns the editor error when it is the validation message `key`.
-fn field_error(editor: &WizardEditorState, key: Key) -> Option<&str> {
-    editor.error().filter(|error| *error == i18n::t(key))
+/// Returns the form error when it is the validation message `key`.
+fn field_error(vm: WizardFormViewModel<'_>, key: Key) -> Option<&str> {
+    vm.error.filter(|error| *error == i18n::t(key))
 }
 
-/// Returns the editor error when no field shows it.
-fn unassigned_error(editor: &WizardEditorState) -> Option<&str> {
-    editor
-        .error()
+/// Returns the form error when no field shows it.
+fn unassigned_error(vm: WizardFormViewModel<'_>) -> Option<&str> {
+    vm.error
         .filter(|error| !FIELD_ERRORS.iter().any(|key| *error == i18n::t(*key)))
 }
 
@@ -428,7 +426,8 @@ mod tests {
     use crate::testing::alone;
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::quick_launch::event::QuickLaunchIntent;
-    use crate::widgets::quick_launch::state::WizardEditorState;
+    use crate::widgets::quick_launch::model::WizardFormViewModel;
+    use crate::widgets::quick_launch::state::QuickLaunchState;
     use crate::widgets::quick_launch::types::QuickLaunchType;
 
     const TAB_ID: u64 = 7;
@@ -443,13 +442,13 @@ mod tests {
     }
 
     fn messages_after_click(
-        editor: &WizardEditorState,
+        state: &QuickLaunchState,
         label: &str,
     ) -> Vec<QuickLaunchIntent> {
         let themes = ThemeManager::new();
         let mut ui = simulator(page(WizardFormProps {
             tab_id: TAB_ID,
-            editor,
+            vm: vm(state),
             theme: ThemeProps::new(themes.current()),
         }));
 
@@ -458,9 +457,9 @@ mod tests {
         ui.into_messages().collect()
     }
 
-    /// Draws `editor` in a window of the given size.
+    /// Draws the editor of `state` in a window of the given size.
     fn in_window<'a>(
-        editor: &'a WizardEditorState,
+        state: &'a QuickLaunchState,
         themes: &'a ThemeManager,
         width: f32,
         height: f32,
@@ -470,7 +469,7 @@ mod tests {
             (width, height),
             page(WizardFormProps {
                 tab_id: TAB_ID,
-                editor,
+                vm: vm(state),
                 theme: ThemeProps::new(themes.current()),
             }),
         )
@@ -498,21 +497,33 @@ mod tests {
         count
     }
 
-    /// The editor of a new launch of the given type.
-    fn editor_of(command_type: QuickLaunchType) -> WizardEditorState {
-        let mut editor = WizardEditorState::new(Vec::new());
-        editor.set_command_type(command_type);
+    /// The state with the editor of a new launch of the given type in tab
+    /// `TAB_ID`.
+    fn state_of(command_type: QuickLaunchType) -> QuickLaunchState {
+        let mut state = QuickLaunchState::default();
+        state.wizard_mut().initialize_create(TAB_ID, Vec::new());
+        state
+            .wizard_mut()
+            .editor_mut(TAB_ID)
+            .expect("the editor was just created")
+            .set_command_type(command_type);
 
-        editor
+        state
+    }
+
+    /// The form of the editor in tab `TAB_ID` of `state`.
+    fn vm(state: &QuickLaunchState) -> WizardFormViewModel<'_> {
+        WizardFormViewModel::from_state(state, TAB_ID)
+            .expect("the tab should have an editor")
     }
 
     #[test]
     fn given_either_launch_type_in_a_small_window_then_the_page_has_one_scroller()
      {
         for command_type in [QuickLaunchType::Custom, QuickLaunchType::Ssh] {
-            let editor = editor_of(command_type);
+            let state = state_of(command_type);
             let themes = ThemeManager::new();
-            let mut ui = in_window(&editor, &themes, 300.0, 300.0);
+            let mut ui = in_window(&state, &themes, 300.0, 300.0);
 
             assert_eq!(scroller_count(&mut ui), 1);
         }
@@ -523,9 +534,9 @@ mod tests {
      {
         let (width, height) = (1024.0, 1400.0);
         for command_type in [QuickLaunchType::Custom, QuickLaunchType::Ssh] {
-            let editor = editor_of(command_type);
+            let state = state_of(command_type);
             let themes = ThemeManager::new();
-            let mut ui = in_window(&editor, &themes, width, height);
+            let mut ui = in_window(&state, &themes, width, height);
 
             let save =
                 ui.find(i18n::t(Key::ButtonSave)).expect("Save").bounds();
@@ -546,9 +557,9 @@ mod tests {
     #[test]
     fn given_a_low_window_then_save_comes_after_the_fields_and_is_reached_by_scrolling()
      {
-        let editor = WizardEditorState::new(Vec::new());
+        let state = state_of(QuickLaunchType::Custom);
         let themes = ThemeManager::new();
-        let mut ui = in_window(&editor, &themes, 1024.0, 300.0);
+        let mut ui = in_window(&state, &themes, 1024.0, 300.0);
         let save = i18n::t(Key::ButtonSave);
 
         let hidden = ui.find(save).expect("Save should exist");
@@ -566,9 +577,9 @@ mod tests {
     #[test]
     fn given_a_small_window_then_the_form_keeps_its_width_and_save_is_in_reach()
     {
-        let editor = WizardEditorState::new(Vec::new());
+        let state = state_of(QuickLaunchType::Custom);
         let themes = ThemeManager::new();
-        let mut ui = in_window(&editor, &themes, 300.0, 300.0);
+        let mut ui = in_window(&state, &themes, 300.0, 300.0);
         let save = i18n::t(Key::ButtonSave);
 
         let found = ui.find(save).expect("Save should exist");
@@ -591,9 +602,9 @@ mod tests {
 
     #[test]
     fn given_a_normal_window_then_the_form_is_as_wide_as_before() {
-        let editor = WizardEditorState::new(Vec::new());
+        let state = state_of(QuickLaunchType::Custom);
         let themes = ThemeManager::new();
-        let mut ui = in_window(&editor, &themes, 1024.0, 1400.0);
+        let mut ui = in_window(&state, &themes, 1024.0, 1400.0);
 
         let title = ui.find(i18n::t(Key::WizardTitleNew)).expect("title");
 
@@ -603,9 +614,9 @@ mod tests {
     #[test]
     fn given_a_small_window_when_a_field_is_scrolled_to_then_typing_reaches_it()
     {
-        let editor = WizardEditorState::new(Vec::new());
+        let state = state_of(QuickLaunchType::Custom);
         let themes = ThemeManager::new();
-        let mut ui = in_window(&editor, &themes, 300.0, 300.0);
+        let mut ui = in_window(&state, &themes, 300.0, 300.0);
 
         wheel(&mut ui, -20.0, -20.0);
         let label = ui
@@ -630,10 +641,14 @@ mod tests {
 
     #[test]
     fn given_a_small_window_then_a_field_error_pushes_the_next_field_down() {
-        let mut editor = WizardEditorState::new(Vec::new());
-        editor.set_error(i18n::t(Key::ErrTitleRequired).to_string());
+        let mut state = state_of(QuickLaunchType::Custom);
+        state
+            .wizard_mut()
+            .editor_mut(TAB_ID)
+            .expect("the tab should have an editor")
+            .set_error(i18n::t(Key::ErrTitleRequired).to_string());
         let themes = ThemeManager::new();
-        let mut ui = in_window(&editor, &themes, 300.0, 1400.0);
+        let mut ui = in_window(&state, &themes, 300.0, 1400.0);
 
         let error = ui
             .find(i18n::t(Key::ErrTitleRequired))
@@ -649,9 +664,9 @@ mod tests {
 
     #[test]
     fn given_form_when_save_pressed_then_save_intent_is_sent() {
-        let editor = WizardEditorState::new(Vec::new());
+        let state = state_of(QuickLaunchType::Custom);
 
-        let messages = messages_after_click(&editor, i18n::t(Key::ButtonSave));
+        let messages = messages_after_click(&state, i18n::t(Key::ButtonSave));
 
         assert!(matches!(
             messages.as_slice(),
@@ -661,10 +676,9 @@ mod tests {
 
     #[test]
     fn given_form_when_cancel_pressed_then_cancel_intent_is_sent() {
-        let editor = WizardEditorState::new(Vec::new());
+        let state = state_of(QuickLaunchType::Custom);
 
-        let messages =
-            messages_after_click(&editor, i18n::t(Key::ButtonCancel));
+        let messages = messages_after_click(&state, i18n::t(Key::ButtonCancel));
 
         assert!(matches!(
             messages.as_slice(),
@@ -674,9 +688,9 @@ mod tests {
 
     #[test]
     fn given_new_launch_when_ssh_pressed_then_type_intent_is_sent() {
-        let editor = WizardEditorState::new(Vec::new());
+        let state = state_of(QuickLaunchType::Custom);
 
-        let messages = messages_after_click(&editor, i18n::t(Key::TypeSsh));
+        let messages = messages_after_click(&state, i18n::t(Key::TypeSsh));
 
         assert!(matches!(
             messages.as_slice(),
@@ -702,8 +716,8 @@ mod tests {
             let marker = i18n::t(Key::FieldOptional);
             for command_type in [QuickLaunchType::Custom, QuickLaunchType::Ssh]
             {
-                let editor = editor_of(command_type);
-                let mut ui = in_window(&editor, &themes, 1024.0, 1400.0);
+                let state = state_of(command_type);
+                let mut ui = in_window(&state, &themes, 1024.0, 1400.0);
 
                 assert!(ui.find(marker).is_ok(), "{locale:?}: {marker}");
                 assert_eq!(
@@ -717,11 +731,11 @@ mod tests {
 
     #[test]
     fn given_new_launch_when_shown_then_title_and_subtitle_are_visible() {
-        let editor = WizardEditorState::new(Vec::new());
+        let state = state_of(QuickLaunchType::Custom);
         let themes = ThemeManager::new();
         let mut ui = simulator(page(WizardFormProps {
             tab_id: TAB_ID,
-            editor: &editor,
+            vm: vm(&state),
             theme: ThemeProps::new(themes.current()),
         }));
 

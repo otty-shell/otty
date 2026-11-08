@@ -54,12 +54,7 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
     let launch_count = props.vm.data.launch_count();
 
     let tree = sidebar_tree::view(sidebar_tree::SidebarTreeProps {
-        data: props.vm.data,
-        selected_path: props.vm.selected_path,
-        hovered_path: props.vm.hovered_path,
-        inline_edit: props.vm.inline_edit,
-        launching: props.vm.launching,
-        drop_target: props.vm.drop_target,
+        vm: props.vm,
         theme: props.theme,
     })
     .map(on_intent);
@@ -87,7 +82,7 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
 pub(crate) fn content_height(vm: &QuickLaunchTreeViewModel<'_>) -> f32 {
     let visible_rows = visible_row_count(vm.data.root().children());
     let is_creating_folder = matches!(
-        vm.inline_edit.map(|edit| &edit.kind),
+        vm.inline_edit.map(|edit| edit.kind),
         Some(InlineEditKind::CreateFolder { .. })
     );
 
@@ -111,7 +106,9 @@ mod tests {
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::quick_launch::event::QuickLaunchIntent;
-    use crate::widgets::quick_launch::model::QuickLaunchTreeViewModel;
+    use crate::widgets::quick_launch::model::{
+        InlineEditViewModel, QuickLaunchTreeViewModel,
+    };
     use crate::widgets::quick_launch::state::InlineEditState;
     use crate::widgets::quick_launch::types::{
         CommandSpec, CustomCommand, InlineEditKind, LaunchInfo, QuickLaunch,
@@ -187,7 +184,7 @@ mod tests {
             data: file,
             selected_path: None,
             hovered_path: None,
-            inline_edit,
+            inline_edit: inline_edit.map(InlineEditViewModel::from_state),
             launching,
             drop_target: None,
         }

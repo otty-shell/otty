@@ -4,10 +4,8 @@ use otty_ui_kit::components::menu::{self, Menu, MenuItem};
 use otty_ui_kit::spacing;
 
 use super::super::event::QuickLaunchIntent;
-use super::super::state::ContextMenuState;
-use super::super::types::{
-    ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,
-};
+use super::super::model::ContextMenuViewModel;
+use super::super::types::{ContextMenuAction, ContextMenuTarget};
 use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
@@ -17,10 +15,9 @@ const SEPARATOR_HEIGHT: f32 = 9.0;
 
 /// Props for the quick launch context menu.
 pub(crate) struct ContextMenuProps<'a> {
-    pub(crate) menu: &'a ContextMenuState,
+    pub(crate) vm: ContextMenuViewModel,
     pub(crate) theme: ThemeProps<'a>,
     pub(crate) area_size: Size,
-    pub(crate) launching: &'a std::collections::HashMap<NodePath, LaunchInfo>,
 }
 
 /// Render the quick launch context menu overlay.
@@ -41,9 +38,9 @@ pub(crate) fn view(
             )
         };
 
-    match &props.menu.target() {
-        ContextMenuTarget::Command(path) => {
-            if props.launching.contains_key(path) {
+    match &props.vm.target {
+        ContextMenuTarget::Command(_) => {
+            if props.vm.is_running {
                 menu = push(menu, Key::Kill, ContextMenuAction::Kill, false);
             }
             menu = push(menu, Key::Edit, ContextMenuAction::Edit, false);
@@ -93,7 +90,7 @@ pub(crate) fn view(
     let height = menu_height_for_items(item_count)
         + SEPARATOR_HEIGHT * separator_count as f32;
     let anchor = anchor_position(
-        props.menu.cursor(),
+        props.vm.cursor,
         props.area_size,
         menu::MENU_WIDTH,
         height,
@@ -127,8 +124,6 @@ pub(crate) fn view(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use iced::{Point, Size};
     use iced_test::simulator;
 
@@ -136,25 +131,26 @@ mod tests {
     use crate::i18n::{self, Key};
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::quick_launch::event::QuickLaunchIntent;
-    use crate::widgets::quick_launch::state::ContextMenuState;
+    use crate::widgets::quick_launch::model::ContextMenuViewModel;
     use crate::widgets::quick_launch::types::{
-        ContextMenuAction, ContextMenuTarget, LaunchInfo, NodePath,
+        ContextMenuAction, ContextMenuTarget,
     };
 
     fn click_item(
         target: ContextMenuTarget,
-        launching: &HashMap<NodePath, LaunchInfo>,
+        is_running: bool,
         key: Key,
     ) -> Vec<QuickLaunchIntent> {
-        let menu = ContextMenuState::default()
-            .with_target(target)
-            .with_cursor(Point::new(40.0, 40.0));
+        let vm = ContextMenuViewModel {
+            target,
+            cursor: Point::new(40.0, 40.0),
+            is_running,
+        };
         let themes = ThemeManager::new();
         let mut ui = simulator(view(ContextMenuProps {
-            menu: &menu,
+            vm,
             theme: ThemeProps::new(themes.current()),
             area_size: Size::new(1024.0, 768.0),
-            launching,
         }));
 
         ui.click(i18n::t(key)).expect("menu item should be visible");
@@ -172,7 +168,7 @@ mod tests {
 
     #[test]
     fn given_command_menu_when_edit_pressed_then_edit_action_is_sent() {
-        let messages = click_item(command(), &HashMap::new(), Key::Edit);
+        let messages = click_item(command(), false, Key::Edit);
 
         assert!(matches!(
             messages.as_slice(),
@@ -184,7 +180,7 @@ mod tests {
 
     #[test]
     fn given_command_menu_when_rename_pressed_then_rename_action_is_sent() {
-        let messages = click_item(command(), &HashMap::new(), Key::Rename);
+        let messages = click_item(command(), false, Key::Rename);
 
         assert!(matches!(
             messages.as_slice(),
@@ -197,7 +193,7 @@ mod tests {
     #[test]
     fn given_command_menu_when_duplicate_pressed_then_duplicate_action_is_sent()
     {
-        let messages = click_item(command(), &HashMap::new(), Key::Duplicate);
+        let messages = click_item(command(), false, Key::Duplicate);
 
         assert!(matches!(
             messages.as_slice(),
@@ -209,7 +205,7 @@ mod tests {
 
     #[test]
     fn given_command_menu_when_remove_pressed_then_remove_action_is_sent() {
-        let messages = click_item(command(), &HashMap::new(), Key::Remove);
+        let messages = click_item(command(), false, Key::Remove);
 
         assert!(matches!(
             messages.as_slice(),
@@ -221,20 +217,7 @@ mod tests {
 
     #[test]
     fn given_running_command_when_kill_pressed_then_kill_action_is_sent() {
-        let path = vec![String::from("build")];
-        let mut launching = HashMap::new();
-        launching.insert(
-            path.clone(),
-            LaunchInfo {
-                id: 1,
-                launch_ticks: 0,
-                is_indicator_highlighted: false,
-                cancel: Default::default(),
-            },
-        );
-
-        let messages =
-            click_item(ContextMenuTarget::Command(path), &launching, Key::Kill);
+        let messages = click_item(command(), true, Key::Kill);
 
         assert!(matches!(
             messages.as_slice(),
@@ -246,7 +229,7 @@ mod tests {
 
     #[test]
     fn given_folder_menu_when_create_folder_pressed_then_action_is_sent() {
-        let messages = click_item(folder(), &HashMap::new(), Key::CreateFolder);
+        let messages = click_item(folder(), false, Key::CreateFolder);
 
         assert!(matches!(
             messages.as_slice(),
@@ -258,8 +241,7 @@ mod tests {
 
     #[test]
     fn given_folder_menu_when_create_launch_pressed_then_action_is_sent() {
-        let messages =
-            click_item(folder(), &HashMap::new(), Key::CreateQuickLaunch);
+        let messages = click_item(folder(), false, Key::CreateQuickLaunch);
 
         assert!(matches!(
             messages.as_slice(),
@@ -271,7 +253,7 @@ mod tests {
 
     #[test]
     fn given_folder_menu_when_rename_pressed_then_rename_action_is_sent() {
-        let messages = click_item(folder(), &HashMap::new(), Key::Rename);
+        let messages = click_item(folder(), false, Key::Rename);
 
         assert!(matches!(
             messages.as_slice(),
@@ -283,7 +265,7 @@ mod tests {
 
     #[test]
     fn given_folder_menu_when_delete_pressed_then_delete_action_is_sent() {
-        let messages = click_item(folder(), &HashMap::new(), Key::Delete);
+        let messages = click_item(folder(), false, Key::Delete);
 
         assert!(matches!(
             messages.as_slice(),
@@ -295,11 +277,8 @@ mod tests {
 
     #[test]
     fn given_background_menu_when_create_launch_pressed_then_action_is_sent() {
-        let messages = click_item(
-            ContextMenuTarget::Background,
-            &HashMap::new(),
-            Key::CreateLaunch,
-        );
+        let messages =
+            click_item(ContextMenuTarget::Background, false, Key::CreateLaunch);
 
         assert!(matches!(
             messages.as_slice(),

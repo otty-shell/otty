@@ -7,83 +7,38 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::QuickLaunchIntent;
-use super::super::state::SecretPromptState;
-use super::super::types::SshSecretKind;
+use super::super::model::SecretPromptViewModel;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
 /// Props for the SSH secret dialog.
 pub(crate) struct SecretPromptProps<'a> {
-    pub(crate) prompt: &'a SecretPromptState,
+    pub(crate) vm: SecretPromptViewModel<'a>,
     pub(crate) theme: ThemeProps<'a>,
-}
-
-/// Texts of the SSH secret dialog for one prompt.
-struct SecretPromptTexts {
-    title: String,
-    hint: String,
-    label: &'static str,
-    error: Option<&'static str>,
-}
-
-impl SecretPromptTexts {
-    fn new(prompt: &SecretPromptState) -> Self {
-        let request = prompt.request();
-
-        let (title, hint, label, retry_error) = match request.kind() {
-            SshSecretKind::KeyPassphrase => (
-                i18n::secret_prompt_passphrase_title(request.target()),
-                i18n::secret_prompt_passphrase_hint(
-                    prompt.launch_title(),
-                    &prompt.account(),
-                ),
-                i18n::t(Key::SecretPromptPassphraseLabel),
-                i18n::t(Key::SecretPromptWrongPassphrase),
-            ),
-            SshSecretKind::Password => (
-                i18n::secret_prompt_password_title(request.target()),
-                i18n::secret_prompt_password_hint(
-                    prompt.launch_title(),
-                    &prompt.account(),
-                ),
-                i18n::t(Key::SecretPromptPasswordLabel),
-                i18n::t(Key::SecretPromptPasswordRejected),
-            ),
-        };
-
-        Self {
-            title,
-            hint,
-            label,
-            error: request.is_retry().then_some(retry_error),
-        }
-    }
 }
 
 /// Render the modal dialog that asks for an SSH key passphrase or password.
 pub(crate) fn view(
     props: SecretPromptProps<'_>,
 ) -> Element<'_, QuickLaunchIntent> {
-    dialog(props.prompt, props.theme.theme.ui())
+    dialog(props.vm, props.theme.theme.ui())
 }
 
 fn dialog<'a>(
-    prompt: &'a SecretPromptState,
+    vm: SecretPromptViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, QuickLaunchIntent> {
-    let texts = SecretPromptTexts::new(prompt);
-
-    let hint = text(texts.hint)
+    let hint = text(vm.hint)
         .size(typography::SMALL.size())
         .font(fonts::UI)
         .color(palette.text_muted());
 
-    let mut input = TextField::new(texts.label, prompt.value(), palette)
-        .id(prompt.input_id().clone())
+    let mut input = TextField::new(vm.label, vm.value, palette)
+        .id(vm.input_id.clone())
         .secure(true)
         .on_input(QuickLaunchIntent::SecretPromptChanged)
         .on_submit(QuickLaunchIntent::SecretPromptSubmit);
-    if let Some(error) = texts.error {
+    if let Some(error) = vm.error {
         input = input.error(error);
     }
 
@@ -94,7 +49,7 @@ fn dialog<'a>(
         .kind(ButtonKind::Primary)
         .on_press(QuickLaunchIntent::SecretPromptSubmit);
 
-    Dialog::new(texts.title, palette)
+    Dialog::new(vm.title, palette)
         .body(column![hint, input].spacing(spacing::SPACE_4))
         .action(cancel)
         .action(connect)
@@ -107,8 +62,11 @@ mod tests {
 
     use super::*;
     use crate::domain::exit_behavior::ExitBehavior;
+    use crate::widgets::quick_launch::state::{
+        QuickLaunchState, SecretPromptState,
+    };
     use crate::widgets::quick_launch::types::{
-        CommandSpec, QuickLaunch, SshCommand, SshSecretRequest,
+        CommandSpec, QuickLaunch, SshCommand, SshSecretKind, SshSecretRequest,
     };
 
     fn ssh_launch() -> QuickLaunch {
@@ -127,16 +85,26 @@ mod tests {
         }
     }
 
+    /// The state of a launch that asks for a secret of `kind` for `target`.
     fn prompt(
         kind: SshSecretKind,
         target: &str,
         is_retry: bool,
-    ) -> SecretPromptState {
-        SecretPromptState::new(
+    ) -> QuickLaunchState {
+        let mut state = QuickLaunchState::default();
+        state.open_secret_prompt(SecretPromptState::new(
             vec![String::from("laptop")],
             Box::new(ssh_launch()),
             SshSecretRequest::new(kind, target.to_string(), is_retry),
-        )
+        ));
+
+        state
+    }
+
+    /// The open dialog of `state`.
+    fn vm(state: &QuickLaunchState) -> SecretPromptViewModel<'_> {
+        SecretPromptViewModel::from_state(state)
+            .expect("the prompt should be open")
     }
 
     #[test]
@@ -144,7 +112,7 @@ mod tests {
         let prompt =
             prompt(SshSecretKind::KeyPassphrase, "~/.ssh/id_ed25519", false);
         let palette = UiPalette::otty_dark();
-        let mut ui = simulator(dialog(&prompt, &palette));
+        let mut ui = simulator(dialog(vm(&prompt), &palette));
 
         let title = i18n::secret_prompt_passphrase_title("~/.ssh/id_ed25519");
         let hint = i18n::secret_prompt_passphrase_hint(
@@ -160,7 +128,7 @@ mod tests {
         let prompt =
             prompt(SshSecretKind::Password, "ubuntu@192.168.1.20:22", false);
         let palette = UiPalette::otty_dark();
-        let mut ui = simulator(dialog(&prompt, &palette));
+        let mut ui = simulator(dialog(vm(&prompt), &palette));
 
         let title =
             i18n::secret_prompt_password_title("ubuntu@192.168.1.20:22");
@@ -174,7 +142,7 @@ mod tests {
     fn given_first_attempt_when_rendered_then_no_error_shows() {
         let prompt = prompt(SshSecretKind::KeyPassphrase, "key", false);
         let palette = UiPalette::otty_dark();
-        let mut ui = simulator(dialog(&prompt, &palette));
+        let mut ui = simulator(dialog(vm(&prompt), &palette));
 
         let error = i18n::t(Key::SecretPromptWrongPassphrase);
         assert!(ui.find(error).is_err());
@@ -185,12 +153,12 @@ mod tests {
         let palette = UiPalette::otty_dark();
 
         let passphrase = prompt(SshSecretKind::KeyPassphrase, "key", true);
-        let mut ui = simulator(dialog(&passphrase, &palette));
+        let mut ui = simulator(dialog(vm(&passphrase), &palette));
         let error = i18n::t(Key::SecretPromptWrongPassphrase);
         assert!(ui.find(error).is_ok());
 
         let password = prompt(SshSecretKind::Password, "u@h:22", true);
-        let mut ui = simulator(dialog(&password, &palette));
+        let mut ui = simulator(dialog(vm(&password), &palette));
         let error = i18n::t(Key::SecretPromptPasswordRejected);
         assert!(ui.find(error).is_ok());
     }
@@ -199,7 +167,7 @@ mod tests {
     fn given_dialog_when_connect_clicked_then_submit_intent_is_sent() {
         let prompt = prompt(SshSecretKind::KeyPassphrase, "key", false);
         let palette = UiPalette::otty_dark();
-        let mut ui = simulator(dialog(&prompt, &palette));
+        let mut ui = simulator(dialog(vm(&prompt), &palette));
 
         ui.click(i18n::t(Key::ButtonConnect))
             .expect("connect button should be visible");
@@ -215,7 +183,7 @@ mod tests {
     fn given_dialog_when_cancel_clicked_then_cancel_intent_is_sent() {
         let prompt = prompt(SshSecretKind::Password, "u@h:22", false);
         let palette = UiPalette::otty_dark();
-        let mut ui = simulator(dialog(&prompt, &palette));
+        let mut ui = simulator(dialog(vm(&prompt), &palette));
 
         ui.click(i18n::t(Key::ButtonCancel))
             .expect("cancel button should be visible");

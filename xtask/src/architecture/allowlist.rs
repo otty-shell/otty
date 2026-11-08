@@ -100,36 +100,6 @@ pub const ALLOWLIST: &[Allowed] = &[
         "the domain type still names a type of the quick_launch widget; move that type into domain/",
     ),
     Allowed::known(
-        Rule::ViewImportsState,
-        "widgets/quick_launch/view/context_menu.rs",
-        "widgets::quick_launch::state",
-        "the view reads state types; give it a view model",
-    ),
-    Allowed::known(
-        Rule::ViewImportsState,
-        "widgets/quick_launch/view/error_tab.rs",
-        "widgets::quick_launch::state",
-        "the view reads state types; give it a view model",
-    ),
-    Allowed::known(
-        Rule::ViewImportsState,
-        "widgets/quick_launch/view/secret_prompt.rs",
-        "widgets::quick_launch::state",
-        "the view reads state types; give it a view model",
-    ),
-    Allowed::known(
-        Rule::ViewImportsState,
-        "widgets/quick_launch/view/sidebar_tree.rs",
-        "widgets::quick_launch::state",
-        "the view reads state types; give it a view model",
-    ),
-    Allowed::known(
-        Rule::ViewImportsState,
-        "widgets/quick_launch/view/wizard_form.rs",
-        "widgets::quick_launch::state",
-        "the view reads state types; give it a view model",
-    ),
-    Allowed::known(
         Rule::ServicesOutsideRoute,
         "app.rs",
         "widgets::terminal_workspace::services",
