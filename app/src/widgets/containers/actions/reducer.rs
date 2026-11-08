@@ -22,6 +22,7 @@ use super::offers::{
 };
 use super::state::{ActionsState, Confirm};
 use super::types::RowAction;
+use crate::focus;
 use crate::i18n::{self, Key};
 
 /// What the actions read from the parent widget: the open list and the
@@ -96,9 +97,11 @@ pub(crate) fn reduce(
 ) -> (Task<ActionsEffect>, Option<ActionsOutcome>) {
     match intent {
         ActionsIntent::Act(action) => act(state, ctx, action),
+        // The menu takes the keyboard, so keys typed in a field under it do
+        // not close it and Esc reaches the app.
         ActionsIntent::OpenRowMenu { target, position } => {
             state.open_row_menu(position, target);
-            (Task::none(), None)
+            (focus::nothing(), None)
         },
         ActionsIntent::CloseRowMenu => {
             state.close_row_menu();
@@ -447,7 +450,7 @@ mod tests {
     use otty_containers::{Resources, fixtures};
 
     use super::*;
-    use crate::testing::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::{collect_outputs, focuses_nothing};
     use crate::widgets::containers::create::FormDialogViewModel;
     use crate::widgets::containers::create::types::FormField;
     use crate::widgets::containers::event::{
@@ -1049,6 +1052,24 @@ mod tests {
         let selected = engine.containers().selected(Container::id);
         assert_eq!(selected.map(Container::name), Some("otty-fx-exit3"));
         assert_eq!(state.actions().row_menu(), Some(position));
+    }
+
+    /// The row menu takes the keyboard from the search field, so typed keys
+    /// do not close it and Esc reaches the app (scenario 16).
+    #[test]
+    fn opening_the_row_menu_takes_the_keyboard_focus() {
+        let mut state = loaded_state();
+
+        let task = reduce_containers(
+            &mut state,
+            ContainersIntent::OpenRowMenu {
+                index: 0,
+                position: Point::ORIGIN,
+            },
+        );
+
+        assert!(state.actions().row_menu().is_some());
+        assert!(focuses_nothing(task));
     }
 
     #[test]

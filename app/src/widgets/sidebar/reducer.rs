@@ -4,6 +4,7 @@ use iced::Task;
 
 use super::event::{SidebarEffect, SidebarEvent, SidebarIntent};
 use super::state::SidebarState;
+use crate::focus;
 
 /// Reduce a sidebar intent event into state updates and effect events.
 ///
@@ -48,9 +49,11 @@ pub(super) fn reduce(
                 Task::none()
             }
         },
+        // The menu takes the keyboard, so typed keys do not reach the shell
+        // under it and Esc reaches the app.
         SidebarIntent::HeaderMenuOpen(menu) => {
             state.open_header_menu(menu);
-            Task::none()
+            focus::nothing()
         },
         SidebarIntent::HeaderMenuDismiss => {
             if !state.dismiss_header_menu() {
@@ -91,7 +94,7 @@ mod tests {
     use iced::time::{Duration, Instant};
     use iced::widget::pane_grid;
 
-    use crate::testing::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::{collect_outputs, focuses_nothing};
     use crate::widgets::sidebar::SidebarWidget;
     use crate::widgets::sidebar::event::{
         SidebarEffect, SidebarEvent, SidebarIntent,
@@ -1051,6 +1054,18 @@ mod tests {
 
         let _dismiss = reduce(&mut widget, SidebarIntent::HeaderMenuDismiss);
         assert_eq!(widget.vm().open_header_menu, None);
+    }
+
+    /// The header menu takes the keyboard from the focused terminal, so
+    /// typed keys do not reach its shell and Esc reaches the app.
+    #[test]
+    fn opening_a_header_menu_takes_the_keyboard_focus() {
+        let mut widget = SidebarWidget::new();
+
+        let task =
+            widget.reduce(SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions));
+
+        assert!(focuses_nothing(task));
     }
 
     #[test]

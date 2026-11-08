@@ -1,7 +1,6 @@
-use iced::widget::{Id, container, mouse_area, pane_grid, text_input};
-use iced::{Background, Element, Length, Point, Size, alignment};
+use iced::widget::{container, mouse_area, pane_grid};
+use iced::{Element, Length, Point, Size, alignment};
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
-use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
 
 use crate::geometry::anchor_position;
@@ -9,10 +8,6 @@ use crate::i18n::{self, Key};
 use crate::shortcuts::AppShortcut;
 use crate::theme::ThemeProps;
 use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
-
-/// Size of the invisible text field that keeps keyboard focus while the menu
-/// is open. It is not a design value, so it has no token.
-const FOCUS_TRAP_SIZE: f32 = 1.0;
 
 /// Height of a menu separator: 1px line plus 4px margin above and below, as
 /// drawn by the kit menu.
@@ -26,7 +21,6 @@ pub(crate) struct PaneContextMenuProps<'a> {
     pub(crate) cursor: Point,
     pub(crate) grid_size: Size,
     pub(crate) terminal_id: u64,
-    pub(crate) focus_target: Id,
     pub(crate) has_block_selection: bool,
     pub(crate) theme: ThemeProps<'a>,
 }
@@ -138,18 +132,10 @@ pub(crate) fn view<'a>(
         }
     });
 
-    iced::widget::stack!(
-        dismiss_layer,
-        positioned_menu,
-        focus_trap(
-            props.tab_id,
-            props.focus_target.clone(),
-            props.theme.theme.ui()
-        )
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .into()
+    iced::widget::stack!(dismiss_layer, positioned_menu)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 /// Total height of the pane menu, used to keep it inside the pane grid.
@@ -159,36 +145,6 @@ fn pane_menu_height(has_block_selection: bool) -> f32 {
     2.0 * menu::MENU_PADDING
         + size::ROW * rows as f32
         + SEPARATOR_HEIGHT * separators as f32
-}
-
-fn focus_trap(
-    tab_id: u64,
-    id: Id,
-    palette: &UiPalette,
-) -> Element<'static, TerminalWorkspaceIntent> {
-    // Every part of the field has the canvas color, so it stays invisible.
-    let color = palette.surface_canvas();
-
-    text_input("", "")
-        .on_input(move |_| TerminalWorkspaceIntent::ContextMenuInput { tab_id })
-        .padding(0)
-        .size(FOCUS_TRAP_SIZE)
-        .width(Length::Fixed(FOCUS_TRAP_SIZE))
-        .id(id)
-        .style(move |_: &iced::Theme, _status| {
-            iced::widget::text_input::Style {
-                background: Background::Color(color),
-                border: iced::Border {
-                    width: 0.0,
-                    ..Default::default()
-                },
-                icon: color,
-                placeholder: color,
-                value: color,
-                selection: color,
-            }
-        })
-        .into()
 }
 
 #[cfg(test)]

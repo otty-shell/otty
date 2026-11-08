@@ -307,7 +307,6 @@ fn view_terminal_context_menu_overlay<'a>(
                     cursor: menu.cursor(),
                     grid_size: menu.grid_size(),
                     terminal_id: menu.terminal_id(),
-                    focus_target: menu.focus_target().clone(),
                     has_block_selection,
                     theme: theme_props,
                 },

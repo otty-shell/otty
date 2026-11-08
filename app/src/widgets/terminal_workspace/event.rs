@@ -38,8 +38,6 @@ pub(crate) enum TerminalWorkspaceIntent {
     },
     /// Dismiss the context menu for a tab.
     CloseContextMenu { tab_id: u64 },
-    /// Keyboard input while context menu is focused (absorb focus trap).
-    ContextMenuInput { tab_id: u64 },
     /// Split the given pane along an axis.
     SplitPane {
         tab_id: u64,
@@ -124,10 +122,6 @@ impl fmt::Debug for TerminalWorkspaceIntent {
                 .finish(),
             Self::CloseContextMenu { tab_id } => f
                 .debug_struct("CloseContextMenu")
-                .field("tab_id", tab_id)
-                .finish(),
-            Self::ContextMenuInput { tab_id } => f
-                .debug_struct("ContextMenuInput")
                 .field("tab_id", tab_id)
                 .finish(),
             Self::SplitPane { tab_id, pane, axis } => f

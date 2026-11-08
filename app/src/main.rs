@@ -2,6 +2,7 @@ mod app;
 mod commands;
 mod components;
 mod domain;
+mod focus;
 mod fonts;
 mod geometry;
 mod guards;

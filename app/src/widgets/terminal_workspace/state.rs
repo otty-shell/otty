@@ -23,8 +23,8 @@ pub(crate) enum StateCommand {
     SelectHovered(Id),
     /// Clear selected block highlight in a terminal widget.
     ClearSelection(Id),
-    /// Focus a generic iced element by id.
-    FocusElement(Id),
+    /// Take the keyboard focus from every widget, the terminals too.
+    FocusNothing,
     /// Close the tab (all panes were removed).
     CloseTab { tab_id: u64 },
     /// Execute multiple commands.
@@ -90,7 +90,6 @@ pub(crate) struct PaneContextMenuState {
     cursor: Point,
     grid_size: Size,
     terminal_id: u64,
-    focus_target: Id,
 }
 
 impl PaneContextMenuState {
@@ -106,7 +105,6 @@ impl PaneContextMenuState {
             cursor,
             grid_size,
             terminal_id,
-            focus_target: Id::unique(),
         }
     }
 
@@ -128,11 +126,6 @@ impl PaneContextMenuState {
     /// Return the terminal id for the pane.
     pub(crate) fn terminal_id(&self) -> u64 {
         self.terminal_id
-    }
-
-    /// Return the iced widget id used for focus trapping.
-    pub(crate) fn focus_target(&self) -> &Id {
-        &self.focus_target
     }
 }
 
@@ -491,13 +484,20 @@ impl TerminalTabState {
 
         let focus_cmd = self.set_focus_on_pane(pane, false, false);
         let select_cmd = StateCommand::SelectHovered(widget_id);
-        let menu_state =
-            PaneContextMenuState::new(pane, cursor, grid_size, terminal_id);
-        let menu_focus_cmd =
-            StateCommand::FocusElement(menu_state.focus_target().clone());
-        self.context_menu = Some(menu_state);
+        self.context_menu = Some(PaneContextMenuState::new(
+            pane,
+            cursor,
+            grid_size,
+            terminal_id,
+        ));
 
-        StateCommand::Batch(vec![focus_cmd, select_cmd, menu_focus_cmd])
+        // The menu takes the keyboard, so typed keys do not reach the shell
+        // under it and Esc reaches the app.
+        StateCommand::Batch(vec![
+            focus_cmd,
+            select_cmd,
+            StateCommand::FocusNothing,
+        ])
     }
 
     /// Close an open context menu.
@@ -780,7 +780,6 @@ mod tests {
         assert_eq!(menu_state.cursor(), Point::new(20.0, 30.0));
         assert_eq!(menu_state.grid_size(), Size::new(300.0, 200.0));
         assert_eq!(menu_state.terminal_id(), 77);
-        let _focus_target = menu_state.focus_target();
     }
 
     #[test]

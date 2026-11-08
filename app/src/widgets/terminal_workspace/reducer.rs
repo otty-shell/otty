@@ -11,7 +11,7 @@ use super::event::{
 };
 use super::state::{StateCommand, TerminalTabState, TerminalWorkspaceState};
 use super::types::{TerminalEvent, TerminalKind};
-use crate::i18n;
+use crate::{focus, i18n};
 
 /// Runtime context injected into each reduce call.
 pub(crate) struct TerminalWorkspaceCtx {
@@ -104,7 +104,6 @@ pub(super) fn reduce(
         CloseContextMenu { tab_id } => {
             with_terminal_tab(state, tab_id, |tab| tab.close_context_menu())
         },
-        ContextMenuInput { .. } => Task::none(),
         SplitPane { tab_id, pane, axis } => reduce_split_pane(
             state,
             terminal_to_tab,
@@ -582,7 +581,7 @@ fn execute_command(command: StateCommand) -> Task<TerminalWorkspaceEvent> {
         StateCommand::ClearSelection(id) => {
             TerminalView::command(id, BlockCommand::ClearSelection)
         },
-        StateCommand::FocusElement(id) => iced::widget::operation::focus(id),
+        StateCommand::FocusNothing => focus::nothing(),
         StateCommand::CloseTab { tab_id } => {
             Task::done(TerminalWorkspaceEvent::Effect(
                 TerminalWorkspaceEffect::TabClosed { tab_id },
@@ -616,7 +615,9 @@ mod tests {
 
     use super::{TerminalWorkspaceCtx, reduce};
     use crate::domain::exit_behavior::ExitBehavior;
-    use crate::testing::task_outputs::runs_widget_operation;
+    use crate::testing::task_outputs::{
+        focuses_nothing, runs_widget_operation,
+    };
     use crate::widgets::terminal_workspace::event::{
         TerminalWorkspaceEvent, TerminalWorkspaceIntent,
     };
@@ -826,20 +827,31 @@ mod tests {
         );
     }
 
+    /// The pane menu takes the keyboard from its terminal, so typed keys do
+    /// not reach the shell and Esc reaches the app (scenario 4).
     #[test]
-    fn given_context_menu_input_when_reduced_then_no_effect() {
-        let mut state = TerminalWorkspaceState::default();
-        let mut terminal_to_tab = HashMap::new();
-        let mut next_id = 100_u64;
-        let ctx = default_ctx();
+    fn opening_the_pane_menu_takes_the_keyboard_focus() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_one_shell_tab();
+        let pane = state
+            .tab(1)
+            .and_then(|tab| tab.focus())
+            .expect("shell tab should have a focused pane");
 
-        let _task = reduce(
+        let task = reduce(
             &mut state,
             &mut terminal_to_tab,
             &mut next_id,
-            TerminalWorkspaceIntent::ContextMenuInput { tab_id: 1 },
-            &ctx,
+            TerminalWorkspaceIntent::OpenContextMenu {
+                tab_id: 1,
+                pane,
+                terminal_id: 100,
+            },
+            &shell_tab_ctx(),
         );
+
+        assert!(state.tab(1).and_then(|tab| tab.context_menu()).is_some());
+        assert!(focuses_nothing(task));
     }
 
     #[test]

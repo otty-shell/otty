@@ -24,6 +24,7 @@ pub(crate) const SHARED_MODULES: &[&str] = &[
     "shell_session",
     "components",
     "domain",
+    "focus",
 ];
 
 /// Wiring files outside `router/` and `screens/`: the crate root, the app
@@ -202,6 +203,7 @@ mod tests {
         );
         assert_eq!(layer_of("domain/mode.rs"), Some(Layer::Shared));
         assert_eq!(layer_of("theme.rs"), Some(Layer::Shared));
+        assert_eq!(layer_of("focus.rs"), Some(Layer::Shared));
         assert_eq!(layer_of("helpers.rs"), None);
     }
 

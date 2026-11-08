@@ -4,7 +4,7 @@ use super::{App, AppEvent};
 use crate::commands::AppCommand;
 use crate::guards::{
     MenuGuard, context_menu_guard, inline_edit_guard, is_escape_press,
-    is_header_menu_choice, is_terminal_input,
+    is_header_menu_choice, is_terminal_input_kept_out, top_overlay,
 };
 use crate::router;
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
@@ -48,9 +48,11 @@ fn finish_update(app: &mut App, task: Task<AppEvent>) -> Task<AppEvent> {
 }
 
 fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
-    // Keys typed while the command palette is open belong to the palette,
-    // even if a terminal still had keyboard focus.
-    if app.widgets.palette.is_open() && is_terminal_input(&event) {
+    let top = top_overlay(app);
+
+    // Keys typed under a menu or a dialog belong to it, even if a terminal
+    // still had keyboard focus.
+    if is_terminal_input_kept_out(top, &event) {
         return Task::none();
     }
 

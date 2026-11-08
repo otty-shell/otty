@@ -21,6 +21,7 @@ use super::types::{
 };
 use super::wizard_draft::build_command;
 use crate::domain::quick_launch::{NodePath, QuickLaunch};
+use crate::focus;
 use crate::i18n::{self, Key};
 
 /// Runtime context for the quick launch reducer.
@@ -111,13 +112,15 @@ fn reduce_intent(
             state.clear_pressed_path();
             Task::none()
         },
+        // The context menu takes the keyboard, so typed keys do not reach
+        // the shell under it and Esc reaches the app.
         BackgroundRightClicked => {
             let context_menu_state = ContextMenuState::default()
                 .with_target(ContextMenuTarget::Background)
                 .with_cursor(ctx.sidebar_cursor);
             state.set_context_menu(Some(context_menu_state));
             state.clear_selected_path();
-            Task::none()
+            focus::nothing()
         },
         NodeRightClicked { path } => {
             let selected_path = path.clone();
@@ -135,7 +138,7 @@ fn reduce_intent(
 
             state.set_context_menu(Some(context_menu_state));
             state.set_selected_path(Some(selected_path));
-            Task::none()
+            focus::nothing()
         },
         ContextMenuDismiss => {
             state.clear_context_menu();
@@ -1164,7 +1167,7 @@ mod tests {
     use super::*;
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::domain::quick_launch::{CommandSpec, CustomCommand, SshCommand};
-    use crate::testing::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::{collect_outputs, focuses_nothing};
 
     fn ctx(settings: &Settings) -> QuickLaunchCtx<'_> {
         QuickLaunchCtx {
@@ -1431,6 +1434,36 @@ mod tests {
 
         assert!(state.context_menu().is_some());
         assert!(state.selected_path().is_none());
+    }
+
+    /// The context menu takes the keyboard from the focused terminal, so
+    /// typed keys do not reach its shell and Esc reaches the app.
+    #[test]
+    fn opening_the_context_menu_takes_the_keyboard_focus() {
+        let settings = Settings::default();
+        let mut on_launch = QuickLaunchState::default();
+        on_launch
+            .data_mut()
+            .root
+            .children
+            .push(QuickLaunchNode::Command(sample_command()));
+        let mut on_background = QuickLaunchState::default();
+
+        let launch_menu = reduce(
+            &mut on_launch,
+            QuickLaunchIntent::NodeRightClicked {
+                path: vec![String::from("Demo")],
+            },
+            &ctx(&settings),
+        );
+        let background_menu = reduce(
+            &mut on_background,
+            QuickLaunchIntent::BackgroundRightClicked,
+            &ctx(&settings),
+        );
+
+        assert!(focuses_nothing(launch_menu));
+        assert!(focuses_nothing(background_menu));
     }
 
     #[test]

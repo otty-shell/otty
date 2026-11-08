@@ -44,6 +44,34 @@ pub(crate) enum Overlay {
     InlineEdit,
 }
 
+impl Overlay {
+    /// Return `true` for a menu: the palette, the All modes menu, the header
+    /// menus, the Containers row menu and the context menus. A click
+    /// outside a menu closes it, and a shortcut closes it and runs.
+    pub(crate) fn is_menu(self) -> bool {
+        matches!(
+            self,
+            Overlay::Palette
+                | Overlay::ModesMenu
+                | Overlay::HeaderMenu
+                | Overlay::ContainersRowMenu
+                | Overlay::TerminalContextMenu
+                | Overlay::LaunchContextMenu
+        )
+    }
+
+    /// Return `true` for a dialog: the SSH prompt and the Containers create
+    /// and confirm dialogs. A dialog waits for its answer.
+    pub(crate) fn is_dialog(self) -> bool {
+        matches!(
+            self,
+            Overlay::SecretPrompt
+                | Overlay::ContainersCreate
+                | Overlay::ContainersConfirm
+        )
+    }
+}
+
 /// Determines how the event loop should treat input from the user when a
 /// context menu is open.
 #[derive(Debug, Clone, Copy)]
@@ -93,7 +121,6 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
                 | E::CopySelectedBlockCommand { .. }
                 | E::SplitPane { .. }
                 | E::ClosePane { .. }
-                | E::ContextMenuInput { .. }
                 | E::Widget(_)
                 | E::PaneGridCursorMoved { .. } => Allow,
                 E::OpenContextMenu { .. } | E::PaneClicked { .. } => Ignore,
@@ -237,6 +264,20 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
     }
 }
 
+/// Return `true` when `event` is text a terminal sends to its shell and a
+/// menu or a dialog lies on top: the keys belong to the overlay, even if a
+/// terminal still had keyboard focus. The inline edit lets them through: it
+/// is no overlay over the terminals.
+pub(crate) fn is_terminal_input_kept_out(
+    top: Option<Overlay>,
+    event: &AppEvent,
+) -> bool {
+    let covers_terminals =
+        top.is_some_and(|top| top.is_menu() || top.is_dialog());
+
+    covers_terminals && is_terminal_input(event)
+}
+
 /// The open overlay of Containers mode on top: a dialog lies over the row
 /// menu.
 fn containers_overlay(app: &App) -> Option<Overlay> {
@@ -273,20 +314,14 @@ fn terminal_overlay(app: &App) -> Option<Overlay> {
     None
 }
 
-/// Return `true` when the event carries text a terminal sends to its shell
-/// (typed keys, a paste or composed input). The app drops it while the
-/// command palette is open, so keys meant for the palette never reach a
-/// shell.
-pub(crate) fn is_terminal_input(event: &AppEvent) -> bool {
+/// Return `true` when the event carries text a terminal sends to its shell:
+/// typed keys, a paste or composed input.
+fn is_terminal_input(event: &AppEvent) -> bool {
     matches!(
         event,
-        AppEvent::TerminalWorkspace(
-            crate::widgets::terminal_workspace::event::TerminalWorkspaceEvent::Intent(
-                crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent::Widget(
-                    otty_ui_term::Event::Write { .. }
-                )
-            )
-        )
+        AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+            TerminalWorkspaceIntent::Widget(otty_ui_term::Event::Write { .. })
+        ))
     )
 }
 
@@ -297,7 +332,8 @@ mod tests {
 
     use super::{
         MenuGuard, Overlay, context_menu_guard, inline_edit_guard,
-        is_escape_press, is_header_menu_choice, is_terminal_input, top_overlay,
+        is_escape_press, is_header_menu_choice, is_terminal_input,
+        is_terminal_input_kept_out, top_overlay,
     };
     use crate::app::App;
     use crate::commands::AppCommand;
@@ -351,6 +387,101 @@ mod tests {
         (open_confirm, Overlay::ContainersConfirm),
         (open_row_menu, Overlay::ContainersRowMenu),
     ];
+
+    /// The menus: a click outside closes them.
+    const MENUS: [Overlay; 6] = [
+        Overlay::Palette,
+        Overlay::ModesMenu,
+        Overlay::HeaderMenu,
+        Overlay::ContainersRowMenu,
+        Overlay::TerminalContextMenu,
+        Overlay::LaunchContextMenu,
+    ];
+
+    /// The dialogs: they wait for their answer.
+    const DIALOGS: [Overlay; 3] = [
+        Overlay::SecretPrompt,
+        Overlay::ContainersCreate,
+        Overlay::ContainersConfirm,
+    ];
+
+    #[test]
+    fn each_overlay_is_a_menu_a_dialog_or_the_inline_edit() {
+        let overlays = TERMINAL_OVERLAYS
+            .into_iter()
+            .chain(CONTAINERS_OVERLAYS)
+            .map(|(_, overlay)| overlay);
+
+        for overlay in overlays {
+            let kinds = [
+                overlay.is_menu(),
+                overlay.is_dialog(),
+                overlay == Overlay::InlineEdit,
+            ];
+
+            assert_eq!(
+                kinds.iter().filter(|is| **is).count(),
+                1,
+                "{overlay:?}"
+            );
+        }
+        for menu in MENUS {
+            assert!(menu.is_menu(), "{menu:?}");
+        }
+        for dialog in DIALOGS {
+            assert!(dialog.is_dialog(), "{dialog:?}");
+        }
+    }
+
+    /// Scenario 2: typing under a menu or a dialog never reaches the shell
+    /// behind it, even if its terminal still had keyboard focus.
+    #[test]
+    fn terminal_input_is_kept_out_under_every_menu_and_dialog_but_not_an_inline_edit()
+     {
+        let typed = terminal_widget_event(otty_ui_term::Event::Write {
+            id: 1,
+            data: b"ls".to_vec(),
+        });
+
+        for (open, overlay) in TERMINAL_OVERLAYS {
+            let mut app = app_in(Mode::Terminal);
+            open(&mut app);
+
+            let is_kept_out =
+                is_terminal_input_kept_out(top_overlay(&app), &typed);
+
+            assert_eq!(
+                is_kept_out,
+                overlay != Overlay::InlineEdit,
+                "{overlay:?}"
+            );
+        }
+        for (open, overlay) in CONTAINERS_OVERLAYS {
+            let mut app = containers_app_with_lists();
+            open(&mut app);
+
+            let is_kept_out =
+                is_terminal_input_kept_out(top_overlay(&app), &typed);
+
+            assert!(is_kept_out, "{overlay:?}");
+        }
+    }
+
+    #[test]
+    fn terminal_input_passes_with_nothing_open_and_a_report_always_passes() {
+        let typed = terminal_widget_event(otty_ui_term::Event::Write {
+            id: 1,
+            data: b"ls".to_vec(),
+        });
+        let redraw =
+            terminal_widget_event(otty_ui_term::Event::Redraw { id: 1 });
+
+        assert!(!is_terminal_input_kept_out(None, &typed));
+        assert!(!is_terminal_input_kept_out(
+            Some(Overlay::HeaderMenu),
+            &redraw
+        ));
+    }
 
     #[test]
     fn nothing_is_on_top_of_a_plain_window() {

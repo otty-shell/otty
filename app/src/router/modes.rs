@@ -4,21 +4,17 @@
 //! Containers widget whether it may talk to the engines (spec Decision 14).
 
 use iced::Task;
-use iced::widget::{Id, operation};
 
 use super::AppEvent;
 use crate::app::App;
 use crate::domain::mode::Mode;
+use crate::focus;
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::modes::event::{ModesEffect, ModesEvent};
 use crate::widgets::modes::storage;
 use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
-
-/// Id no widget has. Focusing it takes keyboard focus away from every
-/// widget, the focused terminal included.
-const NO_WIDGET_ID: &str = "modes_menu_no_widget";
 
 /// Route a modes event: reduce its intents and run its effects.
 pub(crate) fn route(app: &mut App, event: ModesEvent) -> Task<AppEvent> {
@@ -48,7 +44,7 @@ fn handle_effect(effect: ModesEffect) -> Task<AppEvent> {
         ModesEffect::SavePinned(pinned) => save_pinned(pinned),
         // An open menu takes focus from the terminal, so typed keys do not
         // reach the shell and Esc reaches the app, which closes the menu.
-        ModesEffect::MenuOpened => operation::focus(Id::new(NO_WIDGET_ID)),
+        ModesEffect::MenuOpened => focus::nothing(),
         // Once the menu closes in Terminal mode, the active pane gets its
         // keys back. In another mode nothing takes the keyboard.
         ModesEffect::MenuClosed(Mode::Terminal) => focus_active_terminal(),
@@ -80,9 +76,7 @@ fn save_pinned(pinned: Vec<Mode>) -> Task<AppEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::task_outputs::{
-        collect_outputs, runs_widget_operation,
-    };
+    use crate::testing::task_outputs::{collect_outputs, focuses_nothing};
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::event::ModesIntent;
     use crate::widgets::tabs::TabsCtx;
@@ -242,7 +236,7 @@ mod tests {
 
         let task = route(&mut app, ModesEvent::Effect(ModesEffect::MenuOpened));
 
-        assert!(runs_widget_operation(task));
+        assert!(focuses_nothing(task));
     }
 
     #[test]
