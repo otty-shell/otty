@@ -3,17 +3,6 @@ use std::path::Path;
 use super::errors::ExplorerError;
 use super::types::FileNode;
 
-/// Build explorer root label from a file system path.
-///
-/// Returns the final path component, or the full display string for root paths.
-pub(crate) fn root_label(path: &Path) -> String {
-    let display = path.display();
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| format!("{display}"))
-}
-
 /// Load direct children for a file system directory.
 ///
 /// Returns nodes sorted folders-first, then alphabetical.
@@ -70,18 +59,5 @@ mod tests {
         assert_eq!(nodes.len(), 2);
         assert!(nodes[0].is_folder());
         assert_eq!(nodes[1].name(), "a.txt");
-    }
-
-    #[test]
-    fn given_root_path_when_label_requested_then_uses_display() {
-        assert_eq!(root_label(std::path::Path::new("/")), "/");
-    }
-
-    #[test]
-    fn given_normal_path_when_label_requested_then_returns_file_name() {
-        assert_eq!(
-            root_label(std::path::Path::new("/home/user/projects")),
-            "projects"
-        );
     }
 }

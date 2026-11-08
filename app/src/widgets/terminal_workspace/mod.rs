@@ -1,3 +1,4 @@
+mod blocks;
 mod errors;
 pub(crate) mod event;
 mod model;
@@ -107,7 +108,7 @@ impl TerminalWorkspaceWidget {
         let entry = tab.focused_terminal_entry()?;
         let snapshot = entry.terminal().snapshot_arc();
 
-        services::terminal_cwd_from_blocks(snapshot.view().blocks())
+        blocks::terminal_cwd_from_blocks(snapshot.view().blocks())
     }
 
     /// Return a terminal tab with its focused pane: the pane a split of

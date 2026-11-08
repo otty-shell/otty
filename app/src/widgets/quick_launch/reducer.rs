@@ -9,7 +9,6 @@ use iced::widget::operation;
 use super::constants::QUICK_LAUNCHES_TICK_MS;
 use super::errors::quick_launch_error_message;
 use super::event::{QuickLaunchEffect, QuickLaunchEvent, QuickLaunchIntent};
-use super::services::build_command;
 use super::state::{
     ContextMenuState, DragState, InlineEditState, QuickLaunchErrorState,
     QuickLaunchState, SecretPromptState,
@@ -20,6 +19,7 @@ use super::types::{
     QuickLaunchNode, QuickLaunchSetupOutcome, QuickLaunchWizardSaveRequest,
     QuickLaunchWizardSaveTarget, WizardMode,
 };
+use super::wizard_draft::build_command;
 use crate::i18n::{self, Key};
 
 /// Runtime context for the quick launch reducer.

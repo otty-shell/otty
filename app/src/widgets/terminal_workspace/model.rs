@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use iced::widget::pane_grid;
 use otty_ui_kit::components::target_dot::TargetKind;
 
-use super::services;
+use super::blocks::{running_program_from_blocks, terminal_cwd_from_blocks};
 use super::state::TerminalWorkspaceState;
 use super::types::TerminalEntry;
 
@@ -95,9 +95,9 @@ impl PaneLabel {
         let snapshot = entry.terminal().snapshot_arc();
         let view = snapshot.view();
         let blocks = view.blocks();
-        let program = services::running_program_from_blocks(blocks)
-            .unwrap_or(entry.title());
-        let cwd = services::terminal_cwd_from_blocks(blocks);
+        let program =
+            running_program_from_blocks(blocks).unwrap_or(entry.title());
+        let cwd = terminal_cwd_from_blocks(blocks);
 
         Self::new(program, cwd.as_deref(), home_dir())
     }

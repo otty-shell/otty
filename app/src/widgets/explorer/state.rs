@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use super::services::root_label;
 use super::types::{FileNode, TreePath};
 
 /// Runtime state for the sidebar file explorer.
@@ -170,6 +169,17 @@ impl ExplorerState {
     }
 }
 
+/// Build explorer root label from a file system path.
+///
+/// Returns the final path component, or the full display string for root paths.
+fn root_label(path: &Path) -> String {
+    let display = path.display();
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("{display}"))
+}
+
 fn find_node<'a>(
     nodes: &'a [FileNode],
     path: &[String],
@@ -305,7 +315,7 @@ fn preserve_folder_state(node: &mut FileNode, previous: FileNode) {
 mod tests {
     use std::path::PathBuf;
 
-    use super::ExplorerState;
+    use super::{ExplorerState, root_label};
     use crate::widgets::explorer::types::FileNode;
 
     #[test]
@@ -484,5 +494,18 @@ mod tests {
         let directories = state.watched_directories();
 
         assert_eq!(directories, vec![root.clone(), root.join("src")]);
+    }
+
+    #[test]
+    fn given_root_path_when_label_requested_then_uses_display() {
+        assert_eq!(root_label(std::path::Path::new("/")), "/");
+    }
+
+    #[test]
+    fn given_normal_path_when_label_requested_then_returns_file_name() {
+        assert_eq!(
+            root_label(std::path::Path::new("/home/user/projects")),
+            "projects"
+        );
     }
 }

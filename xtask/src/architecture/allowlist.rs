@@ -112,24 +112,6 @@ pub const ALLOWLIST: &[Allowed] = &[
         "the shell session setup lives in terminal_workspace::services; move it where both callers may use it",
     ),
     Allowed::known(
-        Rule::ServicesOutsideRoute,
-        "widgets/explorer/state.rs",
-        "widgets::explorer::services",
-        "a pure helper placed in services.rs; move it into a topic file",
-    ),
-    Allowed::known(
-        Rule::ServicesOutsideRoute,
-        "widgets/quick_launch/reducer.rs",
-        "widgets::quick_launch::services",
-        "a pure helper placed in services.rs; move it into a topic file",
-    ),
-    Allowed::known(
-        Rule::ServicesOutsideRoute,
-        "widgets/terminal_workspace/model.rs",
-        "widgets::terminal_workspace::services",
-        "a pure helper placed in services.rs; move it into a topic file",
-    ),
-    Allowed::known(
         Rule::StreamOutsideSubscription,
         "widgets/explorer/watcher.rs",
         "Subscription::run",

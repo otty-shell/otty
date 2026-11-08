@@ -13,6 +13,7 @@ mod state;
 pub(crate) mod storage;
 pub(crate) mod types;
 pub(crate) mod view;
+mod wizard_draft;
 
 pub(crate) use constants::QUICK_LAUNCHES_TICK_MS;
 use event::{QuickLaunchEvent, QuickLaunchIntent};
