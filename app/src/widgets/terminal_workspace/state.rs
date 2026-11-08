@@ -399,6 +399,9 @@ impl TerminalTabState {
     /// With `equalize_panes` set, the panes left in the closed pane's
     /// split group are spread evenly across the space it freed.
     ///
+    /// The menu of the closed pane closes with it. The menu of another pane
+    /// stays open.
+    ///
     /// When the closed pane had the focus, a pane left becomes the focused
     /// pane of the tab. With `focus_terminal_widget` set, it also takes the
     /// keyboard; without it, the keyboard stays where it is.
@@ -417,7 +420,13 @@ impl TerminalTabState {
         let result = self.panes.close(pane);
         if let Some((terminal_id, sibling)) = result {
             self.clear_selected_block_for_terminal(terminal_id);
-            self.context_menu = None;
+            let menu_is_on_pane = self
+                .context_menu
+                .as_ref()
+                .is_some_and(|menu| menu.pane() == pane);
+            if menu_is_on_pane {
+                self.context_menu = None;
+            }
             self.terminals.remove(&terminal_id);
 
             if equalize_panes {

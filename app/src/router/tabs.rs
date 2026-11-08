@@ -266,6 +266,7 @@ mod tests {
             sidebar_cursor: Point::ORIGIN,
             equalize_panes: true,
             is_overlay_open: false,
+            is_other_overlay_open: false,
         }
     }
 
