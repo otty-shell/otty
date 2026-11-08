@@ -12,7 +12,7 @@ use super::overview::{
     self, Field, container_fields, network_fields, volume_fields,
 };
 use super::state::{ContainersState, EngineState};
-use super::types::{InspectorTab, SelectedRow};
+use super::types::{InspectorTab, ListRow};
 
 /// The tab row and the body of the open tab.
 pub(crate) struct InspectorTabsViewModel<'a> {
@@ -106,7 +106,7 @@ pub(super) fn refresh_inspect_tree(state: &mut ContainersState) {
     };
 
     let shown_container = match row {
-        SelectedRow::Container(container) => Some(container),
+        ListRow::Container(container) => Some(container),
         _ => None,
     };
     let links = InspectLinks {
@@ -124,19 +124,19 @@ pub(super) fn refresh_inspect_tree(state: &mut ContainersState) {
 
 /// The Overview fields of `row`; their links point into the engine's
 /// lists, and an image counts its users in the engine's containers.
-fn overview_fields(engine: &EngineState, row: &SelectedRow<'_>) -> Vec<Field> {
+fn overview_fields(engine: &EngineState, row: &ListRow<'_>) -> Vec<Field> {
     let containers = engine.containers().items();
 
     match row {
-        SelectedRow::Container(container) => container_fields(
+        ListRow::Container(container) => container_fields(
             container,
             engine.images().items(),
             engine.volumes().items(),
             engine.networks().items(),
         ),
-        SelectedRow::Image(image) => overview::image_fields(image, containers),
-        SelectedRow::Volume(volume) => volume_fields(volume, containers),
-        SelectedRow::Network(network) => network_fields(network, containers),
+        ListRow::Image(image) => overview::image_fields(image, containers),
+        ListRow::Volume(volume) => volume_fields(volume, containers),
+        ListRow::Network(network) => network_fields(network, containers),
     }
 }
 
@@ -144,7 +144,7 @@ fn overview_fields(engine: &EngineState, row: &SelectedRow<'_>) -> Vec<Field> {
 fn inspect_content<'a>(
     state: &'a ContainersState,
     engine: &EngineState,
-    row: &SelectedRow<'_>,
+    row: &ListRow<'_>,
 ) -> InspectContent<'a> {
     let target = InspectTarget::new(
         engine.info().address().clone(),

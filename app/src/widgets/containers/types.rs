@@ -408,24 +408,24 @@ pub(crate) struct OpenList<'a> {
 impl<'a> OpenList<'a> {
     /// Return the selected row; `None` when nothing is selected or the row
     /// is not in the loaded list.
-    pub(crate) fn selected_row(&self) -> Option<SelectedRow<'a>> {
+    pub(crate) fn selected_row(&self) -> Option<ListRow<'a>> {
         self.find(self.selected_id?)
     }
 
     /// Return the row with `id` in the open list: a container or network id,
     /// an image row key or a volume name.
-    pub(crate) fn find(&self, id: &str) -> Option<SelectedRow<'a>> {
+    pub(crate) fn find(&self, id: &str) -> Option<ListRow<'a>> {
         let row = match self.resource {
-            ResourceKind::Containers => SelectedRow::Container(
+            ResourceKind::Containers => ListRow::Container(
                 self.containers.iter().find(|row| row.id() == id)?,
             ),
-            ResourceKind::Images => SelectedRow::Image(
+            ResourceKind::Images => ListRow::Image(
                 self.images.iter().find(|row| row.row_key() == id)?,
             ),
-            ResourceKind::Volumes => SelectedRow::Volume(
+            ResourceKind::Volumes => ListRow::Volume(
                 self.volumes.iter().find(|row| row.name() == id)?,
             ),
-            ResourceKind::Networks => SelectedRow::Network(
+            ResourceKind::Networks => ListRow::Network(
                 self.networks.iter().find(|row| row.id() == id)?,
             ),
         };
@@ -436,14 +436,14 @@ impl<'a> OpenList<'a> {
 
 /// A row of the open list, most often the selected one.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum SelectedRow<'a> {
+pub(crate) enum ListRow<'a> {
     Container(&'a Container),
     Image(&'a Image),
     Volume(&'a Volume),
     Network(&'a Network),
 }
 
-impl SelectedRow<'_> {
+impl ListRow<'_> {
     /// Return the list the row is in.
     pub(crate) fn resource(&self) -> ResourceKind {
         match self {

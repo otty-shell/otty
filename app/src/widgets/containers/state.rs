@@ -20,8 +20,8 @@ use super::table_search::{
     images_schema, network_row, networks_schema, volume_row, volumes_schema,
 };
 use super::types::{
-    ContainersError, InspectorTab, LoadedList, LoadedLists, OpenList, Place,
-    ResourceKind, SelectedRow, shown_containers, shown_images, shown_networks,
+    ContainersError, InspectorTab, ListRow, LoadedList, LoadedLists, OpenList,
+    Place, ResourceKind, shown_containers, shown_images, shown_networks,
     shown_volumes,
 };
 
@@ -187,7 +187,7 @@ impl ContainersState {
         }
 
         let (engine, row) = self.selected_row()?;
-        let SelectedRow::Container(container) = row else {
+        let ListRow::Container(container) = row else {
             return None;
         };
 
@@ -229,9 +229,7 @@ impl ContainersState {
 
     /// Return the selected row of the open list and its engine; `None` when
     /// nothing is selected or the row is not in the loaded list.
-    pub(crate) fn selected_row(
-        &self,
-    ) -> Option<(&EngineState, SelectedRow<'_>)> {
+    pub(crate) fn selected_row(&self) -> Option<(&EngineState, ListRow<'_>)> {
         let engine = self.open_engine()?;
         let row =
             open_list_of(self.place.as_ref(), &self.engines)?.selected_row()?;

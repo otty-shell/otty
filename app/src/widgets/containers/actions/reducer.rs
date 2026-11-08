@@ -12,8 +12,8 @@ use otty_containers::{
 };
 
 use super::super::types::{
-    ActionRequest, ContainersError, EngineAction, OpenList, ResourceKind,
-    SelectedRow, image_name, split_reference,
+    ActionRequest, ContainersError, EngineAction, ListRow, OpenList,
+    ResourceKind, image_name, split_reference,
 };
 use super::event::{ActionsEffect, ActionsIntent};
 use super::offers::{
@@ -326,7 +326,7 @@ fn target_item(ctx: &ActionsCtx<'_>, id: &str) -> Option<TargetItem> {
     let resource = open.resource;
 
     let item = match open.find(id)? {
-        SelectedRow::Container(container) => TargetItem {
+        ListRow::Container(container) => TargetItem {
             engine,
             resource,
             id: container.id().to_string(),
@@ -336,7 +336,7 @@ fn target_item(ctx: &ActionsCtx<'_>, id: &str) -> Option<TargetItem> {
             remove_switch: needs_stop(container.state()).then_some(true),
             image_removal: None,
         },
-        SelectedRow::Image(image) => {
+        ListRow::Image(image) => {
             let removal = ImageRemoval::of(
                 engine.kind(),
                 image,
@@ -357,7 +357,7 @@ fn target_item(ctx: &ActionsCtx<'_>, id: &str) -> Option<TargetItem> {
                 image_removal: Some(removal),
             }
         },
-        SelectedRow::Volume(volume) => TargetItem {
+        ListRow::Volume(volume) => TargetItem {
             engine,
             resource,
             id: volume.name().to_string(),
@@ -367,7 +367,7 @@ fn target_item(ctx: &ActionsCtx<'_>, id: &str) -> Option<TargetItem> {
             remove_switch: None,
             image_removal: None,
         },
-        SelectedRow::Network(network) => TargetItem {
+        ListRow::Network(network) => TargetItem {
             engine,
             resource,
             id: network.id().to_string(),

@@ -4,7 +4,7 @@
 use iced::Point;
 use otty_containers::EngineKind;
 
-use super::super::types::{EngineAction, ResourceKind, SelectedRow};
+use super::super::types::{EngineAction, ListRow, ResourceKind};
 use super::offers::{
     ImageRemoval, REMOVE_ONLY, container_actions, image_actions,
     network_remove_hint, volume_remove_hint,
@@ -254,16 +254,16 @@ fn row_actions(
     // What a running action on this row names: the id, but an image row goes
     // by what removes only that row.
     let (offered, remove_hint, action_target) = match open.find(id)? {
-        SelectedRow::Container(container) => {
+        ListRow::Container(container) => {
             (container_actions(container.state()), None, id)
         },
-        SelectedRow::Image(image) => {
+        ListRow::Image(image) => {
             (image_actions(image), None, image.remove_target())
         },
-        SelectedRow::Volume(volume) => {
+        ListRow::Volume(volume) => {
             (REMOVE_ONLY, volume_remove_hint(volume), id)
         },
-        SelectedRow::Network(network) => {
+        ListRow::Network(network) => {
             (REMOVE_ONLY, network_remove_hint(network), id)
         },
     };
