@@ -9,7 +9,7 @@ use otty_containers::{
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
 use super::actions::RowAction;
-use super::forms::FormField;
+use super::create::event::{CreateEffect, CreateIntent};
 use super::inspector::{InspectTarget, InspectorTab, LogTarget};
 use super::links::LinkTarget;
 use super::run_form::RunEdit;
@@ -175,18 +175,14 @@ pub(crate) enum ContainersIntent {
     },
     /// The cross of the action notice was pressed.
     DismissNotice,
-    /// The create button above the table was pressed (Pull image, Create
-    /// volume, Create network).
+    /// The create button above the table was pressed: the open list opens
+    /// Pull image, Create volume, Create network or the Run container form.
     OpenCreate,
-    /// A field of the create dialog changed.
-    FormChanged(FormField, String),
-    /// The action button of the create dialog was pressed.
-    FormSubmitted,
-    /// Cancel of the create dialog was pressed; it stops a running pull.
-    FormCancelled,
-    /// The running pull got further.
+    /// An intent of the create dialogs.
+    Create(CreateIntent),
+    /// The pull of the Run form got further.
     PullProgressed(PullProgress),
-    /// The pull ended; the error is the engine's message.
+    /// The pull of the Run form ended; the error is the engine's message.
     PullFinished(Result<(), ContainersError>),
     // Run container form.
     /// A field of the Run form changed.
@@ -267,13 +263,16 @@ pub(crate) enum ContainersEffect {
     },
     /// Run this action on its engine.
     RunAction(ActionRequest),
-    /// Pull `image` at `tag` on `engine`, reporting progress.
+    /// An effect of the create dialogs.
+    Create(CreateEffect),
+    /// Pull `image` at `tag` on `engine` for the Run form, reporting
+    /// progress.
     StartPull {
         engine: EngineInfo,
         image: String,
         tag: String,
     },
-    /// Stop the running pull.
+    /// Stop the running pull of the Run form.
     CancelPull,
     /// Ask `engine` what the image `reference` sets on its own.
     LoadImageDefaults {

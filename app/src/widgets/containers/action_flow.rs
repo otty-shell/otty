@@ -13,8 +13,9 @@ use super::actions::{
     failure_text, image_actions, needs_stop, network_remove_hint,
     volume_remove_hint,
 };
+use super::create::event::CreateIntent;
 use super::event::{ContainersEffect, ContainersEvent};
-use super::forms::Form;
+use super::reducer::reduce_create;
 use super::run_flow;
 use super::state::ContainersState;
 use super::types::{
@@ -86,8 +87,12 @@ pub(super) fn act(
         },
         RowAction::PullAgain => {
             let (image, tag) = split_reference(&item.name);
-            state.open_form(Form::pull(item.engine, image, tag));
-            return Task::none();
+            let open = CreateIntent::OpenPull {
+                engine: item.engine,
+                image: image.to_string(),
+                tag: tag.to_string(),
+            };
+            return reduce_create(state, open);
         },
         RowAction::Shell => return open_shell(state, &item),
         RowAction::Run => {
@@ -421,10 +426,11 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::containers::create::FormViewModel;
+    use crate::widgets::containers::create::types::FormField;
     use crate::widgets::containers::event::{
         ContainersEffect, ContainersEvent, ContainersIntent,
     };
-    use crate::widgets::containers::forms::{FormField, FormKind};
     use crate::widgets::containers::reducer::reduce;
     use crate::widgets::containers::state::ContainersState;
     use crate::widgets::containers::types::{
@@ -1461,7 +1467,7 @@ mod tests {
 
         let _ = reduce(&mut state, ContainersIntent::Act(RowAction::PullAgain));
 
-        let form = state.form().expect("the pull dialog");
+        let form = state.create().form().expect("the pull dialog");
         assert_eq!(form.value(FormField::Name), "app");
         assert_eq!(form.value(FormField::Tag), "2");
     }
@@ -1499,8 +1505,11 @@ mod tests {
         ));
 
         assert!(effects.is_empty());
-        let form = state.form().expect("the pull dialog");
-        assert_eq!(form.kind(), FormKind::Pull);
+        assert_eq!(
+            FormViewModel::from_state(state.create()).map(|vm| vm.title),
+            Some(i18n::t(Key::ContainersPullImage))
+        );
+        let form = state.create().form().expect("the pull dialog");
         assert_eq!(form.value(FormField::Name), "busybox");
         assert_eq!(form.value(FormField::Tag), "1.37");
     }
@@ -1512,7 +1521,7 @@ mod tests {
 
         let _ = reduce(&mut state, ContainersIntent::Act(RowAction::PullAgain));
 
-        assert!(state.form().is_none());
+        assert!(!state.create().is_open());
     }
 
     #[test]

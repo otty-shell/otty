@@ -9,8 +9,8 @@ use iced::Task;
 use iced::futures::future::join3;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use otty_containers::{
-    Container, ContainerRun, Engine, EngineInfo, ImageDefaults, RunRequest,
-    discover, host_folder_exists, wait_for,
+    Container, ContainerRun, Engine, EngineInfo, ImageDefaults, PullProgress,
+    RunRequest, discover, host_folder_exists, wait_for,
 };
 use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
@@ -18,6 +18,7 @@ use super::AppEvent;
 use crate::app::App;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::{self, terminal_settings_for_session};
+use crate::widgets::containers::create::event::{CreateEffect, CreateIntent};
 use crate::widgets::containers::event::{
     ContainersEffect, ContainersEvent, ContainersIntent,
 };
@@ -38,6 +39,15 @@ const FOLDER_TYPING_PAUSE: Duration = Duration::from_millis(300);
 /// answering.
 const FOLDER_ANSWER_LIMIT: Duration = Duration::from_secs(3);
 
+/// What one pull reports, before the route turns it into an intent of the
+/// part that asked for the pull.
+enum PullUpdate {
+    /// The pull got further.
+    Progressed(PullProgress),
+    /// The pull ended; the error is the engine's message.
+    Finished(Result<(), ContainersError>),
+}
+
 /// Route a Containers event: reduce its intents and run its effects.
 pub(crate) fn route(app: &mut App, event: ContainersEvent) -> Task<AppEvent> {
     match event {
@@ -46,16 +56,14 @@ pub(crate) fn route(app: &mut App, event: ContainersEvent) -> Task<AppEvent> {
             .containers
             .reduce(intent)
             .map(AppEvent::Containers),
+        ContainersEvent::Effect(ContainersEffect::Create(effect)) => {
+            create_effect(app, effect)
+        },
         ContainersEvent::Effect(ContainersEffect::StartPull {
             engine,
             image,
             tag,
-        }) => {
-            let (task, handle) =
-                Task::run(pull_updates(engine, image, tag), intent).abortable();
-            app.widgets.containers.set_pull_task(handle);
-            task
-        },
+        }) => start_pull(app, engine, image, tag, run_pull),
         ContainersEvent::Effect(ContainersEffect::CancelPull) => {
             app.widgets.containers.cancel_pull();
             Task::none()
@@ -67,6 +75,60 @@ pub(crate) fn route(app: &mut App, event: ContainersEvent) -> Task<AppEvent> {
         }) => open_shell_tab(&app.terminal_settings, title, program, args),
         ContainersEvent::Effect(effect) => handle_effect(effect),
     }
+}
+
+/// Run an effect of the create dialogs.
+fn create_effect(app: &mut App, effect: CreateEffect) -> Task<AppEvent> {
+    match effect {
+        CreateEffect::StartPull { engine, image, tag } => {
+            start_pull(app, engine, image, tag, create_pull)
+        },
+        CreateEffect::CancelPull => {
+            app.widgets.containers.cancel_pull();
+            Task::none()
+        },
+    }
+}
+
+/// Pull `image` at `tag` on `engine` and keep the pull's abort handle in the
+/// widget; `to_event` turns each update into the intent of the part that
+/// asked for the pull.
+fn start_pull(
+    app: &mut App,
+    engine: EngineInfo,
+    image: String,
+    tag: String,
+    to_event: fn(PullUpdate) -> AppEvent,
+) -> Task<AppEvent> {
+    let (task, handle) =
+        Task::run(pull_updates(engine, image, tag), to_event).abortable();
+
+    app.widgets.containers.set_pull_task(handle);
+    task
+}
+
+/// An update of the Run form's pull, as a Containers intent.
+fn run_pull(update: PullUpdate) -> AppEvent {
+    match update {
+        PullUpdate::Progressed(progress) => {
+            intent(ContainersIntent::PullProgressed(progress))
+        },
+        PullUpdate::Finished(result) => {
+            intent(ContainersIntent::PullFinished(result))
+        },
+    }
+}
+
+/// An update of the pull dialog's pull, as an intent of the create dialogs.
+fn create_pull(update: PullUpdate) -> AppEvent {
+    let create = match update {
+        PullUpdate::Progressed(progress) => {
+            CreateIntent::PullProgressed(progress)
+        },
+        PullUpdate::Finished(result) => CreateIntent::PullFinished(result),
+    };
+
+    intent(ContainersIntent::Create(create))
 }
 
 /// Open a command tab on this computer running `program` with `args`, the
@@ -97,7 +159,8 @@ fn open_shell_tab(
 }
 
 /// Run the effects that need no app state; the pull effects are run by
-/// [`route`], which keeps the pull's abort handle.
+/// [`route`], which keeps the pull's abort handle, and so are the effects of
+/// the create dialogs.
 fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
     match effect {
         ContainersEffect::Discover => Task::perform(discover(), |discovery| {
@@ -211,7 +274,8 @@ fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
         ContainersEffect::RevealInspector => Task::done(AppEvent::Sidebar(
             SidebarEvent::Intent(SidebarIntent::RevealRight),
         )),
-        ContainersEffect::StartPull { .. }
+        ContainersEffect::Create(_)
+        | ContainersEffect::StartPull { .. }
         | ContainersEffect::CancelPull
         | ContainersEffect::OpenShell { .. } => Task::none(),
     }
@@ -243,21 +307,20 @@ async fn run_container(
     Ok(engine.run_container(&request).await?)
 }
 
-/// The intents of one pull: a `PullProgressed` per line of the engine,
-/// then one `PullFinished` (with the engine's message on failure).
-/// Dropping the stream (Cancel) closes the request, which stops the pull.
+/// The updates of one pull: one `Progressed` per line of the engine, then
+/// one `Finished` (with the engine's message on failure). Dropping the
+/// stream (Cancel) closes the request, which stops the pull.
 fn pull_updates(
     info: EngineInfo,
     image: String,
     tag: String,
-) -> impl Stream<Item = ContainersIntent> {
+) -> impl Stream<Item = PullUpdate> {
     iced::stream::channel(16, async move |mut output| {
         let engine = match Engine::connect(&info) {
             Ok(engine) => engine,
             Err(err) => {
-                let _ = output
-                    .send(ContainersIntent::PullFinished(Err(err.into())))
-                    .await;
+                let _ =
+                    output.send(PullUpdate::Finished(Err(err.into()))).await;
                 return;
             },
         };
@@ -265,10 +328,10 @@ fn pull_updates(
         let mut updates = engine.pull(&image, &tag);
         while let Some(update) = updates.next().await {
             let next = match update {
-                Ok(progress) => ContainersIntent::PullProgressed(progress),
+                Ok(progress) => PullUpdate::Progressed(progress),
                 Err(err) => {
                     let _ = output
-                        .send(ContainersIntent::PullFinished(Err(err.into())))
+                        .send(PullUpdate::Finished(Err(err.into())))
                         .await;
                     return;
                 },
@@ -276,7 +339,7 @@ fn pull_updates(
             let _ = output.send(next).await;
         }
 
-        let _ = output.send(ContainersIntent::PullFinished(Ok(()))).await;
+        let _ = output.send(PullUpdate::Finished(Ok(()))).await;
     })
 }
 
@@ -824,6 +887,56 @@ mod tests {
 
         assert_eq!(cancel.units(), 0);
         assert!(!app.widgets.containers.has_pull_task());
+    }
+
+    #[test]
+    fn a_create_pull_runs_one_task_that_cancel_aborts() {
+        let (mut app, _) = App::new();
+
+        let pull = route(
+            &mut app,
+            ContainersEvent::Effect(ContainersEffect::Create(
+                CreateEffect::StartPull {
+                    engine: fixtures::engine(EngineKind::Docker),
+                    image: String::from("nginx"),
+                    tag: String::from("latest"),
+                },
+            )),
+        );
+        assert_eq!(pull.units(), 1);
+        assert!(app.widgets.containers.has_pull_task());
+
+        let cancel = route(
+            &mut app,
+            ContainersEvent::Effect(ContainersEffect::Create(
+                CreateEffect::CancelPull,
+            )),
+        );
+
+        assert_eq!(cancel.units(), 0);
+        assert!(!app.widgets.containers.has_pull_task());
+    }
+
+    #[test]
+    fn a_create_pull_reports_to_the_create_dialogs() {
+        let progressed =
+            create_pull(PullUpdate::Progressed(fixtures::pull_progress()));
+        let failed = create_pull(PullUpdate::Finished(Err(
+            ContainersError::new("manifest unknown"),
+        )));
+
+        assert!(matches!(
+            progressed,
+            AppEvent::Containers(ContainersEvent::Intent(
+                ContainersIntent::Create(CreateIntent::PullProgressed(progress))
+            )) if progress == fixtures::pull_progress()
+        ));
+        assert!(matches!(
+            failed,
+            AppEvent::Containers(ContainersEvent::Intent(
+                ContainersIntent::Create(CreateIntent::PullFinished(Err(error)))
+            )) if error == ContainersError::new("manifest unknown")
+        ));
     }
 
     #[test]

@@ -9,9 +9,9 @@ use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::spacing;
 
-use super::super::event::ContainersIntent;
-use super::super::form_model::FormViewModel;
-use super::super::forms::FormField;
+use super::super::event::CreateIntent;
+use super::super::model::FormViewModel;
+use super::super::types::FormField;
 use crate::components::pull_line::pull_line;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
@@ -24,9 +24,7 @@ pub(crate) struct FormDialogProps<'a> {
 
 /// Render the modal create dialog: its fields, the progress line of a
 /// running pull, Cancel and the action button.
-pub(crate) fn view(
-    props: FormDialogProps<'_>,
-) -> Element<'_, ContainersIntent> {
+pub(crate) fn view(props: FormDialogProps<'_>) -> Element<'_, CreateIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
 
@@ -40,10 +38,8 @@ pub(crate) fn view(
         if vm.is_editable {
             let changed = field.field;
             input = input
-                .on_input(move |value| {
-                    ContainersIntent::FormChanged(changed, value)
-                })
-                .on_submit(ContainersIntent::FormSubmitted);
+                .on_input(move |value| CreateIntent::Changed(changed, value))
+                .on_submit(CreateIntent::Submitted);
         }
         body = body.push(input);
     }
@@ -53,11 +49,11 @@ pub(crate) fn view(
 
     let cancel = Button::new(i18n::t(Key::ButtonCancel), palette)
         .kind(ButtonKind::Ghost)
-        .on_press(ContainersIntent::FormCancelled);
+        .on_press(CreateIntent::Cancelled);
     let mut submit =
         Button::new(vm.submit_label, palette).kind(ButtonKind::Primary);
     if vm.can_submit {
-        submit = submit.on_press(ContainersIntent::FormSubmitted);
+        submit = submit.on_press(CreateIntent::Submitted);
     }
 
     Dialog::new(vm.title, palette)
@@ -84,7 +80,7 @@ mod tests {
     use crate::components::pull_line::PullLineViewModel;
     use crate::i18n::{self, Key};
     use crate::theme::ThemeManager;
-    use crate::widgets::containers::form_model::FieldViewModel;
+    use crate::widgets::containers::create::model::FieldViewModel;
 
     fn pull_dialog(can_submit: bool) -> FormViewModel<'static> {
         FormViewModel {
@@ -122,13 +118,10 @@ mod tests {
             .expect("image field should show");
         let _ = ui.typewrite("n");
 
-        let intents: Vec<ContainersIntent> = ui.into_messages().collect();
+        let intents: Vec<CreateIntent> = ui.into_messages().collect();
         assert_eq!(
             intents,
-            vec![ContainersIntent::FormChanged(
-                FormField::Name,
-                String::from("n")
-            )]
+            vec![CreateIntent::Changed(FormField::Name, String::from("n"))]
         );
     }
 
@@ -145,13 +138,10 @@ mod tests {
         ui.click(i18n::t(Key::ContainersActionPull))
             .expect("pull should show");
 
-        let intents: Vec<ContainersIntent> = ui.into_messages().collect();
+        let intents: Vec<CreateIntent> = ui.into_messages().collect();
         assert_eq!(
             intents,
-            vec![
-                ContainersIntent::FormCancelled,
-                ContainersIntent::FormSubmitted
-            ]
+            vec![CreateIntent::Cancelled, CreateIntent::Submitted]
         );
     }
 
@@ -166,7 +156,7 @@ mod tests {
         ui.click(i18n::t(Key::ContainersActionPull))
             .expect("pull should show");
 
-        let intents: Vec<ContainersIntent> = ui.into_messages().collect();
+        let intents: Vec<CreateIntent> = ui.into_messages().collect();
         assert!(intents.is_empty());
     }
 
@@ -196,7 +186,7 @@ mod tests {
         ui.click(i18n::t(Key::ButtonCancel))
             .expect("cancel should show");
 
-        let intents: Vec<ContainersIntent> = ui.into_messages().collect();
-        assert_eq!(intents, vec![ContainersIntent::FormCancelled]);
+        let intents: Vec<CreateIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![CreateIntent::Cancelled]);
     }
 }

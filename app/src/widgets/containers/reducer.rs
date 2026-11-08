@@ -3,12 +3,14 @@
 use iced::Task;
 use otty_containers::{Discovery, EngineAddress, EngineInfo};
 
+use super::create::CreateOutcome;
+use super::create::event::{CreateEffect, CreateIntent};
 use super::event::{ContainersEffect, ContainersEvent, ContainersIntent};
 use super::inspector_tabs::refresh_inspect_tree;
 use super::links::LinkTarget;
 use super::state::{ContainersState, Search};
 use super::types::{LoadedList, ResourceKind};
-use super::{action_flow, form_flow, run_flow};
+use super::{action_flow, create, run_flow};
 
 /// Reduce a Containers intent into state changes and effects. Engine work
 /// (search, list loads, inspect) is only asked for while Containers mode is
@@ -22,6 +24,19 @@ pub(super) fn reduce(
 
     let inspector = sync_inspector(state);
     Task::batch([task, inspector])
+}
+
+/// Hand `intent` to the create dialogs and act on what they report in the
+/// same update.
+pub(super) fn reduce_create(
+    state: &mut ContainersState,
+    intent: CreateIntent,
+) -> Task<ContainersEvent> {
+    let (effects, outcome) = create::reduce(state.create_mut(), intent);
+    let after = outcome
+        .map_or_else(Task::none, |outcome| on_create_outcome(state, outcome));
+
+    Task::batch([effects.map(create_effect), after])
 }
 
 fn reduce_intent(
@@ -243,20 +258,11 @@ fn reduce_intent(
             state.dismiss_notice();
             Task::none()
         },
-        ContainersIntent::OpenCreate => form_flow::open(state),
-        ContainersIntent::FormChanged(field, value) => {
-            if let Some(form) = state.form_mut() {
-                form.set_value(field, value);
-            }
-            Task::none()
-        },
-        ContainersIntent::FormSubmitted => form_flow::submit(state),
-        ContainersIntent::FormCancelled => form_flow::cancel(state),
+        ContainersIntent::OpenCreate => open_create(state),
+        ContainersIntent::Create(intent) => reduce_create(state, intent),
         ContainersIntent::PullProgressed(progress) => {
             if run_flow::is_pulling(state) {
                 run_flow::pull_progressed(state, progress);
-            } else if let Some(form) = state.form_mut() {
-                form.set_progress(progress);
             }
             Task::none()
         },
@@ -264,7 +270,7 @@ fn reduce_intent(
             if run_flow::is_pulling(state) {
                 run_flow::finish_pull(state, result)
             } else {
-                form_flow::finish_pull(state, result)
+                Task::none()
             }
         },
         ContainersIntent::RunEdited(edit) => run_flow::edit(state, edit),
@@ -514,8 +520,54 @@ fn load_every_engine(state: &ContainersState) -> Task<ContainersEvent> {
     }))
 }
 
+/// Open the create dialog of the open list: Pull image, Create volume or
+/// Create network; the containers list opens the Run container form.
+fn open_create(state: &mut ContainersState) -> Task<ContainersEvent> {
+    let (Some(place), Some(engine)) = (state.place(), state.open_engine())
+    else {
+        return Task::none();
+    };
+    let info = engine.info().clone();
+
+    let open = match place.resource() {
+        ResourceKind::Images => CreateIntent::OpenPull {
+            engine: info,
+            image: String::new(),
+            tag: String::new(),
+        },
+        ResourceKind::Volumes => CreateIntent::OpenVolume(info),
+        ResourceKind::Networks => CreateIntent::OpenNetwork(info),
+        ResourceKind::Containers => return run_flow::open(state, info, ""),
+    };
+
+    reduce_create(state, open)
+}
+
+/// Act on what the create dialogs report: a sent volume or network runs as
+/// an action, a finished pull reloads its engine's lists and a failed one
+/// shows its notice.
+fn on_create_outcome(
+    state: &mut ContainersState,
+    outcome: CreateOutcome,
+) -> Task<ContainersEvent> {
+    match outcome {
+        CreateOutcome::ActionRequested(request) => {
+            action_flow::run(state, request)
+        },
+        CreateOutcome::Pulled { engine } => action_flow::reload(state, &engine),
+        CreateOutcome::Failed { notice } => {
+            state.set_notice(notice);
+            Task::none()
+        },
+    }
+}
+
 fn effect(effect: ContainersEffect) -> Task<ContainersEvent> {
     Task::done(ContainersEvent::Effect(effect))
+}
+
+fn create_effect(effect: CreateEffect) -> ContainersEvent {
+    ContainersEvent::Effect(ContainersEffect::Create(effect))
 }
 
 #[cfg(test)]
@@ -533,6 +585,7 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key, Locale};
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::containers::create::FormViewModel;
     use crate::widgets::containers::inspect_tree::InspectTree;
     use crate::widgets::containers::inspector::{
         InspectLoad, InspectTarget, InspectorTab, LogRead, LogTarget,
@@ -552,7 +605,8 @@ mod tests {
         COMPOSE_KEY, keys, keys_in,
     };
     use crate::widgets::containers::types::{
-        ContainersError, LoadedList, LoadedLists, Place, ResourceKind,
+        ActionRequest, ContainersError, EngineAction, LoadedList, LoadedLists,
+        Place, ResourceKind,
     };
 
     fn docker() -> EngineInfo {
@@ -6131,5 +6185,94 @@ mod tests {
 
         assert!(at_now > 0);
         assert_eq!(much_later, 0);
+    }
+
+    #[test]
+    fn the_create_button_opens_the_dialog_of_each_list() {
+        let cases = [
+            (ResourceKind::Images, Key::ContainersPullImage),
+            (ResourceKind::Volumes, Key::ContainersCreateVolume),
+            (ResourceKind::Networks, Key::ContainersCreateNetwork),
+        ];
+
+        for (resource, title) in cases {
+            let mut state = loaded_state();
+            open(&mut state, resource);
+
+            let effects =
+                effects(reduce(&mut state, ContainersIntent::OpenCreate));
+
+            assert!(effects.is_empty());
+            assert_eq!(
+                FormViewModel::from_state(state.create()).map(|vm| vm.title),
+                Some(i18n::t(title))
+            );
+        }
+    }
+
+    #[test]
+    fn the_containers_create_button_opens_the_run_form() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Containers);
+
+        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+
+        assert!(!state.create().is_open());
+        assert!(state.run_form().is_some());
+    }
+
+    #[test]
+    fn a_create_request_marks_its_list_busy_and_runs_the_call() {
+        let mut state = loaded_state();
+        let request = ActionRequest::new(
+            docker(),
+            EngineAction::CreateVolume {
+                name: String::from("otty-fx-vol"),
+                driver: String::from("local"),
+            },
+            String::from("otty-fx-vol"),
+        );
+        let address = docker().address().clone();
+        let was_busy = state.is_busy(&address, ResourceKind::Volumes, None);
+
+        let effects = effects(on_create_outcome(
+            &mut state,
+            CreateOutcome::ActionRequested(request.clone()),
+        ));
+
+        assert!(!was_busy);
+        assert!(state.is_busy(&address, ResourceKind::Volumes, None));
+        assert_eq!(effects, vec![ContainersEffect::RunAction(request)]);
+    }
+
+    #[test]
+    fn a_pulled_image_reloads_its_engine_only_while_containers_mode_is_active()
+    {
+        let mut state = loaded_state();
+        let pulled = || CreateOutcome::Pulled {
+            engine: docker().address().clone(),
+        };
+
+        let active = effects(on_create_outcome(&mut state, pulled()));
+        let _ = reduce(&mut state, ContainersIntent::Leave);
+        let inactive = effects(on_create_outcome(&mut state, pulled()));
+
+        assert_eq!(active, vec![ContainersEffect::LoadLists(docker())]);
+        assert!(inactive.is_empty());
+    }
+
+    #[test]
+    fn a_failed_create_shows_its_notice() {
+        let mut state = loaded_state();
+
+        let effects = effects(on_create_outcome(
+            &mut state,
+            CreateOutcome::Failed {
+                notice: String::from("Could not pull nginx:latest"),
+            },
+        ));
+
+        assert!(effects.is_empty());
+        assert_eq!(state.notice(), Some("Could not pull nginx:latest"));
     }
 }

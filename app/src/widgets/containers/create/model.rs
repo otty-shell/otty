@@ -1,9 +1,9 @@
 //! View model of the open create dialog: its fields, its action button and
 //! the progress line of a running pull.
 
-use super::format::pull_amount;
-use super::forms::{FormField, FormKind};
-use super::state::ContainersState;
+use super::super::format::pull_amount;
+use super::state::{CreateState, FormKind};
+use super::types::FormField;
 use crate::components::pull_line::PullLineViewModel;
 use crate::i18n::{self, Key};
 
@@ -31,48 +31,50 @@ pub(crate) struct FormViewModel<'a> {
     pub(crate) is_editable: bool,
 }
 
-/// The open create dialog; `None` when none is open.
-pub(crate) fn form_dialog(
-    state: &ContainersState,
-) -> Option<FormViewModel<'_>> {
-    let form = state.form()?;
+impl<'a> FormViewModel<'a> {
+    /// Build the open create dialog; `None` when none is open.
+    pub(crate) fn from_state(state: &'a CreateState) -> Option<Self> {
+        let form = state.form()?;
 
-    let (title, submit) = match form.kind() {
-        FormKind::Pull => (Key::ContainersPullImage, Key::ContainersActionPull),
-        FormKind::CreateVolume => {
-            (Key::ContainersCreateVolume, Key::ContainersActionCreate)
-        },
-        FormKind::CreateNetwork => {
-            (Key::ContainersCreateNetwork, Key::ContainersActionCreate)
-        },
-    };
-    let fields = form
-        .fields()
-        .iter()
-        .map(|&field| {
-            let (label, placeholder) = field_texts(form.kind(), field);
-            FieldViewModel {
-                field,
-                label: i18n::t(label),
-                value: form.value(field),
-                placeholder: placeholder.map_or("", i18n::t),
-            }
+        let (title, submit) = match form.kind() {
+            FormKind::Pull => {
+                (Key::ContainersPullImage, Key::ContainersActionPull)
+            },
+            FormKind::CreateVolume => {
+                (Key::ContainersCreateVolume, Key::ContainersActionCreate)
+            },
+            FormKind::CreateNetwork => {
+                (Key::ContainersCreateNetwork, Key::ContainersActionCreate)
+            },
+        };
+        let fields = form
+            .fields()
+            .iter()
+            .map(|&field| {
+                let (label, placeholder) = field_texts(form.kind(), field);
+                FieldViewModel {
+                    field,
+                    label: i18n::t(label),
+                    value: form.value(field),
+                    placeholder: placeholder.map_or("", i18n::t),
+                }
+            })
+            .collect();
+        let progress = form.progress().map(|progress| PullLineViewModel {
+            text: i18n::containers_pulling(&form.reference()),
+            fraction: progress.fraction(),
+            amount: pull_amount(progress),
+        });
+
+        Some(Self {
+            title: i18n::t(title),
+            fields,
+            progress,
+            submit_label: i18n::t(submit),
+            can_submit: form.can_submit(),
+            is_editable: !form.is_pulling(),
         })
-        .collect();
-    let progress = form.progress().map(|progress| PullLineViewModel {
-        text: i18n::containers_pulling(&form.reference()),
-        fraction: progress.fraction(),
-        amount: pull_amount(progress),
-    });
-
-    Some(FormViewModel {
-        title: i18n::t(title),
-        fields,
-        progress,
-        submit_label: i18n::t(submit),
-        can_submit: form.can_submit(),
-        is_editable: !form.is_pulling(),
-    })
+    }
 }
 
 /// The label and placeholder keys of `field` in a dialog of `kind`.
@@ -97,8 +99,10 @@ mod tests {
     use otty_containers::{EngineKind, fixtures};
 
     use super::*;
+    use crate::widgets::containers::create::event::CreateIntent;
     use crate::widgets::containers::event::ContainersIntent;
     use crate::widgets::containers::reducer::reduce;
+    use crate::widgets::containers::state::ContainersState;
     use crate::widgets::containers::types::{LoadedLists, Place, ResourceKind};
 
     fn state_with_form(resource: ResourceKind) -> ContainersState {
@@ -135,9 +139,18 @@ mod tests {
         state
     }
 
+    fn form_dialog(state: &ContainersState) -> Option<FormViewModel<'_>> {
+        FormViewModel::from_state(state.create())
+    }
+
     fn type_in(state: &mut ContainersState, field: FormField, value: &str) {
-        let _ =
-            reduce(state, ContainersIntent::FormChanged(field, value.into()));
+        let _ = reduce(
+            state,
+            ContainersIntent::Create(CreateIntent::Changed(
+                field,
+                value.into(),
+            )),
+        );
     }
 
     #[test]
@@ -185,11 +198,16 @@ mod tests {
         let mut state = state_with_form(ResourceKind::Images);
         type_in(&mut state, FormField::Name, "nginx");
         type_in(&mut state, FormField::Tag, "1.27-alpine");
-        let _ = reduce(&mut state, ContainersIntent::FormSubmitted);
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Create(CreateIntent::Submitted),
+        );
         let started = form_dialog(&state).and_then(|vm| vm.progress);
         let _ = reduce(
             &mut state,
-            ContainersIntent::PullProgressed(fixtures::pull_progress()),
+            ContainersIntent::Create(CreateIntent::PullProgressed(
+                fixtures::pull_progress(),
+            )),
         );
 
         let vm = form_dialog(&state).expect("an open dialog");
@@ -244,6 +262,6 @@ mod tests {
 
     #[test]
     fn no_form_has_no_dialog() {
-        assert_eq!(form_dialog(&ContainersState::default()), None);
+        assert_eq!(FormViewModel::from_state(&CreateState::default()), None);
     }
 }

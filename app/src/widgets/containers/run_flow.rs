@@ -388,8 +388,9 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::containers::create::event::CreateIntent;
+    use crate::widgets::containers::create::types::FormField;
     use crate::widgets::containers::event::ContainersIntent;
-    use crate::widgets::containers::forms::Form;
     use crate::widgets::containers::reducer::reduce;
     use crate::widgets::containers::types::{LoadedLists, Place, ResourceKind};
 
@@ -500,7 +501,7 @@ mod tests {
         assert_eq!(form.engine(), &docker());
         assert_eq!(form.image(), "");
         assert_eq!(form.network(), "bridge");
-        assert!(state.form().map(Form::kind).is_none());
+        assert!(!state.create().is_open());
     }
 
     #[test]
@@ -948,21 +949,26 @@ mod tests {
         let _ = reduce(&mut state, ContainersIntent::OpenCreate);
         let _ = reduce(
             &mut state,
-            ContainersIntent::FormChanged(
-                crate::widgets::containers::forms::FormField::Name,
+            ContainersIntent::Create(CreateIntent::Changed(
+                FormField::Name,
                 String::from("nginx"),
-            ),
+            )),
         );
-        let _ = reduce(&mut state, ContainersIntent::FormSubmitted);
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Create(CreateIntent::Submitted),
+        );
 
         let _ = reduce(
             &mut state,
-            ContainersIntent::PullProgressed(fixtures::pull_progress()),
+            ContainersIntent::Create(CreateIntent::PullProgressed(
+                fixtures::pull_progress(),
+            )),
         );
 
         assert!(state.run_form().is_none());
         assert_eq!(
-            state.form().and_then(Form::progress),
+            state.create().form().and_then(|form| form.progress()),
             Some(&fixtures::pull_progress())
         );
     }

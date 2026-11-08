@@ -1,11 +1,9 @@
 mod action_flow;
 mod action_model;
 pub(crate) mod actions;
+pub(crate) mod create;
 pub(crate) mod event;
-mod form_flow;
-mod form_model;
 pub(crate) mod format;
-mod forms;
 mod inspect_links;
 mod inspect_tree;
 pub(crate) mod inspector;
@@ -30,8 +28,8 @@ pub(crate) mod types;
 pub(crate) mod view;
 
 use action_model::{ActionsViewModel, ConfirmViewModel, RowMenuViewModel};
+use create::FormViewModel;
 use event::{ContainersEvent, ContainersIntent};
-use form_model::FormViewModel;
 use iced::{Subscription, Task, task};
 use inspector_tabs::InspectorTabsViewModel;
 pub(crate) use model::MainViewModel;
@@ -175,7 +173,7 @@ impl ContainersWidget {
 
     /// Build the open create dialog.
     pub(crate) fn form_vm(&self) -> Option<FormViewModel<'_>> {
-        form_model::form_dialog(&self.state)
+        FormViewModel::from_state(self.state.create())
     }
 
     /// Build the Run container form, shown in place of the table.
@@ -193,7 +191,7 @@ impl ContainersWidget {
     pub(crate) fn has_overlay(&self) -> bool {
         self.state.row_menu().is_some()
             || self.state.confirm().is_some()
-            || self.state.form().is_some()
+            || self.state.create().is_open()
     }
 }
 

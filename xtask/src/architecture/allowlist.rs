@@ -173,12 +173,6 @@ pub const ALLOWLIST: &[Allowed] = &[
     ),
     Allowed::known(
         Rule::TaskOrElementInPureFile,
-        "widgets/containers/form_flow.rs",
-        "Task",
-        "a reducer part of the large containers widget; settle how large widgets split into parts first",
-    ),
-    Allowed::known(
-        Rule::TaskOrElementInPureFile,
         "widgets/containers/run_flow.rs",
         "Task",
         "a reducer part of the large containers widget; settle how large widgets split into parts first",
@@ -247,12 +241,6 @@ pub const ALLOWLIST: &[Allowed] = &[
         Rule::ViewModelNotFromState,
         "widgets/containers/mod.rs",
         "confirm_vm",
-        "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
-    ),
-    Allowed::known(
-        Rule::ViewModelNotFromState,
-        "widgets/containers/mod.rs",
-        "form_vm",
         "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
     ),
     Allowed::known(

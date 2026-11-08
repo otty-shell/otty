@@ -14,14 +14,14 @@ use crate::theme::ThemeProps;
 use crate::widgets::chrome::event::ChromeEvent;
 use crate::widgets::chrome::view::{action_bar, status_bar};
 use crate::widgets::chrome::{StatusBarInput, StatusBarViewModel};
-use crate::widgets::containers::event::ContainersEvent;
+use crate::widgets::containers::create::view::form_dialog as containers_form;
+use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::containers::no_engine::NoEngineCase;
 use crate::widgets::containers::view::{
     confirm_dialog as containers_confirm, engine_tree,
-    form_dialog as containers_form, inspector as containers_inspector,
-    main_area as containers_main, row_menu as containers_row_menu,
-    run_form as containers_run_form, run_panel as containers_run_panel,
-    status_bar as containers_status_bar,
+    inspector as containers_inspector, main_area as containers_main,
+    row_menu as containers_row_menu, run_form as containers_run_form,
+    run_panel as containers_run_panel, status_bar as containers_status_bar,
 };
 use crate::widgets::containers::{MainViewModel, format as containers_format};
 use crate::widgets::explorer::event::ExplorerEvent;
@@ -506,7 +506,8 @@ fn view_containers_inspector<'a>(
     .map(|intent| AppEvent::Containers(ContainersEvent::Intent(intent)))
 }
 
-/// Containers mode overlays: the row menu and the confirmation dialog.
+/// Containers mode overlays: the row menu, the confirmation dialog and the
+/// create dialog.
 fn view_containers_overlays<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
@@ -531,10 +532,13 @@ fn view_containers_overlays<'a>(
         ));
     }
     if let Some(vm) = app.widgets.containers.form_vm() {
-        layers.push(containers_form::view(containers_form::FormDialogProps {
-            vm,
-            theme: theme_props,
-        }));
+        layers.push(
+            containers_form::view(containers_form::FormDialogProps {
+                vm,
+                theme: theme_props,
+            })
+            .map(ContainersIntent::Create),
+        );
     }
 
     layers

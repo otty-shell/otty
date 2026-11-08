@@ -4,12 +4,46 @@
 
 use otty_containers::{EngineInfo, PullProgress};
 
-use super::types::{DEFAULT_TAG, EngineAction};
+use super::super::types::{DEFAULT_TAG, EngineAction};
+use super::types::FormField;
 
 /// The driver of a new volume unless another one is typed.
 const VOLUME_DRIVER: &str = "local";
 /// The driver of a new network unless another one is typed.
 const NETWORK_DRIVER: &str = "bridge";
+
+/// The create dialog open above the tables, if any.
+#[derive(Debug, Default)]
+pub(crate) struct CreateState {
+    form: Option<Form>,
+}
+
+impl CreateState {
+    /// Return the open create dialog.
+    pub(crate) fn form(&self) -> Option<&Form> {
+        self.form.as_ref()
+    }
+
+    /// Return whether a create dialog is open.
+    pub(crate) fn is_open(&self) -> bool {
+        self.form.is_some()
+    }
+
+    /// Open a create dialog in place of the one that was open.
+    pub(super) fn open_form(&mut self, form: Form) {
+        self.form = Some(form);
+    }
+
+    /// Return the open create dialog to change it.
+    pub(super) fn form_mut(&mut self) -> Option<&mut Form> {
+        self.form.as_mut()
+    }
+
+    /// Close the create dialog and return it.
+    pub(super) fn take_form(&mut self) -> Option<Form> {
+        self.form.take()
+    }
+}
 
 /// Which create dialog is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,17 +51,6 @@ pub(crate) enum FormKind {
     Pull,
     CreateVolume,
     CreateNetwork,
-}
-
-/// One text field of a create dialog.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FormField {
-    /// The image of a pull, or the name of a volume or network.
-    Name,
-    /// The tag of a pull.
-    Tag,
-    /// The driver of a volume or network.
-    Driver,
 }
 
 /// An open create dialog: what it creates, on which engine, the typed
@@ -117,7 +140,7 @@ impl Form {
 
     /// The pull dialog for `engine`, filled with `image` and `tag` (the
     /// default tag when blank).
-    pub(crate) fn pull(engine: EngineInfo, image: &str, tag: &str) -> Self {
+    pub(super) fn pull(engine: EngineInfo, image: &str, tag: &str) -> Self {
         let tag = if tag.trim().is_empty() {
             DEFAULT_TAG
         } else {
@@ -135,17 +158,17 @@ impl Form {
     }
 
     /// The create volume dialog for `engine`, with the `local` driver.
-    pub(crate) fn create_volume(engine: EngineInfo) -> Self {
+    pub(super) fn create_volume(engine: EngineInfo) -> Self {
         Self::create(FormKind::CreateVolume, engine, VOLUME_DRIVER)
     }
 
     /// The create network dialog for `engine`, with the `bridge` driver.
-    pub(crate) fn create_network(engine: EngineInfo) -> Self {
+    pub(super) fn create_network(engine: EngineInfo) -> Self {
         Self::create(FormKind::CreateNetwork, engine, NETWORK_DRIVER)
     }
 
     /// Replace the value of `field`; nothing changes while a pull runs.
-    pub(crate) fn set_value(&mut self, field: FormField, value: String) {
+    pub(super) fn set_value(&mut self, field: FormField, value: String) {
         if self.is_pulling() {
             return;
         }
@@ -158,14 +181,14 @@ impl Form {
     }
 
     /// Mark the pull as started, with no progress yet.
-    pub(crate) fn start_pull(&mut self) {
+    pub(super) fn start_pull(&mut self) {
         if self.kind == FormKind::Pull {
             self.progress = Some(PullProgress::default());
         }
     }
 
     /// Take the newest progress of the running pull.
-    pub(crate) fn set_progress(&mut self, progress: PullProgress) {
+    pub(super) fn set_progress(&mut self, progress: PullProgress) {
         if self.is_pulling() {
             self.progress = Some(progress);
         }

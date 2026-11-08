@@ -11,7 +11,7 @@ use otty_ui_kit::components::tag_search::{
 };
 
 use super::actions::Confirm;
-use super::forms::Form;
+use super::create::CreateState;
 use super::inspector::{
     InspectTarget, InspectorState, InspectorTab, LogTarget,
 };
@@ -72,8 +72,8 @@ pub(super) struct ContainersState {
     /// The open row menu.
     row_menu: Option<RowMenu>,
     notice: Option<String>,
-    /// The open create dialog.
-    form: Option<Form>,
+    /// The create dialogs: Pull image, Create volume and Create network.
+    create: CreateState,
     /// The open Run container form; it replaces the table.
     run_form: Option<RunForm>,
     /// What the main area showed when the last engine went away; it comes back
@@ -311,9 +311,9 @@ impl ContainersState {
         self.notice.as_deref()
     }
 
-    /// Return the open create dialog.
-    pub(crate) fn form(&self) -> Option<&Form> {
-        self.form.as_ref()
+    /// Return the state of the create dialogs.
+    pub(crate) fn create(&self) -> &CreateState {
+        &self.create
     }
 
     /// Return whether an action runs on the row `target` (or, with `None`,
@@ -567,19 +567,9 @@ impl ContainersState {
         self.notice = None;
     }
 
-    /// Open a create dialog.
-    pub(super) fn open_form(&mut self, form: Form) {
-        self.form = Some(form);
-    }
-
-    /// Return the open create dialog to change it.
-    pub(super) fn form_mut(&mut self) -> Option<&mut Form> {
-        self.form.as_mut()
-    }
-
-    /// Close the create dialog and return it.
-    pub(super) fn take_form(&mut self) -> Option<Form> {
-        self.form.take()
+    /// Return the state of the create dialogs for their reducer.
+    pub(super) fn create_mut(&mut self) -> &mut CreateState {
+        &mut self.create
     }
 
     /// Show the Run container form in place of the table.
