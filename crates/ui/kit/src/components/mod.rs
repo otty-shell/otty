@@ -28,7 +28,7 @@ pub mod form_section;
 mod glyph;
 pub mod icon_button;
 mod icon_hover;
-mod input_keys;
+pub mod input_keys;
 pub mod inspector_header;
 pub mod inspector_tabs;
 pub mod kbd;

@@ -1,11 +1,13 @@
 //! `TextField`: labelled single-line input with a hint or an error.
 
+use iced::keyboard::key::Named;
 use iced::widget::text_input::TextInput;
 use iced::widget::{container, row, text_input};
 use iced::{Element, Length, Padding, Pixels};
 
 use super::button::Button;
 use super::field_chrome::{self, Note, input_style};
+use super::input_keys::InputKeys;
 use crate::palette::UiPalette;
 use crate::{fonts, spacing, typography};
 
@@ -39,6 +41,9 @@ pub(super) const PADDING_Y: f32 = 7.0;
 ///         .on_input(Message::Path)
 ///         .into();
 /// ```
+///
+/// A field in a dialog can send its Cancel on Esc with
+/// [`TextField::on_escape`].
 pub struct TextField<'a, Message> {
     label: String,
     value: &'a str,
@@ -53,6 +58,7 @@ pub struct TextField<'a, Message> {
     id: Option<iced::widget::Id>,
     on_input: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_submit: Option<Message>,
+    on_escape: Option<Message>,
 }
 
 impl<'a, Message> TextField<'a, Message> {
@@ -76,6 +82,7 @@ impl<'a, Message> TextField<'a, Message> {
             id: None,
             on_input: None,
             on_submit: None,
+            on_escape: None,
         }
     }
 
@@ -150,6 +157,35 @@ impl<'a, Message> TextField<'a, Message> {
         self.on_submit = Some(message);
         self
     }
+
+    /// Sets the message sent when Esc is pressed in the focused input, such
+    /// as Cancel of the dialog it is in. Without it Esc only takes the focus
+    /// from the input, as in any `iced` text input.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use iced::Element;
+    /// use otty_ui_kit::components::text_field::TextField;
+    /// use otty_ui_kit::palette::UiPalette;
+    ///
+    /// #[derive(Clone)]
+    /// enum Message {
+    ///     Password(String),
+    ///     Cancel,
+    /// }
+    ///
+    /// let palette = UiPalette::otty_dark();
+    /// let field: Element<'_, Message> = TextField::new("Password", "", &palette)
+    ///     .secure(true)
+    ///     .on_input(Message::Password)
+    ///     .on_escape(Message::Cancel)
+    ///     .into();
+    /// ```
+    pub fn on_escape(mut self, message: Message) -> Self {
+        self.on_escape = Some(message);
+        self
+    }
 }
 
 impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
@@ -173,8 +209,14 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
         if let Some(id) = value.id {
             control = control.id(id);
         }
+        let input: Element<'a, Message> = match value.on_escape {
+            Some(message) => InputKeys::new(control)
+                .on_key(Named::Escape, message)
+                .into(),
+            None => control.into(),
+        };
 
-        let mut line = row![control].spacing(spacing::SPACE_2);
+        let mut line = row![input].spacing(spacing::SPACE_2);
         if let Some((label, message)) = value.action {
             line =
                 line.push(Button::new(label, &value.palette).on_press(message));
@@ -200,9 +242,56 @@ impl<'a, Message: Clone + 'a> From<TextField<'a, Message>>
 
 #[cfg(test)]
 mod tests {
+    use iced::keyboard::key::Named;
+    use iced::widget::Id;
     use iced_test::simulator;
 
     use super::*;
+
+    /// The id of the input of the fields under test.
+    const FIELD: &str = "field";
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum Message {
+        Changed(String),
+        Escape,
+    }
+
+    #[test]
+    fn esc_in_the_focused_field_sends_the_escape_message() {
+        let palette = UiPalette::otty_dark();
+        let field: Element<'_, Message> = TextField::new("Name", "", &palette)
+            .id(Id::new(FIELD))
+            .on_input(Message::Changed)
+            .on_escape(Message::Escape)
+            .into();
+        let mut ui = simulator(field);
+
+        ui.click(Id::new(FIELD)).expect("the field should show");
+        ui.tap_key(Named::Escape);
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Escape]);
+    }
+
+    /// Without an Esc message the input behaves as an `iced` input: Esc
+    /// only takes its focus, so the next letter goes nowhere.
+    #[test]
+    fn a_field_without_an_escape_message_keeps_today_s_esc() {
+        let palette = UiPalette::otty_dark();
+        let field: Element<'_, Message> = TextField::new("Name", "", &palette)
+            .id(Id::new(FIELD))
+            .on_input(Message::Changed)
+            .into();
+        let mut ui = simulator(field);
+
+        ui.click(Id::new(FIELD)).expect("the field should show");
+        ui.tap_key(Named::Escape);
+        let _ = ui.typewrite("a");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert!(messages.is_empty());
+    }
 
     #[test]
     fn given_an_optional_marker_when_drawn_then_it_reads_as_given() {

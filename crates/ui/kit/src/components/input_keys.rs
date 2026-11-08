@@ -3,12 +3,15 @@
 //! `iced` 0.14 text inputs send nothing for Backspace on an empty value, for
 //! ↑ and ↓, they only drop focus on Esc, and they do not say when they get
 //! the focus, and they leave the cursor in place when the app replaces the
-//! text (see [`InputKeys::follow_text`]). [`TokenField`], [`CommandPalette`] and [`TagSearchField`] wrap
-//! their input in [`InputKeys`] to turn those into messages.
+//! text (see `InputKeys::follow_text`). [`TokenField`], [`CommandPalette`],
+//! [`TagSearchField`] and [`TextField`] wrap their input in [`InputKeys`] to
+//! turn those into messages. An app wraps a plain `iced` text input the same
+//! way, for example to cancel an edit on Esc.
 //!
 //! [`TokenField`]: super::token_field::TokenField
 //! [`CommandPalette`]: super::command_palette::CommandPalette
 //! [`TagSearchField`]: super::tag_search_field::TagSearchField
+//! [`TextField`]: super::text_field::TextField
 
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::{Operation, Tree, Widget, tree};
@@ -23,7 +26,27 @@ use iced::{
 /// Wraps a text input and publishes the message bound to a named key when
 /// that key is pressed while the input is focused. The key press then does
 /// not reach the input.
-pub(super) struct InputKeys<'a, Message> {
+///
+/// # Example
+///
+/// ```
+/// use iced::Element;
+/// use iced::keyboard::key::Named;
+/// use iced::widget::text_input;
+/// use otty_ui_kit::components::input_keys::InputKeys;
+///
+/// #[derive(Clone)]
+/// enum Message {
+///     NameChanged(String),
+///     CancelEdit,
+/// }
+///
+/// let input = text_input("", "notes").on_input(Message::NameChanged);
+/// let edit: Element<'_, Message> = InputKeys::new(input)
+///     .on_key(Named::Escape, Message::CancelEdit)
+///     .into();
+/// ```
+pub struct InputKeys<'a, Message> {
     content: Element<'a, Message>,
     bindings: Vec<(Named, Message)>,
     on_focus: Option<Message>,
@@ -32,7 +55,7 @@ pub(super) struct InputKeys<'a, Message> {
 
 impl<'a, Message> InputKeys<'a, Message> {
     /// Wraps `input`, which must be a [`text_input`], with no bound keys.
-    pub(super) fn new(input: impl Into<Element<'a, Message>>) -> Self {
+    pub fn new(input: impl Into<Element<'a, Message>>) -> Self {
         Self {
             content: input.into(),
             bindings: Vec::new(),
@@ -52,7 +75,7 @@ impl<'a, Message> InputKeys<'a, Message> {
     }
 
     /// Sends `message` when `key` is pressed in the focused input.
-    pub(super) fn on_key(mut self, key: Named, message: Message) -> Self {
+    pub fn on_key(mut self, key: Named, message: Message) -> Self {
         self.bindings.push((key, message));
         self
     }
