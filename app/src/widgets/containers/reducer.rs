@@ -42,7 +42,7 @@ fn reduce_create(
     let after = outcome
         .map_or_else(Task::none, |outcome| on_create_outcome(state, outcome));
 
-    Task::batch([effects.map(create_effect), after])
+    Task::batch([effects.map(wrap_create_effect), after])
 }
 
 /// Hand `intent` to the Run container form and act on what it reports in
@@ -56,7 +56,7 @@ fn reduce_run(
     let after = outcome
         .map_or_else(Task::none, |outcome| on_run_outcome(state, outcome));
 
-    Task::batch([effects.map(run_effect), after])
+    Task::batch([effects.map(wrap_run_effect), after])
 }
 
 /// Hand `intent` to the actions and act on what they report in the same
@@ -70,7 +70,7 @@ fn reduce_actions(
     let after = outcome
         .map_or_else(Task::none, |outcome| on_actions_outcome(state, outcome));
 
-    Task::batch([effects.map(actions_effect), after])
+    Task::batch([effects.map(wrap_actions_effect), after])
 }
 
 /// Hand `intent` to the inspector and act on what it reports in the same
@@ -85,7 +85,7 @@ fn reduce_inspector(
         on_inspector_outcome(state, outcome)
     });
 
-    Task::batch([effects.map(inspector_effect), after])
+    Task::batch([effects.map(wrap_inspector_effect), after])
 }
 
 fn reduce_intent(
@@ -532,19 +532,19 @@ fn effect(effect: ContainersEffect) -> Task<ContainersEvent> {
     Task::done(ContainersEvent::Effect(effect))
 }
 
-fn create_effect(effect: CreateEffect) -> ContainersEvent {
+fn wrap_create_effect(effect: CreateEffect) -> ContainersEvent {
     ContainersEvent::Effect(ContainersEffect::Create(effect))
 }
 
-fn run_effect(effect: RunEffect) -> ContainersEvent {
+fn wrap_run_effect(effect: RunEffect) -> ContainersEvent {
     ContainersEvent::Effect(ContainersEffect::Run(effect))
 }
 
-fn actions_effect(effect: ActionsEffect) -> ContainersEvent {
+fn wrap_actions_effect(effect: ActionsEffect) -> ContainersEvent {
     ContainersEvent::Effect(ContainersEffect::Actions(effect))
 }
 
-fn inspector_effect(effect: InspectorEffect) -> ContainersEvent {
+fn wrap_inspector_effect(effect: InspectorEffect) -> ContainersEvent {
     ContainersEvent::Effect(ContainersEffect::Inspector(effect))
 }
 
