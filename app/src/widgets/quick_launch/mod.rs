@@ -1,14 +1,14 @@
-pub(crate) mod constants;
+mod constants;
 mod errors;
 pub(crate) mod event;
-pub(crate) mod model;
-pub(crate) mod reducer;
+mod model;
+mod reducer;
 #[expect(
     clippy::disallowed_methods,
     reason = "this module checks programs and files before a launch"
 )]
 pub(crate) mod services;
-pub(crate) mod state;
+mod state;
 #[expect(clippy::disallowed_methods, reason = "this module saves the launches")]
 pub(crate) mod storage;
 pub(crate) mod types;
@@ -16,9 +16,10 @@ pub(crate) mod view;
 
 use std::collections::HashMap;
 
+pub(crate) use constants::QUICK_LAUNCHES_TICK_MS;
 use event::{QuickLaunchEvent, QuickLaunchIntent};
 use iced::Task;
-use model::LaunchViewModel;
+pub(crate) use model::LaunchViewModel;
 pub(crate) use reducer::QuickLaunchCtx;
 use state::QuickLaunchState;
 

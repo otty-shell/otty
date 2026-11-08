@@ -14,12 +14,12 @@ use crate::widgets::palette::event::{
 };
 use crate::widgets::palette::types::PaletteTarget;
 use crate::widgets::palette::{PaletteCtx, PaletteLaunch, PaletteSession};
+use crate::widgets::quick_launch::LaunchViewModel;
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
 };
-use crate::widgets::quick_launch::model::LaunchViewModel;
+use crate::widgets::tabs::TabsViewModel;
 use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
-use crate::widgets::tabs::model::TabsViewModel;
 use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
@@ -157,9 +157,8 @@ mod tests {
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::event::ModesIntent;
-    use crate::widgets::tabs::TabsCtx;
-    use crate::widgets::tabs::model::{
-        SessionGroupViewModel, SessionViewModel,
+    use crate::widgets::tabs::{
+        SessionGroupViewModel, SessionViewModel, TabsCtx,
     };
 
     /// Context the tests reduce tabs intents with.

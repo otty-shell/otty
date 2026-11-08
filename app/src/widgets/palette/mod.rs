@@ -1,6 +1,6 @@
 pub(crate) mod event;
 mod items;
-pub(crate) mod model;
+mod model;
 mod reducer;
 mod state;
 pub(crate) mod types;

@@ -1,5 +1,5 @@
 pub(crate) mod event;
-pub(crate) mod model;
+mod model;
 mod reducer;
 mod state;
 pub(crate) mod types;
@@ -8,7 +8,9 @@ pub(crate) mod view;
 use iced::Task;
 
 use self::event::{TabsEvent, TabsIntent};
-use self::model::TabsViewModel;
+pub(crate) use self::model::TabsViewModel;
+#[cfg(test)]
+pub(crate) use self::model::{SessionGroupViewModel, SessionViewModel};
 pub(crate) use self::reducer::TabsCtx;
 use self::state::TabsState;
 

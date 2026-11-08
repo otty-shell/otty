@@ -12,11 +12,9 @@ use crate::geometry::anchor_position;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::event::ChromeEvent;
-use crate::widgets::chrome::model::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::chrome::view::{action_bar, status_bar};
+use crate::widgets::chrome::{StatusBarInput, StatusBarViewModel};
 use crate::widgets::containers::event::ContainersEvent;
-use crate::widgets::containers::format as containers_format;
-use crate::widgets::containers::model::MainViewModel;
 use crate::widgets::containers::no_engine::NoEngineCase;
 use crate::widgets::containers::view::{
     confirm_dialog as containers_confirm, engine_tree,
@@ -25,6 +23,7 @@ use crate::widgets::containers::view::{
     run_form as containers_run_form, run_panel as containers_run_panel,
     status_bar as containers_status_bar,
 };
+use crate::widgets::containers::{MainViewModel, format as containers_format};
 use crate::widgets::explorer::event::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};

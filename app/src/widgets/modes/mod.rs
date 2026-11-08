@@ -1,6 +1,6 @@
 mod errors;
 pub(crate) mod event;
-pub(crate) mod model;
+mod model;
 mod reducer;
 mod state;
 #[expect(

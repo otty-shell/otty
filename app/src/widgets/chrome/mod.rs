@@ -1,5 +1,5 @@
 pub(crate) mod event;
-pub(crate) mod model;
+mod model;
 mod reducer;
 mod state;
 pub(crate) mod view;
@@ -7,6 +7,7 @@ pub(crate) mod view;
 use iced::Task;
 
 use self::event::{ChromeEvent, ChromeIntent};
+pub(crate) use self::model::{StatusBarInput, StatusBarViewModel};
 use self::state::ChromeState;
 
 /// Chrome widget managing window decorations and controls.

@@ -1,10 +1,10 @@
 mod errors;
 pub(crate) mod event;
-pub(crate) mod model;
+mod model;
 mod pane_balance;
-pub(crate) mod reducer;
+mod reducer;
 pub(crate) mod services;
-pub(crate) mod state;
+mod state;
 pub(crate) mod types;
 pub(crate) mod view;
 
