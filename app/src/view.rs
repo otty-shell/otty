@@ -14,20 +14,20 @@ use crate::theme::ThemeProps;
 use crate::widgets::chrome::event::ChromeEvent;
 use crate::widgets::chrome::view::{action_bar, status_bar};
 use crate::widgets::chrome::{StatusBarInput, StatusBarViewModel};
+use crate::widgets::containers::MainViewModel;
 use crate::widgets::containers::actions::view::{
     confirm_dialog as containers_confirm, row_menu as containers_row_menu,
 };
 use crate::widgets::containers::create::view::form_dialog as containers_form;
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
-use crate::widgets::containers::no_engine::NoEngineCase;
 use crate::widgets::containers::run::view::{
     run_form as containers_run_form, run_panel as containers_run_panel,
 };
+use crate::widgets::containers::types::NoEngineCase;
 use crate::widgets::containers::view::{
     engine_tree, inspector as containers_inspector,
     main_area as containers_main, status_bar as containers_status_bar,
 };
-use crate::widgets::containers::{MainViewModel, format as containers_format};
 use crate::widgets::explorer::event::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
@@ -464,10 +464,7 @@ fn view_containers_main<'a>(
         };
     }
 
-    let vm = app
-        .widgets
-        .containers
-        .main_vm(containers_format::unix_now());
+    let vm = app.widgets.containers.main_vm();
     let id = match &vm {
         MainViewModel::Table(_) => None,
         MainViewModel::Searching => Some(ScreenId::Searching),

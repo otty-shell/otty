@@ -3,6 +3,7 @@
 
 use otty_containers::{CandidateSource, Diagnosis, Discovery, EngineKind};
 
+use super::types::NoEngineCase;
 use crate::i18n::{self, Key};
 
 /// Page that explains how to install Docker.
@@ -27,26 +28,6 @@ const DOCKER_GROUP_COMMAND: &str = "sudo usermod -aG docker $USER";
 /// Page that explains the docker group.
 const DOCKER_GROUP_URL: &str =
     "https://docs.docker.com/engine/install/linux-postinstall/";
-
-/// Why no engine can be used.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum NoEngineCase {
-    /// Neither Docker nor Podman is installed.
-    NotInstalled,
-    /// Docker is installed but no Docker socket answers.
-    DockerNotRunning,
-    /// Podman is installed but its API service is off.
-    PodmanApiOff,
-    /// Docker and Podman are both installed and neither answers.
-    DockerAndPodmanOff,
-    /// A socket exists but this user may not connect to it.
-    NoPermission,
-    /// A Podman socket exists but this user may not connect to it.
-    PodmanNoPermission,
-    /// The socket of this engine refused this user, and the other engine is
-    /// installed but off.
-    NoPermissionAndOtherOff(EngineKind),
-}
 
 /// A command to run in a terminal, with the text around it.
 #[derive(Debug, Clone, PartialEq, Eq)]

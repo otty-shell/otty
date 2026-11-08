@@ -563,7 +563,6 @@ mod tests {
         ContainersEffect, ContainersEvent, ContainersIntent,
     };
     use crate::widgets::containers::format::NO_VALUE;
-    use crate::widgets::containers::no_engine::NoEngineCase;
     use crate::widgets::containers::reducer::reduce;
     use crate::widgets::containers::resource_rows::{self, PORTS_COLUMN};
     use crate::widgets::containers::run::event::RunIntent;
@@ -571,7 +570,9 @@ mod tests {
     use crate::widgets::containers::run::{
         ImagePanelViewModel, RunFormViewModel,
     };
-    use crate::widgets::containers::types::{ContainersError, LoadedLists};
+    use crate::widgets::containers::types::{
+        ContainersError, LoadedLists, NoEngineCase,
+    };
     use crate::widgets::containers::view::status_bar::view as status_bar_view;
 
     const NOW: i64 = 1_793_557_960;

@@ -100,18 +100,6 @@ pub const ALLOWLIST: &[Allowed] = &[
         "the domain type still names a type of the quick_launch widget; move that type into domain/",
     ),
     Allowed::known(
-        Rule::WidgetModuleVisibility,
-        "widgets/containers/mod.rs",
-        "pub(crate) mod format",
-        "view.rs formats containers values with it; give view.rs those values through the view model",
-    ),
-    Allowed::known(
-        Rule::WidgetModuleVisibility,
-        "widgets/containers/mod.rs",
-        "pub(crate) mod no_engine",
-        "view.rs names NoEngineCase to pick the no-engine screen; move the case into types.rs",
-    ),
-    Allowed::known(
         Rule::ViewImportsState,
         "widgets/quick_launch/view/context_menu.rs",
         "widgets::quick_launch::state",

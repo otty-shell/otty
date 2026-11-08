@@ -1,11 +1,11 @@
 pub(crate) mod actions;
 pub(crate) mod create;
 pub(crate) mod event;
-pub(crate) mod format;
+mod format;
 pub(crate) mod inspector;
 mod links;
 mod model;
-pub(crate) mod no_engine;
+mod no_engine;
 mod overview;
 mod reducer;
 mod resource_rows;
@@ -89,9 +89,9 @@ impl ContainersWidget {
         EngineTreeViewModel::from_state(&self.state)
     }
 
-    /// Build the main area; ages are counted up to `now` (Unix seconds).
-    pub(crate) fn main_vm(&self, now: i64) -> MainViewModel<'_> {
-        MainViewModel::from_state(&self.state, now)
+    /// Build the main area; ages are counted up to the current time.
+    pub(crate) fn main_vm(&self) -> MainViewModel<'_> {
+        MainViewModel::from_state(&self.state, format::unix_now())
     }
 
     /// Build the texts of the status bar.

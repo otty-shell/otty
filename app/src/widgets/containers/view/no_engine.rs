@@ -156,7 +156,8 @@ mod tests {
     use super::*;
     use crate::testing::temp_dir::TempDir;
     use crate::theme::ThemeManager;
-    use crate::widgets::containers::no_engine::{NoEngineCase, view_model};
+    use crate::widgets::containers::no_engine::view_model;
+    use crate::widgets::containers::types::NoEngineCase;
 
     /// The card in the area it has in the app.
     fn page<'a>(

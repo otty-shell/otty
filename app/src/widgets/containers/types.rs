@@ -1,7 +1,8 @@
 use std::fmt;
 
 use otty_containers::{
-    Container, EngineAddress, EngineError, EngineInfo, Image, Network, Volume,
+    Container, EngineAddress, EngineError, EngineInfo, EngineKind, Image,
+    Network, Volume,
 };
 use otty_ui_kit::components::tag_search::TagSearch;
 use thiserror::Error;
@@ -464,6 +465,26 @@ impl ListRow<'_> {
             Self::Network(network) => network.id(),
         }
     }
+}
+
+/// Why no engine can be used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NoEngineCase {
+    /// Neither Docker nor Podman is installed.
+    NotInstalled,
+    /// Docker is installed but no Docker socket answers.
+    DockerNotRunning,
+    /// Podman is installed but its API service is off.
+    PodmanApiOff,
+    /// Docker and Podman are both installed and neither answers.
+    DockerAndPodmanOff,
+    /// A socket exists but this user may not connect to it.
+    NoPermission,
+    /// A Podman socket exists but this user may not connect to it.
+    PodmanNoPermission,
+    /// The socket of this engine refused this user, and the other engine is
+    /// installed but off.
+    NoPermissionAndOtherOff(EngineKind),
 }
 
 /// Return the containers that pass `search`, ordered by `sort`. Ages are
