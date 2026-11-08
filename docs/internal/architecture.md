@@ -31,7 +31,8 @@
 
 Когда `model.rs` становится большим, вместо него заводят папку `model/`: `model/mod.rs` и по файлу на каждую view, с именем файла этой view. Например, view model из `view/main_area.rs` лежат в `model/main_area.rs`. В остальном файлы `model/` подчиняются тем же правилам, что и `model.rs`.
 - Файлы внутри `model/` закрыты (`mod main_area;`), а `model/mod.rs` реэкспортирует их view model через `pub(crate) use`. Поэтому путь не меняется: view по-прежнему импортирует `super::super::model::MainAreaViewModel`.
-- `from_state` в таком файле объявлен `pub(crate)`. С `pub(super)` его видел бы только `model/`, и `XWidget` не смог бы его вызвать.
+- `from_state` в таком файле объявлен `pub(in super::super)`, то есть виден во всём виджете. С `pub(super)` его видел бы только `model/`, и `XWidget` не смог бы его вызвать. `pub(crate)` не подходит: `from_state` получает состояние виджета, а оно видно только внутри виджета.
+- Помощники, которые нужны тестам нескольких файлов `model/`, лежат в `model/mod.rs`, в `#[cfg(test)] mod test_support`. Так у `containers`: `model/mod.rs`, `engine_tree.rs`, `inspector.rs`, `main_area.rs`, `no_engine.rs` и `status_bar.rs`.
 - Если одной view model нужна другая, файл импортирует соседний: `use super::no_engine::NoEngineViewModel;`.
 
 Эти файлы виджет добавляет, только когда они нужны:
