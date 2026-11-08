@@ -19,6 +19,11 @@ pub(crate) enum ModesIntent {
     ToggleMenu,
     /// Close the All modes menu (Esc or a click outside it).
     CloseMenu,
+    /// A tab came to the front: it opened or became active. Tabs show only
+    /// in Terminal mode, so another mode switches to Terminal and closes the
+    /// menu, as [`ModesIntent::Select`] does. In Terminal mode nothing
+    /// changes, and an open menu stays open.
+    TabShown,
 }
 
 /// Effect events produced by the modes reducer.

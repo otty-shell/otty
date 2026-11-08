@@ -105,10 +105,4 @@ pub const ALLOWLIST: &[Allowed] = &[
         "focus_after_menu_change",
         "decides focus from the menu state before and after reduce; the reducer should report the menu opening and closing as effects (overlays and focus topic)",
     ),
-    Allowed::known(
-        Rule::RouteBranchesOnState,
-        "router/tabs.rs",
-        "handle_effect",
-        "switches to Terminal mode when a tab shows in another mode; that decision belongs in a reducer",
-    ),
 ];

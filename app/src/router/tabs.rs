@@ -3,7 +3,6 @@ use iced::widget::operation::snap_to_end;
 
 use super::AppEvent;
 use crate::app::App;
-use crate::domain::mode::Mode;
 use crate::domain::quick_launch::WizardTabInit;
 use crate::services::terminal_settings_for_session;
 use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
@@ -35,9 +34,9 @@ pub(crate) fn route(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
 }
 
 /// Run a tabs effect. Tabs only show in Terminal mode (spec Decision 5), so
-/// a tab that opens or becomes active while another mode is shown also
-/// switches to Terminal mode. This is the one place that does it, for every
-/// way a tab can be opened or activated.
+/// a tab that opens or becomes active also tells the modes widget, which
+/// switches to Terminal mode when another mode is shown. This is the one
+/// place that tells it, for every way a tab can be opened or activated.
 fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
     let shows_tab = matches!(
         effect,
@@ -48,19 +47,15 @@ fn handle_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
             | TabsEffect::WizardTabOpened { .. }
             | TabsEffect::ErrorTabOpened { .. }
     );
-    let needs_terminal_mode =
-        shows_tab && app.widgets.modes.active() != Mode::Terminal;
 
     let run = run_effect(app, effect);
-
-    if needs_terminal_mode {
-        let show_terminal = Task::done(AppEvent::Modes(ModesEvent::Intent(
-            ModesIntent::Select(Mode::Terminal),
-        )));
-        return Task::batch([run, show_terminal]);
+    if !shows_tab {
+        return run;
     }
 
-    run
+    let tab_shown =
+        Task::done(AppEvent::Modes(ModesEvent::Intent(ModesIntent::TabShown)));
+    Task::batch([run, tab_shown])
 }
 
 fn run_effect(app: &mut App, effect: TabsEffect) -> Task<AppEvent> {
@@ -479,7 +474,7 @@ mod tests {
     {
         let (mut app, _) = App::new();
 
-        let task = route(
+        let events = collect_outputs(route(
             &mut app,
             TabsEvent::Effect(TabsEffect::WizardTabOpened {
                 tab_id: 7,
@@ -487,23 +482,37 @@ mod tests {
                     parent_path: vec![String::from("Demo")],
                 },
             }),
-        );
-        assert_eq!(task.units(), 1);
+        ));
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::WizardInitializeCreate { tab_id: 7, .. }
+            ))
+        )));
+        assert_eq!(tabs_shown(&events), 1);
     }
 
     #[test]
     fn given_error_tab_opened_effect_then_task_is_emitted() {
         let (mut app, _) = App::new();
 
-        let task = route(
+        let events = collect_outputs(route(
             &mut app,
             TabsEvent::Effect(TabsEffect::ErrorTabOpened {
                 tab_id: 11,
                 title: String::from("Failed"),
                 message: String::from("boom"),
             }),
-        );
-        assert_eq!(task.units(), 1);
+        ));
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::OpenErrorTab { tab_id: 11, .. }
+            ))
+        )));
+        assert_eq!(tabs_shown(&events), 1);
     }
 
     fn containers_app() -> App {
@@ -516,15 +525,15 @@ mod tests {
         app
     }
 
-    fn terminal_switches(events: &[AppEvent]) -> usize {
+    /// How many times the route told the modes widget that a tab came to
+    /// the front. The modes reducer decides whether that switches modes.
+    fn tabs_shown(events: &[AppEvent]) -> usize {
         events
             .iter()
             .filter(|event| {
                 matches!(
                     event,
-                    AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
-                        Mode::Terminal
-                    )))
+                    AppEvent::Modes(ModesEvent::Intent(ModesIntent::TabShown))
                 )
             })
             .count()
@@ -545,7 +554,7 @@ mod tests {
 
         let events = route_intent(&mut app, TabsIntent::OpenSettingsTab);
 
-        assert_eq!(terminal_switches(&events), 1);
+        assert_eq!(tabs_shown(&events), 1);
     }
 
     #[test]
@@ -557,7 +566,7 @@ mod tests {
 
         let events = route_intent(&mut app, TabsIntent::OpenSettingsTab);
 
-        assert_eq!(terminal_switches(&events), 1);
+        assert_eq!(tabs_shown(&events), 1);
     }
 
     #[test]
@@ -566,7 +575,7 @@ mod tests {
 
         let events = route_intent(&mut app, TabsIntent::OpenTerminalTab);
 
-        assert_eq!(terminal_switches(&events), 1);
+        assert_eq!(tabs_shown(&events), 1);
     }
 
     #[test]
@@ -581,7 +590,7 @@ mod tests {
             TabsIntent::ActivateTab { tab_id: first_id },
         );
 
-        assert_eq!(terminal_switches(&events), 1);
+        assert_eq!(tabs_shown(&events), 1);
     }
 
     #[test]
@@ -590,7 +599,7 @@ mod tests {
 
         let events = route_intent(&mut app, open_command_tab_intent());
 
-        assert_eq!(terminal_switches(&events), 1);
+        assert_eq!(tabs_shown(&events), 1);
     }
 
     #[test]
@@ -608,7 +617,7 @@ mod tests {
             },
         );
 
-        assert_eq!(terminal_switches(&events), 1);
+        assert_eq!(tabs_shown(&events), 1);
     }
 
     #[test]
@@ -623,11 +632,12 @@ mod tests {
             },
         );
 
-        assert_eq!(terminal_switches(&events), 1);
+        assert_eq!(tabs_shown(&events), 1);
     }
 
     #[test]
-    fn opening_and_activating_tabs_in_terminal_mode_emits_no_mode_change() {
+    fn opening_and_activating_tabs_in_terminal_mode_tells_the_modes_widget_too()
+    {
         let mut app = App::new().0;
         let intents = [
             TabsIntent::OpenSettingsTab,
@@ -639,7 +649,7 @@ mod tests {
         for intent in intents {
             let events = route_intent(&mut app, intent);
 
-            assert_eq!(terminal_switches(&events), 0);
+            assert_eq!(tabs_shown(&events), 1);
         }
     }
 
@@ -651,7 +661,7 @@ mod tests {
 
         let events = route_intent(&mut app, TabsIntent::CloseTab { tab_id });
 
-        assert_eq!(terminal_switches(&events), 0);
+        assert_eq!(tabs_shown(&events), 0);
     }
 
     #[test]

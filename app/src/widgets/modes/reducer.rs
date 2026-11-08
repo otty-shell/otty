@@ -39,6 +39,7 @@ pub(super) fn reduce(
             state.close_menu();
             Task::none()
         },
+        ModesIntent::TabShown => show_terminal_for_a_tab(state),
     }
 }
 
@@ -50,6 +51,17 @@ fn select(state: &mut ModesState, mode: Mode) -> Task<ModesEvent> {
     }
 
     effect(ModesEffect::ModeChanged(mode))
+}
+
+/// A tab came to the front: tabs live in Terminal mode, so another mode
+/// switches to it and closes the menu. In Terminal mode nothing changes, and
+/// an open menu stays open.
+fn show_terminal_for_a_tab(state: &mut ModesState) -> Task<ModesEvent> {
+    if state.active() == Mode::Terminal {
+        return Task::none();
+    }
+
+    select(state, Mode::Terminal)
 }
 
 /// Ask the app to save the pinned list as it is now.
@@ -122,6 +134,41 @@ mod tests {
 
             assert!(!state.is_menu_open(), "{mode:?}");
         }
+    }
+
+    #[test]
+    fn a_shown_tab_in_another_mode_switches_to_terminal() {
+        let mut state = ModesState::default();
+        let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
+
+        let effects = effects(&mut state, ModesIntent::TabShown);
+
+        assert_eq!(state.active(), Mode::Terminal);
+        assert_eq!(effects, vec![ModesEffect::ModeChanged(Mode::Terminal)]);
+    }
+
+    #[test]
+    fn a_shown_tab_in_terminal_mode_changes_nothing() {
+        let mut state = ModesState::default();
+        let _ = effects(&mut state, ModesIntent::ToggleMenu);
+
+        let effects = effects(&mut state, ModesIntent::TabShown);
+
+        assert_eq!(state.active(), Mode::Terminal);
+        assert!(state.is_menu_open());
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn a_shown_tab_that_switches_modes_closes_the_menu() {
+        let mut state = ModesState::default();
+        let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
+        let _ = effects(&mut state, ModesIntent::ToggleMenu);
+
+        let _ = effects(&mut state, ModesIntent::TabShown);
+
+        assert_eq!(state.active(), Mode::Terminal);
+        assert!(!state.is_menu_open());
     }
 
     #[test]

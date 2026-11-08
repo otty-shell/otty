@@ -830,6 +830,24 @@ mod tests {
         assert!(app.widgets.modes.is_menu_open());
     }
 
+    /// A tab that comes to the front in another mode shows Terminal mode,
+    /// and the All modes menu closes as the mode switches (owner, Q2).
+    #[test]
+    fn a_tab_opened_in_containers_mode_shows_terminal_mode() {
+        let mut app = app_with_open_modes_menu();
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
+        let _ = app.widgets.modes.reduce(ModesIntent::ToggleMenu);
+
+        internal_to_the_end(&mut app, tabs_intent(TabsIntent::OpenSettingsTab));
+
+        assert_eq!(app.widgets.tabs.len(), 1);
+        assert_eq!(app.widgets.modes.active(), Mode::Terminal);
+        assert!(!app.widgets.modes.is_menu_open());
+    }
+
     #[test]
     fn a_tab_closed_under_an_open_menu_lets_go_of_its_terminal() {
         let mut app = app_with_open_modes_menu();
