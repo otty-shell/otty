@@ -24,10 +24,10 @@ pub(crate) enum RunIntent {
     /// Run was pressed.
     Submitted,
     /// The cross of the form's notice was pressed.
-    RunNoticeDismissed,
+    NoticeDismissed,
     /// The container was created and started (its id), or the engine's
     /// message.
-    RunFinished {
+    Finished {
         engine: EngineAddress,
         result: Result<String, ContainersError>,
     },

@@ -62,7 +62,7 @@ pub(crate) fn view(props: RunFormProps<'_>) -> RunElement<'_> {
                 palette,
             )
             .on_dismiss(
-                RunIntent::RunNoticeDismissed,
+                RunIntent::NoticeDismissed,
                 i18n::t(Key::ContainersDismiss),
             ),
         );
@@ -835,7 +835,7 @@ mod tests {
         );
         let _ = reduce_containers(
             &mut state,
-            ContainersIntent::Run(RunIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::Finished {
                 engine: fixtures::engine(EngineKind::Docker).address().clone(),
                 result: Err(ContainersError::new("port is already allocated")),
             }),

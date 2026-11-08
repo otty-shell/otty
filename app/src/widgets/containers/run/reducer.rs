@@ -79,13 +79,13 @@ pub(crate) fn reduce(
             (choose_engine(state, ctx, &address), None)
         },
         RunIntent::Submitted => (submit(state), None),
-        RunIntent::RunNoticeDismissed => {
+        RunIntent::NoticeDismissed => {
             if let Some(form) = state.form_mut() {
                 form.dismiss_notice();
             }
             (Task::none(), None)
         },
-        RunIntent::RunFinished { engine, result } => {
+        RunIntent::Finished { engine, result } => {
             (Task::none(), finish(state, engine, result))
         },
         RunIntent::ImageDefaultsLoaded {
@@ -698,7 +698,7 @@ mod tests {
 
         let (effects, outcome) = reduce_part(
             &mut state,
-            RunIntent::RunFinished {
+            RunIntent::Finished {
                 engine: docker().address().clone(),
                 result: Ok(String::from("4f1c2b9a8e7d")),
             },
@@ -1032,7 +1032,7 @@ mod tests {
 
         let effects = effects(reduce_containers(
             &mut state,
-            ContainersIntent::Run(RunIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::Finished {
                 engine: docker().address().clone(),
                 result: Ok(String::from("4f1c2b9a8e7d")),
             }),
@@ -1083,7 +1083,7 @@ mod tests {
 
         let _ = reduce_containers(
             &mut state,
-            ContainersIntent::Run(RunIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::Finished {
                 engine: podman().address().clone(),
                 result: Ok(String::from("4f1c2b9a8e7d")),
             }),
@@ -1120,7 +1120,7 @@ mod tests {
 
         let effects = effects(reduce_containers(
             &mut state,
-            ContainersIntent::Run(RunIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::Finished {
                 engine: docker().address().clone(),
                 result: Err(ContainersError::new("port is already allocated")),
             }),
@@ -1145,7 +1145,7 @@ mod tests {
 
         let _ = reduce_containers(
             &mut state,
-            ContainersIntent::Run(RunIntent::RunNoticeDismissed),
+            ContainersIntent::Run(RunIntent::NoticeDismissed),
         );
         assert_eq!(run_form(&state).notice(), None);
     }
@@ -1161,7 +1161,7 @@ mod tests {
 
         let _ = reduce_containers(
             &mut state,
-            ContainersIntent::Run(RunIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::Finished {
                 engine: docker().address().clone(),
                 result: Err(ContainersError::new("boom")),
             }),
@@ -1186,7 +1186,7 @@ mod tests {
 
         let effects = effects(reduce_containers(
             &mut state,
-            ContainersIntent::Run(RunIntent::RunFinished {
+            ContainersIntent::Run(RunIntent::Finished {
                 engine: docker().address().clone(),
                 result: Ok(String::from("4f1c")),
             }),

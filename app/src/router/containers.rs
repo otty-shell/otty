@@ -116,7 +116,7 @@ fn run_effect(app: &mut App, effect: RunEffect) -> Task<AppEvent> {
             let address = engine.address().clone();
 
             Task::perform(run_container(engine, request), move |result| {
-                run_intent(RunIntent::RunFinished {
+                run_intent(RunIntent::Finished {
                     engine: address.clone(),
                     result,
                 })
