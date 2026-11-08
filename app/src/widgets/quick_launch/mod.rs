@@ -18,9 +18,9 @@ mod wizard_draft;
 pub(crate) use constants::QUICK_LAUNCHES_TICK_MS;
 use event::{QuickLaunchEvent, QuickLaunchIntent};
 use iced::Task;
-pub(crate) use model::LaunchViewModel;
 pub(crate) use reducer::QuickLaunchCtx;
 use state::QuickLaunchState;
+use types::LaunchSummary;
 
 /// Quick launch widget: manages the tree of saved commands,
 /// inline editing, context menus, drag-and-drop, wizard forms,
@@ -51,10 +51,16 @@ impl QuickLaunchWidget {
         model::SidebarTreeViewModel::from_state(&self.state)
     }
 
+    /// Every launch in the tree, folders left out, in tree order, each with
+    /// the path that runs it.
+    pub(crate) fn launches(&self) -> Vec<LaunchSummary<'_>> {
+        self.state.data().launches()
+    }
+
     /// The launches at the top level of the tree, in tree order, each with
     /// the path that runs it.
-    pub(crate) fn top_level_launches(&self) -> Vec<LaunchViewModel<'_>> {
-        self.vm().top_level_launches()
+    pub(crate) fn top_level_launches(&self) -> Vec<LaunchSummary<'_>> {
+        self.state.data().top_level_launches()
     }
 
     /// Return what the error tab `tab_id` shows, if it is an error tab.

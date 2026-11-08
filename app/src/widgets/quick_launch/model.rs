@@ -6,11 +6,11 @@ use iced::widget::Id;
 use super::state::{InlineEditState, QuickLaunchState};
 use super::types::{
     CommandLaunchOptions, ContextMenuTarget, DropTarget, InlineEditKind,
-    LaunchInfo, QuickLaunchFile, QuickLaunchFolder, QuickLaunchNode,
-    QuickLaunchType, SshLaunchOptions, SshSecretKind,
+    LaunchInfo, QuickLaunchFile, QuickLaunchType, SshLaunchOptions,
+    SshSecretKind,
 };
 use crate::domain::exit_behavior::ExitBehavior;
-use crate::domain::quick_launch::{NodePath, QuickLaunch};
+use crate::domain::quick_launch::NodePath;
 use crate::i18n::{self, Key};
 
 /// Read-only view model for the quick launch tree.
@@ -38,63 +38,6 @@ impl<'a> SidebarTreeViewModel<'a> {
             drop_target: state.drop_target(),
         }
     }
-
-    /// Every launch in the tree, folders left out, in tree order (a
-    /// folder's launches come where the folder is).
-    pub(crate) fn launches(&self) -> Vec<LaunchViewModel<'a>> {
-        let mut launches = Vec::new();
-
-        collect_launches(self.data.root(), &[], &mut launches);
-
-        launches
-    }
-
-    /// The launches directly at the top of the tree, folders and what is
-    /// inside them left out, in tree order.
-    pub(crate) fn top_level_launches(&self) -> Vec<LaunchViewModel<'a>> {
-        self.data
-            .root()
-            .children()
-            .iter()
-            .filter_map(|node| match node {
-                QuickLaunchNode::Command(command) => {
-                    Some(launch(command, vec![command.title().to_string()]))
-                },
-                QuickLaunchNode::Folder(_) => None,
-            })
-            .collect()
-    }
-}
-
-#[cfg(test)]
-impl<'a> SidebarTreeViewModel<'a> {
-    /// Tree of `data` that no one is using: nothing selected, hovered,
-    /// renamed or dragged over. `launching` holds the launches that are
-    /// starting.
-    fn idle(
-        data: &'a QuickLaunchFile,
-        launching: &'a HashMap<NodePath, LaunchInfo>,
-    ) -> Self {
-        Self {
-            data,
-            selected_path: None,
-            hovered_path: None,
-            inline_edit: None,
-            launching,
-            drop_target: None,
-        }
-    }
-}
-
-/// One launch of the tree, for lists outside the tree such as the command
-/// palette.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LaunchViewModel<'a> {
-    /// Path in the tree: the folder titles, then the launch title.
-    pub(crate) path: NodePath,
-    pub(crate) title: &'a str,
-    /// The launch connects over SSH.
-    pub(crate) is_ssh: bool,
 }
 
 /// The name input in the tree: a new folder's name or a new name for a
@@ -271,43 +214,12 @@ impl<'a> WizardFormViewModel<'a> {
     }
 }
 
-/// Add the launches of `folder` (at tree path `folder_path`) and of every
-/// folder below it to `launches`, in tree order.
-fn collect_launches<'a>(
-    folder: &'a QuickLaunchFolder,
-    folder_path: &[String],
-    launches: &mut Vec<LaunchViewModel<'a>>,
-) {
-    for node in folder.children() {
-        let mut path = folder_path.to_vec();
-        path.push(node.title().to_string());
-
-        match node {
-            QuickLaunchNode::Folder(child) => {
-                collect_launches(child, &path, launches);
-            },
-            QuickLaunchNode::Command(command) => {
-                launches.push(launch(command, path));
-            },
-        }
-    }
-}
-
-/// The launch of `command`, which sits at `path` in the tree.
-fn launch(command: &QuickLaunch, path: NodePath) -> LaunchViewModel<'_> {
-    LaunchViewModel {
-        path,
-        title: command.title(),
-        is_ssh: command.is_ssh(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::domain::quick_launch::{CommandSpec, CustomCommand, SshCommand};
+    use crate::domain::quick_launch::{CommandSpec, QuickLaunch, SshCommand};
     use crate::widgets::quick_launch::state::{
         ContextMenuState, QuickLaunchErrorState, SecretPromptState,
     };
@@ -315,131 +227,11 @@ mod tests {
 
     const TAB_ID: u64 = 7;
 
-    fn command(title: &str) -> QuickLaunchNode {
-        QuickLaunchNode::Command(QuickLaunch::new(
-            String::from(title),
-            CommandSpec::Custom {
-                custom: CustomCommand::new(
-                    String::from("htop"),
-                    Vec::new(),
-                    Vec::new(),
-                    None,
-                ),
-            },
-            ExitBehavior::Close,
-        ))
-    }
-
-    fn ssh(title: &str) -> QuickLaunchNode {
-        QuickLaunchNode::Command(QuickLaunch::new(
-            String::from(title),
-            CommandSpec::Ssh {
-                ssh: SshCommand::new(
-                    String::from("example.com"),
-                    22,
-                    None,
-                    None,
-                    Vec::new(),
-                ),
-            },
-            ExitBehavior::Close,
-        ))
-    }
-
-    fn folder(title: &str, children: Vec<QuickLaunchNode>) -> QuickLaunchNode {
-        QuickLaunchNode::Folder(QuickLaunchFolder {
-            title: String::from(title),
-            expanded: false,
-            children,
-        })
-    }
-
     fn path(segments: &[&str]) -> NodePath {
         segments
             .iter()
             .map(|segment| String::from(*segment))
             .collect()
-    }
-
-    #[test]
-    fn launches_walk_the_tree_in_order_and_skip_folders() {
-        let mut data = QuickLaunchFile::default();
-        data.root.children = vec![
-            command("htop"),
-            folder(
-                "servers",
-                vec![ssh("laptop"), folder("prod", vec![ssh("storage")])],
-            ),
-            folder("empty", Vec::new()),
-            command("logs"),
-        ];
-        let launching = HashMap::new();
-        let vm = SidebarTreeViewModel {
-            data: &data,
-            selected_path: None,
-            hovered_path: None,
-            inline_edit: None,
-            launching: &launching,
-            drop_target: None,
-        };
-
-        let launches = vm.launches();
-
-        assert_eq!(
-            launches,
-            vec![
-                LaunchViewModel {
-                    path: path(&["htop"]),
-                    title: "htop",
-                    is_ssh: false,
-                },
-                LaunchViewModel {
-                    path: path(&["servers", "laptop"]),
-                    title: "laptop",
-                    is_ssh: true,
-                },
-                LaunchViewModel {
-                    path: path(&["servers", "prod", "storage"]),
-                    title: "storage",
-                    is_ssh: true,
-                },
-                LaunchViewModel {
-                    path: path(&["logs"]),
-                    title: "logs",
-                    is_ssh: false,
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn top_level_launches_leave_out_folders_and_what_is_inside_them() {
-        let mut data = QuickLaunchFile::default();
-        data.root.children = vec![
-            command("htop"),
-            folder("servers", vec![ssh("laptop")]),
-            ssh("router"),
-        ];
-        let launching = HashMap::new();
-        let vm = SidebarTreeViewModel::idle(&data, &launching);
-
-        let launches = vm.top_level_launches();
-
-        assert_eq!(
-            launches,
-            vec![
-                LaunchViewModel {
-                    path: path(&["htop"]),
-                    title: "htop",
-                    is_ssh: false,
-                },
-                LaunchViewModel {
-                    path: path(&["router"]),
-                    title: "router",
-                    is_ssh: true,
-                },
-            ]
-        );
     }
 
     fn ssh_launch(title: &str, user: Option<&str>) -> QuickLaunch {

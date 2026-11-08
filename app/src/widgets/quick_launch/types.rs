@@ -120,6 +120,55 @@ impl QuickLaunchFile {
         let parent = &path[..path.len() - 1];
         self.folder_mut(parent)
     }
+
+    /// Every launch in the tree, folders left out, in tree order (a
+    /// folder's launches come where the folder is).
+    pub(crate) fn launches(&self) -> Vec<LaunchSummary<'_>> {
+        let mut launches = Vec::new();
+
+        collect_launches(&self.root, &[], &mut launches);
+
+        launches
+    }
+
+    /// The launches directly at the top of the tree, folders and what is
+    /// inside them left out, in tree order.
+    pub(crate) fn top_level_launches(&self) -> Vec<LaunchSummary<'_>> {
+        self.root
+            .children()
+            .iter()
+            .filter_map(|node| match node {
+                QuickLaunchNode::Command(command) => Some(LaunchSummary::new(
+                    command,
+                    vec![command.title().to_string()],
+                )),
+                QuickLaunchNode::Folder(_) => None,
+            })
+            .collect()
+    }
+}
+
+/// One saved launch as the lists outside the tree show it, such as the
+/// command palette and the New session menu: where it is in the tree, its
+/// title and whether it connects over SSH.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LaunchSummary<'a> {
+    /// Path in the tree: the folder titles, then the launch title.
+    pub(crate) path: NodePath,
+    pub(crate) title: &'a str,
+    /// The launch connects over SSH.
+    pub(crate) is_ssh: bool,
+}
+
+impl<'a> LaunchSummary<'a> {
+    /// The summary of `command`, which sits at `path` in the tree.
+    fn new(command: &'a QuickLaunch, path: NodePath) -> Self {
+        Self {
+            path,
+            title: command.title(),
+            is_ssh: command.is_ssh(),
+        }
+    }
 }
 
 /// A folder in the quick launch tree.
@@ -571,6 +620,28 @@ impl WizardOptions {
     }
 }
 
+/// Add the launches of `folder` (at tree path `folder_path`) and of every
+/// folder below it to `launches`, in tree order.
+fn collect_launches<'a>(
+    folder: &'a QuickLaunchFolder,
+    folder_path: &[String],
+    launches: &mut Vec<LaunchSummary<'a>>,
+) {
+    for node in folder.children() {
+        let mut path = folder_path.to_vec();
+        path.push(node.title().to_string());
+
+        match node {
+            QuickLaunchNode::Folder(child) => {
+                collect_launches(child, &path, launches);
+            },
+            QuickLaunchNode::Command(command) => {
+                launches.push(LaunchSummary::new(command, path));
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -630,6 +701,94 @@ mod tests {
         ];
 
         assert_eq!(file.launch_count(), 3);
+    }
+
+    fn folder(title: &str, children: Vec<QuickLaunchNode>) -> QuickLaunchNode {
+        QuickLaunchNode::Folder(QuickLaunchFolder {
+            title: String::from(title),
+            expanded: false,
+            children,
+        })
+    }
+
+    fn path(segments: &[&str]) -> NodePath {
+        segments
+            .iter()
+            .map(|segment| String::from(*segment))
+            .collect()
+    }
+
+    #[test]
+    fn launches_walk_the_tree_in_order_and_skip_folders() {
+        let mut data = QuickLaunchFile::default();
+        data.root.children = vec![
+            local_command("htop"),
+            folder(
+                "servers",
+                vec![
+                    ssh_command("laptop"),
+                    folder("prod", vec![ssh_command("storage")]),
+                ],
+            ),
+            folder("empty", Vec::new()),
+            local_command("logs"),
+        ];
+
+        let launches = data.launches();
+
+        assert_eq!(
+            launches,
+            vec![
+                LaunchSummary {
+                    path: path(&["htop"]),
+                    title: "htop",
+                    is_ssh: false,
+                },
+                LaunchSummary {
+                    path: path(&["servers", "laptop"]),
+                    title: "laptop",
+                    is_ssh: true,
+                },
+                LaunchSummary {
+                    path: path(&["servers", "prod", "storage"]),
+                    title: "storage",
+                    is_ssh: true,
+                },
+                LaunchSummary {
+                    path: path(&["logs"]),
+                    title: "logs",
+                    is_ssh: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn top_level_launches_leave_out_folders_and_what_is_inside_them() {
+        let mut data = QuickLaunchFile::default();
+        data.root.children = vec![
+            local_command("htop"),
+            folder("servers", vec![ssh_command("laptop")]),
+            ssh_command("router"),
+        ];
+
+        let launches = data.top_level_launches();
+
+        assert_eq!(
+            launches,
+            vec![
+                LaunchSummary {
+                    path: path(&["htop"]),
+                    title: "htop",
+                    is_ssh: false,
+                },
+                LaunchSummary {
+                    path: path(&["router"]),
+                    title: "router",
+                    is_ssh: true,
+                },
+            ]
+        );
     }
 
     #[test]

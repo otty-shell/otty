@@ -1,6 +1,6 @@
-//! Routes the command palette: builds what it lists from the other
-//! widgets' view models, and turns a chosen entry into the event the owning
-//! widget already handles for the same button.
+//! Routes the command palette: builds what it lists from the tabs view
+//! model and the saved launches, and turns a chosen entry into the event
+//! the owning widget already handles for the same button.
 
 use iced::Task;
 
@@ -14,10 +14,10 @@ use crate::widgets::palette::event::{
 };
 use crate::widgets::palette::types::PaletteTarget;
 use crate::widgets::palette::{PaletteCtx, PaletteLaunch, PaletteSession};
-use crate::widgets::quick_launch::LaunchViewModel;
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
 };
+use crate::widgets::quick_launch::types::LaunchSummary;
 use crate::widgets::tabs::TabsViewModel;
 use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::event::{
@@ -33,14 +33,14 @@ pub(crate) fn route(app: &mut App, event: PaletteEvent) -> Task<AppEvent> {
     }
 }
 
-/// Build what the palette lists from the tabs and launches view models:
+/// Build what the palette lists from the tabs view model and the launches:
 /// sessions keep the machine grouping of the Sessions panel, launches
 /// keep tree order. `pinned_modes` is Terminal and the pinned modes in
 /// switcher order, for the mode shortcut labels. `commands` decides which
 /// app commands are listed.
 fn palette_ctx<'a>(
     tabs: &TabsViewModel<'a>,
-    launches: Vec<LaunchViewModel<'a>>,
+    launches: Vec<LaunchSummary<'a>>,
     pinned_modes: Vec<Mode>,
     commands: CommandCtx,
 ) -> PaletteCtx<'a> {
@@ -85,7 +85,7 @@ fn handle_intent(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
         .collect();
     let ctx = palette_ctx(
         &app.widgets.tabs.vm(app.host_name.as_deref()),
-        app.widgets.quick_launch.vm().launches(),
+        app.widgets.quick_launch.launches(),
         pinned_modes,
         command_ctx(app),
     );
@@ -215,12 +215,12 @@ mod tests {
             session_count: 3,
         };
         let launches = vec![
-            LaunchViewModel {
+            LaunchSummary {
                 path: vec![String::from("htop")],
                 title: "htop",
                 is_ssh: false,
             },
-            LaunchViewModel {
+            LaunchSummary {
                 path: vec![String::from("servers"), String::from("laptop")],
                 title: "laptop",
                 is_ssh: true,
