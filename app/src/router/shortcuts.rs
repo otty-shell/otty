@@ -89,9 +89,9 @@ mod tests {
     use iced::keyboard::{Event, Key, Location, Modifiers};
 
     use super::*;
+    use crate::domain::mode::Mode;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::modes::ModesWidget;
-    use crate::widgets::modes::types::Mode;
     use crate::widgets::tabs::TabsCtx;
 
     /// Context the tests reduce tabs intents with.

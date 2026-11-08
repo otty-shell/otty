@@ -154,10 +154,10 @@ mod tests {
 
     use super::{handle_effect_event, should_sync_explorer};
     use crate::app::App;
+    use crate::domain::mode::Mode;
     use crate::router::AppEvent;
     use crate::shortcuts::AppShortcut;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::modes::types::Mode;
     use crate::widgets::modes::{ModesEvent, ModesIntent, ModesWidget};
     use crate::widgets::tabs::{TabsEvent, TabsIntent};
     use crate::widgets::terminal_workspace::{

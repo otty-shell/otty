@@ -3,10 +3,10 @@ use iced::widget::operation::snap_to_end;
 
 use super::AppEvent;
 use crate::app::App;
+use crate::domain::mode::Mode;
 use crate::domain::quick_launch::WizardTabInit;
 use crate::services::terminal_settings_for_session;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
-use crate::widgets::modes::types::Mode;
 use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::settings::{SettingsEvent, SettingsIntent};
@@ -240,11 +240,11 @@ mod tests {
     use super::route;
     use crate::app::App;
     use crate::domain::exit_behavior::ExitBehavior;
+    use crate::domain::mode::Mode;
     use crate::domain::quick_launch::WizardTabInit;
     use crate::router::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
-    use crate::widgets::modes::types::Mode;
     use crate::widgets::modes::{ModesEvent, ModesIntent};
     use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
     use crate::widgets::tabs::types::TabMachine;

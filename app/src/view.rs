@@ -7,6 +7,7 @@ use otty_ui_kit::spacing;
 use super::{App, AppEvent};
 #[cfg(not(target_os = "macos"))]
 use crate::components::primitive::resize_grips;
+use crate::domain::mode::Mode;
 use crate::geometry::anchor_position;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
@@ -27,7 +28,6 @@ use crate::widgets::containers::{
 };
 use crate::widgets::explorer::ExplorerEvent;
 use crate::widgets::explorer::view::sidebar_tree;
-use crate::widgets::modes::types::Mode;
 use crate::widgets::modes::view::{mode_menu, mode_switcher};
 use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::palette::{PaletteEvent, view as palette_view};

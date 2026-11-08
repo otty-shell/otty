@@ -1,5 +1,5 @@
 use super::state::ModesState;
-use super::types::Mode;
+use crate::domain::mode::Mode;
 
 /// Read-only view model of the mode switcher and the All modes menu.
 #[derive(Debug, Clone, PartialEq, Eq)]

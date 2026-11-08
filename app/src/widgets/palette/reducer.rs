@@ -9,7 +9,7 @@ use super::event::{PaletteEffect, PaletteEvent, PaletteIntent};
 use super::items::palette_items;
 use super::state::PaletteState;
 use super::types::PaletteTarget;
-use crate::widgets::modes::types::Mode;
+use crate::domain::mode::Mode;
 
 /// What the palette lists. The app fills it from the other widgets when
 /// the palette opens and on every query change.

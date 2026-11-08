@@ -4,7 +4,7 @@ use iced::Task;
 
 use super::event::{ModesEffect, ModesEvent, ModesIntent};
 use super::state::ModesState;
-use super::types::Mode;
+use crate::domain::mode::Mode;
 
 /// Reduce a modes intent into state changes and effects. Switching mode
 /// reports [`ModesEffect::ModeChanged`]; pinning and unpinning report

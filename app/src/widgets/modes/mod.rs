@@ -15,7 +15,8 @@ pub(crate) use event::{ModesEffect, ModesEvent, ModesIntent};
 use iced::Task;
 pub(crate) use model::ModesViewModel;
 use state::ModesState;
-use types::Mode;
+
+use crate::domain::mode::Mode;
 
 /// Modes widget: the active mode, the pinned modes and the All modes menu
 /// (spec Decision 5). The side panels stay with the sidebar widget.

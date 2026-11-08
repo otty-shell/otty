@@ -120,9 +120,9 @@ mod tests {
     use iced_test::{Simulator, simulator};
 
     use super::*;
+    use crate::domain::mode::Mode;
     use crate::theme::ThemeManager;
     use crate::widgets::modes::state::ModesState;
-    use crate::widgets::modes::types::Mode;
 
     fn drive(
         state: &ModesState,

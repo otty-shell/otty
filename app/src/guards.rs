@@ -202,6 +202,7 @@ mod tests {
         MenuGuard, context_menu_guard, inline_edit_guard, is_escape_press,
         is_header_menu_choice, is_terminal_input,
     };
+    use crate::domain::mode::Mode;
     use crate::router::AppEvent;
     use crate::shortcuts::{AppShortcut, Platform};
     use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
@@ -209,7 +210,6 @@ mod tests {
     use crate::widgets::containers::inspector::InspectorTab;
     use crate::widgets::containers::{ContainersEvent, ContainersIntent};
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
-    use crate::widgets::modes::types::Mode;
     use crate::widgets::modes::{ModesEvent, ModesIntent};
     use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
     use crate::widgets::sidebar::types::HeaderMenu;

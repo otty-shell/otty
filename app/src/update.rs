@@ -186,6 +186,7 @@ mod tests {
     use super::*;
     use crate::app::Message;
     use crate::domain::exit_behavior::ExitBehavior;
+    use crate::domain::mode::Mode;
     use crate::i18n;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
@@ -196,7 +197,6 @@ mod tests {
     use crate::widgets::containers::types::LoadedLists;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::ModesWidget;
-    use crate::widgets::modes::types::Mode;
     use crate::widgets::tabs::types::TabMachine;
     use crate::widgets::tabs::{TabsEvent, TabsIntent};
 

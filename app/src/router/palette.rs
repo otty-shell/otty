@@ -8,7 +8,7 @@ use iced::widget::pane_grid;
 use super::AppEvent;
 use super::tabs::close_active_tab;
 use crate::app::App;
-use crate::widgets::modes::types::Mode;
+use crate::domain::mode::Mode;
 use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::palette::types::PaletteTarget;
 use crate::widgets::palette::{

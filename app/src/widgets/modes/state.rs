@@ -1,4 +1,5 @@
-use super::types::{DEFAULT_PINNED, MAX_PINNED, Mode};
+use super::types::{DEFAULT_PINNED, MAX_PINNED};
+use crate::domain::mode::Mode;
 
 /// Modes state: the active mode, the pinned modes in pin order and whether
 /// the All modes menu is open (spec Decision 5).

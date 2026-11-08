@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use super::errors::ModesError;
 use super::state::ModesState;
-use super::types::Mode;
+use crate::domain::mode::Mode;
 
 /// Load the modes state at start: Terminal active, the pinned modes read
 /// from `~/.config/otty/modes.json`. What cannot be read falls back to the

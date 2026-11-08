@@ -1,4 +1,4 @@
-use crate::widgets::modes::types::Mode;
+use crate::domain::mode::Mode;
 
 /// What running a palette entry does. Every entry carries one as its key;
 /// the app router turns it into the event the owning widget already

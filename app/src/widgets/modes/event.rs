@@ -1,4 +1,4 @@
-use super::types::Mode;
+use crate::domain::mode::Mode;
 
 /// Intent events handled by the modes widget.
 #[derive(Debug, Clone)]

@@ -74,9 +74,9 @@ mod tests {
     use otty_ui_kit::components::target_dot::TargetKind;
 
     use super::*;
+    use crate::domain::mode::Mode;
     use crate::testing::task_outputs::collect_outputs;
     use crate::theme::ThemeManager;
-    use crate::widgets::modes::types::Mode;
     use crate::widgets::palette::PaletteEffect;
     use crate::widgets::palette::event::PaletteEvent;
     use crate::widgets::palette::reducer::{

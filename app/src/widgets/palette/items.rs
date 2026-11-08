@@ -3,9 +3,9 @@ use otty_ui_kit::components::target_dot::TargetKind;
 
 use super::reducer::{PaletteCtx, PaletteLaunch, PaletteSession};
 use super::types::PaletteTarget;
+use crate::domain::mode::Mode;
 use crate::i18n::{self, Key};
 use crate::shortcuts::AppShortcut;
-use crate::widgets::modes::types::Mode;
 
 /// Build every palette entry: open sessions, then launches, then the app
 /// actions. Split pane is listed only when there is a focused pane to
@@ -170,7 +170,7 @@ fn switch_mode_title(mode: Mode) -> Key {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widgets::modes::types::Mode;
+    use crate::domain::mode::Mode;
 
     fn session(
         tab_id: u64,

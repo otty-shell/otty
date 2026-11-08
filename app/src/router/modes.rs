@@ -8,8 +8,8 @@ use iced::widget::{Id, operation};
 
 use super::AppEvent;
 use crate::app::App;
+use crate::domain::mode::Mode;
 use crate::widgets::containers::{ContainersEvent, ContainersIntent};
-use crate::widgets::modes::types::Mode;
 use crate::widgets::modes::{ModesEffect, ModesEvent, storage};
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
