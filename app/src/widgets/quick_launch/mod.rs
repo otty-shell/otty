@@ -118,3 +118,13 @@ impl QuickLaunchWidget {
         self.state.inline_edit().is_some()
     }
 }
+
+#[cfg(test)]
+impl QuickLaunchWidget {
+    /// Return what is typed in the open SSH prompt.
+    pub(crate) fn secret_prompt_value(&self) -> Option<&str> {
+        self.state
+            .secret_prompt()
+            .map(state::SecretPromptState::value)
+    }
+}

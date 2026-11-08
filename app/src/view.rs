@@ -578,8 +578,10 @@ mod tests {
 
         use crate::widgets::palette::event::PaletteIntent;
 
+        // A dialog ignores the palette shortcut, so the palette opens here
+        // the way a command opens it, past the input checks.
         let mut app = containers_app_with_a_dialog();
-        let _ = app.update(crate::app::Message::Input(AppEvent::Palette(
+        let _ = app.update(crate::app::Message::Internal(AppEvent::Palette(
             PaletteEvent::Intent(PaletteIntent::Open),
         )));
         assert!(app.widgets.palette.is_open());

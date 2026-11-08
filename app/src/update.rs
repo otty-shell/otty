@@ -3,8 +3,9 @@ use iced::Task;
 use super::{App, AppEvent};
 use crate::commands::AppCommand;
 use crate::guards::{
-    MenuGuard, Overlay, context_menu_guard, inline_edit_guard, is_escape_press,
-    is_header_menu_choice, is_terminal_input_kept_out, top_overlay,
+    MenuGuard, Overlay, context_menu_guard, dialog_guard, inline_edit_guard,
+    is_escape_press, is_header_menu_choice, is_terminal_input_kept_out,
+    top_overlay,
 };
 use crate::router;
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
@@ -65,6 +66,15 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         && is_escape_press(&event)
     {
         return router::route(app, top.escape_event());
+    }
+
+    // A dialog waits for its answer. It lies over any menu, and the menu
+    // stays open under it until the dialog is answered.
+    if let Some(dialog) = top.filter(|top| top.is_dialog()) {
+        return match dialog_guard(dialog, &event) {
+            MenuGuard::Allow => router::route(app, event),
+            _ => Task::none(),
+        };
     }
 
     // Mode shortcuts still work while the All modes menu is open: the menu
@@ -1220,6 +1230,86 @@ mod tests {
 
         assert!(!app.widgets.containers.has_row_menu());
         assert!(app.widgets.containers.has_confirm());
+    }
+
+    fn quick_launch_intent(intent: QuickLaunchIntent) -> AppEvent {
+        AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
+    }
+
+    /// Scenario 13: a shortcut under the SSH prompt does nothing, so no
+    /// terminal behind the prompt takes the typed secret.
+    #[test]
+    fn a_shortcut_does_nothing_while_the_secret_prompt_is_open() {
+        let mut app = app_in(Mode::Terminal);
+        open_secret_prompt(&mut app);
+
+        update_to_the_end(&mut app, shortcut_press(AppShortcut::FocusMode));
+
+        assert!(app.widgets.quick_launch.has_secret_prompt());
+        assert!(!app.widgets.sidebar.vm().is_focus_mode);
+    }
+
+    /// Scenario 11: a mode shortcut does not hide a Containers dialog that
+    /// waits for its answer.
+    #[test]
+    fn a_mode_shortcut_does_nothing_while_a_containers_dialog_is_open() {
+        let mut app = containers_app_with_lists();
+        open_confirm(&mut app);
+
+        update_to_the_end(&mut app, shortcut_press(AppShortcut::TerminalMode));
+
+        assert_eq!(app.widgets.modes.active(), Mode::Containers);
+        assert_eq!(top_overlay(&app), Some(Overlay::ContainersConfirm));
+    }
+
+    #[test]
+    fn a_panel_button_does_nothing_while_the_secret_prompt_is_open() {
+        let mut app = app_in(Mode::Terminal);
+        open_secret_prompt(&mut app);
+        let panels = app.widgets.sidebar.vm();
+
+        update_to_the_end(
+            &mut app,
+            chrome_intent(ChromeIntent::ToggleLeftPanel),
+        );
+
+        let after = app.widgets.sidebar.vm();
+        assert!(app.widgets.quick_launch.has_secret_prompt());
+        assert_eq!(after.is_left_open, panels.is_left_open);
+    }
+
+    /// Scenario 14: an SSH prompt that comes up over an open menu takes
+    /// what the user types.
+    #[test]
+    fn the_secret_prompt_takes_typing_under_an_open_menu() {
+        let mut app = app_in(Mode::Terminal);
+        open_header_menu(&mut app);
+        open_secret_prompt(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            quick_launch_intent(QuickLaunchIntent::SecretPromptChanged(
+                String::from("pw"),
+            )),
+        );
+
+        assert_eq!(app.widgets.quick_launch.secret_prompt_value(), Some("pw"));
+        assert!(app.widgets.sidebar.has_header_menu_open());
+    }
+
+    #[test]
+    fn the_menu_under_a_cancelled_secret_prompt_is_still_open() {
+        let mut app = app_in(Mode::Terminal);
+        open_header_menu(&mut app);
+        open_secret_prompt(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            quick_launch_intent(QuickLaunchIntent::SecretPromptCancel),
+        );
+
+        assert!(!app.widgets.quick_launch.has_secret_prompt());
+        assert_eq!(top_overlay(&app), Some(Overlay::HeaderMenu));
     }
 
     #[test]

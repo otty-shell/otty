@@ -1,5 +1,5 @@
-//! What input from the user does while a menu is open or an inline edit runs,
-//! and which overlay lies on top of the window. The input checks only see
+//! What input from the user does while a menu or a dialog is open or an
+//! inline edit runs, and which overlay lies on top of the window. The input checks only see
 //! input: what follows from it, and what arrives on its own, skips them (see
 //! `update_internal` in `update.rs`), so it can not get lost.
 
@@ -116,7 +116,7 @@ impl Overlay {
 }
 
 /// Determines how the event loop should treat input from the user when a
-/// menu is open.
+/// menu or a dialog is on top.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum MenuGuard {
     /// Let the event pass through to normal dispatch.
@@ -209,6 +209,19 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         AppEvent::Keyboard(_) => Ignore,
         _ => Dismiss,
     }
+}
+
+/// Classify input from the user while `dialog` is on top: it returns only
+/// `Allow` or `Ignore`. A dialog waits for its answer, so only its own
+/// answers, pointer moves, window controls and terminal reports pass.
+/// Shortcuts, app buttons, presses outside it and other keys do nothing,
+/// and a menu under the dialog stays open.
+pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
+    if is_dialog_answer(dialog, event) || passes_every_dialog(event) {
+        return MenuGuard::Allow;
+    }
+
+    MenuGuard::Ignore
 }
 
 /// Return the overlay on top of the window, if one is open.
@@ -368,6 +381,68 @@ fn terminal_overlay(app: &App) -> Option<Overlay> {
     None
 }
 
+/// Whether `event` answers `dialog`: typing in it, its buttons, Enter and
+/// Esc.
+fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
+    match dialog {
+        Overlay::SecretPrompt => matches!(
+            event,
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::SecretPromptChanged(_)
+                    | QuickLaunchIntent::SecretPromptSubmit
+                    | QuickLaunchIntent::SecretPromptCancel
+            ))
+        ),
+        Overlay::ContainersConfirm => matches!(
+            event,
+            AppEvent::Containers(ContainersEvent::Intent(
+                ContainersIntent::Actions(
+                    ActionsIntent::ConfirmSwitchToggled(_)
+                        | ActionsIntent::ConfirmAccepted
+                        | ActionsIntent::ConfirmCancelled
+                )
+            ))
+        ),
+        Overlay::ContainersCreate => matches!(
+            event,
+            AppEvent::Containers(ContainersEvent::Intent(
+                ContainersIntent::Create(
+                    CreateIntent::Changed(..)
+                        | CreateIntent::Submitted
+                        | CreateIntent::Cancelled
+                )
+            ))
+        ),
+        _ => false,
+    }
+}
+
+/// Whether `event` passes under any dialog: a pointer move, a window
+/// control or a report of a terminal.
+fn passes_every_dialog(event: &AppEvent) -> bool {
+    matches!(
+        event,
+        AppEvent::Sidebar(SidebarEvent::Intent(
+            SidebarIntent::WorkspaceCursorMoved { .. }
+        )) | AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+            TerminalWorkspaceIntent::PaneGridCursorMoved { .. }
+                | TerminalWorkspaceIntent::Widget(_)
+        )) | AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+            QuickLaunchIntent::CursorMoved { .. }
+                | QuickLaunchIntent::NodeHovered { .. }
+        )) | AppEvent::Explorer(ExplorerEvent::Intent(
+            ExplorerIntent::NodeHovered { .. }
+        )) | AppEvent::Chrome(ChromeEvent::Intent(
+            ChromeIntent::ToggleMaximize
+                | ChromeIntent::MinimizeWindow
+                | ChromeIntent::CloseWindow
+                | ChromeIntent::PressTitleBar
+                | ChromeIntent::MoveOnTitleBar
+                | ChromeIntent::ReleaseTitleBar
+        )) | AppEvent::ResizeWindow(_)
+    )
+}
+
 fn quick_launch(intent: QuickLaunchIntent) -> AppEvent {
     AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
 }
@@ -394,9 +469,9 @@ mod tests {
     use otty_ui_kit::components::command_palette::PaletteAction;
 
     use super::{
-        MenuGuard, Overlay, context_menu_guard, inline_edit_guard,
-        is_escape_press, is_header_menu_choice, is_terminal_input,
-        is_terminal_input_kept_out, top_overlay,
+        MenuGuard, Overlay, context_menu_guard, dialog_guard,
+        inline_edit_guard, is_escape_press, is_header_menu_choice,
+        is_terminal_input, is_terminal_input_kept_out, top_overlay,
     };
     use crate::app::App;
     use crate::commands::AppCommand;
@@ -929,6 +1004,167 @@ mod tests {
 
         for event in events {
             assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
+        }
+    }
+
+    fn quick_launch(intent: QuickLaunchIntent) -> AppEvent {
+        AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
+    }
+
+    fn containers(intent: ContainersIntent) -> AppEvent {
+        AppEvent::Containers(ContainersEvent::Intent(intent))
+    }
+
+    fn confirm(intent: ActionsIntent) -> AppEvent {
+        containers(ContainersIntent::Actions(intent))
+    }
+
+    fn create(intent: CreateIntent) -> AppEvent {
+        containers(ContainersIntent::Create(intent))
+    }
+
+    /// Each dialog with what the user answers it: typing, its buttons,
+    /// Enter and Esc.
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 3] {
+        use crate::widgets::containers::create::types::FormField;
+
+        [
+            (
+                Overlay::SecretPrompt,
+                vec![
+                    quick_launch(QuickLaunchIntent::SecretPromptChanged(
+                        String::from("pw"),
+                    )),
+                    quick_launch(QuickLaunchIntent::SecretPromptSubmit),
+                    quick_launch(QuickLaunchIntent::SecretPromptCancel),
+                ],
+            ),
+            (
+                Overlay::ContainersConfirm,
+                vec![
+                    confirm(ActionsIntent::ConfirmSwitchToggled(true)),
+                    confirm(ActionsIntent::ConfirmAccepted),
+                    confirm(ActionsIntent::ConfirmCancelled),
+                ],
+            ),
+            (
+                Overlay::ContainersCreate,
+                vec![
+                    create(CreateIntent::Changed(
+                        FormField::Name,
+                        String::from("nginx"),
+                    )),
+                    create(CreateIntent::Submitted),
+                    create(CreateIntent::Cancelled),
+                ],
+            ),
+        ]
+    }
+
+    fn is_allowed(dialog: Overlay, event: &AppEvent) -> bool {
+        matches!(dialog_guard(dialog, event), MenuGuard::Allow)
+    }
+
+    #[test]
+    fn a_dialog_lets_its_own_answers_through() {
+        for (dialog, answers) in dialogs_with_answers() {
+            for answer in &answers {
+                assert!(is_allowed(dialog, answer), "{dialog:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_dialog_ignores_the_answers_of_another_dialog() {
+        let all = dialogs_with_answers();
+
+        for (dialog, _) in &all {
+            let others = all.iter().filter(|(other, _)| other != dialog);
+            for (_, answers) in others {
+                for answer in answers {
+                    assert!(!is_allowed(*dialog, answer), "{dialog:?}");
+                }
+            }
+        }
+    }
+
+    /// Scenario 8: a shortcut, a header button, a press outside the dialog
+    /// and a plain key do nothing while a dialog waits for its answer.
+    #[test]
+    fn a_dialog_ignores_shortcuts_app_buttons_and_keys() {
+        let chrome = |intent| AppEvent::Chrome(ChromeEvent::Intent(intent));
+        let events = [
+            AppEvent::Command(AppCommand::ToggleFocusMode),
+            AppEvent::Command(AppCommand::OpenPalette),
+            AppEvent::Command(AppCommand::SelectModeAt { position: 0 }),
+            chrome(ChromeIntent::ToggleLeftPanel),
+            chrome(ChromeIntent::ToggleFilesPanel),
+            chrome(ChromeIntent::ToggleFocusMode),
+            chrome(ChromeIntent::OpenSettings),
+            chrome(ChromeIntent::OpenCommandPalette),
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::ActivateTab {
+                tab_id: 1,
+            })),
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
+                Mode::Terminal,
+            ))),
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::ToggleMenu)),
+            AppEvent::Sidebar(SidebarEvent::Intent(SidebarIntent::ToggleRight)),
+            AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions),
+            )),
+            AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Open)),
+            quick_launch(QuickLaunchIntent::BackgroundPressed),
+            containers(ContainersIntent::SelectRow(0)),
+            confirm(ActionsIntent::Act(RowAction::Stop)),
+            key_press(Key::Character("a".into()), Physical::Code(Code::KeyA)),
+        ];
+
+        for (dialog, _) in dialogs_with_answers() {
+            for event in &events {
+                assert!(!is_allowed(dialog, event), "{dialog:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_dialog_keeps_window_controls_pointer_moves_and_terminal_reports() {
+        let chrome = |intent| AppEvent::Chrome(ChromeEvent::Intent(intent));
+        let events = [
+            chrome(ChromeIntent::ToggleMaximize),
+            chrome(ChromeIntent::MinimizeWindow),
+            chrome(ChromeIntent::CloseWindow),
+            chrome(ChromeIntent::PressTitleBar),
+            chrome(ChromeIntent::MoveOnTitleBar),
+            chrome(ChromeIntent::ReleaseTitleBar),
+            AppEvent::ResizeWindow(iced::window::Direction::East),
+            AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::WorkspaceCursorMoved {
+                    position: iced::Point::ORIGIN,
+                },
+            )),
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::PaneGridCursorMoved {
+                    tab_id: 1,
+                    position: iced::Point::ORIGIN,
+                },
+            )),
+            quick_launch(QuickLaunchIntent::CursorMoved {
+                position: iced::Point::ORIGIN,
+            }),
+            quick_launch(QuickLaunchIntent::NodeHovered {
+                path: vec![String::from("Demo")],
+            }),
+            AppEvent::Explorer(ExplorerEvent::Intent(
+                ExplorerIntent::NodeHovered { path: None },
+            )),
+            terminal_widget_event(otty_ui_term::Event::Redraw { id: 1 }),
+        ];
+
+        for (dialog, _) in dialogs_with_answers() {
+            for event in &events {
+                assert!(is_allowed(dialog, event), "{dialog:?}");
+            }
         }
     }
 
