@@ -12,17 +12,18 @@ pub enum Rule {
     WidgetImportsWiring,
     /// A shared module imports something that is not a shared module.
     SharedImportsOutside,
-    /// A widget lacks a required file, or has no route.
+    /// A widget or a part lacks a required file, or a widget has no route.
     MissingWidgetFile,
     /// `router/` holds a file that is neither a widget route nor the command
     /// route.
     UnexpectedRouterFile,
-    /// A widget module is open or closed against the visibility rule.
+    /// A module of a widget or a part is open or closed against the
+    /// visibility rule.
     WidgetModuleVisibility,
-    /// A widget `mod.rs` re-exports from an open module or from outside the
-    /// widget.
+    /// A widget or part `mod.rs` re-exports from an open module or from
+    /// outside its folder.
     ReexportFromOpenModule,
-    /// A view imports the state of its widget.
+    /// A view imports the state of its widget or of a part.
     ViewImportsState,
     /// `Task` or `Element` in `state.rs` or in a topic file.
     TaskOrElementInPureFile,
@@ -55,11 +56,16 @@ pub enum Rule {
     ViewModelNotFromState,
     /// A route function decides what to do from widget state.
     RouteBranchesOnState,
+    /// A part imports its parent's own modules or `mod.rs` items, or another
+    /// part.
+    PartImportsOutside,
+    /// A part's `reduce` is called outside its parent's `reducer.rs`.
+    PartReduceOutsideParent,
 }
 
 impl Rule {
     /// Every rule, in declaration order, which is also the order of reports.
-    pub const ALL: [Rule; 24] = [
+    pub const ALL: [Rule; 26] = [
         Rule::FileOutsideLayers,
         Rule::WidgetImportsWidget,
         Rule::WidgetImportsWiring,
@@ -84,6 +90,8 @@ impl Rule {
         Rule::ReduceParameterName,
         Rule::ViewModelNotFromState,
         Rule::RouteBranchesOnState,
+        Rule::PartImportsOutside,
+        Rule::PartReduceOutsideParent,
     ];
 
     /// Short, stable name of the rule, used in reports.
@@ -119,6 +127,8 @@ impl Rule {
             Rule::ReduceParameterName => "reduce-parameter-name",
             Rule::ViewModelNotFromState => "view-model-not-from-state",
             Rule::RouteBranchesOnState => "route-branches-on-state",
+            Rule::PartImportsOutside => "part-imports-outside",
+            Rule::PartReduceOutsideParent => "part-reduce-outside-parent",
         }
     }
 
@@ -139,19 +149,19 @@ impl Rule {
                 "A shared module imports only other shared modules and crates, never a widget or the wiring."
             },
             Rule::MissingWidgetFile => {
-                "Every widget has mod.rs, event.rs, state.rs, reducer.rs, model.rs, a view/ folder and a route in router/<widget>.rs."
+                "Every widget has mod.rs, event.rs, state.rs, reducer.rs, model.rs, a view/ folder and a route in router/<widget>.rs, and every part has the same files and folder but no route."
             },
             Rule::UnexpectedRouterFile => {
                 "router/ holds only mod.rs, one route per widget and command.rs."
             },
             Rule::WidgetModuleVisibility => {
-                "In a widget's mod.rs only event, types, view, storage and services are open (pub(crate) mod), event and view always are, and every other module is closed."
+                "In a widget's mod.rs only event, types, view, storage, services and its parts are open (pub(crate) mod), event and view always are, every other module is closed, and a part's mod.rs follows the same rule."
             },
             Rule::ReexportFromOpenModule => {
-                "A widget's mod.rs re-exports only from its closed modules, so every type has exactly one path."
+                "A widget's or a part's mod.rs re-exports only from its closed modules, so every type has exactly one path."
             },
             Rule::ViewImportsState => {
-                "A view never imports its widget's state; it gets its data from the view model."
+                "A view never imports the state of its widget or of a part; it gets its data from the view model."
             },
             Rule::TaskOrElementInPureFile => {
                 "state.rs and topic files hold plain logic, without Task or Element."
@@ -197,6 +207,12 @@ impl Rule {
             },
             Rule::RouteBranchesOnState => {
                 "A route branches only on its intent or effect; decisions from widget state belong to the reducer, which reports them as effects."
+            },
+            Rule::PartImportsOutside => {
+                "A part imports only its own files, its parent's types, errors and topic files, and shared modules, never its parent's state, reducer, event, model, subscription, view, services, storage or mod.rs items, or another part."
+            },
+            Rule::PartReduceOutsideParent => {
+                "A part's reduce is called only by its parent's reducer.rs."
             },
         }
     }
@@ -264,7 +280,7 @@ mod tests {
             );
         }
         assert_eq!(Rule::ALL.first(), Some(&Rule::FileOutsideLayers));
-        assert_eq!(Rule::ALL.last(), Some(&Rule::RouteBranchesOnState));
+        assert_eq!(Rule::ALL.last(), Some(&Rule::PartReduceOutsideParent));
     }
 
     #[test]

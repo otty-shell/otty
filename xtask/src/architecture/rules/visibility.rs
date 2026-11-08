@@ -1,37 +1,56 @@
 //! Rules about what a widget shows outside: which modules are open and what
-//! `mod.rs` re-exports.
+//! `mod.rs` re-exports, in the widget and in each of its parts.
 
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{
-    ALWAYS_OPEN_WIDGET_MODULES, OPEN_WIDGET_MODULES, widget_names,
+    ALWAYS_OPEN_WIDGET_MODULES, OPEN_WIDGET_MODULES, part_names, widget_names,
 };
 use super::super::paths::expand_use;
 use super::super::source::{SourceFile, SourceTree, declared_module};
 use super::super::text::join_statement;
 
-/// Report widget modules that are open or closed against the rule, and
-/// re-exports from open modules or from outside the widget.
+/// How a re-export line of a `mod.rs` starts.
+const REEXPORT_STARTS: &[&str] =
+    &["pub(crate) use ", "pub(super) use ", "pub use "];
+
+/// A module declared in a widget or part `mod.rs`.
+struct Declared {
+    name: String,
+    is_open: bool,
+    line: usize,
+}
+
+/// Report widget and part modules that are open or closed against the
+/// rule, and re-exports from open modules or from outside the folder.
 pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for widget in widget_names(tree) {
-        let Some(root) = tree.file(&format!("widgets/{widget}/mod.rs")) else {
-            continue;
-        };
-        let modules = declared_modules(root);
+        let parts = part_names(tree, &widget);
 
-        findings.extend(module_visibility(root, &modules));
-        findings.extend(reexports(root, &modules));
+        if let Some(root) = tree.file(&format!("widgets/{widget}/mod.rs")) {
+            findings.extend(mod_file(root, &parts));
+        }
+        for part in &parts {
+            let part_root = format!("widgets/{widget}/{part}/mod.rs");
+            if let Some(root) = tree.file(&part_root) {
+                findings.extend(mod_file(root, &[]));
+            }
+        }
     }
 
     findings
 }
 
-/// A module declared in a widget `mod.rs`.
-struct Declared {
-    name: String,
-    is_open: bool,
-    line: usize,
+/// What breaks a rule in one widget or part `mod.rs`, which may also open
+/// the folders in `parts`.
+fn mod_file(root: &SourceFile, parts: &[String]) -> Vec<Finding> {
+    let modules = declared_modules(root);
+
+    let mut findings = module_visibility(root, &modules, parts);
+    findings.extend(reexports(root, &modules));
+
+    findings
 }
 
 /// The modules declared at the top level of `root`.
@@ -51,12 +70,18 @@ fn declared_modules(root: &SourceFile) -> Vec<Declared> {
         .collect()
 }
 
-fn module_visibility(root: &SourceFile, modules: &[Declared]) -> Vec<Finding> {
+fn module_visibility(
+    root: &SourceFile,
+    modules: &[Declared],
+    parts: &[String],
+) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for module in modules {
         let name = module.name.as_str();
-        if module.is_open && !OPEN_WIDGET_MODULES.contains(&name) {
+        let may_be_open = OPEN_WIDGET_MODULES.contains(&name)
+            || parts.iter().any(|part| part == name);
+        if module.is_open && !may_be_open {
             let key = format!("pub(crate) mod {name}");
             findings.push(finding(root, &key, module.line));
         }
@@ -69,8 +94,9 @@ fn module_visibility(root: &SourceFile, modules: &[Declared]) -> Vec<Finding> {
     findings
 }
 
-/// Re-exports from open modules or from outside the widget. A re-export
-/// from a closed module is the only way out for a type such as `XCtx`.
+/// Re-exports from open modules or from outside the folder of `root`. A
+/// re-export from a closed module is the only way out for a type such as
+/// `XCtx`.
 fn reexports(root: &SourceFile, modules: &[Declared]) -> Vec<Finding> {
     let lines = root.lines();
     let mut findings = Vec::new();
@@ -78,8 +104,7 @@ fn reexports(root: &SourceFile, modules: &[Declared]) -> Vec<Finding> {
 
     while index < lines.len() {
         let text = lines[index].text();
-        if !text.starts_with("pub(crate) use ") && !text.starts_with("pub use ")
-        {
+        if !REEXPORT_STARTS.iter().any(|start| text.starts_with(start)) {
             index += 1;
             continue;
         }
@@ -144,6 +169,91 @@ mod tests {
             [
                 pair("widgets/notes/mod.rs", "mod event"),
                 pair("widgets/notes/mod.rs", "pub(crate) mod state"),
+            ]
+        );
+    }
+
+    const PART_EXAMPLE: &str = "pub(crate) mod event;\npub(crate) mod types;\npub(crate) mod view;\n\
+        mod checks;\nmod model;\nmod reducer;\nmod state;\n\n\
+        pub(super) use model::{ImagePanelViewModel, RunFormViewModel};\n\
+        pub(super) use reducer::{RunCtx, RunEngine, RunOutcome, reduce};\n\
+        pub(super) use state::RunState;\n";
+
+    #[test]
+    fn the_example_part_follows_the_rule() {
+        let tree = SourceTree::from_sources(&[
+            (
+                "widgets/containers/mod.rs",
+                "pub(crate) mod event;\npub(crate) mod run;\nmod state;\npub(crate) mod view;\n",
+            ),
+            ("widgets/containers/run/mod.rs", PART_EXAMPLE),
+        ]);
+        let findings = check(&tree);
+
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+
+    #[test]
+    fn a_widget_may_open_its_parts_but_no_other_folder() {
+        let tree = SourceTree::from_sources(&[
+            (
+                "widgets/containers/mod.rs",
+                "pub(crate) mod event;\npub(crate) mod helpers;\npub(crate) mod run;\npub(crate) mod view;\n",
+            ),
+            ("widgets/containers/helpers.rs", ""),
+            ("widgets/containers/run/mod.rs", PART_EXAMPLE),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::WidgetModuleVisibility),
+            [pair("widgets/containers/mod.rs", "pub(crate) mod helpers")]
+        );
+    }
+
+    #[test]
+    fn a_part_mod_file_follows_the_widget_lists() {
+        let tree = SourceTree::from_sources(&[
+            (
+                "widgets/containers/mod.rs",
+                "pub(crate) mod event;\npub(crate) mod run;\npub(crate) mod view;\n",
+            ),
+            (
+                "widgets/containers/run/mod.rs",
+                "mod event;\npub(crate) mod inner;\npub(crate) mod state;\npub(crate) mod view;\n",
+            ),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::WidgetModuleVisibility),
+            [
+                pair("widgets/containers/run/mod.rs", "mod event"),
+                pair("widgets/containers/run/mod.rs", "pub(crate) mod inner"),
+                pair("widgets/containers/run/mod.rs", "pub(crate) mod state"),
+            ]
+        );
+    }
+
+    #[test]
+    fn re_exports_of_a_part_come_from_its_closed_modules() {
+        let tree = SourceTree::from_sources(&[
+            (
+                "widgets/containers/mod.rs",
+                "pub(crate) mod event;\npub(crate) mod run;\npub(crate) mod view;\n",
+            ),
+            (
+                "widgets/containers/run/mod.rs",
+                "pub(crate) mod event;\nmod model;\npub(crate) mod view;\n\
+                 pub(super) use model::RunFormViewModel;\n\
+                 pub(super) use event::RunIntent;\n\
+                 pub(super) use super::types::Place;\n",
+            ),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::ReexportFromOpenModule),
+            [
+                pair("widgets/containers/run/mod.rs", "event"),
+                pair("widgets/containers/run/mod.rs", "super::types::Place"),
             ]
         );
     }

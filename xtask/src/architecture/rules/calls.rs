@@ -1,6 +1,7 @@
 //! Rules about who calls routes and reducers.
 
 use super::super::finding::{Finding, Rule};
+use super::super::layout::{part_names, widget_names};
 use super::super::source::{SourceFile, SourceTree};
 use super::super::text::is_ident_char;
 
@@ -8,8 +9,10 @@ use super::super::text::is_ident_char;
 /// route, and `update.rs` routes input.
 const ROUTE_CALLERS: &[&str] = &["router/mod.rs", "update.rs"];
 
-/// Report direct route calls and `reduce` calls outside a widget's route.
+/// Report direct route calls, `reduce` calls outside a widget's route and
+/// `reduce` calls of a part outside its parent's `reducer.rs`.
 pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
+    let parts = all_parts(tree);
     let mut findings = Vec::new();
 
     for file in tree.files() {
@@ -17,9 +20,22 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
             findings.extend(route_calls(file));
         }
         findings.extend(reduce_calls(file));
+        findings.extend(part_reduce_calls(file, &parts));
     }
 
     findings
+}
+
+/// The parts of every widget of `tree`, as `(widget, part)` pairs.
+fn all_parts(tree: &SourceTree) -> Vec<(String, String)> {
+    widget_names(tree)
+        .into_iter()
+        .flat_map(|widget| {
+            part_names(tree, &widget)
+                .into_iter()
+                .map(move |part| (widget.clone(), part))
+        })
+        .collect()
 }
 
 fn route_calls(file: &SourceFile) -> Vec<Finding> {
@@ -103,6 +119,44 @@ fn reduce_calls(file: &SourceFile) -> Vec<Finding> {
     findings
 }
 
+/// Calls `<part>::reduce(` of one of the `(widget, part)` pairs in `parts`
+/// anywhere but in the `reducer.rs` of the part's widget.
+fn part_reduce_calls(
+    file: &SourceFile,
+    parts: &[(String, String)],
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    for line in file.lines() {
+        let text = line.text();
+        let mut from = 0;
+        while let Some(found) = text[from..].find("::reduce(") {
+            let at = from + found;
+            from = at + "::reduce(".len();
+
+            let callee = path_before(&text[..at]);
+            let name = callee.rsplit("::").next().unwrap_or(callee);
+            let is_part = parts.iter().any(|(_, part)| part == name);
+            let in_parent_reducer = parts.iter().any(|(widget, part)| {
+                part == name
+                    && file.path() == format!("widgets/{widget}/reducer.rs")
+            });
+            if !is_part || in_parent_reducer {
+                continue;
+            }
+
+            findings.push(Finding::new(
+                Rule::PartReduceOutsideParent,
+                file.path(),
+                &format!("{callee}::reduce"),
+                line.number(),
+            ));
+        }
+    }
+
+    findings
+}
+
 /// `tabs` when `before` ends with `widgets.tabs`.
 fn widget_before(before: &str) -> Option<&str> {
     let start = before
@@ -159,6 +213,42 @@ mod tests {
         assert_eq!(
             found(&check(&tree), Rule::ReduceCalledOutsideRoute),
             [pair("router/palette.rs", "tabs"), pair("update.rs", "tabs")]
+        );
+    }
+
+    #[test]
+    fn only_the_parent_reducer_calls_the_reduce_of_a_part() {
+        let tree = SourceTree::from_sources(&[
+            (
+                "widgets/containers/mod.rs",
+                "reducer::reduce(&mut self.state, intent)\n",
+            ),
+            ("widgets/containers/run/mod.rs", ""),
+            (
+                "widgets/containers/reducer.rs",
+                "let (effects, outcome) = run::reduce(run, intent, &ctx);\n",
+            ),
+            (
+                "widgets/containers/view/main_area.rs",
+                "let _ = run::reduce(run, intent, &ctx);\n",
+            ),
+            (
+                "router/containers.rs",
+                "let _ = containers::run::reduce(run, intent, &ctx);\n",
+            ),
+            (
+                "widgets/notes/reducer.rs",
+                "let _ = run::reduce(run, intent, &ctx);\n",
+            ),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::PartReduceOutsideParent),
+            [
+                pair("router/containers.rs", "containers::run::reduce"),
+                pair("widgets/containers/view/main_area.rs", "run::reduce"),
+                pair("widgets/notes/reducer.rs", "run::reduce"),
+            ]
         );
     }
 }

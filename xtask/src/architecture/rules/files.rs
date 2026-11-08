@@ -1,8 +1,10 @@
-//! Rules about which files exist: layers, the files of a widget, the files
-//! of `router/` and the screen file of every mode.
+//! Rules about which files exist: layers, the files of a widget and of its
+//! parts, the files of `router/` and the screen file of every mode.
 
 use super::super::finding::{Finding, Rule};
-use super::super::layout::{REQUIRED_WIDGET_FILES, layer_of, widget_names};
+use super::super::layout::{
+    REQUIRED_WIDGET_FILES, layer_of, part_names, widget_names,
+};
 use super::super::source::{Line, SourceTree};
 
 /// The file that defines the modes.
@@ -36,32 +38,19 @@ fn files_outside_layers(tree: &SourceTree) -> Vec<Finding> {
         .collect()
 }
 
+/// The required files, `view/` and route of every widget, and the required
+/// files and `view/` of every part, keyed `<widget>/<part>`.
 fn missing_widget_files(tree: &SourceTree, widgets: &[String]) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for widget in widgets {
         let dir = format!("widgets/{widget}");
-        for name in REQUIRED_WIDGET_FILES {
-            let path = format!("{dir}/{name}");
-            if tree.file(&path).is_none() {
-                findings.push(Finding::new(
-                    Rule::MissingWidgetFile,
-                    &path,
-                    widget,
-                    0,
-                ));
-            }
-        }
+        findings.extend(missing_files(tree, &dir, widget));
 
-        let view_dir = format!("{dir}/view");
-        if !tree.has_dir(&view_dir) {
-            let missing = format!("{view_dir}/");
-            findings.push(Finding::new(
-                Rule::MissingWidgetFile,
-                &missing,
-                widget,
-                0,
-            ));
+        for part in part_names(tree, widget) {
+            let part_dir = format!("{dir}/{part}");
+            let key = format!("{widget}/{part}");
+            findings.extend(missing_files(tree, &part_dir, &key));
         }
 
         let route = format!("router/{widget}.rs");
@@ -73,6 +62,26 @@ fn missing_widget_files(tree: &SourceTree, widgets: &[String]) -> Vec<Finding> {
                 0,
             ));
         }
+    }
+
+    findings
+}
+
+/// The required files and the `view/` folder that `dir` lacks.
+fn missing_files(tree: &SourceTree, dir: &str, key: &str) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    for name in REQUIRED_WIDGET_FILES {
+        let path = format!("{dir}/{name}");
+        if tree.file(&path).is_none() {
+            findings.push(Finding::new(Rule::MissingWidgetFile, &path, key, 0));
+        }
+    }
+
+    let view_dir = format!("{dir}/view");
+    if !tree.has_dir(&view_dir) {
+        let missing = format!("{view_dir}/");
+        findings.push(Finding::new(Rule::MissingWidgetFile, &missing, key, 0));
     }
 
     findings
@@ -212,6 +221,46 @@ mod tests {
         assert_eq!(
             found(&check(&tree), Rule::MissingWidgetFile),
             [pair("widgets/notes/view/", "notes")]
+        );
+    }
+
+    #[test]
+    fn a_complete_part_has_no_missing_files_and_needs_no_route() {
+        let mut sources = COMPLETE_WIDGET.to_vec();
+        sources.extend_from_slice(&[
+            ("widgets/notes/editor/mod.rs", ""),
+            ("widgets/notes/editor/event.rs", ""),
+            ("widgets/notes/editor/state.rs", ""),
+            ("widgets/notes/editor/reducer.rs", ""),
+            ("widgets/notes/editor/model.rs", ""),
+            ("widgets/notes/editor/view/mod.rs", ""),
+        ]);
+        let tree = SourceTree::from_sources(&sources);
+
+        let findings = check(&tree);
+
+        assert!(found(&findings, Rule::MissingWidgetFile).is_empty());
+        assert!(found(&findings, Rule::UnexpectedRouterFile).is_empty());
+    }
+
+    #[test]
+    fn a_part_lacking_a_file_or_its_view_folder_is_reported() {
+        let mut sources = COMPLETE_WIDGET.to_vec();
+        sources.extend_from_slice(&[
+            ("widgets/notes/editor/mod.rs", ""),
+            ("widgets/notes/editor/event.rs", ""),
+            ("widgets/notes/editor/reducer.rs", ""),
+            ("widgets/notes/editor/model.rs", ""),
+            ("widgets/notes/editor/view.rs", ""),
+        ]);
+        let tree = SourceTree::from_sources(&sources);
+
+        assert_eq!(
+            found(&check(&tree), Rule::MissingWidgetFile),
+            [
+                pair("widgets/notes/editor/state.rs", "notes/editor"),
+                pair("widgets/notes/editor/view/", "notes/editor"),
+            ]
         );
     }
 

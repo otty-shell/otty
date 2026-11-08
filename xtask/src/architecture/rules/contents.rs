@@ -27,7 +27,7 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         let Some(Layer::Widget(widget)) = layer_of(file.path()) else {
             continue;
         };
-        if is_pure_file(file, &widget) {
+        if is_pure_file(tree, file, &widget) {
             findings.extend(task_or_element(file));
         }
         match file.name() {
@@ -44,9 +44,10 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     findings
 }
 
-/// `state.rs` and topic files: plain logic, without `Task` and `Element`.
-fn is_pure_file(file: &SourceFile, widget: &str) -> bool {
-    if is_view_file(file.path(), widget) {
+/// `state.rs` and topic files, of a widget or of a part: plain logic,
+/// without `Task` and `Element`.
+fn is_pure_file(tree: &SourceTree, file: &SourceFile, widget: &str) -> bool {
+    if is_view_file(tree, file.path(), widget) {
         return false;
     }
 
@@ -229,6 +230,83 @@ mod tests {
                 pair("widgets/notes/sort.rs", "Element"),
                 pair("widgets/notes/state.rs", "Task"),
             ]
+        );
+    }
+
+    #[test]
+    fn a_part_view_may_build_elements_but_its_state_and_topic_files_may_not() {
+        let tree = SourceTree::from_sources(&[
+            ("widgets/containers/mod.rs", ""),
+            ("widgets/containers/run/mod.rs", ""),
+            (
+                "widgets/containers/run/view/run_form.rs",
+                "fn view() -> Element<'_, RunIntent> {}\n",
+            ),
+            (
+                "widgets/containers/run/view.rs",
+                "fn panel() -> Element<'_, RunIntent> {}\n",
+            ),
+            (
+                "widgets/containers/run/reducer.rs",
+                "fn reduce() -> Task<RunEffect> {}\n",
+            ),
+            (
+                "widgets/containers/run/state.rs",
+                "fn a() -> Element<X> {}\n",
+            ),
+            ("widgets/containers/run/checks.rs", "fn b() -> Task<X> {}\n"),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::TaskOrElementInPureFile),
+            [
+                pair("widgets/containers/run/checks.rs", "Task"),
+                pair("widgets/containers/run/state.rs", "Element"),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_rules_for_reducer_event_model_and_ctx_apply_to_part_files() {
+        let tree = SourceTree::from_sources(&[
+            ("widgets/containers/mod.rs", ""),
+            ("widgets/containers/run/mod.rs", ""),
+            (
+                "widgets/containers/run/reducer.rs",
+                "use iced::Task;\npub(crate) struct RunCtx<'a> {\n}\n",
+            ),
+            (
+                "widgets/containers/run/event.rs",
+                "pub(crate) enum RunIntent {\n}\npub(crate) enum RunEffect {\n}\n\
+                 pub(crate) struct RunEdit {\n}\n",
+            ),
+            (
+                "widgets/containers/run/model.rs",
+                "fn bad(state: &mut RunState) {}\n",
+            ),
+            (
+                "widgets/containers/run/state.rs",
+                "pub(crate) struct RunCtx {\n}\n",
+            ),
+        ]);
+
+        let findings = check(&tree);
+
+        assert_eq!(
+            found(&findings, Rule::ReducerWithoutForbid),
+            [pair("widgets/containers/run/reducer.rs", "forbid")]
+        );
+        assert_eq!(
+            found(&findings, Rule::ForeignTypeInEventFile),
+            [pair("widgets/containers/run/event.rs", "RunEdit")]
+        );
+        assert_eq!(
+            found(&findings, Rule::ModelTakesMutState),
+            [pair("widgets/containers/run/model.rs", "RunState")]
+        );
+        assert_eq!(
+            found(&findings, Rule::CtxOutsideReducer),
+            [pair("widgets/containers/run/state.rs", "RunCtx")]
         );
     }
 
