@@ -8,7 +8,8 @@ members = [
     "crates/surface",
     "crates/libterm",
     "crates/containers",
-    "crates/ui/*"
+    "crates/ui/*",
+    "xtask"
 ]
 
 [workspace.package]

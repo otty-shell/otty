@@ -3527,6 +3527,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "otty-xtask"
+version = "0.1.0"
+
+[[package]]
 name = "ouroboros"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
