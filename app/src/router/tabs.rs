@@ -226,6 +226,9 @@ mod tests {
     use crate::domain::quick_launch::WizardTabInit;
     use crate::router::AppEvent;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::testing::window::{
+        open_launch_editor, open_launch_editor_intent,
+    };
     use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::event::{ModesEvent, ModesIntent};
     use crate::widgets::quick_launch::event::{
@@ -435,21 +438,14 @@ mod tests {
     }
 
     #[test]
-    fn given_settings_tab_when_activated_then_explorer_keeps_its_folder() {
+    fn given_launch_editor_tab_when_activated_then_explorer_keeps_its_folder() {
         let (mut app, _) = App::new();
         let _shell_id = open_shell_tab_in(&mut app, "/tmp/otty-first");
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
-        let settings_id = app
-            .widgets
-            .tabs
-            .active_tab_id()
-            .expect("settings tab should open");
+        let editor_id = open_launch_editor(&mut app);
 
         let events = route_intent(
             &mut app,
-            TabsIntent::ActivateTab {
-                tab_id: settings_id,
-            },
+            TabsIntent::ActivateTab { tab_id: editor_id },
         );
 
         assert!(explorer_roots(&events).is_empty());
@@ -642,17 +638,23 @@ mod tests {
     {
         let mut app = App::new().0;
         let intents = [
-            TabsIntent::OpenSettingsTab,
-            TabsIntent::OpenSettingsTab,
+            open_launch_editor_intent(),
             TabsIntent::OpenTerminalTab,
             open_command_tab_intent(),
         ];
+        let mut first_id = None;
 
         for intent in intents {
             let events = route_intent(&mut app, intent);
+            first_id = first_id.or(app.widgets.tabs.active_tab_id());
 
             assert_eq!(tabs_shown(&events), 1);
         }
+        let tab_id = first_id.expect("the launch editor should open");
+        let activated =
+            route_intent(&mut app, TabsIntent::ActivateTab { tab_id });
+
+        assert_eq!(tabs_shown(&activated), 1);
     }
 
     #[test]

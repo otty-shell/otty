@@ -252,7 +252,9 @@ mod tests {
     use crate::testing::task_outputs::{
         collect_outputs, runs_widget_operation,
     };
-    use crate::testing::window::{app_in, containers_app_with_lists};
+    use crate::testing::window::{
+        app_in, containers_app_with_lists, open_launch_editor_intent,
+    };
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::actions::types::RowAction;
     use crate::widgets::containers::event::ContainersEffect;
@@ -976,7 +978,7 @@ mod tests {
             .reduce(ModesIntent::Select(Mode::Containers));
         let _ = app.widgets.modes.reduce(ModesIntent::ToggleMenu);
 
-        internal_to_the_end(&mut app, tabs_intent(TabsIntent::OpenSettingsTab));
+        internal_to_the_end(&mut app, tabs_intent(open_launch_editor_intent()));
 
         assert_eq!(app.widgets.tabs.len(), 1);
         assert_eq!(app.widgets.modes.active(), Mode::Terminal);

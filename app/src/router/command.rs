@@ -107,11 +107,8 @@ mod tests {
     use super::*;
     use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::testing::window::open_launch_editor;
     use crate::widgets::modes::ModesWidget;
-    use crate::widgets::tabs::TabsCtx;
-
-    /// Context the tests reduce tabs intents with.
-    const SH: TabsCtx<'static> = TabsCtx { shell_name: "sh" };
 
     fn run(app: &App, command: AppCommand) -> Vec<AppEvent> {
         collect_outputs(route(app, command))
@@ -203,7 +200,7 @@ mod tests {
     #[test]
     fn close_session_closes_the_active_tab() {
         let mut app = first_start_app();
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
+        let _ = open_launch_editor(&mut app);
 
         let events = run(&app, AppCommand::CloseSession);
 
@@ -242,7 +239,7 @@ mod tests {
     #[test]
     fn split_pane_without_a_terminal_tab_does_nothing() {
         let mut app = first_start_app();
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
+        let _ = open_launch_editor(&mut app);
 
         let events = run(&app, AppCommand::SplitPane);
 
@@ -346,8 +343,8 @@ mod tests {
     fn the_command_context_reads_the_mode_the_active_tab_and_its_pane() {
         let mut app = first_start_app();
         let without_tabs = command_ctx(&app);
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
-        let with_settings = command_ctx(&app);
+        let _ = open_launch_editor(&mut app);
+        let with_launch_editor = command_ctx(&app);
         let _ = open_shell_tab(&mut app);
         let with_shell = command_ctx(&app);
         switch_to_containers(&mut app);
@@ -362,7 +359,7 @@ mod tests {
             }
         );
         assert_eq!(
-            with_settings,
+            with_launch_editor,
             CommandCtx {
                 is_terminal_mode: true,
                 has_active_tab: true,

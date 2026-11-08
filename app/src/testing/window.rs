@@ -248,17 +248,23 @@ pub(crate) fn open_settings(app: &mut App) -> u64 {
     app.widgets.tabs.active_tab_id().expect("the form's tab")
 }
 
+/// The intent that opens a new, empty launch editor: a tab that is no
+/// terminal.
+pub(crate) fn open_launch_editor_intent() -> TabsIntent {
+    TabsIntent::OpenWizardTab {
+        title: String::from("New launch"),
+        init: crate::domain::quick_launch::WizardTabInit::Create {
+            parent_path: Vec::new(),
+        },
+    }
+}
+
 /// Opens a launch editor as a tab, its state in place, and returns its id.
 pub(crate) fn open_launch_editor(app: &mut App) -> u64 {
-    let _ = app.widgets.tabs.reduce(
-        TabsIntent::OpenWizardTab {
-            title: String::from("New launch"),
-            init: crate::domain::quick_launch::WizardTabInit::Create {
-                parent_path: Vec::new(),
-            },
-        },
-        &TabsCtx { shell_name: "sh" },
-    );
+    let _ = app
+        .widgets
+        .tabs
+        .reduce(open_launch_editor_intent(), &TabsCtx { shell_name: "sh" });
     let tab_id = app.widgets.tabs.active_tab_id().expect("the form's tab");
     reduce_quick_launch(
         app,

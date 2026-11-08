@@ -243,8 +243,8 @@ mod tests {
             (
                 2,
                 TabItem::new(
-                    String::from("Settings"),
-                    TabContent::Settings,
+                    String::from("New launch"),
+                    TabContent::QuickLaunchWizard,
                     TabMachine::ThisComputer,
                 ),
             ),
@@ -370,7 +370,7 @@ mod tests {
         assert!(ui.find("this computer").is_ok());
         assert!(ui.find("laptop").is_ok());
         assert!(ui.find("ssh").is_ok());
-        assert!(ui.find("settings").is_ok());
+        assert!(ui.find("editor").is_ok());
     }
 
     #[test]

@@ -325,9 +325,9 @@ mod tests {
     }
 
     #[test]
-    fn settings_and_the_no_engine_card_do_not_share_their_scrolling() {
+    fn a_launch_editor_and_the_no_engine_card_do_not_share_their_scrolling() {
         let mut app = app_with_card(denied_podman_search());
-        let _ = open_settings(&mut app);
+        let _ = open_launch_editor(&mut app);
         let select = |app: &mut App, mode: Mode| {
             let _ = app.widgets.modes.reduce(ModesIntent::Select(mode));
         };

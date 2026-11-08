@@ -77,6 +77,7 @@ fn save_pinned(pinned: Vec<Mode>) -> Task<AppEvent> {
 mod tests {
     use super::*;
     use crate::testing::task_outputs::{collect_outputs, focuses_nothing};
+    use crate::testing::window::open_launch_editor_intent;
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::event::ModesIntent;
     use crate::widgets::tabs::TabsCtx;
@@ -201,7 +202,7 @@ mod tests {
     fn switching_to_containers_and_back_keeps_the_tabs_and_the_active_tab() {
         let mut app = app();
         let ctx = TabsCtx { shell_name: "sh" };
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &ctx);
+        let _ = app.widgets.tabs.reduce(open_launch_editor_intent(), &ctx);
         let _ = app.widgets.tabs.reduce(TabsIntent::OpenTerminalTab, &ctx);
         let tab_count = app.widgets.tabs.len();
         let active_tab = app.widgets.tabs.active_tab_id();

@@ -155,14 +155,12 @@ mod tests {
     use super::*;
     use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::testing::window::open_launch_editor;
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::event::ModesIntent;
     use crate::widgets::tabs::{
-        SessionListGroupViewModel, SessionListRowViewModel, TabsCtx,
+        SessionListGroupViewModel, SessionListRowViewModel,
     };
-
-    /// Context the tests reduce tabs intents with.
-    const SH: TabsCtx<'static> = TabsCtx { shell_name: "sh" };
 
     fn run(app: &mut App, target: PaletteTarget) -> Vec<AppEvent> {
         collect_outputs(route(
@@ -314,20 +312,13 @@ mod tests {
     #[test]
     fn opening_lists_the_open_tabs_from_the_tabs_widget() {
         let (mut app, _) = App::new();
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
-        let settings_tab = app
-            .widgets
-            .tabs
-            .active_tab_id()
-            .expect("settings tab should be active");
+        let editor_tab = open_launch_editor(&mut app);
 
         let _ = route(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
 
         let vm = app.widgets.palette.vm().expect("palette should be open");
         assert!(vm.list.matches().any(|(item, _)| *item.key()
-            == PaletteTarget::Session {
-                tab_id: settings_tab
-            }));
+            == PaletteTarget::Session { tab_id: editor_tab }));
     }
 
     #[test]

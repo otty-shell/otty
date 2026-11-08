@@ -656,14 +656,10 @@ mod tests {
         let _ = frames.frame(&app, None);
         let card_scrolled = frames.frame(&app, scroll_main_area());
 
-        let _ = app
-            .widgets
-            .tabs
-            .reduce(TabsIntent::OpenSettingsTab, &tabs_ctx);
+        let tab_id = open_launch_editor(&mut app);
         let form_opened = frames.frame(&app, None);
         let form_scrolled = frames.frame(&app, scroll_main_area());
 
-        let tab_id = app.widgets.tabs.active_tab_id().expect("the form's tab");
         let _ = app
             .widgets
             .tabs
@@ -948,7 +944,7 @@ mod tests {
             &tabs_ctx,
         );
         // Another tab is active, so "deploy" shows only in its row.
-        let _ = open_settings(&mut app);
+        let _ = open_launch_editor(&mut app);
         open_header_menu_at(
             &mut app,
             HeaderMenu::Sessions,
