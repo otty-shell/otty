@@ -92,17 +92,9 @@ impl Allowed {
 }
 
 /// Every accepted place in `app/src`.
-pub const ALLOWLIST: &[Allowed] = &[
-    Allowed::exception(
-        Rule::RouteBranchesOnState,
-        "router/command.rs",
-        "route",
-        "a command belongs to no widget: the pure AppCommand::is_available, which the palette list shares, decides whether it runs, and the route only asks it (reviewed by the owner)",
-    ),
-    Allowed::known(
-        Rule::RouteBranchesOnState,
-        "router/modes.rs",
-        "focus_after_menu_change",
-        "decides focus from the menu state before and after reduce; the reducer should report the menu opening and closing as effects (overlays and focus topic)",
-    ),
-];
+pub const ALLOWLIST: &[Allowed] = &[Allowed::exception(
+    Rule::RouteBranchesOnState,
+    "router/command.rs",
+    "route",
+    "a command belongs to no widget: the pure AppCommand::is_available, which the palette list shares, decides whether it runs, and the route only asks it (reviewed by the owner)",
+)];

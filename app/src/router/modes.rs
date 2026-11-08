@@ -1,7 +1,7 @@
 //! Routes the modes widget: reduces its intents and runs its effects.
-//! Saving the pinned modes and moving keyboard focus around the All modes
-//! menu happen here, off the reducer. A mode change also tells the Containers
-//! widget whether it may talk to the engines (spec Decision 14).
+//! Saving the pinned modes and moving keyboard focus when the All modes menu
+//! opens or closes happen here, off the reducer. A mode change also tells the
+//! Containers widget whether it may talk to the engines (spec Decision 14).
 
 use iced::Task;
 use iced::widget::{Id, operation};
@@ -24,12 +24,7 @@ const NO_WIDGET_ID: &str = "modes_menu_no_widget";
 pub(crate) fn route(app: &mut App, event: ModesEvent) -> Task<AppEvent> {
     match event {
         ModesEvent::Intent(intent) => {
-            let was_menu_open = app.widgets.modes.is_menu_open();
-
-            let reduced = app.widgets.modes.reduce(intent).map(AppEvent::Modes);
-
-            let focus = focus_after_menu_change(app, was_menu_open);
-            Task::batch([reduced, focus])
+            app.widgets.modes.reduce(intent).map(AppEvent::Modes)
         },
         ModesEvent::Effect(effect) => handle_effect(effect),
     }
@@ -51,29 +46,14 @@ fn handle_effect(effect: ModesEffect) -> Task<AppEvent> {
             containers(ContainersIntent::Enter)
         },
         ModesEffect::SavePinned(pinned) => save_pinned(pinned),
+        // An open menu takes focus from the terminal, so typed keys do not
+        // reach the shell and Esc reaches the app, which closes the menu.
+        ModesEffect::MenuOpened => operation::focus(Id::new(NO_WIDGET_ID)),
+        // Once the menu closes in Terminal mode, the active pane gets its
+        // keys back. In another mode nothing takes the keyboard.
+        ModesEffect::MenuClosed(Mode::Terminal) => focus_active_terminal(),
+        ModesEffect::MenuClosed(_) => Task::none(),
     }
-}
-
-/// Move keyboard focus when the All modes menu opened or closed.
-///
-/// An open menu takes focus from the terminal, so typed keys do not reach
-/// the shell and Esc reaches the app, which closes the menu. Once the menu
-/// closes in Terminal mode, the active pane gets its keys back.
-fn focus_after_menu_change(app: &App, was_menu_open: bool) -> Task<AppEvent> {
-    let is_menu_open = app.widgets.modes.is_menu_open();
-
-    if is_menu_open && !was_menu_open {
-        return operation::focus(Id::new(NO_WIDGET_ID));
-    }
-
-    if was_menu_open
-        && !is_menu_open
-        && app.widgets.modes.active() == Mode::Terminal
-    {
-        return focus_active_terminal();
-    }
-
-    Task::none()
 }
 
 fn containers(intent: ContainersIntent) -> Task<AppEvent> {
@@ -100,7 +80,9 @@ fn save_pinned(pinned: Vec<Mode>) -> Task<AppEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::{
+        collect_outputs, runs_widget_operation,
+    };
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::event::ModesIntent;
     use crate::widgets::tabs::TabsCtx;
@@ -255,58 +237,38 @@ mod tests {
     }
 
     #[test]
-    fn opening_the_menu_reports_nothing_else() {
+    fn a_menu_opened_effect_takes_the_keyboard_focus() {
+        let mut app = app();
+
+        let task = route(&mut app, ModesEvent::Effect(ModesEffect::MenuOpened));
+
+        assert!(runs_widget_operation(task));
+    }
+
+    #[test]
+    fn a_menu_closed_in_terminal_mode_gives_the_active_pane_its_keys_back() {
         let mut app = app();
 
         let events = collect_outputs(route(
             &mut app,
-            ModesEvent::Intent(ModesIntent::ToggleMenu),
+            ModesEvent::Effect(ModesEffect::MenuClosed(Mode::Terminal)),
         ));
 
-        assert!(app.widgets.modes.is_menu_open());
-        assert!(events.is_empty());
+        assert_eq!(events.len(), 1);
+        assert!(focuses_the_active_pane(&events[0]));
     }
 
+    /// Variant A: after an overlay closes in Containers mode, nothing has the
+    /// keyboard.
     #[test]
-    fn closing_the_menu_in_terminal_mode_gives_the_terminal_its_keys_back() {
+    fn a_menu_closed_in_containers_mode_focuses_nothing() {
         let mut app = app();
-        let _ = route(&mut app, ModesEvent::Intent(ModesIntent::ToggleMenu));
 
-        let events = collect_outputs(route(
+        let task = route(
             &mut app,
-            ModesEvent::Intent(ModesIntent::CloseMenu),
-        ));
-
-        assert!(!app.widgets.modes.is_menu_open());
-        assert!(events.iter().any(focuses_the_active_pane));
-    }
-
-    #[test]
-    fn closing_the_menu_in_containers_mode_focuses_nothing() {
-        let mut app = app();
-        let _ = route(
-            &mut app,
-            ModesEvent::Intent(ModesIntent::Select(Mode::Containers)),
+            ModesEvent::Effect(ModesEffect::MenuClosed(Mode::Containers)),
         );
-        let _ = route(&mut app, ModesEvent::Intent(ModesIntent::ToggleMenu));
 
-        let events = collect_outputs(route(
-            &mut app,
-            ModesEvent::Intent(ModesIntent::CloseMenu),
-        ));
-
-        assert!(events.is_empty());
-    }
-
-    #[test]
-    fn closing_a_closed_menu_focuses_nothing() {
-        let mut app = app();
-
-        let events = collect_outputs(route(
-            &mut app,
-            ModesEvent::Intent(ModesIntent::CloseMenu),
-        ));
-
-        assert!(events.is_empty());
+        assert_eq!(task.units(), 0);
     }
 }

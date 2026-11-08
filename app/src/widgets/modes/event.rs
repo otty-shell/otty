@@ -34,6 +34,12 @@ pub(crate) enum ModesEffect {
     ModeChanged(Mode),
     /// The pinned list changed; save it to `modes.json` in this order.
     SavePinned(Vec<Mode>),
+    /// The All modes menu opened. It takes the keyboard from the terminal,
+    /// so typed keys do not reach the shell and Esc reaches the app.
+    MenuOpened,
+    /// The All modes menu closed while this mode is active. Back in Terminal
+    /// mode the active pane gets its keys back.
+    MenuClosed(Mode),
 }
 
 /// Modes event stream routed through the app update loop.

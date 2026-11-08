@@ -8,8 +8,23 @@ use crate::domain::mode::Mode;
 
 /// Reduce a modes intent into state changes and effects. Switching mode
 /// reports [`ModesEffect::ModeChanged`]; pinning and unpinning report
-/// [`ModesEffect::SavePinned`]. The reducer does no I/O.
+/// [`ModesEffect::SavePinned`]; the menu opening and closing report
+/// [`ModesEffect::MenuOpened`] and [`ModesEffect::MenuClosed`], before the
+/// switch the closing came with. The reducer does no I/O.
 pub(super) fn reduce(
+    state: &mut ModesState,
+    intent: ModesIntent,
+) -> Task<ModesEvent> {
+    let was_menu_open = state.is_menu_open();
+
+    let task = reduce_intent(state, intent);
+
+    Task::batch([menu_change(state, was_menu_open), task])
+}
+
+/// Change the state for `intent` and return its effects, all but the menu
+/// change.
+fn reduce_intent(
     state: &mut ModesState,
     intent: ModesIntent,
 ) -> Task<ModesEvent> {
@@ -62,6 +77,15 @@ fn show_terminal_for_a_tab(state: &mut ModesState) -> Task<ModesEvent> {
     }
 
     select(state, Mode::Terminal)
+}
+
+/// Report the menu opening or closing, when the intent changed it.
+fn menu_change(state: &ModesState, was_menu_open: bool) -> Task<ModesEvent> {
+    match (was_menu_open, state.is_menu_open()) {
+        (false, true) => effect(ModesEffect::MenuOpened),
+        (true, false) => effect(ModesEffect::MenuClosed(state.active())),
+        _ => Task::none(),
+    }
 }
 
 /// Ask the app to save the pinned list as it is now.
@@ -172,32 +196,74 @@ mod tests {
     }
 
     #[test]
-    fn toggle_opens_and_closes_the_menu_without_effects() {
+    fn opening_the_menu_reports_it() {
         let mut state = ModesState::default();
 
-        let opened = effects(&mut state, ModesIntent::ToggleMenu);
-        let was_open = state.is_menu_open();
-        let closed = effects(&mut state, ModesIntent::ToggleMenu);
+        let effects = effects(&mut state, ModesIntent::ToggleMenu);
 
-        assert!(was_open);
-        assert!(!state.is_menu_open());
-        assert!(opened.is_empty());
-        assert!(closed.is_empty());
+        assert!(state.is_menu_open());
+        assert_eq!(effects, vec![ModesEffect::MenuOpened]);
     }
 
     #[test]
-    fn close_menu_closes_an_open_menu_and_keeps_a_closed_one_closed() {
+    fn closing_the_menu_reports_it_with_the_active_mode() {
+        let mut state = ModesState::default();
+        let _ = effects(&mut state, ModesIntent::ToggleMenu);
+        let toggled = effects(&mut state, ModesIntent::ToggleMenu);
+        let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
+        let _ = effects(&mut state, ModesIntent::ToggleMenu);
+
+        let closed = effects(&mut state, ModesIntent::CloseMenu);
+
+        assert!(!state.is_menu_open());
+        assert_eq!(toggled, vec![ModesEffect::MenuClosed(Mode::Terminal)]);
+        assert_eq!(closed, vec![ModesEffect::MenuClosed(Mode::Containers)]);
+    }
+
+    #[test]
+    fn closing_a_closed_menu_reports_nothing() {
+        let mut state = ModesState::default();
+
+        let effects = effects(&mut state, ModesIntent::CloseMenu);
+
+        assert!(!state.is_menu_open());
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn choosing_a_mode_in_the_open_menu_reports_its_closing_and_the_switch() {
+        let mut state = ModesState::default();
+        let _ = effects(&mut state, ModesIntent::ToggleMenu);
+        let switched =
+            effects(&mut state, ModesIntent::Select(Mode::Containers));
+        let _ = effects(&mut state, ModesIntent::ToggleMenu);
+
+        let kept = effects(&mut state, ModesIntent::Select(Mode::Containers));
+
+        assert_eq!(
+            switched,
+            vec![
+                ModesEffect::MenuClosed(Mode::Containers),
+                ModesEffect::ModeChanged(Mode::Containers),
+            ]
+        );
+        assert_eq!(kept, vec![ModesEffect::MenuClosed(Mode::Containers)]);
+    }
+
+    #[test]
+    fn pin_and_unpin_report_no_menu_change() {
         let mut state = ModesState::default();
         let _ = effects(&mut state, ModesIntent::ToggleMenu);
 
-        let first = effects(&mut state, ModesIntent::CloseMenu);
-        let was_open = state.is_menu_open();
-        let second = effects(&mut state, ModesIntent::CloseMenu);
+        let unpinned =
+            effects(&mut state, ModesIntent::Unpin(Mode::Containers));
+        let pinned = effects(&mut state, ModesIntent::Pin(Mode::Containers));
 
-        assert!(!was_open);
-        assert!(!state.is_menu_open());
-        assert!(first.is_empty());
-        assert!(second.is_empty());
+        assert_eq!(unpinned, vec![ModesEffect::SavePinned(Vec::new())]);
+        assert_eq!(
+            pinned,
+            vec![ModesEffect::SavePinned(vec![Mode::Containers])]
+        );
     }
 
     #[test]
