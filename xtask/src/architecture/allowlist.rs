@@ -93,18 +93,6 @@ impl Allowed {
 
 /// Every accepted place in `app/src`.
 pub const ALLOWLIST: &[Allowed] = &[
-    Allowed::known(
-        Rule::MissingModeScreen,
-        "view/containers.rs",
-        "Containers",
-        "view.rs still holds the screens of both modes",
-    ),
-    Allowed::known(
-        Rule::MissingModeScreen,
-        "view/terminal.rs",
-        "Terminal",
-        "view.rs still holds the screens of both modes",
-    ),
     Allowed::exception(
         Rule::RouteBranchesOnState,
         "router/command.rs",

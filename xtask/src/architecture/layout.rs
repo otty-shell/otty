@@ -25,8 +25,8 @@ pub(crate) const SHARED_MODULES: &[&str] = &[
     "domain",
 ];
 
-/// Wiring files outside `router/`: the crate root, the app loop and the
-/// list of widgets.
+/// Wiring files outside `router/` and `view/`: the crate root, the app loop
+/// and the list of widgets.
 const WIRING_FILES: &[&str] = &[
     "main.rs",
     "app.rs",
@@ -70,7 +70,8 @@ pub(crate) const ALWAYS_OPEN_WIDGET_MODULES: &[&str] = &["event", "view"];
 /// The layer a source file belongs to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Layer {
-    /// The app loop, the input filter, the routes and the root view.
+    /// The app loop, the input filter, the routes, the root view and the
+    /// screen of each mode.
     Wiring,
     /// A file inside `widgets/<name>/`, also inside one of its parts.
     Widget(String),
@@ -80,7 +81,10 @@ pub(crate) enum Layer {
 
 /// The layer of the file at `path`, or `None` when it belongs to no layer.
 pub(crate) fn layer_of(path: &str) -> Option<Layer> {
-    if WIRING_FILES.contains(&path) || path.starts_with("router/") {
+    if WIRING_FILES.contains(&path)
+        || path.starts_with("router/")
+        || path.starts_with("view/")
+    {
         return Some(Layer::Wiring);
     }
 
@@ -184,6 +188,7 @@ mod tests {
     fn files_get_the_layer_of_their_folder() {
         assert_eq!(layer_of("router/tabs.rs"), Some(Layer::Wiring));
         assert_eq!(layer_of("update.rs"), Some(Layer::Wiring));
+        assert_eq!(layer_of("view/terminal.rs"), Some(Layer::Wiring));
         assert_eq!(layer_of("widgets/mod.rs"), Some(Layer::Wiring));
         assert_eq!(
             layer_of("widgets/modes/view/menu.rs"),
