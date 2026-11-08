@@ -100,12 +100,6 @@ pub const ALLOWLIST: &[Allowed] = &[
         "the domain type still names a type of the quick_launch widget; move that type into domain/",
     ),
     Allowed::known(
-        Rule::MissingWidgetFile,
-        "widgets/palette/view/",
-        "palette",
-        "the palette view is one view.rs file; move it into view/",
-    ),
-    Allowed::known(
         Rule::WidgetModuleVisibility,
         "widgets/containers/mod.rs",
         "pub(crate) mod actions",

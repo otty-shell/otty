@@ -29,7 +29,7 @@ use crate::widgets::explorer::view::sidebar_tree;
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
 use crate::widgets::modes::view::{mode_menu, mode_switcher};
 use crate::widgets::palette::event::PaletteEvent;
-use crate::widgets::palette::view as palette_view;
+use crate::widgets::palette::view::command_palette as palette_view;
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
 };

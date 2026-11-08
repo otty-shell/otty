@@ -2,8 +2,8 @@ use iced::widget::{Space, container, mouse_area, stack, svg};
 use iced::{Element, Length, Padding, alignment, mouse};
 use otty_ui_kit::components::command_palette::CommandPalette;
 
-use super::event::PaletteIntent;
-use super::model::PaletteViewModel;
+use super::super::event::PaletteIntent;
+use super::super::model::PaletteViewModel;
 use crate::i18n::{self, Key};
 use crate::icons::SEARCH;
 use crate::theme::ThemeProps;
