@@ -561,12 +561,11 @@ mod tests {
     use crate::widgets::containers::actions::PruneViewModel;
     use crate::widgets::containers::create::FormViewModel;
     use crate::widgets::containers::model::{
-        MainViewModel, main_area, panel_note,
+        EngineTreeViewModel, MainViewModel, StatusViewModel,
     };
     use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::containers::sort::{SortOrder, TableSort};
     use crate::widgets::containers::state::{ListLoad, Search};
-    use crate::widgets::containers::status::status_bar;
     use crate::widgets::containers::table_search::{
         COMPOSE_KEY, keys, keys_in,
     };
@@ -1761,10 +1760,8 @@ mod tests {
         assert_eq!(engine.images().items().len(), 3);
         assert_eq!(engine.volumes().items().len(), 2);
         assert_eq!(engine.networks().items().len(), 4);
-        let main = crate::widgets::containers::model::main_area(&state, 0);
-        let crate::widgets::containers::model::MainViewModel::Table(table) =
-            main
-        else {
+        let main = MainViewModel::from_state(&state, 0);
+        let MainViewModel::Table(table) = main else {
             panic!("the containers table is shown");
         };
         assert_eq!(table.error, Some("unknown variant `unknown`"));
@@ -1898,7 +1895,7 @@ mod tests {
     }
 
     fn card(state: &ContainersState) -> MainViewModel<'_> {
-        let vm = main_area(state, 0);
+        let vm = MainViewModel::from_state(state, 0);
         assert!(matches!(vm, MainViewModel::NoEngine(_)), "{vm:?}");
 
         vm
@@ -1951,16 +1948,16 @@ mod tests {
     fn a_tick_searches_behind_the_card_and_the_card_stays() {
         let mut state = card_of(docker_stopped());
         let before = format!("{:?}", card(&state));
-        let status = status_bar(&state);
-        let note = panel_note(&state);
+        let status = StatusViewModel::from_state(&state);
+        let note = EngineTreeViewModel::from_state(&state).note;
 
         let sent = tick(&mut state);
 
         assert_eq!(sent, vec![ContainersEffect::DiscoverInBackground]);
         assert!(matches!(state.search(), Search::Done(_)));
         assert_eq!(format!("{:?}", card(&state)), before);
-        assert_eq!(status_bar(&state), status);
-        assert_eq!(panel_note(&state), note);
+        assert_eq!(StatusViewModel::from_state(&state), status);
+        assert_eq!(EngineTreeViewModel::from_state(&state).note, note);
     }
 
     #[test]
@@ -2076,7 +2073,10 @@ mod tests {
 
         assert_eq!(sent, vec![ContainersEffect::Discover]);
         assert_eq!(state.search(), &Search::Searching);
-        assert_eq!(main_area(&state, 0), MainViewModel::Searching);
+        assert_eq!(
+            MainViewModel::from_state(&state, 0),
+            MainViewModel::Searching
+        );
     }
 
     #[test]
@@ -2089,7 +2089,10 @@ mod tests {
 
         assert!(sent.is_empty());
         assert_eq!(state.search(), &Search::Searching);
-        assert_eq!(main_area(&state, 0), MainViewModel::Searching);
+        assert_eq!(
+            MainViewModel::from_state(&state, 0),
+            MainViewModel::Searching
+        );
 
         let _ = reduce(
             &mut state,

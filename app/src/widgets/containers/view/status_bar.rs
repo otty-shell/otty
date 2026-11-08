@@ -5,9 +5,9 @@ use iced::Element;
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::components::target_dot::TargetKind;
 
+use super::super::model::StatusViewModel;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
-use crate::widgets::containers::status::StatusViewModel;
 
 /// Render the Containers mode status bar. With an engine the left side shows its
 /// name and version, then the counts; without one it names the mode and

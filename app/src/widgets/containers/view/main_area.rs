@@ -292,11 +292,11 @@ mod tests {
         self as no_engine_vm, NoEngineCase,
     };
     use crate::widgets::containers::reducer::reduce;
+    use crate::widgets::containers::resource_rows;
     use crate::widgets::containers::sort::{TableSort, TableSorts};
     use crate::widgets::containers::state::ContainersState;
     use crate::widgets::containers::table_search::{keys, keys_in};
     use crate::widgets::containers::types::{LoadedLists, Place, ResourceKind};
-    use crate::widgets::containers::{model, resource_rows};
 
     const NOW: i64 = 1_793_557_960;
 
@@ -893,7 +893,7 @@ mod tests {
     ) {
         let themes = ThemeManager::new();
         let intents: Vec<ContainersIntent> = {
-            let vm = model::main_area(state, NOW);
+            let vm = MainViewModel::from_state(state, NOW);
             let mut ui =
                 simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
             step(&mut ui);
@@ -933,7 +933,7 @@ mod tests {
 
     /// The rows the main area of `state` shows.
     fn row_count(state: &ContainersState) -> usize {
-        match model::main_area(state, NOW) {
+        match MainViewModel::from_state(state, NOW) {
             MainViewModel::Table(table) => table.rows.len(),
             _ => 0,
         }
@@ -1010,7 +1010,9 @@ mod tests {
                 .expect("field should be visible");
         });
 
-        let MainViewModel::Table(table) = model::main_area(&state, NOW) else {
+        let MainViewModel::Table(table) =
+            MainViewModel::from_state(&state, NOW)
+        else {
             panic!("expected a table");
         };
         let keys: Vec<&str> =
@@ -1085,7 +1087,7 @@ mod tests {
         }
         let themes = ThemeManager::new();
         let late: Vec<ContainersIntent> = {
-            let vm = model::main_area(&state, NOW);
+            let vm = MainViewModel::from_state(&state, NOW);
             let mut ui =
                 simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
             ui.click("otty-fx-exit3").expect("the row should be shown");

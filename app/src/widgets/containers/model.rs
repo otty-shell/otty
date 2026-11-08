@@ -1,10 +1,12 @@
+use std::collections::HashSet;
+
 use otty_containers::{Container, ContainerState, Image, Network, Volume};
 use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::status_badge::StatusTone;
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
 
 use super::actions::{PruneViewModel, container_actions};
-use super::format::engine_label;
+use super::format::{engine_label, size_text};
 use super::no_engine::{NoEngineViewModel, no_engine};
 use super::resource_rows::{
     columns, container_cells, container_status, image_cells, image_status,
@@ -20,6 +22,30 @@ use super::types::{
     shown_networks, shown_volumes,
 };
 use crate::i18n::{self, Key};
+
+/// Separates the parts of the status bar text next to the engine, e.g.
+/// "6 containers, 3 running".
+const PART_SEPARATOR: &str = ", ";
+
+/// The engine tree of the left panel: its rows and the short text under them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EngineTreeViewModel {
+    /// Each engine and the four lists of each engine that is not closed.
+    pub(crate) rows: Vec<TreeRowViewModel>,
+    /// The short text under the rows while no engine is usable, such as why
+    /// none is shown; `None` while the search runs or an engine answered.
+    pub(crate) note: Option<&'static str>,
+}
+
+impl EngineTreeViewModel {
+    /// Build the rows of the engine tree and the note under them.
+    pub(super) fn from_state(state: &ContainersState) -> Self {
+        Self {
+            rows: tree_rows(state),
+            note: no_engine_view(state).map(|card| card.panel_text),
+        }
+    }
+}
 
 /// One row of the engine tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +88,87 @@ pub(crate) enum MainViewModel<'a> {
     NoEngine(NoEngineViewModel),
     /// The open list of an engine.
     Table(TableViewModel<'a>),
+}
+
+impl<'a> MainViewModel<'a> {
+    /// Build what the main area shows; ages are counted up to `now` (Unix
+    /// seconds).
+    pub(super) fn from_state(state: &'a ContainersState, now: i64) -> Self {
+        let (Some(place), Some(engine)) = (state.place(), state.open_engine())
+        else {
+            return no_engine_view(state)
+                .map_or(MainViewModel::Searching, MainViewModel::NoEngine);
+        };
+
+        let search = state.table_search(place);
+        let sort = state.sort(place);
+        let clock = state.age_clock();
+        let shown = Shown {
+            page: place,
+            resource: place.resource(),
+            search,
+            suggestions: suggestions(state, search),
+            sort,
+        };
+
+        let table = match place.resource() {
+            ResourceKind::Containers => {
+                let items = engine.containers().items();
+                table(
+                    shown,
+                    engine.containers(),
+                    shown_containers(items, search, clock, sort),
+                    Container::id,
+                    |container| {
+                        !container_actions(container.state()).is_empty()
+                    },
+                    |container| container_cells(container, now),
+                )
+            },
+            ResourceKind::Images => {
+                let items = engine.images().items();
+                table(
+                    shown,
+                    engine.images(),
+                    shown_images(items, search, clock, sort),
+                    Image::row_key,
+                    |_| true,
+                    |image| image_cells(image, now),
+                )
+            },
+            ResourceKind::Volumes => {
+                let items = engine.volumes().items();
+                table(
+                    shown,
+                    engine.volumes(),
+                    shown_volumes(items, search, clock, sort),
+                    Volume::name,
+                    |_| true,
+                    |volume| volume_cells(volume, now),
+                )
+            },
+            ResourceKind::Networks => {
+                let items = engine.networks().items();
+                table(
+                    shown,
+                    engine.networks(),
+                    shown_networks(items, search, clock, sort),
+                    Network::id,
+                    |_| true,
+                    |network| network_cells(network, now),
+                )
+            },
+        };
+        MainViewModel::Table(TableViewModel {
+            prune: PruneViewModel::from_state(
+                state.actions(),
+                &state.actions_ctx(),
+            ),
+            notice: state.notice(),
+            can_create: can_create(state),
+            ..table
+        })
+    }
 }
 
 /// The header row and the table of the open list.
@@ -107,6 +214,84 @@ pub(crate) struct InspectorViewModel {
     pub(crate) tone: StatusTone,
 }
 
+impl InspectorViewModel {
+    /// Build the inspector header of the selected row of the open list;
+    /// `None` when nothing is selected.
+    pub(super) fn from_state(state: &ContainersState) -> Option<Self> {
+        let place = state.place()?;
+        let engine = state.open_engine()?;
+
+        let (title, (status, tone)) = match place.resource() {
+            ResourceKind::Containers => {
+                let container = engine.containers().selected(Container::id)?;
+                (container.name(), container_status(container))
+            },
+            ResourceKind::Images => {
+                let image = engine.images().selected(Image::row_key)?;
+                (image_name(image), image_status(image))
+            },
+            ResourceKind::Volumes => {
+                let volume = engine.volumes().selected(Volume::name)?;
+                (volume.name(), volume_status(volume))
+            },
+            ResourceKind::Networks => {
+                let network = engine.networks().selected(Network::id)?;
+                (network.name(), network_status(network))
+            },
+        };
+
+        Some(Self {
+            title: title.to_string(),
+            status,
+            tone,
+        })
+    }
+}
+
+/// The texts of the Containers mode status bar: the engine on screen and the
+/// counts of the open list, or why there is no engine (spec Decision 5). The
+/// sessions button is added by the view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StatusViewModel {
+    /// The engine on screen, e.g. "Docker 29.9.1": the one the Run form will
+    /// run on while it is open, else the one of the open list; `None` when no
+    /// engine is shown (the bar names the mode instead).
+    pub(crate) engine: Option<String>,
+    /// The counts of the open list, or the reason there is no engine.
+    pub(crate) info: String,
+}
+
+impl StatusViewModel {
+    /// Build the status bar texts for the current state.
+    pub(super) fn from_state(state: &ContainersState) -> Self {
+        let (Some(place), Some(open)) = (state.place(), state.open_engine())
+        else {
+            let info = match no_engine_view(state) {
+                Some(card) => card.status_text,
+                None => i18n::t(Key::ContainersStatusSearching).to_string(),
+            };
+
+            return Self { engine: None, info };
+        };
+
+        // The Run form replaces the table, so the counts of the table would
+        // describe something that is not on screen. It can run on another
+        // engine than the open list, and it keeps its engine when that goes
+        // away; the bar names what the form names.
+        if let Some(engine) = state.run().engine() {
+            return Self {
+                engine: Some(engine_label(engine)),
+                info: i18n::t(Key::ContainersRunContainer).to_string(),
+            };
+        }
+
+        Self {
+            engine: Some(engine_label(open.info())),
+            info: counts(open, place.resource()),
+        }
+    }
+}
+
 /// What every table of the main area needs besides its list.
 struct Shown<'a> {
     page: &'a Place,
@@ -120,7 +305,7 @@ struct Shown<'a> {
 /// lists of each engine that is not closed. An engine opens and closes on its
 /// own, whichever list the main area shows; while the engine of the shown
 /// list is closed, no row is highlighted.
-pub(crate) fn tree_rows(state: &ContainersState) -> Vec<TreeRowViewModel> {
+fn tree_rows(state: &ContainersState) -> Vec<TreeRowViewModel> {
     let open = state.place();
     let mut rows = Vec::new();
 
@@ -161,129 +346,8 @@ pub(crate) fn tree_rows(state: &ContainersState) -> Vec<TreeRowViewModel> {
     rows
 }
 
-/// What the main area shows; ages are counted up to `now` (Unix seconds).
-pub(crate) fn main_area(
-    state: &ContainersState,
-    now: i64,
-) -> MainViewModel<'_> {
-    let (Some(place), Some(engine)) = (state.place(), state.open_engine())
-    else {
-        return no_engine_view(state)
-            .map_or(MainViewModel::Searching, MainViewModel::NoEngine);
-    };
-
-    let search = state.table_search(place);
-    let sort = state.sort(place);
-    let clock = state.age_clock();
-    let shown = Shown {
-        page: place,
-        resource: place.resource(),
-        search,
-        suggestions: suggestions(state, search),
-        sort,
-    };
-
-    let table = match place.resource() {
-        ResourceKind::Containers => {
-            let items = engine.containers().items();
-            table(
-                shown,
-                engine.containers(),
-                shown_containers(items, search, clock, sort),
-                Container::id,
-                |container| !container_actions(container.state()).is_empty(),
-                |container| container_cells(container, now),
-            )
-        },
-        ResourceKind::Images => {
-            let items = engine.images().items();
-            table(
-                shown,
-                engine.images(),
-                shown_images(items, search, clock, sort),
-                Image::row_key,
-                |_| true,
-                |image| image_cells(image, now),
-            )
-        },
-        ResourceKind::Volumes => {
-            let items = engine.volumes().items();
-            table(
-                shown,
-                engine.volumes(),
-                shown_volumes(items, search, clock, sort),
-                Volume::name,
-                |_| true,
-                |volume| volume_cells(volume, now),
-            )
-        },
-        ResourceKind::Networks => {
-            let items = engine.networks().items();
-            table(
-                shown,
-                engine.networks(),
-                shown_networks(items, search, clock, sort),
-                Network::id,
-                |_| true,
-                |network| network_cells(network, now),
-            )
-        },
-    };
-    MainViewModel::Table(TableViewModel {
-        prune: PruneViewModel::from_state(
-            state.actions(),
-            &state.actions_ctx(),
-        ),
-        notice: state.notice(),
-        can_create: can_create(state),
-        ..table
-    })
-}
-
-/// The short text of the left panel while no engine is usable; `None` when
-/// the search runs or an engine answered.
-pub(crate) fn panel_note(state: &ContainersState) -> Option<&'static str> {
-    no_engine_view(state).map(|vm| vm.panel_text)
-}
-
-/// The inspector header of the selected row of the open list; `None` when
-/// nothing is selected.
-pub(crate) fn inspector(state: &ContainersState) -> Option<InspectorViewModel> {
-    let place = state.place()?;
-    let engine = state.open_engine()?;
-
-    let (title, (status, tone)) = match place.resource() {
-        ResourceKind::Containers => {
-            let container = engine.containers().selected(Container::id)?;
-            (container.name(), container_status(container))
-        },
-        ResourceKind::Images => {
-            let image = engine.images().selected(Image::row_key)?;
-            (image_name(image), image_status(image))
-        },
-        ResourceKind::Volumes => {
-            let volume = engine.volumes().selected(Volume::name)?;
-            (volume.name(), volume_status(volume))
-        },
-        ResourceKind::Networks => {
-            let network = engine.networks().selected(Network::id)?;
-            (network.name(), network_status(network))
-        },
-    };
-
-    Some(InspectorViewModel {
-        title: title.to_string(),
-        status,
-        tone,
-    })
-}
-
-/// The note on the right of a list row: the count (running containers for
-/// Containers), nothing while it loads, or that it failed.
 /// The no-engine card of a finished search; `None` while it runs.
-pub(super) fn no_engine_view(
-    state: &ContainersState,
-) -> Option<NoEngineViewModel> {
+fn no_engine_view(state: &ContainersState) -> Option<NoEngineViewModel> {
     match state.search() {
         Search::Done(discovery) => no_engine(discovery),
         _ => None,
@@ -308,6 +372,8 @@ fn suggestions(state: &ContainersState, search: &TagSearch) -> Vec<Suggestion> {
         .map_or_else(Vec::new, |schema| search.suggestions(&schema))
 }
 
+/// The note on the right of a list row: the count (running containers for
+/// Containers), nothing while it loads, or that it failed.
 fn list_note(engine: &EngineState, resource: ResourceKind) -> TreeNote {
     match resource {
         ResourceKind::Containers => {
@@ -403,8 +469,85 @@ fn table<'a, T>(
     }
 }
 
+/// The status bar counts of one list. A list that loads or failed shows that,
+/// not a number.
+fn counts(engine: &EngineState, resource: ResourceKind) -> String {
+    match resource {
+        ResourceKind::Containers => {
+            list_counts(engine.containers(), |containers| {
+                let running = containers
+                    .iter()
+                    .filter(|container: &&Container| {
+                        container.state() == ContainerState::Running
+                    })
+                    .count();
+                let total = i18n::containers_status_count(
+                    Key::ContainersStatusOneContainer,
+                    Key::TplContainersStatusContainers,
+                    containers.len(),
+                );
+                let running =
+                    i18n::with_count(Key::TplContainersRunning, running as u64);
+
+                format!("{total}{PART_SEPARATOR}{running}")
+            })
+        },
+        ResourceKind::Images => list_counts(engine.images(), |images| {
+            let total = i18n::containers_status_count(
+                Key::ContainersStatusOneImage,
+                Key::TplContainersStatusImages,
+                images.len(),
+            );
+            let bytes = images_size(images);
+
+            format!("{total}{PART_SEPARATOR}{}", size_text(bytes))
+        }),
+        ResourceKind::Volumes => list_counts(engine.volumes(), |volumes| {
+            i18n::containers_status_count(
+                Key::ContainersStatusOneVolume,
+                Key::TplContainersStatusVolumes,
+                volumes.len(),
+            )
+        }),
+        ResourceKind::Networks => list_counts(engine.networks(), |networks| {
+            i18n::containers_status_count(
+                Key::ContainersStatusOneNetwork,
+                Key::TplContainersStatusNetworks,
+                networks.len(),
+            )
+        }),
+    }
+}
+
+/// The bytes of `images` on disk; the rows of one image count once.
+fn images_size(images: &[Image]) -> u64 {
+    let mut counted = HashSet::new();
+
+    images
+        .iter()
+        .filter(|image| counted.insert(image.id()))
+        .map(Image::size)
+        .sum()
+}
+
+/// The status bar text of a list in each load state; `loaded` gives it for
+/// the items.
+fn list_counts<T>(
+    list: &ResourceList<T>,
+    loaded: impl FnOnce(&[T]) -> String,
+) -> String {
+    match list.load() {
+        ListLoad::Loaded(items) => loaded(items),
+        ListLoad::Loading => i18n::t(Key::ContainersLoading).to_string(),
+        ListLoad::Failed(_) => {
+            i18n::t(Key::ContainersListFailedShort).to_string()
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use iced_test::simulator;
     use otty_containers::{
         CandidateSource, Container, Discovery, EngineAddress, EngineInfo,
         EngineKind, fixtures,
@@ -415,6 +558,7 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key};
     use crate::testing::task_outputs::collect_outputs;
+    use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::containers::event::{
         ContainersEffect, ContainersEvent, ContainersIntent,
     };
@@ -427,23 +571,23 @@ mod tests {
     use crate::widgets::containers::run::{
         ImagePanelViewModel, RunFormViewModel,
     };
-    use crate::widgets::containers::status::status_bar;
     use crate::widgets::containers::types::{ContainersError, LoadedLists};
+    use crate::widgets::containers::view::status_bar::view as status_bar_view;
 
     const NOW: i64 = 1_793_557_960;
 
     /// All three parts of Containers mode at [`NOW`].
     struct Vm<'a> {
-        tree: Vec<TreeRowViewModel>,
+        tree: EngineTreeViewModel,
         main: MainViewModel<'a>,
         inspector: Option<InspectorViewModel>,
     }
 
     fn build(state: &ContainersState) -> Vm<'_> {
         Vm {
-            tree: tree_rows(state),
-            main: main_area(state, NOW),
-            inspector: inspector(state),
+            tree: EngineTreeViewModel::from_state(state),
+            main: MainViewModel::from_state(state, NOW),
+            inspector: InspectorViewModel::from_state(state),
         }
     }
 
@@ -633,12 +777,12 @@ mod tests {
             card.commands.iter().map(|command| command.text).collect();
         assert_eq!(shown, commands);
         assert_eq!(card.installs.len(), installs);
-        assert!(vm.tree.is_empty(), "stale rows: {:?}", vm.tree);
+        assert!(vm.tree.rows.is_empty(), "stale rows: {:?}", vm.tree.rows);
         assert_eq!(vm.inspector, None);
-        assert_eq!(panel_note(state), Some(card.panel_text));
+        assert_eq!(vm.tree.note, Some(card.panel_text));
         assert_eq!(state.place(), None);
 
-        let bar = status_bar(state);
+        let bar = StatusViewModel::from_state(state);
         assert_eq!(bar.engine, None);
         assert_eq!(bar.info, card.status_text);
     }
@@ -679,7 +823,7 @@ mod tests {
         );
 
         assert!(matches!(build(&state).main, MainViewModel::Table(_)));
-        assert!(!tree_rows(&state).is_empty());
+        assert!(!EngineTreeViewModel::from_state(&state).rows.is_empty());
     }
 
     #[test]
@@ -697,7 +841,7 @@ mod tests {
         let vm = build(&state);
         assert!(matches!(vm.main, MainViewModel::Table(_)));
         assert_eq!(labels(&state), open_labels("Podman 5.8.8"));
-        assert_eq!(panel_note(&state), None);
+        assert_eq!(EngineTreeViewModel::from_state(&state).note, None);
     }
 
     #[test]
@@ -759,9 +903,9 @@ mod tests {
         let vm = build(&state);
         assert_eq!(table(&vm).rows.len(), 6);
         assert_eq!(labels(&state), vec![String::from("Docker 29.9.1")]);
-        assert!(!vm.tree[0].is_open);
+        assert!(!vm.tree.rows[0].is_open);
         assert!(highlighted(&state).is_empty());
-        assert_eq!(panel_note(&state), None);
+        assert_eq!(EngineTreeViewModel::from_state(&state).note, None);
     }
 
     #[test]
@@ -812,7 +956,8 @@ mod tests {
     }
 
     fn suggestion_texts(state: &ContainersState) -> Vec<String> {
-        let MainViewModel::Table(table) = main_area(state, NOW) else {
+        let MainViewModel::Table(table) = MainViewModel::from_state(state, NOW)
+        else {
             panic!("expected a table");
         };
 
@@ -934,10 +1079,10 @@ mod tests {
         };
         assert_eq!(card.title, i18n::t(Key::ContainersNotInstalledTitle));
         assert_eq!(
-            panel_note(&state),
+            vm.tree.note,
             Some(i18n::t(Key::ContainersPanelNotInstalled))
         );
-        assert!(vm.tree.is_empty());
+        assert!(vm.tree.rows.is_empty());
         assert_eq!(vm.inspector, None);
     }
 
@@ -945,7 +1090,24 @@ mod tests {
     fn a_running_search_has_no_panel_text() {
         let state = ContainersState::default();
 
-        assert_eq!(panel_note(&state), None);
+        assert_eq!(EngineTreeViewModel::from_state(&state).note, None);
+    }
+
+    #[test]
+    fn the_tree_has_either_the_engine_rows_or_the_note_of_the_card() {
+        let with_engine = found(&[EngineKind::Docker]);
+        let without_engine = found(&[]);
+
+        let tree = EngineTreeViewModel::from_state(&with_engine);
+        let card_tree = EngineTreeViewModel::from_state(&without_engine);
+
+        assert_eq!(tree.rows.len(), 5);
+        assert_eq!(tree.note, None);
+        assert!(card_tree.rows.is_empty());
+        assert_eq!(
+            card_tree.note,
+            Some(i18n::t(Key::ContainersPanelNotInstalled))
+        );
     }
 
     #[test]
@@ -955,18 +1117,23 @@ mod tests {
         let vm = build(&state);
 
         assert_eq!(vm.main, MainViewModel::Searching);
-        assert!(vm.tree.is_empty());
+        assert!(vm.tree.rows.is_empty());
         assert_eq!(vm.inspector, None);
     }
 
     /// The labels of the tree rows, top to bottom.
     fn labels(state: &ContainersState) -> Vec<String> {
-        tree_rows(state).into_iter().map(|row| row.label).collect()
+        EngineTreeViewModel::from_state(state)
+            .rows
+            .into_iter()
+            .map(|row| row.label)
+            .collect()
     }
 
     /// The labels of the highlighted tree rows with the engine of each.
     fn highlighted(state: &ContainersState) -> Vec<(String, EngineAddress)> {
-        tree_rows(state)
+        EngineTreeViewModel::from_state(state)
+            .rows
             .into_iter()
             .filter(|row| row.is_selected)
             .map(|row| (row.label, row.place.engine().clone()))
@@ -997,7 +1164,8 @@ mod tests {
     fn every_engine_is_open_by_default() {
         let state = found(&[EngineKind::Docker, EngineKind::Podman]);
 
-        let roots: Vec<bool> = tree_rows(&state)
+        let roots: Vec<bool> = EngineTreeViewModel::from_state(&state)
+            .rows
             .iter()
             .filter(|row| row.is_engine)
             .map(|row| row.is_open)
@@ -1040,7 +1208,8 @@ mod tests {
 
         press_root(&mut state, &podman());
         let podman_closed = labels(&state);
-        let root = tree_rows(&state)
+        let root = EngineTreeViewModel::from_state(&state)
+            .rows
             .into_iter()
             .find(|row| row.label == "Podman 5.8.8")
             .expect("the root stays");
@@ -1087,7 +1256,7 @@ mod tests {
         podman_lists.volumes = Err(ContainersError::new("no"));
         load(&mut state, &podman(), podman_lists);
 
-        let tree = tree_rows(&state);
+        let tree = EngineTreeViewModel::from_state(&state).rows;
 
         assert_eq!(tree[2].note, TreeNote::Count(3));
         assert_eq!(tree[3].note, TreeNote::Count(2));
@@ -1176,7 +1345,7 @@ mod tests {
         let vm = build(&state);
 
         assert_eq!(
-            vm.tree,
+            vm.tree.rows,
             vec![
                 TreeRowViewModel {
                     is_engine: true,
@@ -1271,7 +1440,7 @@ mod tests {
         let vm = build(&state);
 
         let labels: Vec<&str> =
-            vm.tree.iter().map(|row| row.label.as_str()).collect();
+            vm.tree.rows.iter().map(|row| row.label.as_str()).collect();
         assert_eq!(
             labels,
             vec![
@@ -1282,7 +1451,7 @@ mod tests {
                 "Networks"
             ]
         );
-        assert!(vm.tree.iter().all(|row| row.depth < 2));
+        assert!(vm.tree.rows.iter().all(|row| row.depth < 2));
     }
 
     #[test]
@@ -1291,7 +1460,7 @@ mod tests {
 
         let vm = build(&state);
 
-        assert_eq!(vm.tree.len(), 5);
+        assert_eq!(vm.tree.rows.len(), 5);
     }
 
     #[test]
@@ -1351,6 +1520,7 @@ mod tests {
 
         let selected: Vec<&str> = vm
             .tree
+            .rows
             .iter()
             .filter(|row| row.is_selected)
             .map(|row| row.label.as_str())
@@ -1492,9 +1662,9 @@ mod tests {
         let vm = build(&state);
         let loading_vm = build(&loading);
 
-        assert_eq!(vm.tree[3].note, TreeNote::Failed);
-        assert_eq!(loading_vm.tree[1].note, TreeNote::Nothing);
-        assert_eq!(loading_vm.tree[2].note, TreeNote::Nothing);
+        assert_eq!(vm.tree.rows[3].note, TreeNote::Failed);
+        assert_eq!(loading_vm.tree.rows[1].note, TreeNote::Nothing);
+        assert_eq!(loading_vm.tree.rows[2].note, TreeNote::Nothing);
     }
 
     #[test]
@@ -1765,7 +1935,7 @@ mod tests {
 
         let vm = build(&state);
 
-        assert_eq!(vm.tree[2].note, TreeNote::Count(2));
+        assert_eq!(vm.tree.rows[2].note, TreeNote::Count(2));
         assert_eq!(table(&vm).rows.len(), 2);
     }
 
@@ -1908,5 +2078,314 @@ mod tests {
 
         assert_eq!(enabled, vec![true, true, true, true]);
         assert!(!can_create(&ContainersState::default()));
+    }
+
+    // What the status bar says.
+
+    fn loaded(kinds: &[EngineKind]) -> ContainersState {
+        let mut state = found(kinds);
+        for kind in kinds {
+            let _ = reduce(
+                &mut state,
+                ContainersIntent::ListsLoaded {
+                    engine: fixtures::engine(*kind).address().clone(),
+                    lists: lists(*kind),
+                },
+            );
+        }
+        state
+    }
+
+    #[test]
+    fn the_counts_are_of_the_whole_list_whatever_the_page_filters() {
+        let mut state = loaded(&[EngineKind::Docker]);
+        let whole_list = StatusViewModel::from_state(&state).info;
+
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::TagSearch(TagSearchAction::InputChanged(
+                String::from("no such name"),
+            )),
+        );
+
+        assert_eq!(StatusViewModel::from_state(&state).info, whole_list);
+    }
+
+    #[test]
+    fn while_searching_the_bar_says_it_looks_for_engines() {
+        let state = ContainersState::default();
+
+        let vm = StatusViewModel::from_state(&state);
+
+        assert_eq!(vm.engine, None);
+        assert_eq!(vm.info, "Looking for engines…");
+    }
+
+    #[test]
+    fn while_the_run_form_is_open_the_bar_says_run_container() {
+        let mut state = loaded(&[EngineKind::Docker]);
+        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+
+        let vm = StatusViewModel::from_state(&state);
+
+        assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
+        assert_eq!(vm.info, "Run container");
+    }
+
+    /// Both engines loaded, the Containers list of Docker open and the Run
+    /// form open on Podman.
+    fn run_form_on_podman() -> ContainersState {
+        let mut state = loaded(&[EngineKind::Docker, EngineKind::Podman]);
+        let _ = reduce(&mut state, ContainersIntent::OpenCreate);
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Run(RunIntent::EngineChosen(
+                podman().address().clone(),
+            )),
+        );
+        state
+    }
+
+    #[test]
+    fn the_bar_names_the_engine_the_run_form_will_run_on() {
+        let state = run_form_on_podman();
+
+        let vm = StatusViewModel::from_state(&state);
+
+        assert_eq!(state.open_engine().map(EngineState::info), Some(&docker()));
+        assert_eq!(vm.engine.as_deref(), Some("Podman 5.8.8"));
+        assert_eq!(vm.info, "Run container");
+    }
+
+    #[test]
+    fn the_bar_follows_the_run_form_when_its_engine_changes_back() {
+        let mut state = run_form_on_podman();
+
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Run(RunIntent::EngineChosen(
+                docker().address().clone(),
+            )),
+        );
+
+        assert_eq!(
+            StatusViewModel::from_state(&state).engine.as_deref(),
+            Some("Docker 29.9.1")
+        );
+    }
+
+    #[test]
+    fn the_bar_goes_back_to_the_open_list_when_the_run_form_closes() {
+        let mut state = run_form_on_podman();
+
+        let _ = reduce(&mut state, ContainersIntent::Run(RunIntent::Close));
+
+        let vm = StatusViewModel::from_state(&state);
+        assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
+        assert!(vm.info.contains("containers"), "{}", vm.info);
+    }
+
+    /// The form stays on the engine that went away: it names that engine, a
+    /// run goes there and fails, and the bar must not name another one.
+    #[test]
+    fn the_bar_and_the_form_keep_naming_an_engine_that_went_away() {
+        let mut state = run_form_on_podman();
+
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ])),
+        );
+
+        let vm = StatusViewModel::from_state(&state);
+        assert!(state.engine(podman().address()).is_none());
+        assert_eq!(vm.engine.as_deref(), Some("Podman 5.8.8"));
+        assert_eq!(vm.info, "Run container");
+        let form = RunFormViewModel::from_state(state.run(), &state.run_ctx())
+            .expect("the form stays");
+        assert_eq!(vm.engine.as_ref(), Some(&form.engine.label));
+    }
+
+    /// Without any engine the form waits behind the no-engine card, so the bar
+    /// gives the reason there is none, as the card does.
+    #[test]
+    fn with_no_engine_left_the_bar_gives_the_reason_while_the_form_waits() {
+        let mut state = run_form_on_podman();
+
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::DiscoveryFinished(fixtures::discovery(&[])),
+        );
+
+        let vm = StatusViewModel::from_state(&state);
+        assert!(state.run().is_open());
+        assert_eq!(vm.engine, None);
+        assert_eq!(vm.info, "no engine found");
+    }
+
+    #[test]
+    fn containers_show_the_total_and_the_running_ones() {
+        let state = loaded(&[EngineKind::Docker]);
+        let containers = fixtures::resources(EngineKind::Docker);
+        let total = containers.containers().len();
+        let running = containers
+            .containers()
+            .iter()
+            .filter(|c| c.state() == ContainerState::Running)
+            .count();
+
+        let vm = StatusViewModel::from_state(&state);
+
+        assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
+        assert_eq!(vm.info, format!("{total} containers, {running} running"));
+    }
+
+    #[test]
+    fn images_count_every_row_and_the_size_of_each_image_once() {
+        let mut state = loaded(&[EngineKind::Docker]);
+        let two_tags =
+            fixtures::image_rows("sha256:app", &["app:1", "app:2"], &[], &[]);
+        let bytes = two_tags[0].size();
+        let resources = fixtures::resources(EngineKind::Docker);
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::ListsLoaded {
+                engine: fixtures::engine(EngineKind::Docker).address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(resources.containers().to_vec()),
+                    images: Ok(two_tags),
+                    volumes: Ok(resources.volumes().to_vec()),
+                    networks: Ok(resources.networks().to_vec()),
+                },
+            },
+        );
+        open(&mut state, ResourceKind::Images);
+
+        let vm = StatusViewModel::from_state(&state);
+
+        assert_eq!(vm.info, format!("2 images, {}", size_text(bytes)));
+    }
+
+    #[test]
+    fn images_show_the_total_and_the_size() {
+        let mut state = loaded(&[EngineKind::Docker]);
+        open(&mut state, ResourceKind::Images);
+        let resources = fixtures::resources(EngineKind::Docker);
+        let count = resources.images().len();
+        let bytes: u64 = resources.images().iter().map(Image::size).sum();
+
+        let vm = StatusViewModel::from_state(&state);
+
+        assert_eq!(vm.info, format!("{count} images, {}", size_text(bytes)));
+    }
+
+    #[test]
+    fn volumes_and_networks_show_their_count() {
+        let mut state = loaded(&[EngineKind::Docker]);
+        let resources = fixtures::resources(EngineKind::Docker);
+
+        open(&mut state, ResourceKind::Volumes);
+        let volumes = StatusViewModel::from_state(&state).info;
+        open(&mut state, ResourceKind::Networks);
+        let networks = StatusViewModel::from_state(&state).info;
+
+        assert_eq!(volumes, format!("{} volumes", resources.volumes().len()));
+        assert_eq!(
+            networks,
+            format!("{} networks", resources.networks().len())
+        );
+    }
+
+    #[test]
+    fn a_count_of_one_is_singular() {
+        let mut state = found(&[EngineKind::Docker]);
+        let resources = fixtures::resources(EngineKind::Docker);
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::ListsLoaded {
+                engine: docker().address().clone(),
+                lists: LoadedLists {
+                    containers: Ok(vec![resources.containers()[0].clone()]),
+                    images: Ok(vec![resources.images()[0].clone()]),
+                    volumes: Ok(vec![resources.volumes()[0].clone()]),
+                    networks: Ok(vec![resources.networks()[0].clone()]),
+                },
+            },
+        );
+
+        let containers = StatusViewModel::from_state(&state).info;
+        open(&mut state, ResourceKind::Images);
+        let images = StatusViewModel::from_state(&state).info;
+        open(&mut state, ResourceKind::Volumes);
+        let volumes = StatusViewModel::from_state(&state).info;
+        open(&mut state, ResourceKind::Networks);
+        let networks = StatusViewModel::from_state(&state).info;
+
+        assert!(containers.starts_with("1 container, "), "{containers}");
+        assert!(images.starts_with("1 image, "), "{images}");
+        assert_eq!(volumes, "1 volume");
+        assert_eq!(networks, "1 network");
+    }
+
+    /// Every engine shows in the tree, so the bar speaks only of the open one.
+    #[test]
+    fn with_two_engines_the_bar_names_only_the_open_one() {
+        let themes = ThemeManager::new();
+        let state = loaded(&[EngineKind::Docker, EngineKind::Podman]);
+
+        let vm = StatusViewModel::from_state(&state);
+        let mut ui = simulator(status_bar_view(
+            &vm,
+            0,
+            "0.4.0",
+            (),
+            ThemeProps::new(themes.current()),
+        ));
+
+        ui.find("Docker 29.9.1").expect("the open engine");
+        assert!(ui.find("Podman 5.8.8").is_err());
+        assert!(!vm.info.contains("Podman"), "{}", vm.info);
+    }
+
+    #[test]
+    fn a_list_that_loads_shows_no_number() {
+        let state = found(&[EngineKind::Docker]);
+
+        let vm = StatusViewModel::from_state(&state);
+
+        assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
+        assert_eq!(vm.info, "Loading…");
+    }
+
+    #[test]
+    fn a_list_that_failed_shows_no_number() {
+        let mut state = found(&[EngineKind::Docker]);
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::ListsLoaded {
+                engine: docker().address().clone(),
+                lists: LoadedLists {
+                    containers: Err(ContainersError::new("boom")),
+                    images: Ok(Vec::new()),
+                    volumes: Ok(Vec::new()),
+                    networks: Ok(Vec::new()),
+                },
+            },
+        );
+
+        let vm = StatusViewModel::from_state(&state);
+
+        assert_eq!(vm.info, "failed");
+    }
+
+    #[test]
+    fn without_an_engine_the_bar_gives_the_reason() {
+        let state = found(&[]);
+
+        let vm = StatusViewModel::from_state(&state);
+
+        assert_eq!(vm.engine, None);
+        assert_eq!(vm.info, "no engine found");
     }
 }

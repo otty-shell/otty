@@ -11,15 +11,13 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::ContainersIntent;
-use super::super::model::{TreeNote, TreeRowViewModel};
+use super::super::model::{EngineTreeViewModel, TreeNote, TreeRowViewModel};
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
 /// Props for the engine tree.
 pub(crate) struct EngineTreeProps<'a> {
-    pub(crate) rows: Vec<TreeRowViewModel>,
-    /// A short text under the rows, such as why no engine is shown.
-    pub(crate) note: Option<&'static str>,
+    pub(crate) vm: EngineTreeViewModel,
     pub(crate) theme: ThemeProps<'a>,
 }
 
@@ -30,10 +28,10 @@ pub(crate) fn view(
 ) -> Element<'_, ContainersIntent> {
     let palette = props.theme.theme.ui();
 
-    let rows = props.rows.into_iter().map(|row| tree_row(row, palette));
+    let rows = props.vm.rows.into_iter().map(|row| tree_row(row, palette));
 
     let mut list = Column::with_children(rows).width(Length::Fill);
-    if let Some(note) = props.note {
+    if let Some(note) = props.vm.note {
         let hint = typography::SMALL;
         list = list.push(
             container(
@@ -146,8 +144,7 @@ mod tests {
             row("Volumes", TreeNote::Failed, place(ResourceKind::Volumes)),
         ];
         let mut ui = simulator(view(EngineTreeProps {
-            rows,
-            note: None,
+            vm: EngineTreeViewModel { rows, note: None },
             theme: ThemeProps::new(themes.current()),
         }));
 
@@ -179,8 +176,7 @@ mod tests {
             )
         }];
         let mut ui = simulator(view(EngineTreeProps {
-            rows,
-            note: None,
+            vm: EngineTreeViewModel { rows, note: None },
             theme: ThemeProps::new(themes.current()),
         }));
 
@@ -198,8 +194,10 @@ mod tests {
     fn a_note_shows_under_the_rows() {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(EngineTreeProps {
-            rows: Vec::new(),
-            note: Some("Docker is not running."),
+            vm: EngineTreeViewModel {
+                rows: Vec::new(),
+                note: Some("Docker is not running."),
+            },
             theme: ThemeProps::new(themes.current()),
         }));
 

@@ -435,8 +435,7 @@ fn view_containers_tree<'a>(
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     engine_tree::view(engine_tree::EngineTreeProps {
-        rows: app.widgets.containers.tree_vm(),
-        note: app.widgets.containers.tree_note(),
+        vm: app.widgets.containers.tree_vm(),
         theme: theme_props,
     })
     .map(|intent| AppEvent::Containers(ContainersEvent::Intent(intent)))

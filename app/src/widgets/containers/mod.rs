@@ -12,7 +12,6 @@ mod resource_rows;
 pub(crate) mod run;
 mod sort;
 mod state;
-mod status;
 mod subscription;
 mod table_search;
 pub(crate) mod types;
@@ -24,10 +23,9 @@ use event::{ContainersEvent, ContainersIntent};
 use iced::{Subscription, Task, task};
 use inspector::InspectorTabsViewModel;
 pub(crate) use model::MainViewModel;
-use model::{InspectorViewModel, TreeRowViewModel};
+use model::{EngineTreeViewModel, InspectorViewModel, StatusViewModel};
 use run::{ImagePanelViewModel, RunFormViewModel};
 use state::ContainersState;
-use status::StatusViewModel;
 
 /// Containers widget: the engines found on this computer, their containers,
 /// images, volumes and networks, the open list, the selected rows and the
@@ -85,29 +83,25 @@ impl ContainersWidget {
         task
     }
 
-    /// Build the rows of the engine tree in the left panel.
-    pub(crate) fn tree_vm(&self) -> Vec<TreeRowViewModel> {
-        model::tree_rows(&self.state)
+    /// Build the engine tree in the left panel: its rows and the short text
+    /// under them while no engine is usable.
+    pub(crate) fn tree_vm(&self) -> EngineTreeViewModel {
+        EngineTreeViewModel::from_state(&self.state)
     }
 
     /// Build the main area; ages are counted up to `now` (Unix seconds).
     pub(crate) fn main_vm(&self, now: i64) -> MainViewModel<'_> {
-        model::main_area(&self.state, now)
-    }
-
-    /// The short text under the engine tree while no engine is usable.
-    pub(crate) fn tree_note(&self) -> Option<&'static str> {
-        model::panel_note(&self.state)
+        MainViewModel::from_state(&self.state, now)
     }
 
     /// Build the texts of the status bar.
     pub(crate) fn status_vm(&self) -> StatusViewModel {
-        status::status_bar(&self.state)
+        StatusViewModel::from_state(&self.state)
     }
 
     /// Build the inspector header of the selected row.
     pub(crate) fn inspector_vm(&self) -> Option<InspectorViewModel> {
-        model::inspector(&self.state)
+        InspectorViewModel::from_state(&self.state)
     }
 
     /// Build the inspector tabs of the selected row and the open tab's body.

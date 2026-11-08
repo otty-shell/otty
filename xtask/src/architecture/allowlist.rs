@@ -189,30 +189,6 @@ pub const ALLOWLIST: &[Allowed] = &[
         "Terminal",
         "view.rs still holds the screens of both modes",
     ),
-    Allowed::known(
-        Rule::ViewModelNotFromState,
-        "widgets/containers/mod.rs",
-        "inspector_vm",
-        "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
-    ),
-    Allowed::known(
-        Rule::ViewModelNotFromState,
-        "widgets/containers/mod.rs",
-        "main_vm",
-        "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
-    ),
-    Allowed::known(
-        Rule::ViewModelNotFromState,
-        "widgets/containers/mod.rs",
-        "status_vm",
-        "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
-    ),
-    Allowed::known(
-        Rule::ViewModelNotFromState,
-        "widgets/containers/mod.rs",
-        "tree_vm",
-        "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
-    ),
     Allowed::exception(
         Rule::RouteBranchesOnState,
         "router/command.rs",
