@@ -55,13 +55,3 @@ impl SettingsWidget {
         self.state.draft()
     }
 }
-
-#[cfg(test)]
-impl SettingsWidget {
-    /// Create a new widget with default state.
-    pub(crate) fn new() -> Self {
-        Self {
-            state: SettingsState::default(),
-        }
-    }
-}

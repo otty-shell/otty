@@ -406,19 +406,6 @@ impl SecretPromptState {
     }
 }
 
-#[cfg(test)]
-impl SecretPromptState {
-    /// Prompt asking for `request` before running `command`, the launch at
-    /// `path`, for screens built outside the widget.
-    pub(crate) fn asking(
-        path: NodePath,
-        command: Box<QuickLaunch>,
-        request: SshSecretRequest,
-    ) -> Self {
-        Self::new(path, command, request)
-    }
-}
-
 /// Hide the typed secret so it never reaches logs.
 impl std::fmt::Debug for SecretPromptState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -475,14 +462,6 @@ impl ContextMenuState {
 
     pub(crate) fn cursor(&self) -> Point {
         self.cursor
-    }
-}
-
-#[cfg(test)]
-impl ContextMenuState {
-    /// Context menu for `target`, opened at `cursor`.
-    pub(crate) fn at(target: ContextMenuTarget, cursor: Point) -> Self {
-        Self { target, cursor }
     }
 }
 

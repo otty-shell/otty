@@ -39,7 +39,7 @@ pub(crate) fn route(app: &mut App, event: PaletteEvent) -> Task<AppEvent> {
 /// switcher order, for the mode shortcut labels. `active_mode` is the mode
 /// on screen, which decides whether the commands of the active tab and New
 /// folder show.
-pub(crate) fn palette_ctx<'a>(
+fn palette_ctx<'a>(
     tabs: &TabsViewModel<'a>,
     launches: Vec<LaunchViewModel<'a>>,
     can_split_pane: bool,

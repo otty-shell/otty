@@ -50,7 +50,7 @@ impl<'a> QuickLaunchTreeViewModel<'a> {
     /// Tree of `data` that no one is using: nothing selected, hovered,
     /// renamed or dragged over. `launching` holds the launches that are
     /// starting.
-    pub(crate) fn idle(
+    fn idle(
         data: &'a QuickLaunchFile,
         launching: &'a HashMap<NodePath, LaunchInfo>,
     ) -> Self {
