@@ -206,7 +206,6 @@ mod tests {
     use iced::keyboard::{Event, Key, Location, Modifiers};
     use iced::widget::pane_grid;
     use otty_containers::{EngineKind, fixtures};
-    use otty_ui_kit::components::log_view::LogViewState;
     use otty_ui_term::settings::Settings;
 
     use super::*;
@@ -218,8 +217,8 @@ mod tests {
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::event::ContainersEffect;
-    use crate::widgets::containers::inspector::LogTarget;
-    use crate::widgets::containers::inspector_tabs::TabContent;
+    use crate::widgets::containers::inspector::event::InspectorIntent;
+    use crate::widgets::containers::inspector::types::LogTarget;
     use crate::widgets::containers::run::event::{RunEffect, RunIntent};
     use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::containers::types::{InspectorTab, LoadedLists};
@@ -585,14 +584,7 @@ mod tests {
 
     /// How many lines the open logs show.
     fn log_lines(app: &App) -> usize {
-        app.widgets
-            .containers
-            .inspector_tabs_vm()
-            .and_then(|tabs| match tabs.content {
-                TabContent::Logs { lines, .. } => lines,
-                _ => None,
-            })
-            .map_or(0, LogViewState::line_count)
+        app.widgets.containers.log_line_count()
     }
 
     /// One line of the first fixture container comes in.
@@ -605,11 +597,13 @@ mod tests {
 
         internal_to_the_end(
             app,
-            containers_intent(ContainersIntent::LogLines {
-                target,
-                lines: vec![String::from("ready")],
-                position: None,
-            }),
+            containers_intent(ContainersIntent::Inspector(
+                InspectorIntent::LogLines {
+                    target,
+                    lines: vec![String::from("ready")],
+                    position: None,
+                },
+            )),
         );
     }
 

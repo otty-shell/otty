@@ -11,7 +11,7 @@ use otty_ui_kit::components::tag_search::{
 
 use super::actions::{ActionsCtx, ActionsState};
 use super::create::CreateState;
-use super::inspector::{InspectTarget, InspectorState, LogTarget};
+use super::inspector::{InspectorCtx, InspectorState};
 use super::resource_rows::port_urls;
 use super::run::{RunCtx, RunEngine, RunState};
 use super::sort::{TableSort, TableSorts};
@@ -20,8 +20,8 @@ use super::table_search::{
     images_schema, network_row, networks_schema, volume_row, volumes_schema,
 };
 use super::types::{
-    ContainersError, InspectorTab, ListRow, LoadedList, LoadedLists, OpenList,
-    Place, ResourceKind, shown_containers, shown_images, shown_networks,
+    ContainersError, InspectorTab, LoadedList, LoadedLists, OpenList, Place,
+    ResourceKind, shown_containers, shown_images, shown_networks,
     shown_volumes,
 };
 
@@ -97,11 +97,6 @@ impl ContainersState {
         &self.search
     }
 
-    /// Return the version of the engines' lists; see the field.
-    pub(crate) fn lists_version(&self) -> u64 {
-        self.lists_version
-    }
-
     /// Return the reached engines, in search order.
     pub(crate) fn engines(&self) -> &[EngineState] {
         &self.engines
@@ -161,80 +156,26 @@ impl ContainersState {
         Some(schema)
     }
 
-    /// Return the open inspector tab.
-    pub(crate) fn inspector_tab(&self) -> InspectorTab {
-        self.inspector_tab
-    }
-
     /// Return the state of the inspector tabs.
     pub(crate) fn inspector(&self) -> &InspectorState {
         &self.inspector
+    }
+
+    /// Return what the inspector reads from this state, for its view models.
+    pub(crate) fn inspector_ctx(&self) -> InspectorCtx<'_> {
+        inspector_ctx_of(
+            self.is_inspector_on_screen(),
+            self.inspector_tab,
+            self.lists_version,
+            self.place.as_ref(),
+            &self.engines,
+        )
     }
 
     /// Return whether the inspector is on screen, as far as the mode, the right
     /// panel and the Run form go: the form shows the image panel in its place.
     fn is_inspector_on_screen(&self) -> bool {
         self.is_active && !self.is_right_panel_hidden && !self.run.is_open()
-    }
-
-    /// Return the container whose logs should be followed now: the Logs tab is
-    /// on screen and a container is selected.
-    pub(crate) fn wanted_log_target(&self) -> Option<LogTarget> {
-        if !self.is_inspector_on_screen()
-            || self.inspector_tab != InspectorTab::Logs
-        {
-            return None;
-        }
-
-        let (engine, row) = self.selected_row()?;
-        let ListRow::Container(container) = row else {
-            return None;
-        };
-
-        Some(LogTarget::new(engine.info.clone(), container.id()))
-    }
-
-    /// Return the row whose inspect JSON should be shown now, with its
-    /// engine: the Inspect tab is on screen and a row is selected.
-    pub(crate) fn wanted_inspect_target(
-        &self,
-    ) -> Option<(EngineInfo, InspectTarget)> {
-        if !self.is_inspector_on_screen()
-            || self.inspector_tab != InspectorTab::Inspect
-        {
-            return None;
-        }
-
-        let (engine, row) = self.selected_row()?;
-        let target = InspectTarget::new(
-            engine.info.address().clone(),
-            row.resource(),
-            row.id(),
-        );
-
-        Some((engine.info.clone(), target))
-    }
-
-    /// Return the selected row as an inspect target, on any tab and in any
-    /// mode; `None` when nothing is selected.
-    pub(crate) fn selected_inspect_target(&self) -> Option<InspectTarget> {
-        let (engine, row) = self.selected_row()?;
-
-        Some(InspectTarget::new(
-            engine.info.address().clone(),
-            row.resource(),
-            row.id(),
-        ))
-    }
-
-    /// Return the selected row of the open list and its engine; `None` when
-    /// nothing is selected or the row is not in the loaded list.
-    pub(crate) fn selected_row(&self) -> Option<(&EngineState, ListRow<'_>)> {
-        let engine = self.open_engine()?;
-        let row =
-            open_list_of(self.place.as_ref(), &self.engines)?.selected_row()?;
-
-        Some((engine, row))
     }
 
     /// Return the id of the selected row of the open list; an image row goes
@@ -309,11 +250,6 @@ impl ContainersState {
         self.engines
             .iter()
             .find(|engine| engine.info().address() == address)
-    }
-
-    /// Return the inspector tabs for a change.
-    pub(super) fn inspector_mut(&mut self) -> &mut InspectorState {
-        &mut self.inspector
     }
 
     /// Open the inspector `tab` when the open list has it (only containers
@@ -504,6 +440,22 @@ impl ContainersState {
             actions_ctx_of(self.place.as_ref(), &self.engines, &self.search);
 
         (&mut self.actions, ctx)
+    }
+
+    /// Return the state of the inspector for its reducer, with what the
+    /// inspector reads from this state.
+    pub(super) fn inspector_and_ctx(
+        &mut self,
+    ) -> (&mut InspectorState, InspectorCtx<'_>) {
+        let ctx = inspector_ctx_of(
+            self.is_inspector_on_screen(),
+            self.inspector_tab,
+            self.lists_version,
+            self.place.as_ref(),
+            &self.engines,
+        );
+
+        (&mut self.inspector, ctx)
     }
 
     /// Show the `resource` list of `engine` and select the item with `id` in
@@ -779,6 +731,17 @@ impl ContainersState {
 
 #[cfg(test)]
 impl ContainersState {
+    /// Return the open inspector tab.
+    pub(crate) fn inspector_tab(&self) -> InspectorTab {
+        self.inspector_tab
+    }
+
+    /// Return the selected row of the open list; `None` when nothing is
+    /// selected or the row is not in the loaded list.
+    pub(crate) fn selected_row(&self) -> Option<super::types::ListRow<'_>> {
+        open_list_of(self.place.as_ref(), &self.engines)?.selected_row()
+    }
+
     /// Return the position in the shown table of the item the engine listed
     /// at `engine_index` in the open list, so a test can press the row of a
     /// known item whatever the sort is.
@@ -1065,6 +1028,23 @@ fn open_list_of<'a>(
         networks: engine.networks.items(),
         selected_id,
     })
+}
+
+/// What the inspector reads from the state: whether it is on screen, the open
+/// tab, the version of the lists and the open list.
+fn inspector_ctx_of<'a>(
+    is_on_screen: bool,
+    tab: InspectorTab,
+    lists_version: u64,
+    place: Option<&Place>,
+    engines: &'a [EngineState],
+) -> InspectorCtx<'a> {
+    InspectorCtx {
+        is_on_screen,
+        tab,
+        lists_version,
+        open: open_list_of(place, engines),
+    }
 }
 
 /// What the actions read from the state: the open list and the command line

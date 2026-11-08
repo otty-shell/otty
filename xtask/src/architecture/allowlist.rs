@@ -108,18 +108,6 @@ pub const ALLOWLIST: &[Allowed] = &[
     Allowed::known(
         Rule::WidgetModuleVisibility,
         "widgets/containers/mod.rs",
-        "pub(crate) mod inspector",
-        "the containers route uses InspectTarget and LogTarget, which travel in intents; move them into types.rs",
-    ),
-    Allowed::known(
-        Rule::WidgetModuleVisibility,
-        "widgets/containers/mod.rs",
-        "pub(crate) mod inspector_tabs",
-        "only tests outside the widget name TabContent; close it once those tests reach it through the widget",
-    ),
-    Allowed::known(
-        Rule::WidgetModuleVisibility,
-        "widgets/containers/mod.rs",
         "pub(crate) mod no_engine",
         "view.rs names NoEngineCase to pick the no-engine screen; move the case into types.rs",
     ),
@@ -185,12 +173,6 @@ pub const ALLOWLIST: &[Allowed] = &[
     ),
     Allowed::known(
         Rule::StreamOutsideSubscription,
-        "widgets/containers/logs.rs",
-        "Subscription::run",
-        "the stream is built in a topic file; move it into the widget's subscription.rs",
-    ),
-    Allowed::known(
-        Rule::StreamOutsideSubscription,
         "widgets/explorer/watcher.rs",
         "Subscription::run",
         "the stream is built in a topic file; move it into the widget's subscription.rs",
@@ -206,12 +188,6 @@ pub const ALLOWLIST: &[Allowed] = &[
         "view/terminal.rs",
         "Terminal",
         "view.rs still holds the screens of both modes",
-    ),
-    Allowed::known(
-        Rule::ViewModelNotFromState,
-        "widgets/containers/mod.rs",
-        "inspector_tabs_vm",
-        "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
     ),
     Allowed::known(
         Rule::ViewModelNotFromState,

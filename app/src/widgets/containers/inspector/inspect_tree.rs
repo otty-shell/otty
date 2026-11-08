@@ -7,8 +7,8 @@ use otty_ui_kit::components::data_tree::DataRow;
 use otty_ui_kit::components::key_value_list::ValuePart;
 use serde_json::{Map, Value};
 
+use super::super::links::LinkTarget;
 use super::inspect_links::{InspectLinks, LIST_ITEM};
-use super::links::LinkTarget;
 
 /// General values that read first.
 const GENERAL_FIRST: [&str; 3] = ["Id", "Name", "Created"];

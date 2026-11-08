@@ -1,15 +1,16 @@
 //! The logs subscription of the inspector's Logs tab: it follows one
-//! container and sends its new lines to the widget. It exists only while
-//! the widget follows logs (see `ContainersState::wanted_log_target`).
+//! container and sends its new lines to the inspector. It exists only while
+//! the inspector follows logs (see `wanted_log_target` in `reducer.rs`).
 
 use iced::Subscription;
 use iced::futures::stream::BoxStream;
 use iced::futures::{FutureExt, SinkExt, StreamExt};
 use otty_containers::{Engine, EngineError, LogLine, LogPosition};
 
-use super::event::{ContainersEvent, ContainersIntent};
-use super::inspector::{LOG_TAIL, LogRead, LogTarget, MAX_LOG_LINES};
-use super::types::ContainersError;
+use super::super::types::ContainersError;
+use super::event::InspectorIntent;
+use super::state::{InspectorState, LOG_TAIL, MAX_LOG_LINES};
+use super::types::{LogRead, LogTarget};
 
 /// Messages that may wait for the app before the stream waits too.
 const CHANNEL_SIZE: usize = 100;
@@ -28,14 +29,14 @@ struct LineBatch {
     error: Option<EngineError>,
 }
 
-/// Follow the logs of `target`; nothing when no logs are followed. The
-/// subscription is keyed by the target, so another container or engine, or
+/// Follow the logs the inspector follows; nothing when it follows none. The
+/// subscription is keyed by their target, so another container or engine, or
 /// the container coming back, stops this stream and starts a new one.
-pub(super) fn subscription(
-    target: Option<&LogTarget>,
-) -> Subscription<ContainersEvent> {
-    match target {
-        Some(target) => Subscription::run_with(target.clone(), follow),
+pub(crate) fn followed_logs(
+    state: &InspectorState,
+) -> Subscription<InspectorIntent> {
+    match state.logs() {
+        Some(logs) => Subscription::run_with(logs.target().clone(), follow),
         None => Subscription::none(),
     }
 }
@@ -49,7 +50,7 @@ pub(super) fn subscription(
 /// A stream that goes on after a position does not read the run: the lines on
 /// screen belong to the run read before them, and that run is what the next
 /// reconnect must compare with.
-fn follow(target: &LogTarget) -> BoxStream<'static, ContainersEvent> {
+fn follow(target: &LogTarget) -> BoxStream<'static, InspectorIntent> {
     let target = target.clone();
 
     Box::pin(iced::stream::channel(
@@ -74,11 +75,11 @@ fn follow(target: &LogTarget) -> BoxStream<'static, ContainersEvent> {
                         return;
                     },
                 };
-                let event = intent(ContainersIntent::LogRunRead {
+                let read = InspectorIntent::LogRunRead {
                     target: target.clone(),
                     run,
-                });
-                if output.send(event).await.is_err() {
+                };
+                if output.send(read).await.is_err() {
                     return;
                 }
 
@@ -93,12 +94,12 @@ fn follow(target: &LogTarget) -> BoxStream<'static, ContainersEvent> {
                 let batch = ready_lines(first, &mut lines);
 
                 if !batch.lines.is_empty() {
-                    let event = intent(ContainersIntent::LogLines {
+                    let arrived = InspectorIntent::LogLines {
                         target: target.clone(),
                         lines: batch.lines,
                         position: batch.position,
-                    });
-                    if output.send(event).await.is_err() {
+                    };
+                    if output.send(arrived).await.is_err() {
                         return;
                     }
                 }
@@ -142,15 +143,11 @@ fn ready_lines(
     batch
 }
 
-fn failed(target: &LogTarget, err: EngineError) -> ContainersEvent {
-    intent(ContainersIntent::LogsFailed {
+fn failed(target: &LogTarget, err: EngineError) -> InspectorIntent {
+    InspectorIntent::LogsFailed {
         target: target.clone(),
         error: ContainersError::from(err),
-    })
-}
-
-fn intent(intent: ContainersIntent) -> ContainersEvent {
-    ContainersEvent::Intent(intent)
+    }
 }
 
 #[cfg(test)]
@@ -278,30 +275,20 @@ mod tests {
     }
 
     /// What the stream of `target` sends until it ends.
-    fn followed_intents(target: &LogTarget) -> Vec<ContainersIntent> {
+    fn followed_intents(target: &LogTarget) -> Vec<InspectorIntent> {
         let runtime =
             <iced::executor::Default as Executor>::new().expect("a runtime");
         let _context = runtime.enter();
 
-        let events: Vec<ContainersEvent> = block_on(follow(target).collect());
-
-        events
-            .into_iter()
-            .map(|event| match event {
-                ContainersEvent::Intent(intent) => intent,
-                ContainersEvent::Effect(effect) => {
-                    panic!("no effect expected: {effect:?}")
-                },
-            })
-            .collect()
+        block_on(follow(target).collect())
     }
 
     /// The lines of all `LogLines` in `intents`.
-    fn lines_of(intents: &[ContainersIntent]) -> Vec<&str> {
+    fn lines_of(intents: &[InspectorIntent]) -> Vec<&str> {
         intents
             .iter()
             .filter_map(|intent| match intent {
-                ContainersIntent::LogLines { lines, .. } => Some(lines),
+                InspectorIntent::LogLines { lines, .. } => Some(lines),
                 _ => None,
             })
             .flatten()
@@ -328,7 +315,7 @@ mod tests {
         assert!(requests[1].contains("tail=500"), "{requests:?}");
         assert!(matches!(
             &intents[0],
-            ContainersIntent::LogRunRead { target: read, run }
+            InspectorIntent::LogRunRead { target: read, run }
                 if read == &target && run.is_running()
         ));
         assert_eq!(lines_of(&intents), ["bye", "hello"]);
@@ -343,7 +330,7 @@ mod tests {
 
         let requests = server.join().expect("the server");
         assert_eq!(requests.len(), 2, "{requests:?}");
-        assert!(matches!(&intents[0], ContainersIntent::LogRunRead { .. }));
+        assert!(matches!(&intents[0], InspectorIntent::LogRunRead { .. }));
         assert_eq!(lines_of(&intents), ["hello"]);
     }
 
@@ -377,7 +364,7 @@ mod tests {
         server.join().expect("the server");
         let last_position =
             intents.iter().rev().find_map(|intent| match intent {
-                ContainersIntent::LogLines { position, .. } => *position,
+                InspectorIntent::LogLines { position, .. } => *position,
                 _ => None,
             });
         assert!(last_position.is_some(), "{intents:?}");
@@ -394,7 +381,7 @@ mod tests {
         assert_eq!(intents.len(), 1, "{intents:?}");
         assert!(matches!(
             &intents[0],
-            ContainersIntent::LogsFailed { error, .. }
+            InspectorIntent::LogsFailed { error, .. }
                 if error.to_string().contains("No such container")
         ));
     }
@@ -474,7 +461,7 @@ mod tests {
         assert!(shown.iter().all(|line| line.len() <= MAX_LOG_LINE_BYTES));
         assert_eq!(shown.concat(), text);
         let is_position_told = intents.iter().all(|intent| match intent {
-            ContainersIntent::LogLines { position, .. } => position.is_some(),
+            InspectorIntent::LogLines { position, .. } => position.is_some(),
             _ => true,
         });
         assert!(is_position_told, "{intents:?}");

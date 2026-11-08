@@ -2,12 +2,8 @@ pub(crate) mod actions;
 pub(crate) mod create;
 pub(crate) mod event;
 pub(crate) mod format;
-mod inspect_links;
-mod inspect_tree;
 pub(crate) mod inspector;
-pub(crate) mod inspector_tabs;
 mod links;
-mod logs;
 mod model;
 pub(crate) mod no_engine;
 mod overview;
@@ -26,7 +22,7 @@ use actions::{ActionsViewModel, ConfirmViewModel, RowMenuViewModel};
 use create::FormViewModel;
 use event::{ContainersEvent, ContainersIntent};
 use iced::{Subscription, Task, task};
-use inspector_tabs::InspectorTabsViewModel;
+use inspector::InspectorTabsViewModel;
 pub(crate) use model::MainViewModel;
 use model::{InspectorViewModel, TreeRowViewModel};
 use run::{ImagePanelViewModel, RunFormViewModel};
@@ -118,7 +114,10 @@ impl ContainersWidget {
     pub(crate) fn inspector_tabs_vm(
         &self,
     ) -> Option<InspectorTabsViewModel<'_>> {
-        inspector_tabs::inspector_tabs(&self.state)
+        InspectorTabsViewModel::from_state(
+            self.state.inspector(),
+            &self.state.inspector_ctx(),
+        )
     }
 
     /// The Containers mode subscriptions: the engine events watch, the followed
@@ -146,9 +145,7 @@ impl ContainersWidget {
     /// Follow the logs of the selected container while the Logs tab is on
     /// screen in Containers mode; nothing otherwise.
     fn followed_logs(&self) -> Subscription<ContainersEvent> {
-        let target = self.state.inspector().logs().map(|logs| logs.target());
-
-        logs::subscription(target)
+        subscription::followed_logs(&self.state)
     }
 
     /// Build the action buttons of the selected row.
@@ -200,6 +197,14 @@ impl ContainersWidget {
     pub(crate) fn has_pull_task(&self) -> bool {
         self.pull_task.is_some()
     }
+
+    /// Return how many lines the followed logs show; 0 without them.
+    pub(crate) fn log_line_count(&self) -> usize {
+        self.state
+            .inspector()
+            .logs()
+            .map_or(0, |logs| logs.lines().line_count())
+    }
 }
 
 #[cfg(test)]
@@ -211,6 +216,7 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::containers::inspector::event::InspectorIntent;
     use crate::widgets::containers::run::event::RunIntent;
     use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::containers::types::{InspectorTab, LoadedLists};
@@ -325,15 +331,19 @@ mod tests {
             .find(|id| *id != selected)
             .expect("another container");
 
-        let _ = widget.reduce(ContainersIntent::ContainerStarted {
-            engine: docker.address().clone(),
-            id: other.to_string(),
-        });
+        let _ = widget.reduce(ContainersIntent::Inspector(
+            InspectorIntent::ContainerStarted {
+                engine: docker.address().clone(),
+                id: other.to_string(),
+            },
+        ));
         let after_other = subscriptions(&widget);
-        let _ = widget.reduce(ContainersIntent::ContainerStarted {
-            engine: docker.address().clone(),
-            id: selected,
-        });
+        let _ = widget.reduce(ContainersIntent::Inspector(
+            InspectorIntent::ContainerStarted {
+                engine: docker.address().clone(),
+                id: selected,
+            },
+        ));
         let after_own = subscriptions(&widget);
 
         assert_eq!(after_other, first);

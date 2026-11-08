@@ -25,7 +25,10 @@ use crate::widgets::containers::create::event::{CreateEffect, CreateIntent};
 use crate::widgets::containers::event::{
     ContainersEffect, ContainersEvent, ContainersIntent,
 };
-use crate::widgets::containers::inspector::{InspectTarget, LogTarget};
+use crate::widgets::containers::inspector::event::{
+    InspectorEffect, InspectorIntent,
+};
+use crate::widgets::containers::inspector::types::{InspectTarget, LogTarget};
 use crate::widgets::containers::run::event::{RunEffect, RunIntent};
 use crate::widgets::containers::types::{
     ActionRequest, ContainersError, EngineAction, LoadedList, LoadedLists,
@@ -68,6 +71,9 @@ pub(crate) fn route(app: &mut App, event: ContainersEvent) -> Task<AppEvent> {
         },
         ContainersEvent::Effect(ContainersEffect::Actions(effect)) => {
             actions_effect(app, effect)
+        },
+        ContainersEvent::Effect(ContainersEffect::Inspector(effect)) => {
+            inspector_effect(effect)
         },
         ContainersEvent::Effect(effect) => handle_effect(effect),
     }
@@ -163,6 +169,34 @@ fn actions_effect(app: &App, effect: ActionsEffect) -> Task<AppEvent> {
     }
 }
 
+/// Run an effect of the inspector: the inspect JSON of a row and the run of
+/// the container of the open logs come back as intents of the inspector.
+fn inspector_effect(effect: InspectorEffect) -> Task<AppEvent> {
+    match effect {
+        InspectorEffect::LoadInspect { engine, target } => {
+            let shown = target.clone();
+
+            Task::perform(load_inspect(engine, target), move |result| {
+                inspector_intent(InspectorIntent::InspectLoaded {
+                    target: shown.clone(),
+                    result,
+                })
+            })
+        },
+        InspectorEffect::CheckLogRun(target) => {
+            let asked = target.clone();
+
+            Task::perform(load_log_run(target), move |result| {
+                inspector_intent(InspectorIntent::LogRunChecked {
+                    target: asked.clone(),
+                    result,
+                })
+            })
+        },
+        InspectorEffect::CopyToClipboard(text) => iced::clipboard::write(text),
+    }
+}
+
 /// Pull `image` at `tag` on `engine` and keep the pull's abort handle in the
 /// widget; `to_event` turns each update into the intent of the part that
 /// asked for the pull.
@@ -231,8 +265,8 @@ fn open_shell_tab(
 
 /// Run the effects that need no app state; the effects of the parts are run
 /// by [`route`]: the create dialogs and the Run form, whose pull's abort
-/// handle the widget keeps, and the actions, whose shell tab takes the
-/// terminal settings.
+/// handle the widget keeps, the actions, whose shell tab takes the terminal
+/// settings, and the inspector.
 fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
     match effect {
         ContainersEffect::Discover => Task::perform(discover(), |discovery| {
@@ -247,26 +281,6 @@ fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
         ContainersEffect::OpenUrl(url) => {
             services::open_url(&url);
             Task::none()
-        },
-        ContainersEffect::LoadInspect { engine, target } => {
-            let shown = target.clone();
-
-            Task::perform(load_inspect(engine, target), move |result| {
-                intent(ContainersIntent::InspectLoaded {
-                    target: shown.clone(),
-                    result,
-                })
-            })
-        },
-        ContainersEffect::CheckLogRun(target) => {
-            let asked = target.clone();
-
-            Task::perform(load_log_run(target), move |result| {
-                intent(ContainersIntent::LogRunChecked {
-                    target: asked.clone(),
-                    result,
-                })
-            })
         },
         ContainersEffect::LoadLists(info) => {
             let engine = info.address().clone();
@@ -297,7 +311,8 @@ fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
         )),
         ContainersEffect::Create(_)
         | ContainersEffect::Run(_)
-        | ContainersEffect::Actions(_) => Task::none(),
+        | ContainersEffect::Actions(_)
+        | ContainersEffect::Inspector(_) => Task::none(),
     }
 }
 
@@ -516,6 +531,12 @@ fn run_intent(intent: RunIntent) -> AppEvent {
 
 fn actions_intent(intent: ActionsIntent) -> AppEvent {
     AppEvent::Containers(ContainersEvent::Intent(ContainersIntent::Actions(
+        intent,
+    )))
+}
+
+fn inspector_intent(intent: InspectorIntent) -> AppEvent {
+    AppEvent::Containers(ContainersEvent::Intent(ContainersIntent::Inspector(
         intent,
     )))
 }
@@ -790,7 +811,7 @@ mod tests {
             "850b6438a531",
         );
 
-        let inspect = handle_effect(ContainersEffect::LoadInspect {
+        let inspect = inspector_effect(InspectorEffect::LoadInspect {
             engine: docker,
             target,
         });
@@ -802,7 +823,7 @@ mod tests {
     fn checking_the_run_of_open_logs_runs_one_engine_task() {
         let docker = fixtures::engine(EngineKind::Docker);
 
-        let check = handle_effect(ContainersEffect::CheckLogRun(
+        let check = inspector_effect(InspectorEffect::CheckLogRun(
             LogTarget::new(docker, "850b6438a531"),
         ));
 
@@ -1023,6 +1044,20 @@ mod tests {
         let copy = handle_effect(ContainersEffect::CopyToClipboard(
             String::from("sudo systemctl start docker"),
         ));
+
+        assert_eq!(copy.units(), 1);
+    }
+
+    #[test]
+    fn copying_the_inspect_json_runs_one_clipboard_task() {
+        let (mut app, _) = App::new();
+
+        let copy = route(
+            &mut app,
+            ContainersEvent::Effect(ContainersEffect::Inspector(
+                InspectorEffect::CopyToClipboard(String::from("{}")),
+            )),
+        );
 
         assert_eq!(copy.units(), 1);
     }

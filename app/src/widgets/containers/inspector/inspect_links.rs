@@ -8,12 +8,12 @@ use otty_containers::{
 };
 use serde_json::Value;
 
-use super::links::{
+use super::super::links::{
     LinkTarget, compose_target, container_id_target, container_image_target,
     image_target, named_container_target, network_target, port_url,
     volume_target,
 };
-use super::types::ResourceKind;
+use super::super::types::ResourceKind;
 
 /// The path key of an item of a list.
 pub(super) const LIST_ITEM: &str = "[]";
@@ -155,8 +155,8 @@ mod tests {
     use otty_ui_kit::components::key_value_list::ValuePart;
     use serde_json::json;
 
+    use super::super::inspect_tree::{InspectTree, inspect_tree};
     use super::*;
-    use crate::widgets::containers::inspect_tree::{InspectTree, inspect_tree};
 
     fn docker() -> Resources {
         fixtures::resources(EngineKind::Docker)

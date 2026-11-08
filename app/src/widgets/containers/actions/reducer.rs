@@ -1123,7 +1123,7 @@ mod tests {
 
     /// Return the id of the selected row, the one the inspector shows.
     fn selected_id(state: &ContainersState) -> Option<String> {
-        state.selected_row().map(|(_, row)| row.id().to_string())
+        state.selected_row().map(|row| row.id().to_string())
     }
 
     #[test]

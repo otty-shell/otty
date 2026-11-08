@@ -1,17 +1,13 @@
 use iced::Point;
-use iced::widget::text_editor::Action;
-use otty_containers::{
-    Container, ContainerRun, Discovery, EngineAddress, EngineInfo, LogPosition,
-};
+use otty_containers::{Container, Discovery, EngineAddress, EngineInfo};
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
 use super::actions::event::{ActionsEffect, ActionsIntent};
 use super::create::event::{CreateEffect, CreateIntent};
-use super::inspector::{InspectTarget, LogTarget};
-use super::links::LinkTarget;
+use super::inspector::event::{InspectorEffect, InspectorIntent};
 use super::run::event::{RunEffect, RunIntent};
 use super::types::{
-    ContainersError, InspectorTab, LoadedList, LoadedLists, Place, ResourceKind,
+    InspectorTab, LoadedList, LoadedLists, Place, ResourceKind,
 };
 
 /// Intent events handled by the Containers widget.
@@ -74,55 +70,8 @@ pub(crate) enum ContainersIntent {
     CopyCommand(String),
     /// Open this page in the browser (the Install and How to fix buttons).
     OpenLink(String),
-    /// A link in the inspector Overview was pressed: open the page of a
-    /// published port, show the named item selected in its list, or add the
-    /// `compose` tag of a Compose project.
-    FollowLink(LinkTarget),
-    // Inspector tabs.
     /// An inspector tab was pressed.
     SelectInspectorTab(InspectorTab),
-    /// New lines of the followed logs arrived; `position` is where they end,
-    /// when they have a time.
-    LogLines {
-        target: LogTarget,
-        lines: Vec<String>,
-        position: Option<LogPosition>,
-    },
-    /// The stream of the followed logs read which run it follows.
-    LogRunRead {
-        target: LogTarget,
-        run: ContainerRun,
-    },
-    /// What became of the container of the followed logs, asked after its
-    /// engine reconnected, or the engine's message.
-    LogRunChecked {
-        target: LogTarget,
-        result: Result<ContainerRun, ContainersError>,
-    },
-    /// The followed logs could not be read; the engine's message.
-    LogsFailed {
-        target: LogTarget,
-        error: ContainersError,
-    },
-    /// Selection or scroll in the log view.
-    LogAction(Action),
-    /// The Follow switch of the logs was turned on or off.
-    LogFollowToggled(bool),
-    /// The inspect JSON of a row arrived, or the engine's message.
-    InspectLoaded {
-        target: InspectTarget,
-        result: Result<String, ContainersError>,
-    },
-    /// Selection or scroll in the inspect view.
-    InspectAction(Action),
-    /// The title of this inspect section was pressed: open or close it.
-    InspectSectionToggled(String),
-    /// The Show empty switch of the inspect tree was turned on or off.
-    InspectShowEmptyToggled(bool),
-    /// The Raw JSON switch of the Inspect tab was turned on or off.
-    InspectRawJsonToggled(bool),
-    /// Copy the inspect JSON to the clipboard (the Copy JSON button).
-    CopyInspectJson,
     // Live updates from engine events.
     /// An engine event changed this list of this engine (the events watch
     /// sends it at most once per 500 ms per list).
@@ -130,8 +79,6 @@ pub(crate) enum ContainersIntent {
         engine: EngineAddress,
         resource: ResourceKind,
     },
-    /// This container of this engine was started or restarted.
-    ContainerStarted { engine: EngineAddress, id: String },
     /// The events stream of this engine broke and is open again; changes in
     /// between were missed.
     EngineReconnected(EngineAddress),
@@ -162,6 +109,9 @@ pub(crate) enum ContainersIntent {
     /// An intent of the actions: the row menu, the confirmation dialog,
     /// Prune and the engine calls that run.
     Actions(ActionsIntent),
+    /// An intent of the inspector: its followed logs, its inspect answer and
+    /// the presses in the body of its open tab.
+    Inspector(InspectorIntent),
 }
 
 /// Effect events produced by the Containers reducer. The app runs them off the
@@ -179,14 +129,6 @@ pub(crate) enum ContainersEffect {
     CopyToClipboard(String),
     /// Open this page in the default browser.
     OpenUrl(String),
-    /// Load the inspect JSON of this row from this engine.
-    LoadInspect {
-        engine: EngineInfo,
-        target: InspectTarget,
-    },
-    /// Ask what became of the container of these logs, after its engine
-    /// reconnected.
-    CheckLogRun(LogTarget),
     /// Load one list of this engine again. "Used by" of images, volumes and
     /// networks is read from `containers`; a container load does not use
     /// it.
@@ -201,6 +143,8 @@ pub(crate) enum ContainersEffect {
     Run(RunEffect),
     /// An effect of the actions.
     Actions(ActionsEffect),
+    /// An effect of the inspector.
+    Inspector(InspectorEffect),
     /// A row press selected a row: make the right panel visible, so the
     /// inspector shows it.
     RevealInspector,

@@ -5,14 +5,14 @@ use std::collections::BTreeSet;
 
 use otty_ui_kit::components::log_view::LogViewState;
 
-use super::inspect_links::InspectLinks;
-use super::inspect_tree::{InspectTree, inspect_tree};
-use super::inspector::{InspectLoad, InspectTarget};
-use super::overview::{
+use super::super::overview::{
     self, Field, container_fields, network_fields, volume_fields,
 };
-use super::state::{ContainersState, EngineState};
-use super::types::{InspectorTab, ListRow};
+use super::super::types::{InspectorTab, ListRow, OpenList};
+use super::inspect_tree::InspectTree;
+use super::reducer::InspectorCtx;
+use super::state::{InspectLoad, InspectorState};
+use super::types::InspectTarget;
 
 /// The tab row and the body of the open tab.
 pub(crate) struct InspectorTabsViewModel<'a> {
@@ -20,6 +20,39 @@ pub(crate) struct InspectorTabsViewModel<'a> {
     pub(crate) tabs: &'static [InspectorTab],
     pub(crate) selected: InspectorTab,
     pub(crate) content: TabContent<'a>,
+}
+
+impl<'a> InspectorTabsViewModel<'a> {
+    /// The tabs of the selected row of the open list and the body of the
+    /// open tab; `None` when nothing is selected.
+    pub(crate) fn from_state(
+        state: &'a InspectorState,
+        ctx: &InspectorCtx<'a>,
+    ) -> Option<Self> {
+        let open = ctx.open?;
+        let row = open.selected_row()?;
+        let selected = ctx.tab;
+
+        let content = match selected {
+            InspectorTab::Logs => {
+                let logs = state.logs();
+                TabContent::Logs {
+                    lines: logs.map(|logs| logs.lines()),
+                    error: logs.and_then(|logs| logs.error()),
+                }
+            },
+            InspectorTab::Inspect => {
+                TabContent::Inspect(inspect_content(state, &open, &row))
+            },
+            _ => TabContent::Overview(overview_fields(&open, &row)),
+        };
+
+        Some(Self {
+            tabs: InspectorTab::of(row.resource()),
+            selected,
+            content,
+        })
+    }
 }
 
 /// What the open tab shows.
@@ -59,111 +92,43 @@ pub(crate) struct InspectLoadedViewModel<'a> {
     pub(crate) shows_empty: bool,
 }
 
-/// The tabs of the selected row of the open list; `None` when nothing is
-/// selected.
-pub(super) fn inspector_tabs(
-    state: &ContainersState,
-) -> Option<InspectorTabsViewModel<'_>> {
-    let (engine, row) = state.selected_row()?;
-    let selected = state.inspector_tab();
-
-    let content = match selected {
-        InspectorTab::Logs => {
-            let logs = state.inspector().logs();
-            TabContent::Logs {
-                lines: logs.map(|logs| logs.lines()),
-                error: logs.and_then(|logs| logs.error()),
-            }
-        },
-        InspectorTab::Inspect => {
-            TabContent::Inspect(inspect_content(state, engine, &row))
-        },
-        _ => TabContent::Overview(overview_fields(engine, &row)),
-    };
-
-    Some(InspectorTabsViewModel {
-        tabs: InspectorTab::of(row.resource()),
-        selected,
-        content,
-    })
-}
-
-/// Build the inspect tree again when what it comes from has changed: the
-/// answer, the engine's lists (its links point into them) or the Show empty
-/// switch. The reducer calls this after every intent; the view only reads the
-/// result.
-pub(super) fn refresh_inspect_tree(state: &mut ContainersState) {
-    if state.inspector_tab() != InspectorTab::Inspect {
-        return;
-    }
-    let lists_version = state.lists_version();
-    let Some(value) = state.inspector().answer_of_old_tree(lists_version)
-    else {
-        return;
-    };
-    let Some((engine, row)) = state.selected_row() else {
-        return;
-    };
-
-    let shown_container = match row {
-        ListRow::Container(container) => Some(container),
-        _ => None,
-    };
-    let links = InspectLinks {
-        resource: row.resource(),
-        shown_container,
-        containers: engine.containers().items(),
-        images: engine.images().items(),
-        volumes: engine.volumes().items(),
-        networks: engine.networks().items(),
-    };
-    let rows = inspect_tree(value, state.inspector().shows_empty(), &links);
-
-    state.inspector_mut().keep_inspect_tree(rows, lists_version);
-}
-
-/// The Overview fields of `row`; their links point into the engine's
-/// lists, and an image counts its users in the engine's containers.
-fn overview_fields(engine: &EngineState, row: &ListRow<'_>) -> Vec<Field> {
-    let containers = engine.containers().items();
-
+/// The Overview fields of `row`; their links point into the engine's lists,
+/// and an image counts its users in the engine's containers.
+fn overview_fields(open: &OpenList<'_>, row: &ListRow<'_>) -> Vec<Field> {
     match row {
         ListRow::Container(container) => container_fields(
             container,
-            engine.images().items(),
-            engine.volumes().items(),
-            engine.networks().items(),
+            open.images,
+            open.volumes,
+            open.networks,
         ),
-        ListRow::Image(image) => overview::image_fields(image, containers),
-        ListRow::Volume(volume) => volume_fields(volume, containers),
-        ListRow::Network(network) => network_fields(network, containers),
+        ListRow::Image(image) => overview::image_fields(image, open.containers),
+        ListRow::Volume(volume) => volume_fields(volume, open.containers),
+        ListRow::Network(network) => network_fields(network, open.containers),
     }
 }
 
 /// The inspect JSON of `row`; loading until it is the one that arrived.
 fn inspect_content<'a>(
-    state: &'a ContainersState,
-    engine: &EngineState,
+    state: &'a InspectorState,
+    open: &OpenList<'_>,
     row: &ListRow<'_>,
 ) -> InspectContent<'a> {
     let target = InspectTarget::new(
-        engine.info().address().clone(),
+        open.engine.address().clone(),
         row.resource(),
         row.id(),
     );
     let Some(inspect) = state
-        .inspector()
         .inspect()
         .filter(|inspect| *inspect.target() == target)
     else {
         return InspectContent::Loading;
     };
 
-    let inspector = state.inspector();
-
     match inspect.load() {
         InspectLoad::Loaded(loaded) => {
-            let tree = if inspector.is_raw_json() {
+            let tree = if state.is_raw_json() {
                 None
             } else {
                 loaded.tree().cloned()
@@ -173,7 +138,7 @@ fn inspect_content<'a>(
                 json: loaded.json(),
                 tree,
                 open_sections: loaded.open_sections(),
-                shows_empty: inspector.shows_empty(),
+                shows_empty: state.shows_empty(),
             })
         },
         InspectLoad::Failed(message) => InspectContent::Failed(message),
@@ -187,12 +152,13 @@ mod tests {
     use otty_ui_kit::components::data_tree::DataRow;
     use otty_ui_kit::components::key_value_list::ValuePart;
 
+    use super::super::event::InspectorIntent;
+    use super::super::types::LogTarget;
     use super::*;
     use crate::widgets::containers::event::ContainersIntent;
-    use crate::widgets::containers::inspector::{InspectTarget, LogTarget};
     use crate::widgets::containers::links::LinkTarget;
-    use crate::widgets::containers::overview;
     use crate::widgets::containers::reducer::reduce;
+    use crate::widgets::containers::state::ContainersState;
     use crate::widgets::containers::types::{
         ContainersError, LoadedList, LoadedLists, Place, ResourceKind,
     };
@@ -228,6 +194,16 @@ mod tests {
 
     fn select_tab(state: &mut ContainersState, tab: InspectorTab) {
         let _ = reduce(state, ContainersIntent::SelectInspectorTab(tab));
+    }
+
+    /// The tabs view model of `state`, as the widget builds it.
+    fn inspector_tabs(
+        state: &ContainersState,
+    ) -> Option<InspectorTabsViewModel<'_>> {
+        InspectorTabsViewModel::from_state(
+            state.inspector(),
+            &state.inspector_ctx(),
+        )
     }
 
     #[test]
@@ -318,18 +294,18 @@ mod tests {
         select_tab(&mut state, InspectorTab::Logs);
         let _ = reduce(
             &mut state,
-            ContainersIntent::LogLines {
+            ContainersIntent::Inspector(InspectorIntent::LogLines {
                 target: target.clone(),
                 lines: vec![String::from("ready")],
                 position: None,
-            },
+            }),
         );
         let _ = reduce(
             &mut state,
-            ContainersIntent::LogsFailed {
+            ContainersIntent::Inspector(InspectorIntent::LogsFailed {
                 target,
                 error: ContainersError::new("stream closed"),
-            },
+            }),
         );
 
         let vm = inspector_tabs(&state).expect("a selected container");
@@ -349,14 +325,14 @@ mod tests {
         select_tab(&mut state, InspectorTab::Inspect);
         let _ = reduce(
             &mut state,
-            ContainersIntent::InspectLoaded {
+            ContainersIntent::Inspector(InspectorIntent::InspectLoaded {
                 target: InspectTarget::new(
                     docker().address().clone(),
                     ResourceKind::Containers,
                     resources.containers()[0].id(),
                 ),
                 result: Ok(json.to_string()),
-            },
+            }),
         );
         state
     }
@@ -469,7 +445,7 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            ContainersIntent::InspectLoaded {
+            ContainersIntent::Inspector(InspectorIntent::InspectLoaded {
                 target: InspectTarget::new(
                     docker().address().clone(),
                     ResourceKind::Networks,
@@ -479,7 +455,7 @@ mod tests {
                     "{ \"Containers\": { \"a\": { \"Name\": \"otty-fx-web-1\" \
                      } } }",
                 )),
-            },
+            }),
         );
 
         check_loaded(&state, |loaded| {
@@ -508,8 +484,12 @@ mod tests {
     fn the_raw_json_switch_shows_the_json_instead_of_the_tree() {
         let mut state = with_inspect("{ \"Id\": \"850b\" }");
 
-        let _ =
-            reduce(&mut state, ContainersIntent::InspectRawJsonToggled(true));
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Inspector(
+                InspectorIntent::InspectRawJsonToggled(true),
+            ),
+        );
 
         check_loaded(&state, |loaded| {
             assert!(loaded.tree.is_none());
@@ -584,14 +564,14 @@ mod tests {
         select_tab(&mut state, InspectorTab::Inspect);
         let _ = reduce(
             &mut state,
-            ContainersIntent::InspectLoaded {
+            ContainersIntent::Inspector(InspectorIntent::InspectLoaded {
                 target: InspectTarget::new(
                     docker().address().clone(),
                     ResourceKind::Containers,
                     resources.containers()[0].id(),
                 ),
                 result: Ok(format!("{{ \"Image\": \"{image_id}\" }}")),
-            },
+            }),
         );
         assert!(!image_is_a_link(&state));
 
@@ -610,13 +590,25 @@ mod tests {
     fn the_tree_changes_with_the_show_empty_switch_after_the_raw_json_switch() {
         let mut state = with_inspect("{ \"Id\": \"850b\", \"Name\": \"\" }");
 
-        let _ =
-            reduce(&mut state, ContainersIntent::InspectRawJsonToggled(true));
-        let _ =
-            reduce(&mut state, ContainersIntent::InspectShowEmptyToggled(true));
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Inspector(
+                InspectorIntent::InspectRawJsonToggled(true),
+            ),
+        );
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Inspector(
+                InspectorIntent::InspectShowEmptyToggled(true),
+            ),
+        );
         check_loaded(&state, |loaded| assert!(loaded.tree.is_none()));
-        let _ =
-            reduce(&mut state, ContainersIntent::InspectRawJsonToggled(false));
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Inspector(
+                InspectorIntent::InspectRawJsonToggled(false),
+            ),
+        );
 
         check_loaded(&state, |loaded| {
             let tree = loaded.tree.expect("the tree");
@@ -661,10 +653,15 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            ContainersIntent::InspectSectionToggled(String::from("State")),
+            ContainersIntent::Inspector(
+                InspectorIntent::InspectSectionToggled(String::from("State")),
+            ),
         );
         let _ = inspector_tabs(&state);
-        let _ = reduce(&mut state, ContainersIntent::CopyInspectJson);
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Inspector(InspectorIntent::CopyInspectJson),
+        );
 
         assert_eq!(kept_rows_address(&state), kept);
 
@@ -687,8 +684,12 @@ mod tests {
             assert_eq!(tree.general, vec![DataRow::new(0, "Id", "850b")]);
         });
 
-        let _ =
-            reduce(&mut state, ContainersIntent::InspectShowEmptyToggled(true));
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::Inspector(
+                InspectorIntent::InspectShowEmptyToggled(true),
+            ),
+        );
 
         check_loaded(&state, |loaded| {
             let tree = loaded.tree.expect("the tree");
@@ -722,14 +723,14 @@ mod tests {
         select_tab(&mut state, InspectorTab::Inspect);
         let _ = reduce(
             &mut state,
-            ContainersIntent::InspectLoaded {
+            ContainersIntent::Inspector(InspectorIntent::InspectLoaded {
                 target: InspectTarget::new(
                     docker().address().clone(),
                     ResourceKind::Containers,
                     resources.containers()[0].id(),
                 ),
                 result: Err(ContainersError::new("engine said no")),
-            },
+            }),
         );
 
         let vm = inspector_tabs(&state).expect("a selected container");

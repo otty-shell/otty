@@ -1,7 +1,8 @@
 //! Watches the events of every reached engine while Containers mode is active
-//! (spec Decision 14) and turns them into Containers intents. Also asks again
-//! about the folders of the Run form while it has any, and looks for engines
-//! while the no-engine card shows (spec Decision 9).
+//! (spec Decision 14) and turns them into Containers intents. Also follows the
+//! logs the inspector shows, asks again about the folders of the Run form
+//! while it has any, and looks for engines while the no-engine card shows
+//! (spec Decision 9).
 
 use std::time::Duration;
 
@@ -12,6 +13,8 @@ use otty_containers::{
 };
 
 use super::event::{ContainersEvent, ContainersIntent};
+use super::inspector;
+use super::inspector::event::InspectorIntent;
 use super::run::event::RunIntent;
 use super::state::ContainersState;
 use super::types::ResourceKind;
@@ -32,6 +35,16 @@ pub(super) fn subscription(
     Subscription::batch(state.engines().iter().map(|engine| {
         Subscription::run_with(engine.info().clone(), watch_engine)
     }))
+}
+
+/// The logs stream of the inspector, while it follows logs: the Logs tab of a
+/// selected container is on screen in active Containers mode.
+pub(super) fn followed_logs(
+    state: &ContainersState,
+) -> Subscription<ContainersEvent> {
+    inspector::followed_logs(state.inspector()).map(|intent| {
+        ContainersEvent::Intent(ContainersIntent::Inspector(intent))
+    })
 }
 
 /// A timer that asks again about the folders of the Run form, so a folder
@@ -73,10 +86,10 @@ fn watch_intent(engine: &EngineAddress, event: WatchEvent) -> ContainersIntent {
             resource: resource_of(list),
         },
         WatchEvent::ContainerStarted(id) => {
-            ContainersIntent::ContainerStarted {
+            ContainersIntent::Inspector(InspectorIntent::ContainerStarted {
                 engine: engine.clone(),
                 id,
-            }
+            })
         },
         WatchEvent::Reconnected => {
             ContainersIntent::EngineReconnected(engine.clone())
@@ -318,10 +331,10 @@ mod tests {
 
         assert_eq!(
             intent,
-            ContainersIntent::ContainerStarted {
+            ContainersIntent::Inspector(InspectorIntent::ContainerStarted {
                 engine,
                 id: String::from("c178"),
-            }
+            })
         );
     }
 
