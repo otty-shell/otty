@@ -11,7 +11,8 @@ use super::inspector::{InspectLoad, InspectTarget, InspectorTab};
 use super::overview::{
     self, Field, container_fields, network_fields, volume_fields,
 };
-use super::state::{ContainersState, EngineState, SelectedRow};
+use super::state::{ContainersState, EngineState};
+use super::types::SelectedRow;
 
 /// The tab row and the body of the open tab.
 pub(crate) struct InspectorTabsViewModel<'a> {

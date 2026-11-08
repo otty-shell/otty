@@ -5,14 +5,13 @@ use otty_containers::{
 };
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
-use super::actions::RowAction;
+use super::actions::event::{ActionsEffect, ActionsIntent};
 use super::create::event::{CreateEffect, CreateIntent};
 use super::inspector::{InspectTarget, InspectorTab, LogTarget};
 use super::links::LinkTarget;
 use super::run::event::{RunEffect, RunIntent};
 use super::types::{
-    ActionRequest, ContainersError, LoadedList, LoadedLists, Place,
-    ResourceKind,
+    ContainersError, LoadedList, LoadedLists, Place, ResourceKind,
 };
 
 /// Intent events handled by the Containers widget.
@@ -143,10 +142,6 @@ pub(crate) enum ContainersIntent {
         engine: EngineAddress,
         list: LoadedList,
     },
-    /// An action button of the inspector or an item of the row menu was
-    /// pressed: run it on the row of the open row menu, or else on the
-    /// selected row.
-    Act(RowAction),
     /// A row was right-pressed: select it and open its menu at `position`
     /// (window coordinates).
     OpenRowMenu { index: usize, position: Point },
@@ -155,21 +150,6 @@ pub(crate) enum ContainersIntent {
     /// button's bottom-right corner) without selecting it, so the inspector
     /// keeps its row.
     RowMenuPressed { index: usize, position: Point },
-    /// A press outside the row menu closed it.
-    CloseRowMenu,
-    /// The Prune button above the table was pressed.
-    Prune,
-    /// The switch of the confirmation dialog changed.
-    ConfirmSwitchToggled(bool),
-    /// The action button of the confirmation dialog was pressed.
-    ConfirmAccepted,
-    /// Cancel of the confirmation dialog was pressed.
-    ConfirmCancelled,
-    /// The engine finished an action; the error is the engine's message.
-    ActionFinished {
-        request: ActionRequest,
-        result: Result<(), ContainersError>,
-    },
     /// The cross of the action notice was pressed.
     DismissNotice,
     /// The create button above the table was pressed: the open list opens
@@ -179,6 +159,9 @@ pub(crate) enum ContainersIntent {
     Create(CreateIntent),
     /// An intent of the Run container form.
     Run(RunIntent),
+    /// An intent of the actions: the row menu, the confirmation dialog,
+    /// Prune and the engine calls that run.
+    Actions(ActionsIntent),
 }
 
 /// Effect events produced by the Containers reducer. The app runs them off the
@@ -194,15 +177,6 @@ pub(crate) enum ContainersEffect {
     LoadLists(EngineInfo),
     /// Put this text on the clipboard.
     CopyToClipboard(String),
-    /// Open a terminal tab named `title` running `program` with `args`
-    /// (`docker --host <address> exec -it -- <id> sh`, or
-    /// `podman --url <address> exec -it -- <id> sh`), so the shell opens on
-    /// the chosen engine, then show Terminal mode.
-    OpenShell {
-        title: String,
-        program: String,
-        args: Vec<String>,
-    },
     /// Open this page in the default browser.
     OpenUrl(String),
     /// Load the inspect JSON of this row from this engine.
@@ -221,12 +195,12 @@ pub(crate) enum ContainersEffect {
         resource: ResourceKind,
         containers: Vec<Container>,
     },
-    /// Run this action on its engine.
-    RunAction(ActionRequest),
     /// An effect of the create dialogs.
     Create(CreateEffect),
     /// An effect of the Run container form.
     Run(RunEffect),
+    /// An effect of the actions.
+    Actions(ActionsEffect),
     /// A row press selected a row: make the right panel visible, so the
     /// inspector shows it.
     RevealInspector,

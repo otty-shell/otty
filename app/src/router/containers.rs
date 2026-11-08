@@ -18,6 +18,9 @@ use super::AppEvent;
 use crate::app::App;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::{self, terminal_settings_for_session};
+use crate::widgets::containers::actions::event::{
+    ActionsEffect, ActionsIntent,
+};
 use crate::widgets::containers::create::event::{CreateEffect, CreateIntent};
 use crate::widgets::containers::event::{
     ContainersEffect, ContainersEvent, ContainersIntent,
@@ -63,11 +66,9 @@ pub(crate) fn route(app: &mut App, event: ContainersEvent) -> Task<AppEvent> {
         ContainersEvent::Effect(ContainersEffect::Run(effect)) => {
             run_effect(app, effect)
         },
-        ContainersEvent::Effect(ContainersEffect::OpenShell {
-            title,
-            program,
-            args,
-        }) => open_shell_tab(&app.terminal_settings, title, program, args),
+        ContainersEvent::Effect(ContainersEffect::Actions(effect)) => {
+            actions_effect(app, effect)
+        },
         ContainersEvent::Effect(effect) => handle_effect(effect),
     }
 }
@@ -145,6 +146,23 @@ fn run_effect(app: &mut App, effect: RunEffect) -> Task<AppEvent> {
     }
 }
 
+/// Run an effect of the actions: the engine call of an action, whose result
+/// comes back as an intent of the actions, or the tab of a shell.
+fn actions_effect(app: &App, effect: ActionsEffect) -> Task<AppEvent> {
+    match effect {
+        ActionsEffect::RunAction(request) => {
+            Task::perform(run_action(request.clone()), move |result| {
+                actions_intent(ActionsIntent::Finished { request, result })
+            })
+        },
+        ActionsEffect::OpenShell {
+            title,
+            program,
+            args,
+        } => open_shell_tab(&app.terminal_settings, title, program, args),
+    }
+}
+
 /// Pull `image` at `tag` on `engine` and keep the pull's abort handle in the
 /// widget; `to_event` turns each update into the intent of the part that
 /// asked for the pull.
@@ -211,9 +229,10 @@ fn open_shell_tab(
     )))
 }
 
-/// Run the effects that need no app state; the effects of the create
-/// dialogs and of the Run form are run by [`route`], which keeps the pull's
-/// abort handle, and so is the shell tab.
+/// Run the effects that need no app state; the effects of the parts are run
+/// by [`route`]: the create dialogs and the Run form, whose pull's abort
+/// handle the widget keeps, and the actions, whose shell tab takes the
+/// terminal settings.
 fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
     match effect {
         ContainersEffect::Discover => Task::perform(discover(), |discovery| {
@@ -273,17 +292,12 @@ fn handle_effect(effect: ContainersEffect) -> Task<AppEvent> {
                 })
             })
         },
-        ContainersEffect::RunAction(request) => {
-            Task::perform(run_action(request.clone()), move |result| {
-                intent(ContainersIntent::ActionFinished { request, result })
-            })
-        },
         ContainersEffect::RevealInspector => Task::done(AppEvent::Sidebar(
             SidebarEvent::Intent(SidebarIntent::RevealRight),
         )),
         ContainersEffect::Create(_)
         | ContainersEffect::Run(_)
-        | ContainersEffect::OpenShell { .. } => Task::none(),
+        | ContainersEffect::Actions(_) => Task::none(),
     }
 }
 
@@ -498,6 +512,12 @@ fn intent(intent: ContainersIntent) -> AppEvent {
 
 fn run_intent(intent: RunIntent) -> AppEvent {
     AppEvent::Containers(ContainersEvent::Intent(ContainersIntent::Run(intent)))
+}
+
+fn actions_intent(intent: ActionsIntent) -> AppEvent {
+    AppEvent::Containers(ContainersEvent::Intent(ContainersIntent::Actions(
+        intent,
+    )))
 }
 
 #[cfg(test)]
@@ -802,12 +822,16 @@ mod tests {
 
     #[test]
     fn an_action_runs_one_engine_task() {
-        let stop =
-            handle_effect(ContainersEffect::RunAction(ActionRequest::new(
+        let (app, _) = App::new();
+
+        let stop = actions_effect(
+            &app,
+            ActionsEffect::RunAction(ActionRequest::new(
                 fixtures::engine(EngineKind::Docker),
                 EngineAction::StopContainer(String::from("c1")),
                 String::from("otty-fx-running"),
-            )));
+            )),
+        );
 
         assert_eq!(stop.units(), 1);
     }
@@ -1018,11 +1042,13 @@ mod tests {
 
         let events = collect_outputs(route(
             &mut app,
-            ContainersEvent::Effect(ContainersEffect::OpenShell {
-                title: String::from("shell web-1"),
-                program: String::from("/opt/homebrew/bin/docker"),
-                args: SHELL_ARGS.map(String::from).to_vec(),
-            }),
+            ContainersEvent::Effect(ContainersEffect::Actions(
+                ActionsEffect::OpenShell {
+                    title: String::from("shell web-1"),
+                    program: String::from("/opt/homebrew/bin/docker"),
+                    args: SHELL_ARGS.map(String::from).to_vec(),
+                },
+            )),
         ));
 
         let [

@@ -14,6 +14,7 @@ use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
 
+use super::super::actions::event::ActionsIntent;
 use super::super::event::ContainersIntent;
 use super::super::model::{MainViewModel, TableViewModel};
 use super::super::resource_rows::PORTS_COLUMN;
@@ -223,7 +224,9 @@ fn toolbar<'a>(
                 prune.label,
             )
             .on_press_maybe(
-                prune.is_enabled.then_some(ContainersIntent::Prune),
+                prune
+                    .is_enabled
+                    .then_some(ContainersIntent::Actions(ActionsIntent::Prune)),
             ),
         );
     }
@@ -284,7 +287,7 @@ mod tests {
     use crate::i18n::Locale;
     use crate::testing::temp_dir::TempDir;
     use crate::theme::ThemeManager;
-    use crate::widgets::containers::action_model::PruneViewModel;
+    use crate::widgets::containers::actions::PruneViewModel;
     use crate::widgets::containers::no_engine::{
         self as no_engine_vm, NoEngineCase,
     };
@@ -683,7 +686,10 @@ mod tests {
         let intents = sent(ui);
         assert_eq!(
             intents,
-            vec![ContainersIntent::Prune, ContainersIntent::Refresh]
+            vec![
+                ContainersIntent::Actions(ActionsIntent::Prune),
+                ContainersIntent::Refresh
+            ]
         );
     }
 
@@ -1338,7 +1344,10 @@ mod tests {
         click_at(&mut ui, prune);
 
         let intents = sent(ui);
-        assert_eq!(intents, vec![ContainersIntent::Prune]);
+        assert_eq!(
+            intents,
+            vec![ContainersIntent::Actions(ActionsIntent::Prune)]
+        );
     }
 
     #[test]

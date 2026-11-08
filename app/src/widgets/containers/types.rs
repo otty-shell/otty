@@ -333,6 +333,89 @@ impl ActionRequest {
     }
 }
 
+/// The list the main area shows, lent by the state to a part: its engine,
+/// which list it is, the four loaded lists of that engine and the id of the
+/// selected row.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct OpenList<'a> {
+    /// The engine of the open list.
+    pub(crate) engine: &'a EngineInfo,
+    /// Which list of the engine is open.
+    pub(crate) resource: ResourceKind,
+    /// The engine's loaded containers; empty while they load or failed.
+    pub(crate) containers: &'a [Container],
+    /// The engine's loaded images.
+    pub(crate) images: &'a [Image],
+    /// The engine's loaded volumes.
+    pub(crate) volumes: &'a [Volume],
+    /// The engine's loaded networks.
+    pub(crate) networks: &'a [Network],
+    /// The id of the selected row of the open list; an image row goes by its
+    /// row key.
+    pub(crate) selected_id: Option<&'a str>,
+}
+
+impl<'a> OpenList<'a> {
+    /// Return the selected row; `None` when nothing is selected or the row
+    /// is not in the loaded list.
+    pub(crate) fn selected_row(&self) -> Option<SelectedRow<'a>> {
+        self.find(self.selected_id?)
+    }
+
+    /// Return the row with `id` in the open list: a container or network id,
+    /// an image row key or a volume name.
+    pub(crate) fn find(&self, id: &str) -> Option<SelectedRow<'a>> {
+        let row = match self.resource {
+            ResourceKind::Containers => SelectedRow::Container(
+                self.containers.iter().find(|row| row.id() == id)?,
+            ),
+            ResourceKind::Images => SelectedRow::Image(
+                self.images.iter().find(|row| row.row_key() == id)?,
+            ),
+            ResourceKind::Volumes => SelectedRow::Volume(
+                self.volumes.iter().find(|row| row.name() == id)?,
+            ),
+            ResourceKind::Networks => SelectedRow::Network(
+                self.networks.iter().find(|row| row.id() == id)?,
+            ),
+        };
+
+        Some(row)
+    }
+}
+
+/// A row of the open list, most often the selected one.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SelectedRow<'a> {
+    Container(&'a Container),
+    Image(&'a Image),
+    Volume(&'a Volume),
+    Network(&'a Network),
+}
+
+impl SelectedRow<'_> {
+    /// Return the list the row is in.
+    pub(crate) fn resource(&self) -> ResourceKind {
+        match self {
+            Self::Container(_) => ResourceKind::Containers,
+            Self::Image(_) => ResourceKind::Images,
+            Self::Volume(_) => ResourceKind::Volumes,
+            Self::Network(_) => ResourceKind::Networks,
+        }
+    }
+
+    /// Return what inspects the row: container, image or network id, or volume
+    /// name. The rows of one image share their inspect answer.
+    pub(crate) fn id(&self) -> &str {
+        match self {
+            Self::Container(container) => container.id(),
+            Self::Image(image) => image.id(),
+            Self::Volume(volume) => volume.name(),
+            Self::Network(network) => network.id(),
+        }
+    }
+}
+
 /// Return the containers that pass `search`, ordered by `sort`. Ages are
 /// counted up to `now` (Unix seconds).
 pub(crate) fn shown_containers<'a>(
@@ -854,5 +937,86 @@ mod tests {
             assert_eq!(action.resource(), resource, "{action:?}");
             assert_eq!(action.target(), target, "{action:?}");
         }
+    }
+
+    /// The open `resource` list of the Docker fixture, with `selected_id`.
+    fn open_list<'a>(
+        resources: &'a otty_containers::Resources,
+        engine: &'a EngineInfo,
+        resource: ResourceKind,
+        selected_id: Option<&'a str>,
+    ) -> OpenList<'a> {
+        OpenList {
+            engine,
+            resource,
+            containers: resources.containers(),
+            images: resources.images(),
+            volumes: resources.volumes(),
+            networks: resources.networks(),
+            selected_id,
+        }
+    }
+
+    #[test]
+    fn the_open_list_finds_a_row_by_the_id_of_its_kind() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let engine = fixtures::engine(EngineKind::Docker);
+        let container = &resources.containers()[1];
+        let image = &resources.images()[1];
+        let volume = &resources.volumes()[0];
+        let network = &resources.networks()[0];
+        let find = |resource, id| {
+            open_list(&resources, &engine, resource, None)
+                .find(id)
+                .map(|row| (row.resource(), row.id().to_string()))
+        };
+
+        let found = [
+            find(ResourceKind::Containers, container.id()),
+            find(ResourceKind::Images, image.row_key()),
+            find(ResourceKind::Volumes, volume.name()),
+            find(ResourceKind::Networks, network.id()),
+        ];
+
+        assert_eq!(
+            found,
+            [
+                Some((ResourceKind::Containers, container.id().to_string())),
+                Some((ResourceKind::Images, image.id().to_string())),
+                Some((ResourceKind::Volumes, volume.name().to_string())),
+                Some((ResourceKind::Networks, network.id().to_string())),
+            ]
+        );
+        assert!(find(ResourceKind::Images, container.id()).is_none());
+    }
+
+    #[test]
+    fn the_selected_row_of_the_open_list_must_be_in_its_list() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let engine = fixtures::engine(EngineKind::Docker);
+        let container = &resources.containers()[2];
+
+        let selected = open_list(
+            &resources,
+            &engine,
+            ResourceKind::Containers,
+            Some(container.id()),
+        )
+        .selected_row()
+        .map(|row| row.id().to_string());
+        let gone = open_list(
+            &resources,
+            &engine,
+            ResourceKind::Containers,
+            Some("gone"),
+        )
+        .selected_row();
+        let none =
+            open_list(&resources, &engine, ResourceKind::Containers, None)
+                .selected_row();
+
+        assert_eq!(selected, Some(container.id().to_string()));
+        assert!(gone.is_none());
+        assert!(none.is_none());
     }
 }

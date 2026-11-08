@@ -8,8 +8,8 @@ use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::{fonts, spacing, typography};
 
-use super::super::action_model::ConfirmViewModel;
-use super::super::event::ContainersIntent;
+use super::super::event::ActionsIntent;
+use super::super::model::ConfirmViewModel;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
@@ -22,7 +22,7 @@ pub(crate) struct ConfirmDialogProps<'a> {
 /// Render the modal confirmation dialog.
 pub(crate) fn view(
     props: ConfirmDialogProps<'_>,
-) -> Element<'_, ContainersIntent> {
+) -> Element<'_, ActionsIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
     let hint = typography::SMALL;
@@ -39,16 +39,16 @@ pub(crate) fn view(
         body = body.push(
             Switch::new(is_on, palette)
                 .label(label)
-                .on_toggle(ContainersIntent::ConfirmSwitchToggled),
+                .on_toggle(ActionsIntent::ConfirmSwitchToggled),
         );
     }
 
     let cancel = Button::new(i18n::t(Key::ButtonCancel), palette)
         .kind(ButtonKind::Ghost)
-        .on_press(ContainersIntent::ConfirmCancelled);
+        .on_press(ActionsIntent::ConfirmCancelled);
     let confirm = Button::new(vm.confirm_label, palette)
         .kind(ButtonKind::Danger)
-        .on_press(ContainersIntent::ConfirmAccepted);
+        .on_press(ActionsIntent::ConfirmAccepted);
 
     Dialog::new(vm.title, palette)
         .body(body)
@@ -103,12 +103,12 @@ mod tests {
         ui.click(i18n::t(Key::ContainersActionRemove))
             .expect("remove should show");
 
-        let intents: Vec<ContainersIntent> = ui.into_messages().collect();
+        let intents: Vec<ActionsIntent> = ui.into_messages().collect();
         assert_eq!(
             intents,
             vec![
-                ContainersIntent::ConfirmCancelled,
-                ContainersIntent::ConfirmAccepted
+                ActionsIntent::ConfirmCancelled,
+                ActionsIntent::ConfirmAccepted
             ]
         );
     }
@@ -135,11 +135,8 @@ mod tests {
         ui.click(i18n::t(Key::ContainersStopItFirst))
             .expect("switch should show");
 
-        let intents: Vec<ContainersIntent> = ui.into_messages().collect();
-        assert_eq!(
-            intents,
-            vec![ContainersIntent::ConfirmSwitchToggled(false)]
-        );
+        let intents: Vec<ActionsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![ActionsIntent::ConfirmSwitchToggled(false)]);
     }
 
     #[test]
@@ -156,7 +153,7 @@ mod tests {
         ui.click(i18n::t(Key::ContainersAlsoRemoveNamedVolumes))
             .expect("switch should show");
 
-        let intents: Vec<ContainersIntent> = ui.into_messages().collect();
-        assert_eq!(intents, vec![ContainersIntent::ConfirmSwitchToggled(true)]);
+        let intents: Vec<ActionsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![ActionsIntent::ConfirmSwitchToggled(true)]);
     }
 }

@@ -22,8 +22,9 @@ use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
 
-use super::super::action_model::ActionsViewModel;
-use super::super::actions::RowAction;
+use super::super::actions::ActionsViewModel;
+use super::super::actions::event::ActionsIntent;
+use super::super::actions::types::RowAction;
 use super::super::event::ContainersIntent;
 use super::super::inspect_tree::InspectTree;
 use super::super::inspector_tabs::{
@@ -98,11 +99,9 @@ pub(crate) fn view(props: InspectorProps<'_>) -> Element<'_, ContainersIntent> {
                 palette,
             )
             .tone(tone)
-            .on_press_maybe(
-                button
-                    .is_enabled
-                    .then_some(ContainersIntent::Act(button.action)),
-            );
+            .on_press_maybe(button.is_enabled.then_some(
+                ContainersIntent::Actions(ActionsIntent::Act(button.action)),
+            ));
             header = header.action(action);
         }
         if let Some(hint) = actions.hint {
@@ -443,10 +442,7 @@ mod tests {
     use super::*;
     use crate::testing::temp_dir::TempDir;
     use crate::theme::{BuiltinTheme, ThemeManager};
-    use crate::widgets::containers::action_model::{
-        ActionButton, ActionsViewModel,
-    };
-    use crate::widgets::containers::actions::RowAction;
+    use crate::widgets::containers::actions::ActionButton;
     use crate::widgets::containers::inspect_tree::InspectSection;
     use crate::widgets::containers::inspector::InspectorTab;
     use crate::widgets::containers::overview::Field;
@@ -1790,8 +1786,10 @@ mod tests {
         assert_eq!(
             intents,
             vec![
-                ContainersIntent::Act(RowAction::Stop),
-                ContainersIntent::Act(RowAction::Remove)
+                ContainersIntent::Actions(ActionsIntent::Act(RowAction::Stop)),
+                ContainersIntent::Actions(ActionsIntent::Act(
+                    RowAction::Remove
+                ))
             ]
         );
     }

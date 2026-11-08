@@ -1,16 +1,15 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use iced::Point;
 use otty_containers::{
-    Container, Diagnosis, Discovery, EngineAddress, EngineInfo, EngineKind,
-    Image, Network, Volume,
+    Container, Diagnosis, Discovery, EngineAddress, EngineInfo, Image, Network,
+    Volume,
 };
 use otty_ui_kit::components::tag_search::{
     TagSchema, TagSearch, TagSearchAction,
 };
 
-use super::actions::Confirm;
+use super::actions::{ActionsCtx, ActionsState};
 use super::create::CreateState;
 use super::inspector::{
     InspectTarget, InspectorState, InspectorTab, LogTarget,
@@ -23,15 +22,14 @@ use super::table_search::{
     images_schema, network_row, networks_schema, volume_row, volumes_schema,
 };
 use super::types::{
-    ActionRequest, ContainersError, LoadedList, LoadedLists, Place,
-    ResourceKind, shown_containers, shown_images, shown_networks,
-    shown_volumes,
+    ContainersError, LoadedList, LoadedLists, OpenList, Place, ResourceKind,
+    SelectedRow, shown_containers, shown_images, shown_networks, shown_volumes,
 };
 
 /// Runtime state of Containers mode: the engines and their lists, the open
-/// place, the selected row of each list, the tag search and sort of each page
-/// and the actions: the ones that run, the open confirmation, the row menu and
-/// the notice of the last failure.
+/// place, the selected row of each list, the tag search and sort of each page,
+/// the notice of the last failure and the parts: the actions, the create
+/// dialogs and the Run form.
 #[derive(Debug, Default)]
 pub(super) struct ContainersState {
     is_active: bool,
@@ -67,10 +65,9 @@ pub(super) struct ContainersState {
     /// The kept tag search of each page; not saved to disk.
     searches: TableSearches,
     inspector: InspectorState,
-    running: Vec<ActionRequest>,
-    confirm: Option<Confirm>,
-    /// The open row menu.
-    row_menu: Option<RowMenu>,
+    /// The actions: the ones that run, the open confirmation and the row
+    /// menu.
+    actions: ActionsState,
     notice: Option<String>,
     /// The create dialogs: Pull image, Create volume and Create network.
     create: CreateState,
@@ -115,19 +112,6 @@ impl ContainersState {
     /// Return whether the tree hides the lists of the engine at `address`.
     pub(crate) fn is_engine_closed(&self, address: &EngineAddress) -> bool {
         self.closed_engines.contains(address)
-    }
-
-    /// Return the full path of the command line tool of `kind`, when the
-    /// last search found it (a `podman-docker` wrapper counts as Podman).
-    pub(crate) fn cli_path(&self, kind: EngineKind) -> Option<&Path> {
-        let Search::Done(discovery) = &self.search else {
-            return None;
-        };
-
-        match kind {
-            EngineKind::Docker => discovery.cli().docker_path(),
-            EngineKind::Podman => discovery.cli().podman_path(),
-        }
     }
 
     /// Return how the table of the page `place` is sorted.
@@ -241,54 +225,16 @@ impl ContainersState {
         &self,
     ) -> Option<(&EngineState, SelectedRow<'_>)> {
         let engine = self.open_engine()?;
-        let place = self.place.as_ref()?;
-
-        let row = match place.resource() {
-            ResourceKind::Containers => SelectedRow::Container(
-                engine.containers.selected(Container::id)?,
-            ),
-            ResourceKind::Images => {
-                SelectedRow::Image(engine.images.selected(Image::row_key)?)
-            },
-            ResourceKind::Volumes => {
-                SelectedRow::Volume(engine.volumes.selected(Volume::name)?)
-            },
-            ResourceKind::Networks => {
-                SelectedRow::Network(engine.networks.selected(Network::id)?)
-            },
-        };
+        let row =
+            open_list_of(self.place.as_ref(), &self.engines)?.selected_row()?;
 
         Some((engine, row))
-    }
-
-    /// Return the action that waits for the user to confirm it.
-    pub(crate) fn confirm(&self) -> Option<&Confirm> {
-        self.confirm.as_ref()
-    }
-
-    /// Return where the row menu is open, in window coordinates.
-    pub(crate) fn row_menu(&self) -> Option<Point> {
-        self.row_menu.as_ref().map(|menu| menu.position)
-    }
-
-    /// Return the id of the row the open row menu is for; an image row goes by
-    /// its row key.
-    pub(crate) fn row_menu_target(&self) -> Option<&str> {
-        self.row_menu.as_ref().map(|menu| menu.target.as_str())
     }
 
     /// Return the id of the selected row of the open list; an image row goes
     /// by its row key.
     pub(crate) fn selected_id(&self) -> Option<&str> {
-        let place = self.place.as_ref()?;
-        let engine = self.open_engine()?;
-
-        match place.resource() {
-            ResourceKind::Containers => engine.containers.selected_id(),
-            ResourceKind::Images => engine.images.selected_id(),
-            ResourceKind::Volumes => engine.volumes.selected_id(),
-            ResourceKind::Networks => engine.networks.selected_id(),
-        }
+        open_list_of(self.place.as_ref(), &self.engines)?.selected_id
     }
 
     /// Return the notice of the last failed action.
@@ -316,18 +262,14 @@ impl ContainersState {
         )
     }
 
-    /// Return whether an action runs on the row `target` (or, with `None`,
-    /// a prune on the whole list) of the `resource` list of the engine at
-    /// `address`.
-    pub(crate) fn is_busy(
-        &self,
-        address: &EngineAddress,
-        resource: ResourceKind,
-        target: Option<&str>,
-    ) -> bool {
-        self.running
-            .iter()
-            .any(|request| request.acts_on(address, resource, target))
+    /// Return the state of the actions.
+    pub(crate) fn actions(&self) -> &ActionsState {
+        &self.actions
+    }
+
+    /// Return what the actions read from this state, for their view models.
+    pub(crate) fn actions_ctx(&self) -> ActionsCtx<'_> {
+        actions_ctx_of(self.place.as_ref(), &self.engines, &self.search)
     }
 
     /// Return whether the no-engine card is what the main area shows: the last
@@ -407,8 +349,9 @@ impl ContainersState {
     /// its engine is still there; see [`Self::leave_lost_place`] for when it
     /// is not. Each page keeps its search and sort. An engine the user closed
     /// stays closed, also when it comes back while the no-engine page shows:
-    /// the table shows its list and its tree row stays closed.
-    pub(super) fn finish_search(&mut self, discovery: Discovery) {
+    /// the table shows its list and its tree row stays closed. Returns `true`
+    /// when the open place was lost with its engine.
+    pub(super) fn finish_search(&mut self, discovery: Discovery) -> bool {
         let reached = match discovery.diagnosis() {
             Diagnosis::Engines(infos) => infos.clone(),
             _ => Vec::new(),
@@ -438,6 +381,7 @@ impl ContainersState {
             .place
             .as_ref()
             .is_some_and(|place| self.engine(place.engine()).is_some());
+        let is_place_lost = self.place.is_some() && !place_is_kept;
         if !place_is_kept {
             self.leave_lost_place(shown_row);
         }
@@ -445,6 +389,8 @@ impl ContainersState {
         self.is_selinux_enabled = discovery.is_selinux_enabled();
         self.home_folder = discovery.home_folder().map(Path::to_path_buf);
         self.search = Search::Done(discovery);
+
+        is_place_lost
     }
 
     /// Take the lists of one load. Returns `false` when the engine is no
@@ -516,47 +462,6 @@ impl ContainersState {
         }
     }
 
-    /// Remember that `request` runs, so its buttons are disabled.
-    pub(super) fn start_action(&mut self, request: ActionRequest) {
-        self.running.push(request);
-    }
-
-    /// Forget a finished `request`.
-    pub(super) fn finish_action(&mut self, request: &ActionRequest) {
-        if let Some(index) =
-            self.running.iter().position(|running| running == request)
-        {
-            self.running.remove(index);
-        }
-    }
-
-    /// Ask the user to confirm an action.
-    pub(super) fn open_confirm(&mut self, confirm: Confirm) {
-        self.confirm = Some(confirm);
-    }
-
-    /// Close the confirmation and return it.
-    pub(super) fn take_confirm(&mut self) -> Option<Confirm> {
-        self.confirm.take()
-    }
-
-    /// Turn the switch of the open confirmation on or off.
-    pub(super) fn set_confirm_switch(&mut self, is_on: bool) {
-        if let Some(confirm) = self.confirm.as_mut() {
-            confirm.set_switch(is_on);
-        }
-    }
-
-    /// Open the menu of the row with the id `target` at `position`.
-    pub(super) fn open_row_menu(&mut self, position: Point, target: String) {
-        self.row_menu = Some(RowMenu { position, target });
-    }
-
-    /// Close the row menu.
-    pub(super) fn close_row_menu(&mut self) {
-        self.row_menu = None;
-    }
-
     /// Show `notice` above the table until it is dismissed.
     pub(super) fn set_notice(&mut self, notice: String) {
         self.notice = Some(notice);
@@ -582,6 +487,17 @@ impl ContainersState {
         );
 
         (&mut self.run, ctx)
+    }
+
+    /// Return the state of the actions for their reducer, with what the
+    /// actions read from this state.
+    pub(super) fn actions_and_ctx(
+        &mut self,
+    ) -> (&mut ActionsState, ActionsCtx<'_>) {
+        let ctx =
+            actions_ctx_of(self.place.as_ref(), &self.engines, &self.search);
+
+        (&mut self.actions, ctx)
     }
 
     /// Show the `resource` list of `engine` and select the item with `id` in
@@ -754,8 +670,8 @@ impl ContainersState {
         true
     }
 
-    /// The engine of the open place is gone, so the row menu and the notice of
-    /// the old list go away and its suggestions close.
+    /// The engine of the open place is gone, so the notice of the old list
+    /// goes away and its suggestions close; the parent closes the row menu.
     ///
     /// When no engine is left, the place and `shown_row` wait in
     /// [`Self::lost_view`] for their engine: they come back with it, the row as
@@ -767,7 +683,6 @@ impl ContainersState {
     /// list is on screen.
     fn leave_lost_place(&mut self, shown_row: Option<String>) {
         let left = self.place.take();
-        self.row_menu = None;
         self.notice = None;
         if let Some(left) = &left {
             self.searches.get_mut(left).close_suggestions();
@@ -899,22 +814,6 @@ impl ContainersState {
             },
         }
     }
-
-    /// Return the actions the engines are running now.
-    pub(crate) fn running(&self) -> &[ActionRequest] {
-        &self.running
-    }
-}
-
-/// The open row menu: where it opened and the row it is for. A right press
-/// also selects that row; the row "⋯" button does not.
-#[derive(Debug)]
-struct RowMenu {
-    /// Window coordinates.
-    position: Point,
-    /// The row's id in the open list: container or network id, image row key,
-    /// or volume name.
-    target: String,
 }
 
 /// What the main area showed when the last engine went away.
@@ -1100,38 +999,6 @@ impl<T> ResourceList<T> {
     }
 }
 
-/// The selected row of the open list.
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum SelectedRow<'a> {
-    Container(&'a Container),
-    Image(&'a Image),
-    Volume(&'a Volume),
-    Network(&'a Network),
-}
-
-impl SelectedRow<'_> {
-    /// Return the list the row is in.
-    pub(crate) fn resource(&self) -> ResourceKind {
-        match self {
-            Self::Container(_) => ResourceKind::Containers,
-            Self::Image(_) => ResourceKind::Images,
-            Self::Volume(_) => ResourceKind::Volumes,
-            Self::Network(_) => ResourceKind::Networks,
-        }
-    }
-
-    /// Return what inspects the row: container, image or network id, or volume
-    /// name. The rows of one image share their inspect answer.
-    pub(crate) fn id(&self) -> &str {
-        match self {
-            Self::Container(container) => container.id(),
-            Self::Image(image) => image.id(),
-            Self::Volume(volume) => volume.name(),
-            Self::Network(network) => network.id(),
-        }
-    }
-}
-
 /// Load state of one list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ListLoad<T> {
@@ -1162,6 +1029,53 @@ fn run_ctx_of<'a>(
         engines,
         is_selinux_enabled,
         home_folder,
+    }
+}
+
+/// The list the main area shows, lent out of the state: the open place's
+/// engine with its lists; `None` without an open place.
+fn open_list_of<'a>(
+    place: Option<&Place>,
+    engines: &'a [EngineState],
+) -> Option<OpenList<'a>> {
+    let place = place?;
+    let engine = engines
+        .iter()
+        .find(|engine| engine.info.address() == place.engine())?;
+
+    let selected_id = match place.resource() {
+        ResourceKind::Containers => engine.containers.selected_id(),
+        ResourceKind::Images => engine.images.selected_id(),
+        ResourceKind::Volumes => engine.volumes.selected_id(),
+        ResourceKind::Networks => engine.networks.selected_id(),
+    };
+
+    Some(OpenList {
+        engine: &engine.info,
+        resource: place.resource(),
+        containers: engine.containers.items(),
+        images: engine.images.items(),
+        volumes: engine.volumes.items(),
+        networks: engine.networks.items(),
+        selected_id,
+    })
+}
+
+/// What the actions read from the state: the open list and the command line
+/// tools of the last finished search.
+fn actions_ctx_of<'a>(
+    place: Option<&Place>,
+    engines: &'a [EngineState],
+    search: &'a Search,
+) -> ActionsCtx<'a> {
+    let cli = match search {
+        Search::Done(discovery) => Some(discovery.cli()),
+        Search::Searching => None,
+    };
+
+    ActionsCtx {
+        open: open_list_of(place, engines),
+        cli,
     }
 }
 
@@ -1245,5 +1159,30 @@ mod tests {
         assert_eq!(engine.images().load(), &ListLoad::Loading);
         assert_eq!(engine.volumes().load(), &ListLoad::Loading);
         assert_eq!(engine.networks().load(), &ListLoad::Loading);
+    }
+
+    #[test]
+    fn finish_search_says_whether_the_open_place_was_lost() {
+        let both =
+            || fixtures::discovery(&[EngineKind::Docker, EngineKind::Podman]);
+        let docker = fixtures::engine(EngineKind::Docker);
+        let mut state = ContainersState::default();
+
+        let first = state.finish_search(both());
+        state.open(Place::new(docker.address().clone(), ResourceKind::Images));
+        let kept = state.finish_search(both());
+        let lost =
+            state.finish_search(fixtures::discovery(&[EngineKind::Podman]));
+        let moved_on =
+            state.finish_search(fixtures::discovery(&[EngineKind::Podman]));
+        let last_gone = state.finish_search(fixtures::discovery(&[]));
+        let none_left = state.finish_search(fixtures::discovery(&[]));
+
+        assert!(!first);
+        assert!(!kept);
+        assert!(lost);
+        assert!(!moved_on);
+        assert!(last_gone);
+        assert!(!none_left);
     }
 }

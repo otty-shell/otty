@@ -1,31 +1,74 @@
-//! How an action goes, as the reducer runs it: a press on a button or a
-//! menu item, the confirmation of a destructive action, the engine call and
-//! its result (spec Decision 11).
+#![forbid(clippy::disallowed_methods)]
+//! How an action goes (spec Decision 11): a press on a button or a menu
+//! item, the confirmation of a destructive action, the engine call and its
+//! result, which the parent acts on.
 
-use iced::{Point, Task};
+use std::path::Path;
+
+use iced::Task;
 use otty_containers::{
-    Container, ContainerState, EngineAddress, EngineInfo, EngineKind, Image,
-    Network, Volume,
+    CliPresence, Container, ContainerState, EngineAddress, EngineInfo,
+    EngineKind, Image, Network, Volume,
 };
 
-use super::actions::{
-    Confirm, ImageRemoval, REMOVE_ONLY, RowAction, container_actions,
-    failure_text, image_actions, needs_stop, network_remove_hint,
-    volume_remove_hint,
+use super::super::types::{
+    ActionRequest, ContainersError, EngineAction, OpenList, ResourceKind,
+    SelectedRow, image_name, split_reference,
 };
-use super::create::event::CreateIntent;
-use super::event::{ContainersEffect, ContainersEvent};
-use super::reducer::{reduce_create, reduce_run};
-use super::run::event::RunIntent;
-use super::state::ContainersState;
-use super::types::{
-    ActionRequest, ContainersError, EngineAction, ResourceKind, image_name,
-    split_reference,
+use super::event::{ActionsEffect, ActionsIntent};
+use super::offers::{
+    ImageRemoval, REMOVE_ONLY, container_actions, failure_text, image_actions,
+    needs_stop, network_remove_hint, volume_remove_hint,
 };
+use super::state::{ActionsState, Confirm};
+use super::types::RowAction;
 use crate::i18n::{self, Key};
 
+/// What the actions read from the parent widget: the open list and the
+/// command line tools the last finished search found.
+#[derive(Debug)]
+pub(crate) struct ActionsCtx<'a> {
+    /// The list the main area shows; `None` without engines.
+    pub(crate) open: Option<OpenList<'a>>,
+    /// The command line tools the last finished search found; `None` while
+    /// a search runs.
+    pub(crate) cli: Option<&'a CliPresence>,
+}
+
+impl<'a> ActionsCtx<'a> {
+    /// Return the full path of the command line tool of `kind`, when the
+    /// last search found it (a `podman-docker` wrapper counts as Podman).
+    pub(crate) fn cli_path(&self, kind: EngineKind) -> Option<&'a Path> {
+        let cli = self.cli?;
+
+        match kind {
+            EngineKind::Docker => cli.docker_path(),
+            EngineKind::Podman => cli.podman_path(),
+        }
+    }
+}
+
+/// What the actions tell the parent widget, which acts on it in the same
+/// update.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ActionsOutcome {
+    /// An action finished: reload the lists of this engine.
+    Done { engine: EngineAddress },
+    /// An action failed: show this notice above the table.
+    Failed { notice: String },
+    /// Run on an image row: open the Run container form with `image` typed.
+    RunRequested { engine: EngineInfo, image: String },
+    /// Pull again on an image row: open the pull dialog with `image` and
+    /// `tag` filled in.
+    PullRequested {
+        engine: EngineInfo,
+        image: String,
+        tag: String,
+    },
+}
+
 /// The row of the open list an action runs on and what it allows, copied
-/// out of the state so the state can change.
+/// out of the open list so the state can change.
 struct TargetItem {
     engine: EngineInfo,
     resource: ResourceKind,
@@ -44,34 +87,70 @@ struct TargetItem {
     image_removal: Option<ImageRemoval>,
 }
 
+/// Reduce an intent of the actions: open and close the row menu and the
+/// confirmation dialog, start engine calls and take their results.
+pub(crate) fn reduce(
+    state: &mut ActionsState,
+    intent: ActionsIntent,
+    ctx: &ActionsCtx<'_>,
+) -> (Task<ActionsEffect>, Option<ActionsOutcome>) {
+    match intent {
+        ActionsIntent::Act(action) => act(state, ctx, action),
+        ActionsIntent::OpenRowMenu { target, position } => {
+            state.open_row_menu(position, target);
+            (Task::none(), None)
+        },
+        ActionsIntent::CloseRowMenu => {
+            state.close_row_menu();
+            (Task::none(), None)
+        },
+        ActionsIntent::Prune => {
+            prune(state, ctx);
+            (Task::none(), None)
+        },
+        ActionsIntent::ConfirmSwitchToggled(is_on) => {
+            state.set_confirm_switch(is_on);
+            (Task::none(), None)
+        },
+        ActionsIntent::ConfirmAccepted => (accept(state), None),
+        ActionsIntent::ConfirmCancelled => {
+            let _ = state.take_confirm();
+            (Task::none(), None)
+        },
+        ActionsIntent::Start(request) => (start(state, request), None),
+        ActionsIntent::Finished { request, result } => {
+            (Task::none(), Some(finish(state, &request, result)))
+        },
+    }
+}
+
 /// Run `action` on the row of the open row menu, or else on the selected
-/// row: a direct action asks the engine, a Remove asks the user first, Pull
-/// again opens the pull dialog. An action the row does not offer, a Remove
-/// the engine would refuse, or any action on a row that already runs one
-/// does nothing. Closes the row menu.
-pub(super) fn act(
-    state: &mut ContainersState,
+/// row: a direct action asks the engine, a Remove asks the user first, Run
+/// and Pull again ask the parent to open their form. An action the row does
+/// not offer, a Remove the engine would refuse, or any action on a row that
+/// already runs one does nothing. Closes the row menu.
+fn act(
+    state: &mut ActionsState,
+    ctx: &ActionsCtx<'_>,
     action: RowAction,
-) -> Task<ContainersEvent> {
-    let target = state
-        .row_menu_target()
-        .or_else(|| state.selected_id())
-        .map(str::to_string);
+) -> (Task<ActionsEffect>, Option<ActionsOutcome>) {
+    let selected = ctx.open.and_then(|open| open.selected_id);
+    let target = state.row_menu_target().or(selected).map(str::to_string);
     state.close_row_menu();
 
-    let Some(item) = target.and_then(|id| target_item(state, &id)) else {
-        return Task::none();
+    let Some(item) = target.and_then(|id| target_item(ctx, &id)) else {
+        return (Task::none(), None);
     };
     let is_busy =
         state.is_busy(item.engine.address(), item.resource, Some(&item.id));
     if !item.offered.contains(&action) || is_busy {
-        return Task::none();
+        return (Task::none(), None);
     }
 
     let call = match action {
         RowAction::Remove => {
             if item.is_remove_blocked {
-                return Task::none();
+                return (Task::none(), None);
             }
             let request = ActionRequest::new(
                 item.engine,
@@ -83,24 +162,24 @@ pub(super) fn act(
                 Some(removal) => confirm.with_image_removal(removal),
                 None => confirm,
             });
-            return Task::none();
+            return (Task::none(), None);
         },
         RowAction::PullAgain => {
             let (image, tag) = split_reference(&item.name);
-            let open = CreateIntent::OpenPull {
+            let pull = ActionsOutcome::PullRequested {
                 engine: item.engine,
                 image: image.to_string(),
                 tag: tag.to_string(),
             };
-            return reduce_create(state, open);
+            return (Task::none(), Some(pull));
         },
-        RowAction::Shell => return open_shell(state, &item),
+        RowAction::Shell => return (open_shell(ctx, &item), None),
         RowAction::Run => {
-            let open = RunIntent::Open {
+            let run = ActionsOutcome::RunRequested {
                 engine: item.engine,
                 image: item.name,
             };
-            return reduce_run(state, open);
+            return (Task::none(), Some(run));
         },
         RowAction::Start => EngineAction::StartContainer(item.id),
         RowAction::Stop => EngineAction::StopContainer(item.id),
@@ -109,49 +188,22 @@ pub(super) fn act(
         RowAction::Unpause => EngineAction::UnpauseContainer(item.id),
     };
 
-    run(state, ActionRequest::new(item.engine, call, item.name))
-}
-
-/// Select the row at `index` of the shown table and open its menu at
-/// `position` (a right press). Nothing opens past the last row.
-pub(super) fn select_and_open_row_menu(
-    state: &mut ContainersState,
-    index: usize,
-    position: Point,
-) -> Task<ContainersEvent> {
-    let _ = state.select_shown_row(index);
-
-    open_row_menu(state, index, position)
-}
-
-/// Open the menu of the row at `index` of the shown table at `position`
-/// and keep the selection (the row "⋯" button). Nothing opens past the last
-/// row.
-pub(super) fn open_row_menu(
-    state: &mut ContainersState,
-    index: usize,
-    position: Point,
-) -> Task<ContainersEvent> {
-    if let Some(target) = state.shown_row_id(index) {
-        state.open_row_menu(position, target);
-    }
-
-    Task::none()
+    let request = ActionRequest::new(item.engine, call, item.name);
+    (start(state, request), None)
 }
 
 /// Ask to prune the open list, with the count of what goes: the stopped
 /// containers (created, exited or dead), the dangling images no container
 /// uses, the anonymous volumes no container uses (the dialog switch adds the
-/// named ones), or the user networks no container
-/// is connected to. Nothing opens while a prune of that list runs.
-pub(super) fn prune(state: &mut ContainersState) -> Task<ContainersEvent> {
-    let (Some(place), Some(engine)) = (state.place(), state.open_engine())
-    else {
-        return Task::none();
+/// named ones), or the user networks no container is connected to. Nothing
+/// opens while a prune of that list runs.
+fn prune(state: &mut ActionsState, ctx: &ActionsCtx<'_>) {
+    let Some(open) = ctx.open else {
+        return;
     };
-    let resource = place.resource();
-    if state.is_busy(place.engine(), resource, None) {
-        return Task::none();
+    let resource = open.resource;
+    if state.is_busy(open.engine.address(), resource, None) {
+        return;
     }
 
     let mut switch = None;
@@ -159,104 +211,85 @@ pub(super) fn prune(state: &mut ContainersState) -> Task<ContainersEvent> {
     let (action, count) = match resource {
         ResourceKind::Containers => (
             EngineAction::PruneContainers,
-            count(engine.containers().items(), is_stopped),
+            count(open.containers, is_stopped),
         ),
         ResourceKind::Images => (
             EngineAction::PruneImages,
-            count(engine.images().items(), is_prunable_image),
+            count(open.images, is_prunable_image),
         ),
         ResourceKind::Volumes => {
             // Named volumes stay unless the dialog switch is turned on.
             switch = Some(false);
-            count_if_on =
-                Some(count(engine.volumes().items(), is_unused_volume));
+            count_if_on = Some(count(open.volumes, is_unused_volume));
             (
                 EngineAction::PruneVolumes {
                     include_named: false,
                 },
-                count(engine.volumes().items(), is_unused_anonymous_volume),
+                count(open.volumes, is_unused_anonymous_volume),
             )
         },
         ResourceKind::Networks => (
             EngineAction::PruneNetworks,
-            count(engine.networks().items(), is_unused_network),
+            count(open.networks, is_unused_network),
         ),
     };
     let request =
-        ActionRequest::new(engine.info().clone(), action, String::new());
+        ActionRequest::new(open.engine.clone(), action, String::new());
 
     let confirm = Confirm::new(request, switch, count)
         .with_count_if_on(count_if_on.unwrap_or(count));
 
     state.open_confirm(confirm);
-    Task::none()
 }
 
 /// Run the confirmed action with its switch applied.
-pub(super) fn accept(state: &mut ContainersState) -> Task<ContainersEvent> {
+fn accept(state: &mut ActionsState) -> Task<ActionsEffect> {
     let Some(confirm) = state.take_confirm() else {
         return Task::none();
     };
 
-    run(state, confirm.into_request())
+    start(state, confirm.into_request())
 }
 
-/// Take the result of an action: success reloads the engine's lists (only
-/// while Containers mode is active), a failure shows a notice and leaves the
-/// table as it was.
-pub(super) fn finish(
-    state: &mut ContainersState,
+/// Take the result of an action: success asks the parent to reload the
+/// engine's lists, a failure to show a notice while the table stays as it
+/// was.
+fn finish(
+    state: &mut ActionsState,
     request: &ActionRequest,
     result: Result<(), ContainersError>,
-) -> Task<ContainersEvent> {
+) -> ActionsOutcome {
     state.finish_action(request);
 
-    if let Err(err) = result {
-        state.set_notice(failure_text(request, &err.to_string()));
-        return Task::none();
+    match result {
+        Ok(()) => ActionsOutcome::Done {
+            engine: request.engine().address().clone(),
+        },
+        Err(err) => ActionsOutcome::Failed {
+            notice: failure_text(request, &err.to_string()),
+        },
     }
-
-    reload(state, request.engine().address())
-}
-
-/// Reload every list of the engine at `address`, only while Containers mode
-/// is active and the engine is still known.
-pub(super) fn reload(
-    state: &ContainersState,
-    address: &EngineAddress,
-) -> Task<ContainersEvent> {
-    let Some(engine) = state.engine(address) else {
-        return Task::none();
-    };
-    if !state.is_active() {
-        return Task::none();
-    }
-
-    effect(ContainersEffect::LoadLists(engine.info().clone()))
 }
 
 /// Remember the running request and ask the app to run it.
-pub(super) fn run(
-    state: &mut ContainersState,
+fn start(
+    state: &mut ActionsState,
     request: ActionRequest,
-) -> Task<ContainersEvent> {
+) -> Task<ActionsEffect> {
     state.start_action(request.clone());
 
-    effect(ContainersEffect::RunAction(request))
+    Task::done(ActionsEffect::RunAction(request))
 }
 
 /// Open a terminal tab with a shell in the selected container, run by the
 /// engine's own command line tool on that engine's address. Does nothing when
 /// the search did not find that tool.
-fn open_shell(
-    state: &ContainersState,
-    item: &TargetItem,
-) -> Task<ContainersEvent> {
-    let Some(program) = state.cli_path(item.engine.kind()) else {
+fn open_shell(ctx: &ActionsCtx<'_>, item: &TargetItem) -> Task<ActionsEffect> {
+    let Some(program) = ctx.cli_path(item.engine.kind()) else {
         return Task::none();
     };
 
-    effect(ContainersEffect::OpenShell {
+    Task::done(ActionsEffect::OpenShell {
         title: i18n::containers_named(
             Key::TplContainersShellTabTitle,
             &item.name,
@@ -287,35 +320,30 @@ fn shell_args(
 }
 
 /// The row with `id` in the open list.
-fn target_item(state: &ContainersState, id: &str) -> Option<TargetItem> {
-    let place = state.place()?;
-    let engine = state.open_engine()?;
-    let info = engine.info().clone();
-    let resource = place.resource();
+fn target_item(ctx: &ActionsCtx<'_>, id: &str) -> Option<TargetItem> {
+    let open = ctx.open?;
+    let engine = open.engine.clone();
+    let resource = open.resource;
 
-    let item = match resource {
-        ResourceKind::Containers => {
-            let container = engine.containers().find(id, Container::id)?;
-            TargetItem {
-                engine: info,
-                resource,
-                id: container.id().to_string(),
-                name: container.name().to_string(),
-                offered: container_actions(container.state()),
-                is_remove_blocked: false,
-                remove_switch: needs_stop(container.state()).then_some(true),
-                image_removal: None,
-            }
+    let item = match open.find(id)? {
+        SelectedRow::Container(container) => TargetItem {
+            engine,
+            resource,
+            id: container.id().to_string(),
+            name: container.name().to_string(),
+            offered: container_actions(container.state()),
+            is_remove_blocked: false,
+            remove_switch: needs_stop(container.state()).then_some(true),
+            image_removal: None,
         },
-        ResourceKind::Images => {
-            let image = engine.images().find(id, Image::row_key)?;
+        SelectedRow::Image(image) => {
             let removal = ImageRemoval::of(
-                info.kind(),
+                engine.kind(),
                 image,
-                has_running_user(image, engine.containers().items()),
+                has_running_user(image, open.containers),
             );
             TargetItem {
-                engine: info,
+                engine,
                 resource,
                 id: image.remove_target().to_string(),
                 name: image_name(image).to_string(),
@@ -329,31 +357,25 @@ fn target_item(state: &ContainersState, id: &str) -> Option<TargetItem> {
                 image_removal: Some(removal),
             }
         },
-        ResourceKind::Volumes => {
-            let volume = engine.volumes().find(id, Volume::name)?;
-            TargetItem {
-                engine: info,
-                resource,
-                id: volume.name().to_string(),
-                name: volume.name().to_string(),
-                offered: REMOVE_ONLY,
-                is_remove_blocked: volume_remove_hint(volume).is_some(),
-                remove_switch: None,
-                image_removal: None,
-            }
+        SelectedRow::Volume(volume) => TargetItem {
+            engine,
+            resource,
+            id: volume.name().to_string(),
+            name: volume.name().to_string(),
+            offered: REMOVE_ONLY,
+            is_remove_blocked: volume_remove_hint(volume).is_some(),
+            remove_switch: None,
+            image_removal: None,
         },
-        ResourceKind::Networks => {
-            let network = engine.networks().find(id, Network::id)?;
-            TargetItem {
-                engine: info,
-                resource,
-                id: network.id().to_string(),
-                name: network.name().to_string(),
-                offered: REMOVE_ONLY,
-                is_remove_blocked: network_remove_hint(network).is_some(),
-                remove_switch: None,
-                image_removal: None,
-            }
+        SelectedRow::Network(network) => TargetItem {
+            engine,
+            resource,
+            id: network.id().to_string(),
+            name: network.name().to_string(),
+            offered: REMOVE_ONLY,
+            is_remove_blocked: network_remove_hint(network).is_some(),
+            remove_switch: None,
+            image_removal: None,
         },
     };
 
@@ -417,16 +439,12 @@ fn is_unused_network(network: &Network) -> bool {
     !network.is_built_in() && network.containers().is_empty()
 }
 
-fn effect(effect: ContainersEffect) -> Task<ContainersEvent> {
-    Task::done(ContainersEvent::Effect(effect))
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use iced::Point;
-    use otty_containers::{Container, EngineInfo, EngineKind, fixtures};
+    use otty_containers::{Resources, fixtures};
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
@@ -435,11 +453,9 @@ mod tests {
     use crate::widgets::containers::event::{
         ContainersEffect, ContainersEvent, ContainersIntent,
     };
-    use crate::widgets::containers::reducer::reduce;
+    use crate::widgets::containers::reducer::reduce as reduce_containers;
     use crate::widgets::containers::state::ContainersState;
-    use crate::widgets::containers::types::{
-        LoadedLists, Place, ResourceKind, image_name,
-    };
+    use crate::widgets::containers::types::{LoadedLists, Place};
 
     /// Where the tests find the `docker` command: an install folder, not
     /// `PATH`.
@@ -459,13 +475,207 @@ mod tests {
             .collect()
     }
 
+    /// Send `intent` to the actions through the widget's reducer.
+    fn send(
+        state: &mut ContainersState,
+        intent: ActionsIntent,
+    ) -> Task<ContainersEvent> {
+        reduce_containers(state, ContainersIntent::Actions(intent))
+    }
+
+    /// Reduce `intent` in the part alone; the effects it asks for and what
+    /// it tells the parent.
+    fn reduce_part(
+        state: &mut ActionsState,
+        intent: ActionsIntent,
+        ctx: &ActionsCtx<'_>,
+    ) -> (Vec<ActionsEffect>, Option<ActionsOutcome>) {
+        let (effects, outcome) = reduce(state, intent, ctx);
+
+        (collect_outputs(effects), outcome)
+    }
+
+    /// What the parent lends the part with no list open.
+    fn no_list() -> ActionsCtx<'static> {
+        ActionsCtx {
+            open: None,
+            cli: None,
+        }
+    }
+
+    /// What the parent lends the part with the `resource` list of `engine`
+    /// open and the row `selected` selected.
+    fn list_ctx<'a>(
+        resources: &'a Resources,
+        engine: &'a EngineInfo,
+        resource: ResourceKind,
+        selected: &'a str,
+    ) -> ActionsCtx<'a> {
+        ActionsCtx {
+            open: Some(OpenList {
+                engine,
+                resource,
+                containers: resources.containers(),
+                images: resources.images(),
+                volumes: resources.volumes(),
+                networks: resources.networks(),
+                selected_id: Some(selected),
+            }),
+            cli: None,
+        }
+    }
+
+    /// The row key of the image row `name` of the Docker fixture.
+    fn image_key(resources: &Resources, name: &str) -> String {
+        resources
+            .images()
+            .iter()
+            .find(|image| image_name(image) == name)
+            .map(|image| image.row_key().to_string())
+            .expect("fixture image")
+    }
+
+    fn stop_request() -> ActionRequest {
+        ActionRequest::new(
+            docker(),
+            EngineAction::StopContainer(String::from("c1")),
+            String::from("otty-fx-running"),
+        )
+    }
+
+    #[test]
+    fn start_marks_its_list_busy_and_runs_the_call() {
+        let mut state = ActionsState::default();
+        let request = ActionRequest::new(
+            docker(),
+            EngineAction::CreateVolume {
+                name: String::from("otty-fx-vol"),
+                driver: String::from("local"),
+            },
+            String::from("otty-fx-vol"),
+        );
+        let address = docker().address().clone();
+
+        let (effects, outcome) = reduce_part(
+            &mut state,
+            ActionsIntent::Start(request.clone()),
+            &no_list(),
+        );
+
+        assert_eq!(effects, vec![ActionsEffect::RunAction(request)]);
+        assert_eq!(outcome, None);
+        assert!(state.is_busy(&address, ResourceKind::Volumes, None));
+    }
+
+    #[test]
+    fn a_finished_action_names_the_engine_to_reload() {
+        let mut state = ActionsState::default();
+        let _ = reduce_part(
+            &mut state,
+            ActionsIntent::Start(stop_request()),
+            &no_list(),
+        );
+
+        let (effects, outcome) = reduce_part(
+            &mut state,
+            ActionsIntent::Finished {
+                request: stop_request(),
+                result: Ok(()),
+            },
+            &no_list(),
+        );
+
+        assert!(effects.is_empty());
+        assert_eq!(
+            outcome,
+            Some(ActionsOutcome::Done {
+                engine: docker().address().clone(),
+            })
+        );
+        assert!(state.running().is_empty());
+    }
+
+    #[test]
+    fn a_failed_action_names_its_notice() {
+        let mut state = ActionsState::default();
+        let _ = reduce_part(
+            &mut state,
+            ActionsIntent::Start(stop_request()),
+            &no_list(),
+        );
+
+        let (effects, outcome) = reduce_part(
+            &mut state,
+            ActionsIntent::Finished {
+                request: stop_request(),
+                result: Err(ContainersError::new("it is restarting")),
+            },
+            &no_list(),
+        );
+
+        assert!(effects.is_empty());
+        assert_eq!(
+            outcome,
+            Some(ActionsOutcome::Failed {
+                notice: failure_text(&stop_request(), "it is restarting"),
+            })
+        );
+        assert!(state.running().is_empty());
+    }
+
+    #[test]
+    fn run_on_an_image_row_asks_the_parent_for_the_run_form() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let engine = docker();
+        let busybox = image_key(&resources, "busybox:1.37");
+        let ctx = list_ctx(&resources, &engine, ResourceKind::Images, &busybox);
+        let mut state = ActionsState::default();
+
+        let (effects, outcome) =
+            reduce_part(&mut state, ActionsIntent::Act(RowAction::Run), &ctx);
+
+        assert!(effects.is_empty());
+        assert_eq!(
+            outcome,
+            Some(ActionsOutcome::RunRequested {
+                engine: docker(),
+                image: String::from("busybox:1.37"),
+            })
+        );
+    }
+
+    #[test]
+    fn pull_again_on_an_image_row_asks_the_parent_for_the_pull_dialog() {
+        let resources = fixtures::resources(EngineKind::Docker);
+        let engine = docker();
+        let busybox = image_key(&resources, "busybox:1.37");
+        let ctx = list_ctx(&resources, &engine, ResourceKind::Images, &busybox);
+        let mut state = ActionsState::default();
+
+        let (effects, outcome) = reduce_part(
+            &mut state,
+            ActionsIntent::Act(RowAction::PullAgain),
+            &ctx,
+        );
+
+        assert!(effects.is_empty());
+        assert_eq!(
+            outcome,
+            Some(ActionsOutcome::PullRequested {
+                engine: docker(),
+                image: String::from("busybox"),
+                tag: String::from("1.37"),
+            })
+        );
+    }
+
     /// Containers mode active, the Docker fixture engine found and loaded, its
     /// containers open.
     fn loaded_state() -> ContainersState {
         let resources = fixtures::resources(EngineKind::Docker);
         let mut state = ContainersState::default();
-        let _ = reduce(&mut state, ContainersIntent::Enter);
-        let _ = reduce(
+        let _ = reduce_containers(&mut state, ContainersIntent::Enter);
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::DiscoveryFinished(fixtures::discovery_with_cli(
                 &[EngineKind::Docker],
@@ -473,7 +683,7 @@ mod tests {
                 None,
             )),
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::ListsLoaded {
                 engine: docker().address().clone(),
@@ -507,16 +717,16 @@ mod tests {
             .expect("fixture container");
 
         let position = state.shown_position(index);
-        let _ = reduce(state, ContainersIntent::SelectRow(position));
+        let _ = reduce_containers(state, ContainersIntent::SelectRow(position));
         container(name).id().to_string()
     }
 
     fn run(action: EngineAction, name: &str) -> ContainersEffect {
-        ContainersEffect::RunAction(ActionRequest::new(
+        ContainersEffect::Actions(ActionsEffect::RunAction(ActionRequest::new(
             docker(),
             action,
             name.to_string(),
-        ))
+        )))
     }
 
     #[test]
@@ -533,8 +743,7 @@ mod tests {
             let mut state = loaded_state();
             let id = select(&mut state, name);
 
-            let effects =
-                effects(reduce(&mut state, ContainersIntent::Act(action)));
+            let effects = effects(send(&mut state, ActionsIntent::Act(action)));
 
             let expected = match call {
                 "start" => EngineAction::StartContainer(id),
@@ -552,53 +761,45 @@ mod tests {
         let mut state = loaded_state();
         let _ = select(&mut state, "otty-fx-running");
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Start),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Start)));
 
         assert!(effects.is_empty());
-        assert!(state.running().is_empty());
+        assert!(state.actions().running().is_empty());
     }
 
     #[test]
     fn while_an_action_runs_its_container_takes_no_other_action() {
         let mut state = loaded_state();
         let _ = select(&mut state, "otty-fx-running");
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Stop));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Stop));
 
-        let again = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Restart),
-        ));
-        let remove = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Remove),
-        ));
+        let again =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Restart)));
+        let remove =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Remove)));
 
         assert!(again.is_empty());
         assert!(remove.is_empty());
-        assert!(state.confirm().is_none());
-        assert_eq!(state.running().len(), 1);
+        assert!(state.actions().confirm().is_none());
+        assert_eq!(state.actions().running().len(), 1);
     }
 
     #[test]
     fn another_container_can_act_while_one_runs_an_action() {
         let mut state = loaded_state();
         let _ = select(&mut state, "otty-fx-running");
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Stop));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Stop));
         let id = select(&mut state, "otty-fx-exit0");
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Start),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Start)));
 
         assert_eq!(
             effects,
             vec![run(EngineAction::StartContainer(id), "otty-fx-exit0")]
         );
-        assert_eq!(state.running().len(), 2);
+        assert_eq!(state.actions().running().len(), 2);
     }
 
     #[test]
@@ -606,30 +807,30 @@ mod tests {
         let mut state = loaded_state();
         let _ = select(&mut state, "otty-fx-exit0");
 
-        let asked = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Remove),
-        ));
+        let asked =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Remove)));
         assert!(asked.is_empty());
-        assert!(state.confirm().is_some());
+        assert!(state.actions().confirm().is_some());
 
         let cancelled =
-            effects(reduce(&mut state, ContainersIntent::ConfirmCancelled));
+            effects(send(&mut state, ActionsIntent::ConfirmCancelled));
 
         assert!(cancelled.is_empty());
-        assert!(state.confirm().is_none());
-        assert!(state.running().is_empty());
+        assert!(state.actions().confirm().is_none());
+        assert!(state.actions().running().is_empty());
     }
 
     #[test]
     fn removing_a_running_container_stops_it_first_by_default() {
         let mut state = loaded_state();
         let id = select(&mut state, "otty-fx-running");
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
-        assert_eq!(state.confirm().and_then(Confirm::switch), Some(true));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
+        assert_eq!(
+            state.actions().confirm().and_then(Confirm::switch),
+            Some(true)
+        );
 
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+        let effects = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
         assert_eq!(
             effects,
@@ -638,20 +839,18 @@ mod tests {
                 "otty-fx-running"
             )]
         );
-        assert!(state.confirm().is_none());
-        assert_eq!(state.running().len(), 1);
+        assert!(state.actions().confirm().is_none());
+        assert_eq!(state.actions().running().len(), 1);
     }
 
     #[test]
     fn turning_stop_it_first_off_removes_without_force() {
         let mut state = loaded_state();
         let id = select(&mut state, "otty-fx-paused");
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
 
-        let _ =
-            reduce(&mut state, ContainersIntent::ConfirmSwitchToggled(false));
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+        let _ = send(&mut state, ActionsIntent::ConfirmSwitchToggled(false));
+        let effects = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
         assert_eq!(
             effects,
@@ -666,11 +865,10 @@ mod tests {
     fn a_stopped_container_is_removed_without_the_switch() {
         let mut state = loaded_state();
         let id = select(&mut state, "otty-fx-exit3");
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
-        assert_eq!(state.confirm().and_then(Confirm::switch), None);
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
+        assert_eq!(state.actions().confirm().and_then(Confirm::switch), None);
 
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+        let effects = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
         assert_eq!(
             effects,
@@ -685,11 +883,10 @@ mod tests {
     fn prune_asks_first_then_prunes_the_stopped_containers() {
         let mut state = loaded_state();
 
-        let asked = effects(reduce(&mut state, ContainersIntent::Prune));
+        let asked = effects(send(&mut state, ActionsIntent::Prune));
         // Created, exited 0 and exited 3.
-        assert_eq!(state.confirm().map(Confirm::count), Some(3));
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+        assert_eq!(state.actions().confirm().map(Confirm::count), Some(3));
+        let effects = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
         assert!(asked.is_empty());
         assert_eq!(effects, vec![run(EngineAction::PruneContainers, "")]);
@@ -698,12 +895,12 @@ mod tests {
     #[test]
     fn a_second_prune_waits_for_the_first() {
         let mut state = loaded_state();
-        let _ = reduce(&mut state, ContainersIntent::Prune);
-        let _ = reduce(&mut state, ContainersIntent::ConfirmAccepted);
+        let _ = send(&mut state, ActionsIntent::Prune);
+        let _ = send(&mut state, ActionsIntent::ConfirmAccepted);
 
-        let _ = reduce(&mut state, ContainersIntent::Prune);
+        let _ = send(&mut state, ActionsIntent::Prune);
 
-        assert!(state.confirm().is_none());
+        assert!(state.actions().confirm().is_none());
     }
 
     #[test]
@@ -711,35 +908,34 @@ mod tests {
         let mut state = loaded_state();
 
         let accepted =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
-        let _ =
-            reduce(&mut state, ContainersIntent::ConfirmSwitchToggled(true));
+            effects(send(&mut state, ActionsIntent::ConfirmAccepted));
+        let _ = send(&mut state, ActionsIntent::ConfirmSwitchToggled(true));
 
         assert!(accepted.is_empty());
-        assert!(state.confirm().is_none());
+        assert!(state.actions().confirm().is_none());
     }
 
     #[test]
     fn a_finished_action_reloads_the_engines_lists() {
         let mut state = loaded_state();
         let id = select(&mut state, "otty-fx-running");
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Stop));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Stop));
         let request = ActionRequest::new(
             docker(),
             EngineAction::StopContainer(id),
             String::from("otty-fx-running"),
         );
 
-        let effects = effects(reduce(
+        let effects = effects(send(
             &mut state,
-            ContainersIntent::ActionFinished {
+            ActionsIntent::Finished {
                 request,
                 result: Ok(()),
             },
         ));
 
         assert_eq!(effects, vec![ContainersEffect::LoadLists(docker())]);
-        assert!(state.running().is_empty());
+        assert!(state.actions().running().is_empty());
         assert!(state.notice().is_none());
     }
 
@@ -747,23 +943,23 @@ mod tests {
     fn a_failed_action_shows_a_notice_and_keeps_the_table() {
         let mut state = loaded_state();
         let id = select(&mut state, "otty-fx-running");
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Stop));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Stop));
         let request = ActionRequest::new(
             docker(),
             EngineAction::StopContainer(id),
             String::from("otty-fx-running"),
         );
 
-        let effects = effects(reduce(
+        let effects = effects(send(
             &mut state,
-            ContainersIntent::ActionFinished {
+            ActionsIntent::Finished {
                 request: request.clone(),
                 result: Err(ContainersError::new("it is restarting")),
             },
         ));
 
         assert!(effects.is_empty());
-        assert!(state.running().is_empty());
+        assert!(state.actions().running().is_empty());
         assert_eq!(
             state.notice(),
             Some(failure_text(&request, "it is restarting").as_str())
@@ -775,9 +971,9 @@ mod tests {
     #[test]
     fn dismissing_the_notice_hides_it() {
         let mut state = loaded_state();
-        let _ = reduce(
+        let _ = send(
             &mut state,
-            ContainersIntent::ActionFinished {
+            ActionsIntent::Finished {
                 request: ActionRequest::new(
                     docker(),
                     EngineAction::PruneContainers,
@@ -787,7 +983,7 @@ mod tests {
             },
         );
 
-        let _ = reduce(&mut state, ContainersIntent::DismissNotice);
+        let _ = reduce_containers(&mut state, ContainersIntent::DismissNotice);
 
         assert!(state.notice().is_none());
     }
@@ -795,9 +991,9 @@ mod tests {
     #[test]
     fn opening_another_list_hides_the_notice() {
         let mut state = loaded_state();
-        let _ = reduce(
+        let _ = send(
             &mut state,
-            ContainersIntent::ActionFinished {
+            ActionsIntent::Finished {
                 request: ActionRequest::new(
                     docker(),
                     EngineAction::PruneContainers,
@@ -807,7 +1003,7 @@ mod tests {
             },
         );
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::Open(Place::new(
                 docker().address().clone(),
@@ -821,11 +1017,11 @@ mod tests {
     #[test]
     fn a_finished_action_outside_containers_mode_does_not_reload() {
         let mut state = loaded_state();
-        let _ = reduce(&mut state, ContainersIntent::Leave);
+        let _ = reduce_containers(&mut state, ContainersIntent::Leave);
 
-        let effects = effects(reduce(
+        let effects = effects(send(
             &mut state,
-            ContainersIntent::ActionFinished {
+            ActionsIntent::Finished {
                 request: ActionRequest::new(
                     docker(),
                     EngineAction::PruneContainers,
@@ -844,7 +1040,7 @@ mod tests {
         let position = Point::new(120.0, 80.0);
         let index = state.shown_position(2);
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::OpenRowMenu { index, position },
         );
@@ -852,14 +1048,14 @@ mod tests {
         let engine = state.open_engine().expect("docker engine");
         let selected = engine.containers().selected(Container::id);
         assert_eq!(selected.map(Container::name), Some("otty-fx-exit3"));
-        assert_eq!(state.row_menu(), Some(position));
+        assert_eq!(state.actions().row_menu(), Some(position));
     }
 
     #[test]
     fn a_menu_item_closes_the_menu_and_runs_its_action() {
         let mut state = loaded_state();
         let index = state.shown_position(2);
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::OpenRowMenu {
                 index,
@@ -867,10 +1063,8 @@ mod tests {
             },
         );
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Start),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Start)));
 
         assert_eq!(
             effects,
@@ -881,13 +1075,13 @@ mod tests {
                 "otty-fx-exit3"
             )]
         );
-        assert_eq!(state.row_menu(), None);
+        assert_eq!(state.actions().row_menu(), None);
     }
 
     #[test]
     fn closing_the_menu_runs_nothing() {
         let mut state = loaded_state();
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::OpenRowMenu {
                 index: 0,
@@ -895,18 +1089,17 @@ mod tests {
             },
         );
 
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::CloseRowMenu));
+        let effects = effects(send(&mut state, ActionsIntent::CloseRowMenu));
 
         assert!(effects.is_empty());
-        assert_eq!(state.row_menu(), None);
+        assert_eq!(state.actions().row_menu(), None);
     }
 
     #[test]
     fn a_right_press_past_the_last_row_opens_no_menu() {
         let mut state = loaded_state();
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::OpenRowMenu {
                 index: 99,
@@ -914,7 +1107,7 @@ mod tests {
             },
         );
 
-        assert_eq!(state.row_menu(), None);
+        assert_eq!(state.actions().row_menu(), None);
     }
 
     /// Return the position of the container `name` in the shown table.
@@ -940,13 +1133,13 @@ mod tests {
         let position = Point::new(900.0, 120.0);
         let index = shown_index(&state, "otty-fx-exit3");
 
-        let effects = effects(reduce(
+        let effects = effects(reduce_containers(
             &mut state,
             ContainersIntent::RowMenuPressed { index, position },
         ));
 
         assert!(effects.is_empty());
-        assert_eq!(state.row_menu(), Some(position));
+        assert_eq!(state.actions().row_menu(), Some(position));
         assert_eq!(selected_id(&state), Some(running));
     }
 
@@ -955,7 +1148,7 @@ mod tests {
         let mut state = loaded_state();
         let running = select(&mut state, "otty-fx-running");
         let index = shown_index(&state, "otty-fx-exit3");
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::RowMenuPressed {
                 index,
@@ -963,10 +1156,8 @@ mod tests {
             },
         );
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Start),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Start)));
 
         assert_eq!(
             effects,
@@ -977,7 +1168,7 @@ mod tests {
                 "otty-fx-exit3"
             )]
         );
-        assert_eq!(state.row_menu(), None);
+        assert_eq!(state.actions().row_menu(), None);
         assert_eq!(selected_id(&state), Some(running));
     }
 
@@ -986,7 +1177,7 @@ mod tests {
         let mut state = loaded_state();
         let _ = select(&mut state, "otty-fx-running");
         let index = shown_index(&state, "otty-fx-exit3");
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::RowMenuPressed {
                 index,
@@ -994,9 +1185,9 @@ mod tests {
             },
         );
 
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
 
-        let confirm = state.confirm().expect("the remove dialog");
+        let confirm = state.actions().confirm().expect("the remove dialog");
         assert_eq!(confirm.request().name(), "otty-fx-exit3");
         assert_eq!(
             confirm.request().action(),
@@ -1013,17 +1204,17 @@ mod tests {
         let mut state = loaded_state();
         let running = select(&mut state, "otty-fx-running");
         let index = shown_index(&state, "otty-fx-exit3");
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::RowMenuPressed {
                 index,
                 position: Point::ORIGIN,
             },
         );
-        let _ = reduce(&mut state, ContainersIntent::CloseRowMenu);
+        let _ = send(&mut state, ActionsIntent::CloseRowMenu);
 
         let effects =
-            effects(reduce(&mut state, ContainersIntent::Act(RowAction::Stop)));
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Stop)));
 
         assert_eq!(
             effects,
@@ -1035,7 +1226,7 @@ mod tests {
     fn the_row_menu_button_past_the_last_row_opens_no_menu() {
         let mut state = loaded_state();
 
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::RowMenuPressed {
                 index: 99,
@@ -1043,14 +1234,14 @@ mod tests {
             },
         );
 
-        assert_eq!(state.row_menu(), None);
+        assert_eq!(state.actions().row_menu(), None);
     }
 
     /// Replace the Docker engine's lists with the idle fixture lists: no
     /// container, so nothing uses an image, a volume or a network.
     fn load_idle(state: &mut ContainersState) {
         let idle = fixtures::idle_resources(EngineKind::Docker);
-        let _ = reduce(
+        let _ = reduce_containers(
             state,
             ContainersIntent::ListsLoaded {
                 engine: docker().address().clone(),
@@ -1071,7 +1262,7 @@ mod tests {
         resource: ResourceKind,
         name: &str,
     ) {
-        let _ = reduce(
+        let _ = reduce_containers(
             state,
             ContainersIntent::Open(Place::new(
                 docker().address().clone(),
@@ -1099,7 +1290,7 @@ mod tests {
         .expect("fixture row");
 
         let position = state.shown_position(index);
-        let _ = reduce(state, ContainersIntent::SelectRow(position));
+        let _ = reduce_containers(state, ContainersIntent::SelectRow(position));
     }
 
     #[test]
@@ -1107,10 +1298,12 @@ mod tests {
         let mut state = loaded_state();
         select_in(&mut state, ResourceKind::Images, "busybox:1.37");
 
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
-        assert_eq!(state.confirm().and_then(Confirm::switch), Some(true));
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
+        assert_eq!(
+            state.actions().confirm().and_then(Confirm::switch),
+            Some(true)
+        );
+        let effects = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
         assert_eq!(
             effects,
@@ -1152,12 +1345,12 @@ mod tests {
         let images = fixtures::image_rows(APP_ID, names, digests, &users);
 
         let mut state = ContainersState::default();
-        let _ = reduce(&mut state, ContainersIntent::Enter);
-        let _ = reduce(
+        let _ = reduce_containers(&mut state, ContainersIntent::Enter);
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::DiscoveryFinished(fixtures::discovery(&[kind])),
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::ListsLoaded {
                 engine: info.address().clone(),
@@ -1169,7 +1362,7 @@ mod tests {
                 },
             },
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::Open(Place::new(
                 info.address().clone(),
@@ -1186,10 +1379,12 @@ mod tests {
         state: &mut ContainersState,
         index: usize,
     ) -> (Option<bool>, EngineAction) {
-        let _ = reduce(state, ContainersIntent::SelectRow(index));
-        let _ = reduce(state, ContainersIntent::Act(RowAction::Remove));
-        let switch = state.confirm().and_then(Confirm::switch);
+        let _ = reduce_containers(state, ContainersIntent::SelectRow(index));
+        let _ = send(state, ActionsIntent::Act(RowAction::Remove));
+        let switch = state.actions().confirm().and_then(Confirm::switch);
         let call = state
+            .actions_and_ctx()
+            .0
             .take_confirm()
             .expect("the remove dialog")
             .into_request()
@@ -1308,20 +1503,20 @@ mod tests {
     fn turning_force_on_on_podman_forces_the_removal() {
         let mut state =
             image_state(EngineKind::Podman, &["app:1"], &[], &["exited"]);
-        let _ = reduce(&mut state, ContainersIntent::SelectRow(0));
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
+        let _ = reduce_containers(&mut state, ContainersIntent::SelectRow(0));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
 
-        let _ =
-            reduce(&mut state, ContainersIntent::ConfirmSwitchToggled(true));
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+        let _ = send(&mut state, ActionsIntent::ConfirmSwitchToggled(true));
+        let effects = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
         assert_eq!(
             effects,
-            vec![ContainersEffect::RunAction(ActionRequest::new(
-                fixtures::engine(EngineKind::Podman),
-                remove_call_of("app:1", true),
-                String::from("app:1"),
+            vec![ContainersEffect::Actions(ActionsEffect::RunAction(
+                ActionRequest::new(
+                    fixtures::engine(EngineKind::Podman),
+                    remove_call_of("app:1", true),
+                    String::from("app:1"),
+                )
             ))]
         );
     }
@@ -1330,25 +1525,29 @@ mod tests {
     fn a_podman_refusal_of_a_removal_left_without_force_reaches_the_notice() {
         let mut state =
             image_state(EngineKind::Podman, &["app:1"], &[], &["exited"]);
-        let _ = reduce(&mut state, ContainersIntent::SelectRow(0));
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
+        let _ = reduce_containers(&mut state, ContainersIntent::SelectRow(0));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
         let request = ActionRequest::new(
             fixtures::engine(EngineKind::Podman),
             remove_call_of("app:1", false),
             String::from("app:1"),
         );
 
-        let started =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
-        let _ = reduce(
+        let started = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
+        let _ = send(
             &mut state,
-            ContainersIntent::ActionFinished {
+            ActionsIntent::Finished {
                 request: request.clone(),
                 result: Err(ContainersError::new("image is in use")),
             },
         );
 
-        assert_eq!(started, vec![ContainersEffect::RunAction(request.clone())]);
+        assert_eq!(
+            started,
+            vec![ContainersEffect::Actions(ActionsEffect::RunAction(
+                request.clone()
+            ))]
+        );
         assert_eq!(
             state.notice(),
             Some(failure_text(&request, "image is in use").as_str())
@@ -1396,7 +1595,7 @@ mod tests {
     fn the_row_menu_of_a_tag_acts_on_that_tag() {
         let mut state =
             image_state(EngineKind::Docker, &["app:1", "app:2"], &[], &[]);
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::RowMenuPressed {
                 index: 1,
@@ -1404,9 +1603,9 @@ mod tests {
             },
         );
 
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
 
-        let confirm = state.confirm().expect("the remove dialog");
+        let confirm = state.actions().confirm().expect("the remove dialog");
         assert_eq!(confirm.request().name(), "app:2");
         assert_eq!(confirm.request().action(), &remove_call_of("app:2", false));
     }
@@ -1415,18 +1614,17 @@ mod tests {
     fn removing_a_tag_blocks_only_that_row() {
         let mut state =
             image_state(EngineKind::Docker, &["app:1", "app:2"], &[], &[]);
-        let _ = reduce(&mut state, ContainersIntent::SelectRow(0));
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
-        let _ = reduce(&mut state, ContainersIntent::ConfirmAccepted);
+        let _ = reduce_containers(&mut state, ContainersIntent::SelectRow(0));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
+        let _ = send(&mut state, ActionsIntent::ConfirmAccepted);
 
-        let again =
-            reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
+        let again = send(&mut state, ActionsIntent::Act(RowAction::Remove));
         let _ = collect_outputs(again);
-        assert!(state.confirm().is_none());
+        assert!(state.actions().confirm().is_none());
 
-        let _ = reduce(&mut state, ContainersIntent::SelectRow(1));
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
-        assert!(state.confirm().is_some());
+        let _ = reduce_containers(&mut state, ContainersIntent::SelectRow(1));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
+        assert!(state.actions().confirm().is_some());
     }
 
     #[test]
@@ -1439,9 +1637,9 @@ mod tests {
             String::from("app:1"),
         );
 
-        let _ = reduce(
+        let _ = send(
             &mut state,
-            ContainersIntent::ActionFinished {
+            ActionsIntent::Finished {
                 request: request.clone(),
                 result: Err(ContainersError::new("must be forced")),
             },
@@ -1456,9 +1654,9 @@ mod tests {
     fn run_on_a_tag_opens_the_form_with_that_tag() {
         let mut state =
             image_state(EngineKind::Docker, &["app:1", "app:2"], &[], &[]);
-        let _ = reduce(&mut state, ContainersIntent::SelectRow(1));
+        let _ = reduce_containers(&mut state, ContainersIntent::SelectRow(1));
 
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Run));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Run));
 
         assert_eq!(state.run().form().map(|form| form.image()), Some("app:2"));
     }
@@ -1467,9 +1665,9 @@ mod tests {
     fn pull_again_on_a_tag_opens_the_dialog_with_that_tag() {
         let mut state =
             image_state(EngineKind::Docker, &["app:1", "app:2"], &[], &[]);
-        let _ = reduce(&mut state, ContainersIntent::SelectRow(1));
+        let _ = reduce_containers(&mut state, ContainersIntent::SelectRow(1));
 
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::PullAgain));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::PullAgain));
 
         let form = state.create().form().expect("the pull dialog");
         assert_eq!(form.value(FormField::Name), "app");
@@ -1481,10 +1679,9 @@ mod tests {
         let mut state = loaded_state();
         select_in(&mut state, ResourceKind::Images, "otty-fx-img:1");
 
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
-        assert_eq!(state.confirm().and_then(Confirm::switch), None);
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
+        assert_eq!(state.actions().confirm().and_then(Confirm::switch), None);
+        let effects = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
         assert_eq!(
             effects,
@@ -1503,10 +1700,8 @@ mod tests {
         let mut state = loaded_state();
         select_in(&mut state, ResourceKind::Images, "busybox:1.37");
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::PullAgain),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::PullAgain)));
 
         assert!(effects.is_empty());
         assert_eq!(
@@ -1523,7 +1718,7 @@ mod tests {
         let mut state = loaded_state();
         select_in(&mut state, ResourceKind::Images, "<none>:<none>");
 
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::PullAgain));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::PullAgain));
 
         assert!(!state.create().is_open());
     }
@@ -1533,13 +1728,11 @@ mod tests {
         let mut state = loaded_state();
         select_in(&mut state, ResourceKind::Volumes, "otty-fx-data");
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Remove),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Remove)));
 
         assert!(effects.is_empty());
-        assert!(state.confirm().is_none());
+        assert!(state.actions().confirm().is_none());
     }
 
     #[test]
@@ -1548,9 +1741,8 @@ mod tests {
         load_idle(&mut state);
         select_in(&mut state, ResourceKind::Volumes, "otty-fx-data");
 
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
+        let effects = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
         assert_eq!(
             effects,
@@ -1567,10 +1759,9 @@ mod tests {
             let mut state = loaded_state();
             select_in(&mut state, ResourceKind::Networks, name);
 
-            let _ =
-                reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
+            let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
 
-            assert!(state.confirm().is_none(), "{name}");
+            assert!(state.actions().confirm().is_none(), "{name}");
         }
     }
 
@@ -1585,9 +1776,8 @@ mod tests {
             .expect("selected network")
             .to_string();
 
-        let _ = reduce(&mut state, ContainersIntent::Act(RowAction::Remove));
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+        let _ = send(&mut state, ActionsIntent::Act(RowAction::Remove));
+        let effects = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
         assert_eq!(
             effects,
@@ -1601,10 +1791,10 @@ mod tests {
         select_in(&mut state, ResourceKind::Images, "busybox:1.37");
 
         let effects =
-            effects(reduce(&mut state, ContainersIntent::Act(RowAction::Stop)));
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Stop)));
 
         assert!(effects.is_empty());
-        assert!(state.confirm().is_none());
+        assert!(state.actions().confirm().is_none());
     }
 
     #[test]
@@ -1617,7 +1807,7 @@ mod tests {
         for (resource, action, count) in cases {
             let mut state = loaded_state();
             load_idle(&mut state);
-            let _ = reduce(
+            let _ = reduce_containers(
                 &mut state,
                 ContainersIntent::Open(Place::new(
                     docker().address().clone(),
@@ -1625,14 +1815,14 @@ mod tests {
                 )),
             );
 
-            let _ = reduce(&mut state, ContainersIntent::Prune);
+            let _ = send(&mut state, ActionsIntent::Prune);
             assert_eq!(
-                state.confirm().map(Confirm::count),
+                state.actions().confirm().map(Confirm::count),
                 Some(count),
                 "{resource:?}"
             );
             let effects =
-                effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+                effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
             assert_eq!(effects, vec![run(action, "")], "{resource:?}");
         }
@@ -1640,14 +1830,14 @@ mod tests {
 
     fn open_volume_prune(state: &mut ContainersState) {
         load_idle(state);
-        let _ = reduce(
+        let _ = reduce_containers(
             state,
             ContainersIntent::Open(Place::new(
                 docker().address().clone(),
                 ResourceKind::Volumes,
             )),
         );
-        let _ = reduce(state, ContainersIntent::Prune);
+        let _ = send(state, ActionsIntent::Prune);
     }
 
     #[test]
@@ -1655,10 +1845,12 @@ mod tests {
         let mut state = loaded_state();
         open_volume_prune(&mut state);
 
-        assert_eq!(state.confirm().and_then(Confirm::switch), Some(false));
-        assert_eq!(state.confirm().map(Confirm::count), Some(1));
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+        assert_eq!(
+            state.actions().confirm().and_then(Confirm::switch),
+            Some(false)
+        );
+        assert_eq!(state.actions().confirm().map(Confirm::count), Some(1));
+        let effects = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
         assert_eq!(
             effects,
@@ -1676,11 +1868,9 @@ mod tests {
         let mut state = loaded_state();
         open_volume_prune(&mut state);
 
-        let _ =
-            reduce(&mut state, ContainersIntent::ConfirmSwitchToggled(true));
-        assert_eq!(state.confirm().map(Confirm::count), Some(2));
-        let effects =
-            effects(reduce(&mut state, ContainersIntent::ConfirmAccepted));
+        let _ = send(&mut state, ActionsIntent::ConfirmSwitchToggled(true));
+        assert_eq!(state.actions().confirm().map(Confirm::count), Some(2));
+        let effects = effects(send(&mut state, ActionsIntent::ConfirmAccepted));
 
         assert_eq!(
             effects,
@@ -1698,12 +1888,10 @@ mod tests {
         let mut state = loaded_state();
         open_volume_prune(&mut state);
 
-        let _ =
-            reduce(&mut state, ContainersIntent::ConfirmSwitchToggled(true));
-        let _ =
-            reduce(&mut state, ContainersIntent::ConfirmSwitchToggled(false));
+        let _ = send(&mut state, ActionsIntent::ConfirmSwitchToggled(true));
+        let _ = send(&mut state, ActionsIntent::ConfirmSwitchToggled(false));
 
-        assert_eq!(state.confirm().map(Confirm::count), Some(1));
+        assert_eq!(state.actions().confirm().map(Confirm::count), Some(1));
     }
 
     /// Podman mode active, the Podman fixture engine found and loaded, with
@@ -1715,8 +1903,8 @@ mod tests {
         let engine = fixtures::engine(EngineKind::Podman);
         let resources = fixtures::resources(EngineKind::Podman);
         let mut state = ContainersState::default();
-        let _ = reduce(&mut state, ContainersIntent::Enter);
-        let _ = reduce(
+        let _ = reduce_containers(&mut state, ContainersIntent::Enter);
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::DiscoveryFinished(fixtures::discovery_with_cli(
                 &[EngineKind::Podman],
@@ -1724,7 +1912,7 @@ mod tests {
                 podman_cli,
             )),
         );
-        let _ = reduce(
+        let _ = reduce_containers(
             &mut state,
             ContainersIntent::ListsLoaded {
                 engine: engine.address().clone(),
@@ -1742,7 +1930,10 @@ mod tests {
             .position(|container| container.name() == "otty-fx-running")
             .expect("fixture container");
         let position = state.shown_position(index);
-        let _ = reduce(&mut state, ContainersIntent::SelectRow(position));
+        let _ = reduce_containers(
+            &mut state,
+            ContainersIntent::SelectRow(position),
+        );
         state
     }
 
@@ -1763,13 +1954,13 @@ mod tests {
     ) -> ContainersEffect {
         let host = format!("unix://{socket}");
 
-        ContainersEffect::OpenShell {
+        ContainersEffect::Actions(ActionsEffect::OpenShell {
             title: String::from("shell otty-fx-running"),
             program: program.to_string(),
             args: [flag, host.as_str(), "exec", "-it", "--", id, "sh"]
                 .map(String::from)
                 .to_vec(),
-        }
+        })
     }
 
     fn podman_shell(program: &str) -> ContainersEffect {
@@ -1786,10 +1977,8 @@ mod tests {
         let mut state = loaded_state();
         let id = select(&mut state, "otty-fx-running");
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Shell),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Shell)));
 
         assert_eq!(
             effects,
@@ -1801,10 +1990,8 @@ mod tests {
     fn shell_on_a_podman_engine_opens_podman_exec() {
         let mut state = podman_state(None, Some("/opt/podman/bin/podman"));
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Shell),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Shell)));
 
         assert_eq!(effects, vec![podman_shell("/opt/podman/bin/podman")]);
     }
@@ -1815,10 +2002,8 @@ mod tests {
         // cli reports it as the Podman command and not as Docker.
         let mut state = podman_state(None, Some("/usr/bin/docker"));
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Shell),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Shell)));
 
         assert_eq!(effects, vec![podman_shell("/usr/bin/docker")]);
     }
@@ -1888,10 +2073,8 @@ mod tests {
     fn shell_on_a_podman_engine_ignores_a_real_docker_command() {
         let mut state = podman_state(Some(DOCKER_CLI), None);
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Shell),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Shell)));
 
         assert!(effects.is_empty());
     }
@@ -1900,10 +2083,8 @@ mod tests {
     fn shell_without_the_command_does_nothing() {
         let mut state = podman_state(None, None);
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Shell),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Shell)));
 
         assert!(effects.is_empty());
     }
@@ -1913,10 +2094,8 @@ mod tests {
         let mut state = loaded_state();
         let _ = select(&mut state, "otty-fx-exit0");
 
-        let effects = effects(reduce(
-            &mut state,
-            ContainersIntent::Act(RowAction::Shell),
-        ));
+        let effects =
+            effects(send(&mut state, ActionsIntent::Act(RowAction::Shell)));
 
         assert!(effects.is_empty());
     }

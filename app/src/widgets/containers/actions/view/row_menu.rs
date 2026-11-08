@@ -6,8 +6,8 @@ use iced::{Element, Length, Padding, Size};
 use otty_ui_kit::components::menu::{self, Menu, MenuItem};
 use otty_ui_kit::spacing;
 
-use super::super::action_model::RowMenuViewModel;
-use super::super::event::ContainersIntent;
+use super::super::event::ActionsIntent;
+use super::super::model::RowMenuViewModel;
 use crate::geometry::{anchor_position, menu_height_for_items};
 use crate::theme::ThemeProps;
 
@@ -21,7 +21,7 @@ pub(crate) struct RowMenuProps<'a> {
 
 /// Render the row menu over the whole window. A press outside it closes
 /// it.
-pub(crate) fn view(props: RowMenuProps<'_>) -> Element<'_, ContainersIntent> {
+pub(crate) fn view(props: RowMenuProps<'_>) -> Element<'_, ActionsIntent> {
     let palette = props.theme.theme.ui();
 
     let height = menu_height_for_items(props.vm.items.len());
@@ -37,7 +37,7 @@ pub(crate) fn view(props: RowMenuProps<'_>) -> Element<'_, ContainersIntent> {
     for item in props.vm.items {
         let mut entry = MenuItem::new(item.label).danger(item.is_danger);
         if item.is_enabled {
-            entry = entry.on_press(ContainersIntent::Act(item.action));
+            entry = entry.on_press(ActionsIntent::Act(item.action));
         }
         list = list.item(entry);
     }
@@ -55,8 +55,8 @@ pub(crate) fn view(props: RowMenuProps<'_>) -> Element<'_, ContainersIntent> {
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(ContainersIntent::CloseRowMenu)
-    .on_right_press(ContainersIntent::CloseRowMenu);
+    .on_press(ActionsIntent::CloseRowMenu)
+    .on_right_press(ActionsIntent::CloseRowMenu);
 
     Stack::with_children(vec![dismiss.into(), positioned.into()])
         .width(Length::Fill)
@@ -72,8 +72,8 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key};
     use crate::theme::ThemeManager;
-    use crate::widgets::containers::action_model::ActionButton;
-    use crate::widgets::containers::actions::RowAction;
+    use crate::widgets::containers::actions::model::ActionButton;
+    use crate::widgets::containers::actions::types::RowAction;
 
     fn item(action: RowAction, is_enabled: bool) -> ActionButton {
         ActionButton {
@@ -106,8 +106,8 @@ mod tests {
         ui.click(i18n::t(Key::ContainersActionRemove))
             .expect("remove should show");
 
-        let intents: Vec<ContainersIntent> = ui.into_messages().collect();
-        assert_eq!(intents, vec![ContainersIntent::Act(RowAction::Remove)]);
+        let intents: Vec<ActionsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![ActionsIntent::Act(RowAction::Remove)]);
     }
 
     #[test]
@@ -122,7 +122,7 @@ mod tests {
         ui.click(i18n::t(Key::ContainersActionStop))
             .expect("stop should show");
 
-        let intents: Vec<ContainersIntent> = ui.into_messages().collect();
+        let intents: Vec<ActionsIntent> = ui.into_messages().collect();
         assert!(intents.is_empty());
     }
 
@@ -138,7 +138,7 @@ mod tests {
         ui.point_at(Point::new(700.0, 500.0));
         let _ = ui.simulate(iced_test::simulator::click());
 
-        let intents: Vec<ContainersIntent> = ui.into_messages().collect();
-        assert_eq!(intents, vec![ContainersIntent::CloseRowMenu]);
+        let intents: Vec<ActionsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![ActionsIntent::CloseRowMenu]);
     }
 }

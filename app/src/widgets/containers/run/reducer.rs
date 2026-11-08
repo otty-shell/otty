@@ -437,6 +437,8 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::containers::actions::event::ActionsIntent;
+    use crate::widgets::containers::actions::types::RowAction;
     use crate::widgets::containers::create::event::CreateIntent;
     use crate::widgets::containers::create::types::FormField;
     use crate::widgets::containers::event::{
@@ -776,9 +778,7 @@ mod tests {
 
         let effects = effects(reduce_containers(
             &mut state,
-            ContainersIntent::Act(
-                crate::widgets::containers::actions::RowAction::Run,
-            ),
+            ContainersIntent::Actions(ActionsIntent::Act(RowAction::Run)),
         ));
 
         let form = run_form(&state);

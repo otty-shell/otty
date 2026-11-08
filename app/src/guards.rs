@@ -212,7 +212,8 @@ mod tests {
     use crate::router::AppEvent;
     use crate::shortcuts::AppShortcut;
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
-    use crate::widgets::containers::actions::RowAction;
+    use crate::widgets::containers::actions::event::ActionsIntent;
+    use crate::widgets::containers::actions::types::RowAction;
     use crate::widgets::containers::event::{
         ContainersEvent, ContainersIntent,
     };
@@ -387,8 +388,10 @@ mod tests {
             containers(ContainersIntent::SelectInspectorTab(
                 InspectorTab::Logs,
             )),
-            containers(ContainersIntent::Act(RowAction::Stop)),
-            containers(ContainersIntent::Prune),
+            containers(ContainersIntent::Actions(ActionsIntent::Act(
+                RowAction::Stop,
+            ))),
+            containers(ContainersIntent::Actions(ActionsIntent::Prune)),
         ];
 
         for event in clicks {

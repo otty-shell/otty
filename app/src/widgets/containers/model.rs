@@ -3,8 +3,7 @@ use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::status_badge::StatusTone;
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
 
-use super::action_model::{PruneViewModel, can_create, prune_button};
-use super::actions::container_actions;
+use super::actions::{PruneViewModel, container_actions};
 use super::format::engine_label;
 use super::no_engine::{NoEngineViewModel, no_engine};
 use super::resource_rows::{
@@ -231,7 +230,10 @@ pub(crate) fn main_area(
         },
     };
     MainViewModel::Table(TableViewModel {
-        prune: prune_button(state),
+        prune: PruneViewModel::from_state(
+            state.actions(),
+            &state.actions_ctx(),
+        ),
         notice: state.notice(),
         can_create: can_create(state),
         ..table
@@ -286,6 +288,12 @@ pub(super) fn no_engine_view(
         Search::Done(discovery) => no_engine(discovery),
         _ => None,
     }
+}
+
+/// Whether the create button above the table works: Run container, Pull
+/// image, Create volume and Create network need an open engine.
+fn can_create(state: &ContainersState) -> bool {
+    state.open_engine().is_some() && state.place().is_some()
 }
 
 /// What the suggestion list of the open table shows. The rows are read only
@@ -1885,5 +1893,20 @@ mod tests {
                 resource_rows::network_status(&resources.networks()[0])
             )
         );
+    }
+
+    #[test]
+    fn every_list_has_a_create_button() {
+        let mut state = found(&[EngineKind::Docker]);
+        load(&mut state, &docker(), lists(EngineKind::Docker));
+        let mut enabled = Vec::new();
+
+        for resource in ResourceKind::ALL {
+            open(&mut state, resource);
+            enabled.push(can_create(&state));
+        }
+
+        assert_eq!(enabled, vec![true, true, true, true]);
+        assert!(!can_create(&ContainersState::default()));
     }
 }

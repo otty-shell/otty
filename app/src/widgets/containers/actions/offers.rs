@@ -1,56 +1,15 @@
-//! What the user can do with a row or a list (spec Decision 11): the
-//! actions each container state and image offers, when Remove is disabled
-//! and the confirmation a destructive one asks for.
+//! What the user can do with a row (spec Decision 11): the actions each
+//! container state and image offers, when Remove is disabled, what removing
+//! an image does and the notice text of a failed action.
 
 use otty_containers::{ContainerState, EngineKind, Image, Network, Volume};
 
-use super::types::ActionRequest;
+use super::super::types::ActionRequest;
+use super::types::RowAction;
 use crate::i18n::{self, Key};
 
 /// The only action of a volume or a network row.
 pub(crate) const REMOVE_ONLY: &[RowAction] = &[RowAction::Remove];
-
-/// What a button in the inspector or an item of the row menu does with the
-/// selected row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RowAction {
-    /// Opens a terminal tab with a shell in the container.
-    Shell,
-    Start,
-    Stop,
-    Restart,
-    Pause,
-    Unpause,
-    /// Opens the Run container form with the image filled in.
-    Run,
-    /// Opens the pull dialog with the image's name and tag.
-    PullAgain,
-    /// Asks first.
-    Remove,
-}
-
-impl RowAction {
-    /// Translation key of the button and the menu item.
-    pub(crate) fn label_key(self) -> Key {
-        match self {
-            Self::Shell => Key::ContainersActionShell,
-            Self::Start => Key::ContainersActionStart,
-            Self::Stop => Key::ContainersActionStop,
-            Self::Restart => Key::ContainersActionRestart,
-            Self::Pause => Key::ContainersActionPause,
-            Self::Unpause => Key::ContainersActionUnpause,
-            Self::Run => Key::ContainersActionRun,
-            Self::PullAgain => Key::ContainersActionPullAgain,
-            Self::Remove => Key::ContainersActionRemove,
-        }
-    }
-
-    /// Whether the action deletes something; it is drawn in the danger
-    /// color.
-    pub(crate) fn is_danger(self) -> bool {
-        self == Self::Remove
-    }
-}
 
 /// What a confirmed Remove of an image row does (spec Decision 11). The engines
 /// were asked on real runs of Docker 29 and Podman 5; they differ once a
@@ -107,90 +66,6 @@ impl ImageRemoval {
             EngineKind::Docker => Self::ForceKeepsContainers,
             EngineKind::Podman => Self::ForceDeletesContainers,
         }
-    }
-}
-
-/// A destructive action waiting for the user to confirm it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Confirm {
-    request: ActionRequest,
-    /// The dialog switch ("Stop it first"); `None` when the dialog has none.
-    switch: Option<bool>,
-    /// How many rows a prune deletes.
-    count: usize,
-    /// How many rows it deletes with the switch on, when that differs.
-    count_if_on: usize,
-    /// What the removal of an image row does; `None` for other actions.
-    image_removal: Option<ImageRemoval>,
-}
-
-impl Confirm {
-    /// The action that runs on confirm, before the switch is applied.
-    pub(crate) fn request(&self) -> &ActionRequest {
-        &self.request
-    }
-
-    /// Whether the switch is on; `None` when the dialog has no switch.
-    pub(crate) fn switch(&self) -> Option<bool> {
-        self.switch
-    }
-
-    /// How many rows a prune deletes, with the switch as it is now.
-    pub(crate) fn count(&self) -> usize {
-        if self.switch == Some(true) {
-            self.count_if_on
-        } else {
-            self.count
-        }
-    }
-
-    /// What the removal of an image row does; `None` for other actions.
-    pub(crate) fn image_removal(&self) -> Option<ImageRemoval> {
-        self.image_removal
-    }
-
-    /// Ask to confirm `request`, with a switch in its first state, or
-    /// none.
-    pub(crate) fn new(
-        request: ActionRequest,
-        switch: Option<bool>,
-        count: usize,
-    ) -> Self {
-        Self {
-            request,
-            switch,
-            count,
-            count_if_on: count,
-            image_removal: None,
-        }
-    }
-
-    /// Say what the removal of an image row does, for the text of the dialog.
-    pub(crate) fn with_image_removal(mut self, removal: ImageRemoval) -> Self {
-        self.image_removal = Some(removal);
-        self
-    }
-
-    /// Set how many rows the prune deletes with the switch on.
-    pub(crate) fn with_count_if_on(mut self, count_if_on: usize) -> Self {
-        self.count_if_on = count_if_on;
-        self
-    }
-
-    /// Turn the switch on or off; a dialog without a switch keeps none.
-    pub(crate) fn set_switch(&mut self, is_on: bool) {
-        if self.switch.is_some() {
-            self.switch = Some(is_on);
-        }
-    }
-
-    /// The request to run, with the switch applied.
-    pub(crate) fn into_request(self) -> ActionRequest {
-        let Some(is_on) = self.switch else {
-            return self.request;
-        };
-
-        self.request.with_switch(is_on)
     }
 }
 
@@ -436,16 +311,6 @@ mod tests {
     }
 
     #[test]
-    fn only_remove_is_destructive() {
-        use RowAction::*;
-
-        for action in [Start, Stop, Restart, Pause, Unpause] {
-            assert!(!action.is_danger(), "{action:?}");
-        }
-        assert!(Remove.is_danger());
-    }
-
-    #[test]
     fn a_running_paused_or_restarting_container_is_stopped_before_removal() {
         assert!(needs_stop(ContainerState::Running));
         assert!(needs_stop(ContainerState::Paused));
@@ -453,49 +318,6 @@ mod tests {
         assert!(!needs_stop(ContainerState::Exited));
         assert!(!needs_stop(ContainerState::Created));
         assert!(!needs_stop(ContainerState::Dead));
-    }
-
-    #[test]
-    fn the_switch_of_a_remove_confirmation_forces_the_removal() {
-        let remove = request(EngineAction::RemoveContainer {
-            id: String::from("c1"),
-            force: false,
-        });
-        let mut confirm = Confirm::new(remove, Some(true), 0);
-
-        let forced = confirm.clone().into_request();
-        confirm.set_switch(false);
-        let gentle = confirm.into_request();
-
-        assert_eq!(
-            forced.action(),
-            &EngineAction::RemoveContainer {
-                id: String::from("c1"),
-                force: true,
-            }
-        );
-        assert_eq!(
-            gentle.action(),
-            &EngineAction::RemoveContainer {
-                id: String::from("c1"),
-                force: false,
-            }
-        );
-    }
-
-    #[test]
-    fn a_confirmation_without_a_switch_keeps_it_hidden() {
-        let mut confirm =
-            Confirm::new(request(EngineAction::PruneContainers), None, 3);
-
-        confirm.set_switch(true);
-
-        assert_eq!(confirm.switch(), None);
-        assert_eq!(confirm.count(), 3);
-        assert_eq!(
-            confirm.into_request().action(),
-            &EngineAction::PruneContainers
-        );
     }
 
     #[test]
@@ -517,24 +339,6 @@ mod tests {
         assert!(stop_text.contains("otty-fx-running"), "{stop_text}");
         assert!(stop_text.contains("it is restarting"), "{stop_text}");
         assert!(prune_text.contains("engine is busy"), "{prune_text}");
-    }
-
-    #[test]
-    fn the_force_switch_forces_an_image_removal() {
-        let remove = request(EngineAction::RemoveImage {
-            reference: String::from("sha256:a"),
-            force: false,
-        });
-
-        let forced = Confirm::new(remove, Some(true), 0).into_request();
-
-        assert_eq!(
-            forced.action(),
-            &EngineAction::RemoveImage {
-                reference: String::from("sha256:a"),
-                force: true,
-            }
-        );
     }
 
     #[test]

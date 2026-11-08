@@ -1,8 +1,10 @@
 #![forbid(clippy::disallowed_methods)]
 
-use iced::Task;
+use iced::{Point, Task};
 use otty_containers::{Discovery, EngineAddress, EngineInfo};
 
+use super::actions::ActionsOutcome;
+use super::actions::event::{ActionsEffect, ActionsIntent};
 use super::create::CreateOutcome;
 use super::create::event::{CreateEffect, CreateIntent};
 use super::event::{ContainersEffect, ContainersEvent, ContainersIntent};
@@ -12,7 +14,7 @@ use super::run::RunOutcome;
 use super::run::event::{RunEffect, RunIntent};
 use super::state::{ContainersState, Search};
 use super::types::{LoadedList, ResourceKind};
-use super::{action_flow, create, run};
+use super::{actions, create, run};
 
 /// Reduce a Containers intent into state changes and effects. Engine work
 /// (search, list loads, inspect) is only asked for while Containers mode is
@@ -30,7 +32,7 @@ pub(super) fn reduce(
 
 /// Hand `intent` to the create dialogs and act on what they report in the
 /// same update.
-pub(super) fn reduce_create(
+fn reduce_create(
     state: &mut ContainersState,
     intent: CreateIntent,
 ) -> Task<ContainersEvent> {
@@ -43,7 +45,7 @@ pub(super) fn reduce_create(
 
 /// Hand `intent` to the Run container form and act on what it reports in
 /// the same update.
-pub(super) fn reduce_run(
+fn reduce_run(
     state: &mut ContainersState,
     intent: RunIntent,
 ) -> Task<ContainersEvent> {
@@ -53,6 +55,20 @@ pub(super) fn reduce_run(
         .map_or_else(Task::none, |outcome| on_run_outcome(state, outcome));
 
     Task::batch([effects.map(run_effect), after])
+}
+
+/// Hand `intent` to the actions and act on what they report in the same
+/// update.
+fn reduce_actions(
+    state: &mut ContainersState,
+    intent: ActionsIntent,
+) -> Task<ContainersEvent> {
+    let (actions, ctx) = state.actions_and_ctx();
+    let (effects, outcome) = actions::reduce(actions, intent, &ctx);
+    let after = outcome
+        .map_or_else(Task::none, |outcome| on_actions_outcome(state, outcome));
+
+    Task::batch([effects.map(actions_effect), after])
 }
 
 fn reduce_intent(
@@ -89,8 +105,7 @@ fn reduce_intent(
             Task::none()
         },
         ContainersIntent::DiscoveryFinished(discovery) => {
-            state.finish_search(discovery);
-            load_every_engine(state)
+            take_search_result(state, discovery)
         },
         ContainersIntent::EngineSearchTick => search_behind_the_card(state),
         ContainersIntent::BackgroundSearchFinished(discovery) => {
@@ -233,10 +248,7 @@ fn reduce_intent(
             Task::none()
         },
         ContainersIntent::EngineReconnected(engine) => {
-            let lists = match active_engine_info(state, &engine) {
-                Some(info) => effect(ContainersEffect::LoadLists(info)),
-                None => Task::none(),
-            };
+            let lists = reload_engine(state, &engine);
 
             Task::batch([lists, check_open_logs(state, &engine)])
         },
@@ -246,29 +258,12 @@ fn reduce_intent(
         ContainersIntent::ListLoaded { engine, list } => {
             apply_reloaded_list(state, &engine, list)
         },
-        ContainersIntent::Act(action) => action_flow::act(state, action),
         ContainersIntent::OpenRowMenu { index, position } => {
-            action_flow::select_and_open_row_menu(state, index, position)
+            let _ = state.select_shown_row(index);
+            open_row_menu(state, index, position)
         },
         ContainersIntent::RowMenuPressed { index, position } => {
-            action_flow::open_row_menu(state, index, position)
-        },
-        ContainersIntent::CloseRowMenu => {
-            state.close_row_menu();
-            Task::none()
-        },
-        ContainersIntent::Prune => action_flow::prune(state),
-        ContainersIntent::ConfirmSwitchToggled(is_on) => {
-            state.set_confirm_switch(is_on);
-            Task::none()
-        },
-        ContainersIntent::ConfirmAccepted => action_flow::accept(state),
-        ContainersIntent::ConfirmCancelled => {
-            let _ = state.take_confirm();
-            Task::none()
-        },
-        ContainersIntent::ActionFinished { request, result } => {
-            action_flow::finish(state, &request, result)
+            open_row_menu(state, index, position)
         },
         ContainersIntent::DismissNotice => {
             state.dismiss_notice();
@@ -277,6 +272,7 @@ fn reduce_intent(
         ContainersIntent::OpenCreate => open_create(state),
         ContainersIntent::Create(intent) => reduce_create(state, intent),
         ContainersIntent::Run(intent) => reduce_run(state, intent),
+        ContainersIntent::Actions(intent) => reduce_actions(state, intent),
     }
 }
 
@@ -447,8 +443,24 @@ fn finish_search_behind_the_card(
         return Task::none();
     }
 
-    state.finish_search(discovery);
-    load_every_engine(state)
+    take_search_result(state, discovery)
+}
+
+/// Take a finished engine search and load the lists of every engine. A place
+/// lost with its engine takes the row menu of its list with it.
+fn take_search_result(
+    state: &mut ContainersState,
+    discovery: Discovery,
+) -> Task<ContainersEvent> {
+    let is_place_lost = state.finish_search(discovery);
+
+    let closed = if is_place_lost {
+        reduce_actions(state, ActionsIntent::CloseRowMenu)
+    } else {
+        Task::none()
+    };
+
+    Task::batch([closed, load_every_engine(state)])
 }
 
 /// The engine at `address` reconnected, so a start of the container whose logs
@@ -466,6 +478,18 @@ fn check_open_logs(
 
     match target {
         Some(target) => effect(ContainersEffect::CheckLogRun(target.clone())),
+        None => Task::none(),
+    }
+}
+
+/// Reload every list of the engine at `address`, only while Containers mode
+/// is active and the engine is still known.
+fn reload_engine(
+    state: &ContainersState,
+    address: &EngineAddress,
+) -> Task<ContainersEvent> {
+    match active_engine_info(state, address) {
+        Some(info) => effect(ContainersEffect::LoadLists(info)),
         None => Task::none(),
     }
 }
@@ -532,9 +556,9 @@ fn on_create_outcome(
 ) -> Task<ContainersEvent> {
     match outcome {
         CreateOutcome::ActionRequested(request) => {
-            action_flow::run(state, request)
+            reduce_actions(state, ActionsIntent::Start(request))
         },
-        CreateOutcome::Pulled { engine } => action_flow::reload(state, &engine),
+        CreateOutcome::Pulled { engine } => reload_engine(state, &engine),
         CreateOutcome::Failed { notice } => {
             state.set_notice(notice);
             Task::none()
@@ -551,9 +575,45 @@ fn on_run_outcome(
     match outcome {
         RunOutcome::Started { engine, id } => {
             state.show_item(&engine, ResourceKind::Containers, id);
-            action_flow::reload(state, &engine)
+            reload_engine(state, &engine)
         },
     }
+}
+
+/// Act on what the actions report: a finished action reloads its engine's
+/// lists and a failed one shows its notice; Run and Pull again on an image
+/// row open the Run form and the pull dialog.
+fn on_actions_outcome(
+    state: &mut ContainersState,
+    outcome: ActionsOutcome,
+) -> Task<ContainersEvent> {
+    match outcome {
+        ActionsOutcome::Done { engine } => reload_engine(state, &engine),
+        ActionsOutcome::Failed { notice } => {
+            state.set_notice(notice);
+            Task::none()
+        },
+        ActionsOutcome::RunRequested { engine, image } => {
+            reduce_run(state, RunIntent::Open { engine, image })
+        },
+        ActionsOutcome::PullRequested { engine, image, tag } => {
+            reduce_create(state, CreateIntent::OpenPull { engine, image, tag })
+        },
+    }
+}
+
+/// Open the menu of the row at `index` of the shown table at `position`.
+/// Nothing opens past the last row.
+fn open_row_menu(
+    state: &mut ContainersState,
+    index: usize,
+    position: Point,
+) -> Task<ContainersEvent> {
+    let Some(target) = state.shown_row_id(index) else {
+        return Task::none();
+    };
+
+    reduce_actions(state, ActionsIntent::OpenRowMenu { target, position })
 }
 
 fn effect(effect: ContainersEffect) -> Task<ContainersEvent> {
@@ -566,6 +626,10 @@ fn create_effect(effect: CreateEffect) -> ContainersEvent {
 
 fn run_effect(effect: RunEffect) -> ContainersEvent {
     ContainersEvent::Effect(ContainersEffect::Run(effect))
+}
+
+fn actions_effect(effect: ActionsEffect) -> ContainersEvent {
+    ContainersEvent::Effect(ContainersEffect::Actions(effect))
 }
 
 #[cfg(test)]
@@ -583,6 +647,7 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key, Locale};
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::containers::actions::PruneViewModel;
     use crate::widgets::containers::create::FormViewModel;
     use crate::widgets::containers::inspect_tree::InspectTree;
     use crate::widgets::containers::inspector::{
@@ -3794,8 +3859,9 @@ mod tests {
     fn a_confirmation_stays_open_through_a_background_result() {
         let mut state = loaded_state();
         open(&mut state, ResourceKind::Images);
-        let _ = reduce(&mut state, ContainersIntent::Prune);
-        assert!(state.confirm().is_some());
+        let _ =
+            reduce(&mut state, ContainersIntent::Actions(ActionsIntent::Prune));
+        assert!(state.actions().confirm().is_some());
         let _ = reduce(
             &mut state,
             ContainersIntent::DiscoveryFinished(docker_stopped()),
@@ -3804,7 +3870,7 @@ mod tests {
         let _ = tick(&mut state);
         let _ = background_result(&mut state, docker_stopped());
 
-        assert!(state.confirm().is_some());
+        assert!(state.actions().confirm().is_some());
     }
 
     // Logs after a reconnect (spec Decision 12).
@@ -5415,7 +5481,7 @@ mod tests {
             .into_iter()
             .find(|container| container.name() == "otty-fx-exit3")
             .expect("fixture container");
-        assert_eq!(state.row_menu_target(), Some(exit3.id()));
+        assert_eq!(state.actions().row_menu_target(), Some(exit3.id()));
     }
 
     #[test]
@@ -5591,7 +5657,7 @@ mod tests {
 
         find_engines(&mut state, &[]);
 
-        assert_eq!(state.row_menu(), None);
+        assert_eq!(state.actions().row_menu(), None);
         assert_eq!(state.notice(), None);
     }
 
@@ -5609,7 +5675,7 @@ mod tests {
 
         find_engines(&mut state, &[EngineKind::Docker, EngineKind::Podman]);
 
-        assert_eq!(state.row_menu(), Some(iced::Point::ORIGIN));
+        assert_eq!(state.actions().row_menu(), Some(iced::Point::ORIGIN));
         assert_eq!(state.notice(), Some("the engine said no"));
     }
 
@@ -5931,7 +5997,10 @@ mod tests {
             },
         );
 
-        assert_eq!(state.row_menu_target(), Some(podman_web_id().as_str()));
+        assert_eq!(
+            state.actions().row_menu_target(),
+            Some(podman_web_id().as_str())
+        );
         assert_eq!(podman_selected(&state), Some(podman_web_id().as_str()));
     }
 
@@ -5947,7 +6016,10 @@ mod tests {
             },
         );
 
-        assert_eq!(state.row_menu_target(), Some(podman_web_id().as_str()));
+        assert_eq!(
+            state.actions().row_menu_target(),
+            Some(podman_web_id().as_str())
+        );
     }
 
     #[test]
@@ -6119,7 +6191,7 @@ mod tests {
             ContainersIntent::TagSearch(TagSearchAction::InputChanged(
                 String::from("web"),
             )),
-            ContainersIntent::Prune,
+            ContainersIntent::Actions(ActionsIntent::Prune),
         ];
 
         for intent in late_intents {
@@ -6142,8 +6214,8 @@ mod tests {
                 selected,
                 "{intent:?}"
             );
-            assert_eq!(state.row_menu_target(), None, "{intent:?}");
-            assert!(state.confirm().is_none(), "{intent:?}");
+            assert_eq!(state.actions().row_menu_target(), None, "{intent:?}");
+            assert!(state.actions().confirm().is_none(), "{intent:?}");
             assert!(tags_on(&state, &open).is_empty(), "{intent:?}");
             assert_eq!(state.table_search(&open).input(), "", "{intent:?}");
             assert_eq!(state.sort(&open), sort, "{intent:?}");
@@ -6235,7 +6307,10 @@ mod tests {
             String::from("otty-fx-vol"),
         );
         let address = docker().address().clone();
-        let was_busy = state.is_busy(&address, ResourceKind::Volumes, None);
+        let was_busy =
+            state
+                .actions()
+                .is_busy(&address, ResourceKind::Volumes, None);
 
         let effects = effects(on_create_outcome(
             &mut state,
@@ -6243,8 +6318,15 @@ mod tests {
         ));
 
         assert!(!was_busy);
-        assert!(state.is_busy(&address, ResourceKind::Volumes, None));
-        assert_eq!(effects, vec![ContainersEffect::RunAction(request)]);
+        assert!(
+            state
+                .actions()
+                .is_busy(&address, ResourceKind::Volumes, None)
+        );
+        assert_eq!(
+            effects,
+            vec![ContainersEffect::Actions(ActionsEffect::RunAction(request))]
+        );
     }
 
     #[test]
@@ -6300,5 +6382,118 @@ mod tests {
         );
         assert_eq!(selected_container(&state), Some("4f1c2b9a8e7d"));
         assert_eq!(effects, vec![ContainersEffect::LoadLists(docker())]);
+    }
+
+    #[test]
+    fn a_volume_being_created_disables_prune_on_volumes() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Volumes);
+        let is_prune_enabled = |state: &ContainersState| {
+            PruneViewModel::from_state(state.actions(), &state.actions_ctx())
+                .map(|vm| vm.is_enabled)
+        };
+        let before = is_prune_enabled(&state);
+
+        let _ = on_create_outcome(
+            &mut state,
+            CreateOutcome::ActionRequested(ActionRequest::new(
+                docker(),
+                EngineAction::CreateVolume {
+                    name: String::from("otty-fx-vol"),
+                    driver: String::from("local"),
+                },
+                String::from("otty-fx-vol"),
+            )),
+        );
+
+        assert_eq!(before, Some(true));
+        assert_eq!(is_prune_enabled(&state), Some(false));
+    }
+
+    #[test]
+    fn a_done_action_reloads_its_engine_only_while_containers_mode_is_active() {
+        let mut state = loaded_state();
+        let done = || ActionsOutcome::Done {
+            engine: docker().address().clone(),
+        };
+
+        let active = effects(on_actions_outcome(&mut state, done()));
+        let _ = reduce(&mut state, ContainersIntent::Leave);
+        let inactive = effects(on_actions_outcome(&mut state, done()));
+
+        assert_eq!(active, vec![ContainersEffect::LoadLists(docker())]);
+        assert!(inactive.is_empty());
+    }
+
+    #[test]
+    fn a_failed_action_shows_its_notice() {
+        let mut state = loaded_state();
+
+        let effects = effects(on_actions_outcome(
+            &mut state,
+            ActionsOutcome::Failed {
+                notice: String::from("Could not stop otty-fx-running"),
+            },
+        ));
+
+        assert!(effects.is_empty());
+        assert_eq!(state.notice(), Some("Could not stop otty-fx-running"));
+    }
+
+    #[test]
+    fn a_run_request_opens_the_run_form_on_that_image() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+
+        let effects = effects(on_actions_outcome(
+            &mut state,
+            ActionsOutcome::RunRequested {
+                engine: docker(),
+                image: String::from("busybox:1.37"),
+            },
+        ));
+
+        assert_eq!(
+            state.run().form().map(|form| form.image()),
+            Some("busybox:1.37")
+        );
+        assert_eq!(
+            effects,
+            vec![ContainersEffect::Run(RunEffect::LoadImageDefaults {
+                engine: docker(),
+                reference: String::from("busybox:1.37"),
+            })]
+        );
+    }
+
+    #[test]
+    fn a_pull_request_opens_the_pull_dialog_filled_in() {
+        let mut state = loaded_state();
+        open(&mut state, ResourceKind::Images);
+
+        let effects = effects(on_actions_outcome(
+            &mut state,
+            ActionsOutcome::PullRequested {
+                engine: docker(),
+                image: String::from("busybox"),
+                tag: String::from("1.37"),
+            },
+        ));
+
+        let dialog = FormViewModel::from_state(state.create());
+        assert!(effects.is_empty());
+        assert_eq!(
+            dialog.as_ref().map(|vm| vm.title),
+            Some(i18n::t(Key::ContainersPullImage))
+        );
+        assert_eq!(
+            dialog.map(|vm| {
+                vm.fields
+                    .iter()
+                    .map(|field| field.value.to_string())
+                    .collect::<Vec<_>>()
+            }),
+            Some(vec![String::from("busybox"), String::from("1.37")])
+        );
     }
 }

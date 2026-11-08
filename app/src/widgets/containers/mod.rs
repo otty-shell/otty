@@ -1,5 +1,3 @@
-mod action_flow;
-mod action_model;
 pub(crate) mod actions;
 pub(crate) mod create;
 pub(crate) mod event;
@@ -24,7 +22,7 @@ mod table_search;
 pub(crate) mod types;
 pub(crate) mod view;
 
-use action_model::{ActionsViewModel, ConfirmViewModel, RowMenuViewModel};
+use actions::{ActionsViewModel, ConfirmViewModel, RowMenuViewModel};
 use create::FormViewModel;
 use event::{ContainersEvent, ContainersIntent};
 use iced::{Subscription, Task, task};
@@ -155,17 +153,23 @@ impl ContainersWidget {
 
     /// Build the action buttons of the selected row.
     pub(crate) fn actions_vm(&self) -> Option<ActionsViewModel> {
-        action_model::action_buttons(&self.state)
+        ActionsViewModel::from_state(
+            self.state.actions(),
+            &self.state.actions_ctx(),
+        )
     }
 
     /// Build the open row menu.
     pub(crate) fn row_menu_vm(&self) -> Option<RowMenuViewModel> {
-        action_model::row_menu(&self.state)
+        RowMenuViewModel::from_state(
+            self.state.actions(),
+            &self.state.actions_ctx(),
+        )
     }
 
     /// Build the open confirmation dialog.
     pub(crate) fn confirm_vm(&self) -> Option<ConfirmViewModel> {
-        action_model::confirm_dialog(&self.state)
+        ConfirmViewModel::from_state(self.state.actions())
     }
 
     /// Build the open create dialog.
@@ -186,9 +190,7 @@ impl ContainersWidget {
 
     /// Return whether a row menu or a dialog covers the window.
     pub(crate) fn has_overlay(&self) -> bool {
-        self.state.row_menu().is_some()
-            || self.state.confirm().is_some()
-            || self.state.create().is_open()
+        self.state.actions().has_overlay() || self.state.create().is_open()
     }
 }
 

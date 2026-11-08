@@ -144,6 +144,7 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
+    use crate::widgets::containers::actions::event::ActionsEffect;
     use crate::widgets::containers::event::{
         ContainersEffect, ContainersEvent, ContainersIntent,
     };
@@ -497,13 +498,15 @@ mod tests {
 
         assert_eq!(
             effects,
-            vec![ContainersEffect::RunAction(ActionRequest::new(
-                docker(),
-                EngineAction::CreateVolume {
-                    name: String::from("otty-fx-vol"),
-                    driver: String::from("local"),
-                },
-                String::from("otty-fx-vol"),
+            vec![ContainersEffect::Actions(ActionsEffect::RunAction(
+                ActionRequest::new(
+                    docker(),
+                    EngineAction::CreateVolume {
+                        name: String::from("otty-fx-vol"),
+                        driver: String::from("local"),
+                    },
+                    String::from("otty-fx-vol"),
+                )
             ))]
         );
         assert!(!state.create().is_open());
@@ -531,13 +534,15 @@ mod tests {
 
         assert_eq!(
             effects,
-            vec![ContainersEffect::RunAction(ActionRequest::new(
-                docker(),
-                EngineAction::CreateNetwork {
-                    name: String::from("otty-fx-net2"),
-                    driver: String::from("macvlan"),
-                },
-                String::from("otty-fx-net2"),
+            vec![ContainersEffect::Actions(ActionsEffect::RunAction(
+                ActionRequest::new(
+                    docker(),
+                    EngineAction::CreateNetwork {
+                        name: String::from("otty-fx-net2"),
+                        driver: String::from("macvlan"),
+                    },
+                    String::from("otty-fx-net2"),
+                )
             ))]
         );
     }

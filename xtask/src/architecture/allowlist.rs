@@ -102,12 +102,6 @@ pub const ALLOWLIST: &[Allowed] = &[
     Allowed::known(
         Rule::WidgetModuleVisibility,
         "widgets/containers/mod.rs",
-        "pub(crate) mod actions",
-        "only tests outside the widget name RowAction, which travels in intents; move it into the types.rs of the actions part",
-    ),
-    Allowed::known(
-        Rule::WidgetModuleVisibility,
-        "widgets/containers/mod.rs",
         "pub(crate) mod format",
         "view.rs formats containers values with it; give view.rs those values through the view model",
     ),
@@ -158,12 +152,6 @@ pub const ALLOWLIST: &[Allowed] = &[
         "widgets/quick_launch/view/wizard_form.rs",
         "widgets::quick_launch::state",
         "the view reads state types; give it a view model",
-    ),
-    Allowed::known(
-        Rule::TaskOrElementInPureFile,
-        "widgets/containers/action_flow.rs",
-        "Task",
-        "a reducer part of the large containers widget; settle how large widgets split into parts first",
     ),
     Allowed::known(
         Rule::ServicesOutsideRoute,
@@ -222,18 +210,6 @@ pub const ALLOWLIST: &[Allowed] = &[
     Allowed::known(
         Rule::ViewModelNotFromState,
         "widgets/containers/mod.rs",
-        "actions_vm",
-        "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
-    ),
-    Allowed::known(
-        Rule::ViewModelNotFromState,
-        "widgets/containers/mod.rs",
-        "confirm_vm",
-        "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
-    ),
-    Allowed::known(
-        Rule::ViewModelNotFromState,
-        "widgets/containers/mod.rs",
         "inspector_tabs_vm",
         "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
     ),
@@ -247,12 +223,6 @@ pub const ALLOWLIST: &[Allowed] = &[
         Rule::ViewModelNotFromState,
         "widgets/containers/mod.rs",
         "main_vm",
-        "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
-    ),
-    Allowed::known(
-        Rule::ViewModelNotFromState,
-        "widgets/containers/mod.rs",
-        "row_menu_vm",
         "mod.rs already only calls a builder in a containers part file; turning it into from_state waits for the decision on large-widget parts",
     ),
     Allowed::known(

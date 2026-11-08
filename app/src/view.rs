@@ -14,6 +14,9 @@ use crate::theme::ThemeProps;
 use crate::widgets::chrome::event::ChromeEvent;
 use crate::widgets::chrome::view::{action_bar, status_bar};
 use crate::widgets::chrome::{StatusBarInput, StatusBarViewModel};
+use crate::widgets::containers::actions::view::{
+    confirm_dialog as containers_confirm, row_menu as containers_row_menu,
+};
 use crate::widgets::containers::create::view::form_dialog as containers_form;
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::containers::no_engine::NoEngineCase;
@@ -21,9 +24,8 @@ use crate::widgets::containers::run::view::{
     run_form as containers_run_form, run_panel as containers_run_panel,
 };
 use crate::widgets::containers::view::{
-    confirm_dialog as containers_confirm, engine_tree,
-    inspector as containers_inspector, main_area as containers_main,
-    row_menu as containers_row_menu, status_bar as containers_status_bar,
+    engine_tree, inspector as containers_inspector,
+    main_area as containers_main, status_bar as containers_status_bar,
 };
 use crate::widgets::containers::{MainViewModel, format as containers_format};
 use crate::widgets::explorer::event::ExplorerEvent;
@@ -519,21 +521,23 @@ fn view_containers_overlays<'a>(
     let mut layers = Vec::new();
 
     if let Some(vm) = app.widgets.containers.row_menu_vm() {
-        layers.push(containers_row_menu::view(
-            containers_row_menu::RowMenuProps {
+        layers.push(
+            containers_row_menu::view(containers_row_menu::RowMenuProps {
                 vm,
                 area: app.state.window_size,
                 theme: theme_props,
-            },
-        ));
+            })
+            .map(ContainersIntent::Actions),
+        );
     }
     if let Some(vm) = app.widgets.containers.confirm_vm() {
-        layers.push(containers_confirm::view(
-            containers_confirm::ConfirmDialogProps {
+        layers.push(
+            containers_confirm::view(containers_confirm::ConfirmDialogProps {
                 vm,
                 theme: theme_props,
-            },
-        ));
+            })
+            .map(ContainersIntent::Actions),
+        );
     }
     if let Some(vm) = app.widgets.containers.form_vm() {
         layers.push(
@@ -981,7 +985,8 @@ mod tests {
     {
         use otty_containers::{EngineKind, fixtures};
 
-        use crate::widgets::containers::actions::RowAction;
+        use crate::widgets::containers::actions::event::ActionsIntent;
+        use crate::widgets::containers::actions::types::RowAction;
         use crate::widgets::containers::event::ContainersIntent;
         use crate::widgets::containers::types::LoadedLists;
 
@@ -1034,14 +1039,13 @@ mod tests {
         assert!(events.iter().any(|event| matches!(
             event,
             AppEvent::Containers(ContainersEvent::Intent(
-                ContainersIntent::Act(RowAction::Start)
+                ContainersIntent::Actions(ActionsIntent::Act(RowAction::Start))
             ))
         )));
 
-        let _ = app
-            .widgets
-            .containers
-            .reduce(ContainersIntent::Act(RowAction::Remove));
+        let _ = app.widgets.containers.reduce(ContainersIntent::Actions(
+            ActionsIntent::Act(RowAction::Remove),
+        ));
         let mut dialog_ui = simulator(view(&app));
         dialog_ui
             .find(i18n::t(Key::ContainersRemoveContainerText))
@@ -1052,7 +1056,7 @@ mod tests {
         let _ = app
             .widgets
             .containers
-            .reduce(ContainersIntent::ConfirmCancelled);
+            .reduce(ContainersIntent::Actions(ActionsIntent::ConfirmCancelled));
         let _ = app.widgets.containers.reduce(ContainersIntent::Open(
             crate::widgets::containers::types::Place::new(
                 docker.address().clone(),
