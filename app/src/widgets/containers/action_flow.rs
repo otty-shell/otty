@@ -13,12 +13,11 @@ use super::actions::{
     container_actions, failure_text, image_actions, needs_stop,
     network_remove_hint, volume_remove_hint,
 };
-use super::errors::ContainersError;
 use super::event::{ContainersEffect, ContainersEvent};
 use super::forms::{Form, split_reference};
 use super::run_flow;
 use super::state::ContainersState;
-use super::types::{ResourceKind, image_name};
+use super::types::{ContainersError, ResourceKind, image_name};
 use crate::i18n::{self, Key};
 
 /// The row of the open list an action runs on and what it allows, copied

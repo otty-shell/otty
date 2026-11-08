@@ -1,7 +1,9 @@
-use otty_containers::{Container, EngineAddress, Image, Network, Volume};
+use otty_containers::{
+    Container, EngineAddress, EngineError, Image, Network, Volume,
+};
 use otty_ui_kit::components::tag_search::TagSearch;
+use thiserror::Error;
 
-use super::errors::ContainersError;
 use super::sort::{
     TableSort, sort_containers, sort_images, sort_networks, sort_volumes,
 };
@@ -87,6 +89,29 @@ impl Place {
     /// The `resource` list of the engine at `engine`.
     pub(crate) fn new(engine: EngineAddress, resource: ResourceKind) -> Self {
         Self { engine, resource }
+    }
+}
+
+/// Why something the Containers widget asked for failed. It holds the text to
+/// show, because the intents that carry it must stay `Clone + PartialEq`,
+/// which the engine's own error is not.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("{0}")]
+pub(crate) struct ContainersError(String);
+
+#[cfg(test)]
+impl ContainersError {
+    /// An error showing `text`.
+    pub(crate) fn new(text: &str) -> Self {
+        Self(text.to_string())
+    }
+}
+
+impl From<EngineError> for ContainersError {
+    /// The engine's own words when it refused a request, otherwise the whole
+    /// error text.
+    fn from(err: EngineError) -> Self {
+        Self(err.message())
     }
 }
 
@@ -225,6 +250,8 @@ pub(crate) fn image_tag(image: &Image) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use otty_containers::{EngineKind, fixtures};
     use otty_ui_kit::components::tag_search::{
         TagKey, TagSchema, TagSearchAction,
@@ -424,5 +451,22 @@ mod tests {
         assert_eq!(lists.images, Err(ContainersError::new("refused")));
         assert_eq!(lists.volumes, Err(ContainersError::new("refused")));
         assert_eq!(lists.networks, Err(ContainersError::new("refused")));
+    }
+
+    #[test]
+    fn it_shows_its_text_as_it_is() {
+        let error = ContainersError::new("port is already allocated");
+
+        assert_eq!(error.to_string(), "port is already allocated");
+    }
+
+    #[test]
+    fn an_engine_error_becomes_the_text_of_its_message() {
+        let engine_error = EngineError::PathNotUtf8(PathBuf::from("/run/x"));
+        let message = engine_error.message();
+
+        let error = ContainersError::from(engine_error);
+
+        assert_eq!(error.to_string(), message);
     }
 }

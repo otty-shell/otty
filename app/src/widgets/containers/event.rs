@@ -9,12 +9,13 @@ use otty_containers::{
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
 use super::actions::{ActionRequest, RowAction};
-use super::errors::ContainersError;
 use super::forms::FormField;
 use super::inspector::{InspectTarget, InspectorTab, LogTarget};
 use super::links::LinkTarget;
 use super::run_form::RunEdit;
-use super::types::{LoadedList, LoadedLists, Place, ResourceKind};
+use super::types::{
+    ContainersError, LoadedList, LoadedLists, Place, ResourceKind,
+};
 
 /// Intent events handled by the Containers widget.
 #[derive(Debug, Clone, PartialEq)]

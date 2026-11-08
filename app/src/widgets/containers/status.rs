@@ -138,11 +138,12 @@ mod tests {
 
     use super::*;
     use crate::theme::{ThemeManager, ThemeProps};
-    use crate::widgets::containers::errors::ContainersError;
     use crate::widgets::containers::event::ContainersIntent;
     use crate::widgets::containers::reducer::reduce;
     use crate::widgets::containers::run_model::run_form;
-    use crate::widgets::containers::types::{LoadedLists, Place};
+    use crate::widgets::containers::types::{
+        ContainersError, LoadedLists, Place,
+    };
     use crate::widgets::containers::view::status_bar::view as status_bar_view;
 
     fn docker() -> EngineInfo {

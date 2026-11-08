@@ -450,11 +450,12 @@ mod tests {
     use otty_containers::{EngineKind, fixtures};
 
     use super::*;
-    use crate::widgets::containers::errors::ContainersError;
     use crate::widgets::containers::event::ContainersIntent;
     use crate::widgets::containers::reducer::reduce;
     use crate::widgets::containers::run_form::RunEdit;
-    use crate::widgets::containers::types::{LoadedLists, Place, ResourceKind};
+    use crate::widgets::containers::types::{
+        ContainersError, LoadedLists, Place, ResourceKind,
+    };
 
     fn lists(kind: EngineKind) -> LoadedLists {
         let resources = fixtures::resources(kind);

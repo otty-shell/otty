@@ -10,13 +10,12 @@ use iced::Task;
 use otty_containers::{EngineAddress, EngineInfo, ImageDefaults, PullProgress};
 
 use super::action_flow::reload;
-use super::errors::ContainersError;
 use super::event::{ContainersEffect, ContainersEvent};
 use super::forms::split_reference;
 use super::run_checks::check;
 use super::run_form::{ImageLookup, RunEdit, RunForm, RunPhase};
 use super::state::{ContainersState, EngineState};
-use super::types::ResourceKind;
+use super::types::{ContainersError, ResourceKind};
 use crate::i18n::{self, Key};
 
 /// The network a new container joins unless another one is chosen.

@@ -533,7 +533,6 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key, Locale};
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::containers::errors::ContainersError;
     use crate::widgets::containers::inspect_tree::InspectTree;
     use crate::widgets::containers::inspector::{
         InspectLoad, InspectTarget, InspectorTab, LogRead, LogTarget,
@@ -553,7 +552,7 @@ mod tests {
         COMPOSE_KEY, keys, keys_in,
     };
     use crate::widgets::containers::types::{
-        LoadedList, LoadedLists, Place, ResourceKind,
+        ContainersError, LoadedList, LoadedLists, Place, ResourceKind,
     };
 
     fn docker() -> EngineInfo {

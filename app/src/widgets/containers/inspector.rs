@@ -10,9 +10,8 @@ use otty_containers::{ContainerRun, EngineAddress, EngineInfo, LogPosition};
 use otty_ui_kit::components::log_view::LogViewState;
 use serde_json::Value;
 
-use super::errors::ContainersError;
 use super::inspect_tree::{InspectTree, first_section_title};
-use super::types::ResourceKind;
+use super::types::{ContainersError, ResourceKind};
 use crate::i18n::{self, Key};
 
 /// Lines asked for when the logs open; then new lines follow.

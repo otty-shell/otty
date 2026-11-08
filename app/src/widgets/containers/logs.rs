@@ -7,9 +7,9 @@ use iced::futures::stream::BoxStream;
 use iced::futures::{FutureExt, SinkExt, StreamExt};
 use otty_containers::{Engine, EngineError, LogLine, LogPosition};
 
-use super::errors::ContainersError;
 use super::event::{ContainersEvent, ContainersIntent};
 use super::inspector::{LOG_TAIL, LogRead, LogTarget, MAX_LOG_LINES};
+use super::types::ContainersError;
 
 /// Messages that may wait for the app before the stream waits too.
 const CHANNEL_SIZE: usize = 100;

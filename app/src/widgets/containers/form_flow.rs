@@ -7,12 +7,11 @@ use iced::Task;
 
 use super::action_flow::{reload, run};
 use super::actions::ActionRequest;
-use super::errors::ContainersError;
 use super::event::{ContainersEffect, ContainersEvent};
 use super::forms::{Form, FormField, FormKind};
 use super::run_flow;
 use super::state::ContainersState;
-use super::types::ResourceKind;
+use super::types::{ContainersError, ResourceKind};
 use crate::i18n::{self, Key};
 
 /// Open the create dialog of the open list: Pull image, Create volume or

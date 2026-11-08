@@ -184,14 +184,13 @@ mod tests {
     use otty_ui_kit::components::key_value_list::ValuePart;
 
     use super::*;
-    use crate::widgets::containers::errors::ContainersError;
     use crate::widgets::containers::event::ContainersIntent;
     use crate::widgets::containers::inspector::{InspectTarget, LogTarget};
     use crate::widgets::containers::links::LinkTarget;
     use crate::widgets::containers::overview;
     use crate::widgets::containers::reducer::reduce;
     use crate::widgets::containers::types::{
-        LoadedList, LoadedLists, Place, ResourceKind,
+        ContainersError, LoadedList, LoadedLists, Place, ResourceKind,
     };
 
     fn docker() -> EngineInfo {

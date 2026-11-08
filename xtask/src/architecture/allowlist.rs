@@ -108,12 +108,6 @@ pub const ALLOWLIST: &[Allowed] = &[
     Allowed::known(
         Rule::WidgetModuleVisibility,
         "widgets/containers/mod.rs",
-        "pub(crate) mod errors",
-        "the containers route names ContainersError; move it into types.rs",
-    ),
-    Allowed::known(
-        Rule::WidgetModuleVisibility,
-        "widgets/containers/mod.rs",
         "pub(crate) mod format",
         "view.rs formats containers values with it; give view.rs those values through the view model",
     ),

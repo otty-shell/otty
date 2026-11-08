@@ -11,7 +11,6 @@ use otty_ui_kit::components::tag_search::{
 };
 
 use super::actions::{ActionRequest, Confirm};
-use super::errors::ContainersError;
 use super::forms::Form;
 use super::inspector::{
     InspectTarget, InspectorState, InspectorTab, LogTarget,
@@ -24,8 +23,8 @@ use super::table_search::{
     images_schema, network_row, networks_schema, volume_row, volumes_schema,
 };
 use super::types::{
-    LoadedList, LoadedLists, Place, ResourceKind, shown_containers,
-    shown_images, shown_networks, shown_volumes,
+    ContainersError, LoadedList, LoadedLists, Place, ResourceKind,
+    shown_containers, shown_images, shown_networks, shown_volumes,
 };
 
 /// Runtime state of Containers mode: the engines and their lists, the open

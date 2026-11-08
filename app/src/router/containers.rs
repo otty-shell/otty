@@ -19,13 +19,12 @@ use crate::app::App;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::{self, terminal_settings_for_session};
 use crate::widgets::containers::actions::{ActionRequest, EngineAction};
-use crate::widgets::containers::errors::ContainersError;
 use crate::widgets::containers::event::{
     ContainersEffect, ContainersEvent, ContainersIntent,
 };
 use crate::widgets::containers::inspector::{InspectTarget, LogTarget};
 use crate::widgets::containers::types::{
-    LoadedList, LoadedLists, ResourceKind,
+    ContainersError, LoadedList, LoadedLists, ResourceKind,
 };
 use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::event::{TabsEvent, TabsIntent};

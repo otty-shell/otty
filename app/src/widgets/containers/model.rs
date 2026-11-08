@@ -427,7 +427,6 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Key};
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::containers::errors::ContainersError;
     use crate::widgets::containers::event::{
         ContainersEffect, ContainersEvent, ContainersIntent,
     };
@@ -438,7 +437,7 @@ mod tests {
     use crate::widgets::containers::run_form::RunEdit;
     use crate::widgets::containers::run_model::{image_panel, run_form};
     use crate::widgets::containers::status::status_bar;
-    use crate::widgets::containers::types::LoadedLists;
+    use crate::widgets::containers::types::{ContainersError, LoadedLists};
 
     const NOW: i64 = 1_793_557_960;
 

@@ -11,7 +11,7 @@ use otty_containers::{
 };
 use otty_ui_kit::components::token_field::TokenList;
 
-use super::errors::ContainersError;
+use super::types::ContainersError;
 
 /// The restart choices in the order the form shows them.
 pub(crate) const RESTART_CHOICES: [RestartPolicy; 4] = [

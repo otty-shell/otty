@@ -471,12 +471,13 @@ mod tests {
     use crate::i18n::{self, Key};
     use crate::testing::alone;
     use crate::theme::{AppTheme, BuiltinTheme};
-    use crate::widgets::containers::errors::ContainersError;
     use crate::widgets::containers::reducer::reduce;
     use crate::widgets::containers::run_form::RunEdit;
     use crate::widgets::containers::run_model::run_form;
     use crate::widgets::containers::state::ContainersState;
-    use crate::widgets::containers::types::{LoadedLists, Place, ResourceKind};
+    use crate::widgets::containers::types::{
+        ContainersError, LoadedLists, Place, ResourceKind,
+    };
 
     /// The form in the area it has in the app.
     fn page(props: RunFormProps<'_>) -> RunElement<'_> {
