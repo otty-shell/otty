@@ -398,10 +398,15 @@ impl TerminalTabState {
     ///
     /// With `equalize_panes` set, the panes left in the closed pane's
     /// split group are spread evenly across the space it freed.
+    ///
+    /// When the closed pane had the focus, a pane left becomes the focused
+    /// pane of the tab. With `focus_terminal_widget` set, it also takes the
+    /// keyboard; without it, the keyboard stays where it is.
     pub(super) fn close_pane(
         &mut self,
         pane: pane_grid::Pane,
         equalize_panes: bool,
+        focus_terminal_widget: bool,
     ) -> StateCommand {
         if self.panes.len() == 1 {
             return StateCommand::CloseTab {
@@ -431,7 +436,9 @@ impl TerminalTabState {
                 {
                     let widget_id = entry.terminal.widget_id().clone();
                     self.label_changed = true;
-                    return StateCommand::FocusTerminal(widget_id);
+                    if focus_terminal_widget {
+                        return StateCommand::FocusTerminal(widget_id);
+                    }
                 }
             }
 
@@ -525,12 +532,13 @@ impl TerminalTabState {
 
     /// Handle a terminal widget event (title changes, shutdown, etc.).
     ///
-    /// A shutdown closes the terminal's pane, so `equalize_panes` is
-    /// forwarded to the same balancing `close_pane` applies.
+    /// A shutdown closes the terminal's pane, so `equalize_panes` and
+    /// `focus_terminal_widget` are forwarded to `close_pane`.
     pub(super) fn handle_terminal_event(
         &mut self,
         event: TerminalEvent,
         equalize_panes: bool,
+        focus_terminal_widget: bool,
     ) -> StateCommand {
         use otty_ui_term::Event::*;
 
@@ -542,12 +550,17 @@ impl TerminalTabState {
                     terminal_id,
                     exit_status,
                     equalize_panes,
+                    focus_terminal_widget,
                 );
             },
             Write { .. } if self.has_exited(terminal_id) => {
                 // The process is gone, so a key press means "close".
                 if let Some(pane) = self.pane_for_terminal(terminal_id) {
-                    return self.close_pane(pane, equalize_panes);
+                    return self.close_pane(
+                        pane,
+                        equalize_panes,
+                        focus_terminal_widget,
+                    );
                 }
             },
             // Shells put the folder in their titles, and the folder is
@@ -627,6 +640,7 @@ impl TerminalTabState {
         terminal_id: u64,
         exit_status: ExitStatus,
         equalize_panes: bool,
+        focus_terminal_widget: bool,
     ) -> StateCommand {
         let Some(pane) = self.pane_for_terminal(terminal_id) else {
             return StateCommand::None;
@@ -639,7 +653,11 @@ impl TerminalTabState {
             _ => true,
         };
         if closes_pane {
-            return self.close_pane(pane, equalize_panes);
+            return self.close_pane(
+                pane,
+                equalize_panes,
+                focus_terminal_widget,
+            );
         }
 
         if let Some(entry) = self.terminals.get_mut(&terminal_id) {
@@ -862,7 +880,7 @@ mod tests {
             state.split_pane(second, pane_grid::Axis::Vertical, 12, true);
         let third = state.focus().expect("split pane should be focused");
 
-        let _task = state.close_pane(third, true);
+        let _task = state.close_pane(third, true, true);
 
         let regions = state.panes().layout().pane_regions(
             0.0,
@@ -890,7 +908,7 @@ mod tests {
             state.split_pane(second, pane_grid::Axis::Vertical, 12, true);
         let third = state.focus().expect("split pane should be focused");
 
-        let _task = state.close_pane(third, false);
+        let _task = state.close_pane(third, false, true);
 
         let mut widths: Vec<f32> = state
             .panes()
@@ -927,7 +945,7 @@ mod tests {
         let mut state = build_terminal_state("Shell");
         let pane = state.focus().expect("focused pane");
 
-        let _task = state.close_pane(pane, true);
+        let _task = state.close_pane(pane, true, true);
 
         assert_eq!(state.panes().len(), 1);
         assert_eq!(state.terminals().len(), 1);
@@ -947,7 +965,7 @@ mod tests {
         let closing_pane = state.focus().expect("split pane should be focused");
         state.set_selected_block(11, String::from("block-2"));
 
-        let _task = state.close_pane(closing_pane, true);
+        let _task = state.close_pane(closing_pane, true, true);
 
         assert_eq!(state.panes().len(), 1);
         assert_eq!(state.terminals().len(), 1);
@@ -1008,12 +1026,14 @@ mod tests {
                 title: String::from("ann@fedora:~/projects/otty"),
             },
             true,
+            true,
         );
         assert_eq!(state.title(), "Shell");
         assert_eq!(state.folder(), None);
 
         let _task = state.handle_terminal_event(
             otty_ui_term::Event::ResetTitle { id: 10 },
+            true,
             true,
         );
         assert_eq!(state.title(), "Shell");
@@ -1041,7 +1061,7 @@ mod tests {
      {
         let mut state = build_terminal_state("Shell");
 
-        let _task = state.handle_terminal_event(key_press(10), true);
+        let _task = state.handle_terminal_event(key_press(10), true, true);
 
         assert!(!state.take_label_change());
     }
@@ -1092,7 +1112,7 @@ mod tests {
         let _task = state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
         assert!(state.contains_terminal(11));
 
-        let _task = state.handle_terminal_event(shutdown(11, 0), true);
+        let _task = state.handle_terminal_event(shutdown(11, 0), true, true);
 
         assert!(!state.contains_terminal(11));
         assert_eq!(state.panes().len(), 1);
@@ -1102,7 +1122,7 @@ mod tests {
     fn given_shell_tab_when_shell_exits_then_tab_closes() {
         let mut state = build_terminal_state("Shell");
 
-        let command = state.handle_terminal_event(shutdown(10, 1), true);
+        let command = state.handle_terminal_event(shutdown(10, 1), true, true);
 
         assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
     }
@@ -1111,7 +1131,7 @@ mod tests {
     fn given_close_command_when_process_exits_then_tab_closes() {
         let mut state = build_command_state(ExitBehavior::Close);
 
-        let command = state.handle_terminal_event(shutdown(10, 0), true);
+        let command = state.handle_terminal_event(shutdown(10, 0), true, true);
 
         assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
     }
@@ -1121,7 +1141,7 @@ mod tests {
     {
         let mut state = build_command_state(ExitBehavior::KeepOpen);
 
-        let command = state.handle_terminal_event(shutdown(10, 0), true);
+        let command = state.handle_terminal_event(shutdown(10, 0), true, true);
 
         assert!(matches!(command, StateCommand::None));
         assert_eq!(state.panes().len(), 1);
@@ -1132,7 +1152,7 @@ mod tests {
     fn given_close_on_success_command_when_process_succeeds_then_tab_closes() {
         let mut state = build_command_state(ExitBehavior::CloseOnSuccess);
 
-        let command = state.handle_terminal_event(shutdown(10, 0), true);
+        let command = state.handle_terminal_event(shutdown(10, 0), true, true);
 
         assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
     }
@@ -1142,7 +1162,7 @@ mod tests {
     {
         let mut state = build_command_state(ExitBehavior::CloseOnSuccess);
 
-        let command = state.handle_terminal_event(shutdown(10, 3), true);
+        let command = state.handle_terminal_event(shutdown(10, 3), true, true);
 
         assert!(matches!(command, StateCommand::None));
         assert_eq!(terminal_exit_status(&state, 10), Some(exit_status(3)));
@@ -1151,9 +1171,9 @@ mod tests {
     #[test]
     fn given_exited_pane_when_key_pressed_then_tab_closes() {
         let mut state = build_command_state(ExitBehavior::KeepOpen);
-        let _command = state.handle_terminal_event(shutdown(10, 0), true);
+        let _command = state.handle_terminal_event(shutdown(10, 0), true, true);
 
-        let command = state.handle_terminal_event(key_press(10), true);
+        let command = state.handle_terminal_event(key_press(10), true, true);
 
         assert!(matches!(command, StateCommand::CloseTab { tab_id: 1 }));
     }
@@ -1162,7 +1182,7 @@ mod tests {
     fn given_running_pane_when_key_pressed_then_pane_stays_open() {
         let mut state = build_command_state(ExitBehavior::KeepOpen);
 
-        let command = state.handle_terminal_event(key_press(10), true);
+        let command = state.handle_terminal_event(key_press(10), true, true);
 
         assert!(matches!(command, StateCommand::None));
         assert!(state.contains_terminal(10));
@@ -1175,9 +1195,9 @@ mod tests {
         let pane = state.focus().expect("focused pane");
         let _command =
             state.split_pane(pane, pane_grid::Axis::Vertical, 11, true);
-        let _command = state.handle_terminal_event(shutdown(11, 0), true);
+        let _command = state.handle_terminal_event(shutdown(11, 0), true, true);
 
-        let _command = state.handle_terminal_event(key_press(11), true);
+        let _command = state.handle_terminal_event(key_press(11), true, true);
 
         assert!(!state.contains_terminal(11));
         assert!(state.contains_terminal(10));

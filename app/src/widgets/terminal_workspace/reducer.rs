@@ -70,12 +70,9 @@ pub(super) fn reduce(
             terminal_to_tab.retain(|_, mapped_tab| *mapped_tab != tab_id);
             Task::none()
         },
-        Widget(event) => reduce_widget_event(
-            state,
-            terminal_to_tab,
-            event,
-            ctx.equalize_panes,
-        ),
+        Widget(event) => {
+            reduce_widget_event(state, terminal_to_tab, event, ctx)
+        },
         PaneClicked { tab_id, pane } => {
             with_terminal_tab(state, tab_id, |tab| tab.focus_pane(pane))
         },
@@ -121,9 +118,11 @@ pub(super) fn reduce(
             axis,
         ),
         ClosePane { tab_id, pane } => {
+            // Close pane in the pane menu closes the menu with the pane, so
+            // the pane left takes the keyboard although the menu was open.
             let equalize_panes = ctx.equalize_panes;
             let task = with_terminal_tab(state, tab_id, |tab| {
-                tab.close_pane(pane, equalize_panes)
+                tab.close_pane(pane, equalize_panes, true)
             });
             reindex_terminal_tabs(state, terminal_to_tab);
             task
@@ -268,7 +267,7 @@ fn reduce_widget_event(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
     event: TerminalEvent,
-    equalize_panes: bool,
+    ctx: &TerminalWorkspaceCtx,
 ) -> Task<TerminalWorkspaceEvent> {
     let terminal_id = *event.terminal_id();
     let Some(tab_id) = terminal_to_tab.get(&terminal_id).copied() else {
@@ -284,9 +283,16 @@ fn reduce_widget_event(
             .is_some_and(|tab| tab.has_exited(terminal_id)),
         _ => false,
     };
+    // When a pane closes, the pane left takes the keyboard only in the tab
+    // on screen, unless an open overlay keeps it. Otherwise it only becomes
+    // the tab's focused pane, and `FocusActive` gives it the keyboard later.
+    let equalize_panes = ctx.equalize_panes;
+    let focus_terminal_widget =
+        ctx.active_tab_id == Some(tab_id) && !ctx.is_overlay_open;
+
     let selection_task = update_block_selection(state, tab_id, &event);
     let event_task = with_terminal_tab(state, tab_id, |tab| {
-        tab.handle_terminal_event(event, equalize_panes)
+        tab.handle_terminal_event(event, equalize_panes, focus_terminal_widget)
     });
     let update = Task::batch(vec![selection_task, event_task]);
 
@@ -961,6 +967,128 @@ mod tests {
         assert!(runs_widget_operation(task));
     }
 
+    /// Scenario 13: the palette, a menu or the SSH prompt is open when the
+    /// shell of one pane exits. The pane closes, and the keyboard stays with
+    /// the overlay. The pane left is the one the overlay's close focuses.
+    #[test]
+    fn a_pane_that_exits_under_an_overlay_takes_no_focus() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_a_split_shell_tab();
+        let ctx = TerminalWorkspaceCtx {
+            is_overlay_open: true,
+            ..shell_tab_ctx()
+        };
+
+        let task = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            shell_exits(101),
+            &ctx,
+        );
+
+        assert!(!runs_widget_operation(task));
+        assert_eq!(terminal_count(&state), 1);
+        assert_eq!(
+            state.tab(1).and_then(|tab| tab.focused_terminal_id()),
+            Some(100)
+        );
+    }
+
+    #[test]
+    fn a_pane_that_exits_in_the_active_tab_focuses_the_pane_left() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_a_split_shell_tab();
+
+        let task = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            shell_exits(101),
+            &shell_tab_ctx(),
+        );
+
+        assert!(runs_widget_operation(task));
+        assert_eq!(terminal_count(&state), 1);
+    }
+
+    /// A pane exits in a tab the user does not see. The keyboard stays in
+    /// the tab the user types in.
+    #[test]
+    fn a_pane_that_exits_in_a_background_tab_takes_no_focus() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_a_split_shell_tab();
+        let _ = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::OpenTab {
+                tab_id: 2,
+                default_title: String::from("Shell"),
+                settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
+                kind: TerminalKind::Shell,
+                sync_explorer: false,
+            },
+            &default_ctx(),
+        );
+        let ctx = TerminalWorkspaceCtx {
+            active_tab_id: Some(2),
+            ..default_ctx()
+        };
+
+        let task = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            shell_exits(101),
+            &ctx,
+        );
+
+        assert!(!runs_widget_operation(task));
+        assert_eq!(terminal_count(&state), 1);
+    }
+
+    /// Close pane in the pane menu closes the menu with the pane, so the
+    /// pane left takes the keyboard although the menu was open.
+    #[test]
+    fn close_pane_in_the_pane_menu_focuses_the_pane_left() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_a_split_shell_tab();
+        let pane = state
+            .tab(1)
+            .and_then(|tab| tab.pane_for_terminal(101))
+            .expect("the split must have created a pane");
+        let menu_ctx = TerminalWorkspaceCtx {
+            is_overlay_open: true,
+            ..shell_tab_ctx()
+        };
+        // Opening the menu selects the hovered block, a terminal command
+        // that waits for an answer, so its task is not read.
+        let _ = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::OpenContextMenu {
+                tab_id: 1,
+                pane,
+                terminal_id: 101,
+            },
+            &shell_tab_ctx(),
+        );
+
+        let task = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::ClosePane { tab_id: 1, pane },
+            &menu_ctx,
+        );
+
+        assert!(runs_widget_operation(task));
+        assert_eq!(terminal_count(&state), 1);
+        assert!(state.tab(1).and_then(|tab| tab.context_menu()).is_none());
+    }
+
     #[test]
     fn given_exited_split_pane_when_key_pressed_then_its_terminal_is_unmapped()
     {
@@ -1039,6 +1167,37 @@ mod tests {
         );
 
         (state, terminal_to_tab, next_id)
+    }
+
+    /// Split the only pane of [`state_with_one_shell_tab`]. The new pane
+    /// runs terminal 101 next to terminal 100 and has the focus.
+    fn state_with_a_split_shell_tab()
+    -> (TerminalWorkspaceState, HashMap<u64, u64>, u64) {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_one_shell_tab();
+
+        // The split clears the selection of the old pane, a terminal command
+        // that waits for an answer, so its task is not read.
+        let _ = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::SplitFocusedPane {
+                axis: pane_grid::Axis::Vertical,
+            },
+            &shell_tab_ctx(),
+        );
+        assert_eq!(terminal_count(&state), 2);
+
+        (state, terminal_to_tab, next_id)
+    }
+
+    /// The shell of the terminal `id` exits, which closes its pane.
+    fn shell_exits(id: u64) -> TerminalWorkspaceIntent {
+        TerminalWorkspaceIntent::Widget(otty_ui_term::Event::Shutdown {
+            id,
+            exit_status: std::process::ExitStatus::default(),
+        })
     }
 
     fn terminal_count(state: &TerminalWorkspaceState) -> usize {
