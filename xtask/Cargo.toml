@@ -2,7 +2,7 @@
 name = "otty-xtask"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
-description = "Development tools for OTTY: the architecture check and report of the app crate"
+description = "Development tools for OTTY: the architecture check and report of the app crate, and the widget generator"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 license = "Apache-2.0"
@@ -10,10 +10,11 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 publish = false
 
-# Standard library only: the check reads the app sources as plain text.
+# Standard library only: the check reads the app sources as plain text,
+# and the generator writes them as plain text.
 [dependencies]
 
 # The rules in the root clippy.toml are for the `app` crate. This tool reads
-# files on purpose, so it turns the file-access ban off.
+# and writes files on purpose, so it turns the file-access ban off.
 [lints.clippy]
 disallowed_methods = "allow"
