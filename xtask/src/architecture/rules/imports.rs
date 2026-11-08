@@ -280,6 +280,19 @@ mod tests {
     }
 
     #[test]
+    fn a_widget_importing_a_mode_screen_is_reported() {
+        let tree = SourceTree::from_sources(&[(
+            "widgets/notes/view/panel.rs",
+            "use crate::screens::terminal;\n",
+        )]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::WidgetImportsWiring),
+            [pair("widgets/notes/view/panel.rs", "screens")]
+        );
+    }
+
+    #[test]
     fn a_shared_module_importing_a_widget_is_reported() {
         let tree = SourceTree::from_sources(&[(
             "domain/quick_launch.rs",

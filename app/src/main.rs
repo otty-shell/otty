@@ -13,6 +13,7 @@ mod layout;
     reason = "routes start the background work of widgets"
 )]
 mod router;
+mod screens;
 #[expect(clippy::disallowed_methods, reason = "this module starts processes")]
 mod services;
 #[expect(

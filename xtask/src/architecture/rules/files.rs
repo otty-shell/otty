@@ -114,7 +114,7 @@ fn missing_mode_screens(tree: &SourceTree) -> Vec<Finding> {
     mode_variants(mode_file.lines())
         .into_iter()
         .filter_map(|variant| {
-            let screen = format!("view/{}.rs", snake_case(&variant));
+            let screen = format!("screens/{}.rs", snake_case(&variant));
 
             tree.file(&screen).is_none().then(|| {
                 Finding::new(Rule::MissingModeScreen, &screen, &variant, 0)
@@ -293,17 +293,18 @@ mod tests {
         let mode = "pub(crate) enum Mode {\n    #[default]\n    Terminal,\n    Containers,\n}\n";
         let missing = SourceTree::from_sources(&[
             ("domain/mode.rs", mode),
-            ("view/terminal.rs", ""),
+            ("screens/terminal.rs", ""),
+            ("view/containers.rs", ""),
         ]);
         let complete = SourceTree::from_sources(&[
             ("domain/mode.rs", mode),
-            ("view/terminal.rs", ""),
-            ("view/containers.rs", ""),
+            ("screens/terminal.rs", ""),
+            ("screens/containers.rs", ""),
         ]);
 
         assert_eq!(
             found(&check(&missing), Rule::MissingModeScreen),
-            [pair("view/containers.rs", "Containers")]
+            [pair("screens/containers.rs", "Containers")]
         );
         assert!(found(&check(&complete), Rule::MissingModeScreen).is_empty());
     }

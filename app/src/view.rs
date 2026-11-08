@@ -1,8 +1,3 @@
-#[path = "view/containers.rs"]
-mod containers;
-#[path = "view/terminal.rs"]
-mod terminal;
-
 use iced::widget::{Space, column, container, mouse_area, pane_grid, text};
 use iced::{Element, Length, Theme, alignment};
 use otty_ui_kit::components::divider;
@@ -15,6 +10,7 @@ use crate::components::primitive::resize_grips;
 use crate::domain::mode::Mode;
 use crate::geometry::anchor_position;
 use crate::layout;
+use crate::screens::{containers, terminal};
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::event::ChromeEvent;
 use crate::widgets::chrome::view::action_bar;
@@ -41,7 +37,7 @@ use crate::widgets::terminal_workspace::event::{
 /// change of value starts at the top left, and the same value built again keeps
 /// its place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ScreenId {
+pub(crate) enum ScreenId {
     /// The start card: no tab is open.
     StartCard,
     /// The content of a tab: Settings, a launch editor, an error tab.
@@ -57,7 +53,7 @@ enum ScreenId {
 /// What fills the main area. A function that chooses it has to say which of the
 /// two it is, so a new screen can not miss the rule of [`ScreenArea`]: anything
 /// that is not a terminal or a table is a [`MainContent::Screen`].
-enum MainContent<'a> {
+pub(crate) enum MainContent<'a> {
     /// A screen. It keeps a minimum width and scrolls when there is too little
     /// room.
     Screen {
@@ -86,7 +82,7 @@ impl<'a> MainContent<'a> {
 
 /// Render the root application view: the window content and the overlays
 /// over it, in one order for every mode.
-pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
+pub(crate) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     let theme = app.theme_manager.current();
     let theme_props: ThemeProps<'_> = ThemeProps::new(theme);
 
@@ -467,7 +463,7 @@ fn view_resize_grips(
 /// Lay `overlay` out in the main area of a layer over the whole window: under
 /// the header and over the status bar. It gets the size of the main area, and
 /// the pointer positions it reports are in the main area too.
-fn over_main_area(
+pub(crate) fn over_main_area(
     overlay: Element<'_, AppEvent, Theme, iced::Renderer>,
 ) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     container(overlay)
@@ -478,7 +474,7 @@ fn over_main_area(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use iced::Point;
     use iced_test::simulator;
     use otty_ui_kit::size;
@@ -490,10 +486,10 @@ mod tests {
     use crate::widgets::modes::event::ModesIntent;
     use crate::widgets::tabs::TabsCtx;
 
-    // The `pub(super)` helpers are shared with the tests of the mode screens
-    // in `view/`.
+    // The `pub(crate)` helpers are shared with the tests of the mode screens
+    // in `screens/`.
 
-    pub(super) fn app_in(mode: Mode) -> App {
+    pub(crate) fn app_in(mode: Mode) -> App {
         let (mut app, _) = App::new();
         app.widgets.modes = ModesWidget::new();
         let _ = app.widgets.modes.reduce(ModesIntent::Select(mode));
@@ -515,10 +511,10 @@ mod tests {
     /// A window where the main area between the panels at their smallest is
     /// too narrow and too low for the no-engine card. Panels dragged wide do
     /// the same in a larger window.
-    pub(super) const SMALL_WINDOW: iced::Size = iced::Size::new(400.0, 250.0);
+    pub(crate) const SMALL_WINDOW: iced::Size = iced::Size::new(400.0, 250.0);
 
     /// A no-engine card with these Docker and Podman commands found.
-    pub(super) fn app_with_card(discovery: otty_containers::Discovery) -> App {
+    pub(crate) fn app_with_card(discovery: otty_containers::Discovery) -> App {
         let mut app = app_in(Mode::Containers);
         app.state.window_size = SMALL_WINDOW;
         let _ = app.widgets.containers.reduce(ContainersIntent::Enter);
@@ -531,7 +527,7 @@ mod tests {
     }
 
     /// The search that finds a refused Podman socket and nothing else.
-    pub(super) fn denied_podman_search() -> otty_containers::Discovery {
+    pub(crate) fn denied_podman_search() -> otty_containers::Discovery {
         use otty_containers::{CandidateSource, fixtures};
 
         fixtures::denied_discovery_with_cli(
@@ -545,7 +541,7 @@ mod tests {
     /// The scroller of the main area: where it is and how far it is scrolled.
     /// It is the only one whose content has the minimum width of a screen, and
     /// the tests that use this one need a page that overflows it both ways.
-    pub(super) fn card_area_scroller(
+    pub(crate) fn card_area_scroller(
         ui: &mut iced_test::Simulator<'_, AppEvent>,
     ) -> (iced::Rectangle, iced::Vector) {
         use iced_test::selector::Candidate;
@@ -567,7 +563,7 @@ mod tests {
     }
 
     /// Presses at the first point, moves along the others and stays pressed.
-    pub(super) fn press_and_move(
+    pub(crate) fn press_and_move(
         ui: &mut iced_test::Simulator<'_, AppEvent>,
         points: &[Point],
     ) {
@@ -588,7 +584,7 @@ mod tests {
         }
     }
 
-    pub(super) fn sent_a_panel_resize(
+    pub(crate) fn sent_a_panel_resize(
         ui: iced_test::Simulator<'_, AppEvent>,
     ) -> bool {
         ui.into_messages().any(|event| {
@@ -602,7 +598,7 @@ mod tests {
     }
 
     /// The panel split at the right of the main area.
-    pub(super) fn right_panel_split(app: &App, window: iced::Size) -> f32 {
+    pub(crate) fn right_panel_split(app: &App, window: iced::Size) -> f32 {
         app.widgets
             .sidebar
             .panes()
@@ -617,13 +613,13 @@ mod tests {
 
     /// One frame of the app after another, as the running app builds them: the
     /// widget state carries over from one to the next.
-    pub(super) struct Frames {
+    pub(crate) struct Frames {
         renderer: iced::Renderer,
         cache: Option<iced_test::runtime::user_interface::Cache>,
     }
 
     impl Frames {
-        pub(super) fn new() -> Self {
+        pub(crate) fn new() -> Self {
             use iced_test::core::renderer::Headless;
 
             let renderer =
@@ -646,7 +642,7 @@ mod tests {
 
         /// Builds a frame of `app`, gives it the wheel at `pointer` if any, and
         /// returns how far the scroller of the screen is scrolled.
-        pub(super) fn frame(
+        pub(crate) fn frame(
             &mut self,
             app: &App,
             wheel: Option<(Point, iced::Vector)>,
@@ -701,7 +697,7 @@ mod tests {
     }
 
     /// Terminal mode with no tab open: the start card in a [`SMALL_WINDOW`].
-    pub(super) fn app_with_start_card() -> App {
+    pub(crate) fn app_with_start_card() -> App {
         let mut app = app_in(Mode::Terminal);
         app.state.window_size = SMALL_WINDOW;
 
@@ -710,7 +706,7 @@ mod tests {
 
     /// A wheel in the main area of a [`SMALL_WINDOW`] that moves a page 30 px
     /// right and 50 px down.
-    pub(super) fn scroll_main_area() -> Option<(Point, iced::Vector)> {
+    pub(crate) fn scroll_main_area() -> Option<(Point, iced::Vector)> {
         Some((Point::new(200.0, 150.0), iced::Vector::new(-30.0, -50.0)))
     }
 
@@ -739,7 +735,7 @@ mod tests {
     }
 
     /// Changes the quick launch widget as the running app does.
-    pub(super) fn reduce_quick_launch(
+    pub(crate) fn reduce_quick_launch(
         app: &mut App,
         intent: QuickLaunchIntent,
     ) {
@@ -754,7 +750,7 @@ mod tests {
     }
 
     /// Opens Settings as a tab and returns its id.
-    pub(super) fn open_settings(app: &mut App) -> u64 {
+    pub(crate) fn open_settings(app: &mut App) -> u64 {
         let _ = app
             .widgets
             .tabs
@@ -764,7 +760,7 @@ mod tests {
     }
 
     /// Opens a launch editor as a tab, its state in place, and returns its id.
-    pub(super) fn open_launch_editor(app: &mut App) -> u64 {
+    pub(crate) fn open_launch_editor(app: &mut App) -> u64 {
         let _ = app.widgets.tabs.reduce(
             TabsIntent::OpenWizardTab {
                 title: String::from("New launch"),
@@ -787,7 +783,7 @@ mod tests {
     }
 
     /// Opens the error tab of a launch, its state in place.
-    pub(super) fn open_error_tab(app: &mut App) -> u64 {
+    pub(crate) fn open_error_tab(app: &mut App) -> u64 {
         let (title, message) = (String::from("Failed"), String::from("Why"));
         let _ = app.widgets.tabs.reduce(
             TabsIntent::OpenErrorTab {
@@ -811,7 +807,7 @@ mod tests {
 
     /// The Run form over the lists of the fixture Docker engine, in a window
     /// too small for it.
-    pub(super) fn app_with_run_form() -> App {
+    pub(crate) fn app_with_run_form() -> App {
         let mut app = containers_app_with_lists();
         app.state.window_size = SMALL_WINDOW;
         let engine = otty_containers::fixtures::engine(
@@ -829,11 +825,11 @@ mod tests {
     }
 
     /// A change to the app between two frames.
-    pub(super) type AppChange = Box<dyn Fn(&mut App)>;
+    pub(crate) type AppChange = Box<dyn Fn(&mut App)>;
 
     /// The offset of a page that was just scrolled once and is built again
     /// after each of `changes`, which must all leave the same screen on show.
-    pub(super) fn offsets_through_rebuilds(
+    pub(crate) fn offsets_through_rebuilds(
         app: &mut App,
         changes: Vec<AppChange>,
     ) -> Vec<iced::Vector> {
@@ -852,7 +848,7 @@ mod tests {
     /// `app` is scrolled, then `leave` puts another screen on show. That screen
     /// must open at its top left, and it can be scrolled on its own. The first
     /// screen, shown again by `back`, starts at its top left too.
-    pub(super) fn assert_each_screen_starts_at_its_top(
+    pub(crate) fn assert_each_screen_starts_at_its_top(
         mut app: App,
         leave: impl Fn(&mut App),
         back: impl Fn(&mut App),
@@ -891,7 +887,7 @@ mod tests {
 
     /// How many scrollers in `app` have content of the minimum width of a
     /// screen.
-    pub(super) fn screen_scrollers(app: &App) -> usize {
+    pub(crate) fn screen_scrollers(app: &App) -> usize {
         let mut ui = iced_test::Simulator::with_size(
             iced::Settings::default(),
             SMALL_WINDOW,
@@ -997,7 +993,7 @@ mod tests {
         }
     }
 
-    pub(super) fn containers_app_with_lists() -> App {
+    pub(crate) fn containers_app_with_lists() -> App {
         use otty_containers::{EngineKind, fixtures};
 
         use crate::widgets::containers::event::ContainersIntent;

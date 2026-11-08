@@ -4,9 +4,10 @@
 use super::source::SourceTree;
 
 /// Top-level modules that form the wiring. `update`, `subscription` and
-/// `view` are declared inside `app` with `#[path]`.
+/// `view` are declared inside `app` with `#[path]`; `screens` holds the
+/// screen of each mode.
 pub(crate) const WIRING_MODULES: &[&str] =
-    &["app", "state", "guards", "router"];
+    &["app", "state", "guards", "router", "screens"];
 
 /// Shared modules: they import only each other and crates.
 pub(crate) const SHARED_MODULES: &[&str] = &[
@@ -25,8 +26,8 @@ pub(crate) const SHARED_MODULES: &[&str] = &[
     "domain",
 ];
 
-/// Wiring files outside `router/` and `view/`: the crate root, the app loop
-/// and the list of widgets.
+/// Wiring files outside `router/` and `screens/`: the crate root, the app
+/// loop, the root view and the list of widgets.
 const WIRING_FILES: &[&str] = &[
     "main.rs",
     "app.rs",
@@ -63,8 +64,8 @@ pub(crate) const OPEN_WIDGET_MODULES: &[&str] =
     &["event", "types", "view", "storage", "services"];
 
 /// Modules that must be `pub(crate) mod` in a widget's or a part's
-/// `mod.rs`: other routes send intents with `event`, and `view.rs` calls
-/// `view`.
+/// `mod.rs`: other routes send intents with `event`, and `view.rs` and the
+/// mode screens call `view`.
 pub(crate) const ALWAYS_OPEN_WIDGET_MODULES: &[&str] = &["event", "view"];
 
 /// The layer a source file belongs to.
@@ -83,7 +84,7 @@ pub(crate) enum Layer {
 pub(crate) fn layer_of(path: &str) -> Option<Layer> {
     if WIRING_FILES.contains(&path)
         || path.starts_with("router/")
-        || path.starts_with("view/")
+        || path.starts_with("screens/")
     {
         return Some(Layer::Wiring);
     }
@@ -188,7 +189,8 @@ mod tests {
     fn files_get_the_layer_of_their_folder() {
         assert_eq!(layer_of("router/tabs.rs"), Some(Layer::Wiring));
         assert_eq!(layer_of("update.rs"), Some(Layer::Wiring));
-        assert_eq!(layer_of("view/terminal.rs"), Some(Layer::Wiring));
+        assert_eq!(layer_of("screens/terminal.rs"), Some(Layer::Wiring));
+        assert_eq!(layer_of("view/terminal.rs"), None);
         assert_eq!(layer_of("widgets/mod.rs"), Some(Layer::Wiring));
         assert_eq!(
             layer_of("widgets/modes/view/menu.rs"),

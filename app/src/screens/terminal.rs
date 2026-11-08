@@ -4,8 +4,8 @@
 use iced::widget::{container, text};
 use iced::{Element, Length, Theme, alignment};
 
-use super::{MainContent, ScreenId, over_main_area};
 use crate::app::App;
+use crate::app::view::{MainContent, ScreenId, over_main_area};
 use crate::i18n::{self, Key};
 use crate::router::AppEvent;
 use crate::theme::ThemeProps;
@@ -36,7 +36,7 @@ use crate::widgets::terminal_workspace::view::{
 
 /// Left panel of Terminal mode: the Sessions section over the Launches
 /// section, sharing the panel height (see [`left_panel::view`]).
-pub(super) fn left_panel<'a>(
+pub(crate) fn left_panel<'a>(
     app: &'a App,
     sidebar_vm: SidebarViewModel,
     theme_props: ThemeProps<'a>,
@@ -100,7 +100,7 @@ pub(super) fn left_panel<'a>(
 
 /// Main area of Terminal mode: the content of the active tab, or the start
 /// card while no tab is open.
-pub(super) fn main<'a>(
+pub(crate) fn main<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> MainContent<'a> {
@@ -168,7 +168,7 @@ pub(super) fn main<'a>(
 }
 
 /// Right panel of Terminal mode: the Files section.
-pub(super) fn right_panel<'a>(
+pub(crate) fn right_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
@@ -181,7 +181,7 @@ pub(super) fn right_panel<'a>(
 
 /// Status bar of Terminal mode: machine and focused pane on the left, pane
 /// and session counts on the right. It stays in focus mode.
-pub(super) fn status_bar<'a>(
+pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
@@ -212,7 +212,7 @@ pub(super) fn status_bar<'a>(
 /// Overlays of Terminal mode, bottom to top: the context menu of the
 /// Launches tree and the context menu of a terminal pane. Both open at the
 /// pointer in the main area, so they lie there, under the header.
-pub(super) fn overlays<'a>(
+pub(crate) fn overlays<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Vec<Element<'a, AppEvent, Theme, iced::Renderer>> {
@@ -326,15 +326,15 @@ mod tests {
     use iced_test::simulator;
     use otty_ui_kit::size;
 
-    use super::super::tests::{
+    use super::*;
+    use crate::app::view::tests::{
         Frames, SMALL_WINDOW, app_in, app_with_start_card,
         assert_each_screen_starts_at_its_top, card_area_scroller,
         offsets_through_rebuilds, open_error_tab, open_launch_editor,
         open_settings, press_and_move, reduce_quick_launch, right_panel_split,
         screen_scrollers, scroll_main_area, sent_a_panel_resize,
     };
-    use super::super::view;
-    use super::*;
+    use crate::app::view::view;
     use crate::domain::mode::Mode;
     use crate::widgets::tabs::TabsCtx;
 

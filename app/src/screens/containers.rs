@@ -3,8 +3,8 @@
 
 use iced::{Element, Theme};
 
-use super::{MainContent, ScreenId};
 use crate::app::App;
+use crate::app::view::{MainContent, ScreenId};
 use crate::domain::mode::Mode;
 use crate::router::AppEvent;
 use crate::theme::ThemeProps;
@@ -24,7 +24,7 @@ use crate::widgets::containers::view::{
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
 
 /// Left panel of Containers mode: the engine tree.
-pub(super) fn left_panel<'a>(
+pub(crate) fn left_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
@@ -37,7 +37,7 @@ pub(super) fn left_panel<'a>(
 
 /// Main area of Containers mode: the Run container form while it is open,
 /// else the open list of an engine or a card while there is none.
-pub(super) fn main<'a>(
+pub(crate) fn main<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> MainContent<'a> {
@@ -78,7 +78,7 @@ pub(super) fn main<'a>(
 
 /// Right panel of Containers mode: what the image sets while the Run form is
 /// open, else the inspector of the selected row.
-pub(super) fn right_panel<'a>(
+pub(crate) fn right_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
@@ -105,7 +105,7 @@ pub(super) fn right_panel<'a>(
 /// Status bar of Containers mode: the engine and the counts of the open list
 /// on the left; on the right the sessions button, which switches to Terminal
 /// mode.
-pub(super) fn status_bar<'a>(
+pub(crate) fn status_bar<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
@@ -123,7 +123,7 @@ pub(super) fn status_bar<'a>(
 /// Overlays of Containers mode, bottom to top: the row menu, the
 /// confirmation dialog and the create dialog. The row menu opens at the
 /// pointer in window coordinates, so all of them lie over the whole window.
-pub(super) fn overlays<'a>(
+pub(crate) fn overlays<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Vec<Element<'a, AppEvent, Theme, iced::Renderer>> {
@@ -175,15 +175,15 @@ mod tests {
     use otty_ui_kit::components::menu;
     use otty_ui_kit::{size, spacing};
 
-    use super::super::tests::{
+    use super::*;
+    use crate::app::view::tests::{
         AppChange, Frames, SMALL_WINDOW, app_in, app_with_card,
         app_with_run_form, assert_each_screen_starts_at_its_top,
         card_area_scroller, containers_app_with_lists, denied_podman_search,
         offsets_through_rebuilds, press_and_move, right_panel_split,
         screen_scrollers, scroll_main_area, sent_a_panel_resize,
     };
-    use super::super::view;
-    use super::*;
+    use crate::app::view::view;
     use crate::i18n::{self, Key};
     use crate::widgets::containers::run::event::RunIntent;
     use crate::widgets::containers::run::types::RunEdit;

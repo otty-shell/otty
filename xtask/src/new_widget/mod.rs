@@ -122,7 +122,7 @@ impl NewWidget {
 Next steps:
   1. Run `cargo +nightly fmt`: the generator does not wrap long lines.
   2. Show the widget in view.rs if it is visible in every mode, or in the
-     file of its mode in view/:
+     file of its mode in screens/:
 
          use crate::widgets::{snake}::event::{camel}Event;
          use crate::widgets::{snake}::view::{snake}_panel;

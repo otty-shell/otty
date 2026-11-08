@@ -48,7 +48,7 @@ pub enum Rule {
     ForeignTypeInEventFile,
     /// `model.rs` takes the widget state mutably.
     ModelTakesMutState,
-    /// A mode has no screen file in `view/`.
+    /// A mode has no screen file in `screens/`.
     MissingModeScreen,
     /// The reducer entry parameter is not named `intent`.
     ReduceParameterName,
@@ -143,7 +143,7 @@ impl Rule {
                 "A widget never imports another widget; shared types live in domain/, and data from other widgets comes in through XCtx."
             },
             Rule::WidgetImportsWiring => {
-                "A widget never imports the wiring: app, state, update, subscription, guards, view or router."
+                "A widget never imports the wiring: app, state, update, subscription, guards, view, screens or router."
             },
             Rule::SharedImportsOutside => {
                 "A shared module imports only other shared modules and crates, never a widget or the wiring."
@@ -197,7 +197,7 @@ impl Rule {
                 "model.rs only reads the widget state to build view models and never takes it as &mut."
             },
             Rule::MissingModeScreen => {
-                "Every mode has one screen file in app/src/view/."
+                "Every mode has one screen file in app/src/screens/."
             },
             Rule::ReduceParameterName => {
                 "The reducer entry parameter is named intent, because its type is always XIntent."
