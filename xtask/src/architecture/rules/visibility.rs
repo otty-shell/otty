@@ -217,6 +217,25 @@ mod tests {
     }
 
     #[test]
+    fn a_model_folder_is_no_part_and_stays_closed() {
+        let tree = SourceTree::from_sources(&[
+            (
+                "widgets/notes/mod.rs",
+                "pub(crate) mod event;\npub(crate) mod model;\npub(crate) mod view;\n",
+            ),
+            (
+                "widgets/notes/model/mod.rs",
+                "pub(crate) mod notes_panel;\n",
+            ),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::WidgetModuleVisibility),
+            [pair("widgets/notes/mod.rs", "pub(crate) mod model")]
+        );
+    }
+
+    #[test]
     fn a_part_mod_file_follows_the_widget_lists() {
         let tree = SourceTree::from_sources(&[
             (

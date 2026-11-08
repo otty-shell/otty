@@ -24,10 +24,15 @@
 | `event.rs` | `XIntent`, `XEffect`, `XEvent` | всё остальное |
 | `state.rs` | `XState` и правила, которые держат его корректным | `Task`, `Element`, файлы, процессы |
 | `reducer.rs` | `reduce` и при необходимости `XCtx` | запуск фоновой работы |
-| `model.rs` | view model, построенные из состояния | изменение состояния |
+| `model.rs` или `model/` | view model, построенные из состояния | изменение состояния |
 | `view/` | по файлу на каждую view, обычно `view(props) -> Element<'_, XIntent>` | импорт `state` |
 
 Ещё у каждого виджета есть маршрут `router/x.rs`, см. «Путь события».
+
+Когда `model.rs` становится большим, вместо него заводят папку `model/`: `model/mod.rs` и по файлу на каждую view, с именем файла этой view. Например, view model из `view/main_area.rs` лежат в `model/main_area.rs`. В остальном файлы `model/` подчиняются тем же правилам, что и `model.rs`.
+- Файлы внутри `model/` закрыты (`mod main_area;`), а `model/mod.rs` реэкспортирует их view model через `pub(crate) use`. Поэтому путь не меняется: view по-прежнему импортирует `super::super::model::MainAreaViewModel`.
+- `from_state` в таком файле объявлен `pub(crate)`. С `pub(super)` его видел бы только `model/`, и `XWidget` не смог бы его вызвать.
+- Если одной view model нужна другая, файл импортирует соседний: `use super::no_engine::NoEngineViewModel;`.
 
 Эти файлы виджет добавляет, только когда они нужны:
 
@@ -165,7 +170,7 @@ Internal:  iced -> update_internal -> router/mod.rs -> router/x.rs
 | `XIntent`, `XEffect`, `XEvent` | `event.rs` | см. «События» | `NotesIntent`, `NotesEffect`, `NotesEvent` |
 | `reduce` | `reducer.rs` | применяет интент к состоянию и возвращает эффекты | `reducer::reduce` |
 | `XCtx` | `reducer.rs` | данные других виджетов для редьюсера, только если они нужны | `NotesCtx` |
-| `XViewModel` | `model.rs` | то, что показывает view, только для чтения. View model называется по файлу своей view: `<View>ViewModel`, например `MainAreaViewModel` для `view/main_area.rs`. Если view model у виджета или части одна, она может называться `XViewModel`, как `TabsViewModel`. View model строки или пункта, которые рисует одна view, называется по этой view: `<View><Item>ViewModel`, например `EngineTreeRowViewModel` | `NotesViewModel` |
+| `XViewModel` | `model.rs` или `model/<view>.rs` | то, что показывает view, только для чтения. View model называется по файлу своей view: `<View>ViewModel`, например `MainAreaViewModel` для `view/main_area.rs`. Если view model у виджета или части одна, она может называться `XViewModel`, как `TabsViewModel`. View model строки или пункта, которые рисует одна view, называется по этой view: `<View><Item>ViewModel`, например `EngineTreeRowViewModel` | `NotesViewModel` |
 | `<View>Props` | `view/<view>.rs` | всё, что получает одна view: view model, тема, простые значения | `NotesPanelProps` |
 | `route` | `router/x.rs` | маршрут: передаёт интенты в `reduce` и выполняет эффекты | `router/notes.rs` |
 
@@ -649,7 +654,7 @@ NotesEvent::Intent(intent) => {
 
 Ниже примеры взяты из `run`.
 
-**Файлы.** У части те же файлы, что у виджета: `mod.rs`, `event.rs`, `state.rs`, `reducer.rs`, `model.rs` и `view/`. Ещё она может добавить `types.rs`, `subscription.rs` и файлы по темам, например `run/checks.rs`. У части нет `XWidget`, своего маршрута и `<Part>Event`.
+**Файлы.** У части те же файлы, что у виджета: `mod.rs`, `event.rs`, `state.rs`, `reducer.rs`, `model.rs` или папка `model/` и `view/`. Ещё она может добавить `types.rs`, `subscription.rs` и файлы по темам, например `run/checks.rs`. У части нет `XWidget`, своего маршрута и `<Part>Event`.
 
 **Что видно снаружи.**
 - Родитель объявляет часть как `pub(crate) mod <part>;`. Внутри части действует та же таблица видимости, что у виджета. Например, у `run` открыты `event`, `types` и `view`, а остальные модули закрыты. Отличие одно: часть не открывает `storage` и `services`, потому что у неё нет своего маршрута, а ввод-вывод выполняет маршрут родителя.
@@ -768,13 +773,13 @@ fn reduce_run(
    - Clippy сравнивает настоящие пути, поэтому переименование через `use` его не обманет. Проверка запускается в `cargo clippy`.
 3. **Тест архитектуры.** Крейт `otty-xtask` в папке `xtask/` читает `app/src` как обычный текст, без новых зависимостей. Код тестов и `testing/` он не проверяет. Он проверяет:
    - слои и направление импортов, в том числе что `services` и `storage` использует только маршрут своего виджета;
-   - обязательные файлы виджета, его маршрут, файлы в `router/` и файл каждого режима в `screens/`;
+   - обязательные файлы виджета, его маршрут, имена файлов в `model/`, файлы в `router/` и файл каждого режима в `screens/`;
    - какие модули виджета открыты и что реэкспортирует `mod.rs`;
-   - что лежит в файлах: импорт `state` во view, `Task` и `Element` в `state.rs` и `<topic>.rs`, первую строку `reducer.rs`, лишние типы в `event.rs`, изменение состояния в `model.rs`, `XCtx` вне `reducer.rs`, view model вне `model.rs`, имя параметра `intent` у `reduce`, имена параметров `intent` и `effect` в `router/`, имя `<View>Props` в файле view, `from_state` в методах `vm()` и рендерер в типе `Element`;
+   - что лежит в файлах: импорт `state` во view, `Task` и `Element` в `state.rs` и `<topic>.rs`, первую строку `reducer.rs`, лишние типы в `event.rs`, изменение состояния в `model.rs` и `model/`, `XCtx` вне `reducer.rs`, view model вне `model.rs` и `model/`, имя параметра `intent` у `reduce`, имена параметров `intent` и `effect` в `router/`, имя `<View>Props` в файле view, `from_state` в методах `vm()` и рендерер в типе `Element`;
    - кто что вызывает: `route` вне `router/mod.rs` и `update.rs`, `reduce` виджета вне его маршрута, потоки вне `subscription.rs`, отметки `Message` вне `app.rs` и снятие запрета clippy там, где его снимать нельзя;
    - что маршрут выбирает действие по интенту или эффекту, а не по состоянию виджетов.
 
-   У частей больших виджетов действуют те же правила, что у виджета: обязательные файлы (без маршрута), видимость модулей (часть не открывает `storage` и `services`), реэкспорты, импорт `state` во view, `Task` и `Element` в `state.rs` и файлах по темам, имя `<View>Props` и view model только в `model.rs`. Два правила есть только у частей: `part-imports-outside` (часть не импортирует родителя и соседей, кроме `types`, `errors` и файлов по темам родителя) и `part-reduce-outside-parent` (`reduce` части вызывает только `reducer.rs` родителя).
+   У частей больших виджетов действуют те же правила, что у виджета: обязательные файлы (без маршрута), видимость модулей (часть не открывает `storage` и `services`), реэкспорты, импорт `state` во view, `Task` и `Element` в `state.rs` и файлах по темам, имя `<View>Props` и view model только в `model.rs` или `model/`. Два правила есть только у частей: `part-imports-outside` (часть не импортирует родителя и соседей, кроме `types`, `errors` и файлов по темам родителя) и `part-reduce-outside-parent` (`reduce` части вызывает только `reducer.rs` родителя).
 
    У каждого правила есть короткое имя, например `view-imports-state`, и описание в одно предложение. Они лежат в `xtask/src/architecture/finding.rs`, и отчёт печатает их над местами, которые нарушают правило.
    - Тест запускается в `cargo test`, поэтому pre-commit и CI уже его покрывают. Он не пропускает новые нарушения и устаревшие записи.

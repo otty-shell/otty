@@ -14,6 +14,9 @@ pub enum Rule {
     SharedImportsOutside,
     /// A widget or a part lacks a required file, or a widget has no route.
     MissingWidgetFile,
+    /// A file in a `model/` folder is not named after a view of its widget or
+    /// part.
+    ModelFileWithoutView,
     /// `router/` holds a file that is neither a widget route nor the command
     /// route.
     UnexpectedRouterFile,
@@ -46,7 +49,7 @@ pub enum Rule {
     DisallowedMethodsLifted,
     /// `event.rs` defines a type that is not an intent, effect or event.
     ForeignTypeInEventFile,
-    /// `model.rs` takes the widget state mutably.
+    /// `model.rs` or a file of `model/` takes the widget state mutably.
     ModelTakesMutState,
     /// A mode has no screen file in `screens/`.
     MissingModeScreen,
@@ -59,8 +62,8 @@ pub enum Rule {
     ViewModelNotFromState,
     /// A Props struct in a view file is not named after the file.
     ViewPropsName,
-    /// A view model is declared outside the `model.rs` of its widget or
-    /// part.
+    /// A view model is declared outside the `model.rs` or the `model/`
+    /// folder of its widget or part.
     ViewModelOutsideModel,
     /// An `Element` type names a renderer.
     ElementNamesRenderer,
@@ -75,12 +78,13 @@ pub enum Rule {
 
 impl Rule {
     /// Every rule, in declaration order, which is also the order of reports.
-    pub const ALL: [Rule; 30] = [
+    pub const ALL: [Rule; 31] = [
         Rule::FileOutsideLayers,
         Rule::WidgetImportsWidget,
         Rule::WidgetImportsWiring,
         Rule::SharedImportsOutside,
         Rule::MissingWidgetFile,
+        Rule::ModelFileWithoutView,
         Rule::UnexpectedRouterFile,
         Rule::WidgetModuleVisibility,
         Rule::ReexportFromOpenModule,
@@ -122,6 +126,7 @@ impl Rule {
             Rule::WidgetImportsWiring => "widget-imports-wiring",
             Rule::SharedImportsOutside => "shared-imports-outside",
             Rule::MissingWidgetFile => "missing-widget-file",
+            Rule::ModelFileWithoutView => "model-file-without-view",
             Rule::UnexpectedRouterFile => "unexpected-router-file",
             Rule::WidgetModuleVisibility => "widget-module-visibility",
             Rule::ReexportFromOpenModule => "reexport-from-open-module",
@@ -167,7 +172,10 @@ impl Rule {
                 "A shared module imports only other shared modules and crates, never a widget or the wiring."
             },
             Rule::MissingWidgetFile => {
-                "Every widget has mod.rs, event.rs, state.rs, reducer.rs, model.rs, a view/ folder and a route in router/<widget>.rs, and every part has the same files and folder but no route."
+                "Every widget has mod.rs, event.rs, state.rs, reducer.rs, model.rs or a model/ folder with its mod.rs, a view/ folder and a route in router/<widget>.rs, and every part has the same files and folders but no route."
+            },
+            Rule::ModelFileWithoutView => {
+                "A file in a model/ folder, other than mod.rs, is named after a view of its widget or part: model/<view>.rs holds the view models of view/<view>.rs."
             },
             Rule::UnexpectedRouterFile => {
                 "router/ holds only mod.rs, one route per widget and command.rs."
@@ -212,7 +220,7 @@ impl Rule {
                 "event.rs holds only XIntent, XEffect and XEvent; other types go to types.rs."
             },
             Rule::ModelTakesMutState => {
-                "model.rs only reads the widget state to build view models and never takes it as &mut."
+                "model.rs and the files of a model/ folder only read the widget state to build view models and never take it as &mut."
             },
             Rule::MissingModeScreen => {
                 "Every mode has one screen file in app/src/screens/."
@@ -224,13 +232,13 @@ impl Rule {
                 "In router/, a parameter whose type is an XIntent is named intent, and one whose type is an XEffect is named effect."
             },
             Rule::ViewModelNotFromState => {
-                "A view model is built in model.rs through XViewModel::from_state."
+                "A view model is built in model.rs or model/ through XViewModel::from_state."
             },
             Rule::ViewPropsName => {
                 "A Props struct in a view file view/<view>.rs is named <View>Props, after the file."
             },
             Rule::ViewModelOutsideModel => {
-                "A view model, a struct or enum whose name ends in ViewModel, is declared only in the model.rs of its widget or part."
+                "A view model, a struct or enum whose name ends in ViewModel, is declared only in the model.rs or the model/ folder of its widget or part."
             },
             Rule::ElementNamesRenderer => {
                 "An Element type never names a renderer: the app draws with iced's default theme and renderer, so Element<'a, X> is the whole type."

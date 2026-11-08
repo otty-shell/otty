@@ -429,6 +429,30 @@ mod tests {
     }
 
     #[test]
+    fn the_model_folder_of_a_widget_is_no_part() {
+        let tree = with_parts(&[
+            ("widgets/containers/model/mod.rs", ""),
+            (
+                "widgets/containers/model/main_area.rs",
+                "use super::super::state::ContainersState;\n\
+                 use super::super::run::RunPanelViewModel;\n",
+            ),
+            (
+                "widgets/containers/run/model/run_form.rs",
+                "use super::super::super::model::MainAreaViewModel;\n",
+            ),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::PartImportsOutside),
+            [pair(
+                "widgets/containers/run/model/run_form.rs",
+                "widgets::containers::model"
+            )]
+        );
+    }
+
+    #[test]
     fn a_part_importing_another_part_is_reported() {
         let tree = with_parts(&[
             (

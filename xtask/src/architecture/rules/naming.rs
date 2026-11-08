@@ -3,7 +3,7 @@
 //! are built and the props of a view.
 
 use super::super::finding::{Finding, Rule};
-use super::super::layout::{Layer, is_view_file, layer_of};
+use super::super::layout::{Layer, is_model_file, is_view_file, layer_of};
 use super::super::source::{Line, SourceFile, SourceTree};
 use super::super::text::{block_end, find_word, is_ident_char, name_after};
 
@@ -34,7 +34,9 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         }
         match file.name() {
             "reducer.rs" => findings.extend(reduce_parameter(file)),
-            "mod.rs" => {
+            // The `mod.rs` of a `model/` folder is a model file, not the
+            // `mod.rs` that holds `XWidget`.
+            "mod.rs" if !is_model_file(tree, file.path(), &widget) => {
                 findings.extend(reduce_parameter(file));
                 findings.extend(view_models_not_from_state(file));
             },
@@ -416,6 +418,19 @@ mod tests {
                 pair("widgets/palette/view/command_palette.rs", "PaletteProps"),
             ]
         );
+    }
+
+    #[test]
+    fn the_mod_file_of_a_model_folder_holds_no_view_model_accessors() {
+        let tree = SourceTree::from_sources(&[
+            ("widgets/notes/mod.rs", ""),
+            (
+                "widgets/notes/model/mod.rs",
+                "fn row_vm(row: &Row) -> RowViewModel {\n    RowViewModel {\n        label: row.label(),\n    }\n}\n",
+            ),
+        ]);
+
+        assert!(found(&check(&tree), Rule::ViewModelNotFromState).is_empty());
     }
 
     #[test]

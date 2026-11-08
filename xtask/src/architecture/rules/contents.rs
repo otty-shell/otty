@@ -2,7 +2,7 @@
 
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{
-    Layer, STANDARD_WIDGET_FILES, is_view_file, layer_of, part_of,
+    Layer, STANDARD_WIDGET_FILES, is_model_file, is_view_file, layer_of,
 };
 use super::super::source::{Line, SourceFile, SourceTree};
 use super::super::text::{find_word, name_after};
@@ -43,13 +43,14 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         match file.name() {
             "reducer.rs" => findings.extend(reducer_without_forbid(file)),
             "event.rs" => findings.extend(foreign_event_types(file)),
-            "model.rs" => findings.extend(model_mut_state(file)),
             _ => {},
         }
         if file.name() != "reducer.rs" {
             findings.extend(ctx_outside_reducer(file));
         }
-        if !is_model_file(tree, file, &widget) {
+        if is_model_file(tree, file.path(), &widget) {
+            findings.extend(model_mut_state(file));
+        } else {
             findings.extend(view_models_outside_model(file));
         }
     }
@@ -58,9 +59,12 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
 }
 
 /// `state.rs` and topic files, of a widget or of a part: plain logic,
-/// without `Task` and `Element`.
+/// without `Task` and `Element`. The files of views and view models are
+/// neither.
 fn is_pure_file(tree: &SourceTree, file: &SourceFile, widget: &str) -> bool {
-    if is_view_file(tree, file.path(), widget) {
+    if is_view_file(tree, file.path(), widget)
+        || is_model_file(tree, file.path(), widget)
+    {
         return false;
     }
 
@@ -84,16 +88,6 @@ fn task_or_element(file: &SourceFile) -> Vec<Finding> {
             ))
         })
         .collect()
-}
-
-/// Whether `file` is the `model.rs` of `widget` or of one of its parts.
-fn is_model_file(tree: &SourceTree, file: &SourceFile, widget: &str) -> bool {
-    let model = match part_of(tree, file.path(), widget) {
-        Some(part) => format!("widgets/{widget}/{part}/model.rs"),
-        None => format!("widgets/{widget}/model.rs"),
-    };
-
-    file.path() == model
 }
 
 fn reducer_without_forbid(file: &SourceFile) -> Option<Finding> {
@@ -524,6 +518,44 @@ mod tests {
                     "RunFormFieldViewModel"
                 ),
                 pair("widgets/containers/view/model.rs", "TableViewModel"),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_files_of_a_model_folder_are_model_files() {
+        let tree = SourceTree::from_sources(&[
+            ("widgets/containers/mod.rs", ""),
+            ("widgets/containers/run/mod.rs", ""),
+            (
+                "widgets/containers/model/mod.rs",
+                "pub(crate) struct ShownViewModel {\n}\nfn bad(state: &mut ContainersState) {}\n",
+            ),
+            (
+                "widgets/containers/model/main_area.rs",
+                "pub(crate) enum MainAreaViewModel<'a> {\n}\n\
+                 fn worse(state: &mut ContainersState) {}\n\
+                 fn not_a_topic() -> Element<'_, X> {}\n",
+            ),
+            (
+                "widgets/containers/run/model/run_form.rs",
+                "pub(crate) struct RunFormViewModel<'a> {\n}\nfn bad(state: &mut RunState) {}\n",
+            ),
+        ]);
+
+        let findings = check(&tree);
+
+        assert!(found(&findings, Rule::ViewModelOutsideModel).is_empty());
+        assert!(found(&findings, Rule::TaskOrElementInPureFile).is_empty());
+        assert_eq!(
+            found(&findings, Rule::ModelTakesMutState),
+            [
+                pair(
+                    "widgets/containers/model/main_area.rs",
+                    "ContainersState"
+                ),
+                pair("widgets/containers/model/mod.rs", "ContainersState"),
+                pair("widgets/containers/run/model/run_form.rs", "RunState"),
             ]
         );
     }
