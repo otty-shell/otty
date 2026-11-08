@@ -2,13 +2,11 @@ use iced::{Task, window};
 
 use super::AppEvent;
 use crate::app::App;
+use crate::commands::AppCommand;
 use crate::widgets::chrome::{ChromeEffect, ChromeEvent};
-use crate::widgets::palette::{PaletteEvent, PaletteIntent};
-use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
-use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
-/// Route a chrome event: reduce its intents and turn its effects into
-/// events of the widgets that own them.
+/// Route a chrome event: reduce its intents, run the window effects and
+/// turn the button effects into the app commands they stand for.
 pub(crate) fn route(app: &mut App, event: ChromeEvent) -> Task<AppEvent> {
     match event {
         ChromeEvent::Intent(event) => {
@@ -27,21 +25,17 @@ fn handle_effect(effect: ChromeEffect) -> Task<AppEvent> {
             window::latest().and_then(|id| window::minimize(id, true))
         },
         CloseWindow => window::latest().and_then(window::close),
-        ToggleLeftPanel => sidebar_intent(SidebarIntent::ToggleLeft),
-        ToggleFocusMode => sidebar_intent(SidebarIntent::ToggleFocusMode),
-        ToggleFilesPanel => sidebar_intent(SidebarIntent::ToggleRight),
-        OpenSettings => Task::done(AppEvent::Tabs(TabsEvent::Intent(
-            TabsIntent::OpenSettingsTab,
-        ))),
-        OpenCommandPalette => Task::done(AppEvent::Palette(
-            PaletteEvent::Intent(PaletteIntent::Open),
-        )),
         StartWindowDrag => window::latest().and_then(window::drag),
+        ToggleLeftPanel => command(AppCommand::ToggleLeftPanel),
+        ToggleFocusMode => command(AppCommand::ToggleFocusMode),
+        ToggleFilesPanel => command(AppCommand::ToggleFilesPanel),
+        OpenSettings => command(AppCommand::OpenSettings),
+        OpenCommandPalette => command(AppCommand::OpenPalette),
     }
 }
 
-fn sidebar_intent(intent: SidebarIntent) -> Task<AppEvent> {
-    Task::done(AppEvent::Sidebar(SidebarEvent::Intent(intent)))
+fn command(command: AppCommand) -> Task<AppEvent> {
+    Task::done(AppEvent::Command(command))
 }
 
 #[cfg(test)]
@@ -49,65 +43,50 @@ mod tests {
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
 
-    #[test]
-    fn left_panel_button_maps_to_the_left_panel_toggle() {
-        let events =
-            collect_outputs(handle_effect(ChromeEffect::ToggleLeftPanel));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Sidebar(SidebarEvent::Intent(
-                SidebarIntent::ToggleLeft
-            ))]
-        ));
+    fn command_of(effect: ChromeEffect) -> Option<AppCommand> {
+        match collect_outputs(handle_effect(effect)).as_slice() {
+            [AppEvent::Command(command)] => Some(*command),
+            _ => None,
+        }
     }
 
     #[test]
-    fn files_panel_button_maps_to_the_right_panel_toggle() {
-        let events =
-            collect_outputs(handle_effect(ChromeEffect::ToggleFilesPanel));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Sidebar(SidebarEvent::Intent(
-                SidebarIntent::ToggleRight
-            ))]
-        ));
+    fn left_panel_button_runs_the_left_panel_command() {
+        assert_eq!(
+            command_of(ChromeEffect::ToggleLeftPanel),
+            Some(AppCommand::ToggleLeftPanel)
+        );
     }
 
     #[test]
-    fn focus_button_maps_to_the_focus_mode_toggle() {
-        let events =
-            collect_outputs(handle_effect(ChromeEffect::ToggleFocusMode));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Sidebar(SidebarEvent::Intent(
-                SidebarIntent::ToggleFocusMode
-            ))]
-        ));
+    fn files_panel_button_runs_the_files_panel_command() {
+        assert_eq!(
+            command_of(ChromeEffect::ToggleFilesPanel),
+            Some(AppCommand::ToggleFilesPanel)
+        );
     }
 
     #[test]
-    fn title_search_opens_the_command_palette() {
-        let events =
-            collect_outputs(handle_effect(ChromeEffect::OpenCommandPalette));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Open))]
-        ));
+    fn focus_button_runs_the_focus_mode_command() {
+        assert_eq!(
+            command_of(ChromeEffect::ToggleFocusMode),
+            Some(AppCommand::ToggleFocusMode)
+        );
     }
 
     #[test]
-    fn settings_button_opens_the_settings_tab() {
-        let events = collect_outputs(handle_effect(ChromeEffect::OpenSettings));
+    fn title_search_runs_the_open_palette_command() {
+        assert_eq!(
+            command_of(ChromeEffect::OpenCommandPalette),
+            Some(AppCommand::OpenPalette)
+        );
+    }
 
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenSettingsTab
-            ))]
-        ));
+    #[test]
+    fn settings_button_runs_the_open_settings_command() {
+        assert_eq!(
+            command_of(ChromeEffect::OpenSettings),
+            Some(AppCommand::OpenSettings)
+        );
     }
 }
