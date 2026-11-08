@@ -4,7 +4,6 @@
 //! lost.
 
 use crate::router::AppEvent;
-use crate::shortcuts::{Platform, shortcut_for_key_press};
 use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::modes::{ModesEvent, ModesIntent};
@@ -94,6 +93,9 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         },
         AppEvent::Modes(_) => Allow,
         AppEvent::ResizeWindow(_) => Allow,
+        // A shortcut, whichever key route it took, closes the menus and
+        // runs. Other keys no widget took do nothing under a menu.
+        AppEvent::Command(_) => DismissAndRun,
         AppEvent::Keyboard(_) => Ignore,
         _ => Dismiss,
     }
@@ -142,8 +144,9 @@ pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
 }
 
 /// Return `true` when an active inline-edit should be cancelled before the
-/// input is dispatched: anything but typing into the edit, pointer moves and
-/// terminal events. A key press cancels it only if it is an app shortcut.
+/// input is dispatched: anything but typing into the edit, pointer moves,
+/// terminal events and key presses. A shortcut cancels it: it arrives as a
+/// command.
 pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
     match event {
         AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event)) => {
@@ -169,9 +172,7 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
         | AppEvent::Chrome(ChromeEvent::Intent(ChromeIntent::MoveOnTitleBar)) => {
             false
         },
-        AppEvent::Keyboard(key) => {
-            shortcut_for_key_press(key, Platform::current()).is_some()
-        },
+        AppEvent::Keyboard(_) => false,
         _ => true,
     }
 }
@@ -202,9 +203,10 @@ mod tests {
         MenuGuard, context_menu_guard, inline_edit_guard, is_escape_press,
         is_header_menu_choice, is_terminal_input,
     };
+    use crate::commands::AppCommand;
     use crate::domain::mode::Mode;
     use crate::router::AppEvent;
-    use crate::shortcuts::{AppShortcut, Platform};
+    use crate::shortcuts::AppShortcut;
     use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::actions::RowAction;
     use crate::widgets::containers::inspector::InspectorTab;
@@ -356,21 +358,11 @@ mod tests {
     }
 
     #[test]
-    fn only_a_key_press_that_is_a_shortcut_cancels_an_inline_edit() {
-        let keys = AppShortcut::Settings.keys(Platform::current());
-        let shortcut = AppEvent::Keyboard(Event::KeyPressed {
-            key: Key::Character(keys.key().into()),
-            modified_key: Key::Character(keys.key().into()),
-            physical_key: Physical::Unidentified(NativeCode::Unidentified),
-            location: Location::Standard,
-            modifiers: keys.modifiers(),
-            text: None,
-            repeat: false,
-        });
+    fn a_key_press_that_is_not_a_shortcut_keeps_an_inline_edit() {
+        // A shortcut key reaches the checks as its command instead.
         let plain =
             key_press(Key::Character("a".into()), Physical::Code(Code::KeyA));
 
-        assert!(inline_edit_guard(&shortcut));
         assert!(!inline_edit_guard(&plain));
     }
 
@@ -514,6 +506,23 @@ mod tests {
     fn pressing_the_title_bar_still_cancels_an_inline_edit() {
         let event =
             AppEvent::Chrome(ChromeEvent::Intent(ChromeIntent::PressTitleBar));
+
+        assert!(inline_edit_guard(&event));
+    }
+
+    #[test]
+    fn a_command_under_an_open_menu_closes_the_menus_and_goes_on() {
+        let event = AppEvent::Command(AppCommand::ToggleFocusMode);
+
+        assert!(matches!(
+            context_menu_guard(&event),
+            MenuGuard::DismissAndRun
+        ));
+    }
+
+    #[test]
+    fn a_command_cancels_an_inline_edit() {
+        let event = AppEvent::Command(AppCommand::ToggleFilesPanel);
 
         assert!(inline_edit_guard(&event));
     }

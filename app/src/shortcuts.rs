@@ -10,6 +10,10 @@
 //!   (`iced::keyboard::listen`, which only delivers keys no widget captured)
 //!   and [`shortcut_for_key_press`] finds the shortcut.
 //!
+//! Either way the app turns the shortcut into its [`AppCommand`] before the
+//! input checks (`update_input` in `update.rs`), and `router/command.rs`
+//! runs it.
+//!
 //! Auto-repeat presses run nothing on either route, so a held key runs its
 //! shortcut once.
 //!
@@ -193,14 +197,6 @@ impl AppShortcut {
                 ShortcutKeys::new("m", cmd_shift)
             },
         }
-    }
-
-    /// Return the switcher position this shortcut selects: 0 for Terminal
-    /// mode, N for pinned mode N, `None` for every other shortcut.
-    pub(crate) fn mode_position(self) -> Option<usize> {
-        Self::MODE_SHORTCUTS
-            .iter()
-            .position(|shortcut| *shortcut == self)
     }
 
     /// Return the shortcut that selects the mode at switcher `position`
@@ -794,40 +790,17 @@ mod tests {
     }
 
     #[test]
-    fn mode_shortcuts_select_the_switcher_positions_in_order() {
-        let positions: Vec<Option<usize>> = AppShortcut::ALL
-            .into_iter()
-            .map(AppShortcut::mode_position)
-            .collect();
-
-        assert_eq!(
-            positions,
-            vec![
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(0),
-                Some(1),
-                Some(2),
-                Some(3),
-                Some(4),
-                None,
-            ]
-        );
-    }
-
-    #[test]
     fn every_switcher_position_up_to_four_has_its_shortcut() {
         for position in 0..=4 {
             let shortcut = AppShortcut::for_mode_position(position)
                 .expect("positions 0 to 4 have a shortcut");
 
-            assert_eq!(shortcut.mode_position(), Some(position));
+            // The label a switcher tab shows is the key of the command that
+            // selects it.
+            assert_eq!(
+                shortcut.command(),
+                AppCommand::SelectModeAt { position }
+            );
         }
         assert_eq!(AppShortcut::for_mode_position(5), None);
     }

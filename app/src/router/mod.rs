@@ -6,7 +6,6 @@ use iced::window::Direction;
 use crate::app::App;
 use crate::commands::AppCommand;
 use crate::layout::screen_size_from_window;
-use crate::shortcuts::{Platform, shortcut_for_key_press};
 use crate::widgets::chrome::ChromeEvent;
 use crate::widgets::containers::ContainersEvent;
 use crate::widgets::explorer::ExplorerEvent;
@@ -78,14 +77,6 @@ pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
                 TerminalWorkspaceIntent::SyncPaneGridSize,
             )),
         ),
-        // Only keys no widget captured arrive here, so a shortcut a focused
-        // terminal already reported does not run twice.
-        AppEvent::Keyboard(event) => {
-            match shortcut_for_key_press(&event, Platform::current()) {
-                Some(shortcut) => command::route(app, shortcut.command()),
-                None => Task::none(),
-            }
-        },
         AppEvent::Window(iced::window::Event::Resized(size)) => {
             app.window_size = size;
             app.state.window_size = size;
@@ -104,48 +95,19 @@ pub(crate) fn route(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::ResizeWindow(dir) => {
             window::latest().and_then(move |id| window::drag_resize(id, dir))
         },
-        AppEvent::Window(_) => Task::none(),
+        // A shortcut key arrives as its command (see `update_input`); other
+        // keys no widget took do nothing.
+        AppEvent::Keyboard(_) | AppEvent::Window(_) => Task::none(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use iced::keyboard::key::{NativeCode, Physical};
-    use iced::keyboard::{Event, Key, Location};
     use iced::widget::pane_grid;
 
     use super::*;
-    use crate::shortcuts::{AppShortcut, Platform};
-    use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::sidebar::SidebarIntent;
 
-    #[test]
-    fn keyboard_event_runs_the_app_shortcut_it_stands_for() {
-        let (mut app, _) = App::new();
-        let keys = AppShortcut::Settings.keys(Platform::current());
-        let event = Event::KeyPressed {
-            key: Key::Character(keys.key().into()),
-            modified_key: Key::Character(keys.key().into()),
-            physical_key: Physical::Unidentified(NativeCode::Unidentified),
-            location: Location::Standard,
-            modifiers: keys.modifiers(),
-            text: None,
-            repeat: false,
-        };
-
-        let events =
-            collect_outputs(route(&mut app, AppEvent::Keyboard(event)));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenSettingsTab
-            ))]
-        ));
-    }
-
-    /// Panel widths are shares of the window, so a smaller window keeps them,
-    /// for a panel that is closed as for one hidden by focus mode.
     #[test]
     fn smaller_window_keeps_the_share_panels_come_back_at() {
         let (mut app, _) = App::new();
@@ -178,35 +140,5 @@ mod tests {
         let _leave = app.widgets.sidebar.reduce(SidebarIntent::ToggleFocusMode);
 
         assert_eq!(app.widgets.sidebar.left_ratio(), 0.3);
-    }
-
-    #[test]
-    fn split_shortcut_from_the_subscription_splits_the_focused_pane() {
-        // No terminal had keyboard focus, so the key reached the app; the
-        // focused pane of the active tab is split all the same.
-        let (mut app, _) = App::new();
-        let _ = crate::testing::shell_tab::open_shell_tab(&mut app);
-        let keys = AppShortcut::SplitPane.keys(Platform::current());
-        let event = Event::KeyPressed {
-            key: Key::Character(keys.key().into()),
-            modified_key: Key::Character(keys.key().into()),
-            physical_key: Physical::Unidentified(NativeCode::Unidentified),
-            location: Location::Standard,
-            modifiers: keys.modifiers(),
-            text: None,
-            repeat: false,
-        };
-
-        let events =
-            collect_outputs(route(&mut app, AppEvent::Keyboard(event)));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::SplitFocusedPane {
-                    axis: pane_grid::Axis::Vertical,
-                }
-            ))]
-        ));
     }
 }

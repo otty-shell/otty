@@ -1,6 +1,7 @@
 use iced::Task;
 
 use super::{App, AppEvent};
+use crate::commands::AppCommand;
 use crate::guards::{
     MenuGuard, context_menu_guard, inline_edit_guard, is_escape_press,
     is_header_menu_choice, is_terminal_input,
@@ -18,6 +19,7 @@ use crate::widgets::terminal_workspace::{
 /// Handle input from the user. Open menus, the command palette and an inline
 /// edit decide first what happens to it, once, on what the user did.
 pub(super) fn update_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
+    let event = as_command(event);
     let task = filter_input(app, event);
 
     finish_update(app, task)
@@ -103,6 +105,31 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     }
 }
 
+/// Turn a key press that is an app shortcut into its command, on both
+/// routes a key press can take (see [`crate::shortcuts`]): a key no widget
+/// captured, and a binding a focused terminal reported. The checks then see
+/// a shortcut once, as a command, whichever route it took. Every other
+/// event stays as it is.
+fn as_command(event: AppEvent) -> AppEvent {
+    let command = match &event {
+        AppEvent::Keyboard(key) => {
+            shortcut_for_key_press(key, Platform::current())
+                .map(AppShortcut::command)
+        },
+        AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+            TerminalWorkspaceIntent::Widget(
+                otty_ui_term::Event::BindingActionDispatched { action, .. },
+            ),
+        )) => Some(action.command()),
+        _ => None,
+    };
+
+    match command {
+        Some(command) => AppEvent::Command(command),
+        None => event,
+    }
+}
+
 /// Send the Containers widget the state of the right panel, if it changed.
 fn tell_containers_about_right_panel(app: &mut App) -> Task<AppEvent> {
     let is_hidden = !app.widgets.sidebar.vm().is_right_open;
@@ -119,15 +146,12 @@ fn tell_containers_about_right_panel(app: &mut App) -> Task<AppEvent> {
 }
 
 fn is_mode_shortcut(event: &AppEvent) -> bool {
-    let AppEvent::Keyboard(key_event) = event else {
-        return false;
-    };
-
-    match shortcut_for_key_press(key_event, Platform::current()) {
-        Some(AppShortcut::AllModesMenu) => true,
-        Some(shortcut) => shortcut.mode_position().is_some(),
-        None => false,
-    }
+    matches!(
+        event,
+        AppEvent::Command(
+            AppCommand::SelectModeAt { .. } | AppCommand::ToggleModesMenu
+        )
+    )
 }
 
 fn any_context_menu_open(app: &App) -> bool {
@@ -188,6 +212,7 @@ mod tests {
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::domain::mode::Mode;
     use crate::i18n;
+    use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::chrome::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::ContainersEffect;
@@ -197,6 +222,7 @@ mod tests {
     use crate::widgets::containers::types::LoadedLists;
     use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::ModesWidget;
+    use crate::widgets::sidebar::types::HeaderMenu;
     use crate::widgets::tabs::types::TabMachine;
     use crate::widgets::tabs::{TabsEvent, TabsIntent};
 
@@ -274,13 +300,13 @@ mod tests {
     }
 
     #[test]
-    fn other_shortcuts_stay_ignored_while_the_modes_menu_is_open() {
+    fn other_shortcuts_close_the_modes_menu_and_run() {
         let mut app = app_with_open_modes_menu();
 
         press(&mut app, AppShortcut::FocusMode);
 
-        assert!(app.widgets.modes.is_menu_open());
-        assert!(!app.widgets.sidebar.vm().is_focus_mode);
+        assert!(!app.widgets.modes.is_menu_open());
+        assert!(app.widgets.sidebar.vm().is_focus_mode);
     }
 
     #[test]
@@ -1068,5 +1094,184 @@ mod tests {
 
         assert!(app.widgets.quick_launch.has_inline_edit());
         assert!(app.widgets.sidebar.vm().is_right_open);
+    }
+
+    /// What a focused terminal reports for `shortcut`. Terminal 999 is in
+    /// no tab: the app turns the report into a command before the terminal
+    /// workspace could look it up.
+    fn terminal_binding(shortcut: AppShortcut) -> AppEvent {
+        AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+            TerminalWorkspaceIntent::Widget(
+                otty_ui_term::Event::BindingActionDispatched {
+                    id: 999,
+                    action: shortcut,
+                },
+            ),
+        ))
+    }
+
+    /// Like [`press`], for the report of a focused terminal.
+    fn press_in_terminal(app: &mut App, shortcut: AppShortcut) {
+        let follow_ups =
+            collect_outputs(update_input(app, terminal_binding(shortcut)));
+
+        for event in follow_ups {
+            let _ = update_internal(app, event);
+        }
+    }
+
+    fn plain_key_press() -> AppEvent {
+        AppEvent::Keyboard(Event::KeyPressed {
+            key: Key::Character("a".into()),
+            modified_key: Key::Character("a".into()),
+            physical_key: Physical::Code(Code::KeyA),
+            location: Location::Standard,
+            modifiers: Modifiers::empty(),
+            text: Some("a".into()),
+            repeat: false,
+        })
+    }
+
+    fn is_split_focused_pane(event: &AppEvent) -> bool {
+        matches!(
+            event,
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::SplitFocusedPane {
+                    axis: pane_grid::Axis::Vertical,
+                }
+            ))
+        )
+    }
+
+    fn app_with_open_header_menu() -> App {
+        let (mut app, _) = App::new();
+        let _ = update_input(
+            &mut app,
+            sidebar_intent(SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions)),
+        );
+        assert!(app.widgets.sidebar.has_header_menu_open());
+        app
+    }
+
+    #[test]
+    fn a_shortcut_key_becomes_its_command() {
+        let event = as_command(shortcut_press(AppShortcut::Settings));
+
+        assert!(matches!(event, AppEvent::Command(AppCommand::OpenSettings)));
+    }
+
+    #[test]
+    fn a_terminal_binding_becomes_its_command() {
+        let event = as_command(terminal_binding(AppShortcut::PinnedMode2));
+
+        assert!(matches!(
+            event,
+            AppEvent::Command(AppCommand::SelectModeAt { position: 2 })
+        ));
+    }
+
+    #[test]
+    fn a_plain_key_stays_a_key() {
+        let event = as_command(plain_key_press());
+
+        assert!(matches!(event, AppEvent::Keyboard(_)));
+    }
+
+    #[test]
+    fn a_shortcut_key_from_the_subscription_runs_its_command() {
+        let (mut app, _) = App::new();
+
+        let events = collect_outputs(update_input(
+            &mut app,
+            shortcut_press(AppShortcut::Settings),
+        ));
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenSettingsTab))
+        )));
+    }
+
+    #[test]
+    fn a_terminal_binding_runs_its_command() {
+        let (mut app, _) = App::new();
+
+        let events = collect_outputs(update_input(
+            &mut app,
+            terminal_binding(AppShortcut::Settings),
+        ));
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Tabs(TabsEvent::Intent(TabsIntent::OpenSettingsTab))
+        )));
+    }
+
+    #[test]
+    fn the_split_shortcut_splits_the_focused_pane_on_both_key_paths() {
+        // From the keyboard subscription no terminal had keyboard focus;
+        // the focused pane of the active tab is split all the same.
+        for press in [
+            shortcut_press(AppShortcut::SplitPane),
+            terminal_binding(AppShortcut::SplitPane),
+        ] {
+            let (mut app, _) = App::new();
+            let _ = open_shell_tab(&mut app);
+
+            let events = collect_outputs(update_input(&mut app, press));
+
+            assert!(events.iter().any(is_split_focused_pane));
+        }
+    }
+
+    #[test]
+    fn a_terminal_binding_during_an_inline_edit_cancels_it() {
+        let (mut app, _) = App::new();
+        start_inline_edit(&mut app);
+
+        let _ =
+            update_input(&mut app, terminal_binding(AppShortcut::FilesPanel));
+
+        assert!(!app.widgets.quick_launch.has_inline_edit());
+    }
+
+    #[test]
+    fn a_command_that_follows_from_input_leaves_an_inline_edit_alone() {
+        // A palette entry runs its command this way, after the palette
+        // already passed the checks.
+        let (mut app, _) = App::new();
+        start_inline_edit(&mut app);
+
+        let _ = update_internal(
+            &mut app,
+            AppEvent::Command(AppCommand::ToggleFilesPanel),
+        );
+
+        assert!(app.widgets.quick_launch.has_inline_edit());
+    }
+
+    #[test]
+    fn a_shortcut_under_an_open_menu_closes_it_and_runs_on_both_key_paths() {
+        for press in [
+            shortcut_press(AppShortcut::FocusMode),
+            terminal_binding(AppShortcut::FocusMode),
+        ] {
+            let mut app = app_with_open_header_menu();
+
+            update_to_the_end(&mut app, press);
+
+            assert!(!app.widgets.sidebar.has_header_menu_open());
+            assert!(app.widgets.sidebar.vm().is_focus_mode);
+        }
+    }
+
+    #[test]
+    fn a_mode_binding_from_a_terminal_switches_while_the_modes_menu_is_open() {
+        let mut app = app_with_open_modes_menu();
+
+        press_in_terminal(&mut app, AppShortcut::PinnedMode1);
+
+        assert_eq!(app.widgets.modes.active(), Mode::Containers);
+        assert!(!app.widgets.modes.is_menu_open());
     }
 }

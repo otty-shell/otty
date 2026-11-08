@@ -3,7 +3,6 @@ use iced::Task;
 use super::AppEvent;
 use crate::app::App;
 use crate::layout::pane_grid_size;
-use crate::shortcuts::AppShortcut;
 use crate::widgets::explorer::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::{
@@ -95,9 +94,6 @@ fn handle_effect_event(
         TerminalWorkspaceEffect::SyncExplorer => {
             sync_explorer_from_terminal(app)
         },
-        TerminalWorkspaceEffect::ShortcutPressed { shortcut } => {
-            Task::done(AppEvent::Command(shortcut.command()))
-        },
     }
 }
 
@@ -135,20 +131,14 @@ fn build_ctx_from_parts(
 fn should_sync_explorer(event: &TerminalWorkspaceIntent) -> bool {
     use TerminalWorkspaceIntent::*;
 
-    match event {
+    matches!(
+        event,
         PaneClicked { .. }
-        | SplitPane { .. }
-        | SplitFocusedPane { .. }
-        | ClosePane { .. } => true,
-        Widget(otty_ui_term::Event::ContentSync { .. }) => true,
-        // A shortcut-driven split focuses the new pane just as the
-        // context menu one does, so the explorer must follow its cwd
-        // either way.
-        Widget(otty_ui_term::Event::BindingActionDispatched {
-            action, ..
-        }) => *action == AppShortcut::SplitPane,
-        _ => false,
-    }
+            | SplitPane { .. }
+            | SplitFocusedPane { .. }
+            | ClosePane { .. }
+            | Widget(otty_ui_term::Event::ContentSync { .. })
+    )
 }
 
 #[cfg(test)]
@@ -157,11 +147,6 @@ mod tests {
 
     use super::{handle_effect_event, should_sync_explorer};
     use crate::app::App;
-    use crate::commands::AppCommand;
-    use crate::router::AppEvent;
-    use crate::shortcuts::AppShortcut;
-    use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::modes::ModesWidget;
     use crate::widgets::terminal_workspace::{
         TerminalWorkspaceEffect, TerminalWorkspaceIntent,
     };
@@ -196,66 +181,6 @@ mod tests {
             &TerminalWorkspaceIntent::SplitFocusedPane {
                 axis: iced::widget::pane_grid::Axis::Vertical,
             }
-        ));
-    }
-
-    #[test]
-    fn given_split_pane_action_when_checked_then_returns_true() {
-        // A shortcut-driven split reaches the workspace as a widget
-        // action, not as a SplitPane intent, but it focuses a new pane
-        // all the same.
-        assert!(should_sync_explorer(&TerminalWorkspaceIntent::Widget(
-            otty_ui_term::Event::BindingActionDispatched {
-                id: 42,
-                action: AppShortcut::SplitPane,
-            }
-        )));
-    }
-
-    #[test]
-    fn given_other_shortcut_action_when_checked_then_returns_false() {
-        assert!(!should_sync_explorer(&TerminalWorkspaceIntent::Widget(
-            otty_ui_term::Event::BindingActionDispatched {
-                id: 42,
-                action: AppShortcut::Settings,
-            }
-        )));
-    }
-
-    #[test]
-    fn given_shortcut_pressed_in_a_terminal_when_handled_then_its_command_runs()
-    {
-        let (mut app, _) = App::new();
-
-        let events = collect_outputs(handle_effect_event(
-            &mut app,
-            TerminalWorkspaceEffect::ShortcutPressed {
-                shortcut: AppShortcut::Settings,
-            },
-        ));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Command(AppCommand::OpenSettings)]
-        ));
-    }
-
-    #[test]
-    fn given_mode_shortcut_pressed_in_a_terminal_when_handled_then_its_position_is_asked_for()
-     {
-        let (mut app, _) = App::new();
-        app.widgets.modes = ModesWidget::new();
-
-        let events = collect_outputs(handle_effect_event(
-            &mut app,
-            TerminalWorkspaceEffect::ShortcutPressed {
-                shortcut: AppShortcut::PinnedMode1,
-            },
-        ));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Command(AppCommand::SelectModeAt { position: 1 })]
         ));
     }
 
