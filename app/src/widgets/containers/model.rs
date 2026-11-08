@@ -1,12 +1,11 @@
-use otty_containers::{
-    Container, ContainerState, EngineInfo, EngineKind, Image, Network, Volume,
-};
+use otty_containers::{Container, ContainerState, Image, Network, Volume};
 use otty_ui_kit::components::data_table::{TableCell, TableColumn};
 use otty_ui_kit::components::status_badge::StatusTone;
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
 
 use super::action_model::{PruneViewModel, can_create, prune_button};
 use super::actions::container_actions;
+use super::format::engine_label;
 use super::no_engine::{NoEngineViewModel, no_engine};
 use super::resource_rows::{
     columns, container_cells, container_status, image_cells, image_status,
@@ -22,11 +21,6 @@ use super::types::{
     shown_networks, shown_volumes,
 };
 use crate::i18n::{self, Key};
-
-/// Brand name of a Docker engine; not translated.
-const DOCKER_NAME: &str = "Docker";
-/// Brand name of a Podman engine; not translated.
-const PODMAN_NAME: &str = "Podman";
 
 /// One row of the engine tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -282,20 +276,6 @@ pub(crate) fn inspector(state: &ContainersState) -> Option<InspectorViewModel> {
     })
 }
 
-/// The engine name and version for the tree root, e.g.
-/// "Docker 29.9.1" or "Podman 5.8.8".
-pub(crate) fn engine_label(info: &EngineInfo) -> String {
-    let kind = match info.kind() {
-        EngineKind::Docker => DOCKER_NAME,
-        EngineKind::Podman => PODMAN_NAME,
-    };
-
-    match info.version() {
-        Some(version) => format!("{kind} {version}"),
-        None => kind.to_string(),
-    }
-}
-
 /// The note on the right of a list row: the count (running containers for
 /// Containers), nothing while it loads, or that it failed.
 /// The no-engine card of a finished search; `None` while it runs.
@@ -418,8 +398,8 @@ fn table<'a, T>(
 #[cfg(test)]
 mod tests {
     use otty_containers::{
-        CandidateSource, Container, Discovery, EngineAddress, EngineKind,
-        fixtures,
+        CandidateSource, Container, Discovery, EngineAddress, EngineInfo,
+        EngineKind, fixtures,
     };
     use otty_ui_kit::components::data_table::CellPart;
     use otty_ui_kit::components::tag_search::TagSearchAction;
@@ -950,12 +930,6 @@ mod tests {
         let state = ContainersState::default();
 
         assert_eq!(panel_note(&state), None);
-    }
-
-    #[test]
-    fn engines_are_named_by_kind_and_version() {
-        assert_eq!(engine_label(&docker()), "Docker 29.9.1");
-        assert_eq!(engine_label(&podman()), "Podman 5.8.8");
     }
 
     #[test]

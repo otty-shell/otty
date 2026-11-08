@@ -5,11 +5,11 @@ use iced::Point;
 use otty_containers::{Container, EngineKind, Image, Network, Volume};
 
 use super::actions::{
-    Confirm, EngineAction, ImageRemoval, REMOVE_ONLY, RowAction,
-    container_actions, image_actions, network_remove_hint, volume_remove_hint,
+    Confirm, ImageRemoval, REMOVE_ONLY, RowAction, container_actions,
+    image_actions, network_remove_hint, volume_remove_hint,
 };
 use super::state::ContainersState;
-use super::types::ResourceKind;
+use super::types::{EngineAction, ResourceKind};
 use crate::i18n::{self, Key};
 
 /// One action button of the inspector, or one item of the row menu.

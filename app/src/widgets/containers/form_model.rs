@@ -1,11 +1,10 @@
 //! View model of the open create dialog: its fields, its action button and
 //! the progress line of a running pull.
 
-use otty_containers::PullProgress;
-
-use super::format::size_text;
+use super::format::pull_amount;
 use super::forms::{FormField, FormKind};
 use super::state::ContainersState;
+use crate::components::pull_line::PullLineViewModel;
 use crate::i18n::{self, Key};
 
 /// One text field of the create dialog.
@@ -16,17 +15,6 @@ pub(crate) struct FieldViewModel<'a> {
     pub(crate) value: &'a str,
     /// Shown while the field is empty; empty for none.
     pub(crate) placeholder: &'static str,
-}
-
-/// The progress line of a running pull.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PullLineViewModel {
-    /// "Pulling nginx:latest".
-    pub(crate) text: String,
-    /// How far the bar is filled, 0 to 1.
-    pub(crate) fraction: f32,
-    /// "15.0 MB of 47.0 MB", once the engine sent sizes.
-    pub(crate) amount: Option<String>,
 }
 
 /// The open create dialog.
@@ -85,19 +73,6 @@ pub(crate) fn form_dialog(
         can_submit: form.can_submit(),
         is_editable: !form.is_pulling(),
     })
-}
-
-/// The bytes of a pull, e.g. "15.0 MB of 47.0 MB"; `None` until the
-/// engine sent a layer size.
-pub(crate) fn pull_amount(progress: &PullProgress) -> Option<String> {
-    if progress.total() == 0 {
-        return None;
-    }
-
-    Some(i18n::containers_pull_amount(
-        &size_text(progress.downloaded()),
-        &size_text(progress.total()),
-    ))
 }
 
 /// The label and placeholder keys of `field` in a dialog of `kind`.
@@ -265,17 +240,6 @@ mod tests {
         assert_eq!(network.fields[1].value, "bridge");
         assert!(!empty_network_can_submit);
         assert!(network.can_submit);
-    }
-
-    #[test]
-    fn the_amount_shows_once_sizes_are_known() {
-        let progress = otty_containers::PullProgress::default();
-
-        assert_eq!(pull_amount(&progress), None);
-        assert_eq!(
-            pull_amount(&fixtures::pull_progress()),
-            Some(i18n::containers_pull_amount("15 MB", "47 MB"))
-        );
     }
 
     #[test]

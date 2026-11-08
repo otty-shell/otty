@@ -5,8 +5,8 @@ use std::collections::HashSet;
 
 use otty_containers::{Container, ContainerState, Image};
 
-use super::format::size_text;
-use super::model::{engine_label, no_engine_view};
+use super::format::{engine_label, size_text};
+use super::model::no_engine_view;
 use super::state::{ContainersState, EngineState, ListLoad, ResourceList};
 use super::types::ResourceKind;
 use crate::i18n::{self, Key};

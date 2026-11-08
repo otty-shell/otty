@@ -24,7 +24,7 @@ use super::super::run_form::RunEdit;
 use super::super::run_model::{
     PortRowViewModel, RunFormViewModel, VolumeRowViewModel,
 };
-use super::form_dialog::pull_line;
+use crate::components::pull_line::pull_line;
 use crate::i18n::{self, Key};
 use crate::icons;
 use crate::theme::ThemeProps;

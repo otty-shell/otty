@@ -1,7 +1,7 @@
 //! Short texts for the Containers tables and the inspector: ages, dates, sizes,
-//! IDs and ports.
+//! IDs, ports, engine names and pull amounts.
 
-use otty_containers::PortMapping;
+use otty_containers::{EngineInfo, EngineKind, PortMapping, PullProgress};
 
 use crate::i18n::{self, Key};
 
@@ -13,6 +13,11 @@ const SIZE_UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
 const SHORT_ID_LENGTH: usize = 12;
 /// Prefix of image and digest IDs.
 const DIGEST_PREFIX: &str = "sha256:";
+
+/// Brand name of a Docker engine; not translated.
+const DOCKER_NAME: &str = "Docker";
+/// Brand name of a Podman engine; not translated.
+const PODMAN_NAME: &str = "Podman";
 
 const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
@@ -125,6 +130,33 @@ pub(crate) fn port_text(port: &PortMapping) -> String {
         Some(host) => format!("{host}:{container}/{protocol}"),
         None => format!("{container}/{protocol}"),
     }
+}
+
+/// The engine name and version for the tree root, e.g.
+/// "Docker 29.9.1" or "Podman 5.8.8".
+pub(crate) fn engine_label(info: &EngineInfo) -> String {
+    let kind = match info.kind() {
+        EngineKind::Docker => DOCKER_NAME,
+        EngineKind::Podman => PODMAN_NAME,
+    };
+
+    match info.version() {
+        Some(version) => format!("{kind} {version}"),
+        None => kind.to_string(),
+    }
+}
+
+/// The bytes of a pull, e.g. "15.0 MB of 47.0 MB"; `None` until the
+/// engine sent a layer size.
+pub(crate) fn pull_amount(progress: &PullProgress) -> Option<String> {
+    if progress.total() == 0 {
+        return None;
+    }
+
+    Some(i18n::containers_pull_amount(
+        &size_text(progress.downloaded()),
+        &size_text(progress.total()),
+    ))
 }
 
 /// The template and number of an age of `seconds`; `None` for under a
@@ -318,5 +350,25 @@ mod tests {
 
         assert_eq!(created.name(), "otty-fx-created");
         assert_eq!(ports_text(created.ports()), NO_VALUE);
+    }
+
+    #[test]
+    fn engines_are_named_by_kind_and_version() {
+        let docker = fixtures::engine(EngineKind::Docker);
+        let podman = fixtures::engine(EngineKind::Podman);
+
+        assert_eq!(engine_label(&docker), "Docker 29.9.1");
+        assert_eq!(engine_label(&podman), "Podman 5.8.8");
+    }
+
+    #[test]
+    fn the_amount_shows_once_sizes_are_known() {
+        let progress = otty_containers::PullProgress::default();
+
+        assert_eq!(pull_amount(&progress), None);
+        assert_eq!(
+            pull_amount(&fixtures::pull_progress()),
+            Some(i18n::containers_pull_amount("15 MB", "47 MB"))
+        );
     }
 }

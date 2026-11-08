@@ -103,7 +103,7 @@ pub const ALLOWLIST: &[Allowed] = &[
         Rule::WidgetModuleVisibility,
         "widgets/containers/mod.rs",
         "pub(crate) mod actions",
-        "the containers route and tests outside the widget use its action types, which travel in intents; move them into types.rs",
+        "only tests outside the widget name RowAction, which travels in intents; move it into the types.rs of the actions part",
     ),
     Allowed::known(
         Rule::WidgetModuleVisibility,

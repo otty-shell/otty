@@ -2,18 +2,17 @@
 //! progress line of the pull), Create volume and Create network (name and
 //! driver).
 
-use iced::widget::{Id, column, row, text};
-use iced::{Alignment, Element};
+use iced::Element;
+use iced::widget::{Id, column};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
-use otty_ui_kit::components::progress_bar::ProgressBar;
 use otty_ui_kit::components::text_field::TextField;
-use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::spacing;
 
 use super::super::event::ContainersIntent;
-use super::super::form_model::{FormViewModel, PullLineViewModel};
+use super::super::form_model::FormViewModel;
 use super::super::forms::FormField;
+use crate::components::pull_line::pull_line;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
@@ -77,44 +76,15 @@ pub(crate) fn field_id(field: FormField) -> Id {
     }
 }
 
-/// "Pulling nginx:latest", the bar, and the bytes so far, going on to the next
-/// line when they do not fit. The Run form shows the same line in its footer.
-pub(crate) fn pull_line<'a>(
-    progress: PullLineViewModel,
-    palette: &UiPalette,
-) -> Element<'a, ContainersIntent> {
-    let hint = typography::SMALL;
-    let muted = |content: String| {
-        text(content)
-            .size(hint.size())
-            .line_height(iced::Pixels(hint.line_height()))
-            .font(fonts::UI)
-            .color(palette.text_muted())
-    };
-
-    let mut line = row![
-        muted(progress.text),
-        ProgressBar::new(progress.fraction, palette),
-    ]
-    .spacing(spacing::SPACE_3)
-    .align_y(Alignment::Center);
-    if let Some(amount) = progress.amount {
-        line = line.push(muted(amount).font(fonts::MONO));
-    }
-
-    line.wrap().vertical_spacing(spacing::SPACE_1).into()
-}
-
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
 
     use super::*;
+    use crate::components::pull_line::PullLineViewModel;
     use crate::i18n::{self, Key};
     use crate::theme::ThemeManager;
-    use crate::widgets::containers::form_model::{
-        FieldViewModel, PullLineViewModel,
-    };
+    use crate::widgets::containers::form_model::FieldViewModel;
 
     fn pull_dialog(can_submit: bool) -> FormViewModel<'static> {
         FormViewModel {

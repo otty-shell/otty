@@ -1,14 +1,10 @@
 //! What the user can do with a row or a list (spec Decision 11): the
-//! actions each container state and image offers, when Remove is disabled,
-//! the engine call each action makes and the confirmation a destructive one
-//! asks for.
+//! actions each container state and image offers, when Remove is disabled
+//! and the confirmation a destructive one asks for.
 
-use otty_containers::{
-    ContainerState, EngineAddress, EngineInfo, EngineKind, Image, Network,
-    Volume,
-};
+use otty_containers::{ContainerState, EngineKind, Image, Network, Volume};
 
-use super::types::ResourceKind;
+use super::types::ActionRequest;
 use crate::i18n::{self, Key};
 
 /// The only action of a volume or a network row.
@@ -53,129 +49,6 @@ impl RowAction {
     /// color.
     pub(crate) fn is_danger(self) -> bool {
         self == Self::Remove
-    }
-}
-
-/// One engine call the app makes for an action.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum EngineAction {
-    /// Start the container with this id.
-    StartContainer(String),
-    StopContainer(String),
-    RestartContainer(String),
-    PauseContainer(String),
-    UnpauseContainer(String),
-    /// Remove the container; `force` kills a running one first.
-    RemoveContainer {
-        id: String,
-        force: bool,
-    },
-    /// Remove every stopped container.
-    PruneContainers,
-    /// Remove this image name or id; `force` goes past a container that uses
-    /// the image, see [`ImageRemoval`].
-    RemoveImage {
-        reference: String,
-        force: bool,
-    },
-    /// Remove every dangling image no container uses.
-    PruneImages,
-    /// Create a volume; a blank name lets the engine pick one.
-    CreateVolume {
-        name: String,
-        driver: String,
-    },
-    /// Remove the volume with this name.
-    RemoveVolume(String),
-    /// Remove the anonymous volumes no container uses; `include_named` adds
-    /// the named ones.
-    PruneVolumes {
-        include_named: bool,
-    },
-    CreateNetwork {
-        name: String,
-        driver: String,
-    },
-    /// Remove the network with this id.
-    RemoveNetwork(String),
-    /// Remove every user network no container uses.
-    PruneNetworks,
-}
-
-impl EngineAction {
-    /// The list the action changes.
-    pub(crate) fn resource(&self) -> ResourceKind {
-        match self {
-            Self::RemoveImage { .. } | Self::PruneImages => {
-                ResourceKind::Images
-            },
-            Self::CreateVolume { .. }
-            | Self::RemoveVolume(_)
-            | Self::PruneVolumes { .. } => ResourceKind::Volumes,
-            Self::CreateNetwork { .. }
-            | Self::RemoveNetwork(_)
-            | Self::PruneNetworks => ResourceKind::Networks,
-            _ => ResourceKind::Containers,
-        }
-    }
-
-    /// The id of the row the action works on; `None` for a prune, which
-    /// works on the whole list, and for a create.
-    pub(crate) fn target(&self) -> Option<&str> {
-        match self {
-            Self::StartContainer(id)
-            | Self::StopContainer(id)
-            | Self::RestartContainer(id)
-            | Self::PauseContainer(id)
-            | Self::UnpauseContainer(id)
-            | Self::RemoveContainer { id, .. }
-            | Self::RemoveImage { reference: id, .. }
-            | Self::RemoveVolume(id)
-            | Self::RemoveNetwork(id) => Some(id),
-            _ => None,
-        }
-    }
-
-    /// Translation key of the notice shown when the engine refuses it.
-    pub(crate) fn failure_key(&self) -> Key {
-        match self {
-            Self::StartContainer(_) => Key::TplContainersStartFailed,
-            Self::StopContainer(_) => Key::TplContainersStopFailed,
-            Self::RestartContainer(_) => Key::TplContainersRestartFailed,
-            Self::PauseContainer(_) => Key::TplContainersPauseFailed,
-            Self::UnpauseContainer(_) => Key::TplContainersUnpauseFailed,
-            Self::RemoveContainer { .. } => {
-                Key::TplContainersRemoveContainerFailed
-            },
-            Self::PruneContainers => Key::TplContainersPruneContainersFailed,
-            Self::RemoveImage { .. } => Key::TplContainersRemoveImageFailed,
-            Self::PruneImages => Key::TplContainersPruneImagesFailed,
-            Self::CreateVolume { .. } => Key::TplContainersCreateVolumeFailed,
-            Self::RemoveVolume(_) => Key::TplContainersRemoveVolumeFailed,
-            Self::PruneVolumes { .. } => Key::TplContainersPruneVolumesFailed,
-            Self::CreateNetwork { .. } => Key::TplContainersCreateNetworkFailed,
-            Self::RemoveNetwork(_) => Key::TplContainersRemoveNetworkFailed,
-            Self::PruneNetworks => Key::TplContainersPruneNetworksFailed,
-        }
-    }
-
-    /// The same action with the confirmation switch applied: it forces a
-    /// container or image removal and adds named volumes to a volume prune.
-    /// Other actions have no switch.
-    fn with_switch(self, is_on: bool) -> Self {
-        match self {
-            Self::RemoveContainer { id, .. } => {
-                Self::RemoveContainer { id, force: is_on }
-            },
-            Self::RemoveImage { reference, .. } => Self::RemoveImage {
-                reference,
-                force: is_on,
-            },
-            Self::PruneVolumes { .. } => Self::PruneVolumes {
-                include_named: is_on,
-            },
-            other => other,
-        }
     }
 }
 
@@ -234,58 +107,6 @@ impl ImageRemoval {
             EngineKind::Docker => Self::ForceKeepsContainers,
             EngineKind::Podman => Self::ForceDeletesContainers,
         }
-    }
-}
-
-/// An action on one engine, with the name of its row for the failure
-/// notice (empty for a prune).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ActionRequest {
-    engine: EngineInfo,
-    action: EngineAction,
-    name: String,
-}
-
-impl ActionRequest {
-    /// The engine the action runs on.
-    pub(crate) fn engine(&self) -> &EngineInfo {
-        &self.engine
-    }
-
-    /// The engine call.
-    pub(crate) fn action(&self) -> &EngineAction {
-        &self.action
-    }
-
-    /// The name of the row, as the table shows it.
-    pub(crate) fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// An `action` on `engine` for the row called `name`.
-    pub(crate) fn new(
-        engine: EngineInfo,
-        action: EngineAction,
-        name: String,
-    ) -> Self {
-        Self {
-            engine,
-            action,
-            name,
-        }
-    }
-
-    /// Whether the request works on the row `target` (or, with `None`, on
-    /// the whole list) of the `resource` list of the engine at `address`.
-    pub(crate) fn acts_on(
-        &self,
-        address: &EngineAddress,
-        resource: ResourceKind,
-        target: Option<&str>,
-    ) -> bool {
-        self.engine.address() == address
-            && self.action.resource() == resource
-            && self.action.target() == target
     }
 }
 
@@ -369,10 +190,7 @@ impl Confirm {
             return self.request;
         };
 
-        ActionRequest {
-            action: self.request.action.with_switch(is_on),
-            ..self.request
-        }
+        self.request.with_switch(is_on)
     }
 }
 
@@ -444,8 +262,8 @@ pub(crate) fn network_remove_hint(network: &Network) -> Option<String> {
 /// engine's `message`.
 pub(crate) fn failure_text(request: &ActionRequest, message: &str) -> String {
     i18n::containers_action_failed(
-        request.action.failure_key(),
-        &request.name,
+        request.action().failure_key(),
+        request.name(),
         message,
     )
 }
@@ -456,6 +274,7 @@ mod tests {
 
     use super::*;
     use crate::i18n;
+    use crate::widgets::containers::types::EngineAction;
 
     fn request(action: EngineAction) -> ActionRequest {
         ActionRequest::new(
@@ -463,13 +282,6 @@ mod tests {
             action,
             String::from("otty-fx-running"),
         )
-    }
-
-    #[test]
-    fn an_action_without_a_switch_ignores_the_switch() {
-        let action = EngineAction::StopContainer(String::from("web"));
-
-        assert_eq!(action.clone().with_switch(true), action);
     }
 
     #[test]
@@ -644,60 +456,6 @@ mod tests {
     }
 
     #[test]
-    fn each_action_names_its_list_and_its_row() {
-        let id = String::from("c1");
-        let actions = [
-            EngineAction::StartContainer(id.clone()),
-            EngineAction::StopContainer(id.clone()),
-            EngineAction::RestartContainer(id.clone()),
-            EngineAction::PauseContainer(id.clone()),
-            EngineAction::UnpauseContainer(id.clone()),
-            EngineAction::RemoveContainer {
-                id: id.clone(),
-                force: true,
-            },
-        ];
-
-        for action in actions {
-            assert_eq!(action.resource(), ResourceKind::Containers);
-            assert_eq!(action.target(), Some("c1"), "{action:?}");
-        }
-        assert_eq!(
-            EngineAction::PruneContainers.resource(),
-            ResourceKind::Containers
-        );
-        assert_eq!(EngineAction::PruneContainers.target(), None);
-    }
-
-    #[test]
-    fn a_request_runs_on_its_engine_list_and_row() {
-        let stop = request(EngineAction::StopContainer(String::from("c1")));
-        let docker = fixtures::engine(EngineKind::Docker);
-        let podman = fixtures::engine(EngineKind::Podman);
-
-        assert!(stop.acts_on(
-            docker.address(),
-            ResourceKind::Containers,
-            Some("c1")
-        ));
-        assert!(!stop.acts_on(
-            docker.address(),
-            ResourceKind::Containers,
-            Some("c2")
-        ));
-        assert!(!stop.acts_on(
-            podman.address(),
-            ResourceKind::Containers,
-            Some("c1")
-        ));
-        assert!(!stop.acts_on(
-            docker.address(),
-            ResourceKind::Containers,
-            None
-        ));
-    }
-
-    #[test]
     fn the_switch_of_a_remove_confirmation_forces_the_removal() {
         let remove = request(EngineAction::RemoveContainer {
             id: String::from("c1"),
@@ -759,104 +517,6 @@ mod tests {
         assert!(stop_text.contains("otty-fx-running"), "{stop_text}");
         assert!(stop_text.contains("it is restarting"), "{stop_text}");
         assert!(prune_text.contains("engine is busy"), "{prune_text}");
-    }
-
-    #[test]
-    fn every_failure_has_its_own_text() {
-        let id = || String::from("c1");
-        let keys: Vec<Key> = [
-            EngineAction::StartContainer(id()),
-            EngineAction::StopContainer(id()),
-            EngineAction::RestartContainer(id()),
-            EngineAction::PauseContainer(id()),
-            EngineAction::UnpauseContainer(id()),
-            EngineAction::RemoveContainer {
-                id: id(),
-                force: false,
-            },
-            EngineAction::PruneContainers,
-            EngineAction::RemoveImage {
-                reference: id(),
-                force: false,
-            },
-            EngineAction::PruneImages,
-            EngineAction::CreateVolume {
-                name: id(),
-                driver: id(),
-            },
-            EngineAction::RemoveVolume(id()),
-            EngineAction::PruneVolumes {
-                include_named: false,
-            },
-            EngineAction::CreateNetwork {
-                name: id(),
-                driver: id(),
-            },
-            EngineAction::RemoveNetwork(id()),
-            EngineAction::PruneNetworks,
-        ]
-        .iter()
-        .map(EngineAction::failure_key)
-        .collect();
-
-        for (position, key) in keys.iter().enumerate() {
-            assert!(!keys[position + 1..].contains(key), "{key:?} repeats");
-        }
-    }
-
-    #[test]
-    fn image_volume_and_network_actions_name_their_list_and_row() {
-        let id = || String::from("x1");
-        let cases = [
-            (
-                EngineAction::RemoveImage {
-                    reference: id(),
-                    force: true,
-                },
-                ResourceKind::Images,
-                Some("x1"),
-            ),
-            (EngineAction::PruneImages, ResourceKind::Images, None),
-            (
-                EngineAction::CreateVolume {
-                    name: id(),
-                    driver: String::from("local"),
-                },
-                ResourceKind::Volumes,
-                None,
-            ),
-            (
-                EngineAction::RemoveVolume(id()),
-                ResourceKind::Volumes,
-                Some("x1"),
-            ),
-            (
-                EngineAction::PruneVolumes {
-                    include_named: false,
-                },
-                ResourceKind::Volumes,
-                None,
-            ),
-            (
-                EngineAction::CreateNetwork {
-                    name: id(),
-                    driver: String::from("bridge"),
-                },
-                ResourceKind::Networks,
-                None,
-            ),
-            (
-                EngineAction::RemoveNetwork(id()),
-                ResourceKind::Networks,
-                Some("x1"),
-            ),
-            (EngineAction::PruneNetworks, ResourceKind::Networks, None),
-        ];
-
-        for (action, resource, target) in cases {
-            assert_eq!(action.resource(), resource, "{action:?}");
-            assert_eq!(action.target(), target, "{action:?}");
-        }
     }
 
     #[test]

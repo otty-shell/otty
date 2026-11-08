@@ -7,13 +7,12 @@ use otty_containers::{EngineAddress, PortProtocol, RestartPolicy};
 use otty_ui_kit::components::status_badge::StatusTone;
 use otty_ui_kit::components::token_field::TokenList;
 
-use super::form_model::{PullLineViewModel, pull_amount};
-use super::format::size_text;
-use super::model::engine_label;
+use super::format::{engine_label, pull_amount, size_text};
 use super::run_checks::{RowProblem, check};
 use super::run_flow::can_run;
 use super::run_form::{ImageLookup, RESTART_CHOICES, RunForm, RunPhase};
 use super::state::ContainersState;
+use crate::components::pull_line::PullLineViewModel;
 use crate::i18n::{self, Key};
 
 /// One engine of the engine select.

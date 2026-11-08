@@ -18,13 +18,13 @@ use super::AppEvent;
 use crate::app::App;
 use crate::domain::exit_behavior::ExitBehavior;
 use crate::services::{self, terminal_settings_for_session};
-use crate::widgets::containers::actions::{ActionRequest, EngineAction};
 use crate::widgets::containers::event::{
     ContainersEffect, ContainersEvent, ContainersIntent,
 };
 use crate::widgets::containers::inspector::{InspectTarget, LogTarget};
 use crate::widgets::containers::types::{
-    ContainersError, LoadedList, LoadedLists, ResourceKind,
+    ActionRequest, ContainersError, EngineAction, LoadedList, LoadedLists,
+    ResourceKind,
 };
 use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
@@ -439,7 +439,7 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::containers::actions::{ActionRequest, EngineAction};
+    use crate::widgets::containers::types::{ActionRequest, EngineAction};
 
     /// Run a waiting task on the runtime the app runs on. Returns the intents
     /// it sent and how long it took.

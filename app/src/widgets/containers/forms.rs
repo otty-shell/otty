@@ -4,10 +4,8 @@
 
 use otty_containers::{EngineInfo, PullProgress};
 
-use super::actions::EngineAction;
+use super::types::{DEFAULT_TAG, EngineAction};
 
-/// The tag a pull uses unless another one is typed.
-pub(crate) const DEFAULT_TAG: &str = "latest";
 /// The driver of a new volume unless another one is typed.
 const VOLUME_DRIVER: &str = "local";
 /// The driver of a new network unless another one is typed.
@@ -202,22 +200,6 @@ impl Form {
     }
 }
 
-/// Split an image reference into its name and tag:
-/// `docker.io/library/busybox:1.37` gives `docker.io/library/busybox` and
-/// `1.37`. A colon before the last `/` belongs to a registry port, so
-/// `localhost:5000/app` has the default tag.
-pub(crate) fn split_reference(reference: &str) -> (&str, &str) {
-    let name_start = reference.rfind('/').map_or(0, |slash| slash + 1);
-
-    match reference[name_start..].rfind(':') {
-        Some(colon) => {
-            let at = name_start + colon;
-            (&reference[..at], &reference[at + 1..])
-        },
-        None => (reference, DEFAULT_TAG),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use otty_containers::{EngineKind, PullProgress, fixtures};
@@ -226,23 +208,6 @@ mod tests {
 
     fn docker() -> EngineInfo {
         fixtures::engine(EngineKind::Docker)
-    }
-
-    #[test]
-    fn a_reference_splits_into_name_and_tag() {
-        assert_eq!(
-            split_reference("docker.io/library/busybox:1.37"),
-            ("docker.io/library/busybox", "1.37")
-        );
-        assert_eq!(split_reference("nginx"), ("nginx", DEFAULT_TAG));
-        assert_eq!(
-            split_reference("localhost:5000/app"),
-            ("localhost:5000/app", DEFAULT_TAG)
-        );
-        assert_eq!(
-            split_reference("localhost:5000/app:v2"),
-            ("localhost:5000/app", "v2")
-        );
     }
 
     #[test]

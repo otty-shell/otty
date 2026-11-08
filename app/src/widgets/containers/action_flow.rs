@@ -9,15 +9,18 @@ use otty_containers::{
 };
 
 use super::actions::{
-    ActionRequest, Confirm, EngineAction, ImageRemoval, REMOVE_ONLY, RowAction,
-    container_actions, failure_text, image_actions, needs_stop,
-    network_remove_hint, volume_remove_hint,
+    Confirm, ImageRemoval, REMOVE_ONLY, RowAction, container_actions,
+    failure_text, image_actions, needs_stop, network_remove_hint,
+    volume_remove_hint,
 };
 use super::event::{ContainersEffect, ContainersEvent};
-use super::forms::{Form, split_reference};
+use super::forms::Form;
 use super::run_flow;
 use super::state::ContainersState;
-use super::types::{ContainersError, ResourceKind, image_name};
+use super::types::{
+    ActionRequest, ContainersError, EngineAction, ResourceKind, image_name,
+    split_reference,
+};
 use crate::i18n::{self, Key};
 
 /// The row of the open list an action runs on and what it allows, copied
