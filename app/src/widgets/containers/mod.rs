@@ -211,10 +211,9 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::containers::inspector::InspectorTab;
     use crate::widgets::containers::run::event::RunIntent;
     use crate::widgets::containers::run::types::RunEdit;
-    use crate::widgets::containers::types::LoadedLists;
+    use crate::widgets::containers::types::{InspectorTab, LoadedLists};
 
     /// Containers mode active with the fixture Docker engine and its lists.
     fn loaded() -> ContainersWidget {

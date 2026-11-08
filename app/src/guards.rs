@@ -217,7 +217,7 @@ mod tests {
     use crate::widgets::containers::event::{
         ContainersEvent, ContainersIntent,
     };
-    use crate::widgets::containers::inspector::InspectorTab;
+    use crate::widgets::containers::types::InspectorTab;
     use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::event::{ModesEvent, ModesIntent};
     use crate::widgets::quick_launch::event::{

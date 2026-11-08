@@ -444,9 +444,8 @@ mod tests {
     use crate::theme::{BuiltinTheme, ThemeManager};
     use crate::widgets::containers::actions::ActionButton;
     use crate::widgets::containers::inspect_tree::InspectSection;
-    use crate::widgets::containers::inspector::InspectorTab;
     use crate::widgets::containers::overview::Field;
-    use crate::widgets::containers::types::ResourceKind;
+    use crate::widgets::containers::types::{InspectorTab, ResourceKind};
 
     fn header() -> Option<InspectorViewModel> {
         Some(InspectorViewModel {

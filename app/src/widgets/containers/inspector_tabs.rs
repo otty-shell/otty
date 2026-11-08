@@ -7,12 +7,12 @@ use otty_ui_kit::components::log_view::LogViewState;
 
 use super::inspect_links::InspectLinks;
 use super::inspect_tree::{InspectTree, inspect_tree};
-use super::inspector::{InspectLoad, InspectTarget, InspectorTab};
+use super::inspector::{InspectLoad, InspectTarget};
 use super::overview::{
     self, Field, container_fields, network_fields, volume_fields,
 };
 use super::state::{ContainersState, EngineState};
-use super::types::SelectedRow;
+use super::types::{InspectorTab, SelectedRow};
 
 /// The tab row and the body of the open tab.
 pub(crate) struct InspectorTabsViewModel<'a> {
@@ -65,7 +65,7 @@ pub(super) fn inspector_tabs(
     state: &ContainersState,
 ) -> Option<InspectorTabsViewModel<'_>> {
     let (engine, row) = state.selected_row()?;
-    let selected = state.inspector().tab();
+    let selected = state.inspector_tab();
 
     let content = match selected {
         InspectorTab::Logs => {
@@ -93,6 +93,9 @@ pub(super) fn inspector_tabs(
 /// switch. The reducer calls this after every intent; the view only reads the
 /// result.
 pub(super) fn refresh_inspect_tree(state: &mut ContainersState) {
+    if state.inspector_tab() != InspectorTab::Inspect {
+        return;
+    }
     let lists_version = state.lists_version();
     let Some(value) = state.inspector().answer_of_old_tree(lists_version)
     else {

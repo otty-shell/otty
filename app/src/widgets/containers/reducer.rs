@@ -651,8 +651,8 @@ mod tests {
     use crate::widgets::containers::create::FormViewModel;
     use crate::widgets::containers::inspect_tree::InspectTree;
     use crate::widgets::containers::inspector::{
-        InspectLoad, InspectTarget, InspectorTab, LogRead, LogTarget,
-        MAX_LOG_LINES, MAX_LOG_TEXT_BYTES,
+        InspectLoad, InspectTarget, LogRead, LogTarget, MAX_LOG_LINES,
+        MAX_LOG_TEXT_BYTES,
     };
     use crate::widgets::containers::inspector_tabs::{
         InspectContent, TabContent, inspector_tabs,
@@ -668,8 +668,8 @@ mod tests {
         COMPOSE_KEY, keys, keys_in,
     };
     use crate::widgets::containers::types::{
-        ActionRequest, ContainersError, EngineAction, LoadedList, LoadedLists,
-        Place, ResourceKind,
+        ActionRequest, ContainersError, EngineAction, InspectorTab, LoadedList,
+        LoadedLists, Place, ResourceKind,
     };
 
     fn docker() -> EngineInfo {
@@ -1392,7 +1392,7 @@ mod tests {
             ))
         );
         assert_eq!(state.selected_id(), Some(key.as_str()));
-        assert_eq!(state.inspector().tab(), InspectorTab::Overview);
+        assert_eq!(state.inspector_tab(), InspectorTab::Overview);
     }
 
     #[test]
@@ -1485,7 +1485,7 @@ mod tests {
         );
         assert_eq!(input_of(&state, ResourceKind::Images), "");
         assert_eq!(state.selected_id(), Some(key.as_str()));
-        assert_eq!(state.inspector().tab(), InspectorTab::Overview);
+        assert_eq!(state.inspector_tab(), InspectorTab::Overview);
         let (_, row) = state.selected_row().expect("the image is selected");
         assert_eq!(row.id(), busybox);
         // The image is shown in the table, sorted as the user left it.
@@ -1870,7 +1870,7 @@ mod tests {
 
         assert_eq!(before, None);
         assert!(effects.is_empty());
-        assert_eq!(state.inspector().tab(), InspectorTab::Logs);
+        assert_eq!(state.inspector_tab(), InspectorTab::Logs);
         assert_eq!(followed(&state), Some(container_id(0)));
         let logs = state.inspector().logs().expect("followed logs");
         assert_eq!(logs.target(), &log_target(0));
@@ -1934,7 +1934,7 @@ mod tests {
 
         let _ = reduce(&mut state, ContainersIntent::OpenCreate);
         let while_open = followed(&state);
-        let tab_while_open = state.inspector().tab();
+        let tab_while_open = state.inspector_tab();
         push_lines(&mut state, 0, &["late line of the old stream"]);
         let _ = reduce(&mut state, ContainersIntent::Run(RunIntent::Close));
 
@@ -1953,7 +1953,7 @@ mod tests {
 
         let _ = hide_right_panel(&mut state, true);
         let while_hidden = followed(&state);
-        let tab_while_hidden = state.inspector().tab();
+        let tab_while_hidden = state.inspector_tab();
         push_lines(&mut state, 0, &["late line of the old stream"]);
         let _ = hide_right_panel(&mut state, false);
 
@@ -1972,7 +1972,7 @@ mod tests {
 
         let _ = select_tab(&mut state, InspectorTab::Logs);
         let while_hidden = followed(&state);
-        let tab_while_hidden = state.inspector().tab();
+        let tab_while_hidden = state.inspector_tab();
         let _ = hide_right_panel(&mut state, false);
 
         assert_eq!(while_hidden, None);
@@ -2108,7 +2108,7 @@ mod tests {
 
         let _ = select_tab(&mut state, InspectorTab::Logs);
 
-        assert_eq!(state.inspector().tab(), InspectorTab::Overview);
+        assert_eq!(state.inspector_tab(), InspectorTab::Overview);
         assert_eq!(followed(&state), None);
     }
 
@@ -2118,12 +2118,44 @@ mod tests {
         let _ = select_tab(&mut state, InspectorTab::Logs);
 
         open(&mut state, ResourceKind::Images);
-        let on_images = state.inspector().tab();
+        let on_images = state.inspector_tab();
         open(&mut state, ResourceKind::Containers);
 
         assert_eq!(on_images, InspectorTab::Overview);
-        assert_eq!(state.inspector().tab(), InspectorTab::Overview);
+        assert_eq!(state.inspector_tab(), InspectorTab::Overview);
         assert_eq!(followed(&state), None);
+    }
+
+    /// The user opened no list: the view moved on to the containers of the
+    /// engine that is left, so the open tab stays.
+    #[test]
+    fn a_place_moved_from_a_lost_engine_keeps_the_open_tab() {
+        let mut state = loaded_state();
+        let _ = select_tab(&mut state, InspectorTab::Logs);
+
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Podman,
+            ])),
+        );
+        let _ = reduce(
+            &mut state,
+            ContainersIntent::ListsLoaded {
+                engine: podman().address().clone(),
+                lists: lists(EngineKind::Podman),
+            },
+        );
+
+        assert_eq!(
+            state.place(),
+            Some(&Place::new(
+                podman().address().clone(),
+                ResourceKind::Containers
+            ))
+        );
+        assert_eq!(state.inspector_tab(), InspectorTab::Logs);
+        assert_eq!(followed_target(&state).engine(), &podman());
     }
 
     #[test]
@@ -4687,7 +4719,7 @@ mod tests {
             },
         );
 
-        assert_eq!(state.inspector().tab(), InspectorTab::Logs);
+        assert_eq!(state.inspector_tab(), InspectorTab::Logs);
         assert_eq!(followed(&state), Some(container_id(1)));
         assert_eq!(followed_target(&state).read(), LogRead::LastLines);
         assert_eq!(log_line_count(&state), 0);
@@ -5546,7 +5578,7 @@ mod tests {
                 tags_of(&state, ResourceKind::Containers),
                 vec!["Compose:otty-fx"]
             );
-            assert_eq!(state.inspector().tab(), InspectorTab::Inspect);
+            assert_eq!(state.inspector_tab(), InspectorTab::Inspect);
             assert_eq!(state.notice(), Some("the engine said no"));
         }
     }

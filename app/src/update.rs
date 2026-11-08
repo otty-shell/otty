@@ -218,11 +218,11 @@ mod tests {
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::event::ContainersEffect;
-    use crate::widgets::containers::inspector::{InspectorTab, LogTarget};
+    use crate::widgets::containers::inspector::LogTarget;
     use crate::widgets::containers::inspector_tabs::TabContent;
     use crate::widgets::containers::run::event::{RunEffect, RunIntent};
     use crate::widgets::containers::run::types::RunEdit;
-    use crate::widgets::containers::types::LoadedLists;
+    use crate::widgets::containers::types::{InspectorTab, LoadedLists};
     use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::sidebar::types::HeaderMenu;

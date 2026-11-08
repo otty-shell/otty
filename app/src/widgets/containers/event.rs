@@ -7,11 +7,11 @@ use otty_ui_kit::components::tag_search::TagSearchAction;
 
 use super::actions::event::{ActionsEffect, ActionsIntent};
 use super::create::event::{CreateEffect, CreateIntent};
-use super::inspector::{InspectTarget, InspectorTab, LogTarget};
+use super::inspector::{InspectTarget, LogTarget};
 use super::links::LinkTarget;
 use super::run::event::{RunEffect, RunIntent};
 use super::types::{
-    ContainersError, LoadedList, LoadedLists, Place, ResourceKind,
+    ContainersError, InspectorTab, LoadedList, LoadedLists, Place, ResourceKind,
 };
 
 /// Intent events handled by the Containers widget.

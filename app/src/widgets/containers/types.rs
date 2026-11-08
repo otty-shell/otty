@@ -1,3 +1,5 @@
+use std::fmt;
+
 use otty_containers::{
     Container, EngineAddress, EngineError, EngineInfo, Image, Network, Volume,
 };
@@ -10,7 +12,7 @@ use super::sort::{
 use super::table_search::{
     container_row, image_row, keys, network_row, volume_row,
 };
-use crate::i18n::Key;
+use crate::i18n::{self, Key};
 
 /// How `docker images` names an image without a tag.
 const DANGLING_IMAGE_NAME: &str = "<none>:<none>";
@@ -18,6 +20,15 @@ const DANGLING_IMAGE_NAME: &str = "<none>:<none>";
 const NO_IMAGE_PART: &str = "<none>";
 /// The tag a pull uses unless another one is typed.
 pub(crate) const DEFAULT_TAG: &str = "latest";
+/// The inspector tabs of a container.
+const CONTAINER_TABS: [InspectorTab; 3] = [
+    InspectorTab::Overview,
+    InspectorTab::Logs,
+    InspectorTab::Inspect,
+];
+/// The inspector tabs of an image, a volume or a network: they have no logs.
+const OTHER_TABS: [InspectorTab; 2] =
+    [InspectorTab::Overview, InspectorTab::Inspect];
 
 /// What the main area of Containers mode lists (spec Decision 10).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -91,6 +102,45 @@ impl Place {
     /// The `resource` list of the engine at `engine`.
     pub(crate) fn new(engine: EngineAddress, resource: ResourceKind) -> Self {
         Self { engine, resource }
+    }
+}
+
+/// One tab of the inspector. The open tab belongs to the widget, not to the
+/// inspector: opening another list goes back to Overview, and a list the view
+/// moved to by itself keeps the tab.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum InspectorTab {
+    /// Key facts of the selected row.
+    #[default]
+    Overview,
+    /// The followed logs of the selected container.
+    Logs,
+    /// The engine's inspect answer of the selected row, as a tree or JSON.
+    Inspect,
+}
+
+impl InspectorTab {
+    /// The tabs of `resource`, in order: only containers have Logs.
+    pub(crate) fn of(resource: ResourceKind) -> &'static [Self] {
+        match resource {
+            ResourceKind::Containers => &CONTAINER_TABS,
+            _ => &OTHER_TABS,
+        }
+    }
+
+    /// Translation key of the tab label.
+    fn label_key(self) -> Key {
+        match self {
+            Self::Overview => Key::ContainersTabOverview,
+            Self::Logs => Key::ContainersTabLogs,
+            Self::Inspect => Key::ContainersTabInspect,
+        }
+    }
+}
+
+impl fmt::Display for InspectorTab {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(i18n::t(self.label_key()))
     }
 }
 

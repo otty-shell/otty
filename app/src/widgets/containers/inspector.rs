@@ -1,6 +1,6 @@
-//! State of the inspector tabs (spec Decision 12): the open tab, the
-//! followed logs of the selected container and the inspect JSON of the
-//! selected row.
+//! State of the inspector tabs (spec Decision 12): the followed logs of the
+//! selected container and the inspect JSON of the selected row. The open tab
+//! belongs to the widget.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -22,53 +22,6 @@ pub(crate) const MAX_LOG_LINES: usize = 5000;
 /// shown lines and the lines waiting while Follow is off together, plus at most
 /// the newest waiting line, which is always kept.
 pub(crate) const MAX_LOG_TEXT_BYTES: usize = 16 * 1024 * 1024;
-
-/// The tabs of a container.
-const CONTAINER_TABS: [InspectorTab; 3] = [
-    InspectorTab::Overview,
-    InspectorTab::Logs,
-    InspectorTab::Inspect,
-];
-/// The tabs of an image, a volume or a network: they have no logs.
-const OTHER_TABS: [InspectorTab; 2] =
-    [InspectorTab::Overview, InspectorTab::Inspect];
-
-/// One tab of the inspector.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) enum InspectorTab {
-    /// Key facts of the selected row.
-    #[default]
-    Overview,
-    /// The followed logs of the selected container.
-    Logs,
-    /// The engine's inspect answer of the selected row, as a tree or JSON.
-    Inspect,
-}
-
-impl InspectorTab {
-    /// The tabs of `resource`, in order: only containers have Logs.
-    pub(crate) fn of(resource: ResourceKind) -> &'static [Self] {
-        match resource {
-            ResourceKind::Containers => &CONTAINER_TABS,
-            _ => &OTHER_TABS,
-        }
-    }
-
-    /// Translation key of the tab label.
-    fn label_key(self) -> Key {
-        match self {
-            Self::Overview => Key::ContainersTabOverview,
-            Self::Logs => Key::ContainersTabLogs,
-            Self::Inspect => Key::ContainersTabInspect,
-        }
-    }
-}
-
-impl fmt::Display for InspectorTab {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(i18n::t(self.label_key()))
-    }
-}
 
 /// Which lines a logs stream reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -404,10 +357,9 @@ impl InspectData {
     }
 }
 
-/// The inspector's open tab, the followed logs and the last inspect JSON.
+/// The inspector's followed logs and the last inspect JSON.
 #[derive(Debug, Default)]
 pub(crate) struct InspectorState {
-    tab: InspectorTab,
     logs: Option<ContainerLogs>,
     inspect: Option<InspectData>,
     is_raw_json: bool,
@@ -415,11 +367,6 @@ pub(crate) struct InspectorState {
 }
 
 impl InspectorState {
-    /// The open tab.
-    pub(crate) fn tab(&self) -> InspectorTab {
-        self.tab
-    }
-
     /// Whether the Inspect tab shows the raw JSON instead of the tree.
     pub(crate) fn is_raw_json(&self) -> bool {
         self.is_raw_json
@@ -447,11 +394,6 @@ impl InspectorState {
             InspectLoad::Loaded(loaded) => Some(loaded.json.text()),
             _ => None,
         }
-    }
-
-    /// Open `tab`.
-    pub(super) fn select_tab(&mut self, tab: InspectorTab) {
-        self.tab = tab;
     }
 
     /// Follow the logs of `target`, or of nothing. Logs of another container
@@ -637,13 +579,14 @@ impl InspectorState {
         }
     }
 
-    /// The loaded answer whose tree is on screen and was not built from the
-    /// lists at `lists_version` with the current Show empty switch.
+    /// The loaded answer, when it shows as a tree (the Raw JSON switch is off)
+    /// that was not built from the lists at `lists_version` with the current
+    /// Show empty switch. The caller checks that the Inspect tab is open.
     pub(super) fn answer_of_old_tree(
         &self,
         lists_version: u64,
     ) -> Option<&Value> {
-        if self.tab != InspectorTab::Inspect || self.is_raw_json {
+        if self.is_raw_json {
             return None;
         }
         let InspectLoad::Loaded(loaded) = self.inspect.as_ref()?.load() else {

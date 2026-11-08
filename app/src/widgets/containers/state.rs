@@ -11,9 +11,7 @@ use otty_ui_kit::components::tag_search::{
 
 use super::actions::{ActionsCtx, ActionsState};
 use super::create::CreateState;
-use super::inspector::{
-    InspectTarget, InspectorState, InspectorTab, LogTarget,
-};
+use super::inspector::{InspectTarget, InspectorState, LogTarget};
 use super::resource_rows::port_urls;
 use super::run::{RunCtx, RunEngine, RunState};
 use super::sort::{TableSort, TableSorts};
@@ -22,8 +20,9 @@ use super::table_search::{
     images_schema, network_row, networks_schema, volume_row, volumes_schema,
 };
 use super::types::{
-    ContainersError, LoadedList, LoadedLists, OpenList, Place, ResourceKind,
-    SelectedRow, shown_containers, shown_images, shown_networks, shown_volumes,
+    ContainersError, InspectorTab, LoadedList, LoadedLists, OpenList, Place,
+    ResourceKind, SelectedRow, shown_containers, shown_images, shown_networks,
+    shown_volumes,
 };
 
 /// Runtime state of Containers mode: the engines and their lists, the open
@@ -64,6 +63,10 @@ pub(super) struct ContainersState {
     sorts: TableSorts,
     /// The kept tag search of each page; not saved to disk.
     searches: TableSearches,
+    /// The open inspector tab. It is kept here and not in the inspector,
+    /// because only opening a list goes back to Overview: a place that moves
+    /// on by itself, when its engine goes away, keeps the tab.
+    inspector_tab: InspectorTab,
     inspector: InspectorState,
     /// The actions: the ones that run, the open confirmation and the row
     /// menu.
@@ -158,6 +161,11 @@ impl ContainersState {
         Some(schema)
     }
 
+    /// Return the open inspector tab.
+    pub(crate) fn inspector_tab(&self) -> InspectorTab {
+        self.inspector_tab
+    }
+
     /// Return the state of the inspector tabs.
     pub(crate) fn inspector(&self) -> &InspectorState {
         &self.inspector
@@ -173,7 +181,7 @@ impl ContainersState {
     /// on screen and a container is selected.
     pub(crate) fn wanted_log_target(&self) -> Option<LogTarget> {
         if !self.is_inspector_on_screen()
-            || self.inspector.tab() != InspectorTab::Logs
+            || self.inspector_tab != InspectorTab::Logs
         {
             return None;
         }
@@ -192,7 +200,7 @@ impl ContainersState {
         &self,
     ) -> Option<(EngineInfo, InspectTarget)> {
         if !self.is_inspector_on_screen()
-            || self.inspector.tab() != InspectorTab::Inspect
+            || self.inspector_tab != InspectorTab::Inspect
         {
             return None;
         }
@@ -320,7 +328,7 @@ impl ContainersState {
             return;
         }
 
-        self.inspector.select_tab(tab);
+        self.inspector_tab = tab;
     }
 
     /// Mark Containers mode as active or not.
@@ -450,7 +458,7 @@ impl ContainersState {
             self.searches.get_mut(left).close_suggestions();
         }
         self.place = Some(place);
-        self.inspector.select_tab(InspectorTab::Overview);
+        self.inspector_tab = InspectorTab::Overview;
         self.notice = None;
     }
 
