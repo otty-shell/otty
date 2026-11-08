@@ -128,6 +128,22 @@ pub(crate) fn block_end(lines: &[Line], start: usize) -> usize {
     lines.len().saturating_sub(1)
 }
 
+/// The identifier right after the whole word `keyword` in `text`, e.g.
+/// `NotesCtx` in `pub(crate) struct NotesCtx<'a> {`.
+pub(crate) fn name_after<'a>(text: &'a str, keyword: &str) -> Option<&'a str> {
+    let start = if keyword.starts_with('&') {
+        text.find(keyword)?
+    } else {
+        find_word(text, keyword)?
+    };
+    let rest = text[start + keyword.len()..].trim_start();
+    let length = rest
+        .find(|ch: char| !is_ident_char(ch))
+        .unwrap_or(rest.len());
+
+    (length > 0).then(|| &rest[..length])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3,7 +3,8 @@
 
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{
-    ALWAYS_OPEN_WIDGET_MODULES, OPEN_WIDGET_MODULES, part_names, widget_names,
+    ALWAYS_OPEN_WIDGET_MODULES, OPEN_PART_MODULES, OPEN_WIDGET_MODULES,
+    part_names, widget_names,
 };
 use super::super::paths::expand_use;
 use super::super::source::{SourceFile, SourceTree, declared_module};
@@ -29,12 +30,12 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         let parts = part_names(tree, &widget);
 
         if let Some(root) = tree.file(&format!("widgets/{widget}/mod.rs")) {
-            findings.extend(mod_file(root, &parts));
+            findings.extend(mod_file(root, OPEN_WIDGET_MODULES, &parts));
         }
         for part in &parts {
             let part_root = format!("widgets/{widget}/{part}/mod.rs");
             if let Some(root) = tree.file(&part_root) {
-                findings.extend(mod_file(root, &[]));
+                findings.extend(mod_file(root, OPEN_PART_MODULES, &[]));
             }
         }
     }
@@ -42,12 +43,16 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     findings
 }
 
-/// What breaks a rule in one widget or part `mod.rs`, which may also open
-/// the folders in `parts`.
-fn mod_file(root: &SourceFile, parts: &[String]) -> Vec<Finding> {
+/// What breaks a rule in one widget or part `mod.rs`, which may open the
+/// modules in `open_modules` and the folders in `parts`.
+fn mod_file(
+    root: &SourceFile,
+    open_modules: &[&str],
+    parts: &[String],
+) -> Vec<Finding> {
     let modules = declared_modules(root);
 
-    let mut findings = module_visibility(root, &modules, parts);
+    let mut findings = module_visibility(root, &modules, open_modules, parts);
     findings.extend(reexports(root, &modules));
 
     findings
@@ -73,13 +78,14 @@ fn declared_modules(root: &SourceFile) -> Vec<Declared> {
 fn module_visibility(
     root: &SourceFile,
     modules: &[Declared],
+    open_modules: &[&str],
     parts: &[String],
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for module in modules {
         let name = module.name.as_str();
-        let may_be_open = OPEN_WIDGET_MODULES.contains(&name)
+        let may_be_open = open_modules.contains(&name)
             || parts.iter().any(|part| part == name);
         if module.is_open && !may_be_open {
             let key = format!("pub(crate) mod {name}");
@@ -229,6 +235,31 @@ mod tests {
                 pair("widgets/containers/run/mod.rs", "mod event"),
                 pair("widgets/containers/run/mod.rs", "pub(crate) mod inner"),
                 pair("widgets/containers/run/mod.rs", "pub(crate) mod state"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_part_never_opens_services_or_storage() {
+        let tree = SourceTree::from_sources(&[
+            (
+                "widgets/containers/mod.rs",
+                "pub(crate) mod event;\npub(crate) mod run;\npub(crate) mod services;\npub(crate) mod view;\n",
+            ),
+            (
+                "widgets/containers/run/mod.rs",
+                "pub(crate) mod event;\npub(crate) mod services;\npub(crate) mod storage;\npub(crate) mod view;\n",
+            ),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::WidgetModuleVisibility),
+            [
+                pair(
+                    "widgets/containers/run/mod.rs",
+                    "pub(crate) mod services"
+                ),
+                pair("widgets/containers/run/mod.rs", "pub(crate) mod storage"),
             ]
         );
     }

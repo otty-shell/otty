@@ -2,10 +2,10 @@
 
 use super::super::finding::{Finding, Rule};
 use super::super::layout::{
-    Layer, STANDARD_WIDGET_FILES, is_view_file, layer_of,
+    Layer, STANDARD_WIDGET_FILES, is_view_file, layer_of, part_of,
 };
 use super::super::source::{SourceFile, SourceTree};
-use super::super::text::{find_word, is_ident_char};
+use super::super::text::{find_word, name_after};
 
 /// The first line of every reducer.
 const FORBID_LINE: &str = "#![forbid(clippy::disallowed_methods)]";
@@ -15,6 +15,9 @@ const MESSAGE_MARKS: &[&str] = &["Message::Input", "Message::Internal"];
 
 /// Name endings of the types an `event.rs` may define.
 const EVENT_TYPE_ENDINGS: &[&str] = &["Intent", "Effect", "Event"];
+
+/// Name ending of a view model type.
+const VIEW_MODEL_ENDING: &str = "ViewModel";
 
 /// Report contents that do not fit the file's role.
 pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
@@ -38,6 +41,9 @@ pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
         }
         if file.name() != "reducer.rs" {
             findings.extend(ctx_outside_reducer(file));
+        }
+        if !is_model_file(tree, file, &widget) {
+            findings.extend(view_models_outside_model(file));
         }
     }
 
@@ -71,6 +77,16 @@ fn task_or_element(file: &SourceFile) -> Vec<Finding> {
             ))
         })
         .collect()
+}
+
+/// Whether `file` is the `model.rs` of `widget` or of one of its parts.
+fn is_model_file(tree: &SourceTree, file: &SourceFile, widget: &str) -> bool {
+    let model = match part_of(tree, file.path(), widget) {
+        Some(part) => format!("widgets/{widget}/{part}/model.rs"),
+        None => format!("widgets/{widget}/model.rs"),
+    };
+
+    file.path() == model
 }
 
 fn reducer_without_forbid(file: &SourceFile) -> Option<Finding> {
@@ -146,6 +162,26 @@ fn ctx_outside_reducer(file: &SourceFile) -> Vec<Finding> {
         .collect()
 }
 
+/// The structs and enums named `...ViewModel` that `file` declares.
+fn view_models_outside_model(file: &SourceFile) -> Vec<Finding> {
+    file.lines()
+        .iter()
+        .filter_map(|line| {
+            let name = ["struct", "enum"]
+                .iter()
+                .find_map(|keyword| name_after(line.text(), keyword))?;
+            name.ends_with(VIEW_MODEL_ENDING).then(|| {
+                Finding::new(
+                    Rule::ViewModelOutsideModel,
+                    file.path(),
+                    name,
+                    line.number(),
+                )
+            })
+        })
+        .collect()
+}
+
 fn foreign_event_types(file: &SourceFile) -> Vec<Finding> {
     file.lines()
         .iter()
@@ -184,22 +220,6 @@ fn model_mut_state(file: &SourceFile) -> Vec<Finding> {
             })
         })
         .collect()
-}
-
-/// The identifier right after the whole word `keyword` in `text`, e.g.
-/// `NotesCtx` in `pub(crate) struct NotesCtx<'a> {`.
-fn name_after<'a>(text: &'a str, keyword: &str) -> Option<&'a str> {
-    let start = if keyword.starts_with('&') {
-        text.find(keyword)?
-    } else {
-        find_word(text, keyword)?
-    };
-    let rest = text[start + keyword.len()..].trim_start();
-    let length = rest
-        .find(|ch: char| !is_ident_char(ch))
-        .unwrap_or(rest.len());
-
-    (length > 0).then(|| &rest[..length])
 }
 
 #[cfg(test)]
@@ -379,6 +399,51 @@ mod tests {
         assert_eq!(
             found(&check(&tree), Rule::CtxOutsideReducer),
             [pair("widgets/tabs/state.rs", "TabsCtx")]
+        );
+    }
+
+    #[test]
+    fn view_models_are_declared_only_in_model_files() {
+        let tree = SourceTree::from_sources(&[
+            ("widgets/containers/mod.rs", ""),
+            ("widgets/containers/run/mod.rs", ""),
+            (
+                "widgets/containers/model.rs",
+                "pub(crate) struct NoEngineViewModel {\n}\n\
+                 pub(crate) enum MainAreaViewModel<'a> {\n}\n",
+            ),
+            (
+                "widgets/containers/run/model.rs",
+                "pub(crate) struct RunFormViewModel<'a> {\n}\n",
+            ),
+            (
+                "widgets/containers/no_engine.rs",
+                "pub(crate) struct NoEngineFixViewModel {\n}\n",
+            ),
+            (
+                "widgets/containers/run/view/run_form.rs",
+                "struct RunFormFieldViewModel {\n}\n",
+            ),
+            (
+                "widgets/containers/view/model.rs",
+                "pub(crate) enum TableViewModel {\n}\n",
+            ),
+            (
+                "components/pull_line.rs",
+                "pub(crate) struct PullLineViewModel {\n}\n",
+            ),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::ViewModelOutsideModel),
+            [
+                pair("widgets/containers/no_engine.rs", "NoEngineFixViewModel"),
+                pair(
+                    "widgets/containers/run/view/run_form.rs",
+                    "RunFormFieldViewModel"
+                ),
+                pair("widgets/containers/view/model.rs", "TableViewModel"),
+            ]
         );
     }
 

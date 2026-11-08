@@ -54,6 +54,11 @@ pub enum Rule {
     ReduceParameterName,
     /// A view model accessor does not build through `from_state`.
     ViewModelNotFromState,
+    /// A Props struct in a view file is not named after the file.
+    ViewPropsName,
+    /// A view model is declared outside the `model.rs` of its widget or
+    /// part.
+    ViewModelOutsideModel,
     /// A route function decides what to do from widget state.
     RouteBranchesOnState,
     /// A part imports its parent's own modules or `mod.rs` items, or another
@@ -65,7 +70,7 @@ pub enum Rule {
 
 impl Rule {
     /// Every rule, in declaration order, which is also the order of reports.
-    pub const ALL: [Rule; 26] = [
+    pub const ALL: [Rule; 28] = [
         Rule::FileOutsideLayers,
         Rule::WidgetImportsWidget,
         Rule::WidgetImportsWiring,
@@ -89,6 +94,8 @@ impl Rule {
         Rule::MissingModeScreen,
         Rule::ReduceParameterName,
         Rule::ViewModelNotFromState,
+        Rule::ViewPropsName,
+        Rule::ViewModelOutsideModel,
         Rule::RouteBranchesOnState,
         Rule::PartImportsOutside,
         Rule::PartReduceOutsideParent,
@@ -126,6 +133,8 @@ impl Rule {
             Rule::MissingModeScreen => "missing-mode-screen",
             Rule::ReduceParameterName => "reduce-parameter-name",
             Rule::ViewModelNotFromState => "view-model-not-from-state",
+            Rule::ViewPropsName => "view-props-name",
+            Rule::ViewModelOutsideModel => "view-model-outside-model",
             Rule::RouteBranchesOnState => "route-branches-on-state",
             Rule::PartImportsOutside => "part-imports-outside",
             Rule::PartReduceOutsideParent => "part-reduce-outside-parent",
@@ -155,7 +164,7 @@ impl Rule {
                 "router/ holds only mod.rs, one route per widget and command.rs."
             },
             Rule::WidgetModuleVisibility => {
-                "In a widget's mod.rs only event, types, view, storage, services and its parts are open (pub(crate) mod), event and view always are, every other module is closed, and a part's mod.rs follows the same rule."
+                "In a widget's mod.rs only event, types, view, storage, services and its parts are open (pub(crate) mod), event and view always are, every other module is closed, and a part's mod.rs follows the same rule but never opens storage or services."
             },
             Rule::ReexportFromOpenModule => {
                 "A widget's or a part's mod.rs re-exports only from its closed modules, so every type has exactly one path."
@@ -204,6 +213,12 @@ impl Rule {
             },
             Rule::ViewModelNotFromState => {
                 "A view model is built in model.rs through XViewModel::from_state."
+            },
+            Rule::ViewPropsName => {
+                "A Props struct in a view file view/<view>.rs is named <View>Props, after the file."
+            },
+            Rule::ViewModelOutsideModel => {
+                "A view model, a struct or enum whose name ends in ViewModel, is declared only in the model.rs of its widget or part."
             },
             Rule::RouteBranchesOnState => {
                 "A route branches only on its intent or effect; decisions from widget state belong to the reducer, which reports them as effects."

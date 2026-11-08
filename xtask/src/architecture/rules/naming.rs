@@ -1,19 +1,26 @@
 //! Rules about names and shapes the widget template fixes: the reducer
-//! parameter and how view models are built.
+//! parameter, how view models are built and the props of a view.
 
 use super::super::finding::{Finding, Rule};
-use super::super::layout::{Layer, layer_of};
+use super::super::layout::{Layer, is_view_file, layer_of};
 use super::super::source::{Line, SourceFile, SourceTree};
-use super::super::text::{block_end, find_word, is_ident_char};
+use super::super::text::{block_end, find_word, is_ident_char, name_after};
 
-/// Report a reducer parameter not named `intent` and view model accessors
-/// that do not build through `from_state`.
+/// Name ending of the props of a view.
+const PROPS_ENDING: &str = "Props";
+
+/// Report a reducer parameter not named `intent`, view model accessors
+/// that do not build through `from_state` and props not named after their
+/// view file.
 pub(crate) fn check(tree: &SourceTree) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for file in tree.files() {
-        if !matches!(layer_of(file.path()), Some(Layer::Widget(_))) {
+        let Some(Layer::Widget(widget)) = layer_of(file.path()) else {
             continue;
+        };
+        if let Some(view) = view_name(tree, file, &widget) {
+            findings.extend(props_not_named_after_view(file, &view));
         }
         match file.name() {
             "reducer.rs" => findings.extend(reduce_parameter(file)),
@@ -101,6 +108,65 @@ fn view_models_not_from_state(file: &SourceFile) -> Vec<Finding> {
     findings
 }
 
+/// Props structs in the file of the view `view` that are not named
+/// `<View>Props`.
+fn props_not_named_after_view(file: &SourceFile, view: &str) -> Vec<Finding> {
+    let expected = format!("{view}{PROPS_ENDING}");
+
+    file.lines()
+        .iter()
+        .filter_map(|line| {
+            let name = name_after(line.text(), "struct")?;
+            let is_other_props =
+                name.ends_with(PROPS_ENDING) && name != expected;
+
+            is_other_props.then(|| {
+                Finding::new(
+                    Rule::ViewPropsName,
+                    file.path(),
+                    name,
+                    line.number(),
+                )
+            })
+        })
+        .collect()
+}
+
+/// The name of the view that `file` holds, in CamelCase, e.g. `RunPanel` for
+/// `widgets/containers/run/view/run_panel.rs`; `None` for a file that is not
+/// one view of `widget` or of a part, such as `view/mod.rs`.
+fn view_name(
+    tree: &SourceTree,
+    file: &SourceFile,
+    widget: &str,
+) -> Option<String> {
+    let name = file.name();
+    if !is_view_file(tree, file.path(), widget)
+        || name == "mod.rs"
+        || name == "view.rs"
+    {
+        return None;
+    }
+
+    name.strip_suffix(".rs").map(camel_case)
+}
+
+/// `run_panel` as `RunPanel`.
+fn camel_case(snake: &str) -> String {
+    snake
+        .split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => {
+                    first.to_ascii_uppercase().to_string() + chars.as_str()
+                },
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
 /// The signature that starts at `lines[start]`, joined up to its `{`.
 fn signature_at(lines: &[Line], start: usize) -> String {
     let mut joined = String::new();
@@ -177,6 +243,46 @@ mod tests {
         assert_eq!(
             found(&check(&tree), Rule::ReduceParameterName),
             [pair("widgets/tabs/reducer.rs", "event")]
+        );
+    }
+
+    #[test]
+    fn props_in_a_view_file_are_named_after_the_file() {
+        let tree = SourceTree::from_sources(&[
+            ("widgets/notes/mod.rs", ""),
+            (
+                "widgets/notes/view/notes_panel.rs",
+                "pub(crate) struct NotesPanelProps<'a> {\n}\n",
+            ),
+            (
+                "widgets/notes/view/status_bar.rs",
+                "pub(crate) fn view() {}\n",
+            ),
+            (
+                "widgets/notes/model.rs",
+                "pub(crate) struct NotesProps {\n}\n",
+            ),
+            (
+                "widgets/palette/view/command_palette.rs",
+                "pub(crate) struct PaletteProps<'a> {\n}\n",
+            ),
+            ("widgets/containers/mod.rs", ""),
+            ("widgets/containers/run/mod.rs", ""),
+            (
+                "widgets/containers/run/view/run_panel.rs",
+                "pub(crate) struct RunPanelProps<'a> {\n}\nstruct ImagePanelProps {\n}\n",
+            ),
+        ]);
+
+        assert_eq!(
+            found(&check(&tree), Rule::ViewPropsName),
+            [
+                pair(
+                    "widgets/containers/run/view/run_panel.rs",
+                    "ImagePanelProps"
+                ),
+                pair("widgets/palette/view/command_palette.rs", "PaletteProps"),
+            ]
         );
     }
 

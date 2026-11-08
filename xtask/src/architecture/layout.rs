@@ -58,10 +58,14 @@ pub(crate) const STANDARD_WIDGET_FILES: &[&str] = &[
     "subscription.rs",
 ];
 
-/// Modules that may be `pub(crate) mod` in a widget's or a part's `mod.rs`;
-/// a widget may also open its parts.
+/// Modules that may be `pub(crate) mod` in a widget's `mod.rs`; a widget
+/// may also open its parts.
 pub(crate) const OPEN_WIDGET_MODULES: &[&str] =
     &["event", "types", "view", "storage", "services"];
+
+/// Modules that may be `pub(crate) mod` in a part's `mod.rs`. A part has no
+/// route, so it opens no `storage` or `services`.
+pub(crate) const OPEN_PART_MODULES: &[&str] = &["event", "types", "view"];
 
 /// Modules that must be `pub(crate) mod` in a widget's or a part's
 /// `mod.rs`: other routes send intents with `event`, and `view.rs` and the
