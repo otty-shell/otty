@@ -850,7 +850,7 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
             shell.publish(event);
         };
 
-        match event {
+        let status = match event {
             iced::Event::Mouse(mouse_event)
                 if self.is_cursor_in_layout(cursor, layout) =>
             {
@@ -863,7 +863,10 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
                     return;
                 }
 
-                self.input_manager.handle_mouse_event(
+                // Mouse events stay uncaptured even when handled here: the
+                // host follows the pointer over the terminal too, for
+                // example to place a context menu or to drag a pane.
+                let _ = self.input_manager.handle_mouse_event(
                     view_state,
                     terminal_state,
                     terminal_size,
@@ -873,7 +876,8 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
                     mouse_event,
                     clipboard,
                     &mut publish,
-                )
+                );
+                iced::event::Status::Ignored
             },
             iced::Event::Keyboard(keyboard_event) if view_state.is_focused => {
                 self.input_manager.handle_keyboard_event(
@@ -895,6 +899,13 @@ impl<T: Clone + PartialEq> Widget<Event<T>, Theme, iced::Renderer>
             },
             _ => iced::event::Status::Ignored,
         };
+
+        // A key the terminal used, as typed text or as a binding it reported,
+        // must not reach the host's keyboard listeners (such as
+        // `iced::keyboard::listen`) too, or a shortcut would run twice.
+        if status == iced::event::Status::Captured {
+            shell.capture_event();
+        }
     }
 
     fn mouse_interaction(
@@ -1173,7 +1184,96 @@ impl BackgroundRect {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use iced_core::keyboard::key::{NativeCode, Physical};
+    use iced_core::keyboard::{self, Key, Location};
+    use iced_core::renderer::Headless;
+    use otty_libterm::surface::SnapshotOwned;
+
     use super::*;
+    use crate::bindings::{BindingAction, InputKind, KeyboardBinding};
+
+    /// A stand-in for the host application's action type; the terminal
+    /// never interprets it.
+    #[derive(Clone, Debug, PartialEq)]
+    enum TestAction {
+        Split,
+    }
+
+    const VIEW_SIZE: Size = Size::new(640.0, 480.0);
+
+    /// Give `event` to a focused terminal view, with the pointer over it,
+    /// and return whether the view captured it. A captured event never
+    /// reaches the host's own listeners, such as `iced::keyboard::listen`.
+    fn is_captured_by_a_focused_terminal(event: iced::Event) -> bool {
+        let mut term = Terminal::<TestAction>::with_snapshot_for_test(
+            7,
+            Arc::new(SnapshotOwned::default()),
+        );
+        term.add_bindings(vec![(
+            KeyboardBinding {
+                target: InputKind::Char(String::from("d")),
+                modifiers: Modifiers::LOGO,
+                mode_include: SurfaceMode::empty(),
+                mode_exclude: SurfaceMode::empty(),
+            },
+            BindingAction::Action(TestAction::Split),
+        )]);
+        let mut view = TerminalView {
+            term: &term,
+            input_manager: InputManager::new(
+                term.id,
+                &term.bindings,
+                term.block_selection_mode(),
+            ),
+        };
+        let mut tree = Tree::new(
+            &view as &dyn Widget<Event<TestAction>, Theme, iced::Renderer>,
+        );
+        tree.state.downcast_mut::<TerminalViewState>().is_focused = true;
+        let node = iced_core::layout::Node::new(VIEW_SIZE);
+        let pointer = Cursor::Available(Point::new(320.0, 240.0));
+        let renderer = iced::futures::executor::block_on(
+            <iced::Renderer as Headless>::new(
+                iced::Font::DEFAULT,
+                iced::Pixels(16.0),
+                Some("tiny-skia"),
+            ),
+        )
+        .expect("a headless renderer");
+        let mut published = Vec::new();
+        let mut shell = iced_graphics::core::Shell::new(&mut published);
+
+        view.update(
+            &mut tree,
+            &event,
+            iced_core::Layout::new(&node),
+            pointer,
+            &renderer,
+            &mut iced_core::clipboard::Null,
+            &mut shell,
+            &Rectangle::with_size(VIEW_SIZE),
+        );
+
+        shell.is_event_captured()
+    }
+
+    fn key_press(
+        character: &str,
+        text: Option<&str>,
+        modifiers: Modifiers,
+    ) -> iced::Event {
+        iced::Event::Keyboard(keyboard::Event::KeyPressed {
+            key: Key::Character(character.into()),
+            modified_key: Key::Character(character.into()),
+            physical_key: Physical::Unidentified(NativeCode::Unidentified),
+            location: Location::Standard,
+            modifiers,
+            text: text.map(Into::into),
+            repeat: false,
+        })
+    }
 
     fn make_block_rect(
         id: &str,
@@ -1191,6 +1291,59 @@ mod tests {
                 height,
             },
         }
+    }
+
+    #[test]
+    fn a_typed_letter_is_captured() {
+        let letter = key_press("d", Some("d"), Modifiers::empty());
+
+        assert!(is_captured_by_a_focused_terminal(letter));
+    }
+
+    /// The host gets the key once, as the binding event, and not a second
+    /// time from its own keyboard listener.
+    #[test]
+    fn a_bound_action_key_is_captured() {
+        let action = key_press("d", None, Modifiers::LOGO);
+
+        assert!(is_captured_by_a_focused_terminal(action));
+    }
+
+    /// The copy key copies the selection but leaves the key to the host.
+    #[test]
+    fn the_copy_key_is_not_captured() {
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers::COMMAND
+        } else {
+            Modifiers::SHIFT | Modifiers::COMMAND
+        };
+        let copy = key_press("c", None, modifiers);
+
+        assert!(!is_captured_by_a_focused_terminal(copy));
+    }
+
+    #[test]
+    fn composed_text_is_captured() {
+        let commit = iced::Event::InputMethod(input_method::Event::Commit(
+            String::from("日本"),
+        ));
+
+        assert!(is_captured_by_a_focused_terminal(commit));
+    }
+
+    /// The host follows the pointer around the terminal, to place its menus
+    /// and to drag panes, so it must still get mouse events.
+    #[test]
+    fn a_press_in_the_terminal_is_not_captured() {
+        let press = iced::Event::Mouse(mouse::Event::ButtonPressed(
+            mouse::Button::Left,
+        ));
+        let moved = iced::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(320.0, 240.0),
+        });
+
+        assert!(!is_captured_by_a_focused_terminal(press));
+        assert!(!is_captured_by_a_focused_terminal(moved));
     }
 
     #[test]

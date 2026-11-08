@@ -60,8 +60,8 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     }
 
     // Esc closes the overlay on top, or cancels it for a dialog and the
-    // inline edit, wherever the keyboard focus is. A menu takes the focus
-    // from the terminals when it opens, so the key reaches the app.
+    // inline edit. A focused terminal keeps Esc for its shell, so every
+    // overlay takes the focus from the terminals when it opens.
     if let Some(top) = top
         && is_escape_press(&event)
     {
@@ -229,7 +229,7 @@ fn close_modes_menu(app: &mut App) -> Task<AppEvent> {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use iced::keyboard::key::{Code, Named, NativeCode, Physical};
+    use iced::keyboard::key::{Code, Named, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
     use iced::widget::pane_grid;
     use otty_containers::{EngineKind, fixtures};
@@ -242,6 +242,7 @@ mod tests {
     use crate::domain::mode::Mode;
     use crate::guards::Overlay;
     use crate::i18n;
+    use crate::testing::keyboard;
     use crate::testing::overlays::{
         open_confirm, open_create_dialog, open_header_menu, open_launch_menu,
         open_modes_menu, open_palette, open_pane_menu, open_row_menu,
@@ -292,21 +293,7 @@ mod tests {
 
     /// The key press the keyboard subscription delivers for `shortcut`.
     fn shortcut_press(shortcut: AppShortcut) -> AppEvent {
-        let keys = shortcut.keys(Platform::current());
-        let physical_key = keys
-            .code()
-            .map(Physical::Code)
-            .unwrap_or(Physical::Unidentified(NativeCode::Unidentified));
-
-        AppEvent::Keyboard(Event::KeyPressed {
-            key: Key::Character(keys.key().into()),
-            modified_key: Key::Character(keys.key().into()),
-            physical_key,
-            location: Location::Standard,
-            modifiers: keys.modifiers(),
-            text: None,
-            repeat: false,
-        })
+        AppEvent::Keyboard(keyboard::shortcut_press(shortcut))
     }
 
     /// Press `shortcut` and run the events its tasks produce through

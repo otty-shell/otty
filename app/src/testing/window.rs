@@ -31,20 +31,8 @@ pub(crate) struct Frames {
 
 impl Frames {
     pub(crate) fn new() -> Self {
-        use iced_test::core::renderer::Headless;
-
-        let renderer =
-            iced_test::runtime::futures::futures::executor::block_on(
-                <iced::Renderer as Headless>::new(
-                    iced::Font::DEFAULT,
-                    iced::Pixels(16.0),
-                    None,
-                ),
-            )
-            .expect("a headless renderer");
-
         Self {
-            renderer,
+            renderer: headless_renderer(),
             cache: Some(iced_test::runtime::user_interface::Cache::default()),
         }
     }
@@ -105,6 +93,21 @@ impl Frames {
 
 /// A change to the app between two frames.
 pub(crate) type AppChange = Box<dyn Fn(&mut App)>;
+
+/// A renderer that draws nothing on screen, for building the window in
+/// tests.
+pub(crate) fn headless_renderer() -> iced::Renderer {
+    use iced_test::core::renderer::Headless;
+
+    iced_test::runtime::futures::futures::executor::block_on(
+        <iced::Renderer as Headless>::new(
+            iced::Font::DEFAULT,
+            iced::Pixels(16.0),
+            None,
+        ),
+    )
+    .expect("a headless renderer")
+}
 
 /// A new app in `mode`, with the modes as they are on a first start.
 pub(crate) fn app_in(mode: Mode) -> App {

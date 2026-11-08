@@ -467,7 +467,12 @@ mod tests {
     use super::*;
     use crate::app::view::view;
     use crate::domain::mode::Mode;
+    use crate::shortcuts::AppShortcut;
+    use crate::testing::keyboard::{
+        input_from_focused_terminal, press_in_focused_terminal, shortcut_press,
+    };
     use crate::testing::mouse::middle_click;
+    use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::window::{
         Frames, SMALL_WINDOW, app_in, app_with_start_card,
         assert_each_screen_starts_at_its_top, card_area_scroller,
@@ -963,5 +968,88 @@ mod tests {
 
         assert!(!app.widgets.sidebar.has_header_menu_open());
         assert_eq!(app.widgets.tabs.len(), 2);
+    }
+
+    /// Terminal mode with one shell tab, whose only pane has the keyboard
+    /// focus.
+    fn app_with_a_focused_terminal() -> App {
+        let mut app = app_in(Mode::Terminal);
+        let _ = open_shell_tab(&mut app);
+
+        app
+    }
+
+    /// Return the shortcut a focused terminal reported in `event`, if any.
+    fn reported_shortcut(event: &AppEvent) -> Option<AppShortcut> {
+        match event {
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::Widget(
+                    otty_ui_term::Event::BindingActionDispatched {
+                        action, ..
+                    },
+                ),
+            )) => Some(*action),
+            _ => None,
+        }
+    }
+
+    /// A focused terminal reports each shortcut and keeps the key, so the
+    /// app keyboard subscription does not run it a second time.
+    #[test]
+    fn every_shortcut_in_a_focused_terminal_reaches_the_app_once() {
+        let app = app_with_a_focused_terminal();
+
+        for shortcut in AppShortcut::ALL {
+            let input =
+                input_from_focused_terminal(&app, &shortcut_press(shortcut));
+
+            let reported: Vec<AppShortcut> =
+                input.iter().filter_map(reported_shortcut).collect();
+            assert_eq!(reported, vec![shortcut]);
+            assert!(
+                !input
+                    .iter()
+                    .any(|event| matches!(event, AppEvent::Keyboard(_))),
+                "{shortcut:?} also reached the app keyboard subscription"
+            );
+        }
+    }
+
+    #[test]
+    fn the_new_terminal_shortcut_in_a_focused_terminal_opens_one_tab() {
+        let mut app = app_with_a_focused_terminal();
+
+        press_in_focused_terminal(
+            &mut app,
+            &shortcut_press(AppShortcut::NewTerminal),
+        );
+
+        assert_eq!(app.widgets.tabs.len(), 2);
+    }
+
+    #[test]
+    fn the_left_panel_shortcut_in_a_focused_terminal_toggles_it_once() {
+        let mut app = app_with_a_focused_terminal();
+        let was_open = app.widgets.sidebar.vm().is_left_open;
+
+        press_in_focused_terminal(
+            &mut app,
+            &shortcut_press(AppShortcut::LeftPanel),
+        );
+
+        assert_eq!(app.widgets.sidebar.vm().is_left_open, !was_open);
+    }
+
+    #[test]
+    fn the_split_shortcut_in_a_focused_terminal_splits_its_pane_once() {
+        let mut app = app_with_a_focused_terminal();
+        let tab_id = app.widgets.tabs.active_tab_id();
+
+        press_in_focused_terminal(
+            &mut app,
+            &shortcut_press(AppShortcut::SplitPane),
+        );
+
+        assert_eq!(app.widgets.terminal_workspace.pane_count(tab_id), Some(2));
     }
 }
