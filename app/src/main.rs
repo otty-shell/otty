@@ -1,4 +1,5 @@
 mod app;
+mod commands;
 mod components;
 mod domain;
 mod fonts;

@@ -3,16 +3,14 @@ use otty_ui_kit::components::target_dot::TargetKind;
 
 use super::reducer::{PaletteCtx, PaletteLaunch, PaletteSession};
 use super::types::PaletteTarget;
+use crate::commands::AppCommand;
 use crate::domain::mode::Mode;
 use crate::i18n::{self, Key};
 use crate::shortcuts::AppShortcut;
 
 /// Build every palette entry: open sessions, then launches, then the app
-/// actions. Split pane is listed only when there is a focused pane to
-/// split, Close session only when a tab is active, and both only in Terminal
-/// mode: elsewhere the tab is hidden and they do nothing. New folder is listed
-/// only in Terminal mode too, because its name field lives in the Launches
-/// panel. Every mode can be switched to, pinned or not.
+/// commands that can run now ([`AppCommand::is_available`]). Every mode can
+/// be switched to, pinned or not.
 pub(super) fn palette_items(
     ctx: &PaletteCtx<'_>,
 ) -> Vec<PaletteItem<PaletteTarget>> {
@@ -79,59 +77,48 @@ fn launch_items(
     items
 }
 
-/// The app actions, each with its shortcut when it has one.
+/// The app commands that can run now, each with its shortcut when it has
+/// one.
 fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
-    let is_terminal_mode = ctx.active_mode == Mode::Terminal;
-    let has_active_session =
-        ctx.sessions.iter().any(|session| session.is_active);
-
     let mut actions = vec![
         (
-            PaletteTarget::NewTerminal,
+            AppCommand::NewTerminal,
             Key::PaletteNewTerminal,
             Some(AppShortcut::NewTerminal),
         ),
-        (PaletteTarget::NewLaunch, Key::PaletteNewLaunch, None),
-    ];
-    if is_terminal_mode {
-        actions.push((PaletteTarget::NewFolder, Key::PaletteNewFolder, None));
-    }
-    actions.push((
-        PaletteTarget::Settings,
-        Key::SettingsTabTitle,
-        Some(AppShortcut::Settings),
-    ));
-    if is_terminal_mode && ctx.can_split_pane {
-        actions.push((
-            PaletteTarget::SplitPane,
+        (AppCommand::NewLaunch, Key::PaletteNewLaunch, None),
+        (AppCommand::NewFolder, Key::PaletteNewFolder, None),
+        (
+            AppCommand::OpenSettings,
+            Key::SettingsTabTitle,
+            Some(AppShortcut::Settings),
+        ),
+        (
+            AppCommand::SplitPane,
             Key::PaletteSplitPane,
             Some(AppShortcut::SplitPane),
-        ));
-    }
-    if is_terminal_mode && has_active_session {
-        actions.push((
-            PaletteTarget::CloseSession,
+        ),
+        (
+            AppCommand::CloseSession,
             Key::CloseSession,
             Some(AppShortcut::CloseSession),
-        ));
-    }
-    actions.extend([
+        ),
         (
-            PaletteTarget::ToggleLeftPanel,
+            AppCommand::ToggleLeftPanel,
             Key::PaletteToggleLeftPanel,
             Some(AppShortcut::LeftPanel),
         ),
         (
-            PaletteTarget::ToggleFilesPanel,
+            AppCommand::ToggleFilesPanel,
             Key::PaletteToggleFilesPanel,
             Some(AppShortcut::FilesPanel),
         ),
         (
-            PaletteTarget::ToggleFocusMode,
+            AppCommand::ToggleFocusMode,
             Key::WindowFocusMode,
             Some(AppShortcut::FocusMode),
         ),
-    ]);
+    ];
     actions.extend(Mode::ALL.into_iter().map(|mode| {
         let shortcut = ctx
             .pinned_modes
@@ -140,7 +127,7 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
             .and_then(AppShortcut::for_mode_position);
 
         (
-            PaletteTarget::SwitchMode(mode),
+            AppCommand::SwitchMode(mode),
             switch_mode_title(mode),
             shortcut,
         )
@@ -149,8 +136,13 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
     let group = i18n::t(Key::PaletteGroupActions);
     actions
         .into_iter()
-        .map(|(target, title, shortcut)| {
-            let item = PaletteItem::new(target, group, i18n::t(title));
+        .filter(|(command, _, _)| command.is_available(&ctx.commands))
+        .map(|(command, title, shortcut)| {
+            let item = PaletteItem::new(
+                PaletteTarget::Command(command),
+                group,
+                i18n::t(title),
+            );
             match shortcut {
                 Some(shortcut) => item.with_shortcut(shortcut.label()),
                 None => item,
@@ -170,7 +162,7 @@ fn switch_mode_title(mode: Mode) -> Key {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::mode::Mode;
+    use crate::commands::CommandCtx;
 
     fn session(
         tab_id: u64,
@@ -204,9 +196,12 @@ mod tests {
         PaletteCtx {
             sessions: Vec::new(),
             launches: Vec::new(),
-            can_split_pane: false,
             pinned_modes: vec![Mode::Terminal, Mode::Containers],
-            active_mode: Mode::Terminal,
+            commands: CommandCtx {
+                is_terminal_mode: true,
+                has_active_tab: false,
+                has_focused_pane: false,
+            },
         }
     }
 
@@ -301,7 +296,11 @@ mod tests {
                 TargetKind::Local,
                 true,
             )],
-            can_split_pane: true,
+            commands: CommandCtx {
+                is_terminal_mode: true,
+                has_active_tab: true,
+                has_focused_pane: true,
+            },
             ..empty_ctx()
         };
 
@@ -319,49 +318,61 @@ mod tests {
             items[1..],
             [
                 action(
-                    PaletteTarget::NewTerminal,
+                    PaletteTarget::Command(AppCommand::NewTerminal),
                     Key::PaletteNewTerminal,
                     Some(AppShortcut::NewTerminal),
                 ),
-                action(PaletteTarget::NewLaunch, Key::PaletteNewLaunch, None),
-                action(PaletteTarget::NewFolder, Key::PaletteNewFolder, None),
                 action(
-                    PaletteTarget::Settings,
+                    PaletteTarget::Command(AppCommand::NewLaunch),
+                    Key::PaletteNewLaunch,
+                    None
+                ),
+                action(
+                    PaletteTarget::Command(AppCommand::NewFolder),
+                    Key::PaletteNewFolder,
+                    None
+                ),
+                action(
+                    PaletteTarget::Command(AppCommand::OpenSettings),
                     Key::SettingsTabTitle,
                     Some(AppShortcut::Settings),
                 ),
                 action(
-                    PaletteTarget::SplitPane,
+                    PaletteTarget::Command(AppCommand::SplitPane),
                     Key::PaletteSplitPane,
                     Some(AppShortcut::SplitPane),
                 ),
                 action(
-                    PaletteTarget::CloseSession,
+                    PaletteTarget::Command(AppCommand::CloseSession),
                     Key::CloseSession,
                     Some(AppShortcut::CloseSession),
                 ),
                 action(
-                    PaletteTarget::ToggleLeftPanel,
+                    PaletteTarget::Command(AppCommand::ToggleLeftPanel),
                     Key::PaletteToggleLeftPanel,
                     Some(AppShortcut::LeftPanel),
                 ),
                 action(
-                    PaletteTarget::ToggleFilesPanel,
+                    PaletteTarget::Command(AppCommand::ToggleFilesPanel),
                     Key::PaletteToggleFilesPanel,
                     Some(AppShortcut::FilesPanel),
                 ),
                 action(
-                    PaletteTarget::ToggleFocusMode,
+                    PaletteTarget::Command(AppCommand::ToggleFocusMode),
                     Key::WindowFocusMode,
                     Some(AppShortcut::FocusMode),
                 ),
                 action(
-                    PaletteTarget::SwitchMode(Mode::Terminal),
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Terminal
+                    )),
                     Key::PaletteSwitchToTerminalMode,
                     Some(AppShortcut::TerminalMode),
                 ),
                 action(
-                    PaletteTarget::SwitchMode(Mode::Containers),
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Containers
+                    )),
                     Key::PaletteSwitchToContainersMode,
                     Some(AppShortcut::PinnedMode1),
                 ),
@@ -376,15 +387,17 @@ mod tests {
         assert_eq!(
             targets(&items),
             vec![
-                PaletteTarget::NewTerminal,
-                PaletteTarget::NewLaunch,
-                PaletteTarget::NewFolder,
-                PaletteTarget::Settings,
-                PaletteTarget::ToggleLeftPanel,
-                PaletteTarget::ToggleFilesPanel,
-                PaletteTarget::ToggleFocusMode,
-                PaletteTarget::SwitchMode(Mode::Terminal),
-                PaletteTarget::SwitchMode(Mode::Containers),
+                PaletteTarget::Command(AppCommand::NewTerminal),
+                PaletteTarget::Command(AppCommand::NewLaunch),
+                PaletteTarget::Command(AppCommand::NewFolder),
+                PaletteTarget::Command(AppCommand::OpenSettings),
+                PaletteTarget::Command(AppCommand::ToggleLeftPanel),
+                PaletteTarget::Command(AppCommand::ToggleFilesPanel),
+                PaletteTarget::Command(AppCommand::ToggleFocusMode),
+                PaletteTarget::Command(AppCommand::SwitchMode(Mode::Terminal)),
+                PaletteTarget::Command(AppCommand::SwitchMode(
+                    Mode::Containers
+                )),
             ]
         );
     }
@@ -403,13 +416,17 @@ mod tests {
             items[items.len() - 2..],
             [
                 PaletteItem::new(
-                    PaletteTarget::SwitchMode(Mode::Terminal),
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Terminal
+                    )),
                     group,
                     i18n::t(Key::PaletteSwitchToTerminalMode),
                 )
                 .with_shortcut(AppShortcut::TerminalMode.label()),
                 PaletteItem::new(
-                    PaletteTarget::SwitchMode(Mode::Containers),
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Containers
+                    )),
                     group,
                     i18n::t(Key::PaletteSwitchToContainersMode),
                 ),
@@ -427,14 +444,22 @@ mod tests {
                 TargetKind::Local,
                 true,
             )],
-            can_split_pane: false,
+            commands: CommandCtx {
+                is_terminal_mode: true,
+                has_active_tab: true,
+                has_focused_pane: false,
+            },
             ..empty_ctx()
         };
 
         let targets = targets(&palette_items(&ctx));
 
-        assert!(targets.contains(&PaletteTarget::CloseSession));
-        assert!(!targets.contains(&PaletteTarget::SplitPane));
+        assert!(
+            targets.contains(&PaletteTarget::Command(AppCommand::CloseSession))
+        );
+        assert!(
+            !targets.contains(&PaletteTarget::Command(AppCommand::SplitPane))
+        );
     }
 
     #[test]
@@ -448,8 +473,11 @@ mod tests {
                 TargetKind::Local,
                 true,
             )],
-            can_split_pane: true,
-            active_mode: Mode::Containers,
+            commands: CommandCtx {
+                is_terminal_mode: false,
+                has_active_tab: true,
+                has_focused_pane: true,
+            },
             ..empty_ctx()
         };
 
@@ -459,14 +487,16 @@ mod tests {
             targets(&items),
             vec![
                 PaletteTarget::Session { tab_id: 1 },
-                PaletteTarget::NewTerminal,
-                PaletteTarget::NewLaunch,
-                PaletteTarget::Settings,
-                PaletteTarget::ToggleLeftPanel,
-                PaletteTarget::ToggleFilesPanel,
-                PaletteTarget::ToggleFocusMode,
-                PaletteTarget::SwitchMode(Mode::Terminal),
-                PaletteTarget::SwitchMode(Mode::Containers),
+                PaletteTarget::Command(AppCommand::NewTerminal),
+                PaletteTarget::Command(AppCommand::NewLaunch),
+                PaletteTarget::Command(AppCommand::OpenSettings),
+                PaletteTarget::Command(AppCommand::ToggleLeftPanel),
+                PaletteTarget::Command(AppCommand::ToggleFilesPanel),
+                PaletteTarget::Command(AppCommand::ToggleFocusMode),
+                PaletteTarget::Command(AppCommand::SwitchMode(Mode::Terminal)),
+                PaletteTarget::Command(AppCommand::SwitchMode(
+                    Mode::Containers
+                )),
             ]
         );
     }

@@ -74,7 +74,7 @@ mod tests {
     use otty_ui_kit::components::target_dot::TargetKind;
 
     use super::*;
-    use crate::domain::mode::Mode;
+    use crate::commands::CommandCtx;
     use crate::testing::task_outputs::collect_outputs;
     use crate::theme::ThemeManager;
     use crate::widgets::palette::PaletteEffect;
@@ -101,9 +101,12 @@ mod tests {
         PaletteCtx {
             sessions,
             launches: Vec::new(),
-            can_split_pane: true,
             pinned_modes: Vec::new(),
-            active_mode: Mode::Terminal,
+            commands: CommandCtx {
+                is_terminal_mode: true,
+                has_active_tab: true,
+                has_focused_pane: true,
+            },
         }
     }
 

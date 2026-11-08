@@ -11,7 +11,7 @@ use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
 use crate::widgets::settings::{SettingsEvent, SettingsIntent};
 use crate::widgets::tabs::view::session_list::SESSION_LIST_SCROLL_ID;
-use crate::widgets::tabs::{TabsCtx, TabsEffect, TabsEvent, TabsIntent};
+use crate::widgets::tabs::{TabsCtx, TabsEffect, TabsEvent};
 use crate::widgets::terminal_workspace::types::TerminalKind;
 use crate::widgets::terminal_workspace::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
@@ -29,17 +29,6 @@ pub(crate) fn route(app: &mut App, event: TabsEvent) -> Task<AppEvent> {
         },
         TabsEvent::Effect(effect) => handle_effect(app, effect),
     }
-}
-
-/// Close the active tab, for the Close session shortcut and palette command.
-/// Terminal tabs keep running while another mode is shown (spec Decision 5),
-/// so outside Terminal mode, where the tab is hidden, this does nothing.
-pub(super) fn close_active_tab(app: &App) -> Task<AppEvent> {
-    if app.widgets.modes.active() != Mode::Terminal {
-        return Task::none();
-    }
-
-    Task::done(AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseActive)))
 }
 
 /// Run a tabs effect. Tabs only show in Terminal mode (spec Decision 5), so

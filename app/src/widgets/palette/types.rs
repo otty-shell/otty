@@ -1,4 +1,4 @@
-use crate::domain::mode::Mode;
+use crate::commands::AppCommand;
 
 /// What running a palette entry does. Every entry carries one as its key;
 /// the app router turns it into the event the owning widget already
@@ -10,24 +10,6 @@ pub(crate) enum PaletteTarget {
     /// Run the launch at this path of the launch tree: the folder titles,
     /// then the launch title.
     Launch { path: Vec<String> },
-    /// Open a terminal tab with the default shell.
-    NewTerminal,
-    /// Open the editor for a new launch.
-    NewLaunch,
-    /// Start naming a new launch folder.
-    NewFolder,
-    /// Open the Settings tab.
-    Settings,
-    /// Split the focused pane of the active terminal tab.
-    SplitPane,
-    /// Close the active tab.
-    CloseSession,
-    /// Show or hide the left panel.
-    ToggleLeftPanel,
-    /// Show or hide the files (right) panel.
-    ToggleFilesPanel,
-    /// Enter or leave focus mode.
-    ToggleFocusMode,
-    /// Switch to this mode, pinned or not.
-    SwitchMode(Mode),
+    /// Run this app command, as its shortcut or header button would.
+    Command(AppCommand),
 }

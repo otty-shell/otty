@@ -1,6 +1,6 @@
 use iced::Task;
 
-use super::{AppEvent, shortcuts};
+use super::AppEvent;
 use crate::app::App;
 use crate::layout::pane_grid_size;
 use crate::shortcuts::AppShortcut;
@@ -96,7 +96,7 @@ fn handle_effect_event(
             sync_explorer_from_terminal(app)
         },
         TerminalWorkspaceEffect::ShortcutPressed { shortcut } => {
-            shortcuts::handle(app, shortcut)
+            Task::done(AppEvent::Command(shortcut.command()))
         },
     }
 }
@@ -157,11 +157,11 @@ mod tests {
 
     use super::{handle_effect_event, should_sync_explorer};
     use crate::app::App;
+    use crate::commands::AppCommand;
     use crate::router::AppEvent;
     use crate::shortcuts::AppShortcut;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::modes::{ModesEvent, ModesIntent, ModesWidget};
-    use crate::widgets::tabs::{TabsEvent, TabsIntent};
+    use crate::widgets::modes::ModesWidget;
     use crate::widgets::terminal_workspace::{
         TerminalWorkspaceEffect, TerminalWorkspaceIntent,
     };
@@ -223,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn given_shortcut_pressed_in_a_terminal_when_handled_then_the_app_runs_it()
+    fn given_shortcut_pressed_in_a_terminal_when_handled_then_its_command_runs()
     {
         let (mut app, _) = App::new();
 
@@ -236,14 +236,12 @@ mod tests {
 
         assert!(matches!(
             events.as_slice(),
-            [AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenSettingsTab
-            ))]
+            [AppEvent::Command(AppCommand::OpenSettings)]
         ));
     }
 
     #[test]
-    fn given_mode_shortcut_pressed_in_a_terminal_when_handled_then_the_mode_switches()
+    fn given_mode_shortcut_pressed_in_a_terminal_when_handled_then_its_position_is_asked_for()
      {
         let (mut app, _) = App::new();
         app.widgets.modes = ModesWidget::new();
@@ -257,9 +255,7 @@ mod tests {
 
         assert!(matches!(
             events.as_slice(),
-            [AppEvent::Modes(ModesEvent::Intent(ModesIntent::SelectAt {
-                position: 1
-            }))]
+            [AppEvent::Command(AppCommand::SelectModeAt { position: 1 })]
         ));
     }
 

@@ -24,6 +24,8 @@ use otty_ui_kit::components::kbd::shortcut_text;
 use otty_ui_term::SurfaceMode;
 use otty_ui_term::bindings::{BindingAction, InputKind, KeyboardBinding};
 
+use crate::commands::AppCommand;
+
 /// An application action that has a keyboard shortcut.
 ///
 /// This is also the action type terminal widgets report back: the `T` of
@@ -205,6 +207,26 @@ impl AppShortcut {
     /// (Terminal, then the pinned modes); `None` past pinned mode 4.
     pub(crate) fn for_mode_position(position: usize) -> Option<AppShortcut> {
         Self::MODE_SHORTCUTS.get(position).copied()
+    }
+
+    /// Return the command this shortcut asks for.
+    pub(crate) fn command(self) -> AppCommand {
+        match self {
+            Self::CommandPalette => AppCommand::OpenPalette,
+            Self::LeftPanel => AppCommand::ToggleLeftPanel,
+            Self::FilesPanel => AppCommand::ToggleFilesPanel,
+            Self::FocusMode => AppCommand::ToggleFocusMode,
+            Self::Settings => AppCommand::OpenSettings,
+            Self::NewTerminal => AppCommand::NewTerminal,
+            Self::CloseSession => AppCommand::CloseSession,
+            Self::SplitPane => AppCommand::SplitPane,
+            Self::TerminalMode => AppCommand::SelectModeAt { position: 0 },
+            Self::PinnedMode1 => AppCommand::SelectModeAt { position: 1 },
+            Self::PinnedMode2 => AppCommand::SelectModeAt { position: 2 },
+            Self::PinnedMode3 => AppCommand::SelectModeAt { position: 3 },
+            Self::PinnedMode4 => AppCommand::SelectModeAt { position: 4 },
+            Self::AllModesMenu => AppCommand::ToggleModesMenu,
+        }
     }
 
     /// Return the shortcut text for menus and `Kbd` hints on the current
@@ -808,5 +830,45 @@ mod tests {
             assert_eq!(shortcut.mode_position(), Some(position));
         }
         assert_eq!(AppShortcut::for_mode_position(5), None);
+    }
+
+    #[test]
+    fn every_shortcut_asks_for_its_command() {
+        let expected = [
+            (AppShortcut::CommandPalette, AppCommand::OpenPalette),
+            (AppShortcut::LeftPanel, AppCommand::ToggleLeftPanel),
+            (AppShortcut::FilesPanel, AppCommand::ToggleFilesPanel),
+            (AppShortcut::FocusMode, AppCommand::ToggleFocusMode),
+            (AppShortcut::Settings, AppCommand::OpenSettings),
+            (AppShortcut::NewTerminal, AppCommand::NewTerminal),
+            (AppShortcut::CloseSession, AppCommand::CloseSession),
+            (AppShortcut::SplitPane, AppCommand::SplitPane),
+            (
+                AppShortcut::TerminalMode,
+                AppCommand::SelectModeAt { position: 0 },
+            ),
+            (
+                AppShortcut::PinnedMode1,
+                AppCommand::SelectModeAt { position: 1 },
+            ),
+            (
+                AppShortcut::PinnedMode2,
+                AppCommand::SelectModeAt { position: 2 },
+            ),
+            (
+                AppShortcut::PinnedMode3,
+                AppCommand::SelectModeAt { position: 3 },
+            ),
+            (
+                AppShortcut::PinnedMode4,
+                AppCommand::SelectModeAt { position: 4 },
+            ),
+            (AppShortcut::AllModesMenu, AppCommand::ToggleModesMenu),
+        ];
+
+        assert_eq!(expected.len(), AppShortcut::ALL.len());
+        for (shortcut, command) in expected {
+            assert_eq!(shortcut.command(), command, "{shortcut:?}");
+        }
     }
 }

@@ -9,6 +9,7 @@ use super::event::{PaletteEffect, PaletteEvent, PaletteIntent};
 use super::items::palette_items;
 use super::state::PaletteState;
 use super::types::PaletteTarget;
+use crate::commands::CommandCtx;
 use crate::domain::mode::Mode;
 
 /// What the palette lists. The app fills it from the other widgets when
@@ -19,15 +20,11 @@ pub(crate) struct PaletteCtx<'a> {
     pub(crate) sessions: Vec<PaletteSession<'a>>,
     /// Every launch of the launch tree, in tree order.
     pub(crate) launches: Vec<PaletteLaunch<'a>>,
-    /// The active tab is a terminal with a focused pane to split.
-    pub(crate) can_split_pane: bool,
     /// Terminal and the pinned modes, in switcher order: the mode at
     /// position N has mode shortcut N.
     pub(crate) pinned_modes: Vec<Mode>,
-    /// The mode on screen. The commands that act on the active tab, and New
-    /// folder, are listed only in Terminal mode, where the tab and the
-    /// Launches panel show.
-    pub(crate) active_mode: Mode,
+    /// What decides which app commands can run now; only those are listed.
+    pub(crate) commands: CommandCtx,
 }
 
 /// One open tab the palette can switch to.
@@ -151,6 +148,7 @@ mod tests {
     use iced_test::runtime::task::into_stream;
 
     use super::*;
+    use crate::commands::AppCommand;
     use crate::i18n::{self, Key};
     use crate::testing::task_outputs::collect_outputs;
 
@@ -174,9 +172,12 @@ mod tests {
                 title: "laptop",
                 is_ssh: true,
             }],
-            can_split_pane: true,
             pinned_modes: Vec::new(),
-            active_mode: Mode::Terminal,
+            commands: CommandCtx {
+                is_terminal_mode: true,
+                has_active_tab: true,
+                has_focused_pane: true,
+            },
         }
     }
 
@@ -186,9 +187,14 @@ mod tests {
 
     /// The same entries as [`ctx`] while Containers mode is on screen.
     fn containers_ctx() -> PaletteCtx<'static> {
+        let ctx = ctx();
+
         PaletteCtx {
-            active_mode: Mode::Containers,
-            ..ctx()
+            commands: CommandCtx {
+                is_terminal_mode: false,
+                ..ctx.commands
+            },
+            ..ctx
         }
     }
 
@@ -359,9 +365,9 @@ mod tests {
         let cases = [
             (0, PaletteTarget::Session { tab_id: 0 }),
             (2, laptop),
-            (3, PaletteTarget::NewTerminal),
-            (5, PaletteTarget::NewFolder),
-            (11, PaletteTarget::ToggleFocusMode),
+            (3, PaletteTarget::Command(AppCommand::NewTerminal)),
+            (5, PaletteTarget::Command(AppCommand::NewFolder)),
+            (11, PaletteTarget::Command(AppCommand::ToggleFocusMode)),
         ];
 
         for (index, expected) in cases {
@@ -381,10 +387,10 @@ mod tests {
     #[test]
     fn in_containers_mode_a_click_runs_the_entry_shown_at_that_place() {
         let cases = [
-            (5, PaletteTarget::Settings),
-            (6, PaletteTarget::ToggleLeftPanel),
-            (7, PaletteTarget::ToggleFilesPanel),
-            (8, PaletteTarget::ToggleFocusMode),
+            (5, PaletteTarget::Command(AppCommand::OpenSettings)),
+            (6, PaletteTarget::Command(AppCommand::ToggleLeftPanel)),
+            (7, PaletteTarget::Command(AppCommand::ToggleFilesPanel)),
+            (8, PaletteTarget::Command(AppCommand::ToggleFocusMode)),
         ];
 
         for (index, expected) in cases {
@@ -413,7 +419,9 @@ mod tests {
 
         assert_eq!(
             effects(events),
-            vec![PaletteEffect::Run(PaletteTarget::ToggleLeftPanel)]
+            vec![PaletteEffect::Run(PaletteTarget::Command(
+                AppCommand::ToggleLeftPanel
+            ))]
         );
     }
 
@@ -454,15 +462,23 @@ mod tests {
 
         assert_eq!(
             effects(events),
-            vec![PaletteEffect::Run(PaletteTarget::ToggleFocusMode)]
+            vec![PaletteEffect::Run(PaletteTarget::Command(
+                AppCommand::ToggleFocusMode
+            ))]
         );
     }
 
     #[test]
     fn typing_lists_the_commands_of_the_mode_on_screen_now() {
         let mut state = open_state();
-        assert!(listed_targets(&state).contains(&PaletteTarget::SplitPane));
-        assert!(listed_targets(&state).contains(&PaletteTarget::NewFolder));
+        assert!(
+            listed_targets(&state)
+                .contains(&PaletteTarget::Command(AppCommand::SplitPane))
+        );
+        assert!(
+            listed_targets(&state)
+                .contains(&PaletteTarget::Command(AppCommand::NewFolder))
+        );
 
         let _ = act_in_containers(
             &mut state,
@@ -470,9 +486,15 @@ mod tests {
         );
 
         let listed = listed_targets(&state);
-        assert!(!listed.contains(&PaletteTarget::SplitPane));
-        assert!(!listed.contains(&PaletteTarget::CloseSession));
-        assert!(!listed.contains(&PaletteTarget::NewFolder));
+        assert!(
+            !listed.contains(&PaletteTarget::Command(AppCommand::SplitPane))
+        );
+        assert!(
+            !listed.contains(&PaletteTarget::Command(AppCommand::CloseSession))
+        );
+        assert!(
+            !listed.contains(&PaletteTarget::Command(AppCommand::NewFolder))
+        );
     }
 
     #[test]

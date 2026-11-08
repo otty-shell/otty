@@ -3,13 +3,12 @@
 //! widget already handles for the same button.
 
 use iced::Task;
-use iced::widget::pane_grid;
 
 use super::AppEvent;
-use super::tabs::close_active_tab;
+use super::command::command_ctx;
 use crate::app::App;
+use crate::commands::{AppCommand, CommandCtx};
 use crate::domain::mode::Mode;
-use crate::widgets::modes::{ModesEvent, ModesIntent};
 use crate::widgets::palette::types::PaletteTarget;
 use crate::widgets::palette::{
     PaletteCtx, PaletteEffect, PaletteEvent, PaletteIntent, PaletteLaunch,
@@ -17,7 +16,6 @@ use crate::widgets::palette::{
 };
 use crate::widgets::quick_launch::model::LaunchViewModel;
 use crate::widgets::quick_launch::{QuickLaunchEvent, QuickLaunchIntent};
-use crate::widgets::sidebar::{SidebarEvent, SidebarIntent};
 use crate::widgets::tabs::model::TabsViewModel;
 use crate::widgets::tabs::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::{
@@ -29,22 +27,20 @@ use crate::widgets::terminal_workspace::{
 pub(crate) fn route(app: &mut App, event: PaletteEvent) -> Task<AppEvent> {
     match event {
         PaletteEvent::Intent(intent) => handle_intent(app, intent),
-        PaletteEvent::Effect(effect) => handle_effect(app, effect),
+        PaletteEvent::Effect(effect) => handle_effect(effect),
     }
 }
 
 /// Build what the palette lists from the tabs and launches view models:
 /// sessions keep the machine grouping of the Sessions panel, launches
 /// keep tree order. `pinned_modes` is Terminal and the pinned modes in
-/// switcher order, for the mode shortcut labels. `active_mode` is the mode
-/// on screen, which decides whether the commands of the active tab and New
-/// folder show.
+/// switcher order, for the mode shortcut labels. `commands` decides which
+/// app commands are listed.
 fn palette_ctx<'a>(
     tabs: &TabsViewModel<'a>,
     launches: Vec<LaunchViewModel<'a>>,
-    can_split_pane: bool,
     pinned_modes: Vec<Mode>,
-    active_mode: Mode,
+    commands: CommandCtx,
 ) -> PaletteCtx<'a> {
     let sessions = tabs
         .groups
@@ -71,9 +67,8 @@ fn palette_ctx<'a>(
     PaletteCtx {
         sessions,
         launches,
-        can_split_pane,
         pinned_modes,
-        active_mode,
+        commands,
     }
 }
 
@@ -89,9 +84,8 @@ fn handle_intent(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
     let ctx = palette_ctx(
         &app.widgets.tabs.vm(app.host_name.as_deref()),
         app.widgets.quick_launch.vm().launches(),
-        focused_pane(app).is_some(),
         pinned_modes,
-        app.widgets.modes.active(),
+        command_ctx(app),
     );
 
     app.widgets
@@ -100,9 +94,9 @@ fn handle_intent(app: &mut App, intent: PaletteIntent) -> Task<AppEvent> {
         .map(AppEvent::Palette)
 }
 
-fn handle_effect(app: &App, effect: PaletteEffect) -> Task<AppEvent> {
+fn handle_effect(effect: PaletteEffect) -> Task<AppEvent> {
     match effect {
-        PaletteEffect::Run(target) => run_target(app, target),
+        PaletteEffect::Run(target) => run_target(target),
         // The palette input had keyboard focus; give it back to the
         // terminal the user was in.
         PaletteEffect::Dismissed => focus_active_terminal(),
@@ -110,100 +104,40 @@ fn handle_effect(app: &App, effect: PaletteEffect) -> Task<AppEvent> {
 }
 
 /// Send the event the owning widget's own button sends for `target`.
-///
-/// Entries that do not move keyboard focus themselves (a launch still
-/// starting, the panel toggles) also give it back to the active terminal,
-/// which lost it to the palette input.
-fn run_target(app: &App, target: PaletteTarget) -> Task<AppEvent> {
+fn run_target(target: PaletteTarget) -> Task<AppEvent> {
     match target {
-        PaletteTarget::Session { tab_id } => {
-            tabs_intent(TabsIntent::ActivateTab { tab_id })
-        },
+        PaletteTarget::Session { tab_id } => Task::done(AppEvent::Tabs(
+            TabsEvent::Intent(TabsIntent::ActivateTab { tab_id }),
+        )),
         // The same single message the New session menu sends for a launch.
+        // The launch is still starting, so the active terminal gets back
+        // the keyboard focus the palette input took.
         PaletteTarget::Launch { path } => Task::batch(vec![
-            quick_launch_intent(QuickLaunchIntent::LaunchNode { path }),
+            Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::LaunchNode { path },
+            ))),
             focus_active_terminal(),
         ]),
-        PaletteTarget::NewTerminal => tabs_intent(TabsIntent::OpenTerminalTab),
-        PaletteTarget::NewLaunch => {
-            quick_launch_intent(QuickLaunchIntent::HeaderCreateCommand)
-        },
-        PaletteTarget::NewFolder => start_new_folder(app),
-        PaletteTarget::Settings => tabs_intent(TabsIntent::OpenSettingsTab),
-        PaletteTarget::SplitPane => split_focused_pane(app),
-        PaletteTarget::CloseSession => close_active_tab(app),
-        PaletteTarget::ToggleLeftPanel => {
-            toggle_panel(SidebarIntent::ToggleLeft)
-        },
-        PaletteTarget::ToggleFilesPanel => {
-            toggle_panel(SidebarIntent::ToggleRight)
-        },
-        PaletteTarget::ToggleFocusMode => {
-            toggle_panel(SidebarIntent::ToggleFocusMode)
-        },
-        PaletteTarget::SwitchMode(mode) => switch_mode(mode),
+        PaletteTarget::Command(command) => run_command(command),
     }
 }
 
-/// Send the intent a switcher tab sends for `mode`. In Terminal mode the
-/// terminal the user was in gets its keyboard focus back from the palette
-/// input; other modes have no terminal on screen.
-fn switch_mode(mode: Mode) -> Task<AppEvent> {
-    let select = Task::done(AppEvent::Modes(ModesEvent::Intent(
-        ModesIntent::Select(mode),
-    )));
+/// Ask the app to run `command`. The commands that do not move keyboard
+/// focus themselves (the panel toggles, and Terminal mode, whose terminal
+/// comes back on screen) also give it back to the active terminal, which
+/// lost it to the palette input.
+fn run_command(command: AppCommand) -> Task<AppEvent> {
+    let run = Task::done(AppEvent::Command(command));
 
-    match mode {
-        Mode::Terminal => Task::batch(vec![select, focus_active_terminal()]),
-        _ => select,
-    }
-}
-
-/// Start a new launch folder. Its name field lives in the Launches section,
-/// so show the section first; the field then gets keyboard focus on screen.
-/// Outside Terminal mode that panel is hidden, so this does nothing. The
-/// palette does not list the command there; this covers a press on a list
-/// opened before a mode switch.
-fn start_new_folder(app: &App) -> Task<AppEvent> {
-    if app.widgets.modes.active() != Mode::Terminal {
-        return Task::none();
-    }
-
-    Task::done(AppEvent::Sidebar(SidebarEvent::Intent(
-        SidebarIntent::RevealLaunches,
-    )))
-    .chain(quick_launch_intent(QuickLaunchIntent::HeaderCreateFolder))
-}
-
-/// Split the focused pane to the right. Terminal tabs keep running while
-/// another mode is shown (spec Decision 5), so outside Terminal mode, where
-/// the pane is hidden, this does nothing. The palette does not list the
-/// command there; this covers a press on a list opened before a mode switch.
-fn split_focused_pane(app: &App) -> Task<AppEvent> {
-    if app.widgets.modes.active() != Mode::Terminal {
-        return Task::none();
-    }
-
-    Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-        TerminalWorkspaceIntent::SplitFocusedPane {
-            axis: pane_grid::Axis::Vertical,
+    match command {
+        AppCommand::ToggleLeftPanel
+        | AppCommand::ToggleFilesPanel
+        | AppCommand::ToggleFocusMode
+        | AppCommand::SwitchMode(Mode::Terminal) => {
+            Task::batch(vec![run, focus_active_terminal()])
         },
-    )))
-}
-
-/// The active terminal tab and its focused pane, the pane the pane menu's
-/// "Split right" would split.
-fn focused_pane(app: &App) -> Option<(u64, pane_grid::Pane)> {
-    let tab_id = app.widgets.tabs.active_tab_id();
-
-    app.widgets.terminal_workspace.focused_pane(tab_id)
-}
-
-fn toggle_panel(intent: SidebarIntent) -> Task<AppEvent> {
-    Task::batch(vec![
-        Task::done(AppEvent::Sidebar(SidebarEvent::Intent(intent))),
-        focus_active_terminal(),
-    ])
+        _ => run,
+    }
 }
 
 fn focus_active_terminal() -> Task<AppEvent> {
@@ -212,37 +146,21 @@ fn focus_active_terminal() -> Task<AppEvent> {
     )))
 }
 
-fn tabs_intent(intent: TabsIntent) -> Task<AppEvent> {
-    Task::done(AppEvent::Tabs(TabsEvent::Intent(intent)))
-}
-
-fn quick_launch_intent(intent: QuickLaunchIntent) -> Task<AppEvent> {
-    Task::done(AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent)))
-}
-
 #[cfg(test)]
 mod tests {
-    use iced::{Point, Size};
     use otty_ui_kit::components::target_dot::TargetKind;
-    use otty_ui_term::settings::{LocalSessionOptions, SessionKind, Settings};
 
     use super::*;
+    use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::modes::ModesWidget;
+    use crate::widgets::modes::{ModesIntent, ModesWidget};
     use crate::widgets::tabs::TabsCtx;
     use crate::widgets::tabs::model::{
         SessionGroupViewModel, SessionViewModel,
     };
-    use crate::widgets::terminal_workspace::TerminalWorkspaceCtx;
-    use crate::widgets::terminal_workspace::types::TerminalKind;
 
     /// Context the tests reduce tabs intents with.
     const SH: TabsCtx<'static> = TabsCtx { shell_name: "sh" };
-
-    #[cfg(unix)]
-    const TEST_SHELL_PATH: &str = "/bin/sh";
-    #[cfg(target_os = "windows")]
-    const TEST_SHELL_PATH: &str = "cmd.exe";
 
     fn run(app: &mut App, target: PaletteTarget) -> Vec<AppEvent> {
         collect_outputs(route(
@@ -258,42 +176,6 @@ mod tests {
                 TerminalWorkspaceIntent::FocusActive
             ))
         )
-    }
-
-    /// Open a shell tab with one real terminal and return its id.
-    fn open_shell_tab(app: &mut App) -> u64 {
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenTerminalTab, &SH);
-        let tab_id = app
-            .widgets
-            .tabs
-            .active_tab_id()
-            .expect("shell tab should open");
-        let mut settings = Settings::default();
-        settings.backend = settings.backend.clone().with_session(
-            SessionKind::from_local_options(
-                LocalSessionOptions::default().with_program(TEST_SHELL_PATH),
-            ),
-        );
-        let ctx = TerminalWorkspaceCtx {
-            active_tab_id: Some(tab_id),
-            pane_grid_size: Size::new(800.0, 600.0),
-            screen_size: Size::new(800.0, 600.0),
-            sidebar_cursor: Point::ORIGIN,
-            equalize_panes: true,
-        };
-
-        let _ = app.widgets.terminal_workspace.reduce(
-            TerminalWorkspaceIntent::OpenTab {
-                tab_id,
-                default_title: String::from("sh"),
-                settings: Box::new(settings),
-                kind: TerminalKind::Shell,
-                sync_explorer: false,
-            },
-            &ctx,
-        );
-
-        tab_id
     }
 
     fn session_vm(
@@ -343,12 +225,17 @@ mod tests {
             },
         ];
 
+        let commands = CommandCtx {
+            is_terminal_mode: false,
+            has_active_tab: true,
+            has_focused_pane: true,
+        };
+
         let ctx = palette_ctx(
             &tabs,
             launches,
-            true,
             vec![Mode::Terminal, Mode::Containers],
-            Mode::Containers,
+            commands,
         );
 
         assert_eq!(
@@ -392,9 +279,8 @@ mod tests {
                 },
             ]
         );
-        assert!(ctx.can_split_pane);
         assert_eq!(ctx.pinned_modes, vec![Mode::Terminal, Mode::Containers]);
-        assert_eq!(ctx.active_mode, Mode::Containers);
+        assert_eq!(ctx.commands, commands);
     }
 
     #[test]
@@ -413,41 +299,14 @@ mod tests {
             .list
             .matches()
             .find(|(item, _)| {
-                *item.key() == PaletteTarget::SwitchMode(Mode::Containers)
+                *item.key()
+                    == PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Containers,
+                    ))
             })
             .map(|(item, _)| item.clone())
             .expect("an unpinned mode is still listed");
         assert_eq!(containers.shortcut(), None);
-    }
-
-    #[test]
-    fn switching_mode_runs_the_switcher_intent() {
-        let (mut app, _) = App::new();
-
-        let events = run(&mut app, PaletteTarget::SwitchMode(Mode::Containers));
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
-                Mode::Containers
-            )))]
-        ));
-    }
-
-    #[test]
-    fn switching_to_terminal_mode_gives_the_terminal_its_focus_back() {
-        let (mut app, _) = App::new();
-
-        let events = run(&mut app, PaletteTarget::SwitchMode(Mode::Terminal));
-
-        assert!(events.iter().any(|event| matches!(
-            event,
-            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
-                Mode::Terminal
-            )))
-        )));
-        assert!(events.iter().any(is_focus_active));
-        assert_eq!(events.len(), 2);
     }
 
     #[test]
@@ -508,170 +367,6 @@ mod tests {
     }
 
     #[test]
-    fn new_terminal_opens_a_shell_tab() {
-        let (mut app, _) = App::new();
-
-        let events = run(&mut app, PaletteTarget::NewTerminal);
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenTerminalTab
-            ))]
-        ));
-    }
-
-    #[test]
-    fn new_launch_runs_the_launches_header_action() {
-        let (mut app, _) = App::new();
-
-        let events = run(&mut app, PaletteTarget::NewLaunch);
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                QuickLaunchIntent::HeaderCreateCommand
-            ))]
-        ));
-    }
-
-    #[test]
-    fn new_folder_reveals_the_launches_section_before_starting_the_folder() {
-        let (mut app, _) = App::new();
-
-        let events = run(&mut app, PaletteTarget::NewFolder);
-
-        // The name field only takes keyboard focus once it is on screen.
-        assert!(matches!(
-            events.as_slice(),
-            [
-                AppEvent::Sidebar(SidebarEvent::Intent(
-                    SidebarIntent::RevealLaunches
-                )),
-                AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-                    QuickLaunchIntent::HeaderCreateFolder
-                )),
-            ]
-        ));
-    }
-
-    #[test]
-    fn new_folder_outside_terminal_mode_leaves_the_hidden_launches_alone() {
-        let (mut app, _) = App::new();
-        let _ = app
-            .widgets
-            .modes
-            .reduce(ModesIntent::Select(Mode::Containers));
-
-        let events = run(&mut app, PaletteTarget::NewFolder);
-
-        assert!(events.is_empty());
-    }
-
-    #[test]
-    fn settings_opens_the_settings_tab() {
-        let (mut app, _) = App::new();
-
-        let events = run(&mut app, PaletteTarget::Settings);
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Tabs(TabsEvent::Intent(
-                TabsIntent::OpenSettingsTab
-            ))]
-        ));
-    }
-
-    #[test]
-    fn split_pane_splits_the_focused_pane_to_the_right() {
-        let (mut app, _) = App::new();
-
-        let events = run(&mut app, PaletteTarget::SplitPane);
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::SplitFocusedPane {
-                    axis: pane_grid::Axis::Vertical,
-                }
-            ))]
-        ));
-    }
-
-    #[test]
-    fn close_session_closes_the_active_tab() {
-        let (mut app, _) = App::new();
-
-        let events = run(&mut app, PaletteTarget::CloseSession);
-
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseActive))]
-        ));
-    }
-
-    #[test]
-    fn close_session_outside_terminal_mode_keeps_the_hidden_tab() {
-        let (mut app, _) = App::new();
-        app.widgets.modes = ModesWidget::new();
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
-        let _ = app
-            .widgets
-            .modes
-            .reduce(ModesIntent::Select(Mode::Containers));
-
-        let events = run(&mut app, PaletteTarget::CloseSession);
-
-        assert!(events.is_empty());
-    }
-
-    #[test]
-    fn split_pane_outside_terminal_mode_leaves_the_hidden_tab_alone() {
-        let (mut app, _) = App::new();
-        let _ = open_shell_tab(&mut app);
-        let _ = app
-            .widgets
-            .modes
-            .reduce(ModesIntent::Select(Mode::Containers));
-
-        let events = run(&mut app, PaletteTarget::SplitPane);
-
-        assert!(events.is_empty());
-    }
-
-    #[test]
-    fn panel_toggles_run_the_sidebar_toggles_and_give_the_terminal_focus() {
-        let cases = [
-            (PaletteTarget::ToggleLeftPanel, SidebarIntent::ToggleLeft),
-            (PaletteTarget::ToggleFilesPanel, SidebarIntent::ToggleRight),
-            (
-                PaletteTarget::ToggleFocusMode,
-                SidebarIntent::ToggleFocusMode,
-            ),
-        ];
-
-        for (target, expected) in cases {
-            let (mut app, _) = App::new();
-
-            let events = run(&mut app, target.clone());
-
-            // `SidebarIntent` has no `PartialEq`; its debug text names it.
-            let sidebar_intents: Vec<String> = events
-                .iter()
-                .filter_map(|event| match event {
-                    AppEvent::Sidebar(SidebarEvent::Intent(intent)) => {
-                        Some(format!("{intent:?}"))
-                    },
-                    _ => None,
-                })
-                .collect();
-            assert_eq!(sidebar_intents, vec![format!("{expected:?}")]);
-            assert!(events.iter().any(is_focus_active), "{target:?}");
-            assert_eq!(events.len(), 2, "{target:?}");
-        }
-    }
-
-    #[test]
     fn closing_without_running_gives_the_terminal_its_focus_back() {
         let (mut app, _) = App::new();
 
@@ -691,11 +386,8 @@ mod tests {
         let _ = route(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
 
         let vm = app.widgets.palette.vm().expect("palette should be open");
-        assert!(
-            vm.list
-                .matches()
-                .any(|(item, _)| *item.key() == PaletteTarget::SplitPane)
-        );
+        assert!(vm.list.matches().any(|(item, _)| *item.key()
+            == PaletteTarget::Command(AppCommand::SplitPane)));
     }
 
     #[test]
@@ -713,28 +405,82 @@ mod tests {
         let vm = app.widgets.palette.vm().expect("palette should be open");
         let targets: Vec<&PaletteTarget> =
             vm.list.matches().map(|(item, _)| item.key()).collect();
-        assert!(!targets.contains(&&PaletteTarget::SplitPane));
-        assert!(!targets.contains(&&PaletteTarget::CloseSession));
-        assert!(!targets.contains(&&PaletteTarget::NewFolder));
+        for command in [
+            AppCommand::SplitPane,
+            AppCommand::CloseSession,
+            AppCommand::NewFolder,
+        ] {
+            assert!(
+                !targets.contains(&&PaletteTarget::Command(command)),
+                "{command:?}"
+            );
+        }
         assert!(targets.contains(&&PaletteTarget::Session { tab_id }));
     }
 
     #[test]
-    fn a_mode_switch_while_the_palette_is_open_leaves_a_stale_press_harmless() {
+    fn a_command_entry_asks_the_app_to_run_its_command() {
+        for command in [
+            AppCommand::NewTerminal,
+            AppCommand::NewLaunch,
+            AppCommand::NewFolder,
+            AppCommand::OpenSettings,
+            AppCommand::SplitPane,
+            AppCommand::CloseSession,
+            AppCommand::SwitchMode(Mode::Containers),
+        ] {
+            let (mut app, _) = App::new();
+
+            let events = run(&mut app, PaletteTarget::Command(command));
+
+            assert!(
+                matches!(
+                    events.as_slice(),
+                    [AppEvent::Command(asked)] if *asked == command
+                ),
+                "{command:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn panel_toggle_entries_run_their_command_and_give_the_terminal_focus() {
+        for command in [
+            AppCommand::ToggleLeftPanel,
+            AppCommand::ToggleFilesPanel,
+            AppCommand::ToggleFocusMode,
+        ] {
+            let (mut app, _) = App::new();
+
+            let events = run(&mut app, PaletteTarget::Command(command));
+
+            assert!(
+                events.iter().any(|event| matches!(
+                    event,
+                    AppEvent::Command(asked) if *asked == command
+                )),
+                "{command:?}"
+            );
+            assert!(events.iter().any(is_focus_active), "{command:?}");
+            assert_eq!(events.len(), 2, "{command:?}");
+        }
+    }
+
+    #[test]
+    fn the_terminal_mode_entry_switches_and_gives_the_terminal_its_focus_back()
+    {
         let (mut app, _) = App::new();
-        let _ = open_shell_tab(&mut app);
-        let _ = route(&mut app, PaletteEvent::Intent(PaletteIntent::Open));
-        let _ = app
-            .widgets
-            .modes
-            .reduce(ModesIntent::Select(Mode::Containers));
 
-        let split = run(&mut app, PaletteTarget::SplitPane);
-        let close = run(&mut app, PaletteTarget::CloseSession);
-        let new_folder = run(&mut app, PaletteTarget::NewFolder);
+        let events = run(
+            &mut app,
+            PaletteTarget::Command(AppCommand::SwitchMode(Mode::Terminal)),
+        );
 
-        assert!(split.is_empty());
-        assert!(close.is_empty());
-        assert!(new_folder.is_empty());
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Command(AppCommand::SwitchMode(Mode::Terminal))
+        )));
+        assert!(events.iter().any(is_focus_active));
+        assert_eq!(events.len(), 2);
     }
 }
