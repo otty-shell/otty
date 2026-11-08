@@ -20,6 +20,7 @@ mod services;
     reason = "this module writes the shell integration files"
 )]
 mod shell_integration;
+mod shell_session;
 mod shortcuts;
 mod state;
 #[cfg(test)]

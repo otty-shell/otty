@@ -20,6 +20,7 @@ pub(crate) const SHARED_MODULES: &[&str] = &[
     "commands",
     "services",
     "shell_integration",
+    "shell_session",
     "components",
     "domain",
 ];

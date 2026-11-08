@@ -13,6 +13,7 @@ use otty_ui_term::settings::{
 
 use crate::fonts::{FontsConfig, apply_text_locale};
 use crate::router::AppEvent;
+use crate::shell_session::{ShellSession, shell_session};
 use crate::state::State;
 use crate::theme::{AppTheme, ThemeManager};
 use crate::widgets::Widgets;
@@ -26,10 +27,6 @@ use crate::widgets::settings::SettingsWidget;
 use crate::widgets::sidebar::SidebarWidget;
 use crate::widgets::tabs::TabsWidget;
 use crate::widgets::terminal_workspace::TerminalWorkspaceWidget;
-use crate::widgets::terminal_workspace::services::{
-    fallback_shell_session_with_shell, setup_shell_session_with_shell,
-};
-use crate::widgets::terminal_workspace::types::ShellSession;
 use crate::{layout, services};
 
 pub(crate) const MIN_WINDOW_WIDTH: f32 = 800.0;
@@ -76,13 +73,7 @@ impl App {
         let fonts = FontsConfig::default();
         let terminal_settings = terminal_settings(current_theme, &fonts);
         let shell_path = initial_settings.terminal_shell().to_string();
-        let shell_session = match setup_shell_session_with_shell(&shell_path) {
-            Ok(session) => session,
-            Err(err) => {
-                log::warn!("shell integration setup failed: {err}");
-                fallback_shell_session_with_shell(&shell_path)
-            },
-        };
+        let shell_session = shell_session(&shell_path);
         let host_name = services::read_host_name();
 
         let window_size = Size {

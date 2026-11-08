@@ -100,18 +100,6 @@ pub const ALLOWLIST: &[Allowed] = &[
         "the domain type still names a type of the quick_launch widget; move that type into domain/",
     ),
     Allowed::known(
-        Rule::ServicesOutsideRoute,
-        "app.rs",
-        "widgets::terminal_workspace::services",
-        "the shell session setup lives in terminal_workspace::services; move it where both callers may use it",
-    ),
-    Allowed::known(
-        Rule::ServicesOutsideRoute,
-        "router/settings.rs",
-        "widgets::terminal_workspace::services",
-        "the shell session setup lives in terminal_workspace::services; move it where both callers may use it",
-    ),
-    Allowed::known(
         Rule::StreamOutsideSubscription,
         "widgets/explorer/watcher.rs",
         "Subscription::run",

@@ -8,6 +8,7 @@ use super::AppEvent;
 use crate::app::App;
 use crate::fonts::apply_text_locale;
 use crate::i18n::{self, Key};
+use crate::shell_session::shell_session;
 use crate::widgets::settings::event::{
     SettingsEffect, SettingsEvent, SettingsIntent,
 };
@@ -16,9 +17,6 @@ use crate::widgets::settings::types::{SettingsData, SettingsLoad};
 use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
-};
-use crate::widgets::terminal_workspace::services::{
-    fallback_shell_session_with_shell, setup_shell_session_with_shell,
 };
 
 /// Route a settings event: reduce its intents and apply saved settings.
@@ -97,13 +95,7 @@ fn apply_theme(app: &mut App, data: &SettingsData) -> Task<AppEvent> {
     };
 
     let shell_path = data.terminal_shell().to_string();
-    app.shell_session = match setup_shell_session_with_shell(&shell_path) {
-        Ok(session) => session,
-        Err(err) => {
-            log::warn!("shell integration setup failed: {err}");
-            fallback_shell_session_with_shell(&shell_path)
-        },
-    };
+    app.shell_session = shell_session(&shell_path);
 
     Task::batch(vec![
         Task::done(AppEvent::Tabs(TabsEvent::Intent(
