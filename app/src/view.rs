@@ -1,14 +1,12 @@
-use iced::widget::{Space, column, container, mouse_area, pane_grid, text};
-use iced::{Element, Length, Theme, alignment};
+use iced::widget::{Space, column, container, mouse_area};
+use iced::{Element, Length, Theme};
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::screen_area::ScreenArea;
-use otty_ui_kit::spacing;
 
 use super::{App, AppEvent};
 #[cfg(not(target_os = "macos"))]
 use crate::components::primitive::resize_grips;
 use crate::domain::mode::Mode;
-use crate::geometry::anchor_position;
 use crate::layout;
 use crate::screens::{containers, terminal};
 use crate::theme::ThemeProps;
@@ -19,19 +17,12 @@ use crate::widgets::modes::event::ModesEvent;
 use crate::widgets::modes::view::{mode_menu, mode_switcher};
 use crate::widgets::palette::event::PaletteEvent;
 use crate::widgets::palette::view::command_palette as palette_view;
-use crate::widgets::quick_launch::event::{
-    QuickLaunchEvent, QuickLaunchIntent,
-};
-use crate::widgets::quick_launch::view::{new_launch_menu, secret_prompt};
+use crate::widgets::quick_launch::event::QuickLaunchEvent;
+use crate::widgets::quick_launch::view::secret_prompt;
 use crate::widgets::sidebar::SidebarViewModel;
 use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
-use crate::widgets::sidebar::types::{HeaderMenu, OpenHeaderMenu, SidebarPane};
+use crate::widgets::sidebar::types::SidebarPane;
 use crate::widgets::sidebar::view::{focus_note, panels};
-use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
-use crate::widgets::tabs::view::new_session_menu;
-use crate::widgets::terminal_workspace::event::{
-    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
-};
 
 /// Which screen fills the main area. Each value is one screen to the user: a
 /// change of value starts at the top left, and the same value built again keeps
@@ -92,7 +83,7 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     let window_content =
         view_window_content(app, mode, sidebar_vm, theme_props);
     let mode_overlays = match mode {
-        Mode::Terminal => terminal::overlays(app, theme_props),
+        Mode::Terminal => terminal::overlays(app, sidebar_vm, theme_props),
         Mode::Containers => containers::overlays(app, theme_props),
     };
     // The mode overlays share one layer, so that one of them opening or
@@ -102,20 +93,15 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
-    let header_menu = sidebar_vm
-        .open_header_menu
-        .map(|open| view_header_menu_overlay(app, open, theme_props));
     let modes_menu = view_modes_menu(app, theme_props);
     let palette = view_palette(app, theme_props);
     let secret_prompt = view_secret_prompt(app, theme_props);
     let resize_grips = view_resize_grips(app, mode);
 
     // The layers from bottom to top, the same in every mode. Each mode lays
-    // its overlays out itself; the shared menus, the palette and the SSH
-    // secret prompt lie in the main area, between the header and the status
-    // bar.
+    // its overlays out itself; the modes menu, the palette and the SSH secret
+    // prompt lie in the main area, between the header and the status bar.
     let mut layers = vec![window_content, mode_overlays];
-    layers.extend(header_menu.map(over_main_area));
     layers.extend(modes_menu.map(over_main_area));
     layers.extend(palette.map(over_main_area));
     layers.extend(secret_prompt.map(over_main_area));
@@ -244,129 +230,6 @@ fn view_left_panel<'a>(
         .into()
 }
 
-/// Render the open header menu with its dismiss layer, anchored at the point
-/// where it was opened.
-fn view_header_menu_overlay<'a>(
-    app: &'a App,
-    open: OpenHeaderMenu,
-    theme_props: ThemeProps<'a>,
-) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    let (menu, menu_width, menu_height) = match open.menu() {
-        HeaderMenu::Sessions => view_new_session_menu(app, theme_props),
-        HeaderMenu::Launches => view_new_launch_menu(theme_props),
-    };
-
-    let anchor = anchor_position(
-        open.cursor(),
-        app.state.screen_size,
-        menu_width,
-        menu_height,
-        spacing::SPACE_2,
-    );
-
-    let padding = iced::Padding {
-        top: anchor.y,
-        left: anchor.x,
-        ..iced::Padding::ZERO
-    };
-
-    let positioned_menu = container(menu)
-        .padding(padding)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(alignment::Horizontal::Left)
-        .align_y(alignment::Vertical::Top);
-
-    let dismiss = || {
-        AppEvent::Sidebar(SidebarEvent::Intent(
-            SidebarIntent::HeaderMenuDismiss,
-        ))
-    };
-    let dismiss_layer = mouse_area(
-        container(text("")).width(Length::Fill).height(Length::Fill),
-    )
-    .on_press(dismiss())
-    .on_right_press(dismiss())
-    .on_move(|position| {
-        AppEvent::Sidebar(SidebarEvent::Intent(
-            SidebarIntent::WorkspaceCursorMoved { position },
-        ))
-    });
-
-    iced::widget::stack!(dismiss_layer, positioned_menu)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-}
-
-/// The New session menu with its width and height.
-fn view_new_session_menu<'a>(
-    app: &'a App,
-    theme_props: ThemeProps<'a>,
-) -> (Element<'a, AppEvent, Theme, iced::Renderer>, f32, f32) {
-    let active_tab_id = app.widgets.tabs.active_tab_id();
-    let on_split = app
-        .widgets
-        .terminal_workspace
-        .focused_pane(active_tab_id)
-        .map(|(tab_id, pane)| {
-            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::SplitPane {
-                    tab_id,
-                    pane,
-                    axis: pane_grid::Axis::Vertical,
-                },
-            ))
-        });
-    let launches: Vec<_> = app
-        .widgets
-        .quick_launch
-        .top_level_launches()
-        .into_iter()
-        .map(|launch| {
-            let run = QuickLaunchIntent::LaunchNode { path: launch.path };
-            (
-                launch.title,
-                AppEvent::QuickLaunch(QuickLaunchEvent::Intent(run)),
-            )
-        })
-        .collect();
-    let menu_height = new_session_menu::menu_height(launches.len());
-
-    let menu = new_session_menu::view(new_session_menu::NewSessionMenuProps {
-        theme: theme_props,
-        shell_name: app.shell_session.name(),
-        on_new_terminal: AppEvent::Tabs(TabsEvent::Intent(
-            TabsIntent::OpenTerminalTab,
-        )),
-        on_split,
-        launches,
-        on_new_launch: AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
-            QuickLaunchIntent::HeaderCreateCommand,
-        )),
-    });
-
-    (menu, new_session_menu::NEW_SESSION_MENU_WIDTH, menu_height)
-}
-
-/// The Launches menu with its width and height.
-fn view_new_launch_menu<'a>(
-    theme_props: ThemeProps<'a>,
-) -> (Element<'a, AppEvent, Theme, iced::Renderer>, f32, f32) {
-    let menu = new_launch_menu::view(new_launch_menu::NewLaunchMenuProps {
-        theme: theme_props,
-        on_intent: |intent| {
-            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
-        },
-    });
-
-    (
-        menu,
-        otty_ui_kit::components::menu::MENU_WIDTH,
-        new_launch_menu::menu_height(),
-    )
-}
-
 /// The All modes menu under the switcher, while it is open.
 fn view_modes_menu<'a>(
     app: &'a App,
@@ -484,7 +347,10 @@ pub(crate) mod tests {
     use crate::widgets::containers::event::ContainersIntent;
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::event::ModesIntent;
+    use crate::widgets::quick_launch::event::QuickLaunchIntent;
+    use crate::widgets::sidebar::types::HeaderMenu;
     use crate::widgets::tabs::TabsCtx;
+    use crate::widgets::tabs::event::TabsIntent;
 
     // The `pub(crate)` helpers are shared with the tests of the mode screens
     // in `screens/`.
@@ -1184,6 +1050,34 @@ pub(crate) mod tests {
         )));
     }
 
+    /// An SSH launch asks for its password while the New session menu is
+    /// open: the prompt is drawn over the Terminal overlays and takes the
+    /// click.
+    #[test]
+    fn the_secret_prompt_is_drawn_over_the_new_session_menu() {
+        let mut app = app_in(Mode::Terminal);
+        let _ = app
+            .widgets
+            .sidebar
+            .reduce(SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions));
+        open_secret_prompt(&mut app);
+        assert!(app.widgets.sidebar.has_header_menu_open());
+
+        let mut ui = simulator(view(&app));
+        ui.find(i18n::t(Key::MenuSplitCurrentPane))
+            .expect("the New session menu should show");
+        ui.click(i18n::t(Key::ButtonConnect))
+            .expect("the prompt should show");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::SecretPromptSubmit
+            ))
+        )));
+    }
+
     #[test]
     fn the_palette_is_drawn_over_a_containers_dialog() {
         use otty_ui_kit::components::command_palette::PaletteAction;
@@ -1232,50 +1126,5 @@ pub(crate) mod tests {
                 Mode::Terminal
             )))
         )));
-    }
-
-    /// The main area reports the pointer in its own coordinates, so the
-    /// Launches menu that opens there lies that far under the header.
-    #[test]
-    fn the_launches_menu_opens_at_the_pointer_in_the_main_area() {
-        let window = iced::Size::new(1024.0, 768.0);
-        let cursor = Point::new(300.0, 200.0);
-        let mut app = app_in(Mode::Terminal);
-        app.state.window_size = window;
-        app.state.screen_size = crate::layout::screen_size_from_window(window);
-        let _ = app
-            .widgets
-            .sidebar
-            .reduce(SidebarIntent::WorkspaceCursorMoved { position: cursor });
-        let _ = app
-            .widgets
-            .sidebar
-            .reduce(SidebarIntent::HeaderMenuOpen(HeaderMenu::Launches));
-        let anchor = anchor_position(
-            cursor,
-            app.state.screen_size,
-            otty_ui_kit::components::menu::MENU_WIDTH,
-            new_launch_menu::menu_height(),
-            spacing::SPACE_2,
-        );
-
-        let mut ui = simulator(view(&app));
-        let item = ui
-            .find(i18n::t(Key::MenuNewFolder))
-            .expect("the menu should show")
-            .bounds();
-
-        let top = size::TITLEBAR + size::LINE + anchor.y;
-        let bottom = top + new_launch_menu::menu_height();
-        let right = anchor.x + otty_ui_kit::components::menu::MENU_WIDTH;
-        assert!(
-            item.x >= anchor.x && item.x < right,
-            "the item {item:?} should start inside the menu from {} to {right}",
-            anchor.x
-        );
-        assert!(
-            item.y >= top && item.y + item.height <= bottom,
-            "the item {item:?} should lie inside the menu from {top} to {bottom}"
-        );
     }
 }
