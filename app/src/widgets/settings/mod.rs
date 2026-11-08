@@ -38,11 +38,7 @@ impl SettingsWidget {
 
     /// Return a read-only view model for the settings form.
     pub(crate) fn vm(&self) -> SettingsViewModel<'_> {
-        SettingsViewModel {
-            draft: self.state.draft(),
-            is_dirty: self.state.is_dirty(),
-            is_saving: self.state.is_saving(),
-        }
+        SettingsViewModel::from_state(&self.state)
     }
 
     /// Return the configured terminal editor command.

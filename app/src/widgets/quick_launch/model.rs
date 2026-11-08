@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::state::InlineEditState;
+use super::state::{InlineEditState, QuickLaunchState};
 use super::types::{
     DropTarget, LaunchInfo, NodePath, QuickLaunch, QuickLaunchFile,
     QuickLaunchFolder, QuickLaunchNode,
@@ -18,6 +18,18 @@ pub(crate) struct QuickLaunchTreeViewModel<'a> {
 }
 
 impl<'a> QuickLaunchTreeViewModel<'a> {
+    /// Build the view model from the quick launch state.
+    pub(super) fn from_state(state: &'a QuickLaunchState) -> Self {
+        Self {
+            data: state.data(),
+            selected_path: state.selected_path(),
+            hovered_path: state.hovered_path(),
+            inline_edit: state.inline_edit(),
+            launching: state.launching(),
+            drop_target: state.drop_target(),
+        }
+    }
+
     /// Every launch in the tree, folders left out, in tree order (a
     /// folder's launches come where the folder is).
     pub(crate) fn launches(&self) -> Vec<LaunchViewModel<'a>> {

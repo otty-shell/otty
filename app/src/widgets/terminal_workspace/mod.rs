@@ -18,9 +18,7 @@ use otty_ui_kit::components::target_dot::TargetKind;
 pub(crate) use reducer::TerminalWorkspaceCtx;
 use state::{TerminalTabState, TerminalWorkspaceState};
 
-use self::model::{
-    PaneLabel, TerminalTabViewModel, TerminalWorkspaceViewModel,
-};
+use self::model::{PaneLabel, TerminalWorkspaceViewModel};
 
 /// Terminal workspace widget: manages terminal sessions across tabs.
 ///
@@ -67,18 +65,12 @@ impl TerminalWorkspaceWidget {
         machine: &'a str,
         machine_target: TargetKind,
     ) -> TerminalWorkspaceViewModel<'a> {
-        let tab = active_tab_id.and_then(|tab_id| self.state.tab(tab_id)).map(
-            |tab| TerminalTabViewModel {
-                tab_id: active_tab_id.unwrap_or(0),
-                panes: tab.panes(),
-                terminals: tab.terminals(),
-                focus: tab.focus(),
-                machine,
-                machine_target,
-            },
-        );
-
-        TerminalWorkspaceViewModel { tab }
+        TerminalWorkspaceViewModel::from_state(
+            &self.state,
+            active_tab_id,
+            machine,
+            machine_target,
+        )
     }
 
     /// Iterate all terminal tabs.

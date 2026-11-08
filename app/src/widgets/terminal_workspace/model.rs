@@ -6,6 +6,7 @@ use iced::widget::pane_grid;
 use otty_ui_kit::components::target_dot::TargetKind;
 
 use super::services;
+use super::state::TerminalWorkspaceState;
 use super::types::TerminalEntry;
 
 /// Longest folder path, counted after `~` or `/`, shown in full.
@@ -31,6 +32,31 @@ pub(crate) struct TerminalTabViewModel<'a> {
 #[derive(Clone, Copy)]
 pub(crate) struct TerminalWorkspaceViewModel<'a> {
     pub(crate) tab: Option<TerminalTabViewModel<'a>>,
+}
+
+impl<'a> TerminalWorkspaceViewModel<'a> {
+    /// Build the view model of the active tab from the workspace state.
+    /// `machine` and `machine_target` describe where the tab runs.
+    pub(super) fn from_state(
+        state: &'a TerminalWorkspaceState,
+        active_tab_id: Option<u64>,
+        machine: &'a str,
+        machine_target: TargetKind,
+    ) -> Self {
+        let tab =
+            active_tab_id
+                .and_then(|tab_id| state.tab(tab_id))
+                .map(|tab| TerminalTabViewModel {
+                    tab_id: active_tab_id.unwrap_or(0),
+                    panes: tab.panes(),
+                    terminals: tab.terminals(),
+                    focus: tab.focus(),
+                    machine,
+                    machine_target,
+                });
+
+        Self { tab }
+    }
 }
 
 /// What a pane runs and where. The pane header, the status bar and the

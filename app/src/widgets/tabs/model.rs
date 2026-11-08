@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use otty_ui_kit::components::target_dot::TargetKind;
 
+use super::state::TabsState;
 use super::types::{TabContent, TabItem, TabMachine};
 
 /// View model of the Sessions section: the open tabs grouped by machine.
@@ -14,6 +15,15 @@ pub(crate) struct TabsViewModel<'a> {
 }
 
 impl<'a> TabsViewModel<'a> {
+    /// Build the view model from the tabs state. `host_name` names this
+    /// computer (`None` when it could not be read).
+    pub(super) fn from_state(
+        state: &'a TabsState,
+        host_name: Option<&'a str>,
+    ) -> Self {
+        Self::new(state.tab_items(), state.active_tab_id(), host_name)
+    }
+
     /// Group `tabs` by machine. Groups keep the order in which their first
     /// open tab was opened; rows keep tab order. `host_name` names this
     /// computer (`None` when it could not be read).

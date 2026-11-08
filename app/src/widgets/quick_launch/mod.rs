@@ -49,14 +49,7 @@ impl QuickLaunchWidget {
 
     /// Return a tree view model for the sidebar panel.
     pub(crate) fn vm(&self) -> model::QuickLaunchTreeViewModel<'_> {
-        model::QuickLaunchTreeViewModel {
-            data: self.state.data(),
-            selected_path: self.state.selected_path(),
-            hovered_path: self.state.hovered_path(),
-            inline_edit: self.state.inline_edit(),
-            launching: self.state.launching(),
-            drop_target: self.state.drop_target(),
-        }
+        model::QuickLaunchTreeViewModel::from_state(&self.state)
     }
 
     /// The launches at the top level of the tree, in tree order, each with

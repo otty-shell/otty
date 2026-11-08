@@ -1,5 +1,6 @@
 use otty_ui_tree::TreePath;
 
+use super::state::ExplorerState;
 use super::types::FileNode;
 
 /// Read-only view model for the explorer tree.
@@ -9,6 +10,18 @@ pub(crate) struct ExplorerTreeViewModel<'a> {
     pub(super) tree: &'a [FileNode],
     pub(super) selected_path: Option<&'a TreePath>,
     pub(super) hovered_path: Option<&'a TreePath>,
+}
+
+impl<'a> ExplorerTreeViewModel<'a> {
+    /// Build the view model from the explorer state.
+    pub(super) fn from_state(state: &'a ExplorerState) -> Self {
+        Self {
+            root_label: state.root_label(),
+            tree: state.tree(),
+            selected_path: state.selected_path(),
+            hovered_path: state.hovered_path(),
+        }
+    }
 }
 
 #[cfg(test)]

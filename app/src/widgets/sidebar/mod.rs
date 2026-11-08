@@ -37,15 +37,7 @@ impl SidebarWidget {
 
     /// Build a read-only view model for the presentation layer.
     pub(crate) fn vm(&self) -> SidebarViewModel {
-        SidebarViewModel {
-            is_left_open: self.state.is_left_open(),
-            is_right_open: self.state.is_right_open(),
-            is_focus_mode: self.state.is_focus_mode(),
-            focus_note_opacity: self.state.focus_note_opacity(),
-            is_sessions_open: self.state.is_sessions_open(),
-            is_launches_open: self.state.is_launches_open(),
-            open_header_menu: self.state.header_menu(),
-        }
+        SidebarViewModel::from_state(&self.state)
     }
 
     /// Return read-only access to pane-grid slots for rendering.

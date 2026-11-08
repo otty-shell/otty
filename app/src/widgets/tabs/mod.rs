@@ -42,11 +42,7 @@ impl TabsWidget {
         &'a self,
         host_name: Option<&'a str>,
     ) -> TabsViewModel<'a> {
-        TabsViewModel::new(
-            self.state.tab_items(),
-            self.state.active_tab_id(),
-            host_name,
-        )
+        TabsViewModel::from_state(&self.state, host_name)
     }
 
     /// Return the active tab identifier.

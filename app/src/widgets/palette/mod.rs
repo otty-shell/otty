@@ -38,7 +38,7 @@ impl PaletteWidget {
 
     /// View model while the palette is open.
     pub(crate) fn vm(&self) -> Option<PaletteViewModel<'_>> {
-        self.state.list().map(|list| PaletteViewModel { list })
+        PaletteViewModel::from_state(&self.state)
     }
 
     /// Return whether the palette is open.
