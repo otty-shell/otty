@@ -56,10 +56,13 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         return Task::none();
     }
 
-    // Esc closes the All modes menu. The menu takes keyboard focus away
-    // from the terminal when it opens, so the key reaches the app.
-    if app.widgets.modes.is_menu_open() && is_escape_press(&event) {
-        return close_modes_menu(app);
+    // Esc closes the overlay on top, or cancels it for a dialog and the
+    // inline edit, wherever the keyboard focus is. A menu takes the focus
+    // from the terminals when it opens, so the key reaches the app.
+    if let Some(top) = top
+        && is_escape_press(&event)
+    {
+        return router::route(app, top.escape_event());
     }
 
     // Mode shortcuts still work while the All modes menu is open: the menu
@@ -214,12 +217,18 @@ mod tests {
     use crate::app::Message;
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::domain::mode::Mode;
+    use crate::guards::Overlay;
     use crate::i18n;
-    use crate::testing::overlays::open_secret_prompt;
+    use crate::testing::overlays::{
+        open_confirm, open_create_dialog, open_header_menu, open_launch_menu,
+        open_modes_menu, open_palette, open_pane_menu, open_row_menu,
+        open_secret_prompt,
+    };
     use crate::testing::shell_tab::open_shell_tab;
     use crate::testing::task_outputs::{
         collect_outputs, runs_widget_operation,
     };
+    use crate::testing::window::{app_in, containers_app_with_lists};
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::event::ContainersEffect;
     use crate::widgets::containers::inspector::event::InspectorIntent;
@@ -324,6 +333,93 @@ mod tests {
         let _ = update_input(&mut app, escape_press());
 
         assert!(!app.widgets.modes.is_menu_open());
+    }
+
+    /// Opens one overlay on an app.
+    type Opener = fn(&mut App);
+
+    /// The openers of the menus of Terminal mode and of both modes.
+    const TERMINAL_MENUS: [Opener; 5] = [
+        open_palette,
+        open_modes_menu,
+        open_header_menu,
+        open_pane_menu,
+        open_launch_menu,
+    ];
+
+    /// Scenarios 1, 3, 4 and 6: Esc closes the menu on top, wherever the
+    /// keyboard focus is.
+    #[test]
+    fn esc_closes_each_menu() {
+        for open in TERMINAL_MENUS {
+            let mut app = app_in(Mode::Terminal);
+            open(&mut app);
+            let opened = top_overlay(&app);
+
+            let _ = update_input(&mut app, escape_press());
+
+            assert!(opened.is_some());
+            assert_eq!(top_overlay(&app), None, "{opened:?}");
+        }
+        let mut app = containers_app_with_lists();
+        open_row_menu(&mut app);
+
+        let _ = update_input(&mut app, escape_press());
+
+        assert_eq!(top_overlay(&app), None);
+    }
+
+    /// Scenarios 5 and 6: Esc means Cancel in a dialog and in the inline edit.
+    #[test]
+    fn esc_cancels_each_dialog_and_the_inline_edit() {
+        let mut prompt = app_in(Mode::Terminal);
+        open_secret_prompt(&mut prompt);
+        let mut edit = app_in(Mode::Terminal);
+        start_inline_edit(&mut edit);
+        let mut create = containers_app_with_lists();
+        open_create_dialog(&mut create);
+        let mut confirm = containers_app_with_lists();
+        open_confirm(&mut confirm);
+
+        for mut app in [prompt, edit, create, confirm] {
+            let opened = top_overlay(&app);
+
+            let _ = update_input(&mut app, escape_press());
+
+            assert!(opened.is_some());
+            assert_eq!(top_overlay(&app), None, "{opened:?}");
+        }
+    }
+
+    /// The SSH prompt over a menu over the inline edit: each Esc closes the
+    /// one on top and leaves the others open.
+    #[test]
+    fn esc_closes_only_the_overlay_on_top() {
+        let mut app = app_in(Mode::Terminal);
+        start_inline_edit(&mut app);
+        open_header_menu(&mut app);
+        open_secret_prompt(&mut app);
+        let mut on_top = Vec::new();
+
+        for _ in 0..3 {
+            let _ = update_input(&mut app, escape_press());
+            on_top.push(top_overlay(&app));
+        }
+
+        assert_eq!(
+            on_top,
+            [Some(Overlay::HeaderMenu), Some(Overlay::InlineEdit), None]
+        );
+    }
+
+    #[test]
+    fn esc_with_nothing_open_changes_nothing() {
+        let mut app = app_in(Mode::Terminal);
+
+        let events = collect_outputs(update_input(&mut app, escape_press()));
+
+        assert!(events.is_empty());
+        assert_eq!(top_overlay(&app), None);
     }
 
     #[test]

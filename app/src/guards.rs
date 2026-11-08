@@ -7,8 +7,12 @@ use crate::app::App;
 use crate::domain::mode::Mode;
 use crate::router::AppEvent;
 use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
+use crate::widgets::containers::actions::event::ActionsIntent;
+use crate::widgets::containers::create::event::CreateIntent;
+use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+use crate::widgets::palette::event::{PaletteEvent, PaletteIntent};
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
 };
@@ -69,6 +73,45 @@ impl Overlay {
                 | Overlay::ContainersCreate
                 | Overlay::ContainersConfirm
         )
+    }
+
+    /// Return what Esc sends while this overlay is on top: the event that
+    /// closes a menu, or Cancel of a dialog and of the inline edit.
+    pub(crate) fn escape_event(self) -> AppEvent {
+        match self {
+            Overlay::SecretPrompt => {
+                quick_launch(QuickLaunchIntent::SecretPromptCancel)
+            },
+            Overlay::Palette => {
+                AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Dismiss))
+            },
+            Overlay::ModesMenu => {
+                AppEvent::Modes(ModesEvent::Intent(ModesIntent::CloseMenu))
+            },
+            Overlay::HeaderMenu => AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::HeaderMenuDismiss,
+            )),
+            Overlay::ContainersCreate => {
+                containers(ContainersIntent::Create(CreateIntent::Cancelled))
+            },
+            Overlay::ContainersConfirm => containers(
+                ContainersIntent::Actions(ActionsIntent::ConfirmCancelled),
+            ),
+            Overlay::ContainersRowMenu => containers(
+                ContainersIntent::Actions(ActionsIntent::CloseRowMenu),
+            ),
+            Overlay::TerminalContextMenu => {
+                AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                    TerminalWorkspaceIntent::CloseAllContextMenus,
+                ))
+            },
+            Overlay::LaunchContextMenu => {
+                quick_launch(QuickLaunchIntent::ContextMenuDismiss)
+            },
+            Overlay::InlineEdit => {
+                quick_launch(QuickLaunchIntent::CancelInlineEdit)
+            },
+        }
     }
 }
 
@@ -216,7 +259,8 @@ pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
 }
 
 /// Return `true` when the event is a press of the Esc key that no widget
-/// took. The app closes the All modes menu with it.
+/// took. The app closes the overlay on top with it. A held key repeats its
+/// press; the repeats do not count, so one press closes one overlay.
 pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
     use iced::keyboard::key::Named;
     use iced::keyboard::{Event, Key};
@@ -225,6 +269,7 @@ pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
         event,
         AppEvent::Keyboard(Event::KeyPressed {
             key: Key::Named(Named::Escape),
+            repeat: false,
             ..
         })
     )
@@ -314,6 +359,14 @@ fn terminal_overlay(app: &App) -> Option<Overlay> {
     None
 }
 
+fn quick_launch(intent: QuickLaunchIntent) -> AppEvent {
+    AppEvent::QuickLaunch(QuickLaunchEvent::Intent(intent))
+}
+
+fn containers(intent: ContainersIntent) -> AppEvent {
+    AppEvent::Containers(ContainersEvent::Intent(intent))
+}
+
 /// Return `true` when the event carries text a terminal sends to its shell:
 /// typed keys, a paste or composed input.
 fn is_terminal_input(event: &AppEvent) -> bool {
@@ -349,12 +402,14 @@ mod tests {
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::actions::event::ActionsIntent;
     use crate::widgets::containers::actions::types::RowAction;
+    use crate::widgets::containers::create::event::CreateIntent;
     use crate::widgets::containers::event::{
         ContainersEvent, ContainersIntent,
     };
     use crate::widgets::containers::types::InspectorTab;
     use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
     use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+    use crate::widgets::palette::event::{PaletteEvent, PaletteIntent};
     use crate::widgets::quick_launch::event::{
         QuickLaunchEvent, QuickLaunchIntent,
     };
@@ -640,6 +695,85 @@ mod tests {
             key_press(Key::Named(Named::Escape), Physical::Code(Code::Escape));
 
         assert!(is_escape_press(&event));
+    }
+
+    /// A held Esc closes one overlay, not the next one under it too.
+    #[test]
+    fn a_held_esc_is_not_an_escape_press() {
+        let held = AppEvent::Keyboard(Event::KeyPressed {
+            key: Key::Named(Named::Escape),
+            modified_key: Key::Named(Named::Escape),
+            physical_key: Physical::Code(Code::Escape),
+            location: Location::Standard,
+            modifiers: Modifiers::empty(),
+            text: None,
+            repeat: true,
+        });
+
+        assert!(!is_escape_press(&held));
+    }
+
+    #[test]
+    fn esc_sends_the_close_or_cancel_intent_of_each_overlay() {
+        let containers =
+            |event: &AppEvent, expected: &ContainersIntent| -> bool {
+                matches!(
+                    event,
+                    AppEvent::Containers(ContainersEvent::Intent(intent))
+                        if intent == expected
+                )
+            };
+
+        assert!(matches!(
+            Overlay::SecretPrompt.escape_event(),
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::SecretPromptCancel
+            ))
+        ));
+        assert!(matches!(
+            Overlay::Palette.escape_event(),
+            AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Dismiss))
+        ));
+        assert!(matches!(
+            Overlay::ModesMenu.escape_event(),
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::CloseMenu))
+        ));
+        assert!(matches!(
+            Overlay::HeaderMenu.escape_event(),
+            AppEvent::Sidebar(SidebarEvent::Intent(
+                SidebarIntent::HeaderMenuDismiss
+            ))
+        ));
+        assert!(containers(
+            &Overlay::ContainersCreate.escape_event(),
+            &ContainersIntent::Create(CreateIntent::Cancelled)
+        ));
+        assert!(containers(
+            &Overlay::ContainersConfirm.escape_event(),
+            &ContainersIntent::Actions(ActionsIntent::ConfirmCancelled)
+        ));
+        assert!(containers(
+            &Overlay::ContainersRowMenu.escape_event(),
+            &ContainersIntent::Actions(ActionsIntent::CloseRowMenu)
+        ));
+        assert!(matches!(
+            Overlay::TerminalContextMenu.escape_event(),
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::CloseAllContextMenus
+            ))
+        ));
+        assert!(matches!(
+            Overlay::LaunchContextMenu.escape_event(),
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::ContextMenuDismiss
+            ))
+        ));
+        assert!(matches!(
+            Overlay::InlineEdit.escape_event(),
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::CancelInlineEdit
+            ))
+        ));
     }
 
     #[test]
