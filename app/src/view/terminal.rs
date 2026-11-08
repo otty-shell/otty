@@ -4,7 +4,7 @@
 use iced::widget::{container, text};
 use iced::{Element, Length, Theme, alignment};
 
-use super::{MainContent, ScreenId};
+use super::{MainContent, ScreenId, over_main_area};
 use crate::app::App;
 use crate::i18n::{self, Key};
 use crate::router::AppEvent;
@@ -210,8 +210,8 @@ pub(super) fn status_bar<'a>(
 }
 
 /// Overlays of Terminal mode, bottom to top: the context menu of the
-/// Launches tree and the context menu of a terminal pane. Both lie over the
-/// main area.
+/// Launches tree and the context menu of a terminal pane. Both open at the
+/// pointer in the main area, so they lie there, under the header.
 pub(super) fn overlays<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
@@ -219,7 +219,7 @@ pub(super) fn overlays<'a>(
     let mut layers = Vec::new();
 
     if let Some(vm) = app.widgets.quick_launch.context_menu_vm() {
-        layers.push(
+        layers.push(over_main_area(
             ql_context_menu::view(ql_context_menu::ContextMenuProps {
                 vm,
                 theme: theme_props,
@@ -228,11 +228,11 @@ pub(super) fn overlays<'a>(
             .map(|event| {
                 AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
             }),
-        );
+        ));
     }
     if let Some(overlay) = view_terminal_context_menu_overlay(app, theme_props)
     {
-        layers.push(overlay);
+        layers.push(over_main_area(overlay));
     }
 
     layers

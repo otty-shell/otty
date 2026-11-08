@@ -14,6 +14,7 @@ use super::{App, AppEvent};
 use crate::components::primitive::resize_grips;
 use crate::domain::mode::Mode;
 use crate::geometry::anchor_position;
+use crate::layout;
 use crate::theme::ThemeProps;
 use crate::widgets::chrome::event::ChromeEvent;
 use crate::widgets::chrome::view::action_bar;
@@ -83,7 +84,8 @@ impl<'a> MainContent<'a> {
     }
 }
 
-/// Render the root application view.
+/// Render the root application view: the window content and the overlays
+/// over it, in one order for every mode.
 pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     let theme = app.theme_manager.current();
     let theme_props: ThemeProps<'_> = ThemeProps::new(theme);
@@ -91,6 +93,52 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
     let sidebar_vm = app.widgets.sidebar.vm();
     let mode = app.widgets.modes.active();
 
+    let window_content =
+        view_window_content(app, mode, sidebar_vm, theme_props);
+    let mode_overlays = match mode {
+        Mode::Terminal => terminal::overlays(app, theme_props),
+        Mode::Containers => containers::overlays(app, theme_props),
+    };
+    // The mode overlays share one layer, so that one of them opening or
+    // closing does not move the layers above it.
+    let mode_overlays: Element<'_, AppEvent, Theme, iced::Renderer> =
+        iced::widget::Stack::with_children(mode_overlays)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+    let header_menu = sidebar_vm
+        .open_header_menu
+        .map(|open| view_header_menu_overlay(app, open, theme_props));
+    let modes_menu = view_modes_menu(app, theme_props);
+    let palette = view_palette(app, theme_props);
+    let secret_prompt = view_secret_prompt(app, theme_props);
+    let resize_grips = view_resize_grips(app, mode);
+
+    // The layers from bottom to top, the same in every mode. Each mode lays
+    // its overlays out itself; the shared menus, the palette and the SSH
+    // secret prompt lie in the main area, between the header and the status
+    // bar.
+    let mut layers = vec![window_content, mode_overlays];
+    layers.extend(header_menu.map(over_main_area));
+    layers.extend(modes_menu.map(over_main_area));
+    layers.extend(palette.map(over_main_area));
+    layers.extend(secret_prompt.map(over_main_area));
+    layers.push(resize_grips);
+
+    iced::widget::Stack::with_children(layers)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+/// The window content: the header, the panels of the active mode with the
+/// focus note over them, and the status bar of the active mode.
+fn view_window_content<'a>(
+    app: &'a App,
+    mode: Mode,
+    sidebar_vm: SidebarViewModel,
+    theme_props: ThemeProps<'a>,
+) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     // The active mode decides what goes into each slot (spec Decision 5);
     // the sidebar keeps the panels open or closed and their widths.
     let content_row = panels::view(panels::PanelsProps {
@@ -123,116 +171,25 @@ pub(super) fn view(app: &App) -> Element<'_, AppEvent, Theme, iced::Renderer> {
         ))
     });
 
-    // The Terminal overlays lie over the main area. The Containers row menu
-    // opens at the pointer in window coordinates, so it and the dialogs lie
-    // over the whole window.
-    let (main_area_overlays, window_overlays) = match mode {
-        Mode::Terminal => (terminal::overlays(app, theme_props), Vec::new()),
-        Mode::Containers => {
-            (Vec::new(), containers::overlays(app, theme_props))
-        },
-    };
-
-    let mut layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> =
+    let mut main_area: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> =
         vec![content_row.into()];
-
     // Focus mode note
     if let Some(note) =
         focus_note::view(sidebar_vm.focus_note_opacity, theme_props)
     {
-        layers.push(note);
+        main_area.push(note);
     }
-
-    // Header menu overlay (New session or Launches)
-    if let Some(open) = sidebar_vm.open_header_menu {
-        layers.push(view_header_menu_overlay(app, open, theme_props));
-    }
-
-    // All modes menu under the switcher
-    let modes_vm = app.widgets.modes.vm();
-    if modes_vm.is_menu_open {
-        layers.push(
-            mode_menu::view(mode_menu::ModeMenuProps {
-                vm: modes_vm,
-                theme: theme_props,
-            })
-            .map(|intent| AppEvent::Modes(ModesEvent::Intent(intent))),
-        );
-    }
-
-    layers.extend(main_area_overlays);
-
-    // Command palette
-    if let Some(vm) = app.widgets.palette.vm() {
-        layers.push(
-            palette_view::view(palette_view::PaletteProps {
-                vm,
-                theme: theme_props,
-            })
-            .map(|intent| AppEvent::Palette(PaletteEvent::Intent(intent))),
-        );
-    }
-
-    // SSH secret dialog stays on top of every other overlay.
-    if let Some(vm) = app.widgets.quick_launch.secret_prompt_vm() {
-        layers.push(
-            secret_prompt::view(secret_prompt::SecretPromptProps {
-                vm,
-                theme: theme_props,
-            })
-            .map(|event| {
-                AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))
-            }),
-        );
-    }
-
-    let content_stack = iced::widget::Stack::with_children(layers)
+    let main_area = iced::widget::Stack::with_children(main_area)
         .width(Length::Fill)
         .height(Length::Fill);
 
-    #[cfg(target_os = "macos")]
-    let resize_grips_layer = container(Space::new())
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into();
-
-    #[cfg(not(target_os = "macos"))]
-    let resize_grips_layer = if app.widgets.sidebar.has_header_menu_open()
-        || app.widgets.modes.is_menu_open()
-        || app.widgets.quick_launch.has_context_menu()
-        || app.widgets.quick_launch.has_secret_prompt()
-        || app.widgets.terminal_workspace.has_any_context_menu()
-        || (mode == Mode::Containers && app.widgets.containers.has_overlay())
-    {
-        container(Space::new())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
-    } else {
-        resize_grips::view().map(|event| match event {
-            resize_grips::ResizeGripEvent::Resize(dir) => {
-                AppEvent::ResizeWindow(dir)
-            },
-        })
-    };
-
     let header = view_header(app, sidebar_vm, theme_props);
-
     let status_bar = match mode {
         Mode::Terminal => terminal::status_bar(app, theme_props),
         Mode::Containers => containers::status_bar(app, theme_props),
     };
 
-    let mut root_layers: Vec<Element<'_, AppEvent, Theme, iced::Renderer>> = vec![
-        column![header, content_stack, status_bar]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
-    ];
-    root_layers.extend(window_overlays);
-    root_layers.push(resize_grips_layer);
-
-    iced::widget::Stack::with_children(root_layers)
+    column![header, main_area, status_bar]
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
@@ -412,6 +369,112 @@ fn view_new_launch_menu<'a>(
         otty_ui_kit::components::menu::MENU_WIDTH,
         new_launch_menu::menu_height(),
     )
+}
+
+/// The All modes menu under the switcher, while it is open.
+fn view_modes_menu<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent, Theme, iced::Renderer>> {
+    let modes_vm = app.widgets.modes.vm();
+    if !modes_vm.is_menu_open {
+        return None;
+    }
+
+    Some(
+        mode_menu::view(mode_menu::ModeMenuProps {
+            vm: modes_vm,
+            theme: theme_props,
+        })
+        .map(|intent| AppEvent::Modes(ModesEvent::Intent(intent))),
+    )
+}
+
+/// The command palette, while it is open.
+fn view_palette<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent, Theme, iced::Renderer>> {
+    let vm = app.widgets.palette.vm()?;
+
+    Some(
+        palette_view::view(palette_view::PaletteProps {
+            vm,
+            theme: theme_props,
+        })
+        .map(|intent| AppEvent::Palette(PaletteEvent::Intent(intent))),
+    )
+}
+
+/// The SSH secret prompt, while a launch waits for its password or
+/// passphrase.
+fn view_secret_prompt<'a>(
+    app: &'a App,
+    theme_props: ThemeProps<'a>,
+) -> Option<Element<'a, AppEvent, Theme, iced::Renderer>> {
+    let vm = app.widgets.quick_launch.secret_prompt_vm()?;
+
+    Some(
+        secret_prompt::view(secret_prompt::SecretPromptProps {
+            vm,
+            theme: theme_props,
+        })
+        .map(|event| AppEvent::QuickLaunch(QuickLaunchEvent::Intent(event))),
+    )
+}
+
+/// The grips that resize the window at its edges. While a menu, the SSH
+/// secret prompt or a Containers overlay is open, an empty layer stands in
+/// for them.
+#[cfg(not(target_os = "macos"))]
+fn view_resize_grips(
+    app: &App,
+    mode: Mode,
+) -> Element<'_, AppEvent, Theme, iced::Renderer> {
+    if app.widgets.sidebar.has_header_menu_open()
+        || app.widgets.modes.is_menu_open()
+        || app.widgets.quick_launch.has_context_menu()
+        || app.widgets.quick_launch.has_secret_prompt()
+        || app.widgets.terminal_workspace.has_any_context_menu()
+        || (mode == Mode::Containers && app.widgets.containers.has_overlay())
+    {
+        return container(Space::new())
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+    }
+
+    resize_grips::view().map(|event| match event {
+        resize_grips::ResizeGripEvent::Resize(dir) => {
+            AppEvent::ResizeWindow(dir)
+        },
+    })
+}
+
+/// The system resizes the window on macOS, so an empty layer stands in for
+/// the grips.
+#[cfg(target_os = "macos")]
+fn view_resize_grips(
+    _app: &App,
+    _mode: Mode,
+) -> Element<'_, AppEvent, Theme, iced::Renderer> {
+    container(Space::new())
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+/// Lay `overlay` out in the main area of a layer over the whole window: under
+/// the header and over the status bar. It gets the size of the main area, and
+/// the pointer positions it reports are in the main area too.
+fn over_main_area(
+    overlay: Element<'_, AppEvent, Theme, iced::Renderer>,
+) -> Element<'_, AppEvent, Theme, iced::Renderer> {
+    container(overlay)
+        .padding(layout::main_area_padding())
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 #[cfg(test)]
@@ -1043,5 +1106,180 @@ mod tests {
                 Mode::Containers
             )))]
         ));
+    }
+
+    /// Containers mode with the Pull image dialog open over the images.
+    fn containers_app_with_a_dialog() -> App {
+        let mut app = containers_app_with_lists();
+        let engine = otty_containers::fixtures::engine(
+            otty_containers::EngineKind::Docker,
+        );
+        let _ = app.widgets.containers.reduce(ContainersIntent::Open(
+            crate::widgets::containers::types::Place::new(
+                engine.address().clone(),
+                crate::widgets::containers::types::ResourceKind::Images,
+            ),
+        ));
+        let _ = app.widgets.containers.reduce(ContainersIntent::OpenCreate);
+
+        app
+    }
+
+    /// Opens the password prompt of an SSH launch, as the launch does when
+    /// the server asks for one.
+    fn open_secret_prompt(app: &mut App) {
+        use crate::domain::exit_behavior::ExitBehavior;
+        use crate::domain::quick_launch::{
+            CommandSpec, QuickLaunch, SshCommand,
+        };
+        use crate::widgets::quick_launch::types::{
+            QuickLaunchSetupOutcome, SshSecretKind, SshSecretRequest,
+        };
+
+        let launch = QuickLaunch::new(
+            String::from("laptop"),
+            CommandSpec::Ssh {
+                ssh: SshCommand::new(
+                    String::from("192.168.1.20"),
+                    22,
+                    Some(String::from("ubuntu")),
+                    None,
+                    Vec::new(),
+                ),
+            },
+            ExitBehavior::default(),
+        );
+
+        reduce_quick_launch(
+            app,
+            QuickLaunchIntent::SetupCompleted(
+                QuickLaunchSetupOutcome::SecretRequired {
+                    path: vec![String::from("laptop")],
+                    launch_id: 0,
+                    command: Box::new(launch),
+                    request: SshSecretRequest::new(
+                        SshSecretKind::Password,
+                        String::from("ubuntu@192.168.1.20:22"),
+                        false,
+                    ),
+                },
+            ),
+        );
+    }
+
+    /// An SSH launch asks for its password while a Containers dialog is open:
+    /// the prompt is drawn on top and takes the click.
+    #[test]
+    fn the_secret_prompt_is_drawn_over_a_containers_dialog() {
+        let mut app = containers_app_with_a_dialog();
+        open_secret_prompt(&mut app);
+        assert!(app.widgets.containers.has_overlay());
+
+        let mut ui = simulator(view(&app));
+        ui.click(i18n::t(Key::ButtonConnect))
+            .expect("the prompt should show");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::QuickLaunch(QuickLaunchEvent::Intent(
+                QuickLaunchIntent::SecretPromptSubmit
+            ))
+        )));
+    }
+
+    #[test]
+    fn the_palette_is_drawn_over_a_containers_dialog() {
+        use otty_ui_kit::components::command_palette::PaletteAction;
+
+        use crate::widgets::palette::event::PaletteIntent;
+
+        let mut app = containers_app_with_a_dialog();
+        let _ = app.update(crate::app::Message::Input(AppEvent::Palette(
+            PaletteEvent::Intent(PaletteIntent::Open),
+        )));
+        assert!(app.widgets.palette.is_open());
+
+        let mut ui = simulator(view(&app));
+        ui.click("Esc")
+            .expect("the palette should show its Esc key");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Action(
+                PaletteAction::Close
+            )))
+        )));
+    }
+
+    #[test]
+    fn the_modes_menu_is_drawn_over_the_containers_row_menu() {
+        let mut app = containers_app_with_lists();
+        let _ = app
+            .widgets
+            .containers
+            .reduce(ContainersIntent::OpenRowMenu {
+                index: 5,
+                position: Point::new(400.0, 200.0),
+            });
+        let _ = app.widgets.modes.reduce(ModesIntent::ToggleMenu);
+
+        let mut ui = simulator(view(&app));
+        ui.click(i18n::t(Key::ModeTerminal))
+            .expect("the modes menu should show");
+
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
+                Mode::Terminal
+            )))
+        )));
+    }
+
+    /// The main area reports the pointer in its own coordinates, so the
+    /// Launches menu that opens there lies that far under the header.
+    #[test]
+    fn the_launches_menu_opens_at_the_pointer_in_the_main_area() {
+        let window = iced::Size::new(1024.0, 768.0);
+        let cursor = Point::new(300.0, 200.0);
+        let mut app = app_in(Mode::Terminal);
+        app.state.window_size = window;
+        app.state.screen_size = crate::layout::screen_size_from_window(window);
+        let _ = app
+            .widgets
+            .sidebar
+            .reduce(SidebarIntent::WorkspaceCursorMoved { position: cursor });
+        let _ = app
+            .widgets
+            .sidebar
+            .reduce(SidebarIntent::HeaderMenuOpen(HeaderMenu::Launches));
+        let anchor = anchor_position(
+            cursor,
+            app.state.screen_size,
+            otty_ui_kit::components::menu::MENU_WIDTH,
+            new_launch_menu::menu_height(),
+            spacing::SPACE_2,
+        );
+
+        let mut ui = simulator(view(&app));
+        let item = ui
+            .find(i18n::t(Key::MenuNewFolder))
+            .expect("the menu should show")
+            .bounds();
+
+        let top = size::TITLEBAR + size::LINE + anchor.y;
+        let bottom = top + new_launch_menu::menu_height();
+        let right = anchor.x + otty_ui_kit::components::menu::MENU_WIDTH;
+        assert!(
+            item.x >= anchor.x && item.x < right,
+            "the item {item:?} should start inside the menu from {} to {right}",
+            anchor.x
+        );
+        assert!(
+            item.y >= top && item.y + item.height <= bottom,
+            "the item {item:?} should lie inside the menu from {top} to {bottom}"
+        );
     }
 }
