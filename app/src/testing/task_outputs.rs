@@ -1,7 +1,8 @@
-//! Test-only helper that reads the messages a [`Task`] produces.
+//! Test-only helpers that read what a [`Task`] produces.
 //!
-//! Reducers return a [`Task`] instead of a list of effects, so tests use this
-//! helper to see which events a reducer emitted.
+//! Reducers return a [`Task`] instead of a list of effects, so tests use
+//! these helpers to see which events a reducer emitted and whether it asked
+//! for a widget operation, such as moving keyboard focus.
 
 use iced::Task;
 use iced::futures::StreamExt;
@@ -36,6 +37,26 @@ pub(crate) fn collect_outputs<T>(task: Task<T>) -> Vec<T> {
             _ => None,
         })
         .collect()
+}
+
+/// Return whether `task` asks for a widget operation, such as moving
+/// keyboard focus. [`collect_outputs`] skips these.
+///
+/// # Example
+///
+/// ```ignore
+/// let focus = iced::widget::operation::focus::<()>(iced::widget::Id::new("x"));
+/// assert!(runs_widget_operation(focus));
+/// ```
+pub(crate) fn runs_widget_operation<T>(task: Task<T>) -> bool {
+    let Some(stream) = into_stream(task) else {
+        return false;
+    };
+    let actions: Vec<Action<T>> = block_on(stream.collect());
+
+    actions
+        .iter()
+        .any(|action| matches!(action, Action::Widget(_)))
 }
 
 #[cfg(test)]

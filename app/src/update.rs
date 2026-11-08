@@ -213,8 +213,11 @@ mod tests {
     use crate::domain::exit_behavior::ExitBehavior;
     use crate::domain::mode::Mode;
     use crate::i18n;
+    use crate::testing::overlays::open_secret_prompt;
     use crate::testing::shell_tab::open_shell_tab;
-    use crate::testing::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::{
+        collect_outputs, runs_widget_operation,
+    };
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::event::ContainersEffect;
     use crate::widgets::containers::inspector::event::InspectorIntent;
@@ -828,6 +831,29 @@ mod tests {
         assert_eq!(app.widgets.tabs.len(), 1);
         assert_eq!(app.widgets.terminal_workspace.tabs().count(), 1);
         assert!(app.widgets.modes.is_menu_open());
+    }
+
+    fn focus_active() -> AppEvent {
+        AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+            TerminalWorkspaceIntent::FocusActive,
+        ))
+    }
+
+    /// Scenario 13: a palette dismiss or a mode switch asks for the active
+    /// pane while the SSH prompt is open. The typed secret must stay in the
+    /// prompt, so the pane does not take the keyboard.
+    #[test]
+    fn focus_active_under_the_secret_prompt_moves_no_focus() {
+        let (mut app, _) = App::new();
+        let _ = open_shell_tab(&mut app);
+        let focused_without_the_prompt =
+            runs_widget_operation(update_internal(&mut app, focus_active()));
+        open_secret_prompt(&mut app);
+
+        let task = update_internal(&mut app, focus_active());
+
+        assert!(focused_without_the_prompt);
+        assert!(!runs_widget_operation(task));
     }
 
     /// A tab that comes to the front in another mode shows Terminal mode,

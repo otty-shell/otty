@@ -2,6 +2,7 @@ use iced::Task;
 
 use super::AppEvent;
 use crate::app::App;
+use crate::guards;
 use crate::layout::pane_grid_size;
 use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
 use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
@@ -41,6 +42,7 @@ fn handle_intent_event(
         app.state.screen_size,
         app.widgets.sidebar.cursor(),
         app.widgets.settings.settings_data().equalize_panes(),
+        guards::top_overlay(app).is_some(),
     );
 
     let should_sync = should_sync_explorer(&event);
@@ -118,6 +120,7 @@ fn build_ctx_from_parts(
     screen_size: iced::Size,
     sidebar_cursor: iced::Point,
     equalize_panes: bool,
+    is_overlay_open: bool,
 ) -> TerminalWorkspaceCtx {
     TerminalWorkspaceCtx {
         active_tab_id,
@@ -125,6 +128,7 @@ fn build_ctx_from_parts(
         screen_size,
         sidebar_cursor,
         equalize_panes,
+        is_overlay_open,
     }
 }
 

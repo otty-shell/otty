@@ -42,6 +42,7 @@ pub(crate) fn open_shell_tab(app: &mut App) -> u64 {
         screen_size: Size::new(800.0, 600.0),
         sidebar_cursor: Point::ORIGIN,
         equalize_panes: true,
+        is_overlay_open: false,
     };
 
     let _ = app.widgets.terminal_workspace.reduce(

@@ -142,15 +142,12 @@ fn focus_input(state: &PaletteState) -> Task<PaletteEvent> {
 
 #[cfg(test)]
 mod tests {
-    use iced::futures::StreamExt;
-    use iced::futures::executor::block_on;
-    use iced_test::runtime::Action;
-    use iced_test::runtime::task::into_stream;
-
     use super::*;
     use crate::commands::AppCommand;
     use crate::i18n::{self, Key};
-    use crate::testing::task_outputs::collect_outputs;
+    use crate::testing::task_outputs::{
+        collect_outputs, runs_widget_operation,
+    };
 
     fn ctx_with_sessions(titles: &[&'static str]) -> PaletteCtx<'static> {
         let sessions = titles
@@ -245,19 +242,6 @@ mod tests {
                 PaletteEvent::Intent(_) => None,
             })
             .collect()
-    }
-
-    /// Return whether `task` asks for a widget operation, such as moving
-    /// keyboard focus.
-    fn runs_widget_operation(task: Task<PaletteEvent>) -> bool {
-        let Some(stream) = into_stream(task) else {
-            return false;
-        };
-        let actions: Vec<Action<PaletteEvent>> = block_on(stream.collect());
-
-        actions
-            .iter()
-            .any(|action| matches!(action, Action::Widget(_)))
     }
 
     fn active_title(state: &PaletteState) -> Option<String> {

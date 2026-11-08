@@ -183,6 +183,21 @@ impl ContainersWidget {
     pub(crate) fn has_overlay(&self) -> bool {
         self.state.actions().has_overlay() || self.state.create().is_open()
     }
+
+    /// Return whether a create dialog, such as Pull image, is open.
+    pub(crate) fn has_create_dialog(&self) -> bool {
+        self.state.create().is_open()
+    }
+
+    /// Return whether a destructive action waits for the user to confirm it.
+    pub(crate) fn has_confirm(&self) -> bool {
+        self.state.actions().confirm().is_some()
+    }
+
+    /// Return whether the menu of a row is open.
+    pub(crate) fn has_row_menu(&self) -> bool {
+        self.state.actions().row_menu().is_some()
+    }
 }
 
 #[cfg(test)]

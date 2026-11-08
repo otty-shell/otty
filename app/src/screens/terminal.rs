@@ -821,6 +821,7 @@ mod tests {
                 screen_size: SMALL_WINDOW,
                 sidebar_cursor: Point::ORIGIN,
                 equalize_panes: true,
+                is_overlay_open: false,
             },
         );
 

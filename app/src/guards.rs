@@ -1,8 +1,10 @@
-//! What input from the user does while a menu is open or an inline edit runs.
-//! These checks only see input: what follows from it, and what arrives on its
-//! own, skips them (see `update_internal` in `update.rs`), so it can not get
-//! lost.
+//! What input from the user does while a menu is open or an inline edit runs,
+//! and which overlay lies on top of the window. The input checks only see
+//! input: what follows from it, and what arrives on its own, skips them (see
+//! `update_internal` in `update.rs`), so it can not get lost.
 
+use crate::app::App;
+use crate::domain::mode::Mode;
 use crate::router::AppEvent;
 use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
 use crate::widgets::explorer::event::{ExplorerEvent, ExplorerIntent};
@@ -14,6 +16,33 @@ use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};
 use crate::widgets::terminal_workspace::event::{
     TerminalWorkspaceEvent, TerminalWorkspaceIntent,
 };
+
+/// An overlay: a menu, a dialog or the inline edit that lies over the window
+/// and takes the user's input before the window under it. [`top_overlay`]
+/// finds the one on top.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Overlay {
+    /// The SSH prompt that asks for a password or a passphrase.
+    SecretPrompt,
+    /// The command palette.
+    Palette,
+    /// The All modes menu.
+    ModesMenu,
+    /// The New session or Launches menu of a section header.
+    HeaderMenu,
+    /// A Containers create dialog, such as Pull image.
+    ContainersCreate,
+    /// The Containers dialog that asks to confirm a destructive action.
+    ContainersConfirm,
+    /// The menu of a Containers row.
+    ContainersRowMenu,
+    /// The context menu of a terminal pane.
+    TerminalContextMenu,
+    /// The context menu of the Launches tree.
+    LaunchContextMenu,
+    /// A name typed in the Launches tree: a new folder or a rename.
+    InlineEdit,
+}
 
 /// Determines how the event loop should treat input from the user when a
 /// context menu is open.
@@ -103,6 +132,33 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
     }
 }
 
+/// Return the overlay on top of the window, if one is open.
+///
+/// The order is fixed, top first: the SSH prompt, the palette, the All modes
+/// menu, the header menus, then the overlays of the active mode. Those of the
+/// other mode are not on screen, so they do not count.
+pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
+    let widgets = &app.widgets;
+
+    if widgets.quick_launch.has_secret_prompt() {
+        return Some(Overlay::SecretPrompt);
+    }
+    if widgets.palette.is_open() {
+        return Some(Overlay::Palette);
+    }
+    if widgets.modes.is_menu_open() {
+        return Some(Overlay::ModesMenu);
+    }
+    if widgets.sidebar.has_header_menu_open() {
+        return Some(Overlay::HeaderMenu);
+    }
+
+    match widgets.modes.active() {
+        Mode::Containers => containers_overlay(app),
+        Mode::Terminal => terminal_overlay(app),
+    }
+}
+
 /// Return `true` when the event is one of the header menu items (New session
 /// or Launches): open a terminal, split the pane, run a launch, create a
 /// launch, or create a folder.
@@ -181,6 +237,42 @@ pub(crate) fn inline_edit_guard(event: &AppEvent) -> bool {
     }
 }
 
+/// The open overlay of Containers mode on top: a dialog lies over the row
+/// menu.
+fn containers_overlay(app: &App) -> Option<Overlay> {
+    let containers = &app.widgets.containers;
+
+    if containers.has_create_dialog() {
+        return Some(Overlay::ContainersCreate);
+    }
+    if containers.has_confirm() {
+        return Some(Overlay::ContainersConfirm);
+    }
+    if containers.has_row_menu() {
+        return Some(Overlay::ContainersRowMenu);
+    }
+
+    None
+}
+
+/// The open overlay of Terminal mode on top: a context menu lies over the
+/// inline edit.
+fn terminal_overlay(app: &App) -> Option<Overlay> {
+    let widgets = &app.widgets;
+
+    if widgets.terminal_workspace.has_any_context_menu() {
+        return Some(Overlay::TerminalContextMenu);
+    }
+    if widgets.quick_launch.has_context_menu() {
+        return Some(Overlay::LaunchContextMenu);
+    }
+    if widgets.quick_launch.has_inline_edit() {
+        return Some(Overlay::InlineEdit);
+    }
+
+    None
+}
+
 /// Return `true` when the event carries text a terminal sends to its shell
 /// (typed keys, a paste or composed input). The app drops it while the
 /// command palette is open, so keys meant for the palette never reach a
@@ -204,13 +296,20 @@ mod tests {
     use iced::keyboard::{Event, Key, Location, Modifiers};
 
     use super::{
-        MenuGuard, context_menu_guard, inline_edit_guard, is_escape_press,
-        is_header_menu_choice, is_terminal_input,
+        MenuGuard, Overlay, context_menu_guard, inline_edit_guard,
+        is_escape_press, is_header_menu_choice, is_terminal_input, top_overlay,
     };
+    use crate::app::App;
     use crate::commands::AppCommand;
     use crate::domain::mode::Mode;
     use crate::router::AppEvent;
     use crate::shortcuts::AppShortcut;
+    use crate::testing::overlays::{
+        open_confirm, open_create_dialog, open_header_menu, open_launch_menu,
+        open_modes_menu, open_palette, open_pane_menu, open_row_menu,
+        open_secret_prompt, start_inline_edit,
+    };
+    use crate::testing::window::{app_in, containers_app_with_lists};
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
     use crate::widgets::containers::actions::event::ActionsIntent;
     use crate::widgets::containers::actions::types::RowAction;
@@ -229,6 +328,129 @@ mod tests {
     use crate::widgets::terminal_workspace::event::{
         TerminalWorkspaceEvent, TerminalWorkspaceIntent,
     };
+
+    /// Opens one overlay on an app.
+    type Opener = fn(&mut App);
+
+    /// The openers of the overlays of Terminal mode and of both modes, with
+    /// the overlay each one opens.
+    const TERMINAL_OVERLAYS: [(Opener, Overlay); 7] = [
+        (open_secret_prompt, Overlay::SecretPrompt),
+        (open_palette, Overlay::Palette),
+        (open_modes_menu, Overlay::ModesMenu),
+        (open_header_menu, Overlay::HeaderMenu),
+        (open_pane_menu, Overlay::TerminalContextMenu),
+        (open_launch_menu, Overlay::LaunchContextMenu),
+        (start_inline_edit, Overlay::InlineEdit),
+    ];
+
+    /// The openers of the overlays of Containers mode, with the overlay each
+    /// one opens. They need the lists of [`containers_app_with_lists`].
+    const CONTAINERS_OVERLAYS: [(Opener, Overlay); 3] = [
+        (open_create_dialog, Overlay::ContainersCreate),
+        (open_confirm, Overlay::ContainersConfirm),
+        (open_row_menu, Overlay::ContainersRowMenu),
+    ];
+
+    #[test]
+    fn nothing_is_on_top_of_a_plain_window() {
+        let terminal = app_in(Mode::Terminal);
+        let containers = containers_app_with_lists();
+
+        assert_eq!(top_overlay(&terminal), None);
+        assert_eq!(top_overlay(&containers), None);
+    }
+
+    #[test]
+    fn each_open_overlay_is_found() {
+        for (open, overlay) in TERMINAL_OVERLAYS {
+            let mut app = app_in(Mode::Terminal);
+            open(&mut app);
+
+            assert_eq!(top_overlay(&app), Some(overlay));
+        }
+        for (open, overlay) in CONTAINERS_OVERLAYS {
+            let mut app = containers_app_with_lists();
+            open(&mut app);
+
+            assert_eq!(top_overlay(&app), Some(overlay));
+        }
+    }
+
+    /// Scenario 14: an SSH launch asks for its password while a menu is open.
+    #[test]
+    fn the_secret_prompt_lies_over_an_open_menu() {
+        let menus: [Opener; 5] = [
+            open_palette,
+            open_modes_menu,
+            open_header_menu,
+            open_pane_menu,
+            open_launch_menu,
+        ];
+
+        for open_menu in menus {
+            let mut app = app_in(Mode::Terminal);
+            open_menu(&mut app);
+            open_secret_prompt(&mut app);
+
+            assert_eq!(top_overlay(&app), Some(Overlay::SecretPrompt));
+        }
+        let mut app = containers_app_with_lists();
+        open_row_menu(&mut app);
+        open_secret_prompt(&mut app);
+
+        assert_eq!(top_overlay(&app), Some(Overlay::SecretPrompt));
+    }
+
+    /// Scenario 11: a Containers dialog stays open, hidden, while Terminal
+    /// mode is shown, and comes back with its mode (owner, Q3).
+    #[test]
+    fn a_containers_overlay_counts_only_in_containers_mode() {
+        let mut app = containers_app_with_lists();
+        open_confirm(&mut app);
+
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Terminal));
+        let in_terminal = top_overlay(&app);
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
+
+        assert_eq!(in_terminal, None);
+        assert_eq!(top_overlay(&app), Some(Overlay::ContainersConfirm));
+    }
+
+    #[test]
+    fn a_terminal_overlay_counts_only_in_terminal_mode() {
+        let mut app = app_in(Mode::Terminal);
+        open_launch_menu(&mut app);
+
+        let _ = app
+            .widgets
+            .modes
+            .reduce(ModesIntent::Select(Mode::Containers));
+
+        assert_eq!(top_overlay(&app), None);
+    }
+
+    #[test]
+    fn the_inline_edit_is_under_every_other_overlay() {
+        let others = TERMINAL_OVERLAYS
+            .into_iter()
+            .filter(|(_, overlay)| *overlay != Overlay::InlineEdit);
+
+        for (open, overlay) in others {
+            let mut app = app_in(Mode::Terminal);
+            start_inline_edit(&mut app);
+            open(&mut app);
+
+            assert!(app.widgets.quick_launch.has_inline_edit(), "{overlay:?}");
+            assert_eq!(top_overlay(&app), Some(overlay));
+        }
+    }
 
     fn terminal_widget_event(
         event: otty_ui_term::Event<AppShortcut>,

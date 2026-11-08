@@ -25,6 +25,9 @@ pub(crate) struct TerminalWorkspaceCtx {
     pub(crate) sidebar_cursor: Point,
     /// Whether sibling panes are evened out on split and close.
     pub(crate) equalize_panes: bool,
+    /// Whether a menu, a dialog or the inline edit lies over the window. It
+    /// keeps the keyboard, so no terminal takes the focus from it.
+    pub(crate) is_overlay_open: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -176,7 +179,7 @@ pub(super) fn reduce(
             }
             Task::batch(commands.into_iter().map(execute_command))
         },
-        FocusActive => reduce_focus_active(state, ctx.active_tab_id),
+        FocusActive => reduce_focus_active(state, ctx),
         SyncSelection { tab_id } => reduce_sync_selection(state, tab_id),
         SyncPaneGridSize => {
             for (_, tab) in state.tabs_mut() {
@@ -247,10 +250,12 @@ fn reduce_open_tab(
     let title_effect = title_changed(tab_id, &terminal_tab);
     state.insert_tab(tab_id, terminal_tab);
 
-    let mut tasks: Vec<Task<TerminalWorkspaceEvent>> = vec![
-        TerminalView::focus(widget_id),
-        Task::done(TerminalWorkspaceEvent::Effect(title_effect)),
-    ];
+    // The new pane takes the keyboard, unless an open overlay keeps it.
+    let mut tasks: Vec<Task<TerminalWorkspaceEvent>> =
+        vec![Task::done(TerminalWorkspaceEvent::Effect(title_effect))];
+    if !ctx.is_overlay_open {
+        tasks.push(TerminalView::focus(widget_id));
+    }
     if sync_explorer {
         tasks.push(Task::done(TerminalWorkspaceEvent::Effect(
             TerminalWorkspaceEffect::SyncExplorer,
@@ -293,11 +298,16 @@ fn reduce_widget_event(
     update
 }
 
+/// Give the focused pane of the active tab the keyboard. An open overlay
+/// keeps it instead.
 fn reduce_focus_active(
     state: &TerminalWorkspaceState,
-    active_tab_id: Option<u64>,
+    ctx: &TerminalWorkspaceCtx,
 ) -> Task<TerminalWorkspaceEvent> {
-    let Some(tab) = active_tab_id.and_then(|id| state.tab(id)) else {
+    if ctx.is_overlay_open {
+        return Task::none();
+    }
+    let Some(tab) = ctx.active_tab_id.and_then(|id| state.tab(id)) else {
         return Task::none();
     };
 
@@ -606,7 +616,10 @@ mod tests {
 
     use super::{TerminalWorkspaceCtx, reduce};
     use crate::domain::exit_behavior::ExitBehavior;
-    use crate::widgets::terminal_workspace::event::TerminalWorkspaceIntent;
+    use crate::testing::task_outputs::runs_widget_operation;
+    use crate::widgets::terminal_workspace::event::{
+        TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+    };
     use crate::widgets::terminal_workspace::state::TerminalWorkspaceState;
     use crate::widgets::terminal_workspace::types::TerminalKind;
 
@@ -637,6 +650,7 @@ mod tests {
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
             equalize_panes: true,
+            is_overlay_open: false,
         }
     }
 
@@ -706,6 +720,7 @@ mod tests {
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
             equalize_panes: true,
+            is_overlay_open: false,
         };
 
         let _ = reduce(
@@ -728,6 +743,7 @@ mod tests {
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
             equalize_panes: true,
+            is_overlay_open: false,
         };
 
         let _ = reduce(
@@ -837,6 +853,7 @@ mod tests {
             screen_size: Size::ZERO,
             sidebar_cursor: Point::ORIGIN,
             equalize_panes: true,
+            is_overlay_open: false,
         };
 
         let _task = reduce(
@@ -846,6 +863,90 @@ mod tests {
             TerminalWorkspaceIntent::FocusActive,
             &ctx,
         );
+    }
+
+    /// Scenario 13: a menu, a dialog or the inline edit keeps the keyboard
+    /// while a palette dismiss or a mode switch asks for the active pane.
+    #[test]
+    fn focus_active_takes_no_focus_from_an_open_overlay() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_one_shell_tab();
+        let ctx = TerminalWorkspaceCtx {
+            is_overlay_open: true,
+            ..shell_tab_ctx()
+        };
+
+        let task = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::FocusActive,
+            &ctx,
+        );
+
+        assert!(!runs_widget_operation(task));
+    }
+
+    #[test]
+    fn focus_active_focuses_the_active_pane_without_an_overlay() {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_one_shell_tab();
+
+        let task = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::FocusActive,
+            &shell_tab_ctx(),
+        );
+
+        assert!(runs_widget_operation(task));
+    }
+
+    fn open_shell_tab(
+        ctx: &TerminalWorkspaceCtx,
+    ) -> iced::Task<TerminalWorkspaceEvent> {
+        let mut state = TerminalWorkspaceState::default();
+        let mut terminal_to_tab = HashMap::new();
+        let mut next_id = 100_u64;
+
+        let task = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::OpenTab {
+                tab_id: 1,
+                default_title: String::from("Shell"),
+                settings: Box::new(settings_with_program(VALID_SHELL_PATH)),
+                kind: TerminalKind::Shell,
+                sync_explorer: false,
+            },
+            ctx,
+        );
+        assert!(state.tab(1).is_some());
+
+        task
+    }
+
+    /// Scenario 13: a tab that opens in the background, such as a launch
+    /// that was started earlier, leaves the keyboard with the overlay.
+    #[test]
+    fn a_tab_opened_under_an_overlay_leaves_the_focus_alone() {
+        let ctx = TerminalWorkspaceCtx {
+            is_overlay_open: true,
+            ..default_ctx()
+        };
+
+        let task = open_shell_tab(&ctx);
+
+        assert!(!runs_widget_operation(task));
+    }
+
+    #[test]
+    fn a_tab_opened_without_an_overlay_focuses_its_pane() {
+        let task = open_shell_tab(&default_ctx());
+
+        assert!(runs_widget_operation(task));
     }
 
     #[test]

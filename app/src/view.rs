@@ -281,12 +281,12 @@ mod tests {
 
     use super::*;
     use crate::i18n::{self, Key};
+    use crate::testing::overlays::open_secret_prompt;
     use crate::testing::window::{
         Frames, SMALL_WINDOW, app_in, app_with_card, app_with_run_form,
         app_with_start_card, assert_each_screen_starts_at_its_top,
         containers_app_with_lists, denied_podman_search, open_error_tab,
-        open_launch_editor, open_settings, reduce_quick_launch,
-        screen_scrollers, scroll_main_area,
+        open_launch_editor, open_settings, screen_scrollers, scroll_main_area,
     };
     use crate::widgets::containers::event::ContainersIntent;
     use crate::widgets::modes::event::ModesIntent;
@@ -521,48 +521,6 @@ mod tests {
         let _ = app.widgets.containers.reduce(ContainersIntent::OpenCreate);
 
         app
-    }
-
-    /// Opens the password prompt of an SSH launch, as the launch does when
-    /// the server asks for one.
-    fn open_secret_prompt(app: &mut App) {
-        use crate::domain::exit_behavior::ExitBehavior;
-        use crate::domain::quick_launch::{
-            CommandSpec, QuickLaunch, SshCommand,
-        };
-        use crate::widgets::quick_launch::types::{
-            QuickLaunchSetupOutcome, SshSecretKind, SshSecretRequest,
-        };
-
-        let launch = QuickLaunch::new(
-            String::from("laptop"),
-            CommandSpec::Ssh {
-                ssh: SshCommand::new(
-                    String::from("192.168.1.20"),
-                    22,
-                    Some(String::from("ubuntu")),
-                    None,
-                    Vec::new(),
-                ),
-            },
-            ExitBehavior::default(),
-        );
-
-        reduce_quick_launch(
-            app,
-            QuickLaunchIntent::SetupCompleted(
-                QuickLaunchSetupOutcome::SecretRequired {
-                    path: vec![String::from("laptop")],
-                    launch_id: 0,
-                    command: Box::new(launch),
-                    request: SshSecretRequest::new(
-                        SshSecretKind::Password,
-                        String::from("ubuntu@192.168.1.20:22"),
-                        false,
-                    ),
-                },
-            ),
-        );
     }
 
     /// An SSH launch asks for its password while a Containers dialog is open:

@@ -173,6 +173,7 @@ mod tests {
             screen_size: Size::new(800.0, 600.0),
             sidebar_cursor: Point::ORIGIN,
             equalize_panes: true,
+            is_overlay_open: false,
         };
 
         let _ = widget.reduce(
