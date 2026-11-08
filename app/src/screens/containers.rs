@@ -3,8 +3,8 @@
 
 use iced::{Element, Theme};
 
+use super::{MainContent, ScreenId};
 use crate::app::App;
-use crate::app::view::{MainContent, ScreenId};
 use crate::domain::mode::Mode;
 use crate::router::AppEvent;
 use crate::theme::ThemeProps;
@@ -178,15 +178,15 @@ mod tests {
     use otty_ui_kit::{size, spacing};
 
     use super::*;
-    use crate::app::view::tests::{
+    use crate::app::view::view;
+    use crate::i18n::{self, Key};
+    use crate::testing::window::{
         AppChange, Frames, SMALL_WINDOW, app_in, app_with_card,
         app_with_run_form, assert_each_screen_starts_at_its_top,
         card_area_scroller, containers_app_with_lists, denied_podman_search,
         offsets_through_rebuilds, press_and_move, right_panel_split,
         screen_scrollers, scroll_main_area, sent_a_panel_resize,
     };
-    use crate::app::view::view;
-    use crate::i18n::{self, Key};
     use crate::widgets::containers::run::event::RunIntent;
     use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::sidebar::event::{SidebarEvent, SidebarIntent};

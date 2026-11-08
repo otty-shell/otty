@@ -6,8 +6,8 @@ use iced::widget::{container, mouse_area, pane_grid, text};
 use iced::{Element, Length, Theme, alignment};
 use otty_ui_kit::spacing;
 
+use super::{MainContent, ScreenId, over_main_area};
 use crate::app::App;
-use crate::app::view::{MainContent, ScreenId, over_main_area};
 use crate::geometry::anchor_position;
 use crate::i18n::{self, Key};
 use crate::router::AppEvent;
@@ -465,15 +465,15 @@ mod tests {
     use otty_ui_kit::size;
 
     use super::*;
-    use crate::app::view::tests::{
+    use crate::app::view::view;
+    use crate::domain::mode::Mode;
+    use crate::testing::window::{
         Frames, SMALL_WINDOW, app_in, app_with_start_card,
         assert_each_screen_starts_at_its_top, card_area_scroller,
         offsets_through_rebuilds, open_error_tab, open_launch_editor,
         open_settings, press_and_move, reduce_quick_launch, right_panel_split,
         screen_scrollers, scroll_main_area, sent_a_panel_resize,
     };
-    use crate::app::view::view;
-    use crate::domain::mode::Mode;
     use crate::widgets::tabs::TabsCtx;
 
     #[test]
