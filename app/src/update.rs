@@ -3,13 +3,15 @@ use iced::Task;
 use super::{App, AppEvent};
 use crate::commands::AppCommand;
 use crate::guards::{
-    MenuGuard, context_menu_guard, inline_edit_guard, is_escape_press,
+    MenuGuard, Overlay, context_menu_guard, inline_edit_guard, is_escape_press,
     is_header_menu_choice, is_terminal_input_kept_out, top_overlay,
 };
 use crate::router;
 use crate::shortcuts::{AppShortcut, Platform, shortcut_for_key_press};
+use crate::widgets::containers::actions::event::ActionsIntent;
 use crate::widgets::containers::event::{ContainersEvent, ContainersIntent};
 use crate::widgets::modes::event::{ModesEvent, ModesIntent};
+use crate::widgets::palette::event::{PaletteEvent, PaletteIntent};
 use crate::widgets::quick_launch::event::{
     QuickLaunchEvent, QuickLaunchIntent,
 };
@@ -72,6 +74,12 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         return router::route(app, event);
     }
 
+    // The palette shortcut under the open palette gives its input the focus
+    // again, and the palette keeps what was typed (owner, Q1).
+    if top == Some(Overlay::Palette) && is_palette_shortcut(&event) {
+        return router::route(app, event);
+    }
+
     let mut pre_dispatch_tasks = Vec::new();
 
     if app.widgets.quick_launch.has_inline_edit() && inline_edit_guard(&event) {
@@ -92,13 +100,13 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
                 SidebarIntent::HeaderMenuDismiss,
             )),
         ));
-    } else if any_context_menu_open(app) {
+    } else if top.is_some_and(Overlay::is_menu) {
         match context_menu_guard(&event) {
             MenuGuard::Allow => {},
             MenuGuard::Ignore => return Task::none(),
-            MenuGuard::Dismiss => return close_all_context_menus(app),
+            MenuGuard::Dismiss => return close_all_menus(app),
             MenuGuard::DismissAndRun => {
-                pre_dispatch_tasks.push(close_all_context_menus(app));
+                pre_dispatch_tasks.push(close_all_menus(app));
             },
         }
     }
@@ -161,19 +169,17 @@ fn is_mode_shortcut(event: &AppEvent) -> bool {
     )
 }
 
-fn any_context_menu_open(app: &App) -> bool {
-    if app.widgets.sidebar.has_header_menu_open()
-        || app.widgets.quick_launch.has_context_menu()
-        || app.widgets.modes.is_menu_open()
-    {
-        return true;
-    }
-
-    app.widgets.terminal_workspace.has_any_context_menu()
+fn is_palette_shortcut(event: &AppEvent) -> bool {
+    matches!(event, AppEvent::Command(AppCommand::OpenPalette))
 }
 
-fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
+/// Close every menu: the one on top and any left open under it.
+fn close_all_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch(vec![
+        router::route(
+            app,
+            AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Dismiss)),
+        ),
         router::route(
             app,
             AppEvent::Sidebar(SidebarEvent::Intent(
@@ -190,6 +196,12 @@ fn close_all_context_menus(app: &mut App) -> Task<AppEvent> {
             app,
             AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
                 TerminalWorkspaceIntent::CloseAllContextMenus,
+            )),
+        ),
+        router::route(
+            app,
+            AppEvent::Containers(ContainersEvent::Intent(
+                ContainersIntent::Actions(ActionsIntent::CloseRowMenu),
             )),
         ),
         close_modes_menu(app),
@@ -211,6 +223,7 @@ mod tests {
     use iced::keyboard::{Event, Key, Location, Modifiers};
     use iced::widget::pane_grid;
     use otty_containers::{EngineKind, fixtures};
+    use otty_ui_kit::components::command_palette::PaletteAction;
     use otty_ui_term::settings::Settings;
 
     use super::*;
@@ -230,6 +243,7 @@ mod tests {
     };
     use crate::testing::window::{app_in, containers_app_with_lists};
     use crate::widgets::chrome::event::{ChromeEvent, ChromeIntent};
+    use crate::widgets::containers::actions::types::RowAction;
     use crate::widgets::containers::event::ContainersEffect;
     use crate::widgets::containers::inspector::event::InspectorIntent;
     use crate::widgets::containers::inspector::types::LogTarget;
@@ -1051,6 +1065,161 @@ mod tests {
 
         assert!(!app.widgets.modes.is_menu_open());
         assert_eq!(app.widgets.tabs.active_tab_id(), Some(first));
+    }
+
+    /// The open palette with `query` typed in it.
+    fn app_with_palette_query(query: &str) -> App {
+        let mut app = app_in(Mode::Terminal);
+        open_palette(&mut app);
+        let _ = update_input(
+            &mut app,
+            AppEvent::Palette(PaletteEvent::Intent(PaletteIntent::Action(
+                PaletteAction::QueryChanged(query.to_string()),
+            ))),
+        );
+
+        app
+    }
+
+    fn palette_query(app: &App) -> Option<&str> {
+        app.widgets.palette.vm().map(|vm| vm.list.query())
+    }
+
+    /// Scenario 8: the palette is a menu, so a press on a header button
+    /// closes it first.
+    #[test]
+    fn a_panel_button_while_the_palette_is_open_only_closes_it() {
+        let presses = [
+            ChromeIntent::ToggleLeftPanel,
+            ChromeIntent::ToggleFilesPanel,
+            ChromeIntent::ToggleFocusMode,
+        ];
+
+        for press in presses {
+            let mut app = app_with_palette_query("");
+            let panels = app.widgets.sidebar.vm();
+
+            update_to_the_end(&mut app, chrome_intent(press));
+
+            let after = app.widgets.sidebar.vm();
+            assert!(!app.widgets.palette.is_open());
+            assert_eq!(after.is_left_open, panels.is_left_open);
+            assert_eq!(after.is_right_open, panels.is_right_open);
+            assert_eq!(after.is_focus_mode, panels.is_focus_mode);
+        }
+    }
+
+    #[test]
+    fn the_search_button_while_the_palette_is_open_closes_it() {
+        let mut app = app_with_palette_query("spl");
+
+        update_to_the_end(
+            &mut app,
+            chrome_intent(ChromeIntent::OpenCommandPalette),
+        );
+
+        assert!(!app.widgets.palette.is_open());
+    }
+
+    #[test]
+    fn the_settings_button_while_the_palette_is_open_closes_it_and_opens_settings()
+     {
+        let mut app = app_with_palette_query("");
+
+        let mut queue = collect_outputs(update_input(
+            &mut app,
+            chrome_intent(ChromeIntent::OpenSettings),
+        ));
+        while !queue.is_empty() {
+            let event = queue.remove(0);
+            // The settings widget would read the real settings file.
+            if matches!(event, AppEvent::Settings(_)) {
+                continue;
+            }
+            queue.extend(collect_outputs(update_internal(&mut app, event)));
+        }
+
+        assert!(!app.widgets.palette.is_open());
+        assert_eq!(app.widgets.tabs.len(), 1);
+    }
+
+    #[test]
+    fn a_window_button_leaves_the_palette_open() {
+        let presses = [
+            ChromeIntent::MinimizeWindow,
+            ChromeIntent::ToggleMaximize,
+            ChromeIntent::PressTitleBar,
+            ChromeIntent::MoveOnTitleBar,
+            ChromeIntent::ReleaseTitleBar,
+        ];
+
+        for press in presses {
+            let mut app = app_with_palette_query("spl");
+
+            // Only the first update: moving the window needs the iced
+            // runtime.
+            let _ = update_input(&mut app, chrome_intent(press));
+
+            assert_eq!(palette_query(&app), Some("spl"));
+        }
+    }
+
+    #[test]
+    fn a_shortcut_while_the_palette_is_open_closes_it_and_runs() {
+        let mut app = app_with_palette_query("spl");
+
+        update_to_the_end(&mut app, shortcut_press(AppShortcut::FocusMode));
+
+        assert!(!app.widgets.palette.is_open());
+        assert!(app.widgets.sidebar.vm().is_focus_mode);
+    }
+
+    /// Q1 (owner): the palette shortcut while the palette is open keeps it
+    /// and what was typed in it.
+    #[test]
+    fn the_palette_shortcut_while_the_palette_is_open_keeps_it_and_its_query() {
+        let mut app = app_with_palette_query("spl");
+
+        update_to_the_end(
+            &mut app,
+            shortcut_press(AppShortcut::CommandPalette),
+        );
+
+        assert_eq!(palette_query(&app), Some("spl"));
+    }
+
+    #[test]
+    fn typing_in_the_palette_keeps_it_open() {
+        let app = app_with_palette_query("spl");
+
+        assert_eq!(palette_query(&app), Some("spl"));
+    }
+
+    #[test]
+    fn a_shortcut_under_the_row_menu_closes_it_and_runs() {
+        let mut app = containers_app_with_lists();
+        open_row_menu(&mut app);
+
+        update_to_the_end(&mut app, shortcut_press(AppShortcut::FocusMode));
+
+        assert!(!app.widgets.containers.has_row_menu());
+        assert!(app.widgets.sidebar.vm().is_focus_mode);
+    }
+
+    #[test]
+    fn a_row_menu_item_runs_its_action() {
+        let mut app = containers_app_with_lists();
+        open_row_menu(&mut app);
+
+        let _ = update_input(
+            &mut app,
+            containers_intent(ContainersIntent::Actions(ActionsIntent::Act(
+                RowAction::Remove,
+            ))),
+        );
+
+        assert!(!app.widgets.containers.has_row_menu());
+        assert!(app.widgets.containers.has_confirm());
     }
 
     #[test]

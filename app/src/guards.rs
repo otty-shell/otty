@@ -116,20 +116,20 @@ impl Overlay {
 }
 
 /// Determines how the event loop should treat input from the user when a
-/// context menu is open.
+/// menu is open.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum MenuGuard {
     /// Let the event pass through to normal dispatch.
     Allow,
     /// Silently drop the event without closing the menu.
     Ignore,
-    /// Close all context menus; the event itself does nothing else.
+    /// Close all menus; the event itself does nothing else.
     Dismiss,
-    /// Close all context menus, then dispatch the event.
+    /// Close all menus, then dispatch the event.
     DismissAndRun,
 }
 
-/// Classify input from the user when at least one context menu is open.
+/// Classify input from the user when a menu is on top.
 pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
     use MenuGuard::*;
 
@@ -185,6 +185,15 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         },
         AppEvent::Explorer(ExplorerEvent::Intent(
             ExplorerIntent::NodeHovered { .. },
+        )) => Allow,
+        // The palette is one of the menus: typing in it, its entries and its
+        // dismiss layer send these.
+        AppEvent::Palette(_) => Allow,
+        // The items and the dismiss layer of the Containers row menu.
+        AppEvent::Containers(ContainersEvent::Intent(
+            ContainersIntent::Actions(
+                ActionsIntent::Act(_) | ActionsIntent::CloseRowMenu,
+            ),
         )) => Allow,
         AppEvent::Tabs(_) => DismissAndRun,
         // The All modes menu is one of the menus: its rows, pin toggles and
@@ -382,6 +391,7 @@ fn is_terminal_input(event: &AppEvent) -> bool {
 mod tests {
     use iced::keyboard::key::{Code, Named, NativeCode, Physical};
     use iced::keyboard::{Event, Key, Location, Modifiers};
+    use otty_ui_kit::components::command_palette::PaletteAction;
 
     use super::{
         MenuGuard, Overlay, context_menu_guard, inline_edit_guard,
@@ -875,15 +885,50 @@ mod tests {
             containers(ContainersIntent::SelectInspectorTab(
                 InspectorTab::Logs,
             )),
-            containers(ContainersIntent::Actions(ActionsIntent::Act(
-                RowAction::Stop,
-            ))),
             containers(ContainersIntent::Actions(ActionsIntent::Prune)),
         ];
 
         for event in clicks {
             assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
             assert!(inline_edit_guard(&event));
+        }
+    }
+
+    /// Typing, choosing an entry and the palette's own dismiss layer go to
+    /// the open palette.
+    #[test]
+    fn the_palette_s_own_input_passes() {
+        let palette = |intent| AppEvent::Palette(PaletteEvent::Intent(intent));
+        let events = [
+            palette(PaletteIntent::Action(PaletteAction::QueryChanged(
+                String::from("spl"),
+            ))),
+            palette(PaletteIntent::Action(PaletteAction::MoveDown)),
+            palette(PaletteIntent::Action(PaletteAction::RunActive)),
+            palette(PaletteIntent::FocusInput),
+            palette(PaletteIntent::Dismiss),
+        ];
+
+        for event in events {
+            assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
+        }
+    }
+
+    #[test]
+    fn the_row_menu_s_items_and_dismiss_pass() {
+        let actions = |intent| {
+            AppEvent::Containers(ContainersEvent::Intent(
+                ContainersIntent::Actions(intent),
+            ))
+        };
+        let events = [
+            actions(ActionsIntent::Act(RowAction::Stop)),
+            actions(ActionsIntent::Act(RowAction::Remove)),
+            actions(ActionsIntent::CloseRowMenu),
+        ];
+
+        for event in events {
+            assert!(matches!(context_menu_guard(&event), MenuGuard::Allow));
         }
     }
 
