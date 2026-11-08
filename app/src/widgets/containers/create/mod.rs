@@ -6,6 +6,6 @@ mod model;
 mod reducer;
 mod state;
 
-pub(super) use model::FormViewModel;
+pub(super) use model::FormDialogViewModel;
 pub(super) use reducer::{CreateOutcome, reduce};
 pub(super) use state::CreateState;

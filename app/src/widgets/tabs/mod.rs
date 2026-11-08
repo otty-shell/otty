@@ -10,7 +10,9 @@ use iced::Task;
 use self::event::{TabsEvent, TabsIntent};
 pub(crate) use self::model::TabsViewModel;
 #[cfg(test)]
-pub(crate) use self::model::{SessionGroupViewModel, SessionViewModel};
+pub(crate) use self::model::{
+    SessionListGroupViewModel, SessionListRowViewModel,
+};
 pub(crate) use self::reducer::TabsCtx;
 use self::state::TabsState;
 

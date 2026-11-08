@@ -76,7 +76,7 @@ impl RowMenuViewModel {
 
 /// The confirmation dialog of a destructive action.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ConfirmViewModel {
+pub(crate) struct ConfirmDialogViewModel {
     pub(crate) title: String,
     /// What goes and what stays.
     pub(crate) text: String,
@@ -86,7 +86,7 @@ pub(crate) struct ConfirmViewModel {
     pub(crate) confirm_label: &'static str,
 }
 
-impl ConfirmViewModel {
+impl ConfirmDialogViewModel {
     /// Build the open confirmation dialog.
     pub(crate) fn from_state(state: &ActionsState) -> Option<Self> {
         let confirm = state.confirm()?;
@@ -361,8 +361,10 @@ mod tests {
         RowMenuViewModel::from_state(state.actions(), &state.actions_ctx())
     }
 
-    fn confirm_dialog(state: &ContainersState) -> Option<ConfirmViewModel> {
-        ConfirmViewModel::from_state(state.actions())
+    fn confirm_dialog(
+        state: &ContainersState,
+    ) -> Option<ConfirmDialogViewModel> {
+        ConfirmDialogViewModel::from_state(state.actions())
     }
 
     fn prune_button(state: &ContainersState) -> Option<PruneViewModel> {
@@ -539,7 +541,7 @@ mod tests {
 
         assert_eq!(
             dialog,
-            ConfirmViewModel {
+            ConfirmDialogViewModel {
                 title: i18n::containers_named(
                     Key::TplContainersRemoveContainerTitle,
                     "otty-fx-running"
@@ -776,7 +778,7 @@ mod tests {
 
         assert_eq!(
             image,
-            ConfirmViewModel {
+            ConfirmDialogViewModel {
                 title: i18n::containers_named(
                     Key::TplContainersRemoveTagTitle,
                     "busybox:1.37"

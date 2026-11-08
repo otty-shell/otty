@@ -13,7 +13,7 @@ use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::ContainersIntent;
 use super::super::no_engine::{
-    CommandViewModel, LinkViewModel, NoEngineViewModel,
+    NoEngineCommandViewModel, NoEngineLinkViewModel, NoEngineViewModel,
 };
 use crate::i18n::{self, Key};
 use crate::icons;
@@ -49,7 +49,7 @@ pub(crate) fn view<'a>(
 /// A big button that opens an install page, with the site name on its
 /// right.
 fn install_tile<'a>(
-    link: &LinkViewModel,
+    link: &NoEngineLinkViewModel,
     palette: &UiPalette,
 ) -> Element<'a, ContainersIntent> {
     ActionTile::new(
@@ -65,7 +65,7 @@ fn install_tile<'a>(
 
 /// The label, the command with its Copy button and the hint under it.
 fn command_block<'a>(
-    command: &CommandViewModel,
+    command: &NoEngineCommandViewModel,
     palette: &UiPalette,
 ) -> Element<'a, ContainersIntent> {
     let command_box = CommandBox::new(

@@ -8,7 +8,7 @@ use crate::app::view::{MainContent, ScreenId};
 use crate::domain::mode::Mode;
 use crate::router::AppEvent;
 use crate::theme::ThemeProps;
-use crate::widgets::containers::MainViewModel;
+use crate::widgets::containers::MainAreaViewModel;
 use crate::widgets::containers::actions::view::{
     confirm_dialog as containers_confirm, row_menu as containers_row_menu,
 };
@@ -58,11 +58,13 @@ pub(crate) fn main<'a>(
         };
     }
 
-    let vm = app.widgets.containers.main_vm();
+    let vm = app.widgets.containers.main_area_vm();
     let id = match &vm {
-        MainViewModel::Table(_) => None,
-        MainViewModel::Searching => Some(ScreenId::Searching),
-        MainViewModel::NoEngine(card) => Some(ScreenId::NoEngine(card.case)),
+        MainAreaViewModel::Table(_) => None,
+        MainAreaViewModel::Searching => Some(ScreenId::Searching),
+        MainAreaViewModel::NoEngine(card) => {
+            Some(ScreenId::NoEngine(card.case))
+        },
     };
     let content = containers_main::view(containers_main::MainAreaProps {
         vm,
@@ -82,7 +84,7 @@ pub(crate) fn right_panel<'a>(
     app: &'a App,
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
-    if let Some(vm) = app.widgets.containers.image_panel_vm() {
+    if let Some(vm) = app.widgets.containers.run_panel_vm() {
         return containers_run_panel::view(
             containers_run_panel::RunPanelProps {
                 vm,
@@ -110,7 +112,7 @@ pub(crate) fn status_bar<'a>(
     theme_props: ThemeProps<'a>,
 ) -> Element<'a, AppEvent, Theme, iced::Renderer> {
     containers_status_bar::view(
-        &app.widgets.containers.status_vm(),
+        &app.widgets.containers.status_bar_vm(),
         app.widgets.tabs.len(),
         env!("CARGO_PKG_VERSION"),
         AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
@@ -139,7 +141,7 @@ pub(crate) fn overlays<'a>(
             .map(ContainersIntent::Actions),
         );
     }
-    if let Some(vm) = app.widgets.containers.confirm_vm() {
+    if let Some(vm) = app.widgets.containers.confirm_dialog_vm() {
         layers.push(
             containers_confirm::view(containers_confirm::ConfirmDialogProps {
                 vm,
@@ -148,7 +150,7 @@ pub(crate) fn overlays<'a>(
             .map(ContainersIntent::Actions),
         );
     }
-    if let Some(vm) = app.widgets.containers.form_vm() {
+    if let Some(vm) = app.widgets.containers.form_dialog_vm() {
         layers.push(
             containers_form::view(containers_form::FormDialogProps {
                 vm,

@@ -16,7 +16,7 @@ const SHORT_PATH_TAIL: usize = 2;
 
 /// View model for a single terminal tab, used by the pane grid view.
 #[derive(Clone, Copy)]
-pub(crate) struct TerminalTabViewModel<'a> {
+pub(crate) struct PaneGridViewModel<'a> {
     pub(crate) tab_id: u64,
     pub(crate) panes: &'a pane_grid::State<u64>,
     pub(crate) terminals: &'a HashMap<u64, TerminalEntry>,
@@ -31,7 +31,7 @@ pub(crate) struct TerminalTabViewModel<'a> {
 /// View model for the entire terminal workspace, keyed by active tab id.
 #[derive(Clone, Copy)]
 pub(crate) struct TerminalWorkspaceViewModel<'a> {
-    pub(crate) tab: Option<TerminalTabViewModel<'a>>,
+    pub(crate) tab: Option<PaneGridViewModel<'a>>,
 }
 
 impl<'a> TerminalWorkspaceViewModel<'a> {
@@ -46,7 +46,7 @@ impl<'a> TerminalWorkspaceViewModel<'a> {
         let tab =
             active_tab_id
                 .and_then(|tab_id| state.tab(tab_id))
-                .map(|tab| TerminalTabViewModel {
+                .map(|tab| PaneGridViewModel {
                     tab_id: active_tab_id.unwrap_or(0),
                     panes: tab.panes(),
                     terminals: tab.terminals(),

@@ -15,7 +15,7 @@ use crate::i18n::{self, Key};
 
 /// Read-only view model for the quick launch tree.
 #[derive(Debug, Clone)]
-pub(crate) struct QuickLaunchTreeViewModel<'a> {
+pub(crate) struct SidebarTreeViewModel<'a> {
     pub(super) data: &'a QuickLaunchFile,
     pub(super) selected_path: Option<&'a NodePath>,
     pub(super) hovered_path: Option<&'a NodePath>,
@@ -24,7 +24,7 @@ pub(crate) struct QuickLaunchTreeViewModel<'a> {
     pub(super) drop_target: Option<&'a DropTarget>,
 }
 
-impl<'a> QuickLaunchTreeViewModel<'a> {
+impl<'a> SidebarTreeViewModel<'a> {
     /// Build the view model from the quick launch state.
     pub(super) fn from_state(state: &'a QuickLaunchState) -> Self {
         Self {
@@ -67,7 +67,7 @@ impl<'a> QuickLaunchTreeViewModel<'a> {
 }
 
 #[cfg(test)]
-impl<'a> QuickLaunchTreeViewModel<'a> {
+impl<'a> SidebarTreeViewModel<'a> {
     /// Tree of `data` that no one is using: nothing selected, hovered,
     /// renamed or dragged over. `launching` holds the launches that are
     /// starting.
@@ -374,7 +374,7 @@ mod tests {
             command("logs"),
         ];
         let launching = HashMap::new();
-        let vm = QuickLaunchTreeViewModel {
+        let vm = SidebarTreeViewModel {
             data: &data,
             selected_path: None,
             hovered_path: None,
@@ -421,7 +421,7 @@ mod tests {
             ssh("router"),
         ];
         let launching = HashMap::new();
-        let vm = QuickLaunchTreeViewModel::idle(&data, &launching);
+        let vm = SidebarTreeViewModel::idle(&data, &launching);
 
         let launches = vm.top_level_launches();
 
@@ -499,7 +499,7 @@ mod tests {
             id: id.clone(),
         }));
 
-        let vm = QuickLaunchTreeViewModel::from_state(&state);
+        let vm = SidebarTreeViewModel::from_state(&state);
 
         let edit = vm.inline_edit.expect("the rename input should show");
         assert!(matches!(
@@ -515,7 +515,7 @@ mod tests {
     fn given_no_inline_edit_when_tree_built_then_no_input_shows() {
         let state = QuickLaunchState::default();
 
-        let vm = QuickLaunchTreeViewModel::from_state(&state);
+        let vm = SidebarTreeViewModel::from_state(&state);
 
         assert!(vm.inline_edit.is_none());
     }

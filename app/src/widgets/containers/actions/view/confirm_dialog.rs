@@ -9,13 +9,13 @@ use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::ActionsIntent;
-use super::super::model::ConfirmViewModel;
+use super::super::model::ConfirmDialogViewModel;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
 /// Props for the confirmation dialog.
 pub(crate) struct ConfirmDialogProps<'a> {
-    pub(crate) vm: ConfirmViewModel,
+    pub(crate) vm: ConfirmDialogViewModel,
     pub(crate) theme: ThemeProps<'a>,
 }
 
@@ -65,8 +65,8 @@ mod tests {
     use crate::i18n::{self, Key};
     use crate::theme::ThemeManager;
 
-    fn remove_dialog(switch: Option<bool>) -> ConfirmViewModel {
-        ConfirmViewModel {
+    fn remove_dialog(switch: Option<bool>) -> ConfirmDialogViewModel {
+        ConfirmDialogViewModel {
             title: String::from("Remove container web-1?"),
             text: String::from("The container is deleted."),
             switch: switch.map(|on| (i18n::t(Key::ContainersStopItFirst), on)),

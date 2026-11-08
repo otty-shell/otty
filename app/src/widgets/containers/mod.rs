@@ -17,14 +17,14 @@ mod table_search;
 pub(crate) mod types;
 pub(crate) mod view;
 
-use actions::{ActionsViewModel, ConfirmViewModel, RowMenuViewModel};
-use create::FormViewModel;
+use actions::{ActionsViewModel, ConfirmDialogViewModel, RowMenuViewModel};
+use create::FormDialogViewModel;
 use event::{ContainersEvent, ContainersIntent};
 use iced::{Subscription, Task, task};
 use inspector::InspectorTabsViewModel;
-pub(crate) use model::MainViewModel;
-use model::{EngineTreeViewModel, InspectorViewModel, StatusViewModel};
-use run::{ImagePanelViewModel, RunFormViewModel};
+pub(crate) use model::MainAreaViewModel;
+use model::{EngineTreeViewModel, InspectorViewModel, StatusBarViewModel};
+use run::{RunFormViewModel, RunPanelViewModel};
 use state::ContainersState;
 
 /// Containers widget: the engines found on this computer, their containers,
@@ -90,13 +90,13 @@ impl ContainersWidget {
     }
 
     /// Build the main area; ages are counted up to the current time.
-    pub(crate) fn main_vm(&self) -> MainViewModel<'_> {
-        MainViewModel::from_state(&self.state, format::unix_now())
+    pub(crate) fn main_area_vm(&self) -> MainAreaViewModel<'_> {
+        MainAreaViewModel::from_state(&self.state, format::unix_now())
     }
 
     /// Build the texts of the status bar.
-    pub(crate) fn status_vm(&self) -> StatusViewModel {
-        StatusViewModel::from_state(&self.state)
+    pub(crate) fn status_bar_vm(&self) -> StatusBarViewModel {
+        StatusBarViewModel::from_state(&self.state)
     }
 
     /// Build the inspector header of the selected row.
@@ -159,13 +159,13 @@ impl ContainersWidget {
     }
 
     /// Build the open confirmation dialog.
-    pub(crate) fn confirm_vm(&self) -> Option<ConfirmViewModel> {
-        ConfirmViewModel::from_state(self.state.actions())
+    pub(crate) fn confirm_dialog_vm(&self) -> Option<ConfirmDialogViewModel> {
+        ConfirmDialogViewModel::from_state(self.state.actions())
     }
 
     /// Build the open create dialog.
-    pub(crate) fn form_vm(&self) -> Option<FormViewModel<'_>> {
-        FormViewModel::from_state(self.state.create())
+    pub(crate) fn form_dialog_vm(&self) -> Option<FormDialogViewModel<'_>> {
+        FormDialogViewModel::from_state(self.state.create())
     }
 
     /// Build the Run container form, shown in place of the table.
@@ -175,8 +175,8 @@ impl ContainersWidget {
 
     /// Build the image panel beside the Run container form, shown in place
     /// of the inspector.
-    pub(crate) fn image_panel_vm(&self) -> Option<ImagePanelViewModel> {
-        ImagePanelViewModel::from_state(self.state.run(), &self.state.run_ctx())
+    pub(crate) fn run_panel_vm(&self) -> Option<RunPanelViewModel> {
+        RunPanelViewModel::from_state(self.state.run(), &self.state.run_ctx())
     }
 
     /// Return whether a row menu or a dialog covers the window.

@@ -13,7 +13,7 @@ const PALETTE_TOP: f32 = 14.0;
 
 /// Props for rendering the open command palette.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PaletteProps<'a> {
+pub(crate) struct CommandPaletteProps<'a> {
     pub(crate) vm: PaletteViewModel<'a>,
     pub(crate) theme: ThemeProps<'a>,
 }
@@ -21,7 +21,9 @@ pub(crate) struct PaletteProps<'a> {
 /// Render the palette centered under the title bar over a transparent
 /// layer: a click on that layer closes the palette, a click on the palette
 /// background gives the input its focus back.
-pub(crate) fn view(props: PaletteProps<'_>) -> Element<'_, PaletteIntent> {
+pub(crate) fn view(
+    props: CommandPaletteProps<'_>,
+) -> Element<'_, PaletteIntent> {
     let palette = props.theme.theme.ui();
 
     let command_palette = CommandPalette::new(
@@ -123,7 +125,7 @@ mod tests {
     ) -> Vec<PaletteIntent> {
         let themes = ThemeManager::new();
         let list = state.list().expect("palette should be open");
-        let mut ui = simulator(view(PaletteProps {
+        let mut ui = simulator(view(CommandPaletteProps {
             vm: PaletteViewModel { list },
             theme: ThemeProps::new(themes.current()),
         }));

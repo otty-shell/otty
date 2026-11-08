@@ -6,7 +6,7 @@ use otty_ui_kit::size;
 use otty_ui_tree::visible_row_count;
 
 use super::super::event::QuickLaunchIntent;
-use super::super::model::QuickLaunchTreeViewModel;
+use super::super::model::SidebarTreeViewModel;
 use super::super::types::InlineEditKind;
 use super::sidebar_tree;
 use crate::i18n::{self, Key};
@@ -19,7 +19,7 @@ use crate::theme::ThemeProps;
 /// and chevron belong to the sidebar, while the tree and the plus send
 /// quick launch intents.
 pub(crate) struct SidebarPanelProps<'a, Message> {
-    pub(crate) vm: QuickLaunchTreeViewModel<'a>,
+    pub(crate) vm: SidebarTreeViewModel<'a>,
     pub(crate) theme: ThemeProps<'a>,
     /// Whether the section body is shown.
     pub(crate) is_open: bool,
@@ -79,7 +79,7 @@ pub(crate) fn view<'a, Message: Clone + 'a>(
 /// Counted from the rows because iced cannot measure a widget before the
 /// left panel shares its height between the sections. An error line under a name input is not counted: Launches is the last
 /// section and takes the height left under the others anyway.
-pub(crate) fn content_height(vm: &QuickLaunchTreeViewModel<'_>) -> f32 {
+pub(crate) fn content_height(vm: &SidebarTreeViewModel<'_>) -> f32 {
     let visible_rows = visible_row_count(vm.data.root().children());
     let is_creating_folder = matches!(
         vm.inline_edit.map(|edit| edit.kind),
@@ -110,7 +110,7 @@ mod tests {
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::quick_launch::event::QuickLaunchIntent;
     use crate::widgets::quick_launch::model::{
-        InlineEditViewModel, QuickLaunchTreeViewModel,
+        InlineEditViewModel, SidebarTreeViewModel,
     };
     use crate::widgets::quick_launch::state::InlineEditState;
     use crate::widgets::quick_launch::types::{
@@ -181,8 +181,8 @@ mod tests {
         file: &'a QuickLaunchFile,
         launching: &'a HashMap<Vec<String>, LaunchInfo>,
         inline_edit: Option<&'a InlineEditState>,
-    ) -> QuickLaunchTreeViewModel<'a> {
-        QuickLaunchTreeViewModel {
+    ) -> SidebarTreeViewModel<'a> {
+        SidebarTreeViewModel {
             data: file,
             selected_path: None,
             hovered_path: None,
@@ -198,7 +198,7 @@ mod tests {
         themes: &'a ThemeManager,
         is_open: bool,
     ) -> iced::Element<'a, Message> {
-        let vm = QuickLaunchTreeViewModel {
+        let vm = SidebarTreeViewModel {
             data: file,
             selected_path: None,
             hovered_path: None,

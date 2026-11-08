@@ -9,7 +9,7 @@ use super::types::{TabContent, TabItem, TabMachine};
 #[derive(Debug, Clone)]
 pub(crate) struct TabsViewModel<'a> {
     /// Machine groups in the order their first open tab was opened.
-    pub(crate) groups: Vec<SessionGroupViewModel<'a>>,
+    pub(crate) groups: Vec<SessionListGroupViewModel<'a>>,
     /// Number of open tabs.
     pub(crate) session_count: usize,
 }
@@ -33,10 +33,10 @@ impl<'a> TabsViewModel<'a> {
         host_name: Option<&'a str>,
     ) -> Self {
         let mut machines: Vec<&TabMachine> = Vec::new();
-        let mut groups: Vec<SessionGroupViewModel<'a>> = Vec::new();
+        let mut groups: Vec<SessionListGroupViewModel<'a>> = Vec::new();
 
         for (&tab_id, tab) in tabs {
-            let session = SessionViewModel {
+            let session = SessionListRowViewModel {
                 tab_id,
                 title: tab.title(),
                 folder: tab.folder(),
@@ -49,7 +49,7 @@ impl<'a> TabsViewModel<'a> {
                 Some(index) => groups[index].sessions.push(session),
                 None => {
                     machines.push(machine);
-                    groups.push(SessionGroupViewModel {
+                    groups.push(SessionListGroupViewModel {
                         name: machine.name(host_name),
                         target: machine.target_kind(),
                         sessions: vec![session],
@@ -67,16 +67,16 @@ impl<'a> TabsViewModel<'a> {
 
 /// One machine and its sessions.
 #[derive(Debug, Clone)]
-pub(crate) struct SessionGroupViewModel<'a> {
+pub(crate) struct SessionListGroupViewModel<'a> {
     /// Host name of this computer or the SSH host.
     pub(crate) name: &'a str,
     pub(crate) target: TargetKind,
-    pub(crate) sessions: Vec<SessionViewModel<'a>>,
+    pub(crate) sessions: Vec<SessionListRowViewModel<'a>>,
 }
 
 /// One open tab in the Sessions section.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SessionViewModel<'a> {
+pub(crate) struct SessionListRowViewModel<'a> {
     pub(crate) tab_id: u64,
     pub(crate) title: &'a str,
     /// Folder name shown muted after the title; `None` without one.
@@ -140,7 +140,7 @@ mod tests {
         vm.groups.iter().map(|group| group.name).collect()
     }
 
-    fn titles<'a>(group: &SessionGroupViewModel<'a>) -> Vec<&'a str> {
+    fn titles<'a>(group: &SessionListGroupViewModel<'a>) -> Vec<&'a str> {
         group.sessions.iter().map(|session| session.title).collect()
     }
 
@@ -280,7 +280,7 @@ mod tests {
 
         assert_eq!(
             vm.groups[1].sessions,
-            vec![SessionViewModel {
+            vec![SessionListRowViewModel {
                 tab_id: 1,
                 title: "htop",
                 folder: None,

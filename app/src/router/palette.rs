@@ -158,7 +158,7 @@ mod tests {
     use crate::widgets::modes::ModesWidget;
     use crate::widgets::modes::event::ModesIntent;
     use crate::widgets::tabs::{
-        SessionGroupViewModel, SessionViewModel, TabsCtx,
+        SessionListGroupViewModel, SessionListRowViewModel, TabsCtx,
     };
 
     /// Context the tests reduce tabs intents with.
@@ -184,8 +184,8 @@ mod tests {
         tab_id: u64,
         title: &'static str,
         is_active: bool,
-    ) -> SessionViewModel<'static> {
-        SessionViewModel {
+    ) -> SessionListRowViewModel<'static> {
+        SessionListRowViewModel {
             tab_id,
             title,
             folder: None,
@@ -198,7 +198,7 @@ mod tests {
     fn the_palette_lists_sessions_by_machine_and_launches_in_tree_order() {
         let tabs = TabsViewModel {
             groups: vec![
-                SessionGroupViewModel {
+                SessionListGroupViewModel {
                     name: "fedora",
                     target: TargetKind::Local,
                     sessions: vec![
@@ -206,7 +206,7 @@ mod tests {
                         session_vm(3, "nvim", true),
                     ],
                 },
-                SessionGroupViewModel {
+                SessionListGroupViewModel {
                     name: "prod-api",
                     target: TargetKind::Ssh,
                     sessions: vec![session_vm(2, "api-prod", false)],

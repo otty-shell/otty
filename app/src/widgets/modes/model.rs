@@ -8,7 +8,7 @@ pub(crate) struct ModesViewModel {
     pub(crate) active: Mode,
     /// Switcher tabs: Terminal, the pinned modes in pin order, then a
     /// temporary tab for the active mode when it is not pinned.
-    pub(crate) tabs: Vec<ModeTabViewModel>,
+    pub(crate) tabs: Vec<ModeSwitcherTabViewModel>,
     /// The All modes menu is open.
     pub(crate) is_menu_open: bool,
     /// Rows of the menu's Pinned section: Terminal, then the pinned modes.
@@ -28,16 +28,16 @@ impl ModesViewModel {
         let shown = std::iter::once(Mode::Terminal)
             .chain(state.pinned().iter().copied());
 
-        let mut tabs: Vec<ModeTabViewModel> = shown
+        let mut tabs: Vec<ModeSwitcherTabViewModel> = shown
             .clone()
-            .map(|mode| ModeTabViewModel {
+            .map(|mode| ModeSwitcherTabViewModel {
                 mode,
                 is_active: mode == active,
                 is_temporary: false,
             })
             .collect();
         if !tabs.iter().any(|tab| tab.is_active) {
-            tabs.push(ModeTabViewModel {
+            tabs.push(ModeSwitcherTabViewModel {
                 mode: active,
                 is_active: true,
                 is_temporary: true,
@@ -75,7 +75,7 @@ impl ModesViewModel {
 
 /// One icon tab of the mode switcher.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ModeTabViewModel {
+pub(crate) struct ModeSwitcherTabViewModel {
     pub(crate) mode: Mode,
     /// The tab of the active mode.
     pub(crate) is_active: bool,
@@ -134,8 +134,8 @@ mod tests {
         mode: Mode,
         is_active: bool,
         is_temporary: bool,
-    ) -> ModeTabViewModel {
-        ModeTabViewModel {
+    ) -> ModeSwitcherTabViewModel {
+        ModeSwitcherTabViewModel {
             mode,
             is_active,
             is_temporary,

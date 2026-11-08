@@ -257,7 +257,7 @@ fn view_palette<'a>(
     let vm = app.widgets.palette.vm()?;
 
     Some(
-        palette_view::view(palette_view::PaletteProps {
+        palette_view::view(palette_view::CommandPaletteProps {
             vm,
             theme: theme_props,
         })

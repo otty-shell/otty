@@ -11,7 +11,7 @@ use otty_ui_kit::{size, spacing, typography};
 use otty_ui_tree::{TreeRowContext, TreeView};
 
 use super::super::event::QuickLaunchIntent;
-use super::super::model::{InlineEditViewModel, QuickLaunchTreeViewModel};
+use super::super::model::{InlineEditViewModel, SidebarTreeViewModel};
 use super::super::types::{
     DropTarget, InlineEditKind, LaunchInfo, QuickLaunchNode,
 };
@@ -23,7 +23,7 @@ use crate::theme::ThemeProps;
 /// Props for the quick launch tree view.
 #[derive(Debug, Clone)]
 pub(crate) struct SidebarTreeProps<'a> {
-    pub(crate) vm: QuickLaunchTreeViewModel<'a>,
+    pub(crate) vm: SidebarTreeViewModel<'a>,
     pub(crate) theme: ThemeProps<'a>,
 }
 

@@ -175,7 +175,7 @@ mod tests {
 
     const PART_EXAMPLE: &str = "pub(crate) mod event;\npub(crate) mod types;\npub(crate) mod view;\n\
         mod checks;\nmod model;\nmod reducer;\nmod state;\n\n\
-        pub(super) use model::{ImagePanelViewModel, RunFormViewModel};\n\
+        pub(super) use model::{RunPanelViewModel, RunFormViewModel};\n\
         pub(super) use reducer::{RunCtx, RunEngine, RunOutcome, reduce};\n\
         pub(super) use state::RunState;\n";
 

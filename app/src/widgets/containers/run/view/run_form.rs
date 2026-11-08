@@ -21,7 +21,7 @@ use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::RunIntent;
 use super::super::model::{
-    PortRowViewModel, RunFormViewModel, VolumeRowViewModel,
+    RunFormPortRowViewModel, RunFormViewModel, RunFormVolumeRowViewModel,
 };
 use super::super::types::RunEdit;
 use crate::components::pull_line::pull_line;
@@ -205,7 +205,7 @@ fn ports_section<'a>(
 /// One port row: inputs, the protocol and the cross.
 fn port_row<'a>(
     index: usize,
-    port: &PortRowViewModel<'a>,
+    port: &RunFormPortRowViewModel<'a>,
     is_editable: bool,
     palette: &UiPalette,
 ) -> MappingRow<'a, RunIntent> {
@@ -295,7 +295,7 @@ fn volumes_section<'a>(
 /// One volume row: inputs, the read-only switch and the cross.
 fn volume_row<'a>(
     index: usize,
-    volume: &VolumeRowViewModel<'a>,
+    volume: &RunFormVolumeRowViewModel<'a>,
     is_editable: bool,
     palette: &UiPalette,
 ) -> MappingRow<'a, RunIntent> {
@@ -331,7 +331,7 @@ fn volume_row<'a>(
 /// on a computer with SELinux.
 fn relabel_switch<'a>(
     index: usize,
-    volume: &VolumeRowViewModel<'a>,
+    volume: &RunFormVolumeRowViewModel<'a>,
     is_editable: bool,
     palette: &UiPalette,
 ) -> RunElement<'a> {

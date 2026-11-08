@@ -10,7 +10,7 @@ use otty_ui_kit::{fonts, spacing, typography};
 use otty_ui_tree::{TreeRowContext, TreeView};
 
 use super::super::event::ExplorerIntent;
-use super::super::model::ExplorerTreeViewModel;
+use super::super::model::SidebarTreeViewModel;
 use super::super::types::FileNode;
 use crate::i18n::{self, Key};
 use crate::icons::FILE;
@@ -19,7 +19,7 @@ use crate::theme::ThemeProps;
 /// Props for the explorer sidebar tree view.
 #[derive(Debug, Clone)]
 pub(crate) struct SidebarTreeProps<'a> {
-    pub(crate) vm: ExplorerTreeViewModel<'a>,
+    pub(crate) vm: SidebarTreeViewModel<'a>,
     pub(crate) theme: ThemeProps<'a>,
 }
 
@@ -67,7 +67,7 @@ fn folder_line<'a>(
 
 /// Render the scrollable explorer tree.
 fn explorer_tree<'a>(
-    vm: &ExplorerTreeViewModel<'a>,
+    vm: &SidebarTreeViewModel<'a>,
     ui: &UiPalette,
 ) -> Element<'a, ExplorerIntent> {
     let row_palette = ui.clone();
@@ -121,7 +121,7 @@ mod tests {
     use super::{SidebarTreeProps, view};
     use crate::theme::{ThemeManager, ThemeProps};
     use crate::widgets::explorer::event::ExplorerIntent;
-    use crate::widgets::explorer::model::ExplorerTreeViewModel;
+    use crate::widgets::explorer::model::SidebarTreeViewModel;
     use crate::widgets::explorer::types::FileNode;
 
     fn props<'a>(
@@ -129,7 +129,7 @@ mod tests {
         tree: &'a [FileNode],
     ) -> SidebarTreeProps<'a> {
         SidebarTreeProps {
-            vm: ExplorerTreeViewModel {
+            vm: SidebarTreeViewModel {
                 root_label: Some("otty"),
                 tree,
                 selected_path: None,

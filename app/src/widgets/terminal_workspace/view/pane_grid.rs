@@ -13,7 +13,7 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 use otty_ui_term::TerminalView;
 
 use super::super::event::TerminalWorkspaceIntent;
-use super::super::model::TerminalTabViewModel;
+use super::super::model::PaneGridViewModel;
 use super::super::types::TerminalEntry;
 use crate::i18n::{self, Key};
 
@@ -22,7 +22,7 @@ const MIN_PANE_SIZE: f32 = 50.0;
 
 /// Render the pane grid for a terminal tab.
 pub(crate) fn view<'a>(
-    vm: TerminalTabViewModel<'a>,
+    vm: PaneGridViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, TerminalWorkspaceIntent> {
     let tab_id = vm.tab_id;
@@ -233,7 +233,7 @@ mod tests {
         let terminals = HashMap::new();
         let palette = UiPalette::otty_dark();
         let grid = view(
-            TerminalTabViewModel {
+            PaneGridViewModel {
                 tab_id: 7,
                 panes: &panes,
                 terminals: &terminals,

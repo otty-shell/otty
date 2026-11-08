@@ -5,14 +5,14 @@ use super::types::FileNode;
 
 /// Read-only view model for the explorer tree.
 #[derive(Debug, Clone)]
-pub(crate) struct ExplorerTreeViewModel<'a> {
+pub(crate) struct SidebarTreeViewModel<'a> {
     pub(super) root_label: Option<&'a str>,
     pub(super) tree: &'a [FileNode],
     pub(super) selected_path: Option<&'a TreePath>,
     pub(super) hovered_path: Option<&'a TreePath>,
 }
 
-impl<'a> ExplorerTreeViewModel<'a> {
+impl<'a> SidebarTreeViewModel<'a> {
     /// Build the view model from the explorer state.
     pub(super) fn from_state(state: &'a ExplorerState) -> Self {
         Self {

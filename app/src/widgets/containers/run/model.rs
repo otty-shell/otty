@@ -42,7 +42,7 @@ impl fmt::Display for RestartChoice {
 
 /// One port row with its problem.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PortRowViewModel<'a> {
+pub(crate) struct RunFormPortRowViewModel<'a> {
     pub(crate) host: &'a str,
     pub(crate) container: &'a str,
     pub(crate) protocol: PortProtocol,
@@ -53,7 +53,7 @@ pub(crate) struct PortRowViewModel<'a> {
 
 /// One volume row with its problem.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct VolumeRowViewModel<'a> {
+pub(crate) struct RunFormVolumeRowViewModel<'a> {
     pub(crate) source: &'a str,
     pub(crate) target: &'a str,
     pub(crate) is_read_only: bool,
@@ -82,11 +82,11 @@ pub(crate) struct RunFormViewModel<'a> {
     pub(crate) pulls_missing: bool,
     pub(crate) command: &'a TokenList,
     pub(crate) command_hint: String,
-    pub(crate) ports: Vec<PortRowViewModel<'a>>,
+    pub(crate) ports: Vec<RunFormPortRowViewModel<'a>>,
     /// "The image listens on 80/tcp." once the image is known.
     pub(crate) ports_hint: Option<String>,
     pub(crate) env: &'a [(String, String)],
-    pub(crate) volumes: Vec<VolumeRowViewModel<'a>>,
+    pub(crate) volumes: Vec<RunFormVolumeRowViewModel<'a>>,
     pub(crate) networks: Vec<String>,
     pub(crate) network: String,
     pub(crate) restarts: Vec<RestartChoice>,
@@ -142,7 +142,7 @@ impl<'a> RunFormViewModel<'a> {
             .enumerate()
             .map(|(index, row)| {
                 let problem = problems.port(index);
-                PortRowViewModel {
+                RunFormPortRowViewModel {
                     host: row.host(),
                     container: row.container(),
                     protocol: row.protocol(),
@@ -159,7 +159,7 @@ impl<'a> RunFormViewModel<'a> {
             .enumerate()
             .map(|(index, row)| {
                 let problem: Option<RowProblem> = problems.volume(index);
-                VolumeRowViewModel {
+                RunFormVolumeRowViewModel {
                     source: row.source(),
                     target: row.target(),
                     is_read_only: row.is_read_only(),
@@ -259,7 +259,7 @@ impl<'a> RunFormViewModel<'a> {
 
 /// What the typed image sets on its own, beside the form.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ImagePanelViewModel {
+pub(crate) struct RunPanelViewModel {
     /// The typed image, or "Run container" while none is typed.
     pub(crate) title: String,
     /// Whether the image is on this computer.
@@ -272,7 +272,7 @@ pub(crate) struct ImagePanelViewModel {
     pub(crate) error: Option<String>,
 }
 
-impl ImagePanelViewModel {
+impl RunPanelViewModel {
     /// Build the image panel of the open Run form; `None` when none is open,
     /// or while no engine is there.
     pub(crate) fn from_state(
@@ -473,8 +473,8 @@ mod tests {
     }
 
     /// The image panel of `state` as the widget builds it.
-    fn image_panel(state: &ContainersState) -> Option<ImagePanelViewModel> {
-        ImagePanelViewModel::from_state(state.run(), &state.run_ctx())
+    fn image_panel(state: &ContainersState) -> Option<RunPanelViewModel> {
+        RunPanelViewModel::from_state(state.run(), &state.run_ctx())
     }
 
     fn lists(kind: EngineKind) -> LoadedLists {
@@ -979,7 +979,7 @@ mod tests {
         };
 
         let form = RunFormViewModel::from_state(state.run(), &no_engine);
-        let panel = ImagePanelViewModel::from_state(state.run(), &no_engine);
+        let panel = RunPanelViewModel::from_state(state.run(), &no_engine);
 
         assert!(form.is_none());
         assert!(panel.is_none());

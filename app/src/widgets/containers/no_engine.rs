@@ -31,7 +31,7 @@ const DOCKER_GROUP_URL: &str =
 
 /// A command to run in a terminal, with the text around it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CommandViewModel {
+pub(crate) struct NoEngineCommandViewModel {
     pub(crate) label: &'static str,
     pub(crate) text: &'static str,
     pub(crate) hint: &'static str,
@@ -39,7 +39,7 @@ pub(crate) struct CommandViewModel {
 
 /// A button that opens a page in the browser.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LinkViewModel {
+pub(crate) struct NoEngineLinkViewModel {
     pub(crate) label: &'static str,
     /// The site name shown next to the label.
     pub(crate) site: &'static str,
@@ -48,7 +48,7 @@ pub(crate) struct LinkViewModel {
 
 /// A button that opens the page about the fix of a case.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FixViewModel {
+pub(crate) struct NoEngineFixViewModel {
     pub(crate) label: &'static str,
     pub(crate) url: &'static str,
 }
@@ -65,11 +65,11 @@ pub(crate) struct NoEngineViewModel {
     pub(crate) status_text: String,
     /// The commands that fix the case: none when nothing is installed, one for
     /// each engine when the card speaks of both.
-    pub(crate) commands: Vec<CommandViewModel>,
+    pub(crate) commands: Vec<NoEngineCommandViewModel>,
     /// Install pages; only when nothing is installed.
-    pub(crate) installs: Vec<LinkViewModel>,
+    pub(crate) installs: Vec<NoEngineLinkViewModel>,
     /// The "How to fix" buttons, in the order of the commands.
-    pub(crate) fixes: Vec<FixViewModel>,
+    pub(crate) fixes: Vec<NoEngineFixViewModel>,
     /// What OTTY looked for, shown under the card.
     pub(crate) looked_for: String,
 }
@@ -141,12 +141,12 @@ pub(crate) fn view_model(
             status_text: i18n::t(Key::ContainersStatusNoEngine).to_string(),
             commands: Vec::new(),
             installs: vec![
-                LinkViewModel {
+                NoEngineLinkViewModel {
                     label: i18n::t(Key::ContainersInstallDocker),
                     site: "docs.docker.com",
                     url: DOCKER_INSTALL_URL,
                 },
-                LinkViewModel {
+                NoEngineLinkViewModel {
                     label: i18n::t(Key::ContainersInstallPodman),
                     site: "podman.io",
                     url: PODMAN_INSTALL_URL,
@@ -281,8 +281,8 @@ pub(crate) fn view_model(
 }
 
 /// The command that adds the user to the docker group, with its warning.
-fn docker_group_command() -> CommandViewModel {
-    CommandViewModel {
+fn docker_group_command() -> NoEngineCommandViewModel {
+    NoEngineCommandViewModel {
         label: i18n::t(Key::ContainersDockerNoAccessLabel),
         text: DOCKER_GROUP_COMMAND,
         hint: i18n::t(Key::ContainersDockerNoAccessHint),
@@ -291,8 +291,8 @@ fn docker_group_command() -> CommandViewModel {
 
 /// The command that turns on the user's own Podman socket, for a user a Podman
 /// socket refused.
-fn podman_own_socket_command() -> CommandViewModel {
-    CommandViewModel {
+fn podman_own_socket_command() -> NoEngineCommandViewModel {
+    NoEngineCommandViewModel {
         label: i18n::t(Key::ContainersPodmanNoAccessLabel),
         text: PODMAN_SOCKET_COMMAND,
         hint: i18n::t(Key::ContainersPodmanNoAccessHint),
@@ -300,8 +300,8 @@ fn podman_own_socket_command() -> CommandViewModel {
 }
 
 /// The command that starts Docker, with its macOS note under the label `label`.
-fn docker_start_command(label: Key) -> CommandViewModel {
-    CommandViewModel {
+fn docker_start_command(label: Key) -> NoEngineCommandViewModel {
+    NoEngineCommandViewModel {
         label: i18n::t(label),
         text: DOCKER_START_COMMAND,
         hint: i18n::t(Key::ContainersDockerStoppedHint),
@@ -310,16 +310,16 @@ fn docker_start_command(label: Key) -> CommandViewModel {
 
 /// The command that turns on the Podman socket, with its macOS note under the
 /// label `label`.
-fn podman_socket_command(label: Key) -> CommandViewModel {
-    CommandViewModel {
+fn podman_socket_command(label: Key) -> NoEngineCommandViewModel {
+    NoEngineCommandViewModel {
         label: i18n::t(label),
         text: PODMAN_SOCKET_COMMAND,
         hint: i18n::t(Key::ContainersPodmanOffHint),
     }
 }
 
-fn how_to_fix(label: Key, url: &'static str) -> FixViewModel {
-    FixViewModel {
+fn how_to_fix(label: Key, url: &'static str) -> NoEngineFixViewModel {
+    NoEngineFixViewModel {
         label: i18n::t(label),
         url,
     }
@@ -338,8 +338,8 @@ mod tests {
         ]
     }
 
-    fn one_fix(url: &'static str) -> FixViewModel {
-        FixViewModel {
+    fn one_fix(url: &'static str) -> NoEngineFixViewModel {
+        NoEngineFixViewModel {
             label: i18n::t(Key::ContainersHowToFix),
             url,
         }
@@ -357,12 +357,12 @@ mod tests {
         assert_eq!(
             vm.installs,
             vec![
-                LinkViewModel {
+                NoEngineLinkViewModel {
                     label: i18n::t(Key::ContainersInstallDocker),
                     site: "docs.docker.com",
                     url: "https://docs.docker.com/get-started/get-docker/",
                 },
-                LinkViewModel {
+                NoEngineLinkViewModel {
                     label: i18n::t(Key::ContainersInstallPodman),
                     site: "podman.io",
                     url: "https://podman.io/docs/installation",
@@ -380,7 +380,7 @@ mod tests {
         assert_eq!(vm.panel_text, i18n::t(Key::ContainersPanelDockerStopped));
         assert_eq!(
             vm.commands,
-            vec![CommandViewModel {
+            vec![NoEngineCommandViewModel {
                 label: i18n::t(Key::ContainersRunInTerminal),
                 text: "sudo systemctl start docker",
                 hint: i18n::t(Key::ContainersDockerStoppedHint),
@@ -402,7 +402,7 @@ mod tests {
         assert_eq!(vm.panel_text, i18n::t(Key::ContainersPanelPodmanOff));
         assert_eq!(
             vm.commands,
-            vec![CommandViewModel {
+            vec![NoEngineCommandViewModel {
                 label: i18n::t(Key::ContainersRunInTerminal),
                 text: "systemctl --user enable --now podman.socket",
                 hint: i18n::t(Key::ContainersPodmanOffHint),
@@ -427,12 +427,12 @@ mod tests {
         assert_eq!(
             vm.commands,
             vec![
-                CommandViewModel {
+                NoEngineCommandViewModel {
                     label: i18n::t(Key::ContainersBothOffDockerLabel),
                     text: "sudo systemctl start docker",
                     hint: i18n::t(Key::ContainersDockerStoppedHint),
                 },
-                CommandViewModel {
+                NoEngineCommandViewModel {
                     label: i18n::t(Key::ContainersBothOffPodmanLabel),
                     text: "systemctl --user enable --now podman.socket",
                     hint: i18n::t(Key::ContainersPodmanOffHint),
@@ -449,11 +449,11 @@ mod tests {
         assert_eq!(
             vm.fixes,
             vec![
-                FixViewModel {
+                NoEngineFixViewModel {
                     label: i18n::t(Key::ContainersHowToFixDocker),
                     url: "https://docs.docker.com/engine/daemon/start/",
                 },
-                FixViewModel {
+                NoEngineFixViewModel {
                     label: i18n::t(Key::ContainersHowToFixPodman),
                     url: "https://docs.podman.io/en/latest/markdown/podman-system-service.1.html",
                 },
@@ -519,7 +519,7 @@ mod tests {
         assert_eq!(vm.panel_text, i18n::t(Key::ContainersPanelDockerNoAccess));
         assert_eq!(
             vm.commands,
-            vec![CommandViewModel {
+            vec![NoEngineCommandViewModel {
                 label: i18n::t(Key::ContainersDockerNoAccessLabel),
                 text: "sudo usermod -aG docker $USER",
                 hint: i18n::t(Key::ContainersDockerNoAccessHint),
@@ -550,7 +550,7 @@ mod tests {
         assert_eq!(vm.status_text, i18n::containers_status_no_access(socket));
         assert_eq!(
             vm.commands,
-            vec![CommandViewModel {
+            vec![NoEngineCommandViewModel {
                 label: i18n::t(Key::ContainersPodmanNoAccessLabel),
                 text: "systemctl --user enable --now podman.socket",
                 hint: i18n::t(Key::ContainersPodmanNoAccessHint),
@@ -621,12 +621,12 @@ mod tests {
         assert_eq!(
             vm.commands,
             vec![
-                CommandViewModel {
+                NoEngineCommandViewModel {
                     label: i18n::t(Key::ContainersDockerNoAccessLabel),
                     text: DOCKER_GROUP_COMMAND,
                     hint: i18n::t(Key::ContainersDockerNoAccessHint),
                 },
-                CommandViewModel {
+                NoEngineCommandViewModel {
                     label: i18n::t(Key::ContainersBothOffPodmanLabel),
                     text: PODMAN_COMMAND,
                     hint: i18n::t(Key::ContainersPodmanOffHint),
@@ -636,11 +636,11 @@ mod tests {
         assert_eq!(
             vm.fixes,
             vec![
-                FixViewModel {
+                NoEngineFixViewModel {
                     label: i18n::t(Key::ContainersHowToFixDocker),
                     url: "https://docs.docker.com/engine/install/linux-postinstall/",
                 },
-                FixViewModel {
+                NoEngineFixViewModel {
                     label: i18n::t(Key::ContainersHowToFixPodman),
                     url: PODMAN_PAGE,
                 },
@@ -677,12 +677,12 @@ mod tests {
         assert_eq!(
             vm.commands,
             vec![
-                CommandViewModel {
+                NoEngineCommandViewModel {
                     label: i18n::t(Key::ContainersPodmanNoAccessLabel),
                     text: PODMAN_COMMAND,
                     hint: i18n::t(Key::ContainersPodmanNoAccessHint),
                 },
-                CommandViewModel {
+                NoEngineCommandViewModel {
                     label: i18n::t(Key::ContainersBothOffDockerLabel),
                     text: DOCKER_START_COMMAND,
                     hint: i18n::t(Key::ContainersDockerStoppedHint),
@@ -692,11 +692,11 @@ mod tests {
         assert_eq!(
             vm.fixes,
             vec![
-                FixViewModel {
+                NoEngineFixViewModel {
                     label: i18n::t(Key::ContainersHowToFixPodman),
                     url: PODMAN_PAGE,
                 },
-                FixViewModel {
+                NoEngineFixViewModel {
                     label: i18n::t(Key::ContainersHowToFixDocker),
                     url: "https://docs.docker.com/engine/daemon/start/",
                 },

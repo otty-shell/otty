@@ -11,7 +11,8 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::TabsIntent;
 use super::super::model::{
-    SessionGroupViewModel, SessionState, SessionViewModel, TabsViewModel,
+    SessionListGroupViewModel, SessionListRowViewModel, SessionState,
+    TabsViewModel,
 };
 use crate::i18n::{self, Key};
 use crate::icons;
@@ -128,7 +129,7 @@ fn empty_hint<'a, Message: 'a>(palette: &UiPalette) -> Element<'a, Message> {
 
 /// Group label: machine dot, name, and "this computer" or "ssh".
 fn group_label<'a, Message: 'a>(
-    group: &SessionGroupViewModel<'_>,
+    group: &SessionListGroupViewModel<'_>,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
     let note = match group.target {
@@ -144,7 +145,7 @@ fn group_label<'a, Message: 'a>(
 /// One session row: press activates the tab, the close cross (shown on hover) and a middle
 /// click close it.
 fn session_row<'a, Message: Clone + 'a>(
-    session: SessionViewModel<'_>,
+    session: SessionListRowViewModel<'_>,
     palette: &UiPalette,
     on_intent: fn(TabsIntent) -> Message,
 ) -> Element<'a, Message> {

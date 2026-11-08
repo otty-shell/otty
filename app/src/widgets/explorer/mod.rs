@@ -43,8 +43,8 @@ impl ExplorerWidget {
     }
 
     /// Return a tree view model for the sidebar panel.
-    pub(crate) fn vm(&self) -> model::ExplorerTreeViewModel<'_> {
-        model::ExplorerTreeViewModel::from_state(&self.state)
+    pub(crate) fn vm(&self) -> model::SidebarTreeViewModel<'_> {
+        model::SidebarTreeViewModel::from_state(&self.state)
     }
 }
 

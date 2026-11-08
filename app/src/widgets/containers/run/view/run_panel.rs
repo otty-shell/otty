@@ -11,7 +11,7 @@ use otty_ui_kit::components::status_badge::StatusBadge;
 use otty_ui_kit::{fonts, typography};
 
 use super::super::event::RunIntent;
-use super::super::model::ImagePanelViewModel;
+use super::super::model::RunPanelViewModel;
 use crate::icons;
 use crate::theme::ThemeProps;
 
@@ -27,7 +27,7 @@ const SECTION_GAP: f32 = 14.0;
 
 /// Props for the image panel.
 pub(crate) struct RunPanelProps<'a> {
-    pub(crate) vm: ImagePanelViewModel,
+    pub(crate) vm: RunPanelViewModel,
     pub(crate) theme: ThemeProps<'a>,
 }
 
@@ -92,8 +92,8 @@ mod tests {
     /// Width of a side panel at its minimum.
     const SIDE_PANEL_MINIMUM: f32 = 128.0;
 
-    fn nginx() -> ImagePanelViewModel {
-        ImagePanelViewModel {
+    fn nginx() -> RunPanelViewModel {
+        RunPanelViewModel {
             title: String::from("nginx:1.27"),
             status: Some((
                 String::from("On this computer, 192 MB"),
@@ -140,7 +140,7 @@ mod tests {
     /// is for it.
     fn status_at(status: &str, width: f32) -> (iced::Rectangle, f32) {
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
-        let vm = ImagePanelViewModel {
+        let vm = RunPanelViewModel {
             status: Some((status.to_string(), StatusTone::Neutral)),
             ..nginx()
         };
@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn a_failed_lookup_shows_the_engines_message() {
         let theme = AppTheme::new(BuiltinTheme::OttyDark);
-        let vm = ImagePanelViewModel {
+        let vm = RunPanelViewModel {
             status: None,
             fields: Vec::new(),
             error: Some(String::from("Could not read the image: boom")),

@@ -559,9 +559,9 @@ mod tests {
     use crate::i18n::{self, Key, Locale};
     use crate::testing::task_outputs::collect_outputs;
     use crate::widgets::containers::actions::PruneViewModel;
-    use crate::widgets::containers::create::FormViewModel;
+    use crate::widgets::containers::create::FormDialogViewModel;
     use crate::widgets::containers::model::{
-        EngineTreeViewModel, MainViewModel, StatusViewModel,
+        EngineTreeViewModel, MainAreaViewModel, StatusBarViewModel,
     };
     use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::containers::sort::{SortOrder, TableSort};
@@ -1760,8 +1760,8 @@ mod tests {
         assert_eq!(engine.images().items().len(), 3);
         assert_eq!(engine.volumes().items().len(), 2);
         assert_eq!(engine.networks().items().len(), 4);
-        let main = MainViewModel::from_state(&state, 0);
-        let MainViewModel::Table(table) = main else {
+        let main = MainAreaViewModel::from_state(&state, 0);
+        let MainAreaViewModel::Table(table) = main else {
             panic!("the containers table is shown");
         };
         assert_eq!(table.error, Some("unknown variant `unknown`"));
@@ -1894,9 +1894,9 @@ mod tests {
         ))
     }
 
-    fn card(state: &ContainersState) -> MainViewModel<'_> {
-        let vm = MainViewModel::from_state(state, 0);
-        assert!(matches!(vm, MainViewModel::NoEngine(_)), "{vm:?}");
+    fn card(state: &ContainersState) -> MainAreaViewModel<'_> {
+        let vm = MainAreaViewModel::from_state(state, 0);
+        assert!(matches!(vm, MainAreaViewModel::NoEngine(_)), "{vm:?}");
 
         vm
     }
@@ -1948,7 +1948,7 @@ mod tests {
     fn a_tick_searches_behind_the_card_and_the_card_stays() {
         let mut state = card_of(docker_stopped());
         let before = format!("{:?}", card(&state));
-        let status = StatusViewModel::from_state(&state);
+        let status = StatusBarViewModel::from_state(&state);
         let note = EngineTreeViewModel::from_state(&state).note;
 
         let sent = tick(&mut state);
@@ -1956,7 +1956,7 @@ mod tests {
         assert_eq!(sent, vec![ContainersEffect::DiscoverInBackground]);
         assert!(matches!(state.search(), Search::Done(_)));
         assert_eq!(format!("{:?}", card(&state)), before);
-        assert_eq!(StatusViewModel::from_state(&state), status);
+        assert_eq!(StatusBarViewModel::from_state(&state), status);
         assert_eq!(EngineTreeViewModel::from_state(&state).note, note);
     }
 
@@ -2023,7 +2023,7 @@ mod tests {
 
         let _ = background_result(&mut state, podman_off());
 
-        let MainViewModel::NoEngine(vm) = card(&state) else {
+        let MainAreaViewModel::NoEngine(vm) = card(&state) else {
             panic!("expected the card");
         };
         assert_eq!(vm.title, i18n::t(Key::ContainersPodmanOffTitle));
@@ -2074,8 +2074,8 @@ mod tests {
         assert_eq!(sent, vec![ContainersEffect::Discover]);
         assert_eq!(state.search(), &Search::Searching);
         assert_eq!(
-            MainViewModel::from_state(&state, 0),
-            MainViewModel::Searching
+            MainAreaViewModel::from_state(&state, 0),
+            MainAreaViewModel::Searching
         );
     }
 
@@ -2090,8 +2090,8 @@ mod tests {
         assert!(sent.is_empty());
         assert_eq!(state.search(), &Search::Searching);
         assert_eq!(
-            MainViewModel::from_state(&state, 0),
-            MainViewModel::Searching
+            MainAreaViewModel::from_state(&state, 0),
+            MainAreaViewModel::Searching
         );
 
         let _ = reduce(
@@ -2099,7 +2099,7 @@ mod tests {
             ContainersIntent::DiscoveryFinished(docker_stopped()),
         );
 
-        let MainViewModel::NoEngine(vm) = card(&state) else {
+        let MainAreaViewModel::NoEngine(vm) = card(&state) else {
             panic!("expected the card");
         };
         assert_eq!(vm.title, i18n::t(Key::ContainersDockerStoppedTitle));
@@ -3827,7 +3827,8 @@ mod tests {
 
             assert!(effects.is_empty());
             assert_eq!(
-                FormViewModel::from_state(state.create()).map(|vm| vm.title),
+                FormDialogViewModel::from_state(state.create())
+                    .map(|vm| vm.title),
                 Some(i18n::t(title))
             );
         }
@@ -4029,7 +4030,7 @@ mod tests {
             },
         ));
 
-        let dialog = FormViewModel::from_state(state.create());
+        let dialog = FormDialogViewModel::from_state(state.create());
         assert!(effects.is_empty());
         assert_eq!(
             dialog.as_ref().map(|vm| vm.title),

@@ -16,7 +16,7 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::actions::event::ActionsIntent;
 use super::super::event::ContainersIntent;
-use super::super::model::{MainViewModel, TableViewModel};
+use super::super::model::{MainAreaViewModel, TableViewModel};
 use super::super::resource_rows::PORTS_COLUMN;
 use super::super::sort::SortOrder;
 use super::super::types::ResourceKind;
@@ -38,7 +38,7 @@ const SEARCH_ID: &str = "containers_search";
 
 /// Props for the Containers main area.
 pub(crate) struct MainAreaProps<'a> {
-    pub(crate) vm: MainViewModel<'a>,
+    pub(crate) vm: MainAreaViewModel<'a>,
     pub(crate) theme: ThemeProps<'a>,
 }
 
@@ -47,7 +47,7 @@ pub(crate) fn view(props: MainAreaProps<'_>) -> Element<'_, ContainersIntent> {
     let palette = props.theme.theme.ui();
 
     match props.vm {
-        MainViewModel::Table(table) => {
+        MainAreaViewModel::Table(table) => {
             let page = table.page.clone();
 
             table_view(table, palette).map(move |intent| {
@@ -57,10 +57,10 @@ pub(crate) fn view(props: MainAreaProps<'_>) -> Element<'_, ContainersIntent> {
                 }
             })
         },
-        MainViewModel::Searching => {
+        MainAreaViewModel::Searching => {
             card(i18n::t(Key::ContainersSearching), palette)
         },
-        MainViewModel::NoEngine(vm) => no_engine::view(vm, palette),
+        MainAreaViewModel::NoEngine(vm) => no_engine::view(vm, palette),
     }
 }
 
@@ -328,8 +328,8 @@ mod tests {
             .collect()
     }
 
-    fn table<'a>(rows: Vec<Vec<TableCell>>) -> MainViewModel<'a> {
-        MainViewModel::Table(TableViewModel {
+    fn table<'a>(rows: Vec<Vec<TableCell>>) -> MainAreaViewModel<'a> {
+        MainAreaViewModel::Table(TableViewModel {
             page: &PAGE,
             resource: ResourceKind::Containers,
             search: &EMPTY_SEARCH,
@@ -356,9 +356,11 @@ mod tests {
 
     fn with<'a>(
         change: impl FnOnce(TableViewModel<'a>) -> TableViewModel<'a>,
-    ) -> MainViewModel<'a> {
+    ) -> MainAreaViewModel<'a> {
         match table(rows()) {
-            MainViewModel::Table(table) => MainViewModel::Table(change(table)),
+            MainAreaViewModel::Table(table) => {
+                MainAreaViewModel::Table(change(table))
+            },
             other => other,
         }
     }
@@ -537,7 +539,7 @@ mod tests {
 
     /// The main area of `vm`, `width` wide.
     fn area<'a>(
-        vm: MainViewModel<'a>,
+        vm: MainAreaViewModel<'a>,
         width: f32,
         theme: ThemeProps<'a>,
     ) -> Element<'a, ContainersIntent> {
@@ -894,7 +896,7 @@ mod tests {
     ) {
         let themes = ThemeManager::new();
         let intents: Vec<ContainersIntent> = {
-            let vm = MainViewModel::from_state(state, NOW);
+            let vm = MainAreaViewModel::from_state(state, NOW);
             let mut ui =
                 simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
             step(&mut ui);
@@ -934,8 +936,8 @@ mod tests {
 
     /// The rows the main area of `state` shows.
     fn row_count(state: &ContainersState) -> usize {
-        match MainViewModel::from_state(state, NOW) {
-            MainViewModel::Table(table) => table.rows.len(),
+        match MainAreaViewModel::from_state(state, NOW) {
+            MainAreaViewModel::Table(table) => table.rows.len(),
             _ => 0,
         }
     }
@@ -1011,8 +1013,8 @@ mod tests {
                 .expect("field should be visible");
         });
 
-        let MainViewModel::Table(table) =
-            MainViewModel::from_state(&state, NOW)
+        let MainAreaViewModel::Table(table) =
+            MainAreaViewModel::from_state(&state, NOW)
         else {
             panic!("expected a table");
         };
@@ -1088,7 +1090,7 @@ mod tests {
         }
         let themes = ThemeManager::new();
         let late: Vec<ContainersIntent> = {
-            let vm = MainViewModel::from_state(&state, NOW);
+            let vm = MainAreaViewModel::from_state(&state, NOW);
             let mut ui =
                 simulator(area(vm, WIDE, ThemeProps::new(themes.current())));
             ui.click("otty-fx-exit3").expect("the row should be shown");
@@ -1147,8 +1149,8 @@ mod tests {
     fn a_failed_list_shows_the_engine_message_in_a_notice() {
         let themes = ThemeManager::new();
         let vm = match table(Vec::new()) {
-            MainViewModel::Table(table) => {
-                MainViewModel::Table(TableViewModel {
+            MainAreaViewModel::Table(table) => {
+                MainAreaViewModel::Table(TableViewModel {
                     error: Some("engine said no"),
                     ..table
                 })
@@ -1168,7 +1170,7 @@ mod tests {
     fn while_searching_the_main_area_shows_a_card() {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(MainAreaProps {
-            vm: MainViewModel::Searching,
+            vm: MainAreaViewModel::Searching,
             theme: ThemeProps::new(themes.current()),
         }));
 
@@ -1187,7 +1189,7 @@ mod tests {
             ScreenArea::new(
                 0,
                 view(MainAreaProps {
-                    vm: MainViewModel::Searching,
+                    vm: MainAreaViewModel::Searching,
                     theme: ThemeProps::new(themes.current()),
                 }),
                 themes.current().ui(),
@@ -1303,7 +1305,7 @@ mod tests {
             &[String::from("/run/podman/podman.sock")],
         );
         let mut ui = simulator(view(MainAreaProps {
-            vm: MainViewModel::NoEngine(vm),
+            vm: MainAreaViewModel::NoEngine(vm),
             theme: ThemeProps::new(themes.current()),
         }));
 

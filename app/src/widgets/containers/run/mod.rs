@@ -7,6 +7,6 @@ mod model;
 mod reducer;
 mod state;
 
-pub(super) use model::{ImagePanelViewModel, RunFormViewModel};
+pub(super) use model::{RunFormViewModel, RunPanelViewModel};
 pub(super) use reducer::{RunCtx, RunEngine, RunOutcome, reduce};
 pub(super) use state::RunState;

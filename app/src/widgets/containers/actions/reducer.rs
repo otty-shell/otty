@@ -448,7 +448,7 @@ mod tests {
 
     use super::*;
     use crate::testing::task_outputs::collect_outputs;
-    use crate::widgets::containers::create::FormViewModel;
+    use crate::widgets::containers::create::FormDialogViewModel;
     use crate::widgets::containers::create::types::FormField;
     use crate::widgets::containers::event::{
         ContainersEffect, ContainersEvent, ContainersIntent,
@@ -1705,7 +1705,7 @@ mod tests {
 
         assert!(effects.is_empty());
         assert_eq!(
-            FormViewModel::from_state(state.create()).map(|vm| vm.title),
+            FormDialogViewModel::from_state(state.create()).map(|vm| vm.title),
             Some(i18n::t(Key::ContainersPullImage))
         );
         let form = state.create().form().expect("the pull dialog");

@@ -9,7 +9,7 @@ use crate::i18n::{self, Key};
 
 /// One text field of the create dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FieldViewModel<'a> {
+pub(crate) struct FormDialogFieldViewModel<'a> {
     pub(crate) field: FormField,
     pub(crate) label: &'static str,
     pub(crate) value: &'a str,
@@ -19,9 +19,9 @@ pub(crate) struct FieldViewModel<'a> {
 
 /// The open create dialog.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct FormViewModel<'a> {
+pub(crate) struct FormDialogViewModel<'a> {
     pub(crate) title: &'static str,
-    pub(crate) fields: Vec<FieldViewModel<'a>>,
+    pub(crate) fields: Vec<FormDialogFieldViewModel<'a>>,
     /// `Some` while a pull runs.
     pub(crate) progress: Option<PullLineViewModel>,
     pub(crate) submit_label: &'static str,
@@ -31,7 +31,7 @@ pub(crate) struct FormViewModel<'a> {
     pub(crate) is_editable: bool,
 }
 
-impl<'a> FormViewModel<'a> {
+impl<'a> FormDialogViewModel<'a> {
     /// Build the open create dialog; `None` when none is open.
     pub(crate) fn from_state(state: &'a CreateState) -> Option<Self> {
         let form = state.form()?;
@@ -52,7 +52,7 @@ impl<'a> FormViewModel<'a> {
             .iter()
             .map(|&field| {
                 let (label, placeholder) = field_texts(form.kind(), field);
-                FieldViewModel {
+                FormDialogFieldViewModel {
                     field,
                     label: i18n::t(label),
                     value: form.value(field),
@@ -139,8 +139,8 @@ mod tests {
         state
     }
 
-    fn form_dialog(state: &ContainersState) -> Option<FormViewModel<'_>> {
-        FormViewModel::from_state(state.create())
+    fn form_dialog(state: &ContainersState) -> Option<FormDialogViewModel<'_>> {
+        FormDialogViewModel::from_state(state.create())
     }
 
     fn type_in(state: &mut ContainersState, field: FormField, value: &str) {
@@ -163,13 +163,13 @@ mod tests {
         assert_eq!(
             vm.fields,
             vec![
-                FieldViewModel {
+                FormDialogFieldViewModel {
                     field: FormField::Name,
                     label: i18n::t(Key::ContainersFieldImage),
                     value: "",
                     placeholder: i18n::t(Key::ContainersImagePlaceholder),
                 },
-                FieldViewModel {
+                FormDialogFieldViewModel {
                     field: FormField::Tag,
                     label: i18n::t(Key::ContainersFieldTag),
                     value: "latest",
@@ -262,6 +262,9 @@ mod tests {
 
     #[test]
     fn no_form_has_no_dialog() {
-        assert_eq!(FormViewModel::from_state(&CreateState::default()), None);
+        assert_eq!(
+            FormDialogViewModel::from_state(&CreateState::default()),
+            None
+        );
     }
 }

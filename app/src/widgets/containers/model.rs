@@ -31,7 +31,7 @@ const PART_SEPARATOR: &str = ", ";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EngineTreeViewModel {
     /// Each engine and the four lists of each engine that is not closed.
-    pub(crate) rows: Vec<TreeRowViewModel>,
+    pub(crate) rows: Vec<EngineTreeRowViewModel>,
     /// The short text under the rows while no engine is usable, such as why
     /// none is shown; `None` while the search runs or an engine answered.
     pub(crate) note: Option<&'static str>,
@@ -49,7 +49,7 @@ impl EngineTreeViewModel {
 
 /// One row of the engine tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TreeRowViewModel {
+pub(crate) struct EngineTreeRowViewModel {
     pub(crate) label: String,
     /// 0 for an engine, 1 for its lists.
     pub(crate) depth: u16,
@@ -81,7 +81,7 @@ pub(crate) enum TreeNote {
 
 /// What the main area of Containers mode shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum MainViewModel<'a> {
+pub(crate) enum MainAreaViewModel<'a> {
     /// The engine search runs and no engine is known yet.
     Searching,
     /// The search found no engine; the card says why and what to do.
@@ -90,14 +90,16 @@ pub(crate) enum MainViewModel<'a> {
     Table(TableViewModel<'a>),
 }
 
-impl<'a> MainViewModel<'a> {
+impl<'a> MainAreaViewModel<'a> {
     /// Build what the main area shows; ages are counted up to `now` (Unix
     /// seconds).
     pub(super) fn from_state(state: &'a ContainersState, now: i64) -> Self {
         let (Some(place), Some(engine)) = (state.place(), state.open_engine())
         else {
-            return no_engine_view(state)
-                .map_or(MainViewModel::Searching, MainViewModel::NoEngine);
+            return no_engine_view(state).map_or(
+                MainAreaViewModel::Searching,
+                MainAreaViewModel::NoEngine,
+            );
         };
 
         let search = state.table_search(place);
@@ -159,7 +161,7 @@ impl<'a> MainViewModel<'a> {
                 )
             },
         };
-        MainViewModel::Table(TableViewModel {
+        MainAreaViewModel::Table(TableViewModel {
             prune: PruneViewModel::from_state(
                 state.actions(),
                 &state.actions_ctx(),
@@ -252,7 +254,7 @@ impl InspectorViewModel {
 /// counts of the open list, or why there is no engine (spec Decision 5). The
 /// sessions button is added by the view.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct StatusViewModel {
+pub(crate) struct StatusBarViewModel {
     /// The engine on screen, e.g. "Docker 29.9.1": the one the Run form will
     /// run on while it is open, else the one of the open list; `None` when no
     /// engine is shown (the bar names the mode instead).
@@ -261,7 +263,7 @@ pub(crate) struct StatusViewModel {
     pub(crate) info: String,
 }
 
-impl StatusViewModel {
+impl StatusBarViewModel {
     /// Build the status bar texts for the current state.
     pub(super) fn from_state(state: &ContainersState) -> Self {
         let (Some(place), Some(open)) = (state.place(), state.open_engine())
@@ -305,7 +307,7 @@ struct Shown<'a> {
 /// lists of each engine that is not closed. An engine opens and closes on its
 /// own, whichever list the main area shows; while the engine of the shown
 /// list is closed, no row is highlighted.
-fn tree_rows(state: &ContainersState) -> Vec<TreeRowViewModel> {
+fn tree_rows(state: &ContainersState) -> Vec<EngineTreeRowViewModel> {
     let open = state.place();
     let mut rows = Vec::new();
 
@@ -313,7 +315,7 @@ fn tree_rows(state: &ContainersState) -> Vec<TreeRowViewModel> {
         let address = engine.info().address();
         let is_open = !state.is_engine_closed(address);
 
-        rows.push(TreeRowViewModel {
+        rows.push(EngineTreeRowViewModel {
             label: engine_label(engine.info()),
             depth: 0,
             is_engine: true,
@@ -331,7 +333,7 @@ fn tree_rows(state: &ContainersState) -> Vec<TreeRowViewModel> {
             let is_shown = open.is_some_and(|open| {
                 open.engine() == address && open.resource() == resource
             });
-            rows.push(TreeRowViewModel {
+            rows.push(EngineTreeRowViewModel {
                 label: i18n::t(resource.title_key()).to_string(),
                 depth: 1,
                 is_engine: false,
@@ -568,7 +570,7 @@ mod tests {
     use crate::widgets::containers::run::event::RunIntent;
     use crate::widgets::containers::run::types::RunEdit;
     use crate::widgets::containers::run::{
-        ImagePanelViewModel, RunFormViewModel,
+        RunFormViewModel, RunPanelViewModel,
     };
     use crate::widgets::containers::types::{
         ContainersError, LoadedLists, NoEngineCase,
@@ -580,14 +582,14 @@ mod tests {
     /// All three parts of Containers mode at [`NOW`].
     struct Vm<'a> {
         tree: EngineTreeViewModel,
-        main: MainViewModel<'a>,
+        main: MainAreaViewModel<'a>,
         inspector: Option<InspectorViewModel>,
     }
 
     fn build(state: &ContainersState) -> Vm<'_> {
         Vm {
             tree: EngineTreeViewModel::from_state(state),
-            main: MainViewModel::from_state(state, NOW),
+            main: MainAreaViewModel::from_state(state, NOW),
             inspector: InspectorViewModel::from_state(state),
         }
     }
@@ -642,7 +644,7 @@ mod tests {
 
     fn table<'a>(vm: &'a Vm<'_>) -> &'a TableViewModel<'a> {
         match &vm.main {
-            MainViewModel::Table(table) => table,
+            MainAreaViewModel::Table(table) => table,
             other => panic!("expected a table, got {other:?}"),
         }
     }
@@ -653,8 +655,8 @@ mod tests {
         note: TreeNote,
         is_selected: bool,
         place: Place,
-    ) -> TreeRowViewModel {
-        TreeRowViewModel {
+    ) -> EngineTreeRowViewModel {
+        EngineTreeRowViewModel {
             label: label.to_string(),
             depth,
             is_engine: false,
@@ -769,7 +771,7 @@ mod tests {
         installs: usize,
     ) {
         let vm = build(state);
-        let MainViewModel::NoEngine(card) = &vm.main else {
+        let MainAreaViewModel::NoEngine(card) = &vm.main else {
             panic!("expected the no engine card, got {:?}", vm.main);
         };
 
@@ -783,7 +785,7 @@ mod tests {
         assert_eq!(vm.tree.note, Some(card.panel_text));
         assert_eq!(state.place(), None);
 
-        let bar = StatusViewModel::from_state(state);
+        let bar = StatusBarViewModel::from_state(state);
         assert_eq!(bar.engine, None);
         assert_eq!(bar.info, card.status_text);
     }
@@ -823,7 +825,7 @@ mod tests {
             ContainersIntent::EngineUnreachable(docker().address().clone()),
         );
 
-        assert!(matches!(build(&state).main, MainViewModel::Table(_)));
+        assert!(matches!(build(&state).main, MainAreaViewModel::Table(_)));
         assert!(!EngineTreeViewModel::from_state(&state).rows.is_empty());
     }
 
@@ -840,7 +842,7 @@ mod tests {
         );
 
         let vm = build(&state);
-        assert!(matches!(vm.main, MainViewModel::Table(_)));
+        assert!(matches!(vm.main, MainAreaViewModel::Table(_)));
         assert_eq!(labels(&state), open_labels("Podman 5.8.8"));
         assert_eq!(EngineTreeViewModel::from_state(&state).note, None);
     }
@@ -861,7 +863,7 @@ mod tests {
 
             let ctx = state.run_ctx();
             let form = RunFormViewModel::from_state(state.run(), &ctx);
-            let panel = ImagePanelViewModel::from_state(state.run(), &ctx);
+            let panel = RunPanelViewModel::from_state(state.run(), &ctx);
             assert_eq!(form.map(|_| ()), None, "{case:?}");
             assert_eq!(panel.map(|_| ()), None, "{case:?}");
             assert_only_the_card(&state, case, commands, installs);
@@ -892,7 +894,7 @@ mod tests {
         );
 
         let _ = reduce(&mut state, ContainersIntent::CheckAgain);
-        assert_eq!(build(&state).main, MainViewModel::Searching);
+        assert_eq!(build(&state).main, MainAreaViewModel::Searching);
         let _ = reduce(
             &mut state,
             ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
@@ -957,7 +959,8 @@ mod tests {
     }
 
     fn suggestion_texts(state: &ContainersState) -> Vec<String> {
-        let MainViewModel::Table(table) = MainViewModel::from_state(state, NOW)
+        let MainAreaViewModel::Table(table) =
+            MainAreaViewModel::from_state(state, NOW)
         else {
             panic!("expected a table");
         };
@@ -1075,7 +1078,7 @@ mod tests {
 
         let vm = build(&state);
 
-        let MainViewModel::NoEngine(card) = vm.main else {
+        let MainAreaViewModel::NoEngine(card) = vm.main else {
             panic!("expected the no engine card");
         };
         assert_eq!(card.title, i18n::t(Key::ContainersNotInstalledTitle));
@@ -1117,7 +1120,7 @@ mod tests {
 
         let vm = build(&state);
 
-        assert_eq!(vm.main, MainViewModel::Searching);
+        assert_eq!(vm.main, MainAreaViewModel::Searching);
         assert!(vm.tree.rows.is_empty());
         assert_eq!(vm.inspector, None);
     }
@@ -1348,7 +1351,7 @@ mod tests {
         assert_eq!(
             vm.tree.rows,
             vec![
-                TreeRowViewModel {
+                EngineTreeRowViewModel {
                     is_engine: true,
                     is_open: true,
                     ..tree_row(
@@ -1390,7 +1393,7 @@ mod tests {
                     false,
                     docker_at(ResourceKind::Networks)
                 ),
-                TreeRowViewModel {
+                EngineTreeRowViewModel {
                     is_engine: true,
                     is_open: true,
                     ..tree_row(
@@ -2100,7 +2103,7 @@ mod tests {
     #[test]
     fn the_counts_are_of_the_whole_list_whatever_the_page_filters() {
         let mut state = loaded(&[EngineKind::Docker]);
-        let whole_list = StatusViewModel::from_state(&state).info;
+        let whole_list = StatusBarViewModel::from_state(&state).info;
 
         let _ = reduce(
             &mut state,
@@ -2109,14 +2112,14 @@ mod tests {
             )),
         );
 
-        assert_eq!(StatusViewModel::from_state(&state).info, whole_list);
+        assert_eq!(StatusBarViewModel::from_state(&state).info, whole_list);
     }
 
     #[test]
     fn while_searching_the_bar_says_it_looks_for_engines() {
         let state = ContainersState::default();
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
 
         assert_eq!(vm.engine, None);
         assert_eq!(vm.info, "Looking for engines…");
@@ -2127,7 +2130,7 @@ mod tests {
         let mut state = loaded(&[EngineKind::Docker]);
         let _ = reduce(&mut state, ContainersIntent::OpenCreate);
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
 
         assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
         assert_eq!(vm.info, "Run container");
@@ -2151,7 +2154,7 @@ mod tests {
     fn the_bar_names_the_engine_the_run_form_will_run_on() {
         let state = run_form_on_podman();
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
 
         assert_eq!(state.open_engine().map(EngineState::info), Some(&docker()));
         assert_eq!(vm.engine.as_deref(), Some("Podman 5.8.8"));
@@ -2170,7 +2173,7 @@ mod tests {
         );
 
         assert_eq!(
-            StatusViewModel::from_state(&state).engine.as_deref(),
+            StatusBarViewModel::from_state(&state).engine.as_deref(),
             Some("Docker 29.9.1")
         );
     }
@@ -2181,7 +2184,7 @@ mod tests {
 
         let _ = reduce(&mut state, ContainersIntent::Run(RunIntent::Close));
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
         assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
         assert!(vm.info.contains("containers"), "{}", vm.info);
     }
@@ -2199,7 +2202,7 @@ mod tests {
             ])),
         );
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
         assert!(state.engine(podman().address()).is_none());
         assert_eq!(vm.engine.as_deref(), Some("Podman 5.8.8"));
         assert_eq!(vm.info, "Run container");
@@ -2219,7 +2222,7 @@ mod tests {
             ContainersIntent::DiscoveryFinished(fixtures::discovery(&[])),
         );
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
         assert!(state.run().is_open());
         assert_eq!(vm.engine, None);
         assert_eq!(vm.info, "no engine found");
@@ -2236,7 +2239,7 @@ mod tests {
             .filter(|c| c.state() == ContainerState::Running)
             .count();
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
 
         assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
         assert_eq!(vm.info, format!("{total} containers, {running} running"));
@@ -2263,7 +2266,7 @@ mod tests {
         );
         open(&mut state, ResourceKind::Images);
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
 
         assert_eq!(vm.info, format!("2 images, {}", size_text(bytes)));
     }
@@ -2276,7 +2279,7 @@ mod tests {
         let count = resources.images().len();
         let bytes: u64 = resources.images().iter().map(Image::size).sum();
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
 
         assert_eq!(vm.info, format!("{count} images, {}", size_text(bytes)));
     }
@@ -2287,9 +2290,9 @@ mod tests {
         let resources = fixtures::resources(EngineKind::Docker);
 
         open(&mut state, ResourceKind::Volumes);
-        let volumes = StatusViewModel::from_state(&state).info;
+        let volumes = StatusBarViewModel::from_state(&state).info;
         open(&mut state, ResourceKind::Networks);
-        let networks = StatusViewModel::from_state(&state).info;
+        let networks = StatusBarViewModel::from_state(&state).info;
 
         assert_eq!(volumes, format!("{} volumes", resources.volumes().len()));
         assert_eq!(
@@ -2315,13 +2318,13 @@ mod tests {
             },
         );
 
-        let containers = StatusViewModel::from_state(&state).info;
+        let containers = StatusBarViewModel::from_state(&state).info;
         open(&mut state, ResourceKind::Images);
-        let images = StatusViewModel::from_state(&state).info;
+        let images = StatusBarViewModel::from_state(&state).info;
         open(&mut state, ResourceKind::Volumes);
-        let volumes = StatusViewModel::from_state(&state).info;
+        let volumes = StatusBarViewModel::from_state(&state).info;
         open(&mut state, ResourceKind::Networks);
-        let networks = StatusViewModel::from_state(&state).info;
+        let networks = StatusBarViewModel::from_state(&state).info;
 
         assert!(containers.starts_with("1 container, "), "{containers}");
         assert!(images.starts_with("1 image, "), "{images}");
@@ -2335,7 +2338,7 @@ mod tests {
         let themes = ThemeManager::new();
         let state = loaded(&[EngineKind::Docker, EngineKind::Podman]);
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
         let mut ui = simulator(status_bar_view(
             &vm,
             0,
@@ -2353,7 +2356,7 @@ mod tests {
     fn a_list_that_loads_shows_no_number() {
         let state = found(&[EngineKind::Docker]);
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
 
         assert_eq!(vm.engine.as_deref(), Some("Docker 29.9.1"));
         assert_eq!(vm.info, "Loading…");
@@ -2375,7 +2378,7 @@ mod tests {
             },
         );
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
 
         assert_eq!(vm.info, "failed");
     }
@@ -2384,7 +2387,7 @@ mod tests {
     fn without_an_engine_the_bar_gives_the_reason() {
         let state = found(&[]);
 
-        let vm = StatusViewModel::from_state(&state);
+        let vm = StatusBarViewModel::from_state(&state);
 
         assert_eq!(vm.engine, None);
         assert_eq!(vm.info, "no engine found");

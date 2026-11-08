@@ -11,7 +11,9 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::ContainersIntent;
-use super::super::model::{EngineTreeViewModel, TreeNote, TreeRowViewModel};
+use super::super::model::{
+    EngineTreeRowViewModel, EngineTreeViewModel, TreeNote,
+};
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
@@ -64,7 +66,7 @@ pub(crate) fn view(
 }
 
 fn tree_row<'a>(
-    vm: TreeRowViewModel,
+    vm: EngineTreeRowViewModel,
     palette: &UiPalette,
 ) -> Element<'a, ContainersIntent> {
     let press = if vm.is_engine {
@@ -102,8 +104,12 @@ mod tests {
     use crate::theme::ThemeManager;
     use crate::widgets::containers::types::{Place, ResourceKind};
 
-    fn row(label: &str, note: TreeNote, place: Place) -> TreeRowViewModel {
-        TreeRowViewModel {
+    fn row(
+        label: &str,
+        note: TreeNote,
+        place: Place,
+    ) -> EngineTreeRowViewModel {
+        EngineTreeRowViewModel {
             label: label.to_string(),
             depth: 1,
             is_engine: false,
@@ -125,7 +131,7 @@ mod tests {
     fn a_press_on_a_list_row_opens_that_list() {
         let themes = ThemeManager::new();
         let rows = vec![
-            TreeRowViewModel {
+            EngineTreeRowViewModel {
                 depth: 0,
                 is_engine: true,
                 is_open: true,
@@ -165,7 +171,7 @@ mod tests {
     fn a_press_on_an_engine_root_only_opens_or_closes_it() {
         let themes = ThemeManager::new();
         let podman = fixtures::engine(EngineKind::Podman);
-        let rows = vec![TreeRowViewModel {
+        let rows = vec![EngineTreeRowViewModel {
             depth: 0,
             is_engine: true,
             is_open: true,

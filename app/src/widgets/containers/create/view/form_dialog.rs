@@ -10,7 +10,7 @@ use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::spacing;
 
 use super::super::event::CreateIntent;
-use super::super::model::FormViewModel;
+use super::super::model::FormDialogViewModel;
 use super::super::types::FormField;
 use crate::components::pull_line::pull_line;
 use crate::i18n::{self, Key};
@@ -18,7 +18,7 @@ use crate::theme::ThemeProps;
 
 /// Props for the create dialog.
 pub(crate) struct FormDialogProps<'a> {
-    pub(crate) vm: FormViewModel<'a>,
+    pub(crate) vm: FormDialogViewModel<'a>,
     pub(crate) theme: ThemeProps<'a>,
 }
 
@@ -80,19 +80,19 @@ mod tests {
     use crate::components::pull_line::PullLineViewModel;
     use crate::i18n::{self, Key};
     use crate::theme::ThemeManager;
-    use crate::widgets::containers::create::model::FieldViewModel;
+    use crate::widgets::containers::create::model::FormDialogFieldViewModel;
 
-    fn pull_dialog(can_submit: bool) -> FormViewModel<'static> {
-        FormViewModel {
+    fn pull_dialog(can_submit: bool) -> FormDialogViewModel<'static> {
+        FormDialogViewModel {
             title: i18n::t(Key::ContainersPullImage),
             fields: vec![
-                FieldViewModel {
+                FormDialogFieldViewModel {
                     field: FormField::Name,
                     label: i18n::t(Key::ContainersFieldImage),
                     value: "",
                     placeholder: "nginx",
                 },
-                FieldViewModel {
+                FormDialogFieldViewModel {
                     field: FormField::Tag,
                     label: i18n::t(Key::ContainersFieldTag),
                     value: "latest",
@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn a_running_pull_shows_its_progress_line_and_can_be_cancelled() {
         let themes = ThemeManager::new();
-        let vm = FormViewModel {
+        let vm = FormDialogViewModel {
             is_editable: false,
             progress: Some(PullLineViewModel {
                 text: String::from("Pulling nginx:latest"),

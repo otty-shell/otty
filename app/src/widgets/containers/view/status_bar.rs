@@ -5,7 +5,7 @@ use iced::Element;
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::components::target_dot::TargetKind;
 
-use super::super::model::StatusViewModel;
+use super::super::model::StatusBarViewModel;
 use crate::i18n::{self, Key};
 use crate::theme::ThemeProps;
 
@@ -14,7 +14,7 @@ use crate::theme::ThemeProps;
 /// gives the reason. The right side shows the sessions button (it sends
 /// `on_sessions`) and `OTTY <version>`.
 pub(crate) fn view<'a, Message: Clone + 'a>(
-    vm: &StatusViewModel,
+    vm: &StatusBarViewModel,
     session_count: usize,
     version: &str,
     on_sessions: Message,
@@ -50,8 +50,8 @@ mod tests {
         ShowSessions,
     }
 
-    fn vm(engine: Option<&str>) -> StatusViewModel {
-        StatusViewModel {
+    fn vm(engine: Option<&str>) -> StatusBarViewModel {
+        StatusBarViewModel {
             engine: engine.map(String::from),
             info: String::from("6 containers, 3 running"),
         }
