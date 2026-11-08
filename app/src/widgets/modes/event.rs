@@ -3,9 +3,13 @@ use crate::domain::mode::Mode;
 /// Intent events handled by the modes widget.
 #[derive(Debug, Clone)]
 pub(crate) enum ModesIntent {
-    /// Switch to this mode (a switcher tab, a menu row, a shortcut or the
-    /// command palette). Also closes the All modes menu.
+    /// Switch to this mode (a switcher tab, a menu row or the command
+    /// palette). Also closes the All modes menu.
     Select(Mode),
+    /// Switch to the mode at this switcher position (a mode shortcut):
+    /// Terminal at 0, then the pinned modes. Past the pinned modes nothing
+    /// happens.
+    SelectAt { position: usize },
     /// Pin this mode; refused for Terminal, an already pinned mode, or
     /// when every pin slot is taken.
     Pin(Mode),

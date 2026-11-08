@@ -13,6 +13,8 @@ pub(crate) enum TabsIntent {
     CloseTab {
         tab_id: u64,
     },
+    /// Close the active tab, if there is one.
+    CloseActive,
     /// Name a terminal tab after its focused pane.
     SetTitle {
         tab_id: u64,

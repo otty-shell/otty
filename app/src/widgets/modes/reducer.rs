@@ -15,6 +15,10 @@ pub(crate) fn reduce(
 ) -> Task<ModesEvent> {
     match intent {
         ModesIntent::Select(mode) => select(state, mode),
+        ModesIntent::SelectAt { position } => match state.mode_at(position) {
+            Some(mode) => select(state, mode),
+            None => Task::none(),
+        },
         ModesIntent::Pin(mode) => {
             if !state.pin(mode) {
                 return Task::none();
@@ -293,5 +297,68 @@ mod tests {
         let state = ModesState::with_pin_limit(&[Mode::Containers], 0);
 
         assert!(state.pinned().is_empty());
+    }
+
+    #[test]
+    fn select_at_position_zero_switches_to_terminal() {
+        let mut state = ModesState::default();
+        let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
+
+        let effects =
+            effects(&mut state, ModesIntent::SelectAt { position: 0 });
+
+        assert_eq!(state.active(), Mode::Terminal);
+        assert_eq!(effects, vec![ModesEffect::ModeChanged(Mode::Terminal)]);
+    }
+
+    #[test]
+    fn select_at_position_one_switches_to_the_first_pinned_mode() {
+        let mut state = ModesState::default();
+
+        let effects =
+            effects(&mut state, ModesIntent::SelectAt { position: 1 });
+
+        assert_eq!(state.active(), Mode::Containers);
+        assert_eq!(effects, vec![ModesEffect::ModeChanged(Mode::Containers)]);
+    }
+
+    #[test]
+    fn select_at_a_position_past_the_pinned_modes_does_nothing() {
+        for position in 2..=4 {
+            let mut state = ModesState::default();
+
+            let effects =
+                effects(&mut state, ModesIntent::SelectAt { position });
+
+            assert_eq!(state.active(), Mode::Terminal, "{position}");
+            assert!(effects.is_empty(), "{position}");
+        }
+    }
+
+    #[test]
+    fn select_at_without_pinned_modes_does_nothing() {
+        let mut state = ModesState::default();
+        let _ = effects(&mut state, ModesIntent::Unpin(Mode::Containers));
+
+        let effects =
+            effects(&mut state, ModesIntent::SelectAt { position: 1 });
+
+        assert_eq!(state.active(), Mode::Terminal);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn select_at_skips_the_temporary_tab() {
+        // Containers unpinned but active: its tab is temporary, not pinned
+        // mode 1.
+        let mut state = ModesState::default();
+        let _ = effects(&mut state, ModesIntent::Unpin(Mode::Containers));
+        let _ = effects(&mut state, ModesIntent::Select(Mode::Containers));
+
+        let effects =
+            effects(&mut state, ModesIntent::SelectAt { position: 1 });
+
+        assert_eq!(state.active(), Mode::Containers);
+        assert!(effects.is_empty());
     }
 }

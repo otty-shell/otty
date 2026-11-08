@@ -46,6 +46,16 @@ impl ModesState {
         self.pinned.len() >= self.pin_limit
     }
 
+    /// Mode at a switcher position: Terminal at 0, then the pinned modes in
+    /// pin order. `None` past the pinned modes; a temporary tab never has a
+    /// position.
+    pub(crate) fn mode_at(&self, position: usize) -> Option<Mode> {
+        match position {
+            0 => Some(Mode::Terminal),
+            _ => self.pinned.get(position - 1).copied(),
+        }
+    }
+
     /// Start in Terminal mode with the menu closed and `pinned` pinned in
     /// order. Entries the pin rules refuse (Terminal, repeats, entries past
     /// the limit) are left out.

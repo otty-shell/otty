@@ -50,23 +50,16 @@ pub(crate) fn handle(app: &App, shortcut: AppShortcut) -> Task<AppEvent> {
         | AppShortcut::PinnedMode1
         | AppShortcut::PinnedMode2
         | AppShortcut::PinnedMode3
-        | AppShortcut::PinnedMode4 => select_mode(app, shortcut),
+        | AppShortcut::PinnedMode4 => select_mode(shortcut),
         AppShortcut::AllModesMenu => modes_intent(ModesIntent::ToggleMenu),
     }
 }
 
-/// Switch to the mode at the switcher position of a mode shortcut:
-/// Terminal, then the pinned modes. With fewer pinned modes than the
-/// position, nothing happens; a temporary tab is never a pinned mode.
-fn select_mode(app: &App, shortcut: AppShortcut) -> Task<AppEvent> {
-    let pinned_rows = app.widgets.modes.vm().pinned_rows;
-    let mode = shortcut
-        .mode_position()
-        .and_then(|position| pinned_rows.get(position))
-        .map(|row| row.mode);
-
-    match mode {
-        Some(mode) => modes_intent(ModesIntent::Select(mode)),
+/// Switch to the mode at the switcher position of a mode shortcut; the
+/// modes widget knows which mode sits there.
+fn select_mode(shortcut: AppShortcut) -> Task<AppEvent> {
+    match shortcut.mode_position() {
+        Some(position) => modes_intent(ModesIntent::SelectAt { position }),
         None => Task::none(),
     }
 }
@@ -136,78 +129,53 @@ mod tests {
         }
     }
 
-    fn selected_mode(events: &[AppEvent]) -> Option<Mode> {
+    fn selected_position(events: &[AppEvent]) -> Option<usize> {
         match events {
             [
-                AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(mode))),
-            ] => Some(*mode),
+                AppEvent::Modes(ModesEvent::Intent(ModesIntent::SelectAt {
+                    position,
+                })),
+            ] => Some(*position),
             _ => None,
         }
     }
 
     #[test]
-    fn terminal_mode_shortcut_switches_to_terminal() {
+    fn terminal_mode_shortcut_asks_for_switcher_position_zero() {
         let app = first_start_app();
 
         let events = collect_outputs(handle(&app, AppShortcut::TerminalMode));
 
-        assert_eq!(selected_mode(&events), Some(Mode::Terminal));
+        assert_eq!(selected_position(&events), Some(0));
     }
 
     #[test]
-    fn pinned_mode_1_shortcut_switches_to_the_first_pinned_mode() {
+    fn pinned_mode_1_shortcut_asks_for_switcher_position_one() {
         let app = first_start_app();
 
         let events = collect_outputs(handle(&app, AppShortcut::PinnedMode1));
 
-        assert_eq!(selected_mode(&events), Some(Mode::Containers));
+        assert_eq!(selected_position(&events), Some(1));
     }
 
     #[test]
-    fn pinned_mode_shortcut_past_the_pinned_modes_does_nothing() {
+    fn pinned_mode_shortcuts_ask_for_their_switcher_positions() {
+        // Which mode sits there, if any, is the modes widget's to say.
         let app = first_start_app();
 
-        for shortcut in [
-            AppShortcut::PinnedMode2,
-            AppShortcut::PinnedMode3,
-            AppShortcut::PinnedMode4,
+        for (shortcut, position) in [
+            (AppShortcut::PinnedMode2, 2),
+            (AppShortcut::PinnedMode3, 3),
+            (AppShortcut::PinnedMode4, 4),
         ] {
             let events = collect_outputs(handle(&app, shortcut));
 
-            assert!(events.is_empty(), "{shortcut:?}");
+            assert_eq!(
+                selected_position(&events),
+                Some(position),
+                "{shortcut:?}"
+            );
         }
-    }
-
-    #[test]
-    fn pinned_mode_shortcut_without_pinned_modes_does_nothing() {
-        let mut app = first_start_app();
-        let _ = app
-            .widgets
-            .modes
-            .reduce(ModesIntent::Unpin(Mode::Containers));
-
-        let events = collect_outputs(handle(&app, AppShortcut::PinnedMode1));
-
-        assert!(events.is_empty());
-    }
-
-    #[test]
-    fn pinned_mode_shortcut_skips_the_temporary_tab() {
-        // Containers unpinned but active: its tab is temporary, not pinned
-        // mode 1.
-        let mut app = first_start_app();
-        let _ = app
-            .widgets
-            .modes
-            .reduce(ModesIntent::Unpin(Mode::Containers));
-        let _ = app
-            .widgets
-            .modes
-            .reduce(ModesIntent::Select(Mode::Containers));
-
-        let events = collect_outputs(handle(&app, AppShortcut::PinnedMode1));
-
-        assert!(events.is_empty());
     }
 
     #[test]
@@ -230,7 +198,7 @@ mod tests {
 
         let events = collect_outputs(handle_key_event(&app, &event));
 
-        assert_eq!(selected_mode(&events), Some(Mode::Containers));
+        assert_eq!(selected_position(&events), Some(1));
     }
 
     #[test]
@@ -263,30 +231,14 @@ mod tests {
 
     #[test]
     fn close_session_shortcut_closes_the_active_tab() {
-        let (mut app, _) = App::new();
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
-        let active = app
-            .widgets
-            .tabs
-            .active_tab_id()
-            .expect("settings tab should be active");
+        let (app, _) = App::new();
 
         let events = collect_outputs(handle(&app, AppShortcut::CloseSession));
 
         assert!(matches!(
             events.as_slice(),
-            [AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseTab { tab_id }))]
-                if *tab_id == active
+            [AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseActive))]
         ));
-    }
-
-    #[test]
-    fn close_session_shortcut_without_tabs_does_nothing() {
-        let (app, _) = App::new();
-
-        let events = collect_outputs(handle(&app, AppShortcut::CloseSession));
-
-        assert!(events.is_empty());
     }
 
     #[test]

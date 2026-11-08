@@ -25,6 +25,10 @@ pub(crate) fn reduce(
     match event {
         TabsIntent::ActivateTab { tab_id } => activate(state, tab_id),
         TabsIntent::CloseTab { tab_id } => close(state, tab_id),
+        TabsIntent::CloseActive => match state.active_tab_id() {
+            Some(tab_id) => close(state, tab_id),
+            None => Task::none(),
+        },
         TabsIntent::SetTitle {
             tab_id,
             title,
@@ -659,5 +663,31 @@ mod tests {
         let second_id = open_terminal(&mut state, "Second");
 
         assert_ne!(first_id, second_id);
+    }
+
+    #[test]
+    fn close_active_closes_the_active_tab() {
+        let mut state = TabsState::default();
+        let first_id = open_terminal(&mut state, "First");
+        let second_id = open_terminal(&mut state, "Second");
+
+        let events =
+            collect_outputs(reduce(&mut state, TabsIntent::CloseActive));
+
+        assert_eq!(state.active_tab_id(), Some(first_id));
+        assert_eq!(
+            closed_effect(&events),
+            Some((second_id, Some(first_id), 1))
+        );
+    }
+
+    #[test]
+    fn close_active_without_tabs_does_nothing() {
+        let mut state = TabsState::default();
+
+        let events =
+            collect_outputs(reduce(&mut state, TabsIntent::CloseActive));
+
+        assert!(events.is_empty());
     }
 }

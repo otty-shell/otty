@@ -113,6 +113,13 @@ pub(crate) fn reduce(
             axis,
             ctx.equalize_panes,
         ),
+        SplitFocusedPane { axis } => reduce_split_focused_pane(
+            state,
+            terminal_to_tab,
+            next_terminal_id,
+            ctx,
+            axis,
+        ),
         ClosePane { tab_id, pane } => {
             let equalize_panes = ctx.equalize_panes;
             let task = with_terminal_tab(state, tab_id, |tab| {
@@ -353,6 +360,33 @@ fn reduce_terminal_action(
         pane,
         pane_grid::Axis::Vertical,
         equalize_panes,
+    )
+}
+
+/// Split the focused pane of the active tab; nothing happens when the
+/// active tab is not a terminal tab or has no focused pane.
+fn reduce_split_focused_pane(
+    state: &mut TerminalWorkspaceState,
+    terminal_to_tab: &mut HashMap<u64, u64>,
+    next_terminal_id: &mut u64,
+    ctx: &TerminalWorkspaceCtx,
+    axis: pane_grid::Axis,
+) -> Task<TerminalWorkspaceEvent> {
+    let Some(tab_id) = ctx.active_tab_id else {
+        return Task::none();
+    };
+    let Some(pane) = state.tab(tab_id).and_then(|tab| tab.focus()) else {
+        return Task::none();
+    };
+
+    reduce_split_pane(
+        state,
+        terminal_to_tab,
+        next_terminal_id,
+        tab_id,
+        pane,
+        axis,
+        ctx.equalize_panes,
     )
 }
 
@@ -1108,5 +1142,71 @@ mod tests {
             1,
             "only split pane changes the workspace"
         );
+    }
+
+    /// Context whose active tab is the shell tab of
+    /// [`state_with_one_shell_tab`].
+    fn shell_tab_ctx() -> TerminalWorkspaceCtx {
+        TerminalWorkspaceCtx {
+            active_tab_id: Some(1),
+            ..default_ctx()
+        }
+    }
+
+    #[test]
+    fn given_split_focused_pane_when_reduced_then_the_focused_pane_of_the_active_tab_is_split()
+     {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_one_shell_tab();
+        let focused = state
+            .tab(1)
+            .and_then(|tab| tab.focus())
+            .expect("shell tab should have a focused pane");
+
+        let _ = reduce(
+            &mut state,
+            &mut terminal_to_tab,
+            &mut next_id,
+            TerminalWorkspaceIntent::SplitFocusedPane {
+                axis: pane_grid::Axis::Vertical,
+            },
+            &shell_tab_ctx(),
+        );
+
+        let tab = state.tab(1).expect("tab must exist after opening");
+        let created = tab
+            .pane_for_terminal(101)
+            .expect("the split must have created a terminal");
+        assert_eq!(
+            sibling_split_axis(tab.panes().layout(), focused, created),
+            Some(pane_grid::Axis::Vertical)
+        );
+        assert_eq!(terminal_to_tab.get(&101), Some(&1));
+    }
+
+    #[test]
+    fn given_split_focused_pane_without_an_active_terminal_tab_when_reduced_then_nothing_is_split()
+     {
+        let (mut state, mut terminal_to_tab, mut next_id) =
+            state_with_one_shell_tab();
+
+        for active_tab_id in [None, Some(7)] {
+            let ctx = TerminalWorkspaceCtx {
+                active_tab_id,
+                ..default_ctx()
+            };
+
+            let _ = reduce(
+                &mut state,
+                &mut terminal_to_tab,
+                &mut next_id,
+                TerminalWorkspaceIntent::SplitFocusedPane {
+                    axis: pane_grid::Axis::Vertical,
+                },
+                &ctx,
+            );
+        }
+
+        assert_eq!(terminal_count(&state), 1);
     }
 }

@@ -184,18 +184,11 @@ fn split_focused_pane(app: &App) -> Task<AppEvent> {
         return Task::none();
     }
 
-    match focused_pane(app) {
-        Some((tab_id, pane)) => Task::done(AppEvent::TerminalWorkspace(
-            TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::SplitPane {
-                    tab_id,
-                    pane,
-                    axis: pane_grid::Axis::Vertical,
-                },
-            ),
-        )),
-        None => Task::none(),
-    }
+    Task::done(AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+        TerminalWorkspaceIntent::SplitFocusedPane {
+            axis: pane_grid::Axis::Vertical,
+        },
+    )))
 }
 
 /// The active terminal tab and its focused pane, the pane the pane menu's
@@ -592,64 +585,29 @@ mod tests {
     #[test]
     fn split_pane_splits_the_focused_pane_to_the_right() {
         let (mut app, _) = App::new();
-        let tab_id = open_shell_tab(&mut app);
-        let focused = app
-            .widgets
-            .terminal_workspace
-            .tab(tab_id)
-            .and_then(|tab| tab.focus())
-            .expect("shell tab should have a focused pane");
 
         let events = run(&mut app, PaletteTarget::SplitPane);
 
         assert!(matches!(
             events.as_slice(),
             [AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
-                TerminalWorkspaceIntent::SplitPane {
-                    tab_id: split_tab,
-                    pane,
+                TerminalWorkspaceIntent::SplitFocusedPane {
                     axis: pane_grid::Axis::Vertical,
                 }
-            ))] if *split_tab == tab_id && *pane == focused
+            ))]
         ));
-    }
-
-    #[test]
-    fn split_pane_without_a_terminal_tab_does_nothing() {
-        let (mut app, _) = App::new();
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
-
-        let events = run(&mut app, PaletteTarget::SplitPane);
-
-        assert!(events.is_empty());
     }
 
     #[test]
     fn close_session_closes_the_active_tab() {
         let (mut app, _) = App::new();
-        let _ = app.widgets.tabs.reduce(TabsIntent::OpenSettingsTab, &SH);
-        let active = app
-            .widgets
-            .tabs
-            .active_tab_id()
-            .expect("settings tab should be active");
 
         let events = run(&mut app, PaletteTarget::CloseSession);
 
         assert!(matches!(
             events.as_slice(),
-            [AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseTab { tab_id }))]
-                if *tab_id == active
+            [AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseActive))]
         ));
-    }
-
-    #[test]
-    fn close_session_without_tabs_does_nothing() {
-        let (mut app, _) = App::new();
-
-        let events = run(&mut app, PaletteTarget::CloseSession);
-
-        assert!(events.is_empty());
     }
 
     #[test]

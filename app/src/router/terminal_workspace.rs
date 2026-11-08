@@ -136,7 +136,10 @@ fn should_sync_explorer(event: &TerminalWorkspaceIntent) -> bool {
     use TerminalWorkspaceIntent::*;
 
     match event {
-        PaneClicked { .. } | SplitPane { .. } | ClosePane { .. } => true,
+        PaneClicked { .. }
+        | SplitPane { .. }
+        | SplitFocusedPane { .. }
+        | ClosePane { .. } => true,
         Widget(otty_ui_term::Event::ContentSync { .. }) => true,
         // A shortcut-driven split focuses the new pane just as the
         // context menu one does, so the explorer must follow its cwd
@@ -154,7 +157,6 @@ mod tests {
 
     use super::{handle_effect_event, should_sync_explorer};
     use crate::app::App;
-    use crate::domain::mode::Mode;
     use crate::router::AppEvent;
     use crate::shortcuts::AppShortcut;
     use crate::testing::task_outputs::collect_outputs;
@@ -185,6 +187,16 @@ mod tests {
                 frame: Arc::new(otty_libterm::surface::SnapshotOwned::default()),
             }
         )));
+    }
+
+    #[test]
+    fn given_split_focused_pane_when_checked_then_returns_true() {
+        // The split focuses the new pane, so the explorer follows its cwd.
+        assert!(should_sync_explorer(
+            &TerminalWorkspaceIntent::SplitFocusedPane {
+                axis: iced::widget::pane_grid::Axis::Vertical,
+            }
+        ));
     }
 
     #[test]
@@ -245,9 +257,9 @@ mod tests {
 
         assert!(matches!(
             events.as_slice(),
-            [AppEvent::Modes(ModesEvent::Intent(ModesIntent::Select(
-                Mode::Containers
-            )))]
+            [AppEvent::Modes(ModesEvent::Intent(ModesIntent::SelectAt {
+                position: 1
+            }))]
         ));
     }
 

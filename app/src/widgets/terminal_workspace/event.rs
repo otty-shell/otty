@@ -47,6 +47,9 @@ pub(crate) enum TerminalWorkspaceIntent {
         pane: pane_grid::Pane,
         axis: pane_grid::Axis,
     },
+    /// Split the focused pane of the active tab along an axis. Nothing
+    /// happens when the active tab is not a terminal tab.
+    SplitFocusedPane { axis: pane_grid::Axis },
     /// Close the given pane.
     ClosePane { tab_id: u64, pane: pane_grid::Pane },
     /// Copy the current text selection from a terminal.
@@ -132,6 +135,10 @@ impl fmt::Debug for TerminalWorkspaceIntent {
                 .debug_struct("SplitPane")
                 .field("tab_id", tab_id)
                 .field("pane", pane)
+                .field("axis", axis)
+                .finish(),
+            Self::SplitFocusedPane { axis } => f
+                .debug_struct("SplitFocusedPane")
                 .field("axis", axis)
                 .finish(),
             Self::ClosePane { tab_id, pane } => f

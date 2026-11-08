@@ -39,12 +39,7 @@ pub(super) fn close_active_tab(app: &App) -> Task<AppEvent> {
         return Task::none();
     }
 
-    match app.widgets.tabs.active_tab_id() {
-        Some(tab_id) => Task::done(AppEvent::Tabs(TabsEvent::Intent(
-            TabsIntent::CloseTab { tab_id },
-        ))),
-        None => Task::none(),
-    }
+    Task::done(AppEvent::Tabs(TabsEvent::Intent(TabsIntent::CloseActive)))
 }
 
 /// Run a tabs effect. Tabs only show in Terminal mode (spec Decision 5), so
