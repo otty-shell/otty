@@ -35,12 +35,12 @@ pub(crate) struct QuickLaunchCtx<'a> {
 /// Reduce a quick launch event into state updates and follow-up actions.
 pub(crate) fn reduce(
     state: &mut QuickLaunchState,
-    event: QuickLaunchIntent,
+    intent: QuickLaunchIntent,
     ctx: &QuickLaunchCtx<'_>,
 ) -> Task<QuickLaunchEvent> {
     use QuickLaunchIntent::*;
 
-    match event {
+    match intent {
         OpenErrorTab {
             tab_id,
             title,

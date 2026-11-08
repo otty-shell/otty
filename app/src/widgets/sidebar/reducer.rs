@@ -11,9 +11,9 @@ use super::state::SidebarState;
 /// the terminals redraw at their new size.
 pub(crate) fn reduce(
     state: &mut SidebarState,
-    event: SidebarIntent,
+    intent: SidebarIntent,
 ) -> Task<SidebarEvent> {
-    match event {
+    match intent {
         SidebarIntent::ToggleLeft => {
             state.toggle_left();
             sync_terminal_grid_sizes()

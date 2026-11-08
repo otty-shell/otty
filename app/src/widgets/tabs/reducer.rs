@@ -19,10 +19,10 @@ pub(crate) struct TabsCtx<'a> {
 /// Reduce a tabs intent event into state mutation and effect tasks.
 pub(crate) fn reduce(
     state: &mut TabsState,
-    event: TabsIntent,
+    intent: TabsIntent,
     ctx: &TabsCtx<'_>,
 ) -> Task<TabsEvent> {
-    match event {
+    match intent {
         TabsIntent::ActivateTab { tab_id } => activate(state, tab_id),
         TabsIntent::CloseTab { tab_id } => close(state, tab_id),
         TabsIntent::CloseActive => match state.active_tab_id() {

@@ -8,9 +8,9 @@ use super::state::ChromeState;
 /// Reduce a chrome intent event into state mutation and effect tasks.
 pub(crate) fn reduce(
     state: &mut ChromeState,
-    event: ChromeIntent,
+    intent: ChromeIntent,
 ) -> Task<ChromeEvent> {
-    match event {
+    match intent {
         ChromeIntent::ToggleMaximize => {
             // A double click must not also start a drag, or the window
             // manager keeps the window where the drag holds it.

@@ -39,12 +39,12 @@ pub(crate) fn reduce(
     state: &mut TerminalWorkspaceState,
     terminal_to_tab: &mut HashMap<u64, u64>,
     next_terminal_id: &mut u64,
-    event: TerminalWorkspaceIntent,
+    intent: TerminalWorkspaceIntent,
     ctx: &TerminalWorkspaceCtx,
 ) -> Task<TerminalWorkspaceEvent> {
     use TerminalWorkspaceIntent::*;
 
-    match event {
+    match intent {
         OpenTab {
             tab_id,
             default_title,

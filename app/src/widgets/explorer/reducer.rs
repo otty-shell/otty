@@ -10,9 +10,9 @@ use super::state::ExplorerState;
 /// Reduce an explorer intent event into state updates and effects.
 pub(crate) fn reduce(
     state: &mut ExplorerState,
-    event: ExplorerIntent,
+    intent: ExplorerIntent,
 ) -> Task<ExplorerEvent> {
-    match event {
+    match intent {
         ExplorerIntent::NodePressed { path } => {
             reduce_node_pressed(state, path)
         },

@@ -10,13 +10,13 @@ use crate::i18n;
 /// Reduce a settings intent event into state updates and effect tasks.
 pub(crate) fn reduce(
     state: &mut SettingsState,
-    event: SettingsIntent,
+    intent: SettingsIntent,
 ) -> Task<SettingsEvent> {
-    if state.is_saving() && changes_draft(&event) {
+    if state.is_saving() && changes_draft(&intent) {
         return Task::none();
     }
 
-    match event {
+    match intent {
         SettingsIntent::Reload => {
             Task::done(SettingsEvent::Effect(SettingsEffect::LoadRequested))
         },

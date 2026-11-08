@@ -48,14 +48,14 @@ impl TerminalWorkspaceWidget {
     /// Reduce an intent event into state updates and effect events.
     pub(crate) fn reduce(
         &mut self,
-        event: TerminalWorkspaceIntent,
+        intent: TerminalWorkspaceIntent,
         ctx: &TerminalWorkspaceCtx,
     ) -> Task<TerminalWorkspaceEvent> {
         reducer::reduce(
             &mut self.state,
             &mut self.terminal_to_tab,
             &mut self.next_terminal_id,
-            event,
+            intent,
             ctx,
         )
     }

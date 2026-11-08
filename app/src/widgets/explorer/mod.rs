@@ -31,9 +31,9 @@ impl ExplorerWidget {
     /// Reduce an intent event into state updates and effects.
     pub(crate) fn reduce(
         &mut self,
-        event: ExplorerIntent,
+        intent: ExplorerIntent,
     ) -> Task<ExplorerEvent> {
-        reducer::reduce(&mut self.state, event)
+        reducer::reduce(&mut self.state, intent)
     }
 
     /// Return active filesystem watcher subscription for loaded directories.

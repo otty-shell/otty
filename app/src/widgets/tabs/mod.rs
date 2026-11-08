@@ -28,10 +28,10 @@ impl TabsWidget {
     /// Reduce a tabs intent event into state updates and effect events.
     pub(crate) fn reduce(
         &mut self,
-        event: TabsIntent,
+        intent: TabsIntent,
         ctx: &TabsCtx<'_>,
     ) -> Task<TabsEvent> {
-        reducer::reduce(&mut self.state, event, ctx)
+        reducer::reduce(&mut self.state, intent, ctx)
     }
 
     /// Produce the Sessions view model: open tabs grouped by machine.

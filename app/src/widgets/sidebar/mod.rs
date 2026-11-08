@@ -30,9 +30,9 @@ impl SidebarWidget {
     /// Reduce an intent event into state updates and effect events.
     pub(crate) fn reduce(
         &mut self,
-        event: SidebarIntent,
+        intent: SidebarIntent,
     ) -> Task<SidebarEvent> {
-        reducer::reduce(&mut self.state, event)
+        reducer::reduce(&mut self.state, intent)
     }
 
     /// Build a read-only view model for the presentation layer.

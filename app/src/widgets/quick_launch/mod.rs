@@ -42,10 +42,10 @@ impl QuickLaunchWidget {
     /// Process an event into state updates and follow-up actions.
     pub(crate) fn reduce(
         &mut self,
-        event: QuickLaunchIntent,
+        intent: QuickLaunchIntent,
         ctx: &QuickLaunchCtx<'_>,
     ) -> Task<QuickLaunchEvent> {
-        reducer::reduce(&mut self.state, event, ctx)
+        reducer::reduce(&mut self.state, intent, ctx)
     }
 
     /// Return a tree view model for the sidebar panel.

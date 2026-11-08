@@ -28,7 +28,7 @@ impl ChromeWidget {
     }
 
     /// Reduce a chrome intent event into state updates and effects.
-    pub(crate) fn reduce(&mut self, event: ChromeIntent) -> Task<ChromeEvent> {
-        reducer::reduce(&mut self.state, event)
+    pub(crate) fn reduce(&mut self, intent: ChromeIntent) -> Task<ChromeEvent> {
+        reducer::reduce(&mut self.state, intent)
     }
 }

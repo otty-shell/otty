@@ -31,9 +31,9 @@ impl SettingsWidget {
     /// Reduce an intent event into state updates and effects.
     pub(crate) fn reduce(
         &mut self,
-        event: SettingsIntent,
+        intent: SettingsIntent,
     ) -> Task<SettingsEvent> {
-        reducer::reduce(&mut self.state, event)
+        reducer::reduce(&mut self.state, intent)
     }
 
     /// Return a read-only view model for the settings form.
