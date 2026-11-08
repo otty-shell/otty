@@ -105,13 +105,14 @@ pub(crate) fn view(
             left: anchor.x,
         });
 
-    // Dismiss layer
+    // Dismiss layer: a left or right press away from the menu closes it.
     let dismiss_layer = iced::widget::mouse_area(
         container(Space::new())
             .width(Length::Fill)
             .height(Length::Fill),
     )
-    .on_press(QuickLaunchIntent::ContextMenuDismiss);
+    .on_press(QuickLaunchIntent::ContextMenuDismiss)
+    .on_right_press(QuickLaunchIntent::ContextMenuDismiss);
 
     iced::widget::Stack::with_children(vec![
         dismiss_layer.into(),
@@ -272,6 +273,39 @@ mod tests {
             [QuickLaunchIntent::ContextMenuAction(
                 ContextMenuAction::Delete
             )]
+        ));
+    }
+
+    /// A right press away from the menu closes it, as a left press does,
+    /// instead of falling through to the tree or the terminal under it.
+    #[test]
+    fn a_right_press_outside_the_menu_closes_it() {
+        let vm = ContextMenuViewModel {
+            target: command(),
+            cursor: Point::new(40.0, 40.0),
+            is_running: false,
+        };
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(ContextMenuProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+            area_size: Size::new(1024.0, 768.0),
+        }));
+
+        ui.point_at(Point::new(900.0, 700.0));
+        let _ = ui.simulate([
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(
+                iced::mouse::Button::Right,
+            )),
+            iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
+                iced::mouse::Button::Right,
+            )),
+        ]);
+
+        let messages: Vec<QuickLaunchIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            messages.as_slice(),
+            [QuickLaunchIntent::ContextMenuDismiss]
         ));
     }
 
