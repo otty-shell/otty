@@ -34,7 +34,31 @@ pub(crate) struct QuickLaunchCtx<'a> {
 }
 
 /// Reduce a quick launch event into state updates and follow-up actions.
+/// When the last open overlay closes, it also reports
+/// [`QuickLaunchEffect::OverlayClosed`]; a Rename or New folder from the
+/// context menu opens the inline edit in its place, so it reports nothing.
 pub(super) fn reduce(
+    state: &mut QuickLaunchState,
+    intent: QuickLaunchIntent,
+    ctx: &QuickLaunchCtx<'_>,
+) -> Task<QuickLaunchEvent> {
+    let had_overlay = state.has_overlay();
+
+    let task = reduce_intent(state, intent, ctx);
+
+    if had_overlay && !state.has_overlay() {
+        return Task::batch([
+            task,
+            emit_effect(QuickLaunchEffect::OverlayClosed),
+        ]);
+    }
+
+    task
+}
+
+/// Change the state for `intent` and return its effects, all but the
+/// overlay closing.
+fn reduce_intent(
     state: &mut QuickLaunchState,
     intent: QuickLaunchIntent,
     ctx: &QuickLaunchCtx<'_>,
@@ -2535,6 +2559,165 @@ mod tests {
         assert!(state.launching().is_empty());
     }
 
+    // -----------------------------------------------------------------------
+    // Overlay closing tests
+    // -----------------------------------------------------------------------
+
+    /// Reduce `intent` and count how many times it reported the last open
+    /// overlay closed.
+    fn overlays_closed(
+        state: &mut QuickLaunchState,
+        intent: QuickLaunchIntent,
+    ) -> usize {
+        let settings = Settings::default();
+
+        collect_outputs(reduce(state, intent, &ctx(&settings)))
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    QuickLaunchEvent::Effect(QuickLaunchEffect::OverlayClosed)
+                )
+            })
+            .count()
+    }
+
+    /// The launch `Demo` in the tree with its context menu open.
+    fn state_with_command_menu() -> QuickLaunchState {
+        let mut state = QuickLaunchState::default();
+        state
+            .data_mut()
+            .root
+            .children
+            .push(QuickLaunchNode::Command(sample_command()));
+        state.set_context_menu(Some(
+            ContextMenuState::default()
+                .with_target(ContextMenuTarget::Command(vec![String::from(
+                    "Demo",
+                )]))
+                .with_cursor(Point::ORIGIN),
+        ));
+
+        state
+    }
+
+    /// A new folder being named `name` in the tree.
+    fn state_with_inline_edit(name: &str) -> QuickLaunchState {
+        let mut state = QuickLaunchState::default();
+        state.set_inline_edit(Some(InlineEditState {
+            kind: InlineEditKind::CreateFolder {
+                parent_path: Vec::new(),
+            },
+            value: String::from(name),
+            error: None,
+            id: iced::widget::Id::unique(),
+        }));
+
+        state
+    }
+
+    #[test]
+    fn closing_the_context_menu_reports_the_overlay_closed() {
+        let mut state = state_with_command_menu();
+
+        let closed =
+            overlays_closed(&mut state, QuickLaunchIntent::ContextMenuDismiss);
+
+        assert!(state.context_menu().is_none());
+        assert_eq!(closed, 1);
+    }
+
+    #[test]
+    fn closing_a_closed_context_menu_reports_nothing() {
+        let mut state = QuickLaunchState::default();
+
+        let closed =
+            overlays_closed(&mut state, QuickLaunchIntent::ContextMenuDismiss);
+
+        assert_eq!(closed, 0);
+    }
+
+    /// Rename closes the menu and opens the inline edit in its place, so an
+    /// overlay stays open.
+    #[test]
+    fn a_rename_from_the_menu_reports_nothing() {
+        let mut state = state_with_command_menu();
+
+        let closed = overlays_closed(
+            &mut state,
+            QuickLaunchIntent::ContextMenuAction(ContextMenuAction::Rename),
+        );
+
+        assert!(state.context_menu().is_none());
+        assert!(state.inline_edit().is_some());
+        assert_eq!(closed, 0);
+    }
+
+    #[test]
+    fn remove_from_the_menu_reports_the_overlay_closed() {
+        let mut state = state_with_command_menu();
+
+        let closed = overlays_closed(
+            &mut state,
+            QuickLaunchIntent::ContextMenuAction(ContextMenuAction::Remove),
+        );
+
+        assert!(state.data().root.children.is_empty());
+        assert_eq!(closed, 1);
+    }
+
+    #[test]
+    fn cancelling_or_sending_the_secret_prompt_reports_it() {
+        let mut cancelled = state_with_secret_prompt();
+        let mut sent = state_with_secret_prompt();
+        let typed = overlays_closed(
+            &mut sent,
+            QuickLaunchIntent::SecretPromptChanged(String::from("hunter2")),
+        );
+
+        let on_cancel = overlays_closed(
+            &mut cancelled,
+            QuickLaunchIntent::SecretPromptCancel,
+        );
+        let on_send =
+            overlays_closed(&mut sent, QuickLaunchIntent::SecretPromptSubmit);
+
+        assert_eq!(typed, 0);
+        assert_eq!(on_cancel, 1);
+        assert_eq!(on_send, 1);
+        assert!(sent.secret_prompt().is_none());
+    }
+
+    /// Owner, Q4: after an inline edit's Enter the active terminal gets the
+    /// keys, as after a cancel.
+    #[test]
+    fn cancelling_or_sending_an_inline_edit_reports_it() {
+        let mut cancelled = state_with_inline_edit("MyFolder");
+        let mut sent = state_with_inline_edit("MyFolder");
+
+        let on_cancel = overlays_closed(
+            &mut cancelled,
+            QuickLaunchIntent::CancelInlineEdit,
+        );
+        let on_send =
+            overlays_closed(&mut sent, QuickLaunchIntent::InlineEditSubmit);
+
+        assert_eq!(on_cancel, 1);
+        assert_eq!(on_send, 1);
+        assert_eq!(sent.data().root.children.len(), 1);
+    }
+
+    #[test]
+    fn a_refused_inline_edit_reports_nothing() {
+        let mut state = state_with_inline_edit("   ");
+
+        let closed =
+            overlays_closed(&mut state, QuickLaunchIntent::InlineEditSubmit);
+
+        assert!(state.inline_edit().is_some());
+        assert_eq!(closed, 0);
+    }
+
     #[test]
     fn given_secret_prompt_when_debug_printed_then_secret_is_hidden() {
         let mut state = state_with_secret_prompt();
@@ -3053,12 +3236,15 @@ mod tests {
 
         assert!(matches!(
             events.as_slice(),
-            [QuickLaunchEvent::Effect(
-                QuickLaunchEffect::LaunchSetupRequested {
-                    secret: Some(secret),
-                    ..
-                }
-            )] if secret == "hunter2"
+            [
+                QuickLaunchEvent::Effect(
+                    QuickLaunchEffect::LaunchSetupRequested {
+                        secret: Some(secret),
+                        ..
+                    }
+                ),
+                QuickLaunchEvent::Effect(QuickLaunchEffect::OverlayClosed),
+            ] if secret == "hunter2"
         ));
     }
 

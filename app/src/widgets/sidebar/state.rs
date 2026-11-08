@@ -229,9 +229,9 @@ impl SidebarState {
         self.header_menu = Some(OpenHeaderMenu::new(menu, self.cursor));
     }
 
-    /// Close the open header menu, if any.
-    pub(super) fn dismiss_header_menu(&mut self) {
-        self.header_menu = None;
+    /// Close the open header menu, if any; return whether one was open.
+    pub(super) fn dismiss_header_menu(&mut self) -> bool {
+        self.header_menu.take().is_some()
     }
 
     /// Note that a panel edge is being dragged now.

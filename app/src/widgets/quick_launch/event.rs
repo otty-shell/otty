@@ -204,6 +204,10 @@ pub(crate) enum QuickLaunchEffect {
         secret: Option<String>,
         cancel: Arc<AtomicBool>,
     },
+    /// The last open overlay of the launches closed: the context menu, the
+    /// SSH secret prompt or the inline edit. Back in Terminal mode the
+    /// active pane gets its keys back.
+    OverlayClosed,
 }
 
 /// Quick launch event stream routed through the app update loop.

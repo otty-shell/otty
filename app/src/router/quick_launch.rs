@@ -13,6 +13,9 @@ use crate::widgets::quick_launch::storage::save_quick_launches;
 use crate::widgets::quick_launch::types::QuickLaunchFile;
 use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
 use crate::widgets::tabs::types::TabMachine;
+use crate::widgets::terminal_workspace::event::{
+    TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+};
 
 /// Route a launches event: reduce its intents and run its effects.
 pub(crate) fn route(app: &mut App, event: QuickLaunchEvent) -> Task<AppEvent> {
@@ -94,6 +97,13 @@ fn handle_effect(effect: QuickLaunchEffect) -> Task<AppEvent> {
                 ))
             },
         ),
+        // The active pane gets its keys back; in Containers mode its pane
+        // is not on screen, so nothing gets them.
+        QuickLaunchEffect::OverlayClosed => Task::done(
+            AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::FocusActive,
+            )),
+        ),
     }
 }
 
@@ -131,6 +141,9 @@ mod tests {
     use crate::widgets::quick_launch::types::QuickLaunchSetupOutcome;
     use crate::widgets::tabs::event::{TabsEvent, TabsIntent};
     use crate::widgets::tabs::types::TabMachine;
+    use crate::widgets::terminal_workspace::event::{
+        TerminalWorkspaceEvent, TerminalWorkspaceIntent,
+    };
 
     fn launch(spec: serde_json::Value) -> QuickLaunch {
         serde_json::from_value(serde_json::json!({
@@ -156,6 +169,19 @@ mod tests {
             })) => Some(machine),
             _ => None,
         })
+    }
+
+    #[test]
+    fn a_closed_overlay_gives_the_active_terminal_its_keys_back() {
+        let events =
+            collect_outputs(handle_effect(QuickLaunchEffect::OverlayClosed));
+
+        assert!(matches!(
+            events.as_slice(),
+            [AppEvent::TerminalWorkspace(TerminalWorkspaceEvent::Intent(
+                TerminalWorkspaceIntent::FocusActive
+            ))]
+        ));
     }
 
     #[test]

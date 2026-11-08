@@ -40,6 +40,9 @@ pub(crate) enum SidebarIntent {
 pub(crate) enum SidebarEffect {
     SyncTerminalGridSizes,
     QuickLaunchResetInteractionState,
+    /// The open header menu closed. Back in Terminal mode the active pane
+    /// gets its keys back.
+    HeaderMenuClosed,
 }
 
 /// Sidebar event stream routed through the app update loop.

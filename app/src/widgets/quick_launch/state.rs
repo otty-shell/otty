@@ -342,6 +342,14 @@ impl QuickLaunchState {
     pub(super) fn take_secret_prompt(&mut self) -> Option<SecretPromptState> {
         self.secret_prompt.take()
     }
+
+    /// Return whether an overlay of the launches is open: the context menu,
+    /// the SSH secret prompt or the inline edit.
+    pub(super) fn has_overlay(&self) -> bool {
+        self.context_menu.is_some()
+            || self.secret_prompt.is_some()
+            || self.inline_edit.is_some()
+    }
 }
 
 /// Dialog that asks for an SSH passphrase or password and then relaunches

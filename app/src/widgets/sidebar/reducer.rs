@@ -53,8 +53,10 @@ pub(super) fn reduce(
             Task::none()
         },
         SidebarIntent::HeaderMenuDismiss => {
-            state.dismiss_header_menu();
-            Task::none()
+            if !state.dismiss_header_menu() {
+                return Task::none();
+            }
+            Task::done(SidebarEvent::Effect(SidebarEffect::HeaderMenuClosed))
         },
         SidebarIntent::WorkspaceCursorMoved { position } => {
             state.update_cursor(position);
@@ -1047,9 +1049,25 @@ mod tests {
         );
         assert!(open.is_empty());
 
-        let dismiss = reduce(&mut widget, SidebarIntent::HeaderMenuDismiss);
+        let _dismiss = reduce(&mut widget, SidebarIntent::HeaderMenuDismiss);
         assert_eq!(widget.vm().open_header_menu, None);
-        assert!(dismiss.is_empty());
+    }
+
+    #[test]
+    fn closing_an_open_header_menu_reports_it() {
+        let mut widget = SidebarWidget::new();
+        let _open = reduce(
+            &mut widget,
+            SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions),
+        );
+
+        let dismiss = reduce(&mut widget, SidebarIntent::HeaderMenuDismiss);
+
+        assert!(!widget.has_header_menu_open());
+        assert!(matches!(
+            dismiss.as_slice(),
+            [SidebarEvent::Effect(SidebarEffect::HeaderMenuClosed)]
+        ));
     }
 
     #[test]
@@ -1081,17 +1099,18 @@ mod tests {
             SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions),
         );
 
-        let _launches = reduce(
+        let launches = reduce(
             &mut widget,
             SidebarIntent::HeaderMenuOpen(HeaderMenu::Launches),
         );
 
         let open = widget.vm().open_header_menu.expect("a menu should be open");
         assert_eq!(open.menu(), HeaderMenu::Launches);
+        assert!(launches.is_empty());
     }
 
     #[test]
-    fn dismissing_a_closed_header_menu_changes_nothing() {
+    fn closing_a_closed_header_menu_reports_nothing() {
         let mut widget = SidebarWidget::new();
 
         let dismiss = reduce(&mut widget, SidebarIntent::HeaderMenuDismiss);
