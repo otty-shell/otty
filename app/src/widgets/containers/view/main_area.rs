@@ -288,15 +288,14 @@ mod tests {
     use crate::testing::temp_dir::TempDir;
     use crate::theme::ThemeManager;
     use crate::widgets::containers::actions::PruneViewModel;
+    use crate::widgets::containers::model::NoEngineViewModel;
     use crate::widgets::containers::reducer::reduce;
+    use crate::widgets::containers::resource_rows;
     use crate::widgets::containers::sort::{TableSort, TableSorts};
     use crate::widgets::containers::state::ContainersState;
     use crate::widgets::containers::table_search::{keys, keys_in};
     use crate::widgets::containers::types::{
         LoadedLists, NoEngineCase, Place, ResourceKind,
-    };
-    use crate::widgets::containers::{
-        no_engine as no_engine_vm, resource_rows,
     };
 
     const NOW: i64 = 1_793_557_960;
@@ -1299,7 +1298,7 @@ mod tests {
     #[test]
     fn without_an_engine_the_main_area_shows_the_case_and_check_again() {
         let themes = ThemeManager::new();
-        let vm = no_engine_vm::view_model(
+        let vm = NoEngineViewModel::for_case(
             NoEngineCase::PodmanApiOff,
             "",
             &[String::from("/run/podman/podman.sock")],

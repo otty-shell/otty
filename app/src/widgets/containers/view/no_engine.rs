@@ -12,7 +12,7 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
 use super::super::event::ContainersIntent;
-use super::super::no_engine::{
+use super::super::model::{
     NoEngineCommandViewModel, NoEngineLinkViewModel, NoEngineViewModel,
 };
 use crate::i18n::{self, Key};
@@ -156,7 +156,6 @@ mod tests {
     use super::*;
     use crate::testing::temp_dir::TempDir;
     use crate::theme::ThemeManager;
-    use crate::widgets::containers::no_engine::view_model;
     use crate::widgets::containers::types::NoEngineCase;
 
     /// The card in the area it has in the app.
@@ -295,7 +294,11 @@ mod tests {
 
     /// A card whose first command is `command`, whatever its length.
     fn card_with_command(command: &'static str) -> NoEngineViewModel {
-        let mut vm = view_model(NoEngineCase::DockerNotRunning, "", &[]);
+        let mut vm = NoEngineViewModel::for_case(
+            NoEngineCase::DockerNotRunning,
+            "",
+            &[],
+        );
         if let Some(first) = vm.commands.first_mut() {
             first.text = command;
         }
@@ -308,7 +311,7 @@ mod tests {
         let palette = themes.current().ui();
         let places = [String::from("/var/run/docker.sock")];
         let mut ui = simulator(page(
-            view_model(case, "/var/run/docker.sock", &places),
+            NoEngineViewModel::for_case(case, "/var/run/docker.sock", &places),
             palette,
         ));
 
@@ -395,7 +398,11 @@ mod tests {
             let themes = ThemeManager::new();
             let places = [String::from("/var/run/docker.sock")];
             let mut ui = simulator(page(
-                view_model(case, "/var/run/docker.sock", &places),
+                NoEngineViewModel::for_case(
+                    case,
+                    "/var/run/docker.sock",
+                    &places,
+                ),
                 themes.current().ui(),
             ));
 
@@ -414,7 +421,7 @@ mod tests {
         let themes = ThemeManager::new();
 
         for (case, _) in CARDS_WITH_COMMANDS {
-            let vm = view_model(case, "/some.sock", &[]);
+            let vm = NoEngineViewModel::for_case(case, "/some.sock", &[]);
             let mut ui = simulator(page(vm, themes.current().ui()));
 
             assert!(ui.find(i18n::t(Key::ContainersCopy)).is_err(), "{case:?}");
@@ -455,7 +462,11 @@ mod tests {
         let reference = folder.path().join("tooltip");
         let themes = ThemeManager::new();
         let palette = themes.current().ui();
-        let vm = view_model(NoEngineCase::DockerNotRunning, "", &[]);
+        let vm = NoEngineViewModel::for_case(
+            NoEngineCase::DockerNotRunning,
+            "",
+            &[],
+        );
         let command = vm.commands.first().expect("the card has a command");
         let block_with_label =
             |label: &'static str| -> Element<'_, ContainersIntent> {
@@ -499,7 +510,7 @@ mod tests {
 
         for (case, commands) in CARDS_WITH_COMMANDS {
             for command in commands {
-                let vm = view_model(case, "/some.sock", &[]);
+                let vm = NoEngineViewModel::for_case(case, "/some.sock", &[]);
                 let mut ui = Simulator::with_size(
                     iced::Settings::default(),
                     NARROW_MAIN,
@@ -533,7 +544,7 @@ mod tests {
 
         for width in [640.0, NARROW_MAIN.width, 200.0] {
             for (case, _) in CARDS_WITH_COMMANDS {
-                let vm = view_model(case, "/some.sock", &[]);
+                let vm = NoEngineViewModel::for_case(case, "/some.sock", &[]);
 
                 for command in &vm.commands {
                     let mut ui = Simulator::with_size(
@@ -564,7 +575,7 @@ mod tests {
         let palette = themes.current().ui();
 
         for (case, commands) in CARDS_WITH_COMMANDS {
-            let vm = view_model(case, "/some.sock", &[]);
+            let vm = NoEngineViewModel::for_case(case, "/some.sock", &[]);
 
             for (block, command) in vm.commands.iter().zip(commands) {
                 let mut ui = Simulator::with_size(
@@ -592,7 +603,10 @@ mod tests {
             let mut ui = Simulator::with_size(
                 iced::Settings::default(),
                 SMALL_MAIN,
-                page(view_model(case, "/some.sock", &[]), palette),
+                page(
+                    NoEngineViewModel::for_case(case, "/some.sock", &[]),
+                    palette,
+                ),
             );
 
             for command in commands {
@@ -611,7 +625,7 @@ mod tests {
     fn in_a_small_area_every_button_of_every_card_can_be_reached() {
         for case in ALL_CASES {
             let themes = ThemeManager::new();
-            let vm = view_model(case, "/some.sock", &[]);
+            let vm = NoEngineViewModel::for_case(case, "/some.sock", &[]);
             let installs: Vec<&str> =
                 vm.installs.iter().map(|link| link.label).collect();
             let fixes: Vec<&str> =
@@ -672,7 +686,7 @@ mod tests {
         let themes = ThemeManager::new();
 
         for case in ALL_CASES {
-            let vm = view_model(case, "/some.sock", &[]);
+            let vm = NoEngineViewModel::for_case(case, "/some.sock", &[]);
             let looked_for = vm.looked_for.clone();
             let mut ui = Simulator::with_size(
                 iced::Settings::default(),
@@ -695,7 +709,7 @@ mod tests {
         let themes = ThemeManager::new();
 
         for case in ALL_CASES {
-            let vm = view_model(case, "/some.sock", &[]);
+            let vm = NoEngineViewModel::for_case(case, "/some.sock", &[]);
             let mut ui = Simulator::with_size(
                 iced::Settings::default(),
                 Size::new(DEFAULT_WINDOW_WIDTH, 1000.0),
@@ -721,7 +735,7 @@ mod tests {
 
         for (index, case) in ALL_CASES.into_iter().enumerate() {
             let reference = folder.path().join(format!("case-{index}"));
-            let vm = view_model(case, "/some.sock", &[]);
+            let vm = NoEngineViewModel::for_case(case, "/some.sock", &[]);
             let plain = container(view(vm.clone(), palette))
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -896,7 +910,11 @@ mod tests {
     /// A press on the button called `label` of the card of both engines.
     fn both_off_intents(label: &str) -> Vec<ContainersIntent> {
         let themes = ThemeManager::new();
-        let vm = view_model(NoEngineCase::DockerAndPodmanOff, "", &[]);
+        let vm = NoEngineViewModel::for_case(
+            NoEngineCase::DockerAndPodmanOff,
+            "",
+            &[],
+        );
         let mut ui = simulator(page(vm, themes.current().ui()));
 
         ui.click(label).expect("the button should be visible");
@@ -907,7 +925,11 @@ mod tests {
     #[test]
     fn both_engines_off_shows_both_commands_and_their_notes() {
         let themes = ThemeManager::new();
-        let vm = view_model(NoEngineCase::DockerAndPodmanOff, "", &[]);
+        let vm = NoEngineViewModel::for_case(
+            NoEngineCase::DockerAndPodmanOff,
+            "",
+            &[],
+        );
         let texts: Vec<&str> = vm
             .commands
             .iter()
@@ -926,7 +948,11 @@ mod tests {
     fn each_command_of_both_engines_off_copies_itself() {
         let themes = ThemeManager::new();
         let palette = themes.current().ui();
-        let vm = view_model(NoEngineCase::DockerAndPodmanOff, "", &[]);
+        let vm = NoEngineViewModel::for_case(
+            NoEngineCase::DockerAndPodmanOff,
+            "",
+            &[],
+        );
         assert_eq!(vm.commands.len(), 2);
 
         for (command, expected) in vm.commands.iter().zip([
@@ -994,7 +1020,7 @@ mod tests {
         let palette = themes.current().ui();
 
         for (engine, commands, _) in denied_and_other_off_cards() {
-            let vm = view_model(
+            let vm = NoEngineViewModel::for_case(
                 NoEngineCase::NoPermissionAndOtherOff(engine),
                 "/some.sock",
                 &[],
@@ -1030,7 +1056,8 @@ mod tests {
     fn a_denied_socket_with_the_other_off_opens_a_page_for_each_engine() {
         for (engine, _, pages) in denied_and_other_off_cards() {
             let case = NoEngineCase::NoPermissionAndOtherOff(engine);
-            let labels = view_model(case, "/some.sock", &[]).fixes;
+            let labels =
+                NoEngineViewModel::for_case(case, "/some.sock", &[]).fixes;
             assert_eq!(labels.len(), 2);
 
             for (fix, page) in labels.iter().zip(pages) {
@@ -1047,7 +1074,7 @@ mod tests {
     #[test]
     fn the_card_shows_its_title_and_what_was_looked_for() {
         let themes = ThemeManager::new();
-        let vm = view_model(
+        let vm = NoEngineViewModel::for_case(
             NoEngineCase::DockerNotRunning,
             "",
             &[String::from("/var/run/docker.sock")],
