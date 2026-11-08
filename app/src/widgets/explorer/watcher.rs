@@ -1,53 +1,59 @@
+//! Which loaded explorer folders a file system event changed.
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use iced::Subscription;
-use iced::futures::channel::mpsc;
-use iced::futures::stream::BoxStream;
-use iced::futures::{FutureExt, SinkExt, StreamExt};
+use notify::EventKind;
 use notify::event::ModifyKind;
-use notify::{EventKind, RecursiveMode, Watcher};
 
-use super::event::{ExplorerEvent, ExplorerIntent};
-
-const WATCH_CHANNEL_SIZE: usize = 100;
-
+/// The loaded folders a watch covers, sorted and without repeats, so the
+/// same folders always name the same watch.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct ExplorerWatchDirectories {
+pub(super) struct ExplorerWatchDirectories {
     directories: Vec<PathBuf>,
 }
 
 impl ExplorerWatchDirectories {
-    fn new(mut directories: Vec<PathBuf>) -> Self {
+    /// Return the watched folders, sorted.
+    pub(super) fn directories(&self) -> &[PathBuf] {
+        &self.directories
+    }
+
+    /// Return whether there is no folder to watch.
+    pub(super) fn is_empty(&self) -> bool {
+        self.directories.is_empty()
+    }
+
+    /// Normalize `directories`: sort them and drop repeats.
+    pub(super) fn new(mut directories: Vec<PathBuf>) -> Self {
         directories.sort();
         directories.dedup();
 
         Self { directories }
     }
-
-    fn is_empty(&self) -> bool {
-        self.directories.is_empty()
-    }
 }
 
+/// The folders a running watch reports changes for.
 #[derive(Debug)]
-struct WatchedDirectories {
+pub(super) struct WatchedDirectories {
     directories: BTreeSet<PathBuf>,
 }
 
 impl WatchedDirectories {
-    fn new(directories: Vec<PathBuf>) -> Self {
-        Self {
-            directories: directories.into_iter().collect(),
-        }
-    }
-
     fn contains(&self, path: &Path) -> bool {
         self.directories.contains(path)
     }
 
-    fn iter(&self) -> impl Iterator<Item = &PathBuf> {
+    /// Iterate over the watched folders, sorted.
+    pub(super) fn iter(&self) -> impl Iterator<Item = &PathBuf> {
         self.directories.iter()
+    }
+
+    /// Watch `directories`.
+    pub(super) fn new(directories: Vec<PathBuf>) -> Self {
+        Self {
+            directories: directories.into_iter().collect(),
+        }
     }
 
     fn nearest_ancestor(&self, path: &Path) -> Option<PathBuf> {
@@ -59,82 +65,9 @@ impl WatchedDirectories {
     }
 }
 
-/// Subscribe to filesystem changes for currently loaded explorer directories.
-pub(super) fn subscription(
-    directories: Vec<PathBuf>,
-) -> Subscription<ExplorerEvent> {
-    let directories = ExplorerWatchDirectories::new(directories);
-    if directories.is_empty() {
-        return Subscription::none();
-    }
-
-    Subscription::run_with(directories, explorer_watch_stream)
-}
-
-fn explorer_watch_stream(
-    data: &ExplorerWatchDirectories,
-) -> BoxStream<'static, ExplorerEvent> {
-    let directories = data.directories.clone();
-
-    Box::pin(iced::stream::channel(
-        WATCH_CHANNEL_SIZE,
-        async move |mut output| {
-            let watched_directories = WatchedDirectories::new(directories);
-            let (event_sender, mut event_receiver) =
-                mpsc::unbounded::<notify::Result<notify::Event>>();
-
-            let mut watcher = match notify::recommended_watcher(move |result| {
-                let _ = event_sender.unbounded_send(result);
-            }) {
-                Ok(watcher) => watcher,
-                Err(err) => {
-                    log::warn!("explorer filesystem watcher failed: {err}");
-                    return;
-                },
-            };
-
-            for directory in watched_directories.iter() {
-                if let Err(err) =
-                    watcher.watch(directory, RecursiveMode::NonRecursive)
-                {
-                    let display = directory.display();
-                    log::warn!("explorer failed to watch {display}: {err}");
-                }
-            }
-
-            let _watcher = watcher;
-            while let Some(result) = event_receiver.next().await {
-                let mut changed_directories = BTreeSet::new();
-                collect_changed_directories(
-                    result,
-                    &watched_directories,
-                    &mut changed_directories,
-                );
-
-                while let Some(Some(result)) =
-                    event_receiver.next().now_or_never()
-                {
-                    collect_changed_directories(
-                        result,
-                        &watched_directories,
-                        &mut changed_directories,
-                    );
-                }
-
-                for directory in changed_directories {
-                    let event = ExplorerEvent::Intent(
-                        ExplorerIntent::DirectoryChanged { directory },
-                    );
-                    if output.send(event).await.is_err() {
-                        return;
-                    }
-                }
-            }
-        },
-    ))
-}
-
-fn collect_changed_directories(
+/// Add to `changed_directories` the watched folders that the event in
+/// `result` changed; a watcher error is logged and changes nothing.
+pub(super) fn collect_changed_directories(
     result: notify::Result<notify::Event>,
     watched: &WatchedDirectories,
     changed_directories: &mut BTreeSet<PathBuf>,
@@ -216,22 +149,6 @@ mod tests {
         ]);
 
         assert_eq!(directories.directories, vec![root, src]);
-    }
-
-    #[test]
-    fn given_empty_directories_when_subscription_created_then_no_units_are_registered()
-     {
-        let subscription = subscription(Vec::new());
-
-        assert_eq!(subscription.units(), 0);
-    }
-
-    #[test]
-    fn given_watch_directories_when_subscription_created_then_one_unit_is_registered()
-     {
-        let subscription = subscription(vec![PathBuf::from("/tmp/project")]);
-
-        assert_eq!(subscription.units(), 1);
     }
 
     #[test]

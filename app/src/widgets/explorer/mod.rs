@@ -5,6 +5,7 @@ mod reducer;
 #[expect(clippy::disallowed_methods, reason = "this module reads folders")]
 pub(crate) mod services;
 mod state;
+mod subscription;
 pub(crate) mod types;
 pub(crate) mod view;
 mod watcher;
@@ -38,7 +39,7 @@ impl ExplorerWidget {
 
     /// Return active filesystem watcher subscription for loaded directories.
     pub(crate) fn subscription(&self) -> Subscription<ExplorerEvent> {
-        watcher::subscription(self.state.watched_directories())
+        subscription::subscription(self.state.watched_directories())
     }
 
     /// Return a tree view model for the sidebar panel.

@@ -100,12 +100,6 @@ pub const ALLOWLIST: &[Allowed] = &[
         "the domain type still names a type of the quick_launch widget; move that type into domain/",
     ),
     Allowed::known(
-        Rule::StreamOutsideSubscription,
-        "widgets/explorer/watcher.rs",
-        "Subscription::run",
-        "the stream is built in a topic file; move it into the widget's subscription.rs",
-    ),
-    Allowed::known(
         Rule::MissingModeScreen,
         "view/containers.rs",
         "Containers",
